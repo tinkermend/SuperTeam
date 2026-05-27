@@ -7,6 +7,7 @@
     "build:web": "pnpm --filter @superteam/web build",
     "dev:control-plane": "go run ./apps/control-plane/cmd/control-plane",
     "dev:runtime-agent": "go run ./apps/runtime-agent/cmd/runtime-agent --once",
+    "generate:control-plane": "cd apps/control-plane && go generate ./internal/api",
     "test": "pnpm test:ts && pnpm test:go",
     "test:ts": "pnpm -r --if-present test",
     "test:go": "go test ./apps/control-plane/... ./apps/runtime-agent/...",

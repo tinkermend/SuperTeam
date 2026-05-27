@@ -26,4 +26,3 @@ func NewRouter() http.Handler {
 
 	return router
 }
-

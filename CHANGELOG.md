@@ -2,6 +2,9 @@
 
 ## 2026-05-28
 
+- 建立 Control Plane 领域包骨架：`task`、`workflow`、`approval`、`artifact`、`audit`、`runtime`、`storage`、`config`。
+- 新增 Control Plane 配置加载与 PostgreSQL、Redis、S3 兼容对象存储客户端封装。
+- 新增 Control Plane OpenAPI 的 `oapi-codegen` Go server 生成配置和 `pnpm generate:control-plane` 脚本。
 - 初始化本地 SuperTeam 数据库连接信息：启动带随机密码的 `superteam-redis`，并在现有 PostgreSQL 实例中创建 `superteam` 数据库、用户和 schema。
 - 新增 `docs/database/conn_info.md` 记录本地 PostgreSQL 与 Redis 连接参数和验证命令。
 

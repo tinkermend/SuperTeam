@@ -11,7 +11,8 @@ out/
 target/          # Tauri / Rust
 
 # Generated code
-*.gen.go         # oapi-codegen / sqlc
+# oapi-codegen / sqlc
+*.gen.go
 *.sql.go
 
 # Environment
