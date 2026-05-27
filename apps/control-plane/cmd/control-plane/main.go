@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"net/http"
 
@@ -11,7 +12,10 @@ import (
 )
 
 func main() {
-	cfg, err := config.LoadFromEnv()
+	configPath := flag.String("config", "", "path to control-plane YAML config file")
+	flag.Parse()
+
+	cfg, err := config.LoadFromFile(*configPath)
 	if err != nil {
 		log.Fatal(err)
 	}

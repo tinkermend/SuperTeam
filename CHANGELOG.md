@@ -2,6 +2,8 @@
 
 ## 2026-05-28
 
+- 为 Control Plane 增加 YAML 配置文件加载能力，支持 `--config` 指定配置文件并保留环境变量覆盖。
+- 新增 `apps/control-plane/config/config.example.yaml`，并忽略本地真实配置 `apps/*/config/local.yaml` 与 `*.local.yaml`。
 - 建立 Control Plane 领域包骨架：`task`、`workflow`、`approval`、`artifact`、`audit`、`runtime`、`storage`、`config`。
 - 新增 Control Plane 配置加载与 PostgreSQL、Redis、S3 兼容对象存储客户端封装。
 - 新增 Control Plane OpenAPI 的 `oapi-codegen` Go server 生成配置和 `pnpm generate:control-plane` 脚本。

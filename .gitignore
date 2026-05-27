@@ -22,6 +22,8 @@ target/          # Tauri / Rust
 .env.development.local
 .env.test.local
 .env.production.local
+apps/*/config/local.yaml
+apps/*/config/*.local.yaml
 
 # IDE
 .vscode/

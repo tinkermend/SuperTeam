@@ -1,0 +1,16 @@
+http:
+  addr: ":8080"
+
+postgres:
+  url: "postgres://superteam:change-me@127.0.0.1:5432/superteam?sslmode=disable"
+
+redis:
+  url: "redis://:change-me@127.0.0.1:6379/0"
+
+objectStore:
+  endpoint: "http://127.0.0.1:9000"
+  region: "us-east-1"
+  bucket: "superteam-artifacts"
+  accessKeyId: "change-me"
+  secretAccessKey: "change-me"
+  forcePathStyle: true
