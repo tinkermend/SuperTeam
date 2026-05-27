@@ -79,6 +79,7 @@ Desktop.ini
 
 # Turbo / Monorepo
 .turbo/
+.worktrees/
 
 # TypeScript
 *.tsbuildinfo
