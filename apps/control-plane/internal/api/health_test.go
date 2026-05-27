@@ -31,4 +31,3 @@ func TestHealthEndpointReturnsControlPlaneStatus(t *testing.T) {
 		t.Fatalf("expected service control-plane, got %q", body["service"])
 	}
 }
-

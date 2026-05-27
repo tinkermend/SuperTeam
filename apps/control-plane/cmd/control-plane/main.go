@@ -1,22 +1,40 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/superteam/control-plane/internal/api"
+	"github.com/superteam/control-plane/internal/config"
+	"github.com/superteam/control-plane/internal/storage"
 )
 
 func main() {
-	addr := os.Getenv("CONTROL_PLANE_ADDR")
-	if addr == "" {
-		addr = ":8080"
+	cfg, err := config.LoadFromEnv()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	log.Printf("control-plane listening on %s", addr)
-	if err := http.ListenAndServe(addr, api.NewRouter()); err != nil {
+	stores, err := storage.NewClients(context.Background(), storage.Config{
+		PostgresURL: cfg.Postgres.URL,
+		RedisURL:    cfg.Redis.URL,
+		ObjectStore: storage.ObjectStoreConfig{
+			Endpoint:        cfg.ObjectStore.Endpoint,
+			Region:          cfg.ObjectStore.Region,
+			Bucket:          cfg.ObjectStore.Bucket,
+			AccessKeyID:     cfg.ObjectStore.AccessKeyID,
+			SecretAccessKey: cfg.ObjectStore.SecretAccessKey,
+			ForcePathStyle:  cfg.ObjectStore.ForcePathStyle,
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer stores.Close()
+
+	log.Printf("control-plane listening on %s", cfg.HTTP.Addr)
+	if err := http.ListenAndServe(cfg.HTTP.Addr, api.NewRouter()); err != nil {
 		log.Fatal(err)
 	}
 }
-
