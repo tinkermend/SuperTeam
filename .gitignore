@@ -1,0 +1,102 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+.next/
+out/
+target/          # Tauri / Rust
+
+# Generated code
+*.gen.go         # oapi-codegen / sqlc
+*.sql.go
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Go
+*.exe
+*.test
+vendor/
+
+# Tauri / Desktop
+src-tauri/target/
+*.dmg
+*.app
+*.msi
+*.deb
+*.AppImage
+
+# Testing
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Playwright
+playwright/.cache/
+
+# Temporal
+temporalio/
+
+# Database
+*.db
+*.sqlite
+migrations/*.down.sql
+
+# Object store (local dev)
+.s3/
+localstack/
+
+# Logs
+*.log
+logs/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Package manager
+.yarn/
+.pnpm/
+*.tgz
+
+# Turbo / Monorepo
+.turbo/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Vite
+vite.config.ts.timestamp-*.mjs
+
+# Tauri
+src-tauri/tauri.conf.json.bak
+
+# Misc
+*.pem
+*.key
+tmp/
+temp/
+tests/
+.agents/
+.claude/
+.codex/
+skills-lock.json

@@ -1,0 +1,9 @@
+{
+  "name": "@superteam/desktop",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "echo \"Desktop shell is deferred; build the Web console first.\""
+  }
+}

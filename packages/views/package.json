@@ -1,0 +1,19 @@
+{
+  "name": "@superteam/views",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --environment jsdom",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@superteam/ui": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "19.2.6"
+  }
+}

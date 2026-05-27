@@ -1,0 +1,118 @@
+# AGENTS.md — SuperTeam
+
+## 项目定位
+
+SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。
+
+当前阶段优先做可控闭环：人类输入需求 -> 数字员工分析 -> 人类确认 -> Runtime Agent 执行 -> 回传结果和工件 -> 人类验收。
+
+## 架构分层
+
+- **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。
+- **Control Plane Layer**：Go 后端。负责任务、审批、审计、流程调度、上下文、工件、Runtime 注册和外部能力注册。对 Console 提供 API，也对 Runtime Agent 提供任务和心跳 API。
+- **Runtime Layer**：部署在各个服务器节点上的 Go daemon。负责领取任务、维护租约、管理本机 Provider 会话、工作目录、日志、工件和执行槽位。
+- **Provider Layer**：Claude Code、OpenCode、Codex、Pi 等具体执行器。它们只在 Runtime Agent 管理下工作，不承载平台级状态。
+- **Capability Integration Layer**：外部能力接入层。平台只负责外部能力的注册、授权、HTTP 调用和审计。
+
+## 技术选型
+
+- Web：Next.js + React + shadcn/ui + Radix UI + Tailwind CSS
+- Desktop：Tauri + React/Vite，第一阶段仅保留空壳或占位；Web 主链路完整后再复用 `packages/views` 和 `packages/ui`
+- Control Plane：Go + chi/net/http；REST/OpenAPI 为主，使用 `oapi-codegen` 生成契约与客户端
+- Runtime Agent：Go daemon；HTTP claim + lease；WebSocket 回传实时事件；NATS 后续在多节点事件总线需要时再引入
+- 工作流：Temporal
+- 数据层：PostgreSQL 为主存储；Redis 用于缓存、唤醒和轻量队列；S3 兼容存储用于日志、报告、附件和执行产物
+- Go 数据访问：pgx + sqlc + Atlas
+- 权限：先保留统一授权接口，避免业务代码散落权限判断；企业级授权目标为 OpenFGA
+- 前端状态与交互：TanStack Query、TanStack Table、xyflow、Monaco Editor、xterm.js；Web 使用 Next.js App Router；Desktop 路由后续通过平台适配层接入
+- 表单校验：React Hook Form + Zod
+- 图标：lucide-react
+- 测试：Vitest、Playwright、Go test + testify、Temporal workflow test suite
+
+## 目录边界
+
+```text
+apps/
+  web/             # Web 控制台入口
+  desktop/         # 第一阶段仅空壳或占位，后续承载通知中心和快速访问
+  control-plane/   # Control Plane Go 服务
+    cmd/control-plane/
+    internal/
+      api/          # REST/OpenAPI 路由、请求响应适配
+      auth/         # 登录、会话、访问控制入口
+      tenant/       # 租户、成员、工作区
+      employee/     # 数字员工定义、技能绑定、权限边界
+      task/         # 任务生命周期、状态流转
+      workflow/     # 流程模板、Temporal 调度、节点状态
+      approval/     # 人类审批、暂停/恢复
+      runtime/      # Runtime Agent 注册、心跳、claim、lease
+      artifact/     # 工件、日志、报告
+      audit/        # 审计事件、操作记录
+      capability/   # 外部能力注册、授权、HTTP 调用
+      policy/       # 风险策略、审批策略、权限判断
+      storage/      # DB、Redis、S3 封装
+      config/       # 配置加载
+  runtime-agent/   # Runtime Agent Go daemon
+    cmd/runtime-agent/
+    internal/
+      daemon/       # Runtime Agent 进程生命周期、启动/停止、主循环
+      controlplane/ # 调用 Control Plane 的客户端
+      lease/        # claim、renew、heartbeat、任务租约
+      slots/        # 本机并发执行槽位
+      providers/    # Claude Code / OpenCode / Codex 适配
+      workspace/    # 本机工作目录、仓库、文件权限
+      events/       # 日志、状态、执行事件回传
+      artifact/     # 工件收集、上传
+      config/       # 节点配置
+      secrets/      # 本机密钥读取和脱敏
+      health/       # 节点健康检查、环境探测
+
+packages/
+  ui/              # 纯 UI 组件，不含业务逻辑
+  views/           # 共享业务页面；第一阶段可先服务 Web，后续再给 Desktop 复用
+  core/            # 领域模型、状态、权限、schema 和领域 hooks
+  api-client/      # 生成客户端、请求封装和 API 类型
+
+contracts/
+  control-plane/   # Console <-> Control Plane REST/OpenAPI 契约
+  runtime/         # Runtime Agent <-> Control Plane HTTP/WS 契约
+  provider/        # Runtime Agent <-> Provider 契约
+
+connectors/
+  http/            # 通用 HTTP 外部能力接入
+  custom/          # 客户专属连接器隔离放置
+
+skills/
+docs/
+deploy/
+```
+
+Go 应用目录统一使用 `cmd/<name>/` + `internal/` 的结构。Control Plane 按领域能力分包，Runtime Agent 按节点执行能力分包；MVP 只创建实际用到的包，不为空目录铺满。
+`packages/core` 不放 UI，不放浏览器/桌面特有 API。
+`packages/api-client` 只负责 API 访问，`packages/core` 基于它组织领域状态和 hooks。
+`packages/views` 不直接依赖 Next/Tauri/router；第一阶段重点服务 Web，后续通过平台适配层接入 Desktop。
+`apps/control-plane/internal/capability` 负责外部能力注册、授权、审计和调用编排；`connectors/` 放具体外部系统或 HTTP 能力适配实现。
+
+## 协作规则
+
+- 数字员工不是聊天机器人，应围绕任务、输入、输出、权限、上下文策略和风险等级建模。
+- Agent 之间不直接自由聊天，通过 `Finding`、`Artifact`、`Handoff`、`Blocker`、`DecisionRequest`、`ExecutionResult`、`Risk`、`NextActionProposal` 等结构化对象协作。
+- Coordinator 负责判断下一步调用哪个数字员工、是否需要补充上下文、是否需要人类审批、是否回退或结束流程。
+- 协作规则长期采用 Coordinator + 结构化对象；MVP 执行链路先固定为 `需求分析 -> 人类确认 -> Runtime Agent 执行 -> 回传结果和工件 -> 人类验收`。
+- 每个阶段都必须产出可持久化的工件或交接包，不能只留在模型上下文里。
+- 人类决策是一等对象。高风险动作、需求歧义、权限不足、上线发布、删除写入、测试失败后的业务判断等场景必须暂停并等待确认。
+- 全局上下文由控制平面持久化；执行时只注入当前任务需要的上下文切片；关键结论必须结构化回写。
+- 客户差异不要进入核心流程代码，应放入 Tenant Profile、Connector、Semantic Mapping、Capability 配置和 Policy。
+- 外部能力类型和 Provider 类型不要在业务核心里依赖封闭枚举；以注册表和服务端校验为准。
+- Provider 接入优先走统一 `provider` contract；当 Provider 协议不完整时，再使用 CLI、PTY 或 HTTP adapter 兜底。
+- 控制平面不直接执行本地命令。Runtime Agent 只负责节点执行，不负责业务策略、人类审批策略和长期业务状态。
+
+## 开发规则
+
+- 每次功能开发完成写`CHANGELOG.md` 记录变更日志
+- 不要盲目猜测,如果有不确定的地方与人类进行沟通
+- 超过5个文件的修改创建 worktree 避免污染主分支, 开发完成后 合并 worktree 到主分支, 并删除 worktree
+
+## 必要信息
+
+- 数据库与redis 连接信息 见 docs/database/conn_info.md
