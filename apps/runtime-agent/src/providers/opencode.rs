@@ -5,9 +5,7 @@ use async_trait::async_trait;
 use tokio::process::Command;
 
 use crate::events::ProviderEvent;
-use crate::providers::{
-    ProviderAdapter, ProviderEventStream, ProviderRequest, stream_child_events,
-};
+use crate::providers::{ProviderAdapter, ProviderRequest, ProviderRun, stream_child_events};
 
 #[derive(Debug, Clone)]
 pub struct OpenCodeProvider {
@@ -42,7 +40,7 @@ impl OpenCodeProvider {
 
 #[async_trait]
 impl ProviderAdapter for OpenCodeProvider {
-    async fn run(&self, request: ProviderRequest) -> anyhow::Result<ProviderEventStream> {
+    async fn start(&self, request: ProviderRequest) -> anyhow::Result<ProviderRun> {
         let mut command = self.build_command(&request);
         command.stdout(std::process::Stdio::piped());
         command.stderr(std::process::Stdio::piped());

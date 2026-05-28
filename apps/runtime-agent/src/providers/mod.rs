@@ -3,12 +3,14 @@ pub mod opencode;
 
 use std::path::PathBuf;
 use std::process::ExitStatus;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::{self, BoxStream};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdout};
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use crate::events::ProviderEvent;
@@ -25,8 +27,12 @@ pub struct ProviderRequest {
 }
 
 #[async_trait]
-pub trait ProviderAdapter {
-    async fn run(&self, request: ProviderRequest) -> anyhow::Result<ProviderEventStream>;
+pub trait ProviderAdapter: Send + Sync {
+    async fn start(&self, request: ProviderRequest) -> anyhow::Result<ProviderRun>;
+
+    async fn run(&self, request: ProviderRequest) -> anyhow::Result<ProviderEventStream> {
+        Ok(self.start(request).await?.events)
+    }
 }
 
 type ProviderParser = fn(&str) -> anyhow::Result<Option<ProviderEvent>>;
@@ -35,8 +41,30 @@ struct ChildStreamState {
     provider_name: &'static str,
     parser: ProviderParser,
     lines: tokio::io::Lines<BufReader<ChildStdout>>,
-    child: Child,
+    child: SharedChild,
     stderr_task: JoinHandle<std::io::Result<String>>,
+}
+
+type SharedChild = Arc<Mutex<Child>>;
+
+#[derive(Clone)]
+pub struct ProviderRunHandle {
+    child: SharedChild,
+}
+
+impl ProviderRunHandle {
+    pub async fn cancel(&self) -> anyhow::Result<()> {
+        let mut child = self.child.lock().await;
+        child
+            .kill()
+            .await
+            .map_err(|error| anyhow::anyhow!("failed to cancel provider process: {error}"))
+    }
+}
+
+pub struct ProviderRun {
+    pub events: ProviderEventStream,
+    pub handle: ProviderRunHandle,
 }
 
 pub fn stream_child_events(
@@ -45,7 +73,11 @@ pub fn stream_child_events(
     child: Child,
     stdout: ChildStdout,
     stderr: ChildStderr,
-) -> ProviderEventStream {
+) -> ProviderRun {
+    let child = Arc::new(Mutex::new(child));
+    let handle = ProviderRunHandle {
+        child: child.clone(),
+    };
     let stderr_task = tokio::spawn(async move {
         let mut stderr_text = String::new();
         let mut reader = BufReader::new(stderr);
@@ -57,11 +89,11 @@ pub fn stream_child_events(
         provider_name,
         parser,
         lines: BufReader::new(stdout).lines(),
-        child,
+        child: child.clone(),
         stderr_task,
     };
 
-    stream::unfold(Some(state), |state| async move {
+    let events = stream::unfold(Some(state), |state| async move {
         let mut state = state?;
 
         loop {
@@ -72,7 +104,7 @@ pub fn stream_child_events(
                     Err(error) => return Some((Err(error), Some(state))),
                 },
                 Ok(None) => {
-                    let status = state.child.wait().await;
+                    let status = state.child.lock().await.wait().await;
                     let stderr = read_stderr(state.stderr_task).await;
                     return provider_exit_result(state.provider_name, status, stderr)
                         .map(|result| (result, None));
@@ -81,7 +113,9 @@ pub fn stream_child_events(
             }
         }
     })
-    .boxed()
+    .boxed();
+
+    ProviderRun { events, handle }
 }
 
 async fn read_stderr(stderr_task: JoinHandle<std::io::Result<String>>) -> String {

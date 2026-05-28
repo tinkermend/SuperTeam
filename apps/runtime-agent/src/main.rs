@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -11,6 +12,7 @@ use superteam_runtime_agent::events::ProviderEvent;
 use superteam_runtime_agent::providers::claude::ClaudeProvider;
 use superteam_runtime_agent::providers::opencode::OpenCodeProvider;
 use superteam_runtime_agent::providers::{ProviderAdapter, ProviderRequest};
+use superteam_runtime_agent::server::{RuntimeHttpConfig, RuntimeHttpServer};
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -19,6 +21,22 @@ struct Args {
 
     #[arg(long)]
     once: bool,
+
+    #[arg(long, env = "RUNTIME_HTTP_ADDR", default_value = "127.0.0.1:7077")]
+    http_addr: SocketAddr,
+
+    #[arg(
+        long,
+        env = "RUNTIME_RUN_LOG_DIR",
+        default_value = ".superteam/runtime-runs"
+    )]
+    run_log_dir: PathBuf,
+
+    #[arg(long, env = "CLAUDE_BIN", default_value = "claude")]
+    claude_bin: PathBuf,
+
+    #[arg(long, env = "OPENCODE_BIN", default_value = "opencode")]
+    opencode_bin: PathBuf,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -86,9 +104,19 @@ async fn main() -> anyhow::Result<()> {
     if args.once {
         return Ok(());
     }
-    loop {
-        std::thread::park();
-    }
+    let server = RuntimeHttpServer::bind(
+        args.http_addr,
+        RuntimeHttpConfig {
+            node_id: snapshot.node_id,
+            run_log_dir: args.run_log_dir,
+            claude_bin: args.claude_bin,
+            opencode_bin: args.opencode_bin,
+        },
+    )
+    .await?;
+    println!("runtime-agent http_addr={}", server.addr());
+    tokio::signal::ctrl_c().await?;
+    Ok(())
 }
 
 async fn run_provider(args: RunArgs) -> anyhow::Result<()> {

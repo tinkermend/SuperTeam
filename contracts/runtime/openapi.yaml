@@ -3,6 +3,98 @@ info:
   title: SuperTeam Runtime Control API
   version: 0.1.0
 paths:
+  /health:
+    get:
+      operationId: getRuntimeHealth
+      summary: Report local Runtime Agent HTTP host health
+      responses:
+        "200":
+          description: Runtime HTTP host is available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeHostHealth"
+  /providers:
+    get:
+      operationId: listRuntimeProviders
+      summary: List locally configured Provider CLI availability
+      responses:
+        "200":
+          description: Provider health list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RuntimeProviderHealth"
+  /runs:
+    post:
+      operationId: createRuntimeRun
+      summary: Start a Provider run on this Runtime Agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRuntimeRunRequest"
+      responses:
+        "202":
+          description: Run accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeRun"
+        "400":
+          $ref: "#/components/responses/RuntimeError"
+  /runs/{runId}:
+    get:
+      operationId: getRuntimeRun
+      summary: Get a Runtime Agent run snapshot
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Run snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeRun"
+        "404":
+          $ref: "#/components/responses/RuntimeError"
+  /runs/{runId}/events:
+    get:
+      operationId: listRuntimeRunEvents
+      summary: Replay cached Runtime Agent run events
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Run event records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RuntimeRunEventRecord"
+        "404":
+          $ref: "#/components/responses/RuntimeError"
+  /runs/{runId}/cancel:
+    post:
+      operationId: cancelRuntimeRun
+      summary: Cancel an active Runtime Agent run
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelRuntimeRunRequest"
+      responses:
+        "204":
+          description: Run cancellation requested
+        "404":
+          $ref: "#/components/responses/RuntimeError"
   /runtime/nodes/{nodeId}/heartbeat:
     post:
       operationId: heartbeatRuntimeNode
@@ -68,7 +160,168 @@ components:
       schema:
         type: string
         minLength: 1
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  responses:
+    RuntimeError:
+      description: Runtime Agent structured error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RuntimeError"
   schemas:
+    RuntimeHostHealth:
+      type: object
+      required:
+        - node_id
+        - status
+      properties:
+        node_id:
+          type: string
+        status:
+          type: string
+    RuntimeProviderHealth:
+      type: object
+      required:
+        - kind
+        - available
+      properties:
+        kind:
+          type: string
+        available:
+          type: boolean
+        version:
+          type: string
+        error:
+          type: string
+    CreateRuntimeRunRequest:
+      type: object
+      required:
+        - provider_kind
+        - workspace_path
+        - prompt
+      properties:
+        provider_kind:
+          type: string
+        workspace_path:
+          type: string
+        prompt:
+          type: string
+        session_id:
+          type: string
+        continue_session:
+          type: boolean
+          default: false
+        model:
+          type: string
+    RuntimeRun:
+      type: object
+      required:
+        - id
+        - provider_kind
+        - workspace_path
+        - prompt
+        - continue_session
+        - status
+        - started_at_ms
+      properties:
+        id:
+          type: string
+        provider_kind:
+          type: string
+        workspace_path:
+          type: string
+        prompt:
+          type: string
+        session_id:
+          type: string
+        continue_session:
+          type: boolean
+        model:
+          type: string
+        provider_session_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - running
+            - completed
+            - failed
+            - cancelled
+        started_at_ms:
+          type: integer
+          minimum: 0
+        finished_at_ms:
+          type: integer
+          minimum: 0
+        error:
+          type: string
+    RuntimeRunEventRecord:
+      type: object
+      required:
+        - sequence
+        - run_id
+        - event
+        - recorded_at_ms
+      properties:
+        sequence:
+          type: integer
+          minimum: 1
+        run_id:
+          type: string
+        event:
+          $ref: "#/components/schemas/ProviderEvent"
+        recorded_at_ms:
+          type: integer
+          minimum: 0
+    ProviderEvent:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - session_started
+            - turn_started
+            - text_delta
+            - tool_started
+            - tool_completed
+            - turn_completed
+            - turn_error
+        session_id:
+          type: string
+        text:
+          type: string
+        tool_id:
+          type: string
+        name:
+          type: string
+        summary:
+          type: string
+        message:
+          type: string
+      additionalProperties: true
+    CancelRuntimeRunRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+    RuntimeError:
+      type: object
+      required:
+        - error
+        - code
+      properties:
+        error:
+          type: string
+        code:
+          type: string
     RuntimeHeartbeatRequest:
       type: object
       required:

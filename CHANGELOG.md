@@ -2,6 +2,9 @@
 
 ## 2026-05-28
 
+- 为 Rust Runtime Agent 增加 HTTP/WS 执行宿主能力：新增 `/health`、`/providers`、`/runs`、`/runs/{id}`、`/runs/{id}/events`、`/runs/{id}/cancel` 和 `/ws`。
+- 新增 Runtime run registry，记录平台 run、Provider session id、事件序号、状态和本机 `events.jsonl` 日志，支持事件回放和取消 active Provider 子进程。
+- 新增 Provider health probe，支持探测 Claude Code/OpenCode binary 与 `--version`，并通过结构化 JSON 暴露可用性与错误。
 - 将 `apps/runtime-agent` 迁移为 Rust/Tokio 可执行 crate，新增 `runtime-agent run` Provider 调用入口，支持 Claude Code/OpenCode CLI JSON stream 事件归一化。
 - 为 Runtime Agent 增加 Rust 测试覆盖：Provider 命令构造、事件解析、fake CLI 流式输出、非零退出 stderr 暴露，以及 CLI JSONL 输出。
 - 同步仓库脚本与 Go workspace：`pnpm dev:runtime-agent` 改走 Cargo，`pnpm test` 增加 `test:rust`，Go 测试只覆盖 Control Plane。
