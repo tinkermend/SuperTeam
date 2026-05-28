@@ -2,13 +2,12 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use async_trait::async_trait;
-use futures::Stream;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio_stream::StreamExt;
 
 use crate::events::ProviderEvent;
-use crate::providers::{ProviderAdapter, ProviderRequest};
+use crate::providers::{
+    ProviderAdapter, ProviderEventStream, ProviderRequest, stream_child_events,
+};
 
 #[derive(Debug, Clone)]
 pub struct OpenCodeProvider {
@@ -43,27 +42,35 @@ impl OpenCodeProvider {
 
 #[async_trait]
 impl ProviderAdapter for OpenCodeProvider {
-    async fn run(
-        &self,
-        request: ProviderRequest,
-    ) -> anyhow::Result<Box<dyn Stream<Item = anyhow::Result<ProviderEvent>> + Send + Unpin>> {
+    async fn run(&self, request: ProviderRequest) -> anyhow::Result<ProviderEventStream> {
         let mut command = self.build_command(&request);
         command.stdout(std::process::Stdio::piped());
+        command.stderr(std::process::Stdio::piped());
         let mut child = command.spawn().context("failed to spawn opencode")?;
-        let stdout = child.stdout.take().context("failed to capture opencode stdout")?;
-        let reader = BufReader::new(stdout);
-        let lines = tokio_stream::wrappers::LinesStream::new(reader.lines());
-        let stream = lines.filter_map(|line| match line {
-            Ok(line) => parse_opencode_event(&line).transpose(),
-            Err(error) => Some(Err(error.into())),
-        });
-        Ok(Box::new(stream))
+        let stdout = child
+            .stdout
+            .take()
+            .context("failed to capture opencode stdout")?;
+        let stderr = child
+            .stderr
+            .take()
+            .context("failed to capture opencode stderr")?;
+        Ok(stream_child_events(
+            "opencode",
+            parse_opencode_event,
+            child,
+            stdout,
+            stderr,
+        ))
     }
 }
 
 pub fn parse_opencode_event(value: &str) -> anyhow::Result<Option<ProviderEvent>> {
     let event: serde_json::Value = serde_json::from_str(value)?;
-    let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or_default();
+    let event_type = event
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
     match event_type {
         "session.updated" | "session" => {
             let session_id = event
@@ -95,9 +102,9 @@ pub fn parse_opencode_event(value: &str) -> anyhow::Result<Option<ProviderEvent>
                 }))
             }
         }
-        "turn.completed" | "session.idle" => Ok(Some(ProviderEvent::TurnCompleted {
-            summary: None,
-        })),
+        "turn.completed" | "session.idle" => {
+            Ok(Some(ProviderEvent::TurnCompleted { summary: None }))
+        }
         _ => Ok(None),
     }
 }

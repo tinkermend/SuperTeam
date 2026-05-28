@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
+use superteam_runtime_agent::providers::ProviderRequest;
 use superteam_runtime_agent::providers::claude::ClaudeProvider;
 use superteam_runtime_agent::providers::opencode::OpenCodeProvider;
-use superteam_runtime_agent::providers::ProviderRequest;
 
 fn request(session_id: Option<&str>, continue_session: bool) -> ProviderRequest {
     ProviderRequest {
@@ -24,7 +24,10 @@ fn claude_new_turn_pins_explicit_session_id() {
         .map(|arg| arg.to_string_lossy().to_string())
         .collect();
 
-    assert!(args.windows(2).any(|window| window == ["--session-id", "session-1"]));
+    assert!(
+        args.windows(2)
+            .any(|window| window == ["--session-id", "session-1"])
+    );
     assert!(!args.iter().any(|arg| arg == "--resume"));
 }
 
@@ -38,7 +41,10 @@ fn claude_continue_uses_resume_session_id() {
         .map(|arg| arg.to_string_lossy().to_string())
         .collect();
 
-    assert!(args.windows(2).any(|window| window == ["--resume", "session-2"]));
+    assert!(
+        args.windows(2)
+            .any(|window| window == ["--resume", "session-2"])
+    );
 }
 
 #[test]
@@ -51,5 +57,8 @@ fn opencode_continue_uses_session_flag() {
         .map(|arg| arg.to_string_lossy().to_string())
         .collect();
 
-    assert!(args.windows(2).any(|window| window == ["--session", "oc-session"]));
+    assert!(
+        args.windows(2)
+            .any(|window| window == ["--session", "oc-session"])
+    );
 }

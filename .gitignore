@@ -8,7 +8,9 @@ dist/
 build/
 .next/
 out/
-target/          # Tauri / Rust
+target/
+apps/*/target/
+src-tauri/target/
 
 # Generated code
 # oapi-codegen / sqlc
@@ -99,7 +101,6 @@ src-tauri/tauri.conf.json.bak
 *.key
 tmp/
 temp/
-tests/
 .agents/
 .claude/
 .codex/

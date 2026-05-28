@@ -6,11 +6,12 @@
     "dev:web": "pnpm --filter @superteam/web dev",
     "build:web": "pnpm --filter @superteam/web build",
     "dev:control-plane": "go run ./apps/control-plane/cmd/control-plane",
-    "dev:runtime-agent": "go run ./apps/runtime-agent/cmd/runtime-agent --once",
+    "dev:runtime-agent": "cargo run --manifest-path apps/runtime-agent/Cargo.toml -- --once",
     "generate:control-plane": "cd apps/control-plane && go generate ./internal/api",
-    "test": "pnpm test:ts && pnpm test:go",
+    "test": "pnpm test:ts && pnpm test:go && pnpm test:rust",
     "test:ts": "pnpm -r --if-present test",
-    "test:go": "go test ./apps/control-plane/... ./apps/runtime-agent/...",
+    "test:go": "go test ./apps/control-plane/...",
+    "test:rust": "cargo test --manifest-path apps/runtime-agent/Cargo.toml",
     "typecheck": "pnpm -r --if-present typecheck"
   },
   "devDependencies": {

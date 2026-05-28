@@ -2,7 +2,11 @@
 
 ## 2026-05-28
 
-- 更新 `AGENTS.md` 的 Runtime Agent 方案：从 Go daemon 调整为 Rust/Tokio 节点执行宿主，并同步 `apps/runtime-agent` Cargo crate 目录边界。
+- 将 `apps/runtime-agent` 迁移为 Rust/Tokio 可执行 crate，新增 `runtime-agent run` Provider 调用入口，支持 Claude Code/OpenCode CLI JSON stream 事件归一化。
+- 为 Runtime Agent 增加 Rust 测试覆盖：Provider 命令构造、事件解析、fake CLI 流式输出、非零退出 stderr 暴露，以及 CLI JSONL 输出。
+- 同步仓库脚本与 Go workspace：`pnpm dev:runtime-agent` 改走 Cargo，`pnpm test` 增加 `test:rust`，Go 测试只覆盖 Control Plane。
+- 更新 Runtime/Provider 契约说明，明确 Rust Runtime Agent 与语言无关 Provider contract 的边界。
+- 更新 `AGENTS.md` 的 Runtime Agent 方案：Control Plane 继续 Go，Runtime Agent 改为 Rust/Tokio 节点执行宿主，Provider contract 保持语言无关；Claude/OpenCode adapter 第一版参考 `desktop-cc-gui`，Runtime 外部 HTTP/WS contract 参考 `AionUi`。
 - 将 Superpowers skills 安装到项目级 `.CodeX/skills` 目录，便于当前项目本地使用。
 - 为 Control Plane 增加 YAML 配置文件加载能力，支持 `--config` 指定配置文件并保留环境变量覆盖。
 - 新增 `apps/control-plane/config/config.example.yaml`，并忽略本地真实配置 `apps/*/config/local.yaml` 与 `*.local.yaml`。

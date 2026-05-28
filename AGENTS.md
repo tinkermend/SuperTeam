@@ -10,8 +10,8 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 
 - **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。
 - **Control Plane Layer**：Go 后端。负责任务、审批、审计、流程调度、上下文、工件、Runtime 注册和外部能力注册。对 Console 提供 API，也对 Runtime Agent 提供任务和心跳 API。
-- **Runtime Layer**：部署在服务器节点、开发者机器或客户侧执行机上的 Rust daemon。负责领取任务、维护租约、管理本机 Provider 进程/会话、工作目录、日志、工件和执行槽位；实现可参考 `desktop-cc-gui` 的 Rust/Tauri 后端会话与事件桥，以及 `AionUi` 的本机/服务器 agent host 思路，但不承载控制台 UI 和业务策略。
-- **Provider Layer**：Claude Code、OpenCode、Codex、Pi 等具体执行器。它们只在 Runtime Agent 管理下工作，不承载平台级状态。
+- **Runtime Layer**：部署在服务器节点、开发者机器或客户侧执行机上的 Rust daemon。负责领取任务、维护租约、管理本机 Provider 进程/会话、工作目录、日志、工件和执行槽位；Runtime 对外 HTTP/WS contract 参考 `AionUi` 的 WebUI/remote agent host 思路，但不承载控制台 UI 和业务策略。
+- **Provider Layer**：Claude Code、OpenCode、Codex、Pi 等具体执行器。它们只在 Runtime Agent 管理下工作，不承载平台级状态；Provider 协议必须保持语言无关，使用结构化 schema 描述输入、事件、结果、工件和错误，Rust 只是一种 adapter 实现语言。
 - **Capability Integration Layer**：外部能力接入层。平台只负责外部能力的注册、授权、HTTP 调用和审计。
 
 ## 技术选型
@@ -19,7 +19,7 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 - Web：Next.js + React + shadcn/ui + Radix UI + Tailwind CSS
 - Desktop：Tauri + React/Vite，第一阶段仅保留空壳或占位；Web 主链路完整后再复用 `packages/views` 和 `packages/ui`
 - Control Plane：Go + chi/net/http；REST/OpenAPI 为主，使用 `oapi-codegen` 生成契约与客户端
-- Runtime Agent：Rust + Tokio + clap；HTTP claim + lease；WebSocket 回传实时事件；本机 Provider 通过 CLI/stdio/JSON stream/PTY adapter 管理；NATS 后续在多节点事件总线需要时再引入
+- Runtime Agent：Rust + Tokio + clap；HTTP claim + lease；WebSocket 回传实时事件；对外 HTTP/WS contract 参考 `AionUi` 的 WebUI/remote agent host；本机 Provider 通过语言无关的 `provider` contract 接入，Claude Code 和 OpenCode adapter 第一版参考 `desktop-cc-gui` 的 Rust/Tauri 后端会话、命令构造和事件桥；NATS 后续在多节点事件总线需要时再引入
 - 工作流：Temporal
 - 数据层：PostgreSQL 为主存储；Redis 用于缓存、唤醒和轻量队列；S3 兼容存储用于日志、报告、附件和执行产物
 - Go 数据访问：pgx + sqlc + Atlas
@@ -106,7 +106,7 @@ Go 应用目录统一使用 `cmd/<name>/` + `internal/` 的结构。Control Plan
 - 全局上下文由控制平面持久化；执行时只注入当前任务需要的上下文切片；关键结论必须结构化回写。
 - 客户差异不要进入核心流程代码，应放入 Tenant Profile、Connector、Semantic Mapping、Capability 配置和 Policy。
 - 外部能力类型和 Provider 类型不要在业务核心里依赖封闭枚举；以注册表和服务端校验为准。
-- Provider 接入优先走统一 `provider` contract；当 Provider 协议不完整时，再使用 CLI、PTY 或 HTTP adapter 兜底。
+- Provider 接入优先走统一且语言无关的 `provider` contract；当 Provider 协议不完整时，再使用 CLI、stdio、JSON stream、PTY 或 HTTP adapter 兜底。Claude Code 和 OpenCode adapter 第一版参考 `desktop-cc-gui`，但不得把 `desktop-cc-gui` 的 UI、Tauri command 边界或本地状态模型搬进平台核心。
 - 控制平面不直接执行本地命令。Runtime Agent 只负责节点执行，不负责业务策略、人类审批策略和长期业务状态。
 
 ## 开发规则
@@ -114,6 +114,7 @@ Go 应用目录统一使用 `cmd/<name>/` + `internal/` 的结构。Control Plan
 - 每次功能开发完成写`CHANGELOG.md` 记录变更日志
 - 不要盲目猜测,如果有不确定的地方与人类进行沟通
 - 超过5个文件的修改创建 worktree 避免污染主分支, 开发完成后 合并 worktree 到主分支, 并删除 worktree
+- 开发完成基于开发的功能做好必要的测试
 
 ## 必要信息
 
