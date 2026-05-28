@@ -1,0 +1,25 @@
+[package]
+name = "superteam-runtime-agent"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "superteam_runtime_agent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "runtime-agent"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+clap = { version = "4.5", features = ["derive", "env"] }
+futures = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.48", features = ["io-util", "macros", "process", "rt-multi-thread"] }
+tokio-stream = { version = "0.1", features = ["io-util"] }
+
+[dev-dependencies]
+tempfile = "3.23"

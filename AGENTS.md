@@ -10,7 +10,7 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 
 - **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。
 - **Control Plane Layer**：Go 后端。负责任务、审批、审计、流程调度、上下文、工件、Runtime 注册和外部能力注册。对 Console 提供 API，也对 Runtime Agent 提供任务和心跳 API。
-- **Runtime Layer**：部署在各个服务器节点上的 Go daemon。负责领取任务、维护租约、管理本机 Provider 会话、工作目录、日志、工件和执行槽位。
+- **Runtime Layer**：部署在服务器节点、开发者机器或客户侧执行机上的 Rust daemon。负责领取任务、维护租约、管理本机 Provider 进程/会话、工作目录、日志、工件和执行槽位；实现可参考 `desktop-cc-gui` 的 Rust/Tauri 后端会话与事件桥，以及 `AionUi` 的本机/服务器 agent host 思路，但不承载控制台 UI 和业务策略。
 - **Provider Layer**：Claude Code、OpenCode、Codex、Pi 等具体执行器。它们只在 Runtime Agent 管理下工作，不承载平台级状态。
 - **Capability Integration Layer**：外部能力接入层。平台只负责外部能力的注册、授权、HTTP 调用和审计。
 
@@ -19,7 +19,7 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 - Web：Next.js + React + shadcn/ui + Radix UI + Tailwind CSS
 - Desktop：Tauri + React/Vite，第一阶段仅保留空壳或占位；Web 主链路完整后再复用 `packages/views` 和 `packages/ui`
 - Control Plane：Go + chi/net/http；REST/OpenAPI 为主，使用 `oapi-codegen` 生成契约与客户端
-- Runtime Agent：Go daemon；HTTP claim + lease；WebSocket 回传实时事件；NATS 后续在多节点事件总线需要时再引入
+- Runtime Agent：Rust + Tokio + clap；HTTP claim + lease；WebSocket 回传实时事件；本机 Provider 通过 CLI/stdio/JSON stream/PTY adapter 管理；NATS 后续在多节点事件总线需要时再引入
 - 工作流：Temporal
 - 数据层：PostgreSQL 为主存储；Redis 用于缓存、唤醒和轻量队列；S3 兼容存储用于日志、报告、附件和执行产物
 - Go 数据访问：pgx + sqlc + Atlas
@@ -27,7 +27,7 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 - 前端状态与交互：TanStack Query、TanStack Table、xyflow、Monaco Editor、xterm.js；Web 使用 Next.js App Router；Desktop 路由后续通过平台适配层接入
 - 表单校验：React Hook Form + Zod
 - 图标：lucide-react
-- 测试：Vitest、Playwright、Go test + testify、Temporal workflow test suite
+- 测试：Vitest、Playwright、Go test + testify、Rust cargo test、Temporal workflow test suite
 
 ## 目录边界
 
@@ -52,20 +52,22 @@ apps/
       policy/       # 风险策略、审批策略、权限判断
       storage/      # DB、Redis、S3 封装
       config/       # 配置加载
-  runtime-agent/   # Runtime Agent Go daemon
-    cmd/runtime-agent/
-    internal/
-      daemon/       # Runtime Agent 进程生命周期、启动/停止、主循环
-      controlplane/ # 调用 Control Plane 的客户端
-      lease/        # claim、renew、heartbeat、任务租约
-      slots/        # 本机并发执行槽位
-      providers/    # Claude Code / OpenCode / Codex 适配
-      workspace/    # 本机工作目录、仓库、文件权限
-      events/       # 日志、状态、执行事件回传
-      artifact/     # 工件收集、上传
-      config/       # 节点配置
-      secrets/      # 本机密钥读取和脱敏
-      health/       # 节点健康检查、环境探测
+  runtime-agent/   # Rust Runtime Agent daemon
+    Cargo.toml
+    src/
+      main.rs       # CLI 入口，解析节点参数并启动 daemon
+      lib.rs        # Runtime Agent 库入口
+      config.rs     # 节点配置
+      daemon.rs     # Runtime Agent 进程生命周期、启动/停止、主循环
+      events.rs     # Provider 事件、日志、状态的统一模型
+      providers/    # Claude Code / OpenCode / Codex 等 Provider 适配
+      controlplane/ # 调用 Control Plane 的客户端，按实际需要创建
+      lease/        # claim、renew、heartbeat、任务租约，按实际需要创建
+      slots/        # 本机并发执行槽位，按实际需要创建
+      workspace/    # 本机工作目录、仓库、文件权限，按实际需要创建
+      artifact/     # 工件收集、上传，按实际需要创建
+      secrets/      # 本机密钥读取和脱敏，按实际需要创建
+      health/       # 节点健康检查、环境探测，按实际需要创建
 
 packages/
   ui/              # 纯 UI 组件，不含业务逻辑
@@ -87,7 +89,7 @@ docs/
 deploy/
 ```
 
-Go 应用目录统一使用 `cmd/<name>/` + `internal/` 的结构。Control Plane 按领域能力分包，Runtime Agent 按节点执行能力分包；MVP 只创建实际用到的包，不为空目录铺满。
+Go 应用目录统一使用 `cmd/<name>/` + `internal/` 的结构。Control Plane 按领域能力分包。Runtime Agent 使用 `apps/runtime-agent` 下的 Rust Cargo crate，按节点执行能力拆分 `src` 模块；MVP 只创建实际用到的模块，不为空目录铺满。
 `packages/core` 不放 UI，不放浏览器/桌面特有 API。
 `packages/api-client` 只负责 API 访问，`packages/core` 基于它组织领域状态和 hooks。
 `packages/views` 不直接依赖 Next/Tauri/router；第一阶段重点服务 Web，后续通过平台适配层接入 Desktop。

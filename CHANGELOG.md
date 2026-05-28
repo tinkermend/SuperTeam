@@ -2,6 +2,8 @@
 
 ## 2026-05-28
 
+- 更新 `AGENTS.md` 的 Runtime Agent 方案：从 Go daemon 调整为 Rust/Tokio 节点执行宿主，并同步 `apps/runtime-agent` Cargo crate 目录边界。
+- 将 Superpowers skills 安装到项目级 `.CodeX/skills` 目录，便于当前项目本地使用。
 - 为 Control Plane 增加 YAML 配置文件加载能力，支持 `--config` 指定配置文件并保留环境变量覆盖。
 - 新增 `apps/control-plane/config/config.example.yaml`，并忽略本地真实配置 `apps/*/config/local.yaml` 与 `*.local.yaml`。
 - 建立 Control Plane 领域包骨架：`task`、`workflow`、`approval`、`artifact`、`audit`、`runtime`、`storage`、`config`。
