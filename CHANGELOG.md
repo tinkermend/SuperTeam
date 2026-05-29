@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Phase 2.3 - 任务调度器 (2026-05-29)
+
+- 添加任务调度器 (`apps/control-plane/internal/runtime/scheduler.go`)
+  - Scheduler 结构：负责任务到节点的调度
+  - SelectNode 方法：智能节点选择
+    - 查询支持指定 Provider 且在线的节点
+    - 过滤负载已满的节点 (current_load >= max_slots)
+    - 选择负载最低的节点实现负载均衡
+    - 自动更新节点 current_load
+  - 错误处理：ErrNoAvailableNode
+- 添加调度器测试 (`apps/control-plane/internal/runtime/scheduler_test.go`)
+  - 单节点调度测试
+  - 负载均衡测试（多节点选择最低负载）
+  - Provider 过滤测试
+  - 容量过滤测试（排除满载节点）
+  - 无可用节点错误测试
+  - 复杂场景测试（混合 Provider、负载、容量）
+  - 11 个测试用例全部通过
+
 #### Phase 2.2 - Runtime 服务 (2026-05-29)
 
 - 添加 Runtime 节点管理服务 (`apps/control-plane/internal/runtime/`)
