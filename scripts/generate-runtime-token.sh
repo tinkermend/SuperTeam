@@ -32,13 +32,13 @@ log_success() {
 
 # 检查参数
 if [ $# -lt 1 ]; then
-    log_error "Usage: $0 <node-name> [token]"
+    log_error "Usage: $0 <node-id> [token]"
     log_info "Example: $0 node-001"
     log_info "Example: $0 node-001 my-custom-token"
     exit 1
 fi
 
-NODE_NAME="$1"
+NODE_ID="$1"
 TOKEN="${2:-$(openssl rand -hex 32)}"
 
 # 检查环境变量
@@ -55,7 +55,7 @@ if ! command -v psql &> /dev/null; then
     exit 1
 fi
 
-log_info "Generating runtime token for node: $NODE_NAME"
+log_info "Generating runtime token for node: $NODE_ID"
 
 # 使用 Go 生成 bcrypt hash
 cd "$PROJECT_ROOT/apps/control-plane"
@@ -98,22 +98,22 @@ fi
 log_info "Generated bcrypt hash"
 
 # 插入到数据库
-SQL="INSERT INTO auth_runtime_tokens (name, token_hash, created_at, updated_at)
-     VALUES ('$NODE_NAME', '$HASH', NOW(), NOW())
-     ON CONFLICT (name) DO UPDATE SET token_hash = EXCLUDED.token_hash, updated_at = NOW();"
+SQL="INSERT INTO auth_runtime_tokens (node_id, token_hash, expires_at)
+     VALUES (:'node_id', :'token_hash', NULL)
+     ON CONFLICT (node_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at;"
 
-if psql "$DATABASE_URL" -c "$SQL" > /dev/null 2>&1; then
+if psql "$DATABASE_URL" -v node_id="$NODE_ID" -v token_hash="$HASH" -c "$SQL" > /dev/null 2>&1; then
     log_success "Token saved to database"
     echo ""
     echo "=========================================="
-    echo "Node Name: $NODE_NAME"
+    echo "Node ID:   $NODE_ID"
     echo "Token:     $TOKEN"
     echo "=========================================="
     echo ""
     log_warn "Save this token securely. It will not be shown again."
     echo ""
     log_info "Start Runtime Agent with:"
-    echo "  cargo run -- daemon --node-id $NODE_NAME --control-plane-url http://localhost:8080 --token $TOKEN"
+    echo "  RUNTIME_AGENT_NODE_ID=$NODE_ID RUNTIME_AGENT_AUTH_TOKEN=$TOKEN cargo run --manifest-path apps/runtime-agent/Cargo.toml"
 else
     log_error "Failed to insert token into database"
     exit 1

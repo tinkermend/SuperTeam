@@ -340,7 +340,7 @@ tail -f apps/control-plane/logs/control-plane.log
 1. 验证 token：
 
 ```bash
-psql $DATABASE_URL -c "SELECT name, created_at FROM auth_runtime_tokens"
+psql $DATABASE_URL -c "SELECT node_id, created_at FROM auth_runtime_tokens"
 ```
 
 2. 检查网络连接：
