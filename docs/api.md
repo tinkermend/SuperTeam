@@ -28,6 +28,8 @@ Authorization: Bearer <runtime-token>
 
 使用 `scripts/generate-runtime-token.sh` 生成 token。
 
+Runtime Agent 默认通过 Control Plane Runtime API 领取、续租和回传任务结果；本地 Runtime Agent HTTP API 仅用于诊断和本地 provider run 结果查看，不是业务任务分发入口。
+
 ## API 端点
 
 ### 健康检查
@@ -156,7 +158,7 @@ curl -X POST http://localhost:8080/api/auth/logout \
       "repo_path": "/path/to/repo"
     }
   },
-  "priority": "normal"
+  "priority": 5
 }
 ```
 
@@ -166,7 +168,7 @@ curl -X POST http://localhost:8080/api/auth/logout \
 - `description` (string, optional): 任务描述
 - `provider_type` (string, required): Provider 类型，如 `claude-code`, `opencode`, `codex`
 - `params` (object, required): Provider 特定参数
-- `priority` (string, optional): 优先级，`low` | `normal` | `high` | `urgent`，默认 `normal`
+- `priority` (integer, optional): 任务优先级，数值越大越优先；未传时由服务端使用默认值
 
 **响应示例**
 
@@ -183,7 +185,7 @@ curl -X POST http://localhost:8080/api/auth/logout \
       "repo_path": "/path/to/repo"
     }
   },
-  "priority": "normal",
+  "priority": 5,
   "created_at": "2026-05-29T10:00:00Z",
   "updated_at": "2026-05-29T10:00:00Z"
 }
@@ -403,7 +405,7 @@ curl http://localhost:8080/api/v1/runtime/nodes \
 
 ## Runtime API
 
-Runtime API 供 Runtime Agent 使用，需要 Runtime Token 认证。
+Runtime API 供 Runtime Agent 调用 Control Plane 使用，需要 Runtime Token 认证。
 
 ### 节点管理
 
@@ -472,11 +474,26 @@ Authorization: Bearer <runtime-token>
 }
 ```
 
-### 任务轮询
+### Runtime 任务主链路
 
-#### GET /api/v1/runtime/tasks/poll
+当前 Runtime 任务主链路的 canonical Control Plane 路径为：
 
-长轮询等待新任务。
+```text
+POST /api/v1/runtime/tasks/claim
+POST /api/v1/runtime/tasks/{taskId}/events
+POST /api/v1/runtime/tasks/{taskId}/complete
+POST /api/v1/runtime/tasks/{taskId}/fail
+POST /api/v1/runtime/tasks/{taskId}/lease
+```
+
+说明：
+
+- Runtime Agent 通过这些 Control Plane endpoint 完成 claim、事件回传、完成、失败和 lease 续约。
+- Console 和其他客户端不应直接把业务任务派发到 Runtime Agent 本地接口。
+
+#### POST /api/v1/runtime/tasks/claim
+
+领取下一个可执行任务。
 
 **请求头**
 
@@ -486,72 +503,25 @@ Authorization: Bearer <runtime-token>
 
 **查询参数**
 
-- `node_id` (string, required): 节点 ID
-- `provider_types` (string, required): 支持的 Provider 类型，逗号分隔，如 `claude-code,opencode`
-- `timeout` (integer, optional): 超时时间（秒），默认 30，最大 60
-
-**请求示例**
-
-```bash
-curl "http://localhost:8080/api/v1/runtime/tasks/poll?node_id=550e8400-e29b-41d4-a716-446655440030&provider_types=claude-code,opencode&timeout=30" \
-  -H "Authorization: Bearer <token>"
-```
-
-**响应示例（有任务）**
-
-```json
-{
-  "task": {
-    "id": "550e8400-e29b-41d4-a716-446655440001",
-    "title": "分析代码库",
-    "provider_type": "claude-code",
-    "params": {
-      "prompt": "分析当前代码库的架构"
-    },
-    "priority": "normal"
-  }
-}
-```
-
-**响应示例（超时无任务）**
-
-```json
-{
-  "task": null
-}
-```
-
-#### POST /api/v1/runtime/tasks/{task_id}/claim
-
-领取任务。
-
-**请求头**
-
-```
-Authorization: Bearer <runtime-token>
-```
-
-**请求体**
-
-```json
-{
-  "node_id": "550e8400-e29b-41d4-a716-446655440030"
-}
-```
+- `timeout` (integer, optional): 长轮询超时时间（秒），默认由服务端控制，最大 60
 
 **响应示例**
 
 ```json
 {
-  "claimed": true,
-  "execution_id": "550e8400-e29b-41d4-a716-446655440002",
-  "lease_expires_at": "2026-05-29T10:10:00Z"
+  "id": "550e8400-e29b-41d4-a716-446655440001",
+  "title": "分析代码库",
+  "status": "claimed",
+  "provider_type": "claude-code",
+  "assigned_node_id": "node-001",
+  "lease_expires_at": "2026-05-29T10:10:00Z",
+  "priority": 5
 }
 ```
 
 ### 任务执行
 
-#### POST /api/v1/runtime/tasks/{task_id}/events
+#### POST /api/v1/runtime/tasks/{taskId}/events
 
 推送任务事件。
 
@@ -586,7 +556,7 @@ Authorization: Bearer <runtime-token>
 }
 ```
 
-#### POST /api/v1/runtime/tasks/{task_id}/complete
+#### POST /api/v1/runtime/tasks/{taskId}/complete
 
 标记任务完成。
 
@@ -622,7 +592,7 @@ Authorization: Bearer <runtime-token>
 }
 ```
 
-#### POST /api/v1/runtime/tasks/{task_id}/fail
+#### POST /api/v1/runtime/tasks/{taskId}/fail
 
 标记任务失败。
 
@@ -655,7 +625,7 @@ Authorization: Bearer <runtime-token>
 }
 ```
 
-#### POST /api/v1/runtime/tasks/{task_id}/renew
+#### POST /api/v1/runtime/tasks/{taskId}/lease
 
 续约任务租约。
 
@@ -697,10 +667,9 @@ Authorization: Bearer <runtime-token>
 
 ### 任务优先级
 
-- `low`: 低优先级
-- `normal`: 普通优先级（默认）
-- `high`: 高优先级
-- `urgent`: 紧急
+- `0-4`: 较低优先级
+- `5`: 默认优先级
+- `6+`: 更高优先级
 
 ### Provider 类型
 
@@ -776,22 +745,14 @@ curl -X POST http://localhost:8080/api/v1/tasks \
   }'
 ```
 
-2. **Runtime Agent 轮询任务**
+2. **Runtime Agent claim 任务**
 
 ```bash
-curl "http://localhost:8080/api/v1/runtime/tasks/poll?node_id=<node-id>&provider_types=claude-code" \
+curl -X POST "http://localhost:8080/api/v1/runtime/tasks/claim?timeout=30" \
   -H "Authorization: Bearer <token>"
 ```
 
-3. **Runtime Agent 领取任务**
-
-```bash
-curl -X POST http://localhost:8080/api/v1/runtime/tasks/<task-id>/claim \
-  -H "Authorization: Bearer <token>" \
-  -d '{"node_id": "<node-id>"}'
-```
-
-4. **Runtime Agent 推送事件**
+3. **Runtime Agent 推送事件**
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/runtime/tasks/<task-id>/events \
@@ -804,7 +765,7 @@ curl -X POST http://localhost:8080/api/v1/runtime/tasks/<task-id>/events \
   }'
 ```
 
-5. **Runtime Agent 完成任务**
+4. **Runtime Agent 完成任务**
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/runtime/tasks/<task-id>/complete \

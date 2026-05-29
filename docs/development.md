@@ -93,7 +93,8 @@ export DATABASE_URL=postgres://superteam:superteam@localhost:5432/superteam?sslm
 
 ```bash
 cd apps/control-plane
-go run cmd/control-plane/main.go
+make generate
+go run ./cmd/control-plane
 ```
 
 Control Plane 默认监听 `http://localhost:8080`。
@@ -109,12 +110,26 @@ curl http://localhost:8080/health
 在新终端中：
 
 ```bash
-cd apps/runtime-agent
-cargo run -- daemon \
-  --node-id node-001 \
-  --control-plane-url http://localhost:8080 \
-  --token <your-token-from-step-5>
+cp apps/runtime-agent/config.example.toml apps/runtime-agent/config.toml
+export RUNTIME_AGENT_AUTH_TOKEN=<your-token-from-step-5>
+cargo run --manifest-path apps/runtime-agent/Cargo.toml -- \
+  --config apps/runtime-agent/config.toml \
+  --node-id node-001
 ```
+
+也可以不设置环境变量，直接通过 CLI 覆盖认证 token：
+
+```bash
+cargo run --manifest-path apps/runtime-agent/Cargo.toml -- \
+  --config apps/runtime-agent/config.toml \
+  --node-id node-001 \
+  --auth-token <your-token-from-step-5>
+```
+
+说明：
+
+- Runtime Agent 的产品默认行为就是连接 Control Plane 的 daemon 模式。
+- 本地 HTTP API 和 `run` 子命令用于诊断、本地 provider 调试和事件回放，不是业务任务分发主链路。
 
 ## 开发工作流
 
@@ -145,8 +160,11 @@ make build
 # 运行测试
 make test
 
-# 生成 sqlc 代码
-make sqlc
+# 生成 sqlc + OpenAPI 代码
+make generate
+
+# 仅生成 sqlc 代码
+make generate-sqlc
 
 # 运行 linter
 make lint
@@ -168,7 +186,7 @@ make fmt
 1. 创建新的迁移文件：`migrations/XXX_description.sql`
 2. 运行迁移：`./scripts/db-migrate.sh`
 3. 更新 sqlc 查询：`internal/storage/queries/*.sql`
-4. 重新生成代码：`make sqlc`
+4. 重新生成代码：`make generate-sqlc`
 
 ### Runtime Agent 开发
 
@@ -198,6 +216,12 @@ cargo clippy
 
 # 格式化代码
 cargo fmt
+
+# 启动受 Control Plane 管理的 daemon
+cargo run --manifest-path apps/runtime-agent/Cargo.toml -- --config apps/runtime-agent/config.toml
+
+# 仅做本地 provider 诊断
+cargo run --manifest-path apps/runtime-agent/Cargo.toml -- run --provider claude --workspace /abs/path --prompt "hello"
 ```
 
 #### 添加新的 Provider
@@ -219,19 +243,27 @@ pnpm dev
 
 ## 测试
 
-### 单元测试
+### 基线验证
 
 ```bash
-# Control Plane
-cd apps/control-plane
-go test ./... -v
-
-# Runtime Agent
-cd apps/runtime-agent
-cargo test
+pnpm install
+cd apps/control-plane && make generate
+go test ./apps/control-plane/...
+cargo test --manifest-path apps/runtime-agent/Cargo.toml
+pnpm -r --if-present test
 ```
 
-### 集成测试
+说明：
+
+- `go test ./apps/control-plane/...` 在当前环境里如果失败，常见原因是 storage/query 测试依赖 testcontainers，而宿主机缺少 rootless Docker，错误通常表现为 `rootless Docker not found, failed to create Docker provider`。
+- 这种情况下，先保留失败输出，再补跑不依赖 Docker 的定向验证，例如：
+
+```bash
+go test ./apps/control-plane/internal/api ./apps/control-plane/internal/task -count=1
+go test -c -o /tmp/superteam-control-plane-queries.test ./apps/control-plane/internal/storage/queries
+```
+
+### 集成测试与本地联调
 
 ```bash
 # 启动所有服务
@@ -240,11 +272,14 @@ docker-compose -f docker-compose.dev.yml up -d
 
 # 启动 Control Plane
 cd apps/control-plane
-go run cmd/control-plane/main.go &
+make generate
+go run ./cmd/control-plane &
 
 # 启动 Runtime Agent
-cd apps/runtime-agent
-cargo run -- daemon --node-id test-node --control-plane-url http://localhost:8080 --token <token> &
+RUNTIME_AGENT_AUTH_TOKEN=<token> \
+cargo run --manifest-path apps/runtime-agent/Cargo.toml -- \
+  --config apps/runtime-agent/config.toml \
+  --node-id test-node &
 
 # 运行端到端测试
 ./scripts/e2e-test.sh

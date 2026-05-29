@@ -25,19 +25,21 @@ contracts/
 
 ```bash
 pnpm install
-pnpm test:ts
-pnpm typecheck
+cd apps/control-plane && make generate
 go test ./apps/control-plane/...
 cargo test --manifest-path apps/runtime-agent/Cargo.toml
-pnpm build:web
-pnpm dev:web
+pnpm -r --if-present test
+pnpm -r --if-present typecheck
 pnpm dev:control-plane
-pnpm dev:runtime-agent
+pnpm dev:web
+cargo run --manifest-path apps/runtime-agent/Cargo.toml -- --config apps/runtime-agent/config.toml
 ```
 
 ## 当前基线
 
-- `apps/control-plane` 提供 `GET /health`，并由 `contracts/control-plane/openapi.yaml` 描述。
-- `apps/runtime-agent` 提供 Rust daemon runner，可通过 `--config apps/runtime-agent/config.example.toml` 加载可见配置；本地真实配置可复制为 `apps/runtime-agent/config.toml`，该文件不会提交。
-- `apps/web` 使用 Next.js App Router，组合 `packages/views` 与 `packages/core`。
+- `apps/control-plane` 通过统一启动入口装配存储、服务、handlers 和 API routes，并提供完整产品 API 与 `GET /health`。
+- `apps/runtime-agent` 默认作为受 Control Plane 管理的 daemon 运行；本地 provider `run` 子命令仅用于诊断，不是业务任务分发入口。
+- `contracts/control-plane/openapi.yaml` 描述 Console 与 Runtime Agent 调用的 Control Plane API。
+- `apps/runtime-agent` 支持通过 `--config apps/runtime-agent/config.toml` 加载本地可见配置；示例文件为 `apps/runtime-agent/config.example.toml`。
+- `apps/web` 当前重点是 API client / core 数据边界，使用 Next.js App Router 组合 `packages/views` 与 `packages/core`。
 - `apps/desktop` 只保留空壳边界，待 Web 主链路完整后再实现。
