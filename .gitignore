@@ -26,6 +26,7 @@ src-tauri/target/
 .env.production.local
 apps/*/config/local.yaml
 apps/*/config/*.local.yaml
+apps/runtime-agent/config.toml
 
 # IDE
 .vscode/
@@ -72,6 +73,7 @@ localstack/
 # Logs
 *.log
 logs/
+.superteam/
 
 # OS
 Thumbs.db

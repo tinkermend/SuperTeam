@@ -142,6 +142,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Runtime Agent 配置入口统一 (2026-05-29)
+
+- 统一 Runtime Agent 配置模型，支持 `--config` 加载 TOML 配置文件。
+- 将配置优先级收敛为：CLI 参数 > `RUNTIME_AGENT_*` 环境变量 > `config.toml` > 默认值。
+- 同步 `.env.example`、`config.example.toml`、README、配置指南和 `dev:runtime-agent` 脚本，避免 `RUNTIME_NODE_ID` / `RUNTIME_AGENT_NODE_ID` 等命名漂移。
+- 忽略本地真实配置 `apps/runtime-agent/config.toml` 和 `.superteam/` 运行状态目录，保留可提交示例配置。
+
 ### Security
 
 ## [0.1.0] - 2026-05-29

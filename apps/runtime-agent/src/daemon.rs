@@ -18,7 +18,7 @@ impl RuntimeDaemon {
 
     pub fn snapshot(&self) -> RuntimeSnapshot {
         RuntimeSnapshot {
-            node_id: self.config.node_id.clone(),
+            node_id: self.config.node_id().to_string(),
             status: "idle".to_string(),
         }
     }

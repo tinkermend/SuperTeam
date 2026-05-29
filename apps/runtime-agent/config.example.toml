@@ -1,9 +1,10 @@
-# Runtime Agent 配置文件
-# 支持通过环境变量覆盖：RUNTIME_AGENT_<SECTION>_<KEY>
+# Runtime Agent 示例配置
+# 本地使用时复制为 apps/runtime-agent/config.toml，并通过 --config 指定。
+# 环境变量 RUNTIME_AGENT_* 可覆盖同名配置，CLI 参数优先级最高。
 
 [runtime]
-# 节点 ID（留空则自动生成 UUID）
-node_id = ""
+# 节点 ID
+node_id = "local-dev-node"
 
 # Control Plane API 地址
 control_plane_url = "http://localhost:8080"
@@ -14,9 +15,17 @@ heartbeat_interval = 30
 # 最大并发任务数
 max_concurrent_tasks = 3
 
+[http]
+# Runtime Agent 本地 HTTP/WS 服务监听地址
+addr = "127.0.0.1:7077"
+
+[runs]
+# Provider 执行日志和事件落盘目录
+log_dir = ".superteam/runtime-runs"
+
 [workspace]
 # 工作目录基础路径
-base_dir = "/var/superteam/workspaces"
+base_dir = ".superteam/workspaces"
 
 # 清理策略：on_success | on_completion | manual
 cleanup_policy = "on_success"
@@ -26,13 +35,13 @@ max_retained = 10
 
 [providers.claude_code]
 enabled = true
-binary_path = "/usr/local/bin/claude"
+binary_path = "claude"
 # 超时时间（秒）
 timeout = 3600
 
 [providers.opencode]
 enabled = false
-binary_path = "/usr/local/bin/opencode"
+binary_path = "opencode"
 timeout = 3600
 
 [logging]
@@ -46,4 +55,4 @@ format = "pretty"
 output = "stdout"
 
 # 日志文件路径（当 output = file 时）
-file_path = "/var/log/superteam/runtime-agent.log"
+file_path = ".superteam/runtime-agent.log"

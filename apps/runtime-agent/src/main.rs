@@ -6,37 +6,36 @@ use clap::Parser;
 use clap::Subcommand;
 use clap::ValueEnum;
 use futures::StreamExt;
-use superteam_runtime_agent::config::RuntimeConfig;
+use superteam_runtime_agent::config::{RuntimeConfig, RuntimeConfigOverrides};
 use superteam_runtime_agent::daemon::RuntimeDaemon;
 use superteam_runtime_agent::events::ProviderEvent;
 use superteam_runtime_agent::providers::claude::ClaudeProvider;
 use superteam_runtime_agent::providers::opencode::OpenCodeProvider;
 use superteam_runtime_agent::providers::{ProviderAdapter, ProviderRequest};
-use superteam_runtime_agent::server::{RuntimeHttpConfig, RuntimeHttpServer};
+use superteam_runtime_agent::server::RuntimeHttpServer;
 
 #[derive(Debug, Parser)]
 struct Args {
-    #[arg(long, env = "RUNTIME_NODE_ID", default_value = "local-dev-node")]
-    node_id: String,
+    #[arg(long)]
+    config: Option<PathBuf>,
+
+    #[arg(long)]
+    node_id: Option<String>,
 
     #[arg(long)]
     once: bool,
 
-    #[arg(long, env = "RUNTIME_HTTP_ADDR", default_value = "127.0.0.1:7077")]
-    http_addr: SocketAddr,
+    #[arg(long)]
+    http_addr: Option<SocketAddr>,
 
-    #[arg(
-        long,
-        env = "RUNTIME_RUN_LOG_DIR",
-        default_value = ".superteam/runtime-runs"
-    )]
-    run_log_dir: PathBuf,
+    #[arg(long)]
+    run_log_dir: Option<PathBuf>,
 
-    #[arg(long, env = "CLAUDE_BIN", default_value = "claude")]
-    claude_bin: PathBuf,
+    #[arg(long)]
+    claude_bin: Option<PathBuf>,
 
-    #[arg(long, env = "OPENCODE_BIN", default_value = "opencode")]
-    opencode_bin: PathBuf,
+    #[arg(long)]
+    opencode_bin: Option<PathBuf>,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -95,7 +94,19 @@ async fn main() -> anyhow::Result<()> {
         };
     }
 
-    let daemon = RuntimeDaemon::new(RuntimeConfig::new(args.node_id)?);
+    let config = RuntimeConfig::load(
+        args.config.as_deref(),
+        RuntimeConfigOverrides {
+            node_id: args.node_id,
+            http_addr: args.http_addr,
+            run_log_dir: args.run_log_dir,
+            claude_bin: args.claude_bin,
+            opencode_bin: args.opencode_bin,
+        },
+    )?;
+    let http_addr = config.http.addr;
+    let http_config = config.http_config();
+    let daemon = RuntimeDaemon::new(config);
     let snapshot = daemon.snapshot();
     println!(
         "runtime-agent node={} status={}",
@@ -104,16 +115,7 @@ async fn main() -> anyhow::Result<()> {
     if args.once {
         return Ok(());
     }
-    let server = RuntimeHttpServer::bind(
-        args.http_addr,
-        RuntimeHttpConfig {
-            node_id: snapshot.node_id,
-            run_log_dir: args.run_log_dir,
-            claude_bin: args.claude_bin,
-            opencode_bin: args.opencode_bin,
-        },
-    )
-    .await?;
+    let server = RuntimeHttpServer::bind(http_addr, http_config).await?;
     println!("runtime-agent http_addr={}", server.addr());
     tokio::signal::ctrl_c().await?;
     Ok(())
