@@ -320,19 +320,17 @@ UPDATE auth_users
 SET
     display_name = COALESCE($2, display_name),
     email = COALESCE($3, email),
-    password_hash = COALESCE($4, password_hash),
-    status = COALESCE($5, status),
+    status = COALESCE($4, status),
     updated_at = NOW()
 WHERE id = $1
 RETURNING id, username, display_name, email, password_hash, status, created_at, updated_at
 `
 
 type UpdateUserParams struct {
-	ID           int64       `json:"id"`
-	DisplayName  pgtype.Text `json:"display_name"`
-	Email        pgtype.Text `json:"email"`
-	PasswordHash string      `json:"password_hash"`
-	Status       string      `json:"status"`
+	ID          int64       `json:"id"`
+	DisplayName pgtype.Text `json:"display_name"`
+	Email       pgtype.Text `json:"email"`
+	Status      string      `json:"status"`
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUser, error) {
@@ -340,7 +338,6 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUse
 		arg.ID,
 		arg.DisplayName,
 		arg.Email,
-		arg.PasswordHash,
 		arg.Status,
 	)
 	var i AuthUser

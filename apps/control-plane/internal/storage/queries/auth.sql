@@ -30,8 +30,7 @@ UPDATE auth_users
 SET
     display_name = COALESCE($2, display_name),
     email = COALESCE($3, email),
-    password_hash = COALESCE($4, password_hash),
-    status = COALESCE($5, status),
+    status = COALESCE($4, status),
     updated_at = NOW()
 WHERE id = $1
 RETURNING *;
