@@ -1,7 +1,74 @@
 package task
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// Mock repository for testing
+type mockRepository struct {
+	createTaskFunc          func(ctx context.Context, params CreateTaskParams) (TaskRecord, error)
+	getTaskFunc             func(ctx context.Context, id int64) (TaskRecord, error)
+	listTasksFunc           func(ctx context.Context, params ListTasksParams) ([]TaskRecord, error)
+	updateTaskStatusFunc    func(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error)
+	updateTaskFunc          func(ctx context.Context, params UpdateTaskParams) (TaskRecord, error)
+	deleteTaskFunc          func(ctx context.Context, id int64) error
+	createTaskStateHistoryFunc  func(ctx context.Context, params CreateTaskStateHistoryParams) error
+}
+
+func (m *mockRepository) CreateTask(ctx context.Context, params CreateTaskParams) (TaskRecord, error) {
+	if m.createTaskFunc != nil {
+		return m.createTaskFunc(ctx, params)
+	}
+	return TaskRecord{}, errors.New("not implemented")
+}
+
+func (m *mockRepository) GetTask(ctx context.Context, id int64) (TaskRecord, error) {
+	if m.getTaskFunc != nil {
+		return m.getTaskFunc(ctx, id)
+	}
+	return TaskRecord{}, errors.New("not implemented")
+}
+
+func (m *mockRepository) ListTasks(ctx context.Context, params ListTasksParams) ([]TaskRecord, error) {
+	if m.listTasksFunc != nil {
+		return m.listTasksFunc(ctx, params)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockRepository) UpdateTaskStatus(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error) {
+	if m.updateTaskStatusFunc != nil {
+		return m.updateTaskStatusFunc(ctx, params)
+	}
+	return TaskRecord{}, errors.New("not implemented")
+}
+
+func (m *mockRepository) UpdateTask(ctx context.Context, params UpdateTaskParams) (TaskRecord, error) {
+	if m.updateTaskFunc != nil {
+		return m.updateTaskFunc(ctx, params)
+	}
+	return TaskRecord{}, errors.New("not implemented")
+}
+
+func (m *mockRepository) DeleteTask(ctx context.Context, id int64) error {
+	if m.deleteTaskFunc != nil {
+		return m.deleteTaskFunc(ctx, id)
+	}
+	return errors.New("not implemented")
+}
+
+func (m *mockRepository) CreateTaskStateHistory(ctx context.Context, params CreateTaskStateHistoryParams) error {
+	if m.createTaskStateHistoryFunc != nil {
+		return m.createTaskStateHistoryFunc(ctx, params)
+	}
+	return nil // State history is optional
+}
+
+// Test NewService
 func TestNewServiceRequiresRepository(t *testing.T) {
 	if _, err := NewService(nil); err == nil {
 		t.Fatal("expected nil repository to fail")
@@ -9,7 +76,7 @@ func TestNewServiceRequiresRepository(t *testing.T) {
 }
 
 func TestNewServiceAcceptsRepository(t *testing.T) {
-	service, err := NewService(memoryRepository{})
+	service, err := NewService(&mockRepository{})
 	if err != nil {
 		t.Fatalf("expected service: %v", err)
 	}
@@ -18,4 +85,542 @@ func TestNewServiceAcceptsRepository(t *testing.T) {
 	}
 }
 
-type memoryRepository struct{}
+// Test CreateTask
+func TestCreateTask(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		req         CreateTaskRequest
+		mockFunc    func(ctx context.Context, params CreateTaskParams) (TaskRecord, error)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "successful creation",
+			req: CreateTaskRequest{
+				Title:        "Test Task",
+				ProviderType: "claude-code",
+				Priority:     5,
+			},
+			mockFunc: func(ctx context.Context, params CreateTaskParams) (TaskRecord, error) {
+				return TaskRecord{
+					ID:           1,
+					Title:        params.Title,
+					Status:       params.Status,
+					ProviderType: params.ProviderType,
+					Priority:     params.Priority,
+					CreatedAt:    pgtype.Timestamptz{Valid: true},
+					UpdatedAt:    pgtype.Timestamptz{Valid: true},
+				}, nil
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing provider type",
+			req: CreateTaskRequest{
+				Title: "Test Task",
+			},
+			wantErr:     true,
+			errContains: "provider_type is required",
+		},
+		{
+			name: "repository error",
+			req: CreateTaskRequest{
+				Title:        "Test Task",
+				ProviderType: "claude-code",
+			},
+			mockFunc: func(ctx context.Context, params CreateTaskParams) (TaskRecord, error) {
+				return TaskRecord{}, errors.New("database error")
+			},
+			wantErr:     true,
+			errContains: "failed to create task",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &mockRepository{
+				createTaskFunc: tt.mockFunc,
+			}
+			service, _ := NewService(repo)
+
+			task, err := service.CreateTask(ctx, tt.req)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error but got none")
+				}
+				if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
+					t.Fatalf("expected error to contain %q, got %q", tt.errContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if task == nil {
+				t.Fatal("expected task but got nil")
+			}
+
+			if task.Status != TaskStatusPending {
+				t.Errorf("expected status %s, got %s", TaskStatusPending, task.Status)
+			}
+		})
+	}
+}
+
+// Test GetTask
+func TestGetTask(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name     string
+		taskID   int64
+		mockFunc func(ctx context.Context, id int64) (TaskRecord, error)
+		wantErr  bool
+	}{
+		{
+			name:   "successful get",
+			taskID: 1,
+			mockFunc: func(ctx context.Context, id int64) (TaskRecord, error) {
+				return TaskRecord{
+					ID:           id,
+					Title:        "Test Task",
+					Status:       string(TaskStatusPending),
+					ProviderType: "claude-code",
+					Priority:     5,
+					CreatedAt:    pgtype.Timestamptz{Valid: true},
+					UpdatedAt:    pgtype.Timestamptz{Valid: true},
+				}, nil
+			},
+			wantErr: false,
+		},
+		{
+			name:   "task not found",
+			taskID: 999,
+			mockFunc: func(ctx context.Context, id int64) (TaskRecord, error) {
+				return TaskRecord{}, errors.New("not found")
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &mockRepository{
+				getTaskFunc: tt.mockFunc,
+			}
+			service, _ := NewService(repo)
+
+			task, err := service.GetTask(ctx, tt.taskID)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if task == nil {
+				t.Fatal("expected task but got nil")
+			}
+
+			if task.ID != tt.taskID {
+				t.Errorf("expected task ID %d, got %d", tt.taskID, task.ID)
+			}
+		})
+	}
+}
+
+// Test ListTasks
+func TestListTasks(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		filter    ListTasksFilter
+		mockFunc  func(ctx context.Context, params ListTasksParams) ([]TaskRecord, error)
+		wantCount int
+		wantErr   bool
+	}{
+		{
+			name: "list all tasks",
+			filter: ListTasksFilter{
+				Limit: 10,
+			},
+			mockFunc: func(ctx context.Context, params ListTasksParams) ([]TaskRecord, error) {
+				return []TaskRecord{
+					{ID: 1, Title: "Task 1", Status: string(TaskStatusPending), ProviderType: "claude-code"},
+					{ID: 2, Title: "Task 2", Status: string(TaskStatusRunning), ProviderType: "claude-code"},
+				}, nil
+			},
+			wantCount: 2,
+			wantErr:   false,
+		},
+		{
+			name: "filter by status",
+			filter: ListTasksFilter{
+				Status: func() *TaskStatus { s := TaskStatusPending; return &s }(),
+				Limit:  10,
+			},
+			mockFunc: func(ctx context.Context, params ListTasksParams) ([]TaskRecord, error) {
+				return []TaskRecord{
+					{ID: 1, Title: "Task 1", Status: string(TaskStatusPending), ProviderType: "claude-code"},
+				}, nil
+			},
+			wantCount: 1,
+			wantErr:   false,
+		},
+		{
+			name: "default limit applied",
+			filter: ListTasksFilter{
+				Limit: 0, // Should default to 50
+			},
+			mockFunc: func(ctx context.Context, params ListTasksParams) ([]TaskRecord, error) {
+				if params.Limit != 50 {
+					t.Errorf("expected default limit 50, got %d", params.Limit)
+				}
+				return []TaskRecord{}, nil
+			},
+			wantCount: 0,
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &mockRepository{
+				listTasksFunc: tt.mockFunc,
+			}
+			service, _ := NewService(repo)
+
+			tasks, err := service.ListTasks(ctx, tt.filter)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if len(tasks) != tt.wantCount {
+				t.Errorf("expected %d tasks, got %d", tt.wantCount, len(tasks))
+			}
+		})
+	}
+}
+
+// Test UpdateTaskStatus
+func TestUpdateTaskStatus(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		req         UpdateTaskStatusRequest
+		currentTask TaskRecord
+		mockUpdate  func(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "valid transition pending to claimed",
+			req: UpdateTaskStatusRequest{
+				TaskID:    1,
+				NewStatus: TaskStatusClaimed,
+			},
+			currentTask: TaskRecord{
+				ID:     1,
+				Status: string(TaskStatusPending),
+			},
+			mockUpdate: func(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error) {
+				return TaskRecord{
+					ID:     params.ID,
+					Status: params.Status,
+				}, nil
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid transition claimed to running",
+			req: UpdateTaskStatusRequest{
+				TaskID:    1,
+				NewStatus: TaskStatusRunning,
+			},
+			currentTask: TaskRecord{
+				ID:     1,
+				Status: string(TaskStatusClaimed),
+			},
+			mockUpdate: func(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error) {
+				return TaskRecord{
+					ID:     params.ID,
+					Status: params.Status,
+				}, nil
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid transition pending to completed",
+			req: UpdateTaskStatusRequest{
+				TaskID:    1,
+				NewStatus: TaskStatusCompleted,
+			},
+			currentTask: TaskRecord{
+				ID:     1,
+				Status: string(TaskStatusPending),
+			},
+			wantErr:     true,
+			errContains: "invalid state transition",
+		},
+		{
+			name: "invalid status",
+			req: UpdateTaskStatusRequest{
+				TaskID:    1,
+				NewStatus: TaskStatus("invalid"),
+			},
+			currentTask: TaskRecord{
+				ID:     1,
+				Status: string(TaskStatusPending),
+			},
+			wantErr:     true,
+			errContains: "invalid task status",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &mockRepository{
+				getTaskFunc: func(ctx context.Context, id int64) (TaskRecord, error) {
+					return tt.currentTask, nil
+				},
+				updateTaskStatusFunc: tt.mockUpdate,
+				createTaskStateHistoryFunc: func(ctx context.Context, params CreateTaskStateHistoryParams) error {
+					return nil
+				},
+			}
+			service, _ := NewService(repo)
+
+			task, err := service.UpdateTaskStatus(ctx, tt.req)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error but got none")
+				}
+				if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
+					t.Fatalf("expected error to contain %q, got %q", tt.errContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if task == nil {
+				t.Fatal("expected task but got nil")
+			}
+
+			if task.Status != tt.req.NewStatus {
+				t.Errorf("expected status %s, got %s", tt.req.NewStatus, task.Status)
+			}
+		})
+	}
+}
+
+// Test CancelTask
+func TestCancelTask(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		taskID      int64
+		currentTask TaskRecord
+		wantErr     bool
+	}{
+		{
+			name:   "cancel pending task",
+			taskID: 1,
+			currentTask: TaskRecord{
+				ID:     1,
+				Status: string(TaskStatusPending),
+			},
+			wantErr: false,
+		},
+		{
+			name:   "cancel running task",
+			taskID: 1,
+			currentTask: TaskRecord{
+				ID:     1,
+				Status: string(TaskStatusRunning),
+			},
+			wantErr: false,
+		},
+		{
+			name:   "cannot cancel completed task",
+			taskID: 1,
+			currentTask: TaskRecord{
+				ID:     1,
+				Status: string(TaskStatusCompleted),
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &mockRepository{
+				getTaskFunc: func(ctx context.Context, id int64) (TaskRecord, error) {
+					return tt.currentTask, nil
+				},
+				updateTaskStatusFunc: func(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error) {
+					return TaskRecord{
+						ID:     params.ID,
+						Status: params.Status,
+					}, nil
+				},
+				createTaskStateHistoryFunc: func(ctx context.Context, params CreateTaskStateHistoryParams) error {
+					return nil
+				},
+			}
+			service, _ := NewService(repo)
+
+			task, err := service.CancelTask(ctx, tt.taskID, nil, nil)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if task.Status != TaskStatusCancelled {
+				t.Errorf("expected status %s, got %s", TaskStatusCancelled, task.Status)
+			}
+		})
+	}
+}
+
+// Test AssignTask
+func TestAssignTask(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		req         AssignTaskRequest
+		currentTask TaskRecord
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "assign pending task",
+			req: AssignTaskRequest{
+				TaskID:         1,
+				AssignedNodeID: "node-001",
+			},
+			currentTask: TaskRecord{
+				ID:             1,
+				Status:         string(TaskStatusPending),
+				AssignedNodeID: pgtype.Text{Valid: false},
+			},
+			wantErr: false,
+		},
+		{
+			name: "cannot assign already assigned task",
+			req: AssignTaskRequest{
+				TaskID:         1,
+				AssignedNodeID: "node-002",
+			},
+			currentTask: TaskRecord{
+				ID:             1,
+				Status:         string(TaskStatusPending),
+				AssignedNodeID: pgtype.Text{String: "node-001", Valid: true},
+			},
+			wantErr:     true,
+			errContains: "already assigned",
+		},
+		{
+			name: "cannot assign completed task",
+			req: AssignTaskRequest{
+				TaskID:         1,
+				AssignedNodeID: "node-001",
+			},
+			currentTask: TaskRecord{
+				ID:             1,
+				Status:         string(TaskStatusCompleted),
+				AssignedNodeID: pgtype.Text{Valid: false},
+			},
+			wantErr:     true,
+			errContains: "cannot be assigned",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &mockRepository{
+				getTaskFunc: func(ctx context.Context, id int64) (TaskRecord, error) {
+					return tt.currentTask, nil
+				},
+				updateTaskFunc: func(ctx context.Context, params UpdateTaskParams) (TaskRecord, error) {
+					return TaskRecord{
+						ID:             params.ID,
+						Status:         params.Status.String,
+						AssignedNodeID: params.AssignedNodeID,
+					}, nil
+				},
+				createTaskStateHistoryFunc: func(ctx context.Context, params CreateTaskStateHistoryParams) error {
+					return nil
+				},
+			}
+			service, _ := NewService(repo)
+
+			task, err := service.AssignTask(ctx, tt.req)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error but got none")
+				}
+				if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
+					t.Fatalf("expected error to contain %q, got %q", tt.errContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if task.AssignedNodeID == nil || *task.AssignedNodeID != tt.req.AssignedNodeID {
+				t.Errorf("expected assigned node %s, got %v", tt.req.AssignedNodeID, task.AssignedNodeID)
+			}
+		})
+	}
+}
+
+// Helper function
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+		(len(s) > 0 && len(substr) > 0 && containsHelper(s, substr)))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
