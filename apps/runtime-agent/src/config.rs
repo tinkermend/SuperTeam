@@ -18,6 +18,7 @@ pub struct RuntimeConfig {
 pub struct RuntimeSection {
     pub node_id: String,
     pub control_plane_url: String,
+    pub auth_token: String,
     pub heartbeat_interval: u64,
     pub max_concurrent_tasks: u16,
 }
@@ -63,6 +64,7 @@ pub struct LoggingSection {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RuntimeConfigOverrides {
     pub node_id: Option<String>,
+    pub auth_token: Option<String>,
     pub http_addr: Option<SocketAddr>,
     pub run_log_dir: Option<PathBuf>,
     pub claude_bin: Option<PathBuf>,
@@ -83,6 +85,7 @@ struct FileConfig {
 struct FileRuntimeSection {
     node_id: Option<String>,
     control_plane_url: Option<String>,
+    auth_token: Option<String>,
     heartbeat_interval: Option<u64>,
     max_concurrent_tasks: Option<u16>,
 }
@@ -180,6 +183,7 @@ impl RuntimeConfig {
                 &mut self.runtime.control_plane_url,
                 runtime.control_plane_url,
             );
+            apply_string(&mut self.runtime.auth_token, runtime.auth_token);
             apply_copy(
                 &mut self.runtime.heartbeat_interval,
                 runtime.heartbeat_interval,
@@ -247,6 +251,9 @@ impl RuntimeConfig {
             "RUNTIME_AGENT_CONTROL_PLANE_URL" => {
                 self.runtime.control_plane_url = value.to_string();
             }
+            "RUNTIME_AGENT_AUTH_TOKEN" => {
+                self.runtime.auth_token = value.to_string();
+            }
             "RUNTIME_AGENT_HEARTBEAT_INTERVAL" => {
                 self.runtime.heartbeat_interval = parse_env(key, value)?;
             }
@@ -291,6 +298,7 @@ impl RuntimeConfig {
 
     fn apply_overrides(&mut self, overrides: RuntimeConfigOverrides) {
         apply_string(&mut self.runtime.node_id, overrides.node_id);
+        apply_string(&mut self.runtime.auth_token, overrides.auth_token);
         apply_copy(&mut self.http.addr, overrides.http_addr);
         apply_path(&mut self.runs.log_dir, overrides.run_log_dir);
         apply_path(
@@ -309,6 +317,9 @@ impl RuntimeConfig {
         }
         if self.runtime.control_plane_url.trim().is_empty() {
             anyhow::bail!("control plane url is required");
+        }
+        if self.runtime.auth_token.trim().is_empty() {
+            anyhow::bail!("runtime auth token is required");
         }
         if self.runtime.heartbeat_interval == 0 {
             anyhow::bail!("heartbeat interval must be greater than 0");
@@ -344,6 +355,7 @@ impl Default for RuntimeConfig {
             runtime: RuntimeSection {
                 node_id: "local-dev-node".to_string(),
                 control_plane_url: "http://localhost:8080".to_string(),
+                auth_token: "local-dev-token".to_string(),
                 heartbeat_interval: 30,
                 max_concurrent_tasks: 3,
             },

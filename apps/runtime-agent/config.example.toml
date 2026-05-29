@@ -9,6 +9,9 @@ node_id = "local-dev-node"
 # Control Plane API 地址
 control_plane_url = "http://localhost:8080"
 
+# Runtime Agent 认证 token
+auth_token = "replace-with-runtime-token"
+
 # 心跳间隔（秒）
 heartbeat_interval = 30
 

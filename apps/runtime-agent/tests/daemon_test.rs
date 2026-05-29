@@ -1,5 +1,5 @@
 use std::process::Command;
-use superteam_runtime_agent::config::RuntimeConfig;
+use superteam_runtime_agent::config::{RuntimeConfig, RuntimeConfigOverrides};
 use superteam_runtime_agent::daemon::RuntimeDaemon;
 
 #[test]
@@ -119,6 +119,32 @@ file_path = "/tmp/runtime-agent.log"
         config.logging.file_path,
         Some(std::path::PathBuf::from("/tmp/runtime-agent.log"))
     );
+}
+
+#[test]
+fn config_loads_runtime_token_from_env_and_cli_override() {
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let config_path = temp.path().join("runtime-agent.toml");
+    std::fs::write(
+        &config_path,
+        r#"
+[runtime]
+auth_token = "file-token"
+"#,
+    )
+    .expect("write config");
+
+    let config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        [("RUNTIME_AGENT_AUTH_TOKEN", "env-token")],
+        RuntimeConfigOverrides {
+            auth_token: Some("cli-token".to_string()),
+            ..Default::default()
+        },
+    )
+    .expect("load config");
+
+    assert_eq!(config.runtime.auth_token, "cli-token");
 }
 
 #[test]

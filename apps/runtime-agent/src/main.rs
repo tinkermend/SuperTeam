@@ -12,7 +12,6 @@ use superteam_runtime_agent::events::ProviderEvent;
 use superteam_runtime_agent::providers::claude::ClaudeProvider;
 use superteam_runtime_agent::providers::opencode::OpenCodeProvider;
 use superteam_runtime_agent::providers::{ProviderAdapter, ProviderRequest};
-use superteam_runtime_agent::server::RuntimeHttpServer;
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -21,6 +20,9 @@ struct Args {
 
     #[arg(long)]
     node_id: Option<String>,
+
+    #[arg(long)]
+    auth_token: Option<String>,
 
     #[arg(long)]
     once: bool,
@@ -98,14 +100,13 @@ async fn main() -> anyhow::Result<()> {
         args.config.as_deref(),
         RuntimeConfigOverrides {
             node_id: args.node_id,
+            auth_token: args.auth_token,
             http_addr: args.http_addr,
             run_log_dir: args.run_log_dir,
             claude_bin: args.claude_bin,
             opencode_bin: args.opencode_bin,
         },
     )?;
-    let http_addr = config.http.addr;
-    let http_config = config.http_config();
     let daemon = RuntimeDaemon::new(config);
     let snapshot = daemon.snapshot();
     println!(
@@ -115,10 +116,7 @@ async fn main() -> anyhow::Result<()> {
     if args.once {
         return Ok(());
     }
-    let server = RuntimeHttpServer::bind(http_addr, http_config).await?;
-    println!("runtime-agent http_addr={}", server.addr());
-    tokio::signal::ctrl_c().await?;
-    Ok(())
+    daemon.run().await
 }
 
 async fn run_provider(args: RunArgs) -> anyhow::Result<()> {

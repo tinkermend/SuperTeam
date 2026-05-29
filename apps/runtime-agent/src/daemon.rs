@@ -30,8 +30,11 @@ impl RuntimeDaemon {
         }
     }
 
-    pub async fn run(self, token: String) -> Result<()> {
-        let client = ControlPlaneClient::new(&self.config.runtime.control_plane_url, &token);
+    pub async fn run(self) -> Result<()> {
+        let client = ControlPlaneClient::new(
+            &self.config.runtime.control_plane_url,
+            &self.config.runtime.auth_token,
+        );
 
         let supported_providers = build_supported_providers(&self.config);
 
@@ -71,7 +74,8 @@ fn build_supported_providers(config: &RuntimeConfig) -> Vec<String> {
 }
 
 async fn heartbeat_loop(client: ControlPlaneClient, config: RuntimeConfig) {
-    let mut interval = tokio::time::interval(Duration::from_secs(config.runtime.heartbeat_interval));
+    let mut interval =
+        tokio::time::interval(Duration::from_secs(config.runtime.heartbeat_interval));
 
     loop {
         interval.tick().await;
