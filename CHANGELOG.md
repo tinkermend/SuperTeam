@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Web 控制台通用骨架 (2026-05-29)
+
+- 沉淀 Web 控制台外部系统骨架复用组件：新增 `ConsoleShell`、状态胶囊、图标徽章、指标块、分区面板和时间线项，并将首页改为基于共享组件挂载。
+
 #### Control Plane S3 对象存储接入 (2026-05-29)
 
 - 使用 AWS SDK for Go v2 的 `config`、`credentials`、`service/s3` 初始化控制平面 S3 客户端。

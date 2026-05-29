@@ -58,6 +58,9 @@ importers:
       '@superteam/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@superteam/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@superteam/views':
         specifier: workspace:*
         version: link:../../packages/views

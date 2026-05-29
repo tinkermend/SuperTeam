@@ -4,6 +4,8 @@
 
 @source "../app/**/*.{ts,tsx}";
 @source "../src/**/*.{ts,tsx}";
+@source "../../../packages/ui/src/**/*.{ts,tsx}";
+@source "../../../packages/views/src/**/*.{ts,tsx}";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -28,6 +30,11 @@ body {
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-status-accent: var(--status-accent);
+  --color-status-danger: var(--status-danger);
+  --color-status-info: var(--status-info);
+  --color-status-success: var(--status-success);
+  --color-status-warning: var(--status-warning);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -93,6 +100,11 @@ body {
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --status-accent: oklch(0.55 0.2 300);
+  --status-danger: oklch(0.58 0.22 27);
+  --status-info: oklch(0.56 0.18 252);
+  --status-success: oklch(0.57 0.16 150);
+  --status-warning: oklch(0.68 0.17 70);
 }
 
 .dark {
@@ -127,6 +139,11 @@ body {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --status-accent: oklch(0.72 0.18 300);
+  --status-danger: oklch(0.72 0.18 27);
+  --status-info: oklch(0.72 0.16 252);
+  --status-success: oklch(0.72 0.14 150);
+  --status-warning: oklch(0.76 0.15 70);
 }
 
 @layer base {

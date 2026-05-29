@@ -12,6 +12,7 @@
   "dependencies": {
     "@superteam/api-client": "workspace:*",
     "@superteam/core": "workspace:*",
+    "@superteam/ui": "workspace:*",
     "@superteam/views": "workspace:*",
     "@tailwindcss/postcss": "4.3.0",
     "class-variance-authority": "^0.7.1",

@@ -6,12 +6,12 @@ type ConsoleHealthViewProps = {
 
 export function ConsoleHealthView({ summary }: ConsoleHealthViewProps) {
   return (
-    <section className="grid gap-3 rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="grid gap-3 rounded-md border bg-card p-4 text-card-foreground shadow-sm">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold text-slate-950">Control Plane</h2>
+        <h2 className="text-base font-semibold">Control Plane</h2>
         <StatusBadge tone="ok">Live</StatusBadge>
       </div>
-      <p className="text-sm text-slate-600">{summary}</p>
+      <p className="text-sm text-muted-foreground">{summary}</p>
     </section>
   );
 }
