@@ -111,6 +111,37 @@ func (q *Queries) CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams
 	return i, err
 }
 
+const CreateTaskStateHistory = `-- name: CreateTaskStateHistory :exec
+INSERT INTO task_state_history (
+    task_id,
+    from_status,
+    to_status,
+    changed_by,
+    reason
+) VALUES (
+    $1, $2, $3, $4, $5
+)
+`
+
+type CreateTaskStateHistoryParams struct {
+	TaskID     int64       `json:"task_id"`
+	FromStatus pgtype.Text `json:"from_status"`
+	ToStatus   string      `json:"to_status"`
+	ChangedBy  pgtype.Text `json:"changed_by"`
+	Reason     pgtype.Text `json:"reason"`
+}
+
+func (q *Queries) CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) error {
+	_, err := q.db.Exec(ctx, CreateTaskStateHistory,
+		arg.TaskID,
+		arg.FromStatus,
+		arg.ToStatus,
+		arg.ChangedBy,
+		arg.Reason,
+	)
+	return err
+}
+
 const DeleteTask = `-- name: DeleteTask :exec
 DELETE FROM tasks
 WHERE id = $1

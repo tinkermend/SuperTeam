@@ -74,3 +74,14 @@ ORDER BY sequence_number ASC;
 -- name: GetTaskEvent :one
 SELECT * FROM task_events
 WHERE task_id = $1 AND sequence_number = $2;
+
+-- name: CreateTaskStateHistory :exec
+INSERT INTO task_state_history (
+    task_id,
+    from_status,
+    to_status,
+    changed_by,
+    reason
+) VALUES (
+    $1, $2, $3, $4, $5
+);
