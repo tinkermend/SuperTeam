@@ -1,6 +1,17 @@
 import type { ApiClientOptions } from "./health";
 
-export type RuntimeNodeResponse = Record<string, unknown>;
+export type RuntimeNodeResponse = {
+  node_id: string;
+  name: string;
+  supported_providers?: string[];
+  max_slots: number;
+  current_load: number;
+  status: string;
+  metadata?: Record<string, unknown>;
+  last_heartbeat_at?: string;
+  created_at?: string;
+  updated_at?: string;
+};
 
 function buildApiUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;

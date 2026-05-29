@@ -1,6 +1,19 @@
 import type { ApiClientOptions } from "./health";
 
-export type TaskResponse = Record<string, unknown>;
+export type TaskResponse = {
+  id: string | number;
+  title: string;
+  provider_type: string;
+  status: string;
+  priority?: number;
+  description?: string;
+  target_node_id?: string;
+  assigned_node_id?: string;
+  workspace_path?: string;
+  params?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+};
 
 export type CreateTaskInput = {
   title: string;

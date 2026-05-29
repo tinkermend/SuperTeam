@@ -1,15 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
+import type { RuntimeNodeResponse } from "./runtime";
 import { listRuntimeNodes } from "./runtime";
 
 describe("listRuntimeNodes", () => {
   it("calls the runtime nodes endpoint and parses JSON", async () => {
-    const nodes = [
+    const nodes: RuntimeNodeResponse[] = [
       {
         node_id: "node-1",
         name: "developer-machine",
+        supported_providers: ["codex", "opencode"],
         status: "online",
         current_load: 1,
         max_slots: 4,
+        metadata: {
+          os: "darwin",
+        },
+        last_heartbeat_at: "2026-05-29T00:00:00Z",
+        created_at: "2026-05-29T00:00:00Z",
+        updated_at: "2026-05-29T00:01:00Z",
       },
     ];
     const fetcher = vi.fn(async () =>
