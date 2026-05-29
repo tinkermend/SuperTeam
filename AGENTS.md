@@ -79,13 +79,7 @@ apps/
       storage/      # DB、Redis、S3 封装
       config/       # 配置加载
   runtime-agent/   # Rust Runtime Agent daemon
-    Cargo.toml
     src/
-      main.rs       # CLI 入口，解析节点参数并启动 daemon
-      lib.rs        # Runtime Agent 库入口
-      config.rs     # 节点配置
-      daemon.rs     # Runtime Agent 进程生命周期、启动/停止、主循环
-      events.rs     # Provider 事件、日志、状态的统一模型
       providers/    # Claude Code / OpenCode / Codex 等 Provider 适配
       controlplane/ # 调用 Control Plane 的客户端，按实际需要创建
       lease/        # claim、renew、heartbeat、任务租约，按实际需要创建
