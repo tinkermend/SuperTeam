@@ -163,8 +163,6 @@ paths:
       responses:
         "202":
           description: Events accepted
-        "501":
-          $ref: "#/components/responses/NotImplemented"
   /api/v1/runtime/tasks/{taskId}/complete:
     post:
       operationId: completeRuntimeTask
@@ -180,8 +178,6 @@ paths:
       responses:
         "200":
           description: Task completion accepted
-        "501":
-          $ref: "#/components/responses/NotImplemented"
   /api/v1/runtime/tasks/{taskId}/fail:
     post:
       operationId: failRuntimeTask
@@ -197,8 +193,6 @@ paths:
       responses:
         "200":
           description: Task failure accepted
-        "501":
-          $ref: "#/components/responses/NotImplemented"
   /api/v1/runtime/tasks/{taskId}/lease:
     post:
       operationId: renewRuntimeTaskLease
@@ -206,10 +200,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/TaskId"
       responses:
-        "200":
+        "204":
           description: Lease renewed
-        "501":
-          $ref: "#/components/responses/NotImplemented"
   /api/v1/runtime/nodes:
     get:
       operationId: listRuntimeNodes
@@ -274,12 +266,6 @@ components:
   responses:
     Error:
       description: Request failed
-      content:
-        text/plain:
-          schema:
-            type: string
-    NotImplemented:
-      description: Endpoint is registered but not implemented yet
       content:
         text/plain:
           schema:
