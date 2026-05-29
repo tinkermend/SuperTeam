@@ -1,6 +1,11 @@
 use superteam_runtime_agent::controlplane::{
     ControlPlaneClient, HeartbeatRequest, NodeStatus, RegisterNodeRequest,
 };
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+    sync::oneshot,
+};
 
 #[test]
 fn test_client_creation() {
@@ -131,4 +136,36 @@ async fn test_claim_task_timeout() {
     if task.is_none() {
         println!("No tasks available (expected in test environment)");
     }
+}
+
+#[tokio::test]
+async fn controlplane_client_claim_task_sends_canonical_runtime_claim_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (request_tx, request_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buffer = vec![0; 4096];
+        let bytes_read = socket.read(&mut buffer).await.unwrap();
+        let request = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+        let _ = request_tx.send(request);
+
+        socket
+            .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+            .await
+            .unwrap();
+    });
+
+    let client = ControlPlaneClient::new(format!("http://{}", addr), "test-token");
+    let result = client.claim_task(7).await.unwrap();
+
+    assert!(result.is_none());
+
+    let request = request_rx.await.unwrap();
+    let request_line = request.lines().next().unwrap();
+    assert_eq!(
+        request_line,
+        "POST /api/v1/runtime/tasks/claim?timeout=7 HTTP/1.1"
+    );
 }
