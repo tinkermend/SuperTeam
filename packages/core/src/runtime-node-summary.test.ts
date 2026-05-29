@@ -1,41 +1,52 @@
 import { describe, expect, it } from "vitest";
-import { createRuntimeNodeSummary } from "./runtime-node-summary";
+import { summarizeRuntimeNode } from "./runtime-node-summary";
 
-describe("createRuntimeNodeSummary", () => {
+describe("summarizeRuntimeNode", () => {
   it("uses snake_case node id and load fields", () => {
     expect(
-      createRuntimeNodeSummary({
+      summarizeRuntimeNode({
         node_id: "node-1",
         name: "builder",
+        status: "online",
         current_load: 2,
         max_slots: 8,
       }),
     ).toEqual({
       id: "node-1",
+      name: "builder",
+      status: "online",
       loadLabel: "2/8",
     });
   });
 
   it("uses camelCase node id and load fields", () => {
     expect(
-      createRuntimeNodeSummary({
+      summarizeRuntimeNode({
         nodeId: "node-2",
+        name: "developer-machine",
+        status: "offline",
         currentLoad: 1,
         maxSlots: 4,
       }),
     ).toEqual({
       id: "node-2",
+      name: "developer-machine",
+      status: "offline",
       loadLabel: "1/4",
     });
   });
 
-  it("falls back to name for id and defaults missing counts to zero", () => {
+  it("defaults missing counts to zero when an explicit node id is present", () => {
     expect(
-      createRuntimeNodeSummary({
+      summarizeRuntimeNode({
+        node_id: "node-3",
         name: "local-runtime",
+        status: "online",
       }),
     ).toEqual({
-      id: "local-runtime",
+      id: "node-3",
+      name: "local-runtime",
+      status: "online",
       loadLabel: "0/0",
     });
   });

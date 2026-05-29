@@ -4,11 +4,12 @@ export type TaskResponse = Record<string, unknown>;
 
 export type CreateTaskInput = {
   title: string;
+  provider_type: string;
+  params: Record<string, unknown>;
   description?: string;
-  provider_type?: string;
-  risk_level?: string;
-  context?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
+  priority?: number;
+  target_node_id?: string;
+  workspace_path?: string;
 };
 
 function buildApiUrl(baseUrl: string, path: string): string {
@@ -36,8 +37,8 @@ export async function listTasks(options: ApiClientOptions): Promise<TaskResponse
 }
 
 export async function createTask(
-  input: CreateTaskInput,
   options: ApiClientOptions,
+  input: CreateTaskInput,
 ): Promise<TaskResponse> {
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(buildApiUrl(options.baseUrl, "/api/v1/tasks"), {
