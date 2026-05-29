@@ -18,6 +18,10 @@ type Repository interface {
 
 	// State history operations
 	CreateTaskStateHistory(ctx context.Context, params CreateTaskStateHistoryParams) error
+
+	// Event operations
+	CreateTaskEvent(ctx context.Context, params CreateTaskEventParams) (TaskEventRecord, error)
+	GetLatestTaskEventSequence(ctx context.Context, taskID int64) (int32, error)
 }
 
 // CreateTaskParams represents parameters for creating a task
@@ -48,6 +52,26 @@ type TaskRecord struct {
 	Priority       int32
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
+}
+
+// CreateTaskEventParams represents parameters for creating a task event
+type CreateTaskEventParams struct {
+	TaskID         int64
+	ExecutionID    pgtype.Int8
+	EventType      string
+	SequenceNumber int32
+	Payload        []byte
+}
+
+// TaskEventRecord represents a task event record from the database
+type TaskEventRecord struct {
+	ID             int64
+	TaskID         int64
+	ExecutionID    pgtype.Int8
+	EventType      string
+	SequenceNumber int32
+	Payload        []byte
+	CreatedAt      pgtype.Timestamptz
 }
 
 // ListTasksParams represents parameters for listing tasks

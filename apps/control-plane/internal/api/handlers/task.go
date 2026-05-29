@@ -14,6 +14,7 @@ type TaskService interface {
 	CreateTask(ctx context.Context, req task.CreateTaskRequest) (*task.Task, error)
 	GetTask(ctx context.Context, taskID int64) (*task.Task, error)
 	ListTasks(ctx context.Context, filter task.ListTasksFilter) ([]*task.Task, error)
+	AppendTaskEvent(ctx context.Context, req task.AppendTaskEventRequest) (*task.TaskEvent, error)
 	UpdateTaskStatus(ctx context.Context, req task.UpdateTaskStatusRequest) (*task.Task, error)
 	CancelTask(ctx context.Context, taskID int64, cancelledBy *string, reason *string) (*task.Task, error)
 	AssignTask(ctx context.Context, req task.AssignTaskRequest) (*task.Task, error)

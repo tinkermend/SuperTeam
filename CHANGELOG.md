@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 补齐 S3 配置校验，启动前检查 endpoint、region、bucket、access key 和 secret key。
 - 更新配置模板和配置指南，保留 MinIO/localstack path-style 默认值，并补充 Volcengine TOS virtual-hosted 配置示例。
 
+#### Runtime 任务执行结果 API (2026-05-29)
+
+- 补齐 Runtime task events、complete、fail 和 lease endpoint 的基础处理，支持 Runtime Agent 回传结构化执行事件和终态。
+
 #### Phase 4 - Runtime Agent Control Plane 集成 (2026-05-29)
 
 - 添加 Runtime Agent Control Plane 客户端 (`apps/runtime-agent/src/controlplane/`)

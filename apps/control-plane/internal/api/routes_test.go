@@ -81,6 +81,10 @@ func (s *routeTaskService) ListTasks(ctx context.Context, filter task.ListTasksF
 	return []*task.Task{}, nil
 }
 
+func (s *routeTaskService) AppendTaskEvent(ctx context.Context, req task.AppendTaskEventRequest) (*task.TaskEvent, error) {
+	return &task.TaskEvent{TaskID: req.TaskID, EventType: req.EventType, Payload: req.Payload}, nil
+}
+
 func (s *routeTaskService) UpdateTaskStatus(ctx context.Context, req task.UpdateTaskStatusRequest) (*task.Task, error) {
 	return &task.Task{ID: req.TaskID, Status: req.NewStatus}, nil
 }

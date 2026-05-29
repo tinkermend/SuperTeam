@@ -54,6 +54,17 @@ type Task struct {
 	UpdatedAt      time.Time
 }
 
+// TaskEvent represents a structured runtime event for a task.
+type TaskEvent struct {
+	ID             int64
+	TaskID         int64
+	ExecutionID    *int64
+	EventType      string
+	SequenceNumber int32
+	Payload        []byte
+	CreatedAt      time.Time
+}
+
 // CreateTaskRequest represents a request to create a task
 type CreateTaskRequest struct {
 	Title         string
@@ -66,12 +77,32 @@ type CreateTaskRequest struct {
 	Priority      int32
 }
 
+// AppendTaskEventRequest represents a request to append a runtime task event.
+type AppendTaskEventRequest struct {
+	TaskID      int64
+	ExecutionID *int64
+	EventType   string
+	Payload     []byte
+}
+
 // UpdateTaskStatusRequest represents a request to update task status
 type UpdateTaskStatusRequest struct {
 	TaskID    int64
 	NewStatus TaskStatus
 	ChangedBy *string
 	Reason    *string
+}
+
+// CompleteTaskRequest represents a runtime task completion request.
+type CompleteTaskRequest struct {
+	TaskID int64
+	Result []byte
+}
+
+// FailTaskRequest represents a runtime task failure request.
+type FailTaskRequest struct {
+	TaskID int64
+	Error  string
 }
 
 // AssignTaskRequest represents a request to assign a task to a node

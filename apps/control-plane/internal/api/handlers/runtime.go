@@ -185,19 +185,129 @@ func (h *RuntimeHandler) assignTask(ctx context.Context, w http.ResponseWriter, 
 }
 
 func (h *RuntimeHandler) PushEvents(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "runtime task event ingestion is not implemented yet", http.StatusNotImplemented)
+	taskID, ok := taskIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		Events []struct {
+			Type    string          `json:"type"`
+			Payload json.RawMessage `json:"payload"`
+		} `json:"events"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	for _, event := range req.Events {
+		if event.Type == "" {
+			http.Error(w, "event type is required", http.StatusBadRequest)
+			return
+		}
+		if len(event.Payload) == 0 {
+			http.Error(w, "event payload is required", http.StatusBadRequest)
+			return
+		}
+		if _, err := h.taskService.AppendTaskEvent(r.Context(), task.AppendTaskEventRequest{
+			TaskID:    taskID,
+			EventType: event.Type,
+			Payload:   []byte(event.Payload),
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (h *RuntimeHandler) CompleteTask(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "runtime task completion is not implemented yet", http.StatusNotImplemented)
+	taskID, ok := taskIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if r.Body != nil {
+		var req struct {
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	reason := "runtime completed task"
+	updatedTask, err := h.taskService.UpdateTaskStatus(r.Context(), task.UpdateTaskStatusRequest{
+		TaskID:    taskID,
+		NewStatus: task.TaskStatusCompleted,
+		Reason:    &reason,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(updatedTask)
 }
 
 func (h *RuntimeHandler) FailTask(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "runtime task failure reporting is not implemented yet", http.StatusNotImplemented)
+	taskID, ok := taskIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Error == "" {
+		http.Error(w, "error is required", http.StatusBadRequest)
+		return
+	}
+
+	updatedTask, err := h.taskService.UpdateTaskStatus(r.Context(), task.UpdateTaskStatusRequest{
+		TaskID:    taskID,
+		NewStatus: task.TaskStatusFailed,
+		Reason:    &req.Error,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(updatedTask)
 }
 
 func (h *RuntimeHandler) RenewLease(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "runtime task lease renewal is not implemented yet", http.StatusNotImplemented)
+	taskID, ok := taskIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	if _, err := h.taskService.GetTask(r.Context(), taskID); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Persistent lease records are not modeled in this foundation stage.
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func taskIDFromRequest(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid task id", http.StatusBadRequest)
+		return 0, false
+	}
+	return id, true
 }
 
 func bestClaimCandidate(current *task.Task, candidate *task.Task) *task.Task {

@@ -10,13 +10,15 @@ import (
 
 // Mock repository for testing
 type mockRepository struct {
-	createTaskFunc          func(ctx context.Context, params CreateTaskParams) (TaskRecord, error)
-	getTaskFunc             func(ctx context.Context, id int64) (TaskRecord, error)
-	listTasksFunc           func(ctx context.Context, params ListTasksParams) ([]TaskRecord, error)
-	updateTaskStatusFunc    func(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error)
-	updateTaskFunc          func(ctx context.Context, params UpdateTaskParams) (TaskRecord, error)
-	deleteTaskFunc          func(ctx context.Context, id int64) error
-	createTaskStateHistoryFunc  func(ctx context.Context, params CreateTaskStateHistoryParams) error
+	createTaskFunc                 func(ctx context.Context, params CreateTaskParams) (TaskRecord, error)
+	getTaskFunc                    func(ctx context.Context, id int64) (TaskRecord, error)
+	listTasksFunc                  func(ctx context.Context, params ListTasksParams) ([]TaskRecord, error)
+	updateTaskStatusFunc           func(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error)
+	updateTaskFunc                 func(ctx context.Context, params UpdateTaskParams) (TaskRecord, error)
+	deleteTaskFunc                 func(ctx context.Context, id int64) error
+	createTaskStateHistoryFunc     func(ctx context.Context, params CreateTaskStateHistoryParams) error
+	createTaskEventFunc            func(ctx context.Context, params CreateTaskEventParams) (TaskEventRecord, error)
+	getLatestTaskEventSequenceFunc func(ctx context.Context, taskID int64) (int32, error)
 }
 
 func (m *mockRepository) CreateTask(ctx context.Context, params CreateTaskParams) (TaskRecord, error) {
@@ -68,6 +70,20 @@ func (m *mockRepository) CreateTaskStateHistory(ctx context.Context, params Crea
 	return nil // State history is optional
 }
 
+func (m *mockRepository) CreateTaskEvent(ctx context.Context, params CreateTaskEventParams) (TaskEventRecord, error) {
+	if m.createTaskEventFunc != nil {
+		return m.createTaskEventFunc(ctx, params)
+	}
+	return TaskEventRecord{}, errors.New("not implemented")
+}
+
+func (m *mockRepository) GetLatestTaskEventSequence(ctx context.Context, taskID int64) (int32, error) {
+	if m.getLatestTaskEventSequenceFunc != nil {
+		return m.getLatestTaskEventSequenceFunc(ctx, taskID)
+	}
+	return 0, errors.New("not implemented")
+}
+
 // Test NewService
 func TestNewServiceRequiresRepository(t *testing.T) {
 	if _, err := NewService(nil); err == nil {
@@ -82,6 +98,64 @@ func TestNewServiceAcceptsRepository(t *testing.T) {
 	}
 	if service == nil {
 		t.Fatal("expected service")
+	}
+}
+
+func TestServiceAppendTaskEvent(t *testing.T) {
+	ctx := context.Background()
+	payload := []byte(`{"delta":"hello"}`)
+
+	repo := &mockRepository{
+		getLatestTaskEventSequenceFunc: func(ctx context.Context, taskID int64) (int32, error) {
+			if taskID != 42 {
+				t.Fatalf("expected latest sequence lookup for task 42, got %d", taskID)
+			}
+			return 0, nil
+		},
+		createTaskEventFunc: func(ctx context.Context, params CreateTaskEventParams) (TaskEventRecord, error) {
+			if params.TaskID != 42 {
+				t.Fatalf("expected task id 42, got %d", params.TaskID)
+			}
+			if params.EventType != "text_delta" {
+				t.Fatalf("expected event type text_delta, got %q", params.EventType)
+			}
+			if params.SequenceNumber != 1 {
+				t.Fatalf("expected sequence number 1, got %d", params.SequenceNumber)
+			}
+			if string(params.Payload) != string(payload) {
+				t.Fatalf("expected payload %s, got %s", payload, params.Payload)
+			}
+			return TaskEventRecord{
+				TaskID:         params.TaskID,
+				EventType:      params.EventType,
+				SequenceNumber: params.SequenceNumber,
+				Payload:        params.Payload,
+				CreatedAt:      pgtype.Timestamptz{Valid: true},
+			}, nil
+		},
+	}
+	service, _ := NewService(repo)
+
+	event, err := service.AppendTaskEvent(ctx, AppendTaskEventRequest{
+		TaskID:    42,
+		EventType: "text_delta",
+		Payload:   payload,
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event.TaskID != 42 {
+		t.Fatalf("expected task id 42, got %d", event.TaskID)
+	}
+	if event.EventType != "text_delta" {
+		t.Fatalf("expected event type text_delta, got %q", event.EventType)
+	}
+	if event.SequenceNumber != 1 {
+		t.Fatalf("expected sequence number 1, got %d", event.SequenceNumber)
+	}
+	if string(event.Payload) != string(payload) {
+		t.Fatalf("expected payload %s, got %s", payload, event.Payload)
 	}
 }
 

@@ -16,15 +16,15 @@ func NewPgRepository(q *queries.Queries) Repository {
 
 func (r *PgRepository) CreateTask(ctx context.Context, params CreateTaskParams) (TaskRecord, error) {
 	task, err := r.q.CreateTask(ctx, queries.CreateTaskParams{
-		Title:          params.Title,
-		Description:    params.Description,
-		Status:         params.Status,
-		Priority:       params.Priority,
-		ProviderType:   params.ProviderType,
-		CreatorID:      params.CreatorID,
-		TargetNodeID:   params.TargetNodeID,
-		WorkspacePath:  params.WorkspacePath,
-		Params:         params.Params,
+		Title:         params.Title,
+		Description:   params.Description,
+		Status:        params.Status,
+		Priority:      params.Priority,
+		ProviderType:  params.ProviderType,
+		CreatorID:     params.CreatorID,
+		TargetNodeID:  params.TargetNodeID,
+		WorkspacePath: params.WorkspacePath,
+		Params:        params.Params,
 	})
 	if err != nil {
 		return TaskRecord{}, err
@@ -170,4 +170,30 @@ func (r *PgRepository) CreateTaskStateHistory(ctx context.Context, params Create
 		Reason:     params.Reason,
 	})
 	return err
+}
+
+func (r *PgRepository) CreateTaskEvent(ctx context.Context, params CreateTaskEventParams) (TaskEventRecord, error) {
+	event, err := r.q.CreateTaskEvent(ctx, queries.CreateTaskEventParams{
+		TaskID:         params.TaskID,
+		ExecutionID:    params.ExecutionID,
+		EventType:      params.EventType,
+		SequenceNumber: params.SequenceNumber,
+		Payload:        params.Payload,
+	})
+	if err != nil {
+		return TaskEventRecord{}, err
+	}
+	return TaskEventRecord{
+		ID:             event.ID,
+		TaskID:         event.TaskID,
+		ExecutionID:    event.ExecutionID,
+		EventType:      event.EventType,
+		SequenceNumber: event.SequenceNumber,
+		Payload:        event.Payload,
+		CreatedAt:      event.CreatedAt,
+	}, nil
+}
+
+func (r *PgRepository) GetLatestTaskEventSequence(ctx context.Context, taskID int64) (int32, error) {
+	return r.q.GetLatestTaskEventSequence(ctx, taskID)
 }

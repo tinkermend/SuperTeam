@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -8,10 +9,118 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
 )
+
+func TestPushEventsPersistsTypedEvent(t *testing.T) {
+	taskService := &claimTaskService{}
+	handler := NewRuntimeHandler(&claimRuntimeService{}, taskService, &claimPoller{})
+
+	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/events", "/api/v1/runtime/tasks/{id}/events", []byte(`{"events":[{"type":"text_delta","payload":{"delta":"hello"}}]}`))
+	response := httptest.NewRecorder()
+
+	handler.PushEvents(response, request)
+
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d: %s", response.Code, response.Body.String())
+	}
+	if len(taskService.appendedEvents) != 1 {
+		t.Fatalf("expected 1 appended event, got %d", len(taskService.appendedEvents))
+	}
+	event := taskService.appendedEvents[0]
+	if event.TaskID != 42 {
+		t.Fatalf("expected task id 42, got %d", event.TaskID)
+	}
+	if event.EventType != "text_delta" {
+		t.Fatalf("expected event type text_delta, got %q", event.EventType)
+	}
+	if string(event.Payload) != `{"delta":"hello"}` {
+		t.Fatalf("expected JSON payload, got %s", event.Payload)
+	}
+}
+
+func TestCompleteTaskTransitionsToCompleted(t *testing.T) {
+	completedTask := &task.Task{ID: 42, Status: task.TaskStatusCompleted}
+	taskService := &claimTaskService{updatedTask: completedTask}
+	handler := NewRuntimeHandler(&claimRuntimeService{}, taskService, &claimPoller{})
+
+	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/complete", "/api/v1/runtime/tasks/{id}/complete", []byte(`{"result":{"ok":true}}`))
+	response := httptest.NewRecorder()
+
+	handler.CompleteTask(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if taskService.updatedStatus == nil || *taskService.updatedStatus != task.TaskStatusCompleted {
+		t.Fatalf("expected completed status update, got %#v", taskService.updatedStatus)
+	}
+	if taskService.updateReason == nil || *taskService.updateReason != "runtime completed task" {
+		t.Fatalf("expected runtime completed task reason, got %#v", taskService.updateReason)
+	}
+
+	var body task.Task
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("expected task JSON response: %v", err)
+	}
+	if body.ID != 42 || body.Status != task.TaskStatusCompleted {
+		t.Fatalf("expected completed task 42, got %#v", body)
+	}
+}
+
+func TestFailTaskRejectsMissingError(t *testing.T) {
+	handler := NewRuntimeHandler(&claimRuntimeService{}, &claimTaskService{}, &claimPoller{})
+
+	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/fail", "/api/v1/runtime/tasks/{id}/fail", []byte(`{}`))
+	response := httptest.NewRecorder()
+
+	handler.FailTask(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestFailTaskAcceptsValidError(t *testing.T) {
+	failedTask := &task.Task{ID: 42, Status: task.TaskStatusFailed}
+	taskService := &claimTaskService{updatedTask: failedTask}
+	handler := NewRuntimeHandler(&claimRuntimeService{}, taskService, &claimPoller{})
+
+	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/fail", "/api/v1/runtime/tasks/{id}/fail", []byte(`{"error":"provider exited"}`))
+	response := httptest.NewRecorder()
+
+	handler.FailTask(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if taskService.updatedStatus == nil || *taskService.updatedStatus != task.TaskStatusFailed {
+		t.Fatalf("expected failed status update, got %#v", taskService.updatedStatus)
+	}
+	if taskService.updateReason == nil || *taskService.updateReason != "provider exited" {
+		t.Fatalf("expected provider error reason, got %#v", taskService.updateReason)
+	}
+}
+
+func TestRenewLeaseReturnsNoContentWhenTaskExists(t *testing.T) {
+	taskService := &claimTaskService{taskByID: map[int64]*task.Task{42: {ID: 42}}}
+	handler := NewRuntimeHandler(&claimRuntimeService{}, taskService, &claimPoller{})
+
+	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/lease", "/api/v1/runtime/tasks/{id}/lease", nil)
+	response := httptest.NewRecorder()
+
+	handler.RenewLease(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d: %s", response.Code, response.Body.String())
+	}
+	if taskService.gotTaskID != 42 {
+		t.Fatalf("expected task lookup for 42, got %d", taskService.gotTaskID)
+	}
+}
 
 func TestClaimTaskAssignsFirstSupportedProviderTask(t *testing.T) {
 	node := &runtime.Node{
@@ -150,6 +259,12 @@ type claimTaskService struct {
 	tasksByProvider map[string][]*task.Task
 	listedProviders []string
 	assignedTaskID  int64
+	appendedEvents  []task.AppendTaskEventRequest
+	updatedStatus   *task.TaskStatus
+	updateReason    *string
+	updatedTask     *task.Task
+	taskByID        map[int64]*task.Task
+	gotTaskID       int64
 }
 
 func (s *claimTaskService) CreateTask(ctx context.Context, req task.CreateTaskRequest) (*task.Task, error) {
@@ -157,7 +272,11 @@ func (s *claimTaskService) CreateTask(ctx context.Context, req task.CreateTaskRe
 }
 
 func (s *claimTaskService) GetTask(ctx context.Context, taskID int64) (*task.Task, error) {
-	return nil, nil
+	s.gotTaskID = taskID
+	if s.taskByID != nil {
+		return s.taskByID[taskID], nil
+	}
+	return &task.Task{ID: taskID}, nil
 }
 
 func (s *claimTaskService) ListTasks(ctx context.Context, filter task.ListTasksFilter) ([]*task.Task, error) {
@@ -170,7 +289,12 @@ func (s *claimTaskService) ListTasks(ctx context.Context, filter task.ListTasksF
 }
 
 func (s *claimTaskService) UpdateTaskStatus(ctx context.Context, req task.UpdateTaskStatusRequest) (*task.Task, error) {
-	return nil, nil
+	s.updatedStatus = &req.NewStatus
+	s.updateReason = req.Reason
+	if s.updatedTask != nil {
+		return s.updatedTask, nil
+	}
+	return &task.Task{ID: req.TaskID, Status: req.NewStatus}, nil
 }
 
 func (s *claimTaskService) CancelTask(ctx context.Context, taskID int64, cancelledBy *string, reason *string) (*task.Task, error) {
@@ -189,9 +313,28 @@ func (s *claimTaskService) AssignTask(ctx context.Context, req task.AssignTaskRe
 	return &task.Task{ID: req.TaskID}, nil
 }
 
+func (s *claimTaskService) AppendTaskEvent(ctx context.Context, req task.AppendTaskEventRequest) (*task.TaskEvent, error) {
+	s.appendedEvents = append(s.appendedEvents, req)
+	return &task.TaskEvent{
+		TaskID:         req.TaskID,
+		EventType:      req.EventType,
+		SequenceNumber: int32(len(s.appendedEvents)),
+		Payload:        req.Payload,
+	}, nil
+}
+
 type claimPoller struct{}
 
 func (p *claimPoller) WaitForTask(ctx context.Context, nodeID string) (*task.Task, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
+}
+
+func runtimeRequest(method string, target string, routePattern string, body []byte) *http.Request {
+	request := httptest.NewRequest(method, target, bytes.NewReader(body))
+	routeContext := chi.NewRouteContext()
+	routeContext.Routes = chi.NewRouter()
+	routeContext.RoutePatterns = []string{routePattern}
+	routeContext.URLParams.Add("id", "42")
+	return request.WithContext(context.WithValue(request.Context(), chi.RouteCtxKey, routeContext))
 }

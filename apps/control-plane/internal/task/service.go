@@ -9,9 +9,9 @@ import (
 )
 
 var (
-	ErrTaskNotFound       = errors.New("task not found")
-	ErrInvalidStatus      = errors.New("invalid task status")
-	ErrInvalidTransition  = errors.New("invalid state transition")
+	ErrTaskNotFound        = errors.New("task not found")
+	ErrInvalidStatus       = errors.New("invalid task status")
+	ErrInvalidTransition   = errors.New("invalid state transition")
 	ErrTaskAlreadyAssigned = errors.New("task already assigned")
 )
 
@@ -102,6 +102,37 @@ func (s *Service) ListTasks(ctx context.Context, filter ListTasksFilter) ([]*Tas
 	}
 
 	return tasks, nil
+}
+
+// AppendTaskEvent appends a structured runtime event to a task.
+func (s *Service) AppendTaskEvent(ctx context.Context, req AppendTaskEventRequest) (*TaskEvent, error) {
+	if req.TaskID <= 0 {
+		return nil, errors.New("task_id must be positive")
+	}
+	if req.EventType == "" {
+		return nil, errors.New("event_type is required")
+	}
+	if len(req.Payload) == 0 {
+		return nil, errors.New("payload is required")
+	}
+
+	latestSequence, err := s.repository.GetLatestTaskEventSequence(ctx, req.TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest task event sequence: %w", err)
+	}
+
+	record, err := s.repository.CreateTaskEvent(ctx, CreateTaskEventParams{
+		TaskID:         req.TaskID,
+		ExecutionID:    int8FromInt64(req.ExecutionID),
+		EventType:      req.EventType,
+		SequenceNumber: latestSequence + 1,
+		Payload:        req.Payload,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create task event: %w", err)
+	}
+
+	return s.recordToTaskEvent(record), nil
 }
 
 // UpdateTaskStatus updates the status of a task with state machine validation
@@ -236,6 +267,18 @@ func (s *Service) recordToTask(record TaskRecord) *Task {
 		Priority:       record.Priority,
 		CreatedAt:      timeFromTimestamptz(record.CreatedAt),
 		UpdatedAt:      timeFromTimestamptz(record.UpdatedAt),
+	}
+}
+
+func (s *Service) recordToTaskEvent(record TaskEventRecord) *TaskEvent {
+	return &TaskEvent{
+		ID:             record.ID,
+		TaskID:         record.TaskID,
+		ExecutionID:    int64FromInt8(record.ExecutionID),
+		EventType:      record.EventType,
+		SequenceNumber: record.SequenceNumber,
+		Payload:        record.Payload,
+		CreatedAt:      timeFromTimestamptz(record.CreatedAt),
 	}
 }
 
