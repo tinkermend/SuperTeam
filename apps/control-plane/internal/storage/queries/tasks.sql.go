@@ -11,6 +11,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const CancelTask = `-- name: CancelTask :one
+UPDATE tasks
+SET status = 'cancelled', updated_at = NOW()
+WHERE id = $1
+RETURNING id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, created_at, updated_at
+`
+
+func (q *Queries) CancelTask(ctx context.Context, id int64) (Task, error) {
+	row := q.db.QueryRow(ctx, CancelTask, id)
+	var i Task
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.CreatorID,
+		&i.ProviderType,
+		&i.TargetNodeID,
+		&i.AssignedNodeID,
+		&i.Status,
+		&i.WorkspacePath,
+		&i.Params,
+		&i.Priority,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const CreateTask = `-- name: CreateTask :one
 INSERT INTO tasks (
     title,
@@ -70,6 +98,49 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 	return i, err
 }
 
+const CreateTaskArtifact = `-- name: CreateTaskArtifact :one
+INSERT INTO task_artifacts (
+    task_id,
+    execution_id,
+    artifact_type,
+    name,
+    storage_url
+) VALUES (
+    $1, $2, $3, $4, $5
+) RETURNING id, task_id, execution_id, artifact_type, name, storage_url, size_bytes, metadata, created_at
+`
+
+type CreateTaskArtifactParams struct {
+	TaskID       int64       `json:"task_id"`
+	ExecutionID  pgtype.Int8 `json:"execution_id"`
+	ArtifactType string      `json:"artifact_type"`
+	Name         string      `json:"name"`
+	StorageUrl   string      `json:"storage_url"`
+}
+
+func (q *Queries) CreateTaskArtifact(ctx context.Context, arg CreateTaskArtifactParams) (TaskArtifact, error) {
+	row := q.db.QueryRow(ctx, CreateTaskArtifact,
+		arg.TaskID,
+		arg.ExecutionID,
+		arg.ArtifactType,
+		arg.Name,
+		arg.StorageUrl,
+	)
+	var i TaskArtifact
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.ExecutionID,
+		&i.ArtifactType,
+		&i.Name,
+		&i.StorageUrl,
+		&i.SizeBytes,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const CreateTaskEvent = `-- name: CreateTaskEvent :one
 INSERT INTO task_events (
     task_id,
@@ -111,7 +182,41 @@ func (q *Queries) CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams
 	return i, err
 }
 
-const CreateTaskStateHistory = `-- name: CreateTaskStateHistory :exec
+const CreateTaskExecution = `-- name: CreateTaskExecution :one
+INSERT INTO task_executions (
+    task_id,
+    node_id,
+    status
+) VALUES (
+    $1, $2, $3
+) RETURNING id, task_id, node_id, provider_session_id, status, started_at, completed_at, result, error_message, created_at
+`
+
+type CreateTaskExecutionParams struct {
+	TaskID int64  `json:"task_id"`
+	NodeID string `json:"node_id"`
+	Status string `json:"status"`
+}
+
+func (q *Queries) CreateTaskExecution(ctx context.Context, arg CreateTaskExecutionParams) (TaskExecution, error) {
+	row := q.db.QueryRow(ctx, CreateTaskExecution, arg.TaskID, arg.NodeID, arg.Status)
+	var i TaskExecution
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.NodeID,
+		&i.ProviderSessionID,
+		&i.Status,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const CreateTaskStateHistory = `-- name: CreateTaskStateHistory :one
 INSERT INTO task_state_history (
     task_id,
     from_status,
@@ -120,7 +225,7 @@ INSERT INTO task_state_history (
     reason
 ) VALUES (
     $1, $2, $3, $4, $5
-)
+) RETURNING id, task_id, from_status, to_status, changed_by, reason, created_at
 `
 
 type CreateTaskStateHistoryParams struct {
@@ -131,15 +236,25 @@ type CreateTaskStateHistoryParams struct {
 	Reason     pgtype.Text `json:"reason"`
 }
 
-func (q *Queries) CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) error {
-	_, err := q.db.Exec(ctx, CreateTaskStateHistory,
+func (q *Queries) CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) (TaskStateHistory, error) {
+	row := q.db.QueryRow(ctx, CreateTaskStateHistory,
 		arg.TaskID,
 		arg.FromStatus,
 		arg.ToStatus,
 		arg.ChangedBy,
 		arg.Reason,
 	)
-	return err
+	var i TaskStateHistory
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.FromStatus,
+		&i.ToStatus,
+		&i.ChangedBy,
+		&i.Reason,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const DeleteTask = `-- name: DeleteTask :exec
@@ -149,6 +264,16 @@ WHERE id = $1
 
 func (q *Queries) DeleteTask(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, DeleteTask, id)
+	return err
+}
+
+const DeleteTaskArtifact = `-- name: DeleteTaskArtifact :exec
+DELETE FROM task_artifacts
+WHERE id = $1
+`
+
+func (q *Queries) DeleteTaskArtifact(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, DeleteTaskArtifact, id)
 	return err
 }
 
@@ -163,6 +288,31 @@ func (q *Queries) GetLatestTaskEventSequence(ctx context.Context, taskID int64) 
 	var max_sequence int32
 	err := row.Scan(&max_sequence)
 	return max_sequence, err
+}
+
+const GetLatestTaskExecution = `-- name: GetLatestTaskExecution :one
+SELECT id, task_id, node_id, provider_session_id, status, started_at, completed_at, result, error_message, created_at FROM task_executions
+WHERE task_id = $1
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetLatestTaskExecution(ctx context.Context, taskID int64) (TaskExecution, error) {
+	row := q.db.QueryRow(ctx, GetLatestTaskExecution, taskID)
+	var i TaskExecution
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.NodeID,
+		&i.ProviderSessionID,
+		&i.Status,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const GetTask = `-- name: GetTask :one
@@ -187,6 +337,28 @@ func (q *Queries) GetTask(ctx context.Context, id int64) (Task, error) {
 		&i.Priority,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const GetTaskArtifact = `-- name: GetTaskArtifact :one
+SELECT id, task_id, execution_id, artifact_type, name, storage_url, size_bytes, metadata, created_at FROM task_artifacts
+WHERE id = $1
+`
+
+func (q *Queries) GetTaskArtifact(ctx context.Context, id int64) (TaskArtifact, error) {
+	row := q.db.QueryRow(ctx, GetTaskArtifact, id)
+	var i TaskArtifact
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.ExecutionID,
+		&i.ArtifactType,
+		&i.Name,
+		&i.StorageUrl,
+		&i.SizeBytes,
+		&i.Metadata,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -216,6 +388,112 @@ func (q *Queries) GetTaskEvent(ctx context.Context, arg GetTaskEventParams) (Tas
 	return i, err
 }
 
+const GetTaskExecution = `-- name: GetTaskExecution :one
+SELECT id, task_id, node_id, provider_session_id, status, started_at, completed_at, result, error_message, created_at FROM task_executions
+WHERE id = $1
+`
+
+func (q *Queries) GetTaskExecution(ctx context.Context, id int64) (TaskExecution, error) {
+	row := q.db.QueryRow(ctx, GetTaskExecution, id)
+	var i TaskExecution
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.NodeID,
+		&i.ProviderSessionID,
+		&i.Status,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const ListPendingTasks = `-- name: ListPendingTasks :many
+SELECT id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, created_at, updated_at FROM tasks
+WHERE status = 'pending'
+  AND ($1::varchar IS NULL OR provider_type = $1)
+ORDER BY priority DESC, created_at ASC
+LIMIT $2
+`
+
+type ListPendingTasksParams struct {
+	ProviderType pgtype.Text `json:"provider_type"`
+	Limit        int32       `json:"limit"`
+}
+
+func (q *Queries) ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error) {
+	rows, err := q.db.Query(ctx, ListPendingTasks, arg.ProviderType, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Task{}
+	for rows.Next() {
+		var i Task
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.CreatorID,
+			&i.ProviderType,
+			&i.TargetNodeID,
+			&i.AssignedNodeID,
+			&i.Status,
+			&i.WorkspacePath,
+			&i.Params,
+			&i.Priority,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListTaskArtifacts = `-- name: ListTaskArtifacts :many
+SELECT id, task_id, execution_id, artifact_type, name, storage_url, size_bytes, metadata, created_at FROM task_artifacts
+WHERE task_id = $1
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListTaskArtifacts(ctx context.Context, taskID int64) ([]TaskArtifact, error) {
+	rows, err := q.db.Query(ctx, ListTaskArtifacts, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskArtifact{}
+	for rows.Next() {
+		var i TaskArtifact
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.ExecutionID,
+			&i.ArtifactType,
+			&i.Name,
+			&i.StorageUrl,
+			&i.SizeBytes,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListTaskEvents = `-- name: ListTaskEvents :many
 SELECT id, task_id, execution_id, event_type, sequence_number, payload, created_at FROM task_events
 WHERE task_id = $1
@@ -238,6 +516,77 @@ func (q *Queries) ListTaskEvents(ctx context.Context, taskID int64) ([]TaskEvent
 			&i.EventType,
 			&i.SequenceNumber,
 			&i.Payload,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListTaskExecutions = `-- name: ListTaskExecutions :many
+SELECT id, task_id, node_id, provider_session_id, status, started_at, completed_at, result, error_message, created_at FROM task_executions
+WHERE task_id = $1
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListTaskExecutions(ctx context.Context, taskID int64) ([]TaskExecution, error) {
+	rows, err := q.db.Query(ctx, ListTaskExecutions, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskExecution{}
+	for rows.Next() {
+		var i TaskExecution
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.NodeID,
+			&i.ProviderSessionID,
+			&i.Status,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.Result,
+			&i.ErrorMessage,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListTaskStateHistory = `-- name: ListTaskStateHistory :many
+SELECT id, task_id, from_status, to_status, changed_by, reason, created_at FROM task_state_history
+WHERE task_id = $1
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListTaskStateHistory(ctx context.Context, taskID int64) ([]TaskStateHistory, error) {
+	rows, err := q.db.Query(ctx, ListTaskStateHistory, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskStateHistory{}
+	for rows.Next() {
+		var i TaskStateHistory
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.FromStatus,
+			&i.ToStatus,
+			&i.ChangedBy,
+			&i.Reason,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -366,6 +715,69 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 	return i, err
 }
 
+const UpdateTaskAssignment = `-- name: UpdateTaskAssignment :one
+UPDATE tasks
+SET assigned_node_id = $2, status = 'claimed', updated_at = NOW()
+WHERE id = $1
+RETURNING id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, created_at, updated_at
+`
+
+type UpdateTaskAssignmentParams struct {
+	ID             int64       `json:"id"`
+	AssignedNodeID pgtype.Text `json:"assigned_node_id"`
+}
+
+func (q *Queries) UpdateTaskAssignment(ctx context.Context, arg UpdateTaskAssignmentParams) (Task, error) {
+	row := q.db.QueryRow(ctx, UpdateTaskAssignment, arg.ID, arg.AssignedNodeID)
+	var i Task
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.CreatorID,
+		&i.ProviderType,
+		&i.TargetNodeID,
+		&i.AssignedNodeID,
+		&i.Status,
+		&i.WorkspacePath,
+		&i.Params,
+		&i.Priority,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const UpdateTaskExecution = `-- name: UpdateTaskExecution :one
+UPDATE task_executions
+SET status = $2, completed_at = NOW(), updated_at = NOW()
+WHERE id = $1
+RETURNING id, task_id, node_id, provider_session_id, status, started_at, completed_at, result, error_message, created_at
+`
+
+type UpdateTaskExecutionParams struct {
+	ID     int64  `json:"id"`
+	Status string `json:"status"`
+}
+
+func (q *Queries) UpdateTaskExecution(ctx context.Context, arg UpdateTaskExecutionParams) (TaskExecution, error) {
+	row := q.db.QueryRow(ctx, UpdateTaskExecution, arg.ID, arg.Status)
+	var i TaskExecution
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.NodeID,
+		&i.ProviderSessionID,
+		&i.Status,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const UpdateTaskStatus = `-- name: UpdateTaskStatus :one
 UPDATE tasks
 SET status = $2, updated_at = NOW()
@@ -380,6 +792,39 @@ type UpdateTaskStatusParams struct {
 
 func (q *Queries) UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusParams) (Task, error) {
 	row := q.db.QueryRow(ctx, UpdateTaskStatus, arg.ID, arg.Status)
+	var i Task
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.CreatorID,
+		&i.ProviderType,
+		&i.TargetNodeID,
+		&i.AssignedNodeID,
+		&i.Status,
+		&i.WorkspacePath,
+		&i.Params,
+		&i.Priority,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const UpdateTaskWorkspace = `-- name: UpdateTaskWorkspace :one
+UPDATE tasks
+SET workspace_path = $2, updated_at = NOW()
+WHERE id = $1
+RETURNING id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, created_at, updated_at
+`
+
+type UpdateTaskWorkspaceParams struct {
+	ID            int64       `json:"id"`
+	WorkspacePath pgtype.Text `json:"workspace_path"`
+}
+
+func (q *Queries) UpdateTaskWorkspace(ctx context.Context, arg UpdateTaskWorkspaceParams) (Task, error) {
+	row := q.db.QueryRow(ctx, UpdateTaskWorkspace, arg.ID, arg.WorkspacePath)
 	var i Task
 	err := row.Scan(
 		&i.ID,
