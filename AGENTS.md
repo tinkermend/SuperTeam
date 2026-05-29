@@ -29,6 +29,33 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 - 图标：lucide-react
 - 测试：Vitest、Playwright、Go test + testify、Rust cargo test、Temporal workflow test suite
 
+## 数据库表命名规范
+
+**规范原则**：
+- 使用模块前缀分组：`{module}_{entity}` 格式
+- 核心业务表可简化前缀（如 `tasks` 而非 `task_tasks`）
+- 所有表名使用小写 + 下划线（snake_case）
+- 主键统一命名为 `id`
+- 时间戳字段统一使用 `created_at`, `updated_at`, `deleted_at`
+- 外键字段命名为 `{referenced_table}_id`
+
+**模块前缀定义**：
+- `runtime_*` - Runtime Agent 节点管理
+- `task_*` 或 `tasks` - 任务管理（核心表简化为 `tasks`）
+- `workflow_*` - 工作流编排
+- `approval_*` - 审批流程
+- `audit_*` - 审计日志
+- `auth_*` - 认证授权
+- `tenant_*` - 租户管理
+- `employee_*` - 数字员工定义
+- `capability_*` - 外部能力注册
+
+**字段类型约定**：
+- ID 使用 `BIGSERIAL` 或 `UUID`（MVP 使用 BIGSERIAL）
+- 时间戳使用 `TIMESTAMPTZ`
+- JSON 数据使用 `JSONB`
+- 枚举使用 `VARCHAR` + 应用层校验（避免 PostgreSQL ENUM 的迁移复杂度）
+
 ## 目录边界
 
 ```text
@@ -114,9 +141,9 @@ Go 应用目录统一使用 `cmd/<name>/` + `internal/` 的结构。Control Plan
 - 每次功能开发完成写`CHANGELOG.md` 记录变更日志
 - 后续 Web 页面开发、UI 组件新增或视觉改造时，参考 `DESIGN.md` 的设计风格、基础组件风格和实施检查清单。
 - 不要盲目猜测,如果有不确定的地方与人类进行沟通
-- 超过5个文件的修改创建 worktree 避免污染主分支, 开发完成后 合并 worktree 到主分支, 并删除 worktree
+- 超过5个文件的修改创建 worktree 分支进行开发, worktree 到主分支, 并删除 worktree
 - 开发完成基于开发的功能做好必要的测试
+- 评估任务开发复杂度,对于复杂任务使用 subagent 模式开发息 见 docs/database/conn_info.md
+- 核心数据完整性应该让 PostgreSQL 兜底；复杂状态机、权限、审批和跨系统一
+  致性放应用层
 
-## 必要信息
-
-- 数据库与redis 连接信息 见 docs/database/conn_info.md
