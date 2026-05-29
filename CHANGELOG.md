@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Foundation fake provider 端到端验收 (2026-05-29)
 
 - 新增 fake provider 风格的最小端到端验收，覆盖任务创建、Runtime 注册、claim、事件回传和完成状态。
+- 对齐 Runtime Agent 客户端的节点注册/心跳响应模型，移除未在 Control Plane contract 中承诺的内部数据库 `id` 依赖。
 
 #### Foundation Hardening 设计 Spec (2026-05-29)
 

@@ -35,7 +35,6 @@ pub struct RegisterNodeRequest {
 /// Register node response
 #[derive(Debug, Clone, Deserialize)]
 pub struct RegisterNodeResponse {
-    pub id: i64,
     pub node_id: String,
     pub name: String,
     pub supported_providers: Vec<String>,
@@ -58,7 +57,6 @@ pub struct HeartbeatRequest {
 /// Heartbeat response
 #[derive(Debug, Clone, Deserialize)]
 pub struct HeartbeatResponse {
-    pub id: i64,
     pub node_id: String,
     pub name: String,
     pub supported_providers: Vec<String>,

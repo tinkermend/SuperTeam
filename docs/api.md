@@ -12,11 +12,7 @@
 
 ### Console API 认证
 
-Console API 使用 Cookie-based Session 认证：
-
-1. 调用 `/api/auth/login` 获取 session cookie
-2. 后续请求自动携带 cookie
-3. 调用 `/api/auth/logout` 清除 session
+当前 foundation 阶段的 product server 尚未挂载 Console session 认证路由；本文档只描述当前已注册的任务和 Runtime API。Cookie-based Session 登录、当前用户和登出接口将在 auth router 接入后补齐。
 
 ### Runtime API 认证
 
@@ -57,87 +53,7 @@ curl http://localhost:8080/health
 
 ## Console API
 
-Console API 供 Web 控制台使用，需要用户认证。
-
-### 认证
-
-#### POST /api/auth/login
-
-用户登录。
-
-**请求体**
-
-```json
-{
-  "username": "admin",
-  "password": "admin"
-}
-```
-
-**响应示例**
-
-```json
-{
-  "user": {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "username": "admin",
-    "status": "active"
-  }
-}
-```
-
-**响应头**
-
-```
-Set-Cookie: session_token=abc123; HttpOnly; Secure; SameSite=Lax
-```
-
-**错误响应**
-
-- `401 Unauthorized`: 用户名或密码错误
-- `403 Forbidden`: 账号已被禁用
-
-#### GET /api/auth/me
-
-获取当前登录用户信息。
-
-**请求示例**
-
-```bash
-curl http://localhost:8080/api/auth/me \
-  -H "Cookie: session_token=abc123"
-```
-
-**响应示例**
-
-```json
-{
-  "user": {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "username": "admin",
-    "status": "active"
-  }
-}
-```
-
-#### POST /api/auth/logout
-
-用户登出。
-
-**请求示例**
-
-```bash
-curl -X POST http://localhost:8080/api/auth/logout \
-  -H "Cookie: session_token=abc123"
-```
-
-**响应示例**
-
-```json
-{
-  "message": "logout success"
-}
-```
+Console API 供 Web 控制台使用。当前 foundation 阶段的 product server 已注册任务管理端点，Console session 认证路由尚未挂载。
 
 ### 任务管理
 
@@ -174,7 +90,7 @@ curl -X POST http://localhost:8080/api/auth/logout \
 
 ```json
 {
-  "id": "550e8400-e29b-41d4-a716-446655440001",
+  "id": 1,
   "title": "分析代码库",
   "description": "分析 SuperTeam 代码库并生成报告",
   "status": "pending",
@@ -472,7 +388,7 @@ Authorization: Bearer <runtime-token>
 
 ```json
 {
-  "id": "550e8400-e29b-41d4-a716-446655440001",
+  "id": 1,
   "title": "分析代码库",
   "status": "claimed",
   "provider_type": "claude-code",
@@ -622,7 +538,6 @@ Authorization: Bearer <runtime-token>
 - `completed`: 已完成
 - `failed`: 失败
 - `cancelled`: 已取消
-- `timeout`: 超时
 
 ### 任务优先级
 
@@ -680,10 +595,7 @@ Authorization: Bearer <runtime-token>
 
 ## 速率限制
 
-- Console API: 每用户 100 请求/分钟
-- Runtime API: 每节点 1000 请求/分钟
-
-超过限制返回 `429 Too Many Requests`。
+当前 foundation server 尚未启用速率限制 middleware。Console/API 配额、Runtime 节点级限流和 `429 Too Many Requests` 响应属于后续策略层能力。
 
 ---
 

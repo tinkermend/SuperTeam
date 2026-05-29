@@ -1,5 +1,6 @@
 use superteam_runtime_agent::controlplane::{
-    ControlPlaneClient, HeartbeatRequest, NodeStatus, RegisterNodeRequest,
+    ControlPlaneClient, HeartbeatRequest, HeartbeatResponse, NodeStatus, RegisterNodeRequest,
+    RegisterNodeResponse,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -39,6 +40,39 @@ fn test_heartbeat_request_serialization() {
     let json = serde_json::to_string(&req).unwrap();
     assert!(json.contains("\"current_load\":2"));
     assert!(json.contains("\"status\":\"online\""));
+}
+
+#[test]
+fn test_register_response_deserializes_control_plane_contract() {
+    let response: RegisterNodeResponse = serde_json::from_value(runtime_node_response()).unwrap();
+
+    assert_eq!(response.node_id, "test-node-001");
+    assert_eq!(response.status, NodeStatus::Online);
+    assert_eq!(response.supported_providers, ["claude-code", "opencode"]);
+}
+
+#[test]
+fn test_heartbeat_response_deserializes_control_plane_contract() {
+    let response: HeartbeatResponse = serde_json::from_value(runtime_node_response()).unwrap();
+
+    assert_eq!(response.node_id, "test-node-001");
+    assert_eq!(response.current_load, 0);
+    assert_eq!(response.status, NodeStatus::Online);
+}
+
+fn runtime_node_response() -> serde_json::Value {
+    serde_json::json!({
+        "node_id": "test-node-001",
+        "name": "Test Node",
+        "supported_providers": ["claude-code", "opencode"],
+        "max_slots": 5,
+        "current_load": 0,
+        "status": "online",
+        "metadata": null,
+        "last_heartbeat_at": null,
+        "created_at": "2026-05-29T00:00:00Z",
+        "updated_at": "2026-05-29T00:00:00Z"
+    })
 }
 
 // Integration tests that require a running Control Plane server
