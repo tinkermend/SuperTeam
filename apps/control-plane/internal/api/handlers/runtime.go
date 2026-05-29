@@ -127,22 +127,28 @@ func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	pendingStatus := task.TaskStatusPending
+	var candidate *task.Task
 	for _, provider := range node.SupportedProviders {
 		provider := provider
 		tasks, err := h.taskService.ListTasks(ctx, task.ListTasksFilter{
 			Status:       &pendingStatus,
 			ProviderType: &provider,
-			Limit:        1,
+			Limit:        10,
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		if len(tasks) > 0 {
-			h.assignTask(ctx, w, tasks[0], nodeID)
-			return
+		for _, t := range tasks {
+			if bestClaimCandidate(candidate, t) == t {
+				candidate = t
+			}
 		}
+	}
+	if candidate != nil {
+		h.assignTask(ctx, w, candidate, nodeID)
+		return
 	}
 
 	t, err := h.poller.WaitForTask(ctx, nodeID)
@@ -176,6 +182,25 @@ func (h *RuntimeHandler) assignTask(ctx context.Context, w http.ResponseWriter, 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(assignedTask)
+}
+
+func bestClaimCandidate(current *task.Task, candidate *task.Task) *task.Task {
+	if current == nil {
+		return candidate
+	}
+	if candidate == nil {
+		return current
+	}
+	if candidate.Priority > current.Priority {
+		return candidate
+	}
+	if candidate.Priority < current.Priority {
+		return current
+	}
+	if candidate.CreatedAt.After(current.CreatedAt) {
+		return candidate
+	}
+	return current
 }
 
 func (h *RuntimeHandler) GetNodeByID(w http.ResponseWriter, r *http.Request) {

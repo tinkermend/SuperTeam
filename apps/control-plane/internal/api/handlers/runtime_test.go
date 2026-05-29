@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/runtime"
@@ -54,6 +55,74 @@ func TestClaimTaskAssignsFirstSupportedProviderTask(t *testing.T) {
 	}
 	if body.ID != supportedTask.ID {
 		t.Fatalf("expected response task %d, got %d", supportedTask.ID, body.ID)
+	}
+}
+
+func TestClaimTaskAssignsHighestPriorityAcrossSupportedProviders(t *testing.T) {
+	node := &runtime.Node{
+		NodeID:             "node-1",
+		SupportedProviders: []string{"codex", "opencode"},
+	}
+	lowerPriorityTask := &task.Task{ID: 100, ProviderType: "codex", Priority: 1}
+	higherPriorityTask := &task.Task{ID: 200, ProviderType: "opencode", Priority: 9}
+	taskService := &claimTaskService{
+		tasksByProvider: map[string][]*task.Task{
+			"codex":    {lowerPriorityTask},
+			"opencode": {higherPriorityTask},
+		},
+	}
+	handler := NewRuntimeHandler(
+		&claimRuntimeService{node: node},
+		taskService,
+		&claimPoller{},
+	)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/claim?timeout=1", nil)
+	ctx := context.WithValue(request.Context(), middleware.NodeIDKey, node.NodeID)
+	request = request.WithContext(ctx)
+	response := httptest.NewRecorder()
+
+	handler.ClaimTask(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if taskService.assignedTaskID != higherPriorityTask.ID {
+		t.Fatalf("expected highest-priority task %d to be assigned, got %d", higherPriorityTask.ID, taskService.assignedTaskID)
+	}
+}
+
+func TestClaimTaskTieBreaksByNewestCreatedAtAcrossSupportedProviders(t *testing.T) {
+	node := &runtime.Node{
+		NodeID:             "node-1",
+		SupportedProviders: []string{"codex", "opencode"},
+	}
+	olderTask := &task.Task{ID: 100, ProviderType: "codex", Priority: 5, CreatedAt: time.Date(2026, 5, 29, 10, 0, 0, 0, time.UTC)}
+	newerTask := &task.Task{ID: 200, ProviderType: "opencode", Priority: 5, CreatedAt: time.Date(2026, 5, 29, 11, 0, 0, 0, time.UTC)}
+	taskService := &claimTaskService{
+		tasksByProvider: map[string][]*task.Task{
+			"codex":    {olderTask},
+			"opencode": {newerTask},
+		},
+	}
+	handler := NewRuntimeHandler(
+		&claimRuntimeService{node: node},
+		taskService,
+		&claimPoller{},
+	)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/claim?timeout=1", nil)
+	ctx := context.WithValue(request.Context(), middleware.NodeIDKey, node.NodeID)
+	request = request.WithContext(ctx)
+	response := httptest.NewRecorder()
+
+	handler.ClaimTask(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if taskService.assignedTaskID != newerTask.ID {
+		t.Fatalf("expected newest task %d to be assigned, got %d", newerTask.ID, taskService.assignedTaskID)
 	}
 }
 

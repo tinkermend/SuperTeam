@@ -85,7 +85,22 @@ func Run(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	defer container.Poller.Close()
+	return runContainer(ctx, container, cfg.HTTP.Addr)
+}
 
-	return container.Server.ListenAndServe(ctx, cfg.HTTP.Addr)
+func runContainer(ctx context.Context, container *Container, addr string) error {
+	stopWatching := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			container.Poller.Close()
+		case <-stopWatching:
+		}
+	}()
+	defer func() {
+		close(stopWatching)
+		container.Poller.Close()
+	}()
+
+	return container.Server.ListenAndServe(ctx, addr)
 }
