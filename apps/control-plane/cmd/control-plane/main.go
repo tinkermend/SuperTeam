@@ -10,6 +10,10 @@ import (
 )
 
 func main() {
+	Main()
+}
+
+func Main() {
 	configPath := flag.String("config", "", "path to control-plane YAML config file")
 	flag.Parse()
 

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestNewHealthOnlyRouterReturnsControlPlaneHealth(t *testing.T) {
+func TestHealthOnlyRouterIsExplicit(t *testing.T) {
 	router := NewHealthOnlyRouter()
 	request := httptest.NewRequest(http.MethodGet, "/health", nil)
 	response := httptest.NewRecorder()
