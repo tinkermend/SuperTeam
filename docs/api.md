@@ -46,8 +46,11 @@ curl http://localhost:8080/health
 
 **响应示例**
 
-```text
-OK
+```json
+{
+  "status": "ok",
+  "service": "control-plane"
+}
 ```
 
 ---

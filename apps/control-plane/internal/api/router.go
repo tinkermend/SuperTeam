@@ -12,16 +12,20 @@ type healthResponse struct {
 	Service string `json:"service"`
 }
 
+func writeHealthResponse(w http.ResponseWriter) {
+	w.Header().Set("content-type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(healthResponse{
+		Status:  "ok",
+		Service: "control-plane",
+	})
+}
+
 func NewHealthOnlyRouter() http.Handler {
 	router := chi.NewRouter()
 
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("content-type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(healthResponse{
-			Status:  "ok",
-			Service: "control-plane",
-		})
+		writeHealthResponse(w)
 	})
 
 	return router

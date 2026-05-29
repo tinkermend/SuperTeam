@@ -24,8 +24,7 @@ func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.Runti
 	r.Use(middleware.CORS())
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		writeHealthResponse(w)
 	})
 
 	s := &Server{

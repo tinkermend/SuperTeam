@@ -390,11 +390,11 @@ atlas migrate down --env local
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `NODE_ID` | 节点 ID | 必需 |
-| `CONTROL_PLANE_URL` | Control Plane URL | 必需 |
-| `TOKEN` | 认证 token | 必需 |
-| `MAX_CONCURRENT_TASKS` | 最大并发任务数 | `4` |
-| `LOG_LEVEL` | 日志级别 | `info` |
+| `RUNTIME_AGENT_NODE_ID` | 节点 ID | `local-dev-node` |
+| `RUNTIME_AGENT_CONTROL_PLANE_URL` | Control Plane URL | `http://localhost:8080` |
+| `RUNTIME_AGENT_AUTH_TOKEN` | Runtime Agent 认证 token | `local-dev-token` |
+| `RUNTIME_AGENT_MAX_CONCURRENT_TASKS` | 最大并发任务数 | `4` |
+| `RUNTIME_AGENT_LOG_LEVEL` | 日志级别 | `info` |
 
 ## 生产部署
 

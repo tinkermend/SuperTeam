@@ -12,10 +12,21 @@ import (
 
 func TestHealthEndpointReturnsControlPlaneStatus(t *testing.T) {
 	router := NewHealthOnlyRouter()
+	assertHealthResponse(t, router)
+}
+
+func TestProductServerHealthEndpointReturnsControlPlaneStatus(t *testing.T) {
+	server := NewServer(nil, nil)
+	assertHealthResponse(t, server)
+}
+
+func assertHealthResponse(t *testing.T, handler http.Handler) {
+	t.Helper()
+
 	request := httptest.NewRequest(http.MethodGet, "/health", nil)
 	response := httptest.NewRecorder()
 
-	router.ServeHTTP(response, request)
+	handler.ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.Code)
