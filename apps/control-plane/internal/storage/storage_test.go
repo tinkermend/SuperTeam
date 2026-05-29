@@ -1,6 +1,10 @@
 package storage
 
-import "testing"
+import (
+	"testing"
+
+	_ "github.com/stretchr/testify/assert"
+)
 
 func TestNewClientsAcceptStorageConfigWithoutNetworkDial(t *testing.T) {
 	cfg := Config{
