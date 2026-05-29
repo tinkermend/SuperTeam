@@ -134,7 +134,25 @@ auth_token = "file-token"
     )
     .expect("write config");
 
-    let config = RuntimeConfig::load_with_env(
+    let file_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        std::iter::empty::<(&str, &str)>(),
+        Default::default(),
+    )
+    .expect("load file config");
+
+    assert_eq!(file_config.runtime.auth_token, "file-token");
+
+    let env_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        [("RUNTIME_AGENT_AUTH_TOKEN", "env-token")],
+        Default::default(),
+    )
+    .expect("load env config");
+
+    assert_eq!(env_config.runtime.auth_token, "env-token");
+
+    let cli_config = RuntimeConfig::load_with_env(
         Some(&config_path),
         [("RUNTIME_AGENT_AUTH_TOKEN", "env-token")],
         RuntimeConfigOverrides {
@@ -144,7 +162,7 @@ auth_token = "file-token"
     )
     .expect("load config");
 
-    assert_eq!(config.runtime.auth_token, "cli-token");
+    assert_eq!(cli_config.runtime.auth_token, "cli-token");
 }
 
 #[test]
@@ -156,6 +174,7 @@ fn cli_loads_config_file_and_allows_explicit_overrides() {
         r#"
 [runtime]
 node_id = "file-cli-node"
+auth_token = "file-cli-token"
 "#,
     )
     .expect("write config");
@@ -165,8 +184,11 @@ node_id = "file-cli-node"
         .arg(&config_path)
         .arg("--node-id")
         .arg("arg-cli-node")
+        .arg("--auth-token")
+        .arg("arg-cli-token")
         .arg("--once")
         .env("RUNTIME_AGENT_NODE_ID", "env-cli-node")
+        .env("RUNTIME_AGENT_AUTH_TOKEN", "env-cli-token")
         .env_remove("RUNTIME_NODE_ID")
         .output()
         .expect("run runtime-agent");
