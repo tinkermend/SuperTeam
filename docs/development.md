@@ -92,9 +92,8 @@ export DATABASE_URL=postgres://superteam:superteam@localhost:5432/superteam?sslm
 ### 6. 启动 Control Plane
 
 ```bash
-cd apps/control-plane
-make generate
-go run ./cmd/control-plane
+make -C apps/control-plane generate
+go run ./apps/control-plane/cmd/control-plane
 ```
 
 Control Plane 默认监听 `http://localhost:8080`。
@@ -247,7 +246,7 @@ pnpm dev
 
 ```bash
 pnpm install
-cd apps/control-plane && make generate
+make -C apps/control-plane generate
 go test ./apps/control-plane/...
 cargo test --manifest-path apps/runtime-agent/Cargo.toml
 pnpm -r --if-present test
@@ -271,9 +270,8 @@ docker-compose -f docker-compose.dev.yml up -d
 ./scripts/db-migrate.sh
 
 # 启动 Control Plane
-cd apps/control-plane
-make generate
-go run ./cmd/control-plane &
+make -C apps/control-plane generate
+go run ./apps/control-plane/cmd/control-plane &
 
 # 启动 Runtime Agent
 RUNTIME_AGENT_AUTH_TOKEN=<token> \

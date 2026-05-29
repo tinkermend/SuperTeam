@@ -46,11 +46,8 @@ curl http://localhost:8080/health
 
 **响应示例**
 
-```json
-{
-  "status": "ok",
-  "service": "control-plane"
-}
+```text
+OK
 ```
 
 ---
@@ -349,7 +346,8 @@ curl http://localhost:8080/api/v1/tasks/550e8400-e29b-41d4-a716-446655440001/eve
 
 **查询参数**
 
-- `status` (string, optional): 过滤状态，`online` | `offline`
+- `limit` (integer, optional): 返回数量上限
+- `offset` (integer, optional): 分页偏移
 
 **请求示例**
 
@@ -361,23 +359,27 @@ curl http://localhost:8080/api/v1/runtime/nodes \
 **响应示例**
 
 ```json
-{
-  "nodes": [
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440030",
-      "name": "node-001",
-      "status": "online",
-      "provider_types": ["claude-code", "opencode"],
-      "max_concurrent_tasks": 4,
-      "current_tasks": 2,
-      "last_heartbeat_at": "2026-05-29T10:04:50Z",
-      "created_at": "2026-05-29T09:00:00Z"
-    }
-  ]
-}
+[
+  {
+    "node_id": "node-001",
+    "name": "Node 001",
+    "supported_providers": ["claude-code", "opencode"],
+    "max_slots": 4,
+    "current_load": 2,
+    "status": "online",
+    "metadata": {
+      "hostname": "dev-machine",
+      "os": "darwin",
+      "arch": "arm64"
+    },
+    "last_heartbeat_at": "2026-05-29T10:04:50Z",
+    "created_at": "2026-05-29T09:00:00Z",
+    "updated_at": "2026-05-29T10:04:50Z"
+  }
+]
 ```
 
-#### GET /api/v1/runtime/nodes/{node_id}
+#### GET /api/v1/runtime/nodes/{nodeId}
 
 获取节点详情。
 
@@ -385,19 +387,20 @@ curl http://localhost:8080/api/v1/runtime/nodes \
 
 ```json
 {
-  "id": "550e8400-e29b-41d4-a716-446655440030",
-  "name": "node-001",
+  "node_id": "node-001",
+  "name": "Node 001",
+  "supported_providers": ["claude-code", "opencode"],
+  "max_slots": 4,
+  "current_load": 2,
   "status": "online",
-  "provider_types": ["claude-code", "opencode"],
-  "max_concurrent_tasks": 4,
-  "current_tasks": 2,
   "metadata": {
     "hostname": "dev-machine",
     "os": "darwin",
     "arch": "arm64"
   },
   "last_heartbeat_at": "2026-05-29T10:04:50Z",
-  "created_at": "2026-05-29T09:00:00Z"
+  "created_at": "2026-05-29T09:00:00Z",
+  "updated_at": "2026-05-29T10:04:50Z"
 }
 ```
 
@@ -423,9 +426,10 @@ Authorization: Bearer <runtime-token>
 
 ```json
 {
-  "name": "node-001",
-  "provider_types": ["claude-code", "opencode"],
-  "max_concurrent_tasks": 4,
+  "node_id": "node-001",
+  "name": "Node 001",
+  "supported_providers": ["claude-code", "opencode"],
+  "max_slots": 4,
   "metadata": {
     "hostname": "dev-machine",
     "os": "darwin",
@@ -438,10 +442,20 @@ Authorization: Bearer <runtime-token>
 
 ```json
 {
-  "id": "550e8400-e29b-41d4-a716-446655440030",
-  "name": "node-001",
+  "node_id": "node-001",
+  "name": "Node 001",
+  "supported_providers": ["claude-code", "opencode"],
+  "max_slots": 4,
+  "current_load": 0,
   "status": "online",
-  "created_at": "2026-05-29T09:00:00Z"
+  "metadata": {
+    "hostname": "dev-machine",
+    "os": "darwin",
+    "arch": "arm64"
+  },
+  "last_heartbeat_at": "2026-05-29T09:00:00Z",
+  "created_at": "2026-05-29T09:00:00Z",
+  "updated_at": "2026-05-29T09:00:00Z"
 }
 ```
 
@@ -459,8 +473,7 @@ Authorization: Bearer <runtime-token>
 
 ```json
 {
-  "node_id": "550e8400-e29b-41d4-a716-446655440030",
-  "current_tasks": 2,
+  "current_load": 2,
   "status": "online"
 }
 ```
@@ -469,8 +482,20 @@ Authorization: Bearer <runtime-token>
 
 ```json
 {
-  "acknowledged": true,
-  "timestamp": "2026-05-29T10:05:00Z"
+  "node_id": "node-001",
+  "name": "Node 001",
+  "supported_providers": ["claude-code", "opencode"],
+  "max_slots": 4,
+  "current_load": 2,
+  "status": "online",
+  "metadata": {
+    "hostname": "dev-machine",
+    "os": "darwin",
+    "arch": "arm64"
+  },
+  "last_heartbeat_at": "2026-05-29T10:05:00Z",
+  "created_at": "2026-05-29T09:00:00Z",
+  "updated_at": "2026-05-29T10:05:00Z"
 }
 ```
 
@@ -537,24 +562,17 @@ Authorization: Bearer <runtime-token>
 {
   "events": [
     {
-      "event_type": "progress_update",
-      "payload": {
-        "progress": 50,
-        "message": "正在分析文件..."
-      },
-      "timestamp": "2026-05-29T10:01:30Z"
+      "type": "text_delta",
+      "text": "正在分析文件..."
     }
   ]
 }
 ```
 
-**响应示例**
+**响应**
 
-```json
-{
-  "accepted": 1
-}
-```
+- `202 Accepted`
+- 空响应体
 
 #### POST /api/v1/runtime/tasks/{taskId}/complete
 
@@ -570,7 +588,6 @@ Authorization: Bearer <runtime-token>
 
 ```json
 {
-  "execution_id": "550e8400-e29b-41d4-a716-446655440002",
   "result": {
     "summary": "分析完成",
     "artifacts": [
@@ -588,7 +605,13 @@ Authorization: Bearer <runtime-token>
 
 ```json
 {
-  "acknowledged": true
+  "id": "550e8400-e29b-41d4-a716-446655440001",
+  "title": "分析代码库",
+  "status": "completed",
+  "provider_type": "claude-code",
+  "priority": 5,
+  "assigned_node_id": "node-001",
+  "updated_at": "2026-05-29T10:06:00Z"
 }
 ```
 
@@ -606,14 +629,7 @@ Authorization: Bearer <runtime-token>
 
 ```json
 {
-  "execution_id": "550e8400-e29b-41d4-a716-446655440002",
-  "error": {
-    "code": "provider_error",
-    "message": "Provider 执行失败",
-    "details": {
-      "stderr": "..."
-    }
-  }
+  "error": "provider exited"
 }
 ```
 
@@ -621,7 +637,13 @@ Authorization: Bearer <runtime-token>
 
 ```json
 {
-  "acknowledged": true
+  "id": "550e8400-e29b-41d4-a716-446655440001",
+  "title": "分析代码库",
+  "status": "failed",
+  "provider_type": "claude-code",
+  "priority": 5,
+  "assigned_node_id": "node-001",
+  "updated_at": "2026-05-29T10:06:00Z"
 }
 ```
 
@@ -637,19 +659,11 @@ Authorization: Bearer <runtime-token>
 
 **请求体**
 
-```json
-{
-  "execution_id": "550e8400-e29b-41d4-a716-446655440002"
-}
-```
+无，请直接发送空请求体。
 
-**响应示例**
+**响应**
 
-```json
-{
-  "lease_expires_at": "2026-05-29T10:15:00Z"
-}
-```
+- `204 No Content`
 
 ---
 
@@ -757,10 +771,11 @@ curl -X POST "http://localhost:8080/api/v1/runtime/tasks/claim?timeout=30" \
 ```bash
 curl -X POST http://localhost:8080/api/v1/runtime/tasks/<task-id>/events \
   -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
   -d '{
     "events": [{
-      "event_type": "progress_update",
-      "payload": {"progress": 50}
+      "type": "text_delta",
+      "text": "hello"
     }]
   }'
 ```
@@ -770,13 +785,13 @@ curl -X POST http://localhost:8080/api/v1/runtime/tasks/<task-id>/events \
 ```bash
 curl -X POST http://localhost:8080/api/v1/runtime/tasks/<task-id>/complete \
   -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
   -d '{
-    "execution_id": "<execution-id>",
     "result": {"summary": "完成"}
   }'
 ```
 
-6. **Console 查看结果**
+5. **Console 查看结果**
 
 ```bash
 curl http://localhost:8080/api/v1/tasks/<task-id> \

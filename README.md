@@ -25,7 +25,7 @@ contracts/
 
 ```bash
 pnpm install
-cd apps/control-plane && make generate
+make -C apps/control-plane generate
 go test ./apps/control-plane/...
 cargo test --manifest-path apps/runtime-agent/Cargo.toml
 pnpm -r --if-present test
