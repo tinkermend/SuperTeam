@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
-	"github.com/superteam/control-plane/internal/api/middleware"
 )
 
 type RuntimeService interface {
@@ -21,7 +21,7 @@ type RuntimeService interface {
 }
 
 type Poller interface {
-	WaitForTask(ctx context.Context, nodeID string, providerTypes []string) (*task.Task, error)
+	WaitForTask(ctx context.Context, nodeID string) (*task.Task, error)
 }
 
 type RuntimeHandler struct {
@@ -117,8 +117,7 @@ func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		timeout = 60
 	}
 
-	node, err := h.runtimeService.GetNode(r.Context(), nodeID)
-	if err != nil {
+	if _, err := h.runtimeService.GetNode(r.Context(), nodeID); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -152,7 +151,7 @@ func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.poller.WaitForTask(ctx, nodeID, node.SupportedProviders)
+	t, err := h.poller.WaitForTask(ctx, nodeID)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			w.WriteHeader(http.StatusNoContent)

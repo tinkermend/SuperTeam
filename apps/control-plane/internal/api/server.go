@@ -59,3 +59,7 @@ func (s *Server) registerRoutes() {
 func (s *Server) Start(addr string) error {
 	return http.ListenAndServe(addr, s.router)
 }
+
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.router.ServeHTTP(w, r)
+}

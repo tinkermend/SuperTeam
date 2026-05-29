@@ -1,4 +1,4 @@
-package api
+package app
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestHealthEndpointReturnsControlPlaneStatus(t *testing.T) {
+func TestNewHealthOnlyRouterReturnsControlPlaneHealth(t *testing.T) {
 	router := NewHealthOnlyRouter()
 	request := httptest.NewRequest(http.MethodGet, "/health", nil)
 	response := httptest.NewRecorder()
@@ -26,7 +26,6 @@ func TestHealthEndpointReturnsControlPlaneStatus(t *testing.T) {
 	if body["status"] != "ok" {
 		t.Fatalf("expected status ok, got %q", body["status"])
 	}
-
 	if body["service"] != "control-plane" {
 		t.Fatalf("expected service control-plane, got %q", body["service"])
 	}

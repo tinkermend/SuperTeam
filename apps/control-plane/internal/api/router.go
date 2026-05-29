@@ -12,7 +12,7 @@ type healthResponse struct {
 	Service string `json:"service"`
 }
 
-func NewRouter() http.Handler {
+func NewHealthOnlyRouter() http.Handler {
 	router := chi.NewRouter()
 
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {

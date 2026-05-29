@@ -155,6 +155,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Control Plane 启动边界收敛 (2026-05-29)
+
+- 收敛 Control Plane 主启动入口，明确 health-only router 与产品 API server 的边界，并通过统一装配路径连接存储、服务和 handlers。
+
 - 将 Control Plane PostgreSQL 和 Redis 配置示例切换到 `docs/database/conn_info.md` 记录的远端地址，并修正连接验证命令。
 - 在远端 PostgreSQL 创建 `superteam` 应用用户、数据库和 schema，并从本地 `127.0.0.1` 的 `superteam` 数据库迁移当前 schema 与迁移记录。
 

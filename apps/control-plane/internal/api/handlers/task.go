@@ -16,6 +16,7 @@ type TaskService interface {
 	ListTasks(ctx context.Context, filter task.ListTasksFilter) ([]*task.Task, error)
 	UpdateTaskStatus(ctx context.Context, req task.UpdateTaskStatusRequest) (*task.Task, error)
 	CancelTask(ctx context.Context, taskID int64, cancelledBy *string, reason *string) (*task.Task, error)
+	AssignTask(ctx context.Context, req task.AssignTaskRequest) (*task.Task, error)
 }
 
 type TaskHandler struct {
@@ -46,10 +47,10 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 	task, err := h.taskService.CreateTask(r.Context(), task.CreateTaskRequest{
 		Title:         req.Title,
-		Description:   req.Description,
+		Description:   optionalString(req.Description),
 		ProviderType:  req.ProviderType,
-		TargetNodeID:  req.TargetNodeID,
-		WorkspacePath: req.WorkspacePath,
+		TargetNodeID:  optionalString(req.TargetNodeID),
+		WorkspacePath: optionalString(req.WorkspacePath),
 		Params:        paramsJSON,
 		Priority:      req.Priority,
 	})
@@ -61,6 +62,13 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(task)
+}
+
+func optionalString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
