@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Phase 4 - Runtime Agent Control Plane 集成 (2026-05-29)
+
+- 添加 Runtime Agent Control Plane 客户端 (`apps/runtime-agent/src/controlplane/`)
+  - client.rs: HTTP 客户端实现
+    - ControlPlaneClient 结构：封装 reqwest HTTP 客户端
+    - register(): 注册节点到 Control Plane
+    - heartbeat(): 发送心跳更新节点状态和负载
+    - claim_task(): 长轮询获取任务（支持超时）
+    - 完整的错误处理和上下文信息
+  - models.rs: API 模型定义
+    - TaskStatus 枚举 (pending/claimed/running/completed/failed/cancelled)
+    - NodeStatus 枚举 (online/offline)
+    - RegisterNodeRequest/Response
+    - HeartbeatRequest/Response
+    - Task 模型（包含完整任务信息）
+    - 所有模型支持 serde 序列化/反序列化
+  - mod.rs: 模块导出
+- 更新 Cargo.toml
+  - 将 reqwest 从 dev-dependencies 移至 dependencies
+  - 启用 json 和 rustls-tls 特性
+- 添加集成测试 (`apps/runtime-agent/tests/controlplane_client_test.rs`)
+  - 客户端创建测试
+  - 请求序列化测试
+  - 集成测试（需要运行的 Control Plane，默认 ignored）
+    - 节点注册测试
+    - 心跳更新测试
+    - 任务 claim 超时测试
+  - 所有单元测试通过
+
 #### Phase 2.3 - 任务调度器 (2026-05-29)
 
 - 添加任务调度器 (`apps/control-plane/internal/runtime/scheduler.go`)
