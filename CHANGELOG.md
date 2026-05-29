@@ -192,6 +192,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Control Plane API 响应契约对齐 (2026-05-30)
+
+- 为任务与 Runtime 节点 API 响应补充显式 DTO，统一输出 snake_case 字段，避免直接编码领域模型时泄漏 Go 字段名。
+- 将任务响应中的 `params` 规范化为 JSON object；空值、无效 JSON 或非对象输入统一回退为 `{}`，避免返回 base64 字符串。
+- 更新 API/e2e 测试，锁定 `create/get/list/update/cancel/claim/complete/fail` 等任务路径及 Runtime 节点路径的真实 JSON shape。
+- 收敛 Runtime claim 到 canonical `/api/v1/runtime/tasks/claim`，移除旧别名路由，并同步 API/OpenAPI 文档对 complete 与 lease 当前能力边界的描述。
+
 #### Runtime Agent 配置入口统一 (2026-05-29)
 
 - 统一 Runtime Agent 配置模型，支持 `--config` 加载 TOML 配置文件。

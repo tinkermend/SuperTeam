@@ -55,7 +55,6 @@ func (s *Server) registerRoutes() {
 			r.Post("/tasks/{id}/complete", s.runtimeHandler.CompleteTask)
 			r.Post("/tasks/{id}/fail", s.runtimeHandler.FailTask)
 			r.Post("/tasks/{id}/lease", s.runtimeHandler.RenewLease)
-			r.Post("/claim", s.runtimeHandler.ClaimTask)
 			r.Get("/nodes", s.runtimeHandler.ListNodes)
 			r.Get("/nodes/{id}", s.runtimeHandler.GetNodeByID)
 		})

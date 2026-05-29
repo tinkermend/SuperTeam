@@ -170,14 +170,18 @@ paths:
       parameters:
         - $ref: "#/components/parameters/TaskId"
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/CompleteTaskRequest"
       responses:
         "200":
-          description: Task completion accepted
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
   /api/v1/runtime/tasks/{taskId}/fail:
     post:
       operationId: failRuntimeTask
@@ -192,16 +196,20 @@ paths:
               $ref: "#/components/schemas/FailTaskRequest"
       responses:
         "200":
-          description: Task failure accepted
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
   /api/v1/runtime/tasks/{taskId}/lease:
     post:
       operationId: renewRuntimeTaskLease
-      summary: Renew a Runtime Agent task lease
+      summary: Acknowledge a Runtime Agent task lease heartbeat
       parameters:
         - $ref: "#/components/parameters/TaskId"
       responses:
         "204":
-          description: Lease renewed
+          description: Lease heartbeat acknowledged
   /api/v1/runtime/nodes:
     get:
       operationId: listRuntimeNodes
@@ -450,8 +458,6 @@ components:
             additionalProperties: true
     CompleteTaskRequest:
       type: object
-      required:
-        - result
       properties:
         result:
           type: object

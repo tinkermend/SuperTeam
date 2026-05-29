@@ -43,7 +43,14 @@ func TestPushEventsPersistsTypedEvent(t *testing.T) {
 }
 
 func TestCompleteTaskTransitionsToCompleted(t *testing.T) {
-	completedTask := &task.Task{ID: 42, Status: task.TaskStatusCompleted}
+	completedTask := &task.Task{
+		ID:           42,
+		Title:        "done",
+		ProviderType: "codex",
+		Status:       task.TaskStatusCompleted,
+		CreatedAt:    time.Date(2026, 5, 29, 10, 0, 0, 0, time.UTC),
+		UpdatedAt:    time.Date(2026, 5, 29, 10, 1, 0, 0, time.UTC),
+	}
 	taskService := &claimTaskService{updatedTask: completedTask}
 	handler := NewRuntimeHandler(&claimRuntimeService{}, taskService, &claimPoller{})
 
@@ -62,12 +69,18 @@ func TestCompleteTaskTransitionsToCompleted(t *testing.T) {
 		t.Fatalf("expected runtime completed task reason, got %#v", taskService.updateReason)
 	}
 
-	var body task.Task
+	var body map[string]any
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("expected task JSON response: %v", err)
 	}
-	if body.ID != 42 || body.Status != task.TaskStatusCompleted {
+	if int64(body["id"].(float64)) != 42 || body["status"] != string(task.TaskStatusCompleted) {
 		t.Fatalf("expected completed task 42, got %#v", body)
+	}
+	if _, ok := body["provider_type"]; !ok {
+		t.Fatalf("expected snake_case task response, got %#v", body)
+	}
+	if _, ok := body["Status"]; ok {
+		t.Fatalf("did not expect Go field names in task response: %#v", body)
 	}
 }
 
@@ -85,7 +98,14 @@ func TestFailTaskRejectsMissingError(t *testing.T) {
 }
 
 func TestFailTaskAcceptsValidError(t *testing.T) {
-	failedTask := &task.Task{ID: 42, Status: task.TaskStatusFailed}
+	failedTask := &task.Task{
+		ID:           42,
+		Title:        "failed",
+		ProviderType: "codex",
+		Status:       task.TaskStatusFailed,
+		CreatedAt:    time.Date(2026, 5, 29, 10, 0, 0, 0, time.UTC),
+		UpdatedAt:    time.Date(2026, 5, 29, 10, 1, 0, 0, time.UTC),
+	}
 	taskService := &claimTaskService{updatedTask: failedTask}
 	handler := NewRuntimeHandler(&claimRuntimeService{}, taskService, &claimPoller{})
 
@@ -141,7 +161,7 @@ func TestClaimTaskAssignsFirstSupportedProviderTask(t *testing.T) {
 		&claimPoller{},
 	)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/claim?timeout=1", nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/tasks/claim?timeout=1", nil)
 	ctx := context.WithValue(request.Context(), middleware.NodeIDKey, node.NodeID)
 	request = request.WithContext(ctx)
 	response := httptest.NewRecorder()
@@ -158,12 +178,15 @@ func TestClaimTaskAssignsFirstSupportedProviderTask(t *testing.T) {
 		t.Fatalf("expected provider-filtered list for codex, got %#v", taskService.listedProviders)
 	}
 
-	var body task.Task
+	var body map[string]any
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("expected task JSON response: %v", err)
 	}
-	if body.ID != supportedTask.ID {
-		t.Fatalf("expected response task %d, got %d", supportedTask.ID, body.ID)
+	if int64(body["id"].(float64)) != supportedTask.ID {
+		t.Fatalf("expected response task %d, got %#v", supportedTask.ID, body["id"])
+	}
+	if _, ok := body["provider_type"]; !ok {
+		t.Fatalf("expected snake_case task response, got %#v", body)
 	}
 }
 
@@ -186,7 +209,7 @@ func TestClaimTaskAssignsHighestPriorityAcrossSupportedProviders(t *testing.T) {
 		&claimPoller{},
 	)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/claim?timeout=1", nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/tasks/claim?timeout=1", nil)
 	ctx := context.WithValue(request.Context(), middleware.NodeIDKey, node.NodeID)
 	request = request.WithContext(ctx)
 	response := httptest.NewRecorder()
@@ -220,7 +243,7 @@ func TestClaimTaskTieBreaksByNewestCreatedAtAcrossSupportedProviders(t *testing.
 		&claimPoller{},
 	)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/claim?timeout=1", nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/tasks/claim?timeout=1", nil)
 	ctx := context.WithValue(request.Context(), middleware.NodeIDKey, node.NodeID)
 	request = request.WithContext(ctx)
 	response := httptest.NewRecorder()

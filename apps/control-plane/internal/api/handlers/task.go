@@ -62,7 +62,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(task)
+	json.NewEncoder(w).Encode(newTaskResponse(task))
 }
 
 func optionalString(value string) *string {
@@ -87,7 +87,7 @@ func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(task)
+	json.NewEncoder(w).Encode(newTaskResponse(task))
 }
 
 func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +104,7 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tasks)
+	json.NewEncoder(w).Encode(newTaskResponses(tasks))
 }
 
 func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +134,7 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(t)
+	json.NewEncoder(w).Encode(newTaskResponse(t))
 }
 
 func (h *TaskHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
@@ -152,5 +152,5 @@ func (h *TaskHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(task)
+	json.NewEncoder(w).Encode(newTaskResponse(task))
 }

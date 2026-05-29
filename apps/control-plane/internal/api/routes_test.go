@@ -49,6 +49,22 @@ func TestRuntimeRoutesAreRegistered(t *testing.T) {
 	}
 }
 
+func TestLegacyRuntimeClaimRouteIsNotRegistered(t *testing.T) {
+	server := NewServer(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/claim", nil)
+	rr := httptest.NewRecorder()
+
+	server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected legacy runtime claim route to be removed, got %d", rr.Code)
+	}
+}
+
 type routeRuntimeService struct{}
 
 func (s *routeRuntimeService) RegisterNode(ctx context.Context, req runtime.RegisterNodeRequest) (*runtime.Node, error) {

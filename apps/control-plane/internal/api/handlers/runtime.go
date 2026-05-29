@@ -69,7 +69,7 @@ func (h *RuntimeHandler) RegisterNode(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(node)
+	json.NewEncoder(w).Encode(newRuntimeNodeResponse(node))
 }
 
 func (h *RuntimeHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
@@ -99,7 +99,7 @@ func (h *RuntimeHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(node)
+	json.NewEncoder(w).Encode(newRuntimeNodeResponse(node))
 }
 
 func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
@@ -184,7 +184,7 @@ func (h *RuntimeHandler) assignTask(ctx context.Context, w http.ResponseWriter, 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(assignedTask)
+	json.NewEncoder(w).Encode(newTaskResponse(assignedTask))
 }
 
 func (h *RuntimeHandler) PushEvents(w http.ResponseWriter, r *http.Request) {
@@ -257,7 +257,7 @@ func (h *RuntimeHandler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updatedTask)
+	json.NewEncoder(w).Encode(newTaskResponse(updatedTask))
 }
 
 func (h *RuntimeHandler) FailTask(w http.ResponseWriter, r *http.Request) {
@@ -289,7 +289,7 @@ func (h *RuntimeHandler) FailTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updatedTask)
+	json.NewEncoder(w).Encode(newTaskResponse(updatedTask))
 }
 
 func (h *RuntimeHandler) RenewLease(w http.ResponseWriter, r *http.Request) {
@@ -346,7 +346,7 @@ func (h *RuntimeHandler) GetNodeByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(node)
+	json.NewEncoder(w).Encode(newRuntimeNodeResponse(node))
 }
 
 func (h *RuntimeHandler) ListNodes(w http.ResponseWriter, r *http.Request) {
@@ -363,5 +363,5 @@ func (h *RuntimeHandler) ListNodes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(nodes)
+	json.NewEncoder(w).Encode(newRuntimeNodeResponses(nodes))
 }

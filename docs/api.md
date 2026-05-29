@@ -191,14 +191,14 @@ curl -X POST http://localhost:8080/api/auth/logout \
 }
 ```
 
-#### GET /api/v1/tasks/{task_id}
+#### GET /api/v1/tasks/{taskId}
 
 获取任务详情。
 
 **请求示例**
 
 ```bash
-curl http://localhost:8080/api/v1/tasks/550e8400-e29b-41d4-a716-446655440001 \
+curl http://localhost:8080/api/v1/tasks/1 \
   -H "Cookie: session_token=abc123"
 ```
 
@@ -206,15 +206,13 @@ curl http://localhost:8080/api/v1/tasks/550e8400-e29b-41d4-a716-446655440001 \
 
 ```json
 {
-  "id": "550e8400-e29b-41d4-a716-446655440001",
+  "id": 1,
   "title": "分析代码库",
   "status": "running",
   "provider_type": "claude-code",
   "assigned_node_id": "node-001",
-  "execution": {
-    "id": "550e8400-e29b-41d4-a716-446655440002",
-    "started_at": "2026-05-29T10:01:00Z",
-    "progress": 50
+  "params": {
+    "prompt": "分析当前代码库的架构"
   },
   "created_at": "2026-05-29T10:00:00Z",
   "updated_at": "2026-05-29T10:01:30Z"
@@ -227,40 +225,38 @@ curl http://localhost:8080/api/v1/tasks/550e8400-e29b-41d4-a716-446655440001 \
 
 **查询参数**
 
-- `status` (string, optional): 过滤状态，如 `pending`, `running`, `completed`, `failed`
-- `provider_type` (string, optional): 过滤 Provider 类型
 - `limit` (integer, optional): 返回数量，默认 20，最大 100
 - `offset` (integer, optional): 偏移量，默认 0
 
 **请求示例**
 
 ```bash
-curl "http://localhost:8080/api/v1/tasks?status=running&limit=10" \
+curl "http://localhost:8080/api/v1/tasks?limit=10" \
   -H "Cookie: session_token=abc123"
 ```
 
 **响应示例**
 
 ```json
-{
-  "tasks": [
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440001",
-      "title": "分析代码库",
-      "status": "running",
-      "provider_type": "claude-code",
-      "created_at": "2026-05-29T10:00:00Z"
-    }
-  ],
-  "total": 1,
-  "limit": 10,
-  "offset": 0
-}
+[
+  {
+    "id": 1,
+    "title": "分析代码库",
+    "status": "running",
+    "provider_type": "claude-code",
+    "params": {
+      "prompt": "分析当前代码库的架构"
+    },
+    "priority": 5,
+    "created_at": "2026-05-29T10:00:00Z",
+    "updated_at": "2026-05-29T10:01:30Z"
+  }
+]
 ```
 
-#### PATCH /api/v1/tasks/{task_id}
+#### PUT /api/v1/tasks/{taskId}/status
 
-更新任务状态（取消任务）。
+更新任务状态。
 
 **请求体**
 
@@ -274,70 +270,9 @@ curl "http://localhost:8080/api/v1/tasks?status=running&limit=10" \
 
 ```json
 {
-  "id": "550e8400-e29b-41d4-a716-446655440001",
+  "id": 1,
   "status": "cancelled",
   "updated_at": "2026-05-29T10:05:00Z"
-}
-```
-
-#### GET /api/v1/tasks/{task_id}/events
-
-获取任务事件流。
-
-**请求示例**
-
-```bash
-curl http://localhost:8080/api/v1/tasks/550e8400-e29b-41d4-a716-446655440001/events \
-  -H "Cookie: session_token=abc123"
-```
-
-**响应示例**
-
-```json
-{
-  "events": [
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440010",
-      "task_id": "550e8400-e29b-41d4-a716-446655440001",
-      "event_type": "task_started",
-      "payload": {
-        "node_id": "node-001"
-      },
-      "created_at": "2026-05-29T10:01:00Z"
-    },
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440011",
-      "task_id": "550e8400-e29b-41d4-a716-446655440001",
-      "event_type": "progress_update",
-      "payload": {
-        "progress": 50,
-        "message": "正在分析文件..."
-      },
-      "created_at": "2026-05-29T10:01:30Z"
-    }
-  ]
-}
-```
-
-#### GET /api/v1/tasks/{task_id}/artifacts
-
-获取任务产物。
-
-**响应示例**
-
-```json
-{
-  "artifacts": [
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440020",
-      "task_id": "550e8400-e29b-41d4-a716-446655440001",
-      "artifact_type": "report",
-      "name": "analysis-report.md",
-      "size": 12345,
-      "url": "http://localhost:9000/superteam-artifacts/550e8400-e29b-41d4-a716-446655440020",
-      "created_at": "2026-05-29T10:05:00Z"
-    }
-  ]
 }
 ```
 
@@ -596,23 +531,21 @@ Authorization: Bearer <runtime-token>
 ```json
 {
   "result": {
-    "summary": "分析完成",
-    "artifacts": [
-      {
-        "artifact_type": "report",
-        "name": "analysis-report.md",
-        "url": "http://localhost:9000/superteam-artifacts/..."
-      }
-    ]
+    "summary": "分析完成"
   }
 }
 ```
+
+说明：
+
+- 当前 foundation 阶段，`complete` 请求体可以为空；如果传入请求体，必须是合法 JSON。
+- Control Plane 当前会校验请求体 JSON 并把任务状态更新为 `completed`，但不会持久化 `result` 内容；结果持久化属于后续能力。
 
 **响应示例**
 
 ```json
 {
-  "id": "550e8400-e29b-41d4-a716-446655440001",
+  "id": 1,
   "title": "分析代码库",
   "status": "completed",
   "provider_type": "claude-code",
@@ -644,7 +577,7 @@ Authorization: Bearer <runtime-token>
 
 ```json
 {
-  "id": "550e8400-e29b-41d4-a716-446655440001",
+  "id": 1,
   "title": "分析代码库",
   "status": "failed",
   "provider_type": "claude-code",
@@ -671,6 +604,11 @@ Authorization: Bearer <runtime-token>
 **响应**
 
 - `204 No Content`
+
+说明：
+
+- 当前 foundation 阶段，lease endpoint 仅用于确认任务存在并返回 `204`。
+- 该接口尚未持久化租约续约记录，也不提供独立 lease 元数据返回。
 
 ---
 
