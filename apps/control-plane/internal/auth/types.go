@@ -4,7 +4,7 @@ import "time"
 
 // User 用户模型
 type User struct {
-	ID           string     `db:"id"`
+	ID           int64      `db:"id"`
 	Username     string     `db:"username"`
 	PasswordHash string     `db:"password_hash"`
 	Status       string     `db:"status"`
@@ -21,22 +21,6 @@ type Session struct {
 	LastSeenAt time.Time `json:"last_seen_at"`
 	ClientIP   string    `json:"client_ip"`
 	UserAgent  string    `json:"user_agent"`
-}
-
-// UserSummary 用户摘要（API 响应）
-type UserSummary struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	Status   string `json:"status"`
-}
-
-// ToUserSummary 转换为用户摘要
-func (u *User) ToUserSummary() UserSummary {
-	return UserSummary{
-		ID:       u.ID,
-		Username: u.Username,
-		Status:   u.Status,
-	}
 }
 
 // contextKey 用于 context 存储
