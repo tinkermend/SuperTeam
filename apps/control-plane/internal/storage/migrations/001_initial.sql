@@ -23,6 +23,8 @@ CREATE TABLE runtime_nodes (
 
 CREATE INDEX idx_runtime_nodes_status ON runtime_nodes(status);
 CREATE INDEX idx_runtime_nodes_last_heartbeat ON runtime_nodes(last_heartbeat_at);
+CREATE INDEX idx_runtime_nodes_supported_providers ON runtime_nodes USING GIN (supported_providers);
+CREATE INDEX idx_runtime_nodes_status_heartbeat ON runtime_nodes(status, last_heartbeat_at DESC);
 
 -- ============================================================================
 -- Auth Module
@@ -33,7 +35,7 @@ CREATE TABLE auth_users (
     id BIGSERIAL PRIMARY KEY,
     username VARCHAR(255) UNIQUE NOT NULL,
     display_name VARCHAR(255),
-    email VARCHAR(255),
+    email VARCHAR(255) UNIQUE,
     password_hash VARCHAR(255),
     status VARCHAR(50) NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -80,6 +82,8 @@ CREATE INDEX idx_tasks_status ON tasks(status);
 CREATE INDEX idx_tasks_provider_type ON tasks(provider_type);
 CREATE INDEX idx_tasks_assigned_node_id ON tasks(assigned_node_id);
 CREATE INDEX idx_tasks_creator_id ON tasks(creator_id);
+CREATE INDEX idx_tasks_params ON tasks USING GIN (params);
+CREATE INDEX idx_tasks_status_priority_created ON tasks(status, priority DESC, created_at DESC);
 
 -- 任务执行记录
 CREATE TABLE task_executions (
@@ -163,3 +167,26 @@ CREATE TABLE audit_events (
 CREATE INDEX idx_audit_events_actor ON audit_events(actor_type, actor_id);
 CREATE INDEX idx_audit_events_resource ON audit_events(resource_type, resource_id);
 CREATE INDEX idx_audit_events_created_at ON audit_events(created_at);
+
+-- ============================================================================
+-- Triggers for auto-updating updated_at
+-- ============================================================================
+
+-- Trigger function for auto-updating updated_at
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Apply trigger to tables with updated_at
+CREATE TRIGGER update_runtime_nodes_updated_at BEFORE UPDATE ON runtime_nodes
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_auth_users_updated_at BEFORE UPDATE ON auth_users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_tasks_updated_at BEFORE UPDATE ON tasks
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
