@@ -30,6 +30,8 @@ func TestRuntimeRoutesAreRegistered(t *testing.T) {
 		{method: http.MethodPost, path: "/api/v1/runtime/tasks/1/complete", body: `{"result":{}}`},
 		{method: http.MethodPost, path: "/api/v1/runtime/tasks/1/fail", body: `{"error":"failed"}`},
 		{method: http.MethodPost, path: "/api/v1/runtime/tasks/1/lease"},
+		{method: http.MethodGet, path: "/api/v1/runtime/nodes"},
+		{method: http.MethodGet, path: "/api/v1/runtime/nodes/node-1"},
 	}
 
 	for _, tt := range tests {
