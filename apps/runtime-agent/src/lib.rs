@@ -1,4 +1,5 @@
 pub mod config;
+pub mod controlplane;
 pub mod daemon;
 pub mod events;
 pub mod health;
