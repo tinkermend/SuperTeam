@@ -9,11 +9,12 @@ import (
 )
 
 type Server struct {
-	router      *chi.Mux
-	taskHandler *handlers.TaskHandler
+	router         *chi.Mux
+	taskHandler    *handlers.TaskHandler
+	runtimeHandler *handlers.RuntimeHandler
 }
 
-func NewServer(taskHandler *handlers.TaskHandler) *Server {
+func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler) *Server {
 	r := chi.NewRouter()
 
 	r.Use(middleware.Recovery())
@@ -26,8 +27,9 @@ func NewServer(taskHandler *handlers.TaskHandler) *Server {
 	})
 
 	s := &Server{
-		router:      r,
-		taskHandler: taskHandler,
+		router:         r,
+		taskHandler:    taskHandler,
+		runtimeHandler: runtimeHandler,
 	}
 
 	s.registerRoutes()
@@ -42,6 +44,14 @@ func (s *Server) registerRoutes() {
 			r.Get("/{id}", s.taskHandler.GetTask)
 			r.Put("/{id}/status", s.taskHandler.UpdateTaskStatus)
 			r.Post("/{id}/cancel", s.taskHandler.CancelTask)
+		})
+
+		r.Route("/runtime", func(r chi.Router) {
+			r.Post("/register", s.runtimeHandler.RegisterNode)
+			r.Post("/heartbeat", s.runtimeHandler.Heartbeat)
+			r.Post("/claim", s.runtimeHandler.ClaimTask)
+			r.Get("/nodes", s.runtimeHandler.ListNodes)
+			r.Get("/nodes/{id}", s.runtimeHandler.GetNodeByID)
 		})
 	})
 }
