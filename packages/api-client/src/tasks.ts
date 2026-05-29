@@ -1,12 +1,15 @@
 import type { ApiClientOptions } from "./health";
 
+export type TaskStatus = "pending" | "claimed" | "running" | "completed" | "failed" | "cancelled";
+
 export type TaskResponse = {
-  id: string | number;
+  id: number;
   title: string;
   provider_type: string;
-  status: string;
-  priority?: number;
+  status: TaskStatus;
+  priority: number;
   description?: string;
+  creator_id?: number;
   target_node_id?: string;
   assigned_node_id?: string;
   workspace_path?: string;

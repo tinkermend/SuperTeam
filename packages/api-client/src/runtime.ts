@@ -1,12 +1,14 @@
 import type { ApiClientOptions } from "./health";
 
+export type RuntimeNodeStatus = "online" | "offline";
+
 export type RuntimeNodeResponse = {
   node_id: string;
   name: string;
-  supported_providers?: string[];
+  supported_providers: string[];
   max_slots: number;
   current_load: number;
-  status: string;
+  status: RuntimeNodeStatus;
   metadata?: Record<string, unknown>;
   last_heartbeat_at?: string;
   created_at?: string;

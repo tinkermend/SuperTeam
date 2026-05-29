@@ -1,14 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import type { TaskResponse } from "./tasks";
+import type { TaskResponse, TaskStatus } from "./tasks";
 import { createTask, listTasks } from "./tasks";
 
 describe("listTasks", () => {
   it("calls the tasks endpoint and parses JSON", async () => {
+    const status: TaskStatus = "pending";
     const tasks: TaskResponse[] = [
       {
-        id: "task-1",
+        id: 1,
         title: "Analyze requirements",
-        status: "pending",
+        status,
         provider_type: "codex",
         priority: 2,
         description: "Clarify initial scope",
@@ -78,9 +79,10 @@ describe("createTask", () => {
       target_node_id: "node-1",
       workspace_path: "/workspace/superteam",
     };
+    const status: TaskStatus = "pending";
     const createdTask: TaskResponse = {
-      id: "task-2",
-      status: "pending",
+      id: 2,
+      status,
       assigned_node_id: "node-1",
       created_at: "2026-05-29T00:02:00Z",
       updated_at: "2026-05-29T00:02:00Z",
