@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Control Plane S3 对象存储接入 (2026-05-29)
+
+- 使用 AWS SDK for Go v2 的 `config`、`credentials`、`service/s3` 初始化控制平面 S3 客户端。
+- 新增 `S3ObjectStore` 边界，封装对象上传、下载、存在性检查和删除，并返回稳定的 `s3://bucket/key` 工件引用。
+- 补齐 S3 配置校验，启动前检查 endpoint、region、bucket、access key 和 secret key。
+- 更新配置模板和配置指南，保留 MinIO/localstack path-style 默认值，并补充 Volcengine TOS virtual-hosted 配置示例。
+
 #### Phase 4 - Runtime Agent Control Plane 集成 (2026-05-29)
 
 - 添加 Runtime Agent Control Plane 客户端 (`apps/runtime-agent/src/controlplane/`)
@@ -136,6 +143,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 将 Control Plane PostgreSQL 和 Redis 配置示例切换到 `docs/database/conn_info.md` 记录的远端地址，并修正连接验证命令。
+- 在远端 PostgreSQL 创建 `superteam` 应用用户、数据库和 schema，并从本地 `127.0.0.1` 的 `superteam` 数据库迁移当前 schema 与迁移记录。
+
 ### Deprecated
 
 ### Removed
@@ -150,6 +160,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 忽略本地真实配置 `apps/runtime-agent/config.toml` 和 `.superteam/` 运行状态目录，保留可提交示例配置。
 
 ### Security
+
+#### 配置文件忽略规则收敛 (2026-05-29)
+
+- 扩展 `.gitignore` 环境配置规则，忽略项目内真实 `.env*` 和 `config.yaml` 文件，仅保留 `.env.example`、`config.example.yaml` 等示例配置可同步。
 
 ## [0.1.0] - 2026-05-29
 

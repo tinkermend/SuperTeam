@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -92,14 +93,26 @@ func applyEnv(cfg Config) Config {
 }
 
 func (cfg Config) validate() error {
-	if cfg.Postgres.URL == "" {
+	if strings.TrimSpace(cfg.Postgres.URL) == "" {
 		return errors.New("DATABASE_URL is required")
 	}
-	if cfg.Redis.URL == "" {
+	if strings.TrimSpace(cfg.Redis.URL) == "" {
 		return errors.New("REDIS_URL is required")
 	}
-	if cfg.ObjectStore.Bucket == "" {
+	if strings.TrimSpace(cfg.ObjectStore.Endpoint) == "" {
+		return errors.New("S3_ENDPOINT is required")
+	}
+	if strings.TrimSpace(cfg.ObjectStore.Region) == "" {
+		return errors.New("S3_REGION is required")
+	}
+	if strings.TrimSpace(cfg.ObjectStore.Bucket) == "" {
 		return errors.New("S3_BUCKET is required")
+	}
+	if strings.TrimSpace(cfg.ObjectStore.AccessKeyID) == "" {
+		return errors.New("S3_ACCESS_KEY_ID is required")
+	}
+	if strings.TrimSpace(cfg.ObjectStore.SecretAccessKey) == "" {
+		return errors.New("S3_SECRET_ACCESS_KEY is required")
 	}
 
 	return nil

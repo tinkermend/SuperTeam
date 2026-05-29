@@ -2,15 +2,20 @@ http:
   addr: ":8080"
 
 postgres:
-  url: "postgres://superteam:change-me@127.0.0.1:5432/superteam?sslmode=disable"
+  url: "postgres://superteam:xxxx@115.190.247.9:35432/superteam?sslmode=disable"
 
 redis:
-  url: "redis://:change-me@127.0.0.1:6379/0"
+  url: "redis://:xxxx@115.190.247.9:6379/0"
 
 objectStore:
-  endpoint: "http://127.0.0.1:9000"
-  region: "us-east-1"
-  bucket: "superteam-artifacts"
-  accessKeyId: "change-me"
-  secretAccessKey: "change-me"
-  forcePathStyle: true
+  # Local MinIO/localstack uses path-style addressing.
+  # Volcengine TOS S3 example:
+  # endpoint: "https://tos-s3-cn-beijing.volces.com"
+  # region: "cn-beijing"
+  # forcePathStyle: false
+  endpoint: "https://tos-s3-cn-guangzhou.volces.com"
+  region: "cn-guangzhou"
+  bucket: "superteam"
+  accessKeyId: "xxx"
+  secretAccessKey: "xxxx"
+  forcePathStyle: false

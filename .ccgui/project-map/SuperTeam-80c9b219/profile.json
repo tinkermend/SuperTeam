@@ -1,0 +1,86 @@
+{
+  "primaryLanguage": "TypeScript",
+  "languages": [
+    "TypeScript",
+    "Go",
+    "Rust"
+  ],
+  "shapes": [
+    "pnpm monorepo",
+    "Next.js Web console",
+    "Go Control Plane service",
+    "Rust Runtime Agent daemon",
+    "contract-first API boundary",
+    "shared packages"
+  ],
+  "frameworks": [
+    {
+      "name": "Next.js",
+      "confidence": "unknown",
+      "evidence": []
+    },
+    {
+      "name": "React",
+      "confidence": "unknown",
+      "evidence": []
+    },
+    {
+      "name": "Tailwind CSS",
+      "confidence": "unknown",
+      "evidence": []
+    },
+    {
+      "name": "Vitest",
+      "confidence": "unknown",
+      "evidence": []
+    },
+    {
+      "name": "Go",
+      "confidence": "unknown",
+      "evidence": []
+    },
+    {
+      "name": "pgx",
+      "confidence": "unknown",
+      "evidence": []
+    },
+    {
+      "name": "oapi-codegen",
+      "confidence": "unknown",
+      "evidence": []
+    },
+    {
+      "name": "Rust",
+      "confidence": "unknown",
+      "evidence": []
+    },
+    {
+      "name": "Tokio",
+      "confidence": "unknown",
+      "evidence": []
+    },
+    {
+      "name": "Axum",
+      "confidence": "unknown",
+      "evidence": []
+    },
+    {
+      "name": "clap",
+      "confidence": "unknown",
+      "evidence": []
+    }
+  ],
+  "interfaceKinds": [
+    "Web UI",
+    "REST/OpenAPI",
+    "Runtime HTTP claim/lease",
+    "Runtime WebSocket events",
+    "Provider adapter contract"
+  ],
+  "buildSystems": [
+    "pnpm",
+    "Makefile",
+    "Cargo",
+    "go test"
+  ]
+}

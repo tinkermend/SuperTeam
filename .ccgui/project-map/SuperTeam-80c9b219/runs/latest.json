@@ -1,0 +1,115 @@
+{
+  "items": [
+    {
+      "id": "global_mpql77u7_yv52r7",
+      "kind": "global",
+      "status": "completed",
+      "engine": "codex",
+      "model": "gpt-5.5",
+      "startedAt": "2026-05-29T07:14:57.775Z",
+      "completedAt": "2026-05-29T07:16:49.761Z",
+      "scope": "global",
+      "requestScope": {
+        "kind": "global",
+        "lensIds": []
+      },
+      "generationIntent": "global",
+      "preferredLanguage": "zh",
+      "readSources": [],
+      "storageLocation": "project",
+      "writePath": "/Users/wangpei/src/singe/SuperTeam/.ccgui/project-map/SuperTeam-80c9b219",
+      "phase": "completed",
+      "progress": 100,
+      "threadId": "019e7296-4671-7ed1-bee6-90ca9b2a2325",
+      "logs": [
+        {
+          "at": "2026-05-29T07:14:57.775Z",
+          "phase": "queued",
+          "message": "Generation request queued."
+        },
+        {
+          "at": "2026-05-29T07:15:11.341Z",
+          "phase": "preparingSources",
+          "message": "Worker claimed the active slot."
+        },
+        {
+          "at": "2026-05-29T07:15:11.383Z",
+          "phase": "preparingSources",
+          "message": "Scanning workspace files for bounded evidence."
+        },
+        {
+          "at": "2026-05-29T07:15:11.505Z",
+          "phase": "preparingSources",
+          "message": "Collected 24 normalized evidence files (18495/52000 chars)."
+        },
+        {
+          "at": "2026-05-29T07:15:11.547Z",
+          "phase": "askingAi",
+          "message": "Dispatching codex thread event generation."
+        },
+        {
+          "at": "2026-05-29T07:15:11.693Z",
+          "phase": "askingAi",
+          "message": "Codex project-map thread started: 019e7296-4671-7ed1-bee6-90ca9b2a2325."
+        },
+        {
+          "at": "2026-05-29T07:15:12.586Z",
+          "phase": "askingAi",
+          "message": "AI generation still running 1s."
+        },
+        {
+          "at": "2026-05-29T07:15:21.616Z",
+          "phase": "askingAi",
+          "message": "AI generation still running 10s."
+        },
+        {
+          "at": "2026-05-29T07:15:31.716Z",
+          "phase": "askingAi",
+          "message": "AI generation still running 20s."
+        },
+        {
+          "at": "2026-05-29T07:15:41.828Z",
+          "phase": "askingAi",
+          "message": "AI generation still running 30s."
+        },
+        {
+          "at": "2026-05-29T07:15:51.940Z",
+          "phase": "askingAi",
+          "message": "AI generation still running 40s."
+        },
+        {
+          "at": "2026-05-29T07:16:02.012Z",
+          "phase": "askingAi",
+          "message": "AI generation still running 50s."
+        },
+        {
+          "at": "2026-05-29T07:16:19.269Z",
+          "phase": "askingAi",
+          "message": "AI generation still running 60s."
+        },
+        {
+          "at": "2026-05-29T07:16:39.295Z",
+          "phase": "askingAi",
+          "message": "AI generation still running 70s."
+        },
+        {
+          "at": "2026-05-29T07:16:49.652Z",
+          "phase": "validatingOutput",
+          "message": "Validating structured JSON output."
+        },
+        {
+          "at": "2026-05-29T07:16:49.709Z",
+          "phase": "writingMap",
+          "message": "Validated map data; writing project-map files."
+        },
+        {
+          "at": "2026-05-29T07:16:49.761Z",
+          "phase": "completed",
+          "message": "Project map generation completed."
+        }
+      ],
+      "error": null,
+      "log": "Project map generation completed."
+    }
+  ]
+}

@@ -17,13 +17,11 @@ src-tauri/target/
 *.gen.go
 *.sql.go
 
-# Environment
-.env
-.env.local
-.env.*.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Environment / local config
+.env*
+!.env.example
+!**/.env.example
+config.yaml
 apps/*/config/local.yaml
 apps/*/config/*.local.yaml
 apps/runtime-agent/config.toml

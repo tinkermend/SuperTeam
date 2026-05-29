@@ -1,0 +1,415 @@
+{
+  "items": [
+    {
+      "id": "superteam-root",
+      "lensId": "architecture",
+      "nodeKind": "project",
+      "title": "SuperTeam 项目根",
+      "summary": "企业级数字员工控制平面，当前基线聚焦 Web、Control Plane、Runtime Agent 与契约。",
+      "detail": {
+        "coreDescription": "SuperTeam 是 pnpm monorepo，包含 apps、packages、contracts 三类主要边界。README 明确第一阶段建立外部 Web 控制台、Control Plane、Runtime Agent 和契约基线。",
+        "keyFacts": [
+          "`pnpm-workspace.yaml` 纳入 `apps/*` 与 `packages/*`。",
+          "根 `package.json` 提供 Web、Control Plane、Runtime Agent 的 dev/build/test 脚本。",
+          "`README.md` 描述 apps/web、apps/desktop、apps/control-plane、apps/runtime-agent、packages 与 contracts。",
+          "contracts 目录拆分 control-plane、runtime、provider 三个边界。"
+        ],
+        "keyLogic": [
+          "Web 通过 workspace 依赖复用 `@superteam/views`、`@superteam/core`、`@superteam/api-client`。",
+          "Control Plane 和 Runtime Agent 分别由 Go 与 Rust 工具链独立构建测试。"
+        ],
+        "riskSignals": [
+          "`README.md` 将 Runtime Agent 写成 Go daemon，但 `apps/runtime-agent/Cargo.toml` 与 runtime contract 证明当前实现是 Rust/Tokio，README 该处疑似过期。"
+        ],
+        "diagramArtifacts": [
+          {
+            "id": "superteam-layering-flow",
+            "label": "SuperTeam 当前分层流向",
+            "path": "/Users/wangpei/src/singe/SuperTeam/.ccgui/project-map/SuperTeam-80c9b219/diagrams/superteam-layering-flow.md",
+            "kind": "flowchart",
+            "summary": "展示 Web Console、Control Plane、Runtime Agent、Provider 和共享契约的主要依赖与调用边界。",
+            "sourceRefs": [
+              ".claude/worktrees/control-plane-api/README.md",
+              ".claude/worktrees/control-plane-api/contracts/control-plane/README.md",
+              ".claude/worktrees/control-plane-api/contracts/runtime/README.md",
+              ".claude/worktrees/control-plane-api/contracts/provider/README.md",
+              ".claude/worktrees/control-plane-api/apps/web/package.json"
+            ]
+          }
+        ],
+        "relatedArtifacts": [
+          {
+            "type": "symbol",
+            "label": "README.md"
+          },
+          {
+            "type": "symbol",
+            "label": "package.json"
+          },
+          {
+            "type": "symbol",
+            "label": "pnpm-workspace.yaml"
+          }
+        ]
+      },
+      "children": [
+        "web-console-app",
+        "control-plane-service",
+        "runtime-agent-daemon",
+        "shared-ts-packages",
+        "contract-boundaries",
+        "desktop-deferred-shell",
+        "workspace-command-surface",
+        "readme-runtime-language-drift"
+      ],
+      "sources": [
+        {
+          "type": "file",
+          "label": "AGENTS.md",
+          "path": ".claude/worktrees/control-plane-api/AGENTS.md",
+          "hash": "7891b591",
+          "excerpt": "# AGENTS.md — SuperTeam\n\n## 项目定位\n\nSuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。\n\n当前阶段优先做可控闭环：人类输入需求 -> 数字员工分析 -> 人类确认 -> Runtime Agent 执行 -> 回传结果和工件 -> 人类验收。\n\n## 架构分层\n\n- **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。\n- **Control Plane Layer**：Go "
+        },
+        {
+          "type": "file",
+          "label": "go.mod",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/go.mod",
+          "hash": "a60338f0",
+          "excerpt": "module github.com/superteam/control-plane\n\ngo 1.25.5\n\nrequire github.com/jackc/pgx/v5 v5.9.2\n\nrequire (\n\tdario.cat/mergo v1.0.2 // indirect\n\tgithub.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect\n\tgithub.com/Microsoft/go-winio v0.6.2 // indirect\n\tgithub.com/cenkalti/backoff/v4 v4.3.0 // indirect\n\tg"
+        },
+        {
+          "type": "file",
+          "label": "README.md",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/internal/storage/queries/README.md",
+          "hash": "453634b6",
+          "excerpt": "# Control Plane Storage Layer Tests\n\n## 概述\n\n本目录包含 SuperTeam 控制平面数据层的完整测试套件。测试使用 testcontainers-go 在隔离的 PostgreSQL 容器中运行，确保测试环境的一致性和可重复性。\n\n## 测试覆盖\n\n### Runtime 节点测试\n- `TestCreateRuntimeNode` - 创建 Runtime 节点\n- `TestGetRuntimeNode` - 查询节点信息\n- `TestUpdateRuntimeNodeHeartbeat` - 更新节点心跳\n- `TestListOnlineNodes` - 查询在线节点列表\n\n##"
+        },
+        {
+          "type": "file",
+          "label": "Makefile",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/Makefile",
+          "hash": "6d62dcac",
+          "excerpt": ".PHONY: generate test build clean migrate-up migrate-down migrate-status\n\n# Generate code from OpenAPI specs\ngenerate:\n\t@echo \"Generating code from OpenAPI specs...\"\n\t@mkdir -p internal/auth\n\toapi-codegen -package auth -generate types,chi-server \\\n\t\t-o internal/auth/generated.go \\\n\t\t../../contracts/control-plane/auth.y"
+        }
+      ],
+      "confidence": "high",
+      "stale": false,
+      "candidate": false,
+      "lastGeneratedAt": "2026-05-29T07:16:49.708Z",
+      "generatedBy": {
+        "engine": "codex",
+        "model": "gpt-5.5",
+        "runId": "global_mpql77u7_yv52r7"
+      }
+    },
+    {
+      "id": "web-console-app",
+      "lensId": "architecture",
+      "nodeKind": "app",
+      "title": "Web Console 应用",
+      "summary": "`apps/web` 是 Next.js 16 + React 19 控制台入口，依赖 workspace 共享包。",
+      "detail": {
+        "coreDescription": "Web 控制台使用 Next.js App Router 技术栈，脚本覆盖 dev、build、test、typecheck，并通过 workspace 包组合 API、领域状态和视图。",
+        "keyFacts": [
+          "`@superteam/web` 依赖 `next` 16.2.6、`react` 19.2.6、`react-dom` 19.2.6。",
+          "Web 依赖 `@superteam/api-client`、`@superteam/core`、`@superteam/views`。",
+          "脚本包含 `next dev --webpack --hostname 127.0.0.1 --port 3000`、`next build`、`vitest run --environment jsdom`、`tsc --noEmit`。",
+          "`tsconfig.json` 继承根 `tsconfig.base.json`，配置 Next plugin 与 `@/*` 到 `./src/*`。"
+        ],
+        "keyLogic": [
+          "Web 侧通过 packages 解耦 API client、core 领域逻辑和 views 页面视图。"
+        ],
+        "riskSignals": [],
+        "diagramArtifacts": [],
+        "relatedArtifacts": [
+          {
+            "type": "symbol",
+            "label": "apps/web/package.json"
+          },
+          {
+            "type": "symbol",
+            "label": "apps/web/tsconfig.json"
+          }
+        ]
+      },
+      "parentId": "superteam-root",
+      "children": [],
+      "sources": [
+        {
+          "type": "file",
+          "label": "AGENTS.md",
+          "path": ".claude/worktrees/control-plane-api/AGENTS.md",
+          "hash": "7891b591",
+          "excerpt": "# AGENTS.md — SuperTeam\n\n## 项目定位\n\nSuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。\n\n当前阶段优先做可控闭环：人类输入需求 -> 数字员工分析 -> 人类确认 -> Runtime Agent 执行 -> 回传结果和工件 -> 人类验收。\n\n## 架构分层\n\n- **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。\n- **Control Plane Layer**：Go "
+        },
+        {
+          "type": "file",
+          "label": "go.mod",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/go.mod",
+          "hash": "a60338f0",
+          "excerpt": "module github.com/superteam/control-plane\n\ngo 1.25.5\n\nrequire github.com/jackc/pgx/v5 v5.9.2\n\nrequire (\n\tdario.cat/mergo v1.0.2 // indirect\n\tgithub.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect\n\tgithub.com/Microsoft/go-winio v0.6.2 // indirect\n\tgithub.com/cenkalti/backoff/v4 v4.3.0 // indirect\n\tg"
+        },
+        {
+          "type": "file",
+          "label": "README.md",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/internal/storage/queries/README.md",
+          "hash": "453634b6",
+          "excerpt": "# Control Plane Storage Layer Tests\n\n## 概述\n\n本目录包含 SuperTeam 控制平面数据层的完整测试套件。测试使用 testcontainers-go 在隔离的 PostgreSQL 容器中运行，确保测试环境的一致性和可重复性。\n\n## 测试覆盖\n\n### Runtime 节点测试\n- `TestCreateRuntimeNode` - 创建 Runtime 节点\n- `TestGetRuntimeNode` - 查询节点信息\n- `TestUpdateRuntimeNodeHeartbeat` - 更新节点心跳\n- `TestListOnlineNodes` - 查询在线节点列表\n\n##"
+        },
+        {
+          "type": "file",
+          "label": "Makefile",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/Makefile",
+          "hash": "6d62dcac",
+          "excerpt": ".PHONY: generate test build clean migrate-up migrate-down migrate-status\n\n# Generate code from OpenAPI specs\ngenerate:\n\t@echo \"Generating code from OpenAPI specs...\"\n\t@mkdir -p internal/auth\n\toapi-codegen -package auth -generate types,chi-server \\\n\t\t-o internal/auth/generated.go \\\n\t\t../../contracts/control-plane/auth.y"
+        }
+      ],
+      "confidence": "high",
+      "stale": false,
+      "candidate": false,
+      "lastGeneratedAt": "2026-05-29T07:16:49.708Z",
+      "generatedBy": {
+        "engine": "codex",
+        "model": "gpt-5.5",
+        "runId": "global_mpql77u7_yv52r7"
+      }
+    },
+    {
+      "id": "desktop-deferred-shell",
+      "lensId": "architecture",
+      "nodeKind": "app",
+      "title": "Desktop 延后空壳",
+      "summary": "`apps/desktop` 仅保留未来 Tauri shell 边界，当前不承载业务页面。",
+      "detail": {
+        "coreDescription": "Desktop 包当前只有占位脚本和 README，明确第一阶段延后，Web 主链路优先。",
+        "keyFacts": [
+          "`@superteam/desktop` 的 `dev` 脚本仅输出 Desktop shell deferred 提示。",
+          "`apps/desktop/README.md` 要求保留未来 Tauri shell 边界。",
+          "README 明确不要在 Desktop 中加入业务页面、本地执行或 provider management。"
+        ],
+        "keyLogic": [
+          "Desktop 目前是架构占位，不是可运行业务控制台。"
+        ],
+        "riskSignals": [],
+        "diagramArtifacts": [],
+        "relatedArtifacts": [
+          {
+            "type": "symbol",
+            "label": "apps/desktop/package.json"
+          },
+          {
+            "type": "symbol",
+            "label": "apps/desktop/README.md"
+          }
+        ]
+      },
+      "parentId": "superteam-root",
+      "children": [],
+      "sources": [
+        {
+          "type": "file",
+          "label": "AGENTS.md",
+          "path": ".claude/worktrees/control-plane-api/AGENTS.md",
+          "hash": "7891b591",
+          "excerpt": "# AGENTS.md — SuperTeam\n\n## 项目定位\n\nSuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。\n\n当前阶段优先做可控闭环：人类输入需求 -> 数字员工分析 -> 人类确认 -> Runtime Agent 执行 -> 回传结果和工件 -> 人类验收。\n\n## 架构分层\n\n- **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。\n- **Control Plane Layer**：Go "
+        },
+        {
+          "type": "file",
+          "label": "go.mod",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/go.mod",
+          "hash": "a60338f0",
+          "excerpt": "module github.com/superteam/control-plane\n\ngo 1.25.5\n\nrequire github.com/jackc/pgx/v5 v5.9.2\n\nrequire (\n\tdario.cat/mergo v1.0.2 // indirect\n\tgithub.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect\n\tgithub.com/Microsoft/go-winio v0.6.2 // indirect\n\tgithub.com/cenkalti/backoff/v4 v4.3.0 // indirect\n\tg"
+        },
+        {
+          "type": "file",
+          "label": "README.md",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/internal/storage/queries/README.md",
+          "hash": "453634b6",
+          "excerpt": "# Control Plane Storage Layer Tests\n\n## 概述\n\n本目录包含 SuperTeam 控制平面数据层的完整测试套件。测试使用 testcontainers-go 在隔离的 PostgreSQL 容器中运行，确保测试环境的一致性和可重复性。\n\n## 测试覆盖\n\n### Runtime 节点测试\n- `TestCreateRuntimeNode` - 创建 Runtime 节点\n- `TestGetRuntimeNode` - 查询节点信息\n- `TestUpdateRuntimeNodeHeartbeat` - 更新节点心跳\n- `TestListOnlineNodes` - 查询在线节点列表\n\n##"
+        },
+        {
+          "type": "file",
+          "label": "Makefile",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/Makefile",
+          "hash": "6d62dcac",
+          "excerpt": ".PHONY: generate test build clean migrate-up migrate-down migrate-status\n\n# Generate code from OpenAPI specs\ngenerate:\n\t@echo \"Generating code from OpenAPI specs...\"\n\t@mkdir -p internal/auth\n\toapi-codegen -package auth -generate types,chi-server \\\n\t\t-o internal/auth/generated.go \\\n\t\t../../contracts/control-plane/auth.y"
+        }
+      ],
+      "confidence": "high",
+      "stale": false,
+      "candidate": false,
+      "lastGeneratedAt": "2026-05-29T07:16:49.708Z",
+      "generatedBy": {
+        "engine": "codex",
+        "model": "gpt-5.5",
+        "runId": "global_mpql77u7_yv52r7"
+      }
+    },
+    {
+      "id": "control-plane-service",
+      "lensId": "architecture",
+      "nodeKind": "service",
+      "title": "Go Control Plane 服务",
+      "summary": "`apps/control-plane` 是 Go 服务，使用 pgx、chi/oapi-codegen、Atlas migration 与 Makefile。",
+      "detail": {
+        "coreDescription": "Control Plane 模块名为 `github.com/superteam/control-plane`，Go 版本声明为 1.25.5，依赖 pgx，并通过 Makefile 提供生成、测试、构建和数据库迁移入口。",
+        "keyFacts": [
+          "`go.mod` module 是 `github.com/superteam/control-plane`。",
+          "`go.mod` 直接 require `github.com/jackc/pgx/v5 v5.9.2`。",
+          "Makefile 的 `generate` 使用 `oapi-codegen` 从 `../../contracts/control-plane/auth.yaml` 生成 chi server/types。",
+          "Makefile 的 `test` 执行 `go test -v -race -coverprofile=coverage.out ./...`。",
+          "Makefile 的迁移命令使用 `atlas migrate apply/status/down` 并要求 `DATABASE_URL`。"
+        ],
+        "keyLogic": [
+          "Control Plane 倾向 contract-first：OpenAPI 生成 server models/interfaces，API 处理器需与契约兼容。",
+          "数据库迁移通过 Atlas 管理，本地迁移命令依赖环境变量。"
+        ],
+        "riskSignals": [
+          "Evidence 未包含 Go 源码入口内容，只能确认构建脚本与依赖，不能确认实际 handler 覆盖。"
+        ],
+        "diagramArtifacts": [],
+        "relatedArtifacts": [
+          {
+            "type": "symbol",
+            "label": "apps/control-plane/go.mod"
+          },
+          {
+            "type": "symbol",
+            "label": "apps/control-plane/Makefile"
+          },
+          {
+            "type": "symbol",
+            "label": "contracts/control-plane/README.md"
+          }
+        ]
+      },
+      "parentId": "superteam-root",
+      "children": [
+        "control-plane-storage-tests"
+      ],
+      "sources": [
+        {
+          "type": "file",
+          "label": "AGENTS.md",
+          "path": ".claude/worktrees/control-plane-api/AGENTS.md",
+          "hash": "7891b591",
+          "excerpt": "# AGENTS.md — SuperTeam\n\n## 项目定位\n\nSuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。\n\n当前阶段优先做可控闭环：人类输入需求 -> 数字员工分析 -> 人类确认 -> Runtime Agent 执行 -> 回传结果和工件 -> 人类验收。\n\n## 架构分层\n\n- **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。\n- **Control Plane Layer**：Go "
+        },
+        {
+          "type": "file",
+          "label": "go.mod",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/go.mod",
+          "hash": "a60338f0",
+          "excerpt": "module github.com/superteam/control-plane\n\ngo 1.25.5\n\nrequire github.com/jackc/pgx/v5 v5.9.2\n\nrequire (\n\tdario.cat/mergo v1.0.2 // indirect\n\tgithub.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect\n\tgithub.com/Microsoft/go-winio v0.6.2 // indirect\n\tgithub.com/cenkalti/backoff/v4 v4.3.0 // indirect\n\tg"
+        },
+        {
+          "type": "file",
+          "label": "README.md",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/internal/storage/queries/README.md",
+          "hash": "453634b6",
+          "excerpt": "# Control Plane Storage Layer Tests\n\n## 概述\n\n本目录包含 SuperTeam 控制平面数据层的完整测试套件。测试使用 testcontainers-go 在隔离的 PostgreSQL 容器中运行，确保测试环境的一致性和可重复性。\n\n## 测试覆盖\n\n### Runtime 节点测试\n- `TestCreateRuntimeNode` - 创建 Runtime 节点\n- `TestGetRuntimeNode` - 查询节点信息\n- `TestUpdateRuntimeNodeHeartbeat` - 更新节点心跳\n- `TestListOnlineNodes` - 查询在线节点列表\n\n##"
+        },
+        {
+          "type": "file",
+          "label": "Makefile",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/Makefile",
+          "hash": "6d62dcac",
+          "excerpt": ".PHONY: generate test build clean migrate-up migrate-down migrate-status\n\n# Generate code from OpenAPI specs\ngenerate:\n\t@echo \"Generating code from OpenAPI specs...\"\n\t@mkdir -p internal/auth\n\toapi-codegen -package auth -generate types,chi-server \\\n\t\t-o internal/auth/generated.go \\\n\t\t../../contracts/control-plane/auth.y"
+        }
+      ],
+      "confidence": "high",
+      "stale": false,
+      "candidate": false,
+      "lastGeneratedAt": "2026-05-29T07:16:49.708Z",
+      "generatedBy": {
+        "engine": "codex",
+        "model": "gpt-5.5",
+        "runId": "global_mpql77u7_yv52r7"
+      }
+    },
+    {
+      "id": "shared-ts-packages",
+      "lensId": "architecture",
+      "nodeKind": "package-group",
+      "title": "共享 TypeScript packages",
+      "summary": "`packages/api-client`、`core`、`ui`、`views` 分别承担 API、领域、UI、视图边界。",
+      "detail": {
+        "coreDescription": "共享 packages 均为 private ESM workspace 包，暴露 `src/index.ts`，并通过各自 test/typecheck 脚本维护边界。",
+        "keyFacts": [
+          "`@superteam/api-client` 暴露 `./src/index.ts`，提供 test 与 typecheck。",
+          "`@superteam/core` 依赖 `@superteam/api-client`。",
+          "`@superteam/ui` 声明 React 19.2.6 peerDependency。",
+          "`@superteam/views` 依赖 `@superteam/ui`，并声明 React peerDependency。",
+          "ui/views 的 test 脚本使用 `vitest run --environment jsdom`。"
+        ],
+        "keyLogic": [
+          "依赖方向体现 API client -> core -> views/ui -> web 的分层复用。",
+          "packages 当前证据主要来自 package.json 与 tsconfig，不能确认具体组件或领域 hook 内容。"
+        ],
+        "riskSignals": [
+          "Evidence 未包含 packages/src 源码，不能确认实际导出的模块数量和行为。"
+        ],
+        "diagramArtifacts": [],
+        "relatedArtifacts": [
+          {
+            "type": "symbol",
+            "label": "packages/api-client/package.json"
+          },
+          {
+            "type": "symbol",
+            "label": "packages/core/package.json"
+          },
+          {
+            "type": "symbol",
+            "label": "packages/ui/package.json"
+          },
+          {
+            "type": "symbol",
+            "label": "packages/views/package.json"
+          }
+        ]
+      },
+      "parentId": "superteam-root",
+      "children": [],
+      "sources": [
+        {
+          "type": "file",
+          "label": "AGENTS.md",
+          "path": ".claude/worktrees/control-plane-api/AGENTS.md",
+          "hash": "7891b591",
+          "excerpt": "# AGENTS.md — SuperTeam\n\n## 项目定位\n\nSuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。\n\n当前阶段优先做可控闭环：人类输入需求 -> 数字员工分析 -> 人类确认 -> Runtime Agent 执行 -> 回传结果和工件 -> 人类验收。\n\n## 架构分层\n\n- **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。\n- **Control Plane Layer**：Go "
+        },
+        {
+          "type": "file",
+          "label": "go.mod",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/go.mod",
+          "hash": "a60338f0",
+          "excerpt": "module github.com/superteam/control-plane\n\ngo 1.25.5\n\nrequire github.com/jackc/pgx/v5 v5.9.2\n\nrequire (\n\tdario.cat/mergo v1.0.2 // indirect\n\tgithub.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect\n\tgithub.com/Microsoft/go-winio v0.6.2 // indirect\n\tgithub.com/cenkalti/backoff/v4 v4.3.0 // indirect\n\tg"
+        },
+        {
+          "type": "file",
+          "label": "README.md",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/internal/storage/queries/README.md",
+          "hash": "453634b6",
+          "excerpt": "# Control Plane Storage Layer Tests\n\n## 概述\n\n本目录包含 SuperTeam 控制平面数据层的完整测试套件。测试使用 testcontainers-go 在隔离的 PostgreSQL 容器中运行，确保测试环境的一致性和可重复性。\n\n## 测试覆盖\n\n### Runtime 节点测试\n- `TestCreateRuntimeNode` - 创建 Runtime 节点\n- `TestGetRuntimeNode` - 查询节点信息\n- `TestUpdateRuntimeNodeHeartbeat` - 更新节点心跳\n- `TestListOnlineNodes` - 查询在线节点列表\n\n##"
+        },
+        {
+          "type": "file",
+          "label": "Makefile",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/Makefile",
+          "hash": "6d62dcac",
+          "excerpt": ".PHONY: generate test build clean migrate-up migrate-down migrate-status\n\n# Generate code from OpenAPI specs\ngenerate:\n\t@echo \"Generating code from OpenAPI specs...\"\n\t@mkdir -p internal/auth\n\toapi-codegen -package auth -generate types,chi-server \\\n\t\t-o internal/auth/generated.go \\\n\t\t../../contracts/control-plane/auth.y"
+        }
+      ],
+      "confidence": "high",
+      "stale": false,
+      "candidate": false,
+      "lastGeneratedAt": "2026-05-29T07:16:49.708Z",
+      "generatedBy": {
+        "engine": "codex",
+        "model": "gpt-5.5",
+        "runId": "global_mpql77u7_yv52r7"
+      }
+    }
+  ]
+}

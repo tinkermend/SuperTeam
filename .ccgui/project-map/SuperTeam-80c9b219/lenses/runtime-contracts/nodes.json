@@ -1,0 +1,313 @@
+{
+  "items": [
+    {
+      "id": "runtime-agent-daemon",
+      "lensId": "runtime-contracts",
+      "nodeKind": "runtime",
+      "title": "Rust Runtime Agent daemon",
+      "summary": "`apps/runtime-agent` 是 Rust 2024 crate，使用 Tokio/Axum/clap，含 lib 与 runtime-agent bin。",
+      "detail": {
+        "coreDescription": "Runtime Agent 当前是 Rust crate，提供库和二进制入口，依赖 Tokio 异步运行时、Axum WebSocket 能力、clap CLI、serde 与 anyhow。",
+        "keyFacts": [
+          "`Cargo.toml` package name 是 `superteam-runtime-agent`，edition 是 2024。",
+          "lib 名为 `superteam_runtime_agent`，路径 `src/lib.rs`。",
+          "bin 名为 `runtime-agent`，路径 `src/main.rs`。",
+          "依赖包含 `tokio`、`axum` with `ws`、`clap` with `derive/env`、`serde`、`serde_json`、`anyhow`。",
+          "dev-dependencies 包含 `reqwest` 和 `tempfile`。"
+        ],
+        "keyLogic": [
+          "根 `package.json` 的 `dev:runtime-agent` 使用 `cargo run --manifest-path apps/runtime-agent/Cargo.toml -- --once`。",
+          "根 `test:rust` 使用 `cargo test --manifest-path apps/runtime-agent/Cargo.toml`。"
+        ],
+        "riskSignals": [
+          "README 中 Runtime Agent 语言描述与 Cargo evidence 冲突，应以 Cargo 和 runtime contract 为准。"
+        ],
+        "diagramArtifacts": [],
+        "relatedArtifacts": [
+          {
+            "type": "symbol",
+            "label": "apps/runtime-agent/Cargo.toml"
+          },
+          {
+            "type": "symbol",
+            "label": "package.json"
+          },
+          {
+            "type": "symbol",
+            "label": "contracts/runtime/README.md"
+          }
+        ]
+      },
+      "parentId": "superteam-root",
+      "children": [
+        "runtime-contract-baseline",
+        "provider-contract-baseline"
+      ],
+      "sources": [
+        {
+          "type": "file",
+          "label": "AGENTS.md",
+          "path": ".claude/worktrees/control-plane-api/AGENTS.md",
+          "hash": "7891b591",
+          "excerpt": "# AGENTS.md — SuperTeam\n\n## 项目定位\n\nSuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。\n\n当前阶段优先做可控闭环：人类输入需求 -> 数字员工分析 -> 人类确认 -> Runtime Agent 执行 -> 回传结果和工件 -> 人类验收。\n\n## 架构分层\n\n- **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。\n- **Control Plane Layer**：Go "
+        },
+        {
+          "type": "file",
+          "label": "go.mod",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/go.mod",
+          "hash": "a60338f0",
+          "excerpt": "module github.com/superteam/control-plane\n\ngo 1.25.5\n\nrequire github.com/jackc/pgx/v5 v5.9.2\n\nrequire (\n\tdario.cat/mergo v1.0.2 // indirect\n\tgithub.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect\n\tgithub.com/Microsoft/go-winio v0.6.2 // indirect\n\tgithub.com/cenkalti/backoff/v4 v4.3.0 // indirect\n\tg"
+        },
+        {
+          "type": "file",
+          "label": "README.md",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/internal/storage/queries/README.md",
+          "hash": "453634b6",
+          "excerpt": "# Control Plane Storage Layer Tests\n\n## 概述\n\n本目录包含 SuperTeam 控制平面数据层的完整测试套件。测试使用 testcontainers-go 在隔离的 PostgreSQL 容器中运行，确保测试环境的一致性和可重复性。\n\n## 测试覆盖\n\n### Runtime 节点测试\n- `TestCreateRuntimeNode` - 创建 Runtime 节点\n- `TestGetRuntimeNode` - 查询节点信息\n- `TestUpdateRuntimeNodeHeartbeat` - 更新节点心跳\n- `TestListOnlineNodes` - 查询在线节点列表\n\n##"
+        },
+        {
+          "type": "file",
+          "label": "Makefile",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/Makefile",
+          "hash": "6d62dcac",
+          "excerpt": ".PHONY: generate test build clean migrate-up migrate-down migrate-status\n\n# Generate code from OpenAPI specs\ngenerate:\n\t@echo \"Generating code from OpenAPI specs...\"\n\t@mkdir -p internal/auth\n\toapi-codegen -package auth -generate types,chi-server \\\n\t\t-o internal/auth/generated.go \\\n\t\t../../contracts/control-plane/auth.y"
+        }
+      ],
+      "confidence": "high",
+      "stale": false,
+      "candidate": false,
+      "lastGeneratedAt": "2026-05-29T07:16:49.708Z",
+      "generatedBy": {
+        "engine": "codex",
+        "model": "gpt-5.5",
+        "runId": "global_mpql77u7_yv52r7"
+      }
+    },
+    {
+      "id": "contract-boundaries",
+      "lensId": "runtime-contracts",
+      "nodeKind": "contract-boundary",
+      "title": "契约边界总览",
+      "summary": "contracts 拆分 Console-Control Plane、Runtime-Control Plane、Runtime-Provider 三条边界。",
+      "detail": {
+        "coreDescription": "项目通过 contracts 目录明确不同系统之间的接口来源，Control Plane REST、Runtime HTTP/WS 与 Provider 中立协议分离。",
+        "keyFacts": [
+          "`contracts/control-plane/openapi.yaml` 被描述为 Console 到 Control Plane REST API 的 source of truth。",
+          "`contracts/runtime` 定义 Runtime Agent nodes 与 Control Plane 之间的 HTTP API。",
+          "`contracts/provider` 定义 Runtime Agent 与 Claude Code、OpenCode、Codex、Pi 等 executor 的边界。"
+        ],
+        "keyLogic": [
+          "生成客户端应放在 `packages/api-client`，Control Plane server handlers 必须兼容契约。",
+          "Runtime events 计划通过 runtime WebSocket channel 回传，而不是嵌在 provider-specific process output 中。",
+          "Provider-specific request shapes 不应进入 Control Plane。"
+        ],
+        "riskSignals": [
+          "Evidence 未包含 OpenAPI YAML 内容，只能确认 README 描述的边界与生成约定。"
+        ],
+        "diagramArtifacts": [],
+        "relatedArtifacts": [
+          {
+            "type": "symbol",
+            "label": "contracts/control-plane/README.md"
+          },
+          {
+            "type": "symbol",
+            "label": "contracts/runtime/README.md"
+          },
+          {
+            "type": "symbol",
+            "label": "contracts/provider/README.md"
+          }
+        ]
+      },
+      "parentId": "superteam-root",
+      "children": [
+        "runtime-contract-baseline",
+        "provider-contract-baseline"
+      ],
+      "sources": [
+        {
+          "type": "file",
+          "label": "AGENTS.md",
+          "path": ".claude/worktrees/control-plane-api/AGENTS.md",
+          "hash": "7891b591",
+          "excerpt": "# AGENTS.md — SuperTeam\n\n## 项目定位\n\nSuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。\n\n当前阶段优先做可控闭环：人类输入需求 -> 数字员工分析 -> 人类确认 -> Runtime Agent 执行 -> 回传结果和工件 -> 人类验收。\n\n## 架构分层\n\n- **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。\n- **Control Plane Layer**：Go "
+        },
+        {
+          "type": "file",
+          "label": "go.mod",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/go.mod",
+          "hash": "a60338f0",
+          "excerpt": "module github.com/superteam/control-plane\n\ngo 1.25.5\n\nrequire github.com/jackc/pgx/v5 v5.9.2\n\nrequire (\n\tdario.cat/mergo v1.0.2 // indirect\n\tgithub.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect\n\tgithub.com/Microsoft/go-winio v0.6.2 // indirect\n\tgithub.com/cenkalti/backoff/v4 v4.3.0 // indirect\n\tg"
+        },
+        {
+          "type": "file",
+          "label": "README.md",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/internal/storage/queries/README.md",
+          "hash": "453634b6",
+          "excerpt": "# Control Plane Storage Layer Tests\n\n## 概述\n\n本目录包含 SuperTeam 控制平面数据层的完整测试套件。测试使用 testcontainers-go 在隔离的 PostgreSQL 容器中运行，确保测试环境的一致性和可重复性。\n\n## 测试覆盖\n\n### Runtime 节点测试\n- `TestCreateRuntimeNode` - 创建 Runtime 节点\n- `TestGetRuntimeNode` - 查询节点信息\n- `TestUpdateRuntimeNodeHeartbeat` - 更新节点心跳\n- `TestListOnlineNodes` - 查询在线节点列表\n\n##"
+        },
+        {
+          "type": "file",
+          "label": "Makefile",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/Makefile",
+          "hash": "6d62dcac",
+          "excerpt": ".PHONY: generate test build clean migrate-up migrate-down migrate-status\n\n# Generate code from OpenAPI specs\ngenerate:\n\t@echo \"Generating code from OpenAPI specs...\"\n\t@mkdir -p internal/auth\n\toapi-codegen -package auth -generate types,chi-server \\\n\t\t-o internal/auth/generated.go \\\n\t\t../../contracts/control-plane/auth.y"
+        }
+      ],
+      "confidence": "high",
+      "stale": false,
+      "candidate": false,
+      "lastGeneratedAt": "2026-05-29T07:16:49.708Z",
+      "generatedBy": {
+        "engine": "codex",
+        "model": "gpt-5.5",
+        "runId": "global_mpql77u7_yv52r7"
+      }
+    },
+    {
+      "id": "runtime-contract-baseline",
+      "lensId": "runtime-contracts",
+      "nodeKind": "api-contract",
+      "title": "Runtime Contract 基线",
+      "summary": "Runtime-Control Plane 当前基线覆盖 node heartbeat、task claim、lease renewal。",
+      "detail": {
+        "coreDescription": "Runtime contract README 明确当前只覆盖 Runtime Agent 节点和 Control Plane 间的基础 HTTP 协议，完整任务状态与 workflow 转换暂未纳入。",
+        "keyFacts": [
+          "Runtime Agent 实现在 `apps/runtime-agent`，是 Rust/Tokio daemon。",
+          "Runtime Agent 与 Go Control Plane 使用中立 HTTP claim/lease APIs。",
+          "实时执行事件预计通过 runtime WebSocket channel 返回。",
+          "第一版 baseline 覆盖 node heartbeat、task claim、lease renewal。",
+          "Task state naming 和完整 workflow transitions 暂时留空。"
+        ],
+        "keyLogic": [
+          "Runtime contract 负责节点执行通道，不承载 provider-specific process output。"
+        ],
+        "riskSignals": [
+          "任务状态命名与完整流程状态尚未定型，是后续模型设计风险点。"
+        ],
+        "diagramArtifacts": [],
+        "relatedArtifacts": [
+          {
+            "type": "symbol",
+            "label": "contracts/runtime/README.md"
+          }
+        ]
+      },
+      "parentId": "contract-boundaries",
+      "children": [],
+      "sources": [
+        {
+          "type": "file",
+          "label": "AGENTS.md",
+          "path": ".claude/worktrees/control-plane-api/AGENTS.md",
+          "hash": "7891b591",
+          "excerpt": "# AGENTS.md — SuperTeam\n\n## 项目定位\n\nSuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。\n\n当前阶段优先做可控闭环：人类输入需求 -> 数字员工分析 -> 人类确认 -> Runtime Agent 执行 -> 回传结果和工件 -> 人类验收。\n\n## 架构分层\n\n- **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。\n- **Control Plane Layer**：Go "
+        },
+        {
+          "type": "file",
+          "label": "go.mod",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/go.mod",
+          "hash": "a60338f0",
+          "excerpt": "module github.com/superteam/control-plane\n\ngo 1.25.5\n\nrequire github.com/jackc/pgx/v5 v5.9.2\n\nrequire (\n\tdario.cat/mergo v1.0.2 // indirect\n\tgithub.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect\n\tgithub.com/Microsoft/go-winio v0.6.2 // indirect\n\tgithub.com/cenkalti/backoff/v4 v4.3.0 // indirect\n\tg"
+        },
+        {
+          "type": "file",
+          "label": "README.md",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/internal/storage/queries/README.md",
+          "hash": "453634b6",
+          "excerpt": "# Control Plane Storage Layer Tests\n\n## 概述\n\n本目录包含 SuperTeam 控制平面数据层的完整测试套件。测试使用 testcontainers-go 在隔离的 PostgreSQL 容器中运行，确保测试环境的一致性和可重复性。\n\n## 测试覆盖\n\n### Runtime 节点测试\n- `TestCreateRuntimeNode` - 创建 Runtime 节点\n- `TestGetRuntimeNode` - 查询节点信息\n- `TestUpdateRuntimeNodeHeartbeat` - 更新节点心跳\n- `TestListOnlineNodes` - 查询在线节点列表\n\n##"
+        },
+        {
+          "type": "file",
+          "label": "Makefile",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/Makefile",
+          "hash": "6d62dcac",
+          "excerpt": ".PHONY: generate test build clean migrate-up migrate-down migrate-status\n\n# Generate code from OpenAPI specs\ngenerate:\n\t@echo \"Generating code from OpenAPI specs...\"\n\t@mkdir -p internal/auth\n\toapi-codegen -package auth -generate types,chi-server \\\n\t\t-o internal/auth/generated.go \\\n\t\t../../contracts/control-plane/auth.y"
+        }
+      ],
+      "confidence": "high",
+      "stale": false,
+      "candidate": false,
+      "lastGeneratedAt": "2026-05-29T07:16:49.708Z",
+      "generatedBy": {
+        "engine": "codex",
+        "model": "gpt-5.5",
+        "runId": "global_mpql77u7_yv52r7"
+      }
+    },
+    {
+      "id": "provider-contract-baseline",
+      "lensId": "runtime-contracts",
+      "nodeKind": "provider-contract",
+      "title": "Provider Contract 基线",
+      "summary": "Provider contract 用中立对象和命令隔离 Runtime adapters 与具体执行器。",
+      "detail": {
+        "coreDescription": "Provider contract 描述 Runtime Agent 与 Claude Code、OpenCode、Codex、Pi 等执行器之间的边界，Control Plane 不依赖 provider-specific request shapes。",
+        "keyFacts": [
+          "Control Plane 不应依赖 provider-specific request shapes。",
+          "Runtime adapters 将中立 contract 翻译为 CLI、PTY、HTTP 或 SDK 调用。",
+          "首个 Rust adapter baseline 支持 Claude Code 与 OpenCode 的 short-lived CLI processes per turn。",
+          "Claude Code 命令基线包含 `claude -p <prompt> --output-format stream-json --verbose --include-partial-messages`。",
+          "OpenCode 命令基线包含 `opencode run --format json <prompt>`。"
+        ],
+        "keyLogic": [
+          "`ProviderSessionRef` 表示 provider session id 与 Runtime Agent 管理的 workspace path。",
+          "`ProviderEvent` 归一化为 structured log、progress、artifact、blocker、decision request 或 execution result。",
+          "baseline commands 是 `start`、`stream`、`cancel`、`collect`。"
+        ],
+        "riskSignals": [
+          "Provider 适配器细节属于 adapter config 和 server-side registration，不应泄漏到 Control Plane 业务流。"
+        ],
+        "diagramArtifacts": [],
+        "relatedArtifacts": [
+          {
+            "type": "symbol",
+            "label": "contracts/provider/README.md"
+          }
+        ]
+      },
+      "parentId": "contract-boundaries",
+      "children": [],
+      "sources": [
+        {
+          "type": "file",
+          "label": "AGENTS.md",
+          "path": ".claude/worktrees/control-plane-api/AGENTS.md",
+          "hash": "7891b591",
+          "excerpt": "# AGENTS.md — SuperTeam\n\n## 项目定位\n\nSuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。\n\n当前阶段优先做可控闭环：人类输入需求 -> 数字员工分析 -> 人类确认 -> Runtime Agent 执行 -> 回传结果和工件 -> 人类验收。\n\n## 架构分层\n\n- **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。\n- **Control Plane Layer**：Go "
+        },
+        {
+          "type": "file",
+          "label": "go.mod",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/go.mod",
+          "hash": "a60338f0",
+          "excerpt": "module github.com/superteam/control-plane\n\ngo 1.25.5\n\nrequire github.com/jackc/pgx/v5 v5.9.2\n\nrequire (\n\tdario.cat/mergo v1.0.2 // indirect\n\tgithub.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect\n\tgithub.com/Microsoft/go-winio v0.6.2 // indirect\n\tgithub.com/cenkalti/backoff/v4 v4.3.0 // indirect\n\tg"
+        },
+        {
+          "type": "file",
+          "label": "README.md",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/internal/storage/queries/README.md",
+          "hash": "453634b6",
+          "excerpt": "# Control Plane Storage Layer Tests\n\n## 概述\n\n本目录包含 SuperTeam 控制平面数据层的完整测试套件。测试使用 testcontainers-go 在隔离的 PostgreSQL 容器中运行，确保测试环境的一致性和可重复性。\n\n## 测试覆盖\n\n### Runtime 节点测试\n- `TestCreateRuntimeNode` - 创建 Runtime 节点\n- `TestGetRuntimeNode` - 查询节点信息\n- `TestUpdateRuntimeNodeHeartbeat` - 更新节点心跳\n- `TestListOnlineNodes` - 查询在线节点列表\n\n##"
+        },
+        {
+          "type": "file",
+          "label": "Makefile",
+          "path": ".claude/worktrees/control-plane-api/apps/control-plane/Makefile",
+          "hash": "6d62dcac",
+          "excerpt": ".PHONY: generate test build clean migrate-up migrate-down migrate-status\n\n# Generate code from OpenAPI specs\ngenerate:\n\t@echo \"Generating code from OpenAPI specs...\"\n\t@mkdir -p internal/auth\n\toapi-codegen -package auth -generate types,chi-server \\\n\t\t-o internal/auth/generated.go \\\n\t\t../../contracts/control-plane/auth.y"
+        }
+      ],
+      "confidence": "high",
+      "stale": false,
+      "candidate": false,
+      "lastGeneratedAt": "2026-05-29T07:16:49.708Z",
+      "generatedBy": {
+        "engine": "codex",
+        "model": "gpt-5.5",
+        "runId": "global_mpql77u7_yv52r7"
+      }
+    }
+  ]
+}

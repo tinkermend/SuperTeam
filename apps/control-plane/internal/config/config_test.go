@@ -49,6 +49,21 @@ func TestLoadFromEnvRequiresStorageConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnvRequiresObjectStoreConnectionConfiguration(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
+	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
+	t.Setenv("S3_BUCKET", "superteam-artifacts")
+	t.Setenv("S3_ENDPOINT", "")
+	t.Setenv("S3_REGION", "")
+	t.Setenv("S3_ACCESS_KEY_ID", "")
+	t.Setenv("S3_SECRET_ACCESS_KEY", "")
+
+	_, err := LoadFromEnv()
+	if err == nil {
+		t.Fatal("expected missing object store connection configuration to fail")
+	}
+}
+
 func TestLoadFromFileReadsControlPlaneYAML(t *testing.T) {
 	path := writeConfigFile(t, `
 http:
@@ -97,7 +112,11 @@ postgres:
 redis:
   url: "redis://file"
 objectStore:
+  endpoint: "http://127.0.0.1:9000"
+  region: "us-east-1"
   bucket: "file-bucket"
+  accessKeyId: "file-ak"
+  secretAccessKey: "file-sk"
 `)
 	t.Setenv("CONTROL_PLANE_ADDR", ":7070")
 	t.Setenv("DATABASE_URL", "postgres://env")
