@@ -103,10 +103,6 @@ contracts/
 connectors/
   http/            # 通用 HTTP 外部能力接入
   custom/          # 客户专属连接器隔离放置
-
-skills/
-docs/
-deploy/
 ```
 
 Go 应用目录统一使用 `cmd/<name>/` + `internal/` 的结构。Control Plane 按领域能力分包。Runtime Agent 使用 `apps/runtime-agent` 下的 Rust Cargo crate，按节点执行能力拆分 `src` 模块；MVP 只创建实际用到的模块，不为空目录铺满。
