@@ -6,7 +6,6 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.41.7
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.17
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.101.0
-	github.com/deepmap/oapi-codegen/v2 v2.1.0
 	github.com/go-chi/chi/v5 v5.0.12
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/oapi-codegen/oapi-codegen/v2 v2.4.1
@@ -14,7 +13,7 @@ require (
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/sqlc-dev/pqtype v0.3.0
 	github.com/stretchr/testify v1.9.0
-	go.yaml.in/yaml/v3 v3.0.4
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -55,5 +54,4 @@ require (
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/tools v0.42.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
