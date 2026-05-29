@@ -5,116 +5,114 @@
 package queries
 
 import (
-	"database/sql"
-	"encoding/json"
-	"time"
+	"net/netip"
 
-	"github.com/sqlc-dev/pqtype"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type AuditEvent struct {
-	ID           int64                 `json:"id"`
-	EventType    string                `json:"event_type"`
-	ActorType    string                `json:"actor_type"`
-	ActorID      string                `json:"actor_id"`
-	ResourceType sql.NullString        `json:"resource_type"`
-	ResourceID   sql.NullString        `json:"resource_id"`
-	Action       string                `json:"action"`
-	Details      pqtype.NullRawMessage `json:"details"`
-	IpAddress    pqtype.Inet           `json:"ip_address"`
-	CreatedAt    time.Time             `json:"created_at"`
+	ID           int64              `json:"id"`
+	EventType    string             `json:"event_type"`
+	ActorType    string             `json:"actor_type"`
+	ActorID      string             `json:"actor_id"`
+	ResourceType pgtype.Text        `json:"resource_type"`
+	ResourceID   pgtype.Text        `json:"resource_id"`
+	Action       string             `json:"action"`
+	Details      []byte             `json:"details"`
+	IpAddress    *netip.Addr        `json:"ip_address"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 type AuthRuntimeToken struct {
-	ID        int64        `json:"id"`
-	NodeID    string       `json:"node_id"`
-	TokenHash string       `json:"token_hash"`
-	ExpiresAt sql.NullTime `json:"expires_at"`
-	CreatedAt time.Time    `json:"created_at"`
+	ID        int64              `json:"id"`
+	NodeID    string             `json:"node_id"`
+	TokenHash string             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type AuthUser struct {
-	ID           int64          `json:"id"`
-	Username     string         `json:"username"`
-	DisplayName  sql.NullString `json:"display_name"`
-	Email        sql.NullString `json:"email"`
-	PasswordHash sql.NullString `json:"password_hash"`
-	Status       string         `json:"status"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
+	ID           int64              `json:"id"`
+	Username     string             `json:"username"`
+	DisplayName  pgtype.Text        `json:"display_name"`
+	Email        pgtype.Text        `json:"email"`
+	PasswordHash pgtype.Text        `json:"password_hash"`
+	Status       string             `json:"status"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type RuntimeNode struct {
-	ID                 int64                 `json:"id"`
-	NodeID             string                `json:"node_id"`
-	Name               string                `json:"name"`
-	SupportedProviders json.RawMessage       `json:"supported_providers"`
-	MaxSlots           int32                 `json:"max_slots"`
-	CurrentLoad        int32                 `json:"current_load"`
-	Status             string                `json:"status"`
-	Metadata           pqtype.NullRawMessage `json:"metadata"`
-	LastHeartbeatAt    sql.NullTime          `json:"last_heartbeat_at"`
-	CreatedAt          time.Time             `json:"created_at"`
-	UpdatedAt          time.Time             `json:"updated_at"`
+	ID                 int64              `json:"id"`
+	NodeID             string             `json:"node_id"`
+	Name               string             `json:"name"`
+	SupportedProviders []byte             `json:"supported_providers"`
+	MaxSlots           int32              `json:"max_slots"`
+	CurrentLoad        int32              `json:"current_load"`
+	Status             string             `json:"status"`
+	Metadata           []byte             `json:"metadata"`
+	LastHeartbeatAt    pgtype.Timestamptz `json:"last_heartbeat_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Task struct {
-	ID             int64           `json:"id"`
-	Title          string          `json:"title"`
-	Description    sql.NullString  `json:"description"`
-	CreatorID      sql.NullInt64   `json:"creator_id"`
-	ProviderType   string          `json:"provider_type"`
-	TargetNodeID   sql.NullString  `json:"target_node_id"`
-	AssignedNodeID sql.NullString  `json:"assigned_node_id"`
-	Status         string          `json:"status"`
-	WorkspacePath  sql.NullString  `json:"workspace_path"`
-	Params         json.RawMessage `json:"params"`
-	Priority       int32           `json:"priority"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID             int64              `json:"id"`
+	Title          string             `json:"title"`
+	Description    pgtype.Text        `json:"description"`
+	CreatorID      pgtype.Int8        `json:"creator_id"`
+	ProviderType   string             `json:"provider_type"`
+	TargetNodeID   pgtype.Text        `json:"target_node_id"`
+	AssignedNodeID pgtype.Text        `json:"assigned_node_id"`
+	Status         string             `json:"status"`
+	WorkspacePath  pgtype.Text        `json:"workspace_path"`
+	Params         []byte             `json:"params"`
+	Priority       int32              `json:"priority"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type TaskArtifact struct {
-	ID           int64                 `json:"id"`
-	TaskID       int64                 `json:"task_id"`
-	ExecutionID  sql.NullInt64         `json:"execution_id"`
-	ArtifactType string                `json:"artifact_type"`
-	Name         string                `json:"name"`
-	StorageUrl   string                `json:"storage_url"`
-	SizeBytes    sql.NullInt64         `json:"size_bytes"`
-	Metadata     pqtype.NullRawMessage `json:"metadata"`
-	CreatedAt    time.Time             `json:"created_at"`
+	ID           int64              `json:"id"`
+	TaskID       int64              `json:"task_id"`
+	ExecutionID  pgtype.Int8        `json:"execution_id"`
+	ArtifactType string             `json:"artifact_type"`
+	Name         string             `json:"name"`
+	StorageUrl   string             `json:"storage_url"`
+	SizeBytes    pgtype.Int8        `json:"size_bytes"`
+	Metadata     []byte             `json:"metadata"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 type TaskEvent struct {
-	ID             int64           `json:"id"`
-	TaskID         int64           `json:"task_id"`
-	ExecutionID    sql.NullInt64   `json:"execution_id"`
-	EventType      string          `json:"event_type"`
-	SequenceNumber int32           `json:"sequence_number"`
-	Payload        json.RawMessage `json:"payload"`
-	CreatedAt      time.Time       `json:"created_at"`
+	ID             int64              `json:"id"`
+	TaskID         int64              `json:"task_id"`
+	ExecutionID    pgtype.Int8        `json:"execution_id"`
+	EventType      string             `json:"event_type"`
+	SequenceNumber int32              `json:"sequence_number"`
+	Payload        []byte             `json:"payload"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
 type TaskExecution struct {
-	ID                int64                 `json:"id"`
-	TaskID            int64                 `json:"task_id"`
-	NodeID            string                `json:"node_id"`
-	ProviderSessionID sql.NullString        `json:"provider_session_id"`
-	Status            string                `json:"status"`
-	StartedAt         time.Time             `json:"started_at"`
-	CompletedAt       sql.NullTime          `json:"completed_at"`
-	Result            pqtype.NullRawMessage `json:"result"`
-	ErrorMessage      sql.NullString        `json:"error_message"`
-	CreatedAt         time.Time             `json:"created_at"`
+	ID                int64              `json:"id"`
+	TaskID            int64              `json:"task_id"`
+	NodeID            string             `json:"node_id"`
+	ProviderSessionID pgtype.Text        `json:"provider_session_id"`
+	Status            string             `json:"status"`
+	StartedAt         pgtype.Timestamptz `json:"started_at"`
+	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	Result            []byte             `json:"result"`
+	ErrorMessage      pgtype.Text        `json:"error_message"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
 type TaskStateHistory struct {
-	ID         int64          `json:"id"`
-	TaskID     int64          `json:"task_id"`
-	FromStatus sql.NullString `json:"from_status"`
-	ToStatus   string         `json:"to_status"`
-	ChangedBy  sql.NullString `json:"changed_by"`
-	Reason     sql.NullString `json:"reason"`
-	CreatedAt  time.Time      `json:"created_at"`
+	ID         int64              `json:"id"`
+	TaskID     int64              `json:"task_id"`
+	FromStatus pgtype.Text        `json:"from_status"`
+	ToStatus   string             `json:"to_status"`
+	ChangedBy  pgtype.Text        `json:"changed_by"`
+	Reason     pgtype.Text        `json:"reason"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }

@@ -7,14 +7,11 @@ package queries
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 
-	"github.com/sqlc-dev/pqtype"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createRuntimeNode = `-- name: CreateRuntimeNode :one
-
+const CreateRuntimeNode = `-- name: CreateRuntimeNode :one
 INSERT INTO runtime_nodes (
     node_id,
     name,
@@ -30,19 +27,18 @@ INSERT INTO runtime_nodes (
 `
 
 type CreateRuntimeNodeParams struct {
-	NodeID             string                `json:"node_id"`
-	Name               string                `json:"name"`
-	SupportedProviders json.RawMessage       `json:"supported_providers"`
-	MaxSlots           int32                 `json:"max_slots"`
-	CurrentLoad        int32                 `json:"current_load"`
-	Status             string                `json:"status"`
-	Metadata           pqtype.NullRawMessage `json:"metadata"`
-	LastHeartbeatAt    sql.NullTime          `json:"last_heartbeat_at"`
+	NodeID             string             `json:"node_id"`
+	Name               string             `json:"name"`
+	SupportedProviders []byte             `json:"supported_providers"`
+	MaxSlots           int32              `json:"max_slots"`
+	CurrentLoad        int32              `json:"current_load"`
+	Status             string             `json:"status"`
+	Metadata           []byte             `json:"metadata"`
+	LastHeartbeatAt    pgtype.Timestamptz `json:"last_heartbeat_at"`
 }
 
-// Runtime Node Queries
 func (q *Queries) CreateRuntimeNode(ctx context.Context, arg CreateRuntimeNodeParams) (RuntimeNode, error) {
-	row := q.db.QueryRowContext(ctx, createRuntimeNode,
+	row := q.db.QueryRow(ctx, CreateRuntimeNode,
 		arg.NodeID,
 		arg.Name,
 		arg.SupportedProviders,
@@ -69,23 +65,23 @@ func (q *Queries) CreateRuntimeNode(ctx context.Context, arg CreateRuntimeNodePa
 	return i, err
 }
 
-const deleteRuntimeNode = `-- name: DeleteRuntimeNode :exec
+const DeleteRuntimeNode = `-- name: DeleteRuntimeNode :exec
 DELETE FROM runtime_nodes
 WHERE node_id = $1
 `
 
 func (q *Queries) DeleteRuntimeNode(ctx context.Context, nodeID string) error {
-	_, err := q.db.ExecContext(ctx, deleteRuntimeNode, nodeID)
+	_, err := q.db.Exec(ctx, DeleteRuntimeNode, nodeID)
 	return err
 }
 
-const getRuntimeNode = `-- name: GetRuntimeNode :one
+const GetRuntimeNode = `-- name: GetRuntimeNode :one
 SELECT id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at FROM runtime_nodes
 WHERE node_id = $1
 `
 
 func (q *Queries) GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNode, error) {
-	row := q.db.QueryRowContext(ctx, getRuntimeNode, nodeID)
+	row := q.db.QueryRow(ctx, GetRuntimeNode, nodeID)
 	var i RuntimeNode
 	err := row.Scan(
 		&i.ID,
@@ -103,40 +99,15 @@ func (q *Queries) GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNod
 	return i, err
 }
 
-const getRuntimeNodeByID = `-- name: GetRuntimeNodeByID :one
-SELECT id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at FROM runtime_nodes
-WHERE id = $1
-`
-
-func (q *Queries) GetRuntimeNodeByID(ctx context.Context, id int64) (RuntimeNode, error) {
-	row := q.db.QueryRowContext(ctx, getRuntimeNodeByID, id)
-	var i RuntimeNode
-	err := row.Scan(
-		&i.ID,
-		&i.NodeID,
-		&i.Name,
-		&i.SupportedProviders,
-		&i.MaxSlots,
-		&i.CurrentLoad,
-		&i.Status,
-		&i.Metadata,
-		&i.LastHeartbeatAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const listOnlineNodes = `-- name: ListOnlineNodes :many
+const ListOnlineNodes = `-- name: ListOnlineNodes :many
 SELECT id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at FROM runtime_nodes
 WHERE status = 'online'
-  AND last_heartbeat_at > NOW() - INTERVAL '2 minutes'
-  AND ($1::varchar IS NULL OR supported_providers::jsonb ? $1)
+  AND last_heartbeat_at > $1
 ORDER BY current_load ASC, created_at ASC
 `
 
-func (q *Queries) ListOnlineNodes(ctx context.Context, dollar_1 string) ([]RuntimeNode, error) {
-	rows, err := q.db.QueryContext(ctx, listOnlineNodes, dollar_1)
+func (q *Queries) ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error) {
+	rows, err := q.db.Query(ctx, ListOnlineNodes, lastHeartbeatAt)
 	if err != nil {
 		return nil, err
 	}
@@ -161,30 +132,27 @@ func (q *Queries) ListOnlineNodes(ctx context.Context, dollar_1 string) ([]Runti
 		}
 		items = append(items, i)
 	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return items, nil
 }
 
-const listRuntimeNodes = `-- name: ListRuntimeNodes :many
+const ListRuntimeNodes = `-- name: ListRuntimeNodes :many
 SELECT id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at FROM runtime_nodes
 WHERE ($1::varchar IS NULL OR status = $1)
 ORDER BY created_at DESC
-LIMIT $2 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListRuntimeNodesParams struct {
 	Column1 string `json:"column_1"`
-	Limit   int32  `json:"limit"`
 	Offset  int32  `json:"offset"`
+	Limit   int32  `json:"limit"`
 }
 
 func (q *Queries) ListRuntimeNodes(ctx context.Context, arg ListRuntimeNodesParams) ([]RuntimeNode, error) {
-	rows, err := q.db.QueryContext(ctx, listRuntimeNodes, arg.Column1, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, ListRuntimeNodes, arg.Column1, arg.Offset, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -209,32 +177,26 @@ func (q *Queries) ListRuntimeNodes(ctx context.Context, arg ListRuntimeNodesPara
 		}
 		items = append(items, i)
 	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return items, nil
 }
 
-const updateRuntimeNodeHeartbeat = `-- name: UpdateRuntimeNodeHeartbeat :one
+const UpdateRuntimeNodeHeartbeat = `-- name: UpdateRuntimeNodeHeartbeat :one
 UPDATE runtime_nodes
-SET last_heartbeat_at = $2,
-    status = $3,
-    updated_at = NOW()
+SET last_heartbeat_at = $2, updated_at = NOW()
 WHERE node_id = $1
 RETURNING id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at
 `
 
 type UpdateRuntimeNodeHeartbeatParams struct {
-	NodeID          string       `json:"node_id"`
-	LastHeartbeatAt sql.NullTime `json:"last_heartbeat_at"`
-	Status          string       `json:"status"`
+	NodeID          string             `json:"node_id"`
+	LastHeartbeatAt pgtype.Timestamptz `json:"last_heartbeat_at"`
 }
 
 func (q *Queries) UpdateRuntimeNodeHeartbeat(ctx context.Context, arg UpdateRuntimeNodeHeartbeatParams) (RuntimeNode, error) {
-	row := q.db.QueryRowContext(ctx, updateRuntimeNodeHeartbeat, arg.NodeID, arg.LastHeartbeatAt, arg.Status)
+	row := q.db.QueryRow(ctx, UpdateRuntimeNodeHeartbeat, arg.NodeID, arg.LastHeartbeatAt)
 	var i RuntimeNode
 	err := row.Scan(
 		&i.ID,
@@ -252,10 +214,9 @@ func (q *Queries) UpdateRuntimeNodeHeartbeat(ctx context.Context, arg UpdateRunt
 	return i, err
 }
 
-const updateRuntimeNodeLoad = `-- name: UpdateRuntimeNodeLoad :one
+const UpdateRuntimeNodeLoad = `-- name: UpdateRuntimeNodeLoad :one
 UPDATE runtime_nodes
-SET current_load = $2,
-    updated_at = NOW()
+SET current_load = $2, updated_at = NOW()
 WHERE node_id = $1
 RETURNING id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at
 `
@@ -266,7 +227,7 @@ type UpdateRuntimeNodeLoadParams struct {
 }
 
 func (q *Queries) UpdateRuntimeNodeLoad(ctx context.Context, arg UpdateRuntimeNodeLoadParams) (RuntimeNode, error) {
-	row := q.db.QueryRowContext(ctx, updateRuntimeNodeLoad, arg.NodeID, arg.CurrentLoad)
+	row := q.db.QueryRow(ctx, UpdateRuntimeNodeLoad, arg.NodeID, arg.CurrentLoad)
 	var i RuntimeNode
 	err := row.Scan(
 		&i.ID,
@@ -284,10 +245,9 @@ func (q *Queries) UpdateRuntimeNodeLoad(ctx context.Context, arg UpdateRuntimeNo
 	return i, err
 }
 
-const updateRuntimeNodeStatus = `-- name: UpdateRuntimeNodeStatus :one
+const UpdateRuntimeNodeStatus = `-- name: UpdateRuntimeNodeStatus :one
 UPDATE runtime_nodes
-SET status = $2,
-    updated_at = NOW()
+SET status = $2, updated_at = NOW()
 WHERE node_id = $1
 RETURNING id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at
 `
@@ -298,7 +258,7 @@ type UpdateRuntimeNodeStatusParams struct {
 }
 
 func (q *Queries) UpdateRuntimeNodeStatus(ctx context.Context, arg UpdateRuntimeNodeStatusParams) (RuntimeNode, error) {
-	row := q.db.QueryRowContext(ctx, updateRuntimeNodeStatus, arg.NodeID, arg.Status)
+	row := q.db.QueryRow(ctx, UpdateRuntimeNodeStatus, arg.NodeID, arg.Status)
 	var i RuntimeNode
 	err := row.Scan(
 		&i.ID,

@@ -7,13 +7,12 @@ package queries
 
 import (
 	"context"
-	"database/sql"
-	"time"
+	"net/netip"
 
-	"github.com/sqlc-dev/pqtype"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countAuditEvents = `-- name: CountAuditEvents :one
+const CountAuditEvents = `-- name: CountAuditEvents :one
 SELECT COUNT(*) FROM audit_events
 WHERE ($1::varchar IS NULL OR event_type = $1)
   AND ($2::varchar IS NULL OR actor_type = $2)
@@ -25,32 +24,31 @@ WHERE ($1::varchar IS NULL OR event_type = $1)
 `
 
 type CountAuditEventsParams struct {
-	Column1 string    `json:"column_1"`
-	Column2 string    `json:"column_2"`
-	Column3 string    `json:"column_3"`
-	Column4 string    `json:"column_4"`
-	Column5 string    `json:"column_5"`
-	Column6 time.Time `json:"column_6"`
-	Column7 time.Time `json:"column_7"`
+	EventType    pgtype.Text        `json:"event_type"`
+	ActorType    pgtype.Text        `json:"actor_type"`
+	ActorID      pgtype.Text        `json:"actor_id"`
+	ResourceType pgtype.Text        `json:"resource_type"`
+	ResourceID   pgtype.Text        `json:"resource_id"`
+	StartTime    pgtype.Timestamptz `json:"start_time"`
+	EndTime      pgtype.Timestamptz `json:"end_time"`
 }
 
 func (q *Queries) CountAuditEvents(ctx context.Context, arg CountAuditEventsParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countAuditEvents,
-		arg.Column1,
-		arg.Column2,
-		arg.Column3,
-		arg.Column4,
-		arg.Column5,
-		arg.Column6,
-		arg.Column7,
+	row := q.db.QueryRow(ctx, CountAuditEvents,
+		arg.EventType,
+		arg.ActorType,
+		arg.ActorID,
+		arg.ResourceType,
+		arg.ResourceID,
+		arg.StartTime,
+		arg.EndTime,
 	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
-const createAuditEvent = `-- name: CreateAuditEvent :one
-
+const CreateAuditEvent = `-- name: CreateAuditEvent :one
 INSERT INTO audit_events (
     event_type,
     actor_type,
@@ -66,19 +64,18 @@ INSERT INTO audit_events (
 `
 
 type CreateAuditEventParams struct {
-	EventType    string                `json:"event_type"`
-	ActorType    string                `json:"actor_type"`
-	ActorID      string                `json:"actor_id"`
-	ResourceType sql.NullString        `json:"resource_type"`
-	ResourceID   sql.NullString        `json:"resource_id"`
-	Action       string                `json:"action"`
-	Details      pqtype.NullRawMessage `json:"details"`
-	IpAddress    pqtype.Inet           `json:"ip_address"`
+	EventType    string      `json:"event_type"`
+	ActorType    string      `json:"actor_type"`
+	ActorID      string      `json:"actor_id"`
+	ResourceType pgtype.Text `json:"resource_type"`
+	ResourceID   pgtype.Text `json:"resource_id"`
+	Action       string      `json:"action"`
+	Details      []byte      `json:"details"`
+	IpAddress    *netip.Addr `json:"ip_address"`
 }
 
-// Audit Queries
 func (q *Queries) CreateAuditEvent(ctx context.Context, arg CreateAuditEventParams) (AuditEvent, error) {
-	row := q.db.QueryRowContext(ctx, createAuditEvent,
+	row := q.db.QueryRow(ctx, CreateAuditEvent,
 		arg.EventType,
 		arg.ActorType,
 		arg.ActorID,
@@ -104,23 +101,13 @@ func (q *Queries) CreateAuditEvent(ctx context.Context, arg CreateAuditEventPara
 	return i, err
 }
 
-const deleteOldAuditEvents = `-- name: DeleteOldAuditEvents :exec
-DELETE FROM audit_events
-WHERE created_at < $1
-`
-
-func (q *Queries) DeleteOldAuditEvents(ctx context.Context, createdAt time.Time) error {
-	_, err := q.db.ExecContext(ctx, deleteOldAuditEvents, createdAt)
-	return err
-}
-
-const getAuditEvent = `-- name: GetAuditEvent :one
+const GetAuditEvent = `-- name: GetAuditEvent :one
 SELECT id, event_type, actor_type, actor_id, resource_type, resource_id, action, details, ip_address, created_at FROM audit_events
 WHERE id = $1
 `
 
 func (q *Queries) GetAuditEvent(ctx context.Context, id int64) (AuditEvent, error) {
-	row := q.db.QueryRowContext(ctx, getAuditEvent, id)
+	row := q.db.QueryRow(ctx, GetAuditEvent, id)
 	var i AuditEvent
 	err := row.Scan(
 		&i.ID,
@@ -137,7 +124,7 @@ func (q *Queries) GetAuditEvent(ctx context.Context, id int64) (AuditEvent, erro
 	return i, err
 }
 
-const listAuditEvents = `-- name: ListAuditEvents :many
+const ListAuditEvents = `-- name: ListAuditEvents :many
 SELECT id, event_type, actor_type, actor_id, resource_type, resource_id, action, details, ip_address, created_at FROM audit_events
 WHERE ($1::varchar IS NULL OR event_type = $1)
   AND ($2::varchar IS NULL OR actor_type = $2)
@@ -147,140 +134,32 @@ WHERE ($1::varchar IS NULL OR event_type = $1)
   AND ($6::timestamptz IS NULL OR created_at >= $6)
   AND ($7::timestamptz IS NULL OR created_at <= $7)
 ORDER BY created_at DESC
-LIMIT $8 OFFSET $9
+LIMIT $9 OFFSET $8
 `
 
 type ListAuditEventsParams struct {
-	Column1 string    `json:"column_1"`
-	Column2 string    `json:"column_2"`
-	Column3 string    `json:"column_3"`
-	Column4 string    `json:"column_4"`
-	Column5 string    `json:"column_5"`
-	Column6 time.Time `json:"column_6"`
-	Column7 time.Time `json:"column_7"`
-	Limit   int32     `json:"limit"`
-	Offset  int32     `json:"offset"`
+	EventType    pgtype.Text        `json:"event_type"`
+	ActorType    pgtype.Text        `json:"actor_type"`
+	ActorID      pgtype.Text        `json:"actor_id"`
+	ResourceType pgtype.Text        `json:"resource_type"`
+	ResourceID   pgtype.Text        `json:"resource_id"`
+	StartTime    pgtype.Timestamptz `json:"start_time"`
+	EndTime      pgtype.Timestamptz `json:"end_time"`
+	Offset       int32              `json:"offset"`
+	Limit        int32              `json:"limit"`
 }
 
 func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]AuditEvent, error) {
-	rows, err := q.db.QueryContext(ctx, listAuditEvents,
-		arg.Column1,
-		arg.Column2,
-		arg.Column3,
-		arg.Column4,
-		arg.Column5,
-		arg.Column6,
-		arg.Column7,
-		arg.Limit,
-		arg.Offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AuditEvent{}
-	for rows.Next() {
-		var i AuditEvent
-		if err := rows.Scan(
-			&i.ID,
-			&i.EventType,
-			&i.ActorType,
-			&i.ActorID,
-			&i.ResourceType,
-			&i.ResourceID,
-			&i.Action,
-			&i.Details,
-			&i.IpAddress,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listAuditEventsByActor = `-- name: ListAuditEventsByActor :many
-SELECT id, event_type, actor_type, actor_id, resource_type, resource_id, action, details, ip_address, created_at FROM audit_events
-WHERE actor_type = $1
-  AND actor_id = $2
-ORDER BY created_at DESC
-LIMIT $3 OFFSET $4
-`
-
-type ListAuditEventsByActorParams struct {
-	ActorType string `json:"actor_type"`
-	ActorID   string `json:"actor_id"`
-	Limit     int32  `json:"limit"`
-	Offset    int32  `json:"offset"`
-}
-
-func (q *Queries) ListAuditEventsByActor(ctx context.Context, arg ListAuditEventsByActorParams) ([]AuditEvent, error) {
-	rows, err := q.db.QueryContext(ctx, listAuditEventsByActor,
+	rows, err := q.db.Query(ctx, ListAuditEvents,
+		arg.EventType,
 		arg.ActorType,
 		arg.ActorID,
-		arg.Limit,
-		arg.Offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AuditEvent{}
-	for rows.Next() {
-		var i AuditEvent
-		if err := rows.Scan(
-			&i.ID,
-			&i.EventType,
-			&i.ActorType,
-			&i.ActorID,
-			&i.ResourceType,
-			&i.ResourceID,
-			&i.Action,
-			&i.Details,
-			&i.IpAddress,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listAuditEventsByResource = `-- name: ListAuditEventsByResource :many
-SELECT id, event_type, actor_type, actor_id, resource_type, resource_id, action, details, ip_address, created_at FROM audit_events
-WHERE resource_type = $1
-  AND resource_id = $2
-ORDER BY created_at DESC
-LIMIT $3 OFFSET $4
-`
-
-type ListAuditEventsByResourceParams struct {
-	ResourceType sql.NullString `json:"resource_type"`
-	ResourceID   sql.NullString `json:"resource_id"`
-	Limit        int32          `json:"limit"`
-	Offset       int32          `json:"offset"`
-}
-
-func (q *Queries) ListAuditEventsByResource(ctx context.Context, arg ListAuditEventsByResourceParams) ([]AuditEvent, error) {
-	rows, err := q.db.QueryContext(ctx, listAuditEventsByResource,
 		arg.ResourceType,
 		arg.ResourceID,
-		arg.Limit,
+		arg.StartTime,
+		arg.EndTime,
 		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err
@@ -304,9 +183,6 @@ func (q *Queries) ListAuditEventsByResource(ctx context.Context, arg ListAuditEv
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
