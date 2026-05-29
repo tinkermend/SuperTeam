@@ -155,6 +155,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Runtime API 契约路径收敛 (2026-05-29)
+
+- 将 Runtime 任务 claim、事件、完成、失败和 lease 续约路径统一收敛到 Control Plane 的 `/api/v1/runtime/tasks/...` canonical contract，并将 Runtime Agent 本地契约保留为诊断和本地 run API。
+
 #### Control Plane 启动边界收敛 (2026-05-29)
 
 - 收敛 Control Plane 主启动入口，明确 health-only router 与产品 API server 的边界，并通过统一装配路径连接存储、服务和 handlers。

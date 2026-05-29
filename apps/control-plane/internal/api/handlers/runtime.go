@@ -184,6 +184,22 @@ func (h *RuntimeHandler) assignTask(ctx context.Context, w http.ResponseWriter, 
 	json.NewEncoder(w).Encode(assignedTask)
 }
 
+func (h *RuntimeHandler) PushEvents(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "runtime task event ingestion is not implemented yet", http.StatusNotImplemented)
+}
+
+func (h *RuntimeHandler) CompleteTask(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "runtime task completion is not implemented yet", http.StatusNotImplemented)
+}
+
+func (h *RuntimeHandler) FailTask(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "runtime task failure reporting is not implemented yet", http.StatusNotImplemented)
+}
+
+func (h *RuntimeHandler) RenewLease(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "runtime task lease renewal is not implemented yet", http.StatusNotImplemented)
+}
+
 func bestClaimCandidate(current *task.Task, candidate *task.Task) *task.Task {
 	if current == nil {
 		return candidate

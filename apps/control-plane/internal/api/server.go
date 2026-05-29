@@ -51,6 +51,11 @@ func (s *Server) registerRoutes() {
 		r.Route("/runtime", func(r chi.Router) {
 			r.Post("/register", s.runtimeHandler.RegisterNode)
 			r.Post("/heartbeat", s.runtimeHandler.Heartbeat)
+			r.Post("/tasks/claim", s.runtimeHandler.ClaimTask)
+			r.Post("/tasks/{id}/events", s.runtimeHandler.PushEvents)
+			r.Post("/tasks/{id}/complete", s.runtimeHandler.CompleteTask)
+			r.Post("/tasks/{id}/fail", s.runtimeHandler.FailTask)
+			r.Post("/tasks/{id}/lease", s.runtimeHandler.RenewLease)
 			r.Post("/claim", s.runtimeHandler.ClaimTask)
 			r.Get("/nodes", s.runtimeHandler.ListNodes)
 			r.Get("/nodes/{id}", s.runtimeHandler.GetNodeByID)

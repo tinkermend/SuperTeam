@@ -14,7 +14,276 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+  /api/v1/tasks:
+    get:
+      operationId: listTasks
+      summary: List tasks
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Task list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+    post:
+      operationId: createTask
+      summary: Create a task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+      responses:
+        "201":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+  /api/v1/tasks/{taskId}:
+    get:
+      operationId: getTask
+      summary: Get a task
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/tasks/{taskId}/status:
+    put:
+      operationId: updateTaskStatus
+      summary: Update task status
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskStatusRequest"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+  /api/v1/tasks/{taskId}/cancel:
+    post:
+      operationId: cancelTask
+      summary: Cancel a task
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Cancelled task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+  /api/v1/runtime/register:
+    post:
+      operationId: registerRuntimeNode
+      summary: Register a Runtime Agent node
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRuntimeNodeRequest"
+      responses:
+        "201":
+          description: Runtime node registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeNode"
+  /api/v1/runtime/heartbeat:
+    post:
+      operationId: heartbeatRuntimeNode
+      summary: Update Runtime Agent heartbeat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeHeartbeatRequest"
+      responses:
+        "200":
+          description: Runtime node heartbeat accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeNode"
+  /api/v1/runtime/tasks/claim:
+    post:
+      operationId: claimRuntimeTask
+      summary: Claim the next executable task for a Runtime Agent
+      parameters:
+        - name: timeout
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 60
+      responses:
+        "200":
+          description: Claimed task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "204":
+          description: No task is currently available
+  /api/v1/runtime/tasks/{taskId}/events:
+    post:
+      operationId: pushRuntimeTaskEvents
+      summary: Push Runtime Agent task events
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTaskEventsRequest"
+      responses:
+        "202":
+          description: Events accepted
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/runtime/tasks/{taskId}/complete:
+    post:
+      operationId: completeRuntimeTask
+      summary: Complete a Runtime Agent task
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteTaskRequest"
+      responses:
+        "200":
+          description: Task completion accepted
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/runtime/tasks/{taskId}/fail:
+    post:
+      operationId: failRuntimeTask
+      summary: Report Runtime Agent task failure
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FailTaskRequest"
+      responses:
+        "200":
+          description: Task failure accepted
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/runtime/tasks/{taskId}/lease:
+    post:
+      operationId: renewRuntimeTaskLease
+      summary: Renew a Runtime Agent task lease
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Lease renewed
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /api/v1/runtime/nodes:
+    get:
+      operationId: listRuntimeNodes
+      summary: List Runtime Agent nodes
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Runtime node list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RuntimeNode"
+  /api/v1/runtime/nodes/{nodeId}:
+    get:
+      operationId: getRuntimeNode
+      summary: Get a Runtime Agent node
+      parameters:
+        - $ref: "#/components/parameters/NodeId"
+      responses:
+        "200":
+          description: Runtime node
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeNode"
+        "404":
+          $ref: "#/components/responses/Error"
 components:
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+    Offset:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    NodeId:
+      name: nodeId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  responses:
+    Error:
+      description: Request failed
+      content:
+        text/plain:
+          schema:
+            type: string
+    NotImplemented:
+      description: Endpoint is registered but not implemented yet
+      content:
+        text/plain:
+          schema:
+            type: string
   schemas:
     HealthResponse:
       type: object
@@ -30,3 +299,180 @@ components:
           type: string
           enum:
             - control-plane
+    Task:
+      type: object
+      required:
+        - id
+        - title
+        - provider_type
+        - status
+        - priority
+      properties:
+        id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        description:
+          type: string
+        creator_id:
+          type: integer
+          format: int64
+        provider_type:
+          type: string
+        target_node_id:
+          type: string
+        assigned_node_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        workspace_path:
+          type: string
+        params:
+          type: object
+          additionalProperties: true
+        priority:
+          type: integer
+          format: int32
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TaskStatus:
+      type: string
+      enum:
+        - pending
+        - claimed
+        - running
+        - completed
+        - failed
+        - cancelled
+    CreateTaskRequest:
+      type: object
+      required:
+        - title
+        - provider_type
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        provider_type:
+          type: string
+        target_node_id:
+          type: string
+        workspace_path:
+          type: string
+        params:
+          type: object
+          additionalProperties: true
+        priority:
+          type: integer
+          format: int32
+    UpdateTaskStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+    RuntimeNode:
+      type: object
+      required:
+        - node_id
+        - name
+        - supported_providers
+        - max_slots
+        - current_load
+        - status
+      properties:
+        node_id:
+          type: string
+        name:
+          type: string
+        supported_providers:
+          type: array
+          items:
+            type: string
+        max_slots:
+          type: integer
+          format: int32
+        current_load:
+          type: integer
+          format: int32
+        status:
+          type: string
+          enum:
+            - online
+            - offline
+        metadata:
+          type: object
+          additionalProperties: true
+        last_heartbeat_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    RegisterRuntimeNodeRequest:
+      type: object
+      required:
+        - node_id
+        - name
+        - supported_providers
+        - max_slots
+      properties:
+        node_id:
+          type: string
+        name:
+          type: string
+        supported_providers:
+          type: array
+          items:
+            type: string
+        max_slots:
+          type: integer
+          format: int32
+        metadata:
+          type: object
+          additionalProperties: true
+    RuntimeHeartbeatRequest:
+      type: object
+      required:
+        - current_load
+      properties:
+        current_load:
+          type: integer
+          format: int32
+        status:
+          type: string
+    PushTaskEventsRequest:
+      type: object
+      required:
+        - events
+      properties:
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    CompleteTaskRequest:
+      type: object
+      required:
+        - result
+      properties:
+        result:
+          type: object
+          additionalProperties: true
+    FailTaskRequest:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
