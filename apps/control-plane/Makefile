@@ -1,4 +1,4 @@
-.PHONY: generate test build clean
+.PHONY: generate test build clean migrate-up migrate-down migrate-status
 
 # Generate code from OpenAPI specs
 generate:
@@ -29,12 +29,16 @@ clean:
 	rm -f coverage.out
 	@echo "Clean complete"
 
-# 数据库迁移
+# Database migrations
 migrate-up:
+	@test -n "$(DATABASE_URL)" || (echo "ERROR: DATABASE_URL not set" && exit 1)
 	atlas migrate apply --dir file://migrations --url "$(DATABASE_URL)"
 
 migrate-down:
-	atlas migrate down --dir file://migrations --url "$(DATABASE_URL)"
+	@test -n "$(DATABASE_URL)" || (echo "ERROR: DATABASE_URL not set" && exit 1)
+	@test -n "$(STEPS)" || (echo "ERROR: STEPS not set. Usage: make migrate-down STEPS=1" && exit 1)
+	atlas migrate down $(STEPS) --dir file://migrations --url "$(DATABASE_URL)"
 
 migrate-status:
+	@test -n "$(DATABASE_URL)" || (echo "ERROR: DATABASE_URL not set" && exit 1)
 	atlas migrate status --dir file://migrations --url "$(DATABASE_URL)"
