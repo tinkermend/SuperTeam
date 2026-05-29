@@ -195,8 +195,9 @@ make fmt
 apps/runtime-agent/
 ├── src/
 │   ├── controlplane/     # Control Plane 客户端
-│   ├── lease/           # 租约管理
+│   ├── executor/         # 任务执行循环、重试和工作目录管理
 │   ├── providers/       # Provider 适配器
+│   ├── server.rs        # 本地诊断 HTTP API
 │   └── daemon.rs        # 主入口
 └── tests/               # 集成测试
 ```
