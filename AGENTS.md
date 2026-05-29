@@ -132,6 +132,7 @@ Go 应用目录统一使用 `cmd/<name>/` + `internal/` 的结构。Control Plan
 - 不要盲目猜测,如果有不确定的地方与人类进行沟通
 - 超过5个文件的修改创建 worktree 分支进行开发, worktree 到主分支, 并删除 worktree
 - 开发完成基于开发的功能做好必要的测试
-- 评估任务开发复杂度,对于复杂任务使用 subagent 模式开发息 见 docs/database/conn_info.md
+- 评估任务开发复杂度,对于复杂任务使用 subagent 模式开发
+- 数据库信息 见 docs/database/conn_info.md
 - 核心数据完整性应该让 PostgreSQL 兜底；复杂状态机、权限、审批和跨系统一
   致性放应用层
