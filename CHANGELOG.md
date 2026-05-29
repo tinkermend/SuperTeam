@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Phase 2.2 - Runtime 服务 (2026-05-29)
+
+- 添加 Runtime 节点管理服务 (`apps/control-plane/internal/runtime/`)
+  - models.go: 领域模型定义
+    - NodeStatus 枚举 (online/offline)
+    - Node 模型及辅助方法 (IsOnline, HasCapacity, SupportsProvider)
+    - RegisterNodeRequest, UpdateHeartbeatRequest 请求模型
+    - ListNodesFilter 过滤器模型
+    - pgtype 类型转换辅助函数
+  - repository.go: 数据访问接口
+    - CRUD 操作 (CreateNode, GetNode, ListNodes, UpdateHeartbeat, UpdateLoad, UpdateStatus, DeleteNode)
+    - ListOnlineNodes: 查询心跳在阈值内的在线节点
+  - service.go: 业务逻辑实现
+    - RegisterNode: 注册新节点或更新已存在节点
+    - UpdateHeartbeat: 更新心跳和负载，自动检测节点状态
+    - GetNode: 根据 ID 查询节点
+    - ListNodes: 列出节点，支持状态过滤和分页
+    - ListOnlineNodes: 列出在线节点（60秒心跳阈值）
+    - JSON 序列化支持 (providers, metadata)
+  - service_test.go: 完整的单元测试
+    - 使用 testify/mock 实现 MockRepository
+    - 覆盖所有服务方法的正向和负向测试用例
+    - 输入验证测试
+    - 分页和限制测试
+    - 15 个测试用例全部通过
+
+#### Phase 2.1 - 任务服务 (2026-05-29)
+
+- 添加任务管理服务 (`apps/control-plane/internal/task/`)
+  - models.go: 任务领域模型
+  - repository.go: 任务数据访问接口
+  - state_machine.go: 任务状态机
+  - service.go: 任务服务实现
+  - service_test.go: 单元测试
+
 #### Phase 1.3 - 数据层测试 (2026-05-29)
 
 - 添加完整的数据层测试套件 (`apps/control-plane/internal/storage/queries/queries_test.go`)
