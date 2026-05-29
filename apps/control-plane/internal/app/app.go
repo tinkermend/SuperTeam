@@ -85,6 +85,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
+	defer container.Poller.Close()
 
-	return container.Server.Start(cfg.HTTP.Addr)
+	return container.Server.ListenAndServe(ctx, cfg.HTTP.Addr)
 }

@@ -1,10 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func TestHealthEndpointReturnsControlPlaneStatus(t *testing.T) {
@@ -29,5 +32,16 @@ func TestHealthEndpointReturnsControlPlaneStatus(t *testing.T) {
 
 	if body["service"] != "control-plane" {
 		t.Fatalf("expected service control-plane, got %q", body["service"])
+	}
+}
+
+func TestServerListenAndServeReturnsCleanlyWhenContextIsCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	server := &Server{router: chi.NewRouter()}
+
+	if err := server.ListenAndServe(ctx, "127.0.0.1:0"); err != nil {
+		t.Fatalf("expected clean shutdown after context cancellation, got %v", err)
 	}
 }

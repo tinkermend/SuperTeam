@@ -117,7 +117,8 @@ func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		timeout = 60
 	}
 
-	if _, err := h.runtimeService.GetNode(r.Context(), nodeID); err != nil {
+	node, err := h.runtimeService.GetNode(r.Context(), nodeID)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -126,29 +127,22 @@ func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	pendingStatus := task.TaskStatusPending
-	tasks, err := h.taskService.ListTasks(ctx, task.ListTasksFilter{
-		Status: &pendingStatus,
-		Limit:  1,
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if len(tasks) > 0 {
-		t := tasks[0]
-		assignedTask, err := h.taskService.AssignTask(ctx, task.AssignTaskRequest{
-			TaskID:         t.ID,
-			AssignedNodeID: nodeID,
+	for _, provider := range node.SupportedProviders {
+		provider := provider
+		tasks, err := h.taskService.ListTasks(ctx, task.ListTasksFilter{
+			Status:       &pendingStatus,
+			ProviderType: &provider,
+			Limit:        1,
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(assignedTask)
-		return
+		if len(tasks) > 0 {
+			h.assignTask(ctx, w, tasks[0], nodeID)
+			return
+		}
 	}
 
 	t, err := h.poller.WaitForTask(ctx, nodeID)
@@ -161,6 +155,16 @@ func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !node.SupportsProvider(t.ProviderType) {
+		// The poller should only wake compatible nodes; reject stale or mismatched wakeups defensively.
+		http.Error(w, "polled task provider is not supported by node", http.StatusInternalServerError)
+		return
+	}
+
+	h.assignTask(ctx, w, t, nodeID)
+}
+
+func (h *RuntimeHandler) assignTask(ctx context.Context, w http.ResponseWriter, t *task.Task, nodeID string) {
 	assignedTask, err := h.taskService.AssignTask(ctx, task.AssignTaskRequest{
 		TaskID:         t.ID,
 		AssignedNodeID: nodeID,

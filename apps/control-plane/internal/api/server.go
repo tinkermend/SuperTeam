@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -57,7 +59,36 @@ func (s *Server) registerRoutes() {
 }
 
 func (s *Server) Start(addr string) error {
-	return http.ListenAndServe(addr, s.router)
+	return s.ListenAndServe(context.Background(), addr)
+}
+
+func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
+	httpServer := &http.Server{
+		Addr:    addr,
+		Handler: s.router,
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- httpServer.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		if err := httpServer.Shutdown(context.Background()); err != nil {
+			return err
+		}
+		err := <-errCh
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
