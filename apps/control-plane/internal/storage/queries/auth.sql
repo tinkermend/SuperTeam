@@ -6,7 +6,11 @@ INSERT INTO auth_users (
     password_hash,
     status
 ) VALUES (
-    $1, $2, $3, $4, $5
+    sqlc.arg('username')::varchar,
+    sqlc.narg('display_name')::varchar,
+    sqlc.narg('email')::varchar,
+    sqlc.arg('password_hash')::varchar,
+    sqlc.arg('status')::varchar
 ) RETURNING *;
 
 -- name: GetUser :one
@@ -80,8 +84,8 @@ WHERE expires_at IS NOT NULL AND expires_at < NOW();
 
 -- name: UpdateUserPassword :one
 UPDATE auth_users
-SET password_hash = $2, updated_at = NOW()
-WHERE id = $1
+SET password_hash = sqlc.arg('password_hash')::varchar, updated_at = NOW()
+WHERE id = sqlc.arg('id')
 RETURNING *;
 
 -- name: GetUserByID :one

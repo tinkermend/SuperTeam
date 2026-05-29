@@ -308,7 +308,7 @@ func TestCreateTask(t *testing.T) {
 		Username:     "task-creator",
 		DisplayName:  pgtype.Text{String: "Task Creator", Valid: true},
 		Email:        pgtype.Text{String: "creator@example.com", Valid: true},
-		PasswordHash: pgtype.Text{String: "$2a$10$hashedpassword", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
 		Status:       "active",
 	})
 	require.NoError(t, err)
@@ -541,7 +541,7 @@ func TestCreateUser(t *testing.T) {
 		Username:     "testuser",
 		DisplayName:  pgtype.Text{String: "Test User", Valid: true},
 		Email:        pgtype.Text{String: "test@example.com", Valid: true},
-		PasswordHash: pgtype.Text{String: "$2a$10$hashedpassword", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
 		Status:       "active",
 	})
 
@@ -563,7 +563,7 @@ func TestGetUserByUsername(t *testing.T) {
 		Username:     "findme",
 		DisplayName:  pgtype.Text{String: "Find Me", Valid: true},
 		Email:        pgtype.Text{String: "findme@example.com", Valid: true},
-		PasswordHash: pgtype.Text{String: "$2a$10$hashedpassword", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
 		Status:       "active",
 	})
 	require.NoError(t, err)
@@ -825,7 +825,7 @@ func TestCreateUser_DuplicateUsername(t *testing.T) {
 		Username:     "duplicate-user",
 		DisplayName:  pgtype.Text{String: "User 1", Valid: true},
 		Email:        pgtype.Text{String: "user1@example.com", Valid: true},
-		PasswordHash: pgtype.Text{String: "$2a$10$hashedpassword", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
 		Status:       "active",
 	})
 	require.NoError(t, err)
@@ -836,7 +836,7 @@ func TestCreateUser_DuplicateUsername(t *testing.T) {
 		Username:     "duplicate-user",
 		DisplayName:  pgtype.Text{String: "User 2", Valid: true},
 		Email:        pgtype.Text{String: "user2@example.com", Valid: true},
-		PasswordHash: pgtype.Text{String: "$2a$10$hashedpassword", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
 		Status:       "active",
 	})
 	assert.Error(t, err)
@@ -907,7 +907,7 @@ func TestCreateUser_DuplicateEmail(t *testing.T) {
 		Username:     "user-email-1",
 		DisplayName:  pgtype.Text{String: "User 1", Valid: true},
 		Email:        pgtype.Text{String: "duplicate@example.com", Valid: true},
-		PasswordHash: pgtype.Text{String: "$2a$10$hashedpassword", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
 		Status:       "active",
 	})
 	require.NoError(t, err)
@@ -918,7 +918,7 @@ func TestCreateUser_DuplicateEmail(t *testing.T) {
 		Username:     "user-email-2",
 		DisplayName:  pgtype.Text{String: "User 2", Valid: true},
 		Email:        pgtype.Text{String: "duplicate@example.com", Valid: true},
-		PasswordHash: pgtype.Text{String: "$2a$10$hashedpassword", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
 		Status:       "active",
 	})
 	assert.Error(t, err)

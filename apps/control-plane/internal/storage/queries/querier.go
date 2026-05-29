@@ -6,59 +6,50 @@ package queries
 
 import (
 	"context"
-	"database/sql"
-	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
 	CancelTask(ctx context.Context, id int64) (Task, error)
 	CountAuditEvents(ctx context.Context, arg CountAuditEventsParams) (int64, error)
-	// Audit Queries
 	CreateAuditEvent(ctx context.Context, arg CreateAuditEventParams) (AuditEvent, error)
-	// Runtime Node Queries
 	CreateRuntimeNode(ctx context.Context, arg CreateRuntimeNodeParams) (RuntimeNode, error)
-	// Runtime Token Queries
 	CreateRuntimeToken(ctx context.Context, arg CreateRuntimeTokenParams) (AuthRuntimeToken, error)
-	// Task Queries
 	CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error)
-	// Task Artifact Queries
 	CreateTaskArtifact(ctx context.Context, arg CreateTaskArtifactParams) (TaskArtifact, error)
-	// Task Event Queries
 	CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams) (TaskEvent, error)
-	// Task Execution Queries
 	CreateTaskExecution(ctx context.Context, arg CreateTaskExecutionParams) (TaskExecution, error)
-	// Task State History Queries
 	CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) (TaskStateHistory, error)
-	// Auth Queries
-	// User Queries
 	CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error)
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
-	DeleteOldAuditEvents(ctx context.Context, createdAt time.Time) error
 	DeleteRuntimeNode(ctx context.Context, nodeID string) error
 	DeleteRuntimeToken(ctx context.Context, nodeID string) error
+	DeleteTask(ctx context.Context, id int64) error
 	DeleteTaskArtifact(ctx context.Context, id int64) error
 	DeleteUser(ctx context.Context, id int64) error
 	GetAuditEvent(ctx context.Context, id int64) (AuditEvent, error)
-	GetLatestTaskEventSequence(ctx context.Context, taskID int64) (interface{}, error)
+	GetLatestTaskEventSequence(ctx context.Context, taskID int64) (int32, error)
 	GetLatestTaskExecution(ctx context.Context, taskID int64) (TaskExecution, error)
 	GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNode, error)
-	GetRuntimeNodeByID(ctx context.Context, id int64) (RuntimeNode, error)
+	GetRuntimeToken(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetTask(ctx context.Context, id int64) (Task, error)
 	GetTaskArtifact(ctx context.Context, id int64) (TaskArtifact, error)
+	GetTaskEvent(ctx context.Context, arg GetTaskEventParams) (TaskEvent, error)
 	GetTaskExecution(ctx context.Context, id int64) (TaskExecution, error)
-	GetUserByEmail(ctx context.Context, email sql.NullString) (AuthUser, error)
+	GetUser(ctx context.Context, id int64) (AuthUser, error)
+	GetUserByEmail(ctx context.Context, email pgtype.Text) (AuthUser, error)
 	GetUserByID(ctx context.Context, id int64) (AuthUser, error)
 	GetUserByUsername(ctx context.Context, username string) (AuthUser, error)
 	ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]AuditEvent, error)
-	ListAuditEventsByActor(ctx context.Context, arg ListAuditEventsByActorParams) ([]AuditEvent, error)
-	ListAuditEventsByResource(ctx context.Context, arg ListAuditEventsByResourceParams) ([]AuditEvent, error)
-	ListOnlineNodes(ctx context.Context, dollar_1 string) ([]RuntimeNode, error)
+	ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
+	ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error)
 	ListRuntimeNodes(ctx context.Context, arg ListRuntimeNodesParams) ([]RuntimeNode, error)
 	ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error)
-	ListTaskArtifacts(ctx context.Context, arg ListTaskArtifactsParams) ([]TaskArtifact, error)
-	ListTaskEvents(ctx context.Context, arg ListTaskEventsParams) ([]TaskEvent, error)
+	ListTaskArtifacts(ctx context.Context, taskID int64) ([]TaskArtifact, error)
+	ListTaskEvents(ctx context.Context, taskID int64) ([]TaskEvent, error)
 	ListTaskExecutions(ctx context.Context, taskID int64) ([]TaskExecution, error)
 	ListTaskStateHistory(ctx context.Context, taskID int64) ([]TaskStateHistory, error)
 	ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error)
@@ -66,13 +57,14 @@ type Querier interface {
 	UpdateRuntimeNodeHeartbeat(ctx context.Context, arg UpdateRuntimeNodeHeartbeatParams) (RuntimeNode, error)
 	UpdateRuntimeNodeLoad(ctx context.Context, arg UpdateRuntimeNodeLoadParams) (RuntimeNode, error)
 	UpdateRuntimeNodeStatus(ctx context.Context, arg UpdateRuntimeNodeStatusParams) (RuntimeNode, error)
+	UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, error)
 	UpdateTaskAssignment(ctx context.Context, arg UpdateTaskAssignmentParams) (Task, error)
 	UpdateTaskExecution(ctx context.Context, arg UpdateTaskExecutionParams) (TaskExecution, error)
 	UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusParams) (Task, error)
 	UpdateTaskWorkspace(ctx context.Context, arg UpdateTaskWorkspaceParams) (Task, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUser, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error)
-	ValidateRuntimeToken(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
+	ValidateRuntimeToken(ctx context.Context, arg ValidateRuntimeTokenParams) (AuthRuntimeToken, error)
 }
 
 var _ Querier = (*Queries)(nil)

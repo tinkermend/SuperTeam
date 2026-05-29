@@ -138,6 +138,45 @@ func (q *Queries) ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Ti
 	return items, nil
 }
 
+const ListOnlineRuntimeNodes = `-- name: ListOnlineRuntimeNodes :many
+SELECT id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at FROM runtime_nodes
+WHERE status = 'online'
+  AND last_heartbeat_at > $1
+ORDER BY current_load ASC, created_at ASC
+`
+
+func (q *Queries) ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error) {
+	rows, err := q.db.Query(ctx, ListOnlineRuntimeNodes, lastHeartbeatAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RuntimeNode{}
+	for rows.Next() {
+		var i RuntimeNode
+		if err := rows.Scan(
+			&i.ID,
+			&i.NodeID,
+			&i.Name,
+			&i.SupportedProviders,
+			&i.MaxSlots,
+			&i.CurrentLoad,
+			&i.Status,
+			&i.Metadata,
+			&i.LastHeartbeatAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListRuntimeNodes = `-- name: ListRuntimeNodes :many
 SELECT id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at FROM runtime_nodes
 WHERE ($1::varchar IS NULL OR status = $1)
@@ -146,13 +185,13 @@ LIMIT $3 OFFSET $2
 `
 
 type ListRuntimeNodesParams struct {
-	Column1 string `json:"column_1"`
-	Offset  int32  `json:"offset"`
-	Limit   int32  `json:"limit"`
+	Status pgtype.Text `json:"status"`
+	Offset int32       `json:"offset"`
+	Limit  int32       `json:"limit"`
 }
 
 func (q *Queries) ListRuntimeNodes(ctx context.Context, arg ListRuntimeNodesParams) ([]RuntimeNode, error) {
-	rows, err := q.db.Query(ctx, ListRuntimeNodes, arg.Column1, arg.Offset, arg.Limit)
+	rows, err := q.db.Query(ctx, ListRuntimeNodes, arg.Status, arg.Offset, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

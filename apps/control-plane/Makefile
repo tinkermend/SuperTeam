@@ -1,13 +1,20 @@
-.PHONY: generate test build clean migrate-up migrate-down migrate-status
+.PHONY: generate generate-sqlc generate-openapi test build clean migrate-up migrate-down migrate-status
 
-# Generate code from OpenAPI specs
-generate:
+# Generate code from sqlc and OpenAPI specs
+generate: generate-sqlc generate-openapi
+
+generate-sqlc:
+	@echo "Generating sqlc code..."
+	sqlc generate
+	@echo "sqlc generation complete"
+
+generate-openapi:
 	@echo "Generating code from OpenAPI specs..."
 	@mkdir -p internal/auth
 	oapi-codegen -package auth -generate types,chi-server \
 		-o internal/auth/generated.go \
 		../../contracts/control-plane/auth.yaml
-	@echo "Code generation complete"
+	@echo "OpenAPI code generation complete"
 
 # Run tests
 test:

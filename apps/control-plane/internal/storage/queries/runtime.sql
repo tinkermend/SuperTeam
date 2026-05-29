@@ -34,6 +34,12 @@ SET status = $2, updated_at = NOW()
 WHERE node_id = $1
 RETURNING *;
 
+-- name: ListOnlineRuntimeNodes :many
+SELECT * FROM runtime_nodes
+WHERE status = 'online'
+  AND last_heartbeat_at > $1
+ORDER BY current_load ASC, created_at ASC;
+
 -- name: ListOnlineNodes :many
 SELECT * FROM runtime_nodes
 WHERE status = 'online'
@@ -42,9 +48,9 @@ ORDER BY current_load ASC, created_at ASC;
 
 -- name: ListRuntimeNodes :many
 SELECT * FROM runtime_nodes
-WHERE ($1::varchar IS NULL OR status = $1)
+WHERE (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status'))
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2;
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: DeleteRuntimeNode :exec
 DELETE FROM runtime_nodes

@@ -48,7 +48,11 @@ INSERT INTO auth_users (
     password_hash,
     status
 ) VALUES (
-    $1, $2, $3, $4, $5
+    $1::varchar,
+    $2::varchar,
+    $3::varchar,
+    $4::varchar,
+    $5::varchar
 ) RETURNING id, username, display_name, email, password_hash, status, created_at, updated_at
 `
 
@@ -56,7 +60,7 @@ type CreateUserParams struct {
 	Username     string      `json:"username"`
 	DisplayName  pgtype.Text `json:"display_name"`
 	Email        pgtype.Text `json:"email"`
-	PasswordHash pgtype.Text `json:"password_hash"`
+	PasswordHash string      `json:"password_hash"`
 	Status       string      `json:"status"`
 }
 
@@ -327,7 +331,7 @@ type UpdateUserParams struct {
 	ID           int64       `json:"id"`
 	DisplayName  pgtype.Text `json:"display_name"`
 	Email        pgtype.Text `json:"email"`
-	PasswordHash pgtype.Text `json:"password_hash"`
+	PasswordHash string      `json:"password_hash"`
 	Status       string      `json:"status"`
 }
 
@@ -355,18 +359,18 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUse
 
 const UpdateUserPassword = `-- name: UpdateUserPassword :one
 UPDATE auth_users
-SET password_hash = $2, updated_at = NOW()
-WHERE id = $1
+SET password_hash = $1::varchar, updated_at = NOW()
+WHERE id = $2
 RETURNING id, username, display_name, email, password_hash, status, created_at, updated_at
 `
 
 type UpdateUserPasswordParams struct {
-	ID           int64       `json:"id"`
-	PasswordHash pgtype.Text `json:"password_hash"`
+	PasswordHash string `json:"password_hash"`
+	ID           int64  `json:"id"`
 }
 
 func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error) {
-	row := q.db.QueryRow(ctx, UpdateUserPassword, arg.ID, arg.PasswordHash)
+	row := q.db.QueryRow(ctx, UpdateUserPassword, arg.PasswordHash, arg.ID)
 	var i AuthUser
 	err := row.Scan(
 		&i.ID,

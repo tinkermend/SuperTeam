@@ -36,7 +36,7 @@ type AuthUser struct {
 	Username     string             `json:"username"`
 	DisplayName  pgtype.Text        `json:"display_name"`
 	Email        pgtype.Text        `json:"email"`
-	PasswordHash pgtype.Text        `json:"password_hash"`
+	PasswordHash string             `json:"password_hash"`
 	Status       string             `json:"status"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
