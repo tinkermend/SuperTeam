@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-05-29
+
+- 清理 `DESIGN.md` 中偏项目化的设计描述，改为通用企业控制台设计风格规范。
+- 补充状态与反馈规则，覆盖 loading、empty、error、权限不足、禁用态和长任务执行反馈。
+- 为 `DESIGN.md` 补充基础组件风格规则，覆盖字体层级、间距密度、按钮、表单、面板、标签、表格、浮层和图标。
+- 在 `AGENTS.md` 中补充 Web 开发设计风格引用，要求后续页面、组件和视觉改造参考 `DESIGN.md`。
+
 ## 2026-05-28
 
 - 为 Rust Runtime Agent 增加 HTTP/WS 执行宿主能力：新增 `/health`、`/providers`、`/runs`、`/runs/{id}`、`/runs/{id}/events`、`/runs/{id}/cancel` 和 `/ws`。
