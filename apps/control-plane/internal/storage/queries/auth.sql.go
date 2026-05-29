@@ -82,6 +82,16 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (AuthUse
 	return i, err
 }
 
+const DeleteExpiredRuntimeTokens = `-- name: DeleteExpiredRuntimeTokens :exec
+DELETE FROM auth_runtime_tokens
+WHERE expires_at IS NOT NULL AND expires_at < NOW()
+`
+
+func (q *Queries) DeleteExpiredRuntimeTokens(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, DeleteExpiredRuntimeTokens)
+	return err
+}
+
 const DeleteRuntimeToken = `-- name: DeleteRuntimeToken :exec
 DELETE FROM auth_runtime_tokens
 WHERE node_id = $1
@@ -109,6 +119,24 @@ WHERE node_id = $1
 
 func (q *Queries) GetRuntimeToken(ctx context.Context, nodeID string) (AuthRuntimeToken, error) {
 	row := q.db.QueryRow(ctx, GetRuntimeToken, nodeID)
+	var i AuthRuntimeToken
+	err := row.Scan(
+		&i.ID,
+		&i.NodeID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const GetRuntimeTokenByNodeID = `-- name: GetRuntimeTokenByNodeID :one
+SELECT id, node_id, token_hash, expires_at, created_at FROM auth_runtime_tokens
+WHERE node_id = $1
+`
+
+func (q *Queries) GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (AuthRuntimeToken, error) {
+	row := q.db.QueryRow(ctx, GetRuntimeTokenByNodeID, nodeID)
 	var i AuthRuntimeToken
 	err := row.Scan(
 		&i.ID,
@@ -162,6 +190,27 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email pgtype.Text) (AuthUs
 	return i, err
 }
 
+const GetUserByID = `-- name: GetUserByID :one
+SELECT id, username, display_name, email, password_hash, status, created_at, updated_at FROM auth_users
+WHERE id = $1
+`
+
+func (q *Queries) GetUserByID(ctx context.Context, id int64) (AuthUser, error) {
+	row := q.db.QueryRow(ctx, GetUserByID, id)
+	var i AuthUser
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.DisplayName,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const GetUserByUsername = `-- name: GetUserByUsername :one
 SELECT id, username, display_name, email, password_hash, status, created_at, updated_at FROM auth_users
 WHERE username = $1
@@ -181,6 +230,43 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (AuthU
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const ListRuntimeTokens = `-- name: ListRuntimeTokens :many
+SELECT id, node_id, token_hash, expires_at, created_at FROM auth_runtime_tokens
+ORDER BY created_at DESC
+LIMIT $1 OFFSET $2
+`
+
+type ListRuntimeTokensParams struct {
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
+}
+
+func (q *Queries) ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error) {
+	rows, err := q.db.Query(ctx, ListRuntimeTokens, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuthRuntimeToken{}
+	for rows.Next() {
+		var i AuthRuntimeToken
+		if err := rows.Scan(
+			&i.ID,
+			&i.NodeID,
+			&i.TokenHash,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ListUsers = `-- name: ListUsers :many
@@ -253,6 +339,34 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUse
 		arg.PasswordHash,
 		arg.Status,
 	)
+	var i AuthUser
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.DisplayName,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const UpdateUserPassword = `-- name: UpdateUserPassword :one
+UPDATE auth_users
+SET password_hash = $2, updated_at = NOW()
+WHERE id = $1
+RETURNING id, username, display_name, email, password_hash, status, created_at, updated_at
+`
+
+type UpdateUserPasswordParams struct {
+	ID           int64       `json:"id"`
+	PasswordHash pgtype.Text `json:"password_hash"`
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error) {
+	row := q.db.QueryRow(ctx, UpdateUserPassword, arg.ID, arg.PasswordHash)
 	var i AuthUser
 	err := row.Scan(
 		&i.ID,

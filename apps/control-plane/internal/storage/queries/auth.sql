@@ -64,3 +64,26 @@ WHERE node_id = $1
 -- name: DeleteRuntimeToken :exec
 DELETE FROM auth_runtime_tokens
 WHERE node_id = $1;
+
+-- name: GetRuntimeTokenByNodeID :one
+SELECT * FROM auth_runtime_tokens
+WHERE node_id = $1;
+
+-- name: ListRuntimeTokens :many
+SELECT * FROM auth_runtime_tokens
+ORDER BY created_at DESC
+LIMIT $1 OFFSET $2;
+
+-- name: DeleteExpiredRuntimeTokens :exec
+DELETE FROM auth_runtime_tokens
+WHERE expires_at IS NOT NULL AND expires_at < NOW();
+
+-- name: UpdateUserPassword :one
+UPDATE auth_users
+SET password_hash = $2, updated_at = NOW()
+WHERE id = $1
+RETURNING *;
+
+-- name: GetUserByID :one
+SELECT * FROM auth_users
+WHERE id = $1;

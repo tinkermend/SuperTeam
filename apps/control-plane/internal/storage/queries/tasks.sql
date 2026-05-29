@@ -75,7 +75,7 @@ ORDER BY sequence_number ASC;
 SELECT * FROM task_events
 WHERE task_id = $1 AND sequence_number = $2;
 
--- name: CreateTaskStateHistory :exec
+-- name: CreateTaskStateHistory :one
 INSERT INTO task_state_history (
     task_id,
     from_status,
@@ -84,4 +84,88 @@ INSERT INTO task_state_history (
     reason
 ) VALUES (
     $1, $2, $3, $4, $5
-);
+) RETURNING *;
+
+-- name: CreateTaskExecution :one
+INSERT INTO task_executions (
+    task_id,
+    node_id,
+    status
+) VALUES (
+    $1, $2, $3
+) RETURNING *;
+
+-- name: CreateTaskArtifact :one
+INSERT INTO task_artifacts (
+    task_id,
+    execution_id,
+    artifact_type,
+    name,
+    storage_url
+) VALUES (
+    $1, $2, $3, $4, $5
+) RETURNING *;
+
+-- name: ListTaskArtifacts :many
+SELECT * FROM task_artifacts
+WHERE task_id = $1
+ORDER BY created_at DESC;
+
+-- name: ListPendingTasks :many
+SELECT * FROM tasks
+WHERE status = 'pending'
+  AND (sqlc.narg('provider_type')::varchar IS NULL OR provider_type = sqlc.narg('provider_type'))
+ORDER BY priority DESC, created_at ASC
+LIMIT sqlc.arg('limit');
+
+-- name: UpdateTaskAssignment :one
+UPDATE tasks
+SET assigned_node_id = $2, status = 'claimed', updated_at = NOW()
+WHERE id = $1
+RETURNING *;
+
+-- name: UpdateTaskExecution :one
+UPDATE task_executions
+SET status = $2, completed_at = NOW(), updated_at = NOW()
+WHERE id = $1
+RETURNING *;
+
+-- name: CancelTask :one
+UPDATE tasks
+SET status = 'cancelled', updated_at = NOW()
+WHERE id = $1
+RETURNING *;
+
+-- name: GetTaskArtifact :one
+SELECT * FROM task_artifacts
+WHERE id = $1;
+
+-- name: DeleteTaskArtifact :exec
+DELETE FROM task_artifacts
+WHERE id = $1;
+
+-- name: GetTaskExecution :one
+SELECT * FROM task_executions
+WHERE id = $1;
+
+-- name: ListTaskExecutions :many
+SELECT * FROM task_executions
+WHERE task_id = $1
+ORDER BY created_at DESC;
+
+-- name: GetLatestTaskExecution :one
+SELECT * FROM task_executions
+WHERE task_id = $1
+ORDER BY created_at DESC
+LIMIT 1;
+
+-- name: ListTaskStateHistory :many
+SELECT * FROM task_state_history
+WHERE task_id = $1
+ORDER BY created_at DESC;
+
+-- name: UpdateTaskWorkspace :one
+UPDATE tasks
+SET workspace_path = $2, updated_at = NOW()
+WHERE id = $1
+RETURNING *;
