@@ -116,6 +116,115 @@ impl ControlPlaneClient {
             }
         }
     }
+
+    /// Update task status
+    pub async fn update_task_status(&self, task_id: i64, status: super::models::TaskStatus) -> Result<()> {
+        let url = format!("{}/api/v1/runtime/tasks/{}/status", self.base_url, task_id);
+
+        let response = self
+            .client
+            .put(&url)
+            .bearer_auth(&self.token)
+            .json(&serde_json::json!({"status": status}))
+            .send()
+            .await
+            .context("Failed to update task status")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Update task status failed with {}: {}", status, body);
+        }
+
+        Ok(())
+    }
+
+    /// Push event to Control Plane
+    pub async fn push_event(&self, task_id: i64, event: &crate::events::ProviderEvent) -> Result<()> {
+        let url = format!("{}/api/v1/runtime/tasks/{}/events", self.base_url, task_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .json(&serde_json::json!({"events": [event]}))
+            .send()
+            .await
+            .context("Failed to push event")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Push event failed with {}: {}", status, body);
+        }
+
+        Ok(())
+    }
+
+    /// Complete task
+    pub async fn complete_task(&self, task_id: i64, result: serde_json::Value) -> Result<()> {
+        let url = format!("{}/api/v1/runtime/tasks/{}/complete", self.base_url, task_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .json(&serde_json::json!({"result": result}))
+            .send()
+            .await
+            .context("Failed to complete task")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Complete task failed with {}: {}", status, body);
+        }
+
+        Ok(())
+    }
+
+    /// Fail task
+    pub async fn fail_task(&self, task_id: i64, error: String) -> Result<()> {
+        let url = format!("{}/api/v1/runtime/tasks/{}/fail", self.base_url, task_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .json(&serde_json::json!({"error": error}))
+            .send()
+            .await
+            .context("Failed to fail task")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Fail task failed with {}: {}", status, body);
+        }
+
+        Ok(())
+    }
+
+    /// Renew task lease
+    pub async fn renew_lease(&self, task_id: i64) -> Result<()> {
+        let url = format!("{}/api/v1/runtime/tasks/{}/renew", self.base_url, task_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .send()
+            .await
+            .context("Failed to renew lease")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Renew lease failed with {}: {}", status, body);
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
