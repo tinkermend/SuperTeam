@@ -539,8 +539,12 @@ Authorization: Bearer <runtime-token>
   "status": "claimed",
   "provider_type": "claude-code",
   "assigned_node_id": "node-001",
-  "lease_expires_at": "2026-05-29T10:10:00Z",
-  "priority": 5
+  "params": {
+    "prompt": "分析当前代码库的架构"
+  },
+  "priority": 5,
+  "created_at": "2026-05-29T10:00:00Z",
+  "updated_at": "2026-05-29T10:01:00Z"
 }
 ```
 
