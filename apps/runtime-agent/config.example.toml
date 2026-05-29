@@ -1,0 +1,49 @@
+# Runtime Agent 配置文件
+# 支持通过环境变量覆盖：RUNTIME_AGENT_<SECTION>_<KEY>
+
+[runtime]
+# 节点 ID（留空则自动生成 UUID）
+node_id = ""
+
+# Control Plane API 地址
+control_plane_url = "http://localhost:8080"
+
+# 心跳间隔（秒）
+heartbeat_interval = 30
+
+# 最大并发任务数
+max_concurrent_tasks = 3
+
+[workspace]
+# 工作目录基础路径
+base_dir = "/var/superteam/workspaces"
+
+# 清理策略：on_success | on_completion | manual
+cleanup_policy = "on_success"
+
+# 工作目录最大保留数量
+max_retained = 10
+
+[providers.claude_code]
+enabled = true
+binary_path = "/usr/local/bin/claude"
+# 超时时间（秒）
+timeout = 3600
+
+[providers.opencode]
+enabled = false
+binary_path = "/usr/local/bin/opencode"
+timeout = 3600
+
+[logging]
+# 日志级别：trace | debug | info | warn | error
+level = "info"
+
+# 日志格式：json | pretty
+format = "pretty"
+
+# 日志输出：stdout | file
+output = "stdout"
+
+# 日志文件路径（当 output = file 时）
+file_path = "/var/log/superteam/runtime-agent.log"
