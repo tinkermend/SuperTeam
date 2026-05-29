@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/superteam/control-plane/internal/api/handlers"
-	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
 )
@@ -105,18 +104,12 @@ func newTestServer(t *testing.T) *e2eTestServer {
 	server := NewServer(
 		handlers.NewTaskHandler(taskService),
 		handlers.NewRuntimeHandler(runtimeService, taskService, fakePoller{}),
+		&fakeRuntimeAuthService{},
 	)
 
 	return &e2eTestServer{
-		handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			nodeID := r.Header.Get("X-Node-ID")
-			if nodeID == "" {
-				nodeID = "fake-node-1"
-			}
-			ctx := context.WithValue(r.Context(), middleware.NodeIDKey, nodeID)
-			server.ServeHTTP(w, r.WithContext(ctx))
-		}),
-		tasks: taskService,
+		handler: server,
+		tasks:   taskService,
 	}
 }
 
@@ -186,6 +179,7 @@ func mustRequest(t *testing.T, server *e2eTestServer, method string, path string
 
 	request := httptest.NewRequest(method, path, &requestBody)
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer fake-token")
 	request.Header.Set("X-Node-ID", "fake-node-1")
 	response := httptest.NewRecorder()
 	server.handler.ServeHTTP(response, request)
@@ -389,6 +383,15 @@ type fakePoller struct{}
 func (fakePoller) WaitForTask(ctx context.Context, nodeID string) (*task.Task, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
+}
+
+type fakeRuntimeAuthService struct{}
+
+func (s *fakeRuntimeAuthService) ValidateRuntimeToken(ctx context.Context, nodeID, token string) error {
+	if nodeID != "fake-node-1" || token != "fake-token" {
+		return errors.New("invalid token")
+	}
+	return nil
 }
 
 func cloneTask(t *task.Task) *task.Task {

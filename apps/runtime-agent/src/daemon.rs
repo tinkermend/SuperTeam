@@ -31,9 +31,10 @@ impl RuntimeDaemon {
     }
 
     pub async fn run(self) -> Result<()> {
-        let client = ControlPlaneClient::new(
+        let client = ControlPlaneClient::with_node_id(
             &self.config.runtime.control_plane_url,
             &self.config.runtime.auth_token,
+            &self.config.runtime.node_id,
         );
 
         let supported_providers = build_supported_providers(&self.config);

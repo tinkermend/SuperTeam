@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -65,6 +66,72 @@ func TestLegacyRuntimeClaimRouteIsNotRegistered(t *testing.T) {
 	}
 }
 
+func TestRuntimeRoutesUseAuthenticatedNodeIdentity(t *testing.T) {
+	server := NewServer(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/heartbeat", strings.NewReader(`{"current_load":2}`))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Node-ID", "node-1")
+	rr := httptest.NewRecorder()
+
+	server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected authenticated heartbeat to reach handler, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode heartbeat response: %v", err)
+	}
+	if body["node_id"] != "node-1" {
+		t.Fatalf("expected node_id from auth context, got %#v", body["node_id"])
+	}
+}
+
+func TestRuntimeRoutesRejectMissingRuntimeAuth(t *testing.T) {
+	server := NewServer(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/heartbeat", strings.NewReader(`{"current_load":2}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected missing runtime auth to be rejected, got %d", rr.Code)
+	}
+}
+
+func TestRuntimeRegisterRejectsMismatchedAuthenticatedNodeIdentity(t *testing.T) {
+	server := NewServer(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/register", strings.NewReader(`{"node_id":"node-2","name":"node 2","supported_providers":["codex"],"max_slots":1}`))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Node-ID", "node-1")
+	rr := httptest.NewRecorder()
+
+	server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected mismatched runtime node identity to be rejected, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
 type routeRuntimeService struct{}
 
 func (s *routeRuntimeService) RegisterNode(ctx context.Context, req runtime.RegisterNodeRequest) (*runtime.Node, error) {
@@ -118,4 +185,13 @@ type routePoller struct{}
 func (p *routePoller) WaitForTask(ctx context.Context, nodeID string) (*task.Task, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
+}
+
+type routeRuntimeAuthService struct{}
+
+func (s *routeRuntimeAuthService) ValidateRuntimeToken(ctx context.Context, nodeID, token string) error {
+	if nodeID != "node-1" || token != "test-token" {
+		return context.Canceled
+	}
+	return nil
 }

@@ -11,6 +11,7 @@ use super::models::{
 pub struct ControlPlaneClient {
     base_url: String,
     token: String,
+    node_id: Option<String>,
     client: Client,
 }
 
@@ -25,8 +26,19 @@ impl ControlPlaneClient {
         Self {
             base_url: base_url.into(),
             token: token.into(),
+            node_id: None,
             client,
         }
+    }
+
+    pub fn with_node_id(
+        base_url: impl Into<String>,
+        token: impl Into<String>,
+        node_id: impl Into<String>,
+    ) -> Self {
+        let mut client = Self::new(base_url, token);
+        client.node_id = Some(node_id.into());
+        client
     }
 
     /// Register this runtime node with the Control Plane
@@ -37,6 +49,7 @@ impl ControlPlaneClient {
             .client
             .post(&url)
             .bearer_auth(&self.token)
+            .header("X-Node-ID", &req.node_id)
             .json(&req)
             .send()
             .await
@@ -64,6 +77,7 @@ impl ControlPlaneClient {
             .client
             .post(&url)
             .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
             .json(&req)
             .send()
             .await
@@ -94,6 +108,7 @@ impl ControlPlaneClient {
             .client
             .post(&url)
             .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
             .send()
             .await
             .context("Failed to send claim task request")?;
@@ -126,6 +141,7 @@ impl ControlPlaneClient {
             .client
             .put(&url)
             .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
             .json(&serde_json::json!({"status": status}))
             .send()
             .await
@@ -152,6 +168,7 @@ impl ControlPlaneClient {
             .client
             .post(&url)
             .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
             .json(&serde_json::json!({"events": [event]}))
             .send()
             .await
@@ -174,6 +191,7 @@ impl ControlPlaneClient {
             .client
             .post(&url)
             .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
             .json(&serde_json::json!({"result": result}))
             .send()
             .await
@@ -196,6 +214,7 @@ impl ControlPlaneClient {
             .client
             .post(&url)
             .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
             .json(&serde_json::json!({"error": error}))
             .send()
             .await
@@ -218,6 +237,7 @@ impl ControlPlaneClient {
             .client
             .post(&url)
             .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
             .send()
             .await
             .context("Failed to renew lease")?;
@@ -236,6 +256,21 @@ impl ControlPlaneClient {
             "{}/api/v1/runtime/tasks/claim?timeout={}",
             self.base_url, timeout_secs
         )
+    }
+
+    fn runtime_headers(&self) -> Result<reqwest::header::HeaderMap> {
+        let node_id = self
+            .node_id
+            .as_ref()
+            .filter(|node_id| !node_id.trim().is_empty())
+            .context("Runtime node_id is required for authenticated Runtime API requests")?;
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            "X-Node-ID",
+            reqwest::header::HeaderValue::from_str(node_id)
+                .context("Runtime node_id is not a valid header value")?,
+        );
+        Ok(headers)
     }
 
     fn task_events_url(&self, task_id: i64) -> String {
@@ -271,6 +306,7 @@ mod tests {
         let client = ControlPlaneClient::new("http://localhost:8080", "test-token");
         assert_eq!(client.base_url, "http://localhost:8080");
         assert_eq!(client.token, "test-token");
+        assert_eq!(client.node_id, None);
     }
 
     #[test]

@@ -20,9 +20,11 @@ Runtime API 使用 Bearer Token 认证：
 
 ```
 Authorization: Bearer <runtime-token>
+X-Node-ID: <runtime-node-id>
 ```
 
 使用 `scripts/generate-runtime-token.sh` 生成 token。
+`X-Node-ID` 必须和 token 对应的 Runtime 节点一致；注册接口中的 `node_id` 也必须与该 header 一致。
 
 Runtime Agent 默认通过 Control Plane Runtime API 领取、续租和回传任务结果；本地 Runtime Agent HTTP API 仅用于诊断和本地 provider run 结果查看，不是业务任务分发入口。
 
@@ -114,8 +116,7 @@ Console API 供 Web 控制台使用。当前 foundation 阶段的 product server
 **请求示例**
 
 ```bash
-curl http://localhost:8080/api/v1/tasks/1 \
-  -H "Cookie: session_token=abc123"
+curl http://localhost:8080/api/v1/tasks/1
 ```
 
 **响应示例**
@@ -147,8 +148,7 @@ curl http://localhost:8080/api/v1/tasks/1 \
 **请求示例**
 
 ```bash
-curl "http://localhost:8080/api/v1/tasks?limit=10" \
-  -H "Cookie: session_token=abc123"
+curl "http://localhost:8080/api/v1/tasks?limit=10"
 ```
 
 **响应示例**
@@ -206,8 +206,7 @@ curl "http://localhost:8080/api/v1/tasks?limit=10" \
 **请求示例**
 
 ```bash
-curl http://localhost:8080/api/v1/runtime/nodes \
-  -H "Cookie: session_token=abc123"
+curl http://localhost:8080/api/v1/runtime/nodes
 ```
 
 **响应示例**
@@ -274,6 +273,7 @@ Runtime API 供 Runtime Agent 调用 Control Plane 使用，需要 Runtime Token
 
 ```
 Authorization: Bearer <runtime-token>
+X-Node-ID: node-001
 ```
 
 **请求体**
@@ -321,6 +321,7 @@ Authorization: Bearer <runtime-token>
 
 ```
 Authorization: Bearer <runtime-token>
+X-Node-ID: node-001
 ```
 
 **请求体**
@@ -378,6 +379,7 @@ POST /api/v1/runtime/tasks/{taskId}/lease
 
 ```
 Authorization: Bearer <runtime-token>
+X-Node-ID: node-001
 ```
 
 **查询参数**
@@ -412,6 +414,7 @@ Authorization: Bearer <runtime-token>
 
 ```
 Authorization: Bearer <runtime-token>
+X-Node-ID: node-001
 ```
 
 **请求体**
@@ -440,6 +443,7 @@ Authorization: Bearer <runtime-token>
 
 ```
 Authorization: Bearer <runtime-token>
+X-Node-ID: node-001
 ```
 
 **请求体**
@@ -479,6 +483,7 @@ Authorization: Bearer <runtime-token>
 
 ```
 Authorization: Bearer <runtime-token>
+X-Node-ID: node-001
 ```
 
 **请求体**
@@ -511,6 +516,7 @@ Authorization: Bearer <runtime-token>
 
 ```
 Authorization: Bearer <runtime-token>
+X-Node-ID: node-001
 ```
 
 **请求体**
@@ -573,14 +579,7 @@ Authorization: Bearer <runtime-token>
 
 ## 错误处理
 
-所有错误响应遵循统一格式：
-
-```json
-{
-  "error": "错误描述",
-  "code": "error_code"
-}
-```
+当前 foundation 阶段，错误响应使用 `text/plain` 响应体返回错误文本；统一 JSON 错误 envelope 属于后续 API 标准化能力。
 
 ### 常见错误码
 
@@ -607,7 +606,6 @@ Authorization: Bearer <runtime-token>
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/tasks \
-  -H "Cookie: session_token=abc123" \
   -H "Content-Type: application/json" \
   -d '{
     "title": "测试任务",
@@ -620,7 +618,8 @@ curl -X POST http://localhost:8080/api/v1/tasks \
 
 ```bash
 curl -X POST "http://localhost:8080/api/v1/runtime/tasks/claim?timeout=30" \
-  -H "Authorization: Bearer <token>"
+  -H "Authorization: Bearer <token>" \
+  -H "X-Node-ID: node-001"
 ```
 
 3. **Runtime Agent 推送事件**
@@ -628,6 +627,7 @@ curl -X POST "http://localhost:8080/api/v1/runtime/tasks/claim?timeout=30" \
 ```bash
 curl -X POST http://localhost:8080/api/v1/runtime/tasks/<task-id>/events \
   -H "Authorization: Bearer <token>" \
+  -H "X-Node-ID: node-001" \
   -H "Content-Type: application/json" \
   -d '{
     "events": [{
@@ -642,6 +642,7 @@ curl -X POST http://localhost:8080/api/v1/runtime/tasks/<task-id>/events \
 ```bash
 curl -X POST http://localhost:8080/api/v1/runtime/tasks/<task-id>/complete \
   -H "Authorization: Bearer <token>" \
+  -H "X-Node-ID: node-001" \
   -H "Content-Type: application/json" \
   -d '{
     "result": {"summary": "完成"}
@@ -651,8 +652,7 @@ curl -X POST http://localhost:8080/api/v1/runtime/tasks/<task-id>/complete \
 5. **Console 查看结果**
 
 ```bash
-curl http://localhost:8080/api/v1/tasks/<task-id> \
-  -H "Cookie: session_token=abc123"
+curl http://localhost:8080/api/v1/tasks/<task-id>
 ```
 
 ---

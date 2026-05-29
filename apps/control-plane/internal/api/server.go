@@ -11,12 +11,13 @@ import (
 )
 
 type Server struct {
-	router         *chi.Mux
-	taskHandler    *handlers.TaskHandler
-	runtimeHandler *handlers.RuntimeHandler
+	router             *chi.Mux
+	taskHandler        *handlers.TaskHandler
+	runtimeHandler     *handlers.RuntimeHandler
+	runtimeAuthService middleware.AuthService
 }
 
-func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler) *Server {
+func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
 	r := chi.NewRouter()
 
 	r.Use(middleware.Recovery())
@@ -27,10 +28,16 @@ func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.Runti
 		writeHealthResponse(w)
 	})
 
+	var authService middleware.AuthService
+	if len(runtimeAuthService) > 0 {
+		authService = runtimeAuthService[0]
+	}
+
 	s := &Server{
-		router:         r,
-		taskHandler:    taskHandler,
-		runtimeHandler: runtimeHandler,
+		router:             r,
+		taskHandler:        taskHandler,
+		runtimeHandler:     runtimeHandler,
+		runtimeAuthService: authService,
 	}
 
 	s.registerRoutes()
@@ -48,15 +55,21 @@ func (s *Server) registerRoutes() {
 		})
 
 		r.Route("/runtime", func(r chi.Router) {
-			r.Post("/register", s.runtimeHandler.RegisterNode)
-			r.Post("/heartbeat", s.runtimeHandler.Heartbeat)
-			r.Post("/tasks/claim", s.runtimeHandler.ClaimTask)
-			r.Post("/tasks/{id}/events", s.runtimeHandler.PushEvents)
-			r.Post("/tasks/{id}/complete", s.runtimeHandler.CompleteTask)
-			r.Post("/tasks/{id}/fail", s.runtimeHandler.FailTask)
-			r.Post("/tasks/{id}/lease", s.runtimeHandler.RenewLease)
 			r.Get("/nodes", s.runtimeHandler.ListNodes)
 			r.Get("/nodes/{id}", s.runtimeHandler.GetNodeByID)
+
+			r.Group(func(r chi.Router) {
+				if s.runtimeAuthService != nil {
+					r.Use(middleware.RuntimeAuth(s.runtimeAuthService))
+				}
+				r.Post("/register", s.runtimeHandler.RegisterNode)
+				r.Post("/heartbeat", s.runtimeHandler.Heartbeat)
+				r.Post("/tasks/claim", s.runtimeHandler.ClaimTask)
+				r.Post("/tasks/{id}/events", s.runtimeHandler.PushEvents)
+				r.Post("/tasks/{id}/complete", s.runtimeHandler.CompleteTask)
+				r.Post("/tasks/{id}/fail", s.runtimeHandler.FailTask)
+				r.Post("/tasks/{id}/lease", s.runtimeHandler.RenewLease)
+			})
 		})
 	})
 }

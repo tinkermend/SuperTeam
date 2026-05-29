@@ -54,6 +54,10 @@ func (h *RuntimeHandler) RegisterNode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if nodeID := middleware.GetNodeID(r.Context()); nodeID != "" && nodeID != req.NodeID {
+		http.Error(w, "authenticated node_id does not match request node_id", http.StatusForbidden)
+		return
+	}
 
 	node, err := h.runtimeService.RegisterNode(r.Context(), runtime.RegisterNodeRequest{
 		NodeID:             req.NodeID,

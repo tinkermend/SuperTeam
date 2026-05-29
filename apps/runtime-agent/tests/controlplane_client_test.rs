@@ -60,6 +60,23 @@ fn test_heartbeat_response_deserializes_control_plane_contract() {
     assert_eq!(response.status, NodeStatus::Online);
 }
 
+#[test]
+fn test_runtime_node_response_allows_optional_timestamps() {
+    let response: RegisterNodeResponse = serde_json::from_value(serde_json::json!({
+        "node_id": "test-node-001",
+        "name": "Test Node",
+        "supported_providers": ["claude-code"],
+        "max_slots": 5,
+        "current_load": 0,
+        "status": "online",
+        "metadata": null,
+        "last_heartbeat_at": null
+    }))
+    .unwrap();
+
+    assert_eq!(response.node_id, "test-node-001");
+}
+
 fn runtime_node_response() -> serde_json::Value {
     serde_json::json!({
         "node_id": "test-node-001",
@@ -80,15 +97,15 @@ fn runtime_node_response() -> serde_json::Value {
 #[tokio::test]
 #[ignore]
 async fn test_register_integration() {
-    let client = ControlPlaneClient::new("http://localhost:8080", "test-token");
-
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
+    let node_id = format!("test-node-{}", timestamp);
+    let client = ControlPlaneClient::with_node_id("http://localhost:8080", "test-token", &node_id);
 
     let req = RegisterNodeRequest {
-        node_id: format!("test-node-{}", timestamp),
+        node_id,
         name: "Integration Test Node".to_string(),
         supported_providers: vec!["claude-code".to_string()],
         max_slots: 3,
@@ -106,15 +123,14 @@ async fn test_register_integration() {
 #[tokio::test]
 #[ignore]
 async fn test_heartbeat_integration() {
-    let client = ControlPlaneClient::new("http://localhost:8080", "test-token");
-
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
+    let node_id = format!("test-node-{}", timestamp);
+    let client = ControlPlaneClient::with_node_id("http://localhost:8080", "test-token", &node_id);
 
     // First register
-    let node_id = format!("test-node-{}", timestamp);
     let register_req = RegisterNodeRequest {
         node_id: node_id.clone(),
         name: "Heartbeat Test Node".to_string(),
@@ -142,15 +158,14 @@ async fn test_heartbeat_integration() {
 #[tokio::test]
 #[ignore]
 async fn test_claim_task_timeout() {
-    let client = ControlPlaneClient::new("http://localhost:8080", "test-token");
-
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
+    let node_id = format!("test-node-{}", timestamp);
+    let client = ControlPlaneClient::with_node_id("http://localhost:8080", "test-token", &node_id);
 
     // Register first
-    let node_id = format!("test-node-{}", timestamp);
     let register_req = RegisterNodeRequest {
         node_id: node_id.clone(),
         name: "Claim Test Node".to_string(),
@@ -173,7 +188,7 @@ async fn test_claim_task_timeout() {
 }
 
 #[tokio::test]
-async fn controlplane_client_claim_task_sends_canonical_runtime_claim_request() {
+async fn controlplane_client_claim_task_sends_runtime_identity_headers() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let (request_tx, request_rx) = oneshot::channel();
@@ -191,7 +206,8 @@ async fn controlplane_client_claim_task_sends_canonical_runtime_claim_request() 
             .unwrap();
     });
 
-    let client = ControlPlaneClient::new(format!("http://{}", addr), "test-token");
+    let client =
+        ControlPlaneClient::with_node_id(format!("http://{}", addr), "test-token", "node-1");
     let result = client.claim_task(7).await.unwrap();
 
     assert!(result.is_none());
@@ -202,4 +218,6 @@ async fn controlplane_client_claim_task_sends_canonical_runtime_claim_request() 
         request_line,
         "POST /api/v1/runtime/tasks/claim?timeout=7 HTTP/1.1"
     );
+    assert!(request.contains("authorization: Bearer test-token"));
+    assert!(request.contains("x-node-id: node-1"));
 }

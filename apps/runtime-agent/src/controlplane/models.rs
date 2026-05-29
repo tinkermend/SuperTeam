@@ -43,8 +43,8 @@ pub struct RegisterNodeResponse {
     pub status: NodeStatus,
     pub metadata: Option<HashMap<String, serde_json::Value>>,
     pub last_heartbeat_at: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 
 /// Heartbeat request
@@ -65,8 +65,8 @@ pub struct HeartbeatResponse {
     pub status: NodeStatus,
     pub metadata: Option<HashMap<String, serde_json::Value>>,
     pub last_heartbeat_at: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 
 /// Task from Control Plane

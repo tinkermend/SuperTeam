@@ -97,6 +97,8 @@ paths:
     post:
       operationId: registerRuntimeNode
       summary: Register a Runtime Agent node
+      parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
       requestBody:
         required: true
         content:
@@ -114,6 +116,8 @@ paths:
     post:
       operationId: heartbeatRuntimeNode
       summary: Update Runtime Agent heartbeat
+      parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
       requestBody:
         required: true
         content:
@@ -132,6 +136,7 @@ paths:
       operationId: claimRuntimeTask
       summary: Claim the next executable task for a Runtime Agent
       parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
         - name: timeout
           in: query
           required: false
@@ -153,6 +158,7 @@ paths:
       operationId: pushRuntimeTaskEvents
       summary: Push Runtime Agent task events
       parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
         - $ref: "#/components/parameters/TaskId"
       requestBody:
         required: true
@@ -168,6 +174,7 @@ paths:
       operationId: completeRuntimeTask
       summary: Complete a Runtime Agent task
       parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
         - $ref: "#/components/parameters/TaskId"
       requestBody:
         required: false
@@ -187,6 +194,7 @@ paths:
       operationId: failRuntimeTask
       summary: Report Runtime Agent task failure
       parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
         - $ref: "#/components/parameters/TaskId"
       requestBody:
         required: true
@@ -206,6 +214,7 @@ paths:
       operationId: renewRuntimeTaskLease
       summary: Acknowledge a Runtime Agent task lease heartbeat
       parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
         - $ref: "#/components/parameters/TaskId"
       responses:
         "204":
@@ -267,6 +276,13 @@ components:
     NodeId:
       name: nodeId
       in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    RuntimeNodeIdHeader:
+      name: X-Node-ID
+      in: header
       required: true
       schema:
         type: string

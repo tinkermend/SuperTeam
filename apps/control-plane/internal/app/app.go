@@ -7,6 +7,7 @@ import (
 
 	"github.com/superteam/control-plane/internal/api"
 	"github.com/superteam/control-plane/internal/api/handlers"
+	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/config"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/storage"
@@ -18,6 +19,7 @@ type Container struct {
 	Queries        *queries.Queries
 	TaskService    *task.Service
 	RuntimeService *runtimepkg.Service
+	AuthService    *auth.Service
 	Poller         *runtimepkg.Poller
 	TaskHandler    *handlers.TaskHandler
 	RuntimeHandler *handlers.RuntimeHandler
@@ -47,15 +49,22 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		return nil, err
 	}
 
+	authRepository := auth.NewPgRepository(q)
+	authService, err := auth.NewService(authRepository)
+	if err != nil {
+		return nil, err
+	}
+
 	poller := runtimepkg.NewPoller()
 	taskHandler := handlers.NewTaskHandler(taskService)
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller)
-	server := api.NewServer(taskHandler, runtimeHandler)
+	server := api.NewServer(taskHandler, runtimeHandler, authService)
 
 	return &Container{
 		Queries:        q,
 		TaskService:    taskService,
 		RuntimeService: runtimeService,
+		AuthService:    authService,
 		Poller:         poller,
 		TaskHandler:    taskHandler,
 		RuntimeHandler: runtimeHandler,
