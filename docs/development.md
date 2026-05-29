@@ -87,7 +87,7 @@ export DATABASE_URL=postgres://superteam:superteam@localhost:5432/superteam?sslm
 ./scripts/generate-runtime-token.sh node-001
 ```
 
-保存输出的 token，后续启动 Runtime Agent 时需要使用。
+保存输出的 token，后续启动 Runtime Agent 时需要使用。默认 token TTL 为 `30 days`，可通过第三个参数覆盖。
 
 ### 6. 启动 Control Plane
 

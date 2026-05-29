@@ -32,14 +32,16 @@ log_success() {
 
 # 检查参数
 if [ $# -lt 1 ]; then
-    log_error "Usage: $0 <node-id> [token]"
+    log_error "Usage: $0 <node-id> [token] [ttl]"
     log_info "Example: $0 node-001"
     log_info "Example: $0 node-001 my-custom-token"
+    log_info "Example: $0 node-001 my-custom-token '30 days'"
     exit 1
 fi
 
 NODE_ID="$1"
 TOKEN="${2:-$(openssl rand -hex 32)}"
+TTL="${3:-30 days}"
 
 # 检查环境变量
 if [ -z "${DATABASE_URL:-}" ]; then
@@ -99,15 +101,19 @@ log_info "Generated bcrypt hash"
 
 # 插入到数据库
 SQL="INSERT INTO auth_runtime_tokens (node_id, token_hash, expires_at)
-     VALUES (:'node_id', :'token_hash', NULL)
+     VALUES (:'node_id', :'token_hash', NOW() + :'ttl'::interval)
      ON CONFLICT (node_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at;"
 
-if psql "$DATABASE_URL" -v node_id="$NODE_ID" -v token_hash="$HASH" -c "$SQL" > /dev/null 2>&1; then
+if psql "$DATABASE_URL" -v node_id="$NODE_ID" -v token_hash="$HASH" -v ttl="$TTL" > /dev/null 2>&1 <<SQL
+$SQL
+SQL
+then
     log_success "Token saved to database"
     echo ""
     echo "=========================================="
     echo "Node ID:   $NODE_ID"
     echo "Token:     $TOKEN"
+    echo "TTL:       $TTL"
     echo "=========================================="
     echo ""
     log_warn "Save this token securely. It will not be shown again."

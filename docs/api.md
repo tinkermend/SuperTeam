@@ -23,7 +23,7 @@ Authorization: Bearer <runtime-token>
 X-Node-ID: <runtime-node-id>
 ```
 
-使用 `scripts/generate-runtime-token.sh` 生成 token。
+使用 `scripts/generate-runtime-token.sh <node-id> [token] [ttl]` 生成 token；默认 TTL 为 `30 days`。
 `X-Node-ID` 必须和 token 对应的 Runtime 节点一致；注册接口中的 `node_id` 也必须与该 header 一致。
 
 Runtime Agent 默认通过 Control Plane Runtime API 领取、续租和回传任务结果；本地 Runtime Agent HTTP API 仅用于诊断和本地 provider run 结果查看，不是业务任务分发入口。
