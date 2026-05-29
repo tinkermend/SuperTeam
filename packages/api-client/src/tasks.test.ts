@@ -34,6 +34,24 @@ describe("listTasks", () => {
       method: "GET",
     });
   });
+
+  it("throws when the tasks endpoint returns a non-ok response", async () => {
+    const fetcher = vi.fn(async () => new Response("", { status: 500 }));
+
+    await expect(
+      listTasks({
+        baseUrl: "http://control-plane.local",
+        fetcher,
+      }),
+    ).rejects.toThrow("tasks request failed with status 500");
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/tasks", {
+      headers: {
+        accept: "application/json",
+      },
+      method: "GET",
+    });
+  });
 });
 
 describe("createTask", () => {
