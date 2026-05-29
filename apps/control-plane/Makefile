@@ -28,3 +28,13 @@ clean:
 	rm -f internal/auth/generated.go
 	rm -f coverage.out
 	@echo "Clean complete"
+
+# 数据库迁移
+migrate-up:
+	atlas migrate apply --dir file://migrations --url "$(DATABASE_URL)"
+
+migrate-down:
+	atlas migrate down --dir file://migrations --url "$(DATABASE_URL)"
+
+migrate-status:
+	atlas migrate status --dir file://migrations --url "$(DATABASE_URL)"
