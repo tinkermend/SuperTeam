@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"net/netip"
 	"os"
+	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
@@ -27,28 +30,39 @@ var (
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
-	// 启动 PostgreSQL 容器
-	pgContainer, err := postgres.Run(ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase("superteam_test"),
-		postgres.WithUsername("test"),
-		postgres.WithPassword("test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second)),
-	)
-	if err != nil {
-		panic(err)
-	}
+	var connStr string
+	var pgContainer *postgres.PostgresContainer
 
-	// 获取连接字符串
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		panic(err)
+	// 检查是否使用现有数据库
+	if testDBURL := os.Getenv("TEST_DATABASE_URL"); testDBURL != "" {
+		// 使用现有数据库
+		connStr = testDBURL
+	} else {
+		// 启动 PostgreSQL 容器
+		var err error
+		pgContainer, err = postgres.Run(ctx,
+			"postgres:16-alpine",
+			postgres.WithDatabase("superteam_test"),
+			postgres.WithUsername("test"),
+			postgres.WithPassword("test"),
+			testcontainers.WithWaitStrategy(
+				wait.ForLog("database system is ready to accept connections").
+					WithOccurrence(2).
+					WithStartupTimeout(60*time.Second)),
+		)
+		if err != nil {
+			panic(err)
+		}
+
+		// 获取连接字符串
+		connStr, err = pgContainer.ConnectionString(ctx, "sslmode=disable")
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	// 连接数据库
+	var err error
 	testDB, err = pgxpool.New(ctx, connStr)
 	if err != nil {
 		panic(err)
@@ -67,23 +81,56 @@ func TestMain(m *testing.M) {
 
 	// 清理
 	testDB.Close()
-	if err := testcontainers.TerminateContainer(pgContainer); err != nil {
-		panic(err)
+	if pgContainer != nil {
+		if err := testcontainers.TerminateContainer(pgContainer); err != nil {
+			panic(err)
+		}
 	}
 
 	os.Exit(code)
 }
 
 func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
-	// 读取迁移文件
-	migrationSQL, err := os.ReadFile("../migrations/001_initial.sql")
+	// 获取连接字符串
+	connString := pool.Config().ConnString()
+
+	// 使用单独的连接执行迁移
+	conn, err := pgx.Connect(ctx, connString)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+
+	// 发现所有迁移文件
+	migrationsDir := filepath.Join("..", "migrations")
+	files, err := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
 	if err != nil {
 		return err
 	}
 
-	// 执行迁移
-	_, err = pool.Exec(ctx, string(migrationSQL))
-	return err
+	// 按文件名排序
+	sort.Strings(files)
+
+	// 执行每个迁移文件
+	for _, file := range files {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			return err
+		}
+
+		if _, err := conn.Exec(ctx, string(content)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// cleanupTestData 清理测试数据，避免测试之间相互影响
+func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
+	ctx := context.Background()
+	_, err := db.Exec(ctx, "TRUNCATE audit_events, task_artifacts, task_events, task_state_history, task_executions, tasks, auth_runtime_tokens, auth_users, runtime_nodes RESTART IDENTITY CASCADE")
+	require.NoError(t, err)
 }
 
 // ============================================================================
@@ -609,6 +656,7 @@ func TestExpiredRuntimeToken(t *testing.T) {
 
 func TestCreateAuditEvent(t *testing.T) {
 	ctx := context.Background()
+	cleanupTestData(t, testDB)
 
 	details := map[string]interface{}{
 		"action":  "create",
@@ -642,6 +690,7 @@ func TestCreateAuditEvent(t *testing.T) {
 
 func TestListAuditEvents(t *testing.T) {
 	ctx := context.Background()
+	cleanupTestData(t, testDB)
 
 	// 创建多个审计事件
 	detailsJSON, _ := json.Marshal(map[string]interface{}{"test": true})
@@ -706,6 +755,7 @@ func TestListAuditEvents(t *testing.T) {
 
 func TestCountAuditEvents(t *testing.T) {
 	ctx := context.Background()
+	cleanupTestData(t, testDB)
 
 	// 创建一些审计事件
 	detailsJSON, _ := json.Marshal(map[string]interface{}{"test": true})
@@ -726,11 +776,12 @@ func TestCountAuditEvents(t *testing.T) {
 		EventType: pgtype.Text{String: "test.event", Valid: true},
 	})
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, count, int64(5))
+	assert.Equal(t, int64(5), count)
 }
 
 func TestAuditEventsTimeFilter(t *testing.T) {
 	ctx := context.Background()
+	cleanupTestData(t, testDB)
 
 	detailsJSON, _ := json.Marshal(map[string]interface{}{"test": true})
 
@@ -760,4 +811,141 @@ func TestAuditEventsTimeFilter(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(events), 1)
+}
+
+// ============================================================================
+// Error Case Tests
+// ============================================================================
+
+func TestCreateUser_DuplicateUsername(t *testing.T) {
+	ctx := context.Background()
+
+	// 创建第一个用户
+	user1, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "duplicate-user",
+		DisplayName:  pgtype.Text{String: "User 1", Valid: true},
+		Email:        pgtype.Text{String: "user1@example.com", Valid: true},
+		PasswordHash: pgtype.Text{String: "$2a$10$hashedpassword", Valid: true},
+		Status:       "active",
+	})
+	require.NoError(t, err)
+	defer testQueries.DeleteUser(ctx, user1.ID)
+
+	// 尝试创建重复用户名的用户
+	_, err = testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "duplicate-user",
+		DisplayName:  pgtype.Text{String: "User 2", Valid: true},
+		Email:        pgtype.Text{String: "user2@example.com", Valid: true},
+		PasswordHash: pgtype.Text{String: "$2a$10$hashedpassword", Valid: true},
+		Status:       "active",
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate key value")
+}
+
+func TestCreateRuntimeNode_DuplicateNodeID(t *testing.T) {
+	ctx := context.Background()
+
+	providersJSON, _ := json.Marshal(map[string]interface{}{"providers": []string{"claude-code"}})
+	metadataJSON, _ := json.Marshal(map[string]interface{}{"test": true})
+	now := pgtype.Timestamptz{}
+	now.Scan(time.Now())
+
+	// 创建第一个节点
+	node1, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "duplicate-node",
+		Name:               "Node 1",
+		SupportedProviders: providersJSON,
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           metadataJSON,
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+	defer testQueries.DeleteRuntimeNode(ctx, node1.NodeID)
+
+	// 尝试创建重复 node_id 的节点
+	_, err = testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "duplicate-node",
+		Name:               "Node 2",
+		SupportedProviders: providersJSON,
+		MaxSlots:           4,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           metadataJSON,
+		LastHeartbeatAt:    now,
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate key value")
+}
+
+func TestCreateTask_InvalidCreatorID(t *testing.T) {
+	ctx := context.Background()
+
+	paramsJSON, _ := json.Marshal(map[string]interface{}{"test": true})
+
+	// 尝试创建任务，使用不存在的 creator_id
+	_, err := testQueries.CreateTask(ctx, queries.CreateTaskParams{
+		Title:        "Invalid Creator Task",
+		Description:  pgtype.Text{String: "Task with invalid creator", Valid: true},
+		Status:       "pending",
+		Priority:     3,
+		ProviderType: "claude-code",
+		CreatorID:    pgtype.Int8{Int64: 999999, Valid: true}, // 不存在的用户 ID
+		Params:       paramsJSON,
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "foreign key")
+}
+
+func TestCreateUser_DuplicateEmail(t *testing.T) {
+	ctx := context.Background()
+
+	// 创建第一个用户
+	user1, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "user-email-1",
+		DisplayName:  pgtype.Text{String: "User 1", Valid: true},
+		Email:        pgtype.Text{String: "duplicate@example.com", Valid: true},
+		PasswordHash: pgtype.Text{String: "$2a$10$hashedpassword", Valid: true},
+		Status:       "active",
+	})
+	require.NoError(t, err)
+	defer testQueries.DeleteUser(ctx, user1.ID)
+
+	// 尝试创建重复邮箱的用户
+	_, err = testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "user-email-2",
+		DisplayName:  pgtype.Text{String: "User 2", Valid: true},
+		Email:        pgtype.Text{String: "duplicate@example.com", Valid: true},
+		PasswordHash: pgtype.Text{String: "$2a$10$hashedpassword", Valid: true},
+		Status:       "active",
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate key value")
+}
+
+func TestCreateRuntimeToken_DuplicateNodeID(t *testing.T) {
+	ctx := context.Background()
+
+	expiresAt := pgtype.Timestamptz{}
+	expiresAt.Scan(time.Now().Add(24 * time.Hour))
+
+	// 创建第一个 token
+	token1, err := testQueries.CreateRuntimeToken(ctx, queries.CreateRuntimeTokenParams{
+		NodeID:    "duplicate-token-node",
+		TokenHash: "hash1",
+		ExpiresAt: expiresAt,
+	})
+	require.NoError(t, err)
+	defer testQueries.DeleteRuntimeToken(ctx, token1.NodeID)
+
+	// 尝试为同一个 node_id 创建第二个 token
+	_, err = testQueries.CreateRuntimeToken(ctx, queries.CreateRuntimeTokenParams{
+		NodeID:    "duplicate-token-node",
+		TokenHash: "hash2",
+		ExpiresAt: expiresAt,
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate key value")
 }
