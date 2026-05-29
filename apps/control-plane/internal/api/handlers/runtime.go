@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -191,29 +194,29 @@ func (h *RuntimeHandler) PushEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Events []struct {
-			Type    string          `json:"type"`
-			Payload json.RawMessage `json:"payload"`
-		} `json:"events"`
+		Events []json.RawMessage `json:"events"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	for _, event := range req.Events {
-		if event.Type == "" {
-			http.Error(w, "event type is required", http.StatusBadRequest)
+	for _, rawEvent := range req.Events {
+		var event struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(rawEvent, &event); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if len(event.Payload) == 0 {
-			http.Error(w, "event payload is required", http.StatusBadRequest)
+		if event.Type == "" {
+			http.Error(w, "event type is required", http.StatusBadRequest)
 			return
 		}
 		if _, err := h.taskService.AppendTaskEvent(r.Context(), task.AppendTaskEventRequest{
 			TaskID:    taskID,
 			EventType: event.Type,
-			Payload:   []byte(event.Payload),
+			Payload:   []byte(rawEvent),
 		}); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -229,10 +232,14 @@ func (h *RuntimeHandler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Body != nil {
-		var req struct {
-			Result json.RawMessage `json:"result"`
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		body = bytes.TrimSpace(body)
+		if len(body) > 0 && !json.Valid(body) {
+			err := errors.New("invalid JSON body")
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

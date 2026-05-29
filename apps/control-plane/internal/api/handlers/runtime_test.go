@@ -19,7 +19,7 @@ func TestPushEventsPersistsTypedEvent(t *testing.T) {
 	taskService := &claimTaskService{}
 	handler := NewRuntimeHandler(&claimRuntimeService{}, taskService, &claimPoller{})
 
-	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/events", "/api/v1/runtime/tasks/{id}/events", []byte(`{"events":[{"type":"text_delta","payload":{"delta":"hello"}}]}`))
+	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/events", "/api/v1/runtime/tasks/{id}/events", []byte(`{"events":[{"type":"text_delta","text":"hello"}]}`))
 	response := httptest.NewRecorder()
 
 	handler.PushEvents(response, request)
@@ -37,8 +37,8 @@ func TestPushEventsPersistsTypedEvent(t *testing.T) {
 	if event.EventType != "text_delta" {
 		t.Fatalf("expected event type text_delta, got %q", event.EventType)
 	}
-	if string(event.Payload) != `{"delta":"hello"}` {
-		t.Fatalf("expected JSON payload, got %s", event.Payload)
+	if string(event.Payload) != `{"type":"text_delta","text":"hello"}` {
+		t.Fatalf("expected whole event JSON payload, got %s", event.Payload)
 	}
 }
 
@@ -47,7 +47,7 @@ func TestCompleteTaskTransitionsToCompleted(t *testing.T) {
 	taskService := &claimTaskService{updatedTask: completedTask}
 	handler := NewRuntimeHandler(&claimRuntimeService{}, taskService, &claimPoller{})
 
-	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/complete", "/api/v1/runtime/tasks/{id}/complete", []byte(`{"result":{"ok":true}}`))
+	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/complete", "/api/v1/runtime/tasks/{id}/complete", nil)
 	response := httptest.NewRecorder()
 
 	handler.CompleteTask(response, request)
