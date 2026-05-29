@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Foundation Hardening 设计 Spec (2026-05-29)
+
+- 新增 Foundation Hardening 设计文档，明确 Control Plane 启动边界、sqlc 生成闭环、契约事实源、Runtime Agent daemon 边界、执行事件流和 Web 真实数据接入底座。
+
 #### Web 根布局 hydration 兼容 (2026-05-29)
 
 - 在 Web 根布局 `<html>` 上启用 `suppressHydrationWarning`，降低浏览器扩展向根节点注入属性时触发的 hydration mismatch 噪音，并补充对应布局测试。
