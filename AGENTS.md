@@ -1,15 +1,11 @@
-# AGENTS.md — SuperTeam
-
 ## 项目定位
 
 SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。
 
-当前阶段优先做可控闭环：人类输入需求 -> 数字员工分析 -> 人类确认 -> Runtime Agent 执行 -> 回传结果和工件 -> 人类验收。
-
 ## 架构分层
 
 - **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。
-- **Control Plane Layer**：Go 后端。负责任务、审批、审计、流程调度、上下文、工件、Runtime 注册和外部能力注册。对 Console 提供 API，也对 Runtime Agent 提供任务和心跳 API。
+- **Control Plane Layer**：Go 后端。负责任务、审批、审计、流程调度、上下文、工件、Runtime 注册和外部能力注册。对 Console 提供 API，也对 Runtime Agent 提供任务和心跳 API
 - **Runtime Layer**：部署在服务器节点、开发者机器或客户侧执行机上的 Rust daemon。负责领取任务、维护租约、管理本机 Provider 进程/会话、工作目录、日志、工件和执行槽位；Runtime 对外 HTTP/WS contract 参考 `AionUi` 的 WebUI/remote agent host 思路，但不承载控制台 UI 和业务策略。
 - **Provider Layer**：Claude Code、OpenCode、Codex、Pi 等具体执行器。它们只在 Runtime Agent 管理下工作，不承载平台级状态；Provider 协议必须保持语言无关，使用结构化 schema 描述输入、事件、结果、工件和错误，Rust 只是一种 adapter 实现语言。
 - **Capability Integration Layer**：外部能力接入层。平台只负责外部能力的注册、授权、HTTP 调用和审计。
@@ -32,6 +28,7 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 ## 数据库表命名规范
 
 **规范原则**：
+
 - 使用模块前缀分组：`{module}_{entity}` 格式
 - 核心业务表可简化前缀（如 `tasks` 而非 `task_tasks`）
 - 所有表名使用小写 + 下划线（snake_case）
@@ -40,6 +37,7 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 - 外键字段命名为 `{referenced_table}_id`
 
 **模块前缀定义**：
+
 - `runtime_*` - Runtime Agent 节点管理
 - `task_*` 或 `tasks` - 任务管理（核心表简化为 `tasks`）
 - `workflow_*` - 工作流编排
@@ -51,10 +49,11 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 - `capability_*` - 外部能力注册
 
 **字段类型约定**：
-- ID 使用 `BIGSERIAL` 或 `UUID`（MVP 使用 BIGSERIAL）
+
+- ID 使用 `UUID`
 - 时间戳使用 `TIMESTAMPTZ`
 - JSON 数据使用 `JSONB`
-- 枚举使用 `VARCHAR` + 应用层校验（避免 PostgreSQL ENUM 的迁移复杂度）
+- 枚举使用 `VARCHAR` + 应用层校验
 
 ## 目录边界
 
@@ -146,4 +145,3 @@ Go 应用目录统一使用 `cmd/<name>/` + `internal/` 的结构。Control Plan
 - 评估任务开发复杂度,对于复杂任务使用 subagent 模式开发息 见 docs/database/conn_info.md
 - 核心数据完整性应该让 PostgreSQL 兜底；复杂状态机、权限、审批和跨系统一
   致性放应用层
-
