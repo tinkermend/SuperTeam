@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Phase 2.1 - 任务服务 (2026-05-29)
+
+- 实现任务服务核心业务逻辑 (`apps/control-plane/internal/task/`)
+  - 领域模型 (`models.go`)：TaskStatus 枚举、Task 领域对象、请求/响应类型
+  - 状态机 (`state_machine.go`)：定义和验证任务状态转换规则
+    - pending → claimed → running → completed/failed/cancelled
+    - 支持 unclaim (claimed → pending)
+    - 终态：completed, failed, cancelled
+  - 数据访问接口 (`repository.go`)：Repository 接口定义，解耦业务逻辑和数据层
+  - 任务服务 (`service.go`)：实现核心业务方法
+    - CreateTask：创建任务，默认优先级为 5
+    - GetTask：根据 ID 查询任务
+    - ListTasks：支持按状态、创建者、Provider 类型过滤
+    - UpdateTaskStatus：状态更新，带状态机验证
+    - CancelTask：取消任务，记录原因
+    - AssignTask：分配任务到 Runtime 节点
+  - 状态历史追踪：所有状态变更记录审计日志
+- 添加完整的单元测试
+  - 服务测试 (`service_test.go`)：Mock repository，测试所有业务方法
+  - 状态机测试 (`state_machine_test.go`)：测试所有状态转换规则
+  - 测试覆盖率：89.7%
+- 添加状态历史 SQL 查询 (`apps/control-plane/internal/storage/queries/tasks.sql`)
+  - CreateTaskStateHistory：记录状态变更历史
+
 #### Phase 1.3 - 数据层测试 (2026-05-29)
 
 - 添加完整的数据层测试套件 (`apps/control-plane/internal/storage/queries/queries_test.go`)
