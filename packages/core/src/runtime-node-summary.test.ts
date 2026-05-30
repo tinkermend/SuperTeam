@@ -15,7 +15,9 @@ describe("summarizeRuntimeNode", () => {
       id: "node-1",
       name: "builder",
       status: "online",
+      statusTone: "success",
       loadLabel: "2/8",
+      loadPercent: 25,
     });
   });
 
@@ -32,7 +34,9 @@ describe("summarizeRuntimeNode", () => {
       id: "node-2",
       name: "developer-machine",
       status: "offline",
+      statusTone: "neutral",
       loadLabel: "1/4",
+      loadPercent: 25,
     });
   });
 
@@ -47,7 +51,51 @@ describe("summarizeRuntimeNode", () => {
       id: "node-3",
       name: "local-runtime",
       status: "online",
+      statusTone: "success",
       loadLabel: "0/0",
+      loadPercent: 0,
+    });
+  });
+
+  it.each([
+    ["online", "success"],
+    ["offline", "neutral"],
+    ["draining", "neutral"],
+  ] as const)("maps %s runtime status to %s tone", (status, statusTone) => {
+    expect(
+      summarizeRuntimeNode({
+        node_id: "node-tone",
+        name: "worker",
+        status,
+      }),
+    ).toMatchObject({
+      statusTone,
+    });
+  });
+
+  it("caps load percent at 100 and returns zero when capacity is not positive", () => {
+    expect(
+      summarizeRuntimeNode({
+        node_id: "node-overloaded",
+        name: "worker",
+        status: "online",
+        current_load: 9,
+        max_slots: 4,
+      }),
+    ).toMatchObject({
+      loadPercent: 100,
+    });
+
+    expect(
+      summarizeRuntimeNode({
+        node_id: "node-zero-capacity",
+        name: "worker",
+        status: "online",
+        currentLoad: 3,
+        maxSlots: 0,
+      }),
+    ).toMatchObject({
+      loadPercent: 0,
     });
   });
 });

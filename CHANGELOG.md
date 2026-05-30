@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Core Summary 状态映射 (2026-05-30)
+
+- 为任务和 Runtime 节点 summary helper 增加稳定状态 tone，供后续 Web 页面复用。
+- 为 Runtime 节点 summary 增加负载百分比，避免每个页面重复计算槽位占用。
+
 #### API Client 最小任务与 Runtime 覆盖 (2026-05-30)
 
 - 为 `packages/api-client` 补齐任务详情、任务状态更新、任务取消和 Runtime 节点详情的最小 client 方法。

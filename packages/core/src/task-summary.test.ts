@@ -14,6 +14,7 @@ describe("summarizeTask", () => {
       id: "42",
       title: "Analyze requirements",
       status: "pending",
+      statusTone: "warning",
       providerLabel: "codex",
     });
   });
@@ -30,6 +31,7 @@ describe("summarizeTask", () => {
       id: "task-1",
       title: "Implement boundary",
       status: "running",
+      statusTone: "info",
       providerLabel: "opencode",
     });
 
@@ -43,7 +45,28 @@ describe("summarizeTask", () => {
       id: "task-2",
       title: "Review result",
       status: "completed",
+      statusTone: "success",
       providerLabel: "unknown",
+    });
+  });
+
+  it.each([
+    ["pending", "warning"],
+    ["claimed", "info"],
+    ["running", "info"],
+    ["completed", "success"],
+    ["failed", "danger"],
+    ["cancelled", "neutral"],
+    ["unknown", "neutral"],
+  ] as const)("maps %s task status to %s tone", (status, statusTone) => {
+    expect(
+      summarizeTask({
+        id: "task-tone",
+        title: "Review tone",
+        status,
+      }),
+    ).toMatchObject({
+      statusTone,
     });
   });
 });
