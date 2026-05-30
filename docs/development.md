@@ -289,6 +289,14 @@ go test \
 
 ### 集成测试与本地联调
 
+不依赖真实 Provider 的最小执行闭环由 fake Runtime 生命周期测试覆盖：
+
+```bash
+go test ./apps/control-plane/internal/api -run TestFakeRuntimeTaskLifecycle -count=1
+```
+
+如需本地手动联调 Control Plane 与 Runtime Agent，可先启动基础设施和服务：
+
 ```bash
 # 启动所有服务
 docker-compose -f docker-compose.dev.yml up -d
@@ -303,9 +311,6 @@ RUNTIME_AGENT_AUTH_TOKEN=<token> \
 cargo run --manifest-path apps/runtime-agent/Cargo.toml -- \
   --config apps/runtime-agent/config.toml \
   --node-id test-node &
-
-# 运行端到端测试
-./scripts/e2e-test.sh
 ```
 
 ### 端到端测试流程
