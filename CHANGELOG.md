@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Foundation 契约漂移检查 (2026-05-30)
+
+- 新增 `pnpm verify:contracts`，检查 Control Plane OpenAPI、Go route、Rust Control Plane client 和 TypeScript api-client 的关键路径一致性。
+- 新增 `pnpm verify:foundation`，聚合契约检查、TypeScript 测试、TypeScript 类型检查和 Runtime Agent Rust 测试。
+
 #### Foundation Readiness 底座收口设计 (2026-05-30)
 
 - 新增 Foundation Readiness 设计文档，明确在进入具体功能开发前采用 Web、Control Plane、Runtime Agent、contracts 与共享 packages 的均衡收口方案。

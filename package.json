@@ -8,6 +8,8 @@
     "dev:control-plane": "go run ./apps/control-plane/cmd/control-plane",
     "dev:runtime-agent": "cargo run --manifest-path apps/runtime-agent/Cargo.toml -- --config apps/runtime-agent/config.example.toml --once",
     "generate:control-plane": "cd apps/control-plane && go generate ./internal/api",
+    "verify:contracts": "node scripts/verify-foundation-contracts.mjs",
+    "verify:foundation": "pnpm verify:contracts && pnpm -r --if-present test && pnpm -r --if-present typecheck && cargo test --manifest-path apps/runtime-agent/Cargo.toml",
     "test": "pnpm test:ts && pnpm test:go && pnpm test:rust",
     "test:ts": "pnpm -r --if-present test",
     "test:go": "go test ./apps/control-plane/...",
