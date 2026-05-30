@@ -33,6 +33,7 @@ cargo test --manifest-path apps/runtime-agent/Cargo.toml
 pnpm verify:foundation
 pnpm dev:control-plane
 pnpm dev:web
+cp apps/runtime-agent/config.example.toml apps/runtime-agent/config.toml
 cargo run --manifest-path apps/runtime-agent/Cargo.toml -- --config apps/runtime-agent/config.toml
 ```
 

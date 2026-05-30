@@ -146,7 +146,7 @@ apps/control-plane/
 │   ├── runtime/          # Runtime 服务
 │   ├── audit/            # 审计服务
 │   └── storage/          # 数据层
-├── migrations/           # 数据库迁移
+│       └── migrations/   # Atlas/sqlc 数据库迁移
 └── config/              # 配置文件
 ```
 
@@ -417,7 +417,7 @@ atlas migrate down --env local
 
 ## 生产部署
 
-参考 `docs/deployment.md`（待补充）
+部署文档计划补充，当前请以本开发指南和配置模板为准。
 
 ## 贡献指南
 
@@ -442,5 +442,5 @@ atlas migrate down --env local
 
 - [API 文档](./api.md)
 - [架构设计](../CLAUDE.md)
-- [数据库 Schema](./database/schema.md)
-- [部署指南](./deployment.md)
+- 数据库 schema 文档计划补充
+- 部署指南计划补充

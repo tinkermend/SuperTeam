@@ -192,6 +192,20 @@ curl "http://localhost:8080/api/v1/tasks?limit=10"
 }
 ```
 
+#### POST /api/v1/tasks/{taskId}/cancel
+
+取消任务。该接口用于 Console 或 API 客户端发起取消请求，返回更新后的任务状态。
+
+**响应示例**
+
+```json
+{
+  "id": 1,
+  "status": "cancelled",
+  "updated_at": "2026-05-29T10:05:00Z"
+}
+```
+
 ### Runtime 节点管理
 
 #### GET /api/v1/runtime/nodes
