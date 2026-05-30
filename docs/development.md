@@ -92,9 +92,12 @@ export DATABASE_URL=postgres://superteam:superteam@localhost:5432/superteam?sslm
 ### 6. 启动 Control Plane
 
 ```bash
+set -a; source apps/control-plane/.env; set +a
 make -C apps/control-plane generate
 go run ./apps/control-plane/cmd/control-plane
 ```
+
+Go Control Plane 不会自动加载 `.env` 文件；启动前需要由 shell 或进程管理器把变量注入进程环境。
 
 Control Plane 默认监听 `http://localhost:8080`。
 
