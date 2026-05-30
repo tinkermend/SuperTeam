@@ -98,4 +98,18 @@ describe("summarizeRuntimeNode", () => {
       loadPercent: 0,
     });
   });
+
+  it("clamps negative load percent to zero", () => {
+    expect(
+      summarizeRuntimeNode({
+        node_id: "node-negative-load",
+        name: "worker",
+        status: "online",
+        current_load: -1,
+        max_slots: 4,
+      }),
+    ).toMatchObject({
+      loadPercent: 0,
+    });
+  });
 });

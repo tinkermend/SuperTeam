@@ -41,7 +41,7 @@ function toLoadPercent(currentLoad: number, maxSlots: number): number {
     return 0;
   }
 
-  return Math.min(100, Math.round((currentLoad / maxSlots) * 100));
+  return Math.max(0, Math.min(100, Math.round((currentLoad / maxSlots) * 100)));
 }
 
 export function summarizeRuntimeNode(raw: RuntimeNodeSummaryInput): RuntimeNodeSummary {
