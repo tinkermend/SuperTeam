@@ -15,10 +15,6 @@ export type RuntimeNodeResponse = {
   updated_at?: string;
 };
 
-type RuntimeNodeIdOptions = ApiClientOptions & {
-  nodeId: string;
-};
-
 function buildApiUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
 }
@@ -46,10 +42,11 @@ export async function listRuntimeNodes(
 }
 
 export async function getRuntimeNode(
-  options: RuntimeNodeIdOptions,
+  options: ApiClientOptions,
+  nodeId: string,
 ): Promise<RuntimeNodeResponse> {
   const fetcher = options.fetcher ?? fetch;
-  const nodeId = encodeURIComponent(options.nodeId);
+  nodeId = encodeURIComponent(nodeId);
   const response = await fetcher(
     buildApiUrl(options.baseUrl, `/api/v1/runtime/nodes/${nodeId}`),
     {

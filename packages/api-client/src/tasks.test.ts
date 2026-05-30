@@ -86,11 +86,13 @@ describe("getTask", () => {
     );
 
     await expect(
-      getTask({
-        baseUrl: "http://control-plane.local/",
-        fetcher,
-        taskId: 42,
-      }),
+      getTask(
+        {
+          baseUrl: "http://control-plane.local/",
+          fetcher,
+        },
+        42,
+      ),
     ).resolves.toEqual(task);
 
     expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/tasks/42", {
@@ -129,8 +131,8 @@ describe("updateTaskStatus", () => {
         {
           baseUrl: "http://control-plane.local/",
           fetcher,
-          taskId: 42,
         },
+        42,
         input,
       ),
     ).resolves.toEqual(task);
@@ -166,11 +168,13 @@ describe("cancelTask", () => {
     );
 
     await expect(
-      cancelTask({
-        baseUrl: "http://control-plane.local/",
-        fetcher,
-        taskId: 42,
-      }),
+      cancelTask(
+        {
+          baseUrl: "http://control-plane.local/",
+          fetcher,
+        },
+        42,
+      ),
     ).resolves.toEqual(task);
 
     expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/tasks/42/cancel", {

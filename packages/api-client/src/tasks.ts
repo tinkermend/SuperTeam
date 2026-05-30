@@ -32,10 +32,6 @@ export type UpdateTaskStatusInput = {
   status: TaskStatus;
 };
 
-type TaskIdOptions = ApiClientOptions & {
-  taskId: number;
-};
-
 function buildApiUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
 }
@@ -77,9 +73,8 @@ export async function createTask(
   return parseJson<TaskResponse>(response, "tasks");
 }
 
-export async function getTask(options: TaskIdOptions): Promise<TaskResponse> {
+export async function getTask(options: ApiClientOptions, taskId: number): Promise<TaskResponse> {
   const fetcher = options.fetcher ?? fetch;
-  const taskId = options.taskId;
   const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/tasks/${taskId}`), {
     headers: {
       accept: "application/json",
@@ -91,11 +86,11 @@ export async function getTask(options: TaskIdOptions): Promise<TaskResponse> {
 }
 
 export async function updateTaskStatus(
-  options: TaskIdOptions,
+  options: ApiClientOptions,
+  taskId: number,
   input: UpdateTaskStatusInput,
 ): Promise<TaskResponse> {
   const fetcher = options.fetcher ?? fetch;
-  const taskId = options.taskId;
   const response = await fetcher(
     buildApiUrl(options.baseUrl, `/api/v1/tasks/${taskId}/status`),
     {
@@ -111,9 +106,11 @@ export async function updateTaskStatus(
   return parseJson<TaskResponse>(response, "tasks");
 }
 
-export async function cancelTask(options: TaskIdOptions): Promise<TaskResponse> {
+export async function cancelTask(
+  options: ApiClientOptions,
+  taskId: number,
+): Promise<TaskResponse> {
   const fetcher = options.fetcher ?? fetch;
-  const taskId = options.taskId;
   const response = await fetcher(
     buildApiUrl(options.baseUrl, `/api/v1/tasks/${taskId}/cancel`),
     {

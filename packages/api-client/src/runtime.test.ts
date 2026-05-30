@@ -80,11 +80,13 @@ describe("getRuntimeNode", () => {
     );
 
     await expect(
-      getRuntimeNode({
-        baseUrl: "http://control-plane.local/",
-        fetcher,
-        nodeId: "node 1/primary",
-      }),
+      getRuntimeNode(
+        {
+          baseUrl: "http://control-plane.local/",
+          fetcher,
+        },
+        "node 1/primary",
+      ),
     ).resolves.toEqual(node);
 
     expect(fetcher).toHaveBeenCalledWith(
