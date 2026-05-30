@@ -3,21 +3,22 @@ import { resolve } from "node:path";
 
 const root = process.cwd();
 
-const requiredOpenApiPaths = new Set([
-  "/health",
-  "/api/v1/tasks",
-  "/api/v1/tasks/{taskId}",
-  "/api/v1/tasks/{taskId}/status",
-  "/api/v1/tasks/{taskId}/cancel",
-  "/api/v1/runtime/register",
-  "/api/v1/runtime/heartbeat",
-  "/api/v1/runtime/tasks/claim",
-  "/api/v1/runtime/tasks/{taskId}/events",
-  "/api/v1/runtime/tasks/{taskId}/complete",
-  "/api/v1/runtime/tasks/{taskId}/fail",
-  "/api/v1/runtime/tasks/{taskId}/lease",
-  "/api/v1/runtime/nodes",
-  "/api/v1/runtime/nodes/{nodeId}",
+const requiredOpenApiOperations = new Set([
+  "GET /health",
+  "GET /api/v1/tasks",
+  "POST /api/v1/tasks",
+  "GET /api/v1/tasks/{taskId}",
+  "PUT /api/v1/tasks/{taskId}/status",
+  "POST /api/v1/tasks/{taskId}/cancel",
+  "POST /api/v1/runtime/register",
+  "POST /api/v1/runtime/heartbeat",
+  "POST /api/v1/runtime/tasks/claim",
+  "POST /api/v1/runtime/tasks/{taskId}/events",
+  "POST /api/v1/runtime/tasks/{taskId}/complete",
+  "POST /api/v1/runtime/tasks/{taskId}/fail",
+  "POST /api/v1/runtime/tasks/{taskId}/lease",
+  "GET /api/v1/runtime/nodes",
+  "GET /api/v1/runtime/nodes/{nodeId}",
 ]);
 
 const requiredRustClientPaths = new Set([
@@ -53,6 +54,10 @@ function normalizePath(path) {
     .replace(/\{nodeId\}/g, "{nodeId}");
 }
 
+function normalizeOperation(method, path) {
+  return `${method.toUpperCase()} ${normalizePath(path)}`;
+}
+
 function joinPaths(prefix, literal) {
   if (literal === "/") {
     return normalizePath(prefix);
@@ -61,24 +66,43 @@ function joinPaths(prefix, literal) {
   return normalizePath(`${prefix.replace(/\/+$/, "")}/${literal.replace(/^\/+/, "")}`);
 }
 
-function readOpenApiPaths() {
+function readOpenApiOperations() {
   const openapi = readText("contracts/control-plane/openapi.yaml");
-  const matches = [...openapi.matchAll(/^  (\/[^:\n]+):$/gm)];
-  return new Set(matches.map((match) => normalizePath(match[1])));
+  const operations = new Set();
+  let currentPath = null;
+
+  for (const line of openapi.split(/\r?\n/)) {
+    const pathMatch = line.match(/^  (\/[^:\n]+):$/);
+    if (pathMatch) {
+      currentPath = pathMatch[1];
+      continue;
+    }
+
+    const methodMatch = line.match(/^    (get|post|put|patch|delete):$/);
+    if (currentPath && methodMatch) {
+      operations.add(normalizeOperation(methodMatch[1], currentPath));
+    }
+  }
+
+  return operations;
+}
+
+function readOpenApiPaths() {
+  return new Set([...readOpenApiOperations()].map((operation) => operation.split(" ")[1]));
 }
 
 function leadingWhitespaceLength(line) {
   return line.match(/^\s*/)[0].length;
 }
 
-function readGoRoutes() {
+function readGoRouteOperations() {
   const server = readText("apps/control-plane/internal/api/server.go");
-  const routes = new Set();
+  const operations = new Set();
   const scopes = [{ indent: -1, prefix: "" }];
 
   for (const line of server.split(/\r?\n/)) {
     const routeMatch = line.match(/\.Route\("([^"]+)"/);
-    const endpointMatch = line.match(/\.(?:Get|Post|Put|Patch|Delete)\("([^"]+)"/);
+    const endpointMatch = line.match(/\.(Get|Post|Put|Patch|Delete)\("([^"]+)"/);
 
     if (!routeMatch && !endpointMatch) {
       continue;
@@ -97,15 +121,16 @@ function readGoRoutes() {
       continue;
     }
 
-    const route = joinPaths(scopes.at(-1).prefix, endpointMatch[1]);
-    routes.add(route === "/api/v1/runtime/nodes/{taskId}" ? "/api/v1/runtime/nodes/{nodeId}" : route);
+    const route = joinPaths(scopes.at(-1).prefix, endpointMatch[2]);
+    const path = route === "/api/v1/runtime/nodes/{taskId}" ? "/api/v1/runtime/nodes/{nodeId}" : route;
+    operations.add(normalizeOperation(endpointMatch[1], path));
   }
 
-  return routes;
+  return operations;
 }
 
 function readRustClientPaths() {
-  const client = readText("apps/runtime-agent/src/controlplane/client.rs");
+  const client = readText("apps/runtime-agent/src/controlplane/client.rs").split("#[cfg(test)]")[0];
   const stringPaths = [...client.matchAll(/\/api\/v1\/[^"?\s]+/g)].map((match) => match[0]);
   const formatPaths = [...client.matchAll(/\/api\/v1\/[^"?\s{]*(?:\{\}[^"?\s{]*)+/g)].map(
     (match) => match[0].replaceAll("{}", "{taskId}"),
@@ -142,13 +167,14 @@ function assertSetContainsAll(label, actual, expected) {
   }
 }
 
+const openApiOperations = readOpenApiOperations();
+const goRouteOperations = readGoRouteOperations();
 const openApiPaths = readOpenApiPaths();
-const goRoutes = readGoRoutes();
 const rustClientPaths = readRustClientPaths();
 const tsClientPaths = readTypeScriptClientPaths();
 
-assertSetContainsAll("Control Plane OpenAPI", openApiPaths, requiredOpenApiPaths);
-assertSetContainsAll("Go route registration", goRoutes, requiredOpenApiPaths);
+assertSetContainsAll("Control Plane OpenAPI", openApiOperations, requiredOpenApiOperations);
+assertSetContainsAll("Go route registration", goRouteOperations, requiredOpenApiOperations);
 assertSetContainsAll("Rust Control Plane client", rustClientPaths, requiredRustClientPaths);
 assertSetContainsAll("TypeScript api-client", tsClientPaths, requiredTypeScriptClientPaths);
 assertSetContainsAll("Rust Control Plane client", openApiPaths, rustClientPaths);
