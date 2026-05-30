@@ -246,6 +246,7 @@ pnpm dev
 ### Foundation 验证
 
 ```bash
+pnpm install
 pnpm verify:contracts
 pnpm -r --if-present test
 pnpm -r --if-present typecheck
@@ -254,18 +255,24 @@ pnpm verify:foundation
 ```
 
 `pnpm verify:contracts` 检查 Control Plane OpenAPI、Go route、Runtime Agent client 和 `packages/api-client` 的关键路径一致性。
-`pnpm verify:foundation` 覆盖契约漂移、前端测试、前端类型检查和 Runtime Agent Rust 测试。完整 Go 验证仍使用：
+`pnpm verify:foundation` 覆盖契约漂移、前端测试、前端类型检查和 Runtime Agent Rust 测试。它不包含完整 Go 测试，因为 `internal/storage/queries` 的测试依赖 testcontainers 和可用 Docker provider。
+
+Control Plane 代码生成和完整 Go 验证仍单独运行：
 
 ```bash
+make -C apps/control-plane generate
 go test ./apps/control-plane/...
 ```
 
-如果完整 Go 验证在 `github.com/superteam/control-plane/internal/storage/queries` 失败，并出现 `rootless Docker not found, failed to create Docker provider`，说明当前机器没有可用的 testcontainers Docker provider。此时先运行以下命令确认非 Docker Go 包基线：
+如果完整 Go 验证在 `github.com/superteam/control-plane/internal/storage/queries` 失败，并出现 `rootless Docker not found, failed to create Docker provider`，说明当前机器没有可用的 testcontainers Docker provider。此时先保留失败输出，再运行以下命令确认所有非 `internal/storage/queries` Control Plane 包基线：
 
 ```bash
 go test \
+  ./apps/control-plane/cmd/control-plane \
+  ./apps/control-plane/cmd/server \
   ./apps/control-plane/internal/api \
   ./apps/control-plane/internal/api/handlers \
+  ./apps/control-plane/internal/api/middleware \
   ./apps/control-plane/internal/app \
   ./apps/control-plane/internal/approval \
   ./apps/control-plane/internal/artifact \
@@ -279,26 +286,6 @@ go test \
 ```
 
 完整通过标准仍然是 Docker/testcontainers 可用后 `go test ./apps/control-plane/...` 通过。
-
-### 基线验证
-
-```bash
-pnpm install
-make -C apps/control-plane generate
-go test ./apps/control-plane/...
-cargo test --manifest-path apps/runtime-agent/Cargo.toml
-pnpm -r --if-present test
-```
-
-说明：
-
-- `go test ./apps/control-plane/...` 在当前环境里如果失败，常见原因是 storage/query 测试依赖 testcontainers，而宿主机缺少 rootless Docker，错误通常表现为 `rootless Docker not found, failed to create Docker provider`。
-- 这种情况下，先保留失败输出，再补跑不依赖 Docker 的定向验证，例如：
-
-```bash
-go test ./apps/control-plane/internal/api ./apps/control-plane/internal/task -count=1
-go test -c -o /tmp/superteam-control-plane-queries.test ./apps/control-plane/internal/storage/queries
-```
 
 ### 集成测试与本地联调
 
