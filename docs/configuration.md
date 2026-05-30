@@ -13,8 +13,7 @@ SuperTeam/
 │   │   └── .env.example                  # 环境变量模板
 │   ├── web/
 │   │   ├── .env.example                  # 环境变量模板
-│   │   ├── .env.development              # 开发环境默认值
-│   │   └── .env.production               # 生产环境默认值
+│   │   └── .env.local                    # 本地真实配置，不提交
 │   └── runtime-agent/
 │       ├── config.example.toml           # TOML 配置模板
 │       ├── config.toml                   # 本地真实配置，不提交
@@ -121,7 +120,7 @@ cd apps/web
 cp .env.example .env.local
 # 编辑 .env.local 填入实际值
 
-# 开发环境会自动加载 .env.development
+# Next.js 本地开发会加载 .env.local
 npm run dev
 ```
 
@@ -155,9 +154,13 @@ kubectl create configmap superteam-config \
   --from-literal=REDIS_URL="redis://..."
 
 # Docker Compose
-docker-compose up -d \
-  -e DATABASE_URL="postgres://..." \
-  -e REDIS_URL="redis://..."
+# 方式一：在当前 shell export 变量
+export DATABASE_URL="postgres://..."
+export REDIS_URL="redis://..."
+docker-compose -f docker-compose.dev.yml up -d
+
+# 方式二：使用 compose 读取的 .env 或服务 env_file 注入变量后启动
+docker-compose -f docker-compose.dev.yml up -d
 
 # Systemd Service
 Environment="DATABASE_URL=postgres://..."

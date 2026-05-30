@@ -154,22 +154,22 @@ apps/control-plane/
 
 ```bash
 # 编译
-make build
+make -C apps/control-plane build
 
 # 运行测试
-make test
+make -C apps/control-plane test
 
 # 生成 sqlc + OpenAPI 代码
-make generate
+make -C apps/control-plane generate
 
 # 仅生成 sqlc 代码
-make generate-sqlc
+make -C apps/control-plane generate-sqlc
 ```
 
 #### 添加新的 API 端点
 
 1. 更新 `contracts/control-plane/openapi.yaml`
-2. 重新生成代码：`make generate`
+2. 重新生成代码：`make -C apps/control-plane generate`
 3. 实现 handler：`internal/api/handlers/`
 4. 注册产品 API 路由：`internal/api/server.go`
 5. 编写测试
@@ -179,7 +179,7 @@ make generate-sqlc
 1. 创建新的迁移文件：`apps/control-plane/internal/storage/migrations/<version>_description.sql`
 2. 运行迁移：`./scripts/db-migrate.sh`
 3. 更新 sqlc 查询：`internal/storage/queries/*.sql`
-4. 重新生成代码：`make generate-sqlc`
+4. 重新生成代码：`make -C apps/control-plane generate-sqlc`
 
 ### Runtime Agent 开发
 

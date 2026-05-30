@@ -1,7 +1,14 @@
-# Runtime Contract
+# Runtime Local Contract
 
-This contract defines HTTP APIs used between Runtime Agent nodes and the Control Plane.
+This contract describes the Runtime Agent local diagnostic HTTP API implemented by `apps/runtime-agent`.
 
-The Runtime Agent implementation lives in `apps/runtime-agent` as a Rust/Tokio daemon. It still speaks neutral HTTP claim/lease APIs to the Go Control Plane, and real-time execution events are intended to be returned over the runtime WebSocket channel rather than embedded in provider-specific process output.
+`contracts/runtime/openapi.yaml` covers the local runtime endpoints:
 
-The first baseline covers node heartbeat, task claim, and lease renewal only. Task state naming and full workflow transitions are intentionally left out until the product model is clearer.
+- `GET /health`
+- `GET /providers`
+- `POST /runs`
+- `GET /runs/{runId}`
+- `GET /runs/{runId}/events`
+- `POST /runs/{runId}/cancel`
+
+Business task claim, event writeback, completion, failure, and lease renewal are Control Plane APIs. Their canonical contract lives in `contracts/control-plane/openapi.yaml`, and the human-readable endpoint guide is in `docs/api.md`.
