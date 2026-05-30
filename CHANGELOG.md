@@ -190,6 +190,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Foundation Readiness 文档收口 (2026-05-30)
+
+- 同步 README、开发指南、API 文档和下一步指引，明确底座阶段的启动、验证、契约守护和 testcontainers 环境边界。
+
 #### Foundation 文档同步 (2026-05-29)
 
 - 同步 README、开发指南、API 文档和下一步指引，使文档状态与已验证的 Foundation baseline 保持一致。

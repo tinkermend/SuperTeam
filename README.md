@@ -25,15 +25,18 @@ contracts/
 
 ```bash
 pnpm install
-make -C apps/control-plane generate
-go test ./apps/control-plane/...
-cargo test --manifest-path apps/runtime-agent/Cargo.toml
+pnpm verify:contracts
 pnpm -r --if-present test
 pnpm -r --if-present typecheck
+go test ./apps/control-plane/...
+cargo test --manifest-path apps/runtime-agent/Cargo.toml
+pnpm verify:foundation
 pnpm dev:control-plane
 pnpm dev:web
 cargo run --manifest-path apps/runtime-agent/Cargo.toml -- --config apps/runtime-agent/config.toml
 ```
+
+`pnpm verify:foundation` intentionally excludes the full Go test suite because `apps/control-plane/internal/storage/queries` uses testcontainers and requires a working Docker provider. Run `go test ./apps/control-plane/...` when Docker/testcontainers is available; if it fails with `rootless Docker not found`, first verify non-Docker Go packages and then fix the local container runtime.
 
 ## 当前基线
 

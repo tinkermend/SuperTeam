@@ -243,6 +243,43 @@ pnpm dev
 
 ## 测试
 
+### Foundation 验证
+
+```bash
+pnpm verify:contracts
+pnpm -r --if-present test
+pnpm -r --if-present typecheck
+cargo test --manifest-path apps/runtime-agent/Cargo.toml
+pnpm verify:foundation
+```
+
+`pnpm verify:contracts` 检查 Control Plane OpenAPI、Go route、Runtime Agent client 和 `packages/api-client` 的关键路径一致性。
+`pnpm verify:foundation` 覆盖契约漂移、前端测试、前端类型检查和 Runtime Agent Rust 测试。完整 Go 验证仍使用：
+
+```bash
+go test ./apps/control-plane/...
+```
+
+如果完整 Go 验证在 `github.com/superteam/control-plane/internal/storage/queries` 失败，并出现 `rootless Docker not found, failed to create Docker provider`，说明当前机器没有可用的 testcontainers Docker provider。此时先运行以下命令确认非 Docker Go 包基线：
+
+```bash
+go test \
+  ./apps/control-plane/internal/api \
+  ./apps/control-plane/internal/api/handlers \
+  ./apps/control-plane/internal/app \
+  ./apps/control-plane/internal/approval \
+  ./apps/control-plane/internal/artifact \
+  ./apps/control-plane/internal/audit \
+  ./apps/control-plane/internal/auth \
+  ./apps/control-plane/internal/config \
+  ./apps/control-plane/internal/runtime \
+  ./apps/control-plane/internal/storage \
+  ./apps/control-plane/internal/task \
+  ./apps/control-plane/internal/workflow
+```
+
+完整通过标准仍然是 Docker/testcontainers 可用后 `go test ./apps/control-plane/...` 通过。
+
 ### 基线验证
 
 ```bash

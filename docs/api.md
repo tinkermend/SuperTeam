@@ -358,13 +358,11 @@ X-Node-ID: node-001
 
 当前 Runtime 任务主链路的 canonical Control Plane 路径为：
 
-```text
-POST /api/v1/runtime/tasks/claim
-POST /api/v1/runtime/tasks/{taskId}/events
-POST /api/v1/runtime/tasks/{taskId}/complete
-POST /api/v1/runtime/tasks/{taskId}/fail
-POST /api/v1/runtime/tasks/{taskId}/lease
-```
+- `POST /api/v1/runtime/tasks/claim`
+- `POST /api/v1/runtime/tasks/{taskId}/events`
+- `POST /api/v1/runtime/tasks/{taskId}/complete`
+- `POST /api/v1/runtime/tasks/{taskId}/fail`
+- `POST /api/v1/runtime/tasks/{taskId}/lease`
 
 说明：
 
