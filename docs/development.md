@@ -297,6 +297,7 @@ go test ./apps/control-plane/internal/api -run TestFakeRuntimeTaskLifecycle -cou
 ```bash
 # 启动所有服务
 docker-compose -f docker-compose.dev.yml up -d
+set -a; source apps/control-plane/.env; set +a
 ./scripts/db-migrate.sh
 
 # 启动 Control Plane

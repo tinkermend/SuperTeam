@@ -107,9 +107,13 @@ cp config/config.example.yaml config/local.yaml
 # 编辑 local.yaml 填入实际值
 
 # 方式二：使用环境变量（优先级更高）
-cp .env.example .env.local
-# 编辑 .env.local 填入实际值
+cp .env.example .env
+# 编辑 .env 填入实际值
+cd ../..
+set -a; source apps/control-plane/.env; set +a
 ```
+
+Go Control Plane 不会自动加载 `.env` / `.env.local`；必须由 shell、进程管理器或容器平台把变量注入进程环境。
 
 ### 2. Web Console
 
