@@ -20,6 +20,23 @@ const requiredOpenApiPaths = new Set([
   "/api/v1/runtime/nodes/{nodeId}",
 ]);
 
+const requiredRustClientPaths = new Set([
+  "/api/v1/runtime/register",
+  "/api/v1/runtime/heartbeat",
+  "/api/v1/runtime/tasks/claim",
+  "/api/v1/runtime/tasks/{taskId}/events",
+  "/api/v1/tasks/{taskId}/status",
+  "/api/v1/runtime/tasks/{taskId}/complete",
+  "/api/v1/runtime/tasks/{taskId}/fail",
+  "/api/v1/runtime/tasks/{taskId}/lease",
+]);
+
+const requiredTypeScriptClientPaths = new Set([
+  "/health",
+  "/api/v1/tasks",
+  "/api/v1/runtime/nodes",
+]);
+
 function readText(path) {
   return readFileSync(resolve(root, path), "utf8");
 }
@@ -132,6 +149,8 @@ const tsClientPaths = readTypeScriptClientPaths();
 
 assertSetContainsAll("Control Plane OpenAPI", openApiPaths, requiredOpenApiPaths);
 assertSetContainsAll("Go route registration", goRoutes, requiredOpenApiPaths);
+assertSetContainsAll("Rust Control Plane client", rustClientPaths, requiredRustClientPaths);
+assertSetContainsAll("TypeScript api-client", tsClientPaths, requiredTypeScriptClientPaths);
 assertSetContainsAll("Rust Control Plane client", openApiPaths, rustClientPaths);
 assertSetContainsAll("TypeScript api-client", openApiPaths, tsClientPaths);
 
