@@ -35,7 +35,11 @@ const requiredRustClientPaths = new Set([
 const requiredTypeScriptClientPaths = new Set([
   "/health",
   "/api/v1/tasks",
+  "/api/v1/tasks/{taskId}",
+  "/api/v1/tasks/{taskId}/status",
+  "/api/v1/tasks/{taskId}/cancel",
   "/api/v1/runtime/nodes",
+  "/api/v1/runtime/nodes/{nodeId}",
 ]);
 
 function readText(path) {

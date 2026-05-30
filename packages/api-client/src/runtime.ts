@@ -15,6 +15,10 @@ export type RuntimeNodeResponse = {
   updated_at?: string;
 };
 
+type RuntimeNodeIdOptions = ApiClientOptions & {
+  nodeId: string;
+};
+
 function buildApiUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
 }
@@ -39,4 +43,22 @@ export async function listRuntimeNodes(
   });
 
   return parseJson<RuntimeNodeResponse[]>(response, "runtime nodes");
+}
+
+export async function getRuntimeNode(
+  options: RuntimeNodeIdOptions,
+): Promise<RuntimeNodeResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const nodeId = encodeURIComponent(options.nodeId);
+  const response = await fetcher(
+    buildApiUrl(options.baseUrl, `/api/v1/runtime/nodes/${nodeId}`),
+    {
+      headers: {
+        accept: "application/json",
+      },
+      method: "GET",
+    },
+  );
+
+  return parseJson<RuntimeNodeResponse>(response, "runtime nodes");
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TaskResponse, TaskStatus } from "./tasks";
-import { createTask, listTasks } from "./tasks";
+import { cancelTask, createTask, getTask, listTasks, updateTaskStatus } from "./tasks";
 
 describe("listTasks", () => {
   it("calls the tasks endpoint and parses JSON", async () => {
@@ -62,6 +62,122 @@ describe("listTasks", () => {
         accept: "application/json",
       },
       method: "GET",
+    });
+  });
+});
+
+describe("getTask", () => {
+  it("calls the task detail endpoint and parses JSON", async () => {
+    const task: TaskResponse = {
+      id: 42,
+      title: "Inspect foundation task",
+      provider_type: "codex",
+      status: "running",
+      priority: 1,
+      params: {},
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(task), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+
+    await expect(
+      getTask({
+        baseUrl: "http://control-plane.local/",
+        fetcher,
+        taskId: 42,
+      }),
+    ).resolves.toEqual(task);
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/tasks/42", {
+      headers: {
+        accept: "application/json",
+      },
+      method: "GET",
+    });
+  });
+});
+
+describe("updateTaskStatus", () => {
+  it("puts JSON to the task status endpoint and parses JSON", async () => {
+    const task: TaskResponse = {
+      id: 42,
+      title: "Inspect foundation task",
+      provider_type: "codex",
+      status: "completed",
+      priority: 1,
+      params: {},
+    };
+    const input = {
+      status: "completed" as const,
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(task), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+
+    await expect(
+      updateTaskStatus(
+        {
+          baseUrl: "http://control-plane.local/",
+          fetcher,
+          taskId: 42,
+        },
+        input,
+      ),
+    ).resolves.toEqual(task);
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/tasks/42/status", {
+      body: JSON.stringify(input),
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      method: "PUT",
+    });
+  });
+});
+
+describe("cancelTask", () => {
+  it("posts to the task cancel endpoint and parses JSON", async () => {
+    const task: TaskResponse = {
+      id: 42,
+      title: "Inspect foundation task",
+      provider_type: "codex",
+      status: "cancelled",
+      priority: 1,
+      params: {},
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(task), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+
+    await expect(
+      cancelTask({
+        baseUrl: "http://control-plane.local/",
+        fetcher,
+        taskId: 42,
+      }),
+    ).resolves.toEqual(task);
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/tasks/42/cancel", {
+      headers: {
+        accept: "application/json",
+      },
+      method: "POST",
     });
   });
 });

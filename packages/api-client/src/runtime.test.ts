@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RuntimeNodeResponse, RuntimeNodeStatus } from "./runtime";
-import { listRuntimeNodes } from "./runtime";
+import { getRuntimeNode, listRuntimeNodes } from "./runtime";
 
 describe("listRuntimeNodes", () => {
   it("calls the runtime nodes endpoint and parses JSON", async () => {
@@ -57,5 +57,44 @@ describe("listRuntimeNodes", () => {
         fetcher,
       }),
     ).rejects.toThrow("runtime nodes request failed with status 503");
+  });
+});
+
+describe("getRuntimeNode", () => {
+  it("calls the runtime node detail endpoint with an encoded node id and parses JSON", async () => {
+    const node: RuntimeNodeResponse = {
+      node_id: "node 1/primary",
+      name: "developer-machine",
+      supported_providers: ["codex"],
+      status: "online",
+      current_load: 0,
+      max_slots: 4,
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(node), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+
+    await expect(
+      getRuntimeNode({
+        baseUrl: "http://control-plane.local/",
+        fetcher,
+        nodeId: "node 1/primary",
+      }),
+    ).resolves.toEqual(node);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/runtime/nodes/node%201%2Fprimary",
+      {
+        headers: {
+          accept: "application/json",
+        },
+        method: "GET",
+      },
+    );
   });
 });

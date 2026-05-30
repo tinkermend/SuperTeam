@@ -28,6 +28,14 @@ export type CreateTaskInput = {
   workspace_path?: string;
 };
 
+export type UpdateTaskStatusInput = {
+  status: TaskStatus;
+};
+
+type TaskIdOptions = ApiClientOptions & {
+  taskId: number;
+};
+
 function buildApiUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
 }
@@ -65,6 +73,56 @@ export async function createTask(
     },
     method: "POST",
   });
+
+  return parseJson<TaskResponse>(response, "tasks");
+}
+
+export async function getTask(options: TaskIdOptions): Promise<TaskResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const taskId = options.taskId;
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/tasks/${taskId}`), {
+    headers: {
+      accept: "application/json",
+    },
+    method: "GET",
+  });
+
+  return parseJson<TaskResponse>(response, "tasks");
+}
+
+export async function updateTaskStatus(
+  options: TaskIdOptions,
+  input: UpdateTaskStatusInput,
+): Promise<TaskResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const taskId = options.taskId;
+  const response = await fetcher(
+    buildApiUrl(options.baseUrl, `/api/v1/tasks/${taskId}/status`),
+    {
+      body: JSON.stringify(input),
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      method: "PUT",
+    },
+  );
+
+  return parseJson<TaskResponse>(response, "tasks");
+}
+
+export async function cancelTask(options: TaskIdOptions): Promise<TaskResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const taskId = options.taskId;
+  const response = await fetcher(
+    buildApiUrl(options.baseUrl, `/api/v1/tasks/${taskId}/cancel`),
+    {
+      headers: {
+        accept: "application/json",
+      },
+      method: "POST",
+    },
+  );
 
   return parseJson<TaskResponse>(response, "tasks");
 }

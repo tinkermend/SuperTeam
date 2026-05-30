@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### API Client 最小任务与 Runtime 覆盖 (2026-05-30)
+
+- 为 `packages/api-client` 补齐任务详情、任务状态更新、任务取消和 Runtime 节点详情的最小 client 方法。
+- 通过 Vitest 锁定这些方法使用的 Control Plane canonical path。
+
 #### Foundation 契约漂移检查 (2026-05-30)
 
 - 新增 `pnpm verify:contracts`，检查 Control Plane OpenAPI、Go route、Rust Control Plane client 和 TypeScript api-client 的关键路径一致性。
