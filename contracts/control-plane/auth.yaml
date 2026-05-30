@@ -95,6 +95,42 @@ paths:
                     type: string
                     example: logout success
 
+  /api/auth/login-logs:
+    get:
+      summary: 查询 Web 控制台登录日志
+      operationId: listLoginLogs
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginLogListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
 components:
   securitySchemes:
     cookieAuth:
@@ -116,6 +152,50 @@ components:
       properties:
         user:
           $ref: '#/components/schemas/UserSummary'
+
+    LoginLogListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LoginLogRecord'
+
+    LoginLogRecord:
+      type: object
+      required: [id, event_type, username, result, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        event_type:
+          type: string
+          enum: [login_succeeded, login_failed, logout_succeeded]
+        user_id:
+          type: integer
+          format: int64
+          nullable: true
+        username:
+          type: string
+        session_id:
+          type: string
+          nullable: true
+        client_ip:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        result:
+          type: string
+          enum: [succeeded, failed]
+        failure_reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
 
     UserSummary:
       type: object

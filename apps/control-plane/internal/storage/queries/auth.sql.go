@@ -40,6 +40,60 @@ func (q *Queries) CreateRuntimeToken(ctx context.Context, arg CreateRuntimeToken
 	return i, err
 }
 
+const CreateSession = `-- name: CreateSession :one
+INSERT INTO auth_sessions (
+    id,
+    user_id,
+    token_hash,
+    expires_at,
+    last_seen_at,
+    client_ip,
+    user_agent
+) VALUES (
+    $1::varchar,
+    $2,
+    $3::varchar,
+    $4,
+    $5,
+    $6::varchar,
+    $7::text
+) RETURNING id, user_id, token_hash, expires_at, last_seen_at, client_ip, user_agent, created_at
+`
+
+type CreateSessionParams struct {
+	ID         string             `json:"id"`
+	UserID     int64              `json:"user_id"`
+	TokenHash  string             `json:"token_hash"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
+	ClientIp   pgtype.Text        `json:"client_ip"`
+	UserAgent  pgtype.Text        `json:"user_agent"`
+}
+
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (AuthSession, error) {
+	row := q.db.QueryRow(ctx, CreateSession,
+		arg.ID,
+		arg.UserID,
+		arg.TokenHash,
+		arg.ExpiresAt,
+		arg.LastSeenAt,
+		arg.ClientIp,
+		arg.UserAgent,
+	)
+	var i AuthSession
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.LastSeenAt,
+		&i.ClientIp,
+		&i.UserAgent,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const CreateUser = `-- name: CreateUser :one
 INSERT INTO auth_users (
     username,
@@ -96,6 +150,16 @@ func (q *Queries) DeleteExpiredRuntimeTokens(ctx context.Context) error {
 	return err
 }
 
+const DeleteExpiredSessions = `-- name: DeleteExpiredSessions :exec
+DELETE FROM auth_sessions
+WHERE expires_at < NOW()
+`
+
+func (q *Queries) DeleteExpiredSessions(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, DeleteExpiredSessions)
+	return err
+}
+
 const DeleteRuntimeToken = `-- name: DeleteRuntimeToken :exec
 DELETE FROM auth_runtime_tokens
 WHERE node_id = $1
@@ -103,6 +167,16 @@ WHERE node_id = $1
 
 func (q *Queries) DeleteRuntimeToken(ctx context.Context, nodeID string) error {
 	_, err := q.db.Exec(ctx, DeleteRuntimeToken, nodeID)
+	return err
+}
+
+const DeleteSessionByTokenHash = `-- name: DeleteSessionByTokenHash :exec
+DELETE FROM auth_sessions
+WHERE token_hash = $1
+`
+
+func (q *Queries) DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error {
+	_, err := q.db.Exec(ctx, DeleteSessionByTokenHash, tokenHash)
 	return err
 }
 
@@ -147,6 +221,27 @@ func (q *Queries) GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (A
 		&i.NodeID,
 		&i.TokenHash,
 		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const GetSessionByTokenHash = `-- name: GetSessionByTokenHash :one
+SELECT id, user_id, token_hash, expires_at, last_seen_at, client_ip, user_agent, created_at FROM auth_sessions
+WHERE token_hash = $1
+`
+
+func (q *Queries) GetSessionByTokenHash(ctx context.Context, tokenHash string) (AuthSession, error) {
+	row := q.db.QueryRow(ctx, GetSessionByTokenHash, tokenHash)
+	var i AuthSession
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.LastSeenAt,
+		&i.ClientIp,
+		&i.UserAgent,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -313,6 +408,34 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUse
 		return nil, err
 	}
 	return items, nil
+}
+
+const UpdateSessionLastSeen = `-- name: UpdateSessionLastSeen :one
+UPDATE auth_sessions
+SET last_seen_at = $2
+WHERE token_hash = $1
+RETURNING id, user_id, token_hash, expires_at, last_seen_at, client_ip, user_agent, created_at
+`
+
+type UpdateSessionLastSeenParams struct {
+	TokenHash  string             `json:"token_hash"`
+	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
+}
+
+func (q *Queries) UpdateSessionLastSeen(ctx context.Context, arg UpdateSessionLastSeenParams) (AuthSession, error) {
+	row := q.db.QueryRow(ctx, UpdateSessionLastSeen, arg.TokenHash, arg.LastSeenAt)
+	var i AuthSession
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.LastSeenAt,
+		&i.ClientIp,
+		&i.UserAgent,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const UpdateUser = `-- name: UpdateUser :one

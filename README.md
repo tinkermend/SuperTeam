@@ -37,7 +37,7 @@ cp apps/runtime-agent/config.example.toml apps/runtime-agent/config.toml
 cargo run --manifest-path apps/runtime-agent/Cargo.toml -- --config apps/runtime-agent/config.toml
 ```
 
-`pnpm verify:foundation` intentionally excludes the full Go test suite because `apps/control-plane/internal/storage/queries` uses testcontainers and requires a working Docker provider. Run `go test ./apps/control-plane/...` when Docker/testcontainers is available; if it fails with `rootless Docker not found`, first verify non-Docker Go packages and then fix the local container runtime.
+`pnpm verify:foundation` 覆盖契约检查、前端测试、前端类型检查和 Runtime Agent Rust 测试。Control Plane Go 测试单独通过 `go test ./apps/control-plane/...` 运行；其中 `apps/control-plane/internal/storage/queries` 的远端集成测试默认在未配置 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL` 时跳过。确认数据库允许迁移和清理测试数据后，可设置 `TEST_DATABASE_URL`/`TEST_REDIS_URL`，或设置 `ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1` 后复用 `DATABASE_URL`/`REDIS_URL`。
 
 ## 当前基线
 

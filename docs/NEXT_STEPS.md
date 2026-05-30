@@ -34,4 +34,4 @@
 ### 5. 更完整的联调与回归验证
 
 - 在现有 Control Plane / Runtime foundation 验收之上，补更稳定的本地联调脚本和 CI 验证。
-- 对 testcontainers、rootless Docker、外部依赖缺失等环境差异给出更明确的开发说明。
+- 对远端数据库、Redis、对象存储和 Provider CLI 等外部依赖缺失场景给出更明确的开发说明。

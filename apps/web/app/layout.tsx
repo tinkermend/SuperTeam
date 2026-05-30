@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import { AuthGate } from "@/auth-gate";
+import { AuthShell } from "@/auth-shell";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { Geist } from "next/font/google";
@@ -17,7 +19,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="zh-CN" className={cn("font-sans", geist.variable)} suppressHydrationWarning>
       <body>
-        <TooltipProvider>{children}</TooltipProvider>
+        <TooltipProvider>
+          <AuthShell>
+            <AuthGate>{children}</AuthGate>
+          </AuthShell>
+        </TooltipProvider>
       </body>
     </html>
   );

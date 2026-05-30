@@ -58,7 +58,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	poller := runtimepkg.NewPoller()
 	taskHandler := handlers.NewTaskHandler(taskService)
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller)
-	server := api.NewServer(taskHandler, runtimeHandler, authService)
+	server := api.NewServerWithAuth(taskHandler, runtimeHandler, authService, authService)
 
 	return &Container{
 		Queries:        q,

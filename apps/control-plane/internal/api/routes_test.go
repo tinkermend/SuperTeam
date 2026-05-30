@@ -7,8 +7,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/superteam/control-plane/internal/api/handlers"
+	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
 )
@@ -63,6 +65,92 @@ func TestLegacyRuntimeClaimRouteIsNotRegistered(t *testing.T) {
 
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("expected legacy runtime claim route to be removed, got %d", rr.Code)
+	}
+}
+
+func TestAuthRoutesAreRegistered(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	server := NewServerWithAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+	)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"admin","password":"admin"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp := httptest.NewRecorder()
+
+	server.ServeHTTP(loginResp, loginReq)
+
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("expected login to succeed, got %d: %s", loginResp.Code, loginResp.Body.String())
+	}
+	cookies := loginResp.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != auth.SessionCookieName {
+		t.Fatalf("expected session cookie, got %#v", cookies)
+	}
+
+	meReq := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	meReq.AddCookie(cookies[0])
+	meResp := httptest.NewRecorder()
+
+	server.ServeHTTP(meResp, meReq)
+
+	if meResp.Code != http.StatusOK {
+		t.Fatalf("expected current user to succeed, got %d: %s", meResp.Code, meResp.Body.String())
+	}
+
+	logsReq := httptest.NewRequest(http.MethodGet, "/api/auth/login-logs?limit=10&offset=0", nil)
+	logsReq.AddCookie(cookies[0])
+	logsResp := httptest.NewRecorder()
+
+	server.ServeHTTP(logsResp, logsReq)
+
+	if logsResp.Code != http.StatusOK {
+		t.Fatalf("expected login logs to succeed, got %d: %s", logsResp.Code, logsResp.Body.String())
+	}
+	var logsBody struct {
+		Items []struct {
+			EventType string `json:"event_type"`
+			Username  string `json:"username"`
+			Result    string `json:"result"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(logsResp.Body).Decode(&logsBody); err != nil {
+		t.Fatalf("decode login logs response: %v", err)
+	}
+	if len(logsBody.Items) != 1 {
+		t.Fatalf("expected one login log, got %#v", logsBody.Items)
+	}
+	if logsBody.Items[0].EventType != auth.LoginEventSucceeded {
+		t.Fatalf("expected login succeeded log, got %#v", logsBody.Items[0])
+	}
+}
+
+func TestLoginLogsRejectUnauthenticatedRequests(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	server := NewServerWithAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/login-logs", nil)
+	resp := httptest.NewRecorder()
+
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected login logs to reject unauthenticated request, got %d", resp.Code)
 	}
 }
 
@@ -194,4 +282,112 @@ func (s *routeRuntimeAuthService) ValidateRuntimeToken(ctx context.Context, node
 		return context.Canceled
 	}
 	return nil
+}
+
+type routeAuthRepo struct {
+	users      map[string]*auth.User
+	usersByID  map[int64]*auth.User
+	sessions   map[string]*auth.Session
+	loginLogs  []auth.LoginLog
+	nextUserID int64
+}
+
+func newRouteAuthRepo() *routeAuthRepo {
+	return &routeAuthRepo{
+		users:      map[string]*auth.User{},
+		usersByID:  map[int64]*auth.User{},
+		sessions:   map[string]*auth.Session{},
+		loginLogs:  []auth.LoginLog{},
+		nextUserID: 1,
+	}
+}
+
+func (r *routeAuthRepo) CreateUser(ctx context.Context, username, passwordHash string) (*auth.User, error) {
+	user := &auth.User{ID: r.nextUserID, Username: username, PasswordHash: passwordHash, Status: "active"}
+	r.nextUserID++
+	r.users[username] = user
+	r.usersByID[user.ID] = user
+	return user, nil
+}
+
+func (r *routeAuthRepo) GetUserByUsername(ctx context.Context, username string) (*auth.User, error) {
+	user, ok := r.users[username]
+	if !ok {
+		return nil, auth.ErrInvalidCredentials
+	}
+	return user, nil
+}
+
+func (r *routeAuthRepo) GetUserByID(ctx context.Context, id int64) (*auth.User, error) {
+	user, ok := r.usersByID[id]
+	if !ok {
+		return nil, auth.ErrUnauthorized
+	}
+	return user, nil
+}
+
+func (r *routeAuthRepo) CreateRuntimeToken(ctx context.Context, nodeID, tokenHash string, expiresAt time.Time) error {
+	return nil
+}
+
+func (r *routeAuthRepo) GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (*auth.RuntimeToken, error) {
+	return nil, auth.ErrInvalidToken
+}
+
+func (r *routeAuthRepo) CreateSession(ctx context.Context, session *auth.Session, tokenHash string) error {
+	r.sessions[tokenHash] = session
+	return nil
+}
+
+func (r *routeAuthRepo) GetSessionByTokenHash(ctx context.Context, tokenHash string) (*auth.Session, error) {
+	session, ok := r.sessions[tokenHash]
+	if !ok {
+		return nil, auth.ErrSessionNotFound
+	}
+	return session, nil
+}
+
+func (r *routeAuthRepo) DeleteSession(ctx context.Context, tokenHash string) error {
+	delete(r.sessions, tokenHash)
+	return nil
+}
+
+func (r *routeAuthRepo) UpdateSessionLastSeen(ctx context.Context, tokenHash string, lastSeenAt time.Time) error {
+	session, ok := r.sessions[tokenHash]
+	if !ok {
+		return auth.ErrSessionNotFound
+	}
+	session.LastSeenAt = lastSeenAt
+	return nil
+}
+
+func (r *routeAuthRepo) CreateLoginLog(ctx context.Context, params auth.CreateLoginLogParams) error {
+	now := time.Now().UTC()
+	r.loginLogs = append([]auth.LoginLog{
+		{
+			ID:            int64(len(r.loginLogs) + 1),
+			EventType:     params.EventType,
+			UserID:        params.UserID,
+			Username:      params.Username,
+			SessionID:     params.SessionID,
+			ClientIP:      params.ClientIP,
+			UserAgent:     params.UserAgent,
+			Result:        params.Result,
+			FailureReason: params.FailureReason,
+			CreatedAt:     now,
+		},
+	}, r.loginLogs...)
+	return nil
+}
+
+func (r *routeAuthRepo) ListLoginLogs(ctx context.Context, filter auth.ListLoginLogsFilter) ([]auth.LoginLog, error) {
+	start := int(filter.Offset)
+	if start >= len(r.loginLogs) {
+		return []auth.LoginLog{}, nil
+	}
+	end := start + int(filter.Limit)
+	if end > len(r.loginLogs) {
+		end = len(r.loginLogs)
+	}
+	return append([]auth.LoginLog{}, r.loginLogs[start:end]...), nil
 }

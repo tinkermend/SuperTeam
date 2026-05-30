@@ -79,6 +79,8 @@ export DATABASE_URL=postgres://superteam:superteam@localhost:5432/superteam?sslm
 ./scripts/db-migrate.sh
 ```
 
+迁移会幂等创建本地 Web 控制台开发账号：`admin / admin`。该账号只用于本地联调和登录烟测，部署环境应改用正式用户初始化流程。
+
 ### 5. 生成 Runtime Token
 
 为 Runtime Agent 生成认证 token：
@@ -106,6 +108,18 @@ Control Plane 默认监听 `http://localhost:8080`。
 ```bash
 curl http://localhost:8080/health
 ```
+
+验证 Web 登录 API：
+
+```bash
+curl -i -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' \
+  -c /tmp/superteam-cookies.txt
+curl http://localhost:8080/api/auth/me -b /tmp/superteam-cookies.txt
+```
+
+Web 控制台默认从 `NEXT_PUBLIC_CONTROL_PLANE_URL=http://localhost:8080` 调用 Control Plane。由于登录会话使用 cookie，本地跨端口调用只允许来自 `http://localhost:3000` 或 `http://127.0.0.1:3000` 的浏览器请求。
 
 ### 7. 启动 Runtime Agent
 
@@ -252,7 +266,7 @@ pnpm verify:foundation
 ```
 
 `pnpm verify:contracts` 检查 Control Plane OpenAPI、Go route、Runtime Agent client 和 `packages/api-client` 的关键路径一致性。
-`pnpm verify:foundation` 覆盖契约漂移、前端测试、前端类型检查和 Runtime Agent Rust 测试。它不包含完整 Go 测试，因为 `internal/storage/queries` 的测试依赖 testcontainers 和可用 Docker provider。
+`pnpm verify:foundation` 覆盖契约漂移、前端测试、前端类型检查和 Runtime Agent Rust 测试。Control Plane Go 测试单独运行。
 
 Control Plane 代码生成和完整 Go 验证仍单独运行：
 
@@ -261,28 +275,20 @@ make -C apps/control-plane generate
 go test ./apps/control-plane/...
 ```
 
-如果完整 Go 验证在 `github.com/superteam/control-plane/internal/storage/queries` 失败，并出现 `rootless Docker not found, failed to create Docker provider`，说明当前机器没有可用的 testcontainers Docker provider。此时先保留失败输出，再运行以下命令确认所有非 `internal/storage/queries` Control Plane 包基线：
+`internal/storage/queries` 是远端集成测试包。未配置 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL` 时，该包会跳过，不会阻塞完整 Go 验证。要运行真实查询测试，使用专用测试环境：
 
 ```bash
-go test \
-  ./apps/control-plane/cmd/control-plane \
-  ./apps/control-plane/cmd/server \
-  ./apps/control-plane/internal/api \
-  ./apps/control-plane/internal/api/handlers \
-  ./apps/control-plane/internal/api/middleware \
-  ./apps/control-plane/internal/app \
-  ./apps/control-plane/internal/approval \
-  ./apps/control-plane/internal/artifact \
-  ./apps/control-plane/internal/audit \
-  ./apps/control-plane/internal/auth \
-  ./apps/control-plane/internal/config \
-  ./apps/control-plane/internal/runtime \
-  ./apps/control-plane/internal/storage \
-  ./apps/control-plane/internal/task \
-  ./apps/control-plane/internal/workflow
+export TEST_DATABASE_URL='postgres://user:password@host:5432/superteam_test?sslmode=disable'
+export TEST_REDIS_URL='redis://:password@host:6379/0'
+go test ./apps/control-plane/internal/storage/queries -v -timeout 5m
 ```
 
-完整通过标准仍然是 Docker/testcontainers 可用后 `go test ./apps/control-plane/...` 通过。
+如果确认当前 `DATABASE_URL` 和 `REDIS_URL` 指向可迁移、可清理的测试环境，也可以显式复用应用配置：
+
+```bash
+export ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1
+go test ./apps/control-plane/internal/storage/queries -v -timeout 5m
+```
 
 ### 集成测试与本地联调
 

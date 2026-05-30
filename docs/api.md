@@ -12,7 +12,33 @@
 
 ### Console API 认证
 
-当前 foundation 阶段的 product server 尚未挂载 Console session 认证路由；本文档只描述当前已注册的任务和 Runtime API。Cookie-based Session 登录、当前用户和登出接口将在 auth router 接入后补齐。
+Web 控制台使用 Cookie-based Session 认证。登录成功后 Control Plane 写入 `session_token` HttpOnly Cookie；浏览器请求需要携带 cookie，因此本地开发 CORS 只允许 `http://localhost:3000` 和 `http://127.0.0.1:3000`。
+
+本地开发迁移会幂等创建默认账号：
+
+- 用户名：`admin`
+- 密码：`admin`
+
+登录接口：
+
+```bash
+curl -i -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' \
+  -c /tmp/superteam-cookies.txt
+```
+
+当前用户接口：
+
+```bash
+curl http://localhost:8080/api/auth/me -b /tmp/superteam-cookies.txt
+```
+
+登出接口：
+
+```bash
+curl -i -X POST http://localhost:8080/api/auth/logout -b /tmp/superteam-cookies.txt
+```
 
 ### Runtime API 认证
 
@@ -55,7 +81,7 @@ curl http://localhost:8080/health
 
 ## Console API
 
-Console API 供 Web 控制台使用。当前 foundation 阶段的 product server 已注册任务管理端点，Console session 认证路由尚未挂载。
+Console API 供 Web 控制台使用。当前已注册登录、当前用户、登出和任务管理端点；后续业务端点会继续挂载到同一 Control Plane。
 
 ### 任务管理
 

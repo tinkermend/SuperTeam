@@ -7,13 +7,28 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 const (
 	CookieAuthScopes = "cookieAuth.Scopes"
+)
+
+// Defines values for LoginLogRecordEventType.
+const (
+	LoginFailed     LoginLogRecordEventType = "login_failed"
+	LoginSucceeded  LoginLogRecordEventType = "login_succeeded"
+	LogoutSucceeded LoginLogRecordEventType = "logout_succeeded"
+)
+
+// Defines values for LoginLogRecordResult.
+const (
+	Failed    LoginLogRecordResult = "failed"
+	Succeeded LoginLogRecordResult = "succeeded"
 )
 
 // Defines values for UserSummaryStatus.
@@ -32,6 +47,31 @@ type ErrorResponse struct {
 	Code  *string `json:"code,omitempty"`
 	Error string  `json:"error"`
 }
+
+// LoginLogListResponse defines model for LoginLogListResponse.
+type LoginLogListResponse struct {
+	Items []LoginLogRecord `json:"items"`
+}
+
+// LoginLogRecord defines model for LoginLogRecord.
+type LoginLogRecord struct {
+	ClientIp      *string                 `json:"client_ip"`
+	CreatedAt     time.Time               `json:"created_at"`
+	EventType     LoginLogRecordEventType `json:"event_type"`
+	FailureReason *string                 `json:"failure_reason"`
+	Id            int64                   `json:"id"`
+	Result        LoginLogRecordResult    `json:"result"`
+	SessionId     *string                 `json:"session_id"`
+	UserAgent     *string                 `json:"user_agent"`
+	UserId        *int64                  `json:"user_id"`
+	Username      string                  `json:"username"`
+}
+
+// LoginLogRecordEventType defines model for LoginLogRecord.EventType.
+type LoginLogRecordEventType string
+
+// LoginLogRecordResult defines model for LoginLogRecord.Result.
+type LoginLogRecordResult string
 
 // LoginResponse defines model for LoginResponse.
 type LoginResponse struct {
@@ -60,6 +100,12 @@ type LoginJSONBody struct {
 	Username string `json:"username"`
 }
 
+// ListLoginLogsParams defines parameters for ListLoginLogs.
+type ListLoginLogsParams struct {
+	Limit  *int32 `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int32 `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody LoginJSONBody
 
@@ -68,6 +114,9 @@ type ServerInterface interface {
 	// 用户登录
 	// (POST /api/auth/login)
 	Login(w http.ResponseWriter, r *http.Request)
+	// 查询 Web 控制台登录日志
+	// (GET /api/auth/login-logs)
+	ListLoginLogs(w http.ResponseWriter, r *http.Request, params ListLoginLogsParams)
 	// 用户登出
 	// (POST /api/auth/logout)
 	Logout(w http.ResponseWriter, r *http.Request)
@@ -83,6 +132,12 @@ type Unimplemented struct{}
 // 用户登录
 // (POST /api/auth/login)
 func (_ Unimplemented) Login(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 查询 Web 控制台登录日志
+// (GET /api/auth/login-logs)
+func (_ Unimplemented) ListLoginLogs(w http.ResponseWriter, r *http.Request, params ListLoginLogsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -113,6 +168,44 @@ func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Login(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// ListLoginLogs operation middleware
+func (siw *ServerInterfaceWrapper) ListLoginLogs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListLoginLogsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListLoginLogs(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -271,6 +364,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/auth/login", wrapper.Login)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/auth/login-logs", wrapper.ListLoginLogs)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/auth/logout", wrapper.Logout)

@@ -90,3 +90,40 @@ RETURNING *;
 -- name: GetUserByID :one
 SELECT * FROM auth_users
 WHERE id = $1;
+
+-- name: CreateSession :one
+INSERT INTO auth_sessions (
+    id,
+    user_id,
+    token_hash,
+    expires_at,
+    last_seen_at,
+    client_ip,
+    user_agent
+) VALUES (
+    sqlc.arg('id')::varchar,
+    sqlc.arg('user_id'),
+    sqlc.arg('token_hash')::varchar,
+    sqlc.arg('expires_at'),
+    sqlc.arg('last_seen_at'),
+    sqlc.narg('client_ip')::varchar,
+    sqlc.narg('user_agent')::text
+) RETURNING *;
+
+-- name: GetSessionByTokenHash :one
+SELECT * FROM auth_sessions
+WHERE token_hash = $1;
+
+-- name: DeleteSessionByTokenHash :exec
+DELETE FROM auth_sessions
+WHERE token_hash = $1;
+
+-- name: UpdateSessionLastSeen :one
+UPDATE auth_sessions
+SET last_seen_at = $2
+WHERE token_hash = $1
+RETURNING *;
+
+-- name: DeleteExpiredSessions :exec
+DELETE FROM auth_sessions
+WHERE expires_at < NOW();

@@ -16,15 +16,19 @@ type Querier interface {
 	CreateAuditEvent(ctx context.Context, arg CreateAuditEventParams) (AuditEvent, error)
 	CreateRuntimeNode(ctx context.Context, arg CreateRuntimeNodeParams) (RuntimeNode, error)
 	CreateRuntimeToken(ctx context.Context, arg CreateRuntimeTokenParams) (AuthRuntimeToken, error)
+	CreateSession(ctx context.Context, arg CreateSessionParams) (AuthSession, error)
 	CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error)
 	CreateTaskArtifact(ctx context.Context, arg CreateTaskArtifactParams) (TaskArtifact, error)
 	CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams) (TaskEvent, error)
 	CreateTaskExecution(ctx context.Context, arg CreateTaskExecutionParams) (TaskExecution, error)
 	CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) (TaskStateHistory, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error)
+	CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogParams) (WebLoginLog, error)
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
+	DeleteExpiredSessions(ctx context.Context) error
 	DeleteRuntimeNode(ctx context.Context, nodeID string) error
 	DeleteRuntimeToken(ctx context.Context, nodeID string) error
+	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error
 	DeleteTask(ctx context.Context, id int64) error
 	DeleteTaskArtifact(ctx context.Context, id int64) error
 	DeleteUser(ctx context.Context, id int64) error
@@ -34,6 +38,7 @@ type Querier interface {
 	GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNode, error)
 	GetRuntimeToken(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
+	GetSessionByTokenHash(ctx context.Context, tokenHash string) (AuthSession, error)
 	GetTask(ctx context.Context, id int64) (Task, error)
 	GetTaskArtifact(ctx context.Context, id int64) (TaskArtifact, error)
 	GetTaskEvent(ctx context.Context, arg GetTaskEventParams) (TaskEvent, error)
@@ -54,9 +59,11 @@ type Querier interface {
 	ListTaskStateHistory(ctx context.Context, taskID int64) ([]TaskStateHistory, error)
 	ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error)
+	ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error)
 	UpdateRuntimeNodeHeartbeat(ctx context.Context, arg UpdateRuntimeNodeHeartbeatParams) (RuntimeNode, error)
 	UpdateRuntimeNodeLoad(ctx context.Context, arg UpdateRuntimeNodeLoadParams) (RuntimeNode, error)
 	UpdateRuntimeNodeStatus(ctx context.Context, arg UpdateRuntimeNodeStatusParams) (RuntimeNode, error)
+	UpdateSessionLastSeen(ctx context.Context, arg UpdateSessionLastSeenParams) (AuthSession, error)
 	UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, error)
 	UpdateTaskAssignment(ctx context.Context, arg UpdateTaskAssignmentParams) (Task, error)
 	UpdateTaskExecution(ctx context.Context, arg UpdateTaskExecutionParams) (TaskExecution, error)

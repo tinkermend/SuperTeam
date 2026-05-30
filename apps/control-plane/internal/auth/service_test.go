@@ -11,14 +11,31 @@ import (
 
 type mockRepo struct {
 	users         map[string]*User
+	usersByID     map[int64]*User
 	runtimeTokens map[string]*RuntimeToken
+	sessions      map[string]*Session
+	loginLogs     []mockLoginLog
 }
 
 func newMockRepo() *mockRepo {
 	return &mockRepo{
 		users:         make(map[string]*User),
+		usersByID:     make(map[int64]*User),
 		runtimeTokens: make(map[string]*RuntimeToken),
+		sessions:      make(map[string]*Session),
+		loginLogs:     []mockLoginLog{},
 	}
+}
+
+type mockLoginLog struct {
+	EventType     string
+	UserID        *int64
+	Username      string
+	SessionID     string
+	ClientIP      string
+	UserAgent     string
+	Result        string
+	FailureReason string
 }
 
 func (m *mockRepo) CreateUser(ctx context.Context, username, passwordHash string) (*User, error) {
@@ -31,11 +48,20 @@ func (m *mockRepo) CreateUser(ctx context.Context, username, passwordHash string
 		UpdatedAt:    time.Now(),
 	}
 	m.users[username] = user
+	m.usersByID[user.ID] = user
 	return user, nil
 }
 
 func (m *mockRepo) GetUserByUsername(ctx context.Context, username string) (*User, error) {
 	user, ok := m.users[username]
+	if !ok {
+		return nil, errors.New("user not found")
+	}
+	return user, nil
+}
+
+func (m *mockRepo) GetUserByID(ctx context.Context, id int64) (*User, error) {
+	user, ok := m.usersByID[id]
 	if !ok {
 		return nil, errors.New("user not found")
 	}
@@ -58,6 +84,51 @@ func (m *mockRepo) GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (
 		return nil, errors.New("token not found")
 	}
 	return token, nil
+}
+
+func (m *mockRepo) CreateSession(ctx context.Context, session *Session, token string) error {
+	m.sessions[token] = session
+	return nil
+}
+
+func (m *mockRepo) GetSessionByTokenHash(ctx context.Context, token string) (*Session, error) {
+	session, ok := m.sessions[token]
+	if !ok {
+		return nil, ErrSessionNotFound
+	}
+	return session, nil
+}
+
+func (m *mockRepo) DeleteSession(ctx context.Context, token string) error {
+	delete(m.sessions, token)
+	return nil
+}
+
+func (m *mockRepo) UpdateSessionLastSeen(ctx context.Context, token string, lastSeenAt time.Time) error {
+	session, ok := m.sessions[token]
+	if !ok {
+		return ErrSessionNotFound
+	}
+	session.LastSeenAt = lastSeenAt
+	return nil
+}
+
+func (m *mockRepo) CreateLoginLog(ctx context.Context, params CreateLoginLogParams) error {
+	m.loginLogs = append(m.loginLogs, mockLoginLog{
+		EventType:     params.EventType,
+		UserID:        params.UserID,
+		Username:      params.Username,
+		SessionID:     params.SessionID,
+		ClientIP:      params.ClientIP,
+		UserAgent:     params.UserAgent,
+		Result:        params.Result,
+		FailureReason: params.FailureReason,
+	})
+	return nil
+}
+
+func (m *mockRepo) ListLoginLogs(ctx context.Context, filter ListLoginLogsFilter) ([]LoginLog, error) {
+	return []LoginLog{}, nil
 }
 
 func TestNewService(t *testing.T) {
@@ -97,6 +168,137 @@ func TestAuthenticateUser(t *testing.T) {
 
 	if _, err := svc.AuthenticateUser(context.Background(), "test", "wrong"); err != ErrInvalidCredentials {
 		t.Error("expected invalid credentials error")
+	}
+}
+
+func TestLoginCreatesSessionAndReturnsCurrentUser(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	createdUser, err := svc.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	session, user, token, err := svc.Login(context.Background(), "admin", "admin", "127.0.0.1", "test-agent")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if token == "" {
+		t.Fatal("expected login token")
+	}
+	if user.ID != createdUser.ID {
+		t.Fatalf("expected user %d, got %d", createdUser.ID, user.ID)
+	}
+	if session.UserID != createdUser.ID {
+		t.Fatalf("expected session user %d, got %d", createdUser.ID, session.UserID)
+	}
+	if session.ClientIP != "127.0.0.1" {
+		t.Fatalf("expected client ip to be recorded, got %q", session.ClientIP)
+	}
+	if _, ok := repo.sessions[token]; ok {
+		t.Fatal("expected session repository key to be a token hash, got raw token")
+	}
+
+	currentSession, currentUser, err := svc.GetUserBySessionToken(context.Background(), token)
+	if err != nil {
+		t.Fatalf("get current user: %v", err)
+	}
+	if currentSession.ID != session.ID {
+		t.Fatalf("expected session %q, got %q", session.ID, currentSession.ID)
+	}
+	if currentUser.Username != "admin" {
+		t.Fatalf("expected admin user, got %q", currentUser.Username)
+	}
+
+	if len(repo.loginLogs) != 1 {
+		t.Fatalf("expected one login log, got %d", len(repo.loginLogs))
+	}
+	log := repo.loginLogs[0]
+	if log.EventType != LoginEventSucceeded {
+		t.Fatalf("expected event type %q, got %q", LoginEventSucceeded, log.EventType)
+	}
+	if log.UserID == nil || *log.UserID != createdUser.ID {
+		t.Fatalf("expected user id %d, got %#v", createdUser.ID, log.UserID)
+	}
+	if log.Username != "admin" {
+		t.Fatalf("expected username admin, got %q", log.Username)
+	}
+	if log.SessionID != session.ID {
+		t.Fatalf("expected session id %q, got %q", session.ID, log.SessionID)
+	}
+	if log.ClientIP != "127.0.0.1" {
+		t.Fatalf("expected client ip 127.0.0.1, got %q", log.ClientIP)
+	}
+	if log.UserAgent != "test-agent" {
+		t.Fatalf("expected user agent test-agent, got %q", log.UserAgent)
+	}
+	if log.Result != LoginResultSucceeded {
+		t.Fatalf("expected result %q, got %q", LoginResultSucceeded, log.Result)
+	}
+}
+
+func TestLogoutDeletesSession(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	if _, err := svc.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	_, _, token, err := svc.Login(context.Background(), "admin", "admin", "127.0.0.1", "test-agent")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+
+	if err := svc.Logout(context.Background(), token); err != nil {
+		t.Fatalf("logout: %v", err)
+	}
+	if _, _, err := svc.GetUserBySessionToken(context.Background(), token); err != ErrSessionNotFound {
+		t.Fatalf("expected deleted session to be unavailable, got %v", err)
+	}
+	if len(repo.loginLogs) != 2 {
+		t.Fatalf("expected login and logout logs, got %d", len(repo.loginLogs))
+	}
+	log := repo.loginLogs[1]
+	if log.EventType != LoginEventLogoutSucceeded {
+		t.Fatalf("expected event type %q, got %q", LoginEventLogoutSucceeded, log.EventType)
+	}
+	if log.Result != LoginResultSucceeded {
+		t.Fatalf("expected result %q, got %q", LoginResultSucceeded, log.Result)
+	}
+	if log.ClientIP != "127.0.0.1" {
+		t.Fatalf("expected logout client ip 127.0.0.1, got %q", log.ClientIP)
+	}
+}
+
+func TestLoginRecordsFailedAttempt(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	if _, err := svc.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	_, _, _, err := svc.Login(context.Background(), "admin", "wrong", "127.0.0.1", "test-agent")
+	if err != ErrInvalidCredentials {
+		t.Fatalf("expected invalid credentials, got %v", err)
+	}
+
+	if len(repo.loginLogs) != 1 {
+		t.Fatalf("expected one failed login log, got %d", len(repo.loginLogs))
+	}
+	log := repo.loginLogs[0]
+	if log.EventType != LoginEventFailed {
+		t.Fatalf("expected event type %q, got %q", LoginEventFailed, log.EventType)
+	}
+	if log.UserID != nil {
+		t.Fatalf("expected failed log to avoid binding a user id, got %#v", log.UserID)
+	}
+	if log.Username != "admin" {
+		t.Fatalf("expected attempted username admin, got %q", log.Username)
+	}
+	if log.Result != LoginResultFailed {
+		t.Fatalf("expected result %q, got %q", LoginResultFailed, log.Result)
+	}
+	if log.FailureReason != LoginFailureInvalidCredentials {
+		t.Fatalf("expected failure reason %q, got %q", LoginFailureInvalidCredentials, log.FailureReason)
 	}
 }
 

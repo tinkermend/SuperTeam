@@ -47,7 +47,7 @@ log_info "Database: $DATABASE_URL"
 cd "$CONTROL_PLANE_DIR"
 
 # 运行迁移
-if atlas migrate apply --env local; then
+if atlas migrate apply --dir file://internal/storage/migrations --url "$DATABASE_URL" --revisions-schema atlas_schema_revisions; then
     log_info "Migration completed successfully"
 else
     log_error "Migration failed"
@@ -56,4 +56,4 @@ fi
 
 # 验证迁移状态
 log_info "Checking migration status..."
-atlas migrate status --env local
+atlas migrate status --dir file://internal/storage/migrations --url "$DATABASE_URL" --revisions-schema atlas_schema_revisions

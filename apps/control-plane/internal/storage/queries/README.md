@@ -2,25 +2,30 @@
 
 ## 概述
 
-本目录包含 SuperTeam 控制平面数据层的完整测试套件。测试使用 testcontainers-go 在隔离的 PostgreSQL 容器中运行，确保测试环境的一致性和可重复性。
+本目录包含 SuperTeam 控制平面数据层的 sqlc 查询集成测试。测试不再自动启动本机容器，只在显式配置远端或专用测试数据库时运行，避免本地 `go test ./...` 依赖 Docker/Podman。
+
+未配置 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL` 时，本包测试会跳过。确认当前配置的数据库允许迁移和清理测试数据后，也可以设置 `ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1`，让测试复用 `DATABASE_URL` 和 `REDIS_URL`。
 
 ## 测试覆盖
 
 ### Runtime 节点测试
+
 - `TestCreateRuntimeNode` - 创建 Runtime 节点
 - `TestGetRuntimeNode` - 查询节点信息
 - `TestUpdateRuntimeNodeHeartbeat` - 更新节点心跳
 - `TestListOnlineNodes` - 查询在线节点列表
 
 ### 任务测试
+
 - `TestCreateTask` - 创建任务
 - `TestGetTask` - 查询任务
-- `TestListTasks` - 任务列表查询（支持过滤）
+- `TestListTasks` - 任务列表查询，支持过滤
 - `TestUpdateTaskStatus` - 更新任务状态
 - `TestTaskStateTransition` - 任务状态转换
 - `TestTaskEvents` - 任务事件流
 
 ### 认证测试
+
 - `TestCreateUser` - 创建用户
 - `TestGetUserByUsername` - 按用户名查询
 - `TestCreateRuntimeToken` - 创建 Runtime token
@@ -28,8 +33,9 @@
 - `TestExpiredRuntimeToken` - 过期 token 验证
 
 ### 审计测试
+
 - `TestCreateAuditEvent` - 创建审计事件
-- `TestListAuditEvents` - 查询审计事件（支持过滤）
+- `TestListAuditEvents` - 查询审计事件，支持过滤
 - `TestCountAuditEvents` - 统计审计事件
 - `TestAuditEventsTimeFilter` - 时间范围过滤
 
@@ -37,33 +43,30 @@
 
 ### 前置条件
 
-1. 安装 Docker 或 Podman
-2. 确保 Docker/Podman daemon 正在运行
+1. 准备 PostgreSQL 测试库，连接串通过 `TEST_DATABASE_URL` 提供。
+2. 准备 Redis 测试实例，连接串通过 `TEST_REDIS_URL` 提供。
+3. 确认测试库可以被迁移和清理数据。
 
-### 使用测试脚本（推荐）
+> 注意：测试会执行 `internal/storage/migrations/*.sql`，并在部分用例中截断核心业务表。不要把生产库或不可清理的共享库配置到 `TEST_DATABASE_URL`。
 
-```bash
-cd apps/control-plane
-./test.sh
-```
-
-测试脚本会自动检测 Podman socket 位置并设置正确的环境变量。
-
-### 手动运行
-
-#### 使用 Docker
+### 使用远端测试环境
 
 ```bash
 cd apps/control-plane
+export TEST_DATABASE_URL='postgres://user:password@host:5432/superteam_test?sslmode=disable'
+export TEST_REDIS_URL='redis://:password@host:6379/0'
 go test ./internal/storage/queries -v -timeout 5m
 ```
 
-#### 使用 Podman
+如需使用项目当前配置的开发环境，可从 `docs/database/conn_info.md` 获取连接信息后显式导出为 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL`。只有确认该环境允许迁移和清理测试数据时才应执行。
+
+也可以显式允许测试复用应用配置：
 
 ```bash
 cd apps/control-plane
-export DOCKER_HOST=unix:///var/folders/.../podman/podman-machine-default-api.sock
-export TESTCONTAINERS_RYUK_DISABLED=true
+export ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1
+export DATABASE_URL='postgres://user:password@host:5432/superteam_test?sslmode=disable'
+export REDIS_URL='redis://:password@host:6379/0'
 go test ./internal/storage/queries -v -timeout 5m
 ```
 
@@ -72,83 +75,71 @@ go test ./internal/storage/queries -v -timeout 5m
 ### TestMain 设置
 
 `TestMain` 函数负责：
-1. 启动 PostgreSQL 16 容器
-2. 建立数据库连接
-3. 运行数据库迁移（`001_initial.sql`）
-4. 创建 queries 实例
-5. 运行所有测试
-6. 清理资源
+
+1. 检查 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL`；或在 `ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1` 时读取 `DATABASE_URL` 和 `REDIS_URL`。
+2. 连接并 ping PostgreSQL。
+3. 连接并 ping Redis，确保测试环境配置完整。
+4. 运行数据库迁移。
+5. 创建 queries 实例。
+6. 运行所有测试。
+7. 关闭数据库连接。
 
 ### 测试隔离
 
 每个测试负责：
+
 - 创建测试所需的数据
 - 使用 `defer` 清理创建的数据
 - 不依赖其他测试的执行顺序
 
+部分审计测试会调用 `cleanupTestData` 截断相关表，以避免统计和列表测试被历史数据污染。
+
 ### 数据库迁移
 
-测试使用与生产环境相同的迁移文件（`../migrations/001_initial.sql`），确保测试环境与生产环境的一致性。
+测试使用与应用环境相同的迁移文件（`../migrations/*.sql`），确保 sqlc 查询与当前 schema 保持一致。
 
 ## 依赖
 
-- `github.com/testcontainers/testcontainers-go` - 容器化测试环境
-- `github.com/testcontainers/testcontainers-go/modules/postgres` - PostgreSQL 模块
-- `github.com/stretchr/testify` - 测试断言库
 - `github.com/jackc/pgx/v5` - PostgreSQL 驱动
+- `github.com/redis/go-redis/v9` - Redis 连接校验
+- `github.com/stretchr/testify` - 测试断言库
 
 ## 故障排查
 
-### Docker/Podman 连接问题
+### 测试被跳过
 
-如果遇到 "rootless Docker not found" 错误：
+如果看到以下输出，说明没有显式配置测试环境：
 
-1. 确认 Docker/Podman 正在运行：
-   ```bash
-   docker ps
-   # 或
-   podman ps
-   ```
+```text
+skipping storage query integration tests: set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL
+```
 
-2. 对于 Podman，找到 socket 位置：
-   ```bash
-   ls /var/folders/*/T/podman/podman-machine-default-api.sock
-   ```
+导出两个环境变量后重新运行即可。
 
-3. 设置环境变量：
-   ```bash
-   export DOCKER_HOST=unix:///path/to/podman.sock
-   export TESTCONTAINERS_RYUK_DISABLED=true
-   ```
+### PostgreSQL 或 Redis 连接失败
+
+先单独验证连接：
+
+```bash
+psql "$TEST_DATABASE_URL" -c 'select current_user, current_database(), current_schema();'
+redis-cli -u "$TEST_REDIS_URL" ping
+```
 
 ### 测试超时
 
-如果测试超时，可以增加超时时间：
+如果远端环境网络较慢，可以增加超时时间：
+
 ```bash
 go test ./internal/storage/queries -v -timeout 10m
 ```
 
-### 容器清理
-
-如果测试中断导致容器未清理，手动清理：
-```bash
-docker ps -a | grep postgres:16-alpine
-docker rm -f <container_id>
-```
-
 ## 持续集成
 
-在 CI 环境中运行测试时，确保：
-1. CI 环境有 Docker 访问权限
-2. 设置足够的超时时间（建议 10 分钟）
-3. 使用 `-race` 标志检测竞态条件：
-   ```bash
-   go test ./internal/storage/queries -v -race -timeout 10m
-   ```
+CI 中可以有两种策略：
 
-## 下一步
+- 默认不配置 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL`，让本包集成测试跳过。
+- 在专用集成测试任务中配置隔离数据库和 Redis，并运行：
 
-- [ ] 添加并发测试
-- [ ] 添加性能基准测试
-- [ ] 添加数据库事务测试
-- [ ] 集成到 CI/CD 流水线
+```bash
+go test ./internal/storage/queries -v -race -timeout 10m
+```

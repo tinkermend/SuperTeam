@@ -31,6 +31,17 @@ type AuthRuntimeToken struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type AuthSession struct {
+	ID         string             `json:"id"`
+	UserID     int64              `json:"user_id"`
+	TokenHash  string             `json:"token_hash"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
+	ClientIp   pgtype.Text        `json:"client_ip"`
+	UserAgent  pgtype.Text        `json:"user_agent"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type AuthUser struct {
 	ID           int64              `json:"id"`
 	Username     string             `json:"username"`
@@ -115,4 +126,34 @@ type TaskStateHistory struct {
 	ChangedBy  pgtype.Text        `json:"changed_by"`
 	Reason     pgtype.Text        `json:"reason"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type WebLoginLog struct {
+	ID            int64              `json:"id"`
+	EventType     string             `json:"event_type"`
+	UserID        pgtype.Int8        `json:"user_id"`
+	Username      string             `json:"username"`
+	SessionID     pgtype.Text        `json:"session_id"`
+	ClientIp      pgtype.Text        `json:"client_ip"`
+	UserAgent     pgtype.Text        `json:"user_agent"`
+	Result        string             `json:"result"`
+	FailureReason pgtype.Text        `json:"failure_reason"`
+	Details       []byte             `json:"details"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type WebOperationLog struct {
+	ID           int64              `json:"id"`
+	UserID       pgtype.Int8        `json:"user_id"`
+	Username     pgtype.Text        `json:"username"`
+	Module       string             `json:"module"`
+	ResourceType pgtype.Text        `json:"resource_type"`
+	ResourceID   pgtype.Text        `json:"resource_id"`
+	Action       string             `json:"action"`
+	Result       string             `json:"result"`
+	RequestID    pgtype.Text        `json:"request_id"`
+	ClientIp     pgtype.Text        `json:"client_ip"`
+	UserAgent    pgtype.Text        `json:"user_agent"`
+	Details      []byte             `json:"details"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }

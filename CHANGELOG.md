@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- 调整 Control Plane storage sqlc 查询集成测试：
+  - 移除 testcontainers 本机容器 fallback，避免完整 Go 测试依赖 Docker/Podman。
+  - 测试仅在显式配置 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL` 时连接远端或专用测试环境运行；也支持通过 `ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1` 复用 `DATABASE_URL` 和 `REDIS_URL`。
+  - 未配置测试环境时跳过 `apps/control-plane/internal/storage/queries` 集成测试。
+
 ### Added
+
+#### Web 登录主链路 (2026-05-31)
+
+- 接入 Web 控制台登录、当前用户和登出 API，使用 `auth_sessions` 持久化浏览器会话。
+- 新增 `@superteam/api-client` auth client、`@superteam/core` AuthProvider/useAuth 和 `@superteam/views` 登录页。
+- Web 根布局接入认证守卫，未登录用户进入 `/login`，登录成功后返回控制台首页。
+- 将浏览器 session token 以 SHA-256 hash 写入 `auth_sessions.token_hash`，避免原始 cookie token 明文入库。
+- 收紧 Control Plane CORS，使携带 cookie 的本地 Web 调用只允许 `localhost:3000` 和 `127.0.0.1:3000`。
+- 新增幂等开发账号迁移，方便本地使用 `admin / admin` 完成 Web 登录烟测。
+
+#### Web 登录日志与操作日志底座 (2026-05-31)
+
+- 新增 `web_login_logs` 表，独立记录 Web 控制台登录成功、登录失败和登出事件，不复用人工审核相关的 `audit_events`。
+- 新增 `web_operation_logs` 表，预留 Web 控制台后续功能操作日志、资源操作结果和请求上下文记录。
+- 登录、登录失败和登出链路接入 `web_login_logs` 写入；日志写入异常不阻断主登录链路。
+- 新增 `GET /api/auth/login-logs` 查询接口，要求有效登录 Cookie，并支持 `limit` / `offset` 分页参数。
+- `@superteam/api-client` 新增 `listLoginLogs`，供 Web 端调用登录日志接口。
 
 #### Core Summary 状态映射 (2026-05-30)
 
@@ -162,15 +186,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - UpdateUser, ListUsers, DeleteUser
   - CreateRuntimeToken, GetRuntimeToken, ValidateRuntimeToken, DeleteRuntimeToken
 - 添加测试辅助脚本 (`apps/control-plane/test.sh`)
-  - 自动检测 Podman socket 位置
-  - 设置正确的环境变量
+  - 基于显式远端或专用测试环境变量运行 storage 查询集成测试
 - 添加测试文档 (`apps/control-plane/internal/storage/queries/README.md`)
   - 测试覆盖说明
   - 运行指南
   - 故障排查
 - 添加测试依赖
-  - testcontainers-go v0.42.0
-  - testcontainers-go/modules/postgres v0.42.0
   - stretchr/testify (latest)
 
 #### Phase 1.2 - 配置 sqlc (2026-05-29)
@@ -192,7 +213,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Foundation Readiness 文档收口 (2026-05-30)
 
-- 同步 README、开发指南、API 文档和下一步指引，明确底座阶段的启动、验证、契约守护和 testcontainers 环境边界。
+- 同步 README、开发指南、API 文档和下一步指引，明确底座阶段的启动、验证和契约守护边界。
 
 #### Foundation 文档同步 (2026-05-29)
 

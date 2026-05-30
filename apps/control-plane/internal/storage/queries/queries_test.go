@@ -3,21 +3,21 @@ package queries_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
@@ -29,42 +29,24 @@ var (
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
+	cfg, ok := testConfig()
+	if !ok {
+		fmt.Fprintln(os.Stderr, "skipping storage query integration tests: set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+		os.Exit(0)
+	}
 
-	var connStr string
-	var pgContainer *postgres.PostgresContainer
-
-	// 检查是否使用现有数据库
-	if testDBURL := os.Getenv("TEST_DATABASE_URL"); testDBURL != "" {
-		// 使用现有数据库
-		connStr = testDBURL
-	} else {
-		// 启动 PostgreSQL 容器
-		var err error
-		pgContainer, err = postgres.Run(ctx,
-			"postgres:16-alpine",
-			postgres.WithDatabase("superteam_test"),
-			postgres.WithUsername("test"),
-			postgres.WithPassword("test"),
-			testcontainers.WithWaitStrategy(
-				wait.ForLog("database system is ready to accept connections").
-					WithOccurrence(2).
-					WithStartupTimeout(60*time.Second)),
-		)
-		if err != nil {
-			panic(err)
-		}
-
-		// 获取连接字符串
-		connStr, err = pgContainer.ConnectionString(ctx, "sslmode=disable")
-		if err != nil {
-			panic(err)
-		}
+	if err := pingRedis(ctx, cfg.redisURL); err != nil {
+		panic(err)
 	}
 
 	// 连接数据库
 	var err error
-	testDB, err = pgxpool.New(ctx, connStr)
+	testDB, err = pgxpool.New(ctx, cfg.databaseURL)
 	if err != nil {
+		panic(err)
+	}
+	if err := testDB.Ping(ctx); err != nil {
+		testDB.Close()
 		panic(err)
 	}
 
@@ -81,13 +63,55 @@ func TestMain(m *testing.M) {
 
 	// 清理
 	testDB.Close()
-	if pgContainer != nil {
-		if err := testcontainers.TerminateContainer(pgContainer); err != nil {
-			panic(err)
-		}
-	}
 
 	os.Exit(code)
+}
+
+type integrationTestConfig struct {
+	databaseURL string
+	redisURL    string
+}
+
+func testConfig() (integrationTestConfig, bool) {
+	databaseURL := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL"))
+	redisURL := strings.TrimSpace(os.Getenv("TEST_REDIS_URL"))
+	if envBool("ALLOW_DATABASE_URL_FOR_QUERY_TESTS") {
+		if databaseURL == "" {
+			databaseURL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+		}
+		if redisURL == "" {
+			redisURL = strings.TrimSpace(os.Getenv("REDIS_URL"))
+		}
+	}
+	if databaseURL == "" || redisURL == "" {
+		return integrationTestConfig{}, false
+	}
+
+	return integrationTestConfig{
+		databaseURL: databaseURL,
+		redisURL:    redisURL,
+	}, true
+}
+
+func envBool(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func pingRedis(ctx context.Context, redisURL string) error {
+	options, err := redis.ParseURL(redisURL)
+	if err != nil {
+		return err
+	}
+
+	client := redis.NewClient(options)
+	defer client.Close()
+
+	return client.Ping(ctx).Err()
 }
 
 func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
@@ -100,6 +124,14 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		return err
 	}
 	defer conn.Close(ctx)
+
+	migrated, err := schemaAlreadyMigrated(ctx, conn)
+	if err != nil {
+		return err
+	}
+	if migrated {
+		return nil
+	}
 
 	// 发现所有迁移文件
 	migrationsDir := filepath.Join("..", "migrations")
@@ -126,10 +158,27 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
+func schemaAlreadyMigrated(ctx context.Context, conn *pgx.Conn) (bool, error) {
+	const query = `
+SELECT EXISTS (
+	SELECT 1
+	FROM information_schema.tables
+	WHERE table_schema = current_schema()
+		AND table_name = 'runtime_nodes'
+)
+`
+
+	var exists bool
+	if err := conn.QueryRow(ctx, query).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 // cleanupTestData 清理测试数据，避免测试之间相互影响
 func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 	ctx := context.Background()
-	_, err := db.Exec(ctx, "TRUNCATE audit_events, task_artifacts, task_events, task_state_history, task_executions, tasks, auth_runtime_tokens, auth_users, runtime_nodes RESTART IDENTITY CASCADE")
+	_, err := db.Exec(ctx, "TRUNCATE web_operation_logs, web_login_logs, audit_events, task_artifacts, task_events, task_state_history, task_executions, tasks, auth_sessions, auth_runtime_tokens, auth_users, runtime_nodes RESTART IDENTITY CASCADE")
 	require.NoError(t, err)
 }
 
@@ -648,6 +697,53 @@ func TestExpiredRuntimeToken(t *testing.T) {
 		TokenHash: "expired_token_hash",
 	})
 	assert.Error(t, err) // 应该找不到，因为已过期
+}
+
+func TestWebLoginLogs(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	user, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "login-log-user",
+		DisplayName:  pgtype.Text{String: "Login Log User", Valid: true},
+		Email:        pgtype.Text{String: "login-log-user@example.com", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
+		Status:       "active",
+	})
+	require.NoError(t, err)
+
+	success, err := testQueries.CreateWebLoginLog(ctx, queries.CreateWebLoginLogParams{
+		EventType: "login_succeeded",
+		UserID:    pgtype.Int8{Int64: user.ID, Valid: true},
+		Username:  "login-log-user",
+		SessionID: pgtype.Text{String: "session-1", Valid: true},
+		ClientIp:  pgtype.Text{String: "127.0.0.1", Valid: true},
+		UserAgent: pgtype.Text{String: "test-agent", Valid: true},
+		Result:    "succeeded",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "login_succeeded", success.EventType)
+
+	failed, err := testQueries.CreateWebLoginLog(ctx, queries.CreateWebLoginLogParams{
+		EventType:     "login_failed",
+		Username:      "login-log-user",
+		ClientIp:      pgtype.Text{String: "127.0.0.1", Valid: true},
+		UserAgent:     pgtype.Text{String: "test-agent", Valid: true},
+		Result:        "failed",
+		FailureReason: pgtype.Text{String: "invalid_credentials", Valid: true},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "login_failed", failed.EventType)
+
+	logs, err := testQueries.ListWebLoginLogs(ctx, queries.ListWebLoginLogsParams{
+		Offset: 0,
+		Limit:  10,
+	})
+	require.NoError(t, err)
+	require.Len(t, logs, 2)
+	assert.Equal(t, failed.ID, logs[0].ID)
+	assert.Equal(t, success.ID, logs[1].ID)
+	assert.Equal(t, "invalid_credentials", logs[0].FailureReason.String)
 }
 
 // ============================================================================

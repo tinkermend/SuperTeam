@@ -39,13 +39,13 @@ clean:
 # Database migrations
 migrate-up:
 	@test -n "$(DATABASE_URL)" || (echo "ERROR: DATABASE_URL not set" && exit 1)
-	atlas migrate apply --dir file://internal/storage/migrations --url "$(DATABASE_URL)"
+	atlas migrate apply --dir file://internal/storage/migrations --url "$(DATABASE_URL)" --revisions-schema atlas_schema_revisions
 
 migrate-down:
 	@test -n "$(DATABASE_URL)" || (echo "ERROR: DATABASE_URL not set" && exit 1)
 	@test -n "$(STEPS)" || (echo "ERROR: STEPS not set. Usage: make migrate-down STEPS=1" && exit 1)
-	atlas migrate down $(STEPS) --dir file://internal/storage/migrations --url "$(DATABASE_URL)"
+	atlas migrate down $(STEPS) --dir file://internal/storage/migrations --url "$(DATABASE_URL)" --revisions-schema atlas_schema_revisions
 
 migrate-status:
 	@test -n "$(DATABASE_URL)" || (echo "ERROR: DATABASE_URL not set" && exit 1)
-	atlas migrate status --dir file://internal/storage/migrations --url "$(DATABASE_URL)"
+	atlas migrate status --dir file://internal/storage/migrations --url "$(DATABASE_URL)" --revisions-schema atlas_schema_revisions

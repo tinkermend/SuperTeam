@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/auth"
 )
 
 type Server struct {
@@ -15,6 +16,7 @@ type Server struct {
 	taskHandler        *handlers.TaskHandler
 	runtimeHandler     *handlers.RuntimeHandler
 	runtimeAuthService middleware.AuthService
+	authService        *auth.Service
 }
 
 func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
@@ -42,6 +44,15 @@ func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.Runti
 
 	s.registerRoutes()
 	return s
+}
+
+func NewServerWithAuth(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, authService *auth.Service, runtimeAuthService ...middleware.AuthService) *Server {
+	server := NewServer(taskHandler, runtimeHandler, runtimeAuthService...)
+	server.authService = authService
+	if authService != nil {
+		auth.HandlerFromMux(auth.NewHandler(authService), server.router)
+	}
+	return server
 }
 
 func (s *Server) registerRoutes() {
