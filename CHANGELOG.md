@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Foundation Readiness 底座收口设计 (2026-05-30)
+
+- 新增 Foundation Readiness 设计文档，明确在进入具体功能开发前采用 Web、Control Plane、Runtime Agent、contracts 与共享 packages 的均衡收口方案。
+- 定义本阶段的维护性、可扩展性、可复用性标准，并明确不提前实现登录认证、Temporal、OpenFGA、完整业务页面和生产级 Provider 治理。
+
 #### Web 真实数据接入底座 (2026-05-29)
 
 - 为任务和 Runtime 节点补充最小 API client 与 core summary helper，后续页面可从 mock 数据平滑切换到真实接口。
