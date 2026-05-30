@@ -164,12 +164,6 @@ make generate
 
 # 仅生成 sqlc 代码
 make generate-sqlc
-
-# 运行 linter
-make lint
-
-# 格式化代码
-make fmt
 ```
 
 #### 添加新的 API 端点
@@ -177,12 +171,12 @@ make fmt
 1. 更新 `contracts/control-plane/openapi.yaml`
 2. 重新生成代码：`make generate`
 3. 实现 handler：`internal/api/handlers/`
-4. 注册路由：`internal/api/router.go`
+4. 注册产品 API 路由：`internal/api/server.go`
 5. 编写测试
 
 #### 数据库变更
 
-1. 创建新的迁移文件：`migrations/XXX_description.sql`
+1. 创建新的迁移文件：`apps/control-plane/internal/storage/migrations/<version>_description.sql`
 2. 运行迁移：`./scripts/db-migrate.sh`
 3. 更新 sqlc 查询：`internal/storage/queries/*.sql`
 4. 重新生成代码：`make generate-sqlc`
@@ -313,7 +307,9 @@ cargo run --manifest-path apps/runtime-agent/Cargo.toml -- \
   --node-id test-node &
 ```
 
-### 端到端测试流程
+### 手动联调 smoke 流程
+
+以下流程依赖真实 Provider 和 Runtime 环境可用，只用于手动 smoke 联调，不替代 `TestFakeRuntimeTaskLifecycle` 自动化生命周期测试。
 
 1. 创建任务
 
@@ -337,10 +333,7 @@ curl http://localhost:8080/api/v1/tasks/<task-id>
 
 3. 查看 Runtime Agent 日志
 
-```bash
-# 查看任务执行日志
-tail -f apps/runtime-agent/logs/node-001.log
-```
+Runtime Agent daemon 默认输出到 stdout；本地 `run` 诊断命令的执行事件和日志写入 `.superteam/runtime-runs`。
 
 ## 故障排查
 
@@ -358,11 +351,7 @@ psql $DATABASE_URL -c "SELECT 1"
 redis-cli -u $REDIS_URL ping
 ```
 
-3. 查看日志：
-
-```bash
-tail -f apps/control-plane/logs/control-plane.log
-```
+3. 查看启动终端的 stdout/stderr。Control Plane 默认不写入 `apps/control-plane` 下的日志文件。
 
 ### Runtime Agent 无法连接
 
