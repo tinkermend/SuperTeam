@@ -13,7 +13,6 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 ## 技术选型
 
 - Web：shadcn admin 脚手架 + React + shadcn/ui + Radix UI + Tailwind CSS
-- Desktop：Tauri + React/Vite，第一阶段仅保留空壳或占位；Web 主链路完整后再复用 `packages/views` 和 `packages/ui`
 - Control Plane：Go + chi/net/http；REST/OpenAPI 为主，使用 `oapi-codegen` 生成契约与客户端
 - Runtime Agent：Rust + Tokio + clap；HTTP claim + lease；WebSocket 回传实时事件；对外 HTTP/WS contract 参考 `AionUi` 的 WebUI/remote agent host；本机 Provider 通过语言无关的 `provider` contract 接入，Claude Code 和 OpenCode adapter 第一版参考 `desktop-cc-gui` 的 Rust/Tauri 后端会话、命令构造和事件桥；NATS 后续在多节点事件总线需要时再引入
 - 工作流：Temporal
@@ -60,7 +59,6 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 ```text
 apps/
   web/             # Web 控制台入口
-  desktop/         # 第一阶段仅空壳或占位，后续承载通知中心和快速访问
   control-plane/   # Control Plane Go 服务
     cmd/control-plane/
     internal/
@@ -89,12 +87,6 @@ apps/
       secrets/      # 本机密钥读取和脱敏，按实际需要创建
       health/       # 节点健康检查、环境探测，按实际需要创建
 
-packages/
-  ui/              # 纯 UI 组件，不含业务逻辑
-  views/           # 共享业务页面；第一阶段可先服务 Web，后续再给 Desktop 复用
-  core/            # 领域模型、状态、权限、schema 和领域 hooks
-  api-client/      # 生成客户端、请求封装和 API 类型
-
 contracts/
   control-plane/   # Console <-> Control Plane REST/OpenAPI 契约
   runtime/         # Runtime Agent <-> Control Plane HTTP/WS 契约
@@ -104,12 +96,6 @@ connectors/
   http/            # 通用 HTTP 外部能力接入
   custom/          # 客户专属连接器隔离放置
 ```
-
-Go 应用目录统一使用 `cmd/<name>/` + `internal/` 的结构。Control Plane 按领域能力分包。Runtime Agent 使用 `apps/runtime-agent` 下的 Rust Cargo crate，按节点执行能力拆分 `src` 模块；MVP 只创建实际用到的模块，不为空目录铺满。
-`packages/core` 不放 UI，不放浏览器/桌面特有 API。
-`packages/api-client` 只负责 API 访问，`packages/core` 基于它组织领域状态和 hooks。
-`packages/views` 不直接依赖 Next/Tauri/router；第一阶段重点服务 Web，后续通过平台适配层接入 Desktop。
-`apps/control-plane/internal/capability` 负责外部能力注册、授权、审计和调用编排；`connectors/` 放具体外部系统或 HTTP 能力适配实现。
 
 ## 协作规则
 
@@ -131,7 +117,7 @@ Go 应用目录统一使用 `cmd/<name>/` + `internal/` 的结构。Control Plan
 - 后续 Web 页面开发、UI 组件新增或视觉改造时，参考 `DESIGN.md` 的设计风格、基础组件风格和实施检查清单。
 - 不要盲目猜测,如果有不确定的地方与人类进行沟通
 - 开发完成后做好必要的功能测试,单元测试,回归测试
-- 数据库信息 见 docs/database/conn_info.md
+- 数据库信息 见 doc/database/conn_info.md
 - 核心数据完整性应该让 PostgreSQL 兜底；复杂状态机、权限、审批和跨系统一
   致性放应用层
 - 新增的数据库表增加对应的中文注释包含字段注释与表注释

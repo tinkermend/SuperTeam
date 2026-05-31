@@ -105,4 +105,6 @@ temp/
 .claude/
 .codex/
 skills-lock.json
-docs/
+
+# Local/private notes and sensitive documents.
+doc/
