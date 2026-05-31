@@ -3,6 +3,15 @@ import { render } from 'vitest-browser-react'
 import { AuthProvider } from './auth-provider'
 import { useAuth } from './use-auth'
 
+function createDeferredResponse() {
+  let resolve!: (response: Response) => void
+  const promise = new Promise<Response>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+
+  return { promise, resolve }
+}
+
 function AuthStatus() {
   const { isAuthenticated, isLoading, user } = useAuth()
 
@@ -14,6 +23,16 @@ function AuthStatus() {
     <p>
       {isAuthenticated ? `Signed in as ${user?.username}` : 'Signed out'}
     </p>
+  )
+}
+
+function LoginProbe() {
+  const { login } = useAuth()
+
+  return (
+    <button onClick={() => void login({ username: 'new', password: 'secret' })}>
+      Login
+    </button>
   )
 }
 
@@ -59,5 +78,87 @@ describe('AuthProvider', () => {
 
     await expect.element(screen.getByText('Signed out')).toBeVisible()
     expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a newer login user when the initial current-user request resolves later', async () => {
+    const initialMe = createDeferredResponse()
+    let currentUserCalls = 0
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+
+      if (url.endsWith('/api/auth/login')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              user: {
+                id: 2,
+                username: 'new',
+                status: 'active',
+              },
+            }),
+            {
+              status: 200,
+              headers: {
+                'content-type': 'application/json',
+              },
+            }
+          )
+        )
+      }
+
+      currentUserCalls += 1
+      if (currentUserCalls === 1) {
+        return initialMe.promise
+      }
+
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            user: {
+              id: 1,
+              username: 'old',
+              status: 'active',
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          }
+        )
+      )
+    })
+
+    const screen = await render(
+      <AuthProvider apiBaseUrl='http://control-plane.local' fetcher={fetcher}>
+        <AuthStatus />
+        <LoginProbe />
+      </AuthProvider>
+    )
+
+    await screen.getByRole('button', { name: 'Login' }).click()
+    await expect.element(screen.getByText('Signed in as new')).toBeVisible()
+
+    initialMe.resolve(
+      new Response(
+        JSON.stringify({
+          user: {
+            id: 1,
+            username: 'old',
+            status: 'active',
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }
+      )
+    )
+
+    await expect.element(screen.getByText('Signed in as new')).toBeVisible()
+    expect(screen.getByText('Signed in as old')).not.toBeInTheDocument()
   })
 })

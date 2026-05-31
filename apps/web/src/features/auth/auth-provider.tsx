@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -28,10 +29,21 @@ export function AuthProvider({
 }: AuthProviderProps) {
   const [user, setUser] = useState<UserSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const requestSequenceRef = useRef(0)
+
+  const startAuthRequest = useCallback(() => {
+    requestSequenceRef.current += 1
+    return requestSequenceRef.current
+  }, [])
+
+  const isCurrentRequest = useCallback((requestId: number) => {
+    return requestSequenceRef.current === requestId
+  }, [])
 
   const refreshCurrentUser = useCallback(
     async (options?: { showLoading?: boolean }) => {
       const showLoading = options?.showLoading ?? true
+      const requestId = startAuthRequest()
 
       if (showLoading) {
         setIsLoading(true)
@@ -39,58 +51,71 @@ export function AuthProvider({
 
       try {
         const response = await getCurrentUser({ baseUrl: apiBaseUrl, fetcher })
-        setUser(response.user)
+        if (isCurrentRequest(requestId)) {
+          setUser(response.user)
+        }
       } catch (error) {
         if (error instanceof ApiRequestError && error.status === 401) {
-          setUser(null)
+          if (isCurrentRequest(requestId)) {
+            setUser(null)
+          }
           return
         }
 
         throw error
       } finally {
-        if (showLoading) {
+        if (isCurrentRequest(requestId)) {
           setIsLoading(false)
         }
       }
     },
-    [apiBaseUrl, fetcher]
+    [apiBaseUrl, fetcher, isCurrentRequest, startAuthRequest]
   )
 
   const login = useCallback(
     async (credentials: { password: string; username: string }) => {
+      const requestId = startAuthRequest()
       const response = await loginRequest(
         { baseUrl: apiBaseUrl, fetcher },
         credentials
       )
-      setUser(response.user)
+      if (isCurrentRequest(requestId)) {
+        setUser(response.user)
+        setIsLoading(false)
+      }
     },
-    [apiBaseUrl, fetcher]
+    [apiBaseUrl, fetcher, isCurrentRequest, startAuthRequest]
   )
 
   const logout = useCallback(async () => {
+    const requestId = startAuthRequest()
     try {
       await logoutRequest({ baseUrl: apiBaseUrl, fetcher })
     } finally {
-      setUser(null)
+      if (isCurrentRequest(requestId)) {
+        setUser(null)
+        setIsLoading(false)
+      }
     }
-  }, [apiBaseUrl, fetcher])
+  }, [apiBaseUrl, fetcher, isCurrentRequest, startAuthRequest])
 
   useEffect(() => {
     let isMounted = true
+    const requestId = startAuthRequest()
 
     async function loadCurrentUser() {
       setIsLoading(true)
       try {
         const response = await getCurrentUser({ baseUrl: apiBaseUrl, fetcher })
-        if (isMounted) {
+        if (isMounted && isCurrentRequest(requestId)) {
           setUser(response.user)
         }
       } catch {
-        if (isMounted) {
+        if (isMounted && isCurrentRequest(requestId)) {
           setUser(null)
         }
       } finally {
-        if (isMounted) {
+        if (isMounted && isCurrentRequest(requestId)) {
           setIsLoading(false)
         }
       }
@@ -101,7 +126,7 @@ export function AuthProvider({
     return () => {
       isMounted = false
     }
-  }, [apiBaseUrl, fetcher])
+  }, [apiBaseUrl, fetcher, isCurrentRequest, startAuthRequest])
 
   useEffect(() => {
     function handleFocus() {

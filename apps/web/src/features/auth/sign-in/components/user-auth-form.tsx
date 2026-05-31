@@ -93,7 +93,9 @@ export function UserAuthForm({
           )}
         />
         {formError ? (
-          <p className='text-sm font-medium text-destructive'>{formError}</p>
+          <p className='text-sm font-medium text-destructive' role='alert'>
+            {formError}
+          </p>
         ) : null}
         <Button className='mt-2' disabled={isLoading}>
           {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
