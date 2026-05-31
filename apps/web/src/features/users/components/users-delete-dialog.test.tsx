@@ -13,7 +13,7 @@ const MOCK_USER: User = {
   firstName: 'John',
   lastName: 'Doe',
   username: 'john_doe',
-  email: 'johndoe@shadcn-admin.com',
+  email: 'johndoe@superteam.local',
   phoneNumber: '+959123456789',
   status: 'active',
   role: 'manager',

@@ -6,7 +6,7 @@ export const Route = createFileRoute('/clerk/(auth)/sign-in')({
   component: () => (
     <SignIn
       initialValues={{
-        emailAddress: 'your_mail+shadcn_admin@gmail.com',
+        emailAddress: 'admin@superteam.local',
       }}
       fallback={<Skeleton className='h-120 w-100' />}
     />
