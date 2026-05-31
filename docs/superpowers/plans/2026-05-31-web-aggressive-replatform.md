@@ -1668,14 +1668,25 @@ rm -rf \
   apps/web/src/routes/_authenticated/chats \
   apps/web/src/routes/_authenticated/help-center \
   apps/web/src/routes/_authenticated/settings \
+  apps/web/src/routes/\(auth\)/sign-up.tsx \
+  apps/web/src/routes/\(auth\)/forgot-password.tsx \
+  apps/web/src/routes/\(auth\)/otp.tsx \
+  apps/web/src/routes/\(auth\)/sign-in-2.tsx \
   apps/web/src/features/apps \
   apps/web/src/features/chats \
   apps/web/src/features/settings \
+  apps/web/src/features/auth/forgot-password \
+  apps/web/src/features/auth/otp \
+  apps/web/src/features/auth/sign-up \
   apps/web/src/assets/clerk-logo.tsx \
-  apps/web/src/assets/clerk-full-logo.tsx
+  apps/web/src/assets/clerk-full-logo.tsx \
+  apps/web/src/assets/logo.tsx \
+  apps/web/src/assets/brand-icons
 ```
 
 Keep `apps/web/src/routes/(errors)` and `apps/web/src/features/errors`.
+
+Why these extras: `sign-up.tsx`, `forgot-password.tsx`, `otp.tsx`, `sign-in-2.tsx` are scaffold auth routes that would be auto-registered by TanStack Router file-system generator. Their feature directories (`forgot-password/`, `otp/`, `sign-up/`) will have broken imports after Task 6 deletes the mock `auth-store.ts`. `logo.tsx` and `brand-icons/` are no longer imported after Task 6 Step 5 removes the `<Logo>` component and social login buttons from the auth layout and form.
 
 - [ ] **Step 6: Run route generation through typecheck**
 
