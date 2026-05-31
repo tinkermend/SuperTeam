@@ -42,15 +42,24 @@ type AuthSession struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+// Web 控制台平台用户表
 type AuthUser struct {
-	ID           int64              `json:"id"`
-	Username     string             `json:"username"`
-	DisplayName  pgtype.Text        `json:"display_name"`
-	Email        pgtype.Text        `json:"email"`
-	PasswordHash string             `json:"password_hash"`
-	Status       string             `json:"status"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	// 用户主键 ID
+	ID int64 `json:"id"`
+	// 登录账号，平台内唯一
+	Username string `json:"username"`
+	// 用户展示名称，当前 MVP 可为空
+	DisplayName pgtype.Text `json:"display_name"`
+	// 用户邮箱，当前 MVP 可为空
+	Email pgtype.Text `json:"email"`
+	// 用户密码哈希，禁止存储明文密码
+	PasswordHash string `json:"password_hash"`
+	// 用户状态：active 表示启用，disabled 表示禁用
+	Status string `json:"status"`
+	// 用户创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 用户最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type RuntimeNode struct {
@@ -142,18 +151,32 @@ type WebLoginLog struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
+// Web 控制台操作日志表
 type WebOperationLog struct {
-	ID           int64              `json:"id"`
-	UserID       pgtype.Int8        `json:"user_id"`
-	Username     pgtype.Text        `json:"username"`
-	Module       string             `json:"module"`
-	ResourceType pgtype.Text        `json:"resource_type"`
-	ResourceID   pgtype.Text        `json:"resource_id"`
-	Action       string             `json:"action"`
-	Result       string             `json:"result"`
-	RequestID    pgtype.Text        `json:"request_id"`
-	ClientIp     pgtype.Text        `json:"client_ip"`
-	UserAgent    pgtype.Text        `json:"user_agent"`
-	Details      []byte             `json:"details"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	// 操作日志主键 ID
+	ID int64 `json:"id"`
+	// 执行操作的用户 ID，用户删除后保留日志
+	UserID pgtype.Int8 `json:"user_id"`
+	// 执行操作的用户账号快照
+	Username pgtype.Text `json:"username"`
+	// 操作所属模块
+	Module string `json:"module"`
+	// 被操作资源类型
+	ResourceType pgtype.Text `json:"resource_type"`
+	// 被操作资源 ID
+	ResourceID pgtype.Text `json:"resource_id"`
+	// 操作动作
+	Action string `json:"action"`
+	// 操作结果：succeeded 或 failed
+	Result string `json:"result"`
+	// 请求 ID，便于链路追踪
+	RequestID pgtype.Text `json:"request_id"`
+	// 客户端 IP
+	ClientIp pgtype.Text `json:"client_ip"`
+	// 客户端 User-Agent
+	UserAgent pgtype.Text `json:"user_agent"`
+	// 操作上下文扩展信息
+	Details []byte `json:"details"`
+	// 操作发生时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }

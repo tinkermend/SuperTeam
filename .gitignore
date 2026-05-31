@@ -16,6 +16,7 @@ src-tauri/target/
 # oapi-codegen / sqlc
 *.gen.go
 *.sql.go
+!apps/control-plane/internal/storage/queries/*.sql.go
 
 # Environment / local config
 .env*
