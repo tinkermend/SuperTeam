@@ -15,6 +15,7 @@ export function Users() {
     queryKey: ["users"],
     queryFn: () => listUsers({ baseUrl: apiBaseUrl, limit: 50, offset: 0 }),
   });
+  const users = usersQuery.data?.items ?? [];
 
   return (
     <>
@@ -37,9 +38,11 @@ export function Users() {
               <p className="text-sm text-muted-foreground">加载中...</p>
             ) : usersQuery.isError ? (
               <p className="text-sm text-destructive">用户列表加载失败。</p>
+            ) : users.length === 0 ? (
+              <p className="text-sm text-muted-foreground">暂无用户记录。</p>
             ) : (
               <div className="divide-y rounded-md border">
-                {(usersQuery.data?.items ?? []).map((user) => (
+                {users.map((user) => (
                   <div key={user.id} className="flex items-center justify-between p-3 text-sm">
                     <span className="font-medium">{user.username}</span>
                     <Badge variant={user.status === "active" ? "default" : "secondary"}>{user.status}</Badge>

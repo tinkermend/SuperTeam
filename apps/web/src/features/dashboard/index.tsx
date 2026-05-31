@@ -65,7 +65,13 @@ export function Dashboard() {
               <CardDescription>来自 /api/auth/login-logs</CardDescription>
             </CardHeader>
             <CardContent className="text-sm">
-              {loginLogsQuery.isLoading ? "加载中" : `${loginLogsQuery.data?.items.length ?? 0} 条最近记录`}
+              {loginLogsQuery.isLoading ? (
+                "加载中"
+              ) : loginLogsQuery.isError ? (
+                <span className="text-destructive">登录日志加载失败</span>
+              ) : (
+                `${loginLogsQuery.data?.items.length ?? 0} 条最近记录`
+              )}
             </CardContent>
           </Card>
         </div>
