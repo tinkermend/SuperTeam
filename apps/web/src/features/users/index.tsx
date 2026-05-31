@@ -1,45 +1,55 @@
-import { getRouteApi } from '@tanstack/react-router'
-import { ConfigDrawer } from '@/components/config-drawer'
-import { Header } from '@/components/layout/header'
-import { Main } from '@/components/layout/main'
-import { ProfileDropdown } from '@/components/profile-dropdown'
-import { Search } from '@/components/search'
-import { ThemeSwitch } from '@/components/theme-switch'
-import { UsersDialogs } from './components/users-dialogs'
-import { UsersPrimaryButtons } from './components/users-primary-buttons'
-import { UsersProvider } from './components/users-provider'
-import { UsersTable } from './components/users-table'
-import { users } from './data/users'
+import { useQuery } from "@tanstack/react-query";
+import { listUsers } from "@/lib/api";
+import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Header } from "@/components/layout/header";
+import { Main } from "@/components/layout/main";
+import { Search } from "@/components/search";
+import { ThemeSwitch } from "@/components/theme-switch";
 
-const route = getRouteApi('/_authenticated/users/')
+const apiBaseUrl = resolveControlPlaneUrl();
 
 export function Users() {
-  const search = route.useSearch()
-  const navigate = route.useNavigate()
+  const usersQuery = useQuery({
+    queryKey: ["users"],
+    queryFn: () => listUsers({ baseUrl: apiBaseUrl, limit: 50, offset: 0 }),
+  });
 
   return (
-    <UsersProvider>
-      <Header fixed>
-        <Search className='me-auto' />
+    <>
+      <Header>
+        <Search />
         <ThemeSwitch />
-        <ConfigDrawer />
-        <ProfileDropdown />
       </Header>
-
-      <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
-        <div className='flex flex-wrap items-end justify-between gap-2'>
-          <div>
-            <h2 className='text-2xl font-bold tracking-tight'>User List</h2>
-            <p className='text-muted-foreground'>
-              Manage your users and their roles here.
-            </p>
-          </div>
-          <UsersPrimaryButtons />
+      <Main>
+        <div className="mb-4">
+          <h1 className="text-2xl font-bold tracking-tight">用户管理</h1>
+          <p className="text-sm text-muted-foreground">展示 Control Plane 返回的真实用户列表。</p>
         </div>
-        <UsersTable data={users} search={search} navigate={navigate} />
+        <Card>
+          <CardHeader>
+            <CardTitle>用户列表</CardTitle>
+            <CardDescription>当前阶段只读展示，写操作后续按权限和审计要求接入。</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {usersQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground">加载中...</p>
+            ) : usersQuery.isError ? (
+              <p className="text-sm text-destructive">用户列表加载失败。</p>
+            ) : (
+              <div className="divide-y rounded-md border">
+                {(usersQuery.data?.items ?? []).map((user) => (
+                  <div key={user.id} className="flex items-center justify-between p-3 text-sm">
+                    <span className="font-medium">{user.username}</span>
+                    <Badge variant={user.status === "active" ? "default" : "secondary"}>{user.status}</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </Main>
-
-      <UsersDialogs />
-    </UsersProvider>
-  )
+    </>
+  );
 }

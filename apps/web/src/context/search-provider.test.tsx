@@ -73,7 +73,7 @@ describe('SearchProvider and CommandMenu', () => {
     await expect.element(getByText('Light')).toBeInTheDocument()
     await expect.element(getByText('Dark')).toBeInTheDocument()
     await expect.element(getByText('System')).toBeInTheDocument()
-    await expect.element(getByText('Dashboard')).toBeInTheDocument()
+    await expect.element(getByText('工作台')).toBeInTheDocument()
   })
 
   it('does not show the dialog content when search is closed', async () => {
@@ -109,7 +109,7 @@ describe('SearchProvider and CommandMenu', () => {
 
     await openCommandPalette(screen)
 
-    await userEvent.click(screen.getByText('Tasks'))
+    await userEvent.click(screen.getByText('任务中心'))
 
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/tasks' })
     await expect
@@ -117,15 +117,15 @@ describe('SearchProvider and CommandMenu', () => {
       .not.toBeInTheDocument()
   })
 
-  it('navigates for nested sidebar items (group with sub-items)', async () => {
+  it('navigates to another SuperTeam route from the command palette', async () => {
     const screen = await renderWithSearchProvider()
-    const { getByPlaceholder, getByRole } = screen
+    const { getByPlaceholder, getByText } = screen
 
     await openCommandPalette(screen)
 
-    await userEvent.click(getByRole('option', { name: 'Settings Account' }))
+    await userEvent.click(getByText('审批中心'))
 
-    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/settings/account' })
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/approvals' })
     await expect
       .element(getByPlaceholder(COMMAND_MENU_PLACEHOLDER))
       .not.toBeInTheDocument()

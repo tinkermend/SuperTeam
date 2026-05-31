@@ -72,7 +72,7 @@ export function NavUser() {
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
-                <Link to="/settings/account">
+                <Link to="/users">
                   <BadgeCheck />
                   账户
                 </Link>
