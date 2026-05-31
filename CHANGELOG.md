@@ -9,13 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Web 控制台从旧 Next.js + 前端 workspace packages 结构激进重铺为 Vite + TanStack Router + shadcn-admin 单应用结构；前端 API client、认证状态、页面和 UI 组件集中到 `apps/web/src`，后端 Control Plane API 契约保持不变。
+- Web 控制台从旧 App Router + 前端 workspace packages 结构激进重铺为 Vite + TanStack Router + shadcn-admin 单应用结构；前端 API client、认证状态、页面和 UI 组件集中到 `apps/web/src`，后端 Control Plane API 契约保持不变。
 - Web 控制台移除 shadcn-admin demo 路由和 mock 数据页面，改为 SuperTeam 工作台、用户管理和任务/审批/审计等领域入口。
 - Web shadcn-admin 路由接入 `AuthProvider`，认证守卫统一未登录跳转 `/login`，并将登出流程切换为 Control Plane session logout。
 - Web shadcn-admin 登录表单从 mock cookie/token store 切换为 Control Plane cookie session auth，新增 `AuthProvider` / `useAuth` 负责加载当前用户、登录、登出和窗口聚焦后的会话刷新。
 - 将一键验收脚本扩展为开发门禁入口：`pnpm verify:foundation` 现在聚合契约、TypeScript、Go 和 Rust 基础验证，并新增 `verify:web`、`verify:control-plane`、`verify:runtime-agent`、`verify:db` 领域门禁。
 - 在 `docs/development.md` 中新增“开发验证门禁”，定义基础门禁、领域门禁、场景 smoke 和后续功能开发时的动态更新规则。
-- Web 控制台默认 Control Plane 地址在未显式配置 `NEXT_PUBLIC_CONTROL_PLANE_URL` 时改为跟随当前浏览器 host 推导，避免本地开发时 `127.0.0.1:3000` 页面请求 `localhost:8080` 导致登录 Cookie 不被后续请求携带。
+- Web 控制台在 Vite 环境下使用 `VITE_CONTROL_PLANE_URL` 配置 Control Plane 地址；未显式配置时继续跟随当前浏览器 host 推导，避免本地开发时 `127.0.0.1` 与 `localhost` 混用导致登录 Cookie 不被后续请求携带。
 - 调整 Control Plane storage sqlc 查询集成测试：
   - 移除 testcontainers 本机容器 fallback，避免完整 Go 测试依赖 Docker/Podman。
   - 测试仅在显式配置 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL` 时连接远端或专用测试环境运行；也支持通过 `ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1` 复用 `DATABASE_URL` 和 `REDIS_URL`。
@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 新 Web 壳接入 `shadcn-admin` 的侧边栏、顶部栏、主题、命令面板和响应式布局。
 - 保留真实 Control Plane 登录、当前用户、退出登录和路由保护主链路，继续使用 cookie session 与 `credentials: "include"`。
 - 新增 Vite 环境变量 `VITE_CONTROL_PLANE_URL`，保留本地 `localhost` / `127.0.0.1` host 对齐策略。
-- 删除不再服务 Web 的 `packages/ui`、`packages/views`、`packages/core` 和 `packages/api-client` 前端拆分。
+- 删除不再服务 Web 的旧 UI、views、core 和 api-client 前端 workspace 拆分。
 
 #### Web 外部能力占位入口 (2026-05-31)
 
@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 新增路由驱动的 `ConsoleAppShell`，统一 Web 控制台菜单 active、面包屑、登录用户展示和登出入口。
 - `ConsoleShell` 支持面包屑渲染，并保留业务页面通过插槽注入页面操作。
-- `@superteam/views` 新增平台通用 empty、loading、error、forbidden 状态组件，用户管理页接入列表加载、空数据和加载失败状态。
+- Web 控制台新增平台通用 empty、loading、error、forbidden 状态组件，用户管理页接入列表加载、空数据和加载失败状态。
 - 新增 Web 控制台 `not-found`、`error`、`loading` 和 `/forbidden` 页面，先形成公共异常与权限不足入口。
 
 #### Web 用户管理 MVP (2026-05-31)
@@ -49,20 +49,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 新增 Web 控制台用户管理页 `/users`，支持用户列表、创建用户、启用/禁用用户和重置密码。
 - Control Plane Auth API 新增用户管理接口：`GET/POST /api/auth/users`、`PATCH /api/auth/users/{id}/status`、`POST /api/auth/users/{id}/reset-password`。
 - 用户管理写操作接入 `web_operation_logs`，记录创建用户、启用/禁用用户和重置密码操作。
-- `@superteam/api-client` 新增用户管理 client 方法，并将认证用户 ID 对齐为后端用户主键 `int64`。
+- `apps/web/src/lib/api` 新增用户管理 client 方法，并将认证用户 ID 对齐为后端用户主键 `int64`。
 - 新增迁移为 `auth_users` 与 `web_operation_logs` 补充中文表注释和字段注释。
 
 #### Web 会话闭环体验 (2026-05-31)
 
 - Web 控制台 Shell 新增右上角用户菜单插槽，支持展示当前登录用户和账户操作。
 - 首页接入 `useAuth()` 当前用户状态，移除顶部账户区域的硬编码用户展示，并提供退出登录操作。
-- `@superteam/core` 登录态在窗口重新聚焦时复查 `/api/auth/me`，遇到 401 会清空当前用户并交由认证守卫回到登录页。
-- `@superteam/api-client` 增加带 HTTP status 的 `ApiRequestError`，供前端认证层稳定识别会话失效。
+- Web 认证状态在窗口重新聚焦时复查 `/api/auth/me`，遇到 401 会清空当前用户并交由认证守卫回到登录页。
+- 前端 API client 增加带 HTTP status 的 `ApiRequestError`，供前端认证层稳定识别会话失效。
 
 #### Web 登录主链路 (2026-05-31)
 
 - 接入 Web 控制台登录、当前用户和登出 API，使用 `auth_sessions` 持久化浏览器会话。
-- 新增 `@superteam/api-client` auth client、`@superteam/core` AuthProvider/useAuth 和 `@superteam/views` 登录页。
+- 在 `apps/web/src` 内新增 auth client、AuthProvider/useAuth 和登录页。
 - Web 根布局接入认证守卫，未登录用户进入 `/login`，登录成功后返回控制台首页。
 - 将浏览器 session token 以 SHA-256 hash 写入 `auth_sessions.token_hash`，避免原始 cookie token 明文入库。
 - 收紧 Control Plane CORS，使携带 cookie 的本地 Web 调用只允许 `localhost:3000` 和 `127.0.0.1:3000`。
@@ -74,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 新增 `web_operation_logs` 表，预留 Web 控制台后续功能操作日志、资源操作结果和请求上下文记录。
 - 登录、登录失败和登出链路接入 `web_login_logs` 写入；日志写入异常不阻断主登录链路。
 - 新增 `GET /api/auth/login-logs` 查询接口，要求有效登录 Cookie，并支持 `limit` / `offset` 分页参数。
-- `@superteam/api-client` 新增 `listLoginLogs`，供 Web 端调用登录日志接口。
+- 前端 API client 新增 `listLoginLogs`，供 Web 端调用登录日志接口。
 
 #### Core Summary 状态映射 (2026-05-30)
 
@@ -83,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### API Client 最小任务与 Runtime 覆盖 (2026-05-30)
 
-- 为 `packages/api-client` 补齐任务详情、任务状态更新、任务取消和 Runtime 节点详情的最小 client 方法。
+- 为前端 API client 补齐任务详情、任务状态更新、任务取消和 Runtime 节点详情的最小 client 方法。
 - 通过 Vitest 锁定这些方法使用的 Control Plane canonical path。
 
 #### Foundation 契约漂移检查 (2026-05-30)
