@@ -32,6 +32,11 @@ const (
 )
 
 const (
+	UserStatusActive   = "active"
+	UserStatusDisabled = "disabled"
+)
+
+const (
 	LoginEventSucceeded       = "login_succeeded"
 	LoginEventFailed          = "login_failed"
 	LoginEventLogoutSucceeded = "logout_succeeded"
@@ -42,6 +47,36 @@ const (
 	LoginFailureInvalidCredentials = "invalid_credentials"
 	LoginFailureUserDisabled       = "user_disabled"
 )
+
+const (
+	OperationModuleAuth              = "auth"
+	OperationResourceUser            = "auth_user"
+	OperationActionUserCreate        = "user.create"
+	OperationActionUserEnable        = "user.enable"
+	OperationActionUserDisable       = "user.disable"
+	OperationActionUserResetPassword = "user.reset_password"
+	OperationResultSucceeded         = "succeeded"
+	OperationResultFailed            = "failed"
+)
+
+// Actor 表示执行 Web 管理操作的当前登录用户。
+type Actor struct {
+	UserID   int64
+	Username string
+}
+
+// ListUsersFilter 用户列表过滤条件。
+type ListUsersFilter struct {
+	Status string
+	Limit  int32
+	Offset int32
+}
+
+// CreateManagedUserInput 创建平台用户的输入。
+type CreateManagedUserInput struct {
+	Username string
+	Password string
+}
 
 // LoginLog Web 控制台登录日志。
 type LoginLog struct {
@@ -73,4 +108,17 @@ type CreateLoginLogParams struct {
 type ListLoginLogsFilter struct {
 	Limit  int32
 	Offset int32
+}
+
+// CreateOperationLogParams 创建 Web 控制台操作日志所需字段。
+type CreateOperationLogParams struct {
+	UserID       *int64
+	Username     string
+	Module       string
+	ResourceType string
+	ResourceID   string
+	Action       string
+	Result       string
+	ClientIP     string
+	UserAgent    string
 }

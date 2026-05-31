@@ -1,7 +1,7 @@
 import type { ApiClientOptions } from "./health";
 
 export type UserSummary = {
-  id: string;
+  id: number;
   status: "active" | "disabled";
   username: string;
 };
@@ -17,6 +17,25 @@ export type LoginResponse = {
 
 export type CurrentUserResponse = {
   user: UserSummary;
+};
+
+export type UserListResponse = {
+  items: UserSummary[];
+};
+
+export type UserResponse = {
+  user: UserSummary;
+};
+
+export type ListUsersOptions = ApiClientOptions & {
+  limit?: number;
+  offset?: number;
+  status?: UserSummary["status"];
+};
+
+export type CreateUserRequest = {
+  password: string;
+  username: string;
 };
 
 export type LoginLogEventType = "login_succeeded" | "login_failed" | "logout_succeeded";
@@ -45,13 +64,23 @@ export type ListLoginLogsOptions = ApiClientOptions & {
   offset?: number;
 };
 
+export class ApiRequestError extends Error {
+  readonly status: number;
+
+  constructor(resource: string, status: number) {
+    super(`${resource} request failed with status ${status}`);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
 function buildApiUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
 }
 
 async function parseJson<T>(response: Response, resource: string): Promise<T> {
   if (!response.ok) {
-    throw new Error(`${resource} request failed with status ${response.status}`);
+    throw new ApiRequestError(resource, response.status);
   }
 
   return (await response.json()) as T;
@@ -118,4 +147,78 @@ export async function listLoginLogs(options: ListLoginLogsOptions): Promise<Logi
   });
 
   return parseJson<LoginLogListResponse>(response, "auth login logs");
+}
+
+export async function listUsers(options: ListUsersOptions): Promise<UserListResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const params = new URLSearchParams();
+  if (options.status !== undefined) {
+    params.set("status", options.status);
+  }
+  if (options.limit !== undefined) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.offset !== undefined) {
+    params.set("offset", String(options.offset));
+  }
+  const query = params.toString();
+  const path = query ? `/api/auth/users?${query}` : "/api/auth/users";
+  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+    },
+    method: "GET",
+  });
+
+  return parseJson<UserListResponse>(response, "auth users");
+}
+
+export async function createUser(options: ApiClientOptions, input: CreateUserRequest): Promise<UserResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/auth/users"), {
+    body: JSON.stringify(input),
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    method: "POST",
+  });
+
+  return parseJson<UserResponse>(response, "auth create user");
+}
+
+export async function updateUserStatus(
+  options: ApiClientOptions,
+  userID: number,
+  status: UserSummary["status"],
+): Promise<UserResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/auth/users/${userID}/status`), {
+    body: JSON.stringify({ status }),
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    method: "PATCH",
+  });
+
+  return parseJson<UserResponse>(response, "auth update user status");
+}
+
+export async function resetUserPassword(options: ApiClientOptions, userID: number, password: string): Promise<UserResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/auth/users/${userID}/reset-password`), {
+    body: JSON.stringify({ password }),
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    method: "POST",
+  });
+
+  return parseJson<UserResponse>(response, "auth reset user password");
 }

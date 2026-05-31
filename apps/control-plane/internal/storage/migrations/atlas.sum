@@ -1,5 +1,6 @@
-h1:9aXCi2jtj09VfoBBzypBAHQ8qQopTRBGxRbi3vKb1XQ=
+h1:QGpnOOgGq9sqXkr3qDZjhdm5qNiwwXTcvSLhffYQXNM=
 001_initial.sql h1:Y96mETwbcNPl9JFr4MdvO2U2lJBBpX5Imp9CeeeXDXQ=
 002_seed_dev_admin.sql h1:MyzHoyE4PeSpaFO+phuUUYEEyC8+QUJTU9hldtUvO1U=
 003_create_auth_sessions.sql h1:nx2WTM+r4KJhEZech4qnQpSmIGOLlQOJsGA3ebY1Cjs=
 004_create_web_logs.sql h1:wXze6Z4114bb7mtuduFJ+6c+nc47puJQa4z97WP7BiQ=
+005_comment_auth_users_and_web_operation_logs.sql h1:qzYVI0KqN9LY285/f7aACAGapkXfzAlPxLUPVTWKoig=

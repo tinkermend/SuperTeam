@@ -37,9 +37,9 @@ RETURNING *;
 
 -- name: ListUsers :many
 SELECT * FROM auth_users
-WHERE ($1::varchar IS NULL OR status = $1)
+WHERE (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar)
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2;
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: DeleteUser :exec
 DELETE FROM auth_users

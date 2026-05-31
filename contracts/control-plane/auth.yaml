@@ -131,6 +131,138 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/auth/users:
+    get:
+      summary: 查询平台用户列表
+      operationId: listUsers
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, disabled]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: 创建平台用户
+      operationId: createUser
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/users/{id}/status:
+    patch:
+      summary: 启用或禁用平台用户
+      operationId: updateUserStatus
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserStatusRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/users/{id}/reset-password:
+    post:
+      summary: 重置平台用户密码
+      operationId: resetUserPassword
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetUserPasswordRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
 components:
   securitySchemes:
     cookieAuth:
@@ -161,6 +293,52 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/LoginLogRecord'
+
+    UserListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSummary'
+
+    UserResponse:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: '#/components/schemas/UserSummary'
+
+    CreateUserRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 255
+        password:
+          type: string
+          format: password
+          minLength: 1
+
+    UpdateUserStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [active, disabled]
+
+    ResetUserPasswordRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          format: password
+          minLength: 1
 
     LoginLogRecord:
       type: object
@@ -202,8 +380,8 @@ components:
       required: [id, username, status]
       properties:
         id:
-          type: string
-          format: uuid
+          type: integer
+          format: int64
         username:
           type: string
         status:
@@ -220,6 +398,12 @@ components:
           type: string
 
   responses:
+    BadRequest:
+      description: 请求参数无效
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
     Unauthorized:
       description: 未登录或凭据无效
       content:

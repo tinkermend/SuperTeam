@@ -134,6 +134,7 @@ Go 应用目录统一使用 `cmd/<name>/` + `internal/` 的结构。Control Plan
 - 数据库信息 见 docs/database/conn_info.md
 - 核心数据完整性应该让 PostgreSQL 兜底；复杂状态机、权限、审批和跨系统一
   致性放应用层
+- 新增的数据库表增加对应的中文注释包含字段注释与表注释
 
 ## 其他规则
 

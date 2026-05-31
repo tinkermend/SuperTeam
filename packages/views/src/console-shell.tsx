@@ -1,4 +1,6 @@
-import type { ComponentType, ReactNode, SVGProps } from "react";
+"use client";
+
+import { useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 
 import { IconBadge, StatusPill } from "@superteam/ui";
 
@@ -15,8 +17,14 @@ export type ConsoleNavItem = {
   label: string;
 };
 
+export type ConsoleBreadcrumbItem = {
+  href?: string;
+  label: string;
+};
+
 export type ConsoleShellProps = {
   activeWorkspace: string;
+  breadcrumbs?: ConsoleBreadcrumbItem[];
   children: ReactNode;
   navItems: ConsoleNavItem[];
   pageActions?: ReactNode;
@@ -28,6 +36,7 @@ export type ConsoleShellProps = {
     name: string;
     role: string;
   };
+  userActions?: ReactNode;
 };
 
 function UserInitial({ name }: { name: string }) {
@@ -40,6 +49,7 @@ function UserInitial({ name }: { name: string }) {
 
 export function ConsoleShell({
   activeWorkspace,
+  breadcrumbs,
   children,
   navItems,
   pageActions,
@@ -48,7 +58,10 @@ export function ConsoleShell({
   productName,
   tenantName,
   user,
+  userActions,
 }: ConsoleShellProps) {
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-background text-foreground">
       <div className="grid min-h-screen w-full max-w-full grid-cols-1 lg:grid-cols-[264px_minmax(0,1fr)]">
@@ -124,7 +137,35 @@ export function ConsoleShell({
                   />
                 </label>
                 {pageActions}
-                <UserInitial name={user.name} />
+                <div className="relative flex shrink-0 items-center">
+                  <button
+                    aria-label={`${user.name} ${user.role}`}
+                    aria-expanded={userActions ? isUserMenuOpen : undefined}
+                    aria-haspopup={userActions ? "menu" : undefined}
+                    className="inline-flex items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => {
+                      if (userActions) {
+                        setIsUserMenuOpen((current) => !current);
+                      }
+                    }}
+                    type="button"
+                  >
+                    <UserInitial name={user.name} />
+                  </button>
+                  {userActions && isUserMenuOpen ? (
+                    <div
+                      aria-label="用户菜单"
+                      className="absolute right-0 top-full mt-2 min-w-44 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+                      role="menu"
+                    >
+                      <div className="border-b px-2 py-1.5">
+                        <p className="truncate text-sm font-medium">{user.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{user.role}</p>
+                      </div>
+                      <div className="mt-1 flex flex-col gap-1">{userActions}</div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
             <div className="w-full max-w-full overflow-hidden border-t lg:hidden">
@@ -147,6 +188,30 @@ export function ConsoleShell({
           </header>
 
           <main className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-5 overflow-x-hidden px-4 py-5 lg:px-6">
+            {breadcrumbs?.length ? (
+              <nav aria-label="面包屑" className="min-w-0 text-xs text-muted-foreground">
+                <ol className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  {breadcrumbs.map((item, index) => {
+                    const isLast = index === breadcrumbs.length - 1;
+
+                    return (
+                      <li className="flex min-w-0 items-center gap-1.5" key={`${item.label}-${index}`}>
+                        {index > 0 ? <span aria-hidden="true">/</span> : null}
+                        {item.href && !isLast ? (
+                          <a className="rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" href={item.href}>
+                            {item.label}
+                          </a>
+                        ) : (
+                          <span aria-current={isLast ? "page" : undefined} className={cn(isLast && "text-foreground")}>
+                            {item.label}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </nav>
+            ) : null}
             {pageDescription ? (
               <p className="max-w-3xl break-all text-sm text-muted-foreground sm:break-normal">{pageDescription}</p>
             ) : null}

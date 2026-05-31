@@ -1,5 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { getCurrentUser, listLoginLogs, login, logout } from "./auth-api";
+import {
+  ApiRequestError,
+  createUser,
+  getCurrentUser,
+  listLoginLogs,
+  listUsers,
+  login,
+  logout,
+  resetUserPassword,
+  updateUserStatus,
+} from "./auth-api";
 
 describe("auth api client", () => {
   it("posts login credentials with cookie credentials and parses the user", async () => {
@@ -7,7 +17,7 @@ describe("auth api client", () => {
       new Response(
         JSON.stringify({
           user: {
-            id: "00000000-0000-0000-0000-000000000001",
+            id: 1,
             username: "admin",
             status: "active",
           },
@@ -54,7 +64,7 @@ describe("auth api client", () => {
       new Response(
         JSON.stringify({
           user: {
-            id: "00000000-0000-0000-0000-000000000001",
+            id: 1,
             username: "admin",
             status: "active",
           },
@@ -168,6 +178,100 @@ describe("auth api client", () => {
     });
   });
 
+  it("loads users with filters and cookie credentials", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: 1,
+              username: "admin",
+              status: "active",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+
+    await expect(
+      listUsers({
+        baseUrl: "http://control-plane.local/",
+        fetcher,
+        limit: 20,
+        offset: 0,
+        status: "active",
+      }),
+    ).resolves.toMatchObject({
+      items: [{ username: "admin", status: "active" }],
+    });
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/auth/users?status=active&limit=20&offset=0", {
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+      },
+      method: "GET",
+    });
+  });
+
+  it("creates and manages users with cookie credentials", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          user: {
+            id: 2,
+            username: "operator",
+            status: "active",
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+
+    await createUser({ baseUrl: "http://control-plane.local/", fetcher }, { username: "operator", password: "secret" });
+    await updateUserStatus({ baseUrl: "http://control-plane.local/", fetcher }, 2, "disabled");
+    await resetUserPassword({ baseUrl: "http://control-plane.local/", fetcher }, 2, "new-secret");
+
+    expect(fetcher).toHaveBeenNthCalledWith(1, "http://control-plane.local/api/auth/users", {
+      body: JSON.stringify({ username: "operator", password: "secret" }),
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+    expect(fetcher).toHaveBeenNthCalledWith(2, "http://control-plane.local/api/auth/users/2/status", {
+      body: JSON.stringify({ status: "disabled" }),
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      method: "PATCH",
+    });
+    expect(fetcher).toHaveBeenNthCalledWith(3, "http://control-plane.local/api/auth/users/2/reset-password", {
+      body: JSON.stringify({ password: "new-secret" }),
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+  });
+
   it("throws a useful error when login is rejected", async () => {
     const fetcher = vi.fn(async () =>
       new Response(JSON.stringify({ error: "unauthorized" }), {
@@ -190,5 +294,26 @@ describe("auth api client", () => {
         },
       ),
     ).rejects.toThrow("auth login request failed with status 401");
+  });
+
+  it("exposes the response status on rejected auth requests", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }));
+
+    const promise =
+      getCurrentUser({
+        baseUrl: "http://control-plane.local/",
+        fetcher,
+      });
+
+    await expect(promise).rejects.toMatchObject({
+      name: "ApiRequestError",
+      status: 401,
+    });
+
+    try {
+      await promise;
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiRequestError);
+    }
   });
 });

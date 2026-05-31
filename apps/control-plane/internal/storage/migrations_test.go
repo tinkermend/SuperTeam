@@ -75,3 +75,22 @@ func TestWebLogsHaveForwardOnlyMigration(t *testing.T) {
 		}
 	}
 }
+
+func TestAuthUserManagementCommentsMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/005_comment_auth_users_and_web_operation_logs.sql")
+	if err != nil {
+		t.Fatalf("read auth user comments migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"COMMENT ON TABLE auth_users IS 'Web 控制台平台用户表'",
+		"COMMENT ON COLUMN auth_users.password_hash IS '用户密码哈希，禁止存储明文密码'",
+		"COMMENT ON TABLE web_operation_logs IS 'Web 控制台操作日志表'",
+		"COMMENT ON COLUMN web_operation_logs.action IS '操作动作'",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected auth user comments migration to contain %q", expected)
+		}
+	}
+}

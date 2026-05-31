@@ -2,6 +2,8 @@
 
 import { AuthProvider } from "@superteam/core/auth";
 
+import { resolveControlPlaneUrl } from "./control-plane-url";
+
 export function AuthShell({ children }: { children: React.ReactNode }) {
-  return <AuthProvider apiBaseUrl={process.env.NEXT_PUBLIC_CONTROL_PLANE_URL ?? "http://localhost:8080"}>{children}</AuthProvider>;
+  return <AuthProvider apiBaseUrl={resolveControlPlaneUrl()}>{children}</AuthProvider>;
 }

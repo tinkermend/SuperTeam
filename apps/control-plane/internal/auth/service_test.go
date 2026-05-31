@@ -15,6 +15,7 @@ type mockRepo struct {
 	runtimeTokens map[string]*RuntimeToken
 	sessions      map[string]*Session
 	loginLogs     []mockLoginLog
+	operationLogs []mockOperationLog
 }
 
 func newMockRepo() *mockRepo {
@@ -24,6 +25,7 @@ func newMockRepo() *mockRepo {
 		runtimeTokens: make(map[string]*RuntimeToken),
 		sessions:      make(map[string]*Session),
 		loginLogs:     []mockLoginLog{},
+		operationLogs: []mockOperationLog{},
 	}
 }
 
@@ -38,6 +40,16 @@ type mockLoginLog struct {
 	FailureReason string
 }
 
+type mockOperationLog struct {
+	UserID       *int64
+	Username     string
+	Module       string
+	ResourceType string
+	ResourceID   string
+	Action       string
+	Result       string
+}
+
 func (m *mockRepo) CreateUser(ctx context.Context, username, passwordHash string) (*User, error) {
 	user := &User{
 		ID:           int64(len(m.users) + 1),
@@ -49,6 +61,37 @@ func (m *mockRepo) CreateUser(ctx context.Context, username, passwordHash string
 	}
 	m.users[username] = user
 	m.usersByID[user.ID] = user
+	return user, nil
+}
+
+func (m *mockRepo) ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error) {
+	users := make([]*User, 0, len(m.usersByID))
+	for _, user := range m.usersByID {
+		if filter.Status != "" && user.Status != filter.Status {
+			continue
+		}
+		users = append(users, user)
+	}
+	return users, nil
+}
+
+func (m *mockRepo) UpdateUserStatus(ctx context.Context, userID int64, status string) (*User, error) {
+	user, ok := m.usersByID[userID]
+	if !ok {
+		return nil, errors.New("user not found")
+	}
+	user.Status = status
+	user.UpdatedAt = time.Now()
+	return user, nil
+}
+
+func (m *mockRepo) UpdateUserPassword(ctx context.Context, userID int64, passwordHash string) (*User, error) {
+	user, ok := m.usersByID[userID]
+	if !ok {
+		return nil, errors.New("user not found")
+	}
+	user.PasswordHash = passwordHash
+	user.UpdatedAt = time.Now()
 	return user, nil
 }
 
@@ -131,6 +174,19 @@ func (m *mockRepo) ListLoginLogs(ctx context.Context, filter ListLoginLogsFilter
 	return []LoginLog{}, nil
 }
 
+func (m *mockRepo) CreateOperationLog(ctx context.Context, params CreateOperationLogParams) error {
+	m.operationLogs = append(m.operationLogs, mockOperationLog{
+		UserID:       params.UserID,
+		Username:     params.Username,
+		Module:       params.Module,
+		ResourceType: params.ResourceType,
+		ResourceID:   params.ResourceID,
+		Action:       params.Action,
+		Result:       params.Result,
+	})
+	return nil
+}
+
 func TestNewService(t *testing.T) {
 	if _, err := NewService(nil); err == nil {
 		t.Fatal("expected error with nil repo")
@@ -151,6 +207,124 @@ func TestCreateUser(t *testing.T) {
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("password")); err != nil {
 		t.Error("password hash mismatch")
+	}
+}
+
+func TestListUsersUsesStatusFilter(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	activeUser, err := svc.CreateUser(context.Background(), "active-user", "password")
+	if err != nil {
+		t.Fatalf("create active user: %v", err)
+	}
+	disabledUser, err := svc.CreateUser(context.Background(), "disabled-user", "password")
+	if err != nil {
+		t.Fatalf("create disabled user: %v", err)
+	}
+	if _, err := repo.UpdateUserStatus(context.Background(), disabledUser.ID, UserStatusDisabled); err != nil {
+		t.Fatalf("disable user: %v", err)
+	}
+
+	users, err := svc.ListUsers(context.Background(), ListUsersFilter{Status: UserStatusActive})
+	if err != nil {
+		t.Fatalf("list users: %v", err)
+	}
+	if len(users) != 1 || users[0].ID != activeUser.ID {
+		t.Fatalf("expected only active user %d, got %#v", activeUser.ID, users)
+	}
+}
+
+func TestCreateManagedUserRecordsOperationLog(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	actor, err := svc.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+
+	created, err := svc.CreateManagedUser(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, CreateManagedUserInput{
+		Username: "operator",
+		Password: "secret",
+	})
+	if err != nil {
+		t.Fatalf("create managed user: %v", err)
+	}
+	if created.Username != "operator" || created.Status != UserStatusActive {
+		t.Fatalf("unexpected created user: %#v", created)
+	}
+	if len(repo.operationLogs) != 1 {
+		t.Fatalf("expected operation log, got %d", len(repo.operationLogs))
+	}
+	log := repo.operationLogs[0]
+	if log.Action != OperationActionUserCreate || log.ResourceID != "2" || log.Result != OperationResultSucceeded {
+		t.Fatalf("unexpected operation log: %#v", log)
+	}
+	if log.UserID == nil || *log.UserID != actor.ID || log.Username != actor.Username {
+		t.Fatalf("expected actor in operation log, got %#v", log)
+	}
+}
+
+func TestUpdateManagedUserStatusRecordsOperationLog(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	actor, err := svc.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	target, err := svc.CreateUser(context.Background(), "operator", "secret")
+	if err != nil {
+		t.Fatalf("create target: %v", err)
+	}
+
+	disabled, err := svc.UpdateManagedUserStatus(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, target.ID, UserStatusDisabled)
+	if err != nil {
+		t.Fatalf("disable user: %v", err)
+	}
+	if disabled.Status != UserStatusDisabled {
+		t.Fatalf("expected disabled status, got %q", disabled.Status)
+	}
+	enabled, err := svc.UpdateManagedUserStatus(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, target.ID, UserStatusActive)
+	if err != nil {
+		t.Fatalf("enable user: %v", err)
+	}
+	if enabled.Status != UserStatusActive {
+		t.Fatalf("expected active status, got %q", enabled.Status)
+	}
+	if len(repo.operationLogs) != 2 {
+		t.Fatalf("expected two operation logs, got %d", len(repo.operationLogs))
+	}
+	if repo.operationLogs[0].Action != OperationActionUserDisable {
+		t.Fatalf("expected disable operation, got %#v", repo.operationLogs[0])
+	}
+	if repo.operationLogs[1].Action != OperationActionUserEnable {
+		t.Fatalf("expected enable operation, got %#v", repo.operationLogs[1])
+	}
+}
+
+func TestResetManagedUserPasswordRecordsOperationLog(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	actor, err := svc.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	target, err := svc.CreateUser(context.Background(), "operator", "old-secret")
+	if err != nil {
+		t.Fatalf("create target: %v", err)
+	}
+
+	updated, err := svc.ResetManagedUserPassword(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, target.ID, "new-secret")
+	if err != nil {
+		t.Fatalf("reset password: %v", err)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(updated.PasswordHash), []byte("new-secret")); err != nil {
+		t.Fatalf("expected new password hash, got %v", err)
+	}
+	if len(repo.operationLogs) != 1 {
+		t.Fatalf("expected operation log, got %d", len(repo.operationLogs))
+	}
+	if repo.operationLogs[0].Action != OperationActionUserResetPassword {
+		t.Fatalf("expected reset password operation, got %#v", repo.operationLogs[0])
 	}
 }
 

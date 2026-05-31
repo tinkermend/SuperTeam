@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthGate } from "./auth-gate";
 
@@ -23,13 +23,17 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("AuthGate", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     replace.mockReset();
     authState = {
       isAuthenticated: false,
       isLoading: false,
     };
-    pathname = "/";
+    pathname = "/users";
   });
 
   it("redirects unauthenticated users away from protected pages", () => {
@@ -56,6 +60,36 @@ describe("AuthGate", () => {
     expect(screen.getByText("登录页")).toBeInTheDocument();
   });
 
+  it("renders the external capability placeholder without requiring login", () => {
+    pathname = "/capabilities";
+
+    render(
+      <AuthGate>
+        <main>外部能力占位页</main>
+      </AuthGate>,
+    );
+
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.getByText("外部能力占位页")).toBeInTheDocument();
+  });
+
+  it("renders undeveloped top-level placeholder pages without requiring login", () => {
+    for (const publicPathname of ["/", "/workspace", "/tasks", "/employees", "/workflows", "/approvals", "/audit"]) {
+      cleanup();
+      replace.mockReset();
+      pathname = publicPathname;
+
+      render(
+        <AuthGate>
+          <main>{publicPathname} 占位页</main>
+        </AuthGate>,
+      );
+
+      expect(replace).not.toHaveBeenCalled();
+      expect(screen.getByText(`${publicPathname} 占位页`)).toBeInTheDocument();
+    }
+  });
+
   it("redirects authenticated users away from the login page", () => {
     pathname = "/login";
     authState = {
@@ -77,6 +111,7 @@ describe("AuthGate", () => {
       isAuthenticated: true,
       isLoading: false,
     };
+    pathname = "/users";
 
     render(
       <AuthGate>

@@ -21,11 +21,31 @@ func (r *PgRepository) CreateUser(ctx context.Context, username, passwordHash st
 	user, err := r.q.CreateUser(ctx, queries.CreateUserParams{
 		Username:     username,
 		PasswordHash: passwordHash,
+		Status:       UserStatusActive,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return toDomainUser(user), nil
+}
+
+func (r *PgRepository) ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error) {
+	rows, err := r.q.ListUsers(ctx, queries.ListUsersParams{
+		Status: pgtype.Text{
+			String: filter.Status,
+			Valid:  filter.Status != "",
+		},
+		Offset: filter.Offset,
+		Limit:  filter.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	users := make([]*User, 0, len(rows))
+	for _, row := range rows {
+		users = append(users, toDomainUser(row))
+	}
+	return users, nil
 }
 
 func (r *PgRepository) GetUserByUsername(ctx context.Context, username string) (*User, error) {
@@ -38,6 +58,28 @@ func (r *PgRepository) GetUserByUsername(ctx context.Context, username string) (
 
 func (r *PgRepository) GetUserByID(ctx context.Context, id int64) (*User, error) {
 	user, err := r.q.GetUserByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return toDomainUser(user), nil
+}
+
+func (r *PgRepository) UpdateUserStatus(ctx context.Context, userID int64, status string) (*User, error) {
+	user, err := r.q.UpdateUser(ctx, queries.UpdateUserParams{
+		ID:     userID,
+		Status: status,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toDomainUser(user), nil
+}
+
+func (r *PgRepository) UpdateUserPassword(ctx context.Context, userID int64, passwordHash string) (*User, error) {
+	user, err := r.q.UpdateUserPassword(ctx, queries.UpdateUserPasswordParams{
+		ID:           userID,
+		PasswordHash: passwordHash,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -178,6 +220,39 @@ func (r *PgRepository) ListLoginLogs(ctx context.Context, filter ListLoginLogsFi
 		logs = append(logs, toDomainLoginLog(row))
 	}
 	return logs, nil
+}
+
+func (r *PgRepository) CreateOperationLog(ctx context.Context, params CreateOperationLogParams) error {
+	_, err := r.q.CreateWebOperationLog(ctx, queries.CreateWebOperationLogParams{
+		UserID: pgtype.Int8{
+			Int64: valueOrZero(params.UserID),
+			Valid: params.UserID != nil,
+		},
+		Username: pgtype.Text{
+			String: params.Username,
+			Valid:  params.Username != "",
+		},
+		Module: params.Module,
+		ResourceType: pgtype.Text{
+			String: params.ResourceType,
+			Valid:  params.ResourceType != "",
+		},
+		ResourceID: pgtype.Text{
+			String: params.ResourceID,
+			Valid:  params.ResourceID != "",
+		},
+		Action: params.Action,
+		Result: params.Result,
+		ClientIp: pgtype.Text{
+			String: params.ClientIP,
+			Valid:  params.ClientIP != "",
+		},
+		UserAgent: pgtype.Text{
+			String: params.UserAgent,
+			Valid:  params.UserAgent != "",
+		},
+	})
+	return err
 }
 
 func valueOrZero(value *int64) int64 {

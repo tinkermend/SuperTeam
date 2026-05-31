@@ -133,6 +133,111 @@ func TestAuthRoutesAreRegistered(t *testing.T) {
 	}
 }
 
+func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
+	authRepo := newRouteAuthRepo()
+	authService, err := auth.NewService(authRepo)
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	server := NewServerWithAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+	)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"admin","password":"admin"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp := httptest.NewRecorder()
+	server.ServeHTTP(loginResp, loginReq)
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("expected login to succeed, got %d: %s", loginResp.Code, loginResp.Body.String())
+	}
+	cookie := loginResp.Result().Cookies()[0]
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/auth/users", strings.NewReader(`{"username":"operator","password":"secret"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.AddCookie(cookie)
+	createResp := httptest.NewRecorder()
+	server.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected create user to succeed, got %d: %s", createResp.Code, createResp.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/auth/users?limit=10&offset=0", nil)
+	listReq.AddCookie(cookie)
+	listResp := httptest.NewRecorder()
+	server.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected list users to succeed, got %d: %s", listResp.Code, listResp.Body.String())
+	}
+	var listBody struct {
+		Items []struct {
+			Username string `json:"username"`
+			Status   string `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&listBody); err != nil {
+		t.Fatalf("decode list users response: %v", err)
+	}
+	if len(listBody.Items) != 2 {
+		t.Fatalf("expected two users, got %#v", listBody.Items)
+	}
+
+	statusReq := httptest.NewRequest(http.MethodPatch, "/api/auth/users/2/status", strings.NewReader(`{"status":"disabled"}`))
+	statusReq.Header.Set("Content-Type", "application/json")
+	statusReq.AddCookie(cookie)
+	statusResp := httptest.NewRecorder()
+	server.ServeHTTP(statusResp, statusReq)
+	if statusResp.Code != http.StatusOK {
+		t.Fatalf("expected status update to succeed, got %d: %s", statusResp.Code, statusResp.Body.String())
+	}
+
+	resetReq := httptest.NewRequest(http.MethodPost, "/api/auth/users/2/reset-password", strings.NewReader(`{"password":"new-secret"}`))
+	resetReq.Header.Set("Content-Type", "application/json")
+	resetReq.AddCookie(cookie)
+	resetResp := httptest.NewRecorder()
+	server.ServeHTTP(resetResp, resetReq)
+	if resetResp.Code != http.StatusOK {
+		t.Fatalf("expected password reset to succeed, got %d: %s", resetResp.Code, resetResp.Body.String())
+	}
+
+	if len(authRepo.operationLogs) != 3 {
+		t.Fatalf("expected three operation logs, got %#v", authRepo.operationLogs)
+	}
+	if authRepo.operationLogs[0].Action != auth.OperationActionUserCreate {
+		t.Fatalf("expected first operation to create user, got %#v", authRepo.operationLogs[0])
+	}
+	if authRepo.operationLogs[1].Action != auth.OperationActionUserDisable {
+		t.Fatalf("expected second operation to disable user, got %#v", authRepo.operationLogs[1])
+	}
+	if authRepo.operationLogs[2].Action != auth.OperationActionUserResetPassword {
+		t.Fatalf("expected third operation to reset password, got %#v", authRepo.operationLogs[2])
+	}
+}
+
+func TestAuthUserManagementRejectsUnauthenticatedRequests(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	server := NewServerWithAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/users", nil)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected users route to reject unauthenticated request, got %d", resp.Code)
+	}
+}
+
 func TestLoginLogsRejectUnauthenticatedRequests(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -285,20 +390,22 @@ func (s *routeRuntimeAuthService) ValidateRuntimeToken(ctx context.Context, node
 }
 
 type routeAuthRepo struct {
-	users      map[string]*auth.User
-	usersByID  map[int64]*auth.User
-	sessions   map[string]*auth.Session
-	loginLogs  []auth.LoginLog
-	nextUserID int64
+	users         map[string]*auth.User
+	usersByID     map[int64]*auth.User
+	sessions      map[string]*auth.Session
+	loginLogs     []auth.LoginLog
+	operationLogs []auth.CreateOperationLogParams
+	nextUserID    int64
 }
 
 func newRouteAuthRepo() *routeAuthRepo {
 	return &routeAuthRepo{
-		users:      map[string]*auth.User{},
-		usersByID:  map[int64]*auth.User{},
-		sessions:   map[string]*auth.Session{},
-		loginLogs:  []auth.LoginLog{},
-		nextUserID: 1,
+		users:         map[string]*auth.User{},
+		usersByID:     map[int64]*auth.User{},
+		sessions:      map[string]*auth.Session{},
+		loginLogs:     []auth.LoginLog{},
+		operationLogs: []auth.CreateOperationLogParams{},
+		nextUserID:    1,
 	}
 }
 
@@ -318,11 +425,40 @@ func (r *routeAuthRepo) GetUserByUsername(ctx context.Context, username string) 
 	return user, nil
 }
 
+func (r *routeAuthRepo) ListUsers(ctx context.Context, filter auth.ListUsersFilter) ([]*auth.User, error) {
+	users := make([]*auth.User, 0, len(r.usersByID))
+	for _, user := range r.usersByID {
+		if filter.Status != "" && user.Status != filter.Status {
+			continue
+		}
+		users = append(users, user)
+	}
+	return users, nil
+}
+
 func (r *routeAuthRepo) GetUserByID(ctx context.Context, id int64) (*auth.User, error) {
 	user, ok := r.usersByID[id]
 	if !ok {
 		return nil, auth.ErrUnauthorized
 	}
+	return user, nil
+}
+
+func (r *routeAuthRepo) UpdateUserStatus(ctx context.Context, userID int64, status string) (*auth.User, error) {
+	user, ok := r.usersByID[userID]
+	if !ok {
+		return nil, auth.ErrUnauthorized
+	}
+	user.Status = status
+	return user, nil
+}
+
+func (r *routeAuthRepo) UpdateUserPassword(ctx context.Context, userID int64, passwordHash string) (*auth.User, error) {
+	user, ok := r.usersByID[userID]
+	if !ok {
+		return nil, auth.ErrUnauthorized
+	}
+	user.PasswordHash = passwordHash
 	return user, nil
 }
 
@@ -390,4 +526,9 @@ func (r *routeAuthRepo) ListLoginLogs(ctx context.Context, filter auth.ListLogin
 		end = len(r.loginLogs)
 	}
 	return append([]auth.LoginLog{}, r.loginLogs[start:end]...), nil
+}
+
+func (r *routeAuthRepo) CreateOperationLog(ctx context.Context, params auth.CreateOperationLogParams) error {
+	r.operationLogs = append(r.operationLogs, params)
+	return nil
 }

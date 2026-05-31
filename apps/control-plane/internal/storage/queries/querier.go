@@ -24,6 +24,7 @@ type Querier interface {
 	CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) (TaskStateHistory, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error)
 	CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogParams) (WebLoginLog, error)
+	CreateWebOperationLog(ctx context.Context, arg CreateWebOperationLogParams) (WebOperationLog, error)
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteRuntimeNode(ctx context.Context, nodeID string) error

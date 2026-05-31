@@ -370,19 +370,19 @@ func (q *Queries) ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensPa
 
 const ListUsers = `-- name: ListUsers :many
 SELECT id, username, display_name, email, password_hash, status, created_at, updated_at FROM auth_users
-WHERE ($1::varchar IS NULL OR status = $1)
+WHERE ($1::varchar IS NULL OR status = $1::varchar)
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
 `
 
 type ListUsersParams struct {
-	Column1 string `json:"column_1"`
-	Offset  int32  `json:"offset"`
-	Limit   int32  `json:"limit"`
+	Status pgtype.Text `json:"status"`
+	Offset int32       `json:"offset"`
+	Limit  int32       `json:"limit"`
 }
 
 func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error) {
-	rows, err := q.db.Query(ctx, ListUsers, arg.Column1, arg.Offset, arg.Limit)
+	rows, err := q.db.Query(ctx, ListUsers, arg.Status, arg.Offset, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

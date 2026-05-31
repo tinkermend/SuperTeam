@@ -5,9 +5,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"strconv"
-
-	"github.com/google/uuid"
 )
 
 const SessionCookieName = "session_token"
@@ -38,13 +35,7 @@ func (h *HTTPHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(SessionCookieName)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	_, user, err := h.service.GetUserBySessionToken(r.Context(), cookie.Value)
+	_, user, err := h.currentSessionUser(r)
 	if err != nil {
 		h.writeAuthError(w, err)
 		return
@@ -54,12 +45,7 @@ func (h *HTTPHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) ListLoginLogs(w http.ResponseWriter, r *http.Request, params ListLoginLogsParams) {
-	cookie, err := r.Cookie(SessionCookieName)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	if _, _, err := h.service.GetUserBySessionToken(r.Context(), cookie.Value); err != nil {
+	if _, _, err := h.currentSessionUser(r); err != nil {
 		h.writeAuthError(w, err)
 		return
 	}
@@ -80,12 +66,117 @@ func (h *HTTPHandler) ListLoginLogs(w http.ResponseWriter, r *http.Request, para
 	writeJSON(w, http.StatusOK, LoginLogListResponse{Items: items})
 }
 
+func (h *HTTPHandler) ListUsers(w http.ResponseWriter, r *http.Request, params ListUsersParams) {
+	if _, _, err := h.currentSessionUser(r); err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+
+	status := ""
+	if params.Status != nil {
+		status = string(*params.Status)
+	}
+	users, err := h.service.ListUsers(r.Context(), ListUsersFilter{
+		Status: status,
+		Limit:  valueOrDefault(params.Limit, 20),
+		Offset: valueOrDefault(params.Offset, 0),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	items := make([]UserSummary, 0, len(users))
+	for _, user := range users {
+		items = append(items, toGeneratedUserSummary(user))
+	}
+	writeJSON(w, http.StatusOK, UserListResponse{Items: items})
+}
+
+func (h *HTTPHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	_, actorUser, err := h.currentSessionUser(r)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+
+	var body CreateUserJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	user, err := h.service.CreateManagedUser(r.Context(), toActor(actorUser), CreateManagedUserInput{
+		Username: body.Username,
+		Password: body.Password,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusCreated, UserResponse{User: toGeneratedUserSummary(user)})
+}
+
+func (h *HTTPHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request, id int64) {
+	_, actorUser, err := h.currentSessionUser(r)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+
+	var body UpdateUserStatusJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	user, err := h.service.UpdateManagedUserStatus(r.Context(), toActor(actorUser), id, string(body.Status))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, UserResponse{User: toGeneratedUserSummary(user)})
+}
+
+func (h *HTTPHandler) ResetUserPassword(w http.ResponseWriter, r *http.Request, id int64) {
+	_, actorUser, err := h.currentSessionUser(r)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+
+	var body ResetUserPasswordJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	user, err := h.service.ResetManagedUserPassword(r.Context(), toActor(actorUser), id, body.Password)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, UserResponse{User: toGeneratedUserSummary(user)})
+}
+
 func (h *HTTPHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(SessionCookieName); err == nil {
 		_ = h.service.Logout(r.Context(), cookie.Value)
 	}
 	http.SetCookie(w, clearSessionCookie())
 	writeJSON(w, http.StatusOK, map[string]string{"message": "logout success"})
+}
+
+func (h *HTTPHandler) currentSessionUser(r *http.Request) (*Session, *User, error) {
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil {
+		return nil, nil, ErrUnauthorized
+	}
+	return h.service.GetUserBySessionToken(r.Context(), cookie.Value)
+}
+
+func toActor(user *User) Actor {
+	return Actor{
+		UserID:   user.ID,
+		Username: user.Username,
+	}
 }
 
 func (h *HTTPHandler) writeAuthError(w http.ResponseWriter, err error) {
@@ -116,7 +207,7 @@ func toGeneratedLoginLogRecord(log LoginLog) LoginLogRecord {
 
 func toGeneratedUserSummary(user *User) UserSummary {
 	return UserSummary{
-		Id:       uuid.NewSHA1(uuid.NameSpaceOID, []byte(strconv.FormatInt(user.ID, 10))),
+		Id:       user.ID,
 		Status:   UserSummaryStatus(user.Status),
 		Username: user.Username,
 	}

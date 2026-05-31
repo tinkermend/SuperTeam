@@ -9,12 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Web 控制台默认 Control Plane 地址在未显式配置 `NEXT_PUBLIC_CONTROL_PLANE_URL` 时改为跟随当前浏览器 host 推导，避免本地开发时 `127.0.0.1:3000` 页面请求 `localhost:8080` 导致登录 Cookie 不被后续请求携带。
 - 调整 Control Plane storage sqlc 查询集成测试：
   - 移除 testcontainers 本机容器 fallback，避免完整 Go 测试依赖 Docker/Podman。
   - 测试仅在显式配置 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL` 时连接远端或专用测试环境运行；也支持通过 `ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1` 复用 `DATABASE_URL` 和 `REDIS_URL`。
   - 未配置测试环境时跳过 `apps/control-plane/internal/storage/queries` 集成测试。
 
 ### Added
+
+#### Web 外部能力占位入口 (2026-05-31)
+
+- 新增 Web 控制台一级菜单“外部能力”及 `/capabilities` 占位页。
+- 页面先说明后续外部能力扩展范围，包括 Dify Workflow、Deephub Agent、企业内部 HTTP 接口、数据分析服务、ITSM、CMDB/监控/日志平台、自研脚本服务和 MCP Server/Connector。
+- `/capabilities` 当前作为公开占位说明页，不要求登录态，避免点击一级菜单后被全局登录守卫重定向到登录页。
+- 为工作台、任务中心、数字员工、流程编排、审批中心和审计日志补齐公开占位页；除用户管理这类真实管理功能外，未开发一级菜单不再跳转登录页。
+
+#### Web 平台 Shell 完善 (2026-05-31)
+
+- 新增路由驱动的 `ConsoleAppShell`，统一 Web 控制台菜单 active、面包屑、登录用户展示和登出入口。
+- `ConsoleShell` 支持面包屑渲染，并保留业务页面通过插槽注入页面操作。
+- `@superteam/views` 新增平台通用 empty、loading、error、forbidden 状态组件，用户管理页接入列表加载、空数据和加载失败状态。
+- 新增 Web 控制台 `not-found`、`error`、`loading` 和 `/forbidden` 页面，先形成公共异常与权限不足入口。
+
+#### Web 用户管理 MVP (2026-05-31)
+
+- 新增 Web 控制台用户管理页 `/users`，支持用户列表、创建用户、启用/禁用用户和重置密码。
+- Control Plane Auth API 新增用户管理接口：`GET/POST /api/auth/users`、`PATCH /api/auth/users/{id}/status`、`POST /api/auth/users/{id}/reset-password`。
+- 用户管理写操作接入 `web_operation_logs`，记录创建用户、启用/禁用用户和重置密码操作。
+- `@superteam/api-client` 新增用户管理 client 方法，并将认证用户 ID 对齐为后端用户主键 `int64`。
+- 新增迁移为 `auth_users` 与 `web_operation_logs` 补充中文表注释和字段注释。
+
+#### Web 会话闭环体验 (2026-05-31)
+
+- Web 控制台 Shell 新增右上角用户菜单插槽，支持展示当前登录用户和账户操作。
+- 首页接入 `useAuth()` 当前用户状态，移除顶部账户区域的硬编码用户展示，并提供退出登录操作。
+- `@superteam/core` 登录态在窗口重新聚焦时复查 `/api/auth/me`，遇到 401 会清空当前用户并交由认证守卫回到登录页。
+- `@superteam/api-client` 增加带 HTTP status 的 `ApiRequestError`，供前端认证层稳定识别会话失效。
 
 #### Web 登录主链路 (2026-05-31)
 

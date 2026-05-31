@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -10,8 +11,11 @@ import (
 
 type Repository interface {
 	CreateUser(ctx context.Context, username, passwordHash string) (*User, error)
+	ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error)
 	GetUserByUsername(ctx context.Context, username string) (*User, error)
 	GetUserByID(ctx context.Context, id int64) (*User, error)
+	UpdateUserStatus(ctx context.Context, userID int64, status string) (*User, error)
+	UpdateUserPassword(ctx context.Context, userID int64, passwordHash string) (*User, error)
 	CreateRuntimeToken(ctx context.Context, nodeID, tokenHash string, expiresAt time.Time) error
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (*RuntimeToken, error)
 	CreateSession(ctx context.Context, session *Session, tokenHash string) error
@@ -20,6 +24,7 @@ type Repository interface {
 	UpdateSessionLastSeen(ctx context.Context, tokenHash string, lastSeenAt time.Time) error
 	CreateLoginLog(ctx context.Context, params CreateLoginLogParams) error
 	ListLoginLogs(ctx context.Context, filter ListLoginLogsFilter) ([]LoginLog, error)
+	CreateOperationLog(ctx context.Context, params CreateOperationLogParams) error
 }
 
 type Service struct {
@@ -39,6 +44,74 @@ func (s *Service) CreateUser(ctx context.Context, username, password string) (*U
 		return nil, err
 	}
 	return s.repo.CreateUser(ctx, username, string(hash))
+}
+
+func (s *Service) ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error) {
+	if filter.Limit <= 0 || filter.Limit > 100 {
+		filter.Limit = 20
+	}
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	return s.repo.ListUsers(ctx, filter)
+}
+
+func (s *Service) CreateManagedUser(ctx context.Context, actor Actor, input CreateManagedUserInput) (*User, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	user, err := s.repo.CreateUser(ctx, input.Username, string(hash))
+	if err != nil {
+		_ = s.recordUserOperation(ctx, actor, 0, OperationActionUserCreate, OperationResultFailed)
+		return nil, err
+	}
+	_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserCreate, OperationResultSucceeded)
+	return user, nil
+}
+
+func (s *Service) UpdateManagedUserStatus(ctx context.Context, actor Actor, userID int64, status string) (*User, error) {
+	action := OperationActionUserEnable
+	if status == UserStatusDisabled {
+		action = OperationActionUserDisable
+	}
+	user, err := s.repo.UpdateUserStatus(ctx, userID, status)
+	if err != nil {
+		_ = s.recordUserOperation(ctx, actor, userID, action, OperationResultFailed)
+		return nil, err
+	}
+	_ = s.recordUserOperation(ctx, actor, user.ID, action, OperationResultSucceeded)
+	return user, nil
+}
+
+func (s *Service) ResetManagedUserPassword(ctx context.Context, actor Actor, userID int64, password string) (*User, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	user, err := s.repo.UpdateUserPassword(ctx, userID, string(hash))
+	if err != nil {
+		_ = s.recordUserOperation(ctx, actor, userID, OperationActionUserResetPassword, OperationResultFailed)
+		return nil, err
+	}
+	_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserResetPassword, OperationResultSucceeded)
+	return user, nil
+}
+
+func (s *Service) recordUserOperation(ctx context.Context, actor Actor, userID int64, action, result string) error {
+	resourceID := ""
+	if userID > 0 {
+		resourceID = strconv.FormatInt(userID, 10)
+	}
+	return s.repo.CreateOperationLog(ctx, CreateOperationLogParams{
+		UserID:       &actor.UserID,
+		Username:     actor.Username,
+		Module:       OperationModuleAuth,
+		ResourceType: OperationResourceUser,
+		ResourceID:   resourceID,
+		Action:       action,
+		Result:       result,
+	})
 }
 
 func (s *Service) AuthenticateUser(ctx context.Context, username, password string) (*User, error) {

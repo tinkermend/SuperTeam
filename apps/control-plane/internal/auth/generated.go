@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/runtime"
-	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 const (
@@ -31,11 +30,29 @@ const (
 	Succeeded LoginLogRecordResult = "succeeded"
 )
 
+// Defines values for UpdateUserStatusRequestStatus.
+const (
+	UpdateUserStatusRequestStatusActive   UpdateUserStatusRequestStatus = "active"
+	UpdateUserStatusRequestStatusDisabled UpdateUserStatusRequestStatus = "disabled"
+)
+
 // Defines values for UserSummaryStatus.
 const (
-	Active   UserSummaryStatus = "active"
-	Disabled UserSummaryStatus = "disabled"
+	UserSummaryStatusActive   UserSummaryStatus = "active"
+	UserSummaryStatusDisabled UserSummaryStatus = "disabled"
 )
+
+// Defines values for ListUsersParamsStatus.
+const (
+	Active   ListUsersParamsStatus = "active"
+	Disabled ListUsersParamsStatus = "disabled"
+)
+
+// CreateUserRequest defines model for CreateUserRequest.
+type CreateUserRequest struct {
+	Password string `json:"password"`
+	Username string `json:"username"`
+}
 
 // CurrentUserResponse defines model for CurrentUserResponse.
 type CurrentUserResponse struct {
@@ -78,15 +95,41 @@ type LoginResponse struct {
 	User UserSummary `json:"user"`
 }
 
+// ResetUserPasswordRequest defines model for ResetUserPasswordRequest.
+type ResetUserPasswordRequest struct {
+	Password string `json:"password"`
+}
+
+// UpdateUserStatusRequest defines model for UpdateUserStatusRequest.
+type UpdateUserStatusRequest struct {
+	Status UpdateUserStatusRequestStatus `json:"status"`
+}
+
+// UpdateUserStatusRequestStatus defines model for UpdateUserStatusRequest.Status.
+type UpdateUserStatusRequestStatus string
+
+// UserListResponse defines model for UserListResponse.
+type UserListResponse struct {
+	Items []UserSummary `json:"items"`
+}
+
+// UserResponse defines model for UserResponse.
+type UserResponse struct {
+	User UserSummary `json:"user"`
+}
+
 // UserSummary defines model for UserSummary.
 type UserSummary struct {
-	Id       openapi_types.UUID `json:"id"`
-	Status   UserSummaryStatus  `json:"status"`
-	Username string             `json:"username"`
+	Id       int64             `json:"id"`
+	Status   UserSummaryStatus `json:"status"`
+	Username string            `json:"username"`
 }
 
 // UserSummaryStatus defines model for UserSummary.Status.
 type UserSummaryStatus string
+
+// BadRequest defines model for BadRequest.
+type BadRequest = ErrorResponse
 
 // Forbidden defines model for Forbidden.
 type Forbidden = ErrorResponse
@@ -106,8 +149,27 @@ type ListLoginLogsParams struct {
 	Offset *int32 `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// ListUsersParams defines parameters for ListUsers.
+type ListUsersParams struct {
+	Status *ListUsersParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	Limit  *int32                 `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int32                 `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListUsersParamsStatus defines parameters for ListUsers.
+type ListUsersParamsStatus string
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody LoginJSONBody
+
+// CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
+type CreateUserJSONRequestBody = CreateUserRequest
+
+// ResetUserPasswordJSONRequestBody defines body for ResetUserPassword for application/json ContentType.
+type ResetUserPasswordJSONRequestBody = ResetUserPasswordRequest
+
+// UpdateUserStatusJSONRequestBody defines body for UpdateUserStatus for application/json ContentType.
+type UpdateUserStatusJSONRequestBody = UpdateUserStatusRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -123,6 +185,18 @@ type ServerInterface interface {
 	// 获取当前登录用户信息
 	// (GET /api/auth/me)
 	GetCurrentUser(w http.ResponseWriter, r *http.Request)
+	// 查询平台用户列表
+	// (GET /api/auth/users)
+	ListUsers(w http.ResponseWriter, r *http.Request, params ListUsersParams)
+	// 创建平台用户
+	// (POST /api/auth/users)
+	CreateUser(w http.ResponseWriter, r *http.Request)
+	// 重置平台用户密码
+	// (POST /api/auth/users/{id}/reset-password)
+	ResetUserPassword(w http.ResponseWriter, r *http.Request, id int64)
+	// 启用或禁用平台用户
+	// (PATCH /api/auth/users/{id}/status)
+	UpdateUserStatus(w http.ResponseWriter, r *http.Request, id int64)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -150,6 +224,30 @@ func (_ Unimplemented) Logout(w http.ResponseWriter, r *http.Request) {
 // 获取当前登录用户信息
 // (GET /api/auth/me)
 func (_ Unimplemented) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 查询平台用户列表
+// (GET /api/auth/users)
+func (_ Unimplemented) ListUsers(w http.ResponseWriter, r *http.Request, params ListUsersParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 创建平台用户
+// (POST /api/auth/users)
+func (_ Unimplemented) CreateUser(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 重置平台用户密码
+// (POST /api/auth/users/{id}/reset-password)
+func (_ Unimplemented) ResetUserPassword(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 启用或禁用平台用户
+// (PATCH /api/auth/users/{id}/status)
+func (_ Unimplemented) UpdateUserStatus(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -240,6 +338,125 @@ func (siw *ServerInterfaceWrapper) GetCurrentUser(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetCurrentUser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// ListUsers operation middleware
+func (siw *ServerInterfaceWrapper) ListUsers(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListUsersParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "status", r.URL.Query(), &params.Status)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUsers(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// CreateUser operation middleware
+func (siw *ServerInterfaceWrapper) CreateUser(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateUser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// ResetUserPassword operation middleware
+func (siw *ServerInterfaceWrapper) ResetUserPassword(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResetUserPassword(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// UpdateUserStatus operation middleware
+func (siw *ServerInterfaceWrapper) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateUserStatus(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -373,6 +590,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/auth/me", wrapper.GetCurrentUser)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/auth/users", wrapper.ListUsers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/auth/users", wrapper.CreateUser)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/auth/users/{id}/reset-password", wrapper.ResetUserPassword)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/auth/users/{id}/status", wrapper.UpdateUserStatus)
 	})
 
 	return r

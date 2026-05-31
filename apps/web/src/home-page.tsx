@@ -2,40 +2,21 @@
 
 import {
   AlertTriangle,
-  Bell,
-  Bot,
   CheckCircle2,
   ClipboardCheck,
   Factory,
-  FileClock,
   Gauge,
-  GitFork,
-  Home,
-  LayoutGrid,
-  Network,
-  ShieldCheck,
-  Workflow,
 } from "lucide-react";
 
 import { IconBadge, MetricTile, SectionPanel, StatusPill, TimelineItem } from "@superteam/ui";
-import { ConsoleHealthView, ConsoleShell, type ConsoleNavItem } from "@superteam/views";
+import { ConsoleHealthView } from "@superteam/views";
 
 import { Button } from "@/components/ui/button";
+import { ConsoleAppShell, DefaultConsolePageActions } from "@/console-app-shell";
 
 type HomePageProps = {
   summary: string;
 };
-
-const navigationItems: ConsoleNavItem[] = [
-  { label: "首页", href: "/", icon: Home, active: true },
-  { label: "工作台", href: "/workspace", icon: LayoutGrid },
-  { label: "任务中心", href: "/tasks", icon: ClipboardCheck },
-  { label: "数字员工", href: "/employees", icon: Bot },
-  { label: "流程编排", href: "/workflows", icon: Workflow },
-  { label: "能力网关", href: "/capabilities", icon: Network },
-  { label: "审批中心", href: "/approvals", icon: ShieldCheck },
-  { label: "审计日志", href: "/audit", icon: FileClock },
-];
 
 const metrics = [
   {
@@ -91,24 +72,10 @@ const timelineItems = [
 
 export function HomePage({ summary }: HomePageProps) {
   return (
-    <ConsoleShell
-      activeWorkspace="默认工作区"
-      navItems={navigationItems}
-      pageActions={
-        <div className="hidden items-center gap-2 md:flex">
-          <Button aria-label="通知" size="icon" variant="ghost">
-            <Bell aria-hidden="true" />
-          </Button>
-          <Button aria-label="能力面板" size="icon" variant="ghost">
-            <GitFork aria-hidden="true" />
-          </Button>
-        </div>
-      }
+    <ConsoleAppShell
+      pageActions={<DefaultConsolePageActions />}
       pageDescription="外部系统骨架和复用组件已先行沉淀，真实任务、审批、Runtime、工件和审计数据可在接口稳定后逐步接入。"
       pageTitle="首页"
-      productName="SuperTeam"
-      tenantName="示例科技有限公司"
-      user={{ name: "张伟", role: "平台管理员" }}
     >
       <section className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => (
@@ -164,6 +131,6 @@ export function HomePage({ summary }: HomePageProps) {
           </SectionPanel>
         </div>
       </div>
-    </ConsoleShell>
+    </ConsoleAppShell>
   );
 }
