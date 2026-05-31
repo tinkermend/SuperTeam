@@ -36,6 +36,20 @@ function LoginProbe() {
   )
 }
 
+function FailedLoginProbe() {
+  const { login } = useAuth()
+
+  return (
+    <button
+      onClick={() => {
+        void login({ username: 'new', password: 'wrong' }).catch(() => {})
+      }}
+    >
+      Login
+    </button>
+  )
+}
+
 describe('AuthProvider', () => {
   it('clears the authenticated user when focus refresh receives 401', async () => {
     const fetcher = vi
@@ -159,6 +173,59 @@ describe('AuthProvider', () => {
     )
 
     await expect.element(screen.getByText('Signed in as new')).toBeVisible()
+    expect(screen.getByText('Signed in as old')).not.toBeInTheDocument()
+  })
+
+  it('clears loading when login fails after superseding a slow initial current-user request', async () => {
+    const initialMe = createDeferredResponse()
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+
+      if (url.endsWith('/api/auth/login')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'invalid_credentials' }), {
+            status: 401,
+            headers: {
+              'content-type': 'application/json',
+            },
+          })
+        )
+      }
+
+      return initialMe.promise
+    })
+
+    const screen = await render(
+      <AuthProvider apiBaseUrl='http://control-plane.local' fetcher={fetcher}>
+        <AuthStatus />
+        <FailedLoginProbe />
+      </AuthProvider>
+    )
+
+    await screen.getByRole('button', { name: 'Login' }).click()
+
+    await expect.element(screen.getByText('Signed out')).toBeVisible()
+    expect(screen.getByText('Loading')).not.toBeInTheDocument()
+
+    initialMe.resolve(
+      new Response(
+        JSON.stringify({
+          user: {
+            id: 1,
+            username: 'old',
+            status: 'active',
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }
+      )
+    )
+
+    await expect.element(screen.getByText('Signed out')).toBeVisible()
     expect(screen.getByText('Signed in as old')).not.toBeInTheDocument()
   })
 })

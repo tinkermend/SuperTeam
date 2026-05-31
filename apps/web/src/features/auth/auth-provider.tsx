@@ -75,13 +75,18 @@ export function AuthProvider({
   const login = useCallback(
     async (credentials: { password: string; username: string }) => {
       const requestId = startAuthRequest()
-      const response = await loginRequest(
-        { baseUrl: apiBaseUrl, fetcher },
-        credentials
-      )
-      if (isCurrentRequest(requestId)) {
-        setUser(response.user)
-        setIsLoading(false)
+      try {
+        const response = await loginRequest(
+          { baseUrl: apiBaseUrl, fetcher },
+          credentials
+        )
+        if (isCurrentRequest(requestId)) {
+          setUser(response.user)
+        }
+      } finally {
+        if (isCurrentRequest(requestId)) {
+          setIsLoading(false)
+        }
       }
     },
     [apiBaseUrl, fetcher, isCurrentRequest, startAuthRequest]
