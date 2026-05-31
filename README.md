@@ -26,18 +26,18 @@ contracts/
 ```bash
 pnpm install
 pnpm verify:contracts
-pnpm -r --if-present test
-pnpm -r --if-present typecheck
-go test ./apps/control-plane/...
-cargo test --manifest-path apps/runtime-agent/Cargo.toml
 pnpm verify:foundation
+pnpm verify:web
+pnpm verify:control-plane
+pnpm verify:runtime-agent
+pnpm verify:db
 pnpm dev:control-plane
 pnpm dev:web
 cp apps/runtime-agent/config.example.toml apps/runtime-agent/config.toml
 cargo run --manifest-path apps/runtime-agent/Cargo.toml -- --config apps/runtime-agent/config.toml
 ```
 
-`pnpm verify:foundation` 覆盖契约检查、前端测试、前端类型检查和 Runtime Agent Rust 测试。Control Plane Go 测试单独通过 `go test ./apps/control-plane/...` 运行；其中 `apps/control-plane/internal/storage/queries` 的远端集成测试默认在未配置 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL` 时跳过。确认数据库允许迁移和清理测试数据后，可设置 `TEST_DATABASE_URL`/`TEST_REDIS_URL`，或设置 `ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1` 后复用 `DATABASE_URL`/`REDIS_URL`。
+`pnpm verify:foundation` 覆盖契约检查、TypeScript 测试、TypeScript 类型检查、Control Plane Go 测试和 Runtime Agent Rust 测试。领域门禁和动态增长规则见 `docs/development.md` 的“开发验证门禁”。其中 `apps/control-plane/internal/storage/queries` 的远端集成测试默认在未配置 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL` 时跳过。确认数据库允许迁移和清理测试数据后，可设置 `TEST_DATABASE_URL`/`TEST_REDIS_URL`，或设置 `ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1` 后复用 `DATABASE_URL`/`REDIS_URL`。
 
 ## 当前基线
 

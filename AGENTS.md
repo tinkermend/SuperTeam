@@ -12,7 +12,7 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 
 ## 技术选型
 
-- Web：Next.js + React + shadcn/ui + Radix UI + Tailwind CSS
+- Web：shadcn admin 脚手架 + React + shadcn/ui + Radix UI + Tailwind CSS
 - Desktop：Tauri + React/Vite，第一阶段仅保留空壳或占位；Web 主链路完整后再复用 `packages/views` 和 `packages/ui`
 - Control Plane：Go + chi/net/http；REST/OpenAPI 为主，使用 `oapi-codegen` 生成契约与客户端
 - Runtime Agent：Rust + Tokio + clap；HTTP claim + lease；WebSocket 回传实时事件；对外 HTTP/WS contract 参考 `AionUi` 的 WebUI/remote agent host；本机 Provider 通过语言无关的 `provider` contract 接入，Claude Code 和 OpenCode adapter 第一版参考 `desktop-cc-gui` 的 Rust/Tauri 后端会话、命令构造和事件桥；NATS 后续在多节点事件总线需要时再引入
@@ -20,7 +20,7 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 - 数据层：PostgreSQL 为主存储；Redis 用于缓存、唤醒和轻量队列；S3 兼容存储用于日志、报告、附件和执行产物
 - Go 数据访问：pgx + sqlc + Atlas
 - 权限：先保留统一授权接口，避免业务代码散落权限判断；企业级授权目标为 OpenFGA
-- 前端状态与交互：TanStack Query、TanStack Table、xyflow、Monaco Editor、xterm.js；Web 使用 Next.js App Router；Desktop 路由后续通过平台适配层接入
+- 前端状态与交互：TanStack Query、TanStack Table、xyflow、Monaco Editor、xterm.js
 - 表单校验：React Hook Form + Zod
 - 图标：lucide-react
 - 测试：Vitest、Playwright、Go test + testify、Rust cargo test、Temporal workflow test suite
@@ -135,6 +135,20 @@ Go 应用目录统一使用 `cmd/<name>/` + `internal/` 的结构。Control Plan
 - 核心数据完整性应该让 PostgreSQL 兜底；复杂状态机、权限、审批和跨系统一
   致性放应用层
 - 新增的数据库表增加对应的中文注释包含字段注释与表注释
+
+## Agent skills
+
+### Issue tracker
+
+Issue 以本地 markdown 文件形式存放在 `.scratch/<feature-slug>/` 下。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+五个分类标签均使用默认值：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+单上下文布局：`CONTEXT.md` + `docs/adr/` 位于仓库根目录。详见 `docs/agents/domain.md`。
 
 ## 其他规则
 

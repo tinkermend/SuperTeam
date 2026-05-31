@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 将一键验收脚本扩展为开发门禁入口：`pnpm verify:foundation` 现在聚合契约、TypeScript、Go 和 Rust 基础验证，并新增 `verify:web`、`verify:control-plane`、`verify:runtime-agent`、`verify:db` 领域门禁。
+- 在 `docs/development.md` 中新增“开发验证门禁”，定义基础门禁、领域门禁、场景 smoke 和后续功能开发时的动态更新规则。
 - Web 控制台默认 Control Plane 地址在未显式配置 `NEXT_PUBLIC_CONTROL_PLANE_URL` 时改为跟随当前浏览器 host 推导，避免本地开发时 `127.0.0.1:3000` 页面请求 `localhost:8080` 导致登录 Cookie 不被后续请求携带。
 - 调整 Control Plane storage sqlc 查询集成测试：
   - 移除 testcontainers 本机容器 fallback，避免完整 Go 测试依赖 Docker/Podman。
