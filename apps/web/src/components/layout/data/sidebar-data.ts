@@ -27,15 +27,15 @@ import { type SidebarData } from '../types'
 
 export const sidebarData: SidebarData = {
   user: {
-    name: 'satnaing',
-    email: 'satnaingdev@gmail.com',
+    name: '平台管理员',
+    email: 'admin@superteam.local',
     avatar: '/avatars/shadcn.jpg',
   },
   teams: [
     {
-      name: 'Shadcn Admin',
+      name: 'SuperTeam',
       logo: Command,
-      plan: 'Vite + ShadcnUI',
+      plan: '数字员工控制平面',
     },
     {
       name: 'Acme Inc',
