@@ -1,8 +1,0 @@
-{
-  "enabled": false,
-  "engine": "codex",
-  "model": "gpt-5.5",
-  "newSessionThreshold": 5,
-  "checkIntervalMinutes": 30,
-  "applyMode": "createCandidate"
-}
