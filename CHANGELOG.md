@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Web shadcn-admin 路由接入 `AuthProvider`，认证守卫统一未登录跳转 `/login`，并将登出流程切换为 Control Plane session logout。
 - Web shadcn-admin 登录表单从 mock cookie/token store 切换为 Control Plane cookie session auth，新增 `AuthProvider` / `useAuth` 负责加载当前用户、登录、登出和窗口聚焦后的会话刷新。
 - 将一键验收脚本扩展为开发门禁入口：`pnpm verify:foundation` 现在聚合契约、TypeScript、Go 和 Rust 基础验证，并新增 `verify:web`、`verify:control-plane`、`verify:runtime-agent`、`verify:db` 领域门禁。
 - 在 `docs/development.md` 中新增“开发验证门禁”，定义基础门禁、领域门禁、场景 smoke 和后续功能开发时的动态更新规则。

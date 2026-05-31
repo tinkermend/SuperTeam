@@ -1,4 +1,5 @@
-import { Outlet } from '@tanstack/react-router'
+import { Navigate, Outlet, useLocation } from '@tanstack/react-router'
+import { useAuth } from '@/features/auth/use-auth'
 import { getCookie } from '@/lib/cookies'
 import { cn } from '@/lib/utils'
 import { LayoutProvider } from '@/context/layout-provider'
@@ -12,6 +13,21 @@ type AuthenticatedLayoutProps = {
 }
 
 export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
+  const { isAuthenticated, isLoading } = useAuth()
+  const location = useLocation()
+
+  if (isLoading) {
+    return (
+      <div className='flex h-svh items-center justify-center text-sm text-muted-foreground'>
+        加载中...
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to='/login' search={{ redirect: location.href }} replace />
+  }
+
   const defaultOpen = getCookie('sidebar_state') !== 'false'
   return (
     <SearchProvider>
