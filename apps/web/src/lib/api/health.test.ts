@@ -38,6 +38,37 @@ describe("getHealth", () => {
       }),
     );
   });
+
+  it("preserves a configured base path", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          status: "ok",
+          service: "control-plane",
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+
+    await getHealth({
+      baseUrl: "http://control-plane.local/root/",
+      fetcher,
+    });
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/root/health",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          accept: "application/json",
+        }),
+      }),
+    );
+  });
 });
 
 describe("control-plane OpenAPI contract", () => {

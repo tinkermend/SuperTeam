@@ -66,6 +66,34 @@ describe("listTasks", () => {
       method: "GET",
     });
   });
+
+  it("adds pagination query parameters in a deterministic order", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+
+    await expect(
+      listTasks({
+        baseUrl: "http://control-plane.local/root/",
+        fetcher,
+        limit: 50,
+        offset: 100,
+      }),
+    ).resolves.toEqual([]);
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/root/api/v1/tasks?limit=50&offset=100", {
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+      },
+      method: "GET",
+    });
+  });
 });
 
 describe("getTask", () => {

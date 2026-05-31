@@ -33,9 +33,29 @@ export type UpdateTaskStatusInput = {
   status: TaskStatus;
 };
 
-export async function listTasks(options: ApiClientOptions): Promise<TaskResponse[]> {
+export type ListTasksOptions = ApiClientOptions & {
+  limit?: number;
+  offset?: number;
+};
+
+function buildListTasksUrl(options: ListTasksOptions): string {
+  const params = new URLSearchParams();
+
+  if (options.limit !== undefined) {
+    params.set("limit", String(options.limit));
+  }
+
+  if (options.offset !== undefined) {
+    params.set("offset", String(options.offset));
+  }
+
+  const query = params.toString();
+  return buildApiUrl(options.baseUrl, `/api/v1/tasks${query ? `?${query}` : ""}`);
+}
+
+export async function listTasks(options: ListTasksOptions): Promise<TaskResponse[]> {
   const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/v1/tasks"), {
+  const response = await fetcher(buildListTasksUrl(options), {
     credentials: "include",
     headers: {
       accept: "application/json",

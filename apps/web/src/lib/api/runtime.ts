@@ -16,9 +16,29 @@ export type RuntimeNodeResponse = {
   updated_at?: string;
 };
 
-export async function listRuntimeNodes(options: ApiClientOptions): Promise<RuntimeNodeResponse[]> {
+export type ListRuntimeNodesOptions = ApiClientOptions & {
+  limit?: number;
+  offset?: number;
+};
+
+function buildListRuntimeNodesUrl(options: ListRuntimeNodesOptions): string {
+  const params = new URLSearchParams();
+
+  if (options.limit !== undefined) {
+    params.set("limit", String(options.limit));
+  }
+
+  if (options.offset !== undefined) {
+    params.set("offset", String(options.offset));
+  }
+
+  const query = params.toString();
+  return buildApiUrl(options.baseUrl, `/api/v1/runtime/nodes${query ? `?${query}` : ""}`);
+}
+
+export async function listRuntimeNodes(options: ListRuntimeNodesOptions): Promise<RuntimeNodeResponse[]> {
   const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/v1/runtime/nodes"), {
+  const response = await fetcher(buildListRuntimeNodesUrl(options), {
     credentials: "include",
     headers: {
       accept: "application/json",

@@ -59,6 +59,37 @@ describe("listRuntimeNodes", () => {
       }),
     ).rejects.toThrow("runtime nodes request failed with status 503");
   });
+
+  it("adds pagination query parameters in a deterministic order", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+
+    await expect(
+      listRuntimeNodes({
+        baseUrl: "http://control-plane.local/root/",
+        fetcher,
+        limit: 25,
+        offset: 75,
+      }),
+    ).resolves.toEqual([]);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/root/api/v1/runtime/nodes?limit=25&offset=75",
+      {
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+        },
+        method: "GET",
+      },
+    );
+  });
 });
 
 describe("getRuntimeNode", () => {
