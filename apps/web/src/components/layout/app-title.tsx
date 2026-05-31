@@ -1,16 +1,20 @@
+import { Link } from "@tanstack/react-router";
 import { Command } from "lucide-react";
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 export function AppTitle() {
+  const { setOpenMobile } = useSidebar();
+
   return (
     <SidebarMenu>
       <SidebarMenuItem>
         <SidebarMenuButton size="lg" asChild>
-          <a href="/">
+          <Link to="/" onClick={() => setOpenMobile(false)}>
             <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
               <Command />
             </div>
@@ -18,7 +22,7 @@ export function AppTitle() {
               <span className="truncate font-semibold">SuperTeam</span>
               <span className="truncate text-xs">数字员工控制平面</span>
             </div>
-          </a>
+          </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>

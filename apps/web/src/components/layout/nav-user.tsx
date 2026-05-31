@@ -74,7 +74,7 @@ export function NavUser() {
               <DropdownMenuItem asChild>
                 <Link to="/settings/account">
                   <BadgeCheck />
-                  Account
+                  账户
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
@@ -83,7 +83,7 @@ export function NavUser() {
                 onClick={() => setOpen(true)}
               >
                 <LogOut />
-                Sign out
+                退出登录
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
