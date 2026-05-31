@@ -15,6 +15,8 @@ type AuthenticatedLayoutProps = {
 export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
   const { isAuthenticated, isLoading } = useAuth()
   const location = useLocation()
+  const isAuthRoute =
+    location.pathname === '/login' || location.pathname === '/sign-in'
 
   if (isLoading) {
     return (
@@ -25,6 +27,10 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
   }
 
   if (!isAuthenticated) {
+    if (isAuthRoute) {
+      return null
+    }
+
     return <Navigate to='/login' search={{ redirect: location.href }} replace />
   }
 
