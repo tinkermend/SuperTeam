@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1 --port 3000",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 3000",
-    "test": "vitest run --browser.headless",
+    "test": "node ./scripts/vitest-run.mjs",
     "test:watch": "vitest --browser.headless",
     "test:browser:install": "playwright install chromium",
     "typecheck": "tsc -b --pretty false"

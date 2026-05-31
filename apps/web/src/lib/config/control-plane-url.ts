@@ -1,19 +1,32 @@
 const DEFAULT_CONTROL_PLANE_PORT = "8080";
 const DEFAULT_CONTROL_PLANE_URL = `http://localhost:${DEFAULT_CONTROL_PLANE_PORT}`;
 
-export function resolveControlPlaneUrl(configuredUrl = import.meta.env.VITE_CONTROL_PLANE_URL?.trim()) {
-  if (typeof window === "undefined") {
+type BrowserLocationLike = Pick<Location, "hostname" | "protocol">;
+
+export function resolveControlPlaneUrl(
+  configuredUrl = import.meta.env.VITE_CONTROL_PLANE_URL?.trim(),
+  locationLike: BrowserLocationLike | undefined = getBrowserLocation(),
+) {
+  if (!locationLike) {
     return configuredUrl || DEFAULT_CONTROL_PLANE_URL;
   }
 
   if (configuredUrl) {
-    return resolveBrowserControlPlaneUrl(configuredUrl);
+    return resolveBrowserControlPlaneUrl(configuredUrl, locationLike);
   }
 
-  return `${window.location.protocol}//${window.location.hostname}:${DEFAULT_CONTROL_PLANE_PORT}`;
+  return `${locationLike.protocol}//${locationLike.hostname}:${DEFAULT_CONTROL_PLANE_PORT}`;
 }
 
-function resolveBrowserControlPlaneUrl(configuredUrl: string) {
+function getBrowserLocation() {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  return window.location;
+}
+
+function resolveBrowserControlPlaneUrl(configuredUrl: string, locationLike: BrowserLocationLike) {
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(configuredUrl);
@@ -21,8 +34,8 @@ function resolveBrowserControlPlaneUrl(configuredUrl: string) {
     return configuredUrl;
   }
 
-  if (isLocalHost(parsedUrl.hostname) && isLocalHost(window.location.hostname)) {
-    parsedUrl.hostname = window.location.hostname;
+  if (isLocalHost(parsedUrl.hostname) && isLocalHost(locationLike.hostname)) {
+    parsedUrl.hostname = locationLike.hostname;
     return trimTrailingSlash(parsedUrl.toString());
   }
 
