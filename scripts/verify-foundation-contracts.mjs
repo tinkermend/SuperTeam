@@ -145,19 +145,23 @@ function readRustClientPaths() {
 
 function readTypeScriptClientPaths() {
   const files = [
-    "packages/api-client/src/health.ts",
-    "packages/api-client/src/tasks.ts",
-    "packages/api-client/src/runtime.ts",
+    "apps/web/src/lib/api/health.ts",
+    "apps/web/src/lib/api/tasks.ts",
+    "apps/web/src/lib/api/runtime.ts",
   ];
   const paths = new Set();
 
   for (const file of files) {
     const text = readText(file);
-    for (const match of text.matchAll(/["`]((?:\/health|\/api\/v1)[^"`$]*)["`]/g)) {
-      paths.add(normalizePath(match[1]));
-    }
-    for (const match of text.matchAll(/`((?:\/health|\/api\/v1)[^`]*)`/g)) {
-      paths.add(normalizePath(match[1].replaceAll("${taskId}", "{taskId}").replaceAll("${nodeId}", "{nodeId}")));
+    for (const match of text.matchAll(/["`]((?:\/health|\/api\/v1)(?:\/(?:[A-Za-z0-9_-]+|\$\{[A-Za-z0-9_]+\}))*)/g)) {
+      paths.add(
+        normalizePath(
+          match[1]
+            .replaceAll("${taskId}", "{taskId}")
+            .replaceAll("${nodeId}", "{nodeId}")
+            .replaceAll("${encodedNodeId}", "{nodeId}"),
+        ),
+      );
     }
   }
 
