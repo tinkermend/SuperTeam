@@ -3,6 +3,7 @@ import {
   ClipboardList,
   FileClock,
   GitBranch,
+  KeyRound,
   LayoutDashboard,
   Puzzle,
   Server,
@@ -50,6 +51,11 @@ export const sidebarData: SidebarData = {
           title: "Runtime 节点",
           url: "/runtime",
           icon: Server,
+        },
+        {
+          title: "权限中心",
+          url: "/permissions",
+          icon: KeyRound,
         },
         {
           title: "用户管理",
