@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const GetActiveTeamMembership = `-- name: GetActiveTeamMembership :one
@@ -117,6 +118,7 @@ SELECT EXISTS (
     AND t.deleted_at IS NULL
     AND rn.node_id = $4::varchar
     AND rn.status = 'online'
+    AND rn.last_heartbeat_at > $5::timestamptz
     AND rn.disabled_at IS NULL
     AND rn.archived_at IS NULL
     AND rns.tenant_id = t.tenant_id
@@ -139,10 +141,11 @@ SELECT EXISTS (
 `
 
 type RuntimeNodeCoversTaskScopeParams struct {
-	TaskID   uuid.UUID     `json:"task_id"`
-	TenantID uuid.UUID     `json:"tenant_id"`
-	TeamID   uuid.NullUUID `json:"team_id"`
-	NodeID   string        `json:"node_id"`
+	TaskID             uuid.UUID          `json:"task_id"`
+	TenantID           uuid.UUID          `json:"tenant_id"`
+	TeamID             uuid.NullUUID      `json:"team_id"`
+	NodeID             string             `json:"node_id"`
+	LastHeartbeatAfter pgtype.Timestamptz `json:"last_heartbeat_after"`
 }
 
 func (q *Queries) RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNodeCoversTaskScopeParams) (bool, error) {
@@ -151,6 +154,7 @@ func (q *Queries) RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNod
 		arg.TenantID,
 		arg.TeamID,
 		arg.NodeID,
+		arg.LastHeartbeatAfter,
 	)
 	var exists bool
 	err := row.Scan(&exists)

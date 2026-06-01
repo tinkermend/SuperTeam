@@ -49,6 +49,10 @@ func NewRuntimeHandler(runtimeService RuntimeService, taskService TaskService, p
 	}
 }
 
+func (h *RuntimeHandler) SetAuthorizer(authorizer authz.Authorizer) {
+	h.authorizer = authorizer
+}
+
 func (h *RuntimeHandler) RegisterNode(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		NodeID             string                 `json:"node_id"`

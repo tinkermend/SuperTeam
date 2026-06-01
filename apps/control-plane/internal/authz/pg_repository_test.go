@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
+	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
@@ -131,6 +133,9 @@ func TestPgRepositoryPassesRuntimeTaskScopeParams(t *testing.T) {
 	require.Equal(t, uuid.NullUUID{UUID: teamID, Valid: true}, store.runtimeParams.TeamID)
 	require.Equal(t, taskID, store.runtimeParams.TaskID)
 	require.Equal(t, "node-1", store.runtimeParams.NodeID)
+	require.True(t, store.runtimeParams.LastHeartbeatAfter.Valid)
+	expectedThreshold := time.Now().Add(-runtimepkg.HeartbeatTimeout)
+	require.WithinDuration(t, expectedThreshold, store.runtimeParams.LastHeartbeatAfter.Time, 2*time.Second)
 }
 
 func TestPgRepositoryPreservesUnexpectedErrors(t *testing.T) {

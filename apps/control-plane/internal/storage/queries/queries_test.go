@@ -312,6 +312,8 @@ func TestAuthzRuntimeNodeCoversTaskScope(t *testing.T) {
 	require.NoError(t, err)
 	now := pgtype.Timestamptz{}
 	require.NoError(t, now.Scan(time.Now()))
+	heartbeatAfter := pgtype.Timestamptz{}
+	require.NoError(t, heartbeatAfter.Scan(time.Now().Add(-time.Minute)))
 
 	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
 		NodeID:             "authz-node-001",
@@ -346,28 +348,31 @@ func TestAuthzRuntimeNodeCoversTaskScope(t *testing.T) {
 	require.NoError(t, err)
 
 	covered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
-		TenantID: tenantID,
-		TeamID:   uuid.NullUUID{UUID: teamID, Valid: true},
-		TaskID:   task.ID,
-		NodeID:   "authz-node-001",
+		TenantID:           tenantID,
+		TeamID:             uuid.NullUUID{UUID: teamID, Valid: true},
+		TaskID:             task.ID,
+		NodeID:             "authz-node-001",
+		LastHeartbeatAfter: heartbeatAfter,
 	})
 	require.NoError(t, err)
 	assert.True(t, covered)
 
 	missingNodeCovered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
-		TenantID: tenantID,
-		TeamID:   uuid.NullUUID{UUID: teamID, Valid: true},
-		TaskID:   task.ID,
-		NodeID:   "authz-node-missing",
+		TenantID:           tenantID,
+		TeamID:             uuid.NullUUID{UUID: teamID, Valid: true},
+		TaskID:             task.ID,
+		NodeID:             "authz-node-missing",
+		LastHeartbeatAfter: heartbeatAfter,
 	})
 	require.NoError(t, err)
 	assert.False(t, missingNodeCovered)
 
 	nilTeamCovered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
-		TenantID: tenantID,
-		TeamID:   uuid.NullUUID{},
-		TaskID:   task.ID,
-		NodeID:   "authz-node-001",
+		TenantID:           tenantID,
+		TeamID:             uuid.NullUUID{},
+		TaskID:             task.ID,
+		NodeID:             "authz-node-001",
+		LastHeartbeatAfter: heartbeatAfter,
 	})
 	require.NoError(t, err)
 	assert.False(t, nilTeamCovered)
@@ -379,13 +384,37 @@ func TestAuthzRuntimeNodeCoversTaskScope(t *testing.T) {
 	require.NoError(t, err)
 
 	offlineNodeCovered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
-		TenantID: tenantID,
-		TeamID:   uuid.NullUUID{UUID: teamID, Valid: true},
-		TaskID:   task.ID,
-		NodeID:   "authz-node-001",
+		TenantID:           tenantID,
+		TeamID:             uuid.NullUUID{UUID: teamID, Valid: true},
+		TaskID:             task.ID,
+		NodeID:             "authz-node-001",
+		LastHeartbeatAfter: heartbeatAfter,
 	})
 	require.NoError(t, err)
 	assert.False(t, offlineNodeCovered)
+
+	_, err = testQueries.UpdateRuntimeNodeStatus(ctx, queries.UpdateRuntimeNodeStatusParams{
+		NodeID: "authz-node-001",
+		Status: "online",
+	})
+	require.NoError(t, err)
+	staleHeartbeat := pgtype.Timestamptz{}
+	require.NoError(t, staleHeartbeat.Scan(time.Now().Add(-2*time.Hour)))
+	_, err = testQueries.UpdateRuntimeNodeHeartbeat(ctx, queries.UpdateRuntimeNodeHeartbeatParams{
+		NodeID:          "authz-node-001",
+		LastHeartbeatAt: staleHeartbeat,
+	})
+	require.NoError(t, err)
+
+	staleNodeCovered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
+		TenantID:           tenantID,
+		TeamID:             uuid.NullUUID{UUID: teamID, Valid: true},
+		TaskID:             task.ID,
+		NodeID:             "authz-node-001",
+		LastHeartbeatAfter: heartbeatAfter,
+	})
+	require.NoError(t, err)
+	assert.False(t, staleNodeCovered)
 }
 
 func TestAuthzRuntimeNodeRejectsMalformedTenantScopePayloads(t *testing.T) {
@@ -401,6 +430,8 @@ func TestAuthzRuntimeNodeRejectsMalformedTenantScopePayloads(t *testing.T) {
 	require.NoError(t, err)
 	now := pgtype.Timestamptz{}
 	require.NoError(t, now.Scan(time.Now()))
+	heartbeatAfter := pgtype.Timestamptz{}
+	require.NoError(t, heartbeatAfter.Scan(time.Now().Add(-time.Minute)))
 
 	nodeWithTeamID, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
 		NodeID:             "authz-malformed-tenant-team",
@@ -447,10 +478,11 @@ func TestAuthzRuntimeNodeRejectsMalformedTenantScopePayloads(t *testing.T) {
 	require.NoError(t, err)
 
 	tenantScopeWithTeamIDCovered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
-		TenantID: tenantID,
-		TeamID:   uuid.NullUUID{},
-		TaskID:   task.ID,
-		NodeID:   "authz-malformed-tenant-team",
+		TenantID:           tenantID,
+		TeamID:             uuid.NullUUID{},
+		TaskID:             task.ID,
+		NodeID:             "authz-malformed-tenant-team",
+		LastHeartbeatAfter: heartbeatAfter,
 	})
 	require.NoError(t, err)
 	assert.False(t, tenantScopeWithTeamIDCovered)
@@ -462,10 +494,11 @@ func TestAuthzRuntimeNodeRejectsMalformedTenantScopePayloads(t *testing.T) {
 	require.NoError(t, err)
 
 	tenantScopeWithWrongValueCovered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
-		TenantID: tenantID,
-		TeamID:   uuid.NullUUID{},
-		TaskID:   task.ID,
-		NodeID:   "authz-malformed-tenant-value",
+		TenantID:           tenantID,
+		TeamID:             uuid.NullUUID{},
+		TaskID:             task.ID,
+		NodeID:             "authz-malformed-tenant-value",
+		LastHeartbeatAfter: heartbeatAfter,
 	})
 	require.NoError(t, err)
 	assert.False(t, tenantScopeWithWrongValueCovered)

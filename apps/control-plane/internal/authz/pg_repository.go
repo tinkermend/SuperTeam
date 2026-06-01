@@ -3,10 +3,13 @@ package authz
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
+	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
@@ -55,11 +58,16 @@ func (r *PgRepository) RuntimeNodeCoversTaskScope(ctx context.Context, params Ru
 		teamID = uuid.NullUUID{UUID: *params.TeamID, Valid: true}
 	}
 	return r.q.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
-		TenantID: params.TenantID,
-		TeamID:   teamID,
-		TaskID:   params.TaskID,
-		NodeID:   params.NodeID,
+		TenantID:           params.TenantID,
+		TeamID:             teamID,
+		TaskID:             params.TaskID,
+		NodeID:             params.NodeID,
+		LastHeartbeatAfter: timestamptz(time.Now().Add(-runtimepkg.HeartbeatTimeout)),
 	})
+}
+
+func timestamptz(value time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: value, Valid: true}
 }
 
 func membershipFromTenantMember(member queries.TenantMember) Membership {

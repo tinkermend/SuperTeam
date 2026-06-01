@@ -202,6 +202,59 @@ func TestCurrentUserRequiresConsoleAuthorization(t *testing.T) {
 	}
 }
 
+func TestServerWithAuthzGatesRuntimeClaim(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	taskID := uuid.MustParse(routeTaskID)
+	taskService := &routeTaskService{
+		tasks: []*task.Task{{
+			ID:           taskID,
+			TenantID:     tenantID,
+			ProviderType: "codex",
+		}},
+	}
+	authorizer := &routeAuthorizer{allowed: false}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(taskService),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, taskService, &routePoller{}),
+		authService,
+		&routeRuntimeAuthService{},
+		authorizer,
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/tasks/claim?timeout=1", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("X-Node-ID", "node-1")
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("expected denied runtime claim to return 204, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if taskService.assignedTaskID != uuid.Nil {
+		t.Fatalf("expected denied runtime claim not to assign task, got %s", taskService.assignedTaskID)
+	}
+	if len(authorizer.checks) != 1 {
+		t.Fatalf("expected one runtime authz check, got %#v", authorizer.checks)
+	}
+	check := authorizer.checks[0]
+	if check.Actor.Type != authz.ActorRuntimeNode || check.Actor.ID != "node-1" {
+		t.Fatalf("expected runtime node actor, got %#v", check.Actor)
+	}
+	if check.Action != authz.ActionTaskClaim {
+		t.Fatalf("expected task claim action, got %q", check.Action)
+	}
+	if check.Resource.Type != authz.ResourceTask || check.Resource.ID != taskID.String() {
+		t.Fatalf("expected task resource %s, got %#v", taskID, check.Resource)
+	}
+	if check.TenantID != tenantID {
+		t.Fatalf("expected tenant %s, got %s", tenantID, check.TenantID)
+	}
+}
+
 func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	authRepo := newRouteAuthRepo()
 	authService, err := auth.NewService(authRepo)
@@ -424,7 +477,10 @@ func (s *routeRuntimeService) ListNodes(ctx context.Context, filter runtime.List
 	return []*runtime.Node{}, nil
 }
 
-type routeTaskService struct{}
+type routeTaskService struct {
+	tasks          []*task.Task
+	assignedTaskID uuid.UUID
+}
 
 func (s *routeTaskService) CreateTask(ctx context.Context, req task.CreateTaskRequest) (*task.Task, error) {
 	return &task.Task{ID: uuid.New(), Title: req.Title, ProviderType: req.ProviderType}, nil
@@ -435,7 +491,20 @@ func (s *routeTaskService) GetTask(ctx context.Context, taskID uuid.UUID) (*task
 }
 
 func (s *routeTaskService) ListTasks(ctx context.Context, filter task.ListTasksFilter) ([]*task.Task, error) {
-	return []*task.Task{}, nil
+	if s.tasks == nil {
+		return []*task.Task{}, nil
+	}
+	tasks := make([]*task.Task, 0, len(s.tasks))
+	for _, t := range s.tasks {
+		if filter.ProviderType != nil && t.ProviderType != *filter.ProviderType {
+			continue
+		}
+		if filter.Status != nil && t.Status != "" && t.Status != *filter.Status {
+			continue
+		}
+		tasks = append(tasks, t)
+	}
+	return tasks, nil
 }
 
 func (s *routeTaskService) AppendTaskEvent(ctx context.Context, req task.AppendTaskEventRequest) (*task.TaskEvent, error) {
@@ -451,6 +520,7 @@ func (s *routeTaskService) CancelTask(ctx context.Context, taskID uuid.UUID, can
 }
 
 func (s *routeTaskService) AssignTask(ctx context.Context, req task.AssignTaskRequest) (*task.Task, error) {
+	s.assignedTaskID = req.TaskID
 	return &task.Task{ID: req.TaskID, AssignedNodeID: &req.AssignedNodeID}, nil
 }
 

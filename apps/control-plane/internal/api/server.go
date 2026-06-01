@@ -66,6 +66,9 @@ func NewServerWithAuthz(
 	server := NewServer(taskHandler, runtimeHandler, runtimeAuthService)
 	server.authService = authService
 	server.authorizer = authorizer
+	if authorizer != nil && runtimeHandler != nil {
+		runtimeHandler.SetAuthorizer(authorizer)
+	}
 	if authService != nil {
 		auth.HandlerFromMux(auth.NewHandler(authService, authorizer), server.router)
 	}

@@ -48,6 +48,7 @@ SELECT EXISTS (
     AND t.deleted_at IS NULL
     AND rn.node_id = sqlc.arg('node_id')::varchar
     AND rn.status = 'online'
+    AND rn.last_heartbeat_at > sqlc.arg('last_heartbeat_after')::timestamptz
     AND rn.disabled_at IS NULL
     AND rn.archived_at IS NULL
     AND rns.tenant_id = t.tenant_id
