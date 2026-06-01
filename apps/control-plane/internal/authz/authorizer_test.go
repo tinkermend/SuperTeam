@@ -95,6 +95,34 @@ func TestDBAuthorizerDeniesConsoleAccessWithoutMembership(t *testing.T) {
 	}
 }
 
+func TestDBAuthorizerDeniesConsoleAccessWithNonConsoleResource(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000004")
+	repo := &memoryRepository{
+		tenantRoles: map[string]string{
+			tenantID.String() + ":user:" + userID.String(): RoleOwner,
+		},
+	}
+	authorizer := NewDBAuthorizer(repo)
+
+	decision, err := authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+		Action:   ActionConsoleAccess,
+		Resource: ResourceRef{Type: ResourceTask, ID: "task-1"},
+		TenantID: tenantID,
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if decision.Allowed {
+		t.Fatalf("expected console access to be denied, got %#v", decision)
+	}
+	if decision.Reason != ReasonInvalidResource {
+		t.Fatalf("expected invalid resource reason, got %q", decision.Reason)
+	}
+}
+
 func TestDBAuthorizerAllowsRuntimeClaimWhenScopeCoversTask(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
@@ -119,6 +147,30 @@ func TestDBAuthorizerAllowsRuntimeClaimWhenScopeCoversTask(t *testing.T) {
 	}
 }
 
+func TestDBAuthorizerDeniesRuntimeClaimWithNonTaskResource(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+	authorizer := NewDBAuthorizer(&memoryRepository{runtimeOK: true})
+
+	decision, err := authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorRuntimeNode, ID: "node-1"},
+		Action:   ActionTaskClaim,
+		Resource: ResourceRef{Type: ResourceConsole, ID: "web"},
+		TenantID: tenantID,
+		TeamID:   &teamID,
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if decision.Allowed {
+		t.Fatalf("expected runtime claim to be denied, got %#v", decision)
+	}
+	if decision.Reason != ReasonInvalidResource {
+		t.Fatalf("expected invalid resource reason, got %q", decision.Reason)
+	}
+}
+
 func TestDBAuthorizerDeniesRuntimeClaimWhenScopeDoesNotCoverTask(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
@@ -140,6 +192,74 @@ func TestDBAuthorizerDeniesRuntimeClaimWhenScopeDoesNotCoverTask(t *testing.T) {
 	}
 	if decision.Reason != ReasonRuntimeScopeMissing {
 		t.Fatalf("expected missing runtime scope reason, got %q", decision.Reason)
+	}
+}
+
+func TestDBAuthorizerDeniesInvalidUserActorID(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	authorizer := NewDBAuthorizer(&memoryRepository{tenantRoles: map[string]string{}})
+
+	decision, err := authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: "not-a-uuid"},
+		Action:   ActionConsoleAccess,
+		Resource: ResourceRef{Type: ResourceConsole, ID: "web"},
+		TenantID: tenantID,
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if decision.Allowed {
+		t.Fatalf("expected invalid actor to be denied, got %#v", decision)
+	}
+	if decision.Reason != ReasonInvalidActor {
+		t.Fatalf("expected invalid actor reason, got %q", decision.Reason)
+	}
+}
+
+func TestDBAuthorizerDeniesNilRepository(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000005")
+	authorizer := NewDBAuthorizer(nil)
+
+	decision, err := authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+		Action:   ActionConsoleAccess,
+		Resource: ResourceRef{Type: ResourceConsole, ID: "web"},
+		TenantID: tenantID,
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if decision.Allowed {
+		t.Fatalf("expected nil repository to be denied, got %#v", decision)
+	}
+	if !decision.RequiresAudit {
+		t.Fatalf("expected nil repository denial to require audit, got %#v", decision)
+	}
+}
+
+func TestDBAuthorizerUnsupportedActionReturnsErrorAndDenyDecision(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000006")
+	authorizer := NewDBAuthorizer(&memoryRepository{})
+
+	decision, err := authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+		Action:   "task.delete",
+		Resource: ResourceRef{Type: ResourceTask, ID: "task-1"},
+		TenantID: tenantID,
+	})
+
+	if !errors.Is(err, ErrUnsupportedAction) {
+		t.Fatalf("expected unsupported action error, got %v", err)
+	}
+	if decision.Allowed {
+		t.Fatalf("expected unsupported action to be denied, got %#v", decision)
+	}
+	if decision.Reason != ReasonUnsupportedAction {
+		t.Fatalf("expected unsupported action reason, got %q", decision.Reason)
 	}
 }
 

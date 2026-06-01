@@ -24,11 +24,25 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 		return Decision{Allowed: false, Reason: "authorizer is not configured", RequiresAudit: true}, nil
 	}
 	switch req.Action {
-	case ActionConsoleAccess, ActionTenantAccess:
+	case ActionConsoleAccess:
+		if !validResource(req.Resource, ResourceConsole) {
+			return deny(ReasonInvalidResource), nil
+		}
+		return a.checkTenantAccess(ctx, req)
+	case ActionTenantAccess:
+		if !validResource(req.Resource, ResourceTenant) {
+			return deny(ReasonInvalidResource), nil
+		}
 		return a.checkTenantAccess(ctx, req)
 	case ActionTeamAccess:
+		if !validResource(req.Resource, ResourceTeam) {
+			return deny(ReasonInvalidResource), nil
+		}
 		return a.checkTeamAccess(ctx, req)
 	case ActionTaskClaim:
+		if !validResource(req.Resource, ResourceTask) {
+			return deny(ReasonInvalidResource), nil
+		}
 		return a.checkRuntimeTaskClaim(ctx, req)
 	default:
 		return Decision{Allowed: false, Reason: ReasonUnsupportedAction, RequiresAudit: true}, ErrUnsupportedAction
@@ -112,6 +126,10 @@ func parseUUIDActor(actor ActorRef, expectedType string) (uuid.UUID, bool) {
 	}
 	id, err := uuid.Parse(actor.ID)
 	return id, err == nil
+}
+
+func validResource(resource ResourceRef, expectedType string) bool {
+	return resource.Type == expectedType && resource.ID != ""
 }
 
 func roleAllowsTenantAccess(role string) bool {

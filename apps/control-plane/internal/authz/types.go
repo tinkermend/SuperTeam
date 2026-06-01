@@ -38,6 +38,7 @@ const (
 	ReasonAllowed             = "allowed"
 	ReasonNoMembership        = "no active membership"
 	ReasonInvalidActor        = "invalid actor"
+	ReasonInvalidResource     = "invalid resource"
 	ReasonUnsupportedAction   = "unsupported action"
 	ReasonRuntimeScopeMissing = "runtime scope does not cover task"
 )
