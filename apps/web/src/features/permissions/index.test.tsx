@@ -254,6 +254,7 @@ describe("PermissionsCenter", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Runtime 范围" }));
     await userEvent.fill(screen.getByLabelText("Runtime Node ID"), runtimeNodeId);
     await userEvent.fill(screen.getByLabelText("租户 ID"), defaultTenantId);
+    await expect.element(screen.getByLabelText("范围值")).toHaveValue(defaultTenantId);
     await userEvent.click(screen.getByRole("button", { name: "新增" }));
 
     await vi.waitFor(() => {
@@ -277,6 +278,7 @@ describe("PermissionsCenter", () => {
     await userEvent.click(screen.getByRole("combobox", { name: "范围类型" }));
     await userEvent.click(screen.getByRole("option", { name: "团队" }));
     await userEvent.fill(screen.getByLabelText("团队 ID"), teamId);
+    await expect.element(screen.getByLabelText("范围值")).toHaveValue(teamId);
     await userEvent.click(screen.getByRole("button", { name: "新增" }));
 
     await vi.waitFor(() => {

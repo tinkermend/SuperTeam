@@ -116,7 +116,7 @@ export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
           <CardDescription>为 Runtime 节点绑定可领取任务的租户或团队范围。</CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_160px_auto]" noValidate onSubmit={handleSubmit}>
+          <form className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_160px_1fr_auto]" noValidate onSubmit={handleSubmit}>
             <div className="flex flex-col gap-2">
               <Label htmlFor="runtime-node-id">Runtime Node ID</Label>
               <Input id="runtime-node-id" required aria-invalid={Boolean(formError && !trimmedRuntimeNodeId)} value={runtimeNodeId} onChange={(event) => setRuntimeNodeId(event.target.value)} />
@@ -142,6 +142,10 @@ export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
                   </SelectGroup>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="runtime-scope-value">范围值</Label>
+              <Input id="runtime-scope-value" readOnly value={derivedScopeValue || "待填写"} />
             </div>
             <div className="flex items-end">
               <Button type="submit" disabled={createScopeMutation.isPending}>
