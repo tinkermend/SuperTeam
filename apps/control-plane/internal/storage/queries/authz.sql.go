@@ -123,7 +123,11 @@ SELECT EXISTS (
     AND rns.status = 'active'
     AND rns.disabled_at IS NULL
     AND (
-      rns.scope_type = 'tenant'
+      (
+        rns.scope_type = 'tenant'
+        AND rns.team_id IS NULL
+        AND rns.scope_value = t.tenant_id::text
+      )
       OR (
         rns.scope_type = 'team'
         AND t.team_id IS NOT NULL

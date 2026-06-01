@@ -257,6 +257,46 @@ func TestAuthzTenantMembershipQueries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "owner", member.Role)
 	assert.False(t, member.TeamID.Valid)
+
+	inactiveUser, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "authz-inactive-member",
+		DisplayName:  pgtype.Text{String: "Authz Inactive Member", Valid: true},
+		Email:        pgtype.Text{String: "authz-inactive-member@example.com", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
+		Status:       "active",
+	})
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
+		INSERT INTO tenant_members (tenant_id, principal_type, principal_id, role, status)
+		VALUES ($1, 'user', $2, 'member', 'invited')
+	`, tenantID, inactiveUser.ID)
+	require.NoError(t, err)
+	_, err = testQueries.GetActiveTenantMembership(ctx, queries.GetActiveTenantMembershipParams{
+		TenantID:      tenantID,
+		PrincipalType: "user",
+		PrincipalID:   inactiveUser.ID,
+	})
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+
+	disabledUser, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "authz-disabled-member",
+		DisplayName:  pgtype.Text{String: "Authz Disabled Member", Valid: true},
+		Email:        pgtype.Text{String: "authz-disabled-member@example.com", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
+		Status:       "active",
+	})
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
+		INSERT INTO tenant_members (tenant_id, principal_type, principal_id, role, status, disabled_at)
+		VALUES ($1, 'user', $2, 'member', 'active', NOW())
+	`, tenantID, disabledUser.ID)
+	require.NoError(t, err)
+	_, err = testQueries.GetActiveTenantMembership(ctx, queries.GetActiveTenantMembershipParams{
+		TenantID:      tenantID,
+		PrincipalType: "user",
+		PrincipalID:   disabledUser.ID,
+	})
+	require.ErrorIs(t, err, pgx.ErrNoRows)
 }
 
 func TestAuthzRuntimeNodeCoversTaskScope(t *testing.T) {
@@ -346,6 +386,89 @@ func TestAuthzRuntimeNodeCoversTaskScope(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.False(t, offlineNodeCovered)
+}
+
+func TestAuthzRuntimeNodeRejectsMalformedTenantScopePayloads(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+
+	providersJSON, err := json.Marshal(map[string]interface{}{"providers": []string{"claude-code"}})
+	require.NoError(t, err)
+	metadataJSON, err := json.Marshal(map[string]interface{}{"test": true})
+	require.NoError(t, err)
+	now := pgtype.Timestamptz{}
+	require.NoError(t, now.Scan(time.Now()))
+
+	nodeWithTeamID, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "authz-malformed-tenant-team",
+		Name:               "Authz Malformed Tenant Team",
+		SupportedProviders: providersJSON,
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           metadataJSON,
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	nodeWithWrongValue, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "authz-malformed-tenant-value",
+		Name:               "Authz Malformed Tenant Value",
+		SupportedProviders: providersJSON,
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           metadataJSON,
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	paramsJSON, err := json.Marshal(map[string]interface{}{"command": "authz"})
+	require.NoError(t, err)
+	task, err := testQueries.CreateTask(ctx, queries.CreateTaskParams{
+		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: true},
+		TeamID:       uuid.NullUUID{},
+		Title:        "Authz Tenant Scope Task",
+		Description:  pgtype.Text{String: "Task for tenant scope authz", Valid: true},
+		Status:       "pending",
+		Priority:     1,
+		ProviderType: "claude-code",
+		Params:       paramsJSON,
+	})
+	require.NoError(t, err)
+
+	_, err = testDB.Exec(ctx, `
+		INSERT INTO runtime_node_scopes (tenant_id, runtime_node_id, team_id, scope_type, scope_value, status)
+		VALUES ($1, $2, $3, 'tenant', $1::text, 'active')
+	`, tenantID, nodeWithTeamID.ID, teamID)
+	require.NoError(t, err)
+
+	tenantScopeWithTeamIDCovered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
+		TenantID: tenantID,
+		TeamID:   uuid.NullUUID{},
+		TaskID:   task.ID,
+		NodeID:   "authz-malformed-tenant-team",
+	})
+	require.NoError(t, err)
+	assert.False(t, tenantScopeWithTeamIDCovered)
+
+	_, err = testDB.Exec(ctx, `
+		INSERT INTO runtime_node_scopes (tenant_id, runtime_node_id, scope_type, scope_value, status)
+		VALUES ($1, $2, 'tenant', 'not-the-tenant', 'active')
+	`, tenantID, nodeWithWrongValue.ID)
+	require.NoError(t, err)
+
+	tenantScopeWithWrongValueCovered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
+		TenantID: tenantID,
+		TeamID:   uuid.NullUUID{},
+		TaskID:   task.ID,
+		NodeID:   "authz-malformed-tenant-value",
+	})
+	require.NoError(t, err)
+	assert.False(t, tenantScopeWithWrongValueCovered)
 }
 
 // ============================================================================
