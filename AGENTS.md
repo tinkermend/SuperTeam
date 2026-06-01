@@ -34,8 +34,8 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 - 主键统一命名为 `id`
 - 时间戳字段统一使用 `created_at`, `updated_at`, `deleted_at`
 - 外键字段命名为 `{referenced_table}_id`
-
-**模块前缀定义**：
+- 新增的数据库表增加对应的中文注释包含字段注释与表注释
+- **模块前缀定义**：
 
 - `runtime_*` - Runtime Agent 节点管理
 - `task_*` 或 `tasks` - 任务管理（核心表简化为 `tasks`）
@@ -114,13 +114,8 @@ connectors/
 ## 开发规则
 
 - 每次功能开发完成写`CHANGELOG.md` 记录变更日志
-- 后续 Web 页面开发、UI 组件新增或视觉改造时，参考 `DESIGN.md` 的设计风格、基础组件风格和实施检查清单。
 - 不要盲目猜测,如果有不确定的地方与人类进行沟通
 - 开发完成后做好必要的功能测试,单元测试,回归测试
-- 数据库信息 见 doc/database/conn_info.md
-- 核心数据完整性应该让 PostgreSQL 兜底；复杂状态机、权限、审批和跨系统一
-  致性放应用层
-- 新增的数据库表增加对应的中文注释包含字段注释与表注释
 
 ## Agent skills
 
