@@ -267,6 +267,50 @@ func TestDBAuthorizerDeniesTenantAccessWithMismatchedTenantResourceID(t *testing
 	}
 }
 
+func TestDBAuthorizerRuntimeScopeManageRequiresTenantOwnerOrAdmin(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+	tests := []struct {
+		name    string
+		role    string
+		allowed bool
+	}{
+		{name: "owner", role: RoleOwner, allowed: true},
+		{name: "admin", role: RoleAdmin, allowed: true},
+		{name: "member", role: RoleMember, allowed: false},
+		{name: "viewer", role: RoleViewer, allowed: false},
+		{name: "no membership", role: "", allowed: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			userID := uuid.New()
+			repo := &memoryRepository{tenantRoles: map[string]string{}}
+			if tt.role != "" {
+				repo.tenantRoles[tenantID.String()+":user:"+userID.String()] = tt.role
+			}
+			authorizer := NewDBAuthorizer(repo)
+
+			decision, err := authorizer.Check(context.Background(), CheckRequest{
+				Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+				Action:   ActionRuntimeScopeManage,
+				Resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()},
+				TenantID: tenantID,
+			})
+
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if decision.Allowed != tt.allowed {
+				t.Fatalf("expected allowed=%v, got %#v", tt.allowed, decision)
+			}
+			if !tt.allowed && decision.Reason != ReasonNoMembership {
+				t.Fatalf("expected no membership denial for %s, got %q", tt.role, decision.Reason)
+			}
+		})
+	}
+}
+
 func TestDBAuthorizerDeniesTeamAccessWithMismatchedTeamResourceID(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")

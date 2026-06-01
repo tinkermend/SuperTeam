@@ -10,6 +10,7 @@ import (
 	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
+	"github.com/superteam/control-plane/internal/authzcenter"
 )
 
 type Server struct {
@@ -19,6 +20,7 @@ type Server struct {
 	runtimeAuthService middleware.AuthService
 	authService        *auth.Service
 	authorizer         authz.Authorizer
+	authzCenterHandler *authzcenter.HTTPHandler
 }
 
 func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
@@ -62,15 +64,22 @@ func NewServerWithAuthz(
 	authService *auth.Service,
 	runtimeAuthService middleware.AuthService,
 	authorizer authz.Authorizer,
+	authzCenterHandlers ...*authzcenter.HTTPHandler,
 ) *Server {
 	server := NewServer(taskHandler, runtimeHandler, runtimeAuthService)
 	server.authService = authService
 	server.authorizer = authorizer
+	if len(authzCenterHandlers) > 0 {
+		server.authzCenterHandler = authzCenterHandlers[0]
+	}
 	if authorizer != nil && runtimeHandler != nil {
 		runtimeHandler.SetAuthorizer(authorizer)
 	}
 	if authService != nil {
 		auth.HandlerFromMux(auth.NewHandler(authService, authorizer), server.router)
+	}
+	if server.authzCenterHandler != nil {
+		authzcenter.HandlerFromMux(server.authzCenterHandler, server.router)
 	}
 	return server
 }

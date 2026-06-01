@@ -55,6 +55,12 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 			break
 		}
 		decision, err = a.checkRuntimeTaskClaim(ctx, req)
+	case ActionRuntimeScopeManage:
+		if !resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) {
+			decision = deny(ReasonInvalidResource)
+			break
+		}
+		decision, err = a.checkTenantAdminAccess(ctx, req)
 	default:
 		return Decision{Allowed: false, Reason: ReasonUnsupportedAction, RequiresAudit: true}, ErrUnsupportedAction
 	}
@@ -132,6 +138,28 @@ func (a *DBAuthorizer) checkTeamAccess(ctx context.Context, req CheckRequest) (D
 	return a.checkTenantAccess(ctx, req)
 }
 
+func (a *DBAuthorizer) checkTenantAdminAccess(ctx context.Context, req CheckRequest) (Decision, error) {
+	principalID, ok := parseUUIDActor(req.Actor, ActorUser)
+	if !ok {
+		return deny(ReasonInvalidActor), nil
+	}
+	membership, err := a.repository.GetActiveTenantMembership(ctx, TenantMembershipParams{
+		TenantID:      req.TenantID,
+		PrincipalType: ActorUser,
+		PrincipalID:   principalID,
+	})
+	if err != nil {
+		if errors.Is(err, ErrNoMembership) {
+			return deny(ReasonNoMembership), nil
+		}
+		return Decision{}, err
+	}
+	if roleAllowsTenantAdminAccess(membership.Role) {
+		return allow("tenant."+membership.Role, membership.Role), nil
+	}
+	return deny(ReasonNoMembership), nil
+}
+
 func (a *DBAuthorizer) checkRuntimeTaskClaim(ctx context.Context, req CheckRequest) (Decision, error) {
 	if req.Actor.Type != ActorRuntimeNode || req.Actor.ID == "" {
 		return deny(ReasonInvalidActor), nil
@@ -186,6 +214,15 @@ func resourceMatchesUUID(resource ResourceRef, expectedType string, expectedID u
 func roleAllowsTenantAccess(role string) bool {
 	switch role {
 	case RoleOwner, RoleAdmin, RoleMember, RoleViewer:
+		return true
+	default:
+		return false
+	}
+}
+
+func roleAllowsTenantAdminAccess(role string) bool {
+	switch role {
+	case RoleOwner, RoleAdmin:
 		return true
 	default:
 		return false

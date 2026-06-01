@@ -22,10 +22,11 @@ const (
 )
 
 const (
-	ActionConsoleAccess = "console.access"
-	ActionTenantAccess  = "tenant.access"
-	ActionTeamAccess    = "team.access"
-	ActionTaskClaim     = "task.claim"
+	ActionConsoleAccess      = "console.access"
+	ActionTenantAccess       = "tenant.access"
+	ActionTeamAccess         = "team.access"
+	ActionTaskClaim          = "task.claim"
+	ActionRuntimeScopeManage = "runtime_scope.manage"
 )
 
 const (

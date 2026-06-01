@@ -9,6 +9,7 @@ import (
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
+	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/config"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/storage"
@@ -22,9 +23,11 @@ type Container struct {
 	RuntimeService *runtimepkg.Service
 	AuthService    *auth.Service
 	Authorizer     authz.Authorizer
+	AuthzCenter    *authzcenter.Service
 	Poller         *runtimepkg.Poller
 	TaskHandler    *handlers.TaskHandler
 	RuntimeHandler *handlers.RuntimeHandler
+	AuthzHandler   *authzcenter.HTTPHandler
 	Server         *api.Server
 }
 
@@ -59,11 +62,14 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	authzRepository := authz.NewPgRepository(q)
 	authzRecorder := authz.NewOperationLogDecisionRecorder(q)
 	authorizer := authz.NewDBAuthorizer(authzRepository, authzRecorder)
+	authzCenterRepository := authzcenter.NewPgRepository(q)
+	authzCenterService := authzcenter.NewService(authzCenterRepository, authorizer)
+	authzCenterHandler := authzcenter.NewHandler(authzCenterService, authService)
 
 	poller := runtimepkg.NewPoller()
 	taskHandler := handlers.NewTaskHandler(taskService)
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
-	server := api.NewServerWithAuthz(taskHandler, runtimeHandler, authService, authService, authorizer)
+	server := api.NewServerWithAuthz(taskHandler, runtimeHandler, authService, authService, authorizer, authzCenterHandler)
 
 	return &Container{
 		Queries:        q,
@@ -71,9 +77,11 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		RuntimeService: runtimeService,
 		AuthService:    authService,
 		Authorizer:     authorizer,
+		AuthzCenter:    authzCenterService,
 		Poller:         poller,
 		TaskHandler:    taskHandler,
 		RuntimeHandler: runtimeHandler,
+		AuthzHandler:   authzCenterHandler,
 		Server:         server,
 	}, nil
 }

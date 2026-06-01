@@ -13,6 +13,7 @@ import (
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
+	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
 )
@@ -393,6 +394,126 @@ func TestLoginLogsRejectUnauthenticatedRequests(t *testing.T) {
 	}
 }
 
+func TestAuthzCenterOverviewRejectsUnauthenticatedRequests(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	repo := &routeAuthzCenterRepo{}
+	service := authzcenter.NewService(repo, &routeAuthorizer{allowed: true})
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+		authzcenter.NewHandler(service, authService),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/authz/overview", nil)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected overview to reject unauthenticated request, got %d", resp.Code)
+	}
+}
+
+func TestAuthzCenterOverviewAllowsAuthenticatedAdmin(t *testing.T) {
+	authRepo := newRouteAuthRepo()
+	authService, err := auth.NewService(authRepo)
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	repo := &routeAuthzCenterRepo{}
+	service := authzcenter.NewService(repo, &routeAuthorizer{allowed: true})
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+		authzcenter.NewHandler(service, authService),
+	)
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/authz/overview", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected overview to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body authzcenter.AuthzOverviewResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode overview response: %v", err)
+	}
+	if body.Engine.Engine != "db" {
+		t.Fatalf("expected db engine, got %#v", body.Engine)
+	}
+}
+
+func TestAuthzCenterRuntimeScopeCreateRecordsCheckAndOperationLog(t *testing.T) {
+	authRepo := newRouteAuthRepo()
+	authService, err := auth.NewService(authRepo)
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	user, err := authService.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	repo := &routeAuthzCenterRepo{}
+	authorizer := &routeAuthorizer{allowed: true}
+	service := authzcenter.NewService(repo, authorizer)
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		authorizer,
+		authzcenter.NewHandler(service, authService),
+	)
+	cookie := routeLogin(t, server, "admin", "admin")
+	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	nodeID := uuid.MustParse("00000000-0000-0000-0000-000000000201")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/authz/runtime-scopes", strings.NewReader(`{
+		"tenant_id":"`+tenantID.String()+`",
+		"runtime_node_id":"`+nodeID.String()+`",
+		"scope_type":"tenant",
+		"scope_value":"`+tenantID.String()+`"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected runtime scope create to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if len(authorizer.checks) != 1 {
+		t.Fatalf("expected one authorization check, got %#v", authorizer.checks)
+	}
+	check := authorizer.checks[0]
+	if check.Action != authz.ActionRuntimeScopeManage {
+		t.Fatalf("expected runtime scope manage check, got %q", check.Action)
+	}
+	if check.Actor.ID != user.ID.String() || check.Resource.Type != authz.ResourceTenant || check.Resource.ID != tenantID.String() {
+		t.Fatalf("unexpected authorization check: %#v", check)
+	}
+	if len(repo.operationLogs) != 1 {
+		t.Fatalf("expected one operation log, got %#v", repo.operationLogs)
+	}
+	if repo.operationLogs[0].Action != authzcenter.OperationActionRuntimeScopeCreate {
+		t.Fatalf("expected runtime scope create operation, got %#v", repo.operationLogs[0])
+	}
+}
+
 func TestRuntimeRoutesUseAuthenticatedNodeIdentity(t *testing.T) {
 	server := NewServer(
 		handlers.NewTaskHandler(&routeTaskService{}),
@@ -684,6 +805,22 @@ func (r *routeAuthRepo) CreateOperationLog(ctx context.Context, params auth.Crea
 	return nil
 }
 
+func routeLogin(t *testing.T, server *Server, username, password string) *http.Cookie {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"`+username+`","password":"`+password+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected login to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	cookies := resp.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatalf("expected session cookie")
+	}
+	return cookies[0]
+}
+
 type routeAuthorizer struct {
 	allowed bool
 	checks  []authz.CheckRequest
@@ -695,4 +832,58 @@ func (a *routeAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (au
 		return authz.Decision{Allowed: true, Reason: authz.ReasonAllowed, MatchedRule: "test.allow"}, nil
 	}
 	return authz.Decision{Allowed: false, Reason: authz.ReasonNoMembership, RequiresAudit: true}, nil
+}
+
+type routeAuthzCenterRepo struct {
+	operationLogs []authzcenter.OperationLogInput
+}
+
+func (r *routeAuthzCenterRepo) CountDecisionsSince(ctx context.Context, since time.Time) (authzcenter.DecisionTotals, error) {
+	return authzcenter.DecisionTotals{}, nil
+}
+
+func (r *routeAuthzCenterRepo) ListTopDeniedActionsSince(ctx context.Context, since time.Time, limit int32) ([]authzcenter.ActionCount, error) {
+	return []authzcenter.ActionCount{}, nil
+}
+
+func (r *routeAuthzCenterRepo) ListDecisions(ctx context.Context, filter authzcenter.DecisionFilter) ([]authzcenter.DecisionRecord, error) {
+	return []authzcenter.DecisionRecord{}, nil
+}
+
+func (r *routeAuthzCenterRepo) ListRuntimeScopeNodes(ctx context.Context) ([]authzcenter.RuntimeScopeNodeRecord, error) {
+	return []authzcenter.RuntimeScopeNodeRecord{}, nil
+}
+
+func (r *routeAuthzCenterRepo) CreateRuntimeScope(ctx context.Context, input authzcenter.RuntimeScopeInput) (authzcenter.RuntimeScopeRecord, error) {
+	now := time.Now().UTC()
+	return authzcenter.RuntimeScopeRecord{
+		ID:            uuid.New(),
+		TenantID:      input.TenantID,
+		RuntimeNodeID: input.RuntimeNodeID,
+		TeamID:        input.TeamID,
+		ScopeType:     authzcenter.RuntimeScopeScopeType(input.ScopeType),
+		ScopeValue:    input.ScopeValue,
+		Status:        authzcenter.RuntimeScopeStatusActive,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}, nil
+}
+
+func (r *routeAuthzCenterRepo) UpdateRuntimeScopeStatus(ctx context.Context, scopeID uuid.UUID, status string) (authzcenter.RuntimeScopeRecord, error) {
+	now := time.Now().UTC()
+	return authzcenter.RuntimeScopeRecord{
+		ID:        scopeID,
+		Status:    authzcenter.RuntimeScopeStatus(status),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}, nil
+}
+
+func (r *routeAuthzCenterRepo) ListMembers(ctx context.Context, filter authzcenter.MemberFilter) ([]authzcenter.MemberRecord, error) {
+	return []authzcenter.MemberRecord{}, nil
+}
+
+func (r *routeAuthzCenterRepo) RecordOperationLog(ctx context.Context, input authzcenter.OperationLogInput) error {
+	r.operationLogs = append(r.operationLogs, input)
+	return nil
 }
