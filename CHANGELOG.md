@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Control Plane 渐进式授权边界 (2026-06-01)
+
+- 新增 Control Plane 渐进式授权边界：`internal/authz` 统一 `Authorizer` 接口，第一版使用 PostgreSQL 权限事实判断 Web 控制台访问和 Runtime claim 范围。
+- `/api/auth/me` 登录后增加 `console.access` 授权检查，认证和授权保持分层。
+- Runtime claim 任务前增加 `task.claim` 范围检查，Runtime 节点不能领取超出 `runtime_node_scopes` 的任务。
+- 授权决策接入 `web_operation_logs`，记录允许/拒绝结果、授权引擎、命中规则、Actor、资源和租户/团队上下文，为后续权限审计视图和 OpenFGA backend 留出稳定审计底座。
+
 #### Web Vite 控制台重铺 (2026-05-31)
 
 - 新 Web 壳接入 `shadcn-admin` 的侧边栏、顶部栏、主题、命令面板和响应式布局。
