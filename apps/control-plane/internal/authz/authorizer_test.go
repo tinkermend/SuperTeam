@@ -48,9 +48,13 @@ func (r *memoryRepository) RuntimeNodeCoversTaskScope(ctx context.Context, param
 
 type memoryRecorder struct {
 	records []DecisionRecord
+	err     error
 }
 
 func (r *memoryRecorder) RecordDecision(ctx context.Context, record DecisionRecord) error {
+	if r.err != nil {
+		return r.err
+	}
 	r.records = append(r.records, record)
 	return nil
 }
@@ -131,6 +135,78 @@ func TestDBAuthorizerRecordsDeniedDecision(t *testing.T) {
 	record := recorder.records[0]
 	if record.ActorType != ActorUser || record.Action != ActionConsoleAccess || record.Allowed {
 		t.Fatalf("unexpected decision record: %#v", record)
+	}
+}
+
+func TestDBAuthorizerRecordsAllowedDecision(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000011")
+	recorder := &memoryRecorder{}
+	repo := &memoryRepository{
+		tenantRoles: map[string]string{
+			tenantID.String() + ":user:" + userID.String(): RoleOwner,
+		},
+	}
+	authorizer := NewDBAuthorizer(repo, recorder)
+
+	decision, err := authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+		Action:   ActionConsoleAccess,
+		Resource: ResourceRef{Type: ResourceConsole, ID: "web"},
+		TenantID: tenantID,
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !decision.Allowed {
+		t.Fatalf("expected console access to be allowed, got %#v", decision)
+	}
+	if len(recorder.records) != 1 {
+		t.Fatalf("expected one decision record, got %#v", recorder.records)
+	}
+	record := recorder.records[0]
+	if !record.Allowed {
+		t.Fatalf("expected allowed decision record, got %#v", record)
+	}
+	if record.MatchedRule != "tenant.owner" {
+		t.Fatalf("expected tenant.owner rule, got %q", record.MatchedRule)
+	}
+	if record.TenantID != tenantID || record.TeamID != nil {
+		t.Fatalf("unexpected tenant/team context: %#v", record)
+	}
+	if record.ActorType != ActorUser || record.ActorID != userID.String() {
+		t.Fatalf("unexpected actor context: %#v", record)
+	}
+	if record.Action != ActionConsoleAccess || record.ResourceType != ResourceConsole || record.ResourceID != "web" {
+		t.Fatalf("unexpected action/resource context: %#v", record)
+	}
+}
+
+func TestDBAuthorizerPropagatesRecorderError(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000012")
+	recorderErr := errors.New("record decision failed")
+	recorder := &memoryRecorder{err: recorderErr}
+	repo := &memoryRepository{
+		tenantRoles: map[string]string{
+			tenantID.String() + ":user:" + userID.String(): RoleOwner,
+		},
+	}
+	authorizer := NewDBAuthorizer(repo, recorder)
+
+	decision, err := authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+		Action:   ActionConsoleAccess,
+		Resource: ResourceRef{Type: ResourceConsole, ID: "web"},
+		TenantID: tenantID,
+	})
+
+	if !errors.Is(err, recorderErr) {
+		t.Fatalf("expected recorder error, got %v", err)
+	}
+	if decision.Allowed {
+		t.Fatalf("expected zero decision on recorder error, got %#v", decision)
 	}
 }
 

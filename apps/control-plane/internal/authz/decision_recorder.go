@@ -32,11 +32,17 @@ func (r *OperationLogDecisionRecorder) RecordDecision(ctx context.Context, recor
 		return nil
 	}
 	details, err := json.Marshal(map[string]any{
-		"allowed":      record.Allowed,
-		"reason":       record.Reason,
-		"matched_rule": record.MatchedRule,
-		"engine":       record.Engine,
-		"snapshot":     record.Snapshot,
+		"tenant_id":     record.TenantID.String(),
+		"team_id":       teamIDString(record.TeamID),
+		"actor_type":    record.ActorType,
+		"actor_id":      record.ActorID,
+		"resource_type": record.ResourceType,
+		"resource_id":   record.ResourceID,
+		"allowed":       record.Allowed,
+		"reason":        record.Reason,
+		"matched_rule":  record.MatchedRule,
+		"engine":        record.Engine,
+		"snapshot":      record.Snapshot,
 	})
 	if err != nil {
 		return err
@@ -46,8 +52,8 @@ func (r *OperationLogDecisionRecorder) RecordDecision(ctx context.Context, recor
 		UserID:       userIDFromRecord(record),
 		Username:     pgtype.Text{},
 		Module:       ModuleAuthz,
-		ResourceType: text(record.ResourceType),
-		ResourceID:   text(record.ResourceID),
+		ResourceType: nullableText(record.ResourceType),
+		ResourceID:   nullableText(record.ResourceID),
 		Action:       record.Action,
 		Result:       result(record.Allowed),
 		RequestID:    pgtype.Text{},
@@ -69,8 +75,15 @@ func userIDFromRecord(record DecisionRecord) uuid.NullUUID {
 	return uuid.NullUUID{UUID: id, Valid: true}
 }
 
-func text(value string) pgtype.Text {
+func nullableText(value string) pgtype.Text {
 	return pgtype.Text{String: value, Valid: value != ""}
+}
+
+func teamIDString(teamID *uuid.UUID) string {
+	if teamID == nil {
+		return ""
+	}
+	return teamID.String()
 }
 
 func result(allowed bool) string {
