@@ -1,0 +1,147 @@
+package authz
+
+import (
+	"context"
+	"errors"
+
+	"github.com/google/uuid"
+)
+
+type Authorizer interface {
+	Check(ctx context.Context, req CheckRequest) (Decision, error)
+}
+
+type DBAuthorizer struct {
+	repository Repository
+}
+
+func NewDBAuthorizer(repository Repository) *DBAuthorizer {
+	return &DBAuthorizer{repository: repository}
+}
+
+func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, error) {
+	if a == nil || a.repository == nil {
+		return Decision{Allowed: false, Reason: "authorizer is not configured", RequiresAudit: true}, nil
+	}
+	switch req.Action {
+	case ActionConsoleAccess, ActionTenantAccess:
+		return a.checkTenantAccess(ctx, req)
+	case ActionTeamAccess:
+		return a.checkTeamAccess(ctx, req)
+	case ActionTaskClaim:
+		return a.checkRuntimeTaskClaim(ctx, req)
+	default:
+		return Decision{Allowed: false, Reason: ReasonUnsupportedAction, RequiresAudit: true}, ErrUnsupportedAction
+	}
+}
+
+func (a *DBAuthorizer) checkTenantAccess(ctx context.Context, req CheckRequest) (Decision, error) {
+	principalID, ok := parseUUIDActor(req.Actor, ActorUser)
+	if !ok {
+		return deny(ReasonInvalidActor), nil
+	}
+	membership, err := a.repository.GetActiveTenantMembership(ctx, TenantMembershipParams{
+		TenantID:      req.TenantID,
+		PrincipalType: ActorUser,
+		PrincipalID:   principalID,
+	})
+	if err != nil {
+		if errors.Is(err, ErrNoMembership) {
+			return deny(ReasonNoMembership), nil
+		}
+		return Decision{}, err
+	}
+	if roleAllowsTenantAccess(membership.Role) {
+		return allow("tenant."+membership.Role, membership.Role), nil
+	}
+	return deny(ReasonNoMembership), nil
+}
+
+func (a *DBAuthorizer) checkTeamAccess(ctx context.Context, req CheckRequest) (Decision, error) {
+	if req.TeamID == nil {
+		return a.checkTenantAccess(ctx, req)
+	}
+	principalID, ok := parseUUIDActor(req.Actor, ActorUser)
+	if !ok {
+		return deny(ReasonInvalidActor), nil
+	}
+	membership, err := a.repository.GetActiveTeamMembership(ctx, TeamMembershipParams{
+		TenantID:      req.TenantID,
+		TeamID:        *req.TeamID,
+		PrincipalType: ActorUser,
+		PrincipalID:   principalID,
+	})
+	if err == nil && roleAllowsTenantAccess(membership.Role) {
+		return allow("team."+membership.Role, membership.Role), nil
+	}
+	if err != nil && !errors.Is(err, ErrNoMembership) {
+		return Decision{}, err
+	}
+	return a.checkTenantAccess(ctx, req)
+}
+
+func (a *DBAuthorizer) checkRuntimeTaskClaim(ctx context.Context, req CheckRequest) (Decision, error) {
+	if req.Actor.Type != ActorRuntimeNode || req.Actor.ID == "" {
+		return deny(ReasonInvalidActor), nil
+	}
+	covered, err := a.repository.RuntimeNodeCoversTaskScope(ctx, RuntimeScopeParams{
+		TenantID: req.TenantID,
+		TeamID:   req.TeamID,
+		NodeID:   req.Actor.ID,
+	})
+	if err != nil {
+		return Decision{}, err
+	}
+	if !covered {
+		return deny(ReasonRuntimeScopeMissing), nil
+	}
+	return Decision{
+		Allowed:     true,
+		Reason:      ReasonAllowed,
+		MatchedRule: "runtime.scope",
+		Snapshot: map[string]any{
+			"engine": "db",
+			"action": req.Action,
+		},
+	}, nil
+}
+
+func parseUUIDActor(actor ActorRef, expectedType string) (uuid.UUID, bool) {
+	if actor.Type != expectedType {
+		return uuid.Nil, false
+	}
+	id, err := uuid.Parse(actor.ID)
+	return id, err == nil
+}
+
+func roleAllowsTenantAccess(role string) bool {
+	switch role {
+	case RoleOwner, RoleAdmin, RoleMember, RoleViewer:
+		return true
+	default:
+		return false
+	}
+}
+
+func allow(rule string, role string) Decision {
+	return Decision{
+		Allowed:     true,
+		Reason:      ReasonAllowed,
+		MatchedRule: rule,
+		Snapshot: map[string]any{
+			"engine": "db",
+			"role":   role,
+		},
+	}
+}
+
+func deny(reason string) Decision {
+	return Decision{
+		Allowed:       false,
+		Reason:        reason,
+		RequiresAudit: true,
+		Snapshot: map[string]any{
+			"engine": "db",
+		},
+	}
+}
