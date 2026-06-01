@@ -37,6 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Runtime claim 任务前增加 `task.claim` 范围检查，Runtime 节点不能领取超出 `runtime_node_scopes` 的任务。
 - 授权决策接入 `web_operation_logs`，记录允许/拒绝结果、授权引擎、命中规则、Actor、资源和租户/团队上下文，为后续权限审计视图和 OpenFGA backend 留出稳定审计底座。
 
+#### 权限中心 MVP (2026-06-01)
+
+- 新增 Control Plane 权限中心 API 契约和 `internal/authzcenter` 应用服务层，提供授权概览、授权审计、Runtime 范围、成员角色只读视图和权限诊断接口。
+- 新增 Web 一级菜单“权限中心”和 `/permissions` 页面，包含“授权概览”“授权审计”“Runtime 范围”“成员角色”“权限诊断”五个 Tab。
+- Runtime 范围管理支持新增租户/团队 scope 以及启用、禁用已有 scope；Web 表单按租户或团队自动派生只读范围值，避免提交不符合后端约束的 payload。
+- Runtime scope 写操作统一经过 `runtime_scope.manage` 授权检查并写入 `web_operation_logs`，权限中心读接口通过 `authz_center.read` 做租户边界控制。
+- 权限诊断通过统一 `Authorizer.Check` dry-run 返回授权结果，并按 action 自动匹配资源类型与必要字段校验。
+- Web 权限中心 API client 与页面补充 Vitest 覆盖，锁定请求方法、请求体、Runtime scope 写入确认和诊断行为。
+
 #### Web Vite 控制台重铺 (2026-05-31)
 
 - 新 Web 壳接入 `shadcn-admin` 的侧边栏、顶部栏、主题、命令面板和响应式布局。
