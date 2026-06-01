@@ -1,0 +1,618 @@
+openapi: 3.0.3
+info:
+  title: SuperTeam Control Plane - Authz Center API
+  version: 1.0.0
+  description: 权限中心 API
+
+servers:
+  - url: http://localhost:8080
+    description: 本地开发环境
+
+paths:
+  /api/authz/overview:
+    get:
+      summary: 获取权限中心概览
+      operationId: getAuthzOverview
+      tags: [AuthzCenter]
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthzOverviewResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/authz/decisions:
+    get:
+      summary: 查询授权审计记录
+      operationId: listAuthzDecisions
+      tags: [AuthzCenter]
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: result
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [succeeded, failed]
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: actor_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: actor_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: resource_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: resource_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: request_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthzDecisionListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/authz/runtime-scopes:
+    get:
+      summary: 查询 Runtime 节点授权范围
+      operationId: listRuntimeScopes
+      tags: [AuthzCenter]
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeScopeListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      summary: 新增 Runtime 节点授权范围
+      operationId: createRuntimeScope
+      tags: [AuthzCenter]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRuntimeScopeRequest"
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeScopeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/authz/runtime-scopes/{scope_id}:
+    patch:
+      summary: 启用或禁用 Runtime 节点授权范围
+      operationId: updateRuntimeScope
+      tags: [AuthzCenter]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: scope_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRuntimeScopeRequest"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeScopeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/authz/members:
+    get:
+      summary: 查询成员角色只读视图
+      operationId: listAuthzMembers
+      tags: [AuthzCenter]
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthzMemberListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/authz/check:
+    post:
+      summary: 权限诊断 dry-run
+      operationId: checkPermission
+      tags: [AuthzCenter]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckPermissionRequest"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckPermissionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session_token
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 100
+        default: 20
+    Offset:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int32
+        minimum: 0
+        default: 0
+
+  schemas:
+    AuthzOverviewResponse:
+      type: object
+      required: [engine, totals, top_denied_actions, recent_events]
+      properties:
+        engine:
+          $ref: "#/components/schemas/AuthzEngineStatus"
+        totals:
+          $ref: "#/components/schemas/AuthzTotals"
+        top_denied_actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthzActionCount"
+        recent_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthzDecisionRecord"
+
+    AuthzEngineStatus:
+      type: object
+      required: [engine, status]
+      properties:
+        engine:
+          type: string
+          example: db
+        status:
+          type: string
+          example: healthy
+        engine_version:
+          type: string
+          nullable: true
+          example: db-authorizer-v1
+
+    AuthzTotals:
+      type: object
+      required: [total, allowed, denied, denied_rate]
+      properties:
+        total:
+          type: integer
+          format: int64
+        allowed:
+          type: integer
+          format: int64
+        denied:
+          type: integer
+          format: int64
+        denied_rate:
+          type: number
+          format: double
+
+    AuthzActionCount:
+      type: object
+      required: [action, count]
+      properties:
+        action:
+          type: string
+        count:
+          type: integer
+          format: int64
+
+    AuthzDecisionListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthzDecisionRecord"
+
+    AuthzDecisionRecord:
+      type: object
+      required: [id, tenant_id, module, action, result, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+          nullable: true
+        username:
+          type: string
+          nullable: true
+        module:
+          type: string
+        action:
+          type: string
+        result:
+          type: string
+          enum: [succeeded, failed]
+        resource_type:
+          type: string
+          nullable: true
+        resource_id:
+          type: string
+          nullable: true
+        request_id:
+          type: string
+          nullable: true
+        engine:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        matched_rule:
+          type: string
+          nullable: true
+        actor_type:
+          type: string
+          nullable: true
+        actor_id:
+          type: string
+          nullable: true
+        details:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    RuntimeScopeListResponse:
+      type: object
+      required: [nodes]
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeScopeNode"
+
+    RuntimeScopeNode:
+      type: object
+      required: [runtime_node_id, node_id, name, supported_providers, max_slots, current_load, status, scopes]
+      properties:
+        runtime_node_id:
+          type: string
+          format: uuid
+        node_id:
+          type: string
+        name:
+          type: string
+        supported_providers:
+          type: array
+          items:
+            type: string
+        max_slots:
+          type: integer
+          format: int32
+        current_load:
+          type: integer
+          format: int32
+        status:
+          type: string
+        last_heartbeat_at:
+          type: string
+          format: date-time
+          nullable: true
+        recent_denied_reason:
+          type: string
+          nullable: true
+        scopes:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeScope"
+
+    RuntimeScope:
+      type: object
+      required: [id, tenant_id, runtime_node_id, scope_type, scope_value, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        runtime_node_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+          nullable: true
+        scope_type:
+          type: string
+          enum: [tenant, team]
+        scope_value:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        disabled_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateRuntimeScopeRequest:
+      type: object
+      required: [runtime_node_id, tenant_id, scope_type, scope_value]
+      properties:
+        runtime_node_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+          nullable: true
+        scope_type:
+          type: string
+          enum: [tenant, team]
+        scope_value:
+          type: string
+          minLength: 1
+
+    UpdateRuntimeScopeRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [active, disabled]
+
+    RuntimeScopeResponse:
+      type: object
+      required: [scope]
+      properties:
+        scope:
+          $ref: "#/components/schemas/RuntimeScope"
+
+    AuthzMemberListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthzMemberRecord"
+
+    AuthzMemberRecord:
+      type: object
+      required: [user_id, username, account_status, memberships, console_access]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          nullable: true
+        display_name:
+          type: string
+          nullable: true
+        account_status:
+          type: string
+        memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthzMembershipRecord"
+        console_access:
+          type: boolean
+        recent_denied_reason:
+          type: string
+          nullable: true
+
+    AuthzMembershipRecord:
+      type: object
+      required: [tenant_id, principal_type, principal_id, role, status]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+          nullable: true
+        principal_type:
+          type: string
+        principal_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+        status:
+          type: string
+
+    CheckPermissionRequest:
+      type: object
+      required: [actor, action, resource, tenant_id]
+      properties:
+        actor:
+          $ref: "#/components/schemas/AuthzRef"
+        action:
+          type: string
+          enum: [console.access, tenant.access, team.access, task.claim]
+        resource:
+          $ref: "#/components/schemas/AuthzRef"
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    AuthzRef:
+      type: object
+      required: [type, id]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+
+    CheckPermissionResponse:
+      type: object
+      required: [allowed, reason, matched_rule, engine]
+      properties:
+        allowed:
+          type: boolean
+        reason:
+          type: string
+        matched_rule:
+          type: string
+        engine:
+          type: string
+        snapshot:
+          type: object
+          additionalProperties: true
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+  responses:
+    BadRequest:
+      description: 请求参数错误
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: 未认证
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: 无权限
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

@@ -14,6 +14,10 @@ generate-openapi:
 	oapi-codegen -package auth -generate types,chi-server \
 		-o internal/auth/generated.go \
 		../../contracts/control-plane/auth.yaml
+	@mkdir -p internal/authzcenter
+	oapi-codegen -package authzcenter -generate types,chi-server \
+		-o internal/authzcenter/generated.go \
+		../../contracts/control-plane/authz.yaml
 	@echo "OpenAPI code generation complete"
 
 # Run tests
@@ -33,6 +37,7 @@ clean:
 	@echo "Cleaning..."
 	rm -rf bin/
 	rm -f internal/auth/generated.go
+	rm -f internal/authzcenter/generated.go
 	rm -f coverage.out
 	@echo "Clean complete"
 
