@@ -190,6 +190,14 @@ describe("authz center api client", () => {
     );
 
     await expect(listRuntimeScopes({ baseUrl: "http://control-plane.local/", fetcher })).resolves.toEqual(responseBody);
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/authz/runtime-scopes", {
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+      },
+      method: "GET",
+    });
   });
 
   it("parses member list responses", async () => {
@@ -233,6 +241,14 @@ describe("authz center api client", () => {
         offset: 0,
       }),
     ).resolves.toEqual(responseBody);
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/authz/members?limit=20&offset=0", {
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+      },
+      method: "GET",
+    });
   });
 
   it("parses permission check responses", async () => {
@@ -267,5 +283,15 @@ describe("authz center api client", () => {
     );
 
     await expect(checkPermission({ baseUrl: "http://control-plane.local/", fetcher }, input)).resolves.toEqual(responseBody);
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/authz/check", {
+      body: JSON.stringify(input),
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
   });
 });
