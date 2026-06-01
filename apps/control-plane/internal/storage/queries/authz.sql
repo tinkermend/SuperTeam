@@ -44,9 +44,10 @@ SELECT EXISTS (
   JOIN runtime_node_scopes rns ON rns.runtime_node_id = rn.id
   WHERE t.id = sqlc.arg('task_id')::uuid
     AND t.tenant_id = sqlc.arg('tenant_id')::uuid
-    AND (sqlc.narg('team_id')::uuid IS NULL OR t.team_id = sqlc.narg('team_id')::uuid)
+    AND t.team_id IS NOT DISTINCT FROM sqlc.narg('team_id')::uuid
     AND t.deleted_at IS NULL
     AND rn.node_id = sqlc.arg('node_id')::varchar
+    AND rn.status = 'online'
     AND rn.disabled_at IS NULL
     AND rn.archived_at IS NULL
     AND rns.tenant_id = t.tenant_id

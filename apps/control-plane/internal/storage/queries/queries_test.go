@@ -322,6 +322,30 @@ func TestAuthzRuntimeNodeCoversTaskScope(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.False(t, missingNodeCovered)
+
+	nilTeamCovered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
+		TenantID: tenantID,
+		TeamID:   uuid.NullUUID{},
+		TaskID:   task.ID,
+		NodeID:   "authz-node-001",
+	})
+	require.NoError(t, err)
+	assert.False(t, nilTeamCovered)
+
+	_, err = testQueries.UpdateRuntimeNodeStatus(ctx, queries.UpdateRuntimeNodeStatusParams{
+		NodeID: "authz-node-001",
+		Status: "offline",
+	})
+	require.NoError(t, err)
+
+	offlineNodeCovered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
+		TenantID: tenantID,
+		TeamID:   uuid.NullUUID{UUID: teamID, Valid: true},
+		TaskID:   task.ID,
+		NodeID:   "authz-node-001",
+	})
+	require.NoError(t, err)
+	assert.False(t, offlineNodeCovered)
 }
 
 // ============================================================================
