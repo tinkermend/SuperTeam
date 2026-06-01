@@ -143,15 +143,17 @@ func TestCurrentUserRequiresConsoleAuthorization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
-	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+	user, err := authService.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	authorizer := &routeAuthorizer{allowed: false}
 	server := NewServerWithAuthz(
 		handlers.NewTaskHandler(&routeTaskService{}),
 		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
 		authService,
 		nil,
-		&routeAuthorizer{allowed: false},
+		authorizer,
 	)
 
 	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"admin","password":"admin"}`))
@@ -169,6 +171,34 @@ func TestCurrentUserRequiresConsoleAuthorization(t *testing.T) {
 
 	if meResp.Code != http.StatusForbidden {
 		t.Fatalf("expected current user to be forbidden, got %d: %s", meResp.Code, meResp.Body.String())
+	}
+	if len(authorizer.checks) != 1 {
+		t.Fatalf("expected one authorization check, got %#v", authorizer.checks)
+	}
+	check := authorizer.checks[0]
+	if check.Action != authz.ActionConsoleAccess {
+		t.Fatalf("expected console access action, got %q", check.Action)
+	}
+	if check.Resource.Type != authz.ResourceConsole {
+		t.Fatalf("expected console resource type, got %q", check.Resource.Type)
+	}
+	if check.Resource.ID != "web" {
+		t.Fatalf("expected web console resource ID, got %q", check.Resource.ID)
+	}
+	if check.Actor.Type != authz.ActorUser {
+		t.Fatalf("expected user actor type, got %q", check.Actor.Type)
+	}
+	if check.Actor.ID != user.ID.String() {
+		t.Fatalf("expected actor ID %q, got %q", user.ID.String(), check.Actor.ID)
+	}
+	if check.TenantID.String() != auth.DefaultTenantID {
+		t.Fatalf("expected default tenant ID %q, got %q", auth.DefaultTenantID, check.TenantID.String())
+	}
+	if check.TeamID != nil {
+		t.Fatalf("expected nil team ID, got %v", check.TeamID)
+	}
+	if check.AuditReason != "current user console access" {
+		t.Fatalf("expected current user audit reason, got %q", check.AuditReason)
 	}
 }
 
