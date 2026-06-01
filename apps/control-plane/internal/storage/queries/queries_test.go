@@ -504,6 +504,218 @@ func TestAuthzRuntimeNodeRejectsMalformedTenantScopePayloads(t *testing.T) {
 	assert.False(t, tenantScopeWithWrongValueCovered)
 }
 
+func TestAuthzCenterDecisionQueries(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	userID := uuid.New()
+	_, err := testQueries.CreateWebOperationLog(ctx, queries.CreateWebOperationLogParams{
+		TenantID: uuid.NullUUID{UUID: tenantID, Valid: true},
+		UserID:   uuid.NullUUID{UUID: userID, Valid: true},
+		Username: pgtype.Text{String: "authz-auditor", Valid: true},
+		Module:   "authz",
+		Action:   "task.claim",
+		Result:   "failed",
+		Details:  []byte(`{"engine":"db","reason":"runtime scope does not cover task","actor_type":"runtime_node","actor_id":"node-1"}`),
+	})
+	require.NoError(t, err)
+
+	rows, err := testQueries.ListAuthzDecisions(ctx, queries.ListAuthzDecisionsParams{
+		Result: pgtype.Text{String: "failed", Valid: true},
+		Action: pgtype.Text{String: "task.claim", Valid: true},
+		Limit:  20,
+		Offset: 0,
+	})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "task.claim", rows[0].Action)
+	assert.Equal(t, "failed", rows[0].Result)
+}
+
+func TestAuthzCenterMemberPaginationPaginatesUsersBeforeMemberships(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+
+	otherUser, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "authz-member-other",
+		DisplayName:  pgtype.Text{String: "Authz Member Other", Valid: true},
+		Email:        pgtype.Text{String: "authz-member-other@example.com", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
+		Status:       "active",
+	})
+	require.NoError(t, err)
+	multiMemberUser, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "authz-member-multi",
+		DisplayName:  pgtype.Text{String: "Authz Member Multi", Valid: true},
+		Email:        pgtype.Text{String: "authz-member-multi@example.com", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
+		Status:       "active",
+	})
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
+		UPDATE auth_users
+		SET created_at = CASE
+			WHEN id = $1 THEN NOW() - INTERVAL '1 hour'
+			WHEN id = $2 THEN NOW()
+			ELSE created_at
+		END
+		WHERE id IN ($1, $2)
+	`, otherUser.ID, multiMemberUser.ID)
+	require.NoError(t, err)
+
+	_, err = testDB.Exec(ctx, `
+		INSERT INTO tenant_members (tenant_id, principal_type, principal_id, role, status)
+		VALUES ($1, 'user', $2, 'owner', 'active');
+
+		INSERT INTO tenant_members (tenant_id, team_id, principal_type, principal_id, role, status)
+		VALUES ($1, $3, 'user', $2, 'developer', 'active');
+
+		INSERT INTO tenant_members (tenant_id, principal_type, principal_id, role, status)
+		VALUES ($1, 'user', $4, 'viewer', 'active');
+	`, tenantID, multiMemberUser.ID, teamID, otherUser.ID)
+	require.NoError(t, err)
+
+	rows, err := testQueries.ListAuthzMembers(ctx, queries.ListAuthzMembersParams{
+		Limit:  1,
+		Offset: 0,
+	})
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+
+	roles := map[string]bool{}
+	for _, row := range rows {
+		assert.Equal(t, multiMemberUser.ID, row.UserID)
+		assert.Equal(t, "authz-member-multi", row.UserUsername)
+		require.True(t, row.Role.Valid)
+		roles[row.Role.String] = true
+	}
+	assert.Equal(t, map[string]bool{"owner": true, "developer": true}, roles)
+}
+
+func TestAuthzCenterRuntimeScopeQueries(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "authz-center-node",
+		Name:               "Authz Center Node",
+		SupportedProviders: []byte(`["codex"]`),
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{}`),
+		LastHeartbeatAt:    pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	require.NoError(t, err)
+
+	scope, err := testQueries.CreateRuntimeNodeScope(ctx, queries.CreateRuntimeNodeScopeParams{
+		TenantID:      tenantID,
+		RuntimeNodeID: node.ID,
+		ScopeType:     "tenant",
+		ScopeValue:    tenantID.String(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "active", scope.Status)
+
+	updated, err := testQueries.UpdateRuntimeNodeScopeStatus(ctx, queries.UpdateRuntimeNodeScopeStatusParams{
+		ID:     scope.ID,
+		Status: "disabled",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "disabled", updated.Status)
+	assert.True(t, updated.DisabledAt.Valid)
+
+	nodes, err := testQueries.ListRuntimeNodesWithScopes(ctx)
+	require.NoError(t, err)
+	var listedScope *queries.ListRuntimeNodesWithScopesRow
+	for i := range nodes {
+		if nodes[i].RuntimeNodeID == node.ID && nodes[i].ScopeID.Valid && nodes[i].ScopeID.UUID == scope.ID {
+			listedScope = &nodes[i]
+			break
+		}
+	}
+	require.NotNil(t, listedScope)
+	assert.Equal(t, node.ID, listedScope.RuntimeNodeID)
+	assert.Equal(t, tenantID, listedScope.RuntimeTenantID)
+	assert.True(t, listedScope.ScopeID.Valid)
+	assert.Equal(t, scope.ID, listedScope.ScopeID.UUID)
+	assert.True(t, listedScope.ScopeStatus.Valid)
+	assert.Equal(t, "disabled", listedScope.ScopeStatus.String)
+	assert.True(t, listedScope.ScopeDisabledAt.Valid)
+
+	reactivated, err := testQueries.CreateRuntimeNodeScope(ctx, queries.CreateRuntimeNodeScopeParams{
+		TenantID:      tenantID,
+		RuntimeNodeID: node.ID,
+		ScopeType:     "tenant",
+		ScopeValue:    tenantID.String(),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, scope.ID, reactivated.ID)
+	assert.Equal(t, "active", reactivated.Status)
+	assert.False(t, reactivated.DisabledAt.Valid)
+}
+
+func TestAuthzCenterRuntimeScopeRejectsInconsistentInput(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+	otherTenantID := uuid.MustParse("00000000-0000-0000-0000-000000000201")
+	otherTeamID := uuid.MustParse("00000000-0000-0000-0000-000000000301")
+	_, err := testDB.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'authz-other', 'Authz Other Tenant', 'active');
+
+		INSERT INTO tenant_teams (id, tenant_id, slug, name, status)
+		VALUES ($2, $1, 'authz-other', 'Authz Other Team', 'active');
+	`, otherTenantID, otherTeamID)
+	require.NoError(t, err)
+
+	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "authz-center-consistency-node",
+		Name:               "Authz Center Consistency Node",
+		SupportedProviders: []byte(`["codex"]`),
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{}`),
+		LastHeartbeatAt:    pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.CreateRuntimeNodeScope(ctx, queries.CreateRuntimeNodeScopeParams{
+		TenantID:      otherTenantID,
+		RuntimeNodeID: node.ID,
+		ScopeType:     "tenant",
+		ScopeValue:    otherTenantID.String(),
+	})
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.CreateRuntimeNodeScope(ctx, queries.CreateRuntimeNodeScopeParams{
+		TenantID:      tenantID,
+		RuntimeNodeID: node.ID,
+		TeamID:        uuid.NullUUID{UUID: otherTeamID, Valid: true},
+		ScopeType:     "team",
+		ScopeValue:    otherTeamID.String(),
+	})
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.CreateRuntimeNodeScope(ctx, queries.CreateRuntimeNodeScopeParams{
+		TenantID:      tenantID,
+		RuntimeNodeID: node.ID,
+		TeamID:        uuid.NullUUID{UUID: teamID, Valid: true},
+		ScopeType:     "team",
+		ScopeValue:    uuid.NewString(),
+	})
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+}
+
 // ============================================================================
 // Runtime Node Tests
 // ============================================================================
