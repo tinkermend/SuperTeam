@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
 )
@@ -32,13 +33,19 @@ type RuntimeHandler struct {
 	runtimeService RuntimeService
 	taskService    TaskService
 	poller         Poller
+	authorizer     authz.Authorizer
 }
 
-func NewRuntimeHandler(runtimeService RuntimeService, taskService TaskService, poller Poller) *RuntimeHandler {
+func NewRuntimeHandler(runtimeService RuntimeService, taskService TaskService, poller Poller, authorizer ...authz.Authorizer) *RuntimeHandler {
+	var az authz.Authorizer
+	if len(authorizer) > 0 {
+		az = authorizer[0]
+	}
 	return &RuntimeHandler{
 		runtimeService: runtimeService,
 		taskService:    taskService,
 		poller:         poller,
+		authorizer:     az,
 	}
 }
 
@@ -149,6 +156,14 @@ func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, t := range tasks {
+			allowed, err := h.runtimeCanClaim(ctx, nodeID, t)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if !allowed {
+				continue
+			}
 			if bestClaimCandidate(candidate, t) == t {
 				candidate = t
 			}
@@ -175,7 +190,41 @@ func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	allowed, err := h.runtimeCanClaim(ctx, nodeID, t)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	h.assignTask(ctx, w, t, nodeID)
+}
+
+func (h *RuntimeHandler) runtimeCanClaim(ctx context.Context, nodeID string, t *task.Task) (bool, error) {
+	if h.authorizer == nil {
+		return true, nil
+	}
+	decision, err := h.authorizer.Check(ctx, authz.CheckRequest{
+		Actor: authz.ActorRef{
+			Type: authz.ActorRuntimeNode,
+			ID:   nodeID,
+		},
+		Action: authz.ActionTaskClaim,
+		Resource: authz.ResourceRef{
+			Type: authz.ResourceTask,
+			ID:   t.ID.String(),
+		},
+		TenantID:    t.TenantID,
+		TeamID:      t.TeamID,
+		AuditReason: "runtime task claim",
+	})
+	if err != nil {
+		return false, err
+	}
+	return decision.Allowed, nil
 }
 
 func (h *RuntimeHandler) assignTask(ctx context.Context, w http.ResponseWriter, t *task.Task, nodeID string) {

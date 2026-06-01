@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
 )
@@ -269,6 +270,53 @@ func TestClaimTaskTieBreaksByNewestCreatedAtAcrossSupportedProviders(t *testing.
 	}
 }
 
+func TestClaimTaskSkipsTaskOutsideRuntimeScope(t *testing.T) {
+	tenantID := handlerTestUUID(1)
+	teamID := handlerTestUUID(101)
+	node := &runtime.Node{
+		NodeID:             "node-1",
+		SupportedProviders: []string{"codex"},
+	}
+	blockedTask := &task.Task{
+		ID:           handlerTestUUID(200),
+		TenantID:     tenantID,
+		TeamID:       &teamID,
+		ProviderType: "codex",
+	}
+	taskService := &claimTaskService{
+		tasksByProvider: map[string][]*task.Task{
+			"codex": {blockedTask},
+		},
+	}
+	authorizer := &claimAuthorizer{allowed: false}
+	handler := NewRuntimeHandler(
+		&claimRuntimeService{node: node},
+		taskService,
+		&claimPoller{},
+		authorizer,
+	)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/tasks/claim?timeout=1", nil)
+	ctx := context.WithValue(request.Context(), middleware.NodeIDKey, node.NodeID)
+	request = request.WithContext(ctx)
+	response := httptest.NewRecorder()
+
+	handler.ClaimTask(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("expected no content when task is outside scope, got %d: %s", response.Code, response.Body.String())
+	}
+	if taskService.assignedTaskID != uuid.Nil {
+		t.Fatalf("expected no assignment, got %s", taskService.assignedTaskID)
+	}
+	if len(authorizer.checks) != 1 {
+		t.Fatalf("expected one authz check, got %#v", authorizer.checks)
+	}
+	if authorizer.checks[0].Action != authz.ActionTaskClaim {
+		t.Fatalf("expected task.claim action, got %#v", authorizer.checks[0])
+	}
+}
+
 type claimRuntimeService struct {
 	node *runtime.Node
 }
@@ -362,6 +410,16 @@ type claimPoller struct{}
 func (p *claimPoller) WaitForTask(ctx context.Context, nodeID string) (*task.Task, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
+}
+
+type claimAuthorizer struct {
+	allowed bool
+	checks  []authz.CheckRequest
+}
+
+func (a *claimAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (authz.Decision, error) {
+	a.checks = append(a.checks, req)
+	return authz.Decision{Allowed: a.allowed, Reason: authz.ReasonAllowed}, nil
 }
 
 func runtimeRequest(method string, target string, routePattern string, taskID uuid.UUID, body []byte) *http.Request {
