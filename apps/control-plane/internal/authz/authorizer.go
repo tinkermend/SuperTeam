@@ -30,12 +30,12 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 		}
 		return a.checkTenantAccess(ctx, req)
 	case ActionTenantAccess:
-		if !validResource(req.Resource, ResourceTenant) {
+		if !resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) {
 			return deny(ReasonInvalidResource), nil
 		}
 		return a.checkTenantAccess(ctx, req)
 	case ActionTeamAccess:
-		if !validResource(req.Resource, ResourceTeam) {
+		if req.TeamID == nil || !resourceMatchesUUID(req.Resource, ResourceTeam, *req.TeamID) {
 			return deny(ReasonInvalidResource), nil
 		}
 		return a.checkTeamAccess(ctx, req)
@@ -98,9 +98,14 @@ func (a *DBAuthorizer) checkRuntimeTaskClaim(ctx context.Context, req CheckReque
 	if req.Actor.Type != ActorRuntimeNode || req.Actor.ID == "" {
 		return deny(ReasonInvalidActor), nil
 	}
+	taskID, err := uuid.Parse(req.Resource.ID)
+	if err != nil {
+		return deny(ReasonInvalidResource), nil
+	}
 	covered, err := a.repository.RuntimeNodeCoversTaskScope(ctx, RuntimeScopeParams{
 		TenantID: req.TenantID,
 		TeamID:   req.TeamID,
+		TaskID:   taskID,
 		NodeID:   req.Actor.ID,
 	})
 	if err != nil {
@@ -130,6 +135,14 @@ func parseUUIDActor(actor ActorRef, expectedType string) (uuid.UUID, bool) {
 
 func validResource(resource ResourceRef, expectedType string) bool {
 	return resource.Type == expectedType && resource.ID != ""
+}
+
+func resourceMatchesUUID(resource ResourceRef, expectedType string, expectedID uuid.UUID) bool {
+	if resource.Type != expectedType {
+		return false
+	}
+	id, err := uuid.Parse(resource.ID)
+	return err == nil && id == expectedID
 }
 
 func roleAllowsTenantAccess(role string) bool {

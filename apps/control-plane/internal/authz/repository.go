@@ -28,5 +28,6 @@ type TeamMembershipParams struct {
 type RuntimeScopeParams struct {
 	TenantID uuid.UUID
 	TeamID   *uuid.UUID
+	TaskID   uuid.UUID
 	NodeID   string
 }
