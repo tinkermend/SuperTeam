@@ -8,6 +8,7 @@ import (
 	"github.com/superteam/control-plane/internal/api"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
+	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/config"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/storage"
@@ -20,6 +21,7 @@ type Container struct {
 	TaskService    *task.Service
 	RuntimeService *runtimepkg.Service
 	AuthService    *auth.Service
+	Authorizer     authz.Authorizer
 	Poller         *runtimepkg.Poller
 	TaskHandler    *handlers.TaskHandler
 	RuntimeHandler *handlers.RuntimeHandler
@@ -54,17 +56,20 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	if err != nil {
 		return nil, err
 	}
+	authzRepository := authz.NewPgRepository(q)
+	authorizer := authz.NewDBAuthorizer(authzRepository)
 
 	poller := runtimepkg.NewPoller()
 	taskHandler := handlers.NewTaskHandler(taskService)
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller)
-	server := api.NewServerWithAuth(taskHandler, runtimeHandler, authService, authService)
+	server := api.NewServerWithAuthz(taskHandler, runtimeHandler, authService, authService, authorizer)
 
 	return &Container{
 		Queries:        q,
 		TaskService:    taskService,
 		RuntimeService: runtimeService,
 		AuthService:    authService,
+		Authorizer:     authorizer,
 		Poller:         poller,
 		TaskHandler:    taskHandler,
 		RuntimeHandler: runtimeHandler,

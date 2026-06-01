@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
+	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
 )
@@ -133,6 +134,41 @@ func TestAuthRoutesAreRegistered(t *testing.T) {
 	}
 	if logsBody.Items[0].EventType != auth.LoginEventSucceeded {
 		t.Fatalf("expected login succeeded log, got %#v", logsBody.Items[0])
+	}
+}
+
+func TestCurrentUserRequiresConsoleAuthorization(t *testing.T) {
+	authRepo := newRouteAuthRepo()
+	authService, err := auth.NewService(authRepo)
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: false},
+	)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"admin","password":"admin"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp := httptest.NewRecorder()
+	server.ServeHTTP(loginResp, loginReq)
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("expected login to succeed, got %d: %s", loginResp.Code, loginResp.Body.String())
+	}
+
+	meReq := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	meReq.AddCookie(loginResp.Result().Cookies()[0])
+	meResp := httptest.NewRecorder()
+	server.ServeHTTP(meResp, meReq)
+
+	if meResp.Code != http.StatusForbidden {
+		t.Fatalf("expected current user to be forbidden, got %d: %s", meResp.Code, meResp.Body.String())
 	}
 }
 
@@ -546,4 +582,17 @@ func (r *routeAuthRepo) ListLoginLogs(ctx context.Context, filter auth.ListLogin
 func (r *routeAuthRepo) CreateOperationLog(ctx context.Context, params auth.CreateOperationLogParams) error {
 	r.operationLogs = append(r.operationLogs, params)
 	return nil
+}
+
+type routeAuthorizer struct {
+	allowed bool
+	checks  []authz.CheckRequest
+}
+
+func (a *routeAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (authz.Decision, error) {
+	a.checks = append(a.checks, req)
+	if a.allowed {
+		return authz.Decision{Allowed: true, Reason: authz.ReasonAllowed, MatchedRule: "test.allow"}, nil
+	}
+	return authz.Decision{Allowed: false, Reason: authz.ReasonNoMembership, RequiresAudit: true}, nil
 }

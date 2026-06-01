@@ -9,6 +9,7 @@ import (
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/auth"
+	"github.com/superteam/control-plane/internal/authz"
 )
 
 type Server struct {
@@ -17,6 +18,7 @@ type Server struct {
 	runtimeHandler     *handlers.RuntimeHandler
 	runtimeAuthService middleware.AuthService
 	authService        *auth.Service
+	authorizer         authz.Authorizer
 }
 
 func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
@@ -47,10 +49,25 @@ func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.Runti
 }
 
 func NewServerWithAuth(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, authService *auth.Service, runtimeAuthService ...middleware.AuthService) *Server {
-	server := NewServer(taskHandler, runtimeHandler, runtimeAuthService...)
+	var runtimeAuth middleware.AuthService
+	if len(runtimeAuthService) > 0 {
+		runtimeAuth = runtimeAuthService[0]
+	}
+	return NewServerWithAuthz(taskHandler, runtimeHandler, authService, runtimeAuth, nil)
+}
+
+func NewServerWithAuthz(
+	taskHandler *handlers.TaskHandler,
+	runtimeHandler *handlers.RuntimeHandler,
+	authService *auth.Service,
+	runtimeAuthService middleware.AuthService,
+	authorizer authz.Authorizer,
+) *Server {
+	server := NewServer(taskHandler, runtimeHandler, runtimeAuthService)
 	server.authService = authService
+	server.authorizer = authorizer
 	if authService != nil {
-		auth.HandlerFromMux(auth.NewHandler(authService), server.router)
+		auth.HandlerFromMux(auth.NewHandler(authService, authorizer), server.router)
 	}
 	return server
 }

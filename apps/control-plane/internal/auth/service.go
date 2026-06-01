@@ -9,6 +9,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const DefaultTenantID = "00000000-0000-0000-0000-000000000001"
+
 type Repository interface {
 	CreateUser(ctx context.Context, username, passwordHash string) (*User, error)
 	ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error)
@@ -29,6 +31,12 @@ type Repository interface {
 
 type Service struct {
 	repo Repository
+}
+
+type CurrentUserContext struct {
+	User     *User
+	TenantID uuid.UUID
+	TeamID   *uuid.UUID
 }
 
 func NewService(repo Repository) (*Service, error) {
@@ -198,6 +206,18 @@ func (s *Service) GetUserBySessionToken(ctx context.Context, token string) (*Ses
 	}
 	_ = s.repo.UpdateSessionLastSeen(ctx, tokenHash, time.Now().UTC())
 	return session, user, nil
+}
+
+func (s *Service) GetCurrentUserContext(ctx context.Context, token string) (*CurrentUserContext, error) {
+	_, user, err := s.GetUserBySessionToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	tenantID := uuid.MustParse(DefaultTenantID)
+	return &CurrentUserContext{
+		User:     user,
+		TenantID: tenantID,
+	}, nil
 }
 
 func (s *Service) Logout(ctx context.Context, token string) error {

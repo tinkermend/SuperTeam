@@ -8,16 +8,22 @@ import (
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	"github.com/superteam/control-plane/internal/authz"
 )
 
 const SessionCookieName = "session_token"
 
 type HTTPHandler struct {
-	service *Service
+	service    *Service
+	authorizer authz.Authorizer
 }
 
-func NewHandler(service *Service) *HTTPHandler {
-	return &HTTPHandler{service: service}
+func NewHandler(service *Service, authorizer ...authz.Authorizer) *HTTPHandler {
+	var az authz.Authorizer
+	if len(authorizer) > 0 {
+		az = authorizer[0]
+	}
+	return &HTTPHandler{service: service, authorizer: az}
 }
 
 func (h *HTTPHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -38,13 +44,37 @@ func (h *HTTPHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
-	_, user, err := h.currentSessionUser(r)
+	current, err := h.currentUserContext(r)
 	if err != nil {
 		h.writeAuthError(w, err)
 		return
 	}
+	if h.authorizer != nil {
+		decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
+			Actor: authz.ActorRef{
+				Type: authz.ActorUser,
+				ID:   current.User.ID.String(),
+			},
+			Action: authz.ActionConsoleAccess,
+			Resource: authz.ResourceRef{
+				Type: authz.ResourceConsole,
+				ID:   "web",
+			},
+			TenantID:    current.TenantID,
+			TeamID:      current.TeamID,
+			AuditReason: "current user console access",
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+		if !decision.Allowed {
+			writeError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+	}
 
-	writeJSON(w, http.StatusOK, CurrentUserResponse{User: toGeneratedUserSummary(user)})
+	writeJSON(w, http.StatusOK, CurrentUserResponse{User: toGeneratedUserSummary(current.User)})
 }
 
 func (h *HTTPHandler) ListLoginLogs(w http.ResponseWriter, r *http.Request, params ListLoginLogsParams) {
@@ -173,6 +203,14 @@ func (h *HTTPHandler) currentSessionUser(r *http.Request) (*Session, *User, erro
 		return nil, nil, ErrUnauthorized
 	}
 	return h.service.GetUserBySessionToken(r.Context(), cookie.Value)
+}
+
+func (h *HTTPHandler) currentUserContext(r *http.Request) (*CurrentUserContext, error) {
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil {
+		return nil, ErrUnauthorized
+	}
+	return h.service.GetCurrentUserContext(r.Context(), cookie.Value)
 }
 
 func toActor(user *User) Actor {
