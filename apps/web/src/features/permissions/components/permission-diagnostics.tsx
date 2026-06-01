@@ -36,11 +36,29 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
   const checkMutation = useMutation({
     mutationFn: (input: CheckPermissionRequest) => checkPermission(apiOptions, input),
   });
+  const trimmedActorId = actorId.trim();
+  const trimmedTenantId = tenantId.trim();
+  const trimmedTeamId = teamId.trim();
+  const trimmedResourceId = resourceId.trim();
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!actorId.trim() || !tenantId.trim()) {
+    const validationError = validateDiagnosticForm({
+      action,
+      actorId: trimmedActorId,
+      resourceId: trimmedResourceId,
+      resourceType,
+      teamId: trimmedTeamId,
+      tenantId: trimmedTenantId,
+    });
+
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+
+    if (!trimmedActorId || !trimmedTenantId) {
       setFormError("请填写 Actor ID 和租户 ID。");
       return;
     }
@@ -48,17 +66,47 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
     setFormError(null);
     checkMutation.mutate({
       actor: {
-        id: actorId.trim(),
+        id: trimmedActorId,
         type: actorType.trim(),
       },
       action,
       resource: {
-        id: resourceId.trim(),
+        id: trimmedResourceId,
         type: resourceType.trim(),
       },
-      tenant_id: tenantId.trim(),
-      team_id: teamId.trim() || undefined,
+      tenant_id: trimmedTenantId,
+      team_id: trimmedTeamId || undefined,
     });
+  }
+
+  function handleActionChange(nextAction: CheckPermissionRequest["action"]) {
+    setAction(nextAction);
+    setFormError(null);
+
+    const defaults = getResourceDefaults(nextAction, {
+      teamId: trimmedTeamId,
+      tenantId: trimmedTenantId,
+    });
+    setResourceType(defaults.resourceType);
+    setResourceId(defaults.resourceId);
+  }
+
+  function handleTenantIdChange(value: string) {
+    setTenantId(value);
+    const nextTenantId = value.trim();
+
+    if (usesTenantResource(action) && (!resourceId.trim() || resourceId.trim() === tenantId.trim())) {
+      setResourceId(nextTenantId);
+    }
+  }
+
+  function handleTeamIdChange(value: string) {
+    setTeamId(value);
+    const nextTeamId = value.trim();
+
+    if (action === "team.access" && (!resourceId.trim() || resourceId.trim() === teamId.trim())) {
+      setResourceId(nextTeamId);
+    }
   }
 
   return (
@@ -72,7 +120,7 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
           <CardDescription>用当前授权引擎检查 Actor 对资源动作的访问结果。</CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="grid gap-3 md:grid-cols-2" onSubmit={handleSubmit}>
+          <form className="grid gap-3 md:grid-cols-2" noValidate onSubmit={handleSubmit}>
             <div className="flex flex-col gap-2">
               <Label htmlFor="diagnostic-actor-type">Actor 类型</Label>
               <Select value={actorType} onValueChange={setActorType}>
@@ -90,11 +138,11 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="diagnostic-actor-id">Actor ID</Label>
-              <Input id="diagnostic-actor-id" value={actorId} onChange={(event) => setActorId(event.target.value)} />
+              <Input id="diagnostic-actor-id" required aria-invalid={Boolean(formError && !trimmedActorId)} value={actorId} onChange={(event) => setActorId(event.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="diagnostic-action">动作</Label>
-              <Select value={action} onValueChange={(value) => setAction(value as CheckPermissionRequest["action"])}>
+              <Select value={action} onValueChange={(value) => handleActionChange(value as CheckPermissionRequest["action"])}>
                 <SelectTrigger id="diagnostic-action" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -111,19 +159,19 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="diagnostic-resource-type">资源类型</Label>
-              <Input id="diagnostic-resource-type" value={resourceType} onChange={(event) => setResourceType(event.target.value)} />
+              <Input id="diagnostic-resource-type" required aria-invalid={Boolean(formError && resourceType.trim() !== expectedResourceType(action))} value={resourceType} onChange={(event) => setResourceType(event.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="diagnostic-resource-id">资源 ID</Label>
-              <Input id="diagnostic-resource-id" value={resourceId} onChange={(event) => setResourceId(event.target.value)} />
+              <Input id="diagnostic-resource-id" required aria-invalid={Boolean(formError && !trimmedResourceId)} value={resourceId} onChange={(event) => setResourceId(event.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="diagnostic-tenant-id">租户 ID</Label>
-              <Input id="diagnostic-tenant-id" value={tenantId} onChange={(event) => setTenantId(event.target.value)} />
+              <Input id="diagnostic-tenant-id" required aria-invalid={Boolean(formError && !trimmedTenantId)} value={tenantId} onChange={(event) => handleTenantIdChange(event.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="diagnostic-team-id">团队 ID</Label>
-              <Input id="diagnostic-team-id" value={teamId} onChange={(event) => setTeamId(event.target.value)} />
+              <Input id="diagnostic-team-id" required={action === "team.access"} aria-invalid={Boolean(formError && action === "team.access" && !trimmedTeamId)} value={teamId} onChange={(event) => handleTeamIdChange(event.target.value)} />
             </div>
             <div className="flex items-end">
               <Button type="submit" disabled={checkMutation.isPending}>
@@ -138,6 +186,90 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
       <DiagnosticsResult result={checkMutation.data} />
     </div>
   );
+}
+
+function getResourceDefaults(
+  action: CheckPermissionRequest["action"],
+  scopeIds: {
+    teamId: string;
+    tenantId: string;
+  },
+) {
+  switch (action) {
+    case "console.access":
+      return {
+        resourceId: "web",
+        resourceType: "console",
+      };
+    case "tenant.access":
+    case "authz_center.read":
+    case "runtime_scope.manage":
+      return {
+        resourceId: scopeIds.tenantId,
+        resourceType: "tenant",
+      };
+    case "team.access":
+      return {
+        resourceId: scopeIds.teamId,
+        resourceType: "team",
+      };
+    case "task.claim":
+      return {
+        resourceId: "",
+        resourceType: "task",
+      };
+  }
+}
+
+function expectedResourceType(action: CheckPermissionRequest["action"]) {
+  return getResourceDefaults(action, { teamId: "", tenantId: "" }).resourceType;
+}
+
+function usesTenantResource(action: CheckPermissionRequest["action"]) {
+  return action === "tenant.access" || action === "authz_center.read" || action === "runtime_scope.manage";
+}
+
+function validateDiagnosticForm({
+  action,
+  actorId,
+  resourceId,
+  resourceType,
+  teamId,
+  tenantId,
+}: {
+  action: CheckPermissionRequest["action"];
+  actorId: string;
+  resourceId: string;
+  resourceType: string;
+  teamId: string;
+  tenantId: string;
+}) {
+  if (!actorId || !tenantId) {
+    return "请填写 Actor ID 和租户 ID。";
+  }
+
+  const expectedType = expectedResourceType(action);
+  if (resourceType.trim() !== expectedType) {
+    return `动作 ${action} 需要资源类型 ${expectedType}。`;
+  }
+
+  if (action === "console.access" && resourceId !== "web") {
+    return "console.access 的资源 ID 应为 web。";
+  }
+
+  if (usesTenantResource(action) && !resourceId) {
+    return `动作 ${action} 需要租户资源 ID。`;
+  }
+
+  if (action === "team.access" && (!teamId || !resourceId)) {
+    return "team.access 需要团队 ID 和团队资源 ID。";
+  }
+
+  if (action === "task.claim" && !resourceId) {
+    return "task.claim 需要任务资源 ID。";
+  }
+
+  return null;
 }
 
 function DiagnosticsResult({ result }: { result?: CheckPermissionResponse }) {

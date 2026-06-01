@@ -4,6 +4,16 @@ import { Server, ShieldAlert } from "lucide-react";
 import type { ApiClientOptions, CreateRuntimeScopeRequest, RuntimeScope, RuntimeScopeNode, RuntimeScopeType } from "@/lib/api";
 import { createRuntimeScope, listRuntimeScopes, updateRuntimeScope } from "@/lib/api";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,26 +47,36 @@ export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
   const [tenantId, setTenantId] = useState("");
   const [teamId, setTeamId] = useState("");
   const [scopeType, setScopeType] = useState<RuntimeScopeType>(defaultScopeType);
-  const [scopeValue, setScopeValue] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [scopePendingConfirmation, setScopePendingConfirmation] = useState<RuntimeScope | null>(null);
 
   const nodes = scopesQuery.data?.nodes ?? [];
+  const trimmedRuntimeNodeId = runtimeNodeId.trim();
+  const trimmedTenantId = tenantId.trim();
+  const trimmedTeamId = teamId.trim();
+  const derivedScopeValue = scopeType === "tenant" ? trimmedTenantId : trimmedTeamId;
+  const pendingStatus = scopePendingConfirmation?.status === "active" ? "disabled" : "active";
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const input = {
-      runtime_node_id: runtimeNodeId.trim(),
-      tenant_id: tenantId.trim(),
-      team_id: teamId.trim() || undefined,
-      scope_type: scopeType,
-      scope_value: scopeValue.trim(),
-    };
-
-    if (!input.runtime_node_id || !input.tenant_id || !input.scope_value) {
-      setFormError("请填写 Runtime Node ID、租户 ID 和范围值。");
+    if (!trimmedRuntimeNodeId || !trimmedTenantId) {
+      setFormError("请填写 Runtime Node ID 和租户 ID。");
       return;
     }
+
+    if (scopeType === "team" && !trimmedTeamId) {
+      setFormError("团队范围需要填写团队 ID。");
+      return;
+    }
+
+    const input: CreateRuntimeScopeRequest = {
+      runtime_node_id: trimmedRuntimeNodeId,
+      tenant_id: trimmedTenantId,
+      scope_type: scopeType,
+      scope_value: derivedScopeValue,
+      ...(scopeType === "team" ? { team_id: trimmedTeamId } : {}),
+    };
 
     setFormError(null);
     createScopeMutation.mutate(input, {
@@ -65,9 +85,24 @@ export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
         setTenantId("");
         setTeamId("");
         setScopeType(defaultScopeType);
-        setScopeValue("");
       },
     });
+  }
+
+  function handleConfirmToggleScope() {
+    if (!scopePendingConfirmation) {
+      return;
+    }
+
+    updateScopeMutation.mutate(
+      {
+        scopeId: scopePendingConfirmation.id,
+        status: pendingStatus,
+      },
+      {
+        onSettled: () => setScopePendingConfirmation(null),
+      },
+    );
   }
 
   return (
@@ -81,18 +116,18 @@ export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
           <CardDescription>为 Runtime 节点绑定可领取任务的租户或团队范围。</CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_160px_1fr_auto]" onSubmit={handleSubmit}>
+          <form className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_160px_auto]" noValidate onSubmit={handleSubmit}>
             <div className="flex flex-col gap-2">
               <Label htmlFor="runtime-node-id">Runtime Node ID</Label>
-              <Input id="runtime-node-id" value={runtimeNodeId} onChange={(event) => setRuntimeNodeId(event.target.value)} />
+              <Input id="runtime-node-id" required aria-invalid={Boolean(formError && !trimmedRuntimeNodeId)} value={runtimeNodeId} onChange={(event) => setRuntimeNodeId(event.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="runtime-scope-tenant-id">租户 ID</Label>
-              <Input id="runtime-scope-tenant-id" value={tenantId} onChange={(event) => setTenantId(event.target.value)} />
+              <Input id="runtime-scope-tenant-id" required aria-invalid={Boolean(formError && !trimmedTenantId)} value={tenantId} onChange={(event) => setTenantId(event.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="runtime-scope-team-id">团队 ID</Label>
-              <Input id="runtime-scope-team-id" value={teamId} onChange={(event) => setTeamId(event.target.value)} />
+              <Label htmlFor="runtime-scope-team-id">团队 ID{scopeType === "team" ? "" : "（可选）"}</Label>
+              <Input id="runtime-scope-team-id" required={scopeType === "team"} aria-invalid={Boolean(formError && scopeType === "team" && !trimmedTeamId)} value={teamId} onChange={(event) => setTeamId(event.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="runtime-scope-type">范围类型</Label>
@@ -108,16 +143,15 @@ export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="runtime-scope-value">范围值</Label>
-              <Input id="runtime-scope-value" value={scopeValue} onChange={(event) => setScopeValue(event.target.value)} />
-            </div>
             <div className="flex items-end">
               <Button type="submit" disabled={createScopeMutation.isPending}>
                 新增
               </Button>
             </div>
           </form>
+          <p className="mt-3 text-sm text-muted-foreground">
+            范围值将由{scopeType === "tenant" ? "租户 ID" : "团队 ID"}自动生成：{derivedScopeValue || "待填写"}
+          </p>
           {formError ? <p className="mt-3 text-sm text-destructive">{formError}</p> : null}
           {createScopeMutation.isError ? <p className="mt-3 text-sm text-destructive">Runtime 范围创建失败。</p> : null}
         </CardContent>
@@ -139,10 +173,28 @@ export function RuntimeScopes({ apiOptions }: RuntimeScopesProps) {
           ) : nodes.length === 0 ? (
             <p className="text-sm text-muted-foreground">暂无 Runtime 授权范围。</p>
           ) : (
-            <RuntimeScopeTable nodes={nodes} onToggleScope={(scope) => updateScopeMutation.mutate({ scopeId: scope.id, status: scope.status === "active" ? "disabled" : "active" })} toggling={updateScopeMutation.isPending} />
+            <RuntimeScopeTable nodes={nodes} onToggleScope={setScopePendingConfirmation} toggling={updateScopeMutation.isPending} />
           )}
         </CardContent>
       </Card>
+      <AlertDialog open={Boolean(scopePendingConfirmation)} onOpenChange={(open) => !open && setScopePendingConfirmation(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingStatus === "disabled" ? "确认禁用 Runtime 范围" : "确认启用 Runtime 范围"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              此操作会影响该 Runtime 节点的后续任务领取行为。禁用后，节点不能再领取不在有效范围内的任务；启用后，节点会重新按该范围参与任务 claim。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updateScopeMutation.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmToggleScope} disabled={updateScopeMutation.isPending}>
+              {pendingStatus === "disabled" ? "确认禁用" : "确认启用"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
