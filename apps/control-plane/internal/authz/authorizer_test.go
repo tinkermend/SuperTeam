@@ -46,6 +46,15 @@ func (r *memoryRepository) RuntimeNodeCoversTaskScope(ctx context.Context, param
 	return r.runtimeOK, nil
 }
 
+type memoryRecorder struct {
+	records []DecisionRecord
+}
+
+func (r *memoryRecorder) RecordDecision(ctx context.Context, record DecisionRecord) error {
+	r.records = append(r.records, record)
+	return nil
+}
+
 func TestDBAuthorizerAllowsTenantOwnerConsoleAccess(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	userID := uuid.MustParse("00000000-0000-4000-8000-000000000001")
@@ -94,6 +103,34 @@ func TestDBAuthorizerDeniesConsoleAccessWithoutMembership(t *testing.T) {
 	}
 	if decision.Reason != ReasonNoMembership {
 		t.Fatalf("expected no membership reason, got %q", decision.Reason)
+	}
+}
+
+func TestDBAuthorizerRecordsDeniedDecision(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000004")
+	recorder := &memoryRecorder{}
+	authorizer := NewDBAuthorizer(&memoryRepository{tenantRoles: map[string]string{}}, recorder)
+
+	decision, err := authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+		Action:   ActionConsoleAccess,
+		Resource: ResourceRef{Type: ResourceConsole, ID: "web"},
+		TenantID: tenantID,
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if decision.Allowed {
+		t.Fatalf("expected denial, got %#v", decision)
+	}
+	if len(recorder.records) != 1 {
+		t.Fatalf("expected one decision record, got %#v", recorder.records)
+	}
+	record := recorder.records[0]
+	if record.ActorType != ActorUser || record.Action != ActionConsoleAccess || record.Allowed {
+		t.Fatalf("unexpected decision record: %#v", record)
 	}
 }
 

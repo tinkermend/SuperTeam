@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
@@ -74,6 +75,25 @@ type Decision struct {
 	MatchedRule   string
 	RequiresAudit bool
 	Snapshot      map[string]any
+}
+
+type DecisionRecord struct {
+	TenantID     uuid.UUID
+	TeamID       *uuid.UUID
+	ActorType    string
+	ActorID      string
+	Action       string
+	ResourceType string
+	ResourceID   string
+	Allowed      bool
+	Reason       string
+	MatchedRule  string
+	Engine       string
+	Snapshot     map[string]any
+}
+
+type DecisionRecorder interface {
+	RecordDecision(ctx context.Context, record DecisionRecord) error
 }
 
 type Membership struct {

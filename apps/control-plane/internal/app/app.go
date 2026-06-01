@@ -57,7 +57,8 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		return nil, err
 	}
 	authzRepository := authz.NewPgRepository(q)
-	authorizer := authz.NewDBAuthorizer(authzRepository)
+	authzRecorder := authz.NewOperationLogDecisionRecorder(q)
+	authorizer := authz.NewDBAuthorizer(authzRepository, authzRecorder)
 
 	poller := runtimepkg.NewPoller()
 	taskHandler := handlers.NewTaskHandler(taskService)
