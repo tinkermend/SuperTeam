@@ -226,6 +226,105 @@ func seedDefaultTenant(t *testing.T, db *pgxpool.Pool) {
 }
 
 // ============================================================================
+// Authz Tests
+// ============================================================================
+
+func TestAuthzTenantMembershipQueries(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	user, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "authz-owner",
+		DisplayName:  pgtype.Text{String: "Authz Owner", Valid: true},
+		Email:        pgtype.Text{String: "authz-owner@example.com", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
+		Status:       "active",
+	})
+	require.NoError(t, err)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	_, err = testDB.Exec(ctx, `
+		INSERT INTO tenant_members (tenant_id, principal_type, principal_id, role, status)
+		VALUES ($1, 'user', $2, 'owner', 'active')
+	`, tenantID, user.ID)
+	require.NoError(t, err)
+
+	member, err := testQueries.GetActiveTenantMembership(ctx, queries.GetActiveTenantMembershipParams{
+		TenantID:      tenantID,
+		PrincipalType: "user",
+		PrincipalID:   user.ID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "owner", member.Role)
+	assert.False(t, member.TeamID.Valid)
+}
+
+func TestAuthzRuntimeNodeCoversTaskScope(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+
+	providersJSON, err := json.Marshal(map[string]interface{}{"providers": []string{"claude-code"}})
+	require.NoError(t, err)
+	metadataJSON, err := json.Marshal(map[string]interface{}{"test": true})
+	require.NoError(t, err)
+	now := pgtype.Timestamptz{}
+	require.NoError(t, now.Scan(time.Now()))
+
+	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "authz-node-001",
+		Name:               "Authz Node 001",
+		SupportedProviders: providersJSON,
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           metadataJSON,
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	paramsJSON, err := json.Marshal(map[string]interface{}{"command": "authz"})
+	require.NoError(t, err)
+	task, err := testQueries.CreateTask(ctx, queries.CreateTaskParams{
+		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: true},
+		TeamID:       uuid.NullUUID{UUID: teamID, Valid: true},
+		Title:        "Authz Task",
+		Description:  pgtype.Text{String: "Task for runtime scope authz", Valid: true},
+		Status:       "pending",
+		Priority:     1,
+		ProviderType: "claude-code",
+		Params:       paramsJSON,
+	})
+	require.NoError(t, err)
+
+	_, err = testDB.Exec(ctx, `
+		INSERT INTO runtime_node_scopes (tenant_id, runtime_node_id, team_id, scope_type, scope_value, status)
+		VALUES ($1, $2, $3, 'team', $3::text, 'active')
+	`, tenantID, node.ID, teamID)
+	require.NoError(t, err)
+
+	covered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
+		TenantID: tenantID,
+		TeamID:   uuid.NullUUID{UUID: teamID, Valid: true},
+		TaskID:   task.ID,
+		NodeID:   "authz-node-001",
+	})
+	require.NoError(t, err)
+	assert.True(t, covered)
+
+	missingNodeCovered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
+		TenantID: tenantID,
+		TeamID:   uuid.NullUUID{UUID: teamID, Valid: true},
+		TaskID:   task.ID,
+		NodeID:   "authz-node-missing",
+	})
+	require.NoError(t, err)
+	assert.False(t, missingNodeCovered)
+}
+
+// ============================================================================
 // Runtime Node Tests
 // ============================================================================
 

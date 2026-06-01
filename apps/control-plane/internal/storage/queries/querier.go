@@ -34,6 +34,8 @@ type Querier interface {
 	DeleteTask(ctx context.Context, arg DeleteTaskParams) error
 	DeleteTaskArtifact(ctx context.Context, arg DeleteTaskArtifactParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	GetActiveTeamMembership(ctx context.Context, arg GetActiveTeamMembershipParams) (TenantMember, error)
+	GetActiveTenantMembership(ctx context.Context, arg GetActiveTenantMembershipParams) (TenantMember, error)
 	GetAuditEvent(ctx context.Context, id uuid.UUID) (AuditEvent, error)
 	GetLatestTaskEventSequence(ctx context.Context, arg GetLatestTaskEventSequenceParams) (int32, error)
 	GetLatestTaskRun(ctx context.Context, arg GetLatestTaskRunParams) (TaskRun, error)
@@ -62,6 +64,7 @@ type Querier interface {
 	ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error)
 	ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error)
+	RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNodeCoversTaskScopeParams) (bool, error)
 	UpdateRuntimeNodeHeartbeat(ctx context.Context, arg UpdateRuntimeNodeHeartbeatParams) (RuntimeNode, error)
 	UpdateRuntimeNodeLoad(ctx context.Context, arg UpdateRuntimeNodeLoadParams) (RuntimeNode, error)
 	UpdateRuntimeNodeStatus(ctx context.Context, arg UpdateRuntimeNodeStatusParams) (RuntimeNode, error)
