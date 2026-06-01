@@ -14,10 +14,10 @@ import (
 )
 
 type PgQueryStore interface {
-	CountAuthzDecisionsSince(ctx context.Context, since pgtype.Timestamptz) (queries.CountAuthzDecisionsSinceRow, error)
+	CountAuthzDecisionsSince(ctx context.Context, params queries.CountAuthzDecisionsSinceParams) (queries.CountAuthzDecisionsSinceRow, error)
 	ListTopDeniedAuthzActionsSince(ctx context.Context, params queries.ListTopDeniedAuthzActionsSinceParams) ([]queries.ListTopDeniedAuthzActionsSinceRow, error)
 	ListAuthzDecisions(ctx context.Context, params queries.ListAuthzDecisionsParams) ([]queries.WebOperationLog, error)
-	ListRuntimeNodesWithScopes(ctx context.Context) ([]queries.ListRuntimeNodesWithScopesRow, error)
+	ListRuntimeNodesWithScopes(ctx context.Context, tenantID uuid.UUID) ([]queries.ListRuntimeNodesWithScopesRow, error)
 	CreateRuntimeNodeScope(ctx context.Context, params queries.CreateRuntimeNodeScopeParams) (queries.RuntimeNodeScope, error)
 	UpdateRuntimeNodeScopeStatus(ctx context.Context, params queries.UpdateRuntimeNodeScopeStatusParams) (queries.RuntimeNodeScope, error)
 	ListAuthzMembers(ctx context.Context, params queries.ListAuthzMembersParams) ([]queries.ListAuthzMembersRow, error)
@@ -32,18 +32,22 @@ func NewPgRepository(q PgQueryStore) *PgRepository {
 	return &PgRepository{q: q}
 }
 
-func (r *PgRepository) CountDecisionsSince(ctx context.Context, since time.Time) (DecisionTotals, error) {
-	row, err := r.q.CountAuthzDecisionsSince(ctx, pgtype.Timestamptz{Time: since, Valid: true})
+func (r *PgRepository) CountDecisionsSince(ctx context.Context, tenantID uuid.UUID, since time.Time) (DecisionTotals, error) {
+	row, err := r.q.CountAuthzDecisionsSince(ctx, queries.CountAuthzDecisionsSinceParams{
+		TenantID: tenantID,
+		Since:    pgtype.Timestamptz{Time: since, Valid: true},
+	})
 	if err != nil {
 		return DecisionTotals{}, err
 	}
 	return DecisionTotals{Total: row.Total, Allowed: row.Allowed, Denied: row.Denied}, nil
 }
 
-func (r *PgRepository) ListTopDeniedActionsSince(ctx context.Context, since time.Time, limit int32) ([]ActionCount, error) {
+func (r *PgRepository) ListTopDeniedActionsSince(ctx context.Context, tenantID uuid.UUID, since time.Time, limit int32) ([]ActionCount, error) {
 	rows, err := r.q.ListTopDeniedAuthzActionsSince(ctx, queries.ListTopDeniedAuthzActionsSinceParams{
-		Since: pgtype.Timestamptz{Time: since, Valid: true},
-		Limit: limit,
+		TenantID: tenantID,
+		Since:    pgtype.Timestamptz{Time: since, Valid: true},
+		Limit:    limit,
 	})
 	if err != nil {
 		return nil, err
@@ -57,6 +61,7 @@ func (r *PgRepository) ListTopDeniedActionsSince(ctx context.Context, since time
 
 func (r *PgRepository) ListDecisions(ctx context.Context, filter DecisionFilter) ([]DecisionRecord, error) {
 	rows, err := r.q.ListAuthzDecisions(ctx, queries.ListAuthzDecisionsParams{
+		TenantID:     filter.TenantID,
 		Result:       nullableText(filter.Result),
 		Action:       nullableText(filter.Action),
 		ActorType:    nullableText(filter.ActorType),
@@ -77,8 +82,8 @@ func (r *PgRepository) ListDecisions(ctx context.Context, filter DecisionFilter)
 	return items, nil
 }
 
-func (r *PgRepository) ListRuntimeScopeNodes(ctx context.Context) ([]RuntimeScopeNodeRecord, error) {
-	rows, err := r.q.ListRuntimeNodesWithScopes(ctx)
+func (r *PgRepository) ListRuntimeScopeNodes(ctx context.Context, tenantID uuid.UUID) ([]RuntimeScopeNodeRecord, error) {
+	rows, err := r.q.ListRuntimeNodesWithScopes(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -123,10 +128,11 @@ func (r *PgRepository) CreateRuntimeScope(ctx context.Context, input RuntimeScop
 	return runtimeScopeFromQuery(scope), nil
 }
 
-func (r *PgRepository) UpdateRuntimeScopeStatus(ctx context.Context, scopeID uuid.UUID, status string) (RuntimeScopeRecord, error) {
+func (r *PgRepository) UpdateRuntimeScopeStatus(ctx context.Context, tenantID uuid.UUID, scopeID uuid.UUID, status string) (RuntimeScopeRecord, error) {
 	scope, err := r.q.UpdateRuntimeNodeScopeStatus(ctx, queries.UpdateRuntimeNodeScopeStatusParams{
-		ID:     scopeID,
-		Status: status,
+		TenantID: tenantID,
+		ID:       scopeID,
+		Status:   status,
 	})
 	if err != nil {
 		return RuntimeScopeRecord{}, mapNotFoundError(err)
@@ -136,8 +142,9 @@ func (r *PgRepository) UpdateRuntimeScopeStatus(ctx context.Context, scopeID uui
 
 func (r *PgRepository) ListMembers(ctx context.Context, filter MemberFilter) ([]MemberRecord, error) {
 	rows, err := r.q.ListAuthzMembers(ctx, queries.ListAuthzMembersParams{
-		Offset: filter.Offset,
-		Limit:  filter.Limit,
+		TenantID: filter.TenantID,
+		Offset:   filter.Offset,
+		Limit:    filter.Limit,
 	})
 	if err != nil {
 		return nil, err
@@ -158,14 +165,14 @@ func (r *PgRepository) ListMembers(ctx context.Context, filter MemberFilter) ([]
 				Memberships:   []MembershipRecord{},
 			})
 		}
-		if row.TenantID.Valid && row.PrincipalID.Valid {
+		if row.TenantID != uuid.Nil {
 			membership := MembershipRecord{
-				TenantID:      row.TenantID.UUID,
+				TenantID:      row.TenantID,
 				TeamID:        uuidPtrFromNull(row.TeamID),
-				PrincipalType: row.PrincipalType.String,
-				PrincipalID:   row.PrincipalID.UUID,
-				Role:          row.Role.String,
-				Status:        row.MembershipStatus.String,
+				PrincipalType: row.PrincipalType,
+				PrincipalID:   row.PrincipalID,
+				Role:          row.Role,
+				Status:        row.MembershipStatus,
 			}
 			members[index].Memberships = append(members[index].Memberships, membership)
 			if row.AccountStatus == "active" && membership.Status == "active" && roleAllowsConsoleAccess(membership.Role) {

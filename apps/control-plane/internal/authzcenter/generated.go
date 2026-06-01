@@ -26,10 +26,12 @@ const (
 
 // Defines values for CheckPermissionRequestAction.
 const (
-	ConsoleAccess CheckPermissionRequestAction = "console.access"
-	TaskClaim     CheckPermissionRequestAction = "task.claim"
-	TeamAccess    CheckPermissionRequestAction = "team.access"
-	TenantAccess  CheckPermissionRequestAction = "tenant.access"
+	AuthzCenterRead    CheckPermissionRequestAction = "authz_center.read"
+	ConsoleAccess      CheckPermissionRequestAction = "console.access"
+	RuntimeScopeManage CheckPermissionRequestAction = "runtime_scope.manage"
+	TaskClaim          CheckPermissionRequestAction = "task.claim"
+	TeamAccess         CheckPermissionRequestAction = "team.access"
+	TenantAccess       CheckPermissionRequestAction = "tenant.access"
 )
 
 // Defines values for CreateRuntimeScopeRequestScopeType.

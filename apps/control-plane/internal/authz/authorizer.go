@@ -61,6 +61,12 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 			break
 		}
 		decision, err = a.checkTenantAdminAccess(ctx, req)
+	case ActionAuthzCenterRead:
+		if !resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) {
+			decision = deny(ReasonInvalidResource)
+			break
+		}
+		decision, err = a.checkTenantAdminAccess(ctx, req)
 	default:
 		return Decision{Allowed: false, Reason: ReasonUnsupportedAction, RequiresAudit: true}, ErrUnsupportedAction
 	}

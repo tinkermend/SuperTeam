@@ -548,7 +548,7 @@ components:
           $ref: "#/components/schemas/AuthzRef"
         action:
           type: string
-          enum: [console.access, tenant.access, team.access, task.claim]
+          enum: [console.access, tenant.access, team.access, task.claim, authz_center.read, runtime_scope.manage]
         resource:
           $ref: "#/components/schemas/AuthzRef"
         tenant_id:

@@ -2,6 +2,7 @@
 SELECT *
 FROM web_operation_logs
 WHERE module = 'authz'
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
   AND (sqlc.narg('result')::varchar IS NULL OR result = sqlc.narg('result')::varchar)
   AND (sqlc.narg('action')::varchar IS NULL OR action = sqlc.narg('action')::varchar)
   AND (sqlc.narg('actor_type')::varchar IS NULL OR details->>'actor_type' = sqlc.narg('actor_type')::varchar OR details->'actor'->>'type' = sqlc.narg('actor_type')::varchar)
@@ -19,12 +20,14 @@ SELECT
   COUNT(*) FILTER (WHERE result = 'failed')::bigint AS denied
 FROM web_operation_logs
 WHERE module = 'authz'
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
   AND created_at >= sqlc.arg('since')::timestamptz;
 
 -- name: ListTopDeniedAuthzActionsSince :many
 SELECT action, COUNT(*)::bigint AS count
 FROM web_operation_logs
 WHERE module = 'authz'
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
   AND result = 'failed'
   AND created_at >= sqlc.arg('since')::timestamptz
 GROUP BY action
@@ -53,8 +56,11 @@ SELECT
   rns.created_at AS scope_created_at,
   rns.updated_at AS scope_updated_at
 FROM runtime_nodes rn
-LEFT JOIN runtime_node_scopes rns ON rns.runtime_node_id = rn.id
+LEFT JOIN runtime_node_scopes rns
+  ON rns.runtime_node_id = rn.id
+ AND rns.tenant_id = sqlc.arg('tenant_id')::uuid
 WHERE rn.archived_at IS NULL
+  AND rn.tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY rn.created_at DESC, rns.created_at DESC;
 
 -- name: CreateRuntimeNodeScope :one
@@ -118,20 +124,27 @@ SET status = sqlc.arg('status')::varchar,
     END,
     updated_at = NOW()
 WHERE id = sqlc.arg('id')::uuid
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
 RETURNING *;
 
 -- name: ListAuthzMembers :many
 WITH paged_users AS (
   SELECT
-    id,
-    username AS user_username,
-    display_name AS user_display_name,
-    email AS user_email,
-    status AS account_status,
-    created_at
-  FROM auth_users
-  WHERE deleted_at IS NULL
-  ORDER BY created_at DESC, id DESC
+    au.id,
+    au.username AS user_username,
+    au.display_name AS user_display_name,
+    au.email AS user_email,
+    au.status AS account_status,
+    au.created_at
+  FROM auth_users au
+  JOIN tenant_members tm
+    ON tm.principal_type = 'user'
+   AND tm.principal_id = au.id
+   AND tm.tenant_id = sqlc.arg('tenant_id')::uuid
+   AND tm.disabled_at IS NULL
+  WHERE au.deleted_at IS NULL
+  GROUP BY au.id, au.username, au.display_name, au.email, au.status, au.created_at
+  ORDER BY au.created_at DESC, au.id DESC
   LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset')
 )
 SELECT
@@ -147,8 +160,9 @@ SELECT
   tm.role,
   tm.status AS membership_status
 FROM paged_users pu
-LEFT JOIN tenant_members tm
+JOIN tenant_members tm
   ON tm.principal_type = 'user'
  AND tm.principal_id = pu.id
+ AND tm.tenant_id = sqlc.arg('tenant_id')::uuid
  AND tm.disabled_at IS NULL
 ORDER BY pu.created_at DESC, pu.id DESC, tm.created_at DESC, tm.id DESC;

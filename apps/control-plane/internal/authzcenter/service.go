@@ -23,20 +23,23 @@ func NewService(repo Repository, authorizer authz.Authorizer) *Service {
 	}
 }
 
-func (s *Service) GetOverview(ctx context.Context) (Overview, error) {
+func (s *Service) GetOverview(ctx context.Context, actor Actor) (Overview, error) {
 	if s == nil || s.repo == nil {
 		return Overview{}, ErrInvalidInput
 	}
+	if err := s.authorizeRead(ctx, actor); err != nil {
+		return Overview{}, err
+	}
 	since := s.now().Add(-24 * time.Hour)
-	totals, err := s.repo.CountDecisionsSince(ctx, since)
+	totals, err := s.repo.CountDecisionsSince(ctx, actor.TenantID, since)
 	if err != nil {
 		return Overview{}, err
 	}
-	topDenied, err := s.repo.ListTopDeniedActionsSince(ctx, since, 5)
+	topDenied, err := s.repo.ListTopDeniedActionsSince(ctx, actor.TenantID, since, 5)
 	if err != nil {
 		return Overview{}, err
 	}
-	recent, err := s.repo.ListDecisions(ctx, DecisionFilter{Limit: 10, Offset: 0})
+	recent, err := s.repo.ListDecisions(ctx, DecisionFilter{TenantID: actor.TenantID, Limit: 10, Offset: 0})
 	if err != nil {
 		return Overview{}, err
 	}
@@ -52,19 +55,26 @@ func (s *Service) GetOverview(ctx context.Context) (Overview, error) {
 	}, nil
 }
 
-func (s *Service) ListDecisions(ctx context.Context, filter DecisionFilter) ([]DecisionRecord, error) {
+func (s *Service) ListDecisions(ctx context.Context, actor Actor, filter DecisionFilter) ([]DecisionRecord, error) {
 	if s == nil || s.repo == nil {
 		return nil, ErrInvalidInput
 	}
+	if err := s.authorizeRead(ctx, actor); err != nil {
+		return nil, err
+	}
 	filter.Limit, filter.Offset = normalizePagination(filter.Limit, filter.Offset)
+	filter.TenantID = actor.TenantID
 	return s.repo.ListDecisions(ctx, filter)
 }
 
-func (s *Service) ListRuntimeScopes(ctx context.Context) ([]RuntimeScopeNodeRecord, error) {
+func (s *Service) ListRuntimeScopes(ctx context.Context, actor Actor) ([]RuntimeScopeNodeRecord, error) {
 	if s == nil || s.repo == nil {
 		return nil, ErrInvalidInput
 	}
-	return s.repo.ListRuntimeScopeNodes(ctx)
+	if err := s.authorizeRead(ctx, actor); err != nil {
+		return nil, err
+	}
+	return s.repo.ListRuntimeScopeNodes(ctx, actor.TenantID)
 }
 
 func (s *Service) CreateRuntimeScope(ctx context.Context, actor Actor, input RuntimeScopeInput) (RuntimeScopeRecord, error) {
@@ -117,7 +127,7 @@ func (s *Service) UpdateRuntimeScopeStatus(ctx context.Context, actor Actor, sco
 		return RuntimeScopeRecord{}, ErrForbidden
 	}
 
-	scope, err := s.repo.UpdateRuntimeScopeStatus(ctx, scopeID, status)
+	scope, err := s.repo.UpdateRuntimeScopeStatus(ctx, actor.TenantID, scopeID, status)
 	if err != nil {
 		s.recordRuntimeScopeStatusOperation(ctx, actor, scopeID, status, OperationResultFailed, map[string]any{"error": err.Error()})
 		return RuntimeScopeRecord{}, err
@@ -126,16 +136,26 @@ func (s *Service) UpdateRuntimeScopeStatus(ctx context.Context, actor Actor, sco
 	return scope, nil
 }
 
-func (s *Service) ListMembers(ctx context.Context, filter MemberFilter) ([]MemberRecord, error) {
+func (s *Service) ListMembers(ctx context.Context, actor Actor, filter MemberFilter) ([]MemberRecord, error) {
 	if s == nil || s.repo == nil {
 		return nil, ErrInvalidInput
 	}
+	if err := s.authorizeRead(ctx, actor); err != nil {
+		return nil, err
+	}
 	filter.Limit, filter.Offset = normalizePagination(filter.Limit, filter.Offset)
+	filter.TenantID = actor.TenantID
 	return s.repo.ListMembers(ctx, filter)
 }
 
-func (s *Service) CheckPermission(ctx context.Context, input CheckPermissionInput) (authz.Decision, error) {
+func (s *Service) CheckPermission(ctx context.Context, actor Actor, input CheckPermissionInput) (authz.Decision, error) {
 	if s == nil || s.authorizer == nil {
+		return authz.Decision{}, ErrForbidden
+	}
+	if err := s.authorizeRead(ctx, actor); err != nil {
+		return authz.Decision{}, err
+	}
+	if input.TenantID != actor.TenantID {
 		return authz.Decision{}, ErrForbidden
 	}
 	return s.authorizer.Check(ctx, authz.CheckRequest{
@@ -146,6 +166,33 @@ func (s *Service) CheckPermission(ctx context.Context, input CheckPermissionInpu
 		TeamID:      input.TeamID,
 		AuditReason: "authz center dry-run",
 	})
+}
+
+func (s *Service) authorizeRead(ctx context.Context, actor Actor) error {
+	if s.authorizer == nil {
+		return ErrForbidden
+	}
+	decision, err := s.authorizer.Check(ctx, authz.CheckRequest{
+		Actor: authz.ActorRef{
+			Type: authz.ActorUser,
+			ID:   actor.UserID.String(),
+		},
+		Action: ActionAuthzCenterRead,
+		Resource: authz.ResourceRef{
+			Type: authz.ResourceTenant,
+			ID:   actor.TenantID.String(),
+		},
+		TenantID:    actor.TenantID,
+		TeamID:      actor.TeamID,
+		AuditReason: "authz center read",
+	})
+	if err != nil {
+		return err
+	}
+	if !decision.Allowed {
+		return ErrForbidden
+	}
+	return nil
 }
 
 func (s *Service) authorizeRuntimeScopeManage(ctx context.Context, actor Actor, tenantID uuid.UUID) (authz.Decision, error) {

@@ -455,6 +455,44 @@ func TestAuthzCenterOverviewAllowsAuthenticatedAdmin(t *testing.T) {
 	if body.Engine.Engine != "db" {
 		t.Fatalf("expected db engine, got %#v", body.Engine)
 	}
+	if repo.lastTenantID != uuid.MustParse(auth.DefaultTenantID) {
+		t.Fatalf("expected overview repository calls to use default tenant, got %s", repo.lastTenantID)
+	}
+}
+
+func TestAuthzCenterOverviewDeniedAuthorizationReturnsForbidden(t *testing.T) {
+	authRepo := newRouteAuthRepo()
+	authService, err := auth.NewService(authRepo)
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "viewer", "viewer"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	repo := &routeAuthzCenterRepo{}
+	authorizer := &routeAuthorizer{allowed: false}
+	service := authzcenter.NewService(repo, authorizer)
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		authorizer,
+		authzcenter.NewHandler(service, authService),
+	)
+	cookie := routeLogin(t, server, "viewer", "viewer")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/authz/overview", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected denied read to return forbidden, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if len(authorizer.checks) != 1 || authorizer.checks[0].Action != authz.ActionAuthzCenterRead {
+		t.Fatalf("expected one authz center read check, got %#v", authorizer.checks)
+	}
 }
 
 func TestAuthzCenterRuntimeScopeCreateRecordsCheckAndOperationLog(t *testing.T) {
@@ -836,13 +874,16 @@ func (a *routeAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (au
 
 type routeAuthzCenterRepo struct {
 	operationLogs []authzcenter.OperationLogInput
+	lastTenantID  uuid.UUID
 }
 
-func (r *routeAuthzCenterRepo) CountDecisionsSince(ctx context.Context, since time.Time) (authzcenter.DecisionTotals, error) {
+func (r *routeAuthzCenterRepo) CountDecisionsSince(ctx context.Context, tenantID uuid.UUID, since time.Time) (authzcenter.DecisionTotals, error) {
+	r.lastTenantID = tenantID
 	return authzcenter.DecisionTotals{}, nil
 }
 
-func (r *routeAuthzCenterRepo) ListTopDeniedActionsSince(ctx context.Context, since time.Time, limit int32) ([]authzcenter.ActionCount, error) {
+func (r *routeAuthzCenterRepo) ListTopDeniedActionsSince(ctx context.Context, tenantID uuid.UUID, since time.Time, limit int32) ([]authzcenter.ActionCount, error) {
+	r.lastTenantID = tenantID
 	return []authzcenter.ActionCount{}, nil
 }
 
@@ -850,7 +891,8 @@ func (r *routeAuthzCenterRepo) ListDecisions(ctx context.Context, filter authzce
 	return []authzcenter.DecisionRecord{}, nil
 }
 
-func (r *routeAuthzCenterRepo) ListRuntimeScopeNodes(ctx context.Context) ([]authzcenter.RuntimeScopeNodeRecord, error) {
+func (r *routeAuthzCenterRepo) ListRuntimeScopeNodes(ctx context.Context, tenantID uuid.UUID) ([]authzcenter.RuntimeScopeNodeRecord, error) {
+	r.lastTenantID = tenantID
 	return []authzcenter.RuntimeScopeNodeRecord{}, nil
 }
 
@@ -869,10 +911,11 @@ func (r *routeAuthzCenterRepo) CreateRuntimeScope(ctx context.Context, input aut
 	}, nil
 }
 
-func (r *routeAuthzCenterRepo) UpdateRuntimeScopeStatus(ctx context.Context, scopeID uuid.UUID, status string) (authzcenter.RuntimeScopeRecord, error) {
+func (r *routeAuthzCenterRepo) UpdateRuntimeScopeStatus(ctx context.Context, tenantID uuid.UUID, scopeID uuid.UUID, status string) (authzcenter.RuntimeScopeRecord, error) {
 	now := time.Now().UTC()
 	return authzcenter.RuntimeScopeRecord{
 		ID:        scopeID,
+		TenantID:  tenantID,
 		Status:    authzcenter.RuntimeScopeStatus(status),
 		CreatedAt: now,
 		UpdatedAt: now,

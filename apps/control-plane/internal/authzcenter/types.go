@@ -10,6 +10,7 @@ import (
 
 const (
 	ActionRuntimeScopeManage = authz.ActionRuntimeScopeManage
+	ActionAuthzCenterRead    = authz.ActionAuthzCenterRead
 
 	OperationModuleAuthz              = "authz"
 	OperationResourceRuntimeNodeScope = "runtime_node_scope"
@@ -64,6 +65,7 @@ type Overview struct {
 }
 
 type DecisionFilter struct {
+	TenantID     uuid.UUID
 	Result       string
 	Action       string
 	ActorType    string
@@ -131,8 +133,9 @@ type RuntimeScopeInput struct {
 }
 
 type MemberFilter struct {
-	Limit  int32
-	Offset int32
+	TenantID uuid.UUID
+	Limit    int32
+	Offset   int32
 }
 
 type MemberRecord struct {

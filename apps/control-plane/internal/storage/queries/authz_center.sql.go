@@ -19,8 +19,14 @@ SELECT
   COUNT(*) FILTER (WHERE result = 'failed')::bigint AS denied
 FROM web_operation_logs
 WHERE module = 'authz'
-  AND created_at >= $1::timestamptz
+  AND tenant_id = $1::uuid
+  AND created_at >= $2::timestamptz
 `
+
+type CountAuthzDecisionsSinceParams struct {
+	TenantID uuid.UUID          `json:"tenant_id"`
+	Since    pgtype.Timestamptz `json:"since"`
+}
 
 type CountAuthzDecisionsSinceRow struct {
 	Total   int64 `json:"total"`
@@ -28,8 +34,8 @@ type CountAuthzDecisionsSinceRow struct {
 	Denied  int64 `json:"denied"`
 }
 
-func (q *Queries) CountAuthzDecisionsSince(ctx context.Context, since pgtype.Timestamptz) (CountAuthzDecisionsSinceRow, error) {
-	row := q.db.QueryRow(ctx, CountAuthzDecisionsSince, since)
+func (q *Queries) CountAuthzDecisionsSince(ctx context.Context, arg CountAuthzDecisionsSinceParams) (CountAuthzDecisionsSinceRow, error) {
+	row := q.db.QueryRow(ctx, CountAuthzDecisionsSince, arg.TenantID, arg.Since)
 	var i CountAuthzDecisionsSinceRow
 	err := row.Scan(&i.Total, &i.Allowed, &i.Denied)
 	return i, err
@@ -123,18 +129,20 @@ const ListAuthzDecisions = `-- name: ListAuthzDecisions :many
 SELECT id, tenant_id, user_id, username, module, resource_type, resource_id, action, result, request_id, client_ip, user_agent, details, created_at
 FROM web_operation_logs
 WHERE module = 'authz'
-  AND ($1::varchar IS NULL OR result = $1::varchar)
-  AND ($2::varchar IS NULL OR action = $2::varchar)
-  AND ($3::varchar IS NULL OR details->>'actor_type' = $3::varchar OR details->'actor'->>'type' = $3::varchar)
-  AND ($4::varchar IS NULL OR details->>'actor_id' = $4::varchar OR details->'actor'->>'id' = $4::varchar)
-  AND ($5::varchar IS NULL OR resource_type = $5::varchar)
-  AND ($6::varchar IS NULL OR resource_id = $6::varchar)
-  AND ($7::varchar IS NULL OR request_id = $7::varchar)
+  AND tenant_id = $1::uuid
+  AND ($2::varchar IS NULL OR result = $2::varchar)
+  AND ($3::varchar IS NULL OR action = $3::varchar)
+  AND ($4::varchar IS NULL OR details->>'actor_type' = $4::varchar OR details->'actor'->>'type' = $4::varchar)
+  AND ($5::varchar IS NULL OR details->>'actor_id' = $5::varchar OR details->'actor'->>'id' = $5::varchar)
+  AND ($6::varchar IS NULL OR resource_type = $6::varchar)
+  AND ($7::varchar IS NULL OR resource_id = $7::varchar)
+  AND ($8::varchar IS NULL OR request_id = $8::varchar)
 ORDER BY created_at DESC, id DESC
-LIMIT $9 OFFSET $8
+LIMIT $10 OFFSET $9
 `
 
 type ListAuthzDecisionsParams struct {
+	TenantID     uuid.UUID   `json:"tenant_id"`
 	Result       pgtype.Text `json:"result"`
 	Action       pgtype.Text `json:"action"`
 	ActorType    pgtype.Text `json:"actor_type"`
@@ -148,6 +156,7 @@ type ListAuthzDecisionsParams struct {
 
 func (q *Queries) ListAuthzDecisions(ctx context.Context, arg ListAuthzDecisionsParams) ([]WebOperationLog, error) {
 	rows, err := q.db.Query(ctx, ListAuthzDecisions,
+		arg.TenantID,
 		arg.Result,
 		arg.Action,
 		arg.ActorType,
@@ -194,16 +203,22 @@ func (q *Queries) ListAuthzDecisions(ctx context.Context, arg ListAuthzDecisions
 const ListAuthzMembers = `-- name: ListAuthzMembers :many
 WITH paged_users AS (
   SELECT
-    id,
-    username AS user_username,
-    display_name AS user_display_name,
-    email AS user_email,
-    status AS account_status,
-    created_at
-  FROM auth_users
-  WHERE deleted_at IS NULL
-  ORDER BY created_at DESC, id DESC
-  LIMIT $2 OFFSET $1
+    au.id,
+    au.username AS user_username,
+    au.display_name AS user_display_name,
+    au.email AS user_email,
+    au.status AS account_status,
+    au.created_at
+  FROM auth_users au
+  JOIN tenant_members tm
+    ON tm.principal_type = 'user'
+   AND tm.principal_id = au.id
+   AND tm.tenant_id = $1::uuid
+   AND tm.disabled_at IS NULL
+  WHERE au.deleted_at IS NULL
+  GROUP BY au.id, au.username, au.display_name, au.email, au.status, au.created_at
+  ORDER BY au.created_at DESC, au.id DESC
+  LIMIT $3 OFFSET $2
 )
 SELECT
   pu.id AS user_id,
@@ -218,16 +233,18 @@ SELECT
   tm.role,
   tm.status AS membership_status
 FROM paged_users pu
-LEFT JOIN tenant_members tm
+JOIN tenant_members tm
   ON tm.principal_type = 'user'
  AND tm.principal_id = pu.id
+ AND tm.tenant_id = $1::uuid
  AND tm.disabled_at IS NULL
 ORDER BY pu.created_at DESC, pu.id DESC, tm.created_at DESC, tm.id DESC
 `
 
 type ListAuthzMembersParams struct {
-	Offset int32 `json:"offset"`
-	Limit  int32 `json:"limit"`
+	TenantID uuid.UUID `json:"tenant_id"`
+	Offset   int32     `json:"offset"`
+	Limit    int32     `json:"limit"`
 }
 
 type ListAuthzMembersRow struct {
@@ -236,16 +253,16 @@ type ListAuthzMembersRow struct {
 	UserDisplayName  pgtype.Text   `json:"user_display_name"`
 	UserEmail        pgtype.Text   `json:"user_email"`
 	AccountStatus    string        `json:"account_status"`
-	TenantID         uuid.NullUUID `json:"tenant_id"`
+	TenantID         uuid.UUID     `json:"tenant_id"`
 	TeamID           uuid.NullUUID `json:"team_id"`
-	PrincipalType    pgtype.Text   `json:"principal_type"`
-	PrincipalID      uuid.NullUUID `json:"principal_id"`
-	Role             pgtype.Text   `json:"role"`
-	MembershipStatus pgtype.Text   `json:"membership_status"`
+	PrincipalType    string        `json:"principal_type"`
+	PrincipalID      uuid.UUID     `json:"principal_id"`
+	Role             string        `json:"role"`
+	MembershipStatus string        `json:"membership_status"`
 }
 
 func (q *Queries) ListAuthzMembers(ctx context.Context, arg ListAuthzMembersParams) ([]ListAuthzMembersRow, error) {
-	rows, err := q.db.Query(ctx, ListAuthzMembers, arg.Offset, arg.Limit)
+	rows, err := q.db.Query(ctx, ListAuthzMembers, arg.TenantID, arg.Offset, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -298,8 +315,11 @@ SELECT
   rns.created_at AS scope_created_at,
   rns.updated_at AS scope_updated_at
 FROM runtime_nodes rn
-LEFT JOIN runtime_node_scopes rns ON rns.runtime_node_id = rn.id
+LEFT JOIN runtime_node_scopes rns
+  ON rns.runtime_node_id = rn.id
+ AND rns.tenant_id = $1::uuid
 WHERE rn.archived_at IS NULL
+  AND rn.tenant_id = $1::uuid
 ORDER BY rn.created_at DESC, rns.created_at DESC
 `
 
@@ -325,8 +345,8 @@ type ListRuntimeNodesWithScopesRow struct {
 	ScopeUpdatedAt     pgtype.Timestamptz `json:"scope_updated_at"`
 }
 
-func (q *Queries) ListRuntimeNodesWithScopes(ctx context.Context) ([]ListRuntimeNodesWithScopesRow, error) {
-	rows, err := q.db.Query(ctx, ListRuntimeNodesWithScopes)
+func (q *Queries) ListRuntimeNodesWithScopes(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeNodesWithScopesRow, error) {
+	rows, err := q.db.Query(ctx, ListRuntimeNodesWithScopes, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -369,16 +389,18 @@ const ListTopDeniedAuthzActionsSince = `-- name: ListTopDeniedAuthzActionsSince 
 SELECT action, COUNT(*)::bigint AS count
 FROM web_operation_logs
 WHERE module = 'authz'
+  AND tenant_id = $1::uuid
   AND result = 'failed'
-  AND created_at >= $1::timestamptz
+  AND created_at >= $2::timestamptz
 GROUP BY action
 ORDER BY count DESC, action ASC
-LIMIT $2
+LIMIT $3
 `
 
 type ListTopDeniedAuthzActionsSinceParams struct {
-	Since pgtype.Timestamptz `json:"since"`
-	Limit int32              `json:"limit"`
+	TenantID uuid.UUID          `json:"tenant_id"`
+	Since    pgtype.Timestamptz `json:"since"`
+	Limit    int32              `json:"limit"`
 }
 
 type ListTopDeniedAuthzActionsSinceRow struct {
@@ -387,7 +409,7 @@ type ListTopDeniedAuthzActionsSinceRow struct {
 }
 
 func (q *Queries) ListTopDeniedAuthzActionsSince(ctx context.Context, arg ListTopDeniedAuthzActionsSinceParams) ([]ListTopDeniedAuthzActionsSinceRow, error) {
-	rows, err := q.db.Query(ctx, ListTopDeniedAuthzActionsSince, arg.Since, arg.Limit)
+	rows, err := q.db.Query(ctx, ListTopDeniedAuthzActionsSince, arg.TenantID, arg.Since, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -416,16 +438,18 @@ SET status = $1::varchar,
     END,
     updated_at = NOW()
 WHERE id = $2::uuid
+  AND tenant_id = $3::uuid
 RETURNING id, tenant_id, runtime_node_id, team_id, scope_type, scope_value, status, disabled_at, created_at, updated_at
 `
 
 type UpdateRuntimeNodeScopeStatusParams struct {
-	Status string    `json:"status"`
-	ID     uuid.UUID `json:"id"`
+	Status   string    `json:"status"`
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateRuntimeNodeScopeStatus(ctx context.Context, arg UpdateRuntimeNodeScopeStatusParams) (RuntimeNodeScope, error) {
-	row := q.db.QueryRow(ctx, UpdateRuntimeNodeScopeStatus, arg.Status, arg.ID)
+	row := q.db.QueryRow(ctx, UpdateRuntimeNodeScopeStatus, arg.Status, arg.ID, arg.TenantID)
 	var i RuntimeNodeScope
 	err := row.Scan(
 		&i.ID,

@@ -21,11 +21,12 @@ func NewHandler(service *Service, authService *auth.Service) *HTTPHandler {
 }
 
 func (h *HTTPHandler) GetAuthzOverview(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.currentActor(r); err != nil {
+	actor, err := h.currentActor(r)
+	if err != nil {
 		h.writeError(w, err)
 		return
 	}
-	overview, err := h.service.GetOverview(r.Context())
+	overview, err := h.service.GetOverview(r.Context(), actor)
 	if err != nil {
 		h.writeError(w, err)
 		return
@@ -34,11 +35,12 @@ func (h *HTTPHandler) GetAuthzOverview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) ListAuthzDecisions(w http.ResponseWriter, r *http.Request, params ListAuthzDecisionsParams) {
-	if _, err := h.currentActor(r); err != nil {
+	actor, err := h.currentActor(r)
+	if err != nil {
 		h.writeError(w, err)
 		return
 	}
-	decisions, err := h.service.ListDecisions(r.Context(), DecisionFilter{
+	decisions, err := h.service.ListDecisions(r.Context(), actor, DecisionFilter{
 		Result:       enumString(params.Result),
 		Action:       stringValue(params.Action),
 		ActorType:    stringValue(params.ActorType),
@@ -61,11 +63,12 @@ func (h *HTTPHandler) ListAuthzDecisions(w http.ResponseWriter, r *http.Request,
 }
 
 func (h *HTTPHandler) ListRuntimeScopes(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.currentActor(r); err != nil {
+	actor, err := h.currentActor(r)
+	if err != nil {
 		h.writeError(w, err)
 		return
 	}
-	nodes, err := h.service.ListRuntimeScopes(r.Context())
+	nodes, err := h.service.ListRuntimeScopes(r.Context(), actor)
 	if err != nil {
 		h.writeError(w, err)
 		return
@@ -122,11 +125,12 @@ func (h *HTTPHandler) UpdateRuntimeScope(w http.ResponseWriter, r *http.Request,
 }
 
 func (h *HTTPHandler) ListAuthzMembers(w http.ResponseWriter, r *http.Request, params ListAuthzMembersParams) {
-	if _, err := h.currentActor(r); err != nil {
+	actor, err := h.currentActor(r)
+	if err != nil {
 		h.writeError(w, err)
 		return
 	}
-	members, err := h.service.ListMembers(r.Context(), MemberFilter{
+	members, err := h.service.ListMembers(r.Context(), actor, MemberFilter{
 		Limit:  int32Value(params.Limit, 20),
 		Offset: int32Value(params.Offset, 0),
 	})
@@ -142,7 +146,8 @@ func (h *HTTPHandler) ListAuthzMembers(w http.ResponseWriter, r *http.Request, p
 }
 
 func (h *HTTPHandler) CheckPermission(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.currentActor(r); err != nil {
+	actor, err := h.currentActor(r)
+	if err != nil {
 		h.writeError(w, err)
 		return
 	}
@@ -151,7 +156,7 @@ func (h *HTTPHandler) CheckPermission(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	decision, err := h.service.CheckPermission(r.Context(), CheckPermissionInput{
+	decision, err := h.service.CheckPermission(r.Context(), actor, CheckPermissionInput{
 		Actor: authz.ActorRef{
 			Type: body.Actor.Type,
 			ID:   body.Actor.Id,

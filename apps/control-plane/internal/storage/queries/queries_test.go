@@ -509,8 +509,14 @@ func TestAuthzCenterDecisionQueries(t *testing.T) {
 	cleanupTestData(t, testDB)
 
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	otherTenantID := uuid.MustParse("00000000-0000-0000-0000-000000000201")
+	_, err := testDB.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'authz-decision-other', 'Authz Decision Other', 'active')
+	`, otherTenantID)
+	require.NoError(t, err)
 	userID := uuid.New()
-	_, err := testQueries.CreateWebOperationLog(ctx, queries.CreateWebOperationLogParams{
+	_, err = testQueries.CreateWebOperationLog(ctx, queries.CreateWebOperationLogParams{
 		TenantID: uuid.NullUUID{UUID: tenantID, Valid: true},
 		UserID:   uuid.NullUUID{UUID: userID, Valid: true},
 		Username: pgtype.Text{String: "authz-auditor", Valid: true},
@@ -520,12 +526,23 @@ func TestAuthzCenterDecisionQueries(t *testing.T) {
 		Details:  []byte(`{"engine":"db","reason":"runtime scope does not cover task","actor_type":"runtime_node","actor_id":"node-1"}`),
 	})
 	require.NoError(t, err)
+	_, err = testQueries.CreateWebOperationLog(ctx, queries.CreateWebOperationLogParams{
+		TenantID: uuid.NullUUID{UUID: otherTenantID, Valid: true},
+		UserID:   uuid.NullUUID{UUID: userID, Valid: true},
+		Username: pgtype.Text{String: "authz-auditor", Valid: true},
+		Module:   "authz",
+		Action:   "task.claim",
+		Result:   "failed",
+		Details:  []byte(`{"engine":"db","reason":"other tenant"}`),
+	})
+	require.NoError(t, err)
 
 	rows, err := testQueries.ListAuthzDecisions(ctx, queries.ListAuthzDecisionsParams{
-		Result: pgtype.Text{String: "failed", Valid: true},
-		Action: pgtype.Text{String: "task.claim", Valid: true},
-		Limit:  20,
-		Offset: 0,
+		TenantID: tenantID,
+		Result:   pgtype.Text{String: "failed", Valid: true},
+		Action:   pgtype.Text{String: "task.claim", Valid: true},
+		Limit:    20,
+		Offset:   0,
 	})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
@@ -539,6 +556,12 @@ func TestAuthzCenterMemberPaginationPaginatesUsersBeforeMemberships(t *testing.T
 
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+	otherTenantID := uuid.MustParse("00000000-0000-0000-0000-000000000201")
+	_, err := testDB.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'authz-member-other-tenant', 'Authz Member Other Tenant', 'active')
+	`, otherTenantID)
+	require.NoError(t, err)
 
 	otherUser, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
 		Username:     "authz-member-other",
@@ -556,15 +579,24 @@ func TestAuthzCenterMemberPaginationPaginatesUsersBeforeMemberships(t *testing.T
 		Status:       "active",
 	})
 	require.NoError(t, err)
+	otherTenantUser, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "authz-member-external",
+		DisplayName:  pgtype.Text{String: "Authz Member External", Valid: true},
+		Email:        pgtype.Text{String: "authz-member-external@example.com", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
+		Status:       "active",
+	})
+	require.NoError(t, err)
 	_, err = testDB.Exec(ctx, `
 		UPDATE auth_users
 		SET created_at = CASE
 			WHEN id = $1 THEN NOW() - INTERVAL '1 hour'
 			WHEN id = $2 THEN NOW()
+			WHEN id = $3 THEN NOW() + INTERVAL '1 hour'
 			ELSE created_at
 		END
-		WHERE id IN ($1, $2)
-	`, otherUser.ID, multiMemberUser.ID)
+		WHERE id IN ($1, $2, $3)
+	`, otherUser.ID, multiMemberUser.ID, otherTenantUser.ID)
 	require.NoError(t, err)
 
 	_, err = testDB.Exec(ctx, `
@@ -576,12 +608,16 @@ func TestAuthzCenterMemberPaginationPaginatesUsersBeforeMemberships(t *testing.T
 
 		INSERT INTO tenant_members (tenant_id, principal_type, principal_id, role, status)
 		VALUES ($1, 'user', $4, 'viewer', 'active');
-	`, tenantID, multiMemberUser.ID, teamID, otherUser.ID)
+
+		INSERT INTO tenant_members (tenant_id, principal_type, principal_id, role, status)
+		VALUES ($5, 'user', $6, 'owner', 'active');
+	`, tenantID, multiMemberUser.ID, teamID, otherUser.ID, otherTenantID, otherTenantUser.ID)
 	require.NoError(t, err)
 
 	rows, err := testQueries.ListAuthzMembers(ctx, queries.ListAuthzMembersParams{
-		Limit:  1,
-		Offset: 0,
+		TenantID: tenantID,
+		Limit:    1,
+		Offset:   0,
 	})
 	require.NoError(t, err)
 	require.Len(t, rows, 2)
@@ -590,8 +626,8 @@ func TestAuthzCenterMemberPaginationPaginatesUsersBeforeMemberships(t *testing.T
 	for _, row := range rows {
 		assert.Equal(t, multiMemberUser.ID, row.UserID)
 		assert.Equal(t, "authz-member-multi", row.UserUsername)
-		require.True(t, row.Role.Valid)
-		roles[row.Role.String] = true
+		require.NotEmpty(t, row.Role)
+		roles[row.Role] = true
 	}
 	assert.Equal(t, map[string]bool{"owner": true, "developer": true}, roles)
 }
@@ -601,6 +637,12 @@ func TestAuthzCenterRuntimeScopeQueries(t *testing.T) {
 	cleanupTestData(t, testDB)
 
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	otherTenantID := uuid.MustParse("00000000-0000-0000-0000-000000000201")
+	_, err := testDB.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'authz-scope-other-tenant', 'Authz Scope Other Tenant', 'active')
+	`, otherTenantID)
+	require.NoError(t, err)
 	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
 		NodeID:             "authz-center-node",
 		Name:               "Authz Center Node",
@@ -611,6 +653,14 @@ func TestAuthzCenterRuntimeScopeQueries(t *testing.T) {
 		Metadata:           []byte(`{}`),
 		LastHeartbeatAt:    pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
 	})
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
+		INSERT INTO runtime_nodes (
+			tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at
+		) VALUES (
+			$1, 'authz-center-other-node', 'Authz Center Other Node', '["codex"]'::jsonb, 2, 0, 'online', '{}'::jsonb, NOW()
+		)
+	`, otherTenantID)
 	require.NoError(t, err)
 
 	scope, err := testQueries.CreateRuntimeNodeScope(ctx, queries.CreateRuntimeNodeScopeParams{
@@ -623,20 +673,29 @@ func TestAuthzCenterRuntimeScopeQueries(t *testing.T) {
 	require.Equal(t, "active", scope.Status)
 
 	updated, err := testQueries.UpdateRuntimeNodeScopeStatus(ctx, queries.UpdateRuntimeNodeScopeStatusParams{
-		ID:     scope.ID,
-		Status: "disabled",
+		TenantID: tenantID,
+		ID:       scope.ID,
+		Status:   "disabled",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "disabled", updated.Status)
 	assert.True(t, updated.DisabledAt.Valid)
 
-	nodes, err := testQueries.ListRuntimeNodesWithScopes(ctx)
+	_, err = testQueries.UpdateRuntimeNodeScopeStatus(ctx, queries.UpdateRuntimeNodeScopeStatusParams{
+		TenantID: otherTenantID,
+		ID:       scope.ID,
+		Status:   "active",
+	})
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+
+	nodes, err := testQueries.ListRuntimeNodesWithScopes(ctx, tenantID)
 	require.NoError(t, err)
 	var listedScope *queries.ListRuntimeNodesWithScopesRow
 	for i := range nodes {
+		assert.Equal(t, tenantID, nodes[i].RuntimeTenantID)
+		assert.NotEqual(t, "authz-center-other-node", nodes[i].NodeID)
 		if nodes[i].RuntimeNodeID == node.ID && nodes[i].ScopeID.Valid && nodes[i].ScopeID.UUID == scope.ID {
 			listedScope = &nodes[i]
-			break
 		}
 	}
 	require.NotNil(t, listedScope)

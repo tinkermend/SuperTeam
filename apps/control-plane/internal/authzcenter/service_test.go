@@ -11,26 +11,35 @@ import (
 )
 
 type serviceRepo struct {
-	totalsSince time.Time
-	topSince    time.Time
-	topLimit    int32
-	listFilter  DecisionFilter
+	countDecisionsCalls int
+	totalsTenantID      uuid.UUID
+	totalsSince         time.Time
+	topTenantID         uuid.UUID
+	topSince            time.Time
+	topLimit            int32
+	listFilter          DecisionFilter
 
 	totals    DecisionTotals
 	top       []ActionCount
 	decisions []DecisionRecord
 
-	createdScopes []RuntimeScopeInput
-	scope         RuntimeScopeRecord
-	operationLogs []OperationLogInput
+	runtimeScopesTenantID uuid.UUID
+	updateTenantID        uuid.UUID
+	scopeTenantID         uuid.UUID
+	createdScopes         []RuntimeScopeInput
+	scope                 RuntimeScopeRecord
+	operationLogs         []OperationLogInput
 }
 
-func (r *serviceRepo) CountDecisionsSince(ctx context.Context, since time.Time) (DecisionTotals, error) {
+func (r *serviceRepo) CountDecisionsSince(ctx context.Context, tenantID uuid.UUID, since time.Time) (DecisionTotals, error) {
+	r.countDecisionsCalls++
+	r.totalsTenantID = tenantID
 	r.totalsSince = since
 	return r.totals, nil
 }
 
-func (r *serviceRepo) ListTopDeniedActionsSince(ctx context.Context, since time.Time, limit int32) ([]ActionCount, error) {
+func (r *serviceRepo) ListTopDeniedActionsSince(ctx context.Context, tenantID uuid.UUID, since time.Time, limit int32) ([]ActionCount, error) {
+	r.topTenantID = tenantID
 	r.topSince = since
 	r.topLimit = limit
 	return r.top, nil
@@ -41,7 +50,8 @@ func (r *serviceRepo) ListDecisions(ctx context.Context, filter DecisionFilter) 
 	return r.decisions, nil
 }
 
-func (r *serviceRepo) ListRuntimeScopeNodes(ctx context.Context) ([]RuntimeScopeNodeRecord, error) {
+func (r *serviceRepo) ListRuntimeScopeNodes(ctx context.Context, tenantID uuid.UUID) ([]RuntimeScopeNodeRecord, error) {
+	r.runtimeScopesTenantID = tenantID
 	return nil, nil
 }
 
@@ -63,8 +73,12 @@ func (r *serviceRepo) CreateRuntimeScope(ctx context.Context, input RuntimeScope
 	return r.scope, nil
 }
 
-func (r *serviceRepo) UpdateRuntimeScopeStatus(ctx context.Context, scopeID uuid.UUID, status string) (RuntimeScopeRecord, error) {
-	return RuntimeScopeRecord{ID: scopeID, Status: RuntimeScopeStatus(status)}, nil
+func (r *serviceRepo) UpdateRuntimeScopeStatus(ctx context.Context, tenantID uuid.UUID, scopeID uuid.UUID, status string) (RuntimeScopeRecord, error) {
+	r.updateTenantID = tenantID
+	if r.scopeTenantID != uuid.Nil && r.scopeTenantID != tenantID {
+		return RuntimeScopeRecord{}, ErrNotFound
+	}
+	return RuntimeScopeRecord{ID: scopeID, TenantID: tenantID, Status: RuntimeScopeStatus(status)}, nil
 }
 
 func (r *serviceRepo) ListMembers(ctx context.Context, filter MemberFilter) ([]MemberRecord, error) {
@@ -92,6 +106,7 @@ func (a *serviceAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (
 
 func TestServiceOverviewUsesDecisionDataAndDBEngine(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000001")
 	recentID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
 	repo := &serviceRepo{
 		totals: DecisionTotals{Total: 10, Allowed: 7, Denied: 3},
@@ -103,12 +118,29 @@ func TestServiceOverviewUsesDecisionDataAndDBEngine(t *testing.T) {
 			Result:   OperationResultFailed,
 		}},
 	}
-	service := NewService(repo, &serviceAuthorizer{})
+	authorizer := &serviceAuthorizer{
+		decision: authz.Decision{Allowed: true, Reason: authz.ReasonAllowed, MatchedRule: "tenant.admin"},
+	}
+	service := NewService(repo, authorizer)
 
-	overview, err := service.GetOverview(context.Background())
+	overview, err := service.GetOverview(context.Background(), Actor{
+		UserID:   userID,
+		Username: "admin",
+		TenantID: tenantID,
+	})
 
 	if err != nil {
 		t.Fatalf("expected overview, got error: %v", err)
+	}
+	if len(authorizer.checks) != 1 {
+		t.Fatalf("expected one read authorization check, got %#v", authorizer.checks)
+	}
+	check := authorizer.checks[0]
+	if check.Action != authz.ActionAuthzCenterRead || check.TenantID != tenantID || check.Resource.ID != tenantID.String() {
+		t.Fatalf("expected authz center read check for tenant, got %#v", check)
+	}
+	if repo.totalsTenantID != tenantID || repo.topTenantID != tenantID || repo.listFilter.TenantID != tenantID {
+		t.Fatalf("expected overview queries to be tenant-scoped, got totals=%s top=%s filter=%#v", repo.totalsTenantID, repo.topTenantID, repo.listFilter)
 	}
 	if overview.Engine.Engine != "db" || overview.Engine.Status != "healthy" || overview.Engine.EngineVersion != "db-authorizer-v1" {
 		t.Fatalf("expected db engine status, got %#v", overview.Engine)
@@ -130,6 +162,27 @@ func TestServiceOverviewUsesDecisionDataAndDBEngine(t *testing.T) {
 	}
 	if len(overview.TopDeniedActions) != 1 || len(overview.RecentEvents) != 1 {
 		t.Fatalf("expected top denied and recent events to be populated, got %#v", overview)
+	}
+}
+
+func TestServiceOverviewDeniedReadDoesNotQueryRepository(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	repo := &serviceRepo{}
+	service := NewService(repo, &serviceAuthorizer{
+		decision: authz.Decision{Allowed: false, Reason: authz.ReasonNoMembership},
+	})
+
+	_, err := service.GetOverview(context.Background(), Actor{
+		UserID:   uuid.New(),
+		Username: "viewer",
+		TenantID: tenantID,
+	})
+
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected forbidden, got %v", err)
+	}
+	if repo.countDecisionsCalls != 0 {
+		t.Fatalf("expected denied read not to query repository")
 	}
 }
 
@@ -217,14 +270,45 @@ func TestServiceCreateRuntimeScopeDeniedWritesFailedOperationLog(t *testing.T) {
 	}
 }
 
+func TestServiceUpdateRuntimeScopeStatusCannotUpdateOtherTenantScope(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	otherTenantID := uuid.MustParse("00000000-0000-0000-0000-000000000201")
+	scopeID := uuid.MustParse("00000000-0000-0000-0000-000000000301")
+	repo := &serviceRepo{scopeTenantID: otherTenantID}
+	service := NewService(repo, &serviceAuthorizer{
+		decision: authz.Decision{Allowed: true, Reason: authz.ReasonAllowed, MatchedRule: "tenant.admin"},
+	})
+
+	_, err := service.UpdateRuntimeScopeStatus(context.Background(), Actor{
+		UserID:   uuid.New(),
+		Username: "admin",
+		TenantID: tenantID,
+	}, scopeID, string(RuntimeScopeStatusDisabled))
+
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected not found for cross-tenant scope update, got %v", err)
+	}
+	if repo.updateTenantID != tenantID {
+		t.Fatalf("expected repository update to use actor tenant %s, got %s", tenantID, repo.updateTenantID)
+	}
+	if len(repo.operationLogs) != 1 || repo.operationLogs[0].Result != OperationResultFailed {
+		t.Fatalf("expected failed operation log, got %#v", repo.operationLogs)
+	}
+}
+
 func TestServiceCheckPermissionUsesDryRunAuditReason(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000001")
 	authorizer := &serviceAuthorizer{
 		decision: authz.Decision{Allowed: true, Reason: authz.ReasonAllowed, MatchedRule: "tenant.owner"},
 	}
 	service := NewService(&serviceRepo{}, authorizer)
 
-	decision, err := service.CheckPermission(context.Background(), CheckPermissionInput{
+	decision, err := service.CheckPermission(context.Background(), Actor{
+		UserID:   userID,
+		Username: "admin",
+		TenantID: tenantID,
+	}, CheckPermissionInput{
 		Actor:    authz.ActorRef{Type: authz.ActorUser, ID: uuid.NewString()},
 		Action:   authz.ActionTenantAccess,
 		Resource: authz.ResourceRef{Type: authz.ResourceTenant, ID: tenantID.String()},
@@ -237,10 +321,13 @@ func TestServiceCheckPermissionUsesDryRunAuditReason(t *testing.T) {
 	if !decision.Allowed {
 		t.Fatalf("expected allowed decision, got %#v", decision)
 	}
-	if len(authorizer.checks) != 1 {
+	if len(authorizer.checks) != 2 {
 		t.Fatalf("expected one authorization check, got %#v", authorizer.checks)
 	}
-	if authorizer.checks[0].AuditReason != "authz center dry-run" {
-		t.Fatalf("expected dry-run audit reason, got %q", authorizer.checks[0].AuditReason)
+	if authorizer.checks[0].Action != authz.ActionAuthzCenterRead {
+		t.Fatalf("expected read gate before dry-run, got %#v", authorizer.checks)
+	}
+	if authorizer.checks[1].AuditReason != "authz center dry-run" {
+		t.Fatalf("expected dry-run audit reason, got %q", authorizer.checks[1].AuditReason)
 	}
 }

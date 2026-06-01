@@ -14,7 +14,7 @@ import (
 type Querier interface {
 	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
 	CountAuditEvents(ctx context.Context, arg CountAuditEventsParams) (int64, error)
-	CountAuthzDecisionsSince(ctx context.Context, since pgtype.Timestamptz) (CountAuthzDecisionsSinceRow, error)
+	CountAuthzDecisionsSince(ctx context.Context, arg CountAuthzDecisionsSinceParams) (CountAuthzDecisionsSinceRow, error)
 	CreateAuditEvent(ctx context.Context, arg CreateAuditEventParams) (AuditEvent, error)
 	CreateRuntimeNode(ctx context.Context, arg CreateRuntimeNodeParams) (RuntimeNode, error)
 	CreateRuntimeNodeScope(ctx context.Context, arg CreateRuntimeNodeScopeParams) (RuntimeNodeScope, error)
@@ -60,7 +60,7 @@ type Querier interface {
 	ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error)
 	ListRuntimeNodes(ctx context.Context, arg ListRuntimeNodesParams) ([]RuntimeNode, error)
-	ListRuntimeNodesWithScopes(ctx context.Context) ([]ListRuntimeNodesWithScopesRow, error)
+	ListRuntimeNodesWithScopes(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeNodesWithScopesRow, error)
 	ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error)
 	ListTaskArtifacts(ctx context.Context, arg ListTaskArtifactsParams) ([]TaskArtifact, error)
 	ListTaskEvents(ctx context.Context, arg ListTaskEventsParams) ([]TaskEvent, error)

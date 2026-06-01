@@ -27,6 +27,7 @@ const (
 	ActionTeamAccess         = "team.access"
 	ActionTaskClaim          = "task.claim"
 	ActionRuntimeScopeManage = "runtime_scope.manage"
+	ActionAuthzCenterRead    = "authz_center.read"
 )
 
 const (
