@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -33,7 +34,7 @@ type CreateNodeParams struct {
 
 // NodeRecord represents a node record from the database
 type NodeRecord struct {
-	ID                 int64
+	ID                 uuid.UUID
 	NodeID             string
 	Name               string
 	SupportedProviders []byte

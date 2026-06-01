@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -178,7 +179,49 @@ SELECT EXISTS (
 // cleanupTestData 清理测试数据，避免测试之间相互影响
 func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 	ctx := context.Background()
-	_, err := db.Exec(ctx, "TRUNCATE web_operation_logs, web_login_logs, audit_events, task_artifacts, task_events, task_state_history, task_executions, tasks, auth_sessions, auth_runtime_tokens, auth_users, runtime_nodes RESTART IDENTITY CASCADE")
+	_, err := db.Exec(ctx, `
+		TRUNCATE
+			web_operation_logs,
+			web_login_logs,
+			audit_events,
+			task_artifacts,
+			task_events,
+			task_state_history,
+			runtime_leases,
+			task_runs,
+			tasks,
+			auth_sessions,
+			auth_runtime_tokens,
+			runtime_node_scopes,
+			runtime_nodes,
+			tenant_members,
+			auth_users,
+			tenant_teams,
+			tenant_profiles,
+			tenants
+		RESTART IDENTITY CASCADE
+	`)
+	require.NoError(t, err)
+	seedDefaultTenant(t, db)
+}
+
+func seedDefaultTenant(t *testing.T, db *pgxpool.Pool) {
+	t.Helper()
+	_, err := db.Exec(context.Background(), `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ('00000000-0000-0000-0000-000000000001'::uuid, 'default', '默认租户', 'active')
+		ON CONFLICT (id) DO NOTHING;
+
+		INSERT INTO tenant_teams (id, tenant_id, slug, name, status)
+		VALUES (
+			'00000000-0000-0000-0000-000000000101'::uuid,
+			'00000000-0000-0000-0000-000000000001'::uuid,
+			'default',
+			'默认团队',
+			'active'
+		)
+		ON CONFLICT (id) DO NOTHING;
+	`)
 	require.NoError(t, err)
 }
 
@@ -376,7 +419,7 @@ func TestCreateTask(t *testing.T) {
 		Status:        "pending",
 		Priority:      5,
 		ProviderType:  "claude-code",
-		CreatorID:     pgtype.Int8{Int64: user.ID, Valid: true},
+		CreatorID:     uuid.NullUUID{UUID: user.ID, Valid: true},
 		TargetNodeID:  pgtype.Text{String: "test-node-001", Valid: true},
 		WorkspacePath: pgtype.Text{String: "/tmp/workspace", Valid: true},
 		Params:        paramsJSON,
@@ -389,7 +432,7 @@ func TestCreateTask(t *testing.T) {
 	assert.Equal(t, "claude-code", task.ProviderType)
 
 	// 清理
-	defer testQueries.DeleteTask(ctx, task.ID)
+	defer testQueries.DeleteTask(ctx, queries.DeleteTaskParams{ID: task.ID})
 }
 
 func TestGetTask(t *testing.T) {
@@ -406,10 +449,10 @@ func TestGetTask(t *testing.T) {
 		Params:       paramsJSON,
 	})
 	require.NoError(t, err)
-	defer testQueries.DeleteTask(ctx, created.ID)
+	defer testQueries.DeleteTask(ctx, queries.DeleteTaskParams{ID: created.ID})
 
 	// 查询任务
-	task, err := testQueries.GetTask(ctx, created.ID)
+	task, err := testQueries.GetTask(ctx, queries.GetTaskParams{ID: created.ID})
 	require.NoError(t, err)
 	assert.Equal(t, created.ID, task.ID)
 	assert.Equal(t, created.Title, task.Title)
@@ -429,7 +472,7 @@ func TestListTasks(t *testing.T) {
 		Params:       paramsJSON,
 	})
 	require.NoError(t, err)
-	defer testQueries.DeleteTask(ctx, task1.ID)
+	defer testQueries.DeleteTask(ctx, queries.DeleteTaskParams{ID: task1.ID})
 
 	task2, err := testQueries.CreateTask(ctx, queries.CreateTaskParams{
 		Title:        "Task 2",
@@ -439,7 +482,7 @@ func TestListTasks(t *testing.T) {
 		Params:       paramsJSON,
 	})
 	require.NoError(t, err)
-	defer testQueries.DeleteTask(ctx, task2.ID)
+	defer testQueries.DeleteTask(ctx, queries.DeleteTaskParams{ID: task2.ID})
 
 	// 测试无过滤
 	tasks, err := testQueries.ListTasks(ctx, queries.ListTasksParams{
@@ -485,7 +528,7 @@ func TestUpdateTaskStatus(t *testing.T) {
 		Params:       paramsJSON,
 	})
 	require.NoError(t, err)
-	defer testQueries.DeleteTask(ctx, task.ID)
+	defer testQueries.DeleteTask(ctx, queries.DeleteTaskParams{ID: task.ID})
 
 	// 更新状态
 	updated, err := testQueries.UpdateTaskStatus(ctx, queries.UpdateTaskStatusParams{
@@ -510,7 +553,7 @@ func TestTaskStateTransition(t *testing.T) {
 		Params:       paramsJSON,
 	})
 	require.NoError(t, err)
-	defer testQueries.DeleteTask(ctx, task.ID)
+	defer testQueries.DeleteTask(ctx, queries.DeleteTaskParams{ID: task.ID})
 
 	// 状态转换: pending -> running
 	task, err = testQueries.UpdateTaskStatus(ctx, queries.UpdateTaskStatusParams{
@@ -542,7 +585,7 @@ func TestTaskEvents(t *testing.T) {
 		Params:       paramsJSON,
 	})
 	require.NoError(t, err)
-	defer testQueries.DeleteTask(ctx, task.ID)
+	defer testQueries.DeleteTask(ctx, queries.DeleteTaskParams{ID: task.ID})
 
 	// 创建事件
 	eventPayload, _ := json.Marshal(map[string]interface{}{"message": "Task started"})
@@ -567,14 +610,14 @@ func TestTaskEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	// 列出事件
-	events, err := testQueries.ListTaskEvents(ctx, task.ID)
+	events, err := testQueries.ListTaskEvents(ctx, queries.ListTaskEventsParams{TaskID: task.ID})
 	require.NoError(t, err)
 	assert.Len(t, events, 2)
 	assert.Equal(t, int32(1), events[0].SequenceNumber)
 	assert.Equal(t, int32(2), events[1].SequenceNumber)
 
 	// 获取最新序列号
-	maxSeq, err := testQueries.GetLatestTaskEventSequence(ctx, task.ID)
+	maxSeq, err := testQueries.GetLatestTaskEventSequence(ctx, queries.GetLatestTaskEventSequenceParams{TaskID: task.ID})
 	require.NoError(t, err)
 	assert.Equal(t, int32(2), maxSeq)
 }
@@ -714,15 +757,17 @@ func TestWebLoginLogs(t *testing.T) {
 
 	success, err := testQueries.CreateWebLoginLog(ctx, queries.CreateWebLoginLogParams{
 		EventType: "login_succeeded",
-		UserID:    pgtype.Int8{Int64: user.ID, Valid: true},
+		UserID:    uuid.NullUUID{UUID: user.ID, Valid: true},
 		Username:  "login-log-user",
-		SessionID: pgtype.Text{String: "session-1", Valid: true},
+		SessionID: uuid.NullUUID{UUID: uuid.New(), Valid: true},
 		ClientIp:  pgtype.Text{String: "127.0.0.1", Valid: true},
 		UserAgent: pgtype.Text{String: "test-agent", Valid: true},
 		Result:    "succeeded",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "login_succeeded", success.EventType)
+	require.True(t, success.UserID.Valid)
+	assert.Equal(t, user.ID, success.UserID.UUID)
 
 	failed, err := testQueries.CreateWebLoginLog(ctx, queries.CreateWebLoginLogParams{
 		EventType:     "login_failed",
@@ -976,23 +1021,25 @@ func TestCreateRuntimeNode_DuplicateNodeID(t *testing.T) {
 	assert.Contains(t, err.Error(), "duplicate key value")
 }
 
-func TestCreateTask_InvalidCreatorID(t *testing.T) {
+func TestCreateTask_PreservesCreatorUUIDWithoutForeignKey(t *testing.T) {
 	ctx := context.Background()
 
 	paramsJSON, _ := json.Marshal(map[string]interface{}{"test": true})
+	creatorID := uuid.New()
 
-	// 尝试创建任务，使用不存在的 creator_id
-	_, err := testQueries.CreateTask(ctx, queries.CreateTaskParams{
+	task, err := testQueries.CreateTask(ctx, queries.CreateTaskParams{
 		Title:        "Invalid Creator Task",
-		Description:  pgtype.Text{String: "Task with invalid creator", Valid: true},
+		Description:  pgtype.Text{String: "Task with application-validated creator reference", Valid: true},
 		Status:       "pending",
 		Priority:     3,
 		ProviderType: "claude-code",
-		CreatorID:    pgtype.Int8{Int64: 999999, Valid: true}, // 不存在的用户 ID
+		CreatorID:    uuid.NullUUID{UUID: creatorID, Valid: true},
 		Params:       paramsJSON,
 	})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "foreign key")
+	require.NoError(t, err)
+	defer testQueries.DeleteTask(ctx, queries.DeleteTaskParams{ID: task.ID})
+	require.True(t, task.CreatorID.Valid)
+	assert.Equal(t, creatorID, task.CreatorID.UUID)
 }
 
 func TestCreateUser_DuplicateEmail(t *testing.T) {

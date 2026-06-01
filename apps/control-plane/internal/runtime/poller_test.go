@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/superteam/control-plane/internal/task"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/superteam/control-plane/internal/task"
 )
 
 func TestPoller_WaitForTask_Timeout(t *testing.T) {
@@ -29,7 +29,7 @@ func TestPoller_WaitForTask_Notify(t *testing.T) {
 	defer poller.Close()
 
 	testTask := &task.Task{
-		ID:           1,
+		ID:           runtimeTestUUID(1),
 		Title:        "Test Task",
 		ProviderType: "claude-code",
 		Status:       task.TaskStatusPending,
@@ -68,7 +68,7 @@ func TestPoller_NotifyTask_NoWaiter(t *testing.T) {
 	defer poller.Close()
 
 	testTask := &task.Task{
-		ID:           1,
+		ID:           runtimeTestUUID(1),
 		Title:        "Test Task",
 		ProviderType: "claude-code",
 		Status:       task.TaskStatusPending,
@@ -111,7 +111,7 @@ func TestPoller_Concurrent(t *testing.T) {
 	for i := 0; i < numNodes; i++ {
 		nodeID := "node-" + string(rune('0'+i))
 		testTask := &task.Task{
-			ID:           int64(i + 1),
+			ID:           runtimeTestUUID(i + 1),
 			Title:        "Task " + string(rune('0'+i)),
 			ProviderType: "claude-code",
 			Status:       task.TaskStatusPending,
@@ -126,7 +126,7 @@ func TestPoller_Concurrent(t *testing.T) {
 	for i := 0; i < numNodes; i++ {
 		require.NoError(t, errors[i], "node %d should not have error", i)
 		require.NotNil(t, results[i], "node %d should have result", i)
-		assert.Equal(t, int64(i+1), results[i].ID)
+		assert.Equal(t, runtimeTestUUID(i+1), results[i].ID)
 	}
 
 	// All waiters should be cleaned up
@@ -183,7 +183,7 @@ func TestPoller_NotifyAfterClose(t *testing.T) {
 	poller.Close()
 
 	testTask := &task.Task{
-		ID:           1,
+		ID:           runtimeTestUUID(1),
 		Title:        "Test Task",
 		ProviderType: "claude-code",
 		Status:       task.TaskStatusPending,
@@ -200,14 +200,14 @@ func TestPoller_MultipleNotifications(t *testing.T) {
 	defer poller.Close()
 
 	testTask1 := &task.Task{
-		ID:           1,
+		ID:           runtimeTestUUID(1),
 		Title:        "Task 1",
 		ProviderType: "claude-code",
 		Status:       task.TaskStatusPending,
 	}
 
 	testTask2 := &task.Task{
-		ID:           2,
+		ID:           runtimeTestUUID(2),
 		Title:        "Task 2",
 		ProviderType: "claude-code",
 		Status:       task.TaskStatusPending,

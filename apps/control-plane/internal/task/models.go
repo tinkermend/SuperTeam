@@ -3,6 +3,7 @@ package task
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -39,10 +40,12 @@ func (s TaskStatus) IsTerminal() bool {
 
 // Task represents a task in the domain model
 type Task struct {
-	ID             int64
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	TeamID         *uuid.UUID
 	Title          string
 	Description    *string
-	CreatorID      *int64
+	CreatorID      *uuid.UUID
 	ProviderType   string
 	TargetNodeID   *string
 	AssignedNodeID *string
@@ -50,15 +53,17 @@ type Task struct {
 	WorkspacePath  *string
 	Params         []byte
 	Priority       int32
+	CancelledAt    *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
 
 // TaskEvent represents a structured runtime event for a task.
 type TaskEvent struct {
-	ID             int64
-	TaskID         int64
-	ExecutionID    *int64
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	TaskID         uuid.UUID
+	RunID          *uuid.UUID
 	EventType      string
 	SequenceNumber int32
 	Payload        []byte
@@ -67,9 +72,11 @@ type TaskEvent struct {
 
 // CreateTaskRequest represents a request to create a task
 type CreateTaskRequest struct {
+	TenantID      *uuid.UUID
+	TeamID        *uuid.UUID
 	Title         string
 	Description   *string
-	CreatorID     *int64
+	CreatorID     *uuid.UUID
 	ProviderType  string
 	TargetNodeID  *string
 	WorkspacePath *string
@@ -79,15 +86,17 @@ type CreateTaskRequest struct {
 
 // AppendTaskEventRequest represents a request to append a runtime task event.
 type AppendTaskEventRequest struct {
-	TaskID      int64
-	ExecutionID *int64
-	EventType   string
-	Payload     []byte
+	TenantID  *uuid.UUID
+	TaskID    uuid.UUID
+	RunID     *uuid.UUID
+	EventType string
+	Payload   []byte
 }
 
 // UpdateTaskStatusRequest represents a request to update task status
 type UpdateTaskStatusRequest struct {
-	TaskID    int64
+	TenantID  *uuid.UUID
+	TaskID    uuid.UUID
 	NewStatus TaskStatus
 	ChangedBy *string
 	Reason    *string
@@ -95,26 +104,28 @@ type UpdateTaskStatusRequest struct {
 
 // CompleteTaskRequest represents a runtime task completion request.
 type CompleteTaskRequest struct {
-	TaskID int64
+	TaskID uuid.UUID
 	Result []byte
 }
 
 // FailTaskRequest represents a runtime task failure request.
 type FailTaskRequest struct {
-	TaskID int64
+	TaskID uuid.UUID
 	Error  string
 }
 
 // AssignTaskRequest represents a request to assign a task to a node
 type AssignTaskRequest struct {
-	TaskID         int64
+	TenantID       *uuid.UUID
+	TaskID         uuid.UUID
 	AssignedNodeID string
 }
 
 // ListTasksFilter represents filters for listing tasks
 type ListTasksFilter struct {
+	TenantID     *uuid.UUID
 	Status       *TaskStatus
-	CreatorID    *int64
+	CreatorID    *uuid.UUID
 	ProviderType *string
 	Limit        int32
 	Offset       int32
@@ -136,18 +147,18 @@ func stringFromText(t pgtype.Text) *string {
 	return &t.String
 }
 
-func int8FromInt64(i *int64) pgtype.Int8 {
-	if i == nil {
-		return pgtype.Int8{Valid: false}
+func nullUUIDFromPtr(value *uuid.UUID) uuid.NullUUID {
+	if value == nil {
+		return uuid.NullUUID{}
 	}
-	return pgtype.Int8{Int64: *i, Valid: true}
+	return uuid.NullUUID{UUID: *value, Valid: true}
 }
 
-func int64FromInt8(i pgtype.Int8) *int64 {
-	if !i.Valid {
+func ptrFromNullUUID(value uuid.NullUUID) *uuid.UUID {
+	if !value.Valid {
 		return nil
 	}
-	return &i.Int64
+	return &value.UUID
 }
 
 func timeFromTimestamptz(t pgtype.Timestamptz) time.Time {
@@ -155,4 +166,11 @@ func timeFromTimestamptz(t pgtype.Timestamptz) time.Time {
 		return time.Time{}
 	}
 	return t.Time
+}
+
+func timePtrFromTimestamptz(t pgtype.Timestamptz) *time.Time {
+	if !t.Valid {
+		return nil
+	}
+	return &t.Time
 }

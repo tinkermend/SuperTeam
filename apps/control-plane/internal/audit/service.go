@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Event struct {
-	ID           int64     `db:"id"`
+	ID           uuid.UUID `db:"id"`
 	EventType    string    `db:"event_type"`
 	ActorType    string    `db:"actor_type"`
 	ActorID      string    `db:"actor_id"`

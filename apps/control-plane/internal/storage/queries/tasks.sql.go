@@ -8,21 +8,32 @@ package queries
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const CancelTask = `-- name: CancelTask :one
 UPDATE tasks
-SET status = 'cancelled', updated_at = NOW()
-WHERE id = $1
-RETURNING id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, created_at, updated_at
+SET status = 'cancelled',
+    cancelled_at = COALESCE(cancelled_at, NOW()),
+    updated_at = NOW()
+WHERE id = $1::uuid
+  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
+RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at
 `
 
-func (q *Queries) CancelTask(ctx context.Context, id int64) (Task, error) {
-	row := q.db.QueryRow(ctx, CancelTask, id)
+type CancelTaskParams struct {
+	ID       uuid.UUID     `json:"id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
+}
+
+func (q *Queries) CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error) {
+	row := q.db.QueryRow(ctx, CancelTask, arg.ID, arg.TenantID)
 	var i Task
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
 		&i.Title,
 		&i.Description,
 		&i.CreatorID,
@@ -33,6 +44,10 @@ func (q *Queries) CancelTask(ctx context.Context, id int64) (Task, error) {
 		&i.WorkspacePath,
 		&i.Params,
 		&i.Priority,
+		&i.IdempotencyKey,
+		&i.RiskLevel,
+		&i.CancelledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -41,6 +56,8 @@ func (q *Queries) CancelTask(ctx context.Context, id int64) (Task, error) {
 
 const CreateTask = `-- name: CreateTask :one
 INSERT INTO tasks (
+    tenant_id,
+    team_id,
     title,
     description,
     status,
@@ -51,24 +68,38 @@ INSERT INTO tasks (
     workspace_path,
     params
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
-) RETURNING id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, created_at, updated_at
+    COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
+    $2::uuid,
+    $3::varchar,
+    $4::text,
+    $5::varchar,
+    $6::integer,
+    $7::varchar,
+    $8::uuid,
+    $9::varchar,
+    $10::text,
+    COALESCE($11::jsonb, '{}'::jsonb)
+) RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at
 `
 
 type CreateTaskParams struct {
-	Title         string      `json:"title"`
-	Description   pgtype.Text `json:"description"`
-	Status        string      `json:"status"`
-	Priority      int32       `json:"priority"`
-	ProviderType  string      `json:"provider_type"`
-	CreatorID     pgtype.Int8 `json:"creator_id"`
-	TargetNodeID  pgtype.Text `json:"target_node_id"`
-	WorkspacePath pgtype.Text `json:"workspace_path"`
-	Params        []byte      `json:"params"`
+	TenantID      uuid.NullUUID `json:"tenant_id"`
+	TeamID        uuid.NullUUID `json:"team_id"`
+	Title         string        `json:"title"`
+	Description   pgtype.Text   `json:"description"`
+	Status        string        `json:"status"`
+	Priority      int32         `json:"priority"`
+	ProviderType  string        `json:"provider_type"`
+	CreatorID     uuid.NullUUID `json:"creator_id"`
+	TargetNodeID  pgtype.Text   `json:"target_node_id"`
+	WorkspacePath pgtype.Text   `json:"workspace_path"`
+	Params        []byte        `json:"params"`
 }
 
 func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error) {
 	row := q.db.QueryRow(ctx, CreateTask,
+		arg.TenantID,
+		arg.TeamID,
 		arg.Title,
 		arg.Description,
 		arg.Status,
@@ -82,6 +113,8 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 	var i Task
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
 		&i.Title,
 		&i.Description,
 		&i.CreatorID,
@@ -92,6 +125,10 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		&i.WorkspacePath,
 		&i.Params,
 		&i.Priority,
+		&i.IdempotencyKey,
+		&i.RiskLevel,
+		&i.CancelledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -100,28 +137,36 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 
 const CreateTaskArtifact = `-- name: CreateTaskArtifact :one
 INSERT INTO task_artifacts (
+    tenant_id,
     task_id,
-    execution_id,
+    run_id,
     artifact_type,
     name,
     storage_url
 ) VALUES (
-    $1, $2, $3, $4, $5
-) RETURNING id, task_id, execution_id, artifact_type, name, storage_url, size_bytes, metadata, created_at
+    COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
+    $2::uuid,
+    $3::uuid,
+    $4::varchar,
+    $5::varchar,
+    $6::text
+) RETURNING id, tenant_id, task_id, run_id, artifact_type, name, storage_url, size_bytes, metadata, archived_at, deleted_at, created_at
 `
 
 type CreateTaskArtifactParams struct {
-	TaskID       int64       `json:"task_id"`
-	ExecutionID  pgtype.Int8 `json:"execution_id"`
-	ArtifactType string      `json:"artifact_type"`
-	Name         string      `json:"name"`
-	StorageUrl   string      `json:"storage_url"`
+	TenantID     uuid.NullUUID `json:"tenant_id"`
+	TaskID       uuid.UUID     `json:"task_id"`
+	RunID        uuid.NullUUID `json:"run_id"`
+	ArtifactType string        `json:"artifact_type"`
+	Name         string        `json:"name"`
+	StorageUrl   string        `json:"storage_url"`
 }
 
 func (q *Queries) CreateTaskArtifact(ctx context.Context, arg CreateTaskArtifactParams) (TaskArtifact, error) {
 	row := q.db.QueryRow(ctx, CreateTaskArtifact,
+		arg.TenantID,
 		arg.TaskID,
-		arg.ExecutionID,
+		arg.RunID,
 		arg.ArtifactType,
 		arg.Name,
 		arg.StorageUrl,
@@ -129,13 +174,16 @@ func (q *Queries) CreateTaskArtifact(ctx context.Context, arg CreateTaskArtifact
 	var i TaskArtifact
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TaskID,
-		&i.ExecutionID,
+		&i.RunID,
 		&i.ArtifactType,
 		&i.Name,
 		&i.StorageUrl,
 		&i.SizeBytes,
 		&i.Metadata,
+		&i.ArchivedAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -143,28 +191,36 @@ func (q *Queries) CreateTaskArtifact(ctx context.Context, arg CreateTaskArtifact
 
 const CreateTaskEvent = `-- name: CreateTaskEvent :one
 INSERT INTO task_events (
+    tenant_id,
     task_id,
-    execution_id,
+    run_id,
     event_type,
     sequence_number,
     payload
 ) VALUES (
-    $1, $2, $3, $4, $5
-) RETURNING id, task_id, execution_id, event_type, sequence_number, payload, created_at
+    COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
+    $2::uuid,
+    $3::uuid,
+    $4::varchar,
+    $5::integer,
+    $6::jsonb
+) RETURNING id, tenant_id, task_id, run_id, event_type, sequence_number, payload, created_at
 `
 
 type CreateTaskEventParams struct {
-	TaskID         int64       `json:"task_id"`
-	ExecutionID    pgtype.Int8 `json:"execution_id"`
-	EventType      string      `json:"event_type"`
-	SequenceNumber int32       `json:"sequence_number"`
-	Payload        []byte      `json:"payload"`
+	TenantID       uuid.NullUUID `json:"tenant_id"`
+	TaskID         uuid.UUID     `json:"task_id"`
+	RunID          uuid.NullUUID `json:"run_id"`
+	EventType      string        `json:"event_type"`
+	SequenceNumber int32         `json:"sequence_number"`
+	Payload        []byte        `json:"payload"`
 }
 
 func (q *Queries) CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams) (TaskEvent, error) {
 	row := q.db.QueryRow(ctx, CreateTaskEvent,
+		arg.TenantID,
 		arg.TaskID,
-		arg.ExecutionID,
+		arg.RunID,
 		arg.EventType,
 		arg.SequenceNumber,
 		arg.Payload,
@@ -172,8 +228,9 @@ func (q *Queries) CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams
 	var i TaskEvent
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TaskID,
-		&i.ExecutionID,
+		&i.RunID,
 		&i.EventType,
 		&i.SequenceNumber,
 		&i.Payload,
@@ -182,62 +239,85 @@ func (q *Queries) CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams
 	return i, err
 }
 
-const CreateTaskExecution = `-- name: CreateTaskExecution :one
-INSERT INTO task_executions (
+const CreateTaskRun = `-- name: CreateTaskRun :one
+INSERT INTO task_runs (
+    tenant_id,
     task_id,
     node_id,
     status
 ) VALUES (
-    $1, $2, $3
-) RETURNING id, task_id, node_id, provider_session_id, status, started_at, completed_at, result, error_message, created_at
+    COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
+    $2::uuid,
+    $3::varchar,
+    $4::varchar
+) RETURNING id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at
 `
 
-type CreateTaskExecutionParams struct {
-	TaskID int64  `json:"task_id"`
-	NodeID string `json:"node_id"`
-	Status string `json:"status"`
+type CreateTaskRunParams struct {
+	TenantID uuid.NullUUID `json:"tenant_id"`
+	TaskID   uuid.UUID     `json:"task_id"`
+	NodeID   string        `json:"node_id"`
+	Status   string        `json:"status"`
 }
 
-func (q *Queries) CreateTaskExecution(ctx context.Context, arg CreateTaskExecutionParams) (TaskExecution, error) {
-	row := q.db.QueryRow(ctx, CreateTaskExecution, arg.TaskID, arg.NodeID, arg.Status)
-	var i TaskExecution
+func (q *Queries) CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error) {
+	row := q.db.QueryRow(ctx, CreateTaskRun,
+		arg.TenantID,
+		arg.TaskID,
+		arg.NodeID,
+		arg.Status,
+	)
+	var i TaskRun
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TaskID,
 		&i.NodeID,
+		&i.RuntimeNodeID,
 		&i.ProviderSessionID,
 		&i.Status,
+		&i.LeaseExpiresAt,
 		&i.StartedAt,
 		&i.CompletedAt,
+		&i.FinishedAt,
 		&i.Result,
 		&i.ErrorMessage,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const CreateTaskStateHistory = `-- name: CreateTaskStateHistory :one
 INSERT INTO task_state_history (
+    tenant_id,
     task_id,
     from_status,
     to_status,
     changed_by,
     reason
 ) VALUES (
-    $1, $2, $3, $4, $5
-) RETURNING id, task_id, from_status, to_status, changed_by, reason, created_at
+    COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
+    $2::uuid,
+    $3::varchar,
+    $4::varchar,
+    $5::varchar,
+    $6::text
+) RETURNING id, tenant_id, task_id, from_status, to_status, changed_by, reason, created_at
 `
 
 type CreateTaskStateHistoryParams struct {
-	TaskID     int64       `json:"task_id"`
-	FromStatus pgtype.Text `json:"from_status"`
-	ToStatus   string      `json:"to_status"`
-	ChangedBy  pgtype.Text `json:"changed_by"`
-	Reason     pgtype.Text `json:"reason"`
+	TenantID   uuid.NullUUID `json:"tenant_id"`
+	TaskID     uuid.UUID     `json:"task_id"`
+	FromStatus pgtype.Text   `json:"from_status"`
+	ToStatus   string        `json:"to_status"`
+	ChangedBy  pgtype.Text   `json:"changed_by"`
+	Reason     pgtype.Text   `json:"reason"`
 }
 
 func (q *Queries) CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) (TaskStateHistory, error) {
 	row := q.db.QueryRow(ctx, CreateTaskStateHistory,
+		arg.TenantID,
 		arg.TaskID,
 		arg.FromStatus,
 		arg.ToStatus,
@@ -247,6 +327,7 @@ func (q *Queries) CreateTaskStateHistory(ctx context.Context, arg CreateTaskStat
 	var i TaskStateHistory
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TaskID,
 		&i.FromStatus,
 		&i.ToStatus,
@@ -258,73 +339,112 @@ func (q *Queries) CreateTaskStateHistory(ctx context.Context, arg CreateTaskStat
 }
 
 const DeleteTask = `-- name: DeleteTask :exec
-DELETE FROM tasks
-WHERE id = $1
+UPDATE tasks
+SET deleted_at = COALESCE(deleted_at, NOW()), updated_at = NOW()
+WHERE id = $1::uuid
+  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 `
 
-func (q *Queries) DeleteTask(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, DeleteTask, id)
+type DeleteTaskParams struct {
+	ID       uuid.UUID     `json:"id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteTask(ctx context.Context, arg DeleteTaskParams) error {
+	_, err := q.db.Exec(ctx, DeleteTask, arg.ID, arg.TenantID)
 	return err
 }
 
 const DeleteTaskArtifact = `-- name: DeleteTaskArtifact :exec
-DELETE FROM task_artifacts
-WHERE id = $1
+UPDATE task_artifacts
+SET deleted_at = COALESCE(deleted_at, NOW())
+WHERE id = $1::uuid
+  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 `
 
-func (q *Queries) DeleteTaskArtifact(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, DeleteTaskArtifact, id)
+type DeleteTaskArtifactParams struct {
+	ID       uuid.UUID     `json:"id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteTaskArtifact(ctx context.Context, arg DeleteTaskArtifactParams) error {
+	_, err := q.db.Exec(ctx, DeleteTaskArtifact, arg.ID, arg.TenantID)
 	return err
 }
 
 const GetLatestTaskEventSequence = `-- name: GetLatestTaskEventSequence :one
 SELECT COALESCE(MAX(sequence_number), 0)::integer as max_sequence
 FROM task_events
-WHERE task_id = $1
+WHERE task_id = $1::uuid
+  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 `
 
-func (q *Queries) GetLatestTaskEventSequence(ctx context.Context, taskID int64) (int32, error) {
-	row := q.db.QueryRow(ctx, GetLatestTaskEventSequence, taskID)
+type GetLatestTaskEventSequenceParams struct {
+	TaskID   uuid.UUID     `json:"task_id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetLatestTaskEventSequence(ctx context.Context, arg GetLatestTaskEventSequenceParams) (int32, error) {
+	row := q.db.QueryRow(ctx, GetLatestTaskEventSequence, arg.TaskID, arg.TenantID)
 	var max_sequence int32
 	err := row.Scan(&max_sequence)
 	return max_sequence, err
 }
 
-const GetLatestTaskExecution = `-- name: GetLatestTaskExecution :one
-SELECT id, task_id, node_id, provider_session_id, status, started_at, completed_at, result, error_message, created_at FROM task_executions
-WHERE task_id = $1
+const GetLatestTaskRun = `-- name: GetLatestTaskRun :one
+SELECT id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at FROM task_runs
+WHERE task_id = $1::uuid
+  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 ORDER BY created_at DESC
 LIMIT 1
 `
 
-func (q *Queries) GetLatestTaskExecution(ctx context.Context, taskID int64) (TaskExecution, error) {
-	row := q.db.QueryRow(ctx, GetLatestTaskExecution, taskID)
-	var i TaskExecution
+type GetLatestTaskRunParams struct {
+	TaskID   uuid.UUID     `json:"task_id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetLatestTaskRun(ctx context.Context, arg GetLatestTaskRunParams) (TaskRun, error) {
+	row := q.db.QueryRow(ctx, GetLatestTaskRun, arg.TaskID, arg.TenantID)
+	var i TaskRun
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TaskID,
 		&i.NodeID,
+		&i.RuntimeNodeID,
 		&i.ProviderSessionID,
 		&i.Status,
+		&i.LeaseExpiresAt,
 		&i.StartedAt,
 		&i.CompletedAt,
+		&i.FinishedAt,
 		&i.Result,
 		&i.ErrorMessage,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const GetTask = `-- name: GetTask :one
-SELECT id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, created_at, updated_at FROM tasks
-WHERE id = $1
+SELECT id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at FROM tasks
+WHERE id = $1::uuid
+  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 `
 
-func (q *Queries) GetTask(ctx context.Context, id int64) (Task, error) {
-	row := q.db.QueryRow(ctx, GetTask, id)
+type GetTaskParams struct {
+	ID       uuid.UUID     `json:"id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetTask(ctx context.Context, arg GetTaskParams) (Task, error) {
+	row := q.db.QueryRow(ctx, GetTask, arg.ID, arg.TenantID)
 	var i Task
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
 		&i.Title,
 		&i.Description,
 		&i.CreatorID,
@@ -335,6 +455,10 @@ func (q *Queries) GetTask(ctx context.Context, id int64) (Task, error) {
 		&i.WorkspacePath,
 		&i.Params,
 		&i.Priority,
+		&i.IdempotencyKey,
+		&i.RiskLevel,
+		&i.CancelledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -342,44 +466,58 @@ func (q *Queries) GetTask(ctx context.Context, id int64) (Task, error) {
 }
 
 const GetTaskArtifact = `-- name: GetTaskArtifact :one
-SELECT id, task_id, execution_id, artifact_type, name, storage_url, size_bytes, metadata, created_at FROM task_artifacts
-WHERE id = $1
+SELECT id, tenant_id, task_id, run_id, artifact_type, name, storage_url, size_bytes, metadata, archived_at, deleted_at, created_at FROM task_artifacts
+WHERE id = $1::uuid
+  AND deleted_at IS NULL
+  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 `
 
-func (q *Queries) GetTaskArtifact(ctx context.Context, id int64) (TaskArtifact, error) {
-	row := q.db.QueryRow(ctx, GetTaskArtifact, id)
+type GetTaskArtifactParams struct {
+	ID       uuid.UUID     `json:"id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetTaskArtifact(ctx context.Context, arg GetTaskArtifactParams) (TaskArtifact, error) {
+	row := q.db.QueryRow(ctx, GetTaskArtifact, arg.ID, arg.TenantID)
 	var i TaskArtifact
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TaskID,
-		&i.ExecutionID,
+		&i.RunID,
 		&i.ArtifactType,
 		&i.Name,
 		&i.StorageUrl,
 		&i.SizeBytes,
 		&i.Metadata,
+		&i.ArchivedAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const GetTaskEvent = `-- name: GetTaskEvent :one
-SELECT id, task_id, execution_id, event_type, sequence_number, payload, created_at FROM task_events
-WHERE task_id = $1 AND sequence_number = $2
+SELECT id, tenant_id, task_id, run_id, event_type, sequence_number, payload, created_at FROM task_events
+WHERE task_id = $1::uuid
+  AND sequence_number = $2::integer
+  AND tenant_id = COALESCE($3::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 `
 
 type GetTaskEventParams struct {
-	TaskID         int64 `json:"task_id"`
-	SequenceNumber int32 `json:"sequence_number"`
+	TaskID         uuid.UUID     `json:"task_id"`
+	SequenceNumber int32         `json:"sequence_number"`
+	TenantID       uuid.NullUUID `json:"tenant_id"`
 }
 
 func (q *Queries) GetTaskEvent(ctx context.Context, arg GetTaskEventParams) (TaskEvent, error) {
-	row := q.db.QueryRow(ctx, GetTaskEvent, arg.TaskID, arg.SequenceNumber)
+	row := q.db.QueryRow(ctx, GetTaskEvent, arg.TaskID, arg.SequenceNumber, arg.TenantID)
 	var i TaskEvent
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TaskID,
-		&i.ExecutionID,
+		&i.RunID,
 		&i.EventType,
 		&i.SequenceNumber,
 		&i.Payload,
@@ -388,44 +526,58 @@ func (q *Queries) GetTaskEvent(ctx context.Context, arg GetTaskEventParams) (Tas
 	return i, err
 }
 
-const GetTaskExecution = `-- name: GetTaskExecution :one
-SELECT id, task_id, node_id, provider_session_id, status, started_at, completed_at, result, error_message, created_at FROM task_executions
-WHERE id = $1
+const GetTaskRun = `-- name: GetTaskRun :one
+SELECT id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at FROM task_runs
+WHERE id = $1::uuid
+  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 `
 
-func (q *Queries) GetTaskExecution(ctx context.Context, id int64) (TaskExecution, error) {
-	row := q.db.QueryRow(ctx, GetTaskExecution, id)
-	var i TaskExecution
+type GetTaskRunParams struct {
+	ID       uuid.UUID     `json:"id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetTaskRun(ctx context.Context, arg GetTaskRunParams) (TaskRun, error) {
+	row := q.db.QueryRow(ctx, GetTaskRun, arg.ID, arg.TenantID)
+	var i TaskRun
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TaskID,
 		&i.NodeID,
+		&i.RuntimeNodeID,
 		&i.ProviderSessionID,
 		&i.Status,
+		&i.LeaseExpiresAt,
 		&i.StartedAt,
 		&i.CompletedAt,
+		&i.FinishedAt,
 		&i.Result,
 		&i.ErrorMessage,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const ListPendingTasks = `-- name: ListPendingTasks :many
-SELECT id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, created_at, updated_at FROM tasks
-WHERE status = 'pending'
-  AND ($1::varchar IS NULL OR provider_type = $1)
+SELECT id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at FROM tasks
+WHERE tenant_id = COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
+  AND deleted_at IS NULL
+  AND status = 'pending'
+  AND (target_node_id IS NULL OR target_node_id = $2::varchar)
 ORDER BY priority DESC, created_at ASC
-LIMIT $2
+LIMIT $3
 `
 
 type ListPendingTasksParams struct {
-	ProviderType pgtype.Text `json:"provider_type"`
-	Limit        int32       `json:"limit"`
+	TenantID     uuid.NullUUID `json:"tenant_id"`
+	TargetNodeID pgtype.Text   `json:"target_node_id"`
+	Limit        int32         `json:"limit"`
 }
 
 func (q *Queries) ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error) {
-	rows, err := q.db.Query(ctx, ListPendingTasks, arg.ProviderType, arg.Limit)
+	rows, err := q.db.Query(ctx, ListPendingTasks, arg.TenantID, arg.TargetNodeID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -435,6 +587,8 @@ func (q *Queries) ListPendingTasks(ctx context.Context, arg ListPendingTasksPara
 		var i Task
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
+			&i.TeamID,
 			&i.Title,
 			&i.Description,
 			&i.CreatorID,
@@ -445,6 +599,10 @@ func (q *Queries) ListPendingTasks(ctx context.Context, arg ListPendingTasksPara
 			&i.WorkspacePath,
 			&i.Params,
 			&i.Priority,
+			&i.IdempotencyKey,
+			&i.RiskLevel,
+			&i.CancelledAt,
+			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -459,13 +617,20 @@ func (q *Queries) ListPendingTasks(ctx context.Context, arg ListPendingTasksPara
 }
 
 const ListTaskArtifacts = `-- name: ListTaskArtifacts :many
-SELECT id, task_id, execution_id, artifact_type, name, storage_url, size_bytes, metadata, created_at FROM task_artifacts
-WHERE task_id = $1
+SELECT id, tenant_id, task_id, run_id, artifact_type, name, storage_url, size_bytes, metadata, archived_at, deleted_at, created_at FROM task_artifacts
+WHERE task_id = $1::uuid
+  AND deleted_at IS NULL
+  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListTaskArtifacts(ctx context.Context, taskID int64) ([]TaskArtifact, error) {
-	rows, err := q.db.Query(ctx, ListTaskArtifacts, taskID)
+type ListTaskArtifactsParams struct {
+	TaskID   uuid.UUID     `json:"task_id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
+}
+
+func (q *Queries) ListTaskArtifacts(ctx context.Context, arg ListTaskArtifactsParams) ([]TaskArtifact, error) {
+	rows, err := q.db.Query(ctx, ListTaskArtifacts, arg.TaskID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -475,13 +640,16 @@ func (q *Queries) ListTaskArtifacts(ctx context.Context, taskID int64) ([]TaskAr
 		var i TaskArtifact
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.TaskID,
-			&i.ExecutionID,
+			&i.RunID,
 			&i.ArtifactType,
 			&i.Name,
 			&i.StorageUrl,
 			&i.SizeBytes,
 			&i.Metadata,
+			&i.ArchivedAt,
+			&i.DeletedAt,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -495,13 +663,19 @@ func (q *Queries) ListTaskArtifacts(ctx context.Context, taskID int64) ([]TaskAr
 }
 
 const ListTaskEvents = `-- name: ListTaskEvents :many
-SELECT id, task_id, execution_id, event_type, sequence_number, payload, created_at FROM task_events
-WHERE task_id = $1
+SELECT id, tenant_id, task_id, run_id, event_type, sequence_number, payload, created_at FROM task_events
+WHERE task_id = $1::uuid
+  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 ORDER BY sequence_number ASC
 `
 
-func (q *Queries) ListTaskEvents(ctx context.Context, taskID int64) ([]TaskEvent, error) {
-	rows, err := q.db.Query(ctx, ListTaskEvents, taskID)
+type ListTaskEventsParams struct {
+	TaskID   uuid.UUID     `json:"task_id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
+}
+
+func (q *Queries) ListTaskEvents(ctx context.Context, arg ListTaskEventsParams) ([]TaskEvent, error) {
+	rows, err := q.db.Query(ctx, ListTaskEvents, arg.TaskID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -511,8 +685,9 @@ func (q *Queries) ListTaskEvents(ctx context.Context, taskID int64) ([]TaskEvent
 		var i TaskEvent
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.TaskID,
-			&i.ExecutionID,
+			&i.RunID,
 			&i.EventType,
 			&i.SequenceNumber,
 			&i.Payload,
@@ -528,32 +703,43 @@ func (q *Queries) ListTaskEvents(ctx context.Context, taskID int64) ([]TaskEvent
 	return items, nil
 }
 
-const ListTaskExecutions = `-- name: ListTaskExecutions :many
-SELECT id, task_id, node_id, provider_session_id, status, started_at, completed_at, result, error_message, created_at FROM task_executions
-WHERE task_id = $1
+const ListTaskRuns = `-- name: ListTaskRuns :many
+SELECT id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at FROM task_runs
+WHERE task_id = $1::uuid
+  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListTaskExecutions(ctx context.Context, taskID int64) ([]TaskExecution, error) {
-	rows, err := q.db.Query(ctx, ListTaskExecutions, taskID)
+type ListTaskRunsParams struct {
+	TaskID   uuid.UUID     `json:"task_id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
+}
+
+func (q *Queries) ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]TaskRun, error) {
+	rows, err := q.db.Query(ctx, ListTaskRuns, arg.TaskID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []TaskExecution{}
+	items := []TaskRun{}
 	for rows.Next() {
-		var i TaskExecution
+		var i TaskRun
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.TaskID,
 			&i.NodeID,
+			&i.RuntimeNodeID,
 			&i.ProviderSessionID,
 			&i.Status,
+			&i.LeaseExpiresAt,
 			&i.StartedAt,
 			&i.CompletedAt,
+			&i.FinishedAt,
 			&i.Result,
 			&i.ErrorMessage,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -566,13 +752,19 @@ func (q *Queries) ListTaskExecutions(ctx context.Context, taskID int64) ([]TaskE
 }
 
 const ListTaskStateHistory = `-- name: ListTaskStateHistory :many
-SELECT id, task_id, from_status, to_status, changed_by, reason, created_at FROM task_state_history
-WHERE task_id = $1
+SELECT id, tenant_id, task_id, from_status, to_status, changed_by, reason, created_at FROM task_state_history
+WHERE task_id = $1::uuid
+  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListTaskStateHistory(ctx context.Context, taskID int64) ([]TaskStateHistory, error) {
-	rows, err := q.db.Query(ctx, ListTaskStateHistory, taskID)
+type ListTaskStateHistoryParams struct {
+	TaskID   uuid.UUID     `json:"task_id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
+}
+
+func (q *Queries) ListTaskStateHistory(ctx context.Context, arg ListTaskStateHistoryParams) ([]TaskStateHistory, error) {
+	rows, err := q.db.Query(ctx, ListTaskStateHistory, arg.TaskID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -582,6 +774,7 @@ func (q *Queries) ListTaskStateHistory(ctx context.Context, taskID int64) ([]Tas
 		var i TaskStateHistory
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.TaskID,
 			&i.FromStatus,
 			&i.ToStatus,
@@ -600,24 +793,28 @@ func (q *Queries) ListTaskStateHistory(ctx context.Context, taskID int64) ([]Tas
 }
 
 const ListTasks = `-- name: ListTasks :many
-SELECT id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, created_at, updated_at FROM tasks
-WHERE ($1::varchar IS NULL OR status = $1)
-  AND ($2::bigint IS NULL OR creator_id = $2)
-  AND ($3::varchar IS NULL OR provider_type = $3)
+SELECT id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at FROM tasks
+WHERE tenant_id = COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
+  AND deleted_at IS NULL
+  AND ($2::varchar IS NULL OR status = $2::varchar)
+  AND ($3::uuid IS NULL OR creator_id = $3::uuid)
+  AND ($4::varchar IS NULL OR provider_type = $4::varchar)
 ORDER BY priority DESC, created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type ListTasksParams struct {
-	Status       pgtype.Text `json:"status"`
-	CreatorID    pgtype.Int8 `json:"creator_id"`
-	ProviderType pgtype.Text `json:"provider_type"`
-	Offset       int32       `json:"offset"`
-	Limit        int32       `json:"limit"`
+	TenantID     uuid.NullUUID `json:"tenant_id"`
+	Status       pgtype.Text   `json:"status"`
+	CreatorID    uuid.NullUUID `json:"creator_id"`
+	ProviderType pgtype.Text   `json:"provider_type"`
+	Offset       int32         `json:"offset"`
+	Limit        int32         `json:"limit"`
 }
 
 func (q *Queries) ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error) {
 	rows, err := q.db.Query(ctx, ListTasks,
+		arg.TenantID,
 		arg.Status,
 		arg.CreatorID,
 		arg.ProviderType,
@@ -633,6 +830,8 @@ func (q *Queries) ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, e
 		var i Task
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
+			&i.TeamID,
 			&i.Title,
 			&i.Description,
 			&i.CreatorID,
@@ -643,6 +842,10 @@ func (q *Queries) ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, e
 			&i.WorkspacePath,
 			&i.Params,
 			&i.Priority,
+			&i.IdempotencyKey,
+			&i.RiskLevel,
+			&i.CancelledAt,
+			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -668,20 +871,22 @@ SET
     workspace_path = COALESCE($7, workspace_path),
     params = COALESCE($8, params),
     updated_at = NOW()
-WHERE id = $9
-RETURNING id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, created_at, updated_at
+WHERE id = $9::uuid
+  AND tenant_id = COALESCE($10::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
+RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at
 `
 
 type UpdateTaskParams struct {
-	Title          pgtype.Text `json:"title"`
-	Description    pgtype.Text `json:"description"`
-	Status         pgtype.Text `json:"status"`
-	Priority       pgtype.Int4 `json:"priority"`
-	TargetNodeID   pgtype.Text `json:"target_node_id"`
-	AssignedNodeID pgtype.Text `json:"assigned_node_id"`
-	WorkspacePath  pgtype.Text `json:"workspace_path"`
-	Params         []byte      `json:"params"`
-	ID             int64       `json:"id"`
+	Title          pgtype.Text   `json:"title"`
+	Description    pgtype.Text   `json:"description"`
+	Status         pgtype.Text   `json:"status"`
+	Priority       pgtype.Int4   `json:"priority"`
+	TargetNodeID   pgtype.Text   `json:"target_node_id"`
+	AssignedNodeID pgtype.Text   `json:"assigned_node_id"`
+	WorkspacePath  pgtype.Text   `json:"workspace_path"`
+	Params         []byte        `json:"params"`
+	ID             uuid.UUID     `json:"id"`
+	TenantID       uuid.NullUUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, error) {
@@ -695,10 +900,13 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		arg.WorkspacePath,
 		arg.Params,
 		arg.ID,
+		arg.TenantID,
 	)
 	var i Task
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
 		&i.Title,
 		&i.Description,
 		&i.CreatorID,
@@ -709,6 +917,10 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		&i.WorkspacePath,
 		&i.Params,
 		&i.Priority,
+		&i.IdempotencyKey,
+		&i.RiskLevel,
+		&i.CancelledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -717,21 +929,25 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 
 const UpdateTaskAssignment = `-- name: UpdateTaskAssignment :one
 UPDATE tasks
-SET assigned_node_id = $2, status = 'claimed', updated_at = NOW()
-WHERE id = $1
-RETURNING id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, created_at, updated_at
+SET assigned_node_id = $1::varchar, status = 'claimed', updated_at = NOW()
+WHERE id = $2::uuid
+  AND tenant_id = COALESCE($3::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
+RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at
 `
 
 type UpdateTaskAssignmentParams struct {
-	ID             int64       `json:"id"`
-	AssignedNodeID pgtype.Text `json:"assigned_node_id"`
+	AssignedNodeID string        `json:"assigned_node_id"`
+	ID             uuid.UUID     `json:"id"`
+	TenantID       uuid.NullUUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateTaskAssignment(ctx context.Context, arg UpdateTaskAssignmentParams) (Task, error) {
-	row := q.db.QueryRow(ctx, UpdateTaskAssignment, arg.ID, arg.AssignedNodeID)
+	row := q.db.QueryRow(ctx, UpdateTaskAssignment, arg.AssignedNodeID, arg.ID, arg.TenantID)
 	var i Task
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
 		&i.Title,
 		&i.Description,
 		&i.CreatorID,
@@ -742,59 +958,83 @@ func (q *Queries) UpdateTaskAssignment(ctx context.Context, arg UpdateTaskAssign
 		&i.WorkspacePath,
 		&i.Params,
 		&i.Priority,
+		&i.IdempotencyKey,
+		&i.RiskLevel,
+		&i.CancelledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const UpdateTaskExecution = `-- name: UpdateTaskExecution :one
-UPDATE task_executions
-SET status = $2, completed_at = NOW(), updated_at = NOW()
-WHERE id = $1
-RETURNING id, task_id, node_id, provider_session_id, status, started_at, completed_at, result, error_message, created_at
+const UpdateTaskRun = `-- name: UpdateTaskRun :one
+UPDATE task_runs
+SET status = $1::varchar,
+    completed_at = NOW(),
+    finished_at = NOW(),
+    updated_at = NOW()
+WHERE id = $2::uuid
+  AND tenant_id = COALESCE($3::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
+RETURNING id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at
 `
 
-type UpdateTaskExecutionParams struct {
-	ID     int64  `json:"id"`
-	Status string `json:"status"`
+type UpdateTaskRunParams struct {
+	Status   string        `json:"status"`
+	ID       uuid.UUID     `json:"id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateTaskExecution(ctx context.Context, arg UpdateTaskExecutionParams) (TaskExecution, error) {
-	row := q.db.QueryRow(ctx, UpdateTaskExecution, arg.ID, arg.Status)
-	var i TaskExecution
+func (q *Queries) UpdateTaskRun(ctx context.Context, arg UpdateTaskRunParams) (TaskRun, error) {
+	row := q.db.QueryRow(ctx, UpdateTaskRun, arg.Status, arg.ID, arg.TenantID)
+	var i TaskRun
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TaskID,
 		&i.NodeID,
+		&i.RuntimeNodeID,
 		&i.ProviderSessionID,
 		&i.Status,
+		&i.LeaseExpiresAt,
 		&i.StartedAt,
 		&i.CompletedAt,
+		&i.FinishedAt,
 		&i.Result,
 		&i.ErrorMessage,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const UpdateTaskStatus = `-- name: UpdateTaskStatus :one
 UPDATE tasks
-SET status = $2, updated_at = NOW()
-WHERE id = $1
-RETURNING id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, created_at, updated_at
+SET
+    status = $1::varchar,
+    cancelled_at = CASE
+        WHEN $1::varchar = 'cancelled' THEN COALESCE(cancelled_at, NOW())
+        ELSE cancelled_at
+    END,
+    updated_at = NOW()
+WHERE id = $2::uuid
+  AND tenant_id = COALESCE($3::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
+RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at
 `
 
 type UpdateTaskStatusParams struct {
-	ID     int64  `json:"id"`
-	Status string `json:"status"`
+	Status   string        `json:"status"`
+	ID       uuid.UUID     `json:"id"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusParams) (Task, error) {
-	row := q.db.QueryRow(ctx, UpdateTaskStatus, arg.ID, arg.Status)
+	row := q.db.QueryRow(ctx, UpdateTaskStatus, arg.Status, arg.ID, arg.TenantID)
 	var i Task
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
 		&i.Title,
 		&i.Description,
 		&i.CreatorID,
@@ -805,6 +1045,10 @@ func (q *Queries) UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusPara
 		&i.WorkspacePath,
 		&i.Params,
 		&i.Priority,
+		&i.IdempotencyKey,
+		&i.RiskLevel,
+		&i.CancelledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -813,21 +1057,25 @@ func (q *Queries) UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusPara
 
 const UpdateTaskWorkspace = `-- name: UpdateTaskWorkspace :one
 UPDATE tasks
-SET workspace_path = $2, updated_at = NOW()
-WHERE id = $1
-RETURNING id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, created_at, updated_at
+SET workspace_path = $1::text, updated_at = NOW()
+WHERE id = $2::uuid
+  AND tenant_id = COALESCE($3::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
+RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at
 `
 
 type UpdateTaskWorkspaceParams struct {
-	ID            int64       `json:"id"`
-	WorkspacePath pgtype.Text `json:"workspace_path"`
+	WorkspacePath string        `json:"workspace_path"`
+	ID            uuid.UUID     `json:"id"`
+	TenantID      uuid.NullUUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateTaskWorkspace(ctx context.Context, arg UpdateTaskWorkspaceParams) (Task, error) {
-	row := q.db.QueryRow(ctx, UpdateTaskWorkspace, arg.ID, arg.WorkspacePath)
+	row := q.db.QueryRow(ctx, UpdateTaskWorkspace, arg.WorkspacePath, arg.ID, arg.TenantID)
 	var i Task
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
 		&i.Title,
 		&i.Description,
 		&i.CreatorID,
@@ -838,6 +1086,10 @@ func (q *Queries) UpdateTaskWorkspace(ctx context.Context, arg UpdateTaskWorkspa
 		&i.WorkspacePath,
 		&i.Params,
 		&i.Priority,
+		&i.IdempotencyKey,
+		&i.RiskLevel,
+		&i.CancelledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

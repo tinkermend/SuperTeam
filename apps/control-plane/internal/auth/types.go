@@ -1,10 +1,14 @@
 package auth
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // User 用户模型
 type User struct {
-	ID           int64      `db:"id"`
+	ID           uuid.UUID  `db:"id"`
 	Username     string     `db:"username"`
 	PasswordHash string     `db:"password_hash"`
 	Status       string     `db:"status"`
@@ -15,8 +19,8 @@ type User struct {
 
 // Session 会话模型
 type Session struct {
-	ID         string    `json:"id"`
-	UserID     int64     `json:"user_id"`
+	ID         uuid.UUID `json:"id"`
+	UserID     uuid.UUID `json:"user_id"`
 	ExpiresAt  time.Time `json:"expires_at"`
 	LastSeenAt time.Time `json:"last_seen_at"`
 	ClientIP   string    `json:"client_ip"`
@@ -61,7 +65,7 @@ const (
 
 // Actor 表示执行 Web 管理操作的当前登录用户。
 type Actor struct {
-	UserID   int64
+	UserID   uuid.UUID
 	Username string
 }
 
@@ -80,11 +84,11 @@ type CreateManagedUserInput struct {
 
 // LoginLog Web 控制台登录日志。
 type LoginLog struct {
-	ID            int64
+	ID            uuid.UUID
 	EventType     string
-	UserID        *int64
+	UserID        *uuid.UUID
 	Username      string
-	SessionID     string
+	SessionID     *uuid.UUID
 	ClientIP      string
 	UserAgent     string
 	Result        string
@@ -95,9 +99,9 @@ type LoginLog struct {
 // CreateLoginLogParams 创建 Web 控制台登录日志所需字段。
 type CreateLoginLogParams struct {
 	EventType     string
-	UserID        *int64
+	UserID        *uuid.UUID
 	Username      string
-	SessionID     string
+	SessionID     *uuid.UUID
 	ClientIP      string
 	UserAgent     string
 	Result        string
@@ -112,7 +116,7 @@ type ListLoginLogsFilter struct {
 
 // CreateOperationLogParams 创建 Web 控制台操作日志所需字段。
 type CreateOperationLogParams struct {
-	UserID       *int64
+	UserID       *uuid.UUID
 	Username     string
 	Module       string
 	ResourceType string

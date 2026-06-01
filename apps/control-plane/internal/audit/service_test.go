@@ -3,6 +3,8 @@ package audit
 import (
 	"context"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 type memoryRepository struct {
@@ -10,7 +12,7 @@ type memoryRepository struct {
 }
 
 func (m *memoryRepository) CreateEvent(ctx context.Context, event *Event) error {
-	event.ID = int64(len(m.events) + 1)
+	event.ID = uuid.New()
 	m.events = append(m.events, event)
 	return nil
 }

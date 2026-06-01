@@ -7,10 +7,10 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
@@ -50,11 +50,11 @@ func TestFakeRuntimeTaskLifecycle(t *testing.T) {
 
 	claimed := mustRequestJSONMap(t, server, http.MethodPost, "/api/v1/runtime/tasks/claim?timeout=1", nil)
 	assertTaskResponseShape(t, claimed)
-	if int64FromJSONNumber(t, claimed["id"]) != int64FromJSONNumber(t, created["id"]) {
+	if stringFromJSON(t, claimed["id"]) != stringFromJSON(t, created["id"]) {
 		t.Fatalf("expected claimed task ID %v, got %v", created["id"], claimed["id"])
 	}
 
-	taskID := strconv.FormatInt(int64FromJSONNumber(t, created["id"]), 10)
+	taskID := stringFromJSON(t, created["id"])
 	mustRequestStatus(t, server, http.MethodPost, "/api/v1/runtime/tasks/"+taskID+"/events", map[string]any{
 		"events": []map[string]any{{"type": "text_delta", "text": "hello"}},
 	}, http.StatusAccepted)
@@ -79,7 +79,7 @@ func TestFakeRuntimeTaskLifecycle(t *testing.T) {
 	}
 	assertTaskResponseShape(t, listed[0])
 
-	events := server.tasks.events[int64FromJSONNumber(t, created["id"])]
+	events := server.tasks.events[uuid.MustParse(taskID)]
 	if len(events) != 1 {
 		t.Fatalf("expected 1 persisted event, got %d", len(events))
 	}
@@ -97,8 +97,8 @@ func newTestServer(t *testing.T) *e2eTestServer {
 	t.Helper()
 
 	taskService := &fakeTaskService{
-		tasks:  map[int64]*task.Task{},
-		events: map[int64][]task.TaskEvent{},
+		tasks:  map[uuid.UUID]*task.Task{},
+		events: map[uuid.UUID][]task.TaskEvent{},
 	}
 	runtimeService := &fakeRuntimeService{nodes: map[string]*runtime.Node{}}
 	server := NewServer(
@@ -223,28 +223,26 @@ func assertRuntimeNodeResponseShape(t *testing.T, got map[string]any) {
 	}
 }
 
-func int64FromJSONNumber(t *testing.T, value any) int64 {
+func stringFromJSON(t *testing.T, value any) string {
 	t.Helper()
 
-	number, ok := value.(float64)
+	text, ok := value.(string)
 	if !ok {
-		t.Fatalf("expected JSON number, got %T (%#v)", value, value)
+		t.Fatalf("expected JSON string, got %T (%#v)", value, value)
 	}
-	return int64(number)
+	return text
 }
 
 type fakeTaskService struct {
-	nextTaskID  int64
-	nextEventID int64
-	tasks       map[int64]*task.Task
-	events      map[int64][]task.TaskEvent
+	tasks  map[uuid.UUID]*task.Task
+	events map[uuid.UUID][]task.TaskEvent
 }
 
 func (s *fakeTaskService) CreateTask(ctx context.Context, req task.CreateTaskRequest) (*task.Task, error) {
-	s.nextTaskID++
 	now := time.Now().UTC()
+	taskID := uuid.New()
 	t := &task.Task{
-		ID:           s.nextTaskID,
+		ID:           taskID,
 		Title:        req.Title,
 		Description:  req.Description,
 		CreatorID:    req.CreatorID,
@@ -260,7 +258,7 @@ func (s *fakeTaskService) CreateTask(ctx context.Context, req task.CreateTaskReq
 	return cloneTask(t), nil
 }
 
-func (s *fakeTaskService) GetTask(ctx context.Context, taskID int64) (*task.Task, error) {
+func (s *fakeTaskService) GetTask(ctx context.Context, taskID uuid.UUID) (*task.Task, error) {
 	t, ok := s.tasks[taskID]
 	if !ok {
 		return nil, errors.New("task not found")
@@ -286,9 +284,8 @@ func (s *fakeTaskService) AppendTaskEvent(ctx context.Context, req task.AppendTa
 	if _, ok := s.tasks[req.TaskID]; !ok {
 		return nil, errors.New("task not found")
 	}
-	s.nextEventID++
 	event := task.TaskEvent{
-		ID:             s.nextEventID,
+		ID:             uuid.New(),
 		TaskID:         req.TaskID,
 		EventType:      req.EventType,
 		SequenceNumber: int32(len(s.events[req.TaskID]) + 1),
@@ -309,7 +306,7 @@ func (s *fakeTaskService) UpdateTaskStatus(ctx context.Context, req task.UpdateT
 	return cloneTask(t), nil
 }
 
-func (s *fakeTaskService) CancelTask(ctx context.Context, taskID int64, cancelledBy *string, reason *string) (*task.Task, error) {
+func (s *fakeTaskService) CancelTask(ctx context.Context, taskID uuid.UUID, cancelledBy *string, reason *string) (*task.Task, error) {
 	return s.UpdateTaskStatus(ctx, task.UpdateTaskStatusRequest{TaskID: taskID, NewStatus: task.TaskStatusCancelled})
 }
 
@@ -325,15 +322,13 @@ func (s *fakeTaskService) AssignTask(ctx context.Context, req task.AssignTaskReq
 }
 
 type fakeRuntimeService struct {
-	nextID int64
-	nodes  map[string]*runtime.Node
+	nodes map[string]*runtime.Node
 }
 
 func (s *fakeRuntimeService) RegisterNode(ctx context.Context, req runtime.RegisterNodeRequest) (*runtime.Node, error) {
-	s.nextID++
 	now := time.Now().UTC()
 	node := &runtime.Node{
-		ID:                 s.nextID,
+		ID:                 uuid.New(),
 		NodeID:             req.NodeID,
 		Name:               req.Name,
 		SupportedProviders: req.SupportedProviders,

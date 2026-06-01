@@ -24,35 +24,9 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 - 图标：lucide-react
 - 测试：Vitest、Playwright、Go test + testify、Rust cargo test、Temporal workflow test suite
 
-## 数据库表命名规范
+## 数据库设计规则
 
-**规范原则**：
-
-- 使用模块前缀分组：`{module}_{entity}` 格式
-- 核心业务表可简化前缀（如 `tasks` 而非 `task_tasks`）
-- 所有表名使用小写 + 下划线（snake_case）
-- 主键统一命名为 `id`
-- 时间戳字段统一使用 `created_at`, `updated_at`, `deleted_at`
-- 外键字段命名为 `{referenced_table}_id`
-- 新增的数据库表增加对应的中文注释包含字段注释与表注释
-- **模块前缀定义**：
-
-- `runtime_*` - Runtime Agent 节点管理
-- `task_*` 或 `tasks` - 任务管理（核心表简化为 `tasks`）
-- `workflow_*` - 工作流编排
-- `approval_*` - 审批流程
-- `audit_*` - 审计日志
-- `auth_*` - 认证授权
-- `tenant_*` - 租户管理
-- `employee_*` - 数字员工定义
-- `capability_*` - 外部能力注册
-
-**字段类型约定**：
-
-- ID 使用 `UUID`
-- 时间戳使用 `TIMESTAMPTZ`
-- JSON 数据使用 `JSONB`
-- 枚举使用 `VARCHAR` + 应用层校验
+- 数据库表设计、字段类型、UUID-first、租户/团队、索引、迁移、sqlc 与 OpenAPI 规则统一遵循根目录 `DATABASE_DESIGN.md`。
 
 ## 目录边界
 

@@ -4,7 +4,7 @@ import { ApiRequestError, buildApiUrl, parseJson } from "./client";
 export { ApiRequestError };
 
 export type UserSummary = {
-  id: number;
+  id: string;
   status: "active" | "disabled";
   username: string;
 };
@@ -46,15 +46,15 @@ export type LoginLogEventType = "login_succeeded" | "login_failed" | "logout_suc
 export type LoginLogResult = "succeeded" | "failed";
 
 export type LoginLogRecord = {
-  client_ip: string | null;
+  client_ip?: string;
   created_at: string;
   event_type: LoginLogEventType;
-  failure_reason: string | null;
-  id: number;
+  failure_reason?: string;
+  id: string;
   result: LoginLogResult;
-  session_id: string | null;
-  user_agent: string | null;
-  user_id: number | null;
+  session_id?: string;
+  user_agent?: string;
+  user_id?: string;
   username: string;
 };
 
@@ -172,7 +172,7 @@ export async function createUser(options: ApiClientOptions, input: CreateUserReq
 
 export async function updateUserStatus(
   options: ApiClientOptions,
-  userID: number,
+  userID: string,
   status: UserSummary["status"],
 ): Promise<UserResponse> {
   const fetcher = options.fetcher ?? fetch;
@@ -189,7 +189,7 @@ export async function updateUserStatus(
   return parseJson<UserResponse>(response, "auth update user status");
 }
 
-export async function resetUserPassword(options: ApiClientOptions, userID: number, password: string): Promise<UserResponse> {
+export async function resetUserPassword(options: ApiClientOptions, userID: string, password: string): Promise<UserResponse> {
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(buildApiUrl(options.baseUrl, `/api/auth/users/${userID}/reset-password`), {
     body: JSON.stringify({ password }),

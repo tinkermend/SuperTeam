@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
@@ -311,12 +312,12 @@ func (h *RuntimeHandler) RenewLease(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func taskIDFromRequest(w http.ResponseWriter, r *http.Request) (int64, bool) {
+func taskIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	idStr := chi.URLParam(r, "id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || id <= 0 {
+	id, err := uuid.Parse(idStr)
+	if err != nil {
 		http.Error(w, "invalid task id", http.StatusBadRequest)
-		return 0, false
+		return uuid.Nil, false
 	}
 	return id, true
 }

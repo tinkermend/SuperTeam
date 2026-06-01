@@ -4,13 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+func runtimeTestUUID(n int) uuid.UUID {
+	return uuid.MustParse(fmt.Sprintf("00000000-0000-4000-8000-%012d", n))
+}
 
 // MockRepository is a mock implementation of Repository
 type MockRepository struct {
@@ -98,7 +104,7 @@ func TestRegisterNode(t *testing.T) {
 
 		// Mock CreateNode
 		expectedRecord := NodeRecord{
-			ID:                 1,
+			ID:                 runtimeTestUUID(1),
 			NodeID:             req.NodeID,
 			Name:               req.Name,
 			SupportedProviders: providersJSON,
@@ -137,7 +143,7 @@ func TestRegisterNode(t *testing.T) {
 
 		providersJSON, _ := json.Marshal(req.SupportedProviders)
 		existingRecord := NodeRecord{
-			ID:                 1,
+			ID:                 runtimeTestUUID(1),
 			NodeID:             req.NodeID,
 			Name:               req.Name,
 			SupportedProviders: providersJSON,
@@ -225,7 +231,7 @@ func TestUpdateHeartbeat(t *testing.T) {
 
 		providersJSON, _ := json.Marshal([]string{"claude-code"})
 		record := NodeRecord{
-			ID:                 1,
+			ID:                 runtimeTestUUID(1),
 			NodeID:             req.NodeID,
 			Name:               "Test Node",
 			SupportedProviders: providersJSON,
@@ -274,7 +280,7 @@ func TestGetNode(t *testing.T) {
 		nodeID := "node-001"
 		providersJSON, _ := json.Marshal([]string{"claude-code"})
 		record := NodeRecord{
-			ID:                 1,
+			ID:                 runtimeTestUUID(1),
 			NodeID:             nodeID,
 			Name:               "Test Node",
 			SupportedProviders: providersJSON,
@@ -317,7 +323,7 @@ func TestListNodes(t *testing.T) {
 		providersJSON, _ := json.Marshal([]string{"claude-code"})
 		records := []NodeRecord{
 			{
-				ID:                 1,
+				ID:                 runtimeTestUUID(1),
 				NodeID:             "node-001",
 				Name:               "Node 1",
 				SupportedProviders: providersJSON,
@@ -330,7 +336,7 @@ func TestListNodes(t *testing.T) {
 				UpdatedAt:          timestamptzFromTime(time.Now()),
 			},
 			{
-				ID:                 2,
+				ID:                 runtimeTestUUID(2),
 				NodeID:             "node-002",
 				Name:               "Node 2",
 				SupportedProviders: providersJSON,
@@ -392,7 +398,7 @@ func TestListOnlineNodes(t *testing.T) {
 		providersJSON, _ := json.Marshal([]string{"claude-code"})
 		records := []NodeRecord{
 			{
-				ID:                 1,
+				ID:                 runtimeTestUUID(1),
 				NodeID:             "node-001",
 				Name:               "Node 1",
 				SupportedProviders: providersJSON,

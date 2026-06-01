@@ -11,13 +11,18 @@ import {
   updateUserStatus,
 } from "./auth";
 
+const userId = "22222222-2222-4222-8222-222222222222";
+const operatorUserId = "22222222-2222-4222-8222-222222222223";
+const loginLogId = "44444444-4444-4444-8444-444444444444";
+const sessionId = "33333333-3333-4333-8333-333333333333";
+
 describe("auth api client", () => {
   it("posts login credentials with cookie credentials and parses the user", async () => {
     const fetcher = vi.fn(async () =>
       new Response(
         JSON.stringify({
           user: {
-            id: 1,
+            id: userId,
             username: "admin",
             status: "active",
           },
@@ -64,7 +69,7 @@ describe("auth api client", () => {
       new Response(
         JSON.stringify({
           user: {
-            id: 1,
+            id: userId,
             username: "admin",
             status: "active",
           },
@@ -130,11 +135,11 @@ describe("auth api client", () => {
         JSON.stringify({
           items: [
             {
-              id: 1,
+              id: loginLogId,
               event_type: "login_succeeded",
-              user_id: 1,
+              user_id: userId,
               username: "admin",
-              session_id: "session-1",
+              session_id: sessionId,
               client_ip: "127.0.0.1",
               user_agent: "test-agent",
               result: "succeeded",
@@ -184,7 +189,7 @@ describe("auth api client", () => {
         JSON.stringify({
           items: [
             {
-              id: 1,
+              id: userId,
               username: "admin",
               status: "active",
             },
@@ -225,7 +230,7 @@ describe("auth api client", () => {
       new Response(
         JSON.stringify({
           user: {
-            id: 2,
+            id: operatorUserId,
             username: "operator",
             status: "active",
           },
@@ -240,8 +245,8 @@ describe("auth api client", () => {
     );
 
     await createUser({ baseUrl: "http://control-plane.local/", fetcher }, { username: "operator", password: "secret" });
-    await updateUserStatus({ baseUrl: "http://control-plane.local/", fetcher }, 2, "disabled");
-    await resetUserPassword({ baseUrl: "http://control-plane.local/", fetcher }, 2, "new-secret");
+    await updateUserStatus({ baseUrl: "http://control-plane.local/", fetcher }, operatorUserId, "disabled");
+    await resetUserPassword({ baseUrl: "http://control-plane.local/", fetcher }, operatorUserId, "new-secret");
 
     expect(fetcher).toHaveBeenNthCalledWith(1, "http://control-plane.local/api/auth/users", {
       body: JSON.stringify({ username: "operator", password: "secret" }),
@@ -252,7 +257,7 @@ describe("auth api client", () => {
       },
       method: "POST",
     });
-    expect(fetcher).toHaveBeenNthCalledWith(2, "http://control-plane.local/api/auth/users/2/status", {
+    expect(fetcher).toHaveBeenNthCalledWith(2, `http://control-plane.local/api/auth/users/${operatorUserId}/status`, {
       body: JSON.stringify({ status: "disabled" }),
       credentials: "include",
       headers: {
@@ -261,7 +266,7 @@ describe("auth api client", () => {
       },
       method: "PATCH",
     });
-    expect(fetcher).toHaveBeenNthCalledWith(3, "http://control-plane.local/api/auth/users/2/reset-password", {
+    expect(fetcher).toHaveBeenNthCalledWith(3, `http://control-plane.local/api/auth/users/${operatorUserId}/reset-password`, {
       body: JSON.stringify({ password: "new-secret" }),
       credentials: "include",
       headers: {

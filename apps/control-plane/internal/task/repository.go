@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -10,28 +11,30 @@ import (
 type Repository interface {
 	// Task operations
 	CreateTask(ctx context.Context, params CreateTaskParams) (TaskRecord, error)
-	GetTask(ctx context.Context, id int64) (TaskRecord, error)
+	GetTask(ctx context.Context, params GetTaskParams) (TaskRecord, error)
 	ListTasks(ctx context.Context, params ListTasksParams) ([]TaskRecord, error)
 	UpdateTaskStatus(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error)
 	UpdateTask(ctx context.Context, params UpdateTaskParams) (TaskRecord, error)
-	DeleteTask(ctx context.Context, id int64) error
+	DeleteTask(ctx context.Context, params DeleteTaskParams) error
 
 	// State history operations
 	CreateTaskStateHistory(ctx context.Context, params CreateTaskStateHistoryParams) error
 
 	// Event operations
 	CreateTaskEvent(ctx context.Context, params CreateTaskEventParams) (TaskEventRecord, error)
-	GetLatestTaskEventSequence(ctx context.Context, taskID int64) (int32, error)
+	GetLatestTaskEventSequence(ctx context.Context, params GetLatestTaskEventSequenceParams) (int32, error)
 }
 
 // CreateTaskParams represents parameters for creating a task
 type CreateTaskParams struct {
+	TenantID      uuid.NullUUID
+	TeamID        uuid.NullUUID
 	Title         string
 	Description   pgtype.Text
 	Status        string
 	Priority      int32
 	ProviderType  string
-	CreatorID     pgtype.Int8
+	CreatorID     uuid.NullUUID
 	TargetNodeID  pgtype.Text
 	WorkspacePath pgtype.Text
 	Params        []byte
@@ -39,10 +42,12 @@ type CreateTaskParams struct {
 
 // TaskRecord represents a task record from the database
 type TaskRecord struct {
-	ID             int64
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	TeamID         uuid.NullUUID
 	Title          string
 	Description    pgtype.Text
-	CreatorID      pgtype.Int8
+	CreatorID      uuid.NullUUID
 	ProviderType   string
 	TargetNodeID   pgtype.Text
 	AssignedNodeID pgtype.Text
@@ -50,24 +55,45 @@ type TaskRecord struct {
 	WorkspacePath  pgtype.Text
 	Params         []byte
 	Priority       int32
+	CancelledAt    pgtype.Timestamptz
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
 }
 
+// GetTaskParams represents parameters for reading a task in a tenant scope.
+type GetTaskParams struct {
+	TenantID uuid.NullUUID
+	ID       uuid.UUID
+}
+
+// DeleteTaskParams represents parameters for deleting a task in a tenant scope.
+type DeleteTaskParams struct {
+	TenantID uuid.NullUUID
+	ID       uuid.UUID
+}
+
 // CreateTaskEventParams represents parameters for creating a task event
 type CreateTaskEventParams struct {
-	TaskID         int64
-	ExecutionID    pgtype.Int8
+	TenantID       uuid.NullUUID
+	TaskID         uuid.UUID
+	RunID          uuid.NullUUID
 	EventType      string
 	SequenceNumber int32
 	Payload        []byte
 }
 
+// GetLatestTaskEventSequenceParams represents parameters for reading an event sequence in a tenant scope.
+type GetLatestTaskEventSequenceParams struct {
+	TenantID uuid.NullUUID
+	TaskID   uuid.UUID
+}
+
 // TaskEventRecord represents a task event record from the database
 type TaskEventRecord struct {
-	ID             int64
-	TaskID         int64
-	ExecutionID    pgtype.Int8
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	TaskID         uuid.UUID
+	RunID          uuid.NullUUID
 	EventType      string
 	SequenceNumber int32
 	Payload        []byte
@@ -76,8 +102,9 @@ type TaskEventRecord struct {
 
 // ListTasksParams represents parameters for listing tasks
 type ListTasksParams struct {
+	TenantID     uuid.NullUUID
 	Status       pgtype.Text
-	CreatorID    pgtype.Int8
+	CreatorID    uuid.NullUUID
 	ProviderType pgtype.Text
 	Offset       int32
 	Limit        int32
@@ -85,12 +112,14 @@ type ListTasksParams struct {
 
 // UpdateTaskStatusParams represents parameters for updating task status
 type UpdateTaskStatusParams struct {
-	ID     int64
-	Status string
+	TenantID uuid.NullUUID
+	ID       uuid.UUID
+	Status   string
 }
 
 // UpdateTaskParams represents parameters for updating a task
 type UpdateTaskParams struct {
+	TenantID       uuid.NullUUID
 	Title          pgtype.Text
 	Description    pgtype.Text
 	Status         pgtype.Text
@@ -99,12 +128,13 @@ type UpdateTaskParams struct {
 	AssignedNodeID pgtype.Text
 	WorkspacePath  pgtype.Text
 	Params         []byte
-	ID             int64
+	ID             uuid.UUID
 }
 
 // CreateTaskStateHistoryParams represents parameters for creating state history
 type CreateTaskStateHistoryParams struct {
-	TaskID     int64
+	TenantID   uuid.NullUUID
+	TaskID     uuid.UUID
 	FromStatus pgtype.Text
 	ToStatus   string
 	ChangedBy  pgtype.Text

@@ -102,7 +102,10 @@ log_info "Generated bcrypt hash"
 # 插入到数据库
 SQL="INSERT INTO auth_runtime_tokens (node_id, token_hash, expires_at)
      VALUES (:'node_id', :'token_hash', NOW() + :'ttl'::interval)
-     ON CONFLICT (node_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at;"
+     ON CONFLICT (node_id) WHERE revoked_at IS NULL DO UPDATE SET
+       token_hash = EXCLUDED.token_hash,
+       expires_at = EXCLUDED.expires_at,
+       revoked_at = NULL;"
 
 if psql "$DATABASE_URL" -v node_id="$NODE_ID" -v token_hash="$HASH" -v ttl="$TTL" > /dev/null 2>&1 <<SQL
 $SQL

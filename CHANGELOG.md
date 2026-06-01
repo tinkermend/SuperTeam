@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Control Plane 初始数据库 schema 重写为 UUID-first 形态，合并早期 auth session、Web 登录日志、操作日志和中文注释迁移，并新增默认租户/团队骨架以支撑后续分布式与多团队数字员工管理。
+- 任务、执行、审计、工件、Web 登录日志和操作日志改为应用层校验的 UUID 引用，避免跨模块重 FK 和级联删除；任务、工件、用户、Runtime 节点等核心实体补充软删除、禁用、归档、取消或终止时间戳。
+- Runtime 任务状态机允许已领取任务直接进入 completed/failed，修复当前 claim -> events -> complete/fail HTTP 合约没有单独 running 接口时的完成链路阻断。
+- 将数据库表设计规则从 `AGENTS.md` 沉淀到根目录 `DATABASE_DESIGN.md`，统一后续 UUID-first、租户/团队、索引、迁移、sqlc 与 OpenAPI 设计规范。
 - Control Plane 请求日志新增 `remote`、`ua` 和 `referer` 字段，便于定位未知请求来源。
 - Control Plane 与 Runtime Agent 本地开发配置统一收敛为 YAML 文件：Control Plane 使用被 Git 忽略的 `apps/control-plane/config/config.yaml`，Runtime Agent 使用被 Git 忽略的 `apps/runtime-agent/config.yaml`；Runtime Agent 示例配置从 TOML 切换为 `config.example.yaml`，并移除 Control Plane / Runtime Agent 的 `.env.example` 示例入口。
 - Control Plane 本地开发脚本默认加载 `apps/control-plane/config/config.yaml`，并兼容 `pnpm dev:control-plane -- --config ...` 的参数传递形式；配置入口统一以 YAML 文件为准。
@@ -277,7 +281,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 收敛 Control Plane 主启动入口，明确 health-only router 与产品 API server 的边界，并通过统一装配路径连接存储、服务和 handlers。
 
-- 将 Control Plane PostgreSQL 和 Redis 配置示例切换到 `docs/database/conn_info.md` 记录的远端地址，并修正连接验证命令。
+- 将 Control Plane PostgreSQL 和 Redis 配置示例切换到 `doc/database/conn_info.md` 记录的远端地址，并修正连接验证命令。
 - 在远端 PostgreSQL 创建 `superteam` 应用用户、数据库和 schema，并从本地 `127.0.0.1` 的 `superteam` 数据库迁移当前 schema 与迁移记录。
 
 ### Deprecated

@@ -13,9 +13,9 @@ import (
 
 // mockSchedulerRepository implements Repository for testing
 type mockSchedulerRepository struct {
-	nodes       map[string]NodeRecord
-	updateLoad  func(ctx context.Context, params UpdateLoadParams) (NodeRecord, error)
-	listOnline  func(ctx context.Context, threshold pgtype.Timestamptz) ([]NodeRecord, error)
+	nodes      map[string]NodeRecord
+	updateLoad func(ctx context.Context, params UpdateLoadParams) (NodeRecord, error)
+	listOnline func(ctx context.Context, threshold pgtype.Timestamptz) ([]NodeRecord, error)
 }
 
 func (m *mockSchedulerRepository) CreateNode(ctx context.Context, params CreateNodeParams) (NodeRecord, error) {
@@ -73,7 +73,7 @@ func createTestNodeRecord(nodeID, name string, providers []string, maxSlots, cur
 	metadataJSON := []byte("{}")
 
 	return NodeRecord{
-		ID:                 1,
+		ID:                 runtimeTestUUID(1),
 		NodeID:             nodeID,
 		Name:               name,
 		SupportedProviders: providersJSON,

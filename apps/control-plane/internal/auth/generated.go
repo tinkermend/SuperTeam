@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 const (
@@ -76,11 +77,11 @@ type LoginLogRecord struct {
 	CreatedAt     time.Time               `json:"created_at"`
 	EventType     LoginLogRecordEventType `json:"event_type"`
 	FailureReason *string                 `json:"failure_reason"`
-	Id            int64                   `json:"id"`
+	Id            openapi_types.UUID      `json:"id"`
 	Result        LoginLogRecordResult    `json:"result"`
-	SessionId     *string                 `json:"session_id"`
+	SessionId     *openapi_types.UUID     `json:"session_id"`
 	UserAgent     *string                 `json:"user_agent"`
-	UserId        *int64                  `json:"user_id"`
+	UserId        *openapi_types.UUID     `json:"user_id"`
 	Username      string                  `json:"username"`
 }
 
@@ -120,9 +121,9 @@ type UserResponse struct {
 
 // UserSummary defines model for UserSummary.
 type UserSummary struct {
-	Id       int64             `json:"id"`
-	Status   UserSummaryStatus `json:"status"`
-	Username string            `json:"username"`
+	Id       openapi_types.UUID `json:"id"`
+	Status   UserSummaryStatus  `json:"status"`
+	Username string             `json:"username"`
 }
 
 // UserSummaryStatus defines model for UserSummary.Status.
@@ -193,10 +194,10 @@ type ServerInterface interface {
 	CreateUser(w http.ResponseWriter, r *http.Request)
 	// 重置平台用户密码
 	// (POST /api/auth/users/{id}/reset-password)
-	ResetUserPassword(w http.ResponseWriter, r *http.Request, id int64)
+	ResetUserPassword(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 	// 启用或禁用平台用户
 	// (PATCH /api/auth/users/{id}/status)
-	UpdateUserStatus(w http.ResponseWriter, r *http.Request, id int64)
+	UpdateUserStatus(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -241,13 +242,13 @@ func (_ Unimplemented) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 // 重置平台用户密码
 // (POST /api/auth/users/{id}/reset-password)
-func (_ Unimplemented) ResetUserPassword(w http.ResponseWriter, r *http.Request, id int64) {
+func (_ Unimplemented) ResetUserPassword(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // 启用或禁用平台用户
 // (PATCH /api/auth/users/{id}/status)
-func (_ Unimplemented) UpdateUserStatus(w http.ResponseWriter, r *http.Request, id int64) {
+func (_ Unimplemented) UpdateUserStatus(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -417,7 +418,7 @@ func (siw *ServerInterfaceWrapper) ResetUserPassword(w http.ResponseWriter, r *h
 	var err error
 
 	// ------------- Path parameter "id" -------------
-	var id int64
+	var id openapi_types.UUID
 
 	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
 	if err != nil {
@@ -445,7 +446,7 @@ func (siw *ServerInterfaceWrapper) UpdateUserStatus(w http.ResponseWriter, r *ht
 	var err error
 
 	// ------------- Path parameter "id" -------------
-	var id int64
+	var id openapi_types.UUID
 
 	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
 	if err != nil {

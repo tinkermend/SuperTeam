@@ -31,18 +31,28 @@ SET
     display_name = COALESCE($2, display_name),
     email = COALESCE($3, email),
     status = COALESCE($4, status),
+    disabled_at = CASE
+        WHEN $4::varchar = 'disabled' THEN COALESCE(disabled_at, NOW())
+        WHEN $4::varchar = 'active' THEN NULL
+        ELSE disabled_at
+    END,
     updated_at = NOW()
 WHERE id = $1
 RETURNING *;
 
 -- name: ListUsers :many
 SELECT * FROM auth_users
-WHERE (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar)
+WHERE deleted_at IS NULL
+  AND (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar)
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: DeleteUser :exec
-DELETE FROM auth_users
+UPDATE auth_users
+SET deleted_at = COALESCE(deleted_at, NOW()),
+    disabled_at = COALESCE(disabled_at, NOW()),
+    status = 'disabled',
+    updated_at = NOW()
 WHERE id = $1;
 
 -- name: CreateRuntimeToken :one
@@ -52,7 +62,12 @@ INSERT INTO auth_runtime_tokens (
     expires_at
 ) VALUES (
     $1, $2, $3
-) RETURNING *;
+)
+ON CONFLICT (node_id) WHERE revoked_at IS NULL DO UPDATE SET
+    token_hash = EXCLUDED.token_hash,
+    expires_at = EXCLUDED.expires_at,
+    revoked_at = NULL
+RETURNING *;
 
 -- name: GetRuntimeToken :one
 SELECT * FROM auth_runtime_tokens
@@ -62,18 +77,22 @@ WHERE node_id = $1;
 SELECT * FROM auth_runtime_tokens
 WHERE node_id = $1
   AND token_hash = $2
+  AND revoked_at IS NULL
   AND (expires_at IS NULL OR expires_at > NOW());
 
 -- name: DeleteRuntimeToken :exec
-DELETE FROM auth_runtime_tokens
+UPDATE auth_runtime_tokens
+SET revoked_at = COALESCE(revoked_at, NOW())
 WHERE node_id = $1;
 
 -- name: GetRuntimeTokenByNodeID :one
 SELECT * FROM auth_runtime_tokens
-WHERE node_id = $1;
+WHERE node_id = $1
+  AND revoked_at IS NULL;
 
 -- name: ListRuntimeTokens :many
 SELECT * FROM auth_runtime_tokens
+WHERE revoked_at IS NULL
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2;
 
@@ -93,7 +112,6 @@ WHERE id = $1;
 
 -- name: CreateSession :one
 INSERT INTO auth_sessions (
-    id,
     user_id,
     token_hash,
     expires_at,
@@ -101,8 +119,7 @@ INSERT INTO auth_sessions (
     client_ip,
     user_agent
 ) VALUES (
-    sqlc.arg('id')::varchar,
-    sqlc.arg('user_id'),
+    sqlc.arg('user_id')::uuid,
     sqlc.arg('token_hash')::varchar,
     sqlc.arg('expires_at'),
     sqlc.arg('last_seen_at'),

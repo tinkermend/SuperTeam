@@ -271,8 +271,8 @@ components:
       in: path
       required: true
       schema:
-        type: integer
-        format: int64
+        type: string
+        format: uuid
     NodeId:
       name: nodeId
       in: path
@@ -313,21 +313,28 @@ components:
       type: object
       required:
         - id
+        - tenant_id
         - title
         - provider_type
         - status
         - priority
       properties:
         id:
-          type: integer
-          format: int64
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
         title:
           type: string
         description:
           type: string
         creator_id:
-          type: integer
-          format: int64
+          type: string
+          format: uuid
         provider_type:
           type: string
         target_node_id:
@@ -344,6 +351,9 @@ components:
         priority:
           type: integer
           format: int32
+        cancelled_at:
+          type: string
+          format: date-time
         created_at:
           type: string
           format: date-time

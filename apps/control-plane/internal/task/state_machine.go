@@ -17,6 +17,8 @@ func NewStateMachine() *StateMachine {
 			},
 			TaskStatusClaimed: {
 				TaskStatusRunning,
+				TaskStatusCompleted,
+				TaskStatusFailed,
 				TaskStatusCancelled,
 				TaskStatusPending, // Allow unclaim
 			},

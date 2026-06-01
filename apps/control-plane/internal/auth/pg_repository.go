@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/superteam/control-plane/internal/storage/queries"
@@ -56,7 +57,7 @@ func (r *PgRepository) GetUserByUsername(ctx context.Context, username string) (
 	return toDomainUser(user), nil
 }
 
-func (r *PgRepository) GetUserByID(ctx context.Context, id int64) (*User, error) {
+func (r *PgRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	user, err := r.q.GetUserByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -64,7 +65,7 @@ func (r *PgRepository) GetUserByID(ctx context.Context, id int64) (*User, error)
 	return toDomainUser(user), nil
 }
 
-func (r *PgRepository) UpdateUserStatus(ctx context.Context, userID int64, status string) (*User, error) {
+func (r *PgRepository) UpdateUserStatus(ctx context.Context, userID uuid.UUID, status string) (*User, error) {
 	user, err := r.q.UpdateUser(ctx, queries.UpdateUserParams{
 		ID:     userID,
 		Status: status,
@@ -75,7 +76,7 @@ func (r *PgRepository) UpdateUserStatus(ctx context.Context, userID int64, statu
 	return toDomainUser(user), nil
 }
 
-func (r *PgRepository) UpdateUserPassword(ctx context.Context, userID int64, passwordHash string) (*User, error) {
+func (r *PgRepository) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) (*User, error) {
 	user, err := r.q.UpdateUserPassword(ctx, queries.UpdateUserPasswordParams{
 		ID:           userID,
 		PasswordHash: passwordHash,
@@ -121,8 +122,7 @@ func (r *PgRepository) GetRuntimeTokenByNodeID(ctx context.Context, nodeID strin
 }
 
 func (r *PgRepository) CreateSession(ctx context.Context, session *Session, tokenHash string) error {
-	_, err := r.q.CreateSession(ctx, queries.CreateSessionParams{
-		ID:        session.ID,
+	created, err := r.q.CreateSession(ctx, queries.CreateSessionParams{
 		UserID:    session.UserID,
 		TokenHash: tokenHash,
 		ExpiresAt: pgtype.Timestamptz{
@@ -142,6 +142,11 @@ func (r *PgRepository) CreateSession(ctx context.Context, session *Session, toke
 			Valid:  session.UserAgent != "",
 		},
 	})
+	if err == nil {
+		session.ID = created.ID
+		session.ExpiresAt = created.ExpiresAt.Time
+		session.LastSeenAt = created.LastSeenAt.Time
+	}
 	return err
 }
 
@@ -181,15 +186,9 @@ func (r *PgRepository) UpdateSessionLastSeen(ctx context.Context, tokenHash stri
 func (r *PgRepository) CreateLoginLog(ctx context.Context, params CreateLoginLogParams) error {
 	_, err := r.q.CreateWebLoginLog(ctx, queries.CreateWebLoginLogParams{
 		EventType: params.EventType,
-		UserID: pgtype.Int8{
-			Int64: valueOrZero(params.UserID),
-			Valid: params.UserID != nil,
-		},
-		Username: params.Username,
-		SessionID: pgtype.Text{
-			String: params.SessionID,
-			Valid:  params.SessionID != "",
-		},
+		UserID:    nullUUID(params.UserID),
+		Username:  params.Username,
+		SessionID: nullUUID(params.SessionID),
 		ClientIp: pgtype.Text{
 			String: params.ClientIP,
 			Valid:  params.ClientIP != "",
@@ -224,10 +223,7 @@ func (r *PgRepository) ListLoginLogs(ctx context.Context, filter ListLoginLogsFi
 
 func (r *PgRepository) CreateOperationLog(ctx context.Context, params CreateOperationLogParams) error {
 	_, err := r.q.CreateWebOperationLog(ctx, queries.CreateWebOperationLogParams{
-		UserID: pgtype.Int8{
-			Int64: valueOrZero(params.UserID),
-			Valid: params.UserID != nil,
-		},
+		UserID: nullUUID(params.UserID),
 		Username: pgtype.Text{
 			String: params.Username,
 			Valid:  params.Username != "",
@@ -255,25 +251,30 @@ func (r *PgRepository) CreateOperationLog(ctx context.Context, params CreateOper
 	return err
 }
 
-func valueOrZero(value *int64) int64 {
+func nullUUID(value *uuid.UUID) uuid.NullUUID {
 	if value == nil {
-		return 0
+		return uuid.NullUUID{}
 	}
-	return *value
+	return uuid.NullUUID{UUID: *value, Valid: true}
 }
 
 func toDomainLoginLog(log queries.WebLoginLog) LoginLog {
-	var userID *int64
+	var userID *uuid.UUID
 	if log.UserID.Valid {
-		id := log.UserID.Int64
+		id := log.UserID.UUID
 		userID = &id
+	}
+	var sessionID *uuid.UUID
+	if log.SessionID.Valid {
+		id := log.SessionID.UUID
+		sessionID = &id
 	}
 	return LoginLog{
 		ID:            log.ID,
 		EventType:     log.EventType,
 		UserID:        userID,
 		Username:      log.Username,
-		SessionID:     log.SessionID.String,
+		SessionID:     sessionID,
 		ClientIP:      log.ClientIp.String,
 		UserAgent:     log.UserAgent.String,
 		Result:        log.Result,

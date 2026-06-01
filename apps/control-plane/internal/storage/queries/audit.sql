@@ -1,5 +1,6 @@
 -- name: CreateAuditEvent :one
 INSERT INTO audit_events (
+    tenant_id,
     event_type,
     actor_type,
     actor_id,
@@ -9,7 +10,15 @@ INSERT INTO audit_events (
     details,
     ip_address
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8
+    COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
+    sqlc.arg('event_type')::varchar,
+    sqlc.arg('actor_type')::varchar,
+    sqlc.arg('actor_id')::varchar,
+    sqlc.narg('resource_type')::varchar,
+    sqlc.narg('resource_id')::varchar,
+    sqlc.arg('action')::varchar,
+    sqlc.narg('details')::jsonb,
+    sqlc.narg('ip_address')::inet
 ) RETURNING *;
 
 -- name: GetAuditEvent :one

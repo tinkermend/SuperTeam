@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type mockRepo struct {
 	users         map[string]*User
-	usersByID     map[int64]*User
+	usersByID     map[uuid.UUID]*User
 	runtimeTokens map[string]*RuntimeToken
 	sessions      map[string]*Session
 	loginLogs     []mockLoginLog
@@ -21,7 +22,7 @@ type mockRepo struct {
 func newMockRepo() *mockRepo {
 	return &mockRepo{
 		users:         make(map[string]*User),
-		usersByID:     make(map[int64]*User),
+		usersByID:     make(map[uuid.UUID]*User),
 		runtimeTokens: make(map[string]*RuntimeToken),
 		sessions:      make(map[string]*Session),
 		loginLogs:     []mockLoginLog{},
@@ -31,9 +32,9 @@ func newMockRepo() *mockRepo {
 
 type mockLoginLog struct {
 	EventType     string
-	UserID        *int64
+	UserID        *uuid.UUID
 	Username      string
-	SessionID     string
+	SessionID     *uuid.UUID
 	ClientIP      string
 	UserAgent     string
 	Result        string
@@ -41,7 +42,7 @@ type mockLoginLog struct {
 }
 
 type mockOperationLog struct {
-	UserID       *int64
+	UserID       *uuid.UUID
 	Username     string
 	Module       string
 	ResourceType string
@@ -52,7 +53,7 @@ type mockOperationLog struct {
 
 func (m *mockRepo) CreateUser(ctx context.Context, username, passwordHash string) (*User, error) {
 	user := &User{
-		ID:           int64(len(m.users) + 1),
+		ID:           uuid.New(),
 		Username:     username,
 		PasswordHash: passwordHash,
 		Status:       "active",
@@ -75,7 +76,7 @@ func (m *mockRepo) ListUsers(ctx context.Context, filter ListUsersFilter) ([]*Us
 	return users, nil
 }
 
-func (m *mockRepo) UpdateUserStatus(ctx context.Context, userID int64, status string) (*User, error) {
+func (m *mockRepo) UpdateUserStatus(ctx context.Context, userID uuid.UUID, status string) (*User, error) {
 	user, ok := m.usersByID[userID]
 	if !ok {
 		return nil, errors.New("user not found")
@@ -85,7 +86,7 @@ func (m *mockRepo) UpdateUserStatus(ctx context.Context, userID int64, status st
 	return user, nil
 }
 
-func (m *mockRepo) UpdateUserPassword(ctx context.Context, userID int64, passwordHash string) (*User, error) {
+func (m *mockRepo) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) (*User, error) {
 	user, ok := m.usersByID[userID]
 	if !ok {
 		return nil, errors.New("user not found")
@@ -103,7 +104,7 @@ func (m *mockRepo) GetUserByUsername(ctx context.Context, username string) (*Use
 	return user, nil
 }
 
-func (m *mockRepo) GetUserByID(ctx context.Context, id int64) (*User, error) {
+func (m *mockRepo) GetUserByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	user, ok := m.usersByID[id]
 	if !ok {
 		return nil, errors.New("user not found")
@@ -130,6 +131,7 @@ func (m *mockRepo) GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (
 }
 
 func (m *mockRepo) CreateSession(ctx context.Context, session *Session, token string) error {
+	session.ID = uuid.New()
 	m.sessions[token] = session
 	return nil
 }
@@ -230,7 +232,7 @@ func TestListUsersUsesStatusFilter(t *testing.T) {
 		t.Fatalf("list users: %v", err)
 	}
 	if len(users) != 1 || users[0].ID != activeUser.ID {
-		t.Fatalf("expected only active user %d, got %#v", activeUser.ID, users)
+		t.Fatalf("expected only active user %s, got %#v", activeUser.ID, users)
 	}
 }
 
@@ -256,7 +258,7 @@ func TestCreateManagedUserRecordsOperationLog(t *testing.T) {
 		t.Fatalf("expected operation log, got %d", len(repo.operationLogs))
 	}
 	log := repo.operationLogs[0]
-	if log.Action != OperationActionUserCreate || log.ResourceID != "2" || log.Result != OperationResultSucceeded {
+	if log.Action != OperationActionUserCreate || log.ResourceID != created.ID.String() || log.Result != OperationResultSucceeded {
 		t.Fatalf("unexpected operation log: %#v", log)
 	}
 	if log.UserID == nil || *log.UserID != actor.ID || log.Username != actor.Username {
@@ -361,10 +363,13 @@ func TestLoginCreatesSessionAndReturnsCurrentUser(t *testing.T) {
 		t.Fatal("expected login token")
 	}
 	if user.ID != createdUser.ID {
-		t.Fatalf("expected user %d, got %d", createdUser.ID, user.ID)
+		t.Fatalf("expected user %s, got %s", createdUser.ID, user.ID)
 	}
 	if session.UserID != createdUser.ID {
-		t.Fatalf("expected session user %d, got %d", createdUser.ID, session.UserID)
+		t.Fatalf("expected session user %s, got %s", createdUser.ID, session.UserID)
+	}
+	if session.ID == uuid.Nil {
+		t.Fatal("expected session id to be assigned by repository")
 	}
 	if session.ClientIP != "127.0.0.1" {
 		t.Fatalf("expected client ip to be recorded, got %q", session.ClientIP)
@@ -392,12 +397,12 @@ func TestLoginCreatesSessionAndReturnsCurrentUser(t *testing.T) {
 		t.Fatalf("expected event type %q, got %q", LoginEventSucceeded, log.EventType)
 	}
 	if log.UserID == nil || *log.UserID != createdUser.ID {
-		t.Fatalf("expected user id %d, got %#v", createdUser.ID, log.UserID)
+		t.Fatalf("expected user id %s, got %#v", createdUser.ID, log.UserID)
 	}
 	if log.Username != "admin" {
 		t.Fatalf("expected username admin, got %q", log.Username)
 	}
-	if log.SessionID != session.ID {
+	if log.SessionID == nil || *log.SessionID != session.ID {
 		t.Fatalf("expected session id %q, got %q", session.ID, log.SessionID)
 	}
 	if log.ClientIP != "127.0.0.1" {

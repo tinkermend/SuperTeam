@@ -4,22 +4,29 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
 )
 
+func handlerTestUUID(n int) uuid.UUID {
+	return uuid.MustParse(fmt.Sprintf("00000000-0000-4000-8000-%012d", n))
+}
+
 func TestPushEventsPersistsTypedEvent(t *testing.T) {
+	taskID := handlerTestUUID(42)
 	taskService := &claimTaskService{}
 	handler := NewRuntimeHandler(&claimRuntimeService{}, taskService, &claimPoller{})
 
-	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/events", "/api/v1/runtime/tasks/{id}/events", []byte(`{"events":[{"type":"text_delta","text":"hello"}]}`))
+	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/"+taskID.String()+"/events", "/api/v1/runtime/tasks/{id}/events", taskID, []byte(`{"events":[{"type":"text_delta","text":"hello"}]}`))
 	response := httptest.NewRecorder()
 
 	handler.PushEvents(response, request)
@@ -31,8 +38,8 @@ func TestPushEventsPersistsTypedEvent(t *testing.T) {
 		t.Fatalf("expected 1 appended event, got %d", len(taskService.appendedEvents))
 	}
 	event := taskService.appendedEvents[0]
-	if event.TaskID != 42 {
-		t.Fatalf("expected task id 42, got %d", event.TaskID)
+	if event.TaskID != taskID {
+		t.Fatalf("expected task id %s, got %s", taskID, event.TaskID)
 	}
 	if event.EventType != "text_delta" {
 		t.Fatalf("expected event type text_delta, got %q", event.EventType)
@@ -43,8 +50,9 @@ func TestPushEventsPersistsTypedEvent(t *testing.T) {
 }
 
 func TestCompleteTaskTransitionsToCompleted(t *testing.T) {
+	taskID := handlerTestUUID(42)
 	completedTask := &task.Task{
-		ID:           42,
+		ID:           taskID,
 		Title:        "done",
 		ProviderType: "codex",
 		Status:       task.TaskStatusCompleted,
@@ -54,7 +62,7 @@ func TestCompleteTaskTransitionsToCompleted(t *testing.T) {
 	taskService := &claimTaskService{updatedTask: completedTask}
 	handler := NewRuntimeHandler(&claimRuntimeService{}, taskService, &claimPoller{})
 
-	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/complete", "/api/v1/runtime/tasks/{id}/complete", nil)
+	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/"+taskID.String()+"/complete", "/api/v1/runtime/tasks/{id}/complete", taskID, nil)
 	response := httptest.NewRecorder()
 
 	handler.CompleteTask(response, request)
@@ -73,8 +81,8 @@ func TestCompleteTaskTransitionsToCompleted(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("expected task JSON response: %v", err)
 	}
-	if int64(body["id"].(float64)) != 42 || body["status"] != string(task.TaskStatusCompleted) {
-		t.Fatalf("expected completed task 42, got %#v", body)
+	if body["id"] != taskID.String() || body["status"] != string(task.TaskStatusCompleted) {
+		t.Fatalf("expected completed task %s, got %#v", taskID, body)
 	}
 	if _, ok := body["provider_type"]; !ok {
 		t.Fatalf("expected snake_case task response, got %#v", body)
@@ -85,9 +93,10 @@ func TestCompleteTaskTransitionsToCompleted(t *testing.T) {
 }
 
 func TestFailTaskRejectsMissingError(t *testing.T) {
+	taskID := handlerTestUUID(42)
 	handler := NewRuntimeHandler(&claimRuntimeService{}, &claimTaskService{}, &claimPoller{})
 
-	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/fail", "/api/v1/runtime/tasks/{id}/fail", []byte(`{}`))
+	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/"+taskID.String()+"/fail", "/api/v1/runtime/tasks/{id}/fail", taskID, []byte(`{}`))
 	response := httptest.NewRecorder()
 
 	handler.FailTask(response, request)
@@ -98,8 +107,9 @@ func TestFailTaskRejectsMissingError(t *testing.T) {
 }
 
 func TestFailTaskAcceptsValidError(t *testing.T) {
+	taskID := handlerTestUUID(42)
 	failedTask := &task.Task{
-		ID:           42,
+		ID:           taskID,
 		Title:        "failed",
 		ProviderType: "codex",
 		Status:       task.TaskStatusFailed,
@@ -109,7 +119,7 @@ func TestFailTaskAcceptsValidError(t *testing.T) {
 	taskService := &claimTaskService{updatedTask: failedTask}
 	handler := NewRuntimeHandler(&claimRuntimeService{}, taskService, &claimPoller{})
 
-	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/fail", "/api/v1/runtime/tasks/{id}/fail", []byte(`{"error":"provider exited"}`))
+	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/"+taskID.String()+"/fail", "/api/v1/runtime/tasks/{id}/fail", taskID, []byte(`{"error":"provider exited"}`))
 	response := httptest.NewRecorder()
 
 	handler.FailTask(response, request)
@@ -126,10 +136,11 @@ func TestFailTaskAcceptsValidError(t *testing.T) {
 }
 
 func TestRenewLeaseReturnsNoContentWhenTaskExists(t *testing.T) {
-	taskService := &claimTaskService{taskByID: map[int64]*task.Task{42: {ID: 42}}}
+	taskID := handlerTestUUID(42)
+	taskService := &claimTaskService{taskByID: map[uuid.UUID]*task.Task{taskID: {ID: taskID}}}
 	handler := NewRuntimeHandler(&claimRuntimeService{}, taskService, &claimPoller{})
 
-	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/42/lease", "/api/v1/runtime/tasks/{id}/lease", nil)
+	request := runtimeRequest(http.MethodPost, "/api/v1/runtime/tasks/"+taskID.String()+"/lease", "/api/v1/runtime/tasks/{id}/lease", taskID, nil)
 	response := httptest.NewRecorder()
 
 	handler.RenewLease(response, request)
@@ -137,8 +148,8 @@ func TestRenewLeaseReturnsNoContentWhenTaskExists(t *testing.T) {
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("expected status 204, got %d: %s", response.Code, response.Body.String())
 	}
-	if taskService.gotTaskID != 42 {
-		t.Fatalf("expected task lookup for 42, got %d", taskService.gotTaskID)
+	if taskService.gotTaskID != taskID {
+		t.Fatalf("expected task lookup for %s, got %s", taskID, taskService.gotTaskID)
 	}
 }
 
@@ -147,8 +158,8 @@ func TestClaimTaskAssignsFirstSupportedProviderTask(t *testing.T) {
 		NodeID:             "node-1",
 		SupportedProviders: []string{"codex"},
 	}
-	unsupportedTask := &task.Task{ID: 100, ProviderType: "claude-code"}
-	supportedTask := &task.Task{ID: 200, ProviderType: "codex"}
+	unsupportedTask := &task.Task{ID: handlerTestUUID(100), ProviderType: "claude-code"}
+	supportedTask := &task.Task{ID: handlerTestUUID(200), ProviderType: "codex"}
 	taskService := &claimTaskService{
 		tasksByProvider: map[string][]*task.Task{
 			"":      {unsupportedTask},
@@ -172,7 +183,7 @@ func TestClaimTaskAssignsFirstSupportedProviderTask(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
 	}
 	if taskService.assignedTaskID != supportedTask.ID {
-		t.Fatalf("expected supported task %d to be assigned, got %d", supportedTask.ID, taskService.assignedTaskID)
+		t.Fatalf("expected supported task %s to be assigned, got %s", supportedTask.ID, taskService.assignedTaskID)
 	}
 	if len(taskService.listedProviders) != 1 || taskService.listedProviders[0] != "codex" {
 		t.Fatalf("expected provider-filtered list for codex, got %#v", taskService.listedProviders)
@@ -182,8 +193,8 @@ func TestClaimTaskAssignsFirstSupportedProviderTask(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("expected task JSON response: %v", err)
 	}
-	if int64(body["id"].(float64)) != supportedTask.ID {
-		t.Fatalf("expected response task %d, got %#v", supportedTask.ID, body["id"])
+	if body["id"] != supportedTask.ID.String() {
+		t.Fatalf("expected response task %s, got %#v", supportedTask.ID, body["id"])
 	}
 	if _, ok := body["provider_type"]; !ok {
 		t.Fatalf("expected snake_case task response, got %#v", body)
@@ -195,8 +206,8 @@ func TestClaimTaskAssignsHighestPriorityAcrossSupportedProviders(t *testing.T) {
 		NodeID:             "node-1",
 		SupportedProviders: []string{"codex", "opencode"},
 	}
-	lowerPriorityTask := &task.Task{ID: 100, ProviderType: "codex", Priority: 1}
-	higherPriorityTask := &task.Task{ID: 200, ProviderType: "opencode", Priority: 9}
+	lowerPriorityTask := &task.Task{ID: handlerTestUUID(100), ProviderType: "codex", Priority: 1}
+	higherPriorityTask := &task.Task{ID: handlerTestUUID(200), ProviderType: "opencode", Priority: 9}
 	taskService := &claimTaskService{
 		tasksByProvider: map[string][]*task.Task{
 			"codex":    {lowerPriorityTask},
@@ -220,7 +231,7 @@ func TestClaimTaskAssignsHighestPriorityAcrossSupportedProviders(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
 	}
 	if taskService.assignedTaskID != higherPriorityTask.ID {
-		t.Fatalf("expected highest-priority task %d to be assigned, got %d", higherPriorityTask.ID, taskService.assignedTaskID)
+		t.Fatalf("expected highest-priority task %s to be assigned, got %s", higherPriorityTask.ID, taskService.assignedTaskID)
 	}
 }
 
@@ -229,8 +240,8 @@ func TestClaimTaskTieBreaksByNewestCreatedAtAcrossSupportedProviders(t *testing.
 		NodeID:             "node-1",
 		SupportedProviders: []string{"codex", "opencode"},
 	}
-	olderTask := &task.Task{ID: 100, ProviderType: "codex", Priority: 5, CreatedAt: time.Date(2026, 5, 29, 10, 0, 0, 0, time.UTC)}
-	newerTask := &task.Task{ID: 200, ProviderType: "opencode", Priority: 5, CreatedAt: time.Date(2026, 5, 29, 11, 0, 0, 0, time.UTC)}
+	olderTask := &task.Task{ID: handlerTestUUID(100), ProviderType: "codex", Priority: 5, CreatedAt: time.Date(2026, 5, 29, 10, 0, 0, 0, time.UTC)}
+	newerTask := &task.Task{ID: handlerTestUUID(200), ProviderType: "opencode", Priority: 5, CreatedAt: time.Date(2026, 5, 29, 11, 0, 0, 0, time.UTC)}
 	taskService := &claimTaskService{
 		tasksByProvider: map[string][]*task.Task{
 			"codex":    {olderTask},
@@ -254,7 +265,7 @@ func TestClaimTaskTieBreaksByNewestCreatedAtAcrossSupportedProviders(t *testing.
 		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
 	}
 	if taskService.assignedTaskID != newerTask.ID {
-		t.Fatalf("expected newest task %d to be assigned, got %d", newerTask.ID, taskService.assignedTaskID)
+		t.Fatalf("expected newest task %s to be assigned, got %s", newerTask.ID, taskService.assignedTaskID)
 	}
 }
 
@@ -281,20 +292,20 @@ func (s *claimRuntimeService) ListNodes(ctx context.Context, filter runtime.List
 type claimTaskService struct {
 	tasksByProvider map[string][]*task.Task
 	listedProviders []string
-	assignedTaskID  int64
+	assignedTaskID  uuid.UUID
 	appendedEvents  []task.AppendTaskEventRequest
 	updatedStatus   *task.TaskStatus
 	updateReason    *string
 	updatedTask     *task.Task
-	taskByID        map[int64]*task.Task
-	gotTaskID       int64
+	taskByID        map[uuid.UUID]*task.Task
+	gotTaskID       uuid.UUID
 }
 
 func (s *claimTaskService) CreateTask(ctx context.Context, req task.CreateTaskRequest) (*task.Task, error) {
 	return nil, nil
 }
 
-func (s *claimTaskService) GetTask(ctx context.Context, taskID int64) (*task.Task, error) {
+func (s *claimTaskService) GetTask(ctx context.Context, taskID uuid.UUID) (*task.Task, error) {
 	s.gotTaskID = taskID
 	if s.taskByID != nil {
 		return s.taskByID[taskID], nil
@@ -320,7 +331,7 @@ func (s *claimTaskService) UpdateTaskStatus(ctx context.Context, req task.Update
 	return &task.Task{ID: req.TaskID, Status: req.NewStatus}, nil
 }
 
-func (s *claimTaskService) CancelTask(ctx context.Context, taskID int64, cancelledBy *string, reason *string) (*task.Task, error) {
+func (s *claimTaskService) CancelTask(ctx context.Context, taskID uuid.UUID, cancelledBy *string, reason *string) (*task.Task, error) {
 	return nil, nil
 }
 
@@ -353,11 +364,11 @@ func (p *claimPoller) WaitForTask(ctx context.Context, nodeID string) (*task.Tas
 	return nil, ctx.Err()
 }
 
-func runtimeRequest(method string, target string, routePattern string, body []byte) *http.Request {
+func runtimeRequest(method string, target string, routePattern string, taskID uuid.UUID, body []byte) *http.Request {
 	request := httptest.NewRequest(method, target, bytes.NewReader(body))
 	routeContext := chi.NewRouteContext()
 	routeContext.Routes = chi.NewRouter()
 	routeContext.RoutePatterns = []string{routePattern}
-	routeContext.URLParams.Add("id", "42")
+	routeContext.URLParams.Add("id", taskID.String())
 	return request.WithContext(context.WithValue(request.Context(), chi.RouteCtxKey, routeContext))
 }

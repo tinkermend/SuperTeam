@@ -5,6 +5,9 @@ import (
 	"errors"
 	"net"
 	"net/http"
+
+	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 const SessionCookieName = "session_token"
@@ -116,7 +119,7 @@ func (h *HTTPHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, UserResponse{User: toGeneratedUserSummary(user)})
 }
 
-func (h *HTTPHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request, id int64) {
+func (h *HTTPHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	_, actorUser, err := h.currentSessionUser(r)
 	if err != nil {
 		h.writeAuthError(w, err)
@@ -128,7 +131,7 @@ func (h *HTTPHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request, i
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	user, err := h.service.UpdateManagedUserStatus(r.Context(), toActor(actorUser), id, string(body.Status))
+	user, err := h.service.UpdateManagedUserStatus(r.Context(), toActor(actorUser), uuid.UUID(id), string(body.Status))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
@@ -136,7 +139,7 @@ func (h *HTTPHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request, i
 	writeJSON(w, http.StatusOK, UserResponse{User: toGeneratedUserSummary(user)})
 }
 
-func (h *HTTPHandler) ResetUserPassword(w http.ResponseWriter, r *http.Request, id int64) {
+func (h *HTTPHandler) ResetUserPassword(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	_, actorUser, err := h.currentSessionUser(r)
 	if err != nil {
 		h.writeAuthError(w, err)
@@ -148,7 +151,7 @@ func (h *HTTPHandler) ResetUserPassword(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	user, err := h.service.ResetManagedUserPassword(r.Context(), toActor(actorUser), id, body.Password)
+	user, err := h.service.ResetManagedUserPassword(r.Context(), toActor(actorUser), uuid.UUID(id), body.Password)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
@@ -196,21 +199,33 @@ func toGeneratedLoginLogRecord(log LoginLog) LoginLogRecord {
 		CreatedAt:     log.CreatedAt,
 		EventType:     LoginLogRecordEventType(log.EventType),
 		FailureReason: optionalString(log.FailureReason),
-		Id:            log.ID,
+		Id:            openapiUUID(log.ID),
 		Result:        LoginLogRecordResult(log.Result),
-		SessionId:     optionalString(log.SessionID),
+		SessionId:     optionalOpenAPIUUID(log.SessionID),
 		UserAgent:     optionalString(log.UserAgent),
-		UserId:        log.UserID,
+		UserId:        optionalOpenAPIUUID(log.UserID),
 		Username:      log.Username,
 	}
 }
 
 func toGeneratedUserSummary(user *User) UserSummary {
 	return UserSummary{
-		Id:       user.ID,
+		Id:       openapiUUID(user.ID),
 		Status:   UserSummaryStatus(user.Status),
 		Username: user.Username,
 	}
+}
+
+func openapiUUID(value uuid.UUID) openapi_types.UUID {
+	return openapi_types.UUID(value)
+}
+
+func optionalOpenAPIUUID(value *uuid.UUID) *openapi_types.UUID {
+	if value == nil {
+		return nil
+	}
+	id := openapiUUID(*value)
+	return &id
 }
 
 func optionalString(value string) *string {

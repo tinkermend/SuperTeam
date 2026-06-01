@@ -23,7 +23,19 @@ INSERT INTO runtime_nodes (
     last_heartbeat_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8
-) RETURNING id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at
+)
+ON CONFLICT (node_id) DO UPDATE SET
+    name = EXCLUDED.name,
+    supported_providers = EXCLUDED.supported_providers,
+    max_slots = EXCLUDED.max_slots,
+    current_load = EXCLUDED.current_load,
+    status = EXCLUDED.status,
+    metadata = EXCLUDED.metadata,
+    last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+    disabled_at = NULL,
+    archived_at = NULL,
+    updated_at = NOW()
+RETURNING id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at
 `
 
 type CreateRuntimeNodeParams struct {
@@ -51,6 +63,7 @@ func (q *Queries) CreateRuntimeNode(ctx context.Context, arg CreateRuntimeNodePa
 	var i RuntimeNode
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.NodeID,
 		&i.Name,
 		&i.SupportedProviders,
@@ -59,6 +72,8 @@ func (q *Queries) CreateRuntimeNode(ctx context.Context, arg CreateRuntimeNodePa
 		&i.Status,
 		&i.Metadata,
 		&i.LastHeartbeatAt,
+		&i.DisabledAt,
+		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -66,7 +81,11 @@ func (q *Queries) CreateRuntimeNode(ctx context.Context, arg CreateRuntimeNodePa
 }
 
 const DeleteRuntimeNode = `-- name: DeleteRuntimeNode :exec
-DELETE FROM runtime_nodes
+UPDATE runtime_nodes
+SET status = 'offline',
+    disabled_at = COALESCE(disabled_at, NOW()),
+    archived_at = COALESCE(archived_at, NOW()),
+    updated_at = NOW()
 WHERE node_id = $1
 `
 
@@ -76,8 +95,9 @@ func (q *Queries) DeleteRuntimeNode(ctx context.Context, nodeID string) error {
 }
 
 const GetRuntimeNode = `-- name: GetRuntimeNode :one
-SELECT id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at FROM runtime_nodes
+SELECT id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at FROM runtime_nodes
 WHERE node_id = $1
+  AND archived_at IS NULL
 `
 
 func (q *Queries) GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNode, error) {
@@ -85,6 +105,7 @@ func (q *Queries) GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNod
 	var i RuntimeNode
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.NodeID,
 		&i.Name,
 		&i.SupportedProviders,
@@ -93,6 +114,8 @@ func (q *Queries) GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNod
 		&i.Status,
 		&i.Metadata,
 		&i.LastHeartbeatAt,
+		&i.DisabledAt,
+		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -100,9 +123,11 @@ func (q *Queries) GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNod
 }
 
 const ListOnlineNodes = `-- name: ListOnlineNodes :many
-SELECT id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at FROM runtime_nodes
+SELECT id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at FROM runtime_nodes
 WHERE status = 'online'
   AND last_heartbeat_at > $1
+  AND disabled_at IS NULL
+  AND archived_at IS NULL
 ORDER BY current_load ASC, created_at ASC
 `
 
@@ -117,6 +142,7 @@ func (q *Queries) ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Ti
 		var i RuntimeNode
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.NodeID,
 			&i.Name,
 			&i.SupportedProviders,
@@ -125,6 +151,8 @@ func (q *Queries) ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Ti
 			&i.Status,
 			&i.Metadata,
 			&i.LastHeartbeatAt,
+			&i.DisabledAt,
+			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -139,9 +167,11 @@ func (q *Queries) ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Ti
 }
 
 const ListOnlineRuntimeNodes = `-- name: ListOnlineRuntimeNodes :many
-SELECT id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at FROM runtime_nodes
+SELECT id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at FROM runtime_nodes
 WHERE status = 'online'
   AND last_heartbeat_at > $1
+  AND disabled_at IS NULL
+  AND archived_at IS NULL
 ORDER BY current_load ASC, created_at ASC
 `
 
@@ -156,6 +186,7 @@ func (q *Queries) ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pg
 		var i RuntimeNode
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.NodeID,
 			&i.Name,
 			&i.SupportedProviders,
@@ -164,6 +195,8 @@ func (q *Queries) ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pg
 			&i.Status,
 			&i.Metadata,
 			&i.LastHeartbeatAt,
+			&i.DisabledAt,
+			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -178,8 +211,9 @@ func (q *Queries) ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pg
 }
 
 const ListRuntimeNodes = `-- name: ListRuntimeNodes :many
-SELECT id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at FROM runtime_nodes
-WHERE ($1::varchar IS NULL OR status = $1)
+SELECT id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at FROM runtime_nodes
+WHERE archived_at IS NULL
+  AND ($1::varchar IS NULL OR status = $1)
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
 `
@@ -201,6 +235,7 @@ func (q *Queries) ListRuntimeNodes(ctx context.Context, arg ListRuntimeNodesPara
 		var i RuntimeNode
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.NodeID,
 			&i.Name,
 			&i.SupportedProviders,
@@ -209,6 +244,8 @@ func (q *Queries) ListRuntimeNodes(ctx context.Context, arg ListRuntimeNodesPara
 			&i.Status,
 			&i.Metadata,
 			&i.LastHeartbeatAt,
+			&i.DisabledAt,
+			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -224,9 +261,12 @@ func (q *Queries) ListRuntimeNodes(ctx context.Context, arg ListRuntimeNodesPara
 
 const UpdateRuntimeNodeHeartbeat = `-- name: UpdateRuntimeNodeHeartbeat :one
 UPDATE runtime_nodes
-SET last_heartbeat_at = $2, updated_at = NOW()
+SET last_heartbeat_at = $2,
+    disabled_at = NULL,
+    updated_at = NOW()
 WHERE node_id = $1
-RETURNING id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at
+  AND archived_at IS NULL
+RETURNING id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at
 `
 
 type UpdateRuntimeNodeHeartbeatParams struct {
@@ -239,6 +279,7 @@ func (q *Queries) UpdateRuntimeNodeHeartbeat(ctx context.Context, arg UpdateRunt
 	var i RuntimeNode
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.NodeID,
 		&i.Name,
 		&i.SupportedProviders,
@@ -247,6 +288,8 @@ func (q *Queries) UpdateRuntimeNodeHeartbeat(ctx context.Context, arg UpdateRunt
 		&i.Status,
 		&i.Metadata,
 		&i.LastHeartbeatAt,
+		&i.DisabledAt,
+		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -257,7 +300,8 @@ const UpdateRuntimeNodeLoad = `-- name: UpdateRuntimeNodeLoad :one
 UPDATE runtime_nodes
 SET current_load = $2, updated_at = NOW()
 WHERE node_id = $1
-RETURNING id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at
+  AND archived_at IS NULL
+RETURNING id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at
 `
 
 type UpdateRuntimeNodeLoadParams struct {
@@ -270,6 +314,7 @@ func (q *Queries) UpdateRuntimeNodeLoad(ctx context.Context, arg UpdateRuntimeNo
 	var i RuntimeNode
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.NodeID,
 		&i.Name,
 		&i.SupportedProviders,
@@ -278,6 +323,8 @@ func (q *Queries) UpdateRuntimeNodeLoad(ctx context.Context, arg UpdateRuntimeNo
 		&i.Status,
 		&i.Metadata,
 		&i.LastHeartbeatAt,
+		&i.DisabledAt,
+		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -286,9 +333,16 @@ func (q *Queries) UpdateRuntimeNodeLoad(ctx context.Context, arg UpdateRuntimeNo
 
 const UpdateRuntimeNodeStatus = `-- name: UpdateRuntimeNodeStatus :one
 UPDATE runtime_nodes
-SET status = $2, updated_at = NOW()
+SET status = $2,
+    disabled_at = CASE
+        WHEN $2::varchar = 'offline' THEN COALESCE(disabled_at, NOW())
+        WHEN $2::varchar = 'online' THEN NULL
+        ELSE disabled_at
+    END,
+    updated_at = NOW()
 WHERE node_id = $1
-RETURNING id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, created_at, updated_at
+  AND archived_at IS NULL
+RETURNING id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at
 `
 
 type UpdateRuntimeNodeStatusParams struct {
@@ -301,6 +355,7 @@ func (q *Queries) UpdateRuntimeNodeStatus(ctx context.Context, arg UpdateRuntime
 	var i RuntimeNode
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.NodeID,
 		&i.Name,
 		&i.SupportedProviders,
@@ -309,6 +364,8 @@ func (q *Queries) UpdateRuntimeNodeStatus(ctx context.Context, arg UpdateRuntime
 		&i.Status,
 		&i.Metadata,
 		&i.LastHeartbeatAt,
+		&i.DisabledAt,
+		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

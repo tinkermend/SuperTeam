@@ -7,11 +7,12 @@ package queries
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
-	CancelTask(ctx context.Context, id int64) (Task, error)
+	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
 	CountAuditEvents(ctx context.Context, arg CountAuditEventsParams) (int64, error)
 	CreateAuditEvent(ctx context.Context, arg CreateAuditEventParams) (AuditEvent, error)
 	CreateRuntimeNode(ctx context.Context, arg CreateRuntimeNodeParams) (RuntimeNode, error)
@@ -20,7 +21,7 @@ type Querier interface {
 	CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error)
 	CreateTaskArtifact(ctx context.Context, arg CreateTaskArtifactParams) (TaskArtifact, error)
 	CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams) (TaskEvent, error)
-	CreateTaskExecution(ctx context.Context, arg CreateTaskExecutionParams) (TaskExecution, error)
+	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
 	CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) (TaskStateHistory, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error)
 	CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogParams) (WebLoginLog, error)
@@ -30,23 +31,23 @@ type Querier interface {
 	DeleteRuntimeNode(ctx context.Context, nodeID string) error
 	DeleteRuntimeToken(ctx context.Context, nodeID string) error
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error
-	DeleteTask(ctx context.Context, id int64) error
-	DeleteTaskArtifact(ctx context.Context, id int64) error
-	DeleteUser(ctx context.Context, id int64) error
-	GetAuditEvent(ctx context.Context, id int64) (AuditEvent, error)
-	GetLatestTaskEventSequence(ctx context.Context, taskID int64) (int32, error)
-	GetLatestTaskExecution(ctx context.Context, taskID int64) (TaskExecution, error)
+	DeleteTask(ctx context.Context, arg DeleteTaskParams) error
+	DeleteTaskArtifact(ctx context.Context, arg DeleteTaskArtifactParams) error
+	DeleteUser(ctx context.Context, id uuid.UUID) error
+	GetAuditEvent(ctx context.Context, id uuid.UUID) (AuditEvent, error)
+	GetLatestTaskEventSequence(ctx context.Context, arg GetLatestTaskEventSequenceParams) (int32, error)
+	GetLatestTaskRun(ctx context.Context, arg GetLatestTaskRunParams) (TaskRun, error)
 	GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNode, error)
 	GetRuntimeToken(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (AuthSession, error)
-	GetTask(ctx context.Context, id int64) (Task, error)
-	GetTaskArtifact(ctx context.Context, id int64) (TaskArtifact, error)
+	GetTask(ctx context.Context, arg GetTaskParams) (Task, error)
+	GetTaskArtifact(ctx context.Context, arg GetTaskArtifactParams) (TaskArtifact, error)
 	GetTaskEvent(ctx context.Context, arg GetTaskEventParams) (TaskEvent, error)
-	GetTaskExecution(ctx context.Context, id int64) (TaskExecution, error)
-	GetUser(ctx context.Context, id int64) (AuthUser, error)
+	GetTaskRun(ctx context.Context, arg GetTaskRunParams) (TaskRun, error)
+	GetUser(ctx context.Context, id uuid.UUID) (AuthUser, error)
 	GetUserByEmail(ctx context.Context, email pgtype.Text) (AuthUser, error)
-	GetUserByID(ctx context.Context, id int64) (AuthUser, error)
+	GetUserByID(ctx context.Context, id uuid.UUID) (AuthUser, error)
 	GetUserByUsername(ctx context.Context, username string) (AuthUser, error)
 	ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]AuditEvent, error)
 	ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
@@ -54,10 +55,10 @@ type Querier interface {
 	ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error)
 	ListRuntimeNodes(ctx context.Context, arg ListRuntimeNodesParams) ([]RuntimeNode, error)
 	ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error)
-	ListTaskArtifacts(ctx context.Context, taskID int64) ([]TaskArtifact, error)
-	ListTaskEvents(ctx context.Context, taskID int64) ([]TaskEvent, error)
-	ListTaskExecutions(ctx context.Context, taskID int64) ([]TaskExecution, error)
-	ListTaskStateHistory(ctx context.Context, taskID int64) ([]TaskStateHistory, error)
+	ListTaskArtifacts(ctx context.Context, arg ListTaskArtifactsParams) ([]TaskArtifact, error)
+	ListTaskEvents(ctx context.Context, arg ListTaskEventsParams) ([]TaskEvent, error)
+	ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]TaskRun, error)
+	ListTaskStateHistory(ctx context.Context, arg ListTaskStateHistoryParams) ([]TaskStateHistory, error)
 	ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error)
 	ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error)
@@ -67,7 +68,7 @@ type Querier interface {
 	UpdateSessionLastSeen(ctx context.Context, arg UpdateSessionLastSeenParams) (AuthSession, error)
 	UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, error)
 	UpdateTaskAssignment(ctx context.Context, arg UpdateTaskAssignmentParams) (Task, error)
-	UpdateTaskExecution(ctx context.Context, arg UpdateTaskExecutionParams) (TaskExecution, error)
+	UpdateTaskRun(ctx context.Context, arg UpdateTaskRunParams) (TaskRun, error)
 	UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusParams) (Task, error)
 	UpdateTaskWorkspace(ctx context.Context, arg UpdateTaskWorkspaceParams) (Task, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUser, error)

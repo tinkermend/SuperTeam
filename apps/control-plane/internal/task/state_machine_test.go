@@ -24,11 +24,9 @@ func TestStateMachine_CanTransition(t *testing.T) {
 		// Valid transitions from claimed
 		{"claimed to running", TaskStatusClaimed, TaskStatusRunning, true},
 		{"claimed to cancelled", TaskStatusClaimed, TaskStatusCancelled, true},
+		{"claimed to completed", TaskStatusClaimed, TaskStatusCompleted, true},
+		{"claimed to failed", TaskStatusClaimed, TaskStatusFailed, true},
 		{"claimed to pending", TaskStatusClaimed, TaskStatusPending, true}, // Unclaim
-
-		// Invalid transitions from claimed
-		{"claimed to completed", TaskStatusClaimed, TaskStatusCompleted, false},
-		{"claimed to failed", TaskStatusClaimed, TaskStatusFailed, false},
 
 		// Valid transitions from running
 		{"running to completed", TaskStatusRunning, TaskStatusCompleted, true},
@@ -93,12 +91,12 @@ func TestStateMachine_GetAllowedTransitions(t *testing.T) {
 		from      TaskStatus
 		wantCount int
 	}{
-		{"pending transitions", TaskStatusPending, 2},       // claimed, cancelled
-		{"claimed transitions", TaskStatusClaimed, 3},       // running, cancelled, pending
-		{"running transitions", TaskStatusRunning, 3},       // completed, failed, cancelled
-		{"completed transitions", TaskStatusCompleted, 0},   // terminal
-		{"failed transitions", TaskStatusFailed, 0},         // terminal
-		{"cancelled transitions", TaskStatusCancelled, 0},   // terminal
+		{"pending transitions", TaskStatusPending, 2},     // claimed, cancelled
+		{"claimed transitions", TaskStatusClaimed, 5},     // running, completed, failed, cancelled, pending
+		{"running transitions", TaskStatusRunning, 3},     // completed, failed, cancelled
+		{"completed transitions", TaskStatusCompleted, 0}, // terminal
+		{"failed transitions", TaskStatusFailed, 0},       // terminal
+		{"cancelled transitions", TaskStatusCancelled, 0}, // terminal
 		{"invalid status", TaskStatus("invalid"), 0},
 	}
 

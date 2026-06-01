@@ -8,6 +8,7 @@ package queries
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -18,7 +19,12 @@ INSERT INTO auth_runtime_tokens (
     expires_at
 ) VALUES (
     $1, $2, $3
-) RETURNING id, node_id, token_hash, expires_at, created_at
+)
+ON CONFLICT (node_id) WHERE revoked_at IS NULL DO UPDATE SET
+    token_hash = EXCLUDED.token_hash,
+    expires_at = EXCLUDED.expires_at,
+    revoked_at = NULL
+RETURNING id, tenant_id, node_id, token_hash, expires_at, revoked_at, created_at
 `
 
 type CreateRuntimeTokenParams struct {
@@ -32,9 +38,11 @@ func (q *Queries) CreateRuntimeToken(ctx context.Context, arg CreateRuntimeToken
 	var i AuthRuntimeToken
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.NodeID,
 		&i.TokenHash,
 		&i.ExpiresAt,
+		&i.RevokedAt,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -42,7 +50,6 @@ func (q *Queries) CreateRuntimeToken(ctx context.Context, arg CreateRuntimeToken
 
 const CreateSession = `-- name: CreateSession :one
 INSERT INTO auth_sessions (
-    id,
     user_id,
     token_hash,
     expires_at,
@@ -50,19 +57,17 @@ INSERT INTO auth_sessions (
     client_ip,
     user_agent
 ) VALUES (
-    $1::varchar,
-    $2,
-    $3::varchar,
+    $1::uuid,
+    $2::varchar,
+    $3,
     $4,
-    $5,
-    $6::varchar,
-    $7::text
-) RETURNING id, user_id, token_hash, expires_at, last_seen_at, client_ip, user_agent, created_at
+    $5::varchar,
+    $6::text
+) RETURNING id, user_id, token_hash, expires_at, last_seen_at, client_ip, user_agent, revoked_at, created_at, updated_at
 `
 
 type CreateSessionParams struct {
-	ID         string             `json:"id"`
-	UserID     int64              `json:"user_id"`
+	UserID     uuid.UUID          `json:"user_id"`
 	TokenHash  string             `json:"token_hash"`
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
@@ -72,7 +77,6 @@ type CreateSessionParams struct {
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (AuthSession, error) {
 	row := q.db.QueryRow(ctx, CreateSession,
-		arg.ID,
 		arg.UserID,
 		arg.TokenHash,
 		arg.ExpiresAt,
@@ -89,7 +93,9 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (A
 		&i.LastSeenAt,
 		&i.ClientIp,
 		&i.UserAgent,
+		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -107,7 +113,7 @@ INSERT INTO auth_users (
     $3::varchar,
     $4::varchar,
     $5::varchar
-) RETURNING id, username, display_name, email, password_hash, status, created_at, updated_at
+) RETURNING id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at
 `
 
 type CreateUserParams struct {
@@ -134,6 +140,9 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (AuthUse
 		&i.Email,
 		&i.PasswordHash,
 		&i.Status,
+		&i.LastLoginAt,
+		&i.DisabledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -161,7 +170,8 @@ func (q *Queries) DeleteExpiredSessions(ctx context.Context) error {
 }
 
 const DeleteRuntimeToken = `-- name: DeleteRuntimeToken :exec
-DELETE FROM auth_runtime_tokens
+UPDATE auth_runtime_tokens
+SET revoked_at = COALESCE(revoked_at, NOW())
 WHERE node_id = $1
 `
 
@@ -181,17 +191,21 @@ func (q *Queries) DeleteSessionByTokenHash(ctx context.Context, tokenHash string
 }
 
 const DeleteUser = `-- name: DeleteUser :exec
-DELETE FROM auth_users
+UPDATE auth_users
+SET deleted_at = COALESCE(deleted_at, NOW()),
+    disabled_at = COALESCE(disabled_at, NOW()),
+    status = 'disabled',
+    updated_at = NOW()
 WHERE id = $1
 `
 
-func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
+func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, DeleteUser, id)
 	return err
 }
 
 const GetRuntimeToken = `-- name: GetRuntimeToken :one
-SELECT id, node_id, token_hash, expires_at, created_at FROM auth_runtime_tokens
+SELECT id, tenant_id, node_id, token_hash, expires_at, revoked_at, created_at FROM auth_runtime_tokens
 WHERE node_id = $1
 `
 
@@ -200,17 +214,20 @@ func (q *Queries) GetRuntimeToken(ctx context.Context, nodeID string) (AuthRunti
 	var i AuthRuntimeToken
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.NodeID,
 		&i.TokenHash,
 		&i.ExpiresAt,
+		&i.RevokedAt,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const GetRuntimeTokenByNodeID = `-- name: GetRuntimeTokenByNodeID :one
-SELECT id, node_id, token_hash, expires_at, created_at FROM auth_runtime_tokens
+SELECT id, tenant_id, node_id, token_hash, expires_at, revoked_at, created_at FROM auth_runtime_tokens
 WHERE node_id = $1
+  AND revoked_at IS NULL
 `
 
 func (q *Queries) GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (AuthRuntimeToken, error) {
@@ -218,16 +235,18 @@ func (q *Queries) GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (A
 	var i AuthRuntimeToken
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.NodeID,
 		&i.TokenHash,
 		&i.ExpiresAt,
+		&i.RevokedAt,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const GetSessionByTokenHash = `-- name: GetSessionByTokenHash :one
-SELECT id, user_id, token_hash, expires_at, last_seen_at, client_ip, user_agent, created_at FROM auth_sessions
+SELECT id, user_id, token_hash, expires_at, last_seen_at, client_ip, user_agent, revoked_at, created_at, updated_at FROM auth_sessions
 WHERE token_hash = $1
 `
 
@@ -242,17 +261,19 @@ func (q *Queries) GetSessionByTokenHash(ctx context.Context, tokenHash string) (
 		&i.LastSeenAt,
 		&i.ClientIp,
 		&i.UserAgent,
+		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const GetUser = `-- name: GetUser :one
-SELECT id, username, display_name, email, password_hash, status, created_at, updated_at FROM auth_users
+SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at FROM auth_users
 WHERE id = $1
 `
 
-func (q *Queries) GetUser(ctx context.Context, id int64) (AuthUser, error) {
+func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (AuthUser, error) {
 	row := q.db.QueryRow(ctx, GetUser, id)
 	var i AuthUser
 	err := row.Scan(
@@ -262,6 +283,9 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (AuthUser, error) {
 		&i.Email,
 		&i.PasswordHash,
 		&i.Status,
+		&i.LastLoginAt,
+		&i.DisabledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -269,7 +293,7 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (AuthUser, error) {
 }
 
 const GetUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, username, display_name, email, password_hash, status, created_at, updated_at FROM auth_users
+SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at FROM auth_users
 WHERE email = $1
 `
 
@@ -283,6 +307,9 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email pgtype.Text) (AuthUs
 		&i.Email,
 		&i.PasswordHash,
 		&i.Status,
+		&i.LastLoginAt,
+		&i.DisabledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -290,11 +317,11 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email pgtype.Text) (AuthUs
 }
 
 const GetUserByID = `-- name: GetUserByID :one
-SELECT id, username, display_name, email, password_hash, status, created_at, updated_at FROM auth_users
+SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at FROM auth_users
 WHERE id = $1
 `
 
-func (q *Queries) GetUserByID(ctx context.Context, id int64) (AuthUser, error) {
+func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (AuthUser, error) {
 	row := q.db.QueryRow(ctx, GetUserByID, id)
 	var i AuthUser
 	err := row.Scan(
@@ -304,6 +331,9 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (AuthUser, error) {
 		&i.Email,
 		&i.PasswordHash,
 		&i.Status,
+		&i.LastLoginAt,
+		&i.DisabledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -311,7 +341,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (AuthUser, error) {
 }
 
 const GetUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, display_name, email, password_hash, status, created_at, updated_at FROM auth_users
+SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at FROM auth_users
 WHERE username = $1
 `
 
@@ -325,6 +355,9 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (AuthU
 		&i.Email,
 		&i.PasswordHash,
 		&i.Status,
+		&i.LastLoginAt,
+		&i.DisabledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -332,7 +365,8 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (AuthU
 }
 
 const ListRuntimeTokens = `-- name: ListRuntimeTokens :many
-SELECT id, node_id, token_hash, expires_at, created_at FROM auth_runtime_tokens
+SELECT id, tenant_id, node_id, token_hash, expires_at, revoked_at, created_at FROM auth_runtime_tokens
+WHERE revoked_at IS NULL
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
 `
@@ -353,9 +387,11 @@ func (q *Queries) ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensPa
 		var i AuthRuntimeToken
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.NodeID,
 			&i.TokenHash,
 			&i.ExpiresAt,
+			&i.RevokedAt,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -369,8 +405,9 @@ func (q *Queries) ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensPa
 }
 
 const ListUsers = `-- name: ListUsers :many
-SELECT id, username, display_name, email, password_hash, status, created_at, updated_at FROM auth_users
-WHERE ($1::varchar IS NULL OR status = $1::varchar)
+SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at FROM auth_users
+WHERE deleted_at IS NULL
+  AND ($1::varchar IS NULL OR status = $1::varchar)
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
 `
@@ -397,6 +434,9 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUse
 			&i.Email,
 			&i.PasswordHash,
 			&i.Status,
+			&i.LastLoginAt,
+			&i.DisabledAt,
+			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -414,7 +454,7 @@ const UpdateSessionLastSeen = `-- name: UpdateSessionLastSeen :one
 UPDATE auth_sessions
 SET last_seen_at = $2
 WHERE token_hash = $1
-RETURNING id, user_id, token_hash, expires_at, last_seen_at, client_ip, user_agent, created_at
+RETURNING id, user_id, token_hash, expires_at, last_seen_at, client_ip, user_agent, revoked_at, created_at, updated_at
 `
 
 type UpdateSessionLastSeenParams struct {
@@ -433,7 +473,9 @@ func (q *Queries) UpdateSessionLastSeen(ctx context.Context, arg UpdateSessionLa
 		&i.LastSeenAt,
 		&i.ClientIp,
 		&i.UserAgent,
+		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -444,13 +486,18 @@ SET
     display_name = COALESCE($2, display_name),
     email = COALESCE($3, email),
     status = COALESCE($4, status),
+    disabled_at = CASE
+        WHEN $4::varchar = 'disabled' THEN COALESCE(disabled_at, NOW())
+        WHEN $4::varchar = 'active' THEN NULL
+        ELSE disabled_at
+    END,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, username, display_name, email, password_hash, status, created_at, updated_at
+RETURNING id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at
 `
 
 type UpdateUserParams struct {
-	ID          int64       `json:"id"`
+	ID          uuid.UUID   `json:"id"`
 	DisplayName pgtype.Text `json:"display_name"`
 	Email       pgtype.Text `json:"email"`
 	Status      string      `json:"status"`
@@ -471,6 +518,9 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUse
 		&i.Email,
 		&i.PasswordHash,
 		&i.Status,
+		&i.LastLoginAt,
+		&i.DisabledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -481,12 +531,12 @@ const UpdateUserPassword = `-- name: UpdateUserPassword :one
 UPDATE auth_users
 SET password_hash = $1::varchar, updated_at = NOW()
 WHERE id = $2
-RETURNING id, username, display_name, email, password_hash, status, created_at, updated_at
+RETURNING id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at
 `
 
 type UpdateUserPasswordParams struct {
-	PasswordHash string `json:"password_hash"`
-	ID           int64  `json:"id"`
+	PasswordHash string    `json:"password_hash"`
+	ID           uuid.UUID `json:"id"`
 }
 
 func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error) {
@@ -499,6 +549,9 @@ func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPassword
 		&i.Email,
 		&i.PasswordHash,
 		&i.Status,
+		&i.LastLoginAt,
+		&i.DisabledAt,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -506,9 +559,10 @@ func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPassword
 }
 
 const ValidateRuntimeToken = `-- name: ValidateRuntimeToken :one
-SELECT id, node_id, token_hash, expires_at, created_at FROM auth_runtime_tokens
+SELECT id, tenant_id, node_id, token_hash, expires_at, revoked_at, created_at FROM auth_runtime_tokens
 WHERE node_id = $1
   AND token_hash = $2
+  AND revoked_at IS NULL
   AND (expires_at IS NULL OR expires_at > NOW())
 `
 
@@ -522,9 +576,11 @@ func (q *Queries) ValidateRuntimeToken(ctx context.Context, arg ValidateRuntimeT
 	var i AuthRuntimeToken
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.NodeID,
 		&i.TokenHash,
 		&i.ExpiresAt,
+		&i.RevokedAt,
 		&i.CreatedAt,
 	)
 	return i, err

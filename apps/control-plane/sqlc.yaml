@@ -24,3 +24,12 @@ sql:
         overrides:
           - column: "auth_users.password_hash"
             go_type: "string"
+          - db_type: "uuid"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - db_type: "uuid"
+            nullable: true
+            go_type:
+              import: "github.com/google/uuid"
+              type: "NullUUID"

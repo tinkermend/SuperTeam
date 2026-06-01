@@ -3,6 +3,7 @@ package runtime
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -25,7 +26,7 @@ func (s NodeStatus) IsValid() bool {
 
 // Node represents a runtime node in the domain model
 type Node struct {
-	ID                 int64
+	ID                 uuid.UUID
 	NodeID             string
 	Name               string
 	SupportedProviders []string
@@ -95,20 +96,6 @@ func stringFromText(t pgtype.Text) *string {
 		return nil
 	}
 	return &t.String
-}
-
-func int8FromInt64(i *int64) pgtype.Int8 {
-	if i == nil {
-		return pgtype.Int8{Valid: false}
-	}
-	return pgtype.Int8{Int64: *i, Valid: true}
-}
-
-func int64FromInt8(i pgtype.Int8) *int64 {
-	if !i.Valid {
-		return nil
-	}
-	return &i.Int64
 }
 
 func timeFromTimestamptz(t pgtype.Timestamptz) time.Time {

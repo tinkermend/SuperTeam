@@ -8,11 +8,13 @@ package queries
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const CreateWebLoginLog = `-- name: CreateWebLoginLog :one
 INSERT INTO web_login_logs (
+    tenant_id,
     event_type,
     user_id,
     username,
@@ -23,32 +25,35 @@ INSERT INTO web_login_logs (
     failure_reason,
     details
 ) VALUES (
-    $1::varchar,
-    $2::bigint,
-    $3::varchar,
+    COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
+    $2::varchar,
+    $3::uuid,
     $4::varchar,
-    $5::varchar,
-    $6::text,
-    $7::varchar,
+    $5::uuid,
+    $6::varchar,
+    $7::text,
     $8::varchar,
-    COALESCE($9::jsonb, '{}'::jsonb)
-) RETURNING id, event_type, user_id, username, session_id, client_ip, user_agent, result, failure_reason, details, created_at
+    $9::varchar,
+    COALESCE($10::jsonb, '{}'::jsonb)
+) RETURNING id, tenant_id, event_type, user_id, username, session_id, client_ip, user_agent, result, failure_reason, details, created_at
 `
 
 type CreateWebLoginLogParams struct {
-	EventType     string      `json:"event_type"`
-	UserID        pgtype.Int8 `json:"user_id"`
-	Username      string      `json:"username"`
-	SessionID     pgtype.Text `json:"session_id"`
-	ClientIp      pgtype.Text `json:"client_ip"`
-	UserAgent     pgtype.Text `json:"user_agent"`
-	Result        string      `json:"result"`
-	FailureReason pgtype.Text `json:"failure_reason"`
-	Details       []byte      `json:"details"`
+	TenantID      uuid.NullUUID `json:"tenant_id"`
+	EventType     string        `json:"event_type"`
+	UserID        uuid.NullUUID `json:"user_id"`
+	Username      string        `json:"username"`
+	SessionID     uuid.NullUUID `json:"session_id"`
+	ClientIp      pgtype.Text   `json:"client_ip"`
+	UserAgent     pgtype.Text   `json:"user_agent"`
+	Result        string        `json:"result"`
+	FailureReason pgtype.Text   `json:"failure_reason"`
+	Details       []byte        `json:"details"`
 }
 
 func (q *Queries) CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogParams) (WebLoginLog, error) {
 	row := q.db.QueryRow(ctx, CreateWebLoginLog,
+		arg.TenantID,
 		arg.EventType,
 		arg.UserID,
 		arg.Username,
@@ -62,6 +67,7 @@ func (q *Queries) CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogPa
 	var i WebLoginLog
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.EventType,
 		&i.UserID,
 		&i.Username,
@@ -78,6 +84,7 @@ func (q *Queries) CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogPa
 
 const CreateWebOperationLog = `-- name: CreateWebOperationLog :one
 INSERT INTO web_operation_logs (
+    tenant_id,
     user_id,
     username,
     module,
@@ -90,8 +97,8 @@ INSERT INTO web_operation_logs (
     user_agent,
     details
 ) VALUES (
-    $1::bigint,
-    $2::varchar,
+    COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
+    $2::uuid,
     $3::varchar,
     $4::varchar,
     $5::varchar,
@@ -99,27 +106,30 @@ INSERT INTO web_operation_logs (
     $7::varchar,
     $8::varchar,
     $9::varchar,
-    $10::text,
-    COALESCE($11::jsonb, '{}'::jsonb)
-) RETURNING id, user_id, username, module, resource_type, resource_id, action, result, request_id, client_ip, user_agent, details, created_at
+    $10::varchar,
+    $11::text,
+    COALESCE($12::jsonb, '{}'::jsonb)
+) RETURNING id, tenant_id, user_id, username, module, resource_type, resource_id, action, result, request_id, client_ip, user_agent, details, created_at
 `
 
 type CreateWebOperationLogParams struct {
-	UserID       pgtype.Int8 `json:"user_id"`
-	Username     pgtype.Text `json:"username"`
-	Module       string      `json:"module"`
-	ResourceType pgtype.Text `json:"resource_type"`
-	ResourceID   pgtype.Text `json:"resource_id"`
-	Action       string      `json:"action"`
-	Result       string      `json:"result"`
-	RequestID    pgtype.Text `json:"request_id"`
-	ClientIp     pgtype.Text `json:"client_ip"`
-	UserAgent    pgtype.Text `json:"user_agent"`
-	Details      []byte      `json:"details"`
+	TenantID     uuid.NullUUID `json:"tenant_id"`
+	UserID       uuid.NullUUID `json:"user_id"`
+	Username     pgtype.Text   `json:"username"`
+	Module       string        `json:"module"`
+	ResourceType pgtype.Text   `json:"resource_type"`
+	ResourceID   pgtype.Text   `json:"resource_id"`
+	Action       string        `json:"action"`
+	Result       string        `json:"result"`
+	RequestID    pgtype.Text   `json:"request_id"`
+	ClientIp     pgtype.Text   `json:"client_ip"`
+	UserAgent    pgtype.Text   `json:"user_agent"`
+	Details      []byte        `json:"details"`
 }
 
 func (q *Queries) CreateWebOperationLog(ctx context.Context, arg CreateWebOperationLogParams) (WebOperationLog, error) {
 	row := q.db.QueryRow(ctx, CreateWebOperationLog,
+		arg.TenantID,
 		arg.UserID,
 		arg.Username,
 		arg.Module,
@@ -135,6 +145,7 @@ func (q *Queries) CreateWebOperationLog(ctx context.Context, arg CreateWebOperat
 	var i WebOperationLog
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Username,
 		&i.Module,
@@ -152,7 +163,7 @@ func (q *Queries) CreateWebOperationLog(ctx context.Context, arg CreateWebOperat
 }
 
 const ListWebLoginLogs = `-- name: ListWebLoginLogs :many
-SELECT id, event_type, user_id, username, session_id, client_ip, user_agent, result, failure_reason, details, created_at FROM web_login_logs
+SELECT id, tenant_id, event_type, user_id, username, session_id, client_ip, user_agent, result, failure_reason, details, created_at FROM web_login_logs
 ORDER BY created_at DESC, id DESC
 LIMIT $2 OFFSET $1
 `
@@ -173,6 +184,7 @@ func (q *Queries) ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsPara
 		var i WebLoginLog
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.EventType,
 			&i.UserID,
 			&i.Username,

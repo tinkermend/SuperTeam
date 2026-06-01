@@ -7,45 +7,82 @@ package queries
 import (
 	"net/netip"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// 审计事件表
 type AuditEvent struct {
-	ID           int64              `json:"id"`
-	EventType    string             `json:"event_type"`
-	ActorType    string             `json:"actor_type"`
-	ActorID      string             `json:"actor_id"`
-	ResourceType pgtype.Text        `json:"resource_type"`
-	ResourceID   pgtype.Text        `json:"resource_id"`
-	Action       string             `json:"action"`
-	Details      []byte             `json:"details"`
-	IpAddress    *netip.Addr        `json:"ip_address"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-}
-
-type AuthRuntimeToken struct {
-	ID        int64              `json:"id"`
-	NodeID    string             `json:"node_id"`
-	TokenHash string             `json:"token_hash"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	// 审计事件主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 审计事件类型
+	EventType string `json:"event_type"`
+	// 操作者类型
+	ActorType string `json:"actor_type"`
+	// 操作者 ID
+	ActorID string `json:"actor_id"`
+	// 资源类型
+	ResourceType pgtype.Text `json:"resource_type"`
+	// 资源 ID
+	ResourceID pgtype.Text `json:"resource_id"`
+	// 审计动作
+	Action string `json:"action"`
+	// 审计扩展信息
+	Details []byte `json:"details"`
+	// 操作者 IP 地址
+	IpAddress *netip.Addr `json:"ip_address"`
+	// 审计事件创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// Runtime Agent 认证令牌表
+type AuthRuntimeToken struct {
+	// Runtime 令牌主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// Runtime 外部业务节点 ID
+	NodeID string `json:"node_id"`
+	// Runtime 令牌哈希
+	TokenHash string `json:"token_hash"`
+	// Runtime 令牌过期时间
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	// Runtime 令牌撤销时间
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+	// Runtime 令牌创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// Web 控制台用户会话表
 type AuthSession struct {
-	ID         string             `json:"id"`
-	UserID     int64              `json:"user_id"`
-	TokenHash  string             `json:"token_hash"`
-	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	// 会话主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 会话所属用户 ID
+	UserID uuid.UUID `json:"user_id"`
+	// 会话令牌哈希
+	TokenHash string `json:"token_hash"`
+	// 会话过期时间
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	// 会话最后访问时间
 	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
-	ClientIp   pgtype.Text        `json:"client_ip"`
-	UserAgent  pgtype.Text        `json:"user_agent"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	// 客户端 IP
+	ClientIp pgtype.Text `json:"client_ip"`
+	// 客户端 User-Agent
+	UserAgent pgtype.Text `json:"user_agent"`
+	// 会话撤销时间
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+	// 会话创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 会话最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Web 控制台平台用户表
 type AuthUser struct {
-	// 用户主键 ID
-	ID int64 `json:"id"`
+	// 用户主键 UUID
+	ID uuid.UUID `json:"id"`
 	// 登录账号，平台内唯一
 	Username string `json:"username"`
 	// 用户展示名称，当前 MVP 可为空
@@ -56,107 +93,376 @@ type AuthUser struct {
 	PasswordHash string `json:"password_hash"`
 	// 用户状态：active 表示启用，disabled 表示禁用
 	Status string `json:"status"`
+	// 用户最后登录时间
+	LastLoginAt pgtype.Timestamptz `json:"last_login_at"`
+	// 用户禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// 用户软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	// 用户创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 用户最后更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Runtime 任务租约表
+type RuntimeLease struct {
+	// 租约主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 租约所属任务 ID
+	TaskID uuid.UUID `json:"task_id"`
+	// 租约所属任务运行 ID
+	RunID uuid.NullUUID `json:"run_id"`
+	// 持有租约的 Runtime 节点 UUID
+	RuntimeNodeID uuid.NullUUID `json:"runtime_node_id"`
+	// 持有租约的 Runtime 外部业务节点 ID
+	NodeID string `json:"node_id"`
+	// 租约令牌
+	LeaseToken string `json:"lease_token"`
+	// 租约状态
+	Status string `json:"status"`
+	// 租约过期时间
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	// 租约续约时间
+	RenewedAt pgtype.Timestamptz `json:"renewed_at"`
+	// 租约释放时间
+	ReleasedAt pgtype.Timestamptz `json:"released_at"`
+	// 租约取消时间
+	CancelledAt pgtype.Timestamptz `json:"cancelled_at"`
+	// 租约创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 租约最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Runtime Agent 节点注册表
 type RuntimeNode struct {
-	ID                 int64              `json:"id"`
-	NodeID             string             `json:"node_id"`
-	Name               string             `json:"name"`
-	SupportedProviders []byte             `json:"supported_providers"`
-	MaxSlots           int32              `json:"max_slots"`
-	CurrentLoad        int32              `json:"current_load"`
-	Status             string             `json:"status"`
-	Metadata           []byte             `json:"metadata"`
-	LastHeartbeatAt    pgtype.Timestamptz `json:"last_heartbeat_at"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	// Runtime 节点主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 默认所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// Runtime 外部业务节点 ID
+	NodeID string `json:"node_id"`
+	// Runtime 节点名称
+	Name string `json:"name"`
+	// Runtime 支持的 Provider 列表
+	SupportedProviders []byte `json:"supported_providers"`
+	// Runtime 最大并发槽位数
+	MaxSlots int32 `json:"max_slots"`
+	// Runtime 当前负载
+	CurrentLoad int32 `json:"current_load"`
+	// Runtime 节点状态
+	Status string `json:"status"`
+	// Runtime 节点扩展元数据
+	Metadata []byte `json:"metadata"`
+	// Runtime 最后心跳时间
+	LastHeartbeatAt pgtype.Timestamptz `json:"last_heartbeat_at"`
+	// Runtime 节点禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// Runtime 节点归档时间
+	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
+	// Runtime 节点注册时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// Runtime 节点最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Runtime 节点可执行范围表
+type RuntimeNodeScope struct {
+	// 节点范围主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// Runtime 节点 ID
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// 授权团队 ID
+	TeamID uuid.NullUUID `json:"team_id"`
+	// 范围类型
+	ScopeType string `json:"scope_type"`
+	// 范围值
+	ScopeValue string `json:"scope_value"`
+	// 范围状态
+	Status string `json:"status"`
+	// 范围禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// 范围创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 范围最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 任务主表
 type Task struct {
-	ID             int64              `json:"id"`
-	Title          string             `json:"title"`
-	Description    pgtype.Text        `json:"description"`
-	CreatorID      pgtype.Int8        `json:"creator_id"`
-	ProviderType   string             `json:"provider_type"`
-	TargetNodeID   pgtype.Text        `json:"target_node_id"`
-	AssignedNodeID pgtype.Text        `json:"assigned_node_id"`
-	Status         string             `json:"status"`
-	WorkspacePath  pgtype.Text        `json:"workspace_path"`
-	Params         []byte             `json:"params"`
-	Priority       int32              `json:"priority"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	// 任务主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属团队 ID
+	TeamID uuid.NullUUID `json:"team_id"`
+	// 任务标题
+	Title string `json:"title"`
+	// 任务描述
+	Description pgtype.Text `json:"description"`
+	// 任务创建用户 ID
+	CreatorID uuid.NullUUID `json:"creator_id"`
+	// 任务目标 Provider 类型
+	ProviderType string `json:"provider_type"`
+	// 指定 Runtime 外部业务节点 ID
+	TargetNodeID pgtype.Text `json:"target_node_id"`
+	// 已分配 Runtime 外部业务节点 ID
+	AssignedNodeID pgtype.Text `json:"assigned_node_id"`
+	// 任务状态
+	Status string `json:"status"`
+	// 任务工作目录路径
+	WorkspacePath pgtype.Text `json:"workspace_path"`
+	// 任务参数
+	Params []byte `json:"params"`
+	// 任务优先级
+	Priority int32 `json:"priority"`
+	// 任务幂等键
+	IdempotencyKey pgtype.Text `json:"idempotency_key"`
+	// 任务风险级别
+	RiskLevel string `json:"risk_level"`
+	// 任务取消时间
+	CancelledAt pgtype.Timestamptz `json:"cancelled_at"`
+	// 任务软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 任务创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 任务最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 任务工件表
 type TaskArtifact struct {
-	ID           int64              `json:"id"`
-	TaskID       int64              `json:"task_id"`
-	ExecutionID  pgtype.Int8        `json:"execution_id"`
-	ArtifactType string             `json:"artifact_type"`
-	Name         string             `json:"name"`
-	StorageUrl   string             `json:"storage_url"`
-	SizeBytes    pgtype.Int8        `json:"size_bytes"`
-	Metadata     []byte             `json:"metadata"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	// 任务工件主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属任务 ID
+	TaskID uuid.UUID `json:"task_id"`
+	// 所属任务运行 ID
+	RunID uuid.NullUUID `json:"run_id"`
+	// 工件类型
+	ArtifactType string `json:"artifact_type"`
+	// 工件名称
+	Name string `json:"name"`
+	// 工件存储地址
+	StorageUrl string `json:"storage_url"`
+	// 工件大小字节数
+	SizeBytes pgtype.Int8 `json:"size_bytes"`
+	// 工件扩展元数据
+	Metadata []byte `json:"metadata"`
+	// 工件归档时间
+	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
+	// 工件软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 工件创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// 任务事件流表
 type TaskEvent struct {
-	ID             int64              `json:"id"`
-	TaskID         int64              `json:"task_id"`
-	ExecutionID    pgtype.Int8        `json:"execution_id"`
-	EventType      string             `json:"event_type"`
-	SequenceNumber int32              `json:"sequence_number"`
-	Payload        []byte             `json:"payload"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	// 任务事件主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属任务 ID
+	TaskID uuid.UUID `json:"task_id"`
+	// 所属任务运行 ID
+	RunID uuid.NullUUID `json:"run_id"`
+	// 任务事件类型
+	EventType string `json:"event_type"`
+	// 任务内事件序号
+	SequenceNumber int32 `json:"sequence_number"`
+	// 任务事件负载
+	Payload []byte `json:"payload"`
+	// 任务事件创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
-type TaskExecution struct {
-	ID                int64              `json:"id"`
-	TaskID            int64              `json:"task_id"`
-	NodeID            string             `json:"node_id"`
-	ProviderSessionID pgtype.Text        `json:"provider_session_id"`
-	Status            string             `json:"status"`
-	StartedAt         pgtype.Timestamptz `json:"started_at"`
-	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
-	Result            []byte             `json:"result"`
-	ErrorMessage      pgtype.Text        `json:"error_message"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+// 任务运行记录表
+type TaskRun struct {
+	// 任务运行主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属任务 ID
+	TaskID uuid.UUID `json:"task_id"`
+	// 执行 Runtime 外部业务节点 ID
+	NodeID string `json:"node_id"`
+	// 执行 Runtime 节点 UUID
+	RuntimeNodeID uuid.NullUUID `json:"runtime_node_id"`
+	// Provider 会话 ID
+	ProviderSessionID pgtype.Text `json:"provider_session_id"`
+	// 任务运行状态
+	Status string `json:"status"`
+	// 任务运行租约过期时间
+	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
+	// 任务运行开始时间
+	StartedAt pgtype.Timestamptz `json:"started_at"`
+	// 任务运行完成时间
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	// 任务运行终止时间，包含完成、失败或取消
+	FinishedAt pgtype.Timestamptz `json:"finished_at"`
+	// 任务运行结果
+	Result []byte `json:"result"`
+	// 任务运行错误信息
+	ErrorMessage pgtype.Text `json:"error_message"`
+	// 任务运行创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 任务运行最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 任务状态变更历史表
 type TaskStateHistory struct {
-	ID         int64              `json:"id"`
-	TaskID     int64              `json:"task_id"`
-	FromStatus pgtype.Text        `json:"from_status"`
-	ToStatus   string             `json:"to_status"`
-	ChangedBy  pgtype.Text        `json:"changed_by"`
-	Reason     pgtype.Text        `json:"reason"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	// 状态历史主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属任务 ID
+	TaskID uuid.UUID `json:"task_id"`
+	// 变更前任务状态
+	FromStatus pgtype.Text `json:"from_status"`
+	// 变更后任务状态
+	ToStatus string `json:"to_status"`
+	// 状态变更触发者
+	ChangedBy pgtype.Text `json:"changed_by"`
+	// 状态变更原因
+	Reason pgtype.Text `json:"reason"`
+	// 状态变更记录时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// 租户表
+type Tenant struct {
+	// 租户主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 租户唯一标识
+	Slug string `json:"slug"`
+	// 租户名称
+	Name string `json:"name"`
+	// 租户状态
+	Status string `json:"status"`
+	// 租户扩展元数据
+	Metadata []byte `json:"metadata"`
+	// 租户归档时间
+	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
+	// 租户禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// 租户软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 租户创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 租户最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 租户成员关系表
+type TenantMember struct {
+	// 成员关系主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属团队 ID，可为空表示租户级成员
+	TeamID uuid.NullUUID `json:"team_id"`
+	// 成员主体类型
+	PrincipalType string `json:"principal_type"`
+	// 成员主体 ID
+	PrincipalID uuid.UUID `json:"principal_id"`
+	// 成员角色
+	Role string `json:"role"`
+	// 成员关系状态
+	Status string `json:"status"`
+	// 成员关系禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// 成员关系创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 成员关系最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 租户配置画像表
+type TenantProfile struct {
+	// 租户配置主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 配置键
+	ProfileKey string `json:"profile_key"`
+	// 配置值
+	ProfileValue []byte `json:"profile_value"`
+	// 配置创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 配置最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 租户团队表
+type TenantTeam struct {
+	// 团队主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 团队唯一标识
+	Slug string `json:"slug"`
+	// 团队名称
+	Name string `json:"name"`
+	// 团队状态
+	Status string `json:"status"`
+	// 团队扩展元数据
+	Metadata []byte `json:"metadata"`
+	// 团队归档时间
+	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
+	// 团队禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// 团队软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 团队创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 团队最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Web 控制台登录日志表
 type WebLoginLog struct {
-	ID            int64              `json:"id"`
-	EventType     string             `json:"event_type"`
-	UserID        pgtype.Int8        `json:"user_id"`
-	Username      string             `json:"username"`
-	SessionID     pgtype.Text        `json:"session_id"`
-	ClientIp      pgtype.Text        `json:"client_ip"`
-	UserAgent     pgtype.Text        `json:"user_agent"`
-	Result        string             `json:"result"`
-	FailureReason pgtype.Text        `json:"failure_reason"`
-	Details       []byte             `json:"details"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	// 登录日志主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 登录事件类型
+	EventType string `json:"event_type"`
+	// 登录用户 ID，失败登录可为空
+	UserID uuid.NullUUID `json:"user_id"`
+	// 登录账号快照
+	Username string `json:"username"`
+	// 登录会话 ID
+	SessionID uuid.NullUUID `json:"session_id"`
+	// 客户端 IP
+	ClientIp pgtype.Text `json:"client_ip"`
+	// 客户端 User-Agent
+	UserAgent pgtype.Text `json:"user_agent"`
+	// 登录结果：succeeded 或 failed
+	Result string `json:"result"`
+	// 登录失败原因
+	FailureReason pgtype.Text `json:"failure_reason"`
+	// 登录上下文扩展信息
+	Details []byte `json:"details"`
+	// 登录事件发生时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // Web 控制台操作日志表
 type WebOperationLog struct {
-	// 操作日志主键 ID
-	ID int64 `json:"id"`
+	// 操作日志主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
 	// 执行操作的用户 ID，用户删除后保留日志
-	UserID pgtype.Int8 `json:"user_id"`
+	UserID uuid.NullUUID `json:"user_id"`
 	// 执行操作的用户账号快照
 	Username pgtype.Text `json:"username"`
 	// 操作所属模块

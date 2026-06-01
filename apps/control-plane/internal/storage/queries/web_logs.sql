@@ -1,5 +1,6 @@
 -- name: CreateWebLoginLog :one
 INSERT INTO web_login_logs (
+    tenant_id,
     event_type,
     user_id,
     username,
@@ -10,10 +11,11 @@ INSERT INTO web_login_logs (
     failure_reason,
     details
 ) VALUES (
+    COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
     sqlc.arg('event_type')::varchar,
-    sqlc.narg('user_id')::bigint,
+    sqlc.narg('user_id')::uuid,
     sqlc.arg('username')::varchar,
-    sqlc.narg('session_id')::varchar,
+    sqlc.narg('session_id')::uuid,
     sqlc.narg('client_ip')::varchar,
     sqlc.narg('user_agent')::text,
     sqlc.arg('result')::varchar,
@@ -28,6 +30,7 @@ LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: CreateWebOperationLog :one
 INSERT INTO web_operation_logs (
+    tenant_id,
     user_id,
     username,
     module,
@@ -40,7 +43,8 @@ INSERT INTO web_operation_logs (
     user_agent,
     details
 ) VALUES (
-    sqlc.narg('user_id')::bigint,
+    COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
+    sqlc.narg('user_id')::uuid,
     sqlc.narg('username')::varchar,
     sqlc.arg('module')::varchar,
     sqlc.narg('resource_type')::varchar,

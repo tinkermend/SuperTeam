@@ -58,7 +58,7 @@ export TEST_REDIS_URL='redis://:password@host:6379/0'
 go test ./internal/storage/queries -v -timeout 5m
 ```
 
-如需使用项目当前配置的开发环境，可从 `docs/database/conn_info.md` 获取连接信息后显式导出为 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL`。只有确认该环境允许迁移和清理测试数据时才应执行。
+如需使用项目当前配置的开发环境，可从 `doc/database/conn_info.md` 获取连接信息后显式导出为 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL`。只有确认该环境允许迁移和清理测试数据时才应执行。
 
 也可以显式允许测试复用应用配置：
 

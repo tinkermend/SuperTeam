@@ -6,17 +6,17 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/task"
 )
 
 type TaskService interface {
 	CreateTask(ctx context.Context, req task.CreateTaskRequest) (*task.Task, error)
-	GetTask(ctx context.Context, taskID int64) (*task.Task, error)
+	GetTask(ctx context.Context, taskID uuid.UUID) (*task.Task, error)
 	ListTasks(ctx context.Context, filter task.ListTasksFilter) ([]*task.Task, error)
 	AppendTaskEvent(ctx context.Context, req task.AppendTaskEventRequest) (*task.TaskEvent, error)
 	UpdateTaskStatus(ctx context.Context, req task.UpdateTaskStatusRequest) (*task.Task, error)
-	CancelTask(ctx context.Context, taskID int64, cancelledBy *string, reason *string) (*task.Task, error)
+	CancelTask(ctx context.Context, taskID uuid.UUID, cancelledBy *string, reason *string) (*task.Task, error)
 	AssignTask(ctx context.Context, req task.AssignTaskRequest) (*task.Task, error)
 }
 
@@ -73,10 +73,8 @@ func optionalString(value string) *string {
 }
 
 func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		http.Error(w, "invalid task id", http.StatusBadRequest)
+	id, ok := taskIDFromRequest(w, r)
+	if !ok {
 		return
 	}
 
@@ -108,10 +106,8 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		http.Error(w, "invalid task id", http.StatusBadRequest)
+	id, ok := taskIDFromRequest(w, r)
+	if !ok {
 		return
 	}
 
@@ -138,10 +134,8 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		http.Error(w, "invalid task id", http.StatusBadRequest)
+	id, ok := taskIDFromRequest(w, r)
+	if !ok {
 		return
 	}
 

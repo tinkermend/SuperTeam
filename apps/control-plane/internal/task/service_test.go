@@ -3,22 +3,29 @@ package task
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+func taskTestUUID(n int) uuid.UUID {
+	return uuid.MustParse(fmt.Sprintf("00000000-0000-4000-8000-%012d", n))
+}
 
 // Mock repository for testing
 type mockRepository struct {
 	createTaskFunc                 func(ctx context.Context, params CreateTaskParams) (TaskRecord, error)
-	getTaskFunc                    func(ctx context.Context, id int64) (TaskRecord, error)
+	getTaskFunc                    func(ctx context.Context, params GetTaskParams) (TaskRecord, error)
 	listTasksFunc                  func(ctx context.Context, params ListTasksParams) ([]TaskRecord, error)
 	updateTaskStatusFunc           func(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error)
 	updateTaskFunc                 func(ctx context.Context, params UpdateTaskParams) (TaskRecord, error)
-	deleteTaskFunc                 func(ctx context.Context, id int64) error
+	deleteTaskFunc                 func(ctx context.Context, params DeleteTaskParams) error
 	createTaskStateHistoryFunc     func(ctx context.Context, params CreateTaskStateHistoryParams) error
 	createTaskEventFunc            func(ctx context.Context, params CreateTaskEventParams) (TaskEventRecord, error)
-	getLatestTaskEventSequenceFunc func(ctx context.Context, taskID int64) (int32, error)
+	getLatestTaskEventSequenceFunc func(ctx context.Context, params GetLatestTaskEventSequenceParams) (int32, error)
 }
 
 func (m *mockRepository) CreateTask(ctx context.Context, params CreateTaskParams) (TaskRecord, error) {
@@ -28,9 +35,9 @@ func (m *mockRepository) CreateTask(ctx context.Context, params CreateTaskParams
 	return TaskRecord{}, errors.New("not implemented")
 }
 
-func (m *mockRepository) GetTask(ctx context.Context, id int64) (TaskRecord, error) {
+func (m *mockRepository) GetTask(ctx context.Context, params GetTaskParams) (TaskRecord, error) {
 	if m.getTaskFunc != nil {
-		return m.getTaskFunc(ctx, id)
+		return m.getTaskFunc(ctx, params)
 	}
 	return TaskRecord{}, errors.New("not implemented")
 }
@@ -56,9 +63,9 @@ func (m *mockRepository) UpdateTask(ctx context.Context, params UpdateTaskParams
 	return TaskRecord{}, errors.New("not implemented")
 }
 
-func (m *mockRepository) DeleteTask(ctx context.Context, id int64) error {
+func (m *mockRepository) DeleteTask(ctx context.Context, params DeleteTaskParams) error {
 	if m.deleteTaskFunc != nil {
-		return m.deleteTaskFunc(ctx, id)
+		return m.deleteTaskFunc(ctx, params)
 	}
 	return errors.New("not implemented")
 }
@@ -77,9 +84,9 @@ func (m *mockRepository) CreateTaskEvent(ctx context.Context, params CreateTaskE
 	return TaskEventRecord{}, errors.New("not implemented")
 }
 
-func (m *mockRepository) GetLatestTaskEventSequence(ctx context.Context, taskID int64) (int32, error) {
+func (m *mockRepository) GetLatestTaskEventSequence(ctx context.Context, params GetLatestTaskEventSequenceParams) (int32, error) {
 	if m.getLatestTaskEventSequenceFunc != nil {
-		return m.getLatestTaskEventSequenceFunc(ctx, taskID)
+		return m.getLatestTaskEventSequenceFunc(ctx, params)
 	}
 	return 0, errors.New("not implemented")
 }
@@ -103,18 +110,19 @@ func TestNewServiceAcceptsRepository(t *testing.T) {
 
 func TestServiceAppendTaskEvent(t *testing.T) {
 	ctx := context.Background()
+	taskID := taskTestUUID(42)
 	payload := []byte(`{"delta":"hello"}`)
 
 	repo := &mockRepository{
-		getLatestTaskEventSequenceFunc: func(ctx context.Context, taskID int64) (int32, error) {
-			if taskID != 42 {
-				t.Fatalf("expected latest sequence lookup for task 42, got %d", taskID)
+		getLatestTaskEventSequenceFunc: func(ctx context.Context, params GetLatestTaskEventSequenceParams) (int32, error) {
+			if params.TaskID != taskID {
+				t.Fatalf("expected latest sequence lookup for task %s, got %s", taskID, params.TaskID)
 			}
 			return 0, nil
 		},
 		createTaskEventFunc: func(ctx context.Context, params CreateTaskEventParams) (TaskEventRecord, error) {
-			if params.TaskID != 42 {
-				t.Fatalf("expected task id 42, got %d", params.TaskID)
+			if params.TaskID != taskID {
+				t.Fatalf("expected task id %s, got %s", taskID, params.TaskID)
 			}
 			if params.EventType != "text_delta" {
 				t.Fatalf("expected event type text_delta, got %q", params.EventType)
@@ -137,7 +145,7 @@ func TestServiceAppendTaskEvent(t *testing.T) {
 	service, _ := NewService(repo)
 
 	event, err := service.AppendTaskEvent(ctx, AppendTaskEventRequest{
-		TaskID:    42,
+		TaskID:    taskID,
 		EventType: "text_delta",
 		Payload:   payload,
 	})
@@ -145,8 +153,8 @@ func TestServiceAppendTaskEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if event.TaskID != 42 {
-		t.Fatalf("expected task id 42, got %d", event.TaskID)
+	if event.TaskID != taskID {
+		t.Fatalf("expected task id %s, got %s", taskID, event.TaskID)
 	}
 	if event.EventType != "text_delta" {
 		t.Fatalf("expected event type text_delta, got %q", event.EventType)
@@ -179,7 +187,7 @@ func TestCreateTask(t *testing.T) {
 			},
 			mockFunc: func(ctx context.Context, params CreateTaskParams) (TaskRecord, error) {
 				return TaskRecord{
-					ID:           1,
+					ID:           taskTestUUID(1),
 					Title:        params.Title,
 					Status:       params.Status,
 					ProviderType: params.ProviderType,
@@ -252,16 +260,16 @@ func TestGetTask(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		taskID   int64
-		mockFunc func(ctx context.Context, id int64) (TaskRecord, error)
+		taskID   uuid.UUID
+		mockFunc func(ctx context.Context, params GetTaskParams) (TaskRecord, error)
 		wantErr  bool
 	}{
 		{
 			name:   "successful get",
-			taskID: 1,
-			mockFunc: func(ctx context.Context, id int64) (TaskRecord, error) {
+			taskID: taskTestUUID(1),
+			mockFunc: func(ctx context.Context, params GetTaskParams) (TaskRecord, error) {
 				return TaskRecord{
-					ID:           id,
+					ID:           params.ID,
 					Title:        "Test Task",
 					Status:       string(TaskStatusPending),
 					ProviderType: "claude-code",
@@ -274,8 +282,8 @@ func TestGetTask(t *testing.T) {
 		},
 		{
 			name:   "task not found",
-			taskID: 999,
-			mockFunc: func(ctx context.Context, id int64) (TaskRecord, error) {
+			taskID: taskTestUUID(999),
+			mockFunc: func(ctx context.Context, params GetTaskParams) (TaskRecord, error) {
 				return TaskRecord{}, errors.New("not found")
 			},
 			wantErr: true,
@@ -307,7 +315,7 @@ func TestGetTask(t *testing.T) {
 			}
 
 			if task.ID != tt.taskID {
-				t.Errorf("expected task ID %d, got %d", tt.taskID, task.ID)
+				t.Errorf("expected task ID %s, got %s", tt.taskID, task.ID)
 			}
 		})
 	}
@@ -331,8 +339,8 @@ func TestListTasks(t *testing.T) {
 			},
 			mockFunc: func(ctx context.Context, params ListTasksParams) ([]TaskRecord, error) {
 				return []TaskRecord{
-					{ID: 1, Title: "Task 1", Status: string(TaskStatusPending), ProviderType: "claude-code"},
-					{ID: 2, Title: "Task 2", Status: string(TaskStatusRunning), ProviderType: "claude-code"},
+					{ID: taskTestUUID(1), Title: "Task 1", Status: string(TaskStatusPending), ProviderType: "claude-code"},
+					{ID: taskTestUUID(2), Title: "Task 2", Status: string(TaskStatusRunning), ProviderType: "claude-code"},
 				}, nil
 			},
 			wantCount: 2,
@@ -346,7 +354,7 @@ func TestListTasks(t *testing.T) {
 			},
 			mockFunc: func(ctx context.Context, params ListTasksParams) ([]TaskRecord, error) {
 				return []TaskRecord{
-					{ID: 1, Title: "Task 1", Status: string(TaskStatusPending), ProviderType: "claude-code"},
+					{ID: taskTestUUID(1), Title: "Task 1", Status: string(TaskStatusPending), ProviderType: "claude-code"},
 				}, nil
 			},
 			wantCount: 1,
@@ -410,11 +418,11 @@ func TestUpdateTaskStatus(t *testing.T) {
 		{
 			name: "valid transition pending to claimed",
 			req: UpdateTaskStatusRequest{
-				TaskID:    1,
+				TaskID:    taskTestUUID(1),
 				NewStatus: TaskStatusClaimed,
 			},
 			currentTask: TaskRecord{
-				ID:     1,
+				ID:     taskTestUUID(1),
 				Status: string(TaskStatusPending),
 			},
 			mockUpdate: func(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error) {
@@ -428,11 +436,11 @@ func TestUpdateTaskStatus(t *testing.T) {
 		{
 			name: "valid transition claimed to running",
 			req: UpdateTaskStatusRequest{
-				TaskID:    1,
+				TaskID:    taskTestUUID(1),
 				NewStatus: TaskStatusRunning,
 			},
 			currentTask: TaskRecord{
-				ID:     1,
+				ID:     taskTestUUID(1),
 				Status: string(TaskStatusClaimed),
 			},
 			mockUpdate: func(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error) {
@@ -446,11 +454,11 @@ func TestUpdateTaskStatus(t *testing.T) {
 		{
 			name: "invalid transition pending to completed",
 			req: UpdateTaskStatusRequest{
-				TaskID:    1,
+				TaskID:    taskTestUUID(1),
 				NewStatus: TaskStatusCompleted,
 			},
 			currentTask: TaskRecord{
-				ID:     1,
+				ID:     taskTestUUID(1),
 				Status: string(TaskStatusPending),
 			},
 			wantErr:     true,
@@ -459,11 +467,11 @@ func TestUpdateTaskStatus(t *testing.T) {
 		{
 			name: "invalid status",
 			req: UpdateTaskStatusRequest{
-				TaskID:    1,
+				TaskID:    taskTestUUID(1),
 				NewStatus: TaskStatus("invalid"),
 			},
 			currentTask: TaskRecord{
-				ID:     1,
+				ID:     taskTestUUID(1),
 				Status: string(TaskStatusPending),
 			},
 			wantErr:     true,
@@ -474,7 +482,7 @@ func TestUpdateTaskStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &mockRepository{
-				getTaskFunc: func(ctx context.Context, id int64) (TaskRecord, error) {
+				getTaskFunc: func(ctx context.Context, params GetTaskParams) (TaskRecord, error) {
 					return tt.currentTask, nil
 				},
 				updateTaskStatusFunc: tt.mockUpdate,
@@ -517,33 +525,33 @@ func TestCancelTask(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		taskID      int64
+		taskID      uuid.UUID
 		currentTask TaskRecord
 		wantErr     bool
 	}{
 		{
 			name:   "cancel pending task",
-			taskID: 1,
+			taskID: taskTestUUID(1),
 			currentTask: TaskRecord{
-				ID:     1,
+				ID:     taskTestUUID(1),
 				Status: string(TaskStatusPending),
 			},
 			wantErr: false,
 		},
 		{
 			name:   "cancel running task",
-			taskID: 1,
+			taskID: taskTestUUID(1),
 			currentTask: TaskRecord{
-				ID:     1,
+				ID:     taskTestUUID(1),
 				Status: string(TaskStatusRunning),
 			},
 			wantErr: false,
 		},
 		{
 			name:   "cannot cancel completed task",
-			taskID: 1,
+			taskID: taskTestUUID(1),
 			currentTask: TaskRecord{
-				ID:     1,
+				ID:     taskTestUUID(1),
 				Status: string(TaskStatusCompleted),
 			},
 			wantErr: true,
@@ -553,13 +561,14 @@ func TestCancelTask(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &mockRepository{
-				getTaskFunc: func(ctx context.Context, id int64) (TaskRecord, error) {
+				getTaskFunc: func(ctx context.Context, params GetTaskParams) (TaskRecord, error) {
 					return tt.currentTask, nil
 				},
 				updateTaskStatusFunc: func(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error) {
 					return TaskRecord{
-						ID:     params.ID,
-						Status: params.Status,
+						ID:          params.ID,
+						Status:      params.Status,
+						CancelledAt: pgtype.Timestamptz{Time: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC), Valid: params.Status == string(TaskStatusCancelled)},
 					}, nil
 				},
 				createTaskStateHistoryFunc: func(ctx context.Context, params CreateTaskStateHistoryParams) error {
@@ -584,6 +593,9 @@ func TestCancelTask(t *testing.T) {
 			if task.Status != TaskStatusCancelled {
 				t.Errorf("expected status %s, got %s", TaskStatusCancelled, task.Status)
 			}
+			if task.CancelledAt == nil || !task.CancelledAt.Equal(time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)) {
+				t.Fatalf("expected cancelled_at to be mapped, got %#v", task.CancelledAt)
+			}
 		})
 	}
 }
@@ -602,11 +614,11 @@ func TestAssignTask(t *testing.T) {
 		{
 			name: "assign pending task",
 			req: AssignTaskRequest{
-				TaskID:         1,
+				TaskID:         taskTestUUID(1),
 				AssignedNodeID: "node-001",
 			},
 			currentTask: TaskRecord{
-				ID:             1,
+				ID:             taskTestUUID(1),
 				Status:         string(TaskStatusPending),
 				AssignedNodeID: pgtype.Text{Valid: false},
 			},
@@ -615,11 +627,11 @@ func TestAssignTask(t *testing.T) {
 		{
 			name: "cannot assign already assigned task",
 			req: AssignTaskRequest{
-				TaskID:         1,
+				TaskID:         taskTestUUID(1),
 				AssignedNodeID: "node-002",
 			},
 			currentTask: TaskRecord{
-				ID:             1,
+				ID:             taskTestUUID(1),
 				Status:         string(TaskStatusPending),
 				AssignedNodeID: pgtype.Text{String: "node-001", Valid: true},
 			},
@@ -629,11 +641,11 @@ func TestAssignTask(t *testing.T) {
 		{
 			name: "cannot assign completed task",
 			req: AssignTaskRequest{
-				TaskID:         1,
+				TaskID:         taskTestUUID(1),
 				AssignedNodeID: "node-001",
 			},
 			currentTask: TaskRecord{
-				ID:             1,
+				ID:             taskTestUUID(1),
 				Status:         string(TaskStatusCompleted),
 				AssignedNodeID: pgtype.Text{Valid: false},
 			},
@@ -645,7 +657,7 @@ func TestAssignTask(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &mockRepository{
-				getTaskFunc: func(ctx context.Context, id int64) (TaskRecord, error) {
+				getTaskFunc: func(ctx context.Context, params GetTaskParams) (TaskRecord, error) {
 					return tt.currentTask, nil
 				},
 				updateTaskFunc: func(ctx context.Context, params UpdateTaskParams) (TaskRecord, error) {

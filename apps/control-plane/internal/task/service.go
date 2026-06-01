@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -14,6 +15,8 @@ var (
 	ErrInvalidTransition   = errors.New("invalid state transition")
 	ErrTaskAlreadyAssigned = errors.New("task already assigned")
 )
+
+var defaultTenantID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 
 type Service struct {
 	repository   Repository
@@ -44,12 +47,14 @@ func (s *Service) CreateTask(ctx context.Context, req CreateTaskRequest) (*Task,
 
 	// Create task with pending status
 	params := CreateTaskParams{
+		TenantID:      nullUUIDFromPtr(req.TenantID),
+		TeamID:        nullUUIDFromPtr(req.TeamID),
 		Title:         req.Title,
 		Description:   textFromString(req.Description),
 		Status:        string(TaskStatusPending),
 		Priority:      req.Priority,
 		ProviderType:  req.ProviderType,
-		CreatorID:     int8FromInt64(req.CreatorID),
+		CreatorID:     nullUUIDFromPtr(req.CreatorID),
 		TargetNodeID:  textFromString(req.TargetNodeID),
 		WorkspacePath: textFromString(req.WorkspacePath),
 		Params:        req.Params,
@@ -64,8 +69,18 @@ func (s *Service) CreateTask(ctx context.Context, req CreateTaskRequest) (*Task,
 }
 
 // GetTask retrieves a task by ID
-func (s *Service) GetTask(ctx context.Context, taskID int64) (*Task, error) {
-	record, err := s.repository.GetTask(ctx, taskID)
+func (s *Service) GetTask(ctx context.Context, taskID uuid.UUID) (*Task, error) {
+	return s.getTask(ctx, taskID, uuid.NullUUID{})
+}
+
+func (s *Service) getTask(ctx context.Context, taskID uuid.UUID, tenantID uuid.NullUUID) (*Task, error) {
+	if taskID == uuid.Nil {
+		return nil, errors.New("task_id is required")
+	}
+	record, err := s.repository.GetTask(ctx, GetTaskParams{
+		TenantID: tenantID,
+		ID:       taskID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task: %w", err)
 	}
@@ -84,8 +99,9 @@ func (s *Service) ListTasks(ctx context.Context, filter ListTasksFilter) ([]*Tas
 	}
 
 	params := ListTasksParams{
+		TenantID:     nullUUIDFromPtr(filter.TenantID),
 		Status:       s.statusToText(filter.Status),
-		CreatorID:    int8FromInt64(filter.CreatorID),
+		CreatorID:    nullUUIDFromPtr(filter.CreatorID),
 		ProviderType: textFromString(filter.ProviderType),
 		Offset:       filter.Offset,
 		Limit:        filter.Limit,
@@ -106,8 +122,8 @@ func (s *Service) ListTasks(ctx context.Context, filter ListTasksFilter) ([]*Tas
 
 // AppendTaskEvent appends a structured runtime event to a task.
 func (s *Service) AppendTaskEvent(ctx context.Context, req AppendTaskEventRequest) (*TaskEvent, error) {
-	if req.TaskID <= 0 {
-		return nil, errors.New("task_id must be positive")
+	if req.TaskID == uuid.Nil {
+		return nil, errors.New("task_id is required")
 	}
 	if req.EventType == "" {
 		return nil, errors.New("event_type is required")
@@ -116,14 +132,19 @@ func (s *Service) AppendTaskEvent(ctx context.Context, req AppendTaskEventReques
 		return nil, errors.New("payload is required")
 	}
 
-	latestSequence, err := s.repository.GetLatestTaskEventSequence(ctx, req.TaskID)
+	tenantID := nullUUIDFromPtr(req.TenantID)
+	latestSequence, err := s.repository.GetLatestTaskEventSequence(ctx, GetLatestTaskEventSequenceParams{
+		TenantID: tenantID,
+		TaskID:   req.TaskID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get latest task event sequence: %w", err)
 	}
 
 	record, err := s.repository.CreateTaskEvent(ctx, CreateTaskEventParams{
+		TenantID:       tenantID,
 		TaskID:         req.TaskID,
-		ExecutionID:    int8FromInt64(req.ExecutionID),
+		RunID:          nullUUIDFromPtr(req.RunID),
 		EventType:      req.EventType,
 		SequenceNumber: latestSequence + 1,
 		Payload:        req.Payload,
@@ -137,8 +158,12 @@ func (s *Service) AppendTaskEvent(ctx context.Context, req AppendTaskEventReques
 
 // UpdateTaskStatus updates the status of a task with state machine validation
 func (s *Service) UpdateTaskStatus(ctx context.Context, req UpdateTaskStatusRequest) (*Task, error) {
+	if req.TaskID == uuid.Nil {
+		return nil, errors.New("task_id is required")
+	}
+	tenantID := nullUUIDFromPtr(req.TenantID)
 	// Get current task
-	currentTask, err := s.GetTask(ctx, req.TaskID)
+	currentTask, err := s.getTask(ctx, req.TaskID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -155,8 +180,9 @@ func (s *Service) UpdateTaskStatus(ctx context.Context, req UpdateTaskStatusRequ
 
 	// Update status
 	params := UpdateTaskStatusParams{
-		ID:     req.TaskID,
-		Status: string(req.NewStatus),
+		TenantID: tenantID,
+		ID:       req.TaskID,
+		Status:   string(req.NewStatus),
 	}
 
 	record, err := s.repository.UpdateTaskStatus(ctx, params)
@@ -166,6 +192,7 @@ func (s *Service) UpdateTaskStatus(ctx context.Context, req UpdateTaskStatusRequ
 
 	// Record state history
 	historyParams := CreateTaskStateHistoryParams{
+		TenantID:   uuid.NullUUID{UUID: currentTask.TenantID, Valid: currentTask.TenantID != uuid.Nil},
 		TaskID:     req.TaskID,
 		FromStatus: textFromString((*string)(&currentTask.Status)),
 		ToStatus:   string(req.NewStatus),
@@ -183,7 +210,7 @@ func (s *Service) UpdateTaskStatus(ctx context.Context, req UpdateTaskStatusRequ
 }
 
 // CancelTask cancels a task
-func (s *Service) CancelTask(ctx context.Context, taskID int64, cancelledBy *string, reason *string) (*Task, error) {
+func (s *Service) CancelTask(ctx context.Context, taskID uuid.UUID, cancelledBy *string, reason *string) (*Task, error) {
 	req := UpdateTaskStatusRequest{
 		TaskID:    taskID,
 		NewStatus: TaskStatusCancelled,
@@ -196,8 +223,9 @@ func (s *Service) CancelTask(ctx context.Context, taskID int64, cancelledBy *str
 
 // AssignTask assigns a task to a node
 func (s *Service) AssignTask(ctx context.Context, req AssignTaskRequest) (*Task, error) {
+	tenantID := nullUUIDFromPtr(req.TenantID)
 	// Get current task
-	currentTask, err := s.GetTask(ctx, req.TaskID)
+	currentTask, err := s.getTask(ctx, req.TaskID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -215,6 +243,7 @@ func (s *Service) AssignTask(ctx context.Context, req AssignTaskRequest) (*Task,
 	// Update task with assigned node
 	claimedStatus := string(TaskStatusClaimed)
 	updateParams := UpdateTaskParams{
+		TenantID:       tenantID,
 		Title:          pgtype.Text{Valid: false},
 		Description:    pgtype.Text{Valid: false},
 		Status:         textFromString(&claimedStatus),
@@ -234,6 +263,7 @@ func (s *Service) AssignTask(ctx context.Context, req AssignTaskRequest) (*Task,
 	// Record state history if status changed
 	if currentTask.Status != TaskStatusClaimed {
 		historyParams := CreateTaskStateHistoryParams{
+			TenantID:   uuid.NullUUID{UUID: currentTask.TenantID, Valid: currentTask.TenantID != uuid.Nil},
 			TaskID:     req.TaskID,
 			FromStatus: textFromString((*string)(&currentTask.Status)),
 			ToStatus:   string(TaskStatusClaimed),
@@ -255,9 +285,11 @@ func (s *Service) AssignTask(ctx context.Context, req AssignTaskRequest) (*Task,
 func (s *Service) recordToTask(record TaskRecord) *Task {
 	return &Task{
 		ID:             record.ID,
+		TenantID:       normalizeTenantID(record.TenantID),
+		TeamID:         ptrFromNullUUID(record.TeamID),
 		Title:          record.Title,
 		Description:    stringFromText(record.Description),
-		CreatorID:      int64FromInt8(record.CreatorID),
+		CreatorID:      ptrFromNullUUID(record.CreatorID),
 		ProviderType:   record.ProviderType,
 		TargetNodeID:   stringFromText(record.TargetNodeID),
 		AssignedNodeID: stringFromText(record.AssignedNodeID),
@@ -265,6 +297,7 @@ func (s *Service) recordToTask(record TaskRecord) *Task {
 		WorkspacePath:  stringFromText(record.WorkspacePath),
 		Params:         record.Params,
 		Priority:       record.Priority,
+		CancelledAt:    timePtrFromTimestamptz(record.CancelledAt),
 		CreatedAt:      timeFromTimestamptz(record.CreatedAt),
 		UpdatedAt:      timeFromTimestamptz(record.UpdatedAt),
 	}
@@ -273,13 +306,21 @@ func (s *Service) recordToTask(record TaskRecord) *Task {
 func (s *Service) recordToTaskEvent(record TaskEventRecord) *TaskEvent {
 	return &TaskEvent{
 		ID:             record.ID,
+		TenantID:       normalizeTenantID(record.TenantID),
 		TaskID:         record.TaskID,
-		ExecutionID:    int64FromInt8(record.ExecutionID),
+		RunID:          ptrFromNullUUID(record.RunID),
 		EventType:      record.EventType,
 		SequenceNumber: record.SequenceNumber,
 		Payload:        record.Payload,
 		CreatedAt:      timeFromTimestamptz(record.CreatedAt),
 	}
+}
+
+func normalizeTenantID(value uuid.UUID) uuid.UUID {
+	if value == uuid.Nil {
+		return defaultTenantID
+	}
+	return value
 }
 
 func (s *Service) statusToText(status *TaskStatus) pgtype.Text {

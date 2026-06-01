@@ -3,9 +3,9 @@ package auth
 import (
 	"context"
 	"errors"
-	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -13,9 +13,9 @@ type Repository interface {
 	CreateUser(ctx context.Context, username, passwordHash string) (*User, error)
 	ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error)
 	GetUserByUsername(ctx context.Context, username string) (*User, error)
-	GetUserByID(ctx context.Context, id int64) (*User, error)
-	UpdateUserStatus(ctx context.Context, userID int64, status string) (*User, error)
-	UpdateUserPassword(ctx context.Context, userID int64, passwordHash string) (*User, error)
+	GetUserByID(ctx context.Context, id uuid.UUID) (*User, error)
+	UpdateUserStatus(ctx context.Context, userID uuid.UUID, status string) (*User, error)
+	UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) (*User, error)
 	CreateRuntimeToken(ctx context.Context, nodeID, tokenHash string, expiresAt time.Time) error
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (*RuntimeToken, error)
 	CreateSession(ctx context.Context, session *Session, tokenHash string) error
@@ -63,14 +63,14 @@ func (s *Service) CreateManagedUser(ctx context.Context, actor Actor, input Crea
 	}
 	user, err := s.repo.CreateUser(ctx, input.Username, string(hash))
 	if err != nil {
-		_ = s.recordUserOperation(ctx, actor, 0, OperationActionUserCreate, OperationResultFailed)
+		_ = s.recordUserOperation(ctx, actor, uuid.Nil, OperationActionUserCreate, OperationResultFailed)
 		return nil, err
 	}
 	_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserCreate, OperationResultSucceeded)
 	return user, nil
 }
 
-func (s *Service) UpdateManagedUserStatus(ctx context.Context, actor Actor, userID int64, status string) (*User, error) {
+func (s *Service) UpdateManagedUserStatus(ctx context.Context, actor Actor, userID uuid.UUID, status string) (*User, error) {
 	action := OperationActionUserEnable
 	if status == UserStatusDisabled {
 		action = OperationActionUserDisable
@@ -84,7 +84,7 @@ func (s *Service) UpdateManagedUserStatus(ctx context.Context, actor Actor, user
 	return user, nil
 }
 
-func (s *Service) ResetManagedUserPassword(ctx context.Context, actor Actor, userID int64, password string) (*User, error) {
+func (s *Service) ResetManagedUserPassword(ctx context.Context, actor Actor, userID uuid.UUID, password string) (*User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
@@ -98,10 +98,10 @@ func (s *Service) ResetManagedUserPassword(ctx context.Context, actor Actor, use
 	return user, nil
 }
 
-func (s *Service) recordUserOperation(ctx context.Context, actor Actor, userID int64, action, result string) error {
+func (s *Service) recordUserOperation(ctx context.Context, actor Actor, userID uuid.UUID, action, result string) error {
 	resourceID := ""
-	if userID > 0 {
-		resourceID = strconv.FormatInt(userID, 10)
+	if userID != uuid.Nil {
+		resourceID = userID.String()
 	}
 	return s.repo.CreateOperationLog(ctx, CreateOperationLogParams{
 		UserID:       &actor.UserID,
@@ -149,7 +149,7 @@ func (s *Service) Login(ctx context.Context, username, password, clientIP, userA
 		EventType: LoginEventSucceeded,
 		UserID:    &user.ID,
 		Username:  user.Username,
-		SessionID: session.ID,
+		SessionID: &session.ID,
 		ClientIP:  clientIP,
 		UserAgent: userAgent,
 		Result:    LoginResultSucceeded,
@@ -157,18 +157,13 @@ func (s *Service) Login(ctx context.Context, username, password, clientIP, userA
 	return session, user, token, nil
 }
 
-func (s *Service) CreateSession(ctx context.Context, userID int64, clientIP, userAgent string) (*Session, string, error) {
+func (s *Service) CreateSession(ctx context.Context, userID uuid.UUID, clientIP, userAgent string) (*Session, string, error) {
 	token, err := GenerateToken()
-	if err != nil {
-		return nil, "", err
-	}
-	sessionID, err := GenerateToken()
 	if err != nil {
 		return nil, "", err
 	}
 	now := time.Now().UTC()
 	session := &Session{
-		ID:         sessionID,
 		UserID:     userID,
 		ExpiresAt:  now.Add(12 * time.Hour),
 		LastSeenAt: now,
@@ -227,7 +222,7 @@ func (s *Service) Logout(ctx context.Context, token string) error {
 			EventType: LoginEventLogoutSucceeded,
 			UserID:    &session.UserID,
 			Username:  username,
-			SessionID: session.ID,
+			SessionID: &session.ID,
 			ClientIP:  session.ClientIP,
 			UserAgent: session.UserAgent,
 			Result:    LoginResultSucceeded,

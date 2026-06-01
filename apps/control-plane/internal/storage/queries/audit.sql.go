@@ -9,6 +9,7 @@ import (
 	"context"
 	"net/netip"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -50,6 +51,7 @@ func (q *Queries) CountAuditEvents(ctx context.Context, arg CountAuditEventsPara
 
 const CreateAuditEvent = `-- name: CreateAuditEvent :one
 INSERT INTO audit_events (
+    tenant_id,
     event_type,
     actor_type,
     actor_id,
@@ -59,23 +61,33 @@ INSERT INTO audit_events (
     details,
     ip_address
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8
-) RETURNING id, event_type, actor_type, actor_id, resource_type, resource_id, action, details, ip_address, created_at
+    COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid),
+    $2::varchar,
+    $3::varchar,
+    $4::varchar,
+    $5::varchar,
+    $6::varchar,
+    $7::varchar,
+    $8::jsonb,
+    $9::inet
+) RETURNING id, tenant_id, event_type, actor_type, actor_id, resource_type, resource_id, action, details, ip_address, created_at
 `
 
 type CreateAuditEventParams struct {
-	EventType    string      `json:"event_type"`
-	ActorType    string      `json:"actor_type"`
-	ActorID      string      `json:"actor_id"`
-	ResourceType pgtype.Text `json:"resource_type"`
-	ResourceID   pgtype.Text `json:"resource_id"`
-	Action       string      `json:"action"`
-	Details      []byte      `json:"details"`
-	IpAddress    *netip.Addr `json:"ip_address"`
+	TenantID     uuid.NullUUID `json:"tenant_id"`
+	EventType    string        `json:"event_type"`
+	ActorType    string        `json:"actor_type"`
+	ActorID      string        `json:"actor_id"`
+	ResourceType pgtype.Text   `json:"resource_type"`
+	ResourceID   pgtype.Text   `json:"resource_id"`
+	Action       string        `json:"action"`
+	Details      []byte        `json:"details"`
+	IpAddress    *netip.Addr   `json:"ip_address"`
 }
 
 func (q *Queries) CreateAuditEvent(ctx context.Context, arg CreateAuditEventParams) (AuditEvent, error) {
 	row := q.db.QueryRow(ctx, CreateAuditEvent,
+		arg.TenantID,
 		arg.EventType,
 		arg.ActorType,
 		arg.ActorID,
@@ -88,6 +100,7 @@ func (q *Queries) CreateAuditEvent(ctx context.Context, arg CreateAuditEventPara
 	var i AuditEvent
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.EventType,
 		&i.ActorType,
 		&i.ActorID,
@@ -102,15 +115,16 @@ func (q *Queries) CreateAuditEvent(ctx context.Context, arg CreateAuditEventPara
 }
 
 const GetAuditEvent = `-- name: GetAuditEvent :one
-SELECT id, event_type, actor_type, actor_id, resource_type, resource_id, action, details, ip_address, created_at FROM audit_events
+SELECT id, tenant_id, event_type, actor_type, actor_id, resource_type, resource_id, action, details, ip_address, created_at FROM audit_events
 WHERE id = $1
 `
 
-func (q *Queries) GetAuditEvent(ctx context.Context, id int64) (AuditEvent, error) {
+func (q *Queries) GetAuditEvent(ctx context.Context, id uuid.UUID) (AuditEvent, error) {
 	row := q.db.QueryRow(ctx, GetAuditEvent, id)
 	var i AuditEvent
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.EventType,
 		&i.ActorType,
 		&i.ActorID,
@@ -125,7 +139,7 @@ func (q *Queries) GetAuditEvent(ctx context.Context, id int64) (AuditEvent, erro
 }
 
 const ListAuditEvents = `-- name: ListAuditEvents :many
-SELECT id, event_type, actor_type, actor_id, resource_type, resource_id, action, details, ip_address, created_at FROM audit_events
+SELECT id, tenant_id, event_type, actor_type, actor_id, resource_type, resource_id, action, details, ip_address, created_at FROM audit_events
 WHERE ($1::varchar IS NULL OR event_type = $1)
   AND ($2::varchar IS NULL OR actor_type = $2)
   AND ($3::varchar IS NULL OR actor_id = $3)
@@ -170,6 +184,7 @@ func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams
 		var i AuditEvent
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.EventType,
 			&i.ActorType,
 			&i.ActorID,

@@ -1,9 +1,13 @@
 package auth
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type RuntimeToken struct {
-	ID        int64     `db:"id"`
+	ID        uuid.UUID `db:"id"`
 	NodeID    string    `db:"node_id"`
 	TokenHash string    `db:"token_hash"`
 	ExpiresAt time.Time `db:"expires_at"`

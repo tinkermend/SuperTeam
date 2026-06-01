@@ -2,17 +2,25 @@ import { describe, expect, it, vi } from "vitest";
 import type { TaskResponse, TaskStatus } from "./tasks";
 import { cancelTask, createTask, getTask, listTasks, updateTaskStatus } from "./tasks";
 
+const taskId = "11111111-1111-4111-8111-111111111111";
+const tenantId = "00000000-0000-4000-8000-000000000001";
+const teamId = "00000000-0000-4000-8000-000000000101";
+const creatorId = "22222222-2222-4222-8222-222222222222";
+
 describe("listTasks", () => {
   it("calls the tasks endpoint and parses JSON", async () => {
     const status: TaskStatus = "pending";
     const tasks: TaskResponse[] = [
       {
-        id: 1,
+        id: taskId,
+        tenant_id: tenantId,
+        team_id: teamId,
         title: "Analyze requirements",
         status,
         provider_type: "codex",
         priority: 2,
         description: "Clarify initial scope",
+        creator_id: creatorId,
         target_node_id: "node-1",
         assigned_node_id: "node-1",
         workspace_path: "/workspace/superteam",
@@ -99,7 +107,7 @@ describe("listTasks", () => {
 describe("getTask", () => {
   it("calls the task detail endpoint and parses JSON", async () => {
     const task: TaskResponse = {
-      id: 42,
+      id: taskId,
       title: "Inspect foundation task",
       provider_type: "codex",
       status: "running",
@@ -121,11 +129,11 @@ describe("getTask", () => {
           baseUrl: "http://control-plane.local/",
           fetcher,
         },
-        42,
+        taskId,
       ),
     ).resolves.toEqual(task);
 
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/tasks/42", {
+    expect(fetcher).toHaveBeenCalledWith(`http://control-plane.local/api/v1/tasks/${taskId}`, {
       credentials: "include",
       headers: {
         accept: "application/json",
@@ -138,7 +146,7 @@ describe("getTask", () => {
 describe("updateTaskStatus", () => {
   it("puts JSON to the task status endpoint and parses JSON", async () => {
     const task: TaskResponse = {
-      id: 42,
+      id: taskId,
       title: "Inspect foundation task",
       provider_type: "codex",
       status: "completed",
@@ -163,12 +171,12 @@ describe("updateTaskStatus", () => {
           baseUrl: "http://control-plane.local/",
           fetcher,
         },
-        42,
+        taskId,
         input,
       ),
     ).resolves.toEqual(task);
 
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/tasks/42/status", {
+    expect(fetcher).toHaveBeenCalledWith(`http://control-plane.local/api/v1/tasks/${taskId}/status`, {
       body: JSON.stringify(input),
       credentials: "include",
       headers: {
@@ -183,7 +191,7 @@ describe("updateTaskStatus", () => {
 describe("cancelTask", () => {
   it("posts to the task cancel endpoint and parses JSON", async () => {
     const task: TaskResponse = {
-      id: 42,
+      id: taskId,
       title: "Inspect foundation task",
       provider_type: "codex",
       status: "cancelled",
@@ -205,11 +213,11 @@ describe("cancelTask", () => {
           baseUrl: "http://control-plane.local/",
           fetcher,
         },
-        42,
+        taskId,
       ),
     ).resolves.toEqual(task);
 
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/tasks/42/cancel", {
+    expect(fetcher).toHaveBeenCalledWith(`http://control-plane.local/api/v1/tasks/${taskId}/cancel`, {
       credentials: "include",
       headers: {
         accept: "application/json",
@@ -234,7 +242,7 @@ describe("createTask", () => {
     };
     const status: TaskStatus = "pending";
     const createdTask: TaskResponse = {
-      id: 2,
+      id: taskId,
       status,
       assigned_node_id: "node-1",
       created_at: "2026-05-29T00:02:00Z",

@@ -16,6 +16,8 @@ func NewPgRepository(q *queries.Queries) Repository {
 
 func (r *PgRepository) CreateTask(ctx context.Context, params CreateTaskParams) (TaskRecord, error) {
 	task, err := r.q.CreateTask(ctx, queries.CreateTaskParams{
+		TenantID:      params.TenantID,
+		TeamID:        params.TeamID,
 		Title:         params.Title,
 		Description:   params.Description,
 		Status:        params.Status,
@@ -31,6 +33,8 @@ func (r *PgRepository) CreateTask(ctx context.Context, params CreateTaskParams) 
 	}
 	return TaskRecord{
 		ID:             task.ID,
+		TenantID:       task.TenantID,
+		TeamID:         task.TeamID,
 		Title:          task.Title,
 		Description:    task.Description,
 		CreatorID:      task.CreatorID,
@@ -41,18 +45,24 @@ func (r *PgRepository) CreateTask(ctx context.Context, params CreateTaskParams) 
 		WorkspacePath:  task.WorkspacePath,
 		Params:         task.Params,
 		Priority:       task.Priority,
+		CancelledAt:    task.CancelledAt,
 		CreatedAt:      task.CreatedAt,
 		UpdatedAt:      task.UpdatedAt,
 	}, nil
 }
 
-func (r *PgRepository) GetTask(ctx context.Context, id int64) (TaskRecord, error) {
-	task, err := r.q.GetTask(ctx, id)
+func (r *PgRepository) GetTask(ctx context.Context, params GetTaskParams) (TaskRecord, error) {
+	task, err := r.q.GetTask(ctx, queries.GetTaskParams{
+		TenantID: params.TenantID,
+		ID:       params.ID,
+	})
 	if err != nil {
 		return TaskRecord{}, err
 	}
 	return TaskRecord{
 		ID:             task.ID,
+		TenantID:       task.TenantID,
+		TeamID:         task.TeamID,
 		Title:          task.Title,
 		Description:    task.Description,
 		CreatorID:      task.CreatorID,
@@ -63,6 +73,7 @@ func (r *PgRepository) GetTask(ctx context.Context, id int64) (TaskRecord, error
 		WorkspacePath:  task.WorkspacePath,
 		Params:         task.Params,
 		Priority:       task.Priority,
+		CancelledAt:    task.CancelledAt,
 		CreatedAt:      task.CreatedAt,
 		UpdatedAt:      task.UpdatedAt,
 	}, nil
@@ -70,6 +81,7 @@ func (r *PgRepository) GetTask(ctx context.Context, id int64) (TaskRecord, error
 
 func (r *PgRepository) ListTasks(ctx context.Context, params ListTasksParams) ([]TaskRecord, error) {
 	tasks, err := r.q.ListTasks(ctx, queries.ListTasksParams{
+		TenantID:     params.TenantID,
 		Status:       params.Status,
 		CreatorID:    params.CreatorID,
 		ProviderType: params.ProviderType,
@@ -83,6 +95,8 @@ func (r *PgRepository) ListTasks(ctx context.Context, params ListTasksParams) ([
 	for i, task := range tasks {
 		records[i] = TaskRecord{
 			ID:             task.ID,
+			TenantID:       task.TenantID,
+			TeamID:         task.TeamID,
 			Title:          task.Title,
 			Description:    task.Description,
 			CreatorID:      task.CreatorID,
@@ -93,6 +107,7 @@ func (r *PgRepository) ListTasks(ctx context.Context, params ListTasksParams) ([
 			WorkspacePath:  task.WorkspacePath,
 			Params:         task.Params,
 			Priority:       task.Priority,
+			CancelledAt:    task.CancelledAt,
 			CreatedAt:      task.CreatedAt,
 			UpdatedAt:      task.UpdatedAt,
 		}
@@ -102,14 +117,17 @@ func (r *PgRepository) ListTasks(ctx context.Context, params ListTasksParams) ([
 
 func (r *PgRepository) UpdateTaskStatus(ctx context.Context, params UpdateTaskStatusParams) (TaskRecord, error) {
 	task, err := r.q.UpdateTaskStatus(ctx, queries.UpdateTaskStatusParams{
-		ID:     params.ID,
-		Status: params.Status,
+		TenantID: params.TenantID,
+		ID:       params.ID,
+		Status:   params.Status,
 	})
 	if err != nil {
 		return TaskRecord{}, err
 	}
 	return TaskRecord{
 		ID:             task.ID,
+		TenantID:       task.TenantID,
+		TeamID:         task.TeamID,
 		Title:          task.Title,
 		Description:    task.Description,
 		CreatorID:      task.CreatorID,
@@ -120,6 +138,7 @@ func (r *PgRepository) UpdateTaskStatus(ctx context.Context, params UpdateTaskSt
 		WorkspacePath:  task.WorkspacePath,
 		Params:         task.Params,
 		Priority:       task.Priority,
+		CancelledAt:    task.CancelledAt,
 		CreatedAt:      task.CreatedAt,
 		UpdatedAt:      task.UpdatedAt,
 	}, nil
@@ -127,6 +146,7 @@ func (r *PgRepository) UpdateTaskStatus(ctx context.Context, params UpdateTaskSt
 
 func (r *PgRepository) UpdateTask(ctx context.Context, params UpdateTaskParams) (TaskRecord, error) {
 	task, err := r.q.UpdateTask(ctx, queries.UpdateTaskParams{
+		TenantID:       params.TenantID,
 		Title:          params.Title,
 		Description:    params.Description,
 		Status:         params.Status,
@@ -142,6 +162,8 @@ func (r *PgRepository) UpdateTask(ctx context.Context, params UpdateTaskParams) 
 	}
 	return TaskRecord{
 		ID:             task.ID,
+		TenantID:       task.TenantID,
+		TeamID:         task.TeamID,
 		Title:          task.Title,
 		Description:    task.Description,
 		CreatorID:      task.CreatorID,
@@ -152,17 +174,22 @@ func (r *PgRepository) UpdateTask(ctx context.Context, params UpdateTaskParams) 
 		WorkspacePath:  task.WorkspacePath,
 		Params:         task.Params,
 		Priority:       task.Priority,
+		CancelledAt:    task.CancelledAt,
 		CreatedAt:      task.CreatedAt,
 		UpdatedAt:      task.UpdatedAt,
 	}, nil
 }
 
-func (r *PgRepository) DeleteTask(ctx context.Context, id int64) error {
-	return r.q.DeleteTask(ctx, id)
+func (r *PgRepository) DeleteTask(ctx context.Context, params DeleteTaskParams) error {
+	return r.q.DeleteTask(ctx, queries.DeleteTaskParams{
+		TenantID: params.TenantID,
+		ID:       params.ID,
+	})
 }
 
 func (r *PgRepository) CreateTaskStateHistory(ctx context.Context, params CreateTaskStateHistoryParams) error {
 	_, err := r.q.CreateTaskStateHistory(ctx, queries.CreateTaskStateHistoryParams{
+		TenantID:   params.TenantID,
 		TaskID:     params.TaskID,
 		FromStatus: params.FromStatus,
 		ToStatus:   params.ToStatus,
@@ -174,8 +201,9 @@ func (r *PgRepository) CreateTaskStateHistory(ctx context.Context, params Create
 
 func (r *PgRepository) CreateTaskEvent(ctx context.Context, params CreateTaskEventParams) (TaskEventRecord, error) {
 	event, err := r.q.CreateTaskEvent(ctx, queries.CreateTaskEventParams{
+		TenantID:       params.TenantID,
 		TaskID:         params.TaskID,
-		ExecutionID:    params.ExecutionID,
+		RunID:          params.RunID,
 		EventType:      params.EventType,
 		SequenceNumber: params.SequenceNumber,
 		Payload:        params.Payload,
@@ -185,8 +213,9 @@ func (r *PgRepository) CreateTaskEvent(ctx context.Context, params CreateTaskEve
 	}
 	return TaskEventRecord{
 		ID:             event.ID,
+		TenantID:       event.TenantID,
 		TaskID:         event.TaskID,
-		ExecutionID:    event.ExecutionID,
+		RunID:          event.RunID,
 		EventType:      event.EventType,
 		SequenceNumber: event.SequenceNumber,
 		Payload:        event.Payload,
@@ -194,6 +223,9 @@ func (r *PgRepository) CreateTaskEvent(ctx context.Context, params CreateTaskEve
 	}, nil
 }
 
-func (r *PgRepository) GetLatestTaskEventSequence(ctx context.Context, taskID int64) (int32, error) {
-	return r.q.GetLatestTaskEventSequence(ctx, taskID)
+func (r *PgRepository) GetLatestTaskEventSequence(ctx context.Context, params GetLatestTaskEventSequenceParams) (int32, error) {
+	return r.q.GetLatestTaskEventSequence(ctx, queries.GetLatestTaskEventSequenceParams{
+		TenantID: params.TenantID,
+		TaskID:   params.TaskID,
+	})
 }

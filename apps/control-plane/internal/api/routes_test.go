@@ -9,11 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
 )
+
+const routeTaskID = "11111111-1111-1111-1111-111111111111"
 
 func TestRuntimeRoutesAreRegistered(t *testing.T) {
 	server := NewServer(
@@ -29,10 +32,10 @@ func TestRuntimeRoutesAreRegistered(t *testing.T) {
 		{method: http.MethodPost, path: "/api/v1/runtime/register", body: `{"node_id":"node-1","name":"node 1","supported_providers":["codex"],"max_slots":1}`},
 		{method: http.MethodPost, path: "/api/v1/runtime/heartbeat", body: `{"current_load":0}`},
 		{method: http.MethodPost, path: "/api/v1/runtime/tasks/claim"},
-		{method: http.MethodPost, path: "/api/v1/runtime/tasks/1/events", body: `{"events":[]}`},
-		{method: http.MethodPost, path: "/api/v1/runtime/tasks/1/complete", body: `{"result":{}}`},
-		{method: http.MethodPost, path: "/api/v1/runtime/tasks/1/fail", body: `{"error":"failed"}`},
-		{method: http.MethodPost, path: "/api/v1/runtime/tasks/1/lease"},
+		{method: http.MethodPost, path: "/api/v1/runtime/tasks/" + routeTaskID + "/events", body: `{"events":[]}`},
+		{method: http.MethodPost, path: "/api/v1/runtime/tasks/" + routeTaskID + "/complete", body: `{"result":{}}`},
+		{method: http.MethodPost, path: "/api/v1/runtime/tasks/" + routeTaskID + "/fail", body: `{"error":"failed"}`},
+		{method: http.MethodPost, path: "/api/v1/runtime/tasks/" + routeTaskID + "/lease"},
 		{method: http.MethodGet, path: "/api/v1/runtime/nodes"},
 		{method: http.MethodGet, path: "/api/v1/runtime/nodes/node-1"},
 	}
@@ -165,6 +168,18 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	if createResp.Code != http.StatusCreated {
 		t.Fatalf("expected create user to succeed, got %d: %s", createResp.Code, createResp.Body.String())
 	}
+	var createBody struct {
+		User struct {
+			ID string `json:"id"`
+		} `json:"user"`
+	}
+	if err := json.NewDecoder(createResp.Body).Decode(&createBody); err != nil {
+		t.Fatalf("decode created user response: %v", err)
+	}
+	operatorID, err := uuid.Parse(createBody.User.ID)
+	if err != nil {
+		t.Fatalf("expected created user ID to be UUID, got %q: %v", createBody.User.ID, err)
+	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/auth/users?limit=10&offset=0", nil)
 	listReq.AddCookie(cookie)
@@ -186,7 +201,7 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 		t.Fatalf("expected two users, got %#v", listBody.Items)
 	}
 
-	statusReq := httptest.NewRequest(http.MethodPatch, "/api/auth/users/2/status", strings.NewReader(`{"status":"disabled"}`))
+	statusReq := httptest.NewRequest(http.MethodPatch, "/api/auth/users/"+operatorID.String()+"/status", strings.NewReader(`{"status":"disabled"}`))
 	statusReq.Header.Set("Content-Type", "application/json")
 	statusReq.AddCookie(cookie)
 	statusResp := httptest.NewRecorder()
@@ -195,7 +210,7 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 		t.Fatalf("expected status update to succeed, got %d: %s", statusResp.Code, statusResp.Body.String())
 	}
 
-	resetReq := httptest.NewRequest(http.MethodPost, "/api/auth/users/2/reset-password", strings.NewReader(`{"password":"new-secret"}`))
+	resetReq := httptest.NewRequest(http.MethodPost, "/api/auth/users/"+operatorID.String()+"/reset-password", strings.NewReader(`{"password":"new-secret"}`))
 	resetReq.Header.Set("Content-Type", "application/json")
 	resetReq.AddCookie(cookie)
 	resetResp := httptest.NewRecorder()
@@ -346,10 +361,10 @@ func (s *routeRuntimeService) ListNodes(ctx context.Context, filter runtime.List
 type routeTaskService struct{}
 
 func (s *routeTaskService) CreateTask(ctx context.Context, req task.CreateTaskRequest) (*task.Task, error) {
-	return &task.Task{ID: 1, Title: req.Title, ProviderType: req.ProviderType}, nil
+	return &task.Task{ID: uuid.New(), Title: req.Title, ProviderType: req.ProviderType}, nil
 }
 
-func (s *routeTaskService) GetTask(ctx context.Context, taskID int64) (*task.Task, error) {
+func (s *routeTaskService) GetTask(ctx context.Context, taskID uuid.UUID) (*task.Task, error) {
 	return &task.Task{ID: taskID, ProviderType: "codex"}, nil
 }
 
@@ -365,7 +380,7 @@ func (s *routeTaskService) UpdateTaskStatus(ctx context.Context, req task.Update
 	return &task.Task{ID: req.TaskID, Status: req.NewStatus}, nil
 }
 
-func (s *routeTaskService) CancelTask(ctx context.Context, taskID int64, cancelledBy *string, reason *string) (*task.Task, error) {
+func (s *routeTaskService) CancelTask(ctx context.Context, taskID uuid.UUID, cancelledBy *string, reason *string) (*task.Task, error) {
 	return &task.Task{ID: taskID, Status: task.TaskStatusCancelled}, nil
 }
 
@@ -391,27 +406,24 @@ func (s *routeRuntimeAuthService) ValidateRuntimeToken(ctx context.Context, node
 
 type routeAuthRepo struct {
 	users         map[string]*auth.User
-	usersByID     map[int64]*auth.User
+	usersByID     map[uuid.UUID]*auth.User
 	sessions      map[string]*auth.Session
 	loginLogs     []auth.LoginLog
 	operationLogs []auth.CreateOperationLogParams
-	nextUserID    int64
 }
 
 func newRouteAuthRepo() *routeAuthRepo {
 	return &routeAuthRepo{
 		users:         map[string]*auth.User{},
-		usersByID:     map[int64]*auth.User{},
+		usersByID:     map[uuid.UUID]*auth.User{},
 		sessions:      map[string]*auth.Session{},
 		loginLogs:     []auth.LoginLog{},
 		operationLogs: []auth.CreateOperationLogParams{},
-		nextUserID:    1,
 	}
 }
 
 func (r *routeAuthRepo) CreateUser(ctx context.Context, username, passwordHash string) (*auth.User, error) {
-	user := &auth.User{ID: r.nextUserID, Username: username, PasswordHash: passwordHash, Status: "active"}
-	r.nextUserID++
+	user := &auth.User{ID: uuid.New(), Username: username, PasswordHash: passwordHash, Status: "active"}
 	r.users[username] = user
 	r.usersByID[user.ID] = user
 	return user, nil
@@ -436,7 +448,7 @@ func (r *routeAuthRepo) ListUsers(ctx context.Context, filter auth.ListUsersFilt
 	return users, nil
 }
 
-func (r *routeAuthRepo) GetUserByID(ctx context.Context, id int64) (*auth.User, error) {
+func (r *routeAuthRepo) GetUserByID(ctx context.Context, id uuid.UUID) (*auth.User, error) {
 	user, ok := r.usersByID[id]
 	if !ok {
 		return nil, auth.ErrUnauthorized
@@ -444,7 +456,7 @@ func (r *routeAuthRepo) GetUserByID(ctx context.Context, id int64) (*auth.User, 
 	return user, nil
 }
 
-func (r *routeAuthRepo) UpdateUserStatus(ctx context.Context, userID int64, status string) (*auth.User, error) {
+func (r *routeAuthRepo) UpdateUserStatus(ctx context.Context, userID uuid.UUID, status string) (*auth.User, error) {
 	user, ok := r.usersByID[userID]
 	if !ok {
 		return nil, auth.ErrUnauthorized
@@ -453,7 +465,7 @@ func (r *routeAuthRepo) UpdateUserStatus(ctx context.Context, userID int64, stat
 	return user, nil
 }
 
-func (r *routeAuthRepo) UpdateUserPassword(ctx context.Context, userID int64, passwordHash string) (*auth.User, error) {
+func (r *routeAuthRepo) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) (*auth.User, error) {
 	user, ok := r.usersByID[userID]
 	if !ok {
 		return nil, auth.ErrUnauthorized
@@ -471,6 +483,9 @@ func (r *routeAuthRepo) GetRuntimeTokenByNodeID(ctx context.Context, nodeID stri
 }
 
 func (r *routeAuthRepo) CreateSession(ctx context.Context, session *auth.Session, tokenHash string) error {
+	if session.ID == uuid.Nil {
+		session.ID = uuid.New()
+	}
 	r.sessions[tokenHash] = session
 	return nil
 }
@@ -501,7 +516,7 @@ func (r *routeAuthRepo) CreateLoginLog(ctx context.Context, params auth.CreateLo
 	now := time.Now().UTC()
 	r.loginLogs = append([]auth.LoginLog{
 		{
-			ID:            int64(len(r.loginLogs) + 1),
+			ID:            uuid.New(),
 			EventType:     params.EventType,
 			UserID:        params.UserID,
 			Username:      params.Username,

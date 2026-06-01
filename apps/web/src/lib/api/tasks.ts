@@ -4,17 +4,20 @@ import { buildApiUrl, parseJson } from "./client";
 export type TaskStatus = "pending" | "claimed" | "running" | "completed" | "failed" | "cancelled";
 
 export type TaskResponse = {
-  id: number;
+  id: string;
+  tenant_id?: string;
+  team_id?: string;
   title: string;
   provider_type: string;
   status: TaskStatus;
   priority: number;
   description?: string;
-  creator_id?: number;
+  creator_id?: string;
   target_node_id?: string;
   assigned_node_id?: string;
   workspace_path?: string;
   params?: Record<string, unknown>;
+  cancelled_at?: string;
   created_at?: string;
   updated_at?: string;
 };
@@ -81,7 +84,7 @@ export async function createTask(options: ApiClientOptions, input: CreateTaskInp
   return parseJson<TaskResponse>(response, "tasks");
 }
 
-export async function getTask(options: ApiClientOptions, taskId: number): Promise<TaskResponse> {
+export async function getTask(options: ApiClientOptions, taskId: string): Promise<TaskResponse> {
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/tasks/${taskId}`), {
     credentials: "include",
@@ -96,7 +99,7 @@ export async function getTask(options: ApiClientOptions, taskId: number): Promis
 
 export async function updateTaskStatus(
   options: ApiClientOptions,
-  taskId: number,
+  taskId: string,
   input: UpdateTaskStatusInput,
 ): Promise<TaskResponse> {
   const fetcher = options.fetcher ?? fetch;
@@ -113,7 +116,7 @@ export async function updateTaskStatus(
   return parseJson<TaskResponse>(response, "tasks");
 }
 
-export async function cancelTask(options: ApiClientOptions, taskId: number): Promise<TaskResponse> {
+export async function cancelTask(options: ApiClientOptions, taskId: string): Promise<TaskResponse> {
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/tasks/${taskId}/cancel`), {
     credentials: "include",
