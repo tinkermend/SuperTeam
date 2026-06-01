@@ -175,7 +175,7 @@ impl RuntimeConfig {
 
     fn apply_file(&mut self, path: &Path) -> anyhow::Result<()> {
         let body = std::fs::read_to_string(path)?;
-        let file: FileConfig = toml::from_str(&body)?;
+        let file: FileConfig = serde_yaml_ng::from_str(&body)?;
 
         if let Some(runtime) = file.runtime {
             apply_string(&mut self.runtime.node_id, runtime.node_id);

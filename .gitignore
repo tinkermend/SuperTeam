@@ -20,12 +20,12 @@ src-tauri/target/
 
 # Environment / local config
 .env*
-!.env.example
-!**/.env.example
-config.yaml
+!apps/web/.env.example
+**/config.yaml
+**/config.toml
+!**/config.example.yaml
 apps/*/config/local.yaml
 apps/*/config/*.local.yaml
-apps/runtime-agent/config.toml
 
 # IDE
 .vscode/

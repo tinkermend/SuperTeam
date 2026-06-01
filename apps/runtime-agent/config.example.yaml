@@ -1,0 +1,62 @@
+# Runtime Agent 示例配置
+# 本地使用时复制为 apps/runtime-agent/config.yaml，并通过 --config 指定。
+# 真实 config.yaml 被 Git 忽略，可以放置本机 node_id 和 runtime token。
+# 环境变量 RUNTIME_AGENT_* 仅作为部署平台或临时运行覆盖层，CLI 参数优先级最高。
+
+runtime:
+  # 节点 ID
+  node_id: local-dev-node
+
+  # Control Plane API 地址
+  control_plane_url: http://localhost:8080
+
+  # Runtime Agent 认证 token
+  auth_token: replace-with-runtime-token
+
+  # 心跳间隔（秒）
+  heartbeat_interval: 30
+
+  # 最大并发任务数
+  max_concurrent_tasks: 3
+
+http:
+  # Runtime Agent 本地 HTTP/WS 服务监听地址
+  addr: 127.0.0.1:7077
+
+runs:
+  # Provider 执行日志和事件落盘目录
+  log_dir: .superteam/runtime-runs
+
+workspace:
+  # 工作目录基础路径
+  base_dir: .superteam/workspaces
+
+  # 清理策略：on_success | on_completion | manual
+  cleanup_policy: on_success
+
+  # 工作目录最大保留数量
+  max_retained: 10
+
+providers:
+  claude_code:
+    enabled: true
+    binary_path: claude
+    # 超时时间（秒）
+    timeout: 3600
+  opencode:
+    enabled: false
+    binary_path: opencode
+    timeout: 3600
+
+logging:
+  # 日志级别：trace | debug | info | warn | error
+  level: info
+
+  # 日志格式：json | pretty
+  format: pretty
+
+  # 日志输出：stdout | file
+  output: stdout
+
+  # 日志文件路径（当 output = file 时）
+  file_path: .superteam/runtime-agent.log

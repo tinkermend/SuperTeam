@@ -21,44 +21,44 @@ fn config_rejects_blank_node_id() {
 }
 
 #[test]
-fn config_loads_runtime_toml_and_env_overrides() {
+fn config_loads_runtime_yaml_and_env_overrides() {
     let temp = tempfile::TempDir::new().expect("tempdir");
-    let config_path = temp.path().join("runtime-agent.toml");
+    let config_path = temp.path().join("runtime-agent.yaml");
     std::fs::write(
         &config_path,
         r#"
-[runtime]
-node_id = "file-node"
-control_plane_url = "http://control-plane-from-file:8080"
-heartbeat_interval = 15
-max_concurrent_tasks = 2
+runtime:
+  node_id: file-node
+  control_plane_url: http://control-plane-from-file:8080
+  heartbeat_interval: 15
+  max_concurrent_tasks: 2
 
-[http]
-addr = "127.0.0.1:9099"
+http:
+  addr: 127.0.0.1:9099
 
-[runs]
-log_dir = "/tmp/file-runtime-runs"
+runs:
+  log_dir: /tmp/file-runtime-runs
 
-[workspace]
-base_dir = "/tmp/file-workspaces"
-cleanup_policy = "manual"
-max_retained = 4
+workspace:
+  base_dir: /tmp/file-workspaces
+  cleanup_policy: manual
+  max_retained: 4
 
-[providers.claude_code]
-enabled = false
-binary_path = "/usr/local/bin/file-claude"
-timeout = 120
+providers:
+  claude_code:
+    enabled: false
+    binary_path: /usr/local/bin/file-claude
+    timeout: 120
+  opencode:
+    enabled: true
+    binary_path: /usr/local/bin/file-opencode
+    timeout: 180
 
-[providers.opencode]
-enabled = true
-binary_path = "/usr/local/bin/file-opencode"
-timeout = 180
-
-[logging]
-level = "debug"
-format = "json"
-output = "file"
-file_path = "/tmp/runtime-agent.log"
+logging:
+  level: debug
+  format: json
+  output: file
+  file_path: /tmp/runtime-agent.log
 "#,
     )
     .expect("write config");
@@ -124,12 +124,12 @@ file_path = "/tmp/runtime-agent.log"
 #[test]
 fn config_loads_runtime_token_from_env_and_cli_override() {
     let temp = tempfile::TempDir::new().expect("tempdir");
-    let config_path = temp.path().join("runtime-agent.toml");
+    let config_path = temp.path().join("runtime-agent.yaml");
     std::fs::write(
         &config_path,
         r#"
-[runtime]
-auth_token = "file-token"
+runtime:
+  auth_token: file-token
 "#,
     )
     .expect("write config");
@@ -168,13 +168,13 @@ auth_token = "file-token"
 #[test]
 fn cli_loads_config_file_and_allows_explicit_overrides() {
     let temp = tempfile::TempDir::new().expect("tempdir");
-    let config_path = temp.path().join("runtime-agent.toml");
+    let config_path = temp.path().join("runtime-agent.yaml");
     std::fs::write(
         &config_path,
         r#"
-[runtime]
-node_id = "file-cli-node"
-auth_token = "file-cli-token"
+runtime:
+  node_id: file-cli-node
+  auth_token: file-cli-token
 "#,
     )
     .expect("write config");
