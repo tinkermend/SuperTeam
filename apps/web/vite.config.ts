@@ -21,6 +21,9 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  optimizeDeps: {
+    include: ['@tanstack/react-query', '@radix-ui/react-alert-dialog', '@radix-ui/react-select', '@radix-ui/react-tabs'],
+  },
   test: {
     silent: 'passed-only',
     unstubEnvs: true,
