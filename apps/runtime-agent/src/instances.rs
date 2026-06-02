@@ -23,13 +23,29 @@ pub fn ensure_instance(request: EnsureInstanceRequest) -> anyhow::Result<EnsureI
 }
 
 fn sanitize_segment(value: &str) -> anyhow::Result<String> {
-    if value.is_empty()
-        || value.contains('/')
-        || value.contains('\\')
-        || value == "."
-        || value == ".."
-    {
+    if !is_uuid_like(value) {
         anyhow::bail!("invalid execution instance id");
     }
     Ok(value.to_string())
+}
+
+fn is_uuid_like(value: &str) -> bool {
+    if value.len() != 36 {
+        return false;
+    }
+    for (index, ch) in value.chars().enumerate() {
+        match index {
+            8 | 13 | 18 | 23 => {
+                if ch != '-' {
+                    return false;
+                }
+            }
+            _ => {
+                if !ch.is_ascii_hexdigit() {
+                    return false;
+                }
+            }
+        }
+    }
+    true
 }

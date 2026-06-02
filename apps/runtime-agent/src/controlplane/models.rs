@@ -150,19 +150,36 @@ pub struct RuntimeCommand {
     pub payload: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeCommandType {
     EnsureInstance,
     StartSession,
     ResumeSession,
     SendInput,
     StopSession,
+    Unsupported(String),
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct EnsureInstanceCommand {
     pub execution_instance_id: String,
+}
+
+impl<'de> Deserialize<'de> for RuntimeCommandType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(match value.as_str() {
+            "ensure_instance" => Self::EnsureInstance,
+            "start_session" => Self::StartSession,
+            "resume_session" => Self::ResumeSession,
+            "send_input" => Self::SendInput,
+            "stop_session" => Self::StopSession,
+            _ => Self::Unsupported(value),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -126,14 +126,32 @@ fn test_runtime_command_deserializes_ensure_instance() {
         "id": "cmd-1",
         "type": "ensure_instance",
         "payload": {
-            "execution_instance_id": "instance-1"
+            "execution_instance_id": "11111111-1111-4111-8111-111111111111"
         }
     }))
     .unwrap();
 
     assert_eq!(command.id, "cmd-1");
     assert_eq!(command.command_type, RuntimeCommandType::EnsureInstance);
-    assert_eq!(command.payload["execution_instance_id"], "instance-1");
+    assert_eq!(
+        command.payload["execution_instance_id"],
+        "11111111-1111-4111-8111-111111111111"
+    );
+}
+
+#[test]
+fn test_runtime_command_deserializes_unknown_command_as_unsupported() {
+    let command: RuntimeCommand = serde_json::from_value(serde_json::json!({
+        "id": "cmd-legacy",
+        "type": "task.claim",
+        "payload": {}
+    }))
+    .unwrap();
+
+    assert_eq!(
+        command.command_type,
+        RuntimeCommandType::Unsupported("task.claim".to_string())
+    );
 }
 
 #[test]
