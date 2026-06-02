@@ -8,6 +8,7 @@ package queries
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -352,6 +353,87 @@ type UpdateRuntimeNodeStatusParams struct {
 
 func (q *Queries) UpdateRuntimeNodeStatus(ctx context.Context, arg UpdateRuntimeNodeStatusParams) (RuntimeNode, error) {
 	row := q.db.QueryRow(ctx, UpdateRuntimeNodeStatus, arg.NodeID, arg.Status)
+	var i RuntimeNode
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.NodeID,
+		&i.Name,
+		&i.SupportedProviders,
+		&i.MaxSlots,
+		&i.CurrentLoad,
+		&i.Status,
+		&i.Metadata,
+		&i.LastHeartbeatAt,
+		&i.DisabledAt,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const UpsertRuntimeNodeForTenant = `-- name: UpsertRuntimeNodeForTenant :one
+INSERT INTO runtime_nodes (
+    tenant_id,
+    node_id,
+    name,
+    supported_providers,
+    max_slots,
+    current_load,
+    status,
+    metadata,
+    last_heartbeat_at
+) VALUES (
+    $1::uuid,
+    $2::varchar,
+    $3::varchar,
+    $4::jsonb,
+    $5::integer,
+    $6::integer,
+    $7::varchar,
+    COALESCE($8::jsonb, '{}'::jsonb),
+    $9::timestamptz
+)
+ON CONFLICT (node_id) DO UPDATE SET
+    name = EXCLUDED.name,
+    supported_providers = EXCLUDED.supported_providers,
+    max_slots = EXCLUDED.max_slots,
+    current_load = EXCLUDED.current_load,
+    status = EXCLUDED.status,
+    metadata = EXCLUDED.metadata,
+    last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+    disabled_at = NULL,
+    archived_at = NULL,
+    updated_at = NOW()
+WHERE runtime_nodes.tenant_id = EXCLUDED.tenant_id
+RETURNING id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at
+`
+
+type UpsertRuntimeNodeForTenantParams struct {
+	TenantID           uuid.UUID          `json:"tenant_id"`
+	NodeID             string             `json:"node_id"`
+	Name               string             `json:"name"`
+	SupportedProviders []byte             `json:"supported_providers"`
+	MaxSlots           int32              `json:"max_slots"`
+	CurrentLoad        int32              `json:"current_load"`
+	Status             string             `json:"status"`
+	Metadata           []byte             `json:"metadata"`
+	LastHeartbeatAt    pgtype.Timestamptz `json:"last_heartbeat_at"`
+}
+
+func (q *Queries) UpsertRuntimeNodeForTenant(ctx context.Context, arg UpsertRuntimeNodeForTenantParams) (RuntimeNode, error) {
+	row := q.db.QueryRow(ctx, UpsertRuntimeNodeForTenant,
+		arg.TenantID,
+		arg.NodeID,
+		arg.Name,
+		arg.SupportedProviders,
+		arg.MaxSlots,
+		arg.CurrentLoad,
+		arg.Status,
+		arg.Metadata,
+		arg.LastHeartbeatAt,
+	)
 	var i RuntimeNode
 	err := row.Scan(
 		&i.ID,

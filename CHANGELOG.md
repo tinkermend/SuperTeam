@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 移除 testcontainers 本机容器 fallback，避免完整 Go 测试依赖 Docker/Podman。
   - 测试仅在显式配置 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL` 时连接远端或专用测试环境运行；也支持通过 `ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1` 复用 `DATABASE_URL` 和 `REDIS_URL`。
   - 未配置测试环境时跳过 `apps/control-plane/internal/storage/queries` 集成测试。
+- Provider 会话事件新增关联 ID 约束，要求 `request_id` 或 `command_id` 至少填写一个，避免无法回溯到平台请求或命令的事件进入审计链路。
+- 数字员工执行链路补强 Runtime 与 Provider 可用性校验：执行实例绑定前要求 Runtime 已批准且 Provider 能力可用，Provider 会话和事件写入会拒绝禁用、错误或失效的执行上下文。
+- Provider 会话事件追加时重新校验会话、数字员工与执行实例仍处于可接收事件状态，防止关闭、禁用或错误的执行上下文继续写入事件流。
+- Provider 会话创建与事件追加只允许绑定 `ready` / `active` 执行实例，防止 `provisioning` 等未就绪状态进入 Provider 执行链路。
+- Runtime Enrollment 和 Runtime Session 查询补强租户、Bootstrap Key、批准状态与撤销边界校验，移除可绕过执行前置条件的数字员工执行实例直接插入查询。
+- Runtime hello 接入写入固定为 pending 状态，并要求有效 Bootstrap Key 与 Runtime 节点外部 ID 匹配，防止 hello 绕过人工审批或错绑节点。
+- Runtime Agent 启动链路从旧版长生命周期 runtime token 注册切换为 bootstrap key hello 接入，批准后使用短期 runtime session token 访问 heartbeat、任务领取和事件回传接口，并按真实 Control Plane contract 上报扁平 capabilities。
+- Runtime Agent 建立短期 session 后会主动连接 Control Plane Runtime WebSocket 命令通道，并支持接收 `ensure_instance` 命令创建数字员工执行实例目录。
 
 ### Added
 
@@ -40,6 +48,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 新增 `apps/web/src/components/superteam` 项目级设计组件层，沉淀 `LiquidCard`、`LiquidPill`、`PrimaryLiquidButton`、`SemanticIconTile`、`StatusBadge` 和 `MetricCard`。
 - 工作台首页指标卡改为复用 `MetricCard`，减少页面内手写玻璃卡片、语义图标和状态胶囊样式。
 - 为液态玻璃设计组件补充 Vitest 浏览器组件测试，锁定组件 slot、核心 class 和基础渲染行为。
+
+#### 数字员工后端与执行实例服务 (2026-06-02)
+
+- 新增 Control Plane 数字员工领域服务、PostgreSQL repository 和 HTTP handler，支持创建草稿、列表、详情、状态更新以及唯一执行实例查询和绑定。
+- 数字员工执行实例绑定复用现有 sqlc upsert 查询，默认绑定为 ready 状态，并通过 Web 控制台 cookie session 注入租户上下文保护 `/api/v1/digital-employees` 路由。
+- Web 控制台新增数字员工页面和 API client，支持查看数字员工业务身份、状态、风险等级和唯一执行实例绑定信息。
+
+#### Runtime 接入与短期会话服务 (2026-06-02)
+
+- 新增 Control Plane Runtime Enrollment / Runtime Session 领域服务，支持 Runtime hello 接入、人工批准/拒绝/撤销、短期 session token 签发、校验与续期。
+- Runtime session token 采用确定性 lookup hash 加 bcrypt secret hash 的双哈希模型，避免原始 token 或可直接校验的单一 hash 明文落库。
+- Runtime hello 会扫描有效 Bootstrap Key 并用 bcrypt 校验原始 secret；pending 接入不会返回 session，approved 且已挂接 Runtime 节点的接入才签发短期 session。
+- Runtime enrollment 撤销会使关联 active session 失效，session 校验与续期会重新检查接入仍处于 approved 且未撤销状态。
+- 接通 Runtime Enrollment、短期 Session 续期与 Capability 上报 HTTP 路由；`/api/v1/runtime/enrollments/hello` 支持公开 bootstrap hello，`/api/v1/runtime/session/renew` 和能力上报要求短期 session token。
+- 新增 Runtime session middleware，并让 heartbeat、claim、task event、complete、fail 和 lease 路由在迁移期同时接受短期 session token 或旧版 `Authorization + X-Node-ID` runtime token。
+- Runtime enrollment 管理路由改为 Web 用户 cookie session 保护，并将 canonical session renew 与 capability upsert 成功响应对齐 OpenAPI 契约。
+- Runtime enrollment 管理路由补充 `runtime_scope.manage` 授权校验，并将当前 Web 用户与租户上下文传入批准、拒绝和撤销操作。
+- 修正 Runtime 接入服务的多租户路径：hello 阶段不再创建默认租户 Runtime 节点，改为仅写入 pending enrollment；批准阶段按租户创建或复用 Runtime 节点并 attach，session 校验改为按全局 lookup hash 查找，支持非默认租户续期。
+- 将 Runtime enrollment 批准改为单条 SQL 原子完成 pending 校验、tenant-safe Runtime 节点 upsert 和 enrollment attach，避免并发拒绝/撤销后留下未挂接节点，并修复 tenant-aware node upsert 的全局 `node_id` 冲突竞态。
+- 将 Runtime session token 默认有效期修正为 12 小时，并补充签发和续期过期时间断言。
+- 新增 Runtime WebSocket Command Channel：Control Plane 维护 Runtime 连接注册表，短期 session 认证的 Runtime 可通过 `/api/v1/runtime/ws` 建立命令通道并接收 JSON command；旧版 Runtime token 不能访问该通道。
+- 加固 Runtime WebSocket Command Channel 连接注册表：Dispatch 不再持有全局锁等待满载 channel，Runtime 重连和断开清理不会被阻塞，并补充 registry 未配置与 client close 后注销测试。
+- Web 控制台新增 Runtime 节点页面，支持查看待接入 Runtime enrollment、批准接入请求以及查看已接入 Runtime 节点状态和 Provider 能力。
 
 #### Control Plane 渐进式授权边界 (2026-06-01)
 

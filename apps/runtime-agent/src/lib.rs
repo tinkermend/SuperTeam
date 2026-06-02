@@ -4,6 +4,8 @@ pub mod daemon;
 pub mod events;
 pub mod executor;
 pub mod health;
+pub mod instances;
 pub mod providers;
 pub mod runs;
 pub mod server;
+pub mod session;

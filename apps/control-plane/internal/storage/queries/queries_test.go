@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -181,6 +182,14 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 	ctx := context.Background()
 	_, err := db.Exec(ctx, `
 		TRUNCATE
+			provider_session_events,
+			provider_sessions,
+			digital_employee_execution_instances,
+			digital_employees,
+			runtime_capabilities,
+			runtime_sessions,
+			runtime_enrollments,
+			runtime_bootstrap_keys,
 			web_operation_logs,
 			web_login_logs,
 			audit_events,
@@ -343,8 +352,8 @@ func TestAuthzRuntimeNodeCoversTaskScope(t *testing.T) {
 
 	_, err = testDB.Exec(ctx, `
 		INSERT INTO runtime_node_scopes (tenant_id, runtime_node_id, team_id, scope_type, scope_value, status)
-		VALUES ($1, $2, $3, 'team', $3::text, 'active')
-	`, tenantID, node.ID, teamID)
+		VALUES ($1, $2, $3, 'team', $4, 'active')
+	`, tenantID, node.ID, teamID, teamID.String())
 	require.NoError(t, err)
 
 	covered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
@@ -473,8 +482,8 @@ func TestAuthzRuntimeNodeRejectsMalformedTenantScopePayloads(t *testing.T) {
 
 	_, err = testDB.Exec(ctx, `
 		INSERT INTO runtime_node_scopes (tenant_id, runtime_node_id, team_id, scope_type, scope_value, status)
-		VALUES ($1, $2, $3, 'tenant', $1::text, 'active')
-	`, tenantID, nodeWithTeamID.ID, teamID)
+		VALUES ($1, $2, $3, 'tenant', $4, 'active')
+	`, tenantID, nodeWithTeamID.ID, teamID, tenantID.String())
 	require.NoError(t, err)
 
 	tenantScopeWithTeamIDCovered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
@@ -601,17 +610,23 @@ func TestAuthzCenterMemberPaginationPaginatesUsersBeforeMemberships(t *testing.T
 
 	_, err = testDB.Exec(ctx, `
 		INSERT INTO tenant_members (tenant_id, principal_type, principal_id, role, status)
-		VALUES ($1, 'user', $2, 'owner', 'active');
-
+		VALUES ($1, 'user', $2, 'owner', 'active')
+	`, tenantID, multiMemberUser.ID)
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
 		INSERT INTO tenant_members (tenant_id, team_id, principal_type, principal_id, role, status)
-		VALUES ($1, $3, 'user', $2, 'developer', 'active');
-
+		VALUES ($1, $2, 'user', $3, 'developer', 'active')
+	`, tenantID, teamID, multiMemberUser.ID)
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
 		INSERT INTO tenant_members (tenant_id, principal_type, principal_id, role, status)
-		VALUES ($1, 'user', $4, 'viewer', 'active');
-
+		VALUES ($1, 'user', $2, 'viewer', 'active')
+	`, tenantID, otherUser.ID)
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
 		INSERT INTO tenant_members (tenant_id, principal_type, principal_id, role, status)
-		VALUES ($5, 'user', $6, 'owner', 'active');
-	`, tenantID, multiMemberUser.ID, teamID, otherUser.ID, otherTenantID, otherTenantUser.ID)
+		VALUES ($1, 'user', $2, 'owner', 'active')
+	`, otherTenantID, otherTenantUser.ID)
 	require.NoError(t, err)
 
 	rows, err := testQueries.ListAuthzMembers(ctx, queries.ListAuthzMembersParams{
@@ -729,11 +744,13 @@ func TestAuthzCenterRuntimeScopeRejectsInconsistentInput(t *testing.T) {
 	otherTeamID := uuid.MustParse("00000000-0000-0000-0000-000000000301")
 	_, err := testDB.Exec(ctx, `
 		INSERT INTO tenants (id, slug, name, status)
-		VALUES ($1, 'authz-other', 'Authz Other Tenant', 'active');
-
+		VALUES ($1, 'authz-other', 'Authz Other Tenant', 'active')
+	`, otherTenantID)
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
 		INSERT INTO tenant_teams (id, tenant_id, slug, name, status)
-		VALUES ($2, $1, 'authz-other', 'Authz Other Team', 'active');
-	`, otherTenantID, otherTeamID)
+		VALUES ($1, $2, 'authz-other', 'Authz Other Team', 'active')
+	`, otherTeamID, otherTenantID)
 	require.NoError(t, err)
 
 	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
@@ -936,6 +953,1722 @@ func TestListOnlineNodes(t *testing.T) {
 	for _, node := range nodes {
 		assert.True(t, node.LastHeartbeatAt.Time.After(threshold.Time))
 	}
+}
+
+func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	otherTenantID := uuid.MustParse("00000000-0000-0000-0000-000000000201")
+	_, err := testDB.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'runtime-enroll-other', 'Runtime Enrollment Other Tenant', 'active')
+		ON CONFLICT (id) DO NOTHING
+	`, otherTenantID)
+	require.NoError(t, err)
+
+	keyExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, keyExpiresAt.Scan(time.Now().Add(24*time.Hour)))
+	bootstrapKey, err := testQueries.CreateRuntimeBootstrapKey(ctx, queries.CreateRuntimeBootstrapKeyParams{
+		TenantID:    uuid.NullUUID{UUID: tenantID, Valid: true},
+		Name:        "customer-vm-bootstrap",
+		KeyHash:     "bootstrap-key-hash",
+		Status:      "active",
+		ExpiresAt:   keyExpiresAt,
+		CreatedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		Description: pgtype.Text{String: "Customer VM enrollment key", Valid: true},
+		Metadata:    []byte(`{"environment":"customer-vm"}`),
+	})
+	require.NoError(t, err)
+
+	otherTenantBootstrapKey, err := testQueries.CreateRuntimeBootstrapKey(ctx, queries.CreateRuntimeBootstrapKeyParams{
+		TenantID:    uuid.NullUUID{UUID: otherTenantID, Valid: true},
+		Name:        "other-tenant-bootstrap",
+		KeyHash:     "other-tenant-bootstrap-key-hash",
+		Status:      "active",
+		ExpiresAt:   keyExpiresAt,
+		CreatedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		Description: pgtype.Text{String: "Other tenant enrollment key", Valid: true},
+		Metadata:    []byte(`{"environment":"other"}`),
+	})
+	require.NoError(t, err)
+
+	revokedBootstrapKey, err := testQueries.CreateRuntimeBootstrapKey(ctx, queries.CreateRuntimeBootstrapKeyParams{
+		TenantID:    uuid.NullUUID{UUID: tenantID, Valid: true},
+		Name:        "revoked-bootstrap",
+		KeyHash:     "revoked-bootstrap-key-hash",
+		Status:      "active",
+		ExpiresAt:   keyExpiresAt,
+		CreatedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		Description: pgtype.Text{String: "Revoked enrollment key", Valid: true},
+		Metadata:    []byte(`{"environment":"customer-vm"}`),
+	})
+	require.NoError(t, err)
+	_, err = testQueries.RevokeRuntimeBootstrapKey(ctx, queries.RevokeRuntimeBootstrapKeyParams{
+		ID:            revokedBootstrapKey.ID,
+		TenantID:      tenantID,
+		RevokedBy:     uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RevokedReason: pgtype.Text{String: "operator revoked bootstrap key", Valid: true},
+	})
+	require.NoError(t, err)
+
+	replacementBootstrapKey, err := testQueries.CreateRuntimeBootstrapKey(ctx, queries.CreateRuntimeBootstrapKeyParams{
+		TenantID:    uuid.NullUUID{UUID: tenantID, Valid: true},
+		Name:        "replacement-bootstrap",
+		KeyHash:     "replacement-bootstrap-key-hash",
+		Status:      "active",
+		ExpiresAt:   keyExpiresAt,
+		CreatedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		Description: pgtype.Text{String: "Replacement enrollment key", Valid: true},
+		Metadata:    []byte(`{"environment":"customer-vm"}`),
+	})
+	require.NoError(t, err)
+
+	activeKey, err := testQueries.GetActiveRuntimeBootstrapKeyByHash(ctx, queries.GetActiveRuntimeBootstrapKeyByHashParams{
+		TenantID: tenantID,
+		KeyHash:  "bootstrap-key-hash",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, bootstrapKey.ID, activeKey.ID)
+
+	now := pgtype.Timestamptz{}
+	require.NoError(t, now.Scan(time.Now()))
+	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "runtime-enroll-node",
+		Name:               "Runtime Enrollment Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           4,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	reusedTenantNode, err := testQueries.UpsertRuntimeNodeForTenant(ctx, queries.UpsertRuntimeNodeForTenantParams{
+		TenantID:           tenantID,
+		NodeID:             "runtime-enroll-node",
+		Name:               "Runtime Enrollment Node Refreshed",
+		SupportedProviders: []byte(`{"providers":["claude-code","codex"]}`),
+		MaxSlots:           6,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local","refreshed":true}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, node.ID, reusedTenantNode.ID)
+	assert.Equal(t, tenantID, reusedTenantNode.TenantID)
+
+	_, err = testQueries.UpsertRuntimeNodeForTenant(ctx, queries.UpsertRuntimeNodeForTenantParams{
+		TenantID:           otherTenantID,
+		NodeID:             "runtime-enroll-node",
+		Name:               "Other Tenant Runtime Should Not Take Over",
+		SupportedProviders: []byte(`{"providers":["codex"]}`),
+		MaxSlots:           1,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"other"}`),
+		LastHeartbeatAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	alternateNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "runtime-enroll-node-rebound",
+		Name:               "Runtime Enrollment Rebound Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           4,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	callerApprovedNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "runtime-enroll-node-caller-approved",
+		Name:               "Runtime Enrollment Caller Approved Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           4,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	rejectedNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "runtime-enroll-node-rejected",
+		Name:               "Runtime Enrollment Rejected Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           4,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	revokedNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "runtime-enroll-node-revoked",
+		Name:               "Runtime Enrollment Revoked Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           4,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	disabledNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "runtime-enroll-node-disabled",
+		Name:               "Runtime Enrollment Disabled Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           4,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+	_, err = testQueries.UpdateRuntimeNodeStatus(ctx, queries.UpdateRuntimeNodeStatusParams{
+		NodeID: disabledNode.NodeID,
+		Status: "offline",
+	})
+	require.NoError(t, err)
+
+	var otherTenantRuntimeNodeID uuid.UUID
+	err = testDB.QueryRow(ctx, `
+		INSERT INTO runtime_nodes (
+			tenant_id,
+			node_id,
+			name,
+			supported_providers,
+			max_slots,
+			current_load,
+			status,
+			metadata,
+			last_heartbeat_at
+		) VALUES (
+			$1,
+			'runtime-enroll-other-tenant-node',
+			'Runtime Enrollment Other Tenant Node',
+			'{"providers":["claude-code"]}'::jsonb,
+			4,
+			0,
+			'online',
+			'{"region":"other"}'::jsonb,
+			$2
+		)
+		RETURNING id
+	`, otherTenantID, now).Scan(&otherTenantRuntimeNodeID)
+	require.NoError(t, err)
+
+	_, hasStatus := reflect.TypeOf(queries.UpsertRuntimeEnrollmentParams{}).FieldByName("Status")
+	assert.False(t, hasStatus)
+
+	enrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         "runtime-enroll-node",
+		BootstrapKeyID: bootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node","version":"0.1.0"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "pending", enrollment.Status)
+
+	otherTenantConflictingEnrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       otherTenantID,
+		NodeID:         "runtime-enroll-node",
+		BootstrapKeyID: otherTenantBootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node","version":"other-tenant"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+	_, err = testQueries.ApproveRuntimeEnrollmentWithNode(ctx, queries.ApproveRuntimeEnrollmentWithNodeParams{
+		ID:                 otherTenantConflictingEnrollment.ID,
+		TenantID:           otherTenantID,
+		ApprovedBy:         uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		Name:               "Other Tenant Runtime Should Not Take Over",
+		SupportedProviders: []byte(`{"providers":["codex"]}`),
+		MaxSlots:           1,
+		CurrentLoad:        0,
+		NodeStatus:         "online",
+		Metadata:           []byte(`{"region":"other"}`),
+		LastHeartbeatAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+	otherTenantConflictingEnrollment, err = testQueries.GetRuntimeEnrollment(ctx, queries.GetRuntimeEnrollmentParams{
+		TenantID: otherTenantID,
+		ID:       otherTenantConflictingEnrollment.ID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "pending", otherTenantConflictingEnrollment.Status)
+	assert.False(t, otherTenantConflictingEnrollment.RuntimeNodeID.Valid)
+
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         "runtime-enroll-node-no-bootstrap",
+		BootstrapKeyID: uuid.Nil,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-no-bootstrap"}`),
+		LastHelloAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	callerApprovedEnrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         "runtime-enroll-node-caller-approved",
+		BootstrapKeyID: bootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-caller-approved"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "pending", callerApprovedEnrollment.Status)
+
+	_, err = testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   callerApprovedNode.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: callerApprovedEnrollment.ID, Valid: true},
+		TokenLookupHash: "0b0b4a2f2c33c8f20a7a50e617b9eac6f6e26f629dddf1cdaff1301ff68c60d5",
+		TokenSecretHash: "$2a$10$callerApprovedEnrollmentSessionHash",
+		ExpiresAt:       keyExpiresAt,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       otherTenantID,
+		NodeID:         "runtime-enroll-node",
+		BootstrapKeyID: bootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node","tenant":"other"}`),
+		LastHelloAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         "runtime-enroll-node-mismatched",
+		BootstrapKeyID: bootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-mismatched"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         "runtime-enroll-node-wrong-runtime-tenant",
+		BootstrapKeyID: bootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-wrong-runtime-tenant"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         "runtime-enroll-node-disabled",
+		BootstrapKeyID: bootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-disabled"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         "runtime-enroll-node-wrong-bootstrap-tenant",
+		BootstrapKeyID: otherTenantBootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-wrong-bootstrap-tenant"}`),
+		LastHelloAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         "runtime-enroll-node-revoked-bootstrap",
+		BootstrapKeyID: revokedBootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-revoked-bootstrap"}`),
+		LastHelloAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	var invalidEnrollmentCount int
+	err = testDB.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM runtime_enrollments
+		WHERE node_id IN (
+			'runtime-enroll-node-no-bootstrap',
+			'runtime-enroll-node-wrong-bootstrap-tenant',
+			'runtime-enroll-node-revoked-bootstrap'
+		)
+	`).Scan(&invalidEnrollmentCount)
+	require.NoError(t, err)
+	assert.Zero(t, invalidEnrollmentCount)
+
+	defaultEnrollment, err := testQueries.GetRuntimeEnrollmentByNodeID(ctx, queries.GetRuntimeEnrollmentByNodeIDParams{
+		TenantID: tenantID,
+		NodeID:   "runtime-enroll-node",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, enrollment.ID, defaultEnrollment.ID)
+	assert.Equal(t, tenantID, defaultEnrollment.TenantID)
+
+	sessionExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, sessionExpiresAt.Scan(time.Now().Add(12*time.Hour)))
+	_, err = testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   node.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: enrollment.ID, Valid: true},
+		TokenLookupHash: "7019a7eed9f6c05309b6b9402fe9bc59d41f9a6dfc0c1b8c40b6a4d829148a11",
+		TokenSecretHash: "$2a$10$pendingRuntimeSessionSecretHash",
+		ExpiresAt:       sessionExpiresAt,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	approved, err := testQueries.ApproveRuntimeEnrollment(ctx, queries.ApproveRuntimeEnrollmentParams{
+		RuntimeNodeID: node.ID,
+		ID:            enrollment.ID,
+		TenantID:      tenantID,
+		ApprovedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "approved", approved.Status)
+	require.True(t, approved.ApprovedAt.Valid)
+
+	terminalHelloAt := pgtype.Timestamptz{}
+	require.NoError(t, terminalHelloAt.Scan(time.Now().Add(2*time.Minute)))
+	terminalHello, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         "runtime-enroll-node",
+		BootstrapKeyID: replacementBootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node","version":"rebound"}`),
+		LastHelloAt:    terminalHelloAt,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, approved.ID, terminalHello.ID)
+	assert.Equal(t, "approved", terminalHello.Status)
+	require.True(t, terminalHello.RuntimeNodeID.Valid)
+	assert.Equal(t, node.ID, terminalHello.RuntimeNodeID.UUID)
+	assert.Equal(t, bootstrapKey.ID, terminalHello.BootstrapKeyID)
+	assert.JSONEq(t, `{"node_id":"runtime-enroll-node","version":"0.1.0"}`, string(terminalHello.RequestPayload))
+	assert.WithinDuration(t, terminalHelloAt.Time, terminalHello.LastHelloAt.Time, time.Second)
+
+	_, err = testQueries.RejectRuntimeEnrollment(ctx, queries.RejectRuntimeEnrollmentParams{
+		ID:           approved.ID,
+		TenantID:     tenantID,
+		RejectedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RejectReason: pgtype.Text{String: "approved enrollments cannot be rejected", Valid: true},
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	rejectedEnrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         "runtime-enroll-node-rejected",
+		BootstrapKeyID: bootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-rejected"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+	rejected, err := testQueries.RejectRuntimeEnrollment(ctx, queries.RejectRuntimeEnrollmentParams{
+		ID:           rejectedEnrollment.ID,
+		TenantID:     tenantID,
+		RejectedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RejectReason: pgtype.Text{String: "operator rejected", Valid: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "rejected", rejected.Status)
+
+	_, err = testQueries.ApproveRuntimeEnrollment(ctx, queries.ApproveRuntimeEnrollmentParams{
+		RuntimeNodeID: rejectedNode.ID,
+		ID:            rejectedEnrollment.ID,
+		TenantID:      tenantID,
+		ApprovedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.RevokeRuntimeEnrollment(ctx, queries.RevokeRuntimeEnrollmentParams{
+		ID:           rejectedEnrollment.ID,
+		TenantID:     tenantID,
+		RevokedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RevokeReason: pgtype.Text{String: "rejected enrollments cannot be revoked", Valid: true},
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	revokedEnrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         "runtime-enroll-node-revoked",
+		BootstrapKeyID: bootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-revoked"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+	revokedEnrollmentRow, err := testQueries.RevokeRuntimeEnrollment(ctx, queries.RevokeRuntimeEnrollmentParams{
+		ID:           revokedEnrollment.ID,
+		TenantID:     tenantID,
+		RevokedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RevokeReason: pgtype.Text{String: "operator revoked", Valid: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "revoked", revokedEnrollmentRow.Status)
+
+	_, err = testQueries.ApproveRuntimeEnrollment(ctx, queries.ApproveRuntimeEnrollmentParams{
+		RuntimeNodeID: revokedNode.ID,
+		ID:            revokedEnrollmentRow.ID,
+		TenantID:      tenantID,
+		ApprovedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   alternateNode.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: approved.ID, Valid: true},
+		TokenLookupHash: "0d89688e9f4af8f3cc501cc9406a9daa9ae98b512704fcb69c4fdf818175c998",
+		TokenSecretHash: "$2a$10$mismatchedRuntimeSessionSecretHash",
+		ExpiresAt:       sessionExpiresAt,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	session, err := testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   node.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: approved.ID, Valid: true},
+		TokenLookupHash: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+		TokenSecretHash: "$2a$10$runtimeSessionSecretHashForLaterValidation",
+		ExpiresAt:       sessionExpiresAt,
+	})
+	require.NoError(t, err)
+
+	validatedSession, err := testQueries.GetActiveRuntimeSessionByLookupHash(ctx, "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")
+	require.NoError(t, err)
+	assert.Equal(t, session.ID, validatedSession.ID)
+	assert.Equal(t, "$2a$10$runtimeSessionSecretHashForLaterValidation", validatedSession.TokenSecretHash)
+
+	renewedExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, renewedExpiresAt.Scan(time.Now().Add(24*time.Hour)))
+	renewedSession, err := testQueries.RenewRuntimeSession(ctx, queries.RenewRuntimeSessionParams{
+		ID:        session.ID,
+		TenantID:  tenantID,
+		ExpiresAt: renewedExpiresAt,
+	})
+	require.NoError(t, err)
+	assert.True(t, renewedSession.ExpiresAt.Time.After(session.ExpiresAt.Time))
+
+	expiredSessionExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, expiredSessionExpiresAt.Scan(time.Now().Add(-1*time.Hour)))
+	expiredSession, err := testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   node.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: approved.ID, Valid: true},
+		TokenLookupHash: "de9f2c7fd25e1b3afad3e85a0bd17d9b954789f0ecfbb0a1c6dfc1d54c2bb74b",
+		TokenSecretHash: "$2a$10$expiredRuntimeSessionSecretHash",
+		ExpiresAt:       expiredSessionExpiresAt,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.RenewRuntimeSession(ctx, queries.RenewRuntimeSessionParams{
+		ID:        expiredSession.ID,
+		TenantID:  tenantID,
+		ExpiresAt: renewedExpiresAt,
+	})
+	assert.Error(t, err)
+
+	_, err = testQueries.TouchRuntimeSessionLastSeen(ctx, queries.TouchRuntimeSessionLastSeenParams{
+		ID:       expiredSession.ID,
+		TenantID: tenantID,
+	})
+	assert.Error(t, err)
+
+	capability, err := testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+		TenantID:         tenantID,
+		RuntimeNodeID:    node.ID,
+		CapabilityType:   "provider",
+		CapabilityKey:    "claude-code",
+		ProviderType:     "claude-code",
+		ProviderVersion:  pgtype.Text{String: "1.0.0", Valid: true},
+		BinaryPath:       pgtype.Text{String: "/usr/local/bin/claude", Valid: true},
+		Available:        true,
+		WorkspaceBaseDir: pgtype.Text{String: "/data/superteam/workspaces", Valid: true},
+		Capacity:         []byte(`{"max_slots":4}`),
+		Labels:           []byte(`{"os":"darwin"}`),
+		Status:           "healthy",
+		Details:          []byte(`{"source":"initial"}`),
+		HealthStatus:     "healthy",
+		Metadata:         []byte(`{"source":"hello"}`),
+		LastSeenAt:       now,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "claude-code", capability.ProviderType)
+
+	later := pgtype.Timestamptz{}
+	require.NoError(t, later.Scan(time.Now().Add(time.Minute)))
+	refreshedCapability, err := testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+		TenantID:         tenantID,
+		RuntimeNodeID:    node.ID,
+		CapabilityType:   "provider",
+		CapabilityKey:    "claude-code",
+		ProviderType:     "claude-code",
+		ProviderVersion:  pgtype.Text{String: "9.9.9", Valid: true},
+		BinaryPath:       pgtype.Text{String: "/tmp/rewritten", Valid: true},
+		Available:        false,
+		WorkspaceBaseDir: pgtype.Text{String: "/tmp/rewritten-workspace", Valid: true},
+		Capacity:         []byte(`{"max_slots":1}`),
+		Labels:           []byte(`{"os":"linux"}`),
+		Status:           "degraded",
+		Details:          []byte(`{"reason":"binary_missing"}`),
+		HealthStatus:     "degraded",
+		Metadata:         []byte(`{"source":"refresh"}`),
+		LastSeenAt:       later,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, capability.ID, refreshedCapability.ID)
+	assert.Equal(t, tenantID, refreshedCapability.TenantID)
+	assert.Equal(t, "degraded", refreshedCapability.Status)
+	assert.JSONEq(t, `{"reason":"binary_missing"}`, string(refreshedCapability.Details))
+	assert.Equal(t, "9.9.9", refreshedCapability.ProviderVersion.String)
+	assert.Equal(t, "/tmp/rewritten", refreshedCapability.BinaryPath.String)
+	assert.False(t, refreshedCapability.Available)
+	assert.Equal(t, "/tmp/rewritten-workspace", refreshedCapability.WorkspaceBaseDir.String)
+	assert.JSONEq(t, `{"max_slots":1}`, string(refreshedCapability.Capacity))
+	assert.JSONEq(t, `{"os":"linux"}`, string(refreshedCapability.Labels))
+	assert.Equal(t, "degraded", refreshedCapability.HealthStatus)
+	assert.JSONEq(t, `{"source":"refresh"}`, string(refreshedCapability.Metadata))
+
+	_, err = testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+		TenantID:         otherTenantID,
+		RuntimeNodeID:    node.ID,
+		CapabilityType:   "provider",
+		CapabilityKey:    "claude-code",
+		ProviderType:     "claude-code",
+		ProviderVersion:  pgtype.Text{String: "2.0.0", Valid: true},
+		BinaryPath:       pgtype.Text{String: "/other/bin/claude", Valid: true},
+		Available:        true,
+		WorkspaceBaseDir: pgtype.Text{String: "/other/workspace", Valid: true},
+		Capacity:         []byte(`{"max_slots":2}`),
+		Labels:           []byte(`{"os":"linux"}`),
+		Status:           "healthy",
+		Details:          []byte(`{"source":"other-tenant"}`),
+		HealthStatus:     "healthy",
+		Metadata:         []byte(`{"source":"other"}`),
+		LastSeenAt:       later,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	persistedCapability, err := testQueries.GetRuntimeCapability(ctx, queries.GetRuntimeCapabilityParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  node.ID,
+		CapabilityType: "provider",
+		CapabilityKey:  "claude-code",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, refreshedCapability.ID, persistedCapability.ID)
+	assert.Equal(t, "degraded", persistedCapability.Status)
+	assert.JSONEq(t, `{"source":"refresh"}`, string(persistedCapability.Metadata))
+
+	var otherTenantCapabilityCount int
+	err = testDB.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM runtime_capabilities
+		WHERE tenant_id = $1
+		  AND runtime_node_id = $2
+		  AND capability_type = 'provider'
+		  AND capability_key = 'claude-code'
+	`, otherTenantID, node.ID).Scan(&otherTenantCapabilityCount)
+	require.NoError(t, err)
+	assert.Zero(t, otherTenantCapabilityCount)
+
+	capabilities, err := testQueries.ListRuntimeCapabilities(ctx, queries.ListRuntimeCapabilitiesParams{
+		TenantID:      tenantID,
+		RuntimeNodeID: node.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, capabilities, 1)
+	assert.Equal(t, capability.ID, capabilities[0].ID)
+
+	revokedApprovedEnrollment, err := testQueries.RevokeRuntimeEnrollment(ctx, queries.RevokeRuntimeEnrollmentParams{
+		ID:           approved.ID,
+		TenantID:     tenantID,
+		RevokedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RevokeReason: pgtype.Text{String: "administrator revoked enrollment", Valid: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "revoked", revokedApprovedEnrollment.Status)
+	require.True(t, revokedApprovedEnrollment.RevokedAt.Valid)
+
+	_, err = testQueries.GetActiveRuntimeSessionByLookupHash(ctx, "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.RenewRuntimeSession(ctx, queries.RenewRuntimeSessionParams{
+		ID:        session.ID,
+		TenantID:  tenantID,
+		ExpiresAt: renewedExpiresAt,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.TouchRuntimeSessionLastSeen(ctx, queries.TouchRuntimeSessionLastSeenParams{
+		ID:       session.ID,
+		TenantID: tenantID,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	var sessionRevokedAt pgtype.Timestamptz
+	err = testDB.QueryRow(ctx, `
+		SELECT revoked_at
+		FROM runtime_sessions
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, session.ID, tenantID).Scan(&sessionRevokedAt)
+	require.NoError(t, err)
+	assert.True(t, sessionRevokedAt.Valid)
+}
+
+func TestDigitalEmployeeExecutionQueries(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+	otherTenantID := uuid.MustParse("00000000-0000-0000-0000-000000000201")
+	_, err := testDB.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'digital-employee-other', 'Digital Employee Other Tenant', 'active')
+		ON CONFLICT (id) DO NOTHING
+	`, otherTenantID)
+	require.NoError(t, err)
+
+	now := pgtype.Timestamptz{}
+	require.NoError(t, now.Scan(time.Now()))
+	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "digital-employee-runtime-node",
+		Name:               "Digital Employee Runtime Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	digitalBootstrapKeyExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, digitalBootstrapKeyExpiresAt.Scan(time.Now().Add(24*time.Hour)))
+	digitalBootstrapKey, err := testQueries.CreateRuntimeBootstrapKey(ctx, queries.CreateRuntimeBootstrapKeyParams{
+		TenantID:    uuid.NullUUID{UUID: tenantID, Valid: true},
+		Name:        "digital-employee-bootstrap",
+		KeyHash:     "digital-employee-bootstrap-key-hash",
+		Status:      "active",
+		ExpiresAt:   digitalBootstrapKeyExpiresAt,
+		CreatedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		Description: pgtype.Text{String: "Digital employee runtime enrollment key", Valid: true},
+		Metadata:    []byte(`{"environment":"digital-employee-test"}`),
+	})
+	require.NoError(t, err)
+
+	employee, err := testQueries.CreateDigitalEmployee(ctx, queries.CreateDigitalEmployeeParams{
+		TenantID:         tenantID,
+		TeamID:           uuid.NullUUID{UUID: teamID, Valid: true},
+		Name:             "需求分析数字员工",
+		Role:             "requirements_analyst",
+		Description:      pgtype.Text{String: "分析需求并产出结构化交接包", Valid: true},
+		Status:           "draft",
+		PermissionPolicy: []byte(`{"scope":"team"}`),
+		ContextPolicy:    []byte(`{"memory":"task_slice"}`),
+		ApprovalPolicy:   []byte(`{"high_risk":"human_required"}`),
+		RiskLevel:        "normal",
+		Metadata:         []byte(`{"owner":"qa"}`),
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/no-approved-runtime",
+		WorkspacePolicy:      []byte(`{"base_dir":"/data/superteam/workspaces"}`),
+		SessionPolicy:        []byte(`{"mode":"reuse_latest"}`),
+		RuntimeSelector:      []byte(`{"labels":{"os":"darwin"}}`),
+		CapacityRequirements: []byte(`{"slots":1}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"no-approved-runtime"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	enrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         "digital-employee-runtime-node",
+		BootstrapKeyID: digitalBootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"digital-employee-runtime-node","version":"0.1.0"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+		TenantID:         tenantID,
+		RuntimeNodeID:    node.ID,
+		CapabilityType:   "provider",
+		CapabilityKey:    "claude-code",
+		ProviderType:     "claude-code",
+		ProviderVersion:  pgtype.Text{String: "1.0.0", Valid: true},
+		BinaryPath:       pgtype.Text{String: "/usr/local/bin/claude", Valid: true},
+		Available:        true,
+		WorkspaceBaseDir: pgtype.Text{String: "/data/superteam/workspaces", Valid: true},
+		Capacity:         []byte(`{"max_slots":2}`),
+		Labels:           []byte(`{"os":"darwin"}`),
+		Status:           "healthy",
+		Details:          []byte(`{"source":"digital-employee-test"}`),
+		HealthStatus:     "healthy",
+		Metadata:         []byte(`{"source":"capability-report"}`),
+		LastSeenAt:       now,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/pending-runtime",
+		WorkspacePolicy:      []byte(`{"base_dir":"/data/superteam/workspaces"}`),
+		SessionPolicy:        []byte(`{"mode":"reuse_latest"}`),
+		RuntimeSelector:      []byte(`{"labels":{"os":"darwin"}}`),
+		CapacityRequirements: []byte(`{"slots":1}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"pending-runtime"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	approvedEnrollment, err := testQueries.ApproveRuntimeEnrollment(ctx, queries.ApproveRuntimeEnrollmentParams{
+		RuntimeNodeID: node.ID,
+		ID:            enrollment.ID,
+		TenantID:      tenantID,
+		ApprovedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+		TenantID:         tenantID,
+		RuntimeNodeID:    node.ID,
+		CapabilityType:   "provider",
+		CapabilityKey:    "claude-code",
+		ProviderType:     "claude-code",
+		ProviderVersion:  pgtype.Text{String: "1.0.0", Valid: true},
+		BinaryPath:       pgtype.Text{String: "/usr/local/bin/claude", Valid: true},
+		Available:        false,
+		WorkspaceBaseDir: pgtype.Text{String: "/data/superteam/workspaces", Valid: true},
+		Capacity:         []byte(`{"max_slots":0}`),
+		Labels:           []byte(`{"os":"darwin"}`),
+		Status:           "degraded",
+		Details:          []byte(`{"reason":"provider_unavailable"}`),
+		HealthStatus:     "degraded",
+		Metadata:         []byte(`{"source":"capability-report"}`),
+		LastSeenAt:       now,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/unavailable-provider",
+		WorkspacePolicy:      []byte(`{"base_dir":"/data/superteam/workspaces"}`),
+		SessionPolicy:        []byte(`{"mode":"reuse_latest"}`),
+		RuntimeSelector:      []byte(`{"labels":{"os":"darwin"}}`),
+		CapacityRequirements: []byte(`{"slots":1}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"unavailable-provider"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+		TenantID:         tenantID,
+		RuntimeNodeID:    node.ID,
+		CapabilityType:   "provider",
+		CapabilityKey:    "claude-code",
+		ProviderType:     "claude-code",
+		ProviderVersion:  pgtype.Text{String: "1.0.0", Valid: true},
+		BinaryPath:       pgtype.Text{String: "/usr/local/bin/claude", Valid: true},
+		Available:        true,
+		WorkspaceBaseDir: pgtype.Text{String: "/data/superteam/workspaces", Valid: true},
+		Capacity:         []byte(`{"max_slots":2}`),
+		Labels:           []byte(`{"os":"darwin"}`),
+		Status:           "healthy",
+		Details:          []byte(`{"source":"digital-employee-test"}`),
+		HealthStatus:     "healthy",
+		Metadata:         []byte(`{"source":"capability-report"}`),
+		LastSeenAt:       now,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "disabled",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/disabled-employee-upsert",
+		WorkspacePolicy:      []byte(`{"base_dir":"/data/superteam/workspaces"}`),
+		SessionPolicy:        []byte(`{"mode":"reuse_latest"}`),
+		RuntimeSelector:      []byte(`{"labels":{"os":"darwin"}}`),
+		CapacityRequirements: []byte(`{"slots":1}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"disabled-employee-upsert"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "error",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/error-employee-upsert",
+		WorkspacePolicy:      []byte(`{"base_dir":"/data/superteam/workspaces"}`),
+		SessionPolicy:        []byte(`{"mode":"reuse_latest"}`),
+		RuntimeSelector:      []byte(`{"labels":{"os":"darwin"}}`),
+		CapacityRequirements: []byte(`{"slots":1}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"error-employee-upsert"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "draft",
+	})
+	require.NoError(t, err)
+
+	runtimeSessionExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, runtimeSessionExpiresAt.Scan(time.Now().Add(12*time.Hour)))
+	runtimeSession, err := testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   node.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: approvedEnrollment.ID, Valid: true},
+		TokenLookupHash: "b2c6249cd92c1aee9a06844a5c3f451a8dd76e6ac8f7fd599a7445a027fbc617",
+		TokenSecretHash: "$2a$10$digitalEmployeeRuntimeSessionHash",
+		ExpiresAt:       runtimeSessionExpiresAt,
+	})
+	require.NoError(t, err)
+
+	instance, err := testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/requirements-analyst",
+		WorkspacePolicy:      []byte(`{"base_dir":"/data/superteam/workspaces"}`),
+		SessionPolicy:        []byte(`{"mode":"reuse_latest"}`),
+		RuntimeSelector:      []byte(`{"labels":{"os":"darwin"}}`),
+		CapacityRequirements: []byte(`{"slots":1}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"web"}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, employee.ID, instance.DigitalEmployeeID)
+
+	updatedInstance, err := testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/requirements-analyst-updated",
+		WorkspacePolicy:      []byte(`{"base_dir":"/data/superteam/workspaces","mode":"updated"}`),
+		SessionPolicy:        []byte(`{"mode":"new"}`),
+		RuntimeSelector:      []byte(`{"labels":{"tier":"gpu"}}`),
+		CapacityRequirements: []byte(`{"slots":2}`),
+		FallbackPolicy:       []byte(`{"enabled":true}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"web-update"}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, instance.ID, updatedInstance.ID)
+	assert.Equal(t, "/data/superteam/workspaces/agents/requirements-analyst-updated", updatedInstance.AgentHomeDir)
+	assert.JSONEq(t, `{"mode":"new"}`, string(updatedInstance.SessionPolicy))
+
+	_, err = testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             otherTenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/wrong-tenant",
+		WorkspacePolicy:      []byte(`{"base_dir":"/wrong-tenant"}`),
+		SessionPolicy:        []byte(`{"mode":"ephemeral"}`),
+		RuntimeSelector:      []byte(`{"labels":{"tenant":"other"}}`),
+		CapacityRequirements: []byte(`{"slots":3}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"wrong-tenant"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	tenantInstance, err := testQueries.GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx, queries.GetDigitalEmployeeExecutionInstanceByEmployeeIDParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employee.ID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, updatedInstance.ID, tenantInstance.ID)
+	assert.Equal(t, "/data/superteam/workspaces/agents/requirements-analyst-updated", tenantInstance.AgentHomeDir)
+
+	var otherTenantInstanceCount int
+	err = testDB.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM digital_employee_execution_instances
+		WHERE tenant_id = $1
+		  AND digital_employee_id = $2
+		  AND deleted_at IS NULL
+	`, otherTenantID, employee.ID).Scan(&otherTenantInstanceCount)
+	require.NoError(t, err)
+	assert.Zero(t, otherTenantInstanceCount)
+
+	readyInstance, err := testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
+		Status:   "ready",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "ready", readyInstance.Status)
+	require.True(t, readyInstance.ReadyAt.Valid)
+
+	activeEmployee, err := testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "active",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "active", activeEmployee.Status)
+
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
+		Status:   "provisioning",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-provisioning-instance",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"provisioning-instance"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
+		Status:   "disabled",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-disabled-instance",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"disabled-instance"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:           instance.ID,
+		TenantID:     tenantID,
+		Status:       "error",
+		ErrorMessage: pgtype.Text{String: "provider provisioning failed", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-error-instance",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"error-instance"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	readyInstance, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
+		Status:   "ready",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "ready", readyInstance.Status)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "disabled",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-disabled-employee",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"disabled-employee"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "error",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-error-employee",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"error-employee"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	activeEmployee, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "active",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "active", activeEmployee.Status)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_enrollments
+		SET status = 'pending',
+		    revoked_at = NULL,
+		    rejected_at = NULL,
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, approvedEnrollment.ID, tenantID)
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-pending-enrollment",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"pending-enrollment"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_enrollments
+		SET status = 'revoked',
+		    revoked_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, approvedEnrollment.ID, tenantID)
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-revoked-enrollment",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"revoked-enrollment"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_enrollments
+		SET status = 'approved',
+		    revoked_at = NULL,
+		    rejected_at = NULL,
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, approvedEnrollment.ID, tenantID)
+	require.NoError(t, err)
+
+	_, err = testQueries.UpdateRuntimeNodeStatus(ctx, queries.UpdateRuntimeNodeStatusParams{
+		NodeID: node.NodeID,
+		Status: "offline",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-offline-runtime",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"offline-runtime"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateRuntimeNodeStatus(ctx, queries.UpdateRuntimeNodeStatusParams{
+		NodeID: node.NodeID,
+		Status: "online",
+	})
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_nodes
+		SET disabled_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1
+	`, node.ID)
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-disabled-runtime",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"disabled-runtime"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_nodes
+		SET disabled_at = NULL,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, node.ID)
+	require.NoError(t, err)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_sessions
+		SET expires_at = NOW() - INTERVAL '1 hour',
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, runtimeSession.ID, tenantID)
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-expired-runtime-session",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"expired-runtime-session"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_sessions
+		SET expires_at = $3,
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, runtimeSession.ID, tenantID, runtimeSessionExpiresAt)
+	require.NoError(t, err)
+
+	_, err = testQueries.RevokeRuntimeSession(ctx, queries.RevokeRuntimeSessionParams{
+		ID:            runtimeSession.ID,
+		TenantID:      tenantID,
+		RevokedReason: pgtype.Text{String: "runtime stopped before provider session create", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-revoked-runtime-session",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"revoked-runtime-session"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	runtimeSession, err = testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   node.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: approvedEnrollment.ID, Valid: true},
+		TokenLookupHash: "641e92a38e2ec02749c9e47c409af6befb86bc0f89ddd65317cdd3a425926d01",
+		TokenSecretHash: "$2a$10$digitalEmployeeRuntimeSessionHashForProviderSession",
+		ExpiresAt:       runtimeSessionExpiresAt,
+	})
+	require.NoError(t, err)
+
+	session, err := testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-001",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"resume"}`),
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            otherTenantID,
+		ProviderSessionID:   "claude-session-wrong-tenant",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"wrong-tenant"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-mismatched-runtime",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       uuid.New(),
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"mismatched-runtime"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-mismatched-provider",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "codex",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"mismatched-provider"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	var pollutedProviderSessionCount int
+	err = testDB.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM provider_sessions
+		WHERE provider_session_id IN (
+			'claude-session-wrong-tenant',
+			'claude-session-mismatched-runtime',
+			'claude-session-mismatched-provider',
+			'claude-session-provisioning-instance',
+			'claude-session-pending-enrollment',
+			'claude-session-revoked-enrollment',
+			'claude-session-offline-runtime',
+			'claude-session-disabled-runtime',
+			'claude-session-expired-runtime-session',
+			'claude-session-revoked-runtime-session'
+		)
+	`).Scan(&pollutedProviderSessionCount)
+	require.NoError(t, err)
+	assert.Zero(t, pollutedProviderSessionCount)
+
+	eventPayload1 := []byte(`{"message":"session started"}`)
+	event1, err := testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    1,
+		Payload:           eventPayload1,
+		RequestID:         pgtype.Text{String: "request-001", Valid: true},
+		CommandID:         pgtype.Text{String: "command-001", Valid: true},
+		RawEventRef:       pgtype.Text{String: "s3://superteam/raw/session-001/1.json", Valid: true},
+		Metadata:          []byte(`{"channel":"stdout"}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, employee.ID, event1.DigitalEmployeeID)
+	assert.Equal(t, instance.ID, event1.ExecutionInstanceID)
+	assert.Equal(t, node.ID, event1.RuntimeNodeID)
+	assert.Equal(t, "claude-code", event1.ProviderType)
+	assert.Equal(t, "request-001", event1.RequestID.String)
+	assert.Equal(t, "command-001", event1.CommandID.String)
+
+	eventPayload2 := []byte(`{"tool":"write_file"}`)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "tool_call",
+		SequenceNumber:    2,
+		Payload:           eventPayload2,
+		Metadata:          []byte(`{"channel":"json_stream"}`),
+	})
+	assert.Error(t, err)
+
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "tool_call",
+		SequenceNumber:    2,
+		Payload:           eventPayload2,
+		CommandID:         pgtype.Text{String: "command-002", Valid: true},
+		Metadata:          []byte(`{"channel":"json_stream"}`),
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "disabled",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    3,
+		Payload:           []byte(`{"message":"disabled employee"}`),
+		RequestID:         pgtype.Text{String: "request-disabled-employee-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "error",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    4,
+		Payload:           []byte(`{"message":"error employee"}`),
+		RequestID:         pgtype.Text{String: "request-error-employee-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "active",
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
+		Status:   "provisioning",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    5,
+		Payload:           []byte(`{"message":"provisioning execution instance"}`),
+		RequestID:         pgtype.Text{String: "request-provisioning-instance-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
+		Status:   "disabled",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    6,
+		Payload:           []byte(`{"message":"disabled execution instance"}`),
+		RequestID:         pgtype.Text{String: "request-disabled-instance-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:           instance.ID,
+		TenantID:     tenantID,
+		Status:       "error",
+		ErrorMessage: pgtype.Text{String: "provider became unavailable", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    7,
+		Payload:           []byte(`{"message":"error execution instance"}`),
+		RequestID:         pgtype.Text{String: "request-error-instance-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
+		Status:   "ready",
+	})
+	require.NoError(t, err)
+
+	stoppedSession, err := testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-stopped-event-context",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"stopped-event-context"}`),
+	})
+	require.NoError(t, err)
+	_, err = testQueries.UpdateProviderSessionStatus(ctx, queries.UpdateProviderSessionStatusParams{
+		ID:       stoppedSession.ID,
+		TenantID: tenantID,
+		Status:   "stopped",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: stoppedSession.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    1,
+		Payload:           []byte(`{"message":"stopped provider session"}`),
+		RequestID:         pgtype.Text{String: "request-stopped-provider-session-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	completedSession, err := testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-completed-event-context",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"completed-event-context"}`),
+	})
+	require.NoError(t, err)
+	_, err = testQueries.UpdateProviderSessionStatus(ctx, queries.UpdateProviderSessionStatusParams{
+		ID:       completedSession.ID,
+		TenantID: tenantID,
+		Status:   "completed",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: completedSession.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    1,
+		Payload:           []byte(`{"message":"completed provider session"}`),
+		RequestID:         pgtype.Text{String: "request-completed-provider-session-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	failedSession, err := testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-failed-event-context",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"failed-event-context"}`),
+	})
+	require.NoError(t, err)
+	_, err = testQueries.UpdateProviderSessionStatus(ctx, queries.UpdateProviderSessionStatusParams{
+		ID:           failedSession.ID,
+		TenantID:     tenantID,
+		Status:       "failed",
+		ErrorMessage: pgtype.Text{String: "provider session failed", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: failedSession.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    1,
+		Payload:           []byte(`{"message":"failed provider session"}`),
+		RequestID:         pgtype.Text{String: "request-failed-provider-session-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    3,
+		Payload:           []byte(`{"message":"empty correlation"}`),
+		RequestID:         pgtype.Text{String: "", Valid: true},
+		CommandID:         pgtype.Text{String: "", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.Error(t, err)
+
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          uuid.New(),
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    3,
+		Payload:           []byte(`{"message":"wrong tenant"}`),
+		RequestID:         pgtype.Text{String: "request-wrong-tenant", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.Error(t, err)
+
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            "wrong-runtime-node",
+		EventType:         "message_delta",
+		SequenceNumber:    3,
+		Payload:           []byte(`{"message":"wrong runtime node"}`),
+		RequestID:         pgtype.Text{String: "request-wrong-runtime-node", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.RevokeRuntimeSession(ctx, queries.RevokeRuntimeSessionParams{
+		ID:            runtimeSession.ID,
+		TenantID:      tenantID,
+		RevokedReason: pgtype.Text{String: "runtime stopped before event upload", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    3,
+		Payload:           []byte(`{"message":"revoked runtime session"}`),
+		RequestID:         pgtype.Text{String: "request-revoked-runtime-session", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   node.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: approvedEnrollment.ID, Valid: true},
+		TokenLookupHash: "94f98d42ed5bca91ec4099422b84f0d0de2a1bd8f80d5d7c0dd9e5f1d5418571",
+		TokenSecretHash: "$2a$10$digitalEmployeeRuntimeSessionHashAfterRevoke",
+		ExpiresAt:       runtimeSessionExpiresAt,
+	})
+	require.NoError(t, err)
+	_, err = testQueries.RevokeRuntimeEnrollment(ctx, queries.RevokeRuntimeEnrollmentParams{
+		ID:           approvedEnrollment.ID,
+		TenantID:     tenantID,
+		RevokedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RevokeReason: pgtype.Text{String: "operator revoked runtime before event upload", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    3,
+		Payload:           []byte(`{"message":"revoked runtime enrollment"}`),
+		RequestID:         pgtype.Text{String: "request-revoked-runtime-enrollment", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	events, err := testQueries.ListProviderSessionEvents(ctx, queries.ListProviderSessionEventsParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 2)
+	assert.Equal(t, event1.ID, events[0].ID)
+	assert.Equal(t, int32(2), events[1].SequenceNumber)
+
+	maxSequence, err := testQueries.GetLatestProviderSessionEventSequence(ctx, queries.GetLatestProviderSessionEventSequenceParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), maxSequence)
+
+	updatedSession, err := testQueries.UpdateProviderSessionStatus(ctx, queries.UpdateProviderSessionStatusParams{
+		ID:       session.ID,
+		TenantID: tenantID,
+		Status:   "idle",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "idle", updatedSession.Status)
 }
 
 // ============================================================================
@@ -1556,8 +3289,8 @@ func TestCreateRuntimeNode_DuplicateNodeID(t *testing.T) {
 	require.NoError(t, err)
 	defer testQueries.DeleteRuntimeNode(ctx, node1.NodeID)
 
-	// 尝试创建重复 node_id 的节点
-	_, err = testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+	// 重复 node_id 会按注册 upsert 语义刷新同一节点
+	node2, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
 		NodeID:             "duplicate-node",
 		Name:               "Node 2",
 		SupportedProviders: providersJSON,
@@ -1567,8 +3300,10 @@ func TestCreateRuntimeNode_DuplicateNodeID(t *testing.T) {
 		Metadata:           metadataJSON,
 		LastHeartbeatAt:    now,
 	})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicate key value")
+	require.NoError(t, err)
+	assert.Equal(t, node1.ID, node2.ID)
+	assert.Equal(t, "Node 2", node2.Name)
+	assert.Equal(t, int32(4), node2.MaxSlots)
 }
 
 func TestCreateTask_PreservesCreatorUUIDWithoutForeignKey(t *testing.T) {
@@ -1633,12 +3368,13 @@ func TestCreateRuntimeToken_DuplicateNodeID(t *testing.T) {
 	require.NoError(t, err)
 	defer testQueries.DeleteRuntimeToken(ctx, token1.NodeID)
 
-	// 尝试为同一个 node_id 创建第二个 token
-	_, err = testQueries.CreateRuntimeToken(ctx, queries.CreateRuntimeTokenParams{
+	// 同一个 node_id 的有效 token 会按 upsert 语义刷新哈希和过期时间
+	token2, err := testQueries.CreateRuntimeToken(ctx, queries.CreateRuntimeTokenParams{
 		NodeID:    "duplicate-token-node",
 		TokenHash: "hash2",
 		ExpiresAt: expiresAt,
 	})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicate key value")
+	require.NoError(t, err)
+	assert.Equal(t, token1.ID, token2.ID)
+	assert.Equal(t, "hash2", token2.TokenHash)
 }

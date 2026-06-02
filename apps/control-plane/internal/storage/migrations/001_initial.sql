@@ -126,6 +126,83 @@ CREATE TABLE auth_runtime_tokens (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE runtime_bootstrap_keys (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+    name VARCHAR(255) NOT NULL,
+    key_hash VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
+    description TEXT,
+    expires_at TIMESTAMPTZ,
+    created_by UUID,
+    revoked_at TIMESTAMPTZ,
+    revoked_by UUID,
+    revoked_reason TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE runtime_enrollments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+    runtime_node_id UUID,
+    node_id VARCHAR(255) NOT NULL,
+    bootstrap_key_id UUID NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    approved_by UUID,
+    approved_at TIMESTAMPTZ,
+    rejected_by UUID,
+    rejected_at TIMESTAMPTZ,
+    reject_reason TEXT,
+    revoked_by UUID,
+    revoked_at TIMESTAMPTZ,
+    revoke_reason TEXT,
+    last_hello_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE runtime_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+    runtime_node_id UUID NOT NULL,
+    enrollment_id UUID,
+    token_lookup_hash VARCHAR(64) UNIQUE NOT NULL,
+    token_secret_hash VARCHAR(255) NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    revoked_at TIMESTAMPTZ,
+    revoked_reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE runtime_capabilities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+    runtime_node_id UUID NOT NULL,
+    capability_type VARCHAR(100) NOT NULL,
+    capability_key VARCHAR(255) NOT NULL,
+    provider_type VARCHAR(100) NOT NULL,
+    provider_version VARCHAR(100),
+    binary_path TEXT,
+    available BOOLEAN NOT NULL DEFAULT false,
+    workspace_base_dir TEXT,
+    capacity JSONB NOT NULL DEFAULT '{}'::jsonb,
+    labels JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status VARCHAR(50) NOT NULL DEFAULT 'unknown',
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    health_status VARCHAR(50) NOT NULL DEFAULT 'unknown',
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_seen_at TIMESTAMPTZ,
+    disabled_at TIMESTAMPTZ,
+    archived_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE auth_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
@@ -137,6 +214,95 @@ CREATE TABLE auth_sessions (
     revoked_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================================
+-- Digital Employee Module
+-- ============================================================================
+
+CREATE TABLE digital_employees (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+    team_id UUID,
+    name VARCHAR(255) NOT NULL,
+    role VARCHAR(100) NOT NULL,
+    description TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'draft',
+    permission_policy JSONB NOT NULL DEFAULT '{}'::jsonb,
+    context_policy JSONB NOT NULL DEFAULT '{}'::jsonb,
+    approval_policy JSONB NOT NULL DEFAULT '{}'::jsonb,
+    risk_level VARCHAR(50) NOT NULL DEFAULT 'normal',
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    disabled_at TIMESTAMPTZ,
+    archived_at TIMESTAMPTZ,
+    deleted_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE digital_employee_execution_instances (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+    digital_employee_id UUID NOT NULL,
+    runtime_node_id UUID NOT NULL,
+    provider_type VARCHAR(100) NOT NULL,
+    agent_home_dir TEXT NOT NULL,
+    workspace_policy JSONB NOT NULL DEFAULT '{}'::jsonb,
+    session_policy JSONB NOT NULL DEFAULT '{}'::jsonb,
+    runtime_selector JSONB NOT NULL DEFAULT '{}'::jsonb,
+    capacity_requirements JSONB NOT NULL DEFAULT '{}'::jsonb,
+    fallback_policy JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status VARCHAR(50) NOT NULL DEFAULT 'provisioning',
+    ready_at TIMESTAMPTZ,
+    disabled_at TIMESTAMPTZ,
+    error_at TIMESTAMPTZ,
+    error_message TEXT,
+    deleted_at TIMESTAMPTZ,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================================
+-- Provider Module
+-- ============================================================================
+
+CREATE TABLE provider_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+    provider_session_id VARCHAR(255) NOT NULL,
+    digital_employee_id UUID NOT NULL,
+    execution_instance_id UUID NOT NULL,
+    runtime_node_id UUID NOT NULL,
+    provider_type VARCHAR(100) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'running',
+    recoverable BOOLEAN NOT NULL DEFAULT true,
+    last_active_at TIMESTAMPTZ,
+    closed_at TIMESTAMPTZ,
+    error_message TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE provider_session_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+    provider_session_id UUID NOT NULL,
+    digital_employee_id UUID NOT NULL,
+    execution_instance_id UUID NOT NULL,
+    runtime_node_id UUID NOT NULL,
+    provider_type VARCHAR(100) NOT NULL,
+    event_type VARCHAR(100) NOT NULL,
+    sequence_number INTEGER NOT NULL,
+    payload JSONB NOT NULL,
+    request_id VARCHAR(255),
+    command_id VARCHAR(255),
+    raw_event_ref TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_provider_session_events_correlation_id
+        CHECK (NULLIF(request_id, '') IS NOT NULL OR NULLIF(command_id, '') IS NOT NULL)
 );
 
 -- ============================================================================
@@ -308,9 +474,43 @@ CREATE INDEX idx_runtime_nodes_status_heartbeat ON runtime_nodes(status, last_he
 CREATE INDEX idx_runtime_node_scopes_tenant_id ON runtime_node_scopes(tenant_id);
 CREATE UNIQUE INDEX uq_auth_runtime_tokens_active_node_id ON auth_runtime_tokens(node_id) WHERE revoked_at IS NULL;
 CREATE INDEX idx_auth_runtime_tokens_node_id ON auth_runtime_tokens(node_id);
+CREATE UNIQUE INDEX uq_runtime_bootstrap_keys_active_hash ON runtime_bootstrap_keys(tenant_id, key_hash) WHERE revoked_at IS NULL;
+CREATE INDEX idx_runtime_bootstrap_keys_tenant_status ON runtime_bootstrap_keys(tenant_id, status, created_at DESC);
+CREATE UNIQUE INDEX uq_runtime_enrollments_tenant_node_id ON runtime_enrollments(tenant_id, node_id);
+CREATE INDEX idx_runtime_enrollments_runtime_node_id ON runtime_enrollments(runtime_node_id);
+CREATE INDEX idx_runtime_enrollments_runtime_approved ON runtime_enrollments(tenant_id, runtime_node_id) WHERE status = 'approved';
+CREATE INDEX idx_runtime_enrollments_tenant_status ON runtime_enrollments(tenant_id, status, created_at DESC);
+CREATE INDEX idx_runtime_enrollments_bootstrap_key_id ON runtime_enrollments(bootstrap_key_id);
+CREATE INDEX idx_runtime_sessions_runtime_node_id ON runtime_sessions(runtime_node_id);
+CREATE INDEX idx_runtime_sessions_active_node ON runtime_sessions(tenant_id, runtime_node_id, expires_at) WHERE revoked_at IS NULL;
+CREATE INDEX idx_runtime_sessions_tenant_expires ON runtime_sessions(tenant_id, expires_at);
+CREATE INDEX idx_runtime_sessions_last_seen ON runtime_sessions(last_seen_at DESC);
+CREATE UNIQUE INDEX uq_runtime_capabilities_tenant_key ON runtime_capabilities(tenant_id, runtime_node_id, capability_type, capability_key);
+CREATE INDEX idx_runtime_capabilities_tenant_node ON runtime_capabilities(tenant_id, runtime_node_id);
+CREATE INDEX idx_runtime_capabilities_provider ON runtime_capabilities(tenant_id, provider_type, health_status);
+CREATE INDEX idx_runtime_capabilities_execution_available ON runtime_capabilities(tenant_id, runtime_node_id, provider_type, health_status) WHERE capability_type = 'provider' AND available = true AND disabled_at IS NULL AND archived_at IS NULL;
+CREATE INDEX idx_runtime_capabilities_type_key ON runtime_capabilities(tenant_id, capability_type, capability_key);
+CREATE INDEX idx_runtime_capabilities_labels ON runtime_capabilities USING GIN (labels);
 CREATE INDEX idx_auth_sessions_user_id ON auth_sessions(user_id);
 CREATE INDEX idx_auth_sessions_token_hash ON auth_sessions(token_hash);
 CREATE INDEX idx_auth_sessions_expires_at ON auth_sessions(expires_at);
+CREATE INDEX idx_digital_employees_tenant_status ON digital_employees(tenant_id, status, created_at DESC);
+CREATE INDEX idx_digital_employees_team_status ON digital_employees(tenant_id, team_id, status, created_at DESC);
+CREATE UNIQUE INDEX uq_digital_employees_active_name ON digital_employees(tenant_id, name) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_digital_employee_execution_instances_tenant_employee ON digital_employee_execution_instances(tenant_id, digital_employee_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_digital_employee_execution_instances_tenant_status ON digital_employee_execution_instances(tenant_id, status, created_at DESC);
+CREATE INDEX idx_digital_employee_execution_instances_runtime ON digital_employee_execution_instances(tenant_id, runtime_node_id);
+CREATE INDEX idx_digital_employee_execution_instances_provider ON digital_employee_execution_instances(tenant_id, provider_type, status);
+CREATE UNIQUE INDEX uq_provider_sessions_external ON provider_sessions(tenant_id, provider_type, provider_session_id);
+CREATE INDEX idx_provider_sessions_digital_employee ON provider_sessions(tenant_id, digital_employee_id, last_active_at DESC);
+CREATE INDEX idx_provider_sessions_execution_instance ON provider_sessions(tenant_id, execution_instance_id);
+CREATE INDEX idx_provider_sessions_runtime ON provider_sessions(tenant_id, runtime_node_id, status);
+CREATE UNIQUE INDEX uq_provider_session_events_sequence ON provider_session_events(provider_session_id, sequence_number);
+CREATE INDEX idx_provider_session_events_session_sequence ON provider_session_events(tenant_id, provider_session_id, sequence_number);
+CREATE INDEX idx_provider_session_events_employee_created ON provider_session_events(tenant_id, digital_employee_id, created_at DESC);
+CREATE INDEX idx_provider_session_events_runtime_created ON provider_session_events(tenant_id, runtime_node_id, created_at DESC);
+CREATE INDEX idx_provider_session_events_request ON provider_session_events(tenant_id, request_id) WHERE request_id IS NOT NULL;
+CREATE INDEX idx_provider_session_events_command ON provider_session_events(tenant_id, command_id) WHERE command_id IS NOT NULL;
 CREATE INDEX idx_tasks_tenant_id ON tasks(tenant_id);
 CREATE INDEX idx_tasks_status ON tasks(status);
 CREATE INDEX idx_tasks_provider_type ON tasks(provider_type);
@@ -370,7 +570,21 @@ CREATE TRIGGER update_runtime_nodes_updated_at BEFORE UPDATE ON runtime_nodes
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_runtime_node_scopes_updated_at BEFORE UPDATE ON runtime_node_scopes
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_runtime_bootstrap_keys_updated_at BEFORE UPDATE ON runtime_bootstrap_keys
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_runtime_enrollments_updated_at BEFORE UPDATE ON runtime_enrollments
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_runtime_sessions_updated_at BEFORE UPDATE ON runtime_sessions
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_runtime_capabilities_updated_at BEFORE UPDATE ON runtime_capabilities
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_auth_sessions_updated_at BEFORE UPDATE ON auth_sessions
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_digital_employees_updated_at BEFORE UPDATE ON digital_employees
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_digital_employee_execution_instances_updated_at BEFORE UPDATE ON digital_employee_execution_instances
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_provider_sessions_updated_at BEFORE UPDATE ON provider_sessions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_tasks_updated_at BEFORE UPDATE ON tasks
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -478,6 +692,79 @@ COMMENT ON COLUMN auth_runtime_tokens.expires_at IS 'Runtime 令牌过期时间'
 COMMENT ON COLUMN auth_runtime_tokens.revoked_at IS 'Runtime 令牌撤销时间';
 COMMENT ON COLUMN auth_runtime_tokens.created_at IS 'Runtime 令牌创建时间';
 
+COMMENT ON TABLE runtime_bootstrap_keys IS 'Runtime Agent 环境级接入引导密钥表';
+COMMENT ON COLUMN runtime_bootstrap_keys.id IS '接入引导密钥主键 UUID';
+COMMENT ON COLUMN runtime_bootstrap_keys.tenant_id IS '所属租户 ID，默认使用开发租户';
+COMMENT ON COLUMN runtime_bootstrap_keys.name IS '接入引导密钥展示名称';
+COMMENT ON COLUMN runtime_bootstrap_keys.key_hash IS '接入引导密钥哈希，禁止保存明文';
+COMMENT ON COLUMN runtime_bootstrap_keys.status IS '接入引导密钥状态';
+COMMENT ON COLUMN runtime_bootstrap_keys.description IS '接入引导密钥用途说明';
+COMMENT ON COLUMN runtime_bootstrap_keys.expires_at IS '接入引导密钥过期时间';
+COMMENT ON COLUMN runtime_bootstrap_keys.created_by IS '创建该密钥的用户 ID';
+COMMENT ON COLUMN runtime_bootstrap_keys.revoked_at IS '接入引导密钥撤销时间';
+COMMENT ON COLUMN runtime_bootstrap_keys.revoked_by IS '撤销该密钥的用户 ID';
+COMMENT ON COLUMN runtime_bootstrap_keys.revoked_reason IS '接入引导密钥撤销原因';
+COMMENT ON COLUMN runtime_bootstrap_keys.metadata IS '接入引导密钥扩展元数据';
+COMMENT ON COLUMN runtime_bootstrap_keys.created_at IS '接入引导密钥创建时间';
+COMMENT ON COLUMN runtime_bootstrap_keys.updated_at IS '接入引导密钥最后更新时间';
+
+COMMENT ON TABLE runtime_enrollments IS 'Runtime Agent 接入审批状态表';
+COMMENT ON COLUMN runtime_enrollments.id IS 'Runtime 接入记录主键 UUID';
+COMMENT ON COLUMN runtime_enrollments.tenant_id IS '所属租户 ID';
+COMMENT ON COLUMN runtime_enrollments.runtime_node_id IS 'Runtime 节点 UUID';
+COMMENT ON COLUMN runtime_enrollments.node_id IS 'Runtime 外部业务节点 ID';
+COMMENT ON COLUMN runtime_enrollments.bootstrap_key_id IS '用于发起接入的有效引导密钥 ID，不能为空';
+COMMENT ON COLUMN runtime_enrollments.status IS '接入审批状态：pending、approved、rejected 或 revoked';
+COMMENT ON COLUMN runtime_enrollments.request_payload IS 'Runtime hello 上报的接入请求快照';
+COMMENT ON COLUMN runtime_enrollments.approved_by IS '批准接入的用户 ID';
+COMMENT ON COLUMN runtime_enrollments.approved_at IS '批准接入时间';
+COMMENT ON COLUMN runtime_enrollments.rejected_by IS '拒绝接入的用户 ID';
+COMMENT ON COLUMN runtime_enrollments.rejected_at IS '拒绝接入时间';
+COMMENT ON COLUMN runtime_enrollments.reject_reason IS '拒绝接入原因';
+COMMENT ON COLUMN runtime_enrollments.revoked_by IS '撤销接入的用户 ID';
+COMMENT ON COLUMN runtime_enrollments.revoked_at IS '撤销接入时间';
+COMMENT ON COLUMN runtime_enrollments.revoke_reason IS '撤销接入原因';
+COMMENT ON COLUMN runtime_enrollments.last_hello_at IS 'Runtime 最近一次 hello 时间';
+COMMENT ON COLUMN runtime_enrollments.created_at IS '接入记录创建时间';
+COMMENT ON COLUMN runtime_enrollments.updated_at IS '接入记录最后更新时间';
+
+COMMENT ON TABLE runtime_sessions IS 'Runtime Agent 短期会话表';
+COMMENT ON COLUMN runtime_sessions.id IS 'Runtime 会话主键 UUID';
+COMMENT ON COLUMN runtime_sessions.tenant_id IS '所属租户 ID';
+COMMENT ON COLUMN runtime_sessions.runtime_node_id IS 'Runtime 节点 UUID';
+COMMENT ON COLUMN runtime_sessions.enrollment_id IS '关联的 Runtime 接入记录 ID';
+COMMENT ON COLUMN runtime_sessions.token_lookup_hash IS '短期 Runtime 会话 token 的确定性查找哈希';
+COMMENT ON COLUMN runtime_sessions.token_secret_hash IS '短期 Runtime 会话 token 的安全校验哈希';
+COMMENT ON COLUMN runtime_sessions.expires_at IS '短期 Runtime 会话过期时间';
+COMMENT ON COLUMN runtime_sessions.last_seen_at IS 'Runtime 会话最近访问时间';
+COMMENT ON COLUMN runtime_sessions.revoked_at IS 'Runtime 会话撤销时间';
+COMMENT ON COLUMN runtime_sessions.revoked_reason IS 'Runtime 会话撤销原因';
+COMMENT ON COLUMN runtime_sessions.created_at IS 'Runtime 会话创建时间';
+COMMENT ON COLUMN runtime_sessions.updated_at IS 'Runtime 会话最后更新时间';
+
+COMMENT ON TABLE runtime_capabilities IS 'Runtime Agent 上报的 Provider 与工作区能力表';
+COMMENT ON COLUMN runtime_capabilities.id IS 'Runtime 能力主键 UUID';
+COMMENT ON COLUMN runtime_capabilities.tenant_id IS '所属租户 ID';
+COMMENT ON COLUMN runtime_capabilities.runtime_node_id IS 'Runtime 节点 UUID';
+COMMENT ON COLUMN runtime_capabilities.capability_type IS 'Runtime 能力类型，例如 provider 或 workspace';
+COMMENT ON COLUMN runtime_capabilities.capability_key IS 'Runtime 能力在节点内的稳定键';
+COMMENT ON COLUMN runtime_capabilities.provider_type IS 'Provider 类型，例如 claude-code、opencode、codex';
+COMMENT ON COLUMN runtime_capabilities.provider_version IS 'Provider 版本';
+COMMENT ON COLUMN runtime_capabilities.binary_path IS 'Provider 可执行文件路径';
+COMMENT ON COLUMN runtime_capabilities.available IS 'Provider 当前是否可用；执行实例绑定前必须为可用';
+COMMENT ON COLUMN runtime_capabilities.workspace_base_dir IS 'Runtime 工作区根目录';
+COMMENT ON COLUMN runtime_capabilities.capacity IS 'Runtime 上报的容量信息';
+COMMENT ON COLUMN runtime_capabilities.labels IS 'Runtime 能力标签，用于后续选择器匹配';
+COMMENT ON COLUMN runtime_capabilities.status IS 'Runtime 能力当前状态';
+COMMENT ON COLUMN runtime_capabilities.details IS 'Runtime 能力状态详情';
+COMMENT ON COLUMN runtime_capabilities.health_status IS 'Provider 能力健康状态';
+COMMENT ON COLUMN runtime_capabilities.metadata IS 'Runtime 能力扩展元数据';
+COMMENT ON COLUMN runtime_capabilities.last_seen_at IS 'Runtime 能力最近上报时间';
+COMMENT ON COLUMN runtime_capabilities.disabled_at IS 'Runtime 能力禁用时间';
+COMMENT ON COLUMN runtime_capabilities.archived_at IS 'Runtime 能力归档时间';
+COMMENT ON COLUMN runtime_capabilities.created_at IS 'Runtime 能力首次上报时间';
+COMMENT ON COLUMN runtime_capabilities.updated_at IS 'Runtime 能力最后更新时间';
+
 COMMENT ON TABLE auth_sessions IS 'Web 控制台用户会话表';
 COMMENT ON COLUMN auth_sessions.id IS '会话主键 UUID';
 COMMENT ON COLUMN auth_sessions.user_id IS '会话所属用户 ID';
@@ -489,6 +776,81 @@ COMMENT ON COLUMN auth_sessions.user_agent IS '客户端 User-Agent';
 COMMENT ON COLUMN auth_sessions.revoked_at IS '会话撤销时间';
 COMMENT ON COLUMN auth_sessions.created_at IS '会话创建时间';
 COMMENT ON COLUMN auth_sessions.updated_at IS '会话最后更新时间';
+
+COMMENT ON TABLE digital_employees IS '数字员工业务身份表';
+COMMENT ON COLUMN digital_employees.id IS '数字员工主键 UUID';
+COMMENT ON COLUMN digital_employees.tenant_id IS '所属租户 ID';
+COMMENT ON COLUMN digital_employees.team_id IS '所属团队 ID，可为空表示租户级数字员工';
+COMMENT ON COLUMN digital_employees.name IS '数字员工名称';
+COMMENT ON COLUMN digital_employees.role IS '数字员工职责或角色标识';
+COMMENT ON COLUMN digital_employees.description IS '数字员工职责描述';
+COMMENT ON COLUMN digital_employees.status IS '数字员工状态：draft、ready、active、disabled 或 error';
+COMMENT ON COLUMN digital_employees.permission_policy IS '数字员工权限策略快照';
+COMMENT ON COLUMN digital_employees.context_policy IS '数字员工上下文注入策略快照';
+COMMENT ON COLUMN digital_employees.approval_policy IS '数字员工人类审批策略快照';
+COMMENT ON COLUMN digital_employees.risk_level IS '数字员工默认风险等级';
+COMMENT ON COLUMN digital_employees.metadata IS '数字员工扩展元数据';
+COMMENT ON COLUMN digital_employees.disabled_at IS '数字员工禁用时间';
+COMMENT ON COLUMN digital_employees.archived_at IS '数字员工归档时间';
+COMMENT ON COLUMN digital_employees.deleted_at IS '数字员工软删除时间';
+COMMENT ON COLUMN digital_employees.created_at IS '数字员工创建时间';
+COMMENT ON COLUMN digital_employees.updated_at IS '数字员工最后更新时间';
+
+COMMENT ON TABLE digital_employee_execution_instances IS '数字员工唯一执行实例表';
+COMMENT ON COLUMN digital_employee_execution_instances.id IS '数字员工执行实例主键 UUID';
+COMMENT ON COLUMN digital_employee_execution_instances.tenant_id IS '所属租户 ID';
+COMMENT ON COLUMN digital_employee_execution_instances.digital_employee_id IS '绑定的数字员工 ID';
+COMMENT ON COLUMN digital_employee_execution_instances.runtime_node_id IS '承载执行实例的 Runtime 节点 UUID';
+COMMENT ON COLUMN digital_employee_execution_instances.provider_type IS '执行实例使用的 Provider 类型';
+COMMENT ON COLUMN digital_employee_execution_instances.agent_home_dir IS '数字员工在 Runtime 工作区中的长期目录';
+COMMENT ON COLUMN digital_employee_execution_instances.workspace_policy IS '工作区策略快照';
+COMMENT ON COLUMN digital_employee_execution_instances.session_policy IS 'Provider 会话策略快照';
+COMMENT ON COLUMN digital_employee_execution_instances.runtime_selector IS '预留的 Runtime 自动选择器';
+COMMENT ON COLUMN digital_employee_execution_instances.capacity_requirements IS '预留的容量需求';
+COMMENT ON COLUMN digital_employee_execution_instances.fallback_policy IS '预留的降级或 fallback 策略';
+COMMENT ON COLUMN digital_employee_execution_instances.status IS '执行实例状态';
+COMMENT ON COLUMN digital_employee_execution_instances.ready_at IS '执行实例就绪时间';
+COMMENT ON COLUMN digital_employee_execution_instances.disabled_at IS '执行实例禁用时间';
+COMMENT ON COLUMN digital_employee_execution_instances.error_at IS '执行实例进入错误状态时间';
+COMMENT ON COLUMN digital_employee_execution_instances.error_message IS '执行实例错误说明';
+COMMENT ON COLUMN digital_employee_execution_instances.deleted_at IS '执行实例软删除时间';
+COMMENT ON COLUMN digital_employee_execution_instances.metadata IS '执行实例扩展元数据';
+COMMENT ON COLUMN digital_employee_execution_instances.created_at IS '执行实例创建时间';
+COMMENT ON COLUMN digital_employee_execution_instances.updated_at IS '执行实例最后更新时间';
+
+COMMENT ON TABLE provider_sessions IS 'Provider 会话映射表';
+COMMENT ON COLUMN provider_sessions.id IS 'Provider 会话主键 UUID';
+COMMENT ON COLUMN provider_sessions.tenant_id IS '所属租户 ID';
+COMMENT ON COLUMN provider_sessions.provider_session_id IS 'Provider 自身返回的会话 ID';
+COMMENT ON COLUMN provider_sessions.digital_employee_id IS '关联的数字员工 ID';
+COMMENT ON COLUMN provider_sessions.execution_instance_id IS '关联的数字员工执行实例 ID';
+COMMENT ON COLUMN provider_sessions.runtime_node_id IS '承载会话的 Runtime 节点 UUID';
+COMMENT ON COLUMN provider_sessions.provider_type IS 'Provider 类型';
+COMMENT ON COLUMN provider_sessions.status IS 'Provider 会话状态';
+COMMENT ON COLUMN provider_sessions.recoverable IS 'Provider 会话是否可恢复';
+COMMENT ON COLUMN provider_sessions.last_active_at IS 'Provider 会话最后活跃时间';
+COMMENT ON COLUMN provider_sessions.closed_at IS 'Provider 会话关闭时间';
+COMMENT ON COLUMN provider_sessions.error_message IS 'Provider 会话错误说明';
+COMMENT ON COLUMN provider_sessions.metadata IS 'Provider 会话扩展元数据';
+COMMENT ON COLUMN provider_sessions.created_at IS 'Provider 会话创建时间';
+COMMENT ON COLUMN provider_sessions.updated_at IS 'Provider 会话最后更新时间';
+
+COMMENT ON TABLE provider_session_events IS 'Provider 会话事件流表';
+COMMENT ON COLUMN provider_session_events.id IS 'Provider 会话事件主键 UUID';
+COMMENT ON COLUMN provider_session_events.tenant_id IS '所属租户 ID';
+COMMENT ON COLUMN provider_session_events.provider_session_id IS 'Provider 会话表内部 UUID';
+COMMENT ON COLUMN provider_session_events.digital_employee_id IS '关联的数字员工 ID';
+COMMENT ON COLUMN provider_session_events.execution_instance_id IS '关联的数字员工执行实例 ID';
+COMMENT ON COLUMN provider_session_events.runtime_node_id IS '事件来源 Runtime 节点 UUID';
+COMMENT ON COLUMN provider_session_events.provider_type IS 'Provider 类型';
+COMMENT ON COLUMN provider_session_events.event_type IS 'Provider 事件类型';
+COMMENT ON COLUMN provider_session_events.sequence_number IS 'Provider 会话内事件序号';
+COMMENT ON COLUMN provider_session_events.payload IS '归一化后的 Provider 事件负载';
+COMMENT ON COLUMN provider_session_events.request_id IS '触发该事件的平台请求 ID，request_id 或 command_id 至少填写一个';
+COMMENT ON COLUMN provider_session_events.command_id IS '触发该事件的平台命令 ID，request_id 或 command_id 至少填写一个';
+COMMENT ON COLUMN provider_session_events.raw_event_ref IS '原始输出对象存储引用或摘要引用';
+COMMENT ON COLUMN provider_session_events.metadata IS 'Provider 会话事件扩展元数据';
+COMMENT ON COLUMN provider_session_events.created_at IS 'Provider 会话事件创建时间';
 
 COMMENT ON TABLE tasks IS '任务主表';
 COMMENT ON COLUMN tasks.id IS '任务主键 UUID';

@@ -22,6 +22,7 @@ const requiredOpenApiOperations = new Set([
 ]);
 
 const requiredRustClientPaths = new Set([
+  "/api/v1/runtime/enrollments/hello",
   "/api/v1/runtime/register",
   "/api/v1/runtime/heartbeat",
   "/api/v1/runtime/tasks/claim",
@@ -30,6 +31,8 @@ const requiredRustClientPaths = new Set([
   "/api/v1/runtime/tasks/{taskId}/complete",
   "/api/v1/runtime/tasks/{taskId}/fail",
   "/api/v1/runtime/tasks/{taskId}/lease",
+  "/api/v1/runtime/sessions/{sessionId}/renew",
+  "/api/v1/runtime/nodes/{nodeId}/capabilities",
 ]);
 
 const requiredTypeScriptClientPaths = new Set([
@@ -40,6 +43,10 @@ const requiredTypeScriptClientPaths = new Set([
   "/api/v1/tasks/{taskId}/cancel",
   "/api/v1/runtime/nodes",
   "/api/v1/runtime/nodes/{nodeId}",
+  "/api/v1/runtime/enrollments",
+  "/api/v1/runtime/enrollments/{enrollmentId}/approve",
+  "/api/v1/digital-employees",
+  "/api/v1/digital-employees/{employeeId}/execution-instance",
 ]);
 
 function readText(path) {
@@ -55,6 +62,8 @@ function normalizePath(path) {
     .replace(/\/api\/v1\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/tasks/{taskId}")
     .replace(/\/api\/v1\/runtime\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/runtime/tasks/{taskId}")
     .replace(/\{id\}/g, "{taskId}")
+    .replace(/\/api\/v1\/runtime\/sessions\/\{taskId\}/g, "/api/v1/runtime/sessions/{sessionId}")
+    .replace(/\/api\/v1\/runtime\/nodes\/\{taskId\}/g, "/api/v1/runtime/nodes/{nodeId}")
     .replace(/\{nodeId\}/g, "{nodeId}");
 }
 
@@ -148,6 +157,7 @@ function readTypeScriptClientPaths() {
     "apps/web/src/lib/api/health.ts",
     "apps/web/src/lib/api/tasks.ts",
     "apps/web/src/lib/api/runtime.ts",
+    "apps/web/src/lib/api/employees.ts",
   ];
   const paths = new Set();
 
@@ -159,7 +169,11 @@ function readTypeScriptClientPaths() {
           match[1]
             .replaceAll("${taskId}", "{taskId}")
             .replaceAll("${nodeId}", "{nodeId}")
-            .replaceAll("${encodedNodeId}", "{nodeId}"),
+            .replaceAll("${encodedNodeId}", "{nodeId}")
+            .replaceAll("${enrollmentId}", "{enrollmentId}")
+            .replaceAll("${encodedEnrollmentId}", "{enrollmentId}")
+            .replaceAll("${employeeId}", "{employeeId}")
+            .replaceAll("${encodedEmployeeId}", "{employeeId}"),
         ),
       );
     }

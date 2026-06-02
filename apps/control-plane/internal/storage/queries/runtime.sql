@@ -24,6 +24,42 @@ ON CONFLICT (node_id) DO UPDATE SET
     updated_at = NOW()
 RETURNING *;
 
+-- name: UpsertRuntimeNodeForTenant :one
+INSERT INTO runtime_nodes (
+    tenant_id,
+    node_id,
+    name,
+    supported_providers,
+    max_slots,
+    current_load,
+    status,
+    metadata,
+    last_heartbeat_at
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('node_id')::varchar,
+    sqlc.arg('name')::varchar,
+    sqlc.arg('supported_providers')::jsonb,
+    sqlc.arg('max_slots')::integer,
+    sqlc.arg('current_load')::integer,
+    sqlc.arg('status')::varchar,
+    COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb),
+    sqlc.arg('last_heartbeat_at')::timestamptz
+)
+ON CONFLICT (node_id) DO UPDATE SET
+    name = EXCLUDED.name,
+    supported_providers = EXCLUDED.supported_providers,
+    max_slots = EXCLUDED.max_slots,
+    current_load = EXCLUDED.current_load,
+    status = EXCLUDED.status,
+    metadata = EXCLUDED.metadata,
+    last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+    disabled_at = NULL,
+    archived_at = NULL,
+    updated_at = NOW()
+WHERE runtime_nodes.tenant_id = EXCLUDED.tenant_id
+RETURNING *;
+
 -- name: GetRuntimeNode :one
 SELECT * FROM runtime_nodes
 WHERE node_id = $1

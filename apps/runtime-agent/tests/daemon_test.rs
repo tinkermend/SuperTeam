@@ -1,6 +1,14 @@
 use std::process::Command;
 use superteam_runtime_agent::config::{RuntimeConfig, RuntimeConfigOverrides};
-use superteam_runtime_agent::daemon::RuntimeDaemon;
+use superteam_runtime_agent::controlplane::{ControlPlaneClient, RuntimeCapabilityInput};
+use superteam_runtime_agent::daemon::{
+    RuntimeDaemon, connect_runtime_session, spawn_session_renewal_loop,
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    sync::oneshot,
+};
 
 #[test]
 fn snapshot_uses_configured_node_id() {
@@ -122,7 +130,83 @@ logging:
 }
 
 #[test]
-fn config_loads_runtime_token_from_env_and_cli_override() {
+fn runtime_config_loads_bootstrap_key_from_file_and_env() {
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let config_path = temp.path().join("runtime-agent.yaml");
+    std::fs::write(
+        &config_path,
+        r#"
+runtime:
+  bootstrap_key: file-bootstrap-key
+"#,
+    )
+    .expect("write config");
+
+    let file_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        std::iter::empty::<(&str, &str)>(),
+        Default::default(),
+    )
+    .expect("load file config");
+
+    assert_eq!(file_config.runtime.bootstrap_key, "file-bootstrap-key");
+
+    let env_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        [("RUNTIME_AGENT_BOOTSTRAP_KEY", "env-bootstrap-key")],
+        Default::default(),
+    )
+    .expect("load env config");
+
+    assert_eq!(env_config.runtime.bootstrap_key, "env-bootstrap-key");
+}
+
+#[test]
+fn config_loads_runtime_bootstrap_key_from_env_and_cli_override() {
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let config_path = temp.path().join("runtime-agent.yaml");
+    std::fs::write(
+        &config_path,
+        r#"
+runtime:
+  bootstrap_key: file-bootstrap-key
+"#,
+    )
+    .expect("write config");
+
+    let file_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        std::iter::empty::<(&str, &str)>(),
+        Default::default(),
+    )
+    .expect("load file config");
+
+    assert_eq!(file_config.runtime.bootstrap_key, "file-bootstrap-key");
+
+    let env_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        [("RUNTIME_AGENT_BOOTSTRAP_KEY", "env-bootstrap-key")],
+        Default::default(),
+    )
+    .expect("load env config");
+
+    assert_eq!(env_config.runtime.bootstrap_key, "env-bootstrap-key");
+
+    let cli_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        [("RUNTIME_AGENT_BOOTSTRAP_KEY", "env-bootstrap-key")],
+        RuntimeConfigOverrides {
+            bootstrap_key: Some("cli-bootstrap-key".to_string()),
+            ..Default::default()
+        },
+    )
+    .expect("load config");
+
+    assert_eq!(cli_config.runtime.bootstrap_key, "cli-bootstrap-key");
+}
+
+#[test]
+fn config_accepts_legacy_auth_token_alias_when_bootstrap_key_absent() {
     let temp = tempfile::TempDir::new().expect("tempdir");
     let config_path = temp.path().join("runtime-agent.yaml");
     std::fs::write(
@@ -141,7 +225,7 @@ runtime:
     )
     .expect("load file config");
 
-    assert_eq!(file_config.runtime.auth_token, "file-token");
+    assert_eq!(file_config.runtime.bootstrap_key, "file-token");
 
     let env_config = RuntimeConfig::load_with_env(
         Some(&config_path),
@@ -150,19 +234,7 @@ runtime:
     )
     .expect("load env config");
 
-    assert_eq!(env_config.runtime.auth_token, "env-token");
-
-    let cli_config = RuntimeConfig::load_with_env(
-        Some(&config_path),
-        [("RUNTIME_AGENT_AUTH_TOKEN", "env-token")],
-        RuntimeConfigOverrides {
-            auth_token: Some("cli-token".to_string()),
-            ..Default::default()
-        },
-    )
-    .expect("load config");
-
-    assert_eq!(cli_config.runtime.auth_token, "cli-token");
+    assert_eq!(env_config.runtime.bootstrap_key, "env-token");
 }
 
 #[test]
@@ -174,7 +246,7 @@ fn cli_loads_config_file_and_allows_explicit_overrides() {
         r#"
 runtime:
   node_id: file-cli-node
-  auth_token: file-cli-token
+  bootstrap_key: file-cli-bootstrap-key
 "#,
     )
     .expect("write config");
@@ -184,11 +256,11 @@ runtime:
         .arg(&config_path)
         .arg("--node-id")
         .arg("arg-cli-node")
-        .arg("--auth-token")
-        .arg("arg-cli-token")
+        .arg("--bootstrap-key")
+        .arg("arg-cli-bootstrap-key")
         .arg("--once")
         .env("RUNTIME_AGENT_NODE_ID", "env-cli-node")
-        .env("RUNTIME_AGENT_AUTH_TOKEN", "env-cli-token")
+        .env("RUNTIME_AGENT_BOOTSTRAP_KEY", "env-cli-bootstrap-key")
         .env_remove("RUNTIME_NODE_ID")
         .output()
         .expect("run runtime-agent");
@@ -200,4 +272,325 @@ runtime:
     );
     let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
     assert!(stdout.contains("runtime-agent node=arg-cli-node status=idle"));
+}
+
+#[tokio::test]
+async fn daemon_runtime_session_renewal_loop_attempts_renew_before_expiry() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (request_tx, request_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let request = read_http_request(&mut socket).await;
+        let _ = request_tx.send(request);
+
+        write_json_response(
+            &mut socket,
+            serde_json::json!({
+                "id": "55555555-5555-4555-8555-555555555555",
+                "tenant_id": "22222222-2222-4222-8222-222222222222",
+                "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                "node_id": "node-1",
+                "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                "expires_at": "2026-06-03T00:00:00Z",
+                "last_seen_at": "2026-06-02T00:00:00Z",
+                "created_at": "2026-06-02T00:00:00Z",
+                "updated_at": "2026-06-02T00:00:00Z"
+            }),
+        )
+        .await;
+    });
+
+    let client = ControlPlaneClient::with_session_token(
+        format!("http://{}", addr),
+        "session-token",
+        "node-1",
+    );
+    let handle = spawn_session_renewal_loop(
+        client,
+        "55555555-5555-4555-8555-555555555555".to_string(),
+        Some("2026-06-01T00:00:00Z".to_string()),
+    );
+
+    let request = tokio::time::timeout(std::time::Duration::from_secs(2), request_rx)
+        .await
+        .expect("renew request should be attempted")
+        .expect("renew request should be captured");
+    handle.abort();
+
+    let request_line = request.lines().next().unwrap();
+    assert_eq!(
+        request_line,
+        "POST /api/v1/runtime/sessions/55555555-5555-4555-8555-555555555555/renew HTTP/1.1"
+    );
+    assert!(request.contains("authorization: Bearer session-token"));
+    assert!(request.contains("x-node-id: node-1"));
+}
+
+#[tokio::test]
+async fn daemon_connect_runtime_session_reports_capabilities_after_approved_hello() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (request_tx, request_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let (mut hello_socket, _) = listener.accept().await.unwrap();
+        let hello_request = read_http_request(&mut hello_socket).await;
+        write_json_response(
+            &mut hello_socket,
+            serde_json::json!({
+                "enrollment": {
+                    "id": "11111111-1111-4111-8111-111111111111",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "bootstrap_key_id": "44444444-4444-4444-8444-444444444444",
+                    "status": "approved",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                    "expires_at": "2999-06-02T00:00:00Z",
+                    "last_seen_at": "2026-06-02T00:00:00Z",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session_token": "session-token"
+            }),
+        )
+        .await;
+
+        let (mut capabilities_socket, _) = listener.accept().await.unwrap();
+        let capabilities_request = read_http_request(&mut capabilities_socket).await;
+        write_json_response(&mut capabilities_socket, serde_json::json!([])).await;
+
+        let _ = request_tx.send((hello_request, capabilities_request));
+    });
+
+    let mut config = RuntimeConfig::new("node-1").expect("valid config");
+    config.runtime.control_plane_url = format!("http://{}", addr);
+    config.runtime.bootstrap_key = "bootstrap-key".to_string();
+    let capabilities = vec![RuntimeCapabilityInput {
+        capability_type: "provider".to_string(),
+        capability_key: "claude-code".to_string(),
+        provider_type: "claude-code".to_string(),
+        provider_version: None,
+        binary_path: Some("claude".to_string()),
+        available: true,
+        workspace_base_dir: None,
+        capacity: None,
+        labels: None,
+        status: "available".to_string(),
+        details: None,
+        health_status: "configured".to_string(),
+        metadata: None,
+    }];
+
+    let client = connect_runtime_session(&config, capabilities)
+        .await
+        .expect("connect runtime session")
+        .expect("approved session client");
+
+    drop(client);
+
+    let (hello_request, capabilities_request) =
+        tokio::time::timeout(std::time::Duration::from_secs(2), request_rx)
+            .await
+            .expect("server should capture requests")
+            .expect("request pair");
+    let hello_line = hello_request.lines().next().unwrap();
+    assert_eq!(
+        hello_line,
+        "POST /api/v1/runtime/enrollments/hello HTTP/1.1"
+    );
+    assert!(hello_request.contains(r#""capabilities":[{"capability_type":"provider""#));
+
+    let capabilities_line = capabilities_request.lines().next().unwrap();
+    assert_eq!(
+        capabilities_line,
+        "PUT /api/v1/runtime/nodes/node-1/capabilities HTTP/1.1"
+    );
+    assert!(capabilities_request.contains("authorization: Bearer session-token"));
+    assert!(capabilities_request.contains("x-node-id: node-1"));
+    let (_, capabilities_body) = capabilities_request
+        .split_once("\r\n\r\n")
+        .expect("capabilities body");
+    let capabilities_body: serde_json::Value =
+        serde_json::from_str(capabilities_body).expect("capabilities json");
+    assert_eq!(
+        capabilities_body["capabilities"][0]["capability_key"],
+        serde_json::json!("claude-code")
+    );
+}
+
+#[tokio::test]
+async fn daemon_connect_runtime_session_does_not_start_renewal_when_capability_upsert_fails() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (renew_tx, renew_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let (mut hello_socket, _) = listener.accept().await.unwrap();
+        let _hello_request = read_http_request(&mut hello_socket).await;
+        write_json_response(
+            &mut hello_socket,
+            serde_json::json!({
+                "enrollment": {
+                    "id": "11111111-1111-4111-8111-111111111111",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "bootstrap_key_id": "44444444-4444-4444-8444-444444444444",
+                    "status": "approved",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                    "expires_at": "1970-01-01T00:00:00Z",
+                    "last_seen_at": "2026-06-02T00:00:00Z",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session_token": "session-token"
+            }),
+        )
+        .await;
+
+        let mut renew_attempted = false;
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+            let request_line = request.lines().next().unwrap_or_default();
+            if request_line == "PUT /api/v1/runtime/nodes/node-1/capabilities HTTP/1.1" {
+                write_status_response(
+                    &mut socket,
+                    "500 Internal Server Error",
+                    serde_json::json!({"error":"capability upsert failed"}),
+                )
+                .await;
+                break;
+            }
+
+            if request_line
+                == "POST /api/v1/runtime/sessions/55555555-5555-4555-8555-555555555555/renew HTTP/1.1"
+            {
+                renew_attempted = true;
+                write_json_response(
+                    &mut socket,
+                    serde_json::json!({
+                        "id": "55555555-5555-4555-8555-555555555555",
+                        "tenant_id": "22222222-2222-4222-8222-222222222222",
+                        "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                        "node_id": "node-1",
+                        "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                        "expires_at": "2999-06-03T00:00:00Z",
+                        "last_seen_at": "2026-06-02T00:00:00Z",
+                        "created_at": "2026-06-02T00:00:00Z",
+                        "updated_at": "2026-06-02T00:00:00Z"
+                    }),
+                )
+                .await;
+                continue;
+            }
+
+            panic!("unexpected request: {request_line}");
+        }
+
+        let late_renew =
+            tokio::time::timeout(std::time::Duration::from_millis(200), listener.accept())
+                .await
+                .is_ok();
+        let _ = renew_tx.send(renew_attempted || late_renew);
+    });
+
+    let mut config = RuntimeConfig::new("node-1").expect("valid config");
+    config.runtime.control_plane_url = format!("http://{}", addr);
+    config.runtime.bootstrap_key = "bootstrap-key".to_string();
+    let capabilities = vec![RuntimeCapabilityInput {
+        capability_type: "provider".to_string(),
+        capability_key: "claude-code".to_string(),
+        provider_type: "claude-code".to_string(),
+        provider_version: None,
+        binary_path: Some("claude".to_string()),
+        available: true,
+        workspace_base_dir: None,
+        capacity: None,
+        labels: None,
+        status: "available".to_string(),
+        details: None,
+        health_status: "configured".to_string(),
+        metadata: None,
+    }];
+
+    let result = connect_runtime_session(&config, capabilities).await;
+
+    assert!(result.is_err(), "capability upsert should fail");
+    let renew_attempted = renew_rx.await.expect("renew observation");
+    assert!(
+        !renew_attempted,
+        "session renewal must not start before capability upsert succeeds"
+    );
+}
+
+async fn read_http_request(socket: &mut TcpStream) -> String {
+    let mut buffer = Vec::new();
+    let header_end = loop {
+        let mut chunk = [0; 1024];
+        let bytes_read = socket.read(&mut chunk).await.unwrap();
+        assert!(bytes_read > 0, "socket closed before HTTP headers");
+        buffer.extend_from_slice(&chunk[..bytes_read]);
+        if let Some(index) = find_subsequence(&buffer, b"\r\n\r\n") {
+            break index + 4;
+        }
+    };
+
+    let headers = String::from_utf8_lossy(&buffer[..header_end]);
+    let content_length = headers
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .find_map(|(name, value)| {
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().unwrap())
+        })
+        .unwrap_or(0);
+
+    while buffer.len() < header_end + content_length {
+        let mut chunk = [0; 1024];
+        let bytes_read = socket.read(&mut chunk).await.unwrap();
+        assert!(bytes_read > 0, "socket closed before HTTP body");
+        buffer.extend_from_slice(&chunk[..bytes_read]);
+    }
+
+    String::from_utf8(buffer[..header_end + content_length].to_vec()).unwrap()
+}
+
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+async fn write_json_response(socket: &mut TcpStream, body: serde_json::Value) {
+    write_status_response(socket, "200 OK", body).await;
+}
+
+async fn write_status_response(socket: &mut TcpStream, status: &str, body: serde_json::Value) {
+    let body = body.to_string();
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    socket.write_all(response.as_bytes()).await.unwrap();
 }

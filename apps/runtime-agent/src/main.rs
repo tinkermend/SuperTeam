@@ -22,6 +22,9 @@ struct Args {
     node_id: Option<String>,
 
     #[arg(long)]
+    bootstrap_key: Option<String>,
+
+    #[arg(long)]
     auth_token: Option<String>,
 
     #[arg(long)]
@@ -100,6 +103,7 @@ async fn main() -> anyhow::Result<()> {
         args.config.as_deref(),
         RuntimeConfigOverrides {
             node_id: args.node_id,
+            bootstrap_key: args.bootstrap_key,
             auth_token: args.auth_token,
             http_addr: args.http_addr,
             run_log_dir: args.run_log_dir,

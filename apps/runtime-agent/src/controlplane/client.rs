@@ -3,7 +3,9 @@ use reqwest::{Client, StatusCode};
 use std::time::Duration;
 
 use super::models::{
-    HeartbeatRequest, HeartbeatResponse, RegisterNodeRequest, RegisterNodeResponse, Task,
+    EnrollHelloRequest, EnrollHelloResponse, HeartbeatRequest, HeartbeatResponse,
+    RegisterNodeRequest, RegisterNodeResponse, RuntimeCapabilitiesRequest, RuntimeCapabilityInput,
+    RuntimeCapabilityResponse, RuntimeSessionResponse, Task,
 };
 
 /// Control Plane HTTP client
@@ -41,6 +43,39 @@ impl ControlPlaneClient {
         client
     }
 
+    pub fn with_session_token(
+        base_url: impl Into<String>,
+        token: impl Into<String>,
+        node_id: impl Into<String>,
+    ) -> Self {
+        Self::with_node_id(base_url, token, node_id)
+    }
+
+    pub async fn enroll_hello(&self, req: EnrollHelloRequest) -> Result<EnrollHelloResponse> {
+        let url = self.enroll_hello_url();
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&req)
+            .send()
+            .await
+            .context("Failed to send enrollment hello request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Enrollment hello failed with status {}: {}", status, body);
+        }
+
+        let enrollment = response
+            .json::<EnrollHelloResponse>()
+            .await
+            .context("Failed to parse enrollment hello response")?;
+
+        Ok(enrollment)
+    }
+
     /// Register this runtime node with the Control Plane
     pub async fn register(&self, req: RegisterNodeRequest) -> Result<RegisterNodeResponse> {
         let url = format!("{}/api/v1/runtime/register", self.base_url);
@@ -67,6 +102,72 @@ impl ControlPlaneClient {
             .context("Failed to parse register response")?;
 
         Ok(node)
+    }
+
+    pub async fn renew_session(&self, session_id: &str) -> Result<RuntimeSessionResponse> {
+        let url = self.session_renew_url(session_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .context("Failed to send runtime session renew request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Runtime session renew failed with status {}: {}",
+                status,
+                body
+            );
+        }
+
+        let session = response
+            .json::<RuntimeSessionResponse>()
+            .await
+            .context("Failed to parse runtime session renew response")?;
+
+        Ok(session)
+    }
+
+    pub async fn upsert_capabilities(
+        &self,
+        node_id: &str,
+        capabilities: Vec<RuntimeCapabilityInput>,
+    ) -> Result<Vec<RuntimeCapabilityResponse>> {
+        let url = self.capabilities_url(node_id);
+
+        let response = self
+            .client
+            .put(&url)
+            .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
+            .json(&RuntimeCapabilitiesRequest { capabilities })
+            .send()
+            .await
+            .context("Failed to send runtime capabilities request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Runtime capabilities upsert failed with status {}: {}",
+                status,
+                body
+            );
+        }
+
+        let capabilities = response
+            .json::<Vec<RuntimeCapabilityResponse>>()
+            .await
+            .context("Failed to parse runtime capabilities response")?;
+
+        Ok(capabilities)
     }
 
     /// Send heartbeat to Control Plane
@@ -258,6 +359,24 @@ impl ControlPlaneClient {
         )
     }
 
+    fn enroll_hello_url(&self) -> String {
+        format!("{}/api/v1/runtime/enrollments/hello", self.base_url)
+    }
+
+    fn session_renew_url(&self, session_id: &str) -> String {
+        format!(
+            "{}/api/v1/runtime/sessions/{}/renew",
+            self.base_url, session_id
+        )
+    }
+
+    fn capabilities_url(&self, node_id: &str) -> String {
+        format!(
+            "{}/api/v1/runtime/nodes/{}/capabilities",
+            self.base_url, node_id
+        )
+    }
+
     fn runtime_headers(&self) -> Result<reqwest::header::HeaderMap> {
         let node_id = self
             .node_id
@@ -316,6 +435,18 @@ mod tests {
         assert_eq!(
             client.claim_task_url(30),
             "http://localhost:8080/api/v1/runtime/tasks/claim?timeout=30"
+        );
+        assert_eq!(
+            client.enroll_hello_url(),
+            "http://localhost:8080/api/v1/runtime/enrollments/hello"
+        );
+        assert_eq!(
+            client.session_renew_url("session-1"),
+            "http://localhost:8080/api/v1/runtime/sessions/session-1/renew"
+        );
+        assert_eq!(
+            client.capabilities_url("node-1"),
+            "http://localhost:8080/api/v1/runtime/nodes/node-1/capabilities"
         );
         assert_eq!(
             client.task_events_url(1),

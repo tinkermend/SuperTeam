@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RuntimeNodeResponse, RuntimeNodeStatus } from "./runtime";
-import { getRuntimeNode, listRuntimeNodes } from "./runtime";
+import { approveRuntimeEnrollment, getRuntimeNode, listRuntimeEnrollments, listRuntimeNodes } from "./runtime";
 
 describe("listRuntimeNodes", () => {
   it("calls the runtime nodes endpoint and parses JSON", async () => {
@@ -88,6 +88,62 @@ describe("listRuntimeNodes", () => {
         },
         method: "GET",
       },
+    );
+  });
+});
+
+describe("runtime enrollments", () => {
+  it("lists runtime enrollments with cookie credentials", async () => {
+    const enrollments = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        node_id: "node-1",
+        status: "pending",
+      },
+    ];
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(enrollments), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(
+      listRuntimeEnrollments({
+        baseUrl: "http://control-plane.local",
+        fetcher,
+      }),
+    ).resolves.toEqual(enrollments);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/runtime/enrollments",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
+
+  it("approves runtime enrollment with cookie credentials", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "11111111-1111-4111-8111-111111111111",
+          node_id: "node-1",
+          status: "approved",
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+
+    await approveRuntimeEnrollment(
+      { baseUrl: "http://control-plane.local", fetcher },
+      "11111111-1111-4111-8111-111111111111",
+    );
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/runtime/enrollments/11111111-1111-4111-8111-111111111111/approve",
+      expect.objectContaining({ method: "POST", credentials: "include" }),
     );
   });
 });
