@@ -1917,6 +1917,26 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
 		ID:       instance.ID,
 		TenantID: tenantID,
+		Status:   "provisioning",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-provisioning-instance",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"provisioning-instance"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
 		Status:   "disabled",
 	})
 	require.NoError(t, err)
@@ -2247,6 +2267,7 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 			'claude-session-wrong-tenant',
 			'claude-session-mismatched-runtime',
 			'claude-session-mismatched-provider',
+			'claude-session-provisioning-instance',
 			'claude-session-pending-enrollment',
 			'claude-session-revoked-enrollment',
 			'claude-session-offline-runtime',
@@ -2349,7 +2370,7 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
 		ID:       instance.ID,
 		TenantID: tenantID,
-		Status:   "disabled",
+		Status:   "provisioning",
 	})
 	require.NoError(t, err)
 	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
@@ -2358,6 +2379,24 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 		NodeID:            node.NodeID,
 		EventType:         "message_delta",
 		SequenceNumber:    5,
+		Payload:           []byte(`{"message":"provisioning execution instance"}`),
+		RequestID:         pgtype.Text{String: "request-provisioning-instance-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
+		Status:   "disabled",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    6,
 		Payload:           []byte(`{"message":"disabled execution instance"}`),
 		RequestID:         pgtype.Text{String: "request-disabled-instance-event", Valid: true},
 		Metadata:          []byte(`{}`),
@@ -2376,7 +2415,7 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 		ProviderSessionID: session.ID,
 		NodeID:            node.NodeID,
 		EventType:         "message_delta",
-		SequenceNumber:    6,
+		SequenceNumber:    7,
 		Payload:           []byte(`{"message":"error execution instance"}`),
 		RequestID:         pgtype.Text{String: "request-error-instance-event", Valid: true},
 		Metadata:          []byte(`{}`),

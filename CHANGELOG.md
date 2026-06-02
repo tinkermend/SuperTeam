@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Provider 会话事件新增关联 ID 约束，要求 `request_id` 或 `command_id` 至少填写一个，避免无法回溯到平台请求或命令的事件进入审计链路。
 - 数字员工执行链路补强 Runtime 与 Provider 可用性校验：执行实例绑定前要求 Runtime 已批准且 Provider 能力可用，Provider 会话和事件写入会拒绝禁用、错误或失效的执行上下文。
 - Provider 会话事件追加时重新校验会话、数字员工与执行实例仍处于可接收事件状态，防止关闭、禁用或错误的执行上下文继续写入事件流。
+- Provider 会话创建与事件追加只允许绑定 `ready` / `active` 执行实例，防止 `provisioning` 等未就绪状态进入 Provider 执行链路。
 - Runtime Enrollment 和 Runtime Session 查询补强租户、Bootstrap Key、批准状态与撤销边界校验，移除可绕过执行前置条件的数字员工执行实例直接插入查询。
 - Runtime hello 接入写入固定为 pending 状态，并要求有效 Bootstrap Key 与 Runtime 节点外部 ID 匹配，防止 hello 绕过人工审批或错绑节点。
 

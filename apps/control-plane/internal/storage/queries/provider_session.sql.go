@@ -53,7 +53,7 @@ WHERE dei.id = $6::uuid
   AND dei.digital_employee_id = $8::uuid
   AND dei.runtime_node_id = $9::uuid
   AND dei.provider_type = $10::varchar
-  AND dei.status NOT IN ('disabled', 'error')
+  AND dei.status IN ('ready', 'active')
   AND dei.deleted_at IS NULL
   AND EXISTS (
       SELECT 1
@@ -156,7 +156,7 @@ JOIN digital_employee_execution_instances dei
  AND dei.digital_employee_id = ps.digital_employee_id
  AND dei.runtime_node_id = ps.runtime_node_id
  AND dei.provider_type = ps.provider_type
- AND dei.status NOT IN ('disabled', 'error')
+ AND dei.status IN ('ready', 'active')
  AND dei.deleted_at IS NULL
 JOIN digital_employees de
   ON de.id = ps.digital_employee_id

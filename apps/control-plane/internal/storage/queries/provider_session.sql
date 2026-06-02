@@ -39,7 +39,7 @@ WHERE dei.id = sqlc.arg('execution_instance_id')::uuid
   AND dei.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND dei.runtime_node_id = sqlc.arg('runtime_node_id')::uuid
   AND dei.provider_type = sqlc.arg('provider_type')::varchar
-  AND dei.status NOT IN ('disabled', 'error')
+  AND dei.status IN ('ready', 'active')
   AND dei.deleted_at IS NULL
   AND EXISTS (
       SELECT 1
@@ -134,7 +134,7 @@ JOIN digital_employee_execution_instances dei
  AND dei.digital_employee_id = ps.digital_employee_id
  AND dei.runtime_node_id = ps.runtime_node_id
  AND dei.provider_type = ps.provider_type
- AND dei.status NOT IN ('disabled', 'error')
+ AND dei.status IN ('ready', 'active')
  AND dei.deleted_at IS NULL
 JOIN digital_employees de
   ON de.id = ps.digital_employee_id
