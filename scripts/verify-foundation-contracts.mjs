@@ -43,6 +43,9 @@ const requiredTypeScriptClientPaths = new Set([
   "/api/v1/tasks/{taskId}/cancel",
   "/api/v1/runtime/nodes",
   "/api/v1/runtime/nodes/{nodeId}",
+  "/api/v1/runtime/enrollments",
+  "/api/v1/runtime/enrollments/{enrollmentId}/approve",
+  "/api/v1/digital-employees",
 ]);
 
 function readText(path) {
@@ -153,6 +156,7 @@ function readTypeScriptClientPaths() {
     "apps/web/src/lib/api/health.ts",
     "apps/web/src/lib/api/tasks.ts",
     "apps/web/src/lib/api/runtime.ts",
+    "apps/web/src/lib/api/employees.ts",
   ];
   const paths = new Set();
 
@@ -164,7 +168,9 @@ function readTypeScriptClientPaths() {
           match[1]
             .replaceAll("${taskId}", "{taskId}")
             .replaceAll("${nodeId}", "{nodeId}")
-            .replaceAll("${encodedNodeId}", "{nodeId}"),
+            .replaceAll("${encodedNodeId}", "{nodeId}")
+            .replaceAll("${enrollmentId}", "{enrollmentId}")
+            .replaceAll("${encodedEnrollmentId}", "{enrollmentId}"),
         ),
       );
     }
