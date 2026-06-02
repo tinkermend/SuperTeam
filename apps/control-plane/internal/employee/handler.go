@@ -178,7 +178,7 @@ func (h *HTTPHandler) UpsertDigitalEmployeeExecutionInstance(w http.ResponseWrit
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, executionInstanceResponseFromDomain(instance))
+	writeJSON(w, http.StatusOK, executionInstanceResponseFromDomain(instance))
 }
 
 type digitalEmployeeResponse struct {

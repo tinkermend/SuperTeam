@@ -91,7 +91,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	upsertReq.AddCookie(cookie)
 	upsertResp := httptest.NewRecorder()
 	server.ServeHTTP(upsertResp, upsertReq)
-	if upsertResp.Code != http.StatusCreated {
+	if upsertResp.Code != http.StatusOK {
 		t.Fatalf("expected upsert execution instance to succeed, got %d: %s", upsertResp.Code, upsertResp.Body.String())
 	}
 	if service.bindReq.TenantID != expectedTenantID || service.bindReq.RuntimeNodeID != runtimeNodeID {
