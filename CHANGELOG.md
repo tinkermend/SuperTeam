@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 接通 Runtime Enrollment、短期 Session 续期与 Capability 上报 HTTP 路由；`/api/v1/runtime/enrollments/hello` 支持公开 bootstrap hello，`/api/v1/runtime/session/renew` 和能力上报要求短期 session token。
 - 新增 Runtime session middleware，并让 heartbeat、claim、task event、complete、fail 和 lease 路由在迁移期同时接受短期 session token 或旧版 `Authorization + X-Node-ID` runtime token。
 - Runtime enrollment 管理路由改为 Web 用户 cookie session 保护，并将 canonical session renew 与 capability upsert 成功响应对齐 OpenAPI 契约。
+- Runtime enrollment 管理路由补充 `runtime_scope.manage` 授权校验，并将当前 Web 用户与租户上下文传入批准、拒绝和撤销操作。
 - 修正 Runtime 接入服务的多租户路径：hello 阶段不再创建默认租户 Runtime 节点，改为仅写入 pending enrollment；批准阶段按租户创建或复用 Runtime 节点并 attach，session 校验改为按全局 lookup hash 查找，支持非默认租户续期。
 - 将 Runtime enrollment 批准改为单条 SQL 原子完成 pending 校验、tenant-safe Runtime 节点 upsert 和 enrollment attach，避免并发拒绝/撤销后留下未挂接节点，并修复 tenant-aware node upsert 的全局 `node_id` 冲突竞态。
 - 将 Runtime session token 默认有效期修正为 12 小时，并补充签发和续期过期时间断言。

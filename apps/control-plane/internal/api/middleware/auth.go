@@ -199,6 +199,13 @@ func GetNodeID(ctx context.Context) string {
 	return ""
 }
 
+func GetUserID(ctx context.Context) uuid.UUID {
+	if userID, ok := ctx.Value(UserIDKey).(uuid.UUID); ok {
+		return userID
+	}
+	return uuid.Nil
+}
+
 func GetTenantID(ctx context.Context) uuid.UUID {
 	if tenantID, ok := ctx.Value(TenantIDKey).(uuid.UUID); ok {
 		return tenantID

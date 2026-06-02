@@ -141,10 +141,13 @@ func TestRuntimeEnrollmentManagementRoutesUseConsoleUserAuth(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	service := &routeRuntimeService{}
-	server := NewServerWithAuth(
+	authorizer := &routeAuthorizer{allowed: true}
+	server := NewServerWithAuthz(
 		handlers.NewTaskHandler(&routeTaskService{}),
 		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
 		authService,
+		nil,
+		authorizer,
 	)
 	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"admin","password":"admin"}`))
 	loginReq.Header.Set("Content-Type", "application/json")
@@ -199,6 +202,119 @@ func TestRuntimeEnrollmentManagementRoutesUseConsoleUserAuth(t *testing.T) {
 	}
 	if !service.revokeEnrollmentCalled || service.revokedReason != "rotated" {
 		t.Fatalf("expected revoke enrollment service call with reason, got called=%v reason=%q", service.revokeEnrollmentCalled, service.revokedReason)
+	}
+}
+
+func TestRuntimeEnrollmentManagementRoutesRequireAuthorization(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeRuntimeService{}
+	authorizer := &routeAuthorizer{allowed: false}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		authorizer,
+	)
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	tests := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodGet, path: "/api/v1/runtime/enrollments"},
+		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/" + routeTaskID + "/approve"},
+		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/" + routeTaskID + "/reject", body: `{"reason":"denied"}`},
+		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/" + routeTaskID + "/revoke", body: `{"reason":"denied"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.AddCookie(cookie)
+			resp := httptest.NewRecorder()
+
+			server.ServeHTTP(resp, req)
+
+			if resp.Code != http.StatusForbidden {
+				t.Fatalf("expected denied enrollment management route to return 403, got %d: %s", resp.Code, resp.Body.String())
+			}
+		})
+	}
+	if service.listEnrollmentsCalled || service.approveEnrollmentCalled || service.rejectEnrollmentCalled || service.revokeEnrollmentCalled {
+		t.Fatalf("expected denied management routes not to call runtime service: %#v", service)
+	}
+	if len(authorizer.checks) != len(tests) {
+		t.Fatalf("expected one authz check per management request, got %#v", authorizer.checks)
+	}
+	for _, check := range authorizer.checks {
+		if check.Actor.Type != authz.ActorUser {
+			t.Fatalf("expected user actor, got %#v", check)
+		}
+		if check.Action != authz.ActionRuntimeScopeManage {
+			t.Fatalf("expected runtime scope manage action, got %#v", check)
+		}
+		if check.Resource.Type != authz.ResourceTenant || check.Resource.ID != auth.DefaultTenantID {
+			t.Fatalf("expected tenant resource %s, got %#v", auth.DefaultTenantID, check)
+		}
+	}
+}
+
+func TestRuntimeEnrollmentManagementRoutesPassTenantAndActorToRuntimeService(t *testing.T) {
+	authRepo := newRouteAuthRepo()
+	authService, err := auth.NewService(authRepo)
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	user, err := authService.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeRuntimeService{}
+	authorizer := &routeAuthorizer{allowed: true}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		authorizer,
+	)
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/enrollments", nil)
+	listReq.AddCookie(cookie)
+	listResp := httptest.NewRecorder()
+	server.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected list enrollment to succeed, got %d: %s", listResp.Code, listResp.Body.String())
+	}
+	if service.listEnrollmentsTenantID.String() != auth.DefaultTenantID {
+		t.Fatalf("expected list tenant %s, got %s", auth.DefaultTenantID, service.listEnrollmentsTenantID)
+	}
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/enrollments/"+routeTaskID+"/approve", nil)
+	approveReq.AddCookie(cookie)
+	approveResp := httptest.NewRecorder()
+	server.ServeHTTP(approveResp, approveReq)
+	if approveResp.Code != http.StatusOK {
+		t.Fatalf("expected approve enrollment to succeed, got %d: %s", approveResp.Code, approveResp.Body.String())
+	}
+	if service.approveTenantID.String() != auth.DefaultTenantID || service.approvedBy != user.ID {
+		t.Fatalf("expected approve tenant/user %s/%s, got %s/%s", auth.DefaultTenantID, user.ID, service.approveTenantID, service.approvedBy)
+	}
+	if len(authorizer.checks) < 2 {
+		t.Fatalf("expected authz checks, got %#v", authorizer.checks)
+	}
+	check := authorizer.checks[len(authorizer.checks)-1]
+	if check.Actor.ID != user.ID.String() || check.AuditReason != "runtime enrollment approve" {
+		t.Fatalf("expected approve authz check with actor and audit reason, got %#v", check)
 	}
 }
 
@@ -752,6 +868,33 @@ func TestRuntimeRoutesAcceptRuntimeSessionTokenIdentity(t *testing.T) {
 	}
 }
 
+func TestRuntimeRoutesFallbackToLegacyWhenSessionTokenInvalid(t *testing.T) {
+	service := &routeRuntimeService{}
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+		service,
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/heartbeat", strings.NewReader(`{"current_load":2}`))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("X-Node-ID", "node-1")
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected legacy runtime auth fallback to reach heartbeat, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.validatedSessionToken != "test-token" {
+		t.Fatalf("expected session auth to be attempted first, got token %q", service.validatedSessionToken)
+	}
+	if service.heartbeatReq.NodeID != "node-1" {
+		t.Fatalf("expected heartbeat to use legacy X-Node-ID identity, got %#v", service.heartbeatReq)
+	}
+}
+
 func TestRuntimeRoutesRejectMissingRuntimeAuth(t *testing.T) {
 	server := NewServer(
 		handlers.NewTaskHandler(&routeTaskService{}),
@@ -959,6 +1102,13 @@ type routeRuntimeService struct {
 	approvedEnrollmentID    uuid.UUID
 	rejectedReason          string
 	revokedReason           string
+	listEnrollmentsTenantID uuid.UUID
+	approveTenantID         uuid.UUID
+	rejectTenantID          uuid.UUID
+	revokeTenantID          uuid.UUID
+	approvedBy              uuid.UUID
+	rejectedBy              uuid.UUID
+	revokedBy               uuid.UUID
 }
 
 func (s *routeRuntimeService) RegisterNode(ctx context.Context, req runtime.RegisterNodeRequest) (*runtime.Node, error) {
@@ -997,24 +1147,31 @@ func (s *routeRuntimeService) EnrollHello(ctx context.Context, req runtime.Enrol
 
 func (s *routeRuntimeService) ListRuntimeEnrollments(ctx context.Context, filter runtime.ListRuntimeEnrollmentsFilter) ([]*runtime.RuntimeEnrollment, error) {
 	s.listEnrollmentsCalled = true
+	s.listEnrollmentsTenantID = filter.TenantID
 	return []*runtime.RuntimeEnrollment{}, nil
 }
 
 func (s *routeRuntimeService) ApproveEnrollment(ctx context.Context, req runtime.ApproveEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
 	s.approveEnrollmentCalled = true
 	s.approvedEnrollmentID = req.EnrollmentID
+	s.approveTenantID = req.TenantID
+	s.approvedBy = req.ApprovedBy
 	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusApproved}, nil
 }
 
 func (s *routeRuntimeService) RejectEnrollment(ctx context.Context, req runtime.RejectEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
 	s.rejectEnrollmentCalled = true
 	s.rejectedReason = req.Reason
+	s.rejectTenantID = req.TenantID
+	s.rejectedBy = req.RejectedBy
 	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRejected, RejectReason: &req.Reason}, nil
 }
 
 func (s *routeRuntimeService) RevokeEnrollment(ctx context.Context, req runtime.RevokeEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
 	s.revokeEnrollmentCalled = true
 	s.revokedReason = req.Reason
+	s.revokeTenantID = req.TenantID
+	s.revokedBy = req.RevokedBy
 	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRevoked, RevokeReason: &req.Reason}, nil
 }
 

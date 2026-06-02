@@ -131,6 +131,10 @@ func (h *RuntimeHandler) EnrollHello(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RuntimeHandler) ListRuntimeEnrollments(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := h.authorizeRuntimeEnrollmentManagement(w, r, "runtime enrollment manage")
+	if !ok {
+		return
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	var status *runtime.RuntimeEnrollmentStatus
@@ -140,7 +144,7 @@ func (h *RuntimeHandler) ListRuntimeEnrollments(w http.ResponseWriter, r *http.R
 	}
 
 	enrollments, err := h.runtimeService.ListRuntimeEnrollments(r.Context(), runtime.ListRuntimeEnrollmentsFilter{
-		TenantID: runtime.DefaultTenantID,
+		TenantID: tenantID,
 		Status:   status,
 		Limit:    int32(limit),
 		Offset:   int32(offset),
@@ -155,14 +159,18 @@ func (h *RuntimeHandler) ListRuntimeEnrollments(w http.ResponseWriter, r *http.R
 }
 
 func (h *RuntimeHandler) ApproveEnrollment(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := h.authorizeRuntimeEnrollmentManagement(w, r, "runtime enrollment approve")
+	if !ok {
+		return
+	}
 	enrollmentID, ok := enrollmentIDFromRequest(w, r)
 	if !ok {
 		return
 	}
 	enrollment, err := h.runtimeService.ApproveEnrollment(r.Context(), runtime.ApproveEnrollmentRequest{
-		TenantID:     runtime.DefaultTenantID,
+		TenantID:     tenantID,
 		EnrollmentID: enrollmentID,
-		ApprovedBy:   uuid.Nil,
+		ApprovedBy:   userID,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -173,6 +181,10 @@ func (h *RuntimeHandler) ApproveEnrollment(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *RuntimeHandler) RejectEnrollment(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := h.authorizeRuntimeEnrollmentManagement(w, r, "runtime enrollment reject")
+	if !ok {
+		return
+	}
 	enrollmentID, ok := enrollmentIDFromRequest(w, r)
 	if !ok {
 		return
@@ -182,9 +194,9 @@ func (h *RuntimeHandler) RejectEnrollment(w http.ResponseWriter, r *http.Request
 		return
 	}
 	enrollment, err := h.runtimeService.RejectEnrollment(r.Context(), runtime.RejectEnrollmentRequest{
-		TenantID:     runtime.DefaultTenantID,
+		TenantID:     tenantID,
 		EnrollmentID: enrollmentID,
-		RejectedBy:   uuid.Nil,
+		RejectedBy:   userID,
 		Reason:       reason,
 	})
 	if err != nil {
@@ -196,6 +208,10 @@ func (h *RuntimeHandler) RejectEnrollment(w http.ResponseWriter, r *http.Request
 }
 
 func (h *RuntimeHandler) RevokeEnrollment(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := h.authorizeRuntimeEnrollmentManagement(w, r, "runtime enrollment revoke")
+	if !ok {
+		return
+	}
 	enrollmentID, ok := enrollmentIDFromRequest(w, r)
 	if !ok {
 		return
@@ -205,9 +221,9 @@ func (h *RuntimeHandler) RevokeEnrollment(w http.ResponseWriter, r *http.Request
 		return
 	}
 	enrollment, err := h.runtimeService.RevokeEnrollment(r.Context(), runtime.RevokeEnrollmentRequest{
-		TenantID:     runtime.DefaultTenantID,
+		TenantID:     tenantID,
 		EnrollmentID: enrollmentID,
-		RevokedBy:    uuid.Nil,
+		RevokedBy:    userID,
 		Reason:       reason,
 	})
 	if err != nil {
@@ -216,6 +232,41 @@ func (h *RuntimeHandler) RevokeEnrollment(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(newRuntimeEnrollmentResponse(enrollment))
+}
+
+func (h *RuntimeHandler) authorizeRuntimeEnrollmentManagement(w http.ResponseWriter, r *http.Request, auditReason string) (uuid.UUID, uuid.UUID, bool) {
+	if h.authorizer == nil {
+		http.Error(w, "runtime enrollment authorization is not configured", http.StatusForbidden)
+		return uuid.Nil, uuid.Nil, false
+	}
+	tenantID := middleware.GetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	if tenantID == uuid.Nil || userID == uuid.Nil {
+		http.Error(w, "console identity not found in context", http.StatusForbidden)
+		return uuid.Nil, uuid.Nil, false
+	}
+	decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
+		Actor: authz.ActorRef{
+			Type: authz.ActorUser,
+			ID:   userID.String(),
+		},
+		Action: authz.ActionRuntimeScopeManage,
+		Resource: authz.ResourceRef{
+			Type: authz.ResourceTenant,
+			ID:   tenantID.String(),
+		},
+		TenantID:    tenantID,
+		AuditReason: auditReason,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return uuid.Nil, uuid.Nil, false
+	}
+	if !decision.Allowed {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return uuid.Nil, uuid.Nil, false
+	}
+	return tenantID, userID, true
 }
 
 func (h *RuntimeHandler) RenewRuntimeSession(w http.ResponseWriter, r *http.Request) {
