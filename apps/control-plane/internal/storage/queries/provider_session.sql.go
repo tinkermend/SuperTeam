@@ -150,6 +150,20 @@ INSERT INTO provider_session_events (
     $6::text,
     COALESCE($7::jsonb, '{}'::jsonb)
 FROM provider_sessions ps
+JOIN digital_employee_execution_instances dei
+  ON dei.id = ps.execution_instance_id
+ AND dei.tenant_id = ps.tenant_id
+ AND dei.digital_employee_id = ps.digital_employee_id
+ AND dei.runtime_node_id = ps.runtime_node_id
+ AND dei.provider_type = ps.provider_type
+ AND dei.status NOT IN ('disabled', 'error')
+ AND dei.deleted_at IS NULL
+JOIN digital_employees de
+  ON de.id = ps.digital_employee_id
+ AND de.tenant_id = ps.tenant_id
+ AND de.status NOT IN ('disabled', 'error')
+ AND de.deleted_at IS NULL
+ AND de.archived_at IS NULL
 JOIN runtime_nodes rn
   ON rn.id = ps.runtime_node_id
  AND rn.tenant_id = ps.tenant_id
@@ -159,6 +173,8 @@ JOIN runtime_nodes rn
  AND rn.archived_at IS NULL
 WHERE ps.id = $9::uuid
   AND ps.tenant_id = $10::uuid
+  AND ps.status IN ('running', 'idle')
+  AND ps.closed_at IS NULL
   AND EXISTS (
       SELECT 1
       FROM runtime_sessions rs

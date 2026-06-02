@@ -2303,6 +2303,187 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "disabled",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    3,
+		Payload:           []byte(`{"message":"disabled employee"}`),
+		RequestID:         pgtype.Text{String: "request-disabled-employee-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "error",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    4,
+		Payload:           []byte(`{"message":"error employee"}`),
+		RequestID:         pgtype.Text{String: "request-error-employee-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "active",
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
+		Status:   "disabled",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    5,
+		Payload:           []byte(`{"message":"disabled execution instance"}`),
+		RequestID:         pgtype.Text{String: "request-disabled-instance-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:           instance.ID,
+		TenantID:     tenantID,
+		Status:       "error",
+		ErrorMessage: pgtype.Text{String: "provider became unavailable", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    6,
+		Payload:           []byte(`{"message":"error execution instance"}`),
+		RequestID:         pgtype.Text{String: "request-error-instance-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
+		Status:   "ready",
+	})
+	require.NoError(t, err)
+
+	stoppedSession, err := testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-stopped-event-context",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"stopped-event-context"}`),
+	})
+	require.NoError(t, err)
+	_, err = testQueries.UpdateProviderSessionStatus(ctx, queries.UpdateProviderSessionStatusParams{
+		ID:       stoppedSession.ID,
+		TenantID: tenantID,
+		Status:   "stopped",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: stoppedSession.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    1,
+		Payload:           []byte(`{"message":"stopped provider session"}`),
+		RequestID:         pgtype.Text{String: "request-stopped-provider-session-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	completedSession, err := testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-completed-event-context",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"completed-event-context"}`),
+	})
+	require.NoError(t, err)
+	_, err = testQueries.UpdateProviderSessionStatus(ctx, queries.UpdateProviderSessionStatusParams{
+		ID:       completedSession.ID,
+		TenantID: tenantID,
+		Status:   "completed",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: completedSession.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    1,
+		Payload:           []byte(`{"message":"completed provider session"}`),
+		RequestID:         pgtype.Text{String: "request-completed-provider-session-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	failedSession, err := testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-failed-event-context",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"failed-event-context"}`),
+	})
+	require.NoError(t, err)
+	_, err = testQueries.UpdateProviderSessionStatus(ctx, queries.UpdateProviderSessionStatusParams{
+		ID:           failedSession.ID,
+		TenantID:     tenantID,
+		Status:       "failed",
+		ErrorMessage: pgtype.Text{String: "provider session failed", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: failedSession.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    1,
+		Payload:           []byte(`{"message":"failed provider session"}`),
+		RequestID:         pgtype.Text{String: "request-failed-provider-session-event", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
 	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
 		TenantID:          tenantID,
 		ProviderSessionID: session.ID,
