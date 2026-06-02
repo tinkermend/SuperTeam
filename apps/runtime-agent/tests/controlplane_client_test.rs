@@ -306,9 +306,7 @@ async fn controlplane_client_upsert_capabilities_sends_openapi_wrapper_body() {
 
     tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
-        let mut buffer = vec![0; 4096];
-        let bytes_read = socket.read(&mut buffer).await.unwrap();
-        let request = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+        let request = read_http_request(&mut socket).await;
         let _ = request_tx.send(request);
 
         socket
