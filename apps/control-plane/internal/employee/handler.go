@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/authz"
 )
 
 type HandlerService interface {
@@ -23,19 +24,24 @@ type HandlerService interface {
 }
 
 type HTTPHandler struct {
-	service HandlerService
+	service    HandlerService
+	authorizer authz.Authorizer
 }
 
 func NewHandler(service HandlerService) *HTTPHandler {
 	return &HTTPHandler{service: service}
 }
 
+func (h *HTTPHandler) SetAuthorizer(authorizer authz.Authorizer) {
+	h.authorizer = authorizer
+}
+
 func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Request) {
-	service, ok := h.serviceFromRequest(w)
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee manage")
 	if !ok {
 		return
 	}
-	tenantID, ok := tenantIDFromContext(w, r)
+	service, ok := h.serviceFromRequest(w)
 	if !ok {
 		return
 	}
@@ -57,11 +63,11 @@ func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Request) {
-	service, ok := h.serviceFromRequest(w)
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee create")
 	if !ok {
 		return
 	}
-	tenantID, ok := tenantIDFromContext(w, r)
+	service, ok := h.serviceFromRequest(w)
 	if !ok {
 		return
 	}
@@ -100,11 +106,15 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *HTTPHandler) GetDigitalEmployee(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee read")
+	if !ok {
+		return
+	}
 	service, ok := h.serviceFromRequest(w)
 	if !ok {
 		return
 	}
-	tenantID, employeeID, ok := tenantAndEmployeeIDFromRequest(w, r)
+	employeeID, ok := employeeIDFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -117,11 +127,15 @@ func (h *HTTPHandler) GetDigitalEmployee(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *HTTPHandler) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee status update")
+	if !ok {
+		return
+	}
 	service, ok := h.serviceFromRequest(w)
 	if !ok {
 		return
 	}
-	tenantID, employeeID, ok := tenantAndEmployeeIDFromRequest(w, r)
+	employeeID, ok := employeeIDFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -145,11 +159,15 @@ func (h *HTTPHandler) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http
 }
 
 func (h *HTTPHandler) GetDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee execution instance read")
+	if !ok {
+		return
+	}
 	service, ok := h.serviceFromRequest(w)
 	if !ok {
 		return
 	}
-	tenantID, employeeID, ok := tenantAndEmployeeIDFromRequest(w, r)
+	employeeID, ok := employeeIDFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -162,11 +180,15 @@ func (h *HTTPHandler) GetDigitalEmployeeExecutionInstance(w http.ResponseWriter,
 }
 
 func (h *HTTPHandler) UpsertDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee execution instance bind")
+	if !ok {
+		return
+	}
 	service, ok := h.serviceFromRequest(w)
 	if !ok {
 		return
 	}
-	tenantID, employeeID, ok := tenantAndEmployeeIDFromRequest(w, r)
+	employeeID, ok := employeeIDFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -213,6 +235,41 @@ func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService,
 	return h.service, true
 }
 
+func (h *HTTPHandler) authorizeDigitalEmployeeManagement(w http.ResponseWriter, r *http.Request, auditReason string) (uuid.UUID, bool) {
+	if h == nil || h.authorizer == nil {
+		http.Error(w, "digital employee authorization is not configured", http.StatusForbidden)
+		return uuid.Nil, false
+	}
+	tenantID := middleware.GetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	if tenantID == uuid.Nil || userID == uuid.Nil {
+		http.Error(w, "console identity not found in context", http.StatusForbidden)
+		return uuid.Nil, false
+	}
+	decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
+		Actor: authz.ActorRef{
+			Type: authz.ActorUser,
+			ID:   userID.String(),
+		},
+		Action: authz.ActionRuntimeScopeManage,
+		Resource: authz.ResourceRef{
+			Type: authz.ResourceTenant,
+			ID:   tenantID.String(),
+		},
+		TenantID:    tenantID,
+		AuditReason: auditReason,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return uuid.Nil, false
+	}
+	if !decision.Allowed {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return uuid.Nil, false
+	}
+	return tenantID, true
+}
+
 type digitalEmployeeResponse struct {
 	ID               string                `json:"id"`
 	TenantID         string                `json:"tenant_id"`
@@ -254,26 +311,13 @@ type executionInstanceResponse struct {
 	UpdatedAt            string                  `json:"updated_at,omitempty"`
 }
 
-func tenantAndEmployeeIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, bool) {
-	tenantID, ok := tenantIDFromContext(w, r)
-	if !ok {
-		return uuid.Nil, uuid.Nil, false
-	}
+func employeeIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	employeeID, err := uuid.Parse(chi.URLParam(r, "employeeId"))
 	if err != nil || employeeID == uuid.Nil {
 		http.Error(w, "invalid employee id", http.StatusBadRequest)
-		return uuid.Nil, uuid.Nil, false
-	}
-	return tenantID, employeeID, true
-}
-
-func tenantIDFromContext(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
-	tenantID := middleware.GetTenantID(r.Context())
-	if tenantID == uuid.Nil {
-		http.Error(w, "tenant_id not found in context", http.StatusUnauthorized)
 		return uuid.Nil, false
 	}
-	return tenantID, true
+	return employeeID, true
 }
 
 func writeHandlerError(w http.ResponseWriter, err error) {

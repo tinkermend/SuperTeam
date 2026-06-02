@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
+	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/employee"
 )
 
@@ -119,6 +120,74 @@ func TestDigitalEmployeeRoutesRequireConsoleAuth(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeRoutesRequireManagementAuthorization(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeEmployeeService{}
+	authorizer := &routeAuthorizer{allowed: false}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		authorizer,
+	)
+	server.SetEmployeeHandler(employee.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+	employeeID := uuid.New().String()
+	runtimeNodeID := uuid.New().String()
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{name: "list", method: http.MethodGet, path: "/api/v1/digital-employees"},
+		{name: "create", method: http.MethodPost, path: "/api/v1/digital-employees", body: `{"name":"Requirements analyst","role":"requirements_analyst"}`},
+		{name: "get", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID},
+		{name: "status", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/status", body: `{"status":"active"}`},
+		{name: "get execution instance", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance"},
+		{name: "upsert execution instance", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance", body: `{"runtime_node_id":"` + runtimeNodeID + `","provider_type":"codex","agent_home_dir":"/srv/agents/requirements"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.AddCookie(cookie)
+			resp := httptest.NewRecorder()
+			server.ServeHTTP(resp, req)
+			if resp.Code != http.StatusForbidden {
+				t.Fatalf("expected forbidden digital employee route, got %d: %s", resp.Code, resp.Body.String())
+			}
+		})
+	}
+	if service.called() {
+		t.Fatalf("expected denied requests not to call employee service")
+	}
+	if len(authorizer.checks) != len(tests) {
+		t.Fatalf("expected one authorization check per request, got %#v", authorizer.checks)
+	}
+	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	for _, check := range authorizer.checks {
+		if check.Action != authz.ActionRuntimeScopeManage {
+			t.Fatalf("expected runtime scope management action, got %#v", check)
+		}
+		if check.Actor.Type != authz.ActorUser {
+			t.Fatalf("expected user actor, got %#v", check)
+		}
+		if check.Resource.Type != authz.ResourceTenant || check.Resource.ID != expectedTenantID.String() || check.TenantID != expectedTenantID {
+			t.Fatalf("expected tenant resource %s, got %#v", expectedTenantID, check)
+		}
+	}
+}
+
 func TestDigitalEmployeeRouteRejectsUnconfiguredService(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -148,15 +217,23 @@ func TestDigitalEmployeeRouteRejectsUnconfiguredService(t *testing.T) {
 }
 
 type routeEmployeeService struct {
-	createReq   employee.CreateDraftRequest
-	listReq     employee.ListDigitalEmployeesRequest
-	bindReq     employee.BindExecutionInstanceRequest
-	getTenantID uuid.UUID
-	listCalled  bool
-	createdID   uuid.UUID
+	createReq           employee.CreateDraftRequest
+	listReq             employee.ListDigitalEmployeesRequest
+	bindReq             employee.BindExecutionInstanceRequest
+	updateReq           employee.UpdateStatusRequest
+	getTenantID         uuid.UUID
+	getInstanceTenantID uuid.UUID
+	createCalled        bool
+	listCalled          bool
+	getCalled           bool
+	updateCalled        bool
+	getInstanceCalled   bool
+	bindCalled          bool
+	createdID           uuid.UUID
 }
 
 func (s *routeEmployeeService) CreateDraft(ctx context.Context, req employee.CreateDraftRequest) (*employee.DigitalEmployee, error) {
+	s.createCalled = true
 	s.createReq = req
 	s.createdID = uuid.New()
 	now := time.Now().UTC()
@@ -183,6 +260,7 @@ func (s *routeEmployeeService) ListDigitalEmployees(ctx context.Context, req emp
 }
 
 func (s *routeEmployeeService) GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (*employee.DigitalEmployee, error) {
+	s.getCalled = true
 	s.getTenantID = tenantID
 	now := time.Now().UTC()
 	return &employee.DigitalEmployee{
@@ -202,6 +280,8 @@ func (s *routeEmployeeService) GetDigitalEmployee(ctx context.Context, tenantID,
 }
 
 func (s *routeEmployeeService) UpdateStatus(ctx context.Context, req employee.UpdateStatusRequest) (*employee.DigitalEmployee, error) {
+	s.updateCalled = true
+	s.updateReq = req
 	now := time.Now().UTC()
 	return &employee.DigitalEmployee{
 		ID:               req.DigitalEmployeeID,
@@ -220,6 +300,8 @@ func (s *routeEmployeeService) UpdateStatus(ctx context.Context, req employee.Up
 }
 
 func (s *routeEmployeeService) GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*employee.DigitalEmployeeExecutionInstance, error) {
+	s.getInstanceCalled = true
+	s.getInstanceTenantID = tenantID
 	now := time.Now().UTC()
 	return &employee.DigitalEmployeeExecutionInstance{
 		ID:                   uuid.New(),
@@ -241,6 +323,7 @@ func (s *routeEmployeeService) GetExecutionInstance(ctx context.Context, tenantI
 }
 
 func (s *routeEmployeeService) BindExecutionInstance(ctx context.Context, req employee.BindExecutionInstanceRequest) (*employee.DigitalEmployeeExecutionInstance, error) {
+	s.bindCalled = true
 	s.bindReq = req
 	now := time.Now().UTC()
 	return &employee.DigitalEmployeeExecutionInstance{
@@ -260,6 +343,15 @@ func (s *routeEmployeeService) BindExecutionInstance(ctx context.Context, req em
 		CreatedAt:            now,
 		UpdatedAt:            now,
 	}, nil
+}
+
+func (s *routeEmployeeService) called() bool {
+	return s.createCalled ||
+		s.listCalled ||
+		s.getCalled ||
+		s.updateCalled ||
+		s.getInstanceCalled ||
+		s.bindCalled
 }
 
 var _ employee.HandlerService = (*routeEmployeeService)(nil)

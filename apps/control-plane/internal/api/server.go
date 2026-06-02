@@ -100,6 +100,9 @@ func NewServerWithAuthzAndRuntimeSessionAuth(
 
 func (s *Server) SetEmployeeHandler(employeeHandler *employee.HTTPHandler) {
 	s.employeeHandler = employeeHandler
+	if employeeHandler != nil {
+		employeeHandler.SetAuthorizer(s.authorizer)
+	}
 	s.registerRoutes()
 }
 
