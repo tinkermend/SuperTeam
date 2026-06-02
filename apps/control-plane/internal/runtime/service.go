@@ -137,25 +137,17 @@ func (s *Service) ApproveEnrollment(ctx context.Context, req ApproveEnrollmentRe
 	if err != nil {
 		return nil, err
 	}
-	nodeRecord, err := enrollmentRepo.UpsertRuntimeNodeForTenant(ctx, UpsertRuntimeNodeForTenantParams{
+	record, err := enrollmentRepo.ApproveRuntimeEnrollmentWithNode(ctx, ApproveRuntimeEnrollmentWithNodeParams{
 		TenantID:           tenantID,
-		NodeID:             enrollment.NodeID,
+		EnrollmentID:       req.EnrollmentID,
+		ApprovedBy:         req.ApprovedBy,
 		Name:               nodeRequest.Name,
 		SupportedProviders: nodeRequest.SupportedProviders,
 		MaxSlots:           nodeRequest.MaxSlots,
 		CurrentLoad:        0,
-		Status:             string(NodeStatusOnline),
+		NodeStatus:         string(NodeStatusOnline),
 		Metadata:           nodeRequest.Metadata,
 		LastHeartbeatAt:    timestamptzFromTime(time.Now()),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create or reuse runtime node: %w", err)
-	}
-	record, err := enrollmentRepo.ApproveRuntimeEnrollment(ctx, ApproveRuntimeEnrollmentParams{
-		TenantID:      tenantID,
-		EnrollmentID:  req.EnrollmentID,
-		RuntimeNodeID: nodeRecord.ID,
-		ApprovedBy:    req.ApprovedBy,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to approve runtime enrollment: %w", err)

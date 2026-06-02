@@ -26,6 +26,7 @@ type EnrollmentRepository interface {
 	GetRuntimeEnrollment(ctx context.Context, tenantID, enrollmentID uuid.UUID) (RuntimeEnrollmentRecord, error)
 	UpsertRuntimeNodeForTenant(ctx context.Context, params UpsertRuntimeNodeForTenantParams) (NodeRecord, error)
 	ApproveRuntimeEnrollment(ctx context.Context, params ApproveRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error)
+	ApproveRuntimeEnrollmentWithNode(ctx context.Context, params ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollmentRecord, error)
 	RejectRuntimeEnrollment(ctx context.Context, params RejectRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error)
 	RevokeRuntimeEnrollment(ctx context.Context, params RevokeRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error)
 	CreateRuntimeSession(ctx context.Context, params CreateRuntimeSessionParams) (RuntimeSessionRecord, error)
@@ -104,6 +105,19 @@ type ApproveRuntimeEnrollmentParams struct {
 	EnrollmentID  uuid.UUID
 	RuntimeNodeID uuid.UUID
 	ApprovedBy    uuid.UUID
+}
+
+type ApproveRuntimeEnrollmentWithNodeParams struct {
+	TenantID           uuid.UUID
+	EnrollmentID       uuid.UUID
+	ApprovedBy         uuid.UUID
+	Name               string
+	SupportedProviders []byte
+	MaxSlots           int32
+	CurrentLoad        int32
+	NodeStatus         string
+	Metadata           []byte
+	LastHeartbeatAt    pgtype.Timestamptz
 }
 
 type RejectRuntimeEnrollmentParams struct {

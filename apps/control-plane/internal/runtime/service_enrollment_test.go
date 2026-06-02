@@ -188,6 +188,55 @@ func TestApproveEnrollmentCreatesOrReusesRuntimeNode(t *testing.T) {
 	require.Equal(t, firstNodeID, approvedAgain.RuntimeNodeID)
 }
 
+func TestApproveEnrollmentDoesNotTakeOverCrossTenantNodeID(t *testing.T) {
+	ctx := context.Background()
+	otherTenantID := runtimeTestUUID(910)
+	repo := newEnrollmentFake(t)
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	bootstrapHash, err := HashRuntimeSecret("boot_cross_tenant")
+	require.NoError(t, err)
+	repo.seedNode(DefaultTenantID, "runtime-shared", "Default Tenant Runtime", []string{"codex"})
+	enrollment := repo.seedEnrollment(otherTenantID, "runtime-shared", RuntimeEnrollmentStatusPending, uuid.Nil, runtimeTestUUID(911), bootstrapHash)
+	enrollment.RequestPayload = mustRuntimePayload(t, "runtime-shared", "Other Tenant Runtime", []string{"codex"}, 2, nil)
+	repo.enrollmentsByID[enrollment.ID] = enrollment
+	repo.enrollmentsByNode[repo.enrollmentKey(otherTenantID, "runtime-shared")] = enrollment
+
+	_, err = service.ApproveEnrollment(ctx, ApproveEnrollmentRequest{
+		TenantID:     otherTenantID,
+		EnrollmentID: enrollment.ID,
+		ApprovedBy:   runtimeTestUUID(912),
+	})
+	require.Error(t, err)
+	require.Equal(t, RuntimeEnrollmentStatusPending, repo.enrollmentsByID[enrollment.ID].Status)
+	require.Equal(t, 1, len(repo.nodes))
+	require.Equal(t, DefaultTenantID, repo.nodes["runtime-shared"].TenantID)
+}
+
+func TestApproveEnrollmentFailureDoesNotCreateRuntimeNode(t *testing.T) {
+	ctx := context.Background()
+	repo := newEnrollmentFake(t)
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	bootstrapHash, err := HashRuntimeSecret("boot_rejected_after_read")
+	require.NoError(t, err)
+	enrollment := repo.seedEnrollment(DefaultTenantID, "runtime-rejected-after-read", RuntimeEnrollmentStatusPending, uuid.Nil, runtimeTestUUID(913), bootstrapHash)
+	enrollment.RequestPayload = mustRuntimePayload(t, "runtime-rejected-after-read", "Runtime Rejected After Read", []string{"codex"}, 2, nil)
+	repo.enrollmentsByID[enrollment.ID] = enrollment
+	repo.enrollmentsByNode[repo.enrollmentKey(DefaultTenantID, "runtime-rejected-after-read")] = enrollment
+	repo.failApproveEnrollmentIDs[enrollment.ID] = true
+
+	_, err = service.ApproveEnrollment(ctx, ApproveEnrollmentRequest{
+		TenantID:     DefaultTenantID,
+		EnrollmentID: enrollment.ID,
+		ApprovedBy:   runtimeTestUUID(914),
+	})
+	require.Error(t, err)
+	require.Empty(t, repo.nodes)
+}
+
 func TestNonDefaultTenantEnrollmentSessionLifecycle(t *testing.T) {
 	ctx := context.Background()
 	tenantID := runtimeTestUUID(900)
@@ -312,22 +361,24 @@ func TestRevokeEnrollmentInvalidatesSessions(t *testing.T) {
 }
 
 type enrollmentFake struct {
-	t                 *testing.T
-	nodes             map[string]NodeRecord
-	bootstrapKeys     []RuntimeBootstrapKeyRecord
-	enrollmentsByID   map[uuid.UUID]RuntimeEnrollmentRecord
-	enrollmentsByNode map[string]RuntimeEnrollmentRecord
-	sessionsByLookup  map[string]RuntimeSessionRecord
+	t                        *testing.T
+	nodes                    map[string]NodeRecord
+	bootstrapKeys            []RuntimeBootstrapKeyRecord
+	enrollmentsByID          map[uuid.UUID]RuntimeEnrollmentRecord
+	enrollmentsByNode        map[string]RuntimeEnrollmentRecord
+	sessionsByLookup         map[string]RuntimeSessionRecord
+	failApproveEnrollmentIDs map[uuid.UUID]bool
 }
 
 func newEnrollmentFake(t *testing.T) *enrollmentFake {
 	t.Helper()
 	return &enrollmentFake{
-		t:                 t,
-		nodes:             map[string]NodeRecord{},
-		enrollmentsByID:   map[uuid.UUID]RuntimeEnrollmentRecord{},
-		enrollmentsByNode: map[string]RuntimeEnrollmentRecord{},
-		sessionsByLookup:  map[string]RuntimeSessionRecord{},
+		t:                        t,
+		nodes:                    map[string]NodeRecord{},
+		enrollmentsByID:          map[uuid.UUID]RuntimeEnrollmentRecord{},
+		enrollmentsByNode:        map[string]RuntimeEnrollmentRecord{},
+		sessionsByLookup:         map[string]RuntimeSessionRecord{},
+		failApproveEnrollmentIDs: map[uuid.UUID]bool{},
 	}
 }
 
@@ -345,7 +396,7 @@ func mustRuntimePayload(t *testing.T, nodeID, name string, providers []string, m
 }
 
 func (f *enrollmentFake) nodeKey(tenantID uuid.UUID, nodeID string) string {
-	return tenantID.String() + "/" + nodeID
+	return nodeID
 }
 
 func (f *enrollmentFake) enrollmentKey(tenantID uuid.UUID, nodeID string) string {
@@ -537,6 +588,9 @@ func (f *enrollmentFake) GetRuntimeEnrollment(_ context.Context, tenantID, enrol
 func (f *enrollmentFake) UpsertRuntimeNodeForTenant(_ context.Context, params UpsertRuntimeNodeForTenantParams) (NodeRecord, error) {
 	key := f.nodeKey(params.TenantID, params.NodeID)
 	if existing, ok := f.nodes[key]; ok {
+		if existing.TenantID != params.TenantID {
+			return NodeRecord{}, errors.New("runtime node belongs to another tenant")
+		}
 		existing.Name = params.Name
 		existing.SupportedProviders = params.SupportedProviders
 		existing.MaxSlots = params.MaxSlots
@@ -564,10 +618,67 @@ func (f *enrollmentFake) UpsertRuntimeNodeForTenant(_ context.Context, params Up
 	return record, nil
 }
 
+func (f *enrollmentFake) ApproveRuntimeEnrollmentWithNode(_ context.Context, params ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollmentRecord, error) {
+	record, ok := f.enrollmentsByID[params.EnrollmentID]
+	if !ok || record.TenantID != params.TenantID || record.Status != RuntimeEnrollmentStatusPending {
+		return RuntimeEnrollmentRecord{}, errors.New("not found")
+	}
+	if f.failApproveEnrollmentIDs[params.EnrollmentID] {
+		record.Status = RuntimeEnrollmentStatusRejected
+		f.enrollmentsByID[record.ID] = record
+		f.enrollmentsByNode[f.enrollmentKey(record.TenantID, record.NodeID)] = record
+		return RuntimeEnrollmentRecord{}, errors.New("approve failed")
+	}
+	key := f.nodeKey(params.TenantID, record.NodeID)
+	node, ok := f.nodes[key]
+	if ok {
+		if node.TenantID != params.TenantID {
+			return RuntimeEnrollmentRecord{}, errors.New("runtime node belongs to another tenant")
+		}
+		node.Name = params.Name
+		node.SupportedProviders = params.SupportedProviders
+		node.MaxSlots = params.MaxSlots
+		node.CurrentLoad = params.CurrentLoad
+		node.Status = params.NodeStatus
+		node.Metadata = params.Metadata
+		node.LastHeartbeatAt = params.LastHeartbeatAt
+		f.nodes[key] = node
+	} else {
+		node = NodeRecord{
+			ID:                 runtimeTestUUID(len(f.nodes) + 100),
+			TenantID:           params.TenantID,
+			NodeID:             record.NodeID,
+			Name:               params.Name,
+			SupportedProviders: params.SupportedProviders,
+			MaxSlots:           params.MaxSlots,
+			CurrentLoad:        params.CurrentLoad,
+			Status:             params.NodeStatus,
+			Metadata:           params.Metadata,
+			LastHeartbeatAt:    params.LastHeartbeatAt,
+			CreatedAt:          timestamptzFromTime(time.Now()),
+			UpdatedAt:          timestamptzFromTime(time.Now()),
+		}
+		f.nodes[key] = node
+	}
+	record.RuntimeNodeID = node.ID
+	record.Status = RuntimeEnrollmentStatusApproved
+	record.ApprovedBy = uuid.NullUUID{UUID: params.ApprovedBy, Valid: params.ApprovedBy != uuid.Nil}
+	record.ApprovedAt = timestamptzFromTime(time.Now())
+	f.enrollmentsByID[record.ID] = record
+	f.enrollmentsByNode[f.enrollmentKey(record.TenantID, record.NodeID)] = record
+	return record, nil
+}
+
 func (f *enrollmentFake) ApproveRuntimeEnrollment(_ context.Context, params ApproveRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error) {
 	record, ok := f.enrollmentsByID[params.EnrollmentID]
 	if !ok || record.TenantID != params.TenantID || record.Status != RuntimeEnrollmentStatusPending {
 		return RuntimeEnrollmentRecord{}, errors.New("not found")
+	}
+	if f.failApproveEnrollmentIDs[params.EnrollmentID] {
+		record.Status = RuntimeEnrollmentStatusRejected
+		f.enrollmentsByID[record.ID] = record
+		f.enrollmentsByNode[f.enrollmentKey(record.TenantID, record.NodeID)] = record
+		return RuntimeEnrollmentRecord{}, errors.New("approve failed")
 	}
 	nodeKey := f.nodeKey(params.TenantID, record.NodeID)
 	node, ok := f.nodes[nodeKey]

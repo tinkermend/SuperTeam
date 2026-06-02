@@ -25,55 +25,40 @@ ON CONFLICT (node_id) DO UPDATE SET
 RETURNING *;
 
 -- name: UpsertRuntimeNodeForTenant :one
-WITH updated AS (
-    UPDATE runtime_nodes
-    SET name = sqlc.arg('name')::varchar,
-        supported_providers = sqlc.arg('supported_providers')::jsonb,
-        max_slots = sqlc.arg('max_slots')::integer,
-        current_load = sqlc.arg('current_load')::integer,
-        status = sqlc.arg('status')::varchar,
-        metadata = COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb),
-        last_heartbeat_at = sqlc.arg('last_heartbeat_at')::timestamptz,
-        disabled_at = NULL,
-        archived_at = NULL,
-        updated_at = NOW()
-    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-      AND node_id = sqlc.arg('node_id')::varchar
-    RETURNING *
-),
-inserted AS (
-    INSERT INTO runtime_nodes (
-        tenant_id,
-        node_id,
-        name,
-        supported_providers,
-        max_slots,
-        current_load,
-        status,
-        metadata,
-        last_heartbeat_at
-    )
-    SELECT
-        sqlc.arg('tenant_id')::uuid,
-        sqlc.arg('node_id')::varchar,
-        sqlc.arg('name')::varchar,
-        sqlc.arg('supported_providers')::jsonb,
-        sqlc.arg('max_slots')::integer,
-        sqlc.arg('current_load')::integer,
-        sqlc.arg('status')::varchar,
-        COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb),
-        sqlc.arg('last_heartbeat_at')::timestamptz
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM runtime_nodes
-        WHERE node_id = sqlc.arg('node_id')::varchar
-    )
-    RETURNING *
+INSERT INTO runtime_nodes (
+    tenant_id,
+    node_id,
+    name,
+    supported_providers,
+    max_slots,
+    current_load,
+    status,
+    metadata,
+    last_heartbeat_at
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('node_id')::varchar,
+    sqlc.arg('name')::varchar,
+    sqlc.arg('supported_providers')::jsonb,
+    sqlc.arg('max_slots')::integer,
+    sqlc.arg('current_load')::integer,
+    sqlc.arg('status')::varchar,
+    COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb),
+    sqlc.arg('last_heartbeat_at')::timestamptz
 )
-SELECT * FROM updated
-UNION ALL
-SELECT * FROM inserted
-LIMIT 1;
+ON CONFLICT (node_id) DO UPDATE SET
+    name = EXCLUDED.name,
+    supported_providers = EXCLUDED.supported_providers,
+    max_slots = EXCLUDED.max_slots,
+    current_load = EXCLUDED.current_load,
+    status = EXCLUDED.status,
+    metadata = EXCLUDED.metadata,
+    last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+    disabled_at = NULL,
+    archived_at = NULL,
+    updated_at = NOW()
+WHERE runtime_nodes.tenant_id = EXCLUDED.tenant_id
+RETURNING *;
 
 -- name: GetRuntimeNode :one
 SELECT * FROM runtime_nodes

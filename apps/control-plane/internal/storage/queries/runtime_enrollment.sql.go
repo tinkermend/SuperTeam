@@ -78,6 +78,124 @@ func (q *Queries) ApproveRuntimeEnrollment(ctx context.Context, arg ApproveRunti
 	return i, err
 }
 
+const ApproveRuntimeEnrollmentWithNode = `-- name: ApproveRuntimeEnrollmentWithNode :one
+WITH pending_enrollment AS (
+    SELECT id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
+    FROM runtime_enrollments
+    WHERE id = $2::uuid
+      AND tenant_id = $3::uuid
+      AND status = 'pending'
+    FOR UPDATE
+),
+upserted_node AS (
+    INSERT INTO runtime_nodes (
+        tenant_id,
+        node_id,
+        name,
+        supported_providers,
+        max_slots,
+        current_load,
+        status,
+        metadata,
+        last_heartbeat_at
+    )
+    SELECT
+        pe.tenant_id,
+        pe.node_id,
+        $4::varchar,
+        $5::jsonb,
+        $6::integer,
+        $7::integer,
+        $8::varchar,
+        COALESCE($9::jsonb, '{}'::jsonb),
+        $10::timestamptz
+    FROM pending_enrollment pe
+    ON CONFLICT (node_id) DO UPDATE SET
+        name = EXCLUDED.name,
+        supported_providers = EXCLUDED.supported_providers,
+        max_slots = EXCLUDED.max_slots,
+        current_load = EXCLUDED.current_load,
+        status = EXCLUDED.status,
+        metadata = EXCLUDED.metadata,
+        last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+        disabled_at = NULL,
+        archived_at = NULL,
+        updated_at = NOW()
+    WHERE runtime_nodes.tenant_id = EXCLUDED.tenant_id
+    RETURNING id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at
+)
+UPDATE runtime_enrollments re
+SET status = 'approved',
+    runtime_node_id = un.id,
+    approved_by = $1::uuid,
+    approved_at = NOW(),
+    rejected_by = NULL,
+    rejected_at = NULL,
+    reject_reason = NULL,
+    revoked_by = NULL,
+    revoked_at = NULL,
+    revoke_reason = NULL,
+    updated_at = NOW()
+FROM pending_enrollment pe
+JOIN upserted_node un
+  ON un.tenant_id = pe.tenant_id
+ AND un.node_id = pe.node_id
+WHERE re.id = pe.id
+  AND re.tenant_id = pe.tenant_id
+  AND re.status = 'pending'
+RETURNING re.id, re.tenant_id, re.runtime_node_id, re.node_id, re.bootstrap_key_id, re.status, re.request_payload, re.approved_by, re.approved_at, re.rejected_by, re.rejected_at, re.reject_reason, re.revoked_by, re.revoked_at, re.revoke_reason, re.last_hello_at, re.created_at, re.updated_at
+`
+
+type ApproveRuntimeEnrollmentWithNodeParams struct {
+	ApprovedBy         uuid.NullUUID      `json:"approved_by"`
+	ID                 uuid.UUID          `json:"id"`
+	TenantID           uuid.UUID          `json:"tenant_id"`
+	Name               string             `json:"name"`
+	SupportedProviders []byte             `json:"supported_providers"`
+	MaxSlots           int32              `json:"max_slots"`
+	CurrentLoad        int32              `json:"current_load"`
+	NodeStatus         string             `json:"node_status"`
+	Metadata           []byte             `json:"metadata"`
+	LastHeartbeatAt    pgtype.Timestamptz `json:"last_heartbeat_at"`
+}
+
+func (q *Queries) ApproveRuntimeEnrollmentWithNode(ctx context.Context, arg ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollment, error) {
+	row := q.db.QueryRow(ctx, ApproveRuntimeEnrollmentWithNode,
+		arg.ApprovedBy,
+		arg.ID,
+		arg.TenantID,
+		arg.Name,
+		arg.SupportedProviders,
+		arg.MaxSlots,
+		arg.CurrentLoad,
+		arg.NodeStatus,
+		arg.Metadata,
+		arg.LastHeartbeatAt,
+	)
+	var i RuntimeEnrollment
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.RuntimeNodeID,
+		&i.NodeID,
+		&i.BootstrapKeyID,
+		&i.Status,
+		&i.RequestPayload,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
+		&i.RejectReason,
+		&i.RevokedBy,
+		&i.RevokedAt,
+		&i.RevokeReason,
+		&i.LastHelloAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const CreateRuntimeBootstrapKey = `-- name: CreateRuntimeBootstrapKey :one
 INSERT INTO runtime_bootstrap_keys (
     tenant_id,

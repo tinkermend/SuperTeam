@@ -139,6 +139,73 @@ WHERE id = sqlc.arg('id')::uuid
   )
 RETURNING *;
 
+-- name: ApproveRuntimeEnrollmentWithNode :one
+WITH pending_enrollment AS (
+    SELECT *
+    FROM runtime_enrollments
+    WHERE id = sqlc.arg('id')::uuid
+      AND tenant_id = sqlc.arg('tenant_id')::uuid
+      AND status = 'pending'
+    FOR UPDATE
+),
+upserted_node AS (
+    INSERT INTO runtime_nodes (
+        tenant_id,
+        node_id,
+        name,
+        supported_providers,
+        max_slots,
+        current_load,
+        status,
+        metadata,
+        last_heartbeat_at
+    )
+    SELECT
+        pe.tenant_id,
+        pe.node_id,
+        sqlc.arg('name')::varchar,
+        sqlc.arg('supported_providers')::jsonb,
+        sqlc.arg('max_slots')::integer,
+        sqlc.arg('current_load')::integer,
+        sqlc.arg('node_status')::varchar,
+        COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb),
+        sqlc.arg('last_heartbeat_at')::timestamptz
+    FROM pending_enrollment pe
+    ON CONFLICT (node_id) DO UPDATE SET
+        name = EXCLUDED.name,
+        supported_providers = EXCLUDED.supported_providers,
+        max_slots = EXCLUDED.max_slots,
+        current_load = EXCLUDED.current_load,
+        status = EXCLUDED.status,
+        metadata = EXCLUDED.metadata,
+        last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+        disabled_at = NULL,
+        archived_at = NULL,
+        updated_at = NOW()
+    WHERE runtime_nodes.tenant_id = EXCLUDED.tenant_id
+    RETURNING *
+)
+UPDATE runtime_enrollments re
+SET status = 'approved',
+    runtime_node_id = un.id,
+    approved_by = sqlc.narg('approved_by')::uuid,
+    approved_at = NOW(),
+    rejected_by = NULL,
+    rejected_at = NULL,
+    reject_reason = NULL,
+    revoked_by = NULL,
+    revoked_at = NULL,
+    revoke_reason = NULL,
+    updated_at = NOW()
+FROM pending_enrollment pe
+JOIN upserted_node un
+  ON un.tenant_id = pe.tenant_id
+ AND un.node_id = pe.node_id
+WHERE re.id = pe.id
+  AND re.tenant_id = pe.tenant_id
+  AND re.status = 'pending'
+RETURNING re.*;
+
 -- name: RejectRuntimeEnrollment :one
 UPDATE runtime_enrollments
 SET status = 'rejected',

@@ -287,6 +287,25 @@ func (r *PgRepository) ApproveRuntimeEnrollment(ctx context.Context, params Appr
 	return runtimeEnrollmentRecordFromQuery(enrollment), nil
 }
 
+func (r *PgRepository) ApproveRuntimeEnrollmentWithNode(ctx context.Context, params ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollmentRecord, error) {
+	enrollment, err := r.q.ApproveRuntimeEnrollmentWithNode(ctx, queries.ApproveRuntimeEnrollmentWithNodeParams{
+		ApprovedBy:         uuid.NullUUID{UUID: params.ApprovedBy, Valid: params.ApprovedBy != uuid.Nil},
+		ID:                 params.EnrollmentID,
+		TenantID:           params.TenantID,
+		Name:               params.Name,
+		SupportedProviders: params.SupportedProviders,
+		MaxSlots:           params.MaxSlots,
+		CurrentLoad:        params.CurrentLoad,
+		NodeStatus:         params.NodeStatus,
+		Metadata:           params.Metadata,
+		LastHeartbeatAt:    params.LastHeartbeatAt,
+	})
+	if err != nil {
+		return RuntimeEnrollmentRecord{}, err
+	}
+	return runtimeEnrollmentRecordFromQuery(enrollment), nil
+}
+
 func (r *PgRepository) RejectRuntimeEnrollment(ctx context.Context, params RejectRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error) {
 	enrollment, err := r.q.RejectRuntimeEnrollment(ctx, queries.RejectRuntimeEnrollmentParams{
 		RejectedBy:   uuid.NullUUID{UUID: params.RejectedBy, Valid: params.RejectedBy != uuid.Nil},

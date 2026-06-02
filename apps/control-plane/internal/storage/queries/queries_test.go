@@ -1046,6 +1046,34 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	reusedTenantNode, err := testQueries.UpsertRuntimeNodeForTenant(ctx, queries.UpsertRuntimeNodeForTenantParams{
+		TenantID:           tenantID,
+		NodeID:             "runtime-enroll-node",
+		Name:               "Runtime Enrollment Node Refreshed",
+		SupportedProviders: []byte(`{"providers":["claude-code","codex"]}`),
+		MaxSlots:           6,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local","refreshed":true}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, node.ID, reusedTenantNode.ID)
+	assert.Equal(t, tenantID, reusedTenantNode.TenantID)
+
+	_, err = testQueries.UpsertRuntimeNodeForTenant(ctx, queries.UpsertRuntimeNodeForTenantParams{
+		TenantID:           otherTenantID,
+		NodeID:             "runtime-enroll-node",
+		Name:               "Other Tenant Runtime Should Not Take Over",
+		SupportedProviders: []byte(`{"providers":["codex"]}`),
+		MaxSlots:           1,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"other"}`),
+		LastHeartbeatAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
 	alternateNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
 		NodeID:             "runtime-enroll-node-rebound",
 		Name:               "Runtime Enrollment Rebound Node",
@@ -1150,6 +1178,35 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "pending", enrollment.Status)
+
+	otherTenantConflictingEnrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       otherTenantID,
+		NodeID:         "runtime-enroll-node",
+		BootstrapKeyID: otherTenantBootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node","version":"other-tenant"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+	_, err = testQueries.ApproveRuntimeEnrollmentWithNode(ctx, queries.ApproveRuntimeEnrollmentWithNodeParams{
+		ID:                 otherTenantConflictingEnrollment.ID,
+		TenantID:           otherTenantID,
+		ApprovedBy:         uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		Name:               "Other Tenant Runtime Should Not Take Over",
+		SupportedProviders: []byte(`{"providers":["codex"]}`),
+		MaxSlots:           1,
+		CurrentLoad:        0,
+		NodeStatus:         "online",
+		Metadata:           []byte(`{"region":"other"}`),
+		LastHeartbeatAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+	otherTenantConflictingEnrollment, err = testQueries.GetRuntimeEnrollment(ctx, queries.GetRuntimeEnrollmentParams{
+		TenantID: otherTenantID,
+		ID:       otherTenantConflictingEnrollment.ID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "pending", otherTenantConflictingEnrollment.Status)
+	assert.False(t, otherTenantConflictingEnrollment.RuntimeNodeID.Valid)
 
 	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
 		TenantID:       tenantID,
