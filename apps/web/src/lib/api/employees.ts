@@ -14,14 +14,22 @@ export type DigitalEmployee = {
   approval_policy?: Record<string, unknown>;
   risk_level?: string;
   metadata?: Record<string, unknown>;
-  execution_instance?: {
-    id: string;
-    runtime_node_id: string;
-    provider_type: string;
-    agent_home_dir?: string;
-    session_policy?: Record<string, unknown>;
-    status: string;
-  };
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type DigitalEmployeeExecutionInstance = {
+  id: string;
+  digital_employee_id: string;
+  runtime_node_id: string;
+  provider_type: string;
+  agent_home_dir?: string;
+  workspace_policy?: Record<string, unknown>;
+  session_policy?: Record<string, unknown>;
+  runtime_selector?: Record<string, unknown>;
+  capacity_requirements?: Record<string, unknown>;
+  fallback_policy?: Record<string, unknown>;
+  status: string;
   created_at?: string;
   updated_at?: string;
 };
@@ -56,4 +64,22 @@ export async function createDigitalEmployee(
   });
 
   return parseJson<DigitalEmployee>(response, "create digital employee");
+}
+
+export async function getDigitalEmployeeExecutionInstance(
+  options: ApiClientOptions,
+  employeeId: string,
+): Promise<DigitalEmployeeExecutionInstance> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedEmployeeId = encodeURIComponent(employeeId);
+  const response = await fetcher(
+    buildApiUrl(options.baseUrl, `/api/v1/digital-employees/${encodedEmployeeId}/execution-instance`),
+    {
+      credentials: "include",
+      headers: { accept: "application/json" },
+      method: "GET",
+    },
+  );
+
+  return parseJson<DigitalEmployeeExecutionInstance>(response, "digital employee execution instance");
 }

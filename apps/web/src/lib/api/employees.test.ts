@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDigitalEmployee, listDigitalEmployees } from "./employees";
+import { createDigitalEmployee, getDigitalEmployeeExecutionInstance, listDigitalEmployees } from "./employees";
 
 describe("digital employee API", () => {
   it("lists digital employees with cookie credentials", async () => {
@@ -71,5 +71,40 @@ describe("digital employee API", () => {
       headers: { accept: "application/json", "content-type": "application/json" },
       method: "POST",
     });
+  });
+
+  it("gets execution instance with encoded employee id and cookie credentials", async () => {
+    const instance = {
+      id: "22222222-2222-4222-8222-222222222222",
+      digital_employee_id: "11111111-1111-4111-8111-111111111111",
+      runtime_node_id: "33333333-3333-4333-8333-333333333333",
+      provider_type: "codex",
+      status: "ready",
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(instance), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      getDigitalEmployeeExecutionInstance(
+        {
+          baseUrl: "http://control-plane.local",
+          fetcher,
+        },
+        "employee 1/primary",
+      ),
+    ).resolves.toEqual(instance);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/execution-instance",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
   });
 });

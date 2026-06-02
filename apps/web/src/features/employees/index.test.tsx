@@ -43,14 +43,27 @@ function createEmployeesFetcher() {
             description: "负责需求拆解和交付风险识别",
             status: "active",
             risk_level: "medium",
-            execution_instance: {
-              id: "22222222-2222-4222-8222-222222222222",
-              runtime_node_id: "33333333-3333-4333-8333-333333333333",
-              provider_type: "codex",
-              status: "ready",
-            },
           },
         ]),
+        {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        },
+      );
+    }
+    if (
+      url.pathname ===
+        "/api/v1/digital-employees/11111111-1111-4111-8111-111111111111/execution-instance" &&
+      (init?.method ?? "GET") === "GET"
+    ) {
+      return new Response(
+        JSON.stringify({
+          id: "22222222-2222-4222-8222-222222222222",
+          digital_employee_id: "11111111-1111-4111-8111-111111111111",
+          runtime_node_id: "33333333-3333-4333-8333-333333333333",
+          provider_type: "codex",
+          status: "ready",
+        }),
         {
           headers: { "content-type": "application/json" },
           status: 200,
@@ -77,12 +90,20 @@ async function renderEmployeesView(fetcher = createEmployeesFetcher()) {
 
 describe("EmployeesView", () => {
   it("renders digital employees and execution instance state", async () => {
-    const screen = await renderEmployeesView();
+    const fetcher = createEmployeesFetcher();
+    const screen = await renderEmployeesView(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
     await expect.element(screen.getByText("需求分析员工")).toBeVisible();
     await expect.element(screen.getByText("负责需求拆解和交付风险识别")).toBeVisible();
     await expect.element(screen.getByText("codex · ready")).toBeVisible();
     await expect.element(screen.getByText("33333333-3333-4333-8333-333333333333")).toBeVisible();
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/11111111-1111-4111-8111-111111111111/execution-instance",
+      expect.objectContaining({
+        credentials: "include",
+        method: "GET",
+      }),
+    );
   });
 });

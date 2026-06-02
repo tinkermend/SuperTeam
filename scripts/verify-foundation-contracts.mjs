@@ -46,6 +46,7 @@ const requiredTypeScriptClientPaths = new Set([
   "/api/v1/runtime/enrollments",
   "/api/v1/runtime/enrollments/{enrollmentId}/approve",
   "/api/v1/digital-employees",
+  "/api/v1/digital-employees/{employeeId}/execution-instance",
 ]);
 
 function readText(path) {
@@ -170,7 +171,9 @@ function readTypeScriptClientPaths() {
             .replaceAll("${nodeId}", "{nodeId}")
             .replaceAll("${encodedNodeId}", "{nodeId}")
             .replaceAll("${enrollmentId}", "{enrollmentId}")
-            .replaceAll("${encodedEnrollmentId}", "{enrollmentId}"),
+            .replaceAll("${encodedEnrollmentId}", "{enrollmentId}")
+            .replaceAll("${employeeId}", "{employeeId}")
+            .replaceAll("${encodedEmployeeId}", "{employeeId}"),
         ),
       );
     }
