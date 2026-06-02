@@ -45,6 +45,8 @@ JOIN digital_employees de
 JOIN runtime_nodes rn
   ON rn.id = dei.runtime_node_id
  AND rn.tenant_id = dei.tenant_id
+ AND rn.status = 'online'
+ AND rn.disabled_at IS NULL
  AND rn.archived_at IS NULL
 WHERE dei.id = $6::uuid
   AND dei.tenant_id = $7::uuid
@@ -53,6 +55,21 @@ WHERE dei.id = $6::uuid
   AND dei.provider_type = $10::varchar
   AND dei.status NOT IN ('disabled', 'error')
   AND dei.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM runtime_sessions rs
+      JOIN runtime_enrollments re
+        ON re.id = rs.enrollment_id
+       AND re.tenant_id = rs.tenant_id
+       AND re.runtime_node_id = rs.runtime_node_id
+       AND re.status = 'approved'
+       AND re.revoked_at IS NULL
+       AND re.rejected_at IS NULL
+      WHERE rs.tenant_id = dei.tenant_id
+        AND rs.runtime_node_id = rn.id
+        AND rs.expires_at > NOW()
+        AND rs.revoked_at IS NULL
+  )
 RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at
 `
 
@@ -150,6 +167,8 @@ WHERE ps.id = $9::uuid
        AND re.tenant_id = rs.tenant_id
        AND re.runtime_node_id = rs.runtime_node_id
        AND re.status = 'approved'
+       AND re.revoked_at IS NULL
+       AND re.rejected_at IS NULL
       WHERE rs.tenant_id = ps.tenant_id
         AND rs.runtime_node_id = rn.id
         AND rs.expires_at > NOW()

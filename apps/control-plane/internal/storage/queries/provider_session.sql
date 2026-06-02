@@ -31,6 +31,8 @@ JOIN digital_employees de
 JOIN runtime_nodes rn
   ON rn.id = dei.runtime_node_id
  AND rn.tenant_id = dei.tenant_id
+ AND rn.status = 'online'
+ AND rn.disabled_at IS NULL
  AND rn.archived_at IS NULL
 WHERE dei.id = sqlc.arg('execution_instance_id')::uuid
   AND dei.tenant_id = sqlc.arg('tenant_id')::uuid
@@ -39,6 +41,21 @@ WHERE dei.id = sqlc.arg('execution_instance_id')::uuid
   AND dei.provider_type = sqlc.arg('provider_type')::varchar
   AND dei.status NOT IN ('disabled', 'error')
   AND dei.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM runtime_sessions rs
+      JOIN runtime_enrollments re
+        ON re.id = rs.enrollment_id
+       AND re.tenant_id = rs.tenant_id
+       AND re.runtime_node_id = rs.runtime_node_id
+       AND re.status = 'approved'
+       AND re.revoked_at IS NULL
+       AND re.rejected_at IS NULL
+      WHERE rs.tenant_id = dei.tenant_id
+        AND rs.runtime_node_id = rn.id
+        AND rs.expires_at > NOW()
+        AND rs.revoked_at IS NULL
+  )
 RETURNING *;
 
 -- name: GetProviderSession :one
@@ -128,6 +145,8 @@ WHERE ps.id = sqlc.arg('provider_session_id')::uuid
        AND re.tenant_id = rs.tenant_id
        AND re.runtime_node_id = rs.runtime_node_id
        AND re.status = 'approved'
+       AND re.revoked_at IS NULL
+       AND re.rejected_at IS NULL
       WHERE rs.tenant_id = ps.tenant_id
         AND rs.runtime_node_id = rn.id
         AND rs.expires_at > NOW()

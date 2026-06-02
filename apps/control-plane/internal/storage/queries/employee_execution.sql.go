@@ -616,6 +616,7 @@ JOIN runtime_nodes rn
  AND rn.archived_at IS NULL
 WHERE de.id = $11::uuid
   AND de.tenant_id = $12::uuid
+  AND de.status NOT IN ('disabled', 'error')
   AND de.deleted_at IS NULL
   AND de.archived_at IS NULL
   AND EXISTS (

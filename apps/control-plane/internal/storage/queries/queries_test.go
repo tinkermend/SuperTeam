@@ -1509,6 +1509,57 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "disabled",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/disabled-employee-upsert",
+		WorkspacePolicy:      []byte(`{"base_dir":"/data/superteam/workspaces"}`),
+		SessionPolicy:        []byte(`{"mode":"reuse_latest"}`),
+		RuntimeSelector:      []byte(`{"labels":{"os":"darwin"}}`),
+		CapacityRequirements: []byte(`{"slots":1}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"disabled-employee-upsert"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "error",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/error-employee-upsert",
+		WorkspacePolicy:      []byte(`{"base_dir":"/data/superteam/workspaces"}`),
+		SessionPolicy:        []byte(`{"mode":"reuse_latest"}`),
+		RuntimeSelector:      []byte(`{"labels":{"os":"darwin"}}`),
+		CapacityRequirements: []byte(`{"slots":1}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"error-employee-upsert"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "draft",
+	})
+	require.NoError(t, err)
+
 	runtimeSessionExpiresAt := pgtype.Timestamptz{}
 	require.NoError(t, runtimeSessionExpiresAt.Scan(time.Now().Add(12*time.Hour)))
 	runtimeSession, err := testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
@@ -1706,6 +1757,178 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "active", activeEmployee.Status)
 
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_enrollments
+		SET status = 'pending',
+		    revoked_at = NULL,
+		    rejected_at = NULL,
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, approvedEnrollment.ID, tenantID)
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-pending-enrollment",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"pending-enrollment"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_enrollments
+		SET status = 'revoked',
+		    revoked_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, approvedEnrollment.ID, tenantID)
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-revoked-enrollment",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"revoked-enrollment"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_enrollments
+		SET status = 'approved',
+		    revoked_at = NULL,
+		    rejected_at = NULL,
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, approvedEnrollment.ID, tenantID)
+	require.NoError(t, err)
+
+	_, err = testQueries.UpdateRuntimeNodeStatus(ctx, queries.UpdateRuntimeNodeStatusParams{
+		NodeID: node.NodeID,
+		Status: "offline",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-offline-runtime",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"offline-runtime"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateRuntimeNodeStatus(ctx, queries.UpdateRuntimeNodeStatusParams{
+		NodeID: node.NodeID,
+		Status: "online",
+	})
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_nodes
+		SET disabled_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1
+	`, node.ID)
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-disabled-runtime",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"disabled-runtime"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_nodes
+		SET disabled_at = NULL,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, node.ID)
+	require.NoError(t, err)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_sessions
+		SET expires_at = NOW() - INTERVAL '1 hour',
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, runtimeSession.ID, tenantID)
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-expired-runtime-session",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"expired-runtime-session"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_sessions
+		SET expires_at = $3,
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, runtimeSession.ID, tenantID, runtimeSessionExpiresAt)
+	require.NoError(t, err)
+
+	_, err = testQueries.RevokeRuntimeSession(ctx, queries.RevokeRuntimeSessionParams{
+		ID:            runtimeSession.ID,
+		TenantID:      tenantID,
+		RevokedReason: pgtype.Text{String: "runtime stopped before provider session create", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-revoked-runtime-session",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"revoked-runtime-session"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	runtimeSession, err = testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   node.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: approvedEnrollment.ID, Valid: true},
+		TokenLookupHash: "641e92a38e2ec02749c9e47c409af6befb86bc0f89ddd65317cdd3a425926d01",
+		TokenSecretHash: "$2a$10$digitalEmployeeRuntimeSessionHashForProviderSession",
+		ExpiresAt:       runtimeSessionExpiresAt,
+	})
+	require.NoError(t, err)
+
 	session, err := testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
 		TenantID:            tenantID,
 		ProviderSessionID:   "claude-session-001",
@@ -1769,7 +1992,13 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 		WHERE provider_session_id IN (
 			'claude-session-wrong-tenant',
 			'claude-session-mismatched-runtime',
-			'claude-session-mismatched-provider'
+			'claude-session-mismatched-provider',
+			'claude-session-pending-enrollment',
+			'claude-session-revoked-enrollment',
+			'claude-session-offline-runtime',
+			'claude-session-disabled-runtime',
+			'claude-session-expired-runtime-session',
+			'claude-session-revoked-runtime-session'
 		)
 	`).Scan(&pollutedProviderSessionCount)
 	require.NoError(t, err)

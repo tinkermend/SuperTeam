@@ -128,6 +128,7 @@ JOIN runtime_nodes rn
  AND rn.archived_at IS NULL
 WHERE de.id = sqlc.arg('digital_employee_id')::uuid
   AND de.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND de.status NOT IN ('disabled', 'error')
   AND de.deleted_at IS NULL
   AND de.archived_at IS NULL
   AND EXISTS (
