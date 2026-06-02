@@ -55,6 +55,8 @@ function normalizePath(path) {
     .replace(/\/api\/v1\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/tasks/{taskId}")
     .replace(/\/api\/v1\/runtime\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/runtime/tasks/{taskId}")
     .replace(/\{id\}/g, "{taskId}")
+    .replace(/\/api\/v1\/runtime\/sessions\/\{taskId\}/g, "/api/v1/runtime/sessions/{sessionId}")
+    .replace(/\/api\/v1\/runtime\/nodes\/\{taskId\}/g, "/api/v1/runtime/nodes/{nodeId}")
     .replace(/\{nodeId\}/g, "{nodeId}");
 }
 

@@ -351,12 +351,6 @@ paths:
       summary: Renew a short-lived Runtime Agent session
       parameters:
         - $ref: "#/components/parameters/RuntimeSessionId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RenewRuntimeSessionRequest"
       responses:
         "200":
           description: Runtime session renewed
@@ -920,6 +914,7 @@ components:
         - node_id
         - bootstrap_key
         - name
+        - max_slots
       properties:
         node_id:
           type: string
@@ -933,6 +928,9 @@ components:
           type: array
           items:
             type: string
+        max_slots:
+          type: integer
+          format: int32
         capabilities:
           type: array
           items:
@@ -995,14 +993,6 @@ components:
           type: string
           format: date-time
         updated_at:
-          type: string
-          format: date-time
-    RenewRuntimeSessionRequest:
-      type: object
-      required:
-        - expires_at
-      properties:
-        expires_at:
           type: string
           format: date-time
     RevokeRuntimeSessionRequest:
