@@ -7,18 +7,23 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 var (
-	ErrNodeNotFound      = errors.New("node not found")
-	ErrNodeAlreadyExists = errors.New("node already exists")
-	ErrInvalidStatus     = errors.New("invalid node status")
+	ErrNodeNotFound          = errors.New("node not found")
+	ErrNodeAlreadyExists     = errors.New("node already exists")
+	ErrInvalidStatus         = errors.New("invalid node status")
+	ErrEnrollmentUnsupported = errors.New("runtime enrollment repository is required")
+	ErrInvalidBootstrapKey   = errors.New("invalid bootstrap key")
+	ErrInvalidRuntimeSession = errors.New("invalid runtime session")
 )
 
 const (
 	// HeartbeatTimeout is the duration after which a node is considered offline
-	HeartbeatTimeout = 60 * time.Second
+	HeartbeatTimeout  = 60 * time.Second
+	RuntimeSessionTTL = 15 * time.Minute
 )
 
 type Service struct {
@@ -32,6 +37,318 @@ func NewService(repository Repository) (*Service, error) {
 	return &Service{
 		repository: repository,
 	}, nil
+}
+
+func (s *Service) EnrollHello(ctx context.Context, req EnrollHelloRequest) (*EnrollHelloResponse, error) {
+	enrollmentRepo, err := s.enrollmentRepository()
+	if err != nil {
+		return nil, err
+	}
+	if req.NodeID == "" {
+		return nil, errors.New("node_id is required")
+	}
+	if req.BootstrapKey == "" {
+		return nil, errors.New("bootstrap_key is required")
+	}
+
+	tenantID := tenantOrDefault(req.TenantID)
+	bootstrapKey, err := s.findBootstrapKey(ctx, enrollmentRepo, tenantID, req.BootstrapKey)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeName := req.Name
+	if nodeName == "" {
+		nodeName = req.NodeID
+	}
+	supportedProviders := req.SupportedProviders
+	if len(supportedProviders) == 0 {
+		supportedProviders = []string{"runtime"}
+	}
+	maxSlots := req.MaxSlots
+	if maxSlots <= 0 {
+		maxSlots = 1
+	}
+	metadata := req.Metadata
+	if metadata == nil {
+		metadata = map[string]interface{}{}
+	}
+	if req.Version != "" {
+		metadata["version"] = req.Version
+	}
+
+	node, err := s.RegisterNode(ctx, RegisterNodeRequest{
+		NodeID:             req.NodeID,
+		Name:               nodeName,
+		SupportedProviders: supportedProviders,
+		MaxSlots:           maxSlots,
+		Metadata:           metadata,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create or refresh runtime node: %w", err)
+	}
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"node_id":             req.NodeID,
+		"name":                nodeName,
+		"supported_providers": supportedProviders,
+		"metadata":            metadata,
+		"version":             req.Version,
+		"capability_count":    len(req.Capabilities),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize enrollment payload: %w", err)
+	}
+
+	enrollmentRecord, err := enrollmentRepo.UpsertRuntimeEnrollmentFromHello(ctx, UpsertRuntimeEnrollmentFromHelloParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  node.ID,
+		NodeID:         req.NodeID,
+		BootstrapKeyID: bootstrapKey.ID,
+		RequestPayload: payload,
+		LastHelloAt:    timestamptzFromTime(time.Now()),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to upsert runtime enrollment: %w", err)
+	}
+
+	enrollment, err := s.recordToRuntimeEnrollment(enrollmentRecord)
+	if err != nil {
+		return nil, err
+	}
+	resp := &EnrollHelloResponse{Enrollment: *enrollment}
+	if enrollment.Status == RuntimeEnrollmentStatusApproved && enrollment.RuntimeNodeID != uuid.Nil {
+		session, token, err := s.IssueRuntimeSession(ctx, enrollmentRecord)
+		if err != nil {
+			return nil, err
+		}
+		resp.Session = session
+		resp.SessionToken = token
+	}
+	return resp, nil
+}
+
+func (s *Service) ApproveEnrollment(ctx context.Context, req ApproveEnrollmentRequest) (*RuntimeEnrollment, error) {
+	enrollmentRepo, err := s.enrollmentRepository()
+	if err != nil {
+		return nil, err
+	}
+	if req.EnrollmentID == uuid.Nil {
+		return nil, errors.New("enrollment_id is required")
+	}
+	record, err := enrollmentRepo.ApproveRuntimeEnrollment(ctx, ApproveRuntimeEnrollmentParams{
+		TenantID:     tenantOrDefault(req.TenantID),
+		EnrollmentID: req.EnrollmentID,
+		ApprovedBy:   req.ApprovedBy,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to approve runtime enrollment: %w", err)
+	}
+	return s.recordToRuntimeEnrollment(record)
+}
+
+func (s *Service) RejectEnrollment(ctx context.Context, req RejectEnrollmentRequest) (*RuntimeEnrollment, error) {
+	enrollmentRepo, err := s.enrollmentRepository()
+	if err != nil {
+		return nil, err
+	}
+	if req.EnrollmentID == uuid.Nil {
+		return nil, errors.New("enrollment_id is required")
+	}
+	record, err := enrollmentRepo.RejectRuntimeEnrollment(ctx, RejectRuntimeEnrollmentParams{
+		TenantID:     tenantOrDefault(req.TenantID),
+		EnrollmentID: req.EnrollmentID,
+		RejectedBy:   req.RejectedBy,
+		Reason:       req.Reason,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to reject runtime enrollment: %w", err)
+	}
+	return s.recordToRuntimeEnrollment(record)
+}
+
+func (s *Service) RevokeEnrollment(ctx context.Context, req RevokeEnrollmentRequest) (*RuntimeEnrollment, error) {
+	enrollmentRepo, err := s.enrollmentRepository()
+	if err != nil {
+		return nil, err
+	}
+	if req.EnrollmentID == uuid.Nil {
+		return nil, errors.New("enrollment_id is required")
+	}
+	record, err := enrollmentRepo.RevokeRuntimeEnrollment(ctx, RevokeRuntimeEnrollmentParams{
+		TenantID:     tenantOrDefault(req.TenantID),
+		EnrollmentID: req.EnrollmentID,
+		RevokedBy:    req.RevokedBy,
+		Reason:       req.Reason,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to revoke runtime enrollment: %w", err)
+	}
+	return s.recordToRuntimeEnrollment(record)
+}
+
+func (s *Service) IssueRuntimeSession(ctx context.Context, enrollment RuntimeEnrollmentRecord) (*RuntimeSession, string, error) {
+	enrollmentRepo, err := s.enrollmentRepository()
+	if err != nil {
+		return nil, "", err
+	}
+	if enrollment.Status != RuntimeEnrollmentStatusApproved {
+		return nil, "", errors.New("runtime enrollment must be approved")
+	}
+	if enrollment.RuntimeNodeID == uuid.Nil {
+		return nil, "", errors.New("runtime enrollment has no attached runtime node")
+	}
+	token, err := GenerateRuntimeSessionToken()
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to generate runtime session token: %w", err)
+	}
+	secretHash, err := HashRuntimeSecret(token)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to hash runtime session token: %w", err)
+	}
+	session, err := enrollmentRepo.CreateRuntimeSession(ctx, CreateRuntimeSessionParams{
+		TenantID:        tenantOrDefault(enrollment.TenantID),
+		RuntimeNodeID:   enrollment.RuntimeNodeID,
+		EnrollmentID:    enrollment.ID,
+		TokenLookupHash: LookupRuntimeSessionTokenHash(token),
+		TokenSecretHash: secretHash,
+		ExpiresAt:       timestamptzFromTime(time.Now().Add(RuntimeSessionTTL)),
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create runtime session: %w", err)
+	}
+	session.NodeID = enrollment.NodeID
+	domainSession := s.recordToRuntimeSession(session)
+	return domainSession, token, nil
+}
+
+func (s *Service) RenewRuntimeSession(ctx context.Context, token string) (*RuntimeSession, error) {
+	validation, err := s.ValidateRuntimeSession(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	enrollmentRepo, err := s.enrollmentRepository()
+	if err != nil {
+		return nil, err
+	}
+	record, err := enrollmentRepo.RenewRuntimeSession(ctx, RenewRuntimeSessionParams{
+		TenantID:  validation.TenantID,
+		SessionID: validation.SessionID,
+		ExpiresAt: timestamptzFromTime(time.Now().Add(RuntimeSessionTTL)),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidRuntimeSession, err)
+	}
+	record.NodeID = validation.NodeID
+	return s.recordToRuntimeSession(record), nil
+}
+
+func (s *Service) ValidateRuntimeSession(ctx context.Context, token string) (*RuntimeSessionValidation, error) {
+	enrollmentRepo, err := s.enrollmentRepository()
+	if err != nil {
+		return nil, err
+	}
+	if token == "" {
+		return nil, errors.New("runtime session token is required")
+	}
+	session, err := enrollmentRepo.GetActiveRuntimeSessionByLookupHash(ctx, GetActiveRuntimeSessionByLookupHashParams{
+		TenantID:        DefaultTenantID,
+		TokenLookupHash: LookupRuntimeSessionTokenHash(token),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidRuntimeSession, err)
+	}
+	if !VerifyRuntimeSecret(token, session.TokenSecretHash) {
+		return nil, ErrInvalidRuntimeSession
+	}
+	touched, err := enrollmentRepo.TouchRuntimeSession(ctx, TouchRuntimeSessionParams{
+		TenantID:  session.TenantID,
+		SessionID: session.ID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidRuntimeSession, err)
+	}
+	if touched.NodeID == "" {
+		touched.NodeID = session.NodeID
+	}
+	return &RuntimeSessionValidation{
+		SessionID:     touched.ID,
+		TenantID:      touched.TenantID,
+		RuntimeNodeID: touched.RuntimeNodeID,
+		NodeID:        touched.NodeID,
+		EnrollmentID:  touched.EnrollmentID,
+		ExpiresAt:     timeFromTimestamptz(touched.ExpiresAt),
+	}, nil
+}
+
+func (s *Service) UpsertCapabilities(ctx context.Context, token string, capabilities []RuntimeCapabilityInput) ([]RuntimeCapability, error) {
+	validation, err := s.ValidateRuntimeSession(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	capabilityRepo, ok := s.repository.(CapabilityRepository)
+	if !ok {
+		return nil, errors.New("runtime capability repository is required")
+	}
+	results := make([]RuntimeCapability, 0, len(capabilities))
+	for _, capability := range capabilities {
+		if capability.CapabilityType == "" {
+			return nil, errors.New("capability_type is required")
+		}
+		if capability.CapabilityKey == "" {
+			return nil, errors.New("capability_key is required")
+		}
+		if capability.ProviderType == "" {
+			return nil, errors.New("provider_type is required")
+		}
+		status := capability.Status
+		if status == "" {
+			status = "active"
+		}
+		healthStatus := capability.HealthStatus
+		if healthStatus == "" {
+			healthStatus = "unknown"
+		}
+		capacity, err := json.Marshal(defaultMap(capability.Capacity))
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize capability capacity: %w", err)
+		}
+		labels, err := json.Marshal(defaultMap(capability.Labels))
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize capability labels: %w", err)
+		}
+		details, err := json.Marshal(defaultMap(capability.Details))
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize capability details: %w", err)
+		}
+		metadata, err := json.Marshal(defaultMap(capability.Metadata))
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize capability metadata: %w", err)
+		}
+		result, err := capabilityRepo.UpsertRuntimeCapability(ctx, UpsertRuntimeCapabilityParams{
+			TenantID:         validation.TenantID,
+			RuntimeNodeID:    validation.RuntimeNodeID,
+			CapabilityType:   capability.CapabilityType,
+			CapabilityKey:    capability.CapabilityKey,
+			ProviderType:     capability.ProviderType,
+			ProviderVersion:  capability.ProviderVersion,
+			BinaryPath:       capability.BinaryPath,
+			Available:        capability.Available,
+			WorkspaceBaseDir: capability.WorkspaceBaseDir,
+			Capacity:         capacity,
+			Labels:           labels,
+			Status:           status,
+			Details:          details,
+			HealthStatus:     healthStatus,
+			Metadata:         metadata,
+			LastSeenAt:       timestamptzFromTime(time.Now()),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to upsert runtime capability: %w", err)
+		}
+		results = append(results, result)
+	}
+	return results, nil
 }
 
 // RegisterNode registers a new runtime node or updates an existing one
@@ -275,4 +592,84 @@ func (s *Service) statusToText(status *NodeStatus) pgtype.Text {
 		return pgtype.Text{Valid: false}
 	}
 	return pgtype.Text{String: string(*status), Valid: true}
+}
+
+func (s *Service) enrollmentRepository() (EnrollmentRepository, error) {
+	repo, ok := s.repository.(EnrollmentRepository)
+	if !ok {
+		return nil, ErrEnrollmentUnsupported
+	}
+	return repo, nil
+}
+
+func (s *Service) findBootstrapKey(ctx context.Context, repo EnrollmentRepository, tenantID uuid.UUID, secret string) (RuntimeBootstrapKeyRecord, error) {
+	keys, err := repo.ListActiveRuntimeBootstrapKeys(ctx, tenantID)
+	if err != nil {
+		return RuntimeBootstrapKeyRecord{}, fmt.Errorf("failed to list active runtime bootstrap keys: %w", err)
+	}
+	for _, key := range keys {
+		if VerifyRuntimeSecret(secret, key.KeyHash) {
+			return key, nil
+		}
+	}
+	return RuntimeBootstrapKeyRecord{}, ErrInvalidBootstrapKey
+}
+
+func (s *Service) recordToRuntimeEnrollment(record RuntimeEnrollmentRecord) (*RuntimeEnrollment, error) {
+	var payload map[string]interface{}
+	if len(record.RequestPayload) > 0 {
+		if err := json.Unmarshal(record.RequestPayload, &payload); err != nil {
+			return nil, fmt.Errorf("failed to deserialize enrollment payload: %w", err)
+		}
+	}
+	return &RuntimeEnrollment{
+		ID:             record.ID,
+		TenantID:       record.TenantID,
+		RuntimeNodeID:  record.RuntimeNodeID,
+		NodeID:         record.NodeID,
+		BootstrapKeyID: record.BootstrapKeyID,
+		Status:         record.Status,
+		RequestPayload: payload,
+		ApprovedBy:     record.ApprovedBy,
+		ApprovedAt:     timeFromTimestamptz(record.ApprovedAt),
+		RejectedBy:     record.RejectedBy,
+		RejectedAt:     timeFromTimestamptz(record.RejectedAt),
+		RejectReason:   stringFromText(record.RejectReason),
+		RevokedBy:      record.RevokedBy,
+		RevokedAt:      timeFromTimestamptz(record.RevokedAt),
+		RevokeReason:   stringFromText(record.RevokeReason),
+		LastHelloAt:    timeFromTimestamptz(record.LastHelloAt),
+		CreatedAt:      timeFromTimestamptz(record.CreatedAt),
+		UpdatedAt:      timeFromTimestamptz(record.UpdatedAt),
+	}, nil
+}
+
+func (s *Service) recordToRuntimeSession(record RuntimeSessionRecord) *RuntimeSession {
+	return &RuntimeSession{
+		ID:            record.ID,
+		TenantID:      record.TenantID,
+		RuntimeNodeID: record.RuntimeNodeID,
+		NodeID:        record.NodeID,
+		EnrollmentID:  record.EnrollmentID,
+		ExpiresAt:     timeFromTimestamptz(record.ExpiresAt),
+		LastSeenAt:    timeFromTimestamptz(record.LastSeenAt),
+		RevokedAt:     timeFromTimestamptz(record.RevokedAt),
+		RevokedReason: stringFromText(record.RevokedReason),
+		CreatedAt:     timeFromTimestamptz(record.CreatedAt),
+		UpdatedAt:     timeFromTimestamptz(record.UpdatedAt),
+	}
+}
+
+func tenantOrDefault(tenantID uuid.UUID) uuid.UUID {
+	if tenantID == uuid.Nil {
+		return DefaultTenantID
+	}
+	return tenantID
+}
+
+func defaultMap(in map[string]interface{}) map[string]interface{} {
+	if in == nil {
+		return map[string]interface{}{}
+	}
+	return in
 }

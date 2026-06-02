@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Runtime 接入与短期会话服务 (2026-06-02)
+
+- 新增 Control Plane Runtime Enrollment / Runtime Session 领域服务，支持 Runtime hello 接入、人工批准/拒绝/撤销、短期 session token 签发、校验与续期。
+- Runtime session token 采用确定性 lookup hash 加 bcrypt secret hash 的双哈希模型，避免原始 token 或可直接校验的单一 hash 明文落库。
+- Runtime hello 会扫描有效 Bootstrap Key 并用 bcrypt 校验原始 secret；pending 接入不会返回 session，approved 且已挂接 Runtime 节点的接入才签发短期 session。
+- Runtime enrollment 撤销会使关联 active session 失效，session 校验与续期会重新检查接入仍处于 approved 且未撤销状态。
+
 #### Control Plane 渐进式授权边界 (2026-06-01)
 
 - 新增 Control Plane 渐进式授权边界：`internal/authz` 统一 `Authorizer` 接口，第一版使用 PostgreSQL 权限事实判断 Web 控制台访问和 Runtime claim 范围。

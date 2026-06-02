@@ -228,7 +228,8 @@ func (q *Queries) GetActiveRuntimeBootstrapKeyByHash(ctx context.Context, arg Ge
 }
 
 const GetActiveRuntimeSessionByLookupHash = `-- name: GetActiveRuntimeSessionByLookupHash :one
-SELECT rs.id, rs.tenant_id, rs.runtime_node_id, rs.enrollment_id, rs.token_lookup_hash, rs.token_secret_hash, rs.expires_at, rs.last_seen_at, rs.revoked_at, rs.revoked_reason, rs.created_at, rs.updated_at
+SELECT rs.id, rs.tenant_id, rs.runtime_node_id, rs.enrollment_id, rs.token_lookup_hash, rs.token_secret_hash, rs.expires_at, rs.last_seen_at, rs.revoked_at, rs.revoked_reason, rs.created_at, rs.updated_at,
+       rn.node_id
 FROM runtime_sessions rs
 JOIN runtime_enrollments re
   ON re.id = rs.enrollment_id
@@ -237,6 +238,10 @@ JOIN runtime_enrollments re
  AND re.status = 'approved'
  AND re.rejected_at IS NULL
  AND re.revoked_at IS NULL
+JOIN runtime_nodes rn
+  ON rn.id = rs.runtime_node_id
+ AND rn.tenant_id = rs.tenant_id
+ AND rn.archived_at IS NULL
 WHERE rs.tenant_id = $1::uuid
   AND rs.token_lookup_hash = $2::varchar
   AND rs.expires_at > NOW()
@@ -248,9 +253,25 @@ type GetActiveRuntimeSessionByLookupHashParams struct {
 	TokenLookupHash string    `json:"token_lookup_hash"`
 }
 
-func (q *Queries) GetActiveRuntimeSessionByLookupHash(ctx context.Context, arg GetActiveRuntimeSessionByLookupHashParams) (RuntimeSession, error) {
+type GetActiveRuntimeSessionByLookupHashRow struct {
+	ID              uuid.UUID          `json:"id"`
+	TenantID        uuid.UUID          `json:"tenant_id"`
+	RuntimeNodeID   uuid.UUID          `json:"runtime_node_id"`
+	EnrollmentID    uuid.NullUUID      `json:"enrollment_id"`
+	TokenLookupHash string             `json:"token_lookup_hash"`
+	TokenSecretHash string             `json:"token_secret_hash"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	LastSeenAt      pgtype.Timestamptz `json:"last_seen_at"`
+	RevokedAt       pgtype.Timestamptz `json:"revoked_at"`
+	RevokedReason   pgtype.Text        `json:"revoked_reason"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	NodeID          string             `json:"node_id"`
+}
+
+func (q *Queries) GetActiveRuntimeSessionByLookupHash(ctx context.Context, arg GetActiveRuntimeSessionByLookupHashParams) (GetActiveRuntimeSessionByLookupHashRow, error) {
 	row := q.db.QueryRow(ctx, GetActiveRuntimeSessionByLookupHash, arg.TenantID, arg.TokenLookupHash)
-	var i RuntimeSession
+	var i GetActiveRuntimeSessionByLookupHashRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -264,6 +285,7 @@ func (q *Queries) GetActiveRuntimeSessionByLookupHash(ctx context.Context, arg G
 		&i.RevokedReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NodeID,
 	)
 	return i, err
 }
@@ -355,6 +377,51 @@ func (q *Queries) GetRuntimeEnrollmentByNodeID(ctx context.Context, arg GetRunti
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const ListActiveRuntimeBootstrapKeys = `-- name: ListActiveRuntimeBootstrapKeys :many
+SELECT id, tenant_id, name, key_hash, status, description, expires_at, created_by, revoked_at, revoked_by, revoked_reason, metadata, created_at, updated_at
+FROM runtime_bootstrap_keys
+WHERE tenant_id = $1::uuid
+  AND status = 'active'
+  AND revoked_at IS NULL
+  AND (expires_at IS NULL OR expires_at > NOW())
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListActiveRuntimeBootstrapKeys(ctx context.Context, tenantID uuid.UUID) ([]RuntimeBootstrapKey, error) {
+	rows, err := q.db.Query(ctx, ListActiveRuntimeBootstrapKeys, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RuntimeBootstrapKey{}
+	for rows.Next() {
+		var i RuntimeBootstrapKey
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.KeyHash,
+			&i.Status,
+			&i.Description,
+			&i.ExpiresAt,
+			&i.CreatedBy,
+			&i.RevokedAt,
+			&i.RevokedBy,
+			&i.RevokedReason,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ListRuntimeCapabilities = `-- name: ListRuntimeCapabilities :many

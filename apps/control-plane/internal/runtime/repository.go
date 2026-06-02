@@ -20,6 +20,22 @@ type Repository interface {
 	DeleteNode(ctx context.Context, nodeID string) error
 }
 
+type EnrollmentRepository interface {
+	ListActiveRuntimeBootstrapKeys(ctx context.Context, tenantID uuid.UUID) ([]RuntimeBootstrapKeyRecord, error)
+	UpsertRuntimeEnrollmentFromHello(ctx context.Context, params UpsertRuntimeEnrollmentFromHelloParams) (RuntimeEnrollmentRecord, error)
+	ApproveRuntimeEnrollment(ctx context.Context, params ApproveRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error)
+	RejectRuntimeEnrollment(ctx context.Context, params RejectRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error)
+	RevokeRuntimeEnrollment(ctx context.Context, params RevokeRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error)
+	CreateRuntimeSession(ctx context.Context, params CreateRuntimeSessionParams) (RuntimeSessionRecord, error)
+	GetActiveRuntimeSessionByLookupHash(ctx context.Context, params GetActiveRuntimeSessionByLookupHashParams) (RuntimeSessionRecord, error)
+	RenewRuntimeSession(ctx context.Context, params RenewRuntimeSessionParams) (RuntimeSessionRecord, error)
+	TouchRuntimeSession(ctx context.Context, params TouchRuntimeSessionParams) (RuntimeSessionRecord, error)
+}
+
+type CapabilityRepository interface {
+	UpsertRuntimeCapability(ctx context.Context, params UpsertRuntimeCapabilityParams) (RuntimeCapability, error)
+}
+
 // CreateNodeParams represents parameters for creating a node
 type CreateNodeParams struct {
 	NodeID             string
@@ -70,4 +86,77 @@ type UpdateLoadParams struct {
 type UpdateStatusParams struct {
 	NodeID string
 	Status string
+}
+
+type UpsertRuntimeEnrollmentFromHelloParams struct {
+	TenantID       uuid.UUID
+	RuntimeNodeID  uuid.UUID
+	NodeID         string
+	BootstrapKeyID uuid.UUID
+	RequestPayload []byte
+	LastHelloAt    pgtype.Timestamptz
+}
+
+type ApproveRuntimeEnrollmentParams struct {
+	TenantID     uuid.UUID
+	EnrollmentID uuid.UUID
+	ApprovedBy   uuid.UUID
+}
+
+type RejectRuntimeEnrollmentParams struct {
+	TenantID     uuid.UUID
+	EnrollmentID uuid.UUID
+	RejectedBy   uuid.UUID
+	Reason       string
+}
+
+type RevokeRuntimeEnrollmentParams struct {
+	TenantID     uuid.UUID
+	EnrollmentID uuid.UUID
+	RevokedBy    uuid.UUID
+	Reason       string
+}
+
+type CreateRuntimeSessionParams struct {
+	TenantID        uuid.UUID
+	RuntimeNodeID   uuid.UUID
+	EnrollmentID    uuid.UUID
+	TokenLookupHash string
+	TokenSecretHash string
+	ExpiresAt       pgtype.Timestamptz
+}
+
+type GetActiveRuntimeSessionByLookupHashParams struct {
+	TenantID        uuid.UUID
+	TokenLookupHash string
+}
+
+type RenewRuntimeSessionParams struct {
+	TenantID  uuid.UUID
+	SessionID uuid.UUID
+	ExpiresAt pgtype.Timestamptz
+}
+
+type TouchRuntimeSessionParams struct {
+	TenantID  uuid.UUID
+	SessionID uuid.UUID
+}
+
+type UpsertRuntimeCapabilityParams struct {
+	TenantID         uuid.UUID
+	RuntimeNodeID    uuid.UUID
+	CapabilityType   string
+	CapabilityKey    string
+	ProviderType     string
+	ProviderVersion  *string
+	BinaryPath       *string
+	Available        bool
+	WorkspaceBaseDir *string
+	Capacity         []byte
+	Labels           []byte
+	Status           string
+	Details          []byte
+	HealthStatus     string
+	Metadata         []byte
+	LastSeenAt       pgtype.Timestamptz
 }

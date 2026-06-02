@@ -15,6 +15,182 @@ const (
 	NodeStatusOffline NodeStatus = "offline"
 )
 
+var DefaultTenantID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+// RuntimeEnrollmentStatus represents the human approval state for runtime enrollment.
+type RuntimeEnrollmentStatus string
+
+const (
+	RuntimeEnrollmentStatusPending  RuntimeEnrollmentStatus = "pending"
+	RuntimeEnrollmentStatusApproved RuntimeEnrollmentStatus = "approved"
+	RuntimeEnrollmentStatusRejected RuntimeEnrollmentStatus = "rejected"
+	RuntimeEnrollmentStatusRevoked  RuntimeEnrollmentStatus = "revoked"
+)
+
+// RuntimeBootstrapKeyRecord is the repository shape for active enrollment bootstrap keys.
+type RuntimeBootstrapKeyRecord struct {
+	ID        uuid.UUID
+	TenantID  uuid.UUID
+	Name      string
+	KeyHash   string
+	Status    string
+	ExpiresAt pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+// RuntimeEnrollmentRecord is the repository shape for runtime enrollment approvals.
+type RuntimeEnrollmentRecord struct {
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	RuntimeNodeID  uuid.UUID
+	NodeID         string
+	BootstrapKeyID uuid.UUID
+	Status         RuntimeEnrollmentStatus
+	RequestPayload []byte
+	ApprovedBy     uuid.NullUUID
+	ApprovedAt     pgtype.Timestamptz
+	RejectedBy     uuid.NullUUID
+	RejectedAt     pgtype.Timestamptz
+	RejectReason   pgtype.Text
+	RevokedBy      uuid.NullUUID
+	RevokedAt      pgtype.Timestamptz
+	RevokeReason   pgtype.Text
+	LastHelloAt    pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
+// RuntimeSessionRecord is the repository shape for short-lived runtime sessions.
+type RuntimeSessionRecord struct {
+	ID              uuid.UUID
+	TenantID        uuid.UUID
+	RuntimeNodeID   uuid.UUID
+	NodeID          string
+	EnrollmentID    uuid.NullUUID
+	TokenLookupHash string
+	TokenSecretHash string
+	ExpiresAt       pgtype.Timestamptz
+	LastSeenAt      pgtype.Timestamptz
+	RevokedAt       pgtype.Timestamptz
+	RevokedReason   pgtype.Text
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+}
+
+type RuntimeEnrollment struct {
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	RuntimeNodeID  uuid.UUID
+	NodeID         string
+	BootstrapKeyID uuid.UUID
+	Status         RuntimeEnrollmentStatus
+	RequestPayload map[string]interface{}
+	ApprovedBy     uuid.NullUUID
+	ApprovedAt     time.Time
+	RejectedBy     uuid.NullUUID
+	RejectedAt     time.Time
+	RejectReason   *string
+	RevokedBy      uuid.NullUUID
+	RevokedAt      time.Time
+	RevokeReason   *string
+	LastHelloAt    time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type RuntimeSession struct {
+	ID            uuid.UUID
+	TenantID      uuid.UUID
+	RuntimeNodeID uuid.UUID
+	NodeID        string
+	EnrollmentID  uuid.NullUUID
+	ExpiresAt     time.Time
+	LastSeenAt    time.Time
+	RevokedAt     time.Time
+	RevokedReason *string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+type RuntimeCapabilityInput struct {
+	CapabilityType   string
+	CapabilityKey    string
+	ProviderType     string
+	ProviderVersion  *string
+	BinaryPath       *string
+	Available        bool
+	WorkspaceBaseDir *string
+	Capacity         map[string]interface{}
+	Labels           map[string]interface{}
+	Status           string
+	Details          map[string]interface{}
+	HealthStatus     string
+	Metadata         map[string]interface{}
+}
+
+type RuntimeCapability struct {
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	RuntimeNodeID  uuid.UUID
+	CapabilityType string
+	CapabilityKey  string
+	ProviderType   string
+	Available      bool
+	Status         string
+	HealthStatus   string
+	LastSeenAt     time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type EnrollHelloRequest struct {
+	TenantID           uuid.UUID
+	NodeID             string
+	Name               string
+	BootstrapKey       string
+	SupportedProviders []string
+	MaxSlots           int32
+	Metadata           map[string]interface{}
+	Version            string
+	Capabilities       []RuntimeCapabilityInput
+}
+
+type EnrollHelloResponse struct {
+	Enrollment   RuntimeEnrollment
+	Session      *RuntimeSession
+	SessionToken string
+}
+
+type ApproveEnrollmentRequest struct {
+	TenantID     uuid.UUID
+	EnrollmentID uuid.UUID
+	ApprovedBy   uuid.UUID
+}
+
+type RejectEnrollmentRequest struct {
+	TenantID     uuid.UUID
+	EnrollmentID uuid.UUID
+	RejectedBy   uuid.UUID
+	Reason       string
+}
+
+type RevokeEnrollmentRequest struct {
+	TenantID     uuid.UUID
+	EnrollmentID uuid.UUID
+	RevokedBy    uuid.UUID
+	Reason       string
+}
+
+type RuntimeSessionValidation struct {
+	SessionID     uuid.UUID
+	TenantID      uuid.UUID
+	RuntimeNodeID uuid.UUID
+	NodeID        string
+	EnrollmentID  uuid.NullUUID
+	ExpiresAt     time.Time
+}
+
 // IsValid checks if the status is valid
 func (s NodeStatus) IsValid() bool {
 	switch s {

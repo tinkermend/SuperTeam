@@ -28,6 +28,15 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND revoked_at IS NULL
   AND (expires_at IS NULL OR expires_at > NOW());
 
+-- name: ListActiveRuntimeBootstrapKeys :many
+SELECT *
+FROM runtime_bootstrap_keys
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND status = 'active'
+  AND revoked_at IS NULL
+  AND (expires_at IS NULL OR expires_at > NOW())
+ORDER BY created_at DESC;
+
 -- name: RevokeRuntimeBootstrapKey :one
 UPDATE runtime_bootstrap_keys
 SET status = 'revoked',
@@ -188,7 +197,8 @@ WHERE re.id = sqlc.narg('enrollment_id')::uuid
 RETURNING *;
 
 -- name: GetActiveRuntimeSessionByLookupHash :one
-SELECT rs.*
+SELECT rs.*,
+       rn.node_id
 FROM runtime_sessions rs
 JOIN runtime_enrollments re
   ON re.id = rs.enrollment_id
@@ -197,6 +207,10 @@ JOIN runtime_enrollments re
  AND re.status = 'approved'
  AND re.rejected_at IS NULL
  AND re.revoked_at IS NULL
+JOIN runtime_nodes rn
+  ON rn.id = rs.runtime_node_id
+ AND rn.tenant_id = rs.tenant_id
+ AND rn.archived_at IS NULL
 WHERE rs.tenant_id = sqlc.arg('tenant_id')::uuid
   AND rs.token_lookup_hash = sqlc.arg('token_lookup_hash')::varchar
   AND rs.expires_at > NOW()

@@ -45,7 +45,7 @@ type Querier interface {
 	DeleteTaskArtifact(ctx context.Context, arg DeleteTaskArtifactParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	GetActiveRuntimeBootstrapKeyByHash(ctx context.Context, arg GetActiveRuntimeBootstrapKeyByHashParams) (RuntimeBootstrapKey, error)
-	GetActiveRuntimeSessionByLookupHash(ctx context.Context, arg GetActiveRuntimeSessionByLookupHashParams) (RuntimeSession, error)
+	GetActiveRuntimeSessionByLookupHash(ctx context.Context, arg GetActiveRuntimeSessionByLookupHashParams) (GetActiveRuntimeSessionByLookupHashRow, error)
 	GetActiveTeamMembership(ctx context.Context, arg GetActiveTeamMembershipParams) (TenantMember, error)
 	GetActiveTenantMembership(ctx context.Context, arg GetActiveTenantMembershipParams) (TenantMember, error)
 	GetAuditEvent(ctx context.Context, id uuid.UUID) (AuditEvent, error)
@@ -71,6 +71,7 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email pgtype.Text) (AuthUser, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (AuthUser, error)
 	GetUserByUsername(ctx context.Context, username string) (AuthUser, error)
+	ListActiveRuntimeBootstrapKeys(ctx context.Context, tenantID uuid.UUID) ([]RuntimeBootstrapKey, error)
 	ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]AuditEvent, error)
 	ListAuthzDecisions(ctx context.Context, arg ListAuthzDecisionsParams) ([]WebOperationLog, error)
 	ListAuthzMembers(ctx context.Context, arg ListAuthzMembersParams) ([]ListAuthzMembersRow, error)
