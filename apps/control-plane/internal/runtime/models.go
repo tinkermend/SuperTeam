@@ -191,6 +191,13 @@ type RuntimeSessionValidation struct {
 	ExpiresAt     time.Time
 }
 
+type ListRuntimeEnrollmentsFilter struct {
+	TenantID uuid.UUID
+	Status   *RuntimeEnrollmentStatus
+	Limit    int32
+	Offset   int32
+}
+
 // IsValid checks if the status is valid
 func (s NodeStatus) IsValid() bool {
 	switch s {

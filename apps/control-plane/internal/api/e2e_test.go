@@ -373,6 +373,49 @@ func (s *fakeRuntimeService) ListNodes(ctx context.Context, filter runtime.ListN
 	return result, nil
 }
 
+func (s *fakeRuntimeService) EnrollHello(ctx context.Context, req runtime.EnrollHelloRequest) (*runtime.EnrollHelloResponse, error) {
+	return &runtime.EnrollHelloResponse{
+		Enrollment: runtime.RuntimeEnrollment{
+			ID:             uuid.New(),
+			TenantID:       runtime.DefaultTenantID,
+			NodeID:         req.NodeID,
+			BootstrapKeyID: uuid.New(),
+			Status:         runtime.RuntimeEnrollmentStatusPending,
+			CreatedAt:      time.Now().UTC(),
+			UpdatedAt:      time.Now().UTC(),
+			LastHelloAt:    time.Now().UTC(),
+		},
+	}, nil
+}
+
+func (s *fakeRuntimeService) ListRuntimeEnrollments(ctx context.Context, filter runtime.ListRuntimeEnrollmentsFilter) ([]*runtime.RuntimeEnrollment, error) {
+	return []*runtime.RuntimeEnrollment{}, nil
+}
+
+func (s *fakeRuntimeService) ApproveEnrollment(ctx context.Context, req runtime.ApproveEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusApproved}, nil
+}
+
+func (s *fakeRuntimeService) RejectEnrollment(ctx context.Context, req runtime.RejectEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRejected}, nil
+}
+
+func (s *fakeRuntimeService) RevokeEnrollment(ctx context.Context, req runtime.RevokeEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRevoked}, nil
+}
+
+func (s *fakeRuntimeService) ValidateRuntimeSession(ctx context.Context, token string) (*runtime.RuntimeSessionValidation, error) {
+	return nil, errors.New("invalid runtime session")
+}
+
+func (s *fakeRuntimeService) RenewRuntimeSession(ctx context.Context, token string) (*runtime.RuntimeSession, error) {
+	return nil, errors.New("invalid runtime session")
+}
+
+func (s *fakeRuntimeService) UpsertCapabilities(ctx context.Context, token string, capabilities []runtime.RuntimeCapabilityInput) ([]runtime.RuntimeCapability, error) {
+	return []runtime.RuntimeCapability{}, nil
+}
+
 type fakePoller struct{}
 
 func (fakePoller) WaitForTask(ctx context.Context, nodeID string) (*task.Task, error) {

@@ -117,6 +117,37 @@ func (s *Service) EnrollHello(ctx context.Context, req EnrollHelloRequest) (*Enr
 	return resp, nil
 }
 
+func (s *Service) ListRuntimeEnrollments(ctx context.Context, filter ListRuntimeEnrollmentsFilter) ([]*RuntimeEnrollment, error) {
+	enrollmentRepo, err := s.enrollmentRepository()
+	if err != nil {
+		return nil, err
+	}
+	if filter.Limit <= 0 {
+		filter.Limit = 50
+	}
+	if filter.Limit > 100 {
+		filter.Limit = 100
+	}
+	records, err := enrollmentRepo.ListRuntimeEnrollments(ctx, ListRuntimeEnrollmentsParams{
+		TenantID: tenantOrDefault(filter.TenantID),
+		Status:   enrollmentStatusToText(filter.Status),
+		Offset:   filter.Offset,
+		Limit:    filter.Limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list runtime enrollments: %w", err)
+	}
+	enrollments := make([]*RuntimeEnrollment, 0, len(records))
+	for _, record := range records {
+		enrollment, err := s.recordToRuntimeEnrollment(record)
+		if err != nil {
+			return nil, err
+		}
+		enrollments = append(enrollments, enrollment)
+	}
+	return enrollments, nil
+}
+
 func (s *Service) ApproveEnrollment(ctx context.Context, req ApproveEnrollmentRequest) (*RuntimeEnrollment, error) {
 	enrollmentRepo, err := s.enrollmentRepository()
 	if err != nil {
@@ -595,6 +626,13 @@ func (s *Service) recordToNode(record NodeRecord) (*Node, error) {
 }
 
 func (s *Service) statusToText(status *NodeStatus) pgtype.Text {
+	if status == nil {
+		return pgtype.Text{Valid: false}
+	}
+	return pgtype.Text{String: string(*status), Valid: true}
+}
+
+func enrollmentStatusToText(status *RuntimeEnrollmentStatus) pgtype.Text {
 	if status == nil {
 		return pgtype.Text{Valid: false}
 	}

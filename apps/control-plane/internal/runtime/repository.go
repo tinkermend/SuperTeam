@@ -24,6 +24,7 @@ type EnrollmentRepository interface {
 	ListActiveRuntimeBootstrapKeys(ctx context.Context, tenantID uuid.UUID) ([]RuntimeBootstrapKeyRecord, error)
 	UpsertRuntimeEnrollmentFromHello(ctx context.Context, params UpsertRuntimeEnrollmentFromHelloParams) (RuntimeEnrollmentRecord, error)
 	GetRuntimeEnrollment(ctx context.Context, tenantID, enrollmentID uuid.UUID) (RuntimeEnrollmentRecord, error)
+	ListRuntimeEnrollments(ctx context.Context, params ListRuntimeEnrollmentsParams) ([]RuntimeEnrollmentRecord, error)
 	UpsertRuntimeNodeForTenant(ctx context.Context, params UpsertRuntimeNodeForTenantParams) (NodeRecord, error)
 	ApproveRuntimeEnrollment(ctx context.Context, params ApproveRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error)
 	ApproveRuntimeEnrollmentWithNode(ctx context.Context, params ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollmentRecord, error)
@@ -98,6 +99,13 @@ type UpsertRuntimeEnrollmentFromHelloParams struct {
 	BootstrapKeyID uuid.UUID
 	RequestPayload []byte
 	LastHelloAt    pgtype.Timestamptz
+}
+
+type ListRuntimeEnrollmentsParams struct {
+	TenantID uuid.UUID
+	Status   pgtype.Text
+	Offset   int32
+	Limit    int32
 }
 
 type ApproveRuntimeEnrollmentParams struct {

@@ -40,6 +40,11 @@ func TestRuntimeRoutesAreRegistered(t *testing.T) {
 		{method: http.MethodPost, path: "/api/v1/runtime/tasks/" + routeTaskID + "/lease"},
 		{method: http.MethodGet, path: "/api/v1/runtime/nodes"},
 		{method: http.MethodGet, path: "/api/v1/runtime/nodes/node-1"},
+		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/hello", body: `{"node_id":"node-1","bootstrap_key":"bootstrap-secret","name":"node 1","supported_providers":["codex"],"max_slots":1}`},
+		{method: http.MethodGet, path: "/api/v1/runtime/enrollments"},
+		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/11111111-1111-1111-1111-111111111111/approve"},
+		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/11111111-1111-1111-1111-111111111111/reject", body: `{"reason":"not allowed"}`},
+		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/11111111-1111-1111-1111-111111111111/revoke", body: `{"reason":"rotated"}`},
 	}
 
 	for _, tt := range tests {
@@ -54,6 +59,40 @@ func TestRuntimeRoutesAreRegistered(t *testing.T) {
 				t.Fatalf("expected runtime route to be registered, got 404")
 			}
 		})
+	}
+}
+
+func TestRuntimeEnrollmentHelloUsesCurrentContractPathWithoutRuntimeSessionAuth(t *testing.T) {
+	service := &routeRuntimeService{}
+	server := NewServer(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/enrollments/hello", strings.NewReader(`{"node_id":"node-hello","bootstrap_key":"bootstrap-secret","name":"node hello","version":"1.2.3","supported_providers":["codex"],"max_slots":2,"metadata":{"region":"local"},"capabilities":[{"capability_type":"provider","capability_key":"codex","provider_type":"codex","available":true}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected enrollment hello to be public and accepted, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if service.enrollHelloReq.NodeID != "node-hello" || service.enrollHelloReq.BootstrapKey != "bootstrap-secret" {
+		t.Fatalf("expected enrollment hello request to reach runtime service, got %#v", service.enrollHelloReq)
+	}
+	var body struct {
+		Enrollment struct {
+			NodeID string `json:"node_id"`
+			Status string `json:"status"`
+		} `json:"enrollment"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode enrollment hello response: %v", err)
+	}
+	if body.Enrollment.NodeID != "node-hello" || body.Enrollment.Status != "pending" {
+		t.Fatalf("unexpected enrollment hello response: %#v", body.Enrollment)
 	}
 }
 
@@ -580,6 +619,33 @@ func TestRuntimeRoutesUseAuthenticatedNodeIdentity(t *testing.T) {
 	}
 }
 
+func TestRuntimeRoutesAcceptRuntimeSessionTokenIdentity(t *testing.T) {
+	service := &routeRuntimeService{}
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+		service,
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/heartbeat", strings.NewReader(`{"current_load":2}`))
+	req.Header.Set("Authorization", "Bearer session-token")
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected session-authenticated heartbeat to reach handler, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if service.heartbeatReq.NodeID != "node-session" {
+		t.Fatalf("expected heartbeat node_id from runtime session validation, got %#v", service.heartbeatReq)
+	}
+	if service.validatedSessionToken != "session-token" {
+		t.Fatalf("expected runtime session token to be validated, got %q", service.validatedSessionToken)
+	}
+}
+
 func TestRuntimeRoutesRejectMissingRuntimeAuth(t *testing.T) {
 	server := NewServer(
 		handlers.NewTaskHandler(&routeTaskService{}),
@@ -595,6 +661,96 @@ func TestRuntimeRoutesRejectMissingRuntimeAuth(t *testing.T) {
 
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("expected missing runtime auth to be rejected, got %d", rr.Code)
+	}
+}
+
+func TestRuntimeBootstrapHelloBodyCannotAccessProtectedRuntimeRoutes(t *testing.T) {
+	service := &routeRuntimeService{}
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+		service,
+	)
+
+	heartbeatReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/heartbeat", strings.NewReader(`{"node_id":"node-hello","bootstrap_key":"bootstrap-secret","current_load":2}`))
+	heartbeatReq.Header.Set("Content-Type", "application/json")
+	heartbeatResp := httptest.NewRecorder()
+	server.ServeHTTP(heartbeatResp, heartbeatReq)
+	if heartbeatResp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected heartbeat to reject bootstrap body without bearer auth, got %d: %s", heartbeatResp.Code, heartbeatResp.Body.String())
+	}
+
+	capReq := httptest.NewRequest(http.MethodPut, "/api/v1/runtime/nodes/node-hello/capabilities", strings.NewReader(`{"capabilities":[{"capability_type":"provider","capability_key":"codex","provider_type":"codex","available":true}]}`))
+	capReq.Header.Set("Content-Type", "application/json")
+	capResp := httptest.NewRecorder()
+	server.ServeHTTP(capResp, capReq)
+	if capResp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected capabilities to reject bootstrap body without session bearer auth, got %d: %s", capResp.Code, capResp.Body.String())
+	}
+}
+
+func TestRuntimeSessionRenewRequiresSessionAuthAndReturnsRenewedSession(t *testing.T) {
+	service := &routeRuntimeService{}
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+		service,
+	)
+
+	missingReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/session/renew", nil)
+	missingResp := httptest.NewRecorder()
+	server.ServeHTTP(missingResp, missingReq)
+	if missingResp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected missing session auth to be rejected, got %d", missingResp.Code)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/session/renew", nil)
+	req.Header.Set("Authorization", "Bearer session-token")
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected session renew to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.renewedSessionToken != "session-token" {
+		t.Fatalf("expected renew to use bearer session token, got %q", service.renewedSessionToken)
+	}
+	var body struct {
+		Session struct {
+			NodeID string `json:"node_id"`
+		} `json:"session"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode renew response: %v", err)
+	}
+	if body.Session.NodeID != "node-session" {
+		t.Fatalf("expected renewed session node id, got %#v", body.Session)
+	}
+}
+
+func TestRuntimeCapabilitiesRejectPathNodeMismatch(t *testing.T) {
+	service := &routeRuntimeService{}
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+		service,
+	)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/runtime/nodes/other-node/capabilities", strings.NewReader(`{"capabilities":[{"capability_type":"provider","capability_key":"codex","provider_type":"codex","available":true}]}`))
+	req.Header.Set("Authorization", "Bearer session-token")
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected path node mismatch to be forbidden, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if len(service.upsertedCapabilities) != 0 {
+		t.Fatalf("expected mismatched node path not to upsert capabilities, got %#v", service.upsertedCapabilities)
 	}
 }
 
@@ -618,13 +774,20 @@ func TestRuntimeRegisterRejectsMismatchedAuthenticatedNodeIdentity(t *testing.T)
 	}
 }
 
-type routeRuntimeService struct{}
+type routeRuntimeService struct {
+	enrollHelloReq        runtime.EnrollHelloRequest
+	heartbeatReq          runtime.UpdateHeartbeatRequest
+	validatedSessionToken string
+	renewedSessionToken   string
+	upsertedCapabilities  []runtime.RuntimeCapabilityInput
+}
 
 func (s *routeRuntimeService) RegisterNode(ctx context.Context, req runtime.RegisterNodeRequest) (*runtime.Node, error) {
 	return &runtime.Node{NodeID: req.NodeID, Name: req.Name, SupportedProviders: req.SupportedProviders, MaxSlots: req.MaxSlots}, nil
 }
 
 func (s *routeRuntimeService) UpdateHeartbeat(ctx context.Context, req runtime.UpdateHeartbeatRequest) (*runtime.Node, error) {
+	s.heartbeatReq = req
 	return &runtime.Node{NodeID: req.NodeID, CurrentLoad: req.CurrentLoad}, nil
 }
 
@@ -634,6 +797,72 @@ func (s *routeRuntimeService) GetNode(ctx context.Context, nodeID string) (*runt
 
 func (s *routeRuntimeService) ListNodes(ctx context.Context, filter runtime.ListNodesFilter) ([]*runtime.Node, error) {
 	return []*runtime.Node{}, nil
+}
+
+func (s *routeRuntimeService) EnrollHello(ctx context.Context, req runtime.EnrollHelloRequest) (*runtime.EnrollHelloResponse, error) {
+	s.enrollHelloReq = req
+	return &runtime.EnrollHelloResponse{
+		Enrollment: runtime.RuntimeEnrollment{
+			ID:             uuid.MustParse(routeTaskID),
+			TenantID:       runtime.DefaultTenantID,
+			NodeID:         req.NodeID,
+			BootstrapKeyID: uuid.MustParse("22222222-2222-2222-2222-222222222222"),
+			Status:         runtime.RuntimeEnrollmentStatusPending,
+			RequestPayload: map[string]interface{}{},
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+			LastHelloAt:    time.Now(),
+		},
+	}, nil
+}
+
+func (s *routeRuntimeService) ListRuntimeEnrollments(ctx context.Context, filter runtime.ListRuntimeEnrollmentsFilter) ([]*runtime.RuntimeEnrollment, error) {
+	return []*runtime.RuntimeEnrollment{}, nil
+}
+
+func (s *routeRuntimeService) ApproveEnrollment(ctx context.Context, req runtime.ApproveEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusApproved}, nil
+}
+
+func (s *routeRuntimeService) RejectEnrollment(ctx context.Context, req runtime.RejectEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRejected, RejectReason: &req.Reason}, nil
+}
+
+func (s *routeRuntimeService) RevokeEnrollment(ctx context.Context, req runtime.RevokeEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRevoked, RevokeReason: &req.Reason}, nil
+}
+
+func (s *routeRuntimeService) ValidateRuntimeSession(ctx context.Context, token string) (*runtime.RuntimeSessionValidation, error) {
+	s.validatedSessionToken = token
+	if token != "session-token" {
+		return nil, context.Canceled
+	}
+	return &runtime.RuntimeSessionValidation{
+		SessionID:     uuid.MustParse("33333333-3333-3333-3333-333333333333"),
+		TenantID:      runtime.DefaultTenantID,
+		RuntimeNodeID: uuid.MustParse("44444444-4444-4444-4444-444444444444"),
+		NodeID:        "node-session",
+		ExpiresAt:     time.Now().Add(time.Hour),
+	}, nil
+}
+
+func (s *routeRuntimeService) RenewRuntimeSession(ctx context.Context, token string) (*runtime.RuntimeSession, error) {
+	s.renewedSessionToken = token
+	return &runtime.RuntimeSession{
+		ID:            uuid.MustParse("33333333-3333-3333-3333-333333333333"),
+		TenantID:      runtime.DefaultTenantID,
+		RuntimeNodeID: uuid.MustParse("44444444-4444-4444-4444-444444444444"),
+		NodeID:        "node-session",
+		ExpiresAt:     time.Now().Add(time.Hour),
+		LastSeenAt:    time.Now(),
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}, nil
+}
+
+func (s *routeRuntimeService) UpsertCapabilities(ctx context.Context, token string, capabilities []runtime.RuntimeCapabilityInput) ([]runtime.RuntimeCapability, error) {
+	s.upsertedCapabilities = capabilities
+	return []runtime.RuntimeCapability{}, nil
 }
 
 type routeTaskService struct {

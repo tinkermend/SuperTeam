@@ -243,6 +243,23 @@ func (r *PgRepository) GetRuntimeEnrollment(ctx context.Context, tenantID, enrol
 	return runtimeEnrollmentRecordFromQuery(enrollment), nil
 }
 
+func (r *PgRepository) ListRuntimeEnrollments(ctx context.Context, params ListRuntimeEnrollmentsParams) ([]RuntimeEnrollmentRecord, error) {
+	enrollments, err := r.q.ListRuntimeEnrollments(ctx, queries.ListRuntimeEnrollmentsParams{
+		TenantID: params.TenantID,
+		Status:   params.Status,
+		Offset:   params.Offset,
+		Limit:    params.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	records := make([]RuntimeEnrollmentRecord, 0, len(enrollments))
+	for _, enrollment := range enrollments {
+		records = append(records, runtimeEnrollmentRecordFromQuery(enrollment))
+	}
+	return records, nil
+}
+
 func (r *PgRepository) UpsertRuntimeNodeForTenant(ctx context.Context, params UpsertRuntimeNodeForTenantParams) (NodeRecord, error) {
 	node, err := r.q.UpsertRuntimeNodeForTenant(ctx, queries.UpsertRuntimeNodeForTenantParams{
 		Name:               params.Name,

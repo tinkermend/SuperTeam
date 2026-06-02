@@ -598,6 +598,20 @@ func (f *enrollmentFake) GetRuntimeEnrollment(_ context.Context, tenantID, enrol
 	return record, nil
 }
 
+func (f *enrollmentFake) ListRuntimeEnrollments(_ context.Context, params ListRuntimeEnrollmentsParams) ([]RuntimeEnrollmentRecord, error) {
+	records := make([]RuntimeEnrollmentRecord, 0, len(f.enrollmentsByID))
+	for _, record := range f.enrollmentsByID {
+		if record.TenantID != params.TenantID {
+			continue
+		}
+		if params.Status.Valid && string(record.Status) != params.Status.String {
+			continue
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
 func (f *enrollmentFake) UpsertRuntimeNodeForTenant(_ context.Context, params UpsertRuntimeNodeForTenantParams) (NodeRecord, error) {
 	key := f.nodeKey(params.TenantID, params.NodeID)
 	if existing, ok := f.nodes[key]; ok {

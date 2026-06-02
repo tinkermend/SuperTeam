@@ -485,6 +485,42 @@ func (s *claimRuntimeService) ListNodes(ctx context.Context, filter runtime.List
 	return nil, nil
 }
 
+func (s *claimRuntimeService) EnrollHello(ctx context.Context, req runtime.EnrollHelloRequest) (*runtime.EnrollHelloResponse, error) {
+	return &runtime.EnrollHelloResponse{
+		Enrollment: runtime.RuntimeEnrollment{
+			ID:             handlerTestUUID(901),
+			TenantID:       runtime.DefaultTenantID,
+			NodeID:         req.NodeID,
+			BootstrapKeyID: handlerTestUUID(902),
+			Status:         runtime.RuntimeEnrollmentStatusPending,
+		},
+	}, nil
+}
+
+func (s *claimRuntimeService) ListRuntimeEnrollments(ctx context.Context, filter runtime.ListRuntimeEnrollmentsFilter) ([]*runtime.RuntimeEnrollment, error) {
+	return nil, nil
+}
+
+func (s *claimRuntimeService) ApproveEnrollment(ctx context.Context, req runtime.ApproveEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusApproved}, nil
+}
+
+func (s *claimRuntimeService) RejectEnrollment(ctx context.Context, req runtime.RejectEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRejected}, nil
+}
+
+func (s *claimRuntimeService) RevokeEnrollment(ctx context.Context, req runtime.RevokeEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
+	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRevoked}, nil
+}
+
+func (s *claimRuntimeService) RenewRuntimeSession(ctx context.Context, token string) (*runtime.RuntimeSession, error) {
+	return &runtime.RuntimeSession{ID: handlerTestUUID(903), TenantID: runtime.DefaultTenantID, RuntimeNodeID: handlerTestUUID(904)}, nil
+}
+
+func (s *claimRuntimeService) UpsertCapabilities(ctx context.Context, token string, capabilities []runtime.RuntimeCapabilityInput) ([]runtime.RuntimeCapability, error) {
+	return []runtime.RuntimeCapability{}, nil
+}
+
 type claimTaskService struct {
 	tasksByProvider map[string][]*task.Task
 	listedProviders []string
