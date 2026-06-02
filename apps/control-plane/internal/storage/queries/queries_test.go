@@ -181,6 +181,14 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 	ctx := context.Background()
 	_, err := db.Exec(ctx, `
 		TRUNCATE
+			provider_session_events,
+			provider_sessions,
+			digital_employee_execution_instances,
+			digital_employees,
+			runtime_capabilities,
+			runtime_sessions,
+			runtime_enrollments,
+			runtime_bootstrap_keys,
 			web_operation_logs,
 			web_login_logs,
 			audit_events,
@@ -936,6 +944,293 @@ func TestListOnlineNodes(t *testing.T) {
 	for _, node := range nodes {
 		assert.True(t, node.LastHeartbeatAt.Time.After(threshold.Time))
 	}
+}
+
+func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+	keyExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, keyExpiresAt.Scan(time.Now().Add(24*time.Hour)))
+	bootstrapKey, err := testQueries.CreateRuntimeBootstrapKey(ctx, queries.CreateRuntimeBootstrapKeyParams{
+		TenantID:    uuid.NullUUID{UUID: tenantID, Valid: true},
+		Name:        "customer-vm-bootstrap",
+		KeyHash:     "bootstrap-key-hash",
+		Status:      "active",
+		ExpiresAt:   keyExpiresAt,
+		CreatedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		Description: pgtype.Text{String: "Customer VM enrollment key", Valid: true},
+		Metadata:    []byte(`{"environment":"customer-vm"}`),
+	})
+	require.NoError(t, err)
+
+	activeKey, err := testQueries.GetActiveRuntimeBootstrapKeyByHash(ctx, queries.GetActiveRuntimeBootstrapKeyByHashParams{
+		TenantID: tenantID,
+		KeyHash:  "bootstrap-key-hash",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, bootstrapKey.ID, activeKey.ID)
+
+	now := pgtype.Timestamptz{}
+	require.NoError(t, now.Scan(time.Now()))
+	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "runtime-enroll-node",
+		Name:               "Runtime Enrollment Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           4,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	enrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  node.ID,
+		BootstrapKeyID: uuid.NullUUID{UUID: bootstrapKey.ID, Valid: true},
+		Status:         "pending",
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node","version":"0.1.0"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "pending", enrollment.Status)
+
+	approved, err := testQueries.ApproveRuntimeEnrollment(ctx, queries.ApproveRuntimeEnrollmentParams{
+		ID:         enrollment.ID,
+		TenantID:   tenantID,
+		ApprovedBy: uuid.NullUUID{UUID: uuid.New(), Valid: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "approved", approved.Status)
+	require.True(t, approved.ApprovedAt.Valid)
+
+	sessionExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, sessionExpiresAt.Scan(time.Now().Add(12*time.Hour)))
+	session, err := testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   node.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: approved.ID, Valid: true},
+		TokenLookupHash: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+		TokenSecretHash: "$2a$10$runtimeSessionSecretHashForLaterValidation",
+		ExpiresAt:       sessionExpiresAt,
+	})
+	require.NoError(t, err)
+
+	validatedSession, err := testQueries.GetActiveRuntimeSessionByLookupHash(ctx, queries.GetActiveRuntimeSessionByLookupHashParams{
+		TenantID:        tenantID,
+		TokenLookupHash: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, session.ID, validatedSession.ID)
+	assert.Equal(t, "$2a$10$runtimeSessionSecretHashForLaterValidation", validatedSession.TokenSecretHash)
+
+	renewedExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, renewedExpiresAt.Scan(time.Now().Add(24*time.Hour)))
+	renewedSession, err := testQueries.RenewRuntimeSession(ctx, queries.RenewRuntimeSessionParams{
+		ID:        session.ID,
+		TenantID:  tenantID,
+		ExpiresAt: renewedExpiresAt,
+	})
+	require.NoError(t, err)
+	assert.True(t, renewedSession.ExpiresAt.Time.After(session.ExpiresAt.Time))
+
+	capability, err := testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+		TenantID:         tenantID,
+		RuntimeNodeID:    node.ID,
+		ProviderType:     "claude-code",
+		ProviderVersion:  pgtype.Text{String: "1.0.0", Valid: true},
+		BinaryPath:       pgtype.Text{String: "/usr/local/bin/claude", Valid: true},
+		Available:        true,
+		WorkspaceBaseDir: pgtype.Text{String: "/data/superteam/workspaces", Valid: true},
+		Capacity:         []byte(`{"max_slots":4}`),
+		Labels:           []byte(`{"os":"darwin"}`),
+		HealthStatus:     "healthy",
+		Metadata:         []byte(`{"source":"hello"}`),
+		LastSeenAt:       now,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "claude-code", capability.ProviderType)
+
+	capabilities, err := testQueries.ListRuntimeCapabilities(ctx, queries.ListRuntimeCapabilitiesParams{
+		TenantID:      tenantID,
+		RuntimeNodeID: node.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, capabilities, 1)
+	assert.Equal(t, capability.ID, capabilities[0].ID)
+
+	revokedSession, err := testQueries.RevokeRuntimeSession(ctx, queries.RevokeRuntimeSessionParams{
+		ID:            session.ID,
+		TenantID:      tenantID,
+		RevokedReason: pgtype.Text{String: "administrator revoked enrollment", Valid: true},
+	})
+	require.NoError(t, err)
+	require.True(t, revokedSession.RevokedAt.Valid)
+
+	_, err = testQueries.GetActiveRuntimeSessionByLookupHash(ctx, queries.GetActiveRuntimeSessionByLookupHashParams{
+		TenantID:        tenantID,
+		TokenLookupHash: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+	})
+	assert.Error(t, err)
+}
+
+func TestDigitalEmployeeExecutionQueries(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+
+	now := pgtype.Timestamptz{}
+	require.NoError(t, now.Scan(time.Now()))
+	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "digital-employee-runtime-node",
+		Name:               "Digital Employee Runtime Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	employee, err := testQueries.CreateDigitalEmployee(ctx, queries.CreateDigitalEmployeeParams{
+		TenantID:         tenantID,
+		TeamID:           uuid.NullUUID{UUID: teamID, Valid: true},
+		Name:             "需求分析数字员工",
+		Role:             "requirements_analyst",
+		Description:      pgtype.Text{String: "分析需求并产出结构化交接包", Valid: true},
+		Status:           "draft",
+		PermissionPolicy: []byte(`{"scope":"team"}`),
+		ContextPolicy:    []byte(`{"memory":"task_slice"}`),
+		ApprovalPolicy:   []byte(`{"high_risk":"human_required"}`),
+		RiskLevel:        "normal",
+		Metadata:         []byte(`{"owner":"qa"}`),
+	})
+	require.NoError(t, err)
+
+	instance, err := testQueries.CreateDigitalEmployeeExecutionInstance(ctx, queries.CreateDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/requirements-analyst",
+		WorkspacePolicy:      []byte(`{"base_dir":"/data/superteam/workspaces"}`),
+		SessionPolicy:        []byte(`{"mode":"reuse_latest"}`),
+		RuntimeSelector:      []byte(`{"labels":{"os":"darwin"}}`),
+		CapacityRequirements: []byte(`{"slots":1}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"web"}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, employee.ID, instance.DigitalEmployeeID)
+
+	_, err = testQueries.CreateDigitalEmployeeExecutionInstance(ctx, queries.CreateDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/requirements-analyst-duplicate",
+		WorkspacePolicy:      []byte(`{}`),
+		SessionPolicy:        []byte(`{}`),
+		RuntimeSelector:      []byte(`{}`),
+		CapacityRequirements: []byte(`{}`),
+		FallbackPolicy:       []byte(`{}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{}`),
+	})
+	assert.Error(t, err)
+
+	readyInstance, err := testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
+		Status:   "ready",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "ready", readyInstance.Status)
+	require.True(t, readyInstance.ReadyAt.Valid)
+
+	activeEmployee, err := testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "active",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "active", activeEmployee.Status)
+
+	session, err := testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-001",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"resume"}`),
+	})
+	require.NoError(t, err)
+
+	eventPayload1 := []byte(`{"message":"session started"}`)
+	event1, err := testQueries.AppendProviderSessionEvent(ctx, queries.AppendProviderSessionEventParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   session.ID,
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		EventType:           "message_delta",
+		SequenceNumber:      1,
+		Payload:             eventPayload1,
+		RawPayloadRef:       pgtype.Text{String: "s3://superteam/raw/session-001/1.json", Valid: true},
+		Metadata:            []byte(`{"channel":"stdout"}`),
+	})
+	require.NoError(t, err)
+
+	eventPayload2 := []byte(`{"tool":"write_file"}`)
+	_, err = testQueries.AppendProviderSessionEvent(ctx, queries.AppendProviderSessionEventParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   session.ID,
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		EventType:           "tool_call",
+		SequenceNumber:      2,
+		Payload:             eventPayload2,
+		Metadata:            []byte(`{"channel":"json_stream"}`),
+	})
+	require.NoError(t, err)
+
+	events, err := testQueries.ListProviderSessionEvents(ctx, queries.ListProviderSessionEventsParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 2)
+	assert.Equal(t, event1.ID, events[0].ID)
+	assert.Equal(t, int32(2), events[1].SequenceNumber)
+
+	maxSequence, err := testQueries.GetLatestProviderSessionEventSequence(ctx, queries.GetLatestProviderSessionEventSequenceParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), maxSequence)
+
+	updatedSession, err := testQueries.UpdateProviderSessionStatus(ctx, queries.UpdateProviderSessionStatusParams{
+		ID:       session.ID,
+		TenantID: tenantID,
+		Status:   "idle",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "idle", updatedSession.Status)
 }
 
 // ============================================================================

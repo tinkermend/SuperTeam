@@ -105,6 +105,260 @@ type AuthUser struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 数字员工业务身份表
+type DigitalEmployee struct {
+	// 数字员工主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属团队 ID，可为空表示租户级数字员工
+	TeamID uuid.NullUUID `json:"team_id"`
+	// 数字员工名称
+	Name string `json:"name"`
+	// 数字员工职责或角色标识
+	Role string `json:"role"`
+	// 数字员工职责描述
+	Description pgtype.Text `json:"description"`
+	// 数字员工状态：draft、ready、active、disabled 或 error
+	Status string `json:"status"`
+	// 数字员工权限策略快照
+	PermissionPolicy []byte `json:"permission_policy"`
+	// 数字员工上下文注入策略快照
+	ContextPolicy []byte `json:"context_policy"`
+	// 数字员工人类审批策略快照
+	ApprovalPolicy []byte `json:"approval_policy"`
+	// 数字员工默认风险等级
+	RiskLevel string `json:"risk_level"`
+	// 数字员工扩展元数据
+	Metadata []byte `json:"metadata"`
+	// 数字员工禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// 数字员工归档时间
+	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
+	// 数字员工软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 数字员工创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 数字员工最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 数字员工唯一执行实例表
+type DigitalEmployeeExecutionInstance struct {
+	// 数字员工执行实例主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 绑定的数字员工 ID
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 承载执行实例的 Runtime 节点 UUID
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// 执行实例使用的 Provider 类型
+	ProviderType string `json:"provider_type"`
+	// 数字员工在 Runtime 工作区中的长期目录
+	AgentHomeDir string `json:"agent_home_dir"`
+	// 工作区策略快照
+	WorkspacePolicy []byte `json:"workspace_policy"`
+	// Provider 会话策略快照
+	SessionPolicy []byte `json:"session_policy"`
+	// 预留的 Runtime 自动选择器
+	RuntimeSelector []byte `json:"runtime_selector"`
+	// 预留的容量需求
+	CapacityRequirements []byte `json:"capacity_requirements"`
+	// 预留的降级或 fallback 策略
+	FallbackPolicy []byte `json:"fallback_policy"`
+	// 执行实例状态
+	Status string `json:"status"`
+	// 执行实例就绪时间
+	ReadyAt pgtype.Timestamptz `json:"ready_at"`
+	// 执行实例禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// 执行实例进入错误状态时间
+	ErrorAt pgtype.Timestamptz `json:"error_at"`
+	// 执行实例错误说明
+	ErrorMessage pgtype.Text `json:"error_message"`
+	// 执行实例软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 执行实例扩展元数据
+	Metadata []byte `json:"metadata"`
+	// 执行实例创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 执行实例最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Provider 会话映射表
+type ProviderSession struct {
+	// Provider 会话主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// Provider 自身返回的会话 ID
+	ProviderSessionID string `json:"provider_session_id"`
+	// 关联的数字员工 ID
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 关联的数字员工执行实例 ID
+	ExecutionInstanceID uuid.UUID `json:"execution_instance_id"`
+	// 承载会话的 Runtime 节点 UUID
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// Provider 类型
+	ProviderType string `json:"provider_type"`
+	// Provider 会话状态
+	Status string `json:"status"`
+	// Provider 会话是否可恢复
+	Recoverable bool `json:"recoverable"`
+	// Provider 会话最后活跃时间
+	LastActiveAt pgtype.Timestamptz `json:"last_active_at"`
+	// Provider 会话关闭时间
+	ClosedAt pgtype.Timestamptz `json:"closed_at"`
+	// Provider 会话错误说明
+	ErrorMessage pgtype.Text `json:"error_message"`
+	// Provider 会话扩展元数据
+	Metadata []byte `json:"metadata"`
+	// Provider 会话创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// Provider 会话最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Provider 会话事件流表
+type ProviderSessionEvent struct {
+	// Provider 会话事件主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// Provider 会话表内部 UUID
+	ProviderSessionID uuid.UUID `json:"provider_session_id"`
+	// 关联的数字员工 ID
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 关联的数字员工执行实例 ID
+	ExecutionInstanceID uuid.UUID `json:"execution_instance_id"`
+	// 事件来源 Runtime 节点 UUID
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// Provider 类型
+	ProviderType string `json:"provider_type"`
+	// Provider 事件类型
+	EventType string `json:"event_type"`
+	// Provider 会话内事件序号
+	SequenceNumber int32 `json:"sequence_number"`
+	// 归一化后的 Provider 事件负载
+	Payload []byte `json:"payload"`
+	// 原始输出对象存储引用或摘要引用
+	RawPayloadRef pgtype.Text `json:"raw_payload_ref"`
+	// Provider 会话事件扩展元数据
+	Metadata []byte `json:"metadata"`
+	// Provider 会话事件创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// Runtime Agent 环境级接入引导密钥表
+type RuntimeBootstrapKey struct {
+	// 接入引导密钥主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID，默认使用开发租户
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 接入引导密钥展示名称
+	Name string `json:"name"`
+	// 接入引导密钥哈希，禁止保存明文
+	KeyHash string `json:"key_hash"`
+	// 接入引导密钥状态
+	Status string `json:"status"`
+	// 接入引导密钥用途说明
+	Description pgtype.Text `json:"description"`
+	// 接入引导密钥过期时间
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	// 创建该密钥的用户 ID
+	CreatedBy uuid.NullUUID `json:"created_by"`
+	// 接入引导密钥撤销时间
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+	// 撤销该密钥的用户 ID
+	RevokedBy uuid.NullUUID `json:"revoked_by"`
+	// 接入引导密钥撤销原因
+	RevokedReason pgtype.Text `json:"revoked_reason"`
+	// 接入引导密钥扩展元数据
+	Metadata []byte `json:"metadata"`
+	// 接入引导密钥创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 接入引导密钥最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Runtime Agent 上报的 Provider 与工作区能力表
+type RuntimeCapability struct {
+	// Runtime 能力主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// Runtime 节点 UUID
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// Provider 类型，例如 claude-code、opencode、codex
+	ProviderType string `json:"provider_type"`
+	// Provider 版本
+	ProviderVersion pgtype.Text `json:"provider_version"`
+	// Provider 可执行文件路径
+	BinaryPath pgtype.Text `json:"binary_path"`
+	// Provider 当前是否可用
+	Available bool `json:"available"`
+	// Runtime 工作区根目录
+	WorkspaceBaseDir pgtype.Text `json:"workspace_base_dir"`
+	// Runtime 上报的容量信息
+	Capacity []byte `json:"capacity"`
+	// Runtime 能力标签，用于后续选择器匹配
+	Labels []byte `json:"labels"`
+	// Provider 能力健康状态
+	HealthStatus string `json:"health_status"`
+	// Runtime 能力扩展元数据
+	Metadata []byte `json:"metadata"`
+	// Runtime 能力最近上报时间
+	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
+	// Runtime 能力禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// Runtime 能力归档时间
+	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
+	// Runtime 能力首次上报时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// Runtime 能力最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Runtime Agent 接入审批状态表
+type RuntimeEnrollment struct {
+	// Runtime 接入记录主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// Runtime 节点 UUID
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// 用于发起接入的引导密钥 ID
+	BootstrapKeyID uuid.NullUUID `json:"bootstrap_key_id"`
+	// 接入审批状态：pending、approved、rejected 或 revoked
+	Status string `json:"status"`
+	// Runtime hello 上报的接入请求快照
+	RequestPayload []byte `json:"request_payload"`
+	// 批准接入的用户 ID
+	ApprovedBy uuid.NullUUID `json:"approved_by"`
+	// 批准接入时间
+	ApprovedAt pgtype.Timestamptz `json:"approved_at"`
+	// 拒绝接入的用户 ID
+	RejectedBy uuid.NullUUID `json:"rejected_by"`
+	// 拒绝接入时间
+	RejectedAt pgtype.Timestamptz `json:"rejected_at"`
+	// 拒绝接入原因
+	RejectReason pgtype.Text `json:"reject_reason"`
+	// 撤销接入的用户 ID
+	RevokedBy uuid.NullUUID `json:"revoked_by"`
+	// 撤销接入时间
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+	// 撤销接入原因
+	RevokeReason pgtype.Text `json:"revoke_reason"`
+	// Runtime 最近一次 hello 时间
+	LastHelloAt pgtype.Timestamptz `json:"last_hello_at"`
+	// 接入记录创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 接入记录最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Runtime 任务租约表
 type RuntimeLease struct {
 	// 租约主键 UUID
@@ -190,6 +444,34 @@ type RuntimeNodeScope struct {
 	// 范围创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 范围最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Runtime Agent 短期会话表
+type RuntimeSession struct {
+	// Runtime 会话主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// Runtime 节点 UUID
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// 关联的 Runtime 接入记录 ID
+	EnrollmentID uuid.NullUUID `json:"enrollment_id"`
+	// 短期 Runtime 会话 token 的确定性查找哈希
+	TokenLookupHash string `json:"token_lookup_hash"`
+	// 短期 Runtime 会话 token 的安全校验哈希
+	TokenSecretHash string `json:"token_secret_hash"`
+	// 短期 Runtime 会话过期时间
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	// Runtime 会话最近访问时间
+	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
+	// Runtime 会话撤销时间
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+	// Runtime 会话撤销原因
+	RevokedReason pgtype.Text `json:"revoked_reason"`
+	// Runtime 会话创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// Runtime 会话最后更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 

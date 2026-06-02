@@ -250,6 +250,350 @@ paths:
                 $ref: "#/components/schemas/RuntimeNode"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/runtime/enrollments/hello:
+    post:
+      operationId: runtimeEnrollmentHello
+      summary: Create or refresh a Runtime Agent enrollment hello
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeEnrollmentHelloRequest"
+      responses:
+        "200":
+          description: Enrollment hello accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeEnrollmentHelloResponse"
+  /api/v1/runtime/enrollments:
+    get:
+      operationId: listRuntimeEnrollments
+      summary: List Runtime Agent enrollments
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/RuntimeEnrollmentStatus"
+      responses:
+        "200":
+          description: Runtime enrollment list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RuntimeEnrollment"
+  /api/v1/runtime/enrollments/{enrollmentId}/approve:
+    post:
+      operationId: approveRuntimeEnrollment
+      summary: Approve a pending Runtime Agent enrollment
+      parameters:
+        - $ref: "#/components/parameters/EnrollmentId"
+      responses:
+        "200":
+          description: Runtime enrollment approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeEnrollment"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/runtime/enrollments/{enrollmentId}/reject:
+    post:
+      operationId: rejectRuntimeEnrollment
+      summary: Reject a pending Runtime Agent enrollment
+      parameters:
+        - $ref: "#/components/parameters/EnrollmentId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeEnrollmentDecisionRequest"
+      responses:
+        "200":
+          description: Runtime enrollment rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeEnrollment"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/runtime/enrollments/{enrollmentId}/revoke:
+    post:
+      operationId: revokeRuntimeEnrollment
+      summary: Revoke an approved Runtime Agent enrollment
+      parameters:
+        - $ref: "#/components/parameters/EnrollmentId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeEnrollmentDecisionRequest"
+      responses:
+        "200":
+          description: Runtime enrollment revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeEnrollment"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/runtime/sessions/{sessionId}/renew:
+    post:
+      operationId: renewRuntimeSession
+      summary: Renew a short-lived Runtime Agent session
+      parameters:
+        - $ref: "#/components/parameters/RuntimeSessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenewRuntimeSessionRequest"
+      responses:
+        "200":
+          description: Runtime session renewed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeSession"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/runtime/sessions/{sessionId}/revoke:
+    post:
+      operationId: revokeRuntimeSession
+      summary: Revoke a short-lived Runtime Agent session
+      parameters:
+        - $ref: "#/components/parameters/RuntimeSessionId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeRuntimeSessionRequest"
+      responses:
+        "200":
+          description: Runtime session revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeSession"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/runtime/nodes/{nodeId}/capabilities:
+    get:
+      operationId: listRuntimeCapabilitiesForNode
+      summary: List capabilities reported by a Runtime Agent node
+      parameters:
+        - $ref: "#/components/parameters/NodeId"
+      responses:
+        "200":
+          description: Runtime capability list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RuntimeCapability"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: upsertRuntimeCapabilities
+      summary: Upsert capabilities reported by a Runtime Agent node
+      parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
+        - $ref: "#/components/parameters/NodeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeCapabilityReportRequest"
+      responses:
+        "200":
+          description: Runtime capabilities accepted
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RuntimeCapability"
+  /api/v1/digital-employees:
+    get:
+      operationId: listDigitalEmployees
+      summary: List digital employees
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/DigitalEmployeeStatus"
+      responses:
+        "200":
+          description: Digital employee list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DigitalEmployee"
+    post:
+      operationId: createDigitalEmployee
+      summary: Create a digital employee draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDigitalEmployeeRequest"
+      responses:
+        "201":
+          description: Digital employee created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployee"
+  /api/v1/digital-employees/{employeeId}:
+    get:
+      operationId: getDigitalEmployee
+      summary: Get a digital employee
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Digital employee
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployee"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/status:
+    put:
+      operationId: updateDigitalEmployeeStatus
+      summary: Update a digital employee status
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDigitalEmployeeStatusRequest"
+      responses:
+        "200":
+          description: Digital employee status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployee"
+  /api/v1/digital-employees/{employeeId}/execution-instance:
+    get:
+      operationId: getDigitalEmployeeExecutionInstance
+      summary: Get the digital employee execution instance
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Digital employee execution instance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeExecutionInstance"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: upsertDigitalEmployeeExecutionInstance
+      summary: Create or update the unique digital employee execution instance
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertDigitalEmployeeExecutionInstanceRequest"
+      responses:
+        "200":
+          description: Digital employee execution instance saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeExecutionInstance"
+  /api/v1/digital-employees/{employeeId}/provider-sessions:
+    get:
+      operationId: listProviderSessionsForDigitalEmployee
+      summary: List provider sessions for a digital employee
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Provider session list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProviderSession"
+    post:
+      operationId: createProviderSessionForDigitalEmployee
+      summary: Create a provider session mapping for a digital employee
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProviderSessionRequest"
+      responses:
+        "201":
+          description: Provider session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderSession"
+  /api/v1/provider-sessions/{providerSessionId}/events:
+    get:
+      operationId: listProviderSessionEvents
+      summary: List provider session events
+      parameters:
+        - $ref: "#/components/parameters/ProviderSessionId"
+      responses:
+        "200":
+          description: Provider session event list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProviderSessionEvent"
+    post:
+      operationId: appendProviderSessionEvent
+      summary: Append a provider session event reported by Runtime Agent
+      parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
+        - $ref: "#/components/parameters/ProviderSessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppendProviderSessionEventRequest"
+      responses:
+        "202":
+          description: Provider session event accepted
 components:
   parameters:
     Limit:
@@ -268,6 +612,34 @@ components:
         minimum: 0
     TaskId:
       name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EnrollmentId:
+      name: enrollmentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RuntimeSessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EmployeeId:
+      name: employeeId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ProviderSessionId:
+      name: providerSessionId
       in: path
       required: true
       schema:
@@ -472,6 +844,586 @@ components:
           format: int32
         status:
           type: string
+    RuntimeEnrollmentStatus:
+      type: string
+      enum:
+        - pending
+        - approved
+        - rejected
+        - revoked
+    RuntimeEnrollment:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - runtime_node_id
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        runtime_node_id:
+          type: string
+          format: uuid
+        bootstrap_key_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/RuntimeEnrollmentStatus"
+        request_payload:
+          type: object
+          additionalProperties: true
+        approved_by:
+          type: string
+          format: uuid
+        approved_at:
+          type: string
+          format: date-time
+        rejected_by:
+          type: string
+          format: uuid
+        rejected_at:
+          type: string
+          format: date-time
+        reject_reason:
+          type: string
+        revoked_by:
+          type: string
+          format: uuid
+        revoked_at:
+          type: string
+          format: date-time
+        revoke_reason:
+          type: string
+        last_hello_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    RuntimeEnrollmentHelloRequest:
+      type: object
+      required:
+        - node_id
+        - bootstrap_key
+        - name
+      properties:
+        node_id:
+          type: string
+        bootstrap_key:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        supported_providers:
+          type: array
+          items:
+            type: string
+        capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeCapabilityInput"
+        metadata:
+          type: object
+          additionalProperties: true
+    RuntimeEnrollmentHelloResponse:
+      type: object
+      required:
+        - enrollment
+      properties:
+        enrollment:
+          $ref: "#/components/schemas/RuntimeEnrollment"
+        session:
+          $ref: "#/components/schemas/RuntimeSession"
+        session_token:
+          type: string
+          description: Short-lived token returned only after enrollment is approved.
+    RuntimeEnrollmentDecisionRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+    RuntimeSession:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - runtime_node_id
+        - expires_at
+        - last_seen_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        runtime_node_id:
+          type: string
+          format: uuid
+        enrollment_id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+        revoked_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    RenewRuntimeSessionRequest:
+      type: object
+      required:
+        - expires_at
+      properties:
+        expires_at:
+          type: string
+          format: date-time
+    RevokeRuntimeSessionRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+    RuntimeCapabilityInput:
+      type: object
+      required:
+        - provider_type
+        - available
+        - health_status
+      properties:
+        provider_type:
+          type: string
+        provider_version:
+          type: string
+        binary_path:
+          type: string
+        available:
+          type: boolean
+        workspace_base_dir:
+          type: string
+        capacity:
+          type: object
+          additionalProperties: true
+        labels:
+          type: object
+          additionalProperties: true
+        health_status:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    RuntimeCapability:
+      allOf:
+        - $ref: "#/components/schemas/RuntimeCapabilityInput"
+        - type: object
+          required:
+            - id
+            - tenant_id
+            - runtime_node_id
+          properties:
+            id:
+              type: string
+              format: uuid
+            tenant_id:
+              type: string
+              format: uuid
+            runtime_node_id:
+              type: string
+              format: uuid
+            last_seen_at:
+              type: string
+              format: date-time
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+    RuntimeCapabilityReportRequest:
+      type: object
+      required:
+        - capabilities
+      properties:
+        capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeCapabilityInput"
+    DigitalEmployeeStatus:
+      type: string
+      enum:
+        - draft
+        - ready
+        - active
+        - disabled
+        - error
+    DigitalEmployee:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - name
+        - role
+        - status
+        - permission_policy
+        - context_policy
+        - approval_policy
+        - risk_level
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        role:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/DigitalEmployeeStatus"
+        permission_policy:
+          type: object
+          additionalProperties: true
+        context_policy:
+          type: object
+          additionalProperties: true
+        approval_policy:
+          type: object
+          additionalProperties: true
+        risk_level:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        disabled_at:
+          type: string
+          format: date-time
+        archived_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateDigitalEmployeeRequest:
+      type: object
+      required:
+        - name
+        - role
+      properties:
+        team_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        role:
+          type: string
+        description:
+          type: string
+        permission_policy:
+          type: object
+          additionalProperties: true
+        context_policy:
+          type: object
+          additionalProperties: true
+        approval_policy:
+          type: object
+          additionalProperties: true
+        risk_level:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateDigitalEmployeeStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: "#/components/schemas/DigitalEmployeeStatus"
+    DigitalEmployeeExecutionInstanceStatus:
+      type: string
+      enum:
+        - provisioning
+        - ready
+        - active
+        - disabled
+        - error
+    DigitalEmployeeExecutionInstance:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - digital_employee_id
+        - runtime_node_id
+        - provider_type
+        - agent_home_dir
+        - workspace_policy
+        - session_policy
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        runtime_node_id:
+          type: string
+          format: uuid
+        provider_type:
+          type: string
+        agent_home_dir:
+          type: string
+        workspace_policy:
+          type: object
+          additionalProperties: true
+        session_policy:
+          type: object
+          additionalProperties: true
+        runtime_selector:
+          type: object
+          additionalProperties: true
+        capacity_requirements:
+          type: object
+          additionalProperties: true
+        fallback_policy:
+          type: object
+          additionalProperties: true
+        status:
+          $ref: "#/components/schemas/DigitalEmployeeExecutionInstanceStatus"
+        ready_at:
+          type: string
+          format: date-time
+        disabled_at:
+          type: string
+          format: date-time
+        error_at:
+          type: string
+          format: date-time
+        error_message:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    UpsertDigitalEmployeeExecutionInstanceRequest:
+      type: object
+      required:
+        - runtime_node_id
+        - provider_type
+        - agent_home_dir
+        - workspace_policy
+        - session_policy
+      properties:
+        runtime_node_id:
+          type: string
+          format: uuid
+        provider_type:
+          type: string
+        agent_home_dir:
+          type: string
+        workspace_policy:
+          type: object
+          additionalProperties: true
+        session_policy:
+          type: object
+          additionalProperties: true
+        runtime_selector:
+          type: object
+          additionalProperties: true
+        capacity_requirements:
+          type: object
+          additionalProperties: true
+        fallback_policy:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+    ProviderSession:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - provider_session_id
+        - digital_employee_id
+        - execution_instance_id
+        - runtime_node_id
+        - provider_type
+        - status
+        - recoverable
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        provider_session_id:
+          type: string
+        digital_employee_id:
+          type: string
+          format: uuid
+        execution_instance_id:
+          type: string
+          format: uuid
+        runtime_node_id:
+          type: string
+          format: uuid
+        provider_type:
+          type: string
+        status:
+          type: string
+        recoverable:
+          type: boolean
+        last_active_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: string
+          format: date-time
+        error_message:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateProviderSessionRequest:
+      type: object
+      required:
+        - provider_session_id
+        - execution_instance_id
+        - runtime_node_id
+        - provider_type
+      properties:
+        provider_session_id:
+          type: string
+        execution_instance_id:
+          type: string
+          format: uuid
+        runtime_node_id:
+          type: string
+          format: uuid
+        provider_type:
+          type: string
+        recoverable:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+    ProviderSessionEvent:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - provider_session_id
+        - digital_employee_id
+        - execution_instance_id
+        - runtime_node_id
+        - provider_type
+        - event_type
+        - sequence_number
+        - payload
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        provider_session_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        execution_instance_id:
+          type: string
+          format: uuid
+        runtime_node_id:
+          type: string
+          format: uuid
+        provider_type:
+          type: string
+        event_type:
+          type: string
+        sequence_number:
+          type: integer
+          format: int32
+        payload:
+          type: object
+          additionalProperties: true
+        raw_payload_ref:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    AppendProviderSessionEventRequest:
+      type: object
+      required:
+        - event_type
+        - sequence_number
+        - payload
+      properties:
+        event_type:
+          type: string
+        sequence_number:
+          type: integer
+          format: int32
+        payload:
+          type: object
+          additionalProperties: true
+        raw_payload_ref:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
     PushTaskEventsRequest:
       type: object
       required:

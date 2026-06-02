@@ -12,12 +12,19 @@ import (
 )
 
 type Querier interface {
+	AppendProviderSessionEvent(ctx context.Context, arg AppendProviderSessionEventParams) (ProviderSessionEvent, error)
+	ApproveRuntimeEnrollment(ctx context.Context, arg ApproveRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
 	CountAuditEvents(ctx context.Context, arg CountAuditEventsParams) (int64, error)
 	CountAuthzDecisionsSince(ctx context.Context, arg CountAuthzDecisionsSinceParams) (CountAuthzDecisionsSinceRow, error)
 	CreateAuditEvent(ctx context.Context, arg CreateAuditEventParams) (AuditEvent, error)
+	CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEmployeeParams) (DigitalEmployee, error)
+	CreateDigitalEmployeeExecutionInstance(ctx context.Context, arg CreateDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
+	CreateProviderSession(ctx context.Context, arg CreateProviderSessionParams) (ProviderSession, error)
+	CreateRuntimeBootstrapKey(ctx context.Context, arg CreateRuntimeBootstrapKeyParams) (RuntimeBootstrapKey, error)
 	CreateRuntimeNode(ctx context.Context, arg CreateRuntimeNodeParams) (RuntimeNode, error)
 	CreateRuntimeNodeScope(ctx context.Context, arg CreateRuntimeNodeScopeParams) (RuntimeNodeScope, error)
+	CreateRuntimeSession(ctx context.Context, arg CreateRuntimeSessionParams) (RuntimeSession, error)
 	CreateRuntimeToken(ctx context.Context, arg CreateRuntimeTokenParams) (AuthRuntimeToken, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (AuthSession, error)
 	CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error)
@@ -28,6 +35,8 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error)
 	CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogParams) (WebLoginLog, error)
 	CreateWebOperationLog(ctx context.Context, arg CreateWebOperationLogParams) (WebOperationLog, error)
+	DeleteDigitalEmployee(ctx context.Context, arg DeleteDigitalEmployeeParams) error
+	DeleteDigitalEmployeeExecutionInstance(ctx context.Context, arg DeleteDigitalEmployeeExecutionInstanceParams) error
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteRuntimeNode(ctx context.Context, nodeID string) error
@@ -36,11 +45,21 @@ type Querier interface {
 	DeleteTask(ctx context.Context, arg DeleteTaskParams) error
 	DeleteTaskArtifact(ctx context.Context, arg DeleteTaskArtifactParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	GetActiveRuntimeBootstrapKeyByHash(ctx context.Context, arg GetActiveRuntimeBootstrapKeyByHashParams) (RuntimeBootstrapKey, error)
+	GetActiveRuntimeSessionByLookupHash(ctx context.Context, arg GetActiveRuntimeSessionByLookupHashParams) (RuntimeSession, error)
 	GetActiveTeamMembership(ctx context.Context, arg GetActiveTeamMembershipParams) (TenantMember, error)
 	GetActiveTenantMembership(ctx context.Context, arg GetActiveTenantMembershipParams) (TenantMember, error)
 	GetAuditEvent(ctx context.Context, id uuid.UUID) (AuditEvent, error)
+	GetDigitalEmployee(ctx context.Context, arg GetDigitalEmployeeParams) (DigitalEmployee, error)
+	GetDigitalEmployeeExecutionInstance(ctx context.Context, arg GetDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
+	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, arg GetDigitalEmployeeExecutionInstanceByEmployeeIDParams) (DigitalEmployeeExecutionInstance, error)
+	GetLatestProviderSessionEventSequence(ctx context.Context, arg GetLatestProviderSessionEventSequenceParams) (int32, error)
 	GetLatestTaskEventSequence(ctx context.Context, arg GetLatestTaskEventSequenceParams) (int32, error)
 	GetLatestTaskRun(ctx context.Context, arg GetLatestTaskRunParams) (TaskRun, error)
+	GetProviderSession(ctx context.Context, arg GetProviderSessionParams) (ProviderSession, error)
+	GetProviderSessionByExternalID(ctx context.Context, arg GetProviderSessionByExternalIDParams) (ProviderSession, error)
+	GetRuntimeCapability(ctx context.Context, arg GetRuntimeCapabilityParams) (RuntimeCapability, error)
+	GetRuntimeEnrollmentByNodeID(ctx context.Context, arg GetRuntimeEnrollmentByNodeIDParams) (RuntimeEnrollment, error)
 	GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNode, error)
 	GetRuntimeToken(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
@@ -56,9 +75,15 @@ type Querier interface {
 	ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]AuditEvent, error)
 	ListAuthzDecisions(ctx context.Context, arg ListAuthzDecisionsParams) ([]WebOperationLog, error)
 	ListAuthzMembers(ctx context.Context, arg ListAuthzMembersParams) ([]ListAuthzMembersRow, error)
+	ListDigitalEmployeeExecutionInstances(ctx context.Context, arg ListDigitalEmployeeExecutionInstancesParams) ([]DigitalEmployeeExecutionInstance, error)
+	ListDigitalEmployees(ctx context.Context, arg ListDigitalEmployeesParams) ([]DigitalEmployee, error)
 	ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error)
+	ListProviderSessionEvents(ctx context.Context, arg ListProviderSessionEventsParams) ([]ProviderSessionEvent, error)
+	ListProviderSessionsForDigitalEmployee(ctx context.Context, arg ListProviderSessionsForDigitalEmployeeParams) ([]ProviderSession, error)
+	ListRuntimeCapabilities(ctx context.Context, arg ListRuntimeCapabilitiesParams) ([]RuntimeCapability, error)
+	ListRuntimeEnrollments(ctx context.Context, arg ListRuntimeEnrollmentsParams) ([]RuntimeEnrollment, error)
 	ListRuntimeNodes(ctx context.Context, arg ListRuntimeNodesParams) ([]RuntimeNode, error)
 	ListRuntimeNodesWithScopes(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeNodesWithScopesRow, error)
 	ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error)
@@ -70,7 +95,16 @@ type Querier interface {
 	ListTopDeniedAuthzActionsSince(ctx context.Context, arg ListTopDeniedAuthzActionsSinceParams) ([]ListTopDeniedAuthzActionsSinceRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error)
 	ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error)
+	RejectRuntimeEnrollment(ctx context.Context, arg RejectRuntimeEnrollmentParams) (RuntimeEnrollment, error)
+	RenewRuntimeSession(ctx context.Context, arg RenewRuntimeSessionParams) (RuntimeSession, error)
+	RevokeRuntimeBootstrapKey(ctx context.Context, arg RevokeRuntimeBootstrapKeyParams) (RuntimeBootstrapKey, error)
+	RevokeRuntimeEnrollment(ctx context.Context, arg RevokeRuntimeEnrollmentParams) (RuntimeEnrollment, error)
+	RevokeRuntimeSession(ctx context.Context, arg RevokeRuntimeSessionParams) (RuntimeSession, error)
 	RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNodeCoversTaskScopeParams) (bool, error)
+	TouchRuntimeSessionLastSeen(ctx context.Context, arg TouchRuntimeSessionLastSeenParams) (RuntimeSession, error)
+	UpdateDigitalEmployeeExecutionInstanceStatus(ctx context.Context, arg UpdateDigitalEmployeeExecutionInstanceStatusParams) (DigitalEmployeeExecutionInstance, error)
+	UpdateDigitalEmployeeStatus(ctx context.Context, arg UpdateDigitalEmployeeStatusParams) (DigitalEmployee, error)
+	UpdateProviderSessionStatus(ctx context.Context, arg UpdateProviderSessionStatusParams) (ProviderSession, error)
 	UpdateRuntimeNodeHeartbeat(ctx context.Context, arg UpdateRuntimeNodeHeartbeatParams) (RuntimeNode, error)
 	UpdateRuntimeNodeLoad(ctx context.Context, arg UpdateRuntimeNodeLoadParams) (RuntimeNode, error)
 	UpdateRuntimeNodeScopeStatus(ctx context.Context, arg UpdateRuntimeNodeScopeStatusParams) (RuntimeNodeScope, error)
@@ -83,6 +117,8 @@ type Querier interface {
 	UpdateTaskWorkspace(ctx context.Context, arg UpdateTaskWorkspaceParams) (Task, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUser, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error)
+	UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntimeCapabilityParams) (RuntimeCapability, error)
+	UpsertRuntimeEnrollment(ctx context.Context, arg UpsertRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	ValidateRuntimeToken(ctx context.Context, arg ValidateRuntimeTokenParams) (AuthRuntimeToken, error)
 }
 
