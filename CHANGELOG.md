@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### 团队治理后端 (2026-06-03)
+
+- Control Plane 新增租户团队领域服务、PostgreSQL repository 和 API 路由，支持团队负责人、共享治理配置版本创建与当前版本查询；相关路由由 Web 控制台会话认证保护，并统一经过 `runtime_scope.manage` 授权校验。
+
 #### Web 液态玻璃组件化 (2026-06-03)
 
 - 新增 `apps/web/src/components/superteam` 项目级设计组件层，沉淀 `LiquidCard`、`LiquidPill`、`PrimaryLiquidButton`、`SemanticIconTile`、`StatusBadge` 和 `MetricCard`。

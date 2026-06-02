@@ -12,6 +12,7 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/tenant"
 )
 
 type Server struct {
@@ -24,6 +25,7 @@ type Server struct {
 	authorizer         authz.Authorizer
 	authzCenterHandler *authzcenter.HTTPHandler
 	employeeHandler    *employee.HTTPHandler
+	tenantHandler      *tenant.HTTPHandler
 }
 
 func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
@@ -106,6 +108,14 @@ func (s *Server) SetEmployeeHandler(employeeHandler *employee.HTTPHandler) {
 	s.registerRoutes()
 }
 
+func (s *Server) SetTenantHandler(tenantHandler *tenant.HTTPHandler) {
+	s.tenantHandler = tenantHandler
+	if tenantHandler != nil {
+		tenantHandler.SetAuthorizer(s.authorizer)
+	}
+	s.registerRoutes()
+}
+
 func (s *Server) registerRoutes() {
 	s.router = chi.NewRouter()
 	s.router.Use(middleware.Recovery())
@@ -140,6 +150,17 @@ func (s *Server) registerRoutes() {
 				r.Put("/digital-employees/{employeeId}/status", s.employeeHandler.UpdateDigitalEmployeeStatus)
 				r.Get("/digital-employees/{employeeId}/execution-instance", s.employeeHandler.GetDigitalEmployeeExecutionInstance)
 				r.Put("/digital-employees/{employeeId}/execution-instance", s.employeeHandler.UpsertDigitalEmployeeExecutionInstance)
+			})
+		}
+
+		if s.tenantHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/teams", s.tenantHandler.ListTeams)
+				r.Post("/teams", s.tenantHandler.CreateTeam)
+				r.Get("/teams/{teamId}", s.tenantHandler.GetTeam)
+				r.Post("/teams/{teamId}/config-revisions", s.tenantHandler.CreateTeamConfigRevision)
+				r.Get("/teams/{teamId}/config-revisions/current", s.tenantHandler.GetCurrentTeamConfigRevision)
 			})
 		}
 

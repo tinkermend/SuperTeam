@@ -1,0 +1,346 @@
+package tenant
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+func TestCreateTeamRequiresHumanOwner(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID: uuid.New(),
+		Slug:     "engineering",
+		Name:     "Engineering",
+	})
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input error, got %v", err)
+	}
+	if repo.createTeamCalled {
+		t.Fatalf("expected invalid team not to reach repository")
+	}
+}
+
+func TestCreateTeamConfigRevisionDefaultsActiveStatus(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	approvedBy := uuid.New()
+	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         tenantID,
+		Slug:             "engineering",
+		Name:             "Engineering",
+		HumanOwnerUserID: &ownerID,
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+
+	revision, err := svc.CreateConfigRevision(context.Background(), CreateTeamConfigRevisionRequest{
+		TenantID:                    tenantID,
+		TeamID:                      team.ID,
+		Constitution:                map[string]any{"principle": "review before execute"},
+		CapabilityPolicy:            map[string]any{"providers": []any{"codex"}},
+		ContextPolicy:               map[string]any{"sources": []any{"task"}},
+		ApprovalPolicy:              map[string]any{"risk": "high"},
+		ArtifactContract:            map[string]any{"required": []any{"handoff"}},
+		InternalCollaborationPolicy: map[string]any{"mode": "structured"},
+		RuntimeScopePolicy:          map[string]any{"scope": "team"},
+		HumanOwnerUserID:            &ownerID,
+		ApprovedBy:                  &approvedBy,
+	})
+	if err != nil {
+		t.Fatalf("create config revision: %v", err)
+	}
+
+	if revision.Status != TeamConfigRevisionStatusActive {
+		t.Fatalf("expected active status, got %q", revision.Status)
+	}
+	if revision.RevisionNumber != 1 {
+		t.Fatalf("expected revision number 1, got %d", revision.RevisionNumber)
+	}
+	if revision.ApprovedAt == nil || revision.ApprovedAt.IsZero() {
+		t.Fatalf("expected approved_at to default to current time")
+	}
+	if revision.ApprovedAt.Location() != time.UTC {
+		t.Fatalf("expected approved_at in UTC, got %s", revision.ApprovedAt.Location())
+	}
+	if repo.createdRevision.Status != TeamConfigRevisionStatusActive {
+		t.Fatalf("expected active status sent to repository, got %q", repo.createdRevision.Status)
+	}
+	if repo.createdRevision.RevisionNumber != 1 {
+		t.Fatalf("expected repository revision number 1, got %d", repo.createdRevision.RevisionNumber)
+	}
+	repo.createdRevision.Constitution["principle"] = "mutated"
+	if revision.Constitution["principle"] != "review before execute" {
+		t.Fatalf("expected revision policy maps to be cloned, got %#v", revision.Constitution)
+	}
+}
+
+func TestCreateTeamConfigRevisionRequiresExistingTeam(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	ownerID := uuid.New()
+	tenantID := uuid.New()
+	otherTenantID := uuid.New()
+	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         tenantID,
+		Slug:             "engineering",
+		Name:             "Engineering",
+		HumanOwnerUserID: &ownerID,
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		tenantID uuid.UUID
+		teamID   uuid.UUID
+	}{
+		{name: "missing team", tenantID: tenantID, teamID: uuid.New()},
+		{name: "wrong tenant", tenantID: otherTenantID, teamID: team.ID},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			beforeInserts := repo.createRevisionCalls
+			_, err := svc.CreateConfigRevision(context.Background(), CreateTeamConfigRevisionRequest{
+				TenantID:         tt.tenantID,
+				TeamID:           tt.teamID,
+				HumanOwnerUserID: &ownerID,
+			})
+			if !errors.Is(err, ErrNotFound) {
+				t.Fatalf("expected not found error, got %v", err)
+			}
+			if repo.createRevisionCalls != beforeInserts {
+				t.Fatalf("expected missing/wrong-tenant team not to insert revision")
+			}
+		})
+	}
+}
+
+func TestCreateTeamConfigRevisionRejectsSecondActiveBeforeInsert(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         tenantID,
+		Slug:             "engineering",
+		Name:             "Engineering",
+		HumanOwnerUserID: &ownerID,
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	if _, err := svc.CreateConfigRevision(context.Background(), CreateTeamConfigRevisionRequest{
+		TenantID:         tenantID,
+		TeamID:           team.ID,
+		HumanOwnerUserID: &ownerID,
+	}); err != nil {
+		t.Fatalf("create first active revision: %v", err)
+	}
+	beforeInserts := repo.createRevisionCalls
+
+	_, err = svc.CreateConfigRevision(context.Background(), CreateTeamConfigRevisionRequest{
+		TenantID:         tenantID,
+		TeamID:           team.ID,
+		HumanOwnerUserID: &ownerID,
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for second active revision, got %v", err)
+	}
+	if repo.createRevisionCalls != beforeInserts {
+		t.Fatalf("expected second active revision not to be inserted")
+	}
+}
+
+func TestCreateTeamConfigRevisionDraftHasNoApprovalMetadata(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	approvedBy := uuid.New()
+	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         tenantID,
+		Slug:             "engineering",
+		Name:             "Engineering",
+		HumanOwnerUserID: &ownerID,
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+
+	revision, err := svc.CreateConfigRevision(context.Background(), CreateTeamConfigRevisionRequest{
+		TenantID:         tenantID,
+		TeamID:           team.ID,
+		HumanOwnerUserID: &ownerID,
+		Status:           TeamConfigRevisionStatusDraft,
+		ApprovedBy:       &approvedBy,
+	})
+	if err != nil {
+		t.Fatalf("create draft revision: %v", err)
+	}
+	if revision.Status != TeamConfigRevisionStatusDraft {
+		t.Fatalf("expected draft status, got %q", revision.Status)
+	}
+	if revision.ApprovedAt != nil {
+		t.Fatalf("expected draft revision approved_at to be nil, got %v", revision.ApprovedAt)
+	}
+	if revision.ApprovedBy != nil {
+		t.Fatalf("expected draft revision approved_by to be nil, got %v", revision.ApprovedBy)
+	}
+	if repo.createdRevision.ApprovedAt != nil || repo.createdRevision.ApprovedBy != nil {
+		t.Fatalf("expected draft approval metadata cleared before repository insert, got approved_at=%v approved_by=%v", repo.createdRevision.ApprovedAt, repo.createdRevision.ApprovedBy)
+	}
+}
+
+func TestListTeamsRejectsNegativeOffset(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = svc.ListTeams(context.Background(), ListTeamsRequest{
+		TenantID: uuid.New(),
+		Offset:   -1,
+	})
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for negative offset, got %v", err)
+	}
+	if repo.listTeamsCalled {
+		t.Fatalf("expected invalid list request not to reach repository")
+	}
+}
+
+type memoryRepository struct {
+	teams               map[uuid.UUID]TeamRecord
+	revisions           map[uuid.UUID]TeamConfigRevisionRecord
+	createTeamCalled    bool
+	listTeamsCalled     bool
+	createRevisionCalls int
+	createdRevision     CreateTeamConfigRevisionParams
+}
+
+func newMemoryRepository() *memoryRepository {
+	return &memoryRepository{
+		teams:     map[uuid.UUID]TeamRecord{},
+		revisions: map[uuid.UUID]TeamConfigRevisionRecord{},
+	}
+}
+
+func (r *memoryRepository) CreateTeam(_ context.Context, params CreateTeamParams) (TeamRecord, error) {
+	r.createTeamCalled = true
+	now := time.Now().UTC()
+	record := TeamRecord{
+		ID:               uuid.New(),
+		TenantID:         params.TenantID,
+		Slug:             params.Slug,
+		Name:             params.Name,
+		Status:           params.Status,
+		HumanOwnerUserID: params.HumanOwnerUserID,
+		Metadata:         cloneMap(params.Metadata),
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	r.teams[record.ID] = record
+	return record, nil
+}
+
+func (r *memoryRepository) ListTeams(_ context.Context, params ListTeamsParams) ([]TeamRecord, error) {
+	r.listTeamsCalled = true
+	records := make([]TeamRecord, 0, len(r.teams))
+	for _, record := range r.teams {
+		if record.TenantID == params.TenantID {
+			records = append(records, record)
+		}
+	}
+	return records, nil
+}
+
+func (r *memoryRepository) GetTeam(_ context.Context, tenantID, teamID uuid.UUID) (TeamRecord, error) {
+	record, ok := r.teams[teamID]
+	if !ok || record.TenantID != tenantID {
+		return TeamRecord{}, ErrNotFound
+	}
+	return record, nil
+}
+
+func (r *memoryRepository) CreateTeamConfigRevision(_ context.Context, params CreateTeamConfigRevisionParams) (TeamConfigRevisionRecord, error) {
+	r.createRevisionCalls++
+	r.createdRevision = params
+	now := time.Now().UTC()
+	record := TeamConfigRevisionRecord{
+		ID:                          uuid.New(),
+		TenantID:                    params.TenantID,
+		TeamID:                      params.TeamID,
+		RevisionNumber:              params.RevisionNumber,
+		Constitution:                cloneMap(params.Constitution),
+		CapabilityPolicy:            cloneMap(params.CapabilityPolicy),
+		ContextPolicy:               cloneMap(params.ContextPolicy),
+		ApprovalPolicy:              cloneMap(params.ApprovalPolicy),
+		ArtifactContract:            cloneMap(params.ArtifactContract),
+		InternalCollaborationPolicy: cloneMap(params.InternalCollaborationPolicy),
+		RuntimeScopePolicy:          cloneMap(params.RuntimeScopePolicy),
+		HumanOwnerUserID:            params.HumanOwnerUserID,
+		Status:                      params.Status,
+		ApprovedBy:                  params.ApprovedBy,
+		ApprovedAt:                  cloneTimePtr(params.ApprovedAt),
+		CreatedAt:                   now,
+		UpdatedAt:                   now,
+	}
+	r.revisions[record.ID] = record
+	return record, nil
+}
+
+func (r *memoryRepository) GetTeamConfigRevision(_ context.Context, tenantID, revisionID uuid.UUID) (TeamConfigRevisionRecord, error) {
+	record, ok := r.revisions[revisionID]
+	if !ok || record.TenantID != tenantID {
+		return TeamConfigRevisionRecord{}, ErrNotFound
+	}
+	return record, nil
+}
+
+func (r *memoryRepository) GetCurrentTeamConfigRevision(_ context.Context, tenantID, teamID uuid.UUID) (TeamConfigRevisionRecord, error) {
+	for _, record := range r.revisions {
+		if record.TenantID == tenantID && record.TeamID == teamID && record.Status == TeamConfigRevisionStatusActive {
+			return record, nil
+		}
+	}
+	return TeamConfigRevisionRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) GetNextTeamConfigRevisionNumber(_ context.Context, tenantID, teamID uuid.UUID) (int32, error) {
+	next := int32(1)
+	for _, record := range r.revisions {
+		if record.TenantID == tenantID && record.TeamID == teamID && record.RevisionNumber >= next {
+			next = record.RevisionNumber + 1
+		}
+	}
+	return next, nil
+}

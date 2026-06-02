@@ -1598,11 +1598,15 @@ func routeLogin(t *testing.T, server *Server, username, password string) *http.C
 
 type routeAuthorizer struct {
 	allowed bool
+	err     error
 	checks  []authz.CheckRequest
 }
 
 func (a *routeAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (authz.Decision, error) {
 	a.checks = append(a.checks, req)
+	if a.err != nil {
+		return authz.Decision{}, a.err
+	}
 	if a.allowed {
 		return authz.Decision{Allowed: true, Reason: authz.ReasonAllowed, MatchedRule: "test.allow"}, nil
 	}
