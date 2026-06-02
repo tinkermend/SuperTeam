@@ -1,7 +1,9 @@
 use std::process::Command;
 use superteam_runtime_agent::config::{RuntimeConfig, RuntimeConfigOverrides};
-use superteam_runtime_agent::controlplane::ControlPlaneClient;
-use superteam_runtime_agent::daemon::{RuntimeDaemon, spawn_session_renewal_loop};
+use superteam_runtime_agent::controlplane::{ControlPlaneClient, RuntimeCapabilityInput};
+use superteam_runtime_agent::daemon::{
+    RuntimeDaemon, connect_runtime_session, spawn_session_renewal_loop,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -321,4 +323,123 @@ Content-Length: 396
     );
     assert!(request.contains("authorization: Bearer session-token"));
     assert!(request.contains("x-node-id: node-1"));
+}
+
+#[tokio::test]
+async fn daemon_connect_runtime_session_reports_capabilities_after_approved_hello() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (request_tx, request_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let (mut hello_socket, _) = listener.accept().await.unwrap();
+        let mut hello_buffer = vec![0; 4096];
+        let hello_bytes = hello_socket.read(&mut hello_buffer).await.unwrap();
+        let hello_request = String::from_utf8_lossy(&hello_buffer[..hello_bytes]).to_string();
+        write_json_response(
+            &mut hello_socket,
+            serde_json::json!({
+                "enrollment": {
+                    "id": "11111111-1111-4111-8111-111111111111",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "bootstrap_key_id": "44444444-4444-4444-8444-444444444444",
+                    "status": "approved",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                    "expires_at": "2999-06-02T00:00:00Z",
+                    "last_seen_at": "2026-06-02T00:00:00Z",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session_token": "session-token"
+            }),
+        )
+        .await;
+
+        let (mut capabilities_socket, _) = listener.accept().await.unwrap();
+        let mut capabilities_buffer = vec![0; 4096];
+        let capabilities_bytes = capabilities_socket
+            .read(&mut capabilities_buffer)
+            .await
+            .unwrap();
+        let capabilities_request =
+            String::from_utf8_lossy(&capabilities_buffer[..capabilities_bytes]).to_string();
+        write_json_response(&mut capabilities_socket, serde_json::json!([])).await;
+
+        let _ = request_tx.send((hello_request, capabilities_request));
+    });
+
+    let mut config = RuntimeConfig::new("node-1").expect("valid config");
+    config.runtime.control_plane_url = format!("http://{}", addr);
+    config.runtime.bootstrap_key = "bootstrap-key".to_string();
+    let capabilities = vec![RuntimeCapabilityInput {
+        capability_type: "provider".to_string(),
+        capability_key: "claude-code".to_string(),
+        provider_type: "claude-code".to_string(),
+        provider_version: None,
+        binary_path: Some("claude".to_string()),
+        available: true,
+        workspace_base_dir: None,
+        capacity: None,
+        labels: None,
+        status: "available".to_string(),
+        details: None,
+        health_status: "configured".to_string(),
+        metadata: None,
+    }];
+
+    let client = connect_runtime_session(&config, capabilities)
+        .await
+        .expect("connect runtime session")
+        .expect("approved session client");
+
+    drop(client);
+
+    let (hello_request, capabilities_request) =
+        tokio::time::timeout(std::time::Duration::from_secs(2), request_rx)
+            .await
+            .expect("server should capture requests")
+            .expect("request pair");
+    let hello_line = hello_request.lines().next().unwrap();
+    assert_eq!(
+        hello_line,
+        "POST /api/v1/runtime/enrollments/hello HTTP/1.1"
+    );
+    assert!(hello_request.contains(r#""capabilities":[{"capability_type":"provider""#));
+
+    let capabilities_line = capabilities_request.lines().next().unwrap();
+    assert_eq!(
+        capabilities_line,
+        "PUT /api/v1/runtime/nodes/node-1/capabilities HTTP/1.1"
+    );
+    assert!(capabilities_request.contains("authorization: Bearer session-token"));
+    assert!(capabilities_request.contains("x-node-id: node-1"));
+    let (_, capabilities_body) = capabilities_request
+        .split_once("\r\n\r\n")
+        .expect("capabilities body");
+    let capabilities_body: serde_json::Value =
+        serde_json::from_str(capabilities_body).expect("capabilities json");
+    assert_eq!(
+        capabilities_body["capabilities"][0]["capability_key"],
+        serde_json::json!("claude-code")
+    );
+}
+
+async fn write_json_response(socket: &mut tokio::net::TcpStream, body: serde_json::Value) {
+    let body = body.to_string();
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    socket.write_all(response.as_bytes()).await.unwrap();
 }

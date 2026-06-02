@@ -41,53 +41,10 @@ impl RuntimeDaemon {
     }
 
     pub async fn run(self) -> Result<()> {
-        let bootstrap_client = ControlPlaneClient::new(&self.config.runtime.control_plane_url, "");
-        let supported_providers = build_supported_providers(&self.config);
         let capabilities = build_capabilities(&self.config);
-
-        let hello_req = EnrollHelloRequest {
-            node_id: self.config.runtime.node_id.clone(),
-            name: format!("runtime-{}", self.config.runtime.node_id),
-            supported_providers,
-            max_slots: self.config.runtime.max_concurrent_tasks as i32,
-            bootstrap_key: self.config.runtime.bootstrap_key.clone(),
-            version: Some(env!("CARGO_PKG_VERSION").to_string()),
-            metadata: Some(runtime_metadata()),
-            capabilities,
-        };
-
-        let hello = bootstrap_client.enroll_hello(hello_req).await?;
-        if hello.enrollment.status != EnrollmentStatus::Approved {
-            println!(
-                "runtime-agent node={} enrollment={}; waiting for approval",
-                self.config.runtime.node_id,
-                enrollment_status_label(&hello.enrollment.status)
-            );
+        let Some(client) = connect_runtime_session(&self.config, capabilities).await? else {
             return Ok(());
-        }
-
-        let Some(session_response) = hello.session.as_ref() else {
-            anyhow::bail!("approved runtime enrollment did not return a session");
         };
-        let session = RuntimeSession::new(
-            hello.session_token.unwrap_or_default(),
-            Some(session_response.expires_at.clone()),
-        );
-        if session.is_empty() {
-            anyhow::bail!("approved runtime enrollment did not return a session token");
-        }
-
-        let client = ControlPlaneClient::with_session_token(
-            &self.config.runtime.control_plane_url,
-            &session.token,
-            &self.config.runtime.node_id,
-        );
-        spawn_session_renewal_loop(
-            client.clone(),
-            session_response.id.clone(),
-            session.expires_at.clone(),
-        );
-        println!("Runtime session established");
 
         let heartbeat_client = client.clone();
         let heartbeat_config = self.config.clone();
@@ -100,6 +57,63 @@ impl RuntimeDaemon {
 
         Ok(())
     }
+}
+
+pub async fn connect_runtime_session(
+    config: &RuntimeConfig,
+    capabilities: Vec<RuntimeCapabilityInput>,
+) -> Result<Option<ControlPlaneClient>> {
+    let bootstrap_client = ControlPlaneClient::new(&config.runtime.control_plane_url, "");
+    let supported_providers = build_supported_providers(config);
+
+    let hello_req = EnrollHelloRequest {
+        node_id: config.runtime.node_id.clone(),
+        name: format!("runtime-{}", config.runtime.node_id),
+        supported_providers,
+        max_slots: config.runtime.max_concurrent_tasks as i32,
+        bootstrap_key: config.runtime.bootstrap_key.clone(),
+        version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        metadata: Some(runtime_metadata()),
+        capabilities: capabilities.clone(),
+    };
+
+    let hello = bootstrap_client.enroll_hello(hello_req).await?;
+    if hello.enrollment.status != EnrollmentStatus::Approved {
+        println!(
+            "runtime-agent node={} enrollment={}; waiting for approval",
+            config.runtime.node_id,
+            enrollment_status_label(&hello.enrollment.status)
+        );
+        return Ok(None);
+    }
+
+    let Some(session_response) = hello.session.as_ref() else {
+        anyhow::bail!("approved runtime enrollment did not return a session");
+    };
+    let session = RuntimeSession::new(
+        hello.session_token.unwrap_or_default(),
+        Some(session_response.expires_at.clone()),
+    );
+    if session.is_empty() {
+        anyhow::bail!("approved runtime enrollment did not return a session token");
+    }
+
+    let client = ControlPlaneClient::with_session_token(
+        &config.runtime.control_plane_url,
+        &session.token,
+        &config.runtime.node_id,
+    );
+    spawn_session_renewal_loop(
+        client.clone(),
+        session_response.id.clone(),
+        session.expires_at.clone(),
+    );
+    client
+        .upsert_capabilities(&config.runtime.node_id, capabilities)
+        .await?;
+    println!("Runtime session established");
+
+    Ok(Some(client))
 }
 
 pub fn spawn_session_renewal_loop(
