@@ -305,7 +305,7 @@ type RuntimeCapability struct {
 	ProviderVersion pgtype.Text `json:"provider_version"`
 	// Provider 可执行文件路径
 	BinaryPath pgtype.Text `json:"binary_path"`
-	// Provider 当前是否可用
+	// Provider 当前是否可用；执行实例绑定前必须为可用
 	Available bool `json:"available"`
 	// Runtime 工作区根目录
 	WorkspaceBaseDir pgtype.Text `json:"workspace_base_dir"`

@@ -25,6 +25,7 @@ FROM digital_employee_execution_instances dei
 JOIN digital_employees de
   ON de.id = dei.digital_employee_id
  AND de.tenant_id = dei.tenant_id
+ AND de.status NOT IN ('disabled', 'error')
  AND de.deleted_at IS NULL
  AND de.archived_at IS NULL
 JOIN runtime_nodes rn
@@ -36,6 +37,7 @@ WHERE dei.id = sqlc.arg('execution_instance_id')::uuid
   AND dei.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND dei.runtime_node_id = sqlc.arg('runtime_node_id')::uuid
   AND dei.provider_type = sqlc.arg('provider_type')::varchar
+  AND dei.status NOT IN ('disabled', 'error')
   AND dei.deleted_at IS NULL
 RETURNING *;
 
@@ -109,8 +111,28 @@ INSERT INTO provider_session_events (
     sqlc.narg('raw_event_ref')::text,
     COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
 FROM provider_sessions ps
+JOIN runtime_nodes rn
+  ON rn.id = ps.runtime_node_id
+ AND rn.tenant_id = ps.tenant_id
+ AND rn.node_id = sqlc.arg('node_id')::varchar
+ AND rn.status = 'online'
+ AND rn.disabled_at IS NULL
+ AND rn.archived_at IS NULL
 WHERE ps.id = sqlc.arg('provider_session_id')::uuid
   AND ps.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND EXISTS (
+      SELECT 1
+      FROM runtime_sessions rs
+      JOIN runtime_enrollments re
+        ON re.id = rs.enrollment_id
+       AND re.tenant_id = rs.tenant_id
+       AND re.runtime_node_id = rs.runtime_node_id
+       AND re.status = 'approved'
+      WHERE rs.tenant_id = ps.tenant_id
+        AND rs.runtime_node_id = rn.id
+        AND rs.expires_at > NOW()
+        AND rs.revoked_at IS NULL
+  )
 RETURNING *;
 
 -- name: ListProviderSessionEvents :many

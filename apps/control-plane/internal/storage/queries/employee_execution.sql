@@ -123,11 +123,33 @@ FROM digital_employees de
 JOIN runtime_nodes rn
   ON rn.id = sqlc.arg('runtime_node_id')::uuid
  AND rn.tenant_id = de.tenant_id
+ AND rn.status = 'online'
+ AND rn.disabled_at IS NULL
  AND rn.archived_at IS NULL
 WHERE de.id = sqlc.arg('digital_employee_id')::uuid
   AND de.tenant_id = sqlc.arg('tenant_id')::uuid
   AND de.deleted_at IS NULL
   AND de.archived_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM runtime_enrollments re
+      WHERE re.tenant_id = de.tenant_id
+        AND re.runtime_node_id = rn.id
+        AND re.status = 'approved'
+  )
+  AND EXISTS (
+      SELECT 1
+      FROM runtime_capabilities rc
+      WHERE rc.tenant_id = de.tenant_id
+        AND rc.runtime_node_id = rn.id
+        AND rc.capability_type = 'provider'
+        AND rc.provider_type = sqlc.arg('provider_type')::varchar
+        AND rc.available = true
+        AND rc.status = 'healthy'
+        AND rc.health_status = 'healthy'
+        AND rc.disabled_at IS NULL
+        AND rc.archived_at IS NULL
+  )
 ON CONFLICT (tenant_id, digital_employee_id) WHERE deleted_at IS NULL DO UPDATE SET
     runtime_node_id = EXCLUDED.runtime_node_id,
     provider_type = EXCLUDED.provider_type,

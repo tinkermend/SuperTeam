@@ -478,14 +478,17 @@ CREATE UNIQUE INDEX uq_runtime_bootstrap_keys_active_hash ON runtime_bootstrap_k
 CREATE INDEX idx_runtime_bootstrap_keys_tenant_status ON runtime_bootstrap_keys(tenant_id, status, created_at DESC);
 CREATE UNIQUE INDEX uq_runtime_enrollments_tenant_node_id ON runtime_enrollments(tenant_id, node_id);
 CREATE INDEX idx_runtime_enrollments_runtime_node_id ON runtime_enrollments(runtime_node_id);
+CREATE INDEX idx_runtime_enrollments_runtime_approved ON runtime_enrollments(tenant_id, runtime_node_id) WHERE status = 'approved';
 CREATE INDEX idx_runtime_enrollments_tenant_status ON runtime_enrollments(tenant_id, status, created_at DESC);
 CREATE INDEX idx_runtime_enrollments_bootstrap_key_id ON runtime_enrollments(bootstrap_key_id);
 CREATE INDEX idx_runtime_sessions_runtime_node_id ON runtime_sessions(runtime_node_id);
+CREATE INDEX idx_runtime_sessions_active_node ON runtime_sessions(tenant_id, runtime_node_id, expires_at) WHERE revoked_at IS NULL;
 CREATE INDEX idx_runtime_sessions_tenant_expires ON runtime_sessions(tenant_id, expires_at);
 CREATE INDEX idx_runtime_sessions_last_seen ON runtime_sessions(last_seen_at DESC);
 CREATE UNIQUE INDEX uq_runtime_capabilities_tenant_key ON runtime_capabilities(tenant_id, runtime_node_id, capability_type, capability_key);
 CREATE INDEX idx_runtime_capabilities_tenant_node ON runtime_capabilities(tenant_id, runtime_node_id);
 CREATE INDEX idx_runtime_capabilities_provider ON runtime_capabilities(tenant_id, provider_type, health_status);
+CREATE INDEX idx_runtime_capabilities_execution_available ON runtime_capabilities(tenant_id, runtime_node_id, provider_type, health_status) WHERE capability_type = 'provider' AND available = true AND disabled_at IS NULL AND archived_at IS NULL;
 CREATE INDEX idx_runtime_capabilities_type_key ON runtime_capabilities(tenant_id, capability_type, capability_key);
 CREATE INDEX idx_runtime_capabilities_labels ON runtime_capabilities USING GIN (labels);
 CREATE INDEX idx_auth_sessions_user_id ON auth_sessions(user_id);
@@ -748,7 +751,7 @@ COMMENT ON COLUMN runtime_capabilities.capability_key IS 'Runtime 能力在节�
 COMMENT ON COLUMN runtime_capabilities.provider_type IS 'Provider 类型，例如 claude-code、opencode、codex';
 COMMENT ON COLUMN runtime_capabilities.provider_version IS 'Provider 版本';
 COMMENT ON COLUMN runtime_capabilities.binary_path IS 'Provider 可执行文件路径';
-COMMENT ON COLUMN runtime_capabilities.available IS 'Provider 当前是否可用';
+COMMENT ON COLUMN runtime_capabilities.available IS 'Provider 当前是否可用；执行实例绑定前必须为可用';
 COMMENT ON COLUMN runtime_capabilities.workspace_base_dir IS 'Runtime 工作区根目录';
 COMMENT ON COLUMN runtime_capabilities.capacity IS 'Runtime 上报的容量信息';
 COMMENT ON COLUMN runtime_capabilities.labels IS 'Runtime 能力标签，用于后续选择器匹配';

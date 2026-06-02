@@ -39,6 +39,7 @@ FROM digital_employee_execution_instances dei
 JOIN digital_employees de
   ON de.id = dei.digital_employee_id
  AND de.tenant_id = dei.tenant_id
+ AND de.status NOT IN ('disabled', 'error')
  AND de.deleted_at IS NULL
  AND de.archived_at IS NULL
 JOIN runtime_nodes rn
@@ -50,6 +51,7 @@ WHERE dei.id = $6::uuid
   AND dei.digital_employee_id = $8::uuid
   AND dei.runtime_node_id = $9::uuid
   AND dei.provider_type = $10::varchar
+  AND dei.status NOT IN ('disabled', 'error')
   AND dei.deleted_at IS NULL
 RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at
 `
@@ -131,8 +133,28 @@ INSERT INTO provider_session_events (
     $6::text,
     COALESCE($7::jsonb, '{}'::jsonb)
 FROM provider_sessions ps
-WHERE ps.id = $8::uuid
-  AND ps.tenant_id = $9::uuid
+JOIN runtime_nodes rn
+  ON rn.id = ps.runtime_node_id
+ AND rn.tenant_id = ps.tenant_id
+ AND rn.node_id = $8::varchar
+ AND rn.status = 'online'
+ AND rn.disabled_at IS NULL
+ AND rn.archived_at IS NULL
+WHERE ps.id = $9::uuid
+  AND ps.tenant_id = $10::uuid
+  AND EXISTS (
+      SELECT 1
+      FROM runtime_sessions rs
+      JOIN runtime_enrollments re
+        ON re.id = rs.enrollment_id
+       AND re.tenant_id = rs.tenant_id
+       AND re.runtime_node_id = rs.runtime_node_id
+       AND re.status = 'approved'
+      WHERE rs.tenant_id = ps.tenant_id
+        AND rs.runtime_node_id = rn.id
+        AND rs.expires_at > NOW()
+        AND rs.revoked_at IS NULL
+  )
 RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, request_id, command_id, raw_event_ref, metadata, created_at
 `
 
@@ -144,6 +166,7 @@ type CreateProviderSessionEventParams struct {
 	CommandID         pgtype.Text `json:"command_id"`
 	RawEventRef       pgtype.Text `json:"raw_event_ref"`
 	Metadata          []byte      `json:"metadata"`
+	NodeID            string      `json:"node_id"`
 	ProviderSessionID uuid.UUID   `json:"provider_session_id"`
 	TenantID          uuid.UUID   `json:"tenant_id"`
 }
@@ -157,6 +180,7 @@ func (q *Queries) CreateProviderSessionEvent(ctx context.Context, arg CreateProv
 		arg.CommandID,
 		arg.RawEventRef,
 		arg.Metadata,
+		arg.NodeID,
 		arg.ProviderSessionID,
 		arg.TenantID,
 	)

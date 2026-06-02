@@ -351,8 +351,8 @@ func TestAuthzRuntimeNodeCoversTaskScope(t *testing.T) {
 
 	_, err = testDB.Exec(ctx, `
 		INSERT INTO runtime_node_scopes (tenant_id, runtime_node_id, team_id, scope_type, scope_value, status)
-		VALUES ($1, $2, $3, 'team', $3::text, 'active')
-	`, tenantID, node.ID, teamID)
+		VALUES ($1, $2, $3, 'team', $4, 'active')
+	`, tenantID, node.ID, teamID, teamID.String())
 	require.NoError(t, err)
 
 	covered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
@@ -481,8 +481,8 @@ func TestAuthzRuntimeNodeRejectsMalformedTenantScopePayloads(t *testing.T) {
 
 	_, err = testDB.Exec(ctx, `
 		INSERT INTO runtime_node_scopes (tenant_id, runtime_node_id, team_id, scope_type, scope_value, status)
-		VALUES ($1, $2, $3, 'tenant', $1::text, 'active')
-	`, tenantID, nodeWithTeamID.ID, teamID)
+		VALUES ($1, $2, $3, 'tenant', $4, 'active')
+	`, tenantID, nodeWithTeamID.ID, teamID, tenantID.String())
 	require.NoError(t, err)
 
 	tenantScopeWithTeamIDCovered, err := testQueries.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
@@ -609,17 +609,23 @@ func TestAuthzCenterMemberPaginationPaginatesUsersBeforeMemberships(t *testing.T
 
 	_, err = testDB.Exec(ctx, `
 		INSERT INTO tenant_members (tenant_id, principal_type, principal_id, role, status)
-		VALUES ($1, 'user', $2, 'owner', 'active');
-
+		VALUES ($1, 'user', $2, 'owner', 'active')
+	`, tenantID, multiMemberUser.ID)
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
 		INSERT INTO tenant_members (tenant_id, team_id, principal_type, principal_id, role, status)
-		VALUES ($1, $3, 'user', $2, 'developer', 'active');
-
+		VALUES ($1, $2, 'user', $3, 'developer', 'active')
+	`, tenantID, teamID, multiMemberUser.ID)
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
 		INSERT INTO tenant_members (tenant_id, principal_type, principal_id, role, status)
-		VALUES ($1, 'user', $4, 'viewer', 'active');
-
+		VALUES ($1, 'user', $2, 'viewer', 'active')
+	`, tenantID, otherUser.ID)
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
 		INSERT INTO tenant_members (tenant_id, principal_type, principal_id, role, status)
-		VALUES ($5, 'user', $6, 'owner', 'active');
-	`, tenantID, multiMemberUser.ID, teamID, otherUser.ID, otherTenantID, otherTenantUser.ID)
+		VALUES ($1, 'user', $2, 'owner', 'active')
+	`, otherTenantID, otherTenantUser.ID)
 	require.NoError(t, err)
 
 	rows, err := testQueries.ListAuthzMembers(ctx, queries.ListAuthzMembersParams{
@@ -737,11 +743,13 @@ func TestAuthzCenterRuntimeScopeRejectsInconsistentInput(t *testing.T) {
 	otherTeamID := uuid.MustParse("00000000-0000-0000-0000-000000000301")
 	_, err := testDB.Exec(ctx, `
 		INSERT INTO tenants (id, slug, name, status)
-		VALUES ($1, 'authz-other', 'Authz Other Tenant', 'active');
-
+		VALUES ($1, 'authz-other', 'Authz Other Tenant', 'active')
+	`, otherTenantID)
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
 		INSERT INTO tenant_teams (id, tenant_id, slug, name, status)
-		VALUES ($2, $1, 'authz-other', 'Authz Other Team', 'active');
-	`, otherTenantID, otherTeamID)
+		VALUES ($1, $2, 'authz-other', 'Authz Other Team', 'active')
+	`, otherTeamID, otherTenantID)
 	require.NoError(t, err)
 
 	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
@@ -1375,6 +1383,144 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	_, err = testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/no-approved-runtime",
+		WorkspacePolicy:      []byte(`{"base_dir":"/data/superteam/workspaces"}`),
+		SessionPolicy:        []byte(`{"mode":"reuse_latest"}`),
+		RuntimeSelector:      []byte(`{"labels":{"os":"darwin"}}`),
+		CapacityRequirements: []byte(`{"slots":1}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"no-approved-runtime"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	enrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  node.ID,
+		NodeID:         "digital-employee-runtime-node",
+		BootstrapKeyID: uuid.NullUUID{},
+		Status:         "pending",
+		RequestPayload: []byte(`{"node_id":"digital-employee-runtime-node","version":"0.1.0"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+		TenantID:         tenantID,
+		RuntimeNodeID:    node.ID,
+		CapabilityType:   "provider",
+		CapabilityKey:    "claude-code",
+		ProviderType:     "claude-code",
+		ProviderVersion:  pgtype.Text{String: "1.0.0", Valid: true},
+		BinaryPath:       pgtype.Text{String: "/usr/local/bin/claude", Valid: true},
+		Available:        true,
+		WorkspaceBaseDir: pgtype.Text{String: "/data/superteam/workspaces", Valid: true},
+		Capacity:         []byte(`{"max_slots":2}`),
+		Labels:           []byte(`{"os":"darwin"}`),
+		Status:           "healthy",
+		Details:          []byte(`{"source":"digital-employee-test"}`),
+		HealthStatus:     "healthy",
+		Metadata:         []byte(`{"source":"capability-report"}`),
+		LastSeenAt:       now,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/pending-runtime",
+		WorkspacePolicy:      []byte(`{"base_dir":"/data/superteam/workspaces"}`),
+		SessionPolicy:        []byte(`{"mode":"reuse_latest"}`),
+		RuntimeSelector:      []byte(`{"labels":{"os":"darwin"}}`),
+		CapacityRequirements: []byte(`{"slots":1}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"pending-runtime"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	approvedEnrollment, err := testQueries.ApproveRuntimeEnrollment(ctx, queries.ApproveRuntimeEnrollmentParams{
+		ID:         enrollment.ID,
+		TenantID:   tenantID,
+		ApprovedBy: uuid.NullUUID{UUID: uuid.New(), Valid: true},
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+		TenantID:         tenantID,
+		RuntimeNodeID:    node.ID,
+		CapabilityType:   "provider",
+		CapabilityKey:    "claude-code",
+		ProviderType:     "claude-code",
+		ProviderVersion:  pgtype.Text{String: "1.0.0", Valid: true},
+		BinaryPath:       pgtype.Text{String: "/usr/local/bin/claude", Valid: true},
+		Available:        false,
+		WorkspaceBaseDir: pgtype.Text{String: "/data/superteam/workspaces", Valid: true},
+		Capacity:         []byte(`{"max_slots":0}`),
+		Labels:           []byte(`{"os":"darwin"}`),
+		Status:           "degraded",
+		Details:          []byte(`{"reason":"provider_unavailable"}`),
+		HealthStatus:     "degraded",
+		Metadata:         []byte(`{"source":"capability-report"}`),
+		LastSeenAt:       now,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             tenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/unavailable-provider",
+		WorkspacePolicy:      []byte(`{"base_dir":"/data/superteam/workspaces"}`),
+		SessionPolicy:        []byte(`{"mode":"reuse_latest"}`),
+		RuntimeSelector:      []byte(`{"labels":{"os":"darwin"}}`),
+		CapacityRequirements: []byte(`{"slots":1}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"unavailable-provider"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+		TenantID:         tenantID,
+		RuntimeNodeID:    node.ID,
+		CapabilityType:   "provider",
+		CapabilityKey:    "claude-code",
+		ProviderType:     "claude-code",
+		ProviderVersion:  pgtype.Text{String: "1.0.0", Valid: true},
+		BinaryPath:       pgtype.Text{String: "/usr/local/bin/claude", Valid: true},
+		Available:        true,
+		WorkspaceBaseDir: pgtype.Text{String: "/data/superteam/workspaces", Valid: true},
+		Capacity:         []byte(`{"max_slots":2}`),
+		Labels:           []byte(`{"os":"darwin"}`),
+		Status:           "healthy",
+		Details:          []byte(`{"source":"digital-employee-test"}`),
+		HealthStatus:     "healthy",
+		Metadata:         []byte(`{"source":"capability-report"}`),
+		LastSeenAt:       now,
+	})
+	require.NoError(t, err)
+
+	runtimeSessionExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, runtimeSessionExpiresAt.Scan(time.Now().Add(12*time.Hour)))
+	runtimeSession, err := testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   node.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: approvedEnrollment.ID, Valid: true},
+		TokenLookupHash: "b2c6249cd92c1aee9a06844a5c3f451a8dd76e6ac8f7fd599a7445a027fbc617",
+		TokenSecretHash: "$2a$10$digitalEmployeeRuntimeSessionHash",
+		ExpiresAt:       runtimeSessionExpiresAt,
+	})
+	require.NoError(t, err)
+
 	instance, err := testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
 		TenantID:             tenantID,
 		DigitalEmployeeID:    employee.ID,
@@ -1463,6 +1609,103 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "active", activeEmployee.Status)
 
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
+		Status:   "disabled",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-disabled-instance",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"disabled-instance"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:           instance.ID,
+		TenantID:     tenantID,
+		Status:       "error",
+		ErrorMessage: pgtype.Text{String: "provider provisioning failed", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-error-instance",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"error-instance"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	readyInstance, err = testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		ID:       instance.ID,
+		TenantID: tenantID,
+		Status:   "ready",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "ready", readyInstance.Status)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "disabled",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-disabled-employee",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"disabled-employee"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "error",
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-error-employee",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"error-employee"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	activeEmployee, err = testQueries.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		ID:       employee.ID,
+		TenantID: tenantID,
+		Status:   "active",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "active", activeEmployee.Status)
+
 	session, err := testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
 		TenantID:            tenantID,
 		ProviderSessionID:   "claude-session-001",
@@ -1536,6 +1779,7 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	event1, err := testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
 		TenantID:          tenantID,
 		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
 		EventType:         "message_delta",
 		SequenceNumber:    1,
 		Payload:           eventPayload1,
@@ -1556,6 +1800,7 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
 		TenantID:          tenantID,
 		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
 		EventType:         "tool_call",
 		SequenceNumber:    2,
 		Payload:           eventPayload2,
@@ -1566,6 +1811,7 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
 		TenantID:          tenantID,
 		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
 		EventType:         "tool_call",
 		SequenceNumber:    2,
 		Payload:           eventPayload2,
@@ -1577,6 +1823,7 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
 		TenantID:          tenantID,
 		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
 		EventType:         "message_delta",
 		SequenceNumber:    3,
 		Payload:           []byte(`{"message":"empty correlation"}`),
@@ -1589,6 +1836,7 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
 		TenantID:          uuid.New(),
 		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
 		EventType:         "message_delta",
 		SequenceNumber:    3,
 		Payload:           []byte(`{"message":"wrong tenant"}`),
@@ -1596,6 +1844,64 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 		Metadata:          []byte(`{}`),
 	})
 	assert.Error(t, err)
+
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            "wrong-runtime-node",
+		EventType:         "message_delta",
+		SequenceNumber:    3,
+		Payload:           []byte(`{"message":"wrong runtime node"}`),
+		RequestID:         pgtype.Text{String: "request-wrong-runtime-node", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.RevokeRuntimeSession(ctx, queries.RevokeRuntimeSessionParams{
+		ID:            runtimeSession.ID,
+		TenantID:      tenantID,
+		RevokedReason: pgtype.Text{String: "runtime stopped before event upload", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    3,
+		Payload:           []byte(`{"message":"revoked runtime session"}`),
+		RequestID:         pgtype.Text{String: "request-revoked-runtime-session", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   node.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: approvedEnrollment.ID, Valid: true},
+		TokenLookupHash: "94f98d42ed5bca91ec4099422b84f0d0de2a1bd8f80d5d7c0dd9e5f1d5418571",
+		TokenSecretHash: "$2a$10$digitalEmployeeRuntimeSessionHashAfterRevoke",
+		ExpiresAt:       runtimeSessionExpiresAt,
+	})
+	require.NoError(t, err)
+	_, err = testQueries.RevokeRuntimeEnrollment(ctx, queries.RevokeRuntimeEnrollmentParams{
+		ID:           approvedEnrollment.ID,
+		TenantID:     tenantID,
+		RevokedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RevokeReason: pgtype.Text{String: "operator revoked runtime before event upload", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		NodeID:            node.NodeID,
+		EventType:         "message_delta",
+		SequenceNumber:    3,
+		Payload:           []byte(`{"message":"revoked runtime enrollment"}`),
+		RequestID:         pgtype.Text{String: "request-revoked-runtime-enrollment", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
 
 	events, err := testQueries.ListProviderSessionEvents(ctx, queries.ListProviderSessionEventsParams{
 		TenantID:          tenantID,
@@ -2240,8 +2546,8 @@ func TestCreateRuntimeNode_DuplicateNodeID(t *testing.T) {
 	require.NoError(t, err)
 	defer testQueries.DeleteRuntimeNode(ctx, node1.NodeID)
 
-	// 尝试创建重复 node_id 的节点
-	_, err = testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+	// 重复 node_id 会按注册 upsert 语义刷新同一节点
+	node2, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
 		NodeID:             "duplicate-node",
 		Name:               "Node 2",
 		SupportedProviders: providersJSON,
@@ -2251,8 +2557,10 @@ func TestCreateRuntimeNode_DuplicateNodeID(t *testing.T) {
 		Metadata:           metadataJSON,
 		LastHeartbeatAt:    now,
 	})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicate key value")
+	require.NoError(t, err)
+	assert.Equal(t, node1.ID, node2.ID)
+	assert.Equal(t, "Node 2", node2.Name)
+	assert.Equal(t, int32(4), node2.MaxSlots)
 }
 
 func TestCreateTask_PreservesCreatorUUIDWithoutForeignKey(t *testing.T) {
@@ -2317,12 +2625,13 @@ func TestCreateRuntimeToken_DuplicateNodeID(t *testing.T) {
 	require.NoError(t, err)
 	defer testQueries.DeleteRuntimeToken(ctx, token1.NodeID)
 
-	// 尝试为同一个 node_id 创建第二个 token
-	_, err = testQueries.CreateRuntimeToken(ctx, queries.CreateRuntimeTokenParams{
+	// 同一个 node_id 的有效 token 会按 upsert 语义刷新哈希和过期时间
+	token2, err := testQueries.CreateRuntimeToken(ctx, queries.CreateRuntimeTokenParams{
 		NodeID:    "duplicate-token-node",
 		TokenHash: "hash2",
 		ExpiresAt: expiresAt,
 	})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicate key value")
+	require.NoError(t, err)
+	assert.Equal(t, token1.ID, token2.ID)
+	assert.Equal(t, "hash2", token2.TokenHash)
 }

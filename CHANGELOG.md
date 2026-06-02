@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 测试仅在显式配置 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL` 时连接远端或专用测试环境运行；也支持通过 `ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1` 复用 `DATABASE_URL` 和 `REDIS_URL`。
   - 未配置测试环境时跳过 `apps/control-plane/internal/storage/queries` 集成测试。
 - Provider 会话事件新增关联 ID 约束，要求 `request_id` 或 `command_id` 至少填写一个，避免无法回溯到平台请求或命令的事件进入审计链路。
+- 数字员工执行链路补强 Runtime 与 Provider 可用性校验：执行实例绑定前要求 Runtime 已批准且 Provider 能力可用，Provider 会话和事件写入会拒绝禁用、错误或失效的执行上下文。
 
 ### Added
 
