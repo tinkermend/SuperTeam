@@ -74,7 +74,7 @@ export function UserAuthForm({
               <FormLabel>账号</FormLabel>
               <FormControl>
                 <Input
-                  className='h-11 rounded-lg bg-white/88 px-4'
+                  className='h-12 rounded-full px-5'
                   placeholder='admin'
                   {...field}
                 />
@@ -91,7 +91,7 @@ export function UserAuthForm({
               <FormLabel>密码</FormLabel>
               <FormControl>
                 <PasswordInput
-                  className='h-11 rounded-lg bg-white/88 px-4 pe-10'
+                  className='h-12 rounded-full px-5 pe-11'
                   placeholder='请输入密码'
                   {...field}
                 />
@@ -105,7 +105,7 @@ export function UserAuthForm({
             {formError}
           </p>
         ) : null}
-        <Button className='mt-1 h-12 rounded-lg text-base' disabled={isLoading}>
+        <Button className='mt-1 h-12 rounded-full text-base' disabled={isLoading}>
           {isLoading ? (
             <Loader2 className='animate-spin' data-icon='inline-start' />
           ) : (

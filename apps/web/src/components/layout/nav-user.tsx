@@ -35,22 +35,26 @@ export function NavUser() {
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                className="border border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-glass-strong-bg)] shadow-[0_10px_24px_rgba(37,99,235,0.06)] data-[state=open]:bg-[color:var(--superteam-sidebar-active)] data-[state=open]:text-sidebar-accent-foreground"
               >
                 <Avatar className="size-8 rounded-lg">
-                  <AvatarFallback className="rounded-lg">
+                  <AvatarFallback className="rounded-lg bg-primary text-primary-foreground">
                     {fallback}
                   </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-start text-sm leading-tight">
-                  <span className="truncate font-semibold">{displayName}</span>
-                  <span className="truncate text-xs">{displayEmail}</span>
+                  <span className="truncate font-semibold text-foreground">
+                    {displayName}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {displayEmail}
+                  </span>
                 </div>
-                <ChevronsUpDown className="ms-auto size-4" />
+                <ChevronsUpDown className="ms-auto size-4 text-muted-foreground" />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
+              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-glass-strong-bg)] shadow-[0_18px_48px_rgba(15,23,42,0.12)] backdrop-blur-xl"
               side={isMobile ? "bottom" : "right"}
               align="end"
               sideOffset={4}
@@ -58,7 +62,7 @@ export function NavUser() {
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-1 py-1.5 text-start text-sm">
                   <Avatar className="size-8 rounded-lg">
-                    <AvatarFallback className="rounded-lg">
+                    <AvatarFallback className="rounded-lg bg-primary text-primary-foreground">
                       {fallback}
                     </AvatarFallback>
                   </Avatar>

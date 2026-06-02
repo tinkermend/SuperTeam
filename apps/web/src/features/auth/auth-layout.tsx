@@ -15,8 +15,10 @@ export function AuthLayout({ children }: AuthLayoutProps) {
             </span>
             <Network className='absolute -right-2 -top-2 text-primary' />
           </div>
-          <h1 className='text-3xl font-semibold text-foreground'>SuperTeam</h1>
-          <p className='mt-2 text-sm font-semibold text-primary'>
+          <h1 className='text-4xl font-bold tracking-normal text-foreground'>
+            SuperTeam
+          </h1>
+          <p className='mt-2 rounded-full bg-[color:var(--superteam-primary-soft)] px-3 py-1 text-sm font-semibold text-primary'>
             企业级数字员工控制平面
           </p>
         </div>

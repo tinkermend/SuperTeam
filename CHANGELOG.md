@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Web 登录页按中心品牌版视觉方向重做，新增浅蓝网格背景、SuperTeam 品牌标识、中文登录表单和更稳定的输入/按钮尺寸节奏。
+- Web 设计系统收敛为浅色液态玻璃控制台方向，`DESIGN.md` 明确蓝绿色主强调、液态玻璃卡片、胶囊按钮、语义图标和“只迁移 UI/UX 样式、不带入示例业务内容”的规则。
+- Web 登录页、认证后 Shell 和工作台首页按浅色液态玻璃设计语言更新，统一按钮、卡片、背景、导航激活态、搜索框和输入控件质感。
+- Web 主按钮和侧栏激活菜单降低左侧白色反光强度，避免高光压住图标和中文文字。
+- Web 暗色主题补充独立玻璃覆盖，修复左侧菜单、卡片和图标容器复用浅色白色高光导致的刺眼与可读性问题。
+- Web 登录页暗色主题补充独立 Auth Shell、品牌标识和登录卡片覆盖，避免浅色背景与暗色文字 token 混用。
 - Control Plane 初始数据库 schema 重写为 UUID-first 形态，合并早期 auth session、Web 登录日志、操作日志和中文注释迁移，并新增默认租户/团队骨架以支撑后续分布式与多团队数字员工管理。
 - 任务、执行、审计、工件、Web 登录日志和操作日志改为应用层校验的 UUID 引用，避免跨模块重 FK 和级联删除；任务、工件、用户、Runtime 节点等核心实体补充软删除、禁用、归档、取消或终止时间戳。
 - Runtime 任务状态机允许已领取任务直接进入 completed/failed，修复当前 claim -> events -> complete/fail HTTP 合约没有单独 running 接口时的完成链路阻断。
@@ -30,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 未配置测试环境时跳过 `apps/control-plane/internal/storage/queries` 集成测试。
 
 ### Added
+
+#### Web 液态玻璃组件化 (2026-06-03)
+
+- 新增 `apps/web/src/components/superteam` 项目级设计组件层，沉淀 `LiquidCard`、`LiquidPill`、`PrimaryLiquidButton`、`SemanticIconTile`、`StatusBadge` 和 `MetricCard`。
+- 工作台首页指标卡改为复用 `MetricCard`，减少页面内手写玻璃卡片、语义图标和状态胶囊样式。
+- 为液态玻璃设计组件补充 Vitest 浏览器组件测试，锁定组件 slot、核心 class 和基础渲染行为。
 
 #### Control Plane 渐进式授权边界 (2026-06-01)
 

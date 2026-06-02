@@ -15,12 +15,16 @@ export function AppTitle() {
       <SidebarMenuItem>
         <SidebarMenuButton size="lg" asChild>
           <Link to="/" onClick={() => setOpenMobile(false)}>
-            <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+            <div className="superteam-primary-action flex aspect-square size-9 items-center justify-center rounded-xl text-white">
               <Command />
             </div>
             <div className="grid flex-1 text-start text-sm leading-tight">
-              <span className="truncate font-semibold">SuperTeam</span>
-              <span className="truncate text-xs">数字员工控制平面</span>
+              <span className="truncate text-base font-semibold text-slate-950 dark:text-slate-50">
+                SuperTeam
+              </span>
+              <span className="truncate text-xs text-muted-foreground">
+                数字员工控制平面
+              </span>
             </div>
           </Link>
         </SidebarMenuButton>

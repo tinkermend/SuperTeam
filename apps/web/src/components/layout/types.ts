@@ -1,9 +1,22 @@
 import { type LinkProps } from "@tanstack/react-router";
 
+type NavIconTone =
+  | "primary"
+  | "task"
+  | "employee"
+  | "workflow"
+  | "capability"
+  | "approval"
+  | "runtime"
+  | "permission"
+  | "audit"
+  | "neutral";
+
 type BaseNavItem = {
   title: string;
   badge?: string;
   icon?: React.ElementType;
+  iconTone?: NavIconTone;
 };
 
 type NavLink = BaseNavItem & {
@@ -27,4 +40,11 @@ type SidebarData = {
   navGroups: NavGroup[];
 };
 
-export type { SidebarData, NavGroup, NavItem, NavCollapsible, NavLink };
+export type {
+  SidebarData,
+  NavGroup,
+  NavItem,
+  NavCollapsible,
+  NavLink,
+  NavIconTone,
+};

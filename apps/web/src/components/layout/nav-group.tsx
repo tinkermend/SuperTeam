@@ -28,10 +28,24 @@ import {
 } from '../ui/dropdown-menu'
 import {
   type NavCollapsible,
+  type NavIconTone,
   type NavItem,
   type NavLink,
   type NavGroup as NavGroupProps,
 } from './types'
+
+const navIconColors: Record<NavIconTone, string> = {
+  primary: 'var(--superteam-primary)',
+  task: 'var(--superteam-task)',
+  employee: 'var(--superteam-employee)',
+  workflow: 'var(--superteam-workflow)',
+  capability: 'var(--superteam-capability)',
+  approval: 'var(--superteam-approval)',
+  runtime: 'var(--superteam-runtime)',
+  permission: 'var(--superteam-permission)',
+  audit: 'var(--superteam-audit)',
+  neutral: 'var(--superteam-neutral)',
+}
 
 export function NavGroup({ title, items }: NavGroupProps) {
   const { state, isMobile } = useSidebar()
@@ -59,7 +73,26 @@ export function NavGroup({ title, items }: NavGroupProps) {
 }
 
 function NavBadge({ children }: { children: ReactNode }) {
-  return <Badge className='rounded-full px-1 py-0 text-xs'>{children}</Badge>
+  return (
+    <Badge className='ms-auto rounded-full border border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-sidebar-active)] px-1.5 py-0 text-xs text-primary shadow-none'>
+      {children}
+    </Badge>
+  )
+}
+
+function NavIcon({ item }: { item: NavItem }) {
+  const Icon = item.icon
+
+  if (!Icon) return null
+
+  return (
+    <Icon
+      aria-hidden='true'
+      style={{
+        color: navIconColors[item.iconTone ?? 'neutral'],
+      }}
+    />
+  )
 }
 
 function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
@@ -72,7 +105,7 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
         tooltip={item.title}
       >
         <Link to={item.url} onClick={() => setOpenMobile(false)}>
-          {item.icon && <item.icon />}
+          <NavIcon item={item} />
           <span>{item.title}</span>
           {item.badge && <NavBadge>{item.badge}</NavBadge>}
         </Link>
@@ -98,7 +131,7 @@ function SidebarMenuCollapsible({
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
           <SidebarMenuButton tooltip={item.title}>
-            {item.icon && <item.icon />}
+            <NavIcon item={item} />
             <span>{item.title}</span>
             {item.badge && <NavBadge>{item.badge}</NavBadge>}
             <ChevronRight className='ms-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90 rtl:rotate-180' />
@@ -113,7 +146,7 @@ function SidebarMenuCollapsible({
                   isActive={checkIsActive(href, subItem)}
                 >
                   <Link to={subItem.url} onClick={() => setOpenMobile(false)}>
-                    {subItem.icon && <subItem.icon />}
+                    <NavIcon item={subItem} />
                     <span>{subItem.title}</span>
                     {subItem.badge && <NavBadge>{subItem.badge}</NavBadge>}
                   </Link>
@@ -142,7 +175,7 @@ function SidebarMenuCollapsedDropdown({
             tooltip={item.title}
             isActive={checkIsActive(href, item)}
           >
-            {item.icon && <item.icon />}
+            <NavIcon item={item} />
             <span>{item.title}</span>
             {item.badge && <NavBadge>{item.badge}</NavBadge>}
             <ChevronRight className='ms-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90' />
@@ -159,7 +192,7 @@ function SidebarMenuCollapsedDropdown({
                 to={sub.url}
                 className={`${checkIsActive(href, sub) ? 'bg-secondary' : ''}`}
               >
-                {sub.icon && <sub.icon />}
+                <NavIcon item={sub} />
                 <span className='max-w-52 text-wrap'>{sub.title}</span>
                 {sub.badge && (
                   <span className='ms-auto text-xs'>{sub.badge}</span>
