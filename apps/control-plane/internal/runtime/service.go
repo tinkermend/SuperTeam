@@ -23,7 +23,7 @@ var (
 const (
 	// HeartbeatTimeout is the duration after which a node is considered offline
 	HeartbeatTimeout  = 60 * time.Second
-	RuntimeSessionTTL = 15 * time.Minute
+	RuntimeSessionTTL = 12 * time.Hour
 )
 
 type Service struct {

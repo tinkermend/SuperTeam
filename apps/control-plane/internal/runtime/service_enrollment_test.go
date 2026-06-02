@@ -58,6 +58,7 @@ func TestEnrollHelloApprovedIssuesSession(t *testing.T) {
 	node := repo.seedNode(DefaultTenantID, "runtime-approved", "Runtime Approved", []string{"codex"})
 	enrollment := repo.seedEnrollment(DefaultTenantID, "runtime-approved", RuntimeEnrollmentStatusApproved, node.ID, runtimeTestUUID(20), bootstrapHash)
 
+	issuedAt := time.Now()
 	resp, err := service.EnrollHello(ctx, EnrollHelloRequest{
 		NodeID:             "runtime-approved",
 		Name:               "Runtime Approved",
@@ -70,7 +71,7 @@ func TestEnrollHelloApprovedIssuesSession(t *testing.T) {
 	require.NotNil(t, resp.Session)
 	require.NotEmpty(t, resp.SessionToken)
 	require.Equal(t, enrollment.ID, resp.Session.EnrollmentID.UUID)
-	require.True(t, resp.Session.ExpiresAt.After(time.Now()))
+	requireRuntimeSessionExpiresNear(t, issuedAt, resp.Session.ExpiresAt)
 	require.Contains(t, repo.sessionsByLookup, LookupRuntimeSessionTokenHash(resp.SessionToken))
 }
 
@@ -279,6 +280,7 @@ func TestNonDefaultTenantEnrollmentSessionLifecycle(t *testing.T) {
 	require.NotEqual(t, uuid.Nil, approved.RuntimeNodeID)
 	require.Equal(t, tenantID, repo.nodes[repo.nodeKey(tenantID, "tenant-runtime")].TenantID)
 
+	issuedAt := time.Now()
 	approvedHello, err := service.EnrollHello(ctx, EnrollHelloRequest{
 		TenantID:     tenantID,
 		NodeID:       "tenant-runtime",
@@ -289,6 +291,7 @@ func TestNonDefaultTenantEnrollmentSessionLifecycle(t *testing.T) {
 	require.Equal(t, RuntimeEnrollmentStatusApproved, approvedHello.Enrollment.Status)
 	require.NotNil(t, approvedHello.Session)
 	require.NotEmpty(t, approvedHello.SessionToken)
+	requireRuntimeSessionExpiresNear(t, issuedAt, approvedHello.Session.ExpiresAt)
 
 	validation, err := service.ValidateRuntimeSession(ctx, approvedHello.SessionToken)
 	require.NoError(t, err)
@@ -296,10 +299,12 @@ func TestNonDefaultTenantEnrollmentSessionLifecycle(t *testing.T) {
 	require.Equal(t, "tenant-runtime", validation.NodeID)
 
 	before := approvedHello.Session.ExpiresAt
+	renewedAt := time.Now()
 	renewed, err := service.RenewRuntimeSession(ctx, approvedHello.SessionToken)
 	require.NoError(t, err)
 	require.Equal(t, tenantID, renewed.TenantID)
 	require.True(t, renewed.ExpiresAt.After(before))
+	requireRuntimeSessionExpiresNear(t, renewedAt, renewed.ExpiresAt)
 }
 
 func TestRenewRuntimeSessionRequiresValidTokenAndExtends(t *testing.T) {
@@ -311,9 +316,11 @@ func TestRenewRuntimeSessionRequiresValidTokenAndExtends(t *testing.T) {
 	token := repo.seedApprovedSession(t, "runtime-renew", "boot_renew", time.Now().Add(10*time.Minute))
 	before := timeFromTimestamptz(repo.sessionsByLookup[LookupRuntimeSessionTokenHash(token)].ExpiresAt)
 
+	renewedAt := time.Now()
 	renewed, err := service.RenewRuntimeSession(ctx, token)
 	require.NoError(t, err)
 	require.True(t, renewed.ExpiresAt.After(before))
+	requireRuntimeSessionExpiresNear(t, renewedAt, renewed.ExpiresAt)
 
 	_, err = service.RenewRuntimeSession(ctx, token+"bad")
 	require.Error(t, err)
@@ -358,6 +365,12 @@ func TestRevokeEnrollmentInvalidatesSessions(t *testing.T) {
 	_, err = service.ValidateRuntimeSession(ctx, token)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid runtime session")
+}
+
+func requireRuntimeSessionExpiresNear(t *testing.T, startedAt time.Time, expiresAt time.Time) {
+	t.Helper()
+	expectedTTL := 12 * time.Hour
+	require.WithinRange(t, expiresAt, startedAt.Add(expectedTTL-5*time.Second), time.Now().Add(expectedTTL+5*time.Second))
 }
 
 type enrollmentFake struct {
