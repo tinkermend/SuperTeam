@@ -18,11 +18,18 @@ pub async fn push_event_with_retry(
             Err(e) if is_retryable_error(&e) && attempt < max_retries => {
                 attempt += 1;
                 let backoff = Duration::from_millis(100 * 2_u64.pow(attempt - 1));
-                eprintln!("Push event failed (attempt {}): {}, retrying in {:?}", attempt, e, backoff);
+                eprintln!(
+                    "Push event failed (attempt {}): {}, retrying in {:?}",
+                    attempt, e, backoff
+                );
                 tokio::time::sleep(backoff).await;
             }
             Err(e) => {
-                return Err(anyhow::anyhow!("Push event failed after {} retries: {}", max_retries, e));
+                return Err(anyhow::anyhow!(
+                    "Push event failed after {} retries: {}",
+                    max_retries,
+                    e
+                ));
             }
         }
     }

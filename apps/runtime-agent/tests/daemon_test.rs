@@ -122,7 +122,83 @@ logging:
 }
 
 #[test]
-fn config_loads_runtime_token_from_env_and_cli_override() {
+fn runtime_config_loads_bootstrap_key_from_file_and_env() {
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let config_path = temp.path().join("runtime-agent.yaml");
+    std::fs::write(
+        &config_path,
+        r#"
+runtime:
+  bootstrap_key: file-bootstrap-key
+"#,
+    )
+    .expect("write config");
+
+    let file_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        std::iter::empty::<(&str, &str)>(),
+        Default::default(),
+    )
+    .expect("load file config");
+
+    assert_eq!(file_config.runtime.bootstrap_key, "file-bootstrap-key");
+
+    let env_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        [("RUNTIME_AGENT_BOOTSTRAP_KEY", "env-bootstrap-key")],
+        Default::default(),
+    )
+    .expect("load env config");
+
+    assert_eq!(env_config.runtime.bootstrap_key, "env-bootstrap-key");
+}
+
+#[test]
+fn config_loads_runtime_bootstrap_key_from_env_and_cli_override() {
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let config_path = temp.path().join("runtime-agent.yaml");
+    std::fs::write(
+        &config_path,
+        r#"
+runtime:
+  bootstrap_key: file-bootstrap-key
+"#,
+    )
+    .expect("write config");
+
+    let file_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        std::iter::empty::<(&str, &str)>(),
+        Default::default(),
+    )
+    .expect("load file config");
+
+    assert_eq!(file_config.runtime.bootstrap_key, "file-bootstrap-key");
+
+    let env_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        [("RUNTIME_AGENT_BOOTSTRAP_KEY", "env-bootstrap-key")],
+        Default::default(),
+    )
+    .expect("load env config");
+
+    assert_eq!(env_config.runtime.bootstrap_key, "env-bootstrap-key");
+
+    let cli_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        [("RUNTIME_AGENT_BOOTSTRAP_KEY", "env-bootstrap-key")],
+        RuntimeConfigOverrides {
+            bootstrap_key: Some("cli-bootstrap-key".to_string()),
+            ..Default::default()
+        },
+    )
+    .expect("load config");
+
+    assert_eq!(cli_config.runtime.bootstrap_key, "cli-bootstrap-key");
+}
+
+#[test]
+fn config_accepts_legacy_auth_token_alias_when_bootstrap_key_absent() {
     let temp = tempfile::TempDir::new().expect("tempdir");
     let config_path = temp.path().join("runtime-agent.yaml");
     std::fs::write(
@@ -141,7 +217,7 @@ runtime:
     )
     .expect("load file config");
 
-    assert_eq!(file_config.runtime.auth_token, "file-token");
+    assert_eq!(file_config.runtime.bootstrap_key, "file-token");
 
     let env_config = RuntimeConfig::load_with_env(
         Some(&config_path),
@@ -150,19 +226,7 @@ runtime:
     )
     .expect("load env config");
 
-    assert_eq!(env_config.runtime.auth_token, "env-token");
-
-    let cli_config = RuntimeConfig::load_with_env(
-        Some(&config_path),
-        [("RUNTIME_AGENT_AUTH_TOKEN", "env-token")],
-        RuntimeConfigOverrides {
-            auth_token: Some("cli-token".to_string()),
-            ..Default::default()
-        },
-    )
-    .expect("load config");
-
-    assert_eq!(cli_config.runtime.auth_token, "cli-token");
+    assert_eq!(env_config.runtime.bootstrap_key, "env-token");
 }
 
 #[test]
@@ -174,7 +238,7 @@ fn cli_loads_config_file_and_allows_explicit_overrides() {
         r#"
 runtime:
   node_id: file-cli-node
-  auth_token: file-cli-token
+  bootstrap_key: file-cli-bootstrap-key
 "#,
     )
     .expect("write config");
@@ -184,11 +248,11 @@ runtime:
         .arg(&config_path)
         .arg("--node-id")
         .arg("arg-cli-node")
-        .arg("--auth-token")
-        .arg("arg-cli-token")
+        .arg("--bootstrap-key")
+        .arg("arg-cli-bootstrap-key")
         .arg("--once")
         .env("RUNTIME_AGENT_NODE_ID", "env-cli-node")
-        .env("RUNTIME_AGENT_AUTH_TOKEN", "env-cli-token")
+        .env("RUNTIME_AGENT_BOOTSTRAP_KEY", "env-cli-bootstrap-key")
         .env_remove("RUNTIME_NODE_ID")
         .output()
         .expect("run runtime-agent");

@@ -41,12 +41,12 @@ impl TaskExecutor {
         let shutdown_token = self.shutdown_token.clone();
 
         let shutdown_signal = async {
-            let mut sigterm = tokio::signal::unix::signal(
-                tokio::signal::unix::SignalKind::terminate()
-            ).expect("Failed to setup SIGTERM handler");
-            let mut sigint = tokio::signal::unix::signal(
-                tokio::signal::unix::SignalKind::interrupt()
-            ).expect("Failed to setup SIGINT handler");
+            let mut sigterm =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .expect("Failed to setup SIGTERM handler");
+            let mut sigint =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+                    .expect("Failed to setup SIGINT handler");
 
             tokio::select! {
                 _ = sigterm.recv() => println!("Received SIGTERM"),
@@ -93,7 +93,10 @@ impl TaskExecutor {
             }
 
             if start.elapsed() > shutdown_timeout {
-                println!("Shutdown timeout reached, {} tasks still running", active_count);
+                println!(
+                    "Shutdown timeout reached, {} tasks still running",
+                    active_count
+                );
 
                 let active = self.active_tasks.lock().await;
                 for (task_id, active_task) in active.iter() {

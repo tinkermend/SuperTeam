@@ -13,8 +13,7 @@ pub struct TaskWorkspace {
 pub fn create_task_workspace(config: &RuntimeConfig, task_id: i64) -> Result<TaskWorkspace> {
     let workspace_path = config.workspace.base_dir.join(format!("task-{}", task_id));
 
-    std::fs::create_dir_all(&workspace_path)
-        .context("Failed to create task workspace")?;
+    std::fs::create_dir_all(&workspace_path).context("Failed to create task workspace")?;
 
     Ok(TaskWorkspace {
         path: workspace_path,
@@ -35,7 +34,10 @@ pub fn cleanup_workspace(workspace: &TaskWorkspace, config: &RuntimeConfig) -> R
             println!("Workspace retained at: {:?}", workspace.path);
         }
         policy => {
-            eprintln!("Unknown cleanup policy: {}, defaulting to 'on_completion'", policy);
+            eprintln!(
+                "Unknown cleanup policy: {}, defaulting to 'on_completion'",
+                policy
+            );
             remove_workspace(workspace)?;
         }
     }
@@ -47,8 +49,7 @@ pub fn cleanup_workspace(workspace: &TaskWorkspace, config: &RuntimeConfig) -> R
 
 fn remove_workspace(workspace: &TaskWorkspace) -> Result<()> {
     if workspace.path.exists() {
-        std::fs::remove_dir_all(&workspace.path)
-            .context("Failed to remove workspace")?;
+        std::fs::remove_dir_all(&workspace.path).context("Failed to remove workspace")?;
         println!("Cleaned up workspace: {:?}", workspace.path);
     }
     Ok(())
@@ -62,11 +63,7 @@ fn cleanup_old_workspaces(config: &RuntimeConfig) -> Result<()> {
 
     let mut workspaces: Vec<_> = std::fs::read_dir(base_dir)?
         .filter_map(|entry| entry.ok())
-        .filter(|entry| {
-            entry.file_name()
-                .to_string_lossy()
-                .starts_with("task-")
-        })
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("task-"))
         .filter_map(|entry| {
             let metadata = entry.metadata().ok()?;
             let modified = metadata.modified().ok()?;

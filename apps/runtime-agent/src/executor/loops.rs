@@ -8,8 +8,8 @@ use tokio_util::sync::CancellationToken;
 use crate::config::RuntimeConfig;
 use crate::controlplane::ControlPlaneClient;
 
-use super::task::execute_task;
 use super::retry::renew_lease_with_retry;
+use super::task::execute_task;
 
 pub struct QueuedTask {
     pub task: crate::controlplane::models::Task,
