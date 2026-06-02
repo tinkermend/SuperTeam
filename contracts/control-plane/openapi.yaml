@@ -1256,8 +1256,6 @@ components:
         - runtime_node_id
         - provider_type
         - agent_home_dir
-        - workspace_policy
-        - session_policy
       properties:
         runtime_node_id:
           type: string
