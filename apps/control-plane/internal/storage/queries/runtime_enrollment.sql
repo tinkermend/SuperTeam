@@ -48,15 +48,26 @@ INSERT INTO runtime_enrollments (
     status,
     request_payload,
     last_hello_at
-) VALUES (
-    sqlc.arg('tenant_id')::uuid,
-    sqlc.arg('runtime_node_id')::uuid,
+) SELECT
+    rn.tenant_id,
+    rn.id,
     sqlc.arg('node_id')::varchar,
     sqlc.narg('bootstrap_key_id')::uuid,
     sqlc.arg('status')::varchar,
     COALESCE(sqlc.arg('request_payload')::jsonb, '{}'::jsonb),
     sqlc.arg('last_hello_at')::timestamptz
-)
+FROM runtime_nodes rn
+LEFT JOIN runtime_bootstrap_keys rbk
+  ON rbk.id = sqlc.narg('bootstrap_key_id')::uuid
+ AND rbk.tenant_id = rn.tenant_id
+ AND rbk.status = 'active'
+ AND rbk.revoked_at IS NULL
+ AND (rbk.expires_at IS NULL OR rbk.expires_at > NOW())
+WHERE rn.id = sqlc.arg('runtime_node_id')::uuid
+  AND rn.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND rn.disabled_at IS NULL
+  AND rn.archived_at IS NULL
+  AND (sqlc.narg('bootstrap_key_id')::uuid IS NULL OR rbk.id IS NOT NULL)
 ON CONFLICT (tenant_id, node_id) DO UPDATE SET
     runtime_node_id = CASE
         WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.runtime_node_id
@@ -122,16 +133,32 @@ WHERE id = sqlc.arg('id')::uuid
 RETURNING *;
 
 -- name: RevokeRuntimeEnrollment :one
-UPDATE runtime_enrollments
-SET status = 'revoked',
-    revoked_by = sqlc.narg('revoked_by')::uuid,
-    revoked_at = NOW(),
-    revoke_reason = sqlc.narg('revoke_reason')::text,
-    updated_at = NOW()
-WHERE id = sqlc.arg('id')::uuid
-  AND tenant_id = sqlc.arg('tenant_id')::uuid
-  AND status IN ('pending', 'approved')
-RETURNING *;
+WITH revoked_enrollment AS (
+    UPDATE runtime_enrollments
+    SET status = 'revoked',
+        revoked_by = sqlc.narg('revoked_by')::uuid,
+        revoked_at = NOW(),
+        revoke_reason = sqlc.narg('revoke_reason')::text,
+        updated_at = NOW()
+    WHERE id = sqlc.arg('id')::uuid
+      AND tenant_id = sqlc.arg('tenant_id')::uuid
+      AND status IN ('pending', 'approved')
+    RETURNING *
+),
+revoked_sessions AS (
+    UPDATE runtime_sessions rs
+    SET revoked_at = COALESCE(rs.revoked_at, NOW()),
+        revoked_reason = COALESCE(sqlc.narg('revoke_reason')::text, rs.revoked_reason),
+        updated_at = NOW()
+    FROM revoked_enrollment re
+    WHERE rs.tenant_id = re.tenant_id
+      AND rs.runtime_node_id = re.runtime_node_id
+      AND rs.expires_at > NOW()
+      AND rs.revoked_at IS NULL
+    RETURNING rs.id
+)
+SELECT *
+FROM revoked_enrollment;
 
 -- name: CreateRuntimeSession :one
 INSERT INTO runtime_sessions (
@@ -161,12 +188,19 @@ WHERE re.id = sqlc.narg('enrollment_id')::uuid
 RETURNING *;
 
 -- name: GetActiveRuntimeSessionByLookupHash :one
-SELECT *
-FROM runtime_sessions
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND token_lookup_hash = sqlc.arg('token_lookup_hash')::varchar
-  AND expires_at > NOW()
-  AND revoked_at IS NULL;
+SELECT rs.*
+FROM runtime_sessions rs
+JOIN runtime_enrollments re
+  ON re.id = rs.enrollment_id
+ AND re.tenant_id = rs.tenant_id
+ AND re.runtime_node_id = rs.runtime_node_id
+ AND re.status = 'approved'
+ AND re.rejected_at IS NULL
+ AND re.revoked_at IS NULL
+WHERE rs.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND rs.token_lookup_hash = sqlc.arg('token_lookup_hash')::varchar
+  AND rs.expires_at > NOW()
+  AND rs.revoked_at IS NULL;
 
 -- name: RenewRuntimeSession :one
 UPDATE runtime_sessions
@@ -177,6 +211,16 @@ WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
   AND expires_at > NOW()
   AND revoked_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM runtime_enrollments re
+      WHERE re.id = runtime_sessions.enrollment_id
+        AND re.tenant_id = runtime_sessions.tenant_id
+        AND re.runtime_node_id = runtime_sessions.runtime_node_id
+        AND re.status = 'approved'
+        AND re.rejected_at IS NULL
+        AND re.revoked_at IS NULL
+  )
 RETURNING *;
 
 -- name: TouchRuntimeSessionLastSeen :one
@@ -187,6 +231,16 @@ WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
   AND expires_at > NOW()
   AND revoked_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM runtime_enrollments re
+      WHERE re.id = runtime_sessions.enrollment_id
+        AND re.tenant_id = runtime_sessions.tenant_id
+        AND re.runtime_node_id = runtime_sessions.runtime_node_id
+        AND re.status = 'approved'
+        AND re.rejected_at IS NULL
+        AND re.revoked_at IS NULL
+  )
 RETURNING *;
 
 -- name: RevokeRuntimeSession :one

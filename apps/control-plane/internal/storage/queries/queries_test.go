@@ -981,6 +981,37 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	otherTenantBootstrapKey, err := testQueries.CreateRuntimeBootstrapKey(ctx, queries.CreateRuntimeBootstrapKeyParams{
+		TenantID:    uuid.NullUUID{UUID: otherTenantID, Valid: true},
+		Name:        "other-tenant-bootstrap",
+		KeyHash:     "other-tenant-bootstrap-key-hash",
+		Status:      "active",
+		ExpiresAt:   keyExpiresAt,
+		CreatedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		Description: pgtype.Text{String: "Other tenant enrollment key", Valid: true},
+		Metadata:    []byte(`{"environment":"other"}`),
+	})
+	require.NoError(t, err)
+
+	revokedBootstrapKey, err := testQueries.CreateRuntimeBootstrapKey(ctx, queries.CreateRuntimeBootstrapKeyParams{
+		TenantID:    uuid.NullUUID{UUID: tenantID, Valid: true},
+		Name:        "revoked-bootstrap",
+		KeyHash:     "revoked-bootstrap-key-hash",
+		Status:      "active",
+		ExpiresAt:   keyExpiresAt,
+		CreatedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		Description: pgtype.Text{String: "Revoked enrollment key", Valid: true},
+		Metadata:    []byte(`{"environment":"customer-vm"}`),
+	})
+	require.NoError(t, err)
+	_, err = testQueries.RevokeRuntimeBootstrapKey(ctx, queries.RevokeRuntimeBootstrapKeyParams{
+		ID:            revokedBootstrapKey.ID,
+		TenantID:      tenantID,
+		RevokedBy:     uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RevokedReason: pgtype.Text{String: "operator revoked bootstrap key", Valid: true},
+	})
+	require.NoError(t, err)
+
 	activeKey, err := testQueries.GetActiveRuntimeBootstrapKeyByHash(ctx, queries.GetActiveRuntimeBootstrapKeyByHashParams{
 		TenantID: tenantID,
 		KeyHash:  "bootstrap-key-hash",
@@ -1014,6 +1045,50 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	disabledNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "runtime-enroll-node-disabled",
+		Name:               "Runtime Enrollment Disabled Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           4,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+	_, err = testQueries.UpdateRuntimeNodeStatus(ctx, queries.UpdateRuntimeNodeStatusParams{
+		NodeID: disabledNode.NodeID,
+		Status: "offline",
+	})
+	require.NoError(t, err)
+
+	var otherTenantRuntimeNodeID uuid.UUID
+	err = testDB.QueryRow(ctx, `
+		INSERT INTO runtime_nodes (
+			tenant_id,
+			node_id,
+			name,
+			supported_providers,
+			max_slots,
+			current_load,
+			status,
+			metadata,
+			last_heartbeat_at
+		) VALUES (
+			$1,
+			'runtime-enroll-other-tenant-node',
+			'Runtime Enrollment Other Tenant Node',
+			'{"providers":["claude-code"]}'::jsonb,
+			4,
+			0,
+			'online',
+			'{"region":"other"}'::jsonb,
+			$2
+		)
+		RETURNING id
+	`, otherTenantID, now).Scan(&otherTenantRuntimeNodeID)
+	require.NoError(t, err)
+
 	enrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
 		TenantID:       tenantID,
 		RuntimeNodeID:  node.ID,
@@ -1026,7 +1101,7 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "pending", enrollment.Status)
 
-	otherEnrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
 		TenantID:       otherTenantID,
 		RuntimeNodeID:  uuid.New(),
 		NodeID:         "runtime-enroll-node",
@@ -1035,9 +1110,65 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 		RequestPayload: []byte(`{"node_id":"runtime-enroll-node","tenant":"other"}`),
 		LastHelloAt:    now,
 	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  otherTenantRuntimeNodeID,
+		NodeID:         "runtime-enroll-node-wrong-runtime-tenant",
+		BootstrapKeyID: uuid.NullUUID{UUID: bootstrapKey.ID, Valid: true},
+		Status:         "pending",
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-wrong-runtime-tenant"}`),
+		LastHelloAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  disabledNode.ID,
+		NodeID:         "runtime-enroll-node-disabled",
+		BootstrapKeyID: uuid.NullUUID{UUID: bootstrapKey.ID, Valid: true},
+		Status:         "pending",
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-disabled"}`),
+		LastHelloAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  node.ID,
+		NodeID:         "runtime-enroll-node-wrong-bootstrap-tenant",
+		BootstrapKeyID: uuid.NullUUID{UUID: otherTenantBootstrapKey.ID, Valid: true},
+		Status:         "pending",
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-wrong-bootstrap-tenant"}`),
+		LastHelloAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  node.ID,
+		NodeID:         "runtime-enroll-node-revoked-bootstrap",
+		BootstrapKeyID: uuid.NullUUID{UUID: revokedBootstrapKey.ID, Valid: true},
+		Status:         "pending",
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-revoked-bootstrap"}`),
+		LastHelloAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	var invalidEnrollmentCount int
+	err = testDB.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM runtime_enrollments
+		WHERE node_id IN (
+			'runtime-enroll-node-wrong-runtime-tenant',
+			'runtime-enroll-node-disabled',
+			'runtime-enroll-node-wrong-bootstrap-tenant',
+			'runtime-enroll-node-revoked-bootstrap'
+		)
+	`).Scan(&invalidEnrollmentCount)
 	require.NoError(t, err)
-	assert.Equal(t, otherTenantID, otherEnrollment.TenantID)
-	assert.NotEqual(t, enrollment.ID, otherEnrollment.ID)
+	assert.Zero(t, invalidEnrollmentCount)
 
 	defaultEnrollment, err := testQueries.GetRuntimeEnrollmentByNodeID(ctx, queries.GetRuntimeEnrollmentByNodeIDParams{
 		TenantID: tenantID,
@@ -1140,17 +1271,17 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 		LastHelloAt:    now,
 	})
 	require.NoError(t, err)
-	revokedEnrollment, err = testQueries.RevokeRuntimeEnrollment(ctx, queries.RevokeRuntimeEnrollmentParams{
+	revokedEnrollmentRow, err := testQueries.RevokeRuntimeEnrollment(ctx, queries.RevokeRuntimeEnrollmentParams{
 		ID:           revokedEnrollment.ID,
 		TenantID:     tenantID,
 		RevokedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
 		RevokeReason: pgtype.Text{String: "operator revoked", Valid: true},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "revoked", revokedEnrollment.Status)
+	assert.Equal(t, "revoked", revokedEnrollmentRow.Status)
 
 	_, err = testQueries.ApproveRuntimeEnrollment(ctx, queries.ApproveRuntimeEnrollmentParams{
-		ID:         revokedEnrollment.ID,
+		ID:         revokedEnrollmentRow.ID,
 		TenantID:   tenantID,
 		ApprovedBy: uuid.NullUUID{UUID: uuid.New(), Valid: true},
 	})
@@ -1325,19 +1456,44 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	require.Len(t, capabilities, 1)
 	assert.Equal(t, capability.ID, capabilities[0].ID)
 
-	revokedSession, err := testQueries.RevokeRuntimeSession(ctx, queries.RevokeRuntimeSessionParams{
-		ID:            session.ID,
-		TenantID:      tenantID,
-		RevokedReason: pgtype.Text{String: "administrator revoked enrollment", Valid: true},
+	revokedApprovedEnrollment, err := testQueries.RevokeRuntimeEnrollment(ctx, queries.RevokeRuntimeEnrollmentParams{
+		ID:           approved.ID,
+		TenantID:     tenantID,
+		RevokedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RevokeReason: pgtype.Text{String: "administrator revoked enrollment", Valid: true},
 	})
 	require.NoError(t, err)
-	require.True(t, revokedSession.RevokedAt.Valid)
+	assert.Equal(t, "revoked", revokedApprovedEnrollment.Status)
+	require.True(t, revokedApprovedEnrollment.RevokedAt.Valid)
 
 	_, err = testQueries.GetActiveRuntimeSessionByLookupHash(ctx, queries.GetActiveRuntimeSessionByLookupHashParams{
 		TenantID:        tenantID,
 		TokenLookupHash: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
 	})
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.RenewRuntimeSession(ctx, queries.RenewRuntimeSessionParams{
+		ID:        session.ID,
+		TenantID:  tenantID,
+		ExpiresAt: renewedExpiresAt,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.TouchRuntimeSessionLastSeen(ctx, queries.TouchRuntimeSessionLastSeenParams{
+		ID:       session.ID,
+		TenantID: tenantID,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	var sessionRevokedAt pgtype.Timestamptz
+	err = testDB.QueryRow(ctx, `
+		SELECT revoked_at
+		FROM runtime_sessions
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, session.ID, tenantID).Scan(&sessionRevokedAt)
+	require.NoError(t, err)
+	assert.True(t, sessionRevokedAt.Valid)
 }
 
 func TestDigitalEmployeeExecutionQueries(t *testing.T) {

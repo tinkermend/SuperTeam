@@ -857,6 +857,7 @@ components:
         - id
         - tenant_id
         - runtime_node_id
+        - node_id
         - status
         - created_at
         - updated_at
@@ -870,6 +871,9 @@ components:
         runtime_node_id:
           type: string
           format: uuid
+        node_id:
+          type: string
+          minLength: 1
         bootstrap_key_id:
           type: string
           format: uuid

@@ -63,35 +63,6 @@ SET deleted_at = COALESCE(deleted_at, NOW()),
 WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid;
 
--- name: CreateDigitalEmployeeExecutionInstance :one
-INSERT INTO digital_employee_execution_instances (
-    tenant_id,
-    digital_employee_id,
-    runtime_node_id,
-    provider_type,
-    agent_home_dir,
-    workspace_policy,
-    session_policy,
-    runtime_selector,
-    capacity_requirements,
-    fallback_policy,
-    status,
-    metadata
-) VALUES (
-    sqlc.arg('tenant_id')::uuid,
-    sqlc.arg('digital_employee_id')::uuid,
-    sqlc.arg('runtime_node_id')::uuid,
-    sqlc.arg('provider_type')::varchar,
-    sqlc.arg('agent_home_dir')::text,
-    COALESCE(sqlc.arg('workspace_policy')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.arg('session_policy')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.arg('runtime_selector')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.arg('capacity_requirements')::jsonb, '{}'::jsonb),
-    COALESCE(sqlc.arg('fallback_policy')::jsonb, '{}'::jsonb),
-    sqlc.arg('status')::varchar,
-    COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
-) RETURNING *;
-
 -- name: UpsertDigitalEmployeeExecutionInstance :one
 INSERT INTO digital_employee_execution_instances (
     tenant_id,

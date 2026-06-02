@@ -228,12 +228,19 @@ func (q *Queries) GetActiveRuntimeBootstrapKeyByHash(ctx context.Context, arg Ge
 }
 
 const GetActiveRuntimeSessionByLookupHash = `-- name: GetActiveRuntimeSessionByLookupHash :one
-SELECT id, tenant_id, runtime_node_id, enrollment_id, token_lookup_hash, token_secret_hash, expires_at, last_seen_at, revoked_at, revoked_reason, created_at, updated_at
-FROM runtime_sessions
-WHERE tenant_id = $1::uuid
-  AND token_lookup_hash = $2::varchar
-  AND expires_at > NOW()
-  AND revoked_at IS NULL
+SELECT rs.id, rs.tenant_id, rs.runtime_node_id, rs.enrollment_id, rs.token_lookup_hash, rs.token_secret_hash, rs.expires_at, rs.last_seen_at, rs.revoked_at, rs.revoked_reason, rs.created_at, rs.updated_at
+FROM runtime_sessions rs
+JOIN runtime_enrollments re
+  ON re.id = rs.enrollment_id
+ AND re.tenant_id = rs.tenant_id
+ AND re.runtime_node_id = rs.runtime_node_id
+ AND re.status = 'approved'
+ AND re.rejected_at IS NULL
+ AND re.revoked_at IS NULL
+WHERE rs.tenant_id = $1::uuid
+  AND rs.token_lookup_hash = $2::varchar
+  AND rs.expires_at > NOW()
+  AND rs.revoked_at IS NULL
 `
 
 type GetActiveRuntimeSessionByLookupHashParams struct {
@@ -526,6 +533,16 @@ WHERE id = $2::uuid
   AND tenant_id = $3::uuid
   AND expires_at > NOW()
   AND revoked_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM runtime_enrollments re
+      WHERE re.id = runtime_sessions.enrollment_id
+        AND re.tenant_id = runtime_sessions.tenant_id
+        AND re.runtime_node_id = runtime_sessions.runtime_node_id
+        AND re.status = 'approved'
+        AND re.rejected_at IS NULL
+        AND re.revoked_at IS NULL
+  )
 RETURNING id, tenant_id, runtime_node_id, enrollment_id, token_lookup_hash, token_secret_hash, expires_at, last_seen_at, revoked_at, revoked_reason, created_at, updated_at
 `
 
@@ -602,16 +619,32 @@ func (q *Queries) RevokeRuntimeBootstrapKey(ctx context.Context, arg RevokeRunti
 }
 
 const RevokeRuntimeEnrollment = `-- name: RevokeRuntimeEnrollment :one
-UPDATE runtime_enrollments
-SET status = 'revoked',
-    revoked_by = $1::uuid,
-    revoked_at = NOW(),
-    revoke_reason = $2::text,
-    updated_at = NOW()
-WHERE id = $3::uuid
-  AND tenant_id = $4::uuid
-  AND status IN ('pending', 'approved')
-RETURNING id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
+WITH revoked_enrollment AS (
+    UPDATE runtime_enrollments
+    SET status = 'revoked',
+        revoked_by = $1::uuid,
+        revoked_at = NOW(),
+        revoke_reason = $2::text,
+        updated_at = NOW()
+    WHERE id = $3::uuid
+      AND tenant_id = $4::uuid
+      AND status IN ('pending', 'approved')
+    RETURNING id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
+),
+revoked_sessions AS (
+    UPDATE runtime_sessions rs
+    SET revoked_at = COALESCE(rs.revoked_at, NOW()),
+        revoked_reason = COALESCE($2::text, rs.revoked_reason),
+        updated_at = NOW()
+    FROM revoked_enrollment re
+    WHERE rs.tenant_id = re.tenant_id
+      AND rs.runtime_node_id = re.runtime_node_id
+      AND rs.expires_at > NOW()
+      AND rs.revoked_at IS NULL
+    RETURNING rs.id
+)
+SELECT id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
+FROM revoked_enrollment
 `
 
 type RevokeRuntimeEnrollmentParams struct {
@@ -621,14 +654,35 @@ type RevokeRuntimeEnrollmentParams struct {
 	TenantID     uuid.UUID     `json:"tenant_id"`
 }
 
-func (q *Queries) RevokeRuntimeEnrollment(ctx context.Context, arg RevokeRuntimeEnrollmentParams) (RuntimeEnrollment, error) {
+type RevokeRuntimeEnrollmentRow struct {
+	ID             uuid.UUID          `json:"id"`
+	TenantID       uuid.UUID          `json:"tenant_id"`
+	RuntimeNodeID  uuid.UUID          `json:"runtime_node_id"`
+	NodeID         string             `json:"node_id"`
+	BootstrapKeyID uuid.NullUUID      `json:"bootstrap_key_id"`
+	Status         string             `json:"status"`
+	RequestPayload []byte             `json:"request_payload"`
+	ApprovedBy     uuid.NullUUID      `json:"approved_by"`
+	ApprovedAt     pgtype.Timestamptz `json:"approved_at"`
+	RejectedBy     uuid.NullUUID      `json:"rejected_by"`
+	RejectedAt     pgtype.Timestamptz `json:"rejected_at"`
+	RejectReason   pgtype.Text        `json:"reject_reason"`
+	RevokedBy      uuid.NullUUID      `json:"revoked_by"`
+	RevokedAt      pgtype.Timestamptz `json:"revoked_at"`
+	RevokeReason   pgtype.Text        `json:"revoke_reason"`
+	LastHelloAt    pgtype.Timestamptz `json:"last_hello_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) RevokeRuntimeEnrollment(ctx context.Context, arg RevokeRuntimeEnrollmentParams) (RevokeRuntimeEnrollmentRow, error) {
 	row := q.db.QueryRow(ctx, RevokeRuntimeEnrollment,
 		arg.RevokedBy,
 		arg.RevokeReason,
 		arg.ID,
 		arg.TenantID,
 	)
-	var i RuntimeEnrollment
+	var i RevokeRuntimeEnrollmentRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -696,6 +750,16 @@ WHERE id = $1::uuid
   AND tenant_id = $2::uuid
   AND expires_at > NOW()
   AND revoked_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM runtime_enrollments re
+      WHERE re.id = runtime_sessions.enrollment_id
+        AND re.tenant_id = runtime_sessions.tenant_id
+        AND re.runtime_node_id = runtime_sessions.runtime_node_id
+        AND re.status = 'approved'
+        AND re.rejected_at IS NULL
+        AND re.revoked_at IS NULL
+  )
 RETURNING id, tenant_id, runtime_node_id, enrollment_id, token_lookup_hash, token_secret_hash, expires_at, last_seen_at, revoked_at, revoked_reason, created_at, updated_at
 `
 
@@ -854,15 +918,26 @@ INSERT INTO runtime_enrollments (
     status,
     request_payload,
     last_hello_at
-) VALUES (
-    $1::uuid,
+) SELECT
+    rn.tenant_id,
+    rn.id,
+    $1::varchar,
     $2::uuid,
     $3::varchar,
-    $4::uuid,
-    $5::varchar,
-    COALESCE($6::jsonb, '{}'::jsonb),
-    $7::timestamptz
-)
+    COALESCE($4::jsonb, '{}'::jsonb),
+    $5::timestamptz
+FROM runtime_nodes rn
+LEFT JOIN runtime_bootstrap_keys rbk
+  ON rbk.id = $2::uuid
+ AND rbk.tenant_id = rn.tenant_id
+ AND rbk.status = 'active'
+ AND rbk.revoked_at IS NULL
+ AND (rbk.expires_at IS NULL OR rbk.expires_at > NOW())
+WHERE rn.id = $6::uuid
+  AND rn.tenant_id = $7::uuid
+  AND rn.disabled_at IS NULL
+  AND rn.archived_at IS NULL
+  AND ($2::uuid IS NULL OR rbk.id IS NOT NULL)
 ON CONFLICT (tenant_id, node_id) DO UPDATE SET
     runtime_node_id = CASE
         WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.runtime_node_id
@@ -886,24 +961,24 @@ RETURNING id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, req
 `
 
 type UpsertRuntimeEnrollmentParams struct {
-	TenantID       uuid.UUID          `json:"tenant_id"`
-	RuntimeNodeID  uuid.UUID          `json:"runtime_node_id"`
 	NodeID         string             `json:"node_id"`
 	BootstrapKeyID uuid.NullUUID      `json:"bootstrap_key_id"`
 	Status         string             `json:"status"`
 	RequestPayload []byte             `json:"request_payload"`
 	LastHelloAt    pgtype.Timestamptz `json:"last_hello_at"`
+	RuntimeNodeID  uuid.UUID          `json:"runtime_node_id"`
+	TenantID       uuid.UUID          `json:"tenant_id"`
 }
 
 func (q *Queries) UpsertRuntimeEnrollment(ctx context.Context, arg UpsertRuntimeEnrollmentParams) (RuntimeEnrollment, error) {
 	row := q.db.QueryRow(ctx, UpsertRuntimeEnrollment,
-		arg.TenantID,
-		arg.RuntimeNodeID,
 		arg.NodeID,
 		arg.BootstrapKeyID,
 		arg.Status,
 		arg.RequestPayload,
 		arg.LastHelloAt,
+		arg.RuntimeNodeID,
+		arg.TenantID,
 	)
 	var i RuntimeEnrollment
 	err := row.Scan(
