@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Web 团队管理页面 (2026-06-03)
+
+- Web 控制台新增“团队管理”侧栏入口和 `/teams` 页面，可查看团队负责人、当前治理配置修订号、宪法硬性规则、能力边界和内部协作自动轮次；当前治理配置缺失或加载失败时按单行降级提示，不阻断团队列表展示。
+
 #### 团队治理后端 (2026-06-03)
 
 - Control Plane 新增租户团队领域服务、PostgreSQL repository 和 API 路由，支持团队负责人、共享治理配置版本创建与当前版本查询；相关路由由 Web 控制台会话认证保护，并统一经过 `runtime_scope.manage` 授权校验。

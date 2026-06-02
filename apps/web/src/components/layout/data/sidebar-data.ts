@@ -9,6 +9,7 @@ import {
   Server,
   ShieldCheck,
   Users,
+  UsersRound,
 } from "lucide-react";
 import { type SidebarData } from "../types";
 
@@ -34,6 +35,12 @@ export const sidebarData: SidebarData = {
           url: "/employees",
           icon: Bot,
           iconTone: "employee",
+        },
+        {
+          title: "团队管理",
+          url: "/teams",
+          icon: UsersRound,
+          iconTone: "permission",
         },
       ],
     },
