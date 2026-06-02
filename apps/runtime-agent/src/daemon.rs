@@ -10,6 +10,7 @@ use crate::controlplane::client::ControlPlaneClient;
 use crate::controlplane::models::{
     EnrollHelloRequest, EnrollmentStatus, HeartbeatRequest, NodeStatus, RuntimeCapabilityInput,
 };
+use crate::controlplane::ws::run_command_loop;
 use crate::executor::TaskExecutor;
 use crate::session::RuntimeSession;
 
@@ -28,6 +29,11 @@ pub struct RuntimeDaemon {
     config: RuntimeConfig,
 }
 
+struct RuntimeSessionContext {
+    client: ControlPlaneClient,
+    session_token: String,
+}
+
 impl RuntimeDaemon {
     pub fn new(config: RuntimeConfig) -> Self {
         Self { config }
@@ -42,17 +48,26 @@ impl RuntimeDaemon {
 
     pub async fn run(self) -> Result<()> {
         let capabilities = build_capabilities(&self.config);
-        let Some(client) = connect_runtime_session(&self.config, capabilities).await? else {
+        let Some(session_context) = establish_runtime_session(&self.config, capabilities).await?
+        else {
             return Ok(());
         };
 
-        let heartbeat_client = client.clone();
+        let command_config = self.config.clone();
+        let command_session_token = session_context.session_token.clone();
+        tokio::spawn(async move {
+            if let Err(error) = run_command_loop(command_config, command_session_token).await {
+                eprintln!("Runtime command loop failed: {}", error);
+            }
+        });
+
+        let heartbeat_client = session_context.client.clone();
         let heartbeat_config = self.config.clone();
         tokio::spawn(async move {
             heartbeat_loop(heartbeat_client, heartbeat_config).await;
         });
 
-        let executor = TaskExecutor::new(self.config, client);
+        let executor = TaskExecutor::new(self.config, session_context.client);
         executor.run().await?;
 
         Ok(())
@@ -63,6 +78,15 @@ pub async fn connect_runtime_session(
     config: &RuntimeConfig,
     capabilities: Vec<RuntimeCapabilityInput>,
 ) -> Result<Option<ControlPlaneClient>> {
+    Ok(establish_runtime_session(config, capabilities)
+        .await?
+        .map(|context| context.client))
+}
+
+async fn establish_runtime_session(
+    config: &RuntimeConfig,
+    capabilities: Vec<RuntimeCapabilityInput>,
+) -> Result<Option<RuntimeSessionContext>> {
     let bootstrap_client = ControlPlaneClient::new(&config.runtime.control_plane_url, "");
     let supported_providers = build_supported_providers(config);
 
@@ -111,9 +135,13 @@ pub async fn connect_runtime_session(
         session_response.id.clone(),
         session.expires_at.clone(),
     );
+    let session_token = session.token.clone();
     println!("Runtime session established");
 
-    Ok(Some(client))
+    Ok(Some(RuntimeSessionContext {
+        client,
+        session_token,
+    }))
 }
 
 pub fn spawn_session_renewal_loop(

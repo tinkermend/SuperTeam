@@ -1266,6 +1266,8 @@ dependencies = [
  "axum",
  "clap",
  "futures",
+ "futures-util",
+ "http",
  "reqwest",
  "serde",
  "serde_json",
@@ -1273,6 +1275,7 @@ dependencies = [
  "tempfile",
  "time",
  "tokio",
+ "tokio-tungstenite",
  "tokio-util",
 ]
 

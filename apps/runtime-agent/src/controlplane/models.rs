@@ -143,6 +143,29 @@ pub type RuntimeWorkspaceCapability = RuntimeCapabilityInput;
 pub type RuntimeCapacityCapability = RuntimeCapabilityInput;
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct RuntimeCommand {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub command_type: RuntimeCommandType,
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeCommandType {
+    EnsureInstance,
+    StartSession,
+    ResumeSession,
+    SendInput,
+    StopSession,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EnsureInstanceCommand {
+    pub execution_instance_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct RuntimeCapabilityResponse {
     pub id: String,
     pub tenant_id: String,

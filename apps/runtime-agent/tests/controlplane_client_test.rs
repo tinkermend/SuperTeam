@@ -1,7 +1,7 @@
 use superteam_runtime_agent::controlplane::{
     ControlPlaneClient, EnrollHelloRequest, EnrollHelloResponse, EnrollmentStatus,
     HeartbeatRequest, HeartbeatResponse, NodeStatus, RegisterNodeRequest, RegisterNodeResponse,
-    RuntimeCapabilityInput,
+    RuntimeCapabilityInput, RuntimeCommand, RuntimeCommandType,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -118,6 +118,22 @@ fn test_enroll_hello_response_reads_top_level_session_token() {
         response.session.as_ref().map(|session| session.id.as_str()),
         Some("55555555-5555-4555-8555-555555555555")
     );
+}
+
+#[test]
+fn test_runtime_command_deserializes_ensure_instance() {
+    let command: RuntimeCommand = serde_json::from_value(serde_json::json!({
+        "id": "cmd-1",
+        "type": "ensure_instance",
+        "payload": {
+            "execution_instance_id": "instance-1"
+        }
+    }))
+    .unwrap();
+
+    assert_eq!(command.id, "cmd-1");
+    assert_eq!(command.command_type, RuntimeCommandType::EnsureInstance);
+    assert_eq!(command.payload["execution_instance_id"], "instance-1");
 }
 
 #[test]

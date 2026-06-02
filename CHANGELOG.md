@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Runtime Enrollment 和 Runtime Session 查询补强租户、Bootstrap Key、批准状态与撤销边界校验，移除可绕过执行前置条件的数字员工执行实例直接插入查询。
 - Runtime hello 接入写入固定为 pending 状态，并要求有效 Bootstrap Key 与 Runtime 节点外部 ID 匹配，防止 hello 绕过人工审批或错绑节点。
 - Runtime Agent 启动链路从旧版长生命周期 runtime token 注册切换为 bootstrap key hello 接入，批准后使用短期 runtime session token 访问 heartbeat、任务领取和事件回传接口，并按真实 Control Plane contract 上报扁平 capabilities。
+- Runtime Agent 建立短期 session 后会主动连接 Control Plane Runtime WebSocket 命令通道，并支持接收 `ensure_instance` 命令创建数字员工执行实例目录。
 
 ### Added
 
