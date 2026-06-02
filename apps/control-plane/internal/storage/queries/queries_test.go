@@ -1334,6 +1334,8 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 		EventType:         "message_delta",
 		SequenceNumber:    1,
 		Payload:           eventPayload1,
+		RequestID:         pgtype.Text{String: "request-001", Valid: true},
+		CommandID:         pgtype.Text{String: "command-001", Valid: true},
 		RawEventRef:       pgtype.Text{String: "s3://superteam/raw/session-001/1.json", Valid: true},
 		Metadata:          []byte(`{"channel":"stdout"}`),
 	})
@@ -1342,6 +1344,8 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	assert.Equal(t, instance.ID, event1.ExecutionInstanceID)
 	assert.Equal(t, node.ID, event1.RuntimeNodeID)
 	assert.Equal(t, "claude-code", event1.ProviderType)
+	assert.Equal(t, "request-001", event1.RequestID.String)
+	assert.Equal(t, "command-001", event1.CommandID.String)
 
 	eventPayload2 := []byte(`{"tool":"write_file"}`)
 	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{

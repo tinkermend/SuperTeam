@@ -96,6 +96,8 @@ INSERT INTO provider_session_events (
     event_type,
     sequence_number,
     payload,
+    request_id,
+    command_id,
     raw_event_ref,
     metadata
 ) SELECT
@@ -108,18 +110,22 @@ INSERT INTO provider_session_events (
     $1::varchar,
     $2::integer,
     $3::jsonb,
-    $4::text,
-    COALESCE($5::jsonb, '{}'::jsonb)
+    $4::varchar,
+    $5::varchar,
+    $6::text,
+    COALESCE($7::jsonb, '{}'::jsonb)
 FROM provider_sessions ps
-WHERE ps.id = $6::uuid
-  AND ps.tenant_id = $7::uuid
-RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, raw_event_ref, metadata, created_at
+WHERE ps.id = $8::uuid
+  AND ps.tenant_id = $9::uuid
+RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, request_id, command_id, raw_event_ref, metadata, created_at
 `
 
 type CreateProviderSessionEventParams struct {
 	EventType         string      `json:"event_type"`
 	SequenceNumber    int32       `json:"sequence_number"`
 	Payload           []byte      `json:"payload"`
+	RequestID         pgtype.Text `json:"request_id"`
+	CommandID         pgtype.Text `json:"command_id"`
 	RawEventRef       pgtype.Text `json:"raw_event_ref"`
 	Metadata          []byte      `json:"metadata"`
 	ProviderSessionID uuid.UUID   `json:"provider_session_id"`
@@ -131,6 +137,8 @@ func (q *Queries) CreateProviderSessionEvent(ctx context.Context, arg CreateProv
 		arg.EventType,
 		arg.SequenceNumber,
 		arg.Payload,
+		arg.RequestID,
+		arg.CommandID,
 		arg.RawEventRef,
 		arg.Metadata,
 		arg.ProviderSessionID,
@@ -148,6 +156,8 @@ func (q *Queries) CreateProviderSessionEvent(ctx context.Context, arg CreateProv
 		&i.EventType,
 		&i.SequenceNumber,
 		&i.Payload,
+		&i.RequestID,
+		&i.CommandID,
 		&i.RawEventRef,
 		&i.Metadata,
 		&i.CreatedAt,
@@ -247,7 +257,7 @@ func (q *Queries) GetProviderSessionByExternalID(ctx context.Context, arg GetPro
 }
 
 const ListProviderSessionEvents = `-- name: ListProviderSessionEvents :many
-SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, raw_event_ref, metadata, created_at
+SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, request_id, command_id, raw_event_ref, metadata, created_at
 FROM provider_session_events
 WHERE tenant_id = $1::uuid
   AND provider_session_id = $2::uuid
@@ -279,6 +289,8 @@ func (q *Queries) ListProviderSessionEvents(ctx context.Context, arg ListProvide
 			&i.EventType,
 			&i.SequenceNumber,
 			&i.Payload,
+			&i.RequestID,
+			&i.CommandID,
 			&i.RawEventRef,
 			&i.Metadata,
 			&i.CreatedAt,

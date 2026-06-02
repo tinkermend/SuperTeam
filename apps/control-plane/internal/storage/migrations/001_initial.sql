@@ -296,6 +296,8 @@ CREATE TABLE provider_session_events (
     event_type VARCHAR(100) NOT NULL,
     sequence_number INTEGER NOT NULL,
     payload JSONB NOT NULL,
+    request_id VARCHAR(255),
+    command_id VARCHAR(255),
     raw_event_ref TEXT,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -502,6 +504,8 @@ CREATE UNIQUE INDEX uq_provider_session_events_sequence ON provider_session_even
 CREATE INDEX idx_provider_session_events_session_sequence ON provider_session_events(tenant_id, provider_session_id, sequence_number);
 CREATE INDEX idx_provider_session_events_employee_created ON provider_session_events(tenant_id, digital_employee_id, created_at DESC);
 CREATE INDEX idx_provider_session_events_runtime_created ON provider_session_events(tenant_id, runtime_node_id, created_at DESC);
+CREATE INDEX idx_provider_session_events_request ON provider_session_events(tenant_id, request_id) WHERE request_id IS NOT NULL;
+CREATE INDEX idx_provider_session_events_command ON provider_session_events(tenant_id, command_id) WHERE command_id IS NOT NULL;
 CREATE INDEX idx_tasks_tenant_id ON tasks(tenant_id);
 CREATE INDEX idx_tasks_status ON tasks(status);
 CREATE INDEX idx_tasks_provider_type ON tasks(provider_type);
@@ -837,6 +841,8 @@ COMMENT ON COLUMN provider_session_events.provider_type IS 'Provider 类型';
 COMMENT ON COLUMN provider_session_events.event_type IS 'Provider 事件类型';
 COMMENT ON COLUMN provider_session_events.sequence_number IS 'Provider 会话内事件序号';
 COMMENT ON COLUMN provider_session_events.payload IS '归一化后的 Provider 事件负载';
+COMMENT ON COLUMN provider_session_events.request_id IS '触发该事件的平台请求 ID，可为空';
+COMMENT ON COLUMN provider_session_events.command_id IS '触发该事件的平台命令 ID，可为空';
 COMMENT ON COLUMN provider_session_events.raw_event_ref IS '原始输出对象存储引用或摘要引用';
 COMMENT ON COLUMN provider_session_events.metadata IS 'Provider 会话事件扩展元数据';
 COMMENT ON COLUMN provider_session_events.created_at IS 'Provider 会话事件创建时间';

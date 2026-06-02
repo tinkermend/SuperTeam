@@ -1408,6 +1408,10 @@ components:
         payload:
           type: object
           additionalProperties: true
+        request_id:
+          type: string
+        command_id:
+          type: string
         raw_event_ref:
           type: string
         metadata:
@@ -1431,6 +1435,10 @@ components:
         payload:
           type: object
           additionalProperties: true
+        request_id:
+          type: string
+        command_id:
+          type: string
         raw_event_ref:
           type: string
         metadata:

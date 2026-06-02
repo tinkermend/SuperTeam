@@ -74,6 +74,8 @@ INSERT INTO provider_session_events (
     event_type,
     sequence_number,
     payload,
+    request_id,
+    command_id,
     raw_event_ref,
     metadata
 ) SELECT
@@ -86,6 +88,8 @@ INSERT INTO provider_session_events (
     sqlc.arg('event_type')::varchar,
     sqlc.arg('sequence_number')::integer,
     sqlc.arg('payload')::jsonb,
+    sqlc.narg('request_id')::varchar,
+    sqlc.narg('command_id')::varchar,
     sqlc.narg('raw_event_ref')::text,
     COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
 FROM provider_sessions ps
