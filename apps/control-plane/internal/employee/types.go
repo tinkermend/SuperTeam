@@ -10,6 +10,7 @@ import (
 var (
 	ErrInvalidInput = errors.New("invalid employee input")
 	ErrNotFound     = errors.New("employee not found")
+	ErrConflict     = errors.New("employee conflict")
 )
 
 type DigitalEmployeeStatus string
@@ -50,6 +51,31 @@ func (s ExecutionInstanceStatus) IsValid() bool {
 	}
 }
 
+type ConfigRevisionStatus string
+
+const (
+	ConfigRevisionStatusDraft ConfigRevisionStatus = "draft"
+)
+
+type EffectiveConfigStatus string
+
+const (
+	EffectiveConfigStatusPendingApproval EffectiveConfigStatus = "pending_approval"
+	EffectiveConfigStatusApproved        EffectiveConfigStatus = "approved"
+	EffectiveConfigStatusRevoked         EffectiveConfigStatus = "revoked"
+)
+
+type ValidationIssue struct {
+	Code    string `json:"code"`
+	Path    string `json:"path,omitempty"`
+	Message string `json:"message"`
+}
+
+type EffectiveConfigValidation struct {
+	BlockingErrors []ValidationIssue `json:"blocking_errors"`
+	Warnings       []ValidationIssue `json:"warnings"`
+}
+
 type DigitalEmployee struct {
 	ID               uuid.UUID
 	TenantID         uuid.UUID
@@ -67,6 +93,75 @@ type DigitalEmployee struct {
 	ArchivedAt       *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+}
+
+type TeamConfigInput struct {
+	ID                          uuid.UUID
+	TenantID                    uuid.UUID
+	TeamID                      uuid.UUID
+	RevisionNumber              int32
+	Constitution                map[string]any
+	CapabilityPolicy            map[string]any
+	ContextPolicy               map[string]any
+	ApprovalPolicy              map[string]any
+	ArtifactContract            map[string]any
+	InternalCollaborationPolicy map[string]any
+	RuntimeScopePolicy          map[string]any
+}
+
+type EmployeeConfigInput struct {
+	ID                     uuid.UUID
+	TenantID               uuid.UUID
+	DigitalEmployeeID      uuid.UUID
+	RevisionNumber         int32
+	RoleProfile            map[string]any
+	ConstitutionAddendum   map[string]any
+	CapabilitySelection    map[string]any
+	ContextPolicyOverride  map[string]any
+	ApprovalPolicyOverride map[string]any
+	OutputContractAddendum map[string]any
+}
+
+type DigitalEmployeeConfigRevision struct {
+	ID                     uuid.UUID
+	TenantID               uuid.UUID
+	DigitalEmployeeID      uuid.UUID
+	RevisionNumber         int32
+	RoleProfile            map[string]any
+	ConstitutionAddendum   map[string]any
+	CapabilitySelection    map[string]any
+	ContextPolicyOverride  map[string]any
+	ApprovalPolicyOverride map[string]any
+	OutputContractAddendum map[string]any
+	Status                 ConfigRevisionStatus
+	ApprovedBy             *uuid.UUID
+	ApprovedAt             *time.Time
+	ArchivedAt             *time.Time
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+}
+
+type EffectiveConfigPreview struct {
+	TeamConfigRevisionID     uuid.UUID
+	EmployeeConfigRevisionID uuid.UUID
+	EffectiveConfig          map[string]any
+	Validation               EffectiveConfigValidation
+}
+
+type DigitalEmployeeEffectiveConfig struct {
+	ID                       uuid.UUID
+	TenantID                 uuid.UUID
+	DigitalEmployeeID        uuid.UUID
+	TeamConfigRevisionID     uuid.UUID
+	EmployeeConfigRevisionID uuid.UUID
+	EffectiveConfig          map[string]any
+	ValidationResult         map[string]any
+	Status                   EffectiveConfigStatus
+	ApprovedBy               *uuid.UUID
+	ApprovedAt               *time.Time
+	RevokedAt                *time.Time
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
 }
 
 type DigitalEmployeeExecutionInstance struct {
@@ -102,6 +197,41 @@ type CreateDraftRequest struct {
 	ApprovalPolicy   map[string]any
 	RiskLevel        string
 	Metadata         map[string]any
+}
+
+type CreateDigitalEmployeeConfigRevisionRequest struct {
+	TenantID               uuid.UUID
+	DigitalEmployeeID      uuid.UUID
+	RoleProfile            map[string]any
+	ConstitutionAddendum   map[string]any
+	CapabilitySelection    map[string]any
+	ContextPolicyOverride  map[string]any
+	ApprovalPolicyOverride map[string]any
+	OutputContractAddendum map[string]any
+	Status                 ConfigRevisionStatus
+	ApprovedBy             *uuid.UUID
+}
+
+type PreviewEffectiveConfigRequest struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	TeamConfig        TeamConfigInput
+	EmployeeConfig    EmployeeConfigInput
+}
+
+type PreviewEffectiveConfigByRevisionIDsRequest struct {
+	TenantID                 uuid.UUID
+	DigitalEmployeeID        uuid.UUID
+	TeamConfigRevisionID     uuid.UUID
+	EmployeeConfigRevisionID uuid.UUID
+}
+
+type ApproveEffectiveConfigRequest struct {
+	TenantID                 uuid.UUID
+	DigitalEmployeeID        uuid.UUID
+	TeamConfigRevisionID     uuid.UUID
+	EmployeeConfigRevisionID uuid.UUID
+	ApprovedBy               uuid.UUID
 }
 
 type ListDigitalEmployeesRequest struct {

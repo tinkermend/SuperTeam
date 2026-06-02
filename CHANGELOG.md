@@ -47,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### 团队治理后端 (2026-06-03)
 
 - Control Plane 新增租户团队领域服务、PostgreSQL repository 和 API 路由，支持团队负责人、共享治理配置版本创建与当前版本查询；相关路由由 Web 控制台会话认证保护，并统一经过 `runtime_scope.manage` 授权校验。
+- 数字员工服务新增个人配置版本、生效配置预览与校验、审批落库能力；预览会阻断团队能力白名单外的个人能力、团队上下文范围外的上下文覆盖以及降低团队审批要求的个人审批覆盖。
+- 数字员工生效配置审批要求已有 ready 或 active 的唯一执行实例，并新增 `/api/v1/digital-employees/{employeeId}/config-revisions`、`/effective-configs/preview`、`/effective-configs/approve` API 路由。
 
 #### Web 液态玻璃组件化 (2026-06-03)
 

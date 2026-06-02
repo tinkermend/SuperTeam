@@ -14,6 +14,12 @@ type Repository interface {
 	UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error)
 	UpsertDigitalEmployeeExecutionInstance(ctx context.Context, params UpsertExecutionInstanceParams) (DigitalEmployeeExecutionInstanceRecord, error)
 	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeExecutionInstanceRecord, error)
+	CreateDigitalEmployeeConfigRevision(ctx context.Context, params CreateConfigRevisionParams) (DigitalEmployeeConfigRevisionRecord, error)
+	GetTeamConfigRevision(ctx context.Context, tenantID, teamConfigRevisionID uuid.UUID) (TeamConfigInput, error)
+	GetDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID, employeeConfigRevisionID uuid.UUID) (EmployeeConfigInput, error)
+	GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (int32, error)
+	GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeEffectiveConfigRecord, error)
+	CreateDigitalEmployeeEffectiveConfig(ctx context.Context, params CreateEffectiveConfigParams) (DigitalEmployeeEffectiveConfigRecord, error)
 }
 
 type CreateDigitalEmployeeParams struct {
@@ -51,6 +57,33 @@ type UpsertExecutionInstanceParams struct {
 	FallbackPolicy       map[string]any
 	Status               ExecutionInstanceStatus
 	Metadata             map[string]any
+}
+
+type CreateConfigRevisionParams struct {
+	TenantID               uuid.UUID
+	DigitalEmployeeID      uuid.UUID
+	RevisionNumber         int32
+	RoleProfile            map[string]any
+	ConstitutionAddendum   map[string]any
+	CapabilitySelection    map[string]any
+	ContextPolicyOverride  map[string]any
+	ApprovalPolicyOverride map[string]any
+	OutputContractAddendum map[string]any
+	Status                 ConfigRevisionStatus
+	ApprovedBy             *uuid.UUID
+	ApprovedAt             *time.Time
+}
+
+type CreateEffectiveConfigParams struct {
+	TenantID                 uuid.UUID
+	DigitalEmployeeID        uuid.UUID
+	TeamConfigRevisionID     uuid.UUID
+	EmployeeConfigRevisionID uuid.UUID
+	EffectiveConfig          map[string]any
+	ValidationResult         map[string]any
+	Status                   EffectiveConfigStatus
+	ApprovedBy               *uuid.UUID
+	ApprovedAt               *time.Time
 }
 
 type DigitalEmployeeRecord struct {
@@ -92,4 +125,39 @@ type DigitalEmployeeExecutionInstanceRecord struct {
 	Metadata             map[string]any
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+}
+
+type DigitalEmployeeConfigRevisionRecord struct {
+	ID                     uuid.UUID
+	TenantID               uuid.UUID
+	DigitalEmployeeID      uuid.UUID
+	RevisionNumber         int32
+	RoleProfile            map[string]any
+	ConstitutionAddendum   map[string]any
+	CapabilitySelection    map[string]any
+	ContextPolicyOverride  map[string]any
+	ApprovalPolicyOverride map[string]any
+	OutputContractAddendum map[string]any
+	Status                 ConfigRevisionStatus
+	ApprovedBy             *uuid.UUID
+	ApprovedAt             *time.Time
+	ArchivedAt             *time.Time
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+}
+
+type DigitalEmployeeEffectiveConfigRecord struct {
+	ID                       uuid.UUID
+	TenantID                 uuid.UUID
+	DigitalEmployeeID        uuid.UUID
+	TeamConfigRevisionID     uuid.UUID
+	EmployeeConfigRevisionID uuid.UUID
+	EffectiveConfig          map[string]any
+	ValidationResult         map[string]any
+	Status                   EffectiveConfigStatus
+	ApprovedBy               *uuid.UUID
+	ApprovedAt               *time.Time
+	RevokedAt                *time.Time
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
 }

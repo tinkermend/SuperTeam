@@ -17,9 +17,11 @@ func TestCreateDraftDigitalEmployeeDefaultsAndTrims(t *testing.T) {
 		t.Fatalf("new service: %v", err)
 	}
 	tenantID := uuid.New()
+	teamID := uuid.New()
 
 	created, err := svc.CreateDraft(context.Background(), CreateDraftRequest{
 		TenantID: tenantID,
+		TeamID:   &teamID,
 		Name:     "  Finance reviewer  ",
 		Role:     "  finance_reviewer  ",
 	})
@@ -29,6 +31,9 @@ func TestCreateDraftDigitalEmployeeDefaultsAndTrims(t *testing.T) {
 
 	if created.TenantID != tenantID {
 		t.Fatalf("expected tenant id %s, got %s", tenantID, created.TenantID)
+	}
+	if created.TeamID == nil || *created.TeamID != teamID {
+		t.Fatalf("expected team id %s, got %#v", teamID, created.TeamID)
 	}
 	if created.Name != "Finance reviewer" {
 		t.Fatalf("expected trimmed name, got %q", created.Name)
@@ -109,6 +114,7 @@ func TestServiceValidation(t *testing.T) {
 		t.Fatalf("new service: %v", err)
 	}
 	tenantID := uuid.New()
+	teamID := uuid.New()
 	employeeID := uuid.New()
 	runtimeNodeID := uuid.New()
 
@@ -119,21 +125,28 @@ func TestServiceValidation(t *testing.T) {
 		{
 			name: "create requires tenant",
 			run: func() error {
-				_, err := svc.CreateDraft(context.Background(), CreateDraftRequest{Name: "employee", Role: "reviewer"})
+				_, err := svc.CreateDraft(context.Background(), CreateDraftRequest{TeamID: &teamID, Name: "employee", Role: "reviewer"})
+				return err
+			},
+		},
+		{
+			name: "create requires team",
+			run: func() error {
+				_, err := svc.CreateDraft(context.Background(), CreateDraftRequest{TenantID: tenantID, Name: "employee", Role: "reviewer"})
 				return err
 			},
 		},
 		{
 			name: "create requires name",
 			run: func() error {
-				_, err := svc.CreateDraft(context.Background(), CreateDraftRequest{TenantID: tenantID, Name: " ", Role: "reviewer"})
+				_, err := svc.CreateDraft(context.Background(), CreateDraftRequest{TenantID: tenantID, TeamID: &teamID, Name: " ", Role: "reviewer"})
 				return err
 			},
 		},
 		{
 			name: "create requires role",
 			run: func() error {
-				_, err := svc.CreateDraft(context.Background(), CreateDraftRequest{TenantID: tenantID, Name: "employee", Role: " "})
+				_, err := svc.CreateDraft(context.Background(), CreateDraftRequest{TenantID: tenantID, TeamID: &teamID, Name: "employee", Role: " "})
 				return err
 			},
 		},
@@ -173,6 +186,491 @@ func TestServiceValidation(t *testing.T) {
 	}
 }
 
+func TestCreateConfigRevisionDefaultsDraftAndRevisionNumber(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	teamID := uuid.New()
+	spoofedApproverID := uuid.New()
+	repo.nextConfigRevisionNumber = 3
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:       employeeID,
+		TenantID: tenantID,
+		TeamID:   &teamID,
+		Name:     "Finance reviewer",
+		Role:     "finance_reviewer",
+		Status:   DigitalEmployeeStatusDraft,
+	}
+
+	revision, err := svc.CreateConfigRevision(context.Background(), CreateDigitalEmployeeConfigRevisionRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		RoleProfile:       map[string]any{"title": "finance reviewer"},
+		ApprovedBy:        &spoofedApproverID,
+	})
+	if err != nil {
+		t.Fatalf("create config revision: %v", err)
+	}
+
+	if revision.RevisionNumber != 3 {
+		t.Fatalf("expected revision number 3, got %d", revision.RevisionNumber)
+	}
+	if revision.Status != ConfigRevisionStatusDraft {
+		t.Fatalf("expected draft status, got %q", revision.Status)
+	}
+	if revision.ApprovedAt != nil {
+		t.Fatalf("expected draft revision approved_at to be nil, got %v", revision.ApprovedAt)
+	}
+	if revision.ApprovedBy != nil {
+		t.Fatalf("expected draft revision approved_by to be nil, got %#v", revision.ApprovedBy)
+	}
+	if repo.createdConfigRevision.Status != ConfigRevisionStatusDraft {
+		t.Fatalf("expected repository draft status, got %q", repo.createdConfigRevision.Status)
+	}
+	if repo.createdConfigRevision.ApprovedBy != nil || repo.createdConfigRevision.ApprovedAt != nil {
+		t.Fatalf("expected repository draft approval metadata to be cleared, got %#v/%#v", repo.createdConfigRevision.ApprovedBy, repo.createdConfigRevision.ApprovedAt)
+	}
+}
+
+func TestCreateConfigRevisionRequiresExistingEmployee(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	employeeID := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:       employeeID,
+		TenantID: uuid.New(),
+		Name:     "Wrong tenant employee",
+		Role:     "reviewer",
+		Status:   DigitalEmployeeStatusDraft,
+	}
+
+	_, err = svc.CreateConfigRevision(context.Background(), CreateDigitalEmployeeConfigRevisionRequest{
+		TenantID:          uuid.New(),
+		DigitalEmployeeID: employeeID,
+		RoleProfile:       map[string]any{"title": "finance reviewer"},
+	})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected not found for wrong-tenant employee, got %v", err)
+	}
+	if len(repo.employeeConfigs) != 0 {
+		t.Fatalf("expected missing employee not to insert config revision, got %#v", repo.employeeConfigs)
+	}
+}
+
+func TestPreviewEffectiveConfigBlocksCapabilityOutsideTeamAllowlist(t *testing.T) {
+	svc := newTestService(t)
+	preview, err := svc.PreviewEffectiveConfig(context.Background(), PreviewEffectiveConfigRequest{
+		TenantID:          uuid.New(),
+		DigitalEmployeeID: uuid.New(),
+		TeamConfig: TeamConfigInput{
+			ID:               uuid.New(),
+			CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
+		},
+		EmployeeConfig: EmployeeConfigInput{
+			ID:                  uuid.New(),
+			CapabilitySelection: map[string]any{"enabled_skills": []any{"database-troubleshooting"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("preview effective config: %v", err)
+	}
+
+	assertBlockingIssue(t, preview.Validation, "capability_outside_team_allowlist")
+}
+
+func TestPreviewEffectiveConfigBlocksContextOutsideTeamScope(t *testing.T) {
+	svc := newTestService(t)
+	preview, err := svc.PreviewEffectiveConfig(context.Background(), PreviewEffectiveConfigRequest{
+		TenantID:          uuid.New(),
+		DigitalEmployeeID: uuid.New(),
+		TeamConfig: TeamConfigInput{
+			ID:            uuid.New(),
+			ContextPolicy: map[string]any{"sources": []any{"monitoring", "logs"}},
+		},
+		EmployeeConfig: EmployeeConfigInput{
+			ID:                    uuid.New(),
+			ContextPolicyOverride: map[string]any{"sources": []any{"monitoring", "customer_profile"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("preview effective config: %v", err)
+	}
+
+	assertBlockingIssue(t, preview.Validation, "context_outside_team_scope")
+}
+
+func TestPreviewEffectiveConfigBlocksApprovalPolicyDowngrade(t *testing.T) {
+	svc := newTestService(t)
+	preview, err := svc.PreviewEffectiveConfig(context.Background(), PreviewEffectiveConfigRequest{
+		TenantID:          uuid.New(),
+		DigitalEmployeeID: uuid.New(),
+		TeamConfig: TeamConfigInput{
+			ID: uuid.New(),
+			ApprovalPolicy: map[string]any{
+				"min_risk_for_human":          "high",
+				"write_actions_require_human": true,
+			},
+		},
+		EmployeeConfig: EmployeeConfigInput{
+			ID: uuid.New(),
+			ApprovalPolicyOverride: map[string]any{
+				"min_risk_for_human":          "critical",
+				"write_actions_require_human": false,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("preview effective config: %v", err)
+	}
+
+	if len(preview.Validation.BlockingErrors) != 2 {
+		t.Fatalf("expected two approval downgrade blocking errors, got %#v", preview.Validation.BlockingErrors)
+	}
+	assertBlockingIssuePath(t, preview.Validation, "approval_policy_downgrade", "approval_policy_override.min_risk_for_human")
+	assertBlockingIssuePath(t, preview.Validation, "approval_policy_downgrade", "approval_policy_override.write_actions_require_human")
+}
+
+func TestPreviewEffectiveConfigAllowsTeamInternalCollaborationPolicy(t *testing.T) {
+	svc := newTestService(t)
+	policy := map[string]any{
+		"mode":                       "team_internal",
+		"allow_same_team_handoffs":   true,
+		"requires_external_approval": false,
+	}
+	preview, err := svc.PreviewEffectiveConfig(context.Background(), PreviewEffectiveConfigRequest{
+		TenantID:          uuid.New(),
+		DigitalEmployeeID: uuid.New(),
+		TeamConfig: TeamConfigInput{
+			ID:                          uuid.New(),
+			CapabilityPolicy:            map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
+			ContextPolicy:               map[string]any{"sources": []any{"monitoring"}},
+			ApprovalPolicy:              map[string]any{"min_risk_for_human": "high"},
+			InternalCollaborationPolicy: policy,
+		},
+		EmployeeConfig: EmployeeConfigInput{
+			ID:                    uuid.New(),
+			CapabilitySelection:   map[string]any{"enabled_skills": []any{"incident-diagnosis"}},
+			ContextPolicyOverride: map[string]any{"sources": []any{"monitoring"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("preview effective config: %v", err)
+	}
+	if len(preview.Validation.BlockingErrors) != 0 {
+		t.Fatalf("expected no blocking errors, got %#v", preview.Validation.BlockingErrors)
+	}
+	got, ok := preview.EffectiveConfig["internal_collaboration_policy"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected internal collaboration policy in effective config, got %#v", preview.EffectiveConfig["internal_collaboration_policy"])
+	}
+	if got["mode"] != "team_internal" || got["allow_same_team_handoffs"] != true {
+		t.Fatalf("expected team internal collaboration policy, got %#v", got)
+	}
+}
+
+func TestPreviewEffectiveConfigReportsMalformedPolicyValues(t *testing.T) {
+	svc := newTestService(t)
+	preview, err := svc.PreviewEffectiveConfig(context.Background(), PreviewEffectiveConfigRequest{
+		TenantID:          uuid.New(),
+		DigitalEmployeeID: uuid.New(),
+		TeamConfig: TeamConfigInput{
+			ID:               uuid.New(),
+			CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
+		},
+		EmployeeConfig: EmployeeConfigInput{
+			ID:                  uuid.New(),
+			CapabilitySelection: map[string]any{"enabled_skills": []any{"incident-diagnosis", 42}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("preview effective config: %v", err)
+	}
+
+	assertBlockingIssuePath(t, preview.Validation, "invalid_policy_value", "capability_selection.enabled_skills")
+}
+
+func TestPreviewEffectiveConfigReportsUnknownApprovalRisk(t *testing.T) {
+	svc := newTestService(t)
+	preview, err := svc.PreviewEffectiveConfig(context.Background(), PreviewEffectiveConfigRequest{
+		TenantID:          uuid.New(),
+		DigitalEmployeeID: uuid.New(),
+		TeamConfig: TeamConfigInput{
+			ID:             uuid.New(),
+			ApprovalPolicy: map[string]any{"min_risk_for_human": "high"},
+		},
+		EmployeeConfig: EmployeeConfigInput{
+			ID:                     uuid.New(),
+			ApprovalPolicyOverride: map[string]any{"min_risk_for_human": "severe"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("preview effective config: %v", err)
+	}
+
+	assertBlockingIssuePath(t, preview.Validation, "invalid_policy_value", "approval_policy_override.min_risk_for_human")
+}
+
+func TestApproveEffectiveConfigBlocksValidationErrors(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	teamID := uuid.New()
+	teamConfigRevisionID := uuid.New()
+	employeeConfigRevisionID := uuid.New()
+	approvedBy := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:       employeeID,
+		TenantID: tenantID,
+		TeamID:   &teamID,
+		Name:     "Incident analyst",
+		Role:     "incident_analyst",
+		Status:   DigitalEmployeeStatusDraft,
+	}
+	repo.teamConfigs[teamConfigRevisionID] = TeamConfigInput{
+		ID:               teamConfigRevisionID,
+		TenantID:         tenantID,
+		TeamID:           teamID,
+		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
+	}
+	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
+		ID:                  employeeConfigRevisionID,
+		TenantID:            tenantID,
+		DigitalEmployeeID:   employeeID,
+		CapabilitySelection: map[string]any{"enabled_skills": []any{"database-troubleshooting"}},
+	}
+	repo.instances[employeeID] = DigitalEmployeeExecutionInstanceRecord{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Status:            ExecutionInstanceStatusReady,
+	}
+
+	_, err = svc.ApproveEffectiveConfig(context.Background(), ApproveEffectiveConfigRequest{
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		TeamConfigRevisionID:     teamConfigRevisionID,
+		EmployeeConfigRevisionID: employeeConfigRevisionID,
+		ApprovedBy:               approvedBy,
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for blocking validation errors, got %v", err)
+	}
+	if len(repo.effectiveConfigs) != 0 {
+		t.Fatalf("expected no effective config to be created, got %#v", repo.effectiveConfigs)
+	}
+}
+
+func TestApproveEffectiveConfigRejectsDuplicateApprovedConfig(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	teamID := uuid.New()
+	teamConfigRevisionID := uuid.New()
+	employeeConfigRevisionID := uuid.New()
+	approvedBy := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:       employeeID,
+		TenantID: tenantID,
+		TeamID:   &teamID,
+		Name:     "Incident analyst",
+		Role:     "incident_analyst",
+		Status:   DigitalEmployeeStatusDraft,
+	}
+	repo.teamConfigs[teamConfigRevisionID] = TeamConfigInput{
+		ID:               teamConfigRevisionID,
+		TenantID:         tenantID,
+		TeamID:           teamID,
+		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
+	}
+	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
+		ID:                  employeeConfigRevisionID,
+		TenantID:            tenantID,
+		DigitalEmployeeID:   employeeID,
+		CapabilitySelection: map[string]any{"enabled_skills": []any{"incident-diagnosis"}},
+	}
+	repo.instances[employeeID] = DigitalEmployeeExecutionInstanceRecord{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Status:            ExecutionInstanceStatusReady,
+	}
+	existingID := uuid.New()
+	repo.effectiveConfigs[existingID] = DigitalEmployeeEffectiveConfigRecord{
+		ID:                       existingID,
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		TeamConfigRevisionID:     teamConfigRevisionID,
+		EmployeeConfigRevisionID: employeeConfigRevisionID,
+		Status:                   EffectiveConfigStatusApproved,
+	}
+
+	_, err = svc.ApproveEffectiveConfig(context.Background(), ApproveEffectiveConfigRequest{
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		TeamConfigRevisionID:     teamConfigRevisionID,
+		EmployeeConfigRevisionID: employeeConfigRevisionID,
+		ApprovedBy:               approvedBy,
+	})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected conflict for duplicate approved effective config, got %v", err)
+	}
+	if len(repo.effectiveConfigs) != 1 {
+		t.Fatalf("expected duplicate approval not to create another effective config, got %#v", repo.effectiveConfigs)
+	}
+}
+
+func TestPreviewEffectiveConfigByRevisionIDsRejectsWrongTeamConfig(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	employeeTeamID := uuid.New()
+	otherTeamID := uuid.New()
+	teamConfigRevisionID := uuid.New()
+	employeeConfigRevisionID := uuid.New()
+	approvedBy := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:       employeeID,
+		TenantID: tenantID,
+		TeamID:   &employeeTeamID,
+		Name:     "Incident analyst",
+		Role:     "incident_analyst",
+		Status:   DigitalEmployeeStatusDraft,
+	}
+	repo.teamConfigs[teamConfigRevisionID] = TeamConfigInput{
+		ID:               teamConfigRevisionID,
+		TenantID:         tenantID,
+		TeamID:           otherTeamID,
+		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
+	}
+	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
+		ID:                  employeeConfigRevisionID,
+		TenantID:            tenantID,
+		DigitalEmployeeID:   employeeID,
+		CapabilitySelection: map[string]any{"enabled_skills": []any{"incident-diagnosis"}},
+	}
+	repo.instances[employeeID] = DigitalEmployeeExecutionInstanceRecord{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Status:            ExecutionInstanceStatusReady,
+	}
+
+	_, err = svc.PreviewEffectiveConfigByRevisionIDs(context.Background(), PreviewEffectiveConfigByRevisionIDsRequest{
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		TeamConfigRevisionID:     teamConfigRevisionID,
+		EmployeeConfigRevisionID: employeeConfigRevisionID,
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for mismatched team config, got %v", err)
+	}
+
+	_, err = svc.ApproveEffectiveConfig(context.Background(), ApproveEffectiveConfigRequest{
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		TeamConfigRevisionID:     teamConfigRevisionID,
+		EmployeeConfigRevisionID: employeeConfigRevisionID,
+		ApprovedBy:               approvedBy,
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected approval to reject mismatched team config, got %v", err)
+	}
+	if len(repo.effectiveConfigs) != 0 {
+		t.Fatalf("expected mismatched team config not to persist effective config, got %#v", repo.effectiveConfigs)
+	}
+}
+
+func TestApproveEffectiveConfigRequiresReadyOrActiveExecutionInstance(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	teamID := uuid.New()
+	teamConfigRevisionID := uuid.New()
+	employeeConfigRevisionID := uuid.New()
+	approvedBy := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:       employeeID,
+		TenantID: tenantID,
+		TeamID:   &teamID,
+		Name:     "Incident analyst",
+		Role:     "incident_analyst",
+		Status:   DigitalEmployeeStatusDraft,
+	}
+	repo.teamConfigs[teamConfigRevisionID] = TeamConfigInput{
+		ID:               teamConfigRevisionID,
+		TenantID:         tenantID,
+		TeamID:           teamID,
+		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
+	}
+	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
+		ID:                  employeeConfigRevisionID,
+		TenantID:            tenantID,
+		DigitalEmployeeID:   employeeID,
+		CapabilitySelection: map[string]any{"enabled_skills": []any{"incident-diagnosis"}},
+	}
+	repo.instances[employeeID] = DigitalEmployeeExecutionInstanceRecord{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Status:            ExecutionInstanceStatusDisabled,
+	}
+
+	_, err = svc.ApproveEffectiveConfig(context.Background(), ApproveEffectiveConfigRequest{
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		TeamConfigRevisionID:     teamConfigRevisionID,
+		EmployeeConfigRevisionID: employeeConfigRevisionID,
+		ApprovedBy:               approvedBy,
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for disabled execution instance, got %v", err)
+	}
+
+	repo.instances[employeeID] = DigitalEmployeeExecutionInstanceRecord{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Status:            ExecutionInstanceStatusReady,
+	}
+	effectiveConfig, err := svc.ApproveEffectiveConfig(context.Background(), ApproveEffectiveConfigRequest{
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		TeamConfigRevisionID:     teamConfigRevisionID,
+		EmployeeConfigRevisionID: employeeConfigRevisionID,
+		ApprovedBy:               approvedBy,
+	})
+	if err != nil {
+		t.Fatalf("approve effective config: %v", err)
+	}
+	if effectiveConfig.Status != EffectiveConfigStatusApproved {
+		t.Fatalf("expected approved effective config, got %q", effectiveConfig.Status)
+	}
+	if effectiveConfig.ApprovedBy == nil || *effectiveConfig.ApprovedBy != approvedBy {
+		t.Fatalf("expected approved_by %s, got %#v", approvedBy, effectiveConfig.ApprovedBy)
+	}
+	if repo.createdEffectiveConfig.ValidationResult["blocking_errors"] == nil {
+		t.Fatalf("expected validation result to be persisted, got %#v", repo.createdEffectiveConfig.ValidationResult)
+	}
+}
+
 func TestJSONBFromMapRejectsUnsupportedValues(t *testing.T) {
 	_, err := jsonbFromMap(map[string]any{"bad": func() {}}, "metadata")
 	if err == nil {
@@ -193,15 +691,54 @@ func assertEmptyMap(t *testing.T, value map[string]any, label string) {
 	}
 }
 
+func newTestService(t *testing.T) *Service {
+	t.Helper()
+	svc, err := NewService(newMemoryRepository())
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	return svc
+}
+
+func assertBlockingIssue(t *testing.T, validation EffectiveConfigValidation, code string) {
+	t.Helper()
+	for _, issue := range validation.BlockingErrors {
+		if issue.Code == code {
+			return
+		}
+	}
+	t.Fatalf("expected blocking issue %q, got %#v", code, validation.BlockingErrors)
+}
+
+func assertBlockingIssuePath(t *testing.T, validation EffectiveConfigValidation, code, path string) {
+	t.Helper()
+	for _, issue := range validation.BlockingErrors {
+		if issue.Code == code && issue.Path == path {
+			return
+		}
+	}
+	t.Fatalf("expected blocking issue %q at %q, got %#v", code, path, validation.BlockingErrors)
+}
+
 type memoryRepository struct {
-	employees map[uuid.UUID]DigitalEmployeeRecord
-	instances map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord
+	employees                map[uuid.UUID]DigitalEmployeeRecord
+	instances                map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord
+	teamConfigs              map[uuid.UUID]TeamConfigInput
+	employeeConfigs          map[uuid.UUID]EmployeeConfigInput
+	effectiveConfigs         map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord
+	nextConfigRevisionNumber int32
+	createdConfigRevision    CreateConfigRevisionParams
+	createdEffectiveConfig   CreateEffectiveConfigParams
 }
 
 func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{
-		employees: make(map[uuid.UUID]DigitalEmployeeRecord),
-		instances: make(map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord),
+		employees:                make(map[uuid.UUID]DigitalEmployeeRecord),
+		instances:                make(map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord),
+		teamConfigs:              make(map[uuid.UUID]TeamConfigInput),
+		employeeConfigs:          make(map[uuid.UUID]EmployeeConfigInput),
+		effectiveConfigs:         make(map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord),
+		nextConfigRevisionNumber: 1,
 	}
 }
 
@@ -292,5 +829,98 @@ func (r *memoryRepository) GetDigitalEmployeeExecutionInstanceByEmployeeID(_ con
 	if !ok || record.TenantID != tenantID {
 		return DigitalEmployeeExecutionInstanceRecord{}, ErrNotFound
 	}
+	return record, nil
+}
+
+func (r *memoryRepository) CreateDigitalEmployeeConfigRevision(_ context.Context, params CreateConfigRevisionParams) (DigitalEmployeeConfigRevisionRecord, error) {
+	r.createdConfigRevision = params
+	now := time.Now().UTC()
+	approvedAt := params.ApprovedAt
+	record := DigitalEmployeeConfigRevisionRecord{
+		ID:                     uuid.New(),
+		TenantID:               params.TenantID,
+		DigitalEmployeeID:      params.DigitalEmployeeID,
+		RevisionNumber:         params.RevisionNumber,
+		RoleProfile:            cloneMap(params.RoleProfile),
+		ConstitutionAddendum:   cloneMap(params.ConstitutionAddendum),
+		CapabilitySelection:    cloneMap(params.CapabilitySelection),
+		ContextPolicyOverride:  cloneMap(params.ContextPolicyOverride),
+		ApprovalPolicyOverride: cloneMap(params.ApprovalPolicyOverride),
+		OutputContractAddendum: cloneMap(params.OutputContractAddendum),
+		Status:                 params.Status,
+		ApprovedBy:             validUUIDPtr(params.ApprovedBy),
+		ApprovedAt:             cloneTimePtr(approvedAt),
+		CreatedAt:              now,
+		UpdatedAt:              now,
+	}
+	r.employeeConfigs[record.ID] = EmployeeConfigInput{
+		ID:                     record.ID,
+		TenantID:               record.TenantID,
+		DigitalEmployeeID:      record.DigitalEmployeeID,
+		RevisionNumber:         record.RevisionNumber,
+		RoleProfile:            cloneMap(record.RoleProfile),
+		ConstitutionAddendum:   cloneMap(record.ConstitutionAddendum),
+		CapabilitySelection:    cloneMap(record.CapabilitySelection),
+		ContextPolicyOverride:  cloneMap(record.ContextPolicyOverride),
+		ApprovalPolicyOverride: cloneMap(record.ApprovalPolicyOverride),
+		OutputContractAddendum: cloneMap(record.OutputContractAddendum),
+	}
+	return record, nil
+}
+
+func (r *memoryRepository) GetTeamConfigRevision(_ context.Context, tenantID, teamConfigRevisionID uuid.UUID) (TeamConfigInput, error) {
+	record, ok := r.teamConfigs[teamConfigRevisionID]
+	if !ok || record.TenantID != tenantID {
+		return TeamConfigInput{}, ErrNotFound
+	}
+	return record, nil
+}
+
+func (r *memoryRepository) GetDigitalEmployeeConfigRevision(_ context.Context, tenantID, digitalEmployeeID, employeeConfigRevisionID uuid.UUID) (EmployeeConfigInput, error) {
+	record, ok := r.employeeConfigs[employeeConfigRevisionID]
+	if !ok || record.TenantID != tenantID || record.DigitalEmployeeID != digitalEmployeeID {
+		return EmployeeConfigInput{}, ErrNotFound
+	}
+	return record, nil
+}
+
+func (r *memoryRepository) GetNextDigitalEmployeeConfigRevisionNumber(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) (int32, error) {
+	if tenantID == uuid.Nil || digitalEmployeeID == uuid.Nil {
+		return 0, errors.New("tenant and employee are required")
+	}
+	return r.nextConfigRevisionNumber, nil
+}
+
+func (r *memoryRepository) GetCurrentDigitalEmployeeEffectiveConfig(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeEffectiveConfigRecord, error) {
+	for _, record := range r.effectiveConfigs {
+		if record.TenantID != tenantID || record.DigitalEmployeeID != digitalEmployeeID {
+			continue
+		}
+		if record.Status != EffectiveConfigStatusApproved || record.RevokedAt != nil {
+			continue
+		}
+		return record, nil
+	}
+	return DigitalEmployeeEffectiveConfigRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) CreateDigitalEmployeeEffectiveConfig(_ context.Context, params CreateEffectiveConfigParams) (DigitalEmployeeEffectiveConfigRecord, error) {
+	r.createdEffectiveConfig = params
+	now := time.Now().UTC()
+	record := DigitalEmployeeEffectiveConfigRecord{
+		ID:                       uuid.New(),
+		TenantID:                 params.TenantID,
+		DigitalEmployeeID:        params.DigitalEmployeeID,
+		TeamConfigRevisionID:     params.TeamConfigRevisionID,
+		EmployeeConfigRevisionID: params.EmployeeConfigRevisionID,
+		EffectiveConfig:          cloneMap(params.EffectiveConfig),
+		ValidationResult:         cloneMap(params.ValidationResult),
+		Status:                   params.Status,
+		ApprovedBy:               validUUIDPtr(params.ApprovedBy),
+		ApprovedAt:               cloneTimePtr(params.ApprovedAt),
+		CreatedAt:                now,
+		UpdatedAt:                now,
+	}
+	r.effectiveConfigs[record.ID] = record
 	return record, nil
 }

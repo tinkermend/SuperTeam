@@ -21,6 +21,9 @@ type HandlerService interface {
 	UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*DigitalEmployee, error)
 	GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeExecutionInstance, error)
 	BindExecutionInstance(ctx context.Context, req BindExecutionInstanceRequest) (*DigitalEmployeeExecutionInstance, error)
+	CreateConfigRevision(ctx context.Context, req CreateDigitalEmployeeConfigRevisionRequest) (*DigitalEmployeeConfigRevision, error)
+	PreviewEffectiveConfigByRevisionIDs(ctx context.Context, req PreviewEffectiveConfigByRevisionIDsRequest) (*EffectiveConfigPreview, error)
+	ApproveEffectiveConfig(ctx context.Context, req ApproveEffectiveConfigRequest) (*DigitalEmployeeEffectiveConfig, error)
 }
 
 type HTTPHandler struct {
@@ -227,6 +230,130 @@ func (h *HTTPHandler) UpsertDigitalEmployeeExecutionInstance(w http.ResponseWrit
 	writeJSON(w, http.StatusOK, executionInstanceResponseFromDomain(instance))
 }
 
+func (h *HTTPHandler) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee config revision create")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		RoleProfile            map[string]any       `json:"role_profile"`
+		ConstitutionAddendum   map[string]any       `json:"constitution_addendum"`
+		CapabilitySelection    map[string]any       `json:"capability_selection"`
+		ContextPolicyOverride  map[string]any       `json:"context_policy_override"`
+		ApprovalPolicyOverride map[string]any       `json:"approval_policy_override"`
+		OutputContractAddendum map[string]any       `json:"output_contract_addendum"`
+		Status                 ConfigRevisionStatus `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	revision, err := service.CreateConfigRevision(r.Context(), CreateDigitalEmployeeConfigRevisionRequest{
+		TenantID:               tenantID,
+		DigitalEmployeeID:      employeeID,
+		RoleProfile:            req.RoleProfile,
+		ConstitutionAddendum:   req.ConstitutionAddendum,
+		CapabilitySelection:    req.CapabilitySelection,
+		ContextPolicyOverride:  req.ContextPolicyOverride,
+		ApprovalPolicyOverride: req.ApprovalPolicyOverride,
+		OutputContractAddendum: req.OutputContractAddendum,
+		Status:                 req.Status,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, configRevisionResponseFromDomain(revision))
+}
+
+func (h *HTTPHandler) PreviewDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee effective config preview")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		TeamConfig struct {
+			ID uuid.UUID `json:"id"`
+		} `json:"team_config"`
+		EmployeeConfig struct {
+			ID uuid.UUID `json:"id"`
+		} `json:"employee_config"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	preview, err := service.PreviewEffectiveConfigByRevisionIDs(r.Context(), PreviewEffectiveConfigByRevisionIDsRequest{
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		TeamConfigRevisionID:     req.TeamConfig.ID,
+		EmployeeConfigRevisionID: req.EmployeeConfig.ID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, effectiveConfigPreviewResponseFromDomain(preview))
+}
+
+func (h *HTTPHandler) ApproveDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee effective config approve")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Preview struct {
+			TeamConfig struct {
+				ID uuid.UUID `json:"id"`
+			} `json:"team_config"`
+			EmployeeConfig struct {
+				ID uuid.UUID `json:"id"`
+			} `json:"employee_config"`
+		} `json:"preview"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	approvedBy := middleware.GetUserID(r.Context())
+	effectiveConfig, err := service.ApproveEffectiveConfig(r.Context(), ApproveEffectiveConfigRequest{
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		TeamConfigRevisionID:     req.Preview.TeamConfig.ID,
+		EmployeeConfigRevisionID: req.Preview.EmployeeConfig.ID,
+		ApprovedBy:               approvedBy,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, effectiveConfigResponseFromDomain(effectiveConfig))
+}
+
 func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService, bool) {
 	if h == nil || h.service == nil {
 		http.Error(w, "employee service is not configured", http.StatusServiceUnavailable)
@@ -260,7 +387,7 @@ func (h *HTTPHandler) authorizeDigitalEmployeeManagement(w http.ResponseWriter, 
 		AuditReason: auditReason,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return uuid.Nil, false
 	}
 	if !decision.Allowed {
@@ -311,6 +438,48 @@ type executionInstanceResponse struct {
 	UpdatedAt            string                  `json:"updated_at,omitempty"`
 }
 
+type configRevisionResponse struct {
+	ID                     string               `json:"id"`
+	TenantID               string               `json:"tenant_id"`
+	DigitalEmployeeID      string               `json:"digital_employee_id"`
+	RevisionNumber         int32                `json:"revision_number"`
+	RoleProfile            map[string]any       `json:"role_profile"`
+	ConstitutionAddendum   map[string]any       `json:"constitution_addendum"`
+	CapabilitySelection    map[string]any       `json:"capability_selection"`
+	ContextPolicyOverride  map[string]any       `json:"context_policy_override"`
+	ApprovalPolicyOverride map[string]any       `json:"approval_policy_override"`
+	OutputContractAddendum map[string]any       `json:"output_contract_addendum"`
+	Status                 ConfigRevisionStatus `json:"status"`
+	ApprovedBy             *string              `json:"approved_by,omitempty"`
+	ApprovedAt             *string              `json:"approved_at,omitempty"`
+	ArchivedAt             *string              `json:"archived_at,omitempty"`
+	CreatedAt              string               `json:"created_at,omitempty"`
+	UpdatedAt              string               `json:"updated_at,omitempty"`
+}
+
+type effectiveConfigPreviewResponse struct {
+	TeamConfigRevisionID     string                    `json:"team_config_revision_id"`
+	EmployeeConfigRevisionID string                    `json:"employee_config_revision_id"`
+	EffectiveConfig          map[string]any            `json:"effective_config"`
+	Validation               EffectiveConfigValidation `json:"validation"`
+}
+
+type effectiveConfigResponse struct {
+	ID                       string                `json:"id"`
+	TenantID                 string                `json:"tenant_id"`
+	DigitalEmployeeID        string                `json:"digital_employee_id"`
+	TeamConfigRevisionID     string                `json:"team_config_revision_id"`
+	EmployeeConfigRevisionID string                `json:"employee_config_revision_id"`
+	EffectiveConfig          map[string]any        `json:"effective_config"`
+	ValidationResult         map[string]any        `json:"validation_result"`
+	Status                   EffectiveConfigStatus `json:"status"`
+	ApprovedBy               *string               `json:"approved_by,omitempty"`
+	ApprovedAt               *string               `json:"approved_at,omitempty"`
+	RevokedAt                *string               `json:"revoked_at,omitempty"`
+	CreatedAt                string                `json:"created_at,omitempty"`
+	UpdatedAt                string                `json:"updated_at,omitempty"`
+}
+
 func employeeIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	employeeID, err := uuid.Parse(chi.URLParam(r, "employeeId"))
 	if err != nil || employeeID == uuid.Nil {
@@ -326,8 +495,10 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
+	case errors.Is(err, ErrConflict):
+		http.Error(w, "conflict", http.StatusConflict)
 	default:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
 
@@ -387,6 +558,54 @@ func executionInstanceResponseFromDomain(instance *DigitalEmployeeExecutionInsta
 		Metadata:             cloneMap(instance.Metadata),
 		CreatedAt:            timeString(instance.CreatedAt),
 		UpdatedAt:            timeString(instance.UpdatedAt),
+	}
+}
+
+func configRevisionResponseFromDomain(revision *DigitalEmployeeConfigRevision) configRevisionResponse {
+	return configRevisionResponse{
+		ID:                     revision.ID.String(),
+		TenantID:               revision.TenantID.String(),
+		DigitalEmployeeID:      revision.DigitalEmployeeID.String(),
+		RevisionNumber:         revision.RevisionNumber,
+		RoleProfile:            cloneMap(revision.RoleProfile),
+		ConstitutionAddendum:   cloneMap(revision.ConstitutionAddendum),
+		CapabilitySelection:    cloneMap(revision.CapabilitySelection),
+		ContextPolicyOverride:  cloneMap(revision.ContextPolicyOverride),
+		ApprovalPolicyOverride: cloneMap(revision.ApprovalPolicyOverride),
+		OutputContractAddendum: cloneMap(revision.OutputContractAddendum),
+		Status:                 revision.Status,
+		ApprovedBy:             uuidStringPtr(revision.ApprovedBy),
+		ApprovedAt:             timeStringPtr(revision.ApprovedAt),
+		ArchivedAt:             timeStringPtr(revision.ArchivedAt),
+		CreatedAt:              timeString(revision.CreatedAt),
+		UpdatedAt:              timeString(revision.UpdatedAt),
+	}
+}
+
+func effectiveConfigPreviewResponseFromDomain(preview *EffectiveConfigPreview) effectiveConfigPreviewResponse {
+	return effectiveConfigPreviewResponse{
+		TeamConfigRevisionID:     preview.TeamConfigRevisionID.String(),
+		EmployeeConfigRevisionID: preview.EmployeeConfigRevisionID.String(),
+		EffectiveConfig:          cloneMap(preview.EffectiveConfig),
+		Validation:               preview.Validation,
+	}
+}
+
+func effectiveConfigResponseFromDomain(effectiveConfig *DigitalEmployeeEffectiveConfig) effectiveConfigResponse {
+	return effectiveConfigResponse{
+		ID:                       effectiveConfig.ID.String(),
+		TenantID:                 effectiveConfig.TenantID.String(),
+		DigitalEmployeeID:        effectiveConfig.DigitalEmployeeID.String(),
+		TeamConfigRevisionID:     effectiveConfig.TeamConfigRevisionID.String(),
+		EmployeeConfigRevisionID: effectiveConfig.EmployeeConfigRevisionID.String(),
+		EffectiveConfig:          cloneMap(effectiveConfig.EffectiveConfig),
+		ValidationResult:         cloneMap(effectiveConfig.ValidationResult),
+		Status:                   effectiveConfig.Status,
+		ApprovedBy:               uuidStringPtr(effectiveConfig.ApprovedBy),
+		ApprovedAt:               timeStringPtr(effectiveConfig.ApprovedAt),
+		RevokedAt:                timeStringPtr(effectiveConfig.RevokedAt),
+		CreatedAt:                timeString(effectiveConfig.CreatedAt),
+		UpdatedAt:                timeString(effectiveConfig.UpdatedAt),
 	}
 }
 

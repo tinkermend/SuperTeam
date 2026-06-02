@@ -160,6 +160,122 @@ func (r *PgRepository) GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx conte
 	return executionInstanceRecordFromQuery(instance)
 }
 
+func (r *PgRepository) CreateDigitalEmployeeConfigRevision(ctx context.Context, params CreateConfigRevisionParams) (DigitalEmployeeConfigRevisionRecord, error) {
+	roleProfile, err := jsonbFromMap(params.RoleProfile, "role_profile")
+	if err != nil {
+		return DigitalEmployeeConfigRevisionRecord{}, err
+	}
+	constitutionAddendum, err := jsonbFromMap(params.ConstitutionAddendum, "constitution_addendum")
+	if err != nil {
+		return DigitalEmployeeConfigRevisionRecord{}, err
+	}
+	capabilitySelection, err := jsonbFromMap(params.CapabilitySelection, "capability_selection")
+	if err != nil {
+		return DigitalEmployeeConfigRevisionRecord{}, err
+	}
+	contextPolicyOverride, err := jsonbFromMap(params.ContextPolicyOverride, "context_policy_override")
+	if err != nil {
+		return DigitalEmployeeConfigRevisionRecord{}, err
+	}
+	approvalPolicyOverride, err := jsonbFromMap(params.ApprovalPolicyOverride, "approval_policy_override")
+	if err != nil {
+		return DigitalEmployeeConfigRevisionRecord{}, err
+	}
+	outputContractAddendum, err := jsonbFromMap(params.OutputContractAddendum, "output_contract_addendum")
+	if err != nil {
+		return DigitalEmployeeConfigRevisionRecord{}, err
+	}
+	revision, err := r.q.CreateDigitalEmployeeConfigRevision(ctx, queries.CreateDigitalEmployeeConfigRevisionParams{
+		TenantID:               params.TenantID,
+		DigitalEmployeeID:      params.DigitalEmployeeID,
+		RevisionNumber:         params.RevisionNumber,
+		RoleProfile:            roleProfile,
+		ConstitutionAddendum:   constitutionAddendum,
+		CapabilitySelection:    capabilitySelection,
+		ContextPolicyOverride:  contextPolicyOverride,
+		ApprovalPolicyOverride: approvalPolicyOverride,
+		OutputContractAddendum: outputContractAddendum,
+		Status:                 string(params.Status),
+		ApprovedBy:             nullUUIDFromPtr(params.ApprovedBy),
+		ApprovedAt:             timestamptzFromPtr(params.ApprovedAt),
+	})
+	if err != nil {
+		return DigitalEmployeeConfigRevisionRecord{}, err
+	}
+	return configRevisionRecordFromQuery(revision)
+}
+
+func (r *PgRepository) GetTeamConfigRevision(ctx context.Context, tenantID, teamConfigRevisionID uuid.UUID) (TeamConfigInput, error) {
+	revision, err := r.q.GetTenantTeamConfigRevision(ctx, queries.GetTenantTeamConfigRevisionParams{
+		ID:       teamConfigRevisionID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return TeamConfigInput{}, mapNoRows(err)
+	}
+	return teamConfigInputFromQuery(revision)
+}
+
+func (r *PgRepository) GetDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID, employeeConfigRevisionID uuid.UUID) (EmployeeConfigInput, error) {
+	revision, err := r.q.GetDigitalEmployeeConfigRevision(ctx, queries.GetDigitalEmployeeConfigRevisionParams{
+		ID:                employeeConfigRevisionID,
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	if err != nil {
+		return EmployeeConfigInput{}, mapNoRows(err)
+	}
+	return employeeConfigInputFromQuery(revision)
+}
+
+func (r *PgRepository) GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (int32, error) {
+	nextRevision, err := r.q.GetNextDigitalEmployeeConfigRevisionNumber(ctx, queries.GetNextDigitalEmployeeConfigRevisionNumberParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return nextRevision, nil
+}
+
+func (r *PgRepository) GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeEffectiveConfigRecord, error) {
+	effectiveConfig, err := r.q.GetCurrentDigitalEmployeeEffectiveConfig(ctx, queries.GetCurrentDigitalEmployeeEffectiveConfigParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	if err != nil {
+		return DigitalEmployeeEffectiveConfigRecord{}, mapNoRows(err)
+	}
+	return effectiveConfigRecordFromQuery(effectiveConfig)
+}
+
+func (r *PgRepository) CreateDigitalEmployeeEffectiveConfig(ctx context.Context, params CreateEffectiveConfigParams) (DigitalEmployeeEffectiveConfigRecord, error) {
+	effectiveConfigSnapshot, err := jsonbFromMap(params.EffectiveConfig, "effective_config_snapshot")
+	if err != nil {
+		return DigitalEmployeeEffectiveConfigRecord{}, err
+	}
+	validationResult, err := jsonbFromMap(params.ValidationResult, "validation_result")
+	if err != nil {
+		return DigitalEmployeeEffectiveConfigRecord{}, err
+	}
+	effectiveConfig, err := r.q.CreateDigitalEmployeeEffectiveConfig(ctx, queries.CreateDigitalEmployeeEffectiveConfigParams{
+		TenantID:                   params.TenantID,
+		DigitalEmployeeID:          params.DigitalEmployeeID,
+		TenantTeamConfigRevisionID: params.TeamConfigRevisionID,
+		EmployeeConfigRevisionID:   params.EmployeeConfigRevisionID,
+		EffectiveConfigSnapshot:    effectiveConfigSnapshot,
+		ValidationResult:           validationResult,
+		Status:                     string(params.Status),
+		ApprovedBy:                 nullUUIDFromPtr(params.ApprovedBy),
+		ApprovedAt:                 timestamptzFromPtr(params.ApprovedAt),
+	})
+	if err != nil {
+		return DigitalEmployeeEffectiveConfigRecord{}, err
+	}
+	return effectiveConfigRecordFromQuery(effectiveConfig)
+}
+
 func digitalEmployeeRecordFromQuery(employee queries.DigitalEmployee) (DigitalEmployeeRecord, error) {
 	permissionPolicy, err := mapFromJSONB(employee.PermissionPolicy, "permission_policy")
 	if err != nil {
@@ -194,6 +310,140 @@ func digitalEmployeeRecordFromQuery(employee queries.DigitalEmployee) (DigitalEm
 		ArchivedAt:       timePtrFromTimestamptz(employee.ArchivedAt),
 		CreatedAt:        timeFromTimestamptz(employee.CreatedAt),
 		UpdatedAt:        timeFromTimestamptz(employee.UpdatedAt),
+	}, nil
+}
+
+func configRevisionRecordFromQuery(revision queries.DigitalEmployeeConfigRevision) (DigitalEmployeeConfigRevisionRecord, error) {
+	input, err := employeeConfigInputFromQuery(revision)
+	if err != nil {
+		return DigitalEmployeeConfigRevisionRecord{}, err
+	}
+	return DigitalEmployeeConfigRevisionRecord{
+		ID:                     input.ID,
+		TenantID:               input.TenantID,
+		DigitalEmployeeID:      input.DigitalEmployeeID,
+		RevisionNumber:         input.RevisionNumber,
+		RoleProfile:            cloneMap(input.RoleProfile),
+		ConstitutionAddendum:   cloneMap(input.ConstitutionAddendum),
+		CapabilitySelection:    cloneMap(input.CapabilitySelection),
+		ContextPolicyOverride:  cloneMap(input.ContextPolicyOverride),
+		ApprovalPolicyOverride: cloneMap(input.ApprovalPolicyOverride),
+		OutputContractAddendum: cloneMap(input.OutputContractAddendum),
+		Status:                 ConfigRevisionStatus(revision.Status),
+		ApprovedBy:             uuidPtrFromNull(revision.ApprovedBy),
+		ApprovedAt:             timePtrFromTimestamptz(revision.ApprovedAt),
+		ArchivedAt:             timePtrFromTimestamptz(revision.ArchivedAt),
+		CreatedAt:              timeFromTimestamptz(revision.CreatedAt),
+		UpdatedAt:              timeFromTimestamptz(revision.UpdatedAt),
+	}, nil
+}
+
+func teamConfigInputFromQuery(revision queries.TenantTeamConfigRevision) (TeamConfigInput, error) {
+	constitution, err := mapFromJSONB(revision.Constitution, "constitution")
+	if err != nil {
+		return TeamConfigInput{}, err
+	}
+	capabilityPolicy, err := mapFromJSONB(revision.CapabilityPolicy, "capability_policy")
+	if err != nil {
+		return TeamConfigInput{}, err
+	}
+	contextPolicy, err := mapFromJSONB(revision.ContextPolicy, "context_policy")
+	if err != nil {
+		return TeamConfigInput{}, err
+	}
+	approvalPolicy, err := mapFromJSONB(revision.ApprovalPolicy, "approval_policy")
+	if err != nil {
+		return TeamConfigInput{}, err
+	}
+	artifactContract, err := mapFromJSONB(revision.ArtifactContract, "artifact_contract")
+	if err != nil {
+		return TeamConfigInput{}, err
+	}
+	internalCollaborationPolicy, err := mapFromJSONB(revision.InternalCollaborationPolicy, "internal_collaboration_policy")
+	if err != nil {
+		return TeamConfigInput{}, err
+	}
+	runtimeScopePolicy, err := mapFromJSONB(revision.RuntimeScopePolicy, "runtime_scope_policy")
+	if err != nil {
+		return TeamConfigInput{}, err
+	}
+	return TeamConfigInput{
+		ID:                          revision.ID,
+		TenantID:                    revision.TenantID,
+		TeamID:                      revision.TeamID,
+		RevisionNumber:              revision.RevisionNumber,
+		Constitution:                constitution,
+		CapabilityPolicy:            capabilityPolicy,
+		ContextPolicy:               contextPolicy,
+		ApprovalPolicy:              approvalPolicy,
+		ArtifactContract:            artifactContract,
+		InternalCollaborationPolicy: internalCollaborationPolicy,
+		RuntimeScopePolicy:          runtimeScopePolicy,
+	}, nil
+}
+
+func employeeConfigInputFromQuery(revision queries.DigitalEmployeeConfigRevision) (EmployeeConfigInput, error) {
+	roleProfile, err := mapFromJSONB(revision.RoleProfile, "role_profile")
+	if err != nil {
+		return EmployeeConfigInput{}, err
+	}
+	constitutionAddendum, err := mapFromJSONB(revision.ConstitutionAddendum, "constitution_addendum")
+	if err != nil {
+		return EmployeeConfigInput{}, err
+	}
+	capabilitySelection, err := mapFromJSONB(revision.CapabilitySelection, "capability_selection")
+	if err != nil {
+		return EmployeeConfigInput{}, err
+	}
+	contextPolicyOverride, err := mapFromJSONB(revision.ContextPolicyOverride, "context_policy_override")
+	if err != nil {
+		return EmployeeConfigInput{}, err
+	}
+	approvalPolicyOverride, err := mapFromJSONB(revision.ApprovalPolicyOverride, "approval_policy_override")
+	if err != nil {
+		return EmployeeConfigInput{}, err
+	}
+	outputContractAddendum, err := mapFromJSONB(revision.OutputContractAddendum, "output_contract_addendum")
+	if err != nil {
+		return EmployeeConfigInput{}, err
+	}
+	return EmployeeConfigInput{
+		ID:                     revision.ID,
+		TenantID:               revision.TenantID,
+		DigitalEmployeeID:      revision.DigitalEmployeeID,
+		RevisionNumber:         revision.RevisionNumber,
+		RoleProfile:            roleProfile,
+		ConstitutionAddendum:   constitutionAddendum,
+		CapabilitySelection:    capabilitySelection,
+		ContextPolicyOverride:  contextPolicyOverride,
+		ApprovalPolicyOverride: approvalPolicyOverride,
+		OutputContractAddendum: outputContractAddendum,
+	}, nil
+}
+
+func effectiveConfigRecordFromQuery(effectiveConfig queries.DigitalEmployeeEffectiveConfig) (DigitalEmployeeEffectiveConfigRecord, error) {
+	effectiveConfigSnapshot, err := mapFromJSONB(effectiveConfig.EffectiveConfigSnapshot, "effective_config_snapshot")
+	if err != nil {
+		return DigitalEmployeeEffectiveConfigRecord{}, err
+	}
+	validationResult, err := mapFromJSONB(effectiveConfig.ValidationResult, "validation_result")
+	if err != nil {
+		return DigitalEmployeeEffectiveConfigRecord{}, err
+	}
+	return DigitalEmployeeEffectiveConfigRecord{
+		ID:                       effectiveConfig.ID,
+		TenantID:                 effectiveConfig.TenantID,
+		DigitalEmployeeID:        effectiveConfig.DigitalEmployeeID,
+		TeamConfigRevisionID:     effectiveConfig.TenantTeamConfigRevisionID,
+		EmployeeConfigRevisionID: effectiveConfig.EmployeeConfigRevisionID,
+		EffectiveConfig:          effectiveConfigSnapshot,
+		ValidationResult:         validationResult,
+		Status:                   EffectiveConfigStatus(effectiveConfig.Status),
+		ApprovedBy:               uuidPtrFromNull(effectiveConfig.ApprovedBy),
+		ApprovedAt:               timePtrFromTimestamptz(effectiveConfig.ApprovedAt),
+		RevokedAt:                timePtrFromTimestamptz(effectiveConfig.RevokedAt),
+		CreatedAt:                timeFromTimestamptz(effectiveConfig.CreatedAt),
+		UpdatedAt:                timeFromTimestamptz(effectiveConfig.UpdatedAt),
 	}, nil
 }
 
@@ -279,6 +529,13 @@ func textFromStatus(status DigitalEmployeeStatus) pgtype.Text {
 		return pgtype.Text{}
 	}
 	return pgtype.Text{String: string(status), Valid: true}
+}
+
+func timestamptzFromPtr(value *time.Time) pgtype.Timestamptz {
+	if value == nil || value.IsZero() {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: value.UTC(), Valid: true}
 }
 
 func stringPtrFromText(value pgtype.Text) *string {
