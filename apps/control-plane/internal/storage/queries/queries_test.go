@@ -185,6 +185,8 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 			provider_session_events,
 			provider_sessions,
 			digital_employee_execution_instances,
+			digital_employee_effective_configs,
+			digital_employee_config_revisions,
 			digital_employees,
 			runtime_capabilities,
 			runtime_sessions,
@@ -205,6 +207,7 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 			runtime_nodes,
 			tenant_members,
 			auth_users,
+			tenant_team_config_revisions,
 			tenant_teams,
 			tenant_profiles,
 			tenants
@@ -232,6 +235,135 @@ func seedDefaultTenant(t *testing.T, db *pgxpool.Pool) {
 		ON CONFLICT (id) DO NOTHING;
 	`)
 	require.NoError(t, err)
+}
+
+func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	owner, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "ops-owner",
+		DisplayName:  pgtype.Text{String: "Ops Owner", Valid: true},
+		Email:        pgtype.Text{String: "ops-owner@example.com", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
+		Status:       "active",
+	})
+	require.NoError(t, err)
+
+	team, err := testQueries.CreateTenantTeam(ctx, queries.CreateTenantTeamParams{
+		TenantID:         tenantID,
+		Slug:             "ops",
+		Name:             "运维团队",
+		HumanOwnerUserID: uuid.NullUUID{UUID: owner.ID, Valid: true},
+		Metadata:         []byte(`{"domain":"operations"}`),
+	})
+	require.NoError(t, err)
+
+	teamConfig, err := testQueries.CreateTenantTeamConfigRevision(ctx, queries.CreateTenantTeamConfigRevisionParams{
+		TenantID:                    tenantID,
+		TeamID:                      team.ID,
+		RevisionNumber:              1,
+		Constitution:                []byte(`{"hard_rules":["禁止执行未审批的生产写操作"]}`),
+		CapabilityPolicy:            []byte(`{"allowed_mcp_servers":["prometheus"],"allowed_skills":["incident-diagnosis"],"allowed_plugins":["log-viewer"],"allowed_provider_types":["codex"]}`),
+		ContextPolicy:               []byte(`{"sources":["monitoring","logs"]}`),
+		ApprovalPolicy:              []byte(`{"min_risk_for_human":"high","write_actions_require_human":true}`),
+		ArtifactContract:            []byte(`{"required":["Finding","Risk","DecisionRequest"]}`),
+		InternalCollaborationPolicy: []byte(`{"allowed_request_types":["info_request","review_request","artifact_request"],"max_auto_rounds":2,"max_auto_participants":3}`),
+		RuntimeScopePolicy:          []byte(`{"allowed_provider_types":["codex"]}`),
+		HumanOwnerUserID:            uuid.NullUUID{UUID: owner.ID, Valid: true},
+		Status:                      "active",
+		ApprovedBy:                  uuid.NullUUID{UUID: owner.ID, Valid: true},
+		ApprovedAt:                  pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	require.NoError(t, err)
+
+	employee, err := testQueries.CreateDigitalEmployee(ctx, queries.CreateDigitalEmployeeParams{
+		TenantID:  tenantID,
+		TeamID:    uuid.NullUUID{UUID: team.ID, Valid: true},
+		Name:      "数据库运维员工",
+		Role:      "database_operator",
+		Status:    "draft",
+		RiskLevel: "medium",
+	})
+	require.NoError(t, err)
+
+	employeeConfig, err := testQueries.CreateDigitalEmployeeConfigRevision(ctx, queries.CreateDigitalEmployeeConfigRevisionParams{
+		TenantID:               tenantID,
+		DigitalEmployeeID:      employee.ID,
+		RevisionNumber:         1,
+		RoleProfile:            []byte(`{"specialty":"postgres"}`),
+		ConstitutionAddendum:   []byte(`{"required_output_rules":["输出慢查询证据"]}`),
+		CapabilitySelection:    []byte(`{"enabled_mcp_servers":["prometheus"],"enabled_skills":["incident-diagnosis"],"enabled_plugins":["log-viewer"]}`),
+		ContextPolicyOverride:  []byte(`{"sources":["monitoring"]}`),
+		ApprovalPolicyOverride: []byte(`{"min_risk_for_human":"high"}`),
+		OutputContractAddendum: []byte(`{"required":["SlowQueryFinding"]}`),
+		Status:                 "active",
+		ApprovedBy:             uuid.NullUUID{UUID: owner.ID, Valid: true},
+		ApprovedAt:             pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	require.NoError(t, err)
+
+	draftEmployeeConfig, err := testQueries.CreateDigitalEmployeeConfigRevision(ctx, queries.CreateDigitalEmployeeConfigRevisionParams{
+		TenantID:               tenantID,
+		DigitalEmployeeID:      employee.ID,
+		RevisionNumber:         2,
+		RoleProfile:            []byte(`{"specialty":"postgres","mode":"draft"}`),
+		ConstitutionAddendum:   []byte(`{"required_output_rules":["输出执行计划证据"]}`),
+		CapabilitySelection:    []byte(`{"enabled_mcp_servers":["prometheus"],"enabled_skills":["incident-diagnosis"]}`),
+		ContextPolicyOverride:  []byte(`{"sources":["monitoring","traces"]}`),
+		ApprovalPolicyOverride: []byte(`{"min_risk_for_human":"medium"}`),
+		OutputContractAddendum: []byte(`{"required":["ExecutionPlanFinding"]}`),
+		Status:                 "draft",
+	})
+	require.NoError(t, err)
+
+	effective, err := testQueries.CreateDigitalEmployeeEffectiveConfig(ctx, queries.CreateDigitalEmployeeEffectiveConfigParams{
+		TenantID:                   tenantID,
+		DigitalEmployeeID:          employee.ID,
+		TenantTeamConfigRevisionID: teamConfig.ID,
+		EmployeeConfigRevisionID:   employeeConfig.ID,
+		EffectiveConfigSnapshot:    []byte(`{"team":{"revision":1},"employee":{"revision":1}}`),
+		ValidationResult:           []byte(`{"blocking_errors":[],"warnings":[]}`),
+		Status:                     "approved",
+		ApprovedBy:                 uuid.NullUUID{UUID: owner.ID, Valid: true},
+		ApprovedAt:                 pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	require.NoError(t, err)
+	require.Equal(t, employee.ID, effective.DigitalEmployeeID)
+
+	pendingEffective, err := testQueries.CreateDigitalEmployeeEffectiveConfig(ctx, queries.CreateDigitalEmployeeEffectiveConfigParams{
+		TenantID:                   tenantID,
+		DigitalEmployeeID:          employee.ID,
+		TenantTeamConfigRevisionID: teamConfig.ID,
+		EmployeeConfigRevisionID:   draftEmployeeConfig.ID,
+		EffectiveConfigSnapshot:    []byte(`{"team":{"revision":1},"employee":{"revision":2}}`),
+		ValidationResult:           []byte(`{"blocking_errors":[],"warnings":["等待审批"]}`),
+		Status:                     "pending_approval",
+	})
+	require.NoError(t, err)
+	require.Equal(t, employee.ID, pendingEffective.DigitalEmployeeID)
+
+	current, err := testQueries.GetCurrentTenantTeamConfigRevision(ctx, queries.GetCurrentTenantTeamConfigRevisionParams{
+		TenantID: tenantID,
+		TeamID:   team.ID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, teamConfig.ID, current.ID)
+
+	currentEmployeeConfig, err := testQueries.GetCurrentDigitalEmployeeConfigRevision(ctx, queries.GetCurrentDigitalEmployeeConfigRevisionParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employee.ID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, employeeConfig.ID, currentEmployeeConfig.ID)
+
+	currentEffective, err := testQueries.GetCurrentDigitalEmployeeEffectiveConfig(ctx, queries.GetCurrentDigitalEmployeeEffectiveConfigParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employee.ID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, effective.ID, currentEffective.ID)
 }
 
 // ============================================================================

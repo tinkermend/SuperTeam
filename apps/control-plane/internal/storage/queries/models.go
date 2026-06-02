@@ -143,6 +143,72 @@ type DigitalEmployee struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 数字员工个人治理配置版本表
+type DigitalEmployeeConfigRevision struct {
+	// 数字员工个人配置版本ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 数字员工ID
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 个人配置版本号，同一数字员工内递增
+	RevisionNumber int32 `json:"revision_number"`
+	// 角色画像，描述数字员工专业方向和职责
+	RoleProfile []byte `json:"role_profile"`
+	// 个人宪法补充，只能收紧或补充团队宪法
+	ConstitutionAddendum []byte `json:"constitution_addendum"`
+	// 个人能力选择，只能从团队允许范围内启用MCP、技能和插件
+	CapabilitySelection []byte `json:"capability_selection"`
+	// 个人上下文策略覆盖，只能收紧团队上下文策略
+	ContextPolicyOverride []byte `json:"context_policy_override"`
+	// 个人审批策略覆盖，只能收紧团队审批策略
+	ApprovalPolicyOverride []byte `json:"approval_policy_override"`
+	// 个人输出契约补充，定义额外交接工件要求
+	OutputContractAddendum []byte `json:"output_contract_addendum"`
+	// 配置状态：draft、pending_approval、active、archived
+	Status string `json:"status"`
+	// 批准该个人配置版本的用户ID
+	ApprovedBy uuid.NullUUID `json:"approved_by"`
+	// 个人配置版本批准时间
+	ApprovedAt pgtype.Timestamptz `json:"approved_at"`
+	// 个人配置版本归档时间
+	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
+	// 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 数字员工生效治理配置快照表
+type DigitalEmployeeEffectiveConfig struct {
+	// 生效配置快照ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 数字员工ID
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 参与合成的团队配置版本ID
+	TenantTeamConfigRevisionID uuid.UUID `json:"tenant_team_config_revision_id"`
+	// 参与合成的个人配置版本ID
+	EmployeeConfigRevisionID uuid.UUID `json:"employee_config_revision_id"`
+	// 团队配置与个人配置合成后的生效治理配置快照
+	EffectiveConfigSnapshot []byte `json:"effective_config_snapshot"`
+	// 生效配置校验结果，包含阻断错误和警告
+	ValidationResult []byte `json:"validation_result"`
+	// 生效配置状态：pending_approval、approved、revoked
+	Status string `json:"status"`
+	// 批准生效配置的用户ID
+	ApprovedBy uuid.NullUUID `json:"approved_by"`
+	// 生效配置批准时间
+	ApprovedAt pgtype.Timestamptz `json:"approved_at"`
+	// 生效配置撤销时间
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+	// 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 数字员工唯一执行实例表
 type DigitalEmployeeExecutionInstance struct {
 	// 数字员工执行实例主键 UUID
@@ -709,6 +775,8 @@ type TenantTeam struct {
 	Name string `json:"name"`
 	// 团队状态
 	Status string `json:"status"`
+	// 团队负责人用户ID，第一版用于团队级审批、升级和跨团队交接决策
+	HumanOwnerUserID uuid.NullUUID `json:"human_owner_user_id"`
 	// 团队扩展元数据
 	Metadata []byte `json:"metadata"`
 	// 团队归档时间
@@ -720,6 +788,46 @@ type TenantTeam struct {
 	// 团队创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 团队最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 团队治理配置版本表
+type TenantTeamConfigRevision struct {
+	// 团队治理配置版本ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 团队ID
+	TeamID uuid.UUID `json:"team_id"`
+	// 团队配置版本号，同一团队内递增
+	RevisionNumber int32 `json:"revision_number"`
+	// 团队公共宪法，定义硬性规则、工作原则和禁止行为
+	Constitution []byte `json:"constitution"`
+	// 团队公共能力策略，定义允许的MCP、技能、插件和Provider类型
+	CapabilityPolicy []byte `json:"capability_policy"`
+	// 团队公共上下文策略，定义可注入上下文来源、范围和保留规则
+	ContextPolicy []byte `json:"context_policy"`
+	// 团队公共审批策略，定义风险阈值和必须人类审批的动作
+	ApprovalPolicy []byte `json:"approval_policy"`
+	// 团队工件契约，定义交接时必须产出的结构化对象
+	ArtifactContract []byte `json:"artifact_contract"`
+	// 团队内部协作策略，定义同团队数字员工自动问询的边界
+	InternalCollaborationPolicy []byte `json:"internal_collaboration_policy"`
+	// 团队Runtime范围策略，定义可使用的执行节点、Provider和环境边界
+	RuntimeScopePolicy []byte `json:"runtime_scope_policy"`
+	// 该版本配置的团队负责人用户ID
+	HumanOwnerUserID uuid.NullUUID `json:"human_owner_user_id"`
+	// 配置状态：draft、active、archived
+	Status string `json:"status"`
+	// 批准该配置版本的用户ID
+	ApprovedBy uuid.NullUUID `json:"approved_by"`
+	// 配置版本批准时间
+	ApprovedAt pgtype.Timestamptz `json:"approved_at"`
+	// 配置版本归档时间
+	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
+	// 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 

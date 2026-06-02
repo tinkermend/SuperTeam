@@ -17,6 +17,7 @@ var uuidFirstTables = []string{
 	"tenants",
 	"tenant_profiles",
 	"tenant_teams",
+	"tenant_team_config_revisions",
 	"auth_users",
 	"tenant_members",
 	"runtime_nodes",
@@ -28,6 +29,8 @@ var uuidFirstTables = []string{
 	"runtime_capabilities",
 	"auth_sessions",
 	"digital_employees",
+	"digital_employee_config_revisions",
+	"digital_employee_effective_configs",
 	"digital_employee_execution_instances",
 	"provider_sessions",
 	"provider_session_events",
@@ -93,6 +96,24 @@ func TestInitialSchemaIsUUIDFirst(t *testing.T) {
 	} {
 		if !strings.Contains(sql, expected) {
 			t.Fatalf("expected UUID-first initial schema to contain %q", expected)
+		}
+	}
+
+	for _, expected := range []string{
+		"CREATE TABLE tenant_team_config_revisions",
+		"CREATE TABLE digital_employee_config_revisions",
+		"CREATE TABLE digital_employee_effective_configs",
+		"human_owner_user_id UUID",
+		"CREATE UNIQUE INDEX uq_digital_employee_config_revisions_active",
+		"COMMENT ON COLUMN tenant_teams.human_owner_user_id IS '团队负责人用户ID，第一版用于团队级审批、升级和跨团队交接决策';",
+		"COMMENT ON TABLE tenant_team_config_revisions IS '团队治理配置版本表';",
+		"COMMENT ON COLUMN tenant_team_config_revisions.internal_collaboration_policy IS '团队内部协作策略，定义同团队数字员工自动问询的边界';",
+		"COMMENT ON TABLE digital_employee_config_revisions IS '数字员工个人治理配置版本表';",
+		"COMMENT ON TABLE digital_employee_effective_configs IS '数字员工生效治理配置快照表';",
+		"COMMENT ON COLUMN digital_employee_effective_configs.validation_result IS '生效配置校验结果，包含阻断错误和警告';",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected team governance schema to contain %q", expected)
 		}
 	}
 }
