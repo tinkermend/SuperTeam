@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1108,6 +1109,25 @@ func TestRuntimeWebSocketRejectsLegacyRuntimeToken(t *testing.T) {
 	}
 }
 
+func TestRuntimeWebSocketReturnsServiceUnavailableWhenRegistryMissing(t *testing.T) {
+	service := &routeRuntimeService{}
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+		service,
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/ws", nil)
+	req.Header.Set("Authorization", "Bearer session-token")
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected websocket route without registry to return 503, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestRuntimeWebSocketSendsDispatchedCommand(t *testing.T) {
 	service := &routeRuntimeService{}
 	registry := runtime.NewConnectionRegistry()
@@ -1156,6 +1176,49 @@ func TestRuntimeWebSocketSendsDispatchedCommand(t *testing.T) {
 	if got.ID != command.ID || got.Type != command.Type || string(got.Payload) != string(command.Payload) {
 		t.Fatalf("unexpected websocket command: %#v", got)
 	}
+}
+
+func TestRuntimeWebSocketClientCloseUnregistersConnection(t *testing.T) {
+	service := &routeRuntimeService{}
+	registry := runtime.NewConnectionRegistry()
+	runtimeHandler := handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{})
+	runtimeHandler.SetConnectionRegistry(registry)
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		runtimeHandler,
+		&routeRuntimeAuthService{},
+		service,
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/v1/runtime/ws"
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer session-token")
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: headers})
+	if err != nil {
+		t.Fatalf("dial runtime websocket: %v", err)
+	}
+	if err := registry.Dispatch(ctx, "node-session", runtime.RuntimeCommand{ID: "cmd-before-close", Type: "noop"}); err != nil {
+		t.Fatalf("expected connected runtime to accept dispatch before close: %v", err)
+	}
+
+	if err := conn.Close(websocket.StatusNormalClosure, "test done"); err != nil {
+		t.Fatalf("close runtime websocket: %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		dispatchCtx, dispatchCancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		err := registry.Dispatch(dispatchCtx, "node-session", runtime.RuntimeCommand{ID: "cmd-after-close", Type: "noop"})
+		dispatchCancel()
+		if errors.Is(err, runtime.ErrRuntimeNotConnected) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("expected runtime websocket close to unregister connection")
 }
 
 func TestRuntimeRegisterRejectsMismatchedAuthenticatedNodeIdentity(t *testing.T) {

@@ -46,15 +46,6 @@ func TestConnectionRegistryReplacesConnectionAndIgnoresStaleUnregister(t *testin
 	oldConnection := registry.Register("node-1")
 	newConnection := registry.Register("node-1")
 
-	select {
-	case _, ok := <-oldConnection.Commands:
-		if ok {
-			t.Fatalf("expected old connection command channel to be closed")
-		}
-	default:
-		t.Fatalf("expected replacing a connection to close the old channel")
-	}
-
 	registry.Unregister("node-1", oldConnection.ID)
 
 	command := RuntimeCommand{ID: "cmd-2", Type: "task.claim"}
@@ -71,6 +62,18 @@ func TestConnectionRegistryReplacesConnectionAndIgnoresStaleUnregister(t *testin
 	}
 }
 
+func TestConnectionRegistryDispatchAfterUnregisterReturnsErrRuntimeNotConnected(t *testing.T) {
+	registry := NewConnectionRegistry()
+	connection := registry.Register("node-1")
+
+	registry.Unregister("node-1", connection.ID)
+
+	err := registry.Dispatch(context.Background(), "node-1", RuntimeCommand{ID: "cmd-1", Type: "noop"})
+	if !errors.Is(err, ErrRuntimeNotConnected) {
+		t.Fatalf("expected ErrRuntimeNotConnected after unregister, got %v", err)
+	}
+}
+
 func TestConnectionRegistryDispatchRespectsContextCancellationWhenChannelFull(t *testing.T) {
 	registry := NewConnectionRegistry()
 	connection := registry.Register("node-1")
@@ -84,5 +87,92 @@ func TestConnectionRegistryDispatchRespectsContextCancellationWhenChannelFull(t 
 
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected context deadline when command channel is full, got %v", err)
+	}
+}
+
+func TestConnectionRegistryFullChannelDispatchDoesNotBlockRegisterOrUnregister(t *testing.T) {
+	registry := NewConnectionRegistry()
+	connection := registry.Register("node-1")
+	fillCommandChannel(connection)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- registry.Dispatch(ctx, "node-1", RuntimeCommand{ID: "blocked", Type: "noop"})
+	}()
+	assertDispatchStillBlocked(t, errCh)
+
+	registerDone := make(chan struct{})
+	var replacement *RuntimeConnection
+	go func() {
+		replacement = registry.Register("node-1")
+		close(registerDone)
+	}()
+	assertCompletesQuickly(t, registerDone, "register")
+
+	unregisterDone := make(chan struct{})
+	go func() {
+		registry.Unregister("node-1", replacement.ID)
+		close(unregisterDone)
+	}()
+	assertCompletesQuickly(t, unregisterDone, "unregister")
+
+	cancel()
+	assertDispatchReturnsError(t, errCh)
+
+	unregisterRegistry := NewConnectionRegistry()
+	unregisterConnection := unregisterRegistry.Register("node-2")
+	fillCommandChannel(unregisterConnection)
+	unregisterCtx, unregisterCancel := context.WithCancel(context.Background())
+	defer unregisterCancel()
+	unregisterErrCh := make(chan error, 1)
+	go func() {
+		unregisterErrCh <- unregisterRegistry.Dispatch(unregisterCtx, "node-2", RuntimeCommand{ID: "blocked", Type: "noop"})
+	}()
+	assertDispatchStillBlocked(t, unregisterErrCh)
+
+	activeUnregisterDone := make(chan struct{})
+	go func() {
+		unregisterRegistry.Unregister("node-2", unregisterConnection.ID)
+		close(activeUnregisterDone)
+	}()
+	assertCompletesQuickly(t, activeUnregisterDone, "active unregister")
+	unregisterCancel()
+	assertDispatchReturnsError(t, unregisterErrCh)
+}
+
+func fillCommandChannel(connection *RuntimeConnection) {
+	for i := 0; i < cap(connection.Commands); i++ {
+		connection.Commands <- RuntimeCommand{ID: "fill", Type: "noop"}
+	}
+}
+
+func assertDispatchStillBlocked(t *testing.T, errCh <-chan error) {
+	t.Helper()
+	select {
+	case err := <-errCh:
+		t.Fatalf("expected dispatch to block on full channel, got %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func assertCompletesQuickly(t *testing.T, done <-chan struct{}, operation string) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatalf("%s blocked behind full command channel dispatch", operation)
+	}
+}
+
+func assertDispatchReturnsError(t *testing.T, errCh <-chan error) {
+	t.Helper()
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatalf("expected blocked dispatch to end with an error")
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("timed out waiting for blocked dispatch to finish")
 	}
 }

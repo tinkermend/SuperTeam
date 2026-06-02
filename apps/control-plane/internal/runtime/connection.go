@@ -20,9 +20,12 @@ type RuntimeCommand struct {
 }
 
 type RuntimeConnection struct {
-	ID       string
-	NodeID   string
-	Commands chan RuntimeCommand
+	ID     string
+	NodeID string
+	// Commands remains open after close; use Done for connection lifecycle.
+	Commands  chan RuntimeCommand
+	closed    chan struct{}
+	closeOnce sync.Once
 }
 
 type ConnectionRegistry struct {
@@ -41,42 +44,65 @@ func (r *ConnectionRegistry) Register(nodeID string) *RuntimeConnection {
 		ID:       uuid.NewString(),
 		NodeID:   nodeID,
 		Commands: make(chan RuntimeCommand, runtimeCommandChannelSize),
+		closed:   make(chan struct{}),
 	}
 
 	r.mu.Lock()
 	oldConnection := r.connections[nodeID]
 	r.connections[nodeID] = connection
-	if oldConnection != nil {
-		close(oldConnection.Commands)
-	}
 	r.mu.Unlock()
 
+	if oldConnection != nil {
+		oldConnection.close()
+	}
 	return connection
 }
 
 func (r *ConnectionRegistry) Unregister(nodeID, connectionID string) {
+	var connectionToClose *RuntimeConnection
 	r.mu.Lock()
 	if connection := r.connections[nodeID]; connection != nil && connection.ID == connectionID {
 		delete(r.connections, nodeID)
-		close(connection.Commands)
+		connectionToClose = connection
 	}
 	r.mu.Unlock()
+	if connectionToClose != nil {
+		connectionToClose.close()
+	}
 }
 
 func (r *ConnectionRegistry) Dispatch(ctx context.Context, nodeID string, command RuntimeCommand) error {
 	r.mu.Lock()
 	connection := r.connections[nodeID]
+	r.mu.Unlock()
 	if connection == nil {
-		r.mu.Unlock()
 		return ErrRuntimeNotConnected
 	}
+	return connection.send(ctx, command)
+}
 
+func (c *RuntimeConnection) Done() <-chan struct{} {
+	return c.closed
+}
+
+func (c *RuntimeConnection) close() {
+	c.closeOnce.Do(func() {
+		close(c.closed)
+	})
+}
+
+func (c *RuntimeConnection) send(ctx context.Context, command RuntimeCommand) error {
 	select {
-	case connection.Commands <- command:
-		r.mu.Unlock()
+	case <-c.closed:
+		return ErrRuntimeNotConnected
+	default:
+	}
+	select {
+	case c.Commands <- command:
 		return nil
 	case <-ctx.Done():
-		r.mu.Unlock()
 		return ctx.Err()
+	case <-c.closed:
+		return ErrRuntimeNotConnected
 	}
 }

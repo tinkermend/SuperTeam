@@ -368,6 +368,8 @@ func (h *RuntimeHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 			if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
 				return
 			}
+		case <-connection.Done():
+			return
 		case <-ctx.Done():
 			return
 		}

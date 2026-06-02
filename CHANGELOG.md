@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 将 Runtime enrollment 批准改为单条 SQL 原子完成 pending 校验、tenant-safe Runtime 节点 upsert 和 enrollment attach，避免并发拒绝/撤销后留下未挂接节点，并修复 tenant-aware node upsert 的全局 `node_id` 冲突竞态。
 - 将 Runtime session token 默认有效期修正为 12 小时，并补充签发和续期过期时间断言。
 - 新增 Runtime WebSocket Command Channel：Control Plane 维护 Runtime 连接注册表，短期 session 认证的 Runtime 可通过 `/api/v1/runtime/ws` 建立命令通道并接收 JSON command；旧版 Runtime token 不能访问该通道。
+- 加固 Runtime WebSocket Command Channel 连接注册表：Dispatch 不再持有全局锁等待满载 channel，Runtime 重连和断开清理不会被阻塞，并补充 registry 未配置与 client close 后注销测试。
 
 #### Control Plane 渐进式授权边界 (2026-06-01)
 
