@@ -43,6 +43,7 @@ RETURNING *;
 INSERT INTO runtime_enrollments (
     tenant_id,
     runtime_node_id,
+    node_id,
     bootstrap_key_id,
     status,
     request_payload,
@@ -50,13 +51,14 @@ INSERT INTO runtime_enrollments (
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('runtime_node_id')::uuid,
+    sqlc.arg('node_id')::varchar,
     sqlc.narg('bootstrap_key_id')::uuid,
     sqlc.arg('status')::varchar,
     COALESCE(sqlc.arg('request_payload')::jsonb, '{}'::jsonb),
     sqlc.arg('last_hello_at')::timestamptz
 )
-ON CONFLICT (runtime_node_id) DO UPDATE SET
-    tenant_id = EXCLUDED.tenant_id,
+ON CONFLICT (tenant_id, node_id) DO UPDATE SET
+    runtime_node_id = EXCLUDED.runtime_node_id,
     bootstrap_key_id = EXCLUDED.bootstrap_key_id,
     status = CASE
         WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.status
@@ -71,7 +73,7 @@ RETURNING *;
 SELECT *
 FROM runtime_enrollments
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND runtime_node_id = sqlc.arg('runtime_node_id')::uuid;
+  AND node_id = sqlc.arg('node_id')::varchar;
 
 -- name: ListRuntimeEnrollments :many
 SELECT *
@@ -151,6 +153,7 @@ SET expires_at = sqlc.arg('expires_at')::timestamptz,
     updated_at = NOW()
 WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND expires_at > NOW()
   AND revoked_at IS NULL
 RETURNING *;
 
@@ -160,6 +163,7 @@ SET last_seen_at = NOW(),
     updated_at = NOW()
 WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND expires_at > NOW()
   AND revoked_at IS NULL
 RETURNING *;
 
@@ -176,6 +180,8 @@ RETURNING *;
 INSERT INTO runtime_capabilities (
     tenant_id,
     runtime_node_id,
+    capability_type,
+    capability_key,
     provider_type,
     provider_version,
     binary_path,
@@ -183,12 +189,16 @@ INSERT INTO runtime_capabilities (
     workspace_base_dir,
     capacity,
     labels,
+    status,
+    details,
     health_status,
     metadata,
     last_seen_at
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('runtime_node_id')::uuid,
+    sqlc.arg('capability_type')::varchar,
+    sqlc.arg('capability_key')::varchar,
     sqlc.arg('provider_type')::varchar,
     sqlc.narg('provider_version')::varchar,
     sqlc.narg('binary_path')::text,
@@ -196,23 +206,16 @@ INSERT INTO runtime_capabilities (
     sqlc.narg('workspace_base_dir')::text,
     COALESCE(sqlc.arg('capacity')::jsonb, '{}'::jsonb),
     COALESCE(sqlc.arg('labels')::jsonb, '{}'::jsonb),
+    sqlc.arg('status')::varchar,
+    COALESCE(sqlc.arg('details')::jsonb, '{}'::jsonb),
     sqlc.arg('health_status')::varchar,
     COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb),
     sqlc.arg('last_seen_at')::timestamptz
 )
-ON CONFLICT (runtime_node_id, provider_type) DO UPDATE SET
-    tenant_id = EXCLUDED.tenant_id,
-    provider_version = EXCLUDED.provider_version,
-    binary_path = EXCLUDED.binary_path,
-    available = EXCLUDED.available,
-    workspace_base_dir = EXCLUDED.workspace_base_dir,
-    capacity = EXCLUDED.capacity,
-    labels = EXCLUDED.labels,
-    health_status = EXCLUDED.health_status,
-    metadata = EXCLUDED.metadata,
+ON CONFLICT (tenant_id, runtime_node_id, capability_type, capability_key) DO UPDATE SET
+    status = EXCLUDED.status,
+    details = EXCLUDED.details,
     last_seen_at = EXCLUDED.last_seen_at,
-    disabled_at = NULL,
-    archived_at = NULL,
     updated_at = NOW()
 RETURNING *;
 
@@ -229,5 +232,6 @@ SELECT *
 FROM runtime_capabilities
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND runtime_node_id = sqlc.arg('runtime_node_id')::uuid
-  AND provider_type = sqlc.arg('provider_type')::varchar
+  AND capability_type = sqlc.arg('capability_type')::varchar
+  AND capability_key = sqlc.arg('capability_key')::varchar
   AND archived_at IS NULL;

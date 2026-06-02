@@ -12,81 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const AppendProviderSessionEvent = `-- name: AppendProviderSessionEvent :one
-INSERT INTO provider_session_events (
-    tenant_id,
-    provider_session_id,
-    digital_employee_id,
-    execution_instance_id,
-    runtime_node_id,
-    provider_type,
-    event_type,
-    sequence_number,
-    payload,
-    raw_payload_ref,
-    metadata
-) VALUES (
-    $1::uuid,
-    $2::uuid,
-    $3::uuid,
-    $4::uuid,
-    $5::uuid,
-    $6::varchar,
-    $7::varchar,
-    $8::integer,
-    $9::jsonb,
-    $10::text,
-    COALESCE($11::jsonb, '{}'::jsonb)
-) RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, raw_payload_ref, metadata, created_at
-`
-
-type AppendProviderSessionEventParams struct {
-	TenantID            uuid.UUID   `json:"tenant_id"`
-	ProviderSessionID   uuid.UUID   `json:"provider_session_id"`
-	DigitalEmployeeID   uuid.UUID   `json:"digital_employee_id"`
-	ExecutionInstanceID uuid.UUID   `json:"execution_instance_id"`
-	RuntimeNodeID       uuid.UUID   `json:"runtime_node_id"`
-	ProviderType        string      `json:"provider_type"`
-	EventType           string      `json:"event_type"`
-	SequenceNumber      int32       `json:"sequence_number"`
-	Payload             []byte      `json:"payload"`
-	RawPayloadRef       pgtype.Text `json:"raw_payload_ref"`
-	Metadata            []byte      `json:"metadata"`
-}
-
-func (q *Queries) AppendProviderSessionEvent(ctx context.Context, arg AppendProviderSessionEventParams) (ProviderSessionEvent, error) {
-	row := q.db.QueryRow(ctx, AppendProviderSessionEvent,
-		arg.TenantID,
-		arg.ProviderSessionID,
-		arg.DigitalEmployeeID,
-		arg.ExecutionInstanceID,
-		arg.RuntimeNodeID,
-		arg.ProviderType,
-		arg.EventType,
-		arg.SequenceNumber,
-		arg.Payload,
-		arg.RawPayloadRef,
-		arg.Metadata,
-	)
-	var i ProviderSessionEvent
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.ProviderSessionID,
-		&i.DigitalEmployeeID,
-		&i.ExecutionInstanceID,
-		&i.RuntimeNodeID,
-		&i.ProviderType,
-		&i.EventType,
-		&i.SequenceNumber,
-		&i.Payload,
-		&i.RawPayloadRef,
-		&i.Metadata,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const CreateProviderSession = `-- name: CreateProviderSession :one
 INSERT INTO provider_sessions (
     tenant_id,
@@ -156,6 +81,76 @@ func (q *Queries) CreateProviderSession(ctx context.Context, arg CreateProviderS
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const CreateProviderSessionEvent = `-- name: CreateProviderSessionEvent :one
+INSERT INTO provider_session_events (
+    tenant_id,
+    provider_session_id,
+    digital_employee_id,
+    execution_instance_id,
+    runtime_node_id,
+    provider_type,
+    event_type,
+    sequence_number,
+    payload,
+    raw_event_ref,
+    metadata
+) SELECT
+    ps.tenant_id,
+    ps.id,
+    ps.digital_employee_id,
+    ps.execution_instance_id,
+    ps.runtime_node_id,
+    ps.provider_type,
+    $1::varchar,
+    $2::integer,
+    $3::jsonb,
+    $4::text,
+    COALESCE($5::jsonb, '{}'::jsonb)
+FROM provider_sessions ps
+WHERE ps.id = $6::uuid
+  AND ps.tenant_id = $7::uuid
+RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, raw_event_ref, metadata, created_at
+`
+
+type CreateProviderSessionEventParams struct {
+	EventType         string      `json:"event_type"`
+	SequenceNumber    int32       `json:"sequence_number"`
+	Payload           []byte      `json:"payload"`
+	RawEventRef       pgtype.Text `json:"raw_event_ref"`
+	Metadata          []byte      `json:"metadata"`
+	ProviderSessionID uuid.UUID   `json:"provider_session_id"`
+	TenantID          uuid.UUID   `json:"tenant_id"`
+}
+
+func (q *Queries) CreateProviderSessionEvent(ctx context.Context, arg CreateProviderSessionEventParams) (ProviderSessionEvent, error) {
+	row := q.db.QueryRow(ctx, CreateProviderSessionEvent,
+		arg.EventType,
+		arg.SequenceNumber,
+		arg.Payload,
+		arg.RawEventRef,
+		arg.Metadata,
+		arg.ProviderSessionID,
+		arg.TenantID,
+	)
+	var i ProviderSessionEvent
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProviderSessionID,
+		&i.DigitalEmployeeID,
+		&i.ExecutionInstanceID,
+		&i.RuntimeNodeID,
+		&i.ProviderType,
+		&i.EventType,
+		&i.SequenceNumber,
+		&i.Payload,
+		&i.RawEventRef,
+		&i.Metadata,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -252,7 +247,7 @@ func (q *Queries) GetProviderSessionByExternalID(ctx context.Context, arg GetPro
 }
 
 const ListProviderSessionEvents = `-- name: ListProviderSessionEvents :many
-SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, raw_payload_ref, metadata, created_at
+SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, raw_event_ref, metadata, created_at
 FROM provider_session_events
 WHERE tenant_id = $1::uuid
   AND provider_session_id = $2::uuid
@@ -284,7 +279,7 @@ func (q *Queries) ListProviderSessionEvents(ctx context.Context, arg ListProvide
 			&i.EventType,
 			&i.SequenceNumber,
 			&i.Payload,
-			&i.RawPayloadRef,
+			&i.RawEventRef,
 			&i.Metadata,
 			&i.CreatedAt,
 		); err != nil {

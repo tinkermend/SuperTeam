@@ -26,7 +26,7 @@ SET status = 'approved',
     updated_at = NOW()
 WHERE id = $2::uuid
   AND tenant_id = $3::uuid
-RETURNING id, tenant_id, runtime_node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
+RETURNING id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
 `
 
 type ApproveRuntimeEnrollmentParams struct {
@@ -42,6 +42,7 @@ func (q *Queries) ApproveRuntimeEnrollment(ctx context.Context, arg ApproveRunti
 		&i.ID,
 		&i.TenantID,
 		&i.RuntimeNodeID,
+		&i.NodeID,
 		&i.BootstrapKeyID,
 		&i.Status,
 		&i.RequestPayload,
@@ -250,27 +251,36 @@ func (q *Queries) GetActiveRuntimeSessionByLookupHash(ctx context.Context, arg G
 }
 
 const GetRuntimeCapability = `-- name: GetRuntimeCapability :one
-SELECT id, tenant_id, runtime_node_id, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
 FROM runtime_capabilities
 WHERE tenant_id = $1::uuid
   AND runtime_node_id = $2::uuid
-  AND provider_type = $3::varchar
+  AND capability_type = $3::varchar
+  AND capability_key = $4::varchar
   AND archived_at IS NULL
 `
 
 type GetRuntimeCapabilityParams struct {
-	TenantID      uuid.UUID `json:"tenant_id"`
-	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
-	ProviderType  string    `json:"provider_type"`
+	TenantID       uuid.UUID `json:"tenant_id"`
+	RuntimeNodeID  uuid.UUID `json:"runtime_node_id"`
+	CapabilityType string    `json:"capability_type"`
+	CapabilityKey  string    `json:"capability_key"`
 }
 
 func (q *Queries) GetRuntimeCapability(ctx context.Context, arg GetRuntimeCapabilityParams) (RuntimeCapability, error) {
-	row := q.db.QueryRow(ctx, GetRuntimeCapability, arg.TenantID, arg.RuntimeNodeID, arg.ProviderType)
+	row := q.db.QueryRow(ctx, GetRuntimeCapability,
+		arg.TenantID,
+		arg.RuntimeNodeID,
+		arg.CapabilityType,
+		arg.CapabilityKey,
+	)
 	var i RuntimeCapability
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.RuntimeNodeID,
+		&i.CapabilityType,
+		&i.CapabilityKey,
 		&i.ProviderType,
 		&i.ProviderVersion,
 		&i.BinaryPath,
@@ -278,6 +288,8 @@ func (q *Queries) GetRuntimeCapability(ctx context.Context, arg GetRuntimeCapabi
 		&i.WorkspaceBaseDir,
 		&i.Capacity,
 		&i.Labels,
+		&i.Status,
+		&i.Details,
 		&i.HealthStatus,
 		&i.Metadata,
 		&i.LastSeenAt,
@@ -290,24 +302,25 @@ func (q *Queries) GetRuntimeCapability(ctx context.Context, arg GetRuntimeCapabi
 }
 
 const GetRuntimeEnrollmentByNodeID = `-- name: GetRuntimeEnrollmentByNodeID :one
-SELECT id, tenant_id, runtime_node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
+SELECT id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
 FROM runtime_enrollments
 WHERE tenant_id = $1::uuid
-  AND runtime_node_id = $2::uuid
+  AND node_id = $2::varchar
 `
 
 type GetRuntimeEnrollmentByNodeIDParams struct {
-	TenantID      uuid.UUID `json:"tenant_id"`
-	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	TenantID uuid.UUID `json:"tenant_id"`
+	NodeID   string    `json:"node_id"`
 }
 
 func (q *Queries) GetRuntimeEnrollmentByNodeID(ctx context.Context, arg GetRuntimeEnrollmentByNodeIDParams) (RuntimeEnrollment, error) {
-	row := q.db.QueryRow(ctx, GetRuntimeEnrollmentByNodeID, arg.TenantID, arg.RuntimeNodeID)
+	row := q.db.QueryRow(ctx, GetRuntimeEnrollmentByNodeID, arg.TenantID, arg.NodeID)
 	var i RuntimeEnrollment
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.RuntimeNodeID,
+		&i.NodeID,
 		&i.BootstrapKeyID,
 		&i.Status,
 		&i.RequestPayload,
@@ -327,7 +340,7 @@ func (q *Queries) GetRuntimeEnrollmentByNodeID(ctx context.Context, arg GetRunti
 }
 
 const ListRuntimeCapabilities = `-- name: ListRuntimeCapabilities :many
-SELECT id, tenant_id, runtime_node_id, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
 FROM runtime_capabilities
 WHERE tenant_id = $1::uuid
   AND runtime_node_id = $2::uuid
@@ -353,6 +366,8 @@ func (q *Queries) ListRuntimeCapabilities(ctx context.Context, arg ListRuntimeCa
 			&i.ID,
 			&i.TenantID,
 			&i.RuntimeNodeID,
+			&i.CapabilityType,
+			&i.CapabilityKey,
 			&i.ProviderType,
 			&i.ProviderVersion,
 			&i.BinaryPath,
@@ -360,6 +375,8 @@ func (q *Queries) ListRuntimeCapabilities(ctx context.Context, arg ListRuntimeCa
 			&i.WorkspaceBaseDir,
 			&i.Capacity,
 			&i.Labels,
+			&i.Status,
+			&i.Details,
 			&i.HealthStatus,
 			&i.Metadata,
 			&i.LastSeenAt,
@@ -379,7 +396,7 @@ func (q *Queries) ListRuntimeCapabilities(ctx context.Context, arg ListRuntimeCa
 }
 
 const ListRuntimeEnrollments = `-- name: ListRuntimeEnrollments :many
-SELECT id, tenant_id, runtime_node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
+SELECT id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
 FROM runtime_enrollments
 WHERE tenant_id = $1::uuid
   AND ($2::varchar IS NULL OR status = $2::varchar)
@@ -412,6 +429,7 @@ func (q *Queries) ListRuntimeEnrollments(ctx context.Context, arg ListRuntimeEnr
 			&i.ID,
 			&i.TenantID,
 			&i.RuntimeNodeID,
+			&i.NodeID,
 			&i.BootstrapKeyID,
 			&i.Status,
 			&i.RequestPayload,
@@ -446,7 +464,7 @@ SET status = 'rejected',
     updated_at = NOW()
 WHERE id = $3::uuid
   AND tenant_id = $4::uuid
-RETURNING id, tenant_id, runtime_node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
+RETURNING id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
 `
 
 type RejectRuntimeEnrollmentParams struct {
@@ -468,6 +486,7 @@ func (q *Queries) RejectRuntimeEnrollment(ctx context.Context, arg RejectRuntime
 		&i.ID,
 		&i.TenantID,
 		&i.RuntimeNodeID,
+		&i.NodeID,
 		&i.BootstrapKeyID,
 		&i.Status,
 		&i.RequestPayload,
@@ -493,6 +512,7 @@ SET expires_at = $1::timestamptz,
     updated_at = NOW()
 WHERE id = $2::uuid
   AND tenant_id = $3::uuid
+  AND expires_at > NOW()
   AND revoked_at IS NULL
 RETURNING id, tenant_id, runtime_node_id, enrollment_id, token_lookup_hash, token_secret_hash, expires_at, last_seen_at, revoked_at, revoked_reason, created_at, updated_at
 `
@@ -578,7 +598,7 @@ SET status = 'revoked',
     updated_at = NOW()
 WHERE id = $3::uuid
   AND tenant_id = $4::uuid
-RETURNING id, tenant_id, runtime_node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
+RETURNING id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
 `
 
 type RevokeRuntimeEnrollmentParams struct {
@@ -600,6 +620,7 @@ func (q *Queries) RevokeRuntimeEnrollment(ctx context.Context, arg RevokeRuntime
 		&i.ID,
 		&i.TenantID,
 		&i.RuntimeNodeID,
+		&i.NodeID,
 		&i.BootstrapKeyID,
 		&i.Status,
 		&i.RequestPayload,
@@ -660,6 +681,7 @@ SET last_seen_at = NOW(),
     updated_at = NOW()
 WHERE id = $1::uuid
   AND tenant_id = $2::uuid
+  AND expires_at > NOW()
   AND revoked_at IS NULL
 RETURNING id, tenant_id, runtime_node_id, enrollment_id, token_lookup_hash, token_secret_hash, expires_at, last_seen_at, revoked_at, revoked_reason, created_at, updated_at
 `
@@ -693,6 +715,8 @@ const UpsertRuntimeCapability = `-- name: UpsertRuntimeCapability :one
 INSERT INTO runtime_capabilities (
     tenant_id,
     runtime_node_id,
+    capability_type,
+    capability_key,
     provider_type,
     provider_version,
     binary_path,
@@ -700,6 +724,8 @@ INSERT INTO runtime_capabilities (
     workspace_base_dir,
     capacity,
     labels,
+    status,
+    details,
     health_status,
     metadata,
     last_seen_at
@@ -708,35 +734,32 @@ INSERT INTO runtime_capabilities (
     $2::uuid,
     $3::varchar,
     $4::varchar,
-    $5::text,
-    $6::boolean,
+    $5::varchar,
+    $6::varchar,
     $7::text,
-    COALESCE($8::jsonb, '{}'::jsonb),
-    COALESCE($9::jsonb, '{}'::jsonb),
-    $10::varchar,
+    $8::boolean,
+    $9::text,
+    COALESCE($10::jsonb, '{}'::jsonb),
     COALESCE($11::jsonb, '{}'::jsonb),
-    $12::timestamptz
+    $12::varchar,
+    COALESCE($13::jsonb, '{}'::jsonb),
+    $14::varchar,
+    COALESCE($15::jsonb, '{}'::jsonb),
+    $16::timestamptz
 )
-ON CONFLICT (runtime_node_id, provider_type) DO UPDATE SET
-    tenant_id = EXCLUDED.tenant_id,
-    provider_version = EXCLUDED.provider_version,
-    binary_path = EXCLUDED.binary_path,
-    available = EXCLUDED.available,
-    workspace_base_dir = EXCLUDED.workspace_base_dir,
-    capacity = EXCLUDED.capacity,
-    labels = EXCLUDED.labels,
-    health_status = EXCLUDED.health_status,
-    metadata = EXCLUDED.metadata,
+ON CONFLICT (tenant_id, runtime_node_id, capability_type, capability_key) DO UPDATE SET
+    status = EXCLUDED.status,
+    details = EXCLUDED.details,
     last_seen_at = EXCLUDED.last_seen_at,
-    disabled_at = NULL,
-    archived_at = NULL,
     updated_at = NOW()
-RETURNING id, tenant_id, runtime_node_id, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+RETURNING id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
 `
 
 type UpsertRuntimeCapabilityParams struct {
 	TenantID         uuid.UUID          `json:"tenant_id"`
 	RuntimeNodeID    uuid.UUID          `json:"runtime_node_id"`
+	CapabilityType   string             `json:"capability_type"`
+	CapabilityKey    string             `json:"capability_key"`
 	ProviderType     string             `json:"provider_type"`
 	ProviderVersion  pgtype.Text        `json:"provider_version"`
 	BinaryPath       pgtype.Text        `json:"binary_path"`
@@ -744,6 +767,8 @@ type UpsertRuntimeCapabilityParams struct {
 	WorkspaceBaseDir pgtype.Text        `json:"workspace_base_dir"`
 	Capacity         []byte             `json:"capacity"`
 	Labels           []byte             `json:"labels"`
+	Status           string             `json:"status"`
+	Details          []byte             `json:"details"`
 	HealthStatus     string             `json:"health_status"`
 	Metadata         []byte             `json:"metadata"`
 	LastSeenAt       pgtype.Timestamptz `json:"last_seen_at"`
@@ -753,6 +778,8 @@ func (q *Queries) UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntime
 	row := q.db.QueryRow(ctx, UpsertRuntimeCapability,
 		arg.TenantID,
 		arg.RuntimeNodeID,
+		arg.CapabilityType,
+		arg.CapabilityKey,
 		arg.ProviderType,
 		arg.ProviderVersion,
 		arg.BinaryPath,
@@ -760,6 +787,8 @@ func (q *Queries) UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntime
 		arg.WorkspaceBaseDir,
 		arg.Capacity,
 		arg.Labels,
+		arg.Status,
+		arg.Details,
 		arg.HealthStatus,
 		arg.Metadata,
 		arg.LastSeenAt,
@@ -769,6 +798,8 @@ func (q *Queries) UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntime
 		&i.ID,
 		&i.TenantID,
 		&i.RuntimeNodeID,
+		&i.CapabilityType,
+		&i.CapabilityKey,
 		&i.ProviderType,
 		&i.ProviderVersion,
 		&i.BinaryPath,
@@ -776,6 +807,8 @@ func (q *Queries) UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntime
 		&i.WorkspaceBaseDir,
 		&i.Capacity,
 		&i.Labels,
+		&i.Status,
+		&i.Details,
 		&i.HealthStatus,
 		&i.Metadata,
 		&i.LastSeenAt,
@@ -791,6 +824,7 @@ const UpsertRuntimeEnrollment = `-- name: UpsertRuntimeEnrollment :one
 INSERT INTO runtime_enrollments (
     tenant_id,
     runtime_node_id,
+    node_id,
     bootstrap_key_id,
     status,
     request_payload,
@@ -798,13 +832,14 @@ INSERT INTO runtime_enrollments (
 ) VALUES (
     $1::uuid,
     $2::uuid,
-    $3::uuid,
-    $4::varchar,
-    COALESCE($5::jsonb, '{}'::jsonb),
-    $6::timestamptz
+    $3::varchar,
+    $4::uuid,
+    $5::varchar,
+    COALESCE($6::jsonb, '{}'::jsonb),
+    $7::timestamptz
 )
-ON CONFLICT (runtime_node_id) DO UPDATE SET
-    tenant_id = EXCLUDED.tenant_id,
+ON CONFLICT (tenant_id, node_id) DO UPDATE SET
+    runtime_node_id = EXCLUDED.runtime_node_id,
     bootstrap_key_id = EXCLUDED.bootstrap_key_id,
     status = CASE
         WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.status
@@ -813,12 +848,13 @@ ON CONFLICT (runtime_node_id) DO UPDATE SET
     request_payload = EXCLUDED.request_payload,
     last_hello_at = EXCLUDED.last_hello_at,
     updated_at = NOW()
-RETURNING id, tenant_id, runtime_node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
+RETURNING id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
 `
 
 type UpsertRuntimeEnrollmentParams struct {
 	TenantID       uuid.UUID          `json:"tenant_id"`
 	RuntimeNodeID  uuid.UUID          `json:"runtime_node_id"`
+	NodeID         string             `json:"node_id"`
 	BootstrapKeyID uuid.NullUUID      `json:"bootstrap_key_id"`
 	Status         string             `json:"status"`
 	RequestPayload []byte             `json:"request_payload"`
@@ -829,6 +865,7 @@ func (q *Queries) UpsertRuntimeEnrollment(ctx context.Context, arg UpsertRuntime
 	row := q.db.QueryRow(ctx, UpsertRuntimeEnrollment,
 		arg.TenantID,
 		arg.RuntimeNodeID,
+		arg.NodeID,
 		arg.BootstrapKeyID,
 		arg.Status,
 		arg.RequestPayload,
@@ -839,6 +876,7 @@ func (q *Queries) UpsertRuntimeEnrollment(ctx context.Context, arg UpsertRuntime
 		&i.ID,
 		&i.TenantID,
 		&i.RuntimeNodeID,
+		&i.NodeID,
 		&i.BootstrapKeyID,
 		&i.Status,
 		&i.RequestPayload,

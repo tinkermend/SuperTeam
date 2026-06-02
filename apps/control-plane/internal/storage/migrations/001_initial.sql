@@ -147,6 +147,7 @@ CREATE TABLE runtime_enrollments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     runtime_node_id UUID NOT NULL,
+    node_id VARCHAR(255) NOT NULL,
     bootstrap_key_id UUID,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
     request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -182,6 +183,8 @@ CREATE TABLE runtime_capabilities (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     runtime_node_id UUID NOT NULL,
+    capability_type VARCHAR(100) NOT NULL,
+    capability_key VARCHAR(255) NOT NULL,
     provider_type VARCHAR(100) NOT NULL,
     provider_version VARCHAR(100),
     binary_path TEXT,
@@ -189,6 +192,8 @@ CREATE TABLE runtime_capabilities (
     workspace_base_dir TEXT,
     capacity JSONB NOT NULL DEFAULT '{}'::jsonb,
     labels JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status VARCHAR(50) NOT NULL DEFAULT 'unknown',
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
     health_status VARCHAR(50) NOT NULL DEFAULT 'unknown',
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     last_seen_at TIMESTAMPTZ,
@@ -291,7 +296,7 @@ CREATE TABLE provider_session_events (
     event_type VARCHAR(100) NOT NULL,
     sequence_number INTEGER NOT NULL,
     payload JSONB NOT NULL,
-    raw_payload_ref TEXT,
+    raw_event_ref TEXT,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -467,15 +472,17 @@ CREATE UNIQUE INDEX uq_auth_runtime_tokens_active_node_id ON auth_runtime_tokens
 CREATE INDEX idx_auth_runtime_tokens_node_id ON auth_runtime_tokens(node_id);
 CREATE UNIQUE INDEX uq_runtime_bootstrap_keys_active_hash ON runtime_bootstrap_keys(tenant_id, key_hash) WHERE revoked_at IS NULL;
 CREATE INDEX idx_runtime_bootstrap_keys_tenant_status ON runtime_bootstrap_keys(tenant_id, status, created_at DESC);
-CREATE UNIQUE INDEX uq_runtime_enrollments_runtime_node ON runtime_enrollments(runtime_node_id);
+CREATE UNIQUE INDEX uq_runtime_enrollments_tenant_node_id ON runtime_enrollments(tenant_id, node_id);
+CREATE INDEX idx_runtime_enrollments_runtime_node_id ON runtime_enrollments(runtime_node_id);
 CREATE INDEX idx_runtime_enrollments_tenant_status ON runtime_enrollments(tenant_id, status, created_at DESC);
 CREATE INDEX idx_runtime_enrollments_bootstrap_key_id ON runtime_enrollments(bootstrap_key_id);
 CREATE INDEX idx_runtime_sessions_runtime_node_id ON runtime_sessions(runtime_node_id);
 CREATE INDEX idx_runtime_sessions_tenant_expires ON runtime_sessions(tenant_id, expires_at);
 CREATE INDEX idx_runtime_sessions_last_seen ON runtime_sessions(last_seen_at DESC);
-CREATE UNIQUE INDEX uq_runtime_capabilities_node_provider ON runtime_capabilities(runtime_node_id, provider_type);
+CREATE UNIQUE INDEX uq_runtime_capabilities_tenant_key ON runtime_capabilities(tenant_id, runtime_node_id, capability_type, capability_key);
 CREATE INDEX idx_runtime_capabilities_tenant_node ON runtime_capabilities(tenant_id, runtime_node_id);
 CREATE INDEX idx_runtime_capabilities_provider ON runtime_capabilities(tenant_id, provider_type, health_status);
+CREATE INDEX idx_runtime_capabilities_type_key ON runtime_capabilities(tenant_id, capability_type, capability_key);
 CREATE INDEX idx_runtime_capabilities_labels ON runtime_capabilities USING GIN (labels);
 CREATE INDEX idx_auth_sessions_user_id ON auth_sessions(user_id);
 CREATE INDEX idx_auth_sessions_token_hash ON auth_sessions(token_hash);
@@ -696,6 +703,7 @@ COMMENT ON TABLE runtime_enrollments IS 'Runtime Agent 接入审批状态表';
 COMMENT ON COLUMN runtime_enrollments.id IS 'Runtime 接入记录主键 UUID';
 COMMENT ON COLUMN runtime_enrollments.tenant_id IS '所属租户 ID';
 COMMENT ON COLUMN runtime_enrollments.runtime_node_id IS 'Runtime 节点 UUID';
+COMMENT ON COLUMN runtime_enrollments.node_id IS 'Runtime 外部业务节点 ID';
 COMMENT ON COLUMN runtime_enrollments.bootstrap_key_id IS '用于发起接入的引导密钥 ID';
 COMMENT ON COLUMN runtime_enrollments.status IS '接入审批状态：pending、approved、rejected 或 revoked';
 COMMENT ON COLUMN runtime_enrollments.request_payload IS 'Runtime hello 上报的接入请求快照';
@@ -729,6 +737,8 @@ COMMENT ON TABLE runtime_capabilities IS 'Runtime Agent 上报的 Provider 与�
 COMMENT ON COLUMN runtime_capabilities.id IS 'Runtime 能力主键 UUID';
 COMMENT ON COLUMN runtime_capabilities.tenant_id IS '所属租户 ID';
 COMMENT ON COLUMN runtime_capabilities.runtime_node_id IS 'Runtime 节点 UUID';
+COMMENT ON COLUMN runtime_capabilities.capability_type IS 'Runtime 能力类型，例如 provider 或 workspace';
+COMMENT ON COLUMN runtime_capabilities.capability_key IS 'Runtime 能力在节点内的稳定键';
 COMMENT ON COLUMN runtime_capabilities.provider_type IS 'Provider 类型，例如 claude-code、opencode、codex';
 COMMENT ON COLUMN runtime_capabilities.provider_version IS 'Provider 版本';
 COMMENT ON COLUMN runtime_capabilities.binary_path IS 'Provider 可执行文件路径';
@@ -736,6 +746,8 @@ COMMENT ON COLUMN runtime_capabilities.available IS 'Provider 当前是否可用
 COMMENT ON COLUMN runtime_capabilities.workspace_base_dir IS 'Runtime 工作区根目录';
 COMMENT ON COLUMN runtime_capabilities.capacity IS 'Runtime 上报的容量信息';
 COMMENT ON COLUMN runtime_capabilities.labels IS 'Runtime 能力标签，用于后续选择器匹配';
+COMMENT ON COLUMN runtime_capabilities.status IS 'Runtime 能力当前状态';
+COMMENT ON COLUMN runtime_capabilities.details IS 'Runtime 能力状态详情';
 COMMENT ON COLUMN runtime_capabilities.health_status IS 'Provider 能力健康状态';
 COMMENT ON COLUMN runtime_capabilities.metadata IS 'Runtime 能力扩展元数据';
 COMMENT ON COLUMN runtime_capabilities.last_seen_at IS 'Runtime 能力最近上报时间';
@@ -825,7 +837,7 @@ COMMENT ON COLUMN provider_session_events.provider_type IS 'Provider 类型';
 COMMENT ON COLUMN provider_session_events.event_type IS 'Provider 事件类型';
 COMMENT ON COLUMN provider_session_events.sequence_number IS 'Provider 会话内事件序号';
 COMMENT ON COLUMN provider_session_events.payload IS '归一化后的 Provider 事件负载';
-COMMENT ON COLUMN provider_session_events.raw_payload_ref IS '原始输出对象存储引用或摘要引用';
+COMMENT ON COLUMN provider_session_events.raw_event_ref IS '原始输出对象存储引用或摘要引用';
 COMMENT ON COLUMN provider_session_events.metadata IS 'Provider 会话事件扩展元数据';
 COMMENT ON COLUMN provider_session_events.created_at IS 'Provider 会话事件创建时间';
 

@@ -12,7 +12,6 @@ import (
 )
 
 type Querier interface {
-	AppendProviderSessionEvent(ctx context.Context, arg AppendProviderSessionEventParams) (ProviderSessionEvent, error)
 	ApproveRuntimeEnrollment(ctx context.Context, arg ApproveRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
 	CountAuditEvents(ctx context.Context, arg CountAuditEventsParams) (int64, error)
@@ -21,6 +20,7 @@ type Querier interface {
 	CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEmployeeParams) (DigitalEmployee, error)
 	CreateDigitalEmployeeExecutionInstance(ctx context.Context, arg CreateDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
 	CreateProviderSession(ctx context.Context, arg CreateProviderSessionParams) (ProviderSession, error)
+	CreateProviderSessionEvent(ctx context.Context, arg CreateProviderSessionEventParams) (ProviderSessionEvent, error)
 	CreateRuntimeBootstrapKey(ctx context.Context, arg CreateRuntimeBootstrapKeyParams) (RuntimeBootstrapKey, error)
 	CreateRuntimeNode(ctx context.Context, arg CreateRuntimeNodeParams) (RuntimeNode, error)
 	CreateRuntimeNodeScope(ctx context.Context, arg CreateRuntimeNodeScopeParams) (RuntimeNodeScope, error)
@@ -117,6 +117,7 @@ type Querier interface {
 	UpdateTaskWorkspace(ctx context.Context, arg UpdateTaskWorkspaceParams) (Task, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUser, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error)
+	UpsertDigitalEmployeeExecutionInstance(ctx context.Context, arg UpsertDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
 	UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntimeCapabilityParams) (RuntimeCapability, error)
 	UpsertRuntimeEnrollment(ctx context.Context, arg UpsertRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	ValidateRuntimeToken(ctx context.Context, arg ValidateRuntimeTokenParams) (AuthRuntimeToken, error)

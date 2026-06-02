@@ -1008,10 +1008,17 @@ components:
     RuntimeCapabilityInput:
       type: object
       required:
+        - capability_type
+        - capability_key
         - provider_type
         - available
+        - status
         - health_status
       properties:
+        capability_type:
+          type: string
+        capability_key:
+          type: string
         provider_type:
           type: string
         provider_version:
@@ -1026,6 +1033,11 @@ components:
           type: object
           additionalProperties: true
         labels:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+        details:
           type: object
           additionalProperties: true
         health_status:
@@ -1396,7 +1408,7 @@ components:
         payload:
           type: object
           additionalProperties: true
-        raw_payload_ref:
+        raw_event_ref:
           type: string
         metadata:
           type: object
@@ -1419,7 +1431,7 @@ components:
         payload:
           type: object
           additionalProperties: true
-        raw_payload_ref:
+        raw_event_ref:
           type: string
         metadata:
           type: object

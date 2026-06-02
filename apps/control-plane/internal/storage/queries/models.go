@@ -244,7 +244,7 @@ type ProviderSessionEvent struct {
 	// 归一化后的 Provider 事件负载
 	Payload []byte `json:"payload"`
 	// 原始输出对象存储引用或摘要引用
-	RawPayloadRef pgtype.Text `json:"raw_payload_ref"`
+	RawEventRef pgtype.Text `json:"raw_event_ref"`
 	// Provider 会话事件扩展元数据
 	Metadata []byte `json:"metadata"`
 	// Provider 会话事件创建时间
@@ -291,6 +291,10 @@ type RuntimeCapability struct {
 	TenantID uuid.UUID `json:"tenant_id"`
 	// Runtime 节点 UUID
 	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// Runtime 能力类型，例如 provider 或 workspace
+	CapabilityType string `json:"capability_type"`
+	// Runtime 能力在节点内的稳定键
+	CapabilityKey string `json:"capability_key"`
 	// Provider 类型，例如 claude-code、opencode、codex
 	ProviderType string `json:"provider_type"`
 	// Provider 版本
@@ -305,6 +309,10 @@ type RuntimeCapability struct {
 	Capacity []byte `json:"capacity"`
 	// Runtime 能力标签，用于后续选择器匹配
 	Labels []byte `json:"labels"`
+	// Runtime 能力当前状态
+	Status string `json:"status"`
+	// Runtime 能力状态详情
+	Details []byte `json:"details"`
 	// Provider 能力健康状态
 	HealthStatus string `json:"health_status"`
 	// Runtime 能力扩展元数据
@@ -329,6 +337,8 @@ type RuntimeEnrollment struct {
 	TenantID uuid.UUID `json:"tenant_id"`
 	// Runtime 节点 UUID
 	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// Runtime 外部业务节点 ID
+	NodeID string `json:"node_id"`
 	// 用于发起接入的引导密钥 ID
 	BootstrapKeyID uuid.NullUUID `json:"bootstrap_key_id"`
 	// 接入审批状态：pending、approved、rejected 或 revoked

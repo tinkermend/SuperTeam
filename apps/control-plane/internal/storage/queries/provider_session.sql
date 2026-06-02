@@ -63,7 +63,7 @@ WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
 RETURNING *;
 
--- name: AppendProviderSessionEvent :one
+-- name: CreateProviderSessionEvent :one
 INSERT INTO provider_session_events (
     tenant_id,
     provider_session_id,
@@ -74,21 +74,24 @@ INSERT INTO provider_session_events (
     event_type,
     sequence_number,
     payload,
-    raw_payload_ref,
+    raw_event_ref,
     metadata
-) VALUES (
-    sqlc.arg('tenant_id')::uuid,
-    sqlc.arg('provider_session_id')::uuid,
-    sqlc.arg('digital_employee_id')::uuid,
-    sqlc.arg('execution_instance_id')::uuid,
-    sqlc.arg('runtime_node_id')::uuid,
-    sqlc.arg('provider_type')::varchar,
+) SELECT
+    ps.tenant_id,
+    ps.id,
+    ps.digital_employee_id,
+    ps.execution_instance_id,
+    ps.runtime_node_id,
+    ps.provider_type,
     sqlc.arg('event_type')::varchar,
     sqlc.arg('sequence_number')::integer,
     sqlc.arg('payload')::jsonb,
-    sqlc.narg('raw_payload_ref')::text,
+    sqlc.narg('raw_event_ref')::text,
     COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
-) RETURNING *;
+FROM provider_sessions ps
+WHERE ps.id = sqlc.arg('provider_session_id')::uuid
+  AND ps.tenant_id = sqlc.arg('tenant_id')::uuid
+RETURNING *;
 
 -- name: ListProviderSessionEvents :many
 SELECT *

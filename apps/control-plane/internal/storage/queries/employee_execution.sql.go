@@ -579,3 +579,102 @@ func (q *Queries) UpdateDigitalEmployeeStatus(ctx context.Context, arg UpdateDig
 	)
 	return i, err
 }
+
+const UpsertDigitalEmployeeExecutionInstance = `-- name: UpsertDigitalEmployeeExecutionInstance :one
+INSERT INTO digital_employee_execution_instances (
+    tenant_id,
+    digital_employee_id,
+    runtime_node_id,
+    provider_type,
+    agent_home_dir,
+    workspace_policy,
+    session_policy,
+    runtime_selector,
+    capacity_requirements,
+    fallback_policy,
+    status,
+    metadata
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::varchar,
+    $5::text,
+    COALESCE($6::jsonb, '{}'::jsonb),
+    COALESCE($7::jsonb, '{}'::jsonb),
+    COALESCE($8::jsonb, '{}'::jsonb),
+    COALESCE($9::jsonb, '{}'::jsonb),
+    COALESCE($10::jsonb, '{}'::jsonb),
+    $11::varchar,
+    COALESCE($12::jsonb, '{}'::jsonb)
+)
+ON CONFLICT (digital_employee_id) WHERE deleted_at IS NULL DO UPDATE SET
+    runtime_node_id = EXCLUDED.runtime_node_id,
+    provider_type = EXCLUDED.provider_type,
+    agent_home_dir = EXCLUDED.agent_home_dir,
+    workspace_policy = EXCLUDED.workspace_policy,
+    session_policy = EXCLUDED.session_policy,
+    runtime_selector = EXCLUDED.runtime_selector,
+    capacity_requirements = EXCLUDED.capacity_requirements,
+    fallback_policy = EXCLUDED.fallback_policy,
+    status = EXCLUDED.status,
+    metadata = EXCLUDED.metadata,
+    updated_at = NOW()
+RETURNING id, tenant_id, digital_employee_id, runtime_node_id, provider_type, agent_home_dir, workspace_policy, session_policy, runtime_selector, capacity_requirements, fallback_policy, status, ready_at, disabled_at, error_at, error_message, deleted_at, metadata, created_at, updated_at
+`
+
+type UpsertDigitalEmployeeExecutionInstanceParams struct {
+	TenantID             uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID    uuid.UUID `json:"digital_employee_id"`
+	RuntimeNodeID        uuid.UUID `json:"runtime_node_id"`
+	ProviderType         string    `json:"provider_type"`
+	AgentHomeDir         string    `json:"agent_home_dir"`
+	WorkspacePolicy      []byte    `json:"workspace_policy"`
+	SessionPolicy        []byte    `json:"session_policy"`
+	RuntimeSelector      []byte    `json:"runtime_selector"`
+	CapacityRequirements []byte    `json:"capacity_requirements"`
+	FallbackPolicy       []byte    `json:"fallback_policy"`
+	Status               string    `json:"status"`
+	Metadata             []byte    `json:"metadata"`
+}
+
+func (q *Queries) UpsertDigitalEmployeeExecutionInstance(ctx context.Context, arg UpsertDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error) {
+	row := q.db.QueryRow(ctx, UpsertDigitalEmployeeExecutionInstance,
+		arg.TenantID,
+		arg.DigitalEmployeeID,
+		arg.RuntimeNodeID,
+		arg.ProviderType,
+		arg.AgentHomeDir,
+		arg.WorkspacePolicy,
+		arg.SessionPolicy,
+		arg.RuntimeSelector,
+		arg.CapacityRequirements,
+		arg.FallbackPolicy,
+		arg.Status,
+		arg.Metadata,
+	)
+	var i DigitalEmployeeExecutionInstance
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.DigitalEmployeeID,
+		&i.RuntimeNodeID,
+		&i.ProviderType,
+		&i.AgentHomeDir,
+		&i.WorkspacePolicy,
+		&i.SessionPolicy,
+		&i.RuntimeSelector,
+		&i.CapacityRequirements,
+		&i.FallbackPolicy,
+		&i.Status,
+		&i.ReadyAt,
+		&i.DisabledAt,
+		&i.ErrorAt,
+		&i.ErrorMessage,
+		&i.DeletedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
