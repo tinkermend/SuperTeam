@@ -748,8 +748,17 @@ INSERT INTO runtime_capabilities (
     $16::timestamptz
 )
 ON CONFLICT (tenant_id, runtime_node_id, capability_type, capability_key) DO UPDATE SET
+    provider_type = EXCLUDED.provider_type,
+    provider_version = EXCLUDED.provider_version,
+    binary_path = EXCLUDED.binary_path,
+    available = EXCLUDED.available,
+    workspace_base_dir = EXCLUDED.workspace_base_dir,
+    capacity = EXCLUDED.capacity,
+    labels = EXCLUDED.labels,
     status = EXCLUDED.status,
     details = EXCLUDED.details,
+    health_status = EXCLUDED.health_status,
+    metadata = EXCLUDED.metadata,
     last_seen_at = EXCLUDED.last_seen_at,
     updated_at = NOW()
 RETURNING id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at

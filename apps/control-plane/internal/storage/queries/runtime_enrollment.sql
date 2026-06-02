@@ -213,8 +213,17 @@ INSERT INTO runtime_capabilities (
     sqlc.arg('last_seen_at')::timestamptz
 )
 ON CONFLICT (tenant_id, runtime_node_id, capability_type, capability_key) DO UPDATE SET
+    provider_type = EXCLUDED.provider_type,
+    provider_version = EXCLUDED.provider_version,
+    binary_path = EXCLUDED.binary_path,
+    available = EXCLUDED.available,
+    workspace_base_dir = EXCLUDED.workspace_base_dir,
+    capacity = EXCLUDED.capacity,
+    labels = EXCLUDED.labels,
     status = EXCLUDED.status,
     details = EXCLUDED.details,
+    health_status = EXCLUDED.health_status,
+    metadata = EXCLUDED.metadata,
     last_seen_at = EXCLUDED.last_seen_at,
     updated_at = NOW()
 RETURNING *;

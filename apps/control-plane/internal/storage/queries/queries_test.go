@@ -1137,8 +1137,14 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	assert.Equal(t, tenantID, refreshedCapability.TenantID)
 	assert.Equal(t, "degraded", refreshedCapability.Status)
 	assert.JSONEq(t, `{"reason":"binary_missing"}`, string(refreshedCapability.Details))
-	assert.Equal(t, "1.0.0", refreshedCapability.ProviderVersion.String)
-	assert.Equal(t, "/usr/local/bin/claude", refreshedCapability.BinaryPath.String)
+	assert.Equal(t, "9.9.9", refreshedCapability.ProviderVersion.String)
+	assert.Equal(t, "/tmp/rewritten", refreshedCapability.BinaryPath.String)
+	assert.False(t, refreshedCapability.Available)
+	assert.Equal(t, "/tmp/rewritten-workspace", refreshedCapability.WorkspaceBaseDir.String)
+	assert.JSONEq(t, `{"max_slots":1}`, string(refreshedCapability.Capacity))
+	assert.JSONEq(t, `{"os":"linux"}`, string(refreshedCapability.Labels))
+	assert.Equal(t, "degraded", refreshedCapability.HealthStatus)
+	assert.JSONEq(t, `{"source":"refresh"}`, string(refreshedCapability.Metadata))
 
 	otherCapability, err := testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
 		TenantID:         otherTenantID,
