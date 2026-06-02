@@ -5,7 +5,7 @@ use superteam_runtime_agent::controlplane::{
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
     sync::oneshot,
 };
 
@@ -273,9 +273,7 @@ async fn controlplane_client_claim_task_sends_runtime_identity_headers() {
 
     tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
-        let mut buffer = vec![0; 4096];
-        let bytes_read = socket.read(&mut buffer).await.unwrap();
-        let request = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+        let request = read_http_request(&mut socket).await;
         let _ = request_tx.send(request);
 
         socket
@@ -369,4 +367,42 @@ Content-Length: 2
         body["capabilities"][0]["capability_type"],
         serde_json::json!("provider")
     );
+}
+
+async fn read_http_request(socket: &mut TcpStream) -> String {
+    let mut buffer = Vec::new();
+    let header_end = loop {
+        let mut chunk = [0; 1024];
+        let bytes_read = socket.read(&mut chunk).await.unwrap();
+        assert!(bytes_read > 0, "socket closed before HTTP headers");
+        buffer.extend_from_slice(&chunk[..bytes_read]);
+        if let Some(index) = find_subsequence(&buffer, b"\r\n\r\n") {
+            break index + 4;
+        }
+    };
+
+    let headers = String::from_utf8_lossy(&buffer[..header_end]);
+    let content_length = headers
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .find_map(|(name, value)| {
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().unwrap())
+        })
+        .unwrap_or(0);
+
+    while buffer.len() < header_end + content_length {
+        let mut chunk = [0; 1024];
+        let bytes_read = socket.read(&mut chunk).await.unwrap();
+        assert!(bytes_read > 0, "socket closed before HTTP body");
+        buffer.extend_from_slice(&chunk[..bytes_read]);
+    }
+
+    String::from_utf8(buffer[..header_end + content_length].to_vec()).unwrap()
+}
+
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }

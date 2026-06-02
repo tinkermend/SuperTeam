@@ -103,14 +103,14 @@ pub async fn connect_runtime_session(
         &session.token,
         &config.runtime.node_id,
     );
+    client
+        .upsert_capabilities(&config.runtime.node_id, capabilities)
+        .await?;
     spawn_session_renewal_loop(
         client.clone(),
         session_response.id.clone(),
         session.expires_at.clone(),
     );
-    client
-        .upsert_capabilities(&config.runtime.node_id, capabilities)
-        .await?;
     println!("Runtime session established");
 
     Ok(Some(client))

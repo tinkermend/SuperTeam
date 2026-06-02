@@ -6,7 +6,7 @@ use superteam_runtime_agent::daemon::{
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
     sync::oneshot,
 };
 
@@ -282,21 +282,24 @@ async fn daemon_runtime_session_renewal_loop_attempts_renew_before_expiry() {
 
     tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
-        let mut buffer = vec![0; 4096];
-        let bytes_read = socket.read(&mut buffer).await.unwrap();
-        let request = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+        let request = read_http_request(&mut socket).await;
         let _ = request_tx.send(request);
 
-        socket
-            .write_all(
-                br#"HTTP/1.1 200 OK
-Content-Type: application/json
-Content-Length: 396
-
-{"id":"55555555-5555-4555-8555-555555555555","tenant_id":"22222222-2222-4222-8222-222222222222","runtime_node_id":"33333333-3333-4333-8333-333333333333","node_id":"node-1","enrollment_id":"11111111-1111-4111-8111-111111111111","expires_at":"2026-06-03T00:00:00Z","last_seen_at":"2026-06-02T00:00:00Z","created_at":"2026-06-02T00:00:00Z","updated_at":"2026-06-02T00:00:00Z"}"#,
-            )
-            .await
-            .unwrap();
+        write_json_response(
+            &mut socket,
+            serde_json::json!({
+                "id": "55555555-5555-4555-8555-555555555555",
+                "tenant_id": "22222222-2222-4222-8222-222222222222",
+                "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                "node_id": "node-1",
+                "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                "expires_at": "2026-06-03T00:00:00Z",
+                "last_seen_at": "2026-06-02T00:00:00Z",
+                "created_at": "2026-06-02T00:00:00Z",
+                "updated_at": "2026-06-02T00:00:00Z"
+            }),
+        )
+        .await;
     });
 
     let client = ControlPlaneClient::with_session_token(
@@ -333,9 +336,7 @@ async fn daemon_connect_runtime_session_reports_capabilities_after_approved_hell
 
     tokio::spawn(async move {
         let (mut hello_socket, _) = listener.accept().await.unwrap();
-        let mut hello_buffer = vec![0; 4096];
-        let hello_bytes = hello_socket.read(&mut hello_buffer).await.unwrap();
-        let hello_request = String::from_utf8_lossy(&hello_buffer[..hello_bytes]).to_string();
+        let hello_request = read_http_request(&mut hello_socket).await;
         write_json_response(
             &mut hello_socket,
             serde_json::json!({
@@ -366,13 +367,7 @@ async fn daemon_connect_runtime_session_reports_capabilities_after_approved_hell
         .await;
 
         let (mut capabilities_socket, _) = listener.accept().await.unwrap();
-        let mut capabilities_buffer = vec![0; 4096];
-        let capabilities_bytes = capabilities_socket
-            .read(&mut capabilities_buffer)
-            .await
-            .unwrap();
-        let capabilities_request =
-            String::from_utf8_lossy(&capabilities_buffer[..capabilities_bytes]).to_string();
+        let capabilities_request = read_http_request(&mut capabilities_socket).await;
         write_json_response(&mut capabilities_socket, serde_json::json!([])).await;
 
         let _ = request_tx.send((hello_request, capabilities_request));
@@ -434,10 +429,166 @@ async fn daemon_connect_runtime_session_reports_capabilities_after_approved_hell
     );
 }
 
-async fn write_json_response(socket: &mut tokio::net::TcpStream, body: serde_json::Value) {
+#[tokio::test]
+async fn daemon_connect_runtime_session_does_not_start_renewal_when_capability_upsert_fails() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (renew_tx, renew_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let (mut hello_socket, _) = listener.accept().await.unwrap();
+        let _hello_request = read_http_request(&mut hello_socket).await;
+        write_json_response(
+            &mut hello_socket,
+            serde_json::json!({
+                "enrollment": {
+                    "id": "11111111-1111-4111-8111-111111111111",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "bootstrap_key_id": "44444444-4444-4444-8444-444444444444",
+                    "status": "approved",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                    "expires_at": "1970-01-01T00:00:00Z",
+                    "last_seen_at": "2026-06-02T00:00:00Z",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session_token": "session-token"
+            }),
+        )
+        .await;
+
+        let mut renew_attempted = false;
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+            let request_line = request.lines().next().unwrap_or_default();
+            if request_line == "PUT /api/v1/runtime/nodes/node-1/capabilities HTTP/1.1" {
+                write_status_response(
+                    &mut socket,
+                    "500 Internal Server Error",
+                    serde_json::json!({"error":"capability upsert failed"}),
+                )
+                .await;
+                break;
+            }
+
+            if request_line
+                == "POST /api/v1/runtime/sessions/55555555-5555-4555-8555-555555555555/renew HTTP/1.1"
+            {
+                renew_attempted = true;
+                write_json_response(
+                    &mut socket,
+                    serde_json::json!({
+                        "id": "55555555-5555-4555-8555-555555555555",
+                        "tenant_id": "22222222-2222-4222-8222-222222222222",
+                        "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                        "node_id": "node-1",
+                        "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                        "expires_at": "2999-06-03T00:00:00Z",
+                        "last_seen_at": "2026-06-02T00:00:00Z",
+                        "created_at": "2026-06-02T00:00:00Z",
+                        "updated_at": "2026-06-02T00:00:00Z"
+                    }),
+                )
+                .await;
+                continue;
+            }
+
+            panic!("unexpected request: {request_line}");
+        }
+
+        let late_renew =
+            tokio::time::timeout(std::time::Duration::from_millis(200), listener.accept())
+                .await
+                .is_ok();
+        let _ = renew_tx.send(renew_attempted || late_renew);
+    });
+
+    let mut config = RuntimeConfig::new("node-1").expect("valid config");
+    config.runtime.control_plane_url = format!("http://{}", addr);
+    config.runtime.bootstrap_key = "bootstrap-key".to_string();
+    let capabilities = vec![RuntimeCapabilityInput {
+        capability_type: "provider".to_string(),
+        capability_key: "claude-code".to_string(),
+        provider_type: "claude-code".to_string(),
+        provider_version: None,
+        binary_path: Some("claude".to_string()),
+        available: true,
+        workspace_base_dir: None,
+        capacity: None,
+        labels: None,
+        status: "available".to_string(),
+        details: None,
+        health_status: "configured".to_string(),
+        metadata: None,
+    }];
+
+    let result = connect_runtime_session(&config, capabilities).await;
+
+    assert!(result.is_err(), "capability upsert should fail");
+    let renew_attempted = renew_rx.await.expect("renew observation");
+    assert!(
+        !renew_attempted,
+        "session renewal must not start before capability upsert succeeds"
+    );
+}
+
+async fn read_http_request(socket: &mut TcpStream) -> String {
+    let mut buffer = Vec::new();
+    let header_end = loop {
+        let mut chunk = [0; 1024];
+        let bytes_read = socket.read(&mut chunk).await.unwrap();
+        assert!(bytes_read > 0, "socket closed before HTTP headers");
+        buffer.extend_from_slice(&chunk[..bytes_read]);
+        if let Some(index) = find_subsequence(&buffer, b"\r\n\r\n") {
+            break index + 4;
+        }
+    };
+
+    let headers = String::from_utf8_lossy(&buffer[..header_end]);
+    let content_length = headers
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .find_map(|(name, value)| {
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().unwrap())
+        })
+        .unwrap_or(0);
+
+    while buffer.len() < header_end + content_length {
+        let mut chunk = [0; 1024];
+        let bytes_read = socket.read(&mut chunk).await.unwrap();
+        assert!(bytes_read > 0, "socket closed before HTTP body");
+        buffer.extend_from_slice(&chunk[..bytes_read]);
+    }
+
+    String::from_utf8(buffer[..header_end + content_length].to_vec()).unwrap()
+}
+
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+async fn write_json_response(socket: &mut TcpStream, body: serde_json::Value) {
+    write_status_response(socket, "200 OK", body).await;
+}
+
+async fn write_status_response(socket: &mut TcpStream, status: &str, body: serde_json::Value) {
     let body = body.to_string();
     let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
         body.len(),
         body
     );

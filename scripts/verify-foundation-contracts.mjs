@@ -22,6 +22,7 @@ const requiredOpenApiOperations = new Set([
 ]);
 
 const requiredRustClientPaths = new Set([
+  "/api/v1/runtime/enrollments/hello",
   "/api/v1/runtime/register",
   "/api/v1/runtime/heartbeat",
   "/api/v1/runtime/tasks/claim",
@@ -30,6 +31,8 @@ const requiredRustClientPaths = new Set([
   "/api/v1/runtime/tasks/{taskId}/complete",
   "/api/v1/runtime/tasks/{taskId}/fail",
   "/api/v1/runtime/tasks/{taskId}/lease",
+  "/api/v1/runtime/sessions/{sessionId}/renew",
+  "/api/v1/runtime/nodes/{nodeId}/capabilities",
 ]);
 
 const requiredTypeScriptClientPaths = new Set([
