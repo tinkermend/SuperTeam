@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### 数字员工后端与执行实例服务 (2026-06-02)
+
+- 新增 Control Plane 数字员工领域服务、PostgreSQL repository 和 HTTP handler，支持创建草稿、列表、详情、状态更新以及唯一执行实例查询和绑定。
+- 数字员工执行实例绑定复用现有 sqlc upsert 查询，默认绑定为 ready 状态，并通过 Web 控制台 cookie session 注入租户上下文保护 `/api/v1/digital-employees` 路由。
+
 #### Runtime 接入与短期会话服务 (2026-06-02)
 
 - 新增 Control Plane Runtime Enrollment / Runtime Session 领域服务，支持 Runtime hello 接入、人工批准/拒绝/撤销、短期 session token 签发、校验与续期。

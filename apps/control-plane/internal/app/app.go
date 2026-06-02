@@ -11,6 +11,7 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/config"
+	"github.com/superteam/control-plane/internal/employee"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/storage/queries"
@@ -21,6 +22,7 @@ type Container struct {
 	Queries         *queries.Queries
 	TaskService     *task.Service
 	RuntimeService  *runtimepkg.Service
+	EmployeeService *employee.Service
 	RuntimeCommands *runtimepkg.ConnectionRegistry
 	AuthService     *auth.Service
 	Authorizer      authz.Authorizer
@@ -28,6 +30,7 @@ type Container struct {
 	Poller          *runtimepkg.Poller
 	TaskHandler     *handlers.TaskHandler
 	RuntimeHandler  *handlers.RuntimeHandler
+	EmployeeHandler *employee.HTTPHandler
 	AuthzHandler    *authzcenter.HTTPHandler
 	Server          *api.Server
 }
@@ -55,6 +58,12 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		return nil, err
 	}
 
+	employeeRepository := employee.NewPgRepository(q)
+	employeeService, err := employee.NewService(employeeRepository)
+	if err != nil {
+		return nil, err
+	}
+
 	authRepository := auth.NewPgRepository(q)
 	authService, err := auth.NewService(authRepository)
 	if err != nil {
@@ -71,13 +80,16 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	runtimeCommands := runtimepkg.NewConnectionRegistry()
 	taskHandler := handlers.NewTaskHandler(taskService)
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
+	employeeHandler := employee.NewHandler(employeeService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
 	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
+	server.SetEmployeeHandler(employeeHandler)
 
 	return &Container{
 		Queries:         q,
 		TaskService:     taskService,
 		RuntimeService:  runtimeService,
+		EmployeeService: employeeService,
 		RuntimeCommands: runtimeCommands,
 		AuthService:     authService,
 		Authorizer:      authorizer,
@@ -85,6 +97,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		Poller:          poller,
 		TaskHandler:     taskHandler,
 		RuntimeHandler:  runtimeHandler,
+		EmployeeHandler: employeeHandler,
 		AuthzHandler:    authzCenterHandler,
 		Server:          server,
 	}, nil

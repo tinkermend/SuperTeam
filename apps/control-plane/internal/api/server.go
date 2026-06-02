@@ -11,6 +11,7 @@ import (
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
+	"github.com/superteam/control-plane/internal/employee"
 )
 
 type Server struct {
@@ -22,6 +23,7 @@ type Server struct {
 	authService        *auth.Service
 	authorizer         authz.Authorizer
 	authzCenterHandler *authzcenter.HTTPHandler
+	employeeHandler    *employee.HTTPHandler
 }
 
 func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
@@ -96,6 +98,11 @@ func NewServerWithAuthzAndRuntimeSessionAuth(
 	return server
 }
 
+func (s *Server) SetEmployeeHandler(employeeHandler *employee.HTTPHandler) {
+	s.employeeHandler = employeeHandler
+	s.registerRoutes()
+}
+
 func (s *Server) registerRoutes() {
 	s.router = chi.NewRouter()
 	s.router.Use(middleware.Recovery())
@@ -120,6 +127,18 @@ func (s *Server) registerRoutes() {
 			r.Put("/{id}/status", s.taskHandler.UpdateTaskStatus)
 			r.Post("/{id}/cancel", s.taskHandler.CancelTask)
 		})
+
+		if s.employeeHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/digital-employees", s.employeeHandler.ListDigitalEmployees)
+				r.Post("/digital-employees", s.employeeHandler.CreateDigitalEmployee)
+				r.Get("/digital-employees/{employeeId}", s.employeeHandler.GetDigitalEmployee)
+				r.Put("/digital-employees/{employeeId}/status", s.employeeHandler.UpdateDigitalEmployeeStatus)
+				r.Get("/digital-employees/{employeeId}/execution-instance", s.employeeHandler.GetDigitalEmployeeExecutionInstance)
+				r.Put("/digital-employees/{employeeId}/execution-instance", s.employeeHandler.UpsertDigitalEmployeeExecutionInstance)
+			})
+		}
 
 		r.Route("/runtime", func(r chi.Router) {
 			r.Get("/nodes", s.runtimeHandler.ListNodes)
