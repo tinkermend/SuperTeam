@@ -54,7 +54,6 @@ export type CreateTeamConfigRevisionInput = {
   internal_collaboration_policy?: Record<string, unknown>;
   runtime_scope_policy?: Record<string, unknown>;
   status?: TeamConfigRevisionStatus;
-  approved_by?: string;
 };
 
 async function getJson<T>(options: ApiClientOptions, path: string, resource: string): Promise<T> {

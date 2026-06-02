@@ -18,6 +18,7 @@ func TestCreateDraftDigitalEmployeeDefaultsAndTrims(t *testing.T) {
 	}
 	tenantID := uuid.New()
 	teamID := uuid.New()
+	repo.teams[teamID] = tenantID
 
 	created, err := svc.CreateDraft(context.Background(), CreateDraftRequest{
 		TenantID: tenantID,
@@ -51,6 +52,30 @@ func TestCreateDraftDigitalEmployeeDefaultsAndTrims(t *testing.T) {
 	assertEmptyMap(t, created.ContextPolicy, "context policy")
 	assertEmptyMap(t, created.ApprovalPolicy, "approval policy")
 	assertEmptyMap(t, created.Metadata, "metadata")
+}
+
+func TestCreateDraftRequiresExistingTenantTeam(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	teamID := uuid.New()
+
+	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
+		TenantID: tenantID,
+		TeamID:   &teamID,
+		Name:     "Incident analyst",
+		Role:     "incident_analyst",
+	})
+
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected not found for missing tenant team, got %v", err)
+	}
+	if len(repo.employees) != 0 {
+		t.Fatalf("expected missing tenant team not to create employee, got %#v", repo.employees)
+	}
 }
 
 func TestBindExecutionInstanceReplacesExistingForEmployee(t *testing.T) {
@@ -441,6 +466,7 @@ func TestApproveEffectiveConfigBlocksValidationErrors(t *testing.T) {
 		ID:               teamConfigRevisionID,
 		TenantID:         tenantID,
 		TeamID:           teamID,
+		Status:           TeamConfigRevisionStatusActive,
 		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
 	}
 	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
@@ -494,6 +520,7 @@ func TestApproveEffectiveConfigRejectsDuplicateApprovedConfig(t *testing.T) {
 		ID:               teamConfigRevisionID,
 		TenantID:         tenantID,
 		TeamID:           teamID,
+		Status:           TeamConfigRevisionStatusActive,
 		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
 	}
 	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
@@ -557,6 +584,7 @@ func TestPreviewEffectiveConfigByRevisionIDsRejectsWrongTeamConfig(t *testing.T)
 		ID:               teamConfigRevisionID,
 		TenantID:         tenantID,
 		TeamID:           otherTeamID,
+		Status:           TeamConfigRevisionStatusActive,
 		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
 	}
 	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
@@ -596,6 +624,70 @@ func TestPreviewEffectiveConfigByRevisionIDsRejectsWrongTeamConfig(t *testing.T)
 	}
 }
 
+func TestPreviewEffectiveConfigByRevisionIDsRejectsDraftTeamConfig(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	teamID := uuid.New()
+	teamConfigRevisionID := uuid.New()
+	employeeConfigRevisionID := uuid.New()
+	approvedBy := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:       employeeID,
+		TenantID: tenantID,
+		TeamID:   &teamID,
+		Name:     "Incident analyst",
+		Role:     "incident_analyst",
+		Status:   DigitalEmployeeStatusDraft,
+	}
+	repo.teamConfigs[teamConfigRevisionID] = TeamConfigInput{
+		ID:               teamConfigRevisionID,
+		TenantID:         tenantID,
+		TeamID:           teamID,
+		Status:           TeamConfigRevisionStatusDraft,
+		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
+	}
+	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
+		ID:                  employeeConfigRevisionID,
+		TenantID:            tenantID,
+		DigitalEmployeeID:   employeeID,
+		CapabilitySelection: map[string]any{"enabled_skills": []any{"incident-diagnosis"}},
+	}
+	repo.instances[employeeID] = DigitalEmployeeExecutionInstanceRecord{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Status:            ExecutionInstanceStatusReady,
+	}
+
+	_, err = svc.PreviewEffectiveConfigByRevisionIDs(context.Background(), PreviewEffectiveConfigByRevisionIDsRequest{
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		TeamConfigRevisionID:     teamConfigRevisionID,
+		EmployeeConfigRevisionID: employeeConfigRevisionID,
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for draft team config preview, got %v", err)
+	}
+
+	_, err = svc.ApproveEffectiveConfig(context.Background(), ApproveEffectiveConfigRequest{
+		TenantID:                 tenantID,
+		DigitalEmployeeID:        employeeID,
+		TeamConfigRevisionID:     teamConfigRevisionID,
+		EmployeeConfigRevisionID: employeeConfigRevisionID,
+		ApprovedBy:               approvedBy,
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected approval to reject draft team config, got %v", err)
+	}
+	if len(repo.effectiveConfigs) != 0 {
+		t.Fatalf("expected draft team config not to persist effective config, got %#v", repo.effectiveConfigs)
+	}
+}
+
 func TestApproveEffectiveConfigRequiresReadyOrActiveExecutionInstance(t *testing.T) {
 	repo := newMemoryRepository()
 	svc, err := NewService(repo)
@@ -620,6 +712,7 @@ func TestApproveEffectiveConfigRequiresReadyOrActiveExecutionInstance(t *testing
 		ID:               teamConfigRevisionID,
 		TenantID:         tenantID,
 		TeamID:           teamID,
+		Status:           TeamConfigRevisionStatusActive,
 		CapabilityPolicy: map[string]any{"allowed_skills": []any{"incident-diagnosis"}},
 	}
 	repo.employeeConfigs[employeeConfigRevisionID] = EmployeeConfigInput{
@@ -721,6 +814,7 @@ func assertBlockingIssuePath(t *testing.T, validation EffectiveConfigValidation,
 }
 
 type memoryRepository struct {
+	teams                    map[uuid.UUID]uuid.UUID
 	employees                map[uuid.UUID]DigitalEmployeeRecord
 	instances                map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord
 	teamConfigs              map[uuid.UUID]TeamConfigInput
@@ -733,6 +827,7 @@ type memoryRepository struct {
 
 func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{
+		teams:                    make(map[uuid.UUID]uuid.UUID),
 		employees:                make(map[uuid.UUID]DigitalEmployeeRecord),
 		instances:                make(map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord),
 		teamConfigs:              make(map[uuid.UUID]TeamConfigInput),
@@ -784,6 +879,14 @@ func (r *memoryRepository) GetDigitalEmployee(_ context.Context, tenantID, emplo
 		return DigitalEmployeeRecord{}, ErrNotFound
 	}
 	return record, nil
+}
+
+func (r *memoryRepository) EnsureTeamExists(_ context.Context, tenantID, teamID uuid.UUID) error {
+	teamTenantID, ok := r.teams[teamID]
+	if !ok || teamTenantID != tenantID {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *memoryRepository) UpdateDigitalEmployeeStatus(_ context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {

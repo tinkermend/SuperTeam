@@ -22,7 +22,8 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
-	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+	user, err := authService.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	service := &routeTeamService{}
@@ -90,8 +91,8 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 		t.Fatalf("expected get tenant %s, got %s", expectedTenantID, service.getTenantID)
 	}
 
-	approvedBy := uuid.New()
-	revisionReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+"/config-revisions", strings.NewReader(`{"human_owner_user_id":"`+ownerID.String()+`","approved_by":"`+approvedBy.String()+`","constitution":{"principle":"review"}}`))
+	clientApprovedBy := uuid.New()
+	revisionReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+"/config-revisions", strings.NewReader(`{"human_owner_user_id":"`+ownerID.String()+`","approved_by":"`+clientApprovedBy.String()+`","constitution":{"principle":"review"}}`))
 	revisionReq.Header.Set("Content-Type", "application/json")
 	revisionReq.AddCookie(cookie)
 	revisionResp := httptest.NewRecorder()
@@ -104,6 +105,12 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if service.createRevisionReq.HumanOwnerUserID == nil || *service.createRevisionReq.HumanOwnerUserID != ownerID {
 		t.Fatalf("expected revision human owner %s, got %#v", ownerID, service.createRevisionReq.HumanOwnerUserID)
+	}
+	if service.createRevisionReq.ApprovedBy == nil || *service.createRevisionReq.ApprovedBy != user.ID {
+		t.Fatalf("expected revision approved_by to use current console user %s, got %#v", user.ID, service.createRevisionReq.ApprovedBy)
+	}
+	if *service.createRevisionReq.ApprovedBy == clientApprovedBy {
+		t.Fatalf("expected handler to ignore client supplied approved_by %s", clientApprovedBy)
 	}
 
 	currentReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.ID+"/config-revisions/current", nil)

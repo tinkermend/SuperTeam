@@ -53,8 +53,14 @@ const requiredTypeScriptClientPaths = new Set([
   "/api/v1/runtime/nodes/{nodeId}",
   "/api/v1/runtime/enrollments",
   "/api/v1/runtime/enrollments/{enrollmentId}/approve",
+  "/api/v1/teams",
+  "/api/v1/teams/{teamId}/config-revisions",
+  "/api/v1/teams/{teamId}/config-revisions/current",
   "/api/v1/digital-employees",
   "/api/v1/digital-employees/{employeeId}/execution-instance",
+  "/api/v1/digital-employees/{employeeId}/config-revisions",
+  "/api/v1/digital-employees/{employeeId}/effective-configs/preview",
+  "/api/v1/digital-employees/{employeeId}/effective-configs/approve",
 ]);
 
 function readText(path) {
@@ -175,6 +181,7 @@ function readTypeScriptClientPaths() {
     "apps/web/src/lib/api/health.ts",
     "apps/web/src/lib/api/tasks.ts",
     "apps/web/src/lib/api/runtime.ts",
+    "apps/web/src/lib/api/teams.ts",
     "apps/web/src/lib/api/employees.ts",
   ];
   const paths = new Set();
@@ -190,6 +197,8 @@ function readTypeScriptClientPaths() {
             .replaceAll("${encodedNodeId}", "{nodeId}")
             .replaceAll("${enrollmentId}", "{enrollmentId}")
             .replaceAll("${encodedEnrollmentId}", "{enrollmentId}")
+            .replaceAll("${teamId}", "{teamId}")
+            .replaceAll("${encodedTeamId}", "{teamId}")
             .replaceAll("${employeeId}", "{employeeId}")
             .replaceAll("${encodedEmployeeId}", "{employeeId}"),
         ),

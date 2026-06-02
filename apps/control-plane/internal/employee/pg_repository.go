@@ -91,6 +91,16 @@ func (r *PgRepository) GetDigitalEmployee(ctx context.Context, tenantID, employe
 	return digitalEmployeeRecordFromQuery(employee)
 }
 
+func (r *PgRepository) EnsureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error {
+	if _, err := r.q.GetTenantTeam(ctx, queries.GetTenantTeamParams{
+		ID:       teamID,
+		TenantID: tenantID,
+	}); err != nil {
+		return mapNoRows(err)
+	}
+	return nil
+}
+
 func (r *PgRepository) UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
 	employee, err := r.q.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
 		Status:   string(status),
@@ -372,6 +382,7 @@ func teamConfigInputFromQuery(revision queries.TenantTeamConfigRevision) (TeamCo
 		TenantID:                    revision.TenantID,
 		TeamID:                      revision.TeamID,
 		RevisionNumber:              revision.RevisionNumber,
+		Status:                      TeamConfigRevisionStatus(revision.Status),
 		Constitution:                constitution,
 		CapabilityPolicy:            capabilityPolicy,
 		ContextPolicy:               contextPolicy,

@@ -146,12 +146,12 @@ func (h *HTTPHandler) CreateTeamConfigRevision(w http.ResponseWriter, r *http.Re
 		RuntimeScopePolicy          map[string]any           `json:"runtime_scope_policy"`
 		HumanOwnerUserID            *uuid.UUID               `json:"human_owner_user_id"`
 		Status                      TeamConfigRevisionStatus `json:"status"`
-		ApprovedBy                  *uuid.UUID               `json:"approved_by"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	approvedBy := middleware.GetUserID(r.Context())
 	revision, err := service.CreateConfigRevision(r.Context(), CreateTeamConfigRevisionRequest{
 		TenantID:                    tenantID,
 		TeamID:                      teamID,
@@ -164,7 +164,7 @@ func (h *HTTPHandler) CreateTeamConfigRevision(w http.ResponseWriter, r *http.Re
 		RuntimeScopePolicy:          req.RuntimeScopePolicy,
 		HumanOwnerUserID:            req.HumanOwnerUserID,
 		Status:                      req.Status,
-		ApprovedBy:                  req.ApprovedBy,
+		ApprovedBy:                  &approvedBy,
 	})
 	if err != nil {
 		writeHandlerError(w, err)

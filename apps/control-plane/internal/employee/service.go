@@ -41,6 +41,9 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dig
 	if riskLevel == "" {
 		riskLevel = "medium"
 	}
+	if err := s.repository.EnsureTeamExists(ctx, req.TenantID, *req.TeamID); err != nil {
+		return nil, fmt.Errorf("get team: %w", err)
+	}
 
 	record, err := s.repository.CreateDigitalEmployee(ctx, CreateDigitalEmployeeParams{
 		TenantID:         req.TenantID,
@@ -227,6 +230,9 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 	if req.EmployeeConfig.ID == uuid.Nil {
 		return nil, fmt.Errorf("%w: employee_config_revision_id is required", ErrInvalidInput)
 	}
+	if req.TeamConfig.Status != "" && req.TeamConfig.Status != TeamConfigRevisionStatusActive {
+		return nil, fmt.Errorf("%w: team config revision must be active", ErrInvalidInput)
+	}
 
 	effectiveConfig := map[string]any{
 		"team_config_revision_id":     req.TeamConfig.ID.String(),
@@ -288,6 +294,9 @@ func (s *Service) PreviewEffectiveConfigByRevisionIDs(ctx context.Context, req P
 	}
 	if teamConfig.TeamID != *employee.TeamID {
 		return nil, fmt.Errorf("%w: team config revision does not belong to digital employee team", ErrInvalidInput)
+	}
+	if teamConfig.Status != TeamConfigRevisionStatusActive {
+		return nil, fmt.Errorf("%w: team config revision must be active", ErrInvalidInput)
 	}
 	employeeConfig, err := s.repository.GetDigitalEmployeeConfigRevision(ctx, req.TenantID, req.DigitalEmployeeID, req.EmployeeConfigRevisionID)
 	if err != nil {

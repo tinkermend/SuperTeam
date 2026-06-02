@@ -57,6 +57,13 @@ const (
 	ConfigRevisionStatusDraft ConfigRevisionStatus = "draft"
 )
 
+type TeamConfigRevisionStatus string
+
+const (
+	TeamConfigRevisionStatusDraft  TeamConfigRevisionStatus = "draft"
+	TeamConfigRevisionStatusActive TeamConfigRevisionStatus = "active"
+)
+
 type EffectiveConfigStatus string
 
 const (
@@ -100,6 +107,7 @@ type TeamConfigInput struct {
 	TenantID                    uuid.UUID
 	TeamID                      uuid.UUID
 	RevisionNumber              int32
+	Status                      TeamConfigRevisionStatus
 	Constitution                map[string]any
 	CapabilityPolicy            map[string]any
 	ContextPolicy               map[string]any
