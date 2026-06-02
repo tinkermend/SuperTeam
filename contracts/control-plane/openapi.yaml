@@ -419,6 +419,95 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/RuntimeCapability"
+  /api/v1/teams:
+    get:
+      operationId: listTeams
+      summary: List tenant teams
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - active
+              - disabled
+      responses:
+        "200":
+          description: Team list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Team"
+    post:
+      operationId: createTeam
+      summary: Create a tenant team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTeamRequest"
+      responses:
+        "201":
+          description: Team created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+  /api/v1/teams/{teamId}:
+    get:
+      operationId: getTeam
+      summary: Get a tenant team
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/config-revisions:
+    post:
+      operationId: createTeamConfigRevision
+      summary: Create a team governance config revision
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTeamConfigRevisionRequest"
+      responses:
+        "201":
+          description: Team config revision created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamConfigRevision"
+  /api/v1/teams/{teamId}/config-revisions/current:
+    get:
+      operationId: getCurrentTeamConfigRevision
+      summary: Get the current active team governance config revision
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Current team config revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamConfigRevision"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/digital-employees:
     get:
       operationId: listDigitalEmployees
@@ -471,6 +560,63 @@ paths:
                 $ref: "#/components/schemas/DigitalEmployee"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/config-revisions:
+    post:
+      operationId: createDigitalEmployeeConfigRevision
+      summary: Create a digital employee governance config revision
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDigitalEmployeeConfigRevisionRequest"
+      responses:
+        "201":
+          description: Digital employee config revision created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeConfigRevision"
+  /api/v1/digital-employees/{employeeId}/effective-configs/preview:
+    post:
+      operationId: previewDigitalEmployeeEffectiveConfig
+      summary: Preview a digital employee effective config
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EffectiveConfigPreviewRequest"
+      responses:
+        "200":
+          description: Digital employee effective config preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EffectiveConfigPreview"
+  /api/v1/digital-employees/{employeeId}/effective-configs/approve:
+    post:
+      operationId: approveDigitalEmployeeEffectiveConfig
+      summary: Approve a digital employee effective config
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveEffectiveConfigRequest"
+      responses:
+        "201":
+          description: Digital employee effective config approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeEffectiveConfig"
   /api/v1/digital-employees/{employeeId}/status:
     put:
       operationId: updateDigitalEmployeeStatus
@@ -627,6 +773,13 @@ components:
         format: uuid
     EmployeeId:
       name: employeeId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TeamId:
+      name: teamId
       in: path
       required: true
       schema:
@@ -1076,6 +1229,171 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RuntimeCapabilityInput"
+    Team:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - slug
+        - name
+        - status
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+        human_owner_user_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TeamConfigRevision:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - team_id
+        - revision_number
+        - constitution
+        - capability_policy
+        - context_policy
+        - approval_policy
+        - artifact_contract
+        - internal_collaboration_policy
+        - runtime_scope_policy
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        revision_number:
+          type: integer
+          format: int32
+        constitution:
+          type: object
+          additionalProperties: true
+        capability_policy:
+          type: object
+          additionalProperties: true
+        context_policy:
+          type: object
+          additionalProperties: true
+        approval_policy:
+          type: object
+          additionalProperties: true
+        artifact_contract:
+          type: object
+          additionalProperties: true
+        internal_collaboration_policy:
+          type: object
+          additionalProperties: true
+        runtime_scope_policy:
+          type: object
+          additionalProperties: true
+        human_owner_user_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - draft
+            - active
+        approved_by:
+          type: string
+          format: uuid
+        approved_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateTeamRequest:
+      type: object
+      required:
+        - slug
+        - name
+        - human_owner_user_id
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+        human_owner_user_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateTeamConfigRevisionRequest:
+      type: object
+      required:
+        - human_owner_user_id
+      properties:
+        constitution:
+          type: object
+          additionalProperties: true
+        capability_policy:
+          type: object
+          additionalProperties: true
+        context_policy:
+          type: object
+          additionalProperties: true
+        approval_policy:
+          type: object
+          additionalProperties: true
+        artifact_contract:
+          type: object
+          additionalProperties: true
+        internal_collaboration_policy:
+          type: object
+          additionalProperties: true
+        runtime_scope_policy:
+          type: object
+          additionalProperties: true
+        human_owner_user_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - draft
+            - active
+        approved_by:
+          type: string
+          format: uuid
     DigitalEmployeeStatus:
       type: string
       enum:
@@ -1089,6 +1407,7 @@ components:
       required:
         - id
         - tenant_id
+        - team_id
         - name
         - role
         - status
@@ -1143,6 +1462,7 @@ components:
     CreateDigitalEmployeeRequest:
       type: object
       required:
+        - team_id
         - name
         - role
       properties:
@@ -1169,6 +1489,227 @@ components:
         metadata:
           type: object
           additionalProperties: true
+    DigitalEmployeeConfigRevision:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - digital_employee_id
+        - revision_number
+        - role_profile
+        - constitution_addendum
+        - capability_selection
+        - context_policy_override
+        - approval_policy_override
+        - output_contract_addendum
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        revision_number:
+          type: integer
+          format: int32
+        role_profile:
+          type: object
+          additionalProperties: true
+        constitution_addendum:
+          type: object
+          additionalProperties: true
+        capability_selection:
+          type: object
+          additionalProperties: true
+        context_policy_override:
+          type: object
+          additionalProperties: true
+        approval_policy_override:
+          type: object
+          additionalProperties: true
+        output_contract_addendum:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum:
+            - draft
+        approved_by:
+          type: string
+          format: uuid
+        approved_at:
+          type: string
+          format: date-time
+        archived_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateDigitalEmployeeConfigRevisionRequest:
+      type: object
+      properties:
+        role_profile:
+          type: object
+          additionalProperties: true
+        constitution_addendum:
+          type: object
+          additionalProperties: true
+        capability_selection:
+          type: object
+          additionalProperties: true
+        context_policy_override:
+          type: object
+          additionalProperties: true
+        approval_policy_override:
+          type: object
+          additionalProperties: true
+        output_contract_addendum:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum:
+            - draft
+    ConfigRevisionRef:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          format: uuid
+    EffectiveConfigPreviewRequest:
+      type: object
+      required:
+        - team_config
+        - employee_config
+      properties:
+        team_config:
+          $ref: "#/components/schemas/ConfigRevisionRef"
+        employee_config:
+          $ref: "#/components/schemas/ConfigRevisionRef"
+    EffectiveConfigValidationIssue:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        path:
+          type: string
+        message:
+          type: string
+    EffectiveConfigValidation:
+      type: object
+      required:
+        - blocking_errors
+        - warnings
+      properties:
+        blocking_errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/EffectiveConfigValidationIssue"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/EffectiveConfigValidationIssue"
+    EffectiveConfigPreview:
+      type: object
+      required:
+        - team_config_revision_id
+        - employee_config_revision_id
+        - effective_config
+        - validation
+      properties:
+        team_config_revision_id:
+          type: string
+          format: uuid
+        employee_config_revision_id:
+          type: string
+          format: uuid
+        effective_config:
+          type: object
+          additionalProperties: true
+        validation:
+          $ref: "#/components/schemas/EffectiveConfigValidation"
+    ApproveEffectiveConfigRequest:
+      type: object
+      required:
+        - preview
+      properties:
+        preview:
+          type: object
+          required:
+            - team_config
+            - employee_config
+          properties:
+            team_config:
+              $ref: "#/components/schemas/ConfigRevisionRef"
+            employee_config:
+              $ref: "#/components/schemas/ConfigRevisionRef"
+    DigitalEmployeeEffectiveConfig:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - digital_employee_id
+        - team_config_revision_id
+        - employee_config_revision_id
+        - effective_config
+        - validation_result
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        team_config_revision_id:
+          type: string
+          format: uuid
+        employee_config_revision_id:
+          type: string
+          format: uuid
+        effective_config:
+          type: object
+          additionalProperties: true
+        validation_result:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum:
+            - pending_approval
+            - approved
+            - revoked
+        approved_by:
+          type: string
+          format: uuid
+        approved_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     UpdateDigitalEmployeeStatusRequest:
       type: object
       required:

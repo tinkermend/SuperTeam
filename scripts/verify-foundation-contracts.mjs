@@ -19,6 +19,14 @@ const requiredOpenApiOperations = new Set([
   "POST /api/v1/runtime/tasks/{taskId}/lease",
   "GET /api/v1/runtime/nodes",
   "GET /api/v1/runtime/nodes/{nodeId}",
+  "GET /api/v1/teams",
+  "POST /api/v1/teams",
+  "GET /api/v1/teams/{teamId}",
+  "POST /api/v1/teams/{teamId}/config-revisions",
+  "GET /api/v1/teams/{teamId}/config-revisions/current",
+  "POST /api/v1/digital-employees/{employeeId}/config-revisions",
+  "POST /api/v1/digital-employees/{employeeId}/effective-configs/preview",
+  "POST /api/v1/digital-employees/{employeeId}/effective-configs/approve",
 ]);
 
 const requiredRustClientPaths = new Set([
@@ -61,9 +69,12 @@ function normalizePath(path) {
     .replace(/\{\}/g, "{taskId}")
     .replace(/\/api\/v1\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/tasks/{taskId}")
     .replace(/\/api\/v1\/runtime\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/runtime/tasks/{taskId}")
-    .replace(/\{id\}/g, "{taskId}")
+    .replace(/\/api\/v1\/tasks\/\{id\}/g, "/api/v1/tasks/{taskId}")
+    .replace(/\/api\/v1\/runtime\/tasks\/\{id\}/g, "/api/v1/runtime/tasks/{taskId}")
     .replace(/\/api\/v1\/runtime\/sessions\/\{taskId\}/g, "/api/v1/runtime/sessions/{sessionId}")
     .replace(/\/api\/v1\/runtime\/nodes\/\{taskId\}/g, "/api/v1/runtime/nodes/{nodeId}")
+    .replace(/\/api\/v1\/runtime\/sessions\/\{id\}/g, "/api/v1/runtime/sessions/{sessionId}")
+    .replace(/\/api\/v1\/runtime\/nodes\/\{id\}/g, "/api/v1/runtime/nodes/{nodeId}")
     .replace(/\{nodeId\}/g, "{nodeId}");
 }
 
@@ -104,39 +115,46 @@ function readOpenApiPaths() {
   return new Set([...readOpenApiOperations()].map((operation) => operation.split(" ")[1]));
 }
 
-function leadingWhitespaceLength(line) {
-  return line.match(/^\s*/)[0].length;
+function braceDeltaOutsideStrings(line) {
+  const withoutStrings = line.replace(/"[^"]*"/g, '""');
+  const opens = withoutStrings.match(/\{/g)?.length ?? 0;
+  const closes = withoutStrings.match(/\}/g)?.length ?? 0;
+  return opens - closes;
 }
 
 function readGoRouteOperations() {
   const server = readText("apps/control-plane/internal/api/server.go");
   const operations = new Set();
-  const scopes = [{ indent: -1, prefix: "" }];
+  const scopes = [{ depth: -1, prefix: "" }];
+  let blockDepth = 0;
 
   for (const line of server.split(/\r?\n/)) {
-    const routeMatch = line.match(/\.Route\("([^"]+)"/);
-    const endpointMatch = line.match(/\.(Get|Post|Put|Patch|Delete)\("([^"]+)"/);
-
-    if (!routeMatch && !endpointMatch) {
-      continue;
+    while (scopes.length > 1 && blockDepth < scopes.at(-1).depth) {
+      scopes.pop();
     }
 
-    const indent = leadingWhitespaceLength(line);
-    while (scopes.length > 1 && indent <= scopes.at(-1).indent) {
-      scopes.pop();
+    const routeMatch = line.match(/\.Route\("([^"]+)"/);
+    const endpointMatch = line.match(/\.(Get|Post|Put|Patch|Delete)\("([^"]+)"/);
+    const lineBraceDelta = braceDeltaOutsideStrings(line);
+
+    if (!routeMatch && !endpointMatch) {
+      blockDepth += lineBraceDelta;
+      continue;
     }
 
     if (routeMatch) {
       scopes.push({
-        indent,
+        depth: blockDepth + lineBraceDelta,
         prefix: joinPaths(scopes.at(-1).prefix, routeMatch[1]),
       });
+      blockDepth += lineBraceDelta;
       continue;
     }
 
     const route = joinPaths(scopes.at(-1).prefix, endpointMatch[2]);
     const path = route === "/api/v1/runtime/nodes/{taskId}" ? "/api/v1/runtime/nodes/{nodeId}" : route;
     operations.add(normalizeOperation(endpointMatch[1], path));
+    blockDepth += lineBraceDelta;
   }
 
   return operations;
