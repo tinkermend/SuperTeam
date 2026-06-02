@@ -384,8 +384,13 @@ CREATE UNIQUE INDEX uq_task_events_run_sequence
 
 ### 10.1 Migration 策略
 
-- 早期 UUID-first 基础重构允许重写初始 schema 并重建开发库；执行前必须确认没有需要保留的数据或已备份。
-- 基础 schema 稳定后，新增结构变更应使用 forward migration，不再随意改写已共享迁移。
+当前默认策略：除非用户在本次任务中明确要求 `rebuild-only`、重写初始 schema，或确认当前数据库可丢弃并重建，否则所有新增表、字段、索引、注释和数据结构变更都必须创建新的 forward migration，不得修改已存在于 `atlas.sum` 的迁移文件。
+
+- 普通功能开发必须使用下一个编号的 forward migration，例如 `003_team_governance.sql`。
+- 不得在普通功能开发中修改 `001_initial.sql` 或其他已共享迁移。
+- 早期 UUID-first 基础重构允许重写初始 schema 并重建开发库，但这是例外流程，不是默认迁移策略。
+- 启用 rebuild-only 例外前，必须在 plan 或 issue 中写明重建原因、备份命令、重建命令和验证命令，并确认没有需要保留的数据或已完成备份。
+- 修改、删除或重排迁移文件后，必须重新生成 `atlas.sum` 并验证 Atlas 迁移状态。
 - 所有新增表和字段必须同步中文注释。
 - seed migration 必须适配 UUID 主键，可使用显式固定 UUID 或数据库默认生成 UUID。
 - 不得在生产或不可丢数据环境执行 rebuild-only 策略。
@@ -418,6 +423,9 @@ make -C apps/control-plane generate-sqlc
 
 - 是否使用 `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`。
 - 是否误用了 `BIGSERIAL`、内部 `BIGINT` ID 或数字型 OpenAPI ID。
+- 是否试图修改已存在于 `atlas.sum` 的迁移文件；如果是，是否有用户在本次任务中明确批准 rebuild-only。
+- 普通功能开发是否使用下一个编号的 forward migration，而不是回写 `001_initial.sql`。
+- schema 变更是否规划或执行了 `atlas migrate hash`、`atlas migrate status`、`atlas migrate apply` 或等价验证，并完成必要的 live schema readback。
 - 是否包含必要的 `tenant_id` 和团队维度。
 - 关系完整性是否可以由应用层控制，并有明确代码路径和测试覆盖。
 - 如果新增 FK、组合 FK 或级联删除，是否说明了为什么数据库约束是更好的选择。
