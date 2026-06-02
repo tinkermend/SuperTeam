@@ -1561,7 +1561,30 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 		Payload:           eventPayload2,
 		Metadata:          []byte(`{"channel":"json_stream"}`),
 	})
+	assert.Error(t, err)
+
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		EventType:         "tool_call",
+		SequenceNumber:    2,
+		Payload:           eventPayload2,
+		CommandID:         pgtype.Text{String: "command-002", Valid: true},
+		Metadata:          []byte(`{"channel":"json_stream"}`),
+	})
 	require.NoError(t, err)
+
+	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
+		TenantID:          tenantID,
+		ProviderSessionID: session.ID,
+		EventType:         "message_delta",
+		SequenceNumber:    3,
+		Payload:           []byte(`{"message":"empty correlation"}`),
+		RequestID:         pgtype.Text{String: "", Valid: true},
+		CommandID:         pgtype.Text{String: "", Valid: true},
+		Metadata:          []byte(`{}`),
+	})
+	assert.Error(t, err)
 
 	_, err = testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
 		TenantID:          uuid.New(),
@@ -1569,6 +1592,7 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 		EventType:         "message_delta",
 		SequenceNumber:    3,
 		Payload:           []byte(`{"message":"wrong tenant"}`),
+		RequestID:         pgtype.Text{String: "request-wrong-tenant", Valid: true},
 		Metadata:          []byte(`{}`),
 	})
 	assert.Error(t, err)

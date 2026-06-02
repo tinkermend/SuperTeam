@@ -243,9 +243,9 @@ type ProviderSessionEvent struct {
 	SequenceNumber int32 `json:"sequence_number"`
 	// 归一化后的 Provider 事件负载
 	Payload []byte `json:"payload"`
-	// 触发该事件的平台请求 ID，可为空
+	// 触发该事件的平台请求 ID，request_id 或 command_id 至少填写一个
 	RequestID pgtype.Text `json:"request_id"`
-	// 触发该事件的平台命令 ID，可为空
+	// 触发该事件的平台命令 ID，request_id 或 command_id 至少填写一个
 	CommandID pgtype.Text `json:"command_id"`
 	// 原始输出对象存储引用或摘要引用
 	RawEventRef pgtype.Text `json:"raw_event_ref"`

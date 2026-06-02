@@ -188,6 +188,33 @@ func TestInitialSchemaUsesLifecycleTimestampsForCoreEntities(t *testing.T) {
 	}
 }
 
+func TestProviderSessionEventsRequireCorrelationID(t *testing.T) {
+	body, err := os.ReadFile("migrations/001_initial.sql")
+	if err != nil {
+		t.Fatalf("read initial migration: %v", err)
+	}
+	sql := string(body)
+	block := createTableBlock(t, sql, "provider_session_events")
+
+	for _, expected := range []string{
+		"CONSTRAINT chk_provider_session_events_correlation_id",
+		"CHECK (NULLIF(request_id, '') IS NOT NULL OR NULLIF(command_id, '') IS NOT NULL)",
+	} {
+		if !strings.Contains(block, expected) {
+			t.Fatalf("expected provider_session_events schema to contain %q, got block:\n%s", expected, block)
+		}
+	}
+
+	for _, expected := range []string{
+		"COMMENT ON COLUMN provider_session_events.request_id IS '触发该事件的平台请求 ID，request_id 或 command_id 至少填写一个'",
+		"COMMENT ON COLUMN provider_session_events.command_id IS '触发该事件的平台命令 ID，request_id 或 command_id 至少填写一个'",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected provider session event comment to contain %q", expected)
+		}
+	}
+}
+
 func createTableBlock(t *testing.T, sql string, table string) string {
 	t.Helper()
 	startMarker := "CREATE TABLE " + table + " ("

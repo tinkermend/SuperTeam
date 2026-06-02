@@ -300,7 +300,9 @@ CREATE TABLE provider_session_events (
     command_id VARCHAR(255),
     raw_event_ref TEXT,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_provider_session_events_correlation_id
+        CHECK (NULLIF(request_id, '') IS NOT NULL OR NULLIF(command_id, '') IS NOT NULL)
 );
 
 -- ============================================================================
@@ -841,8 +843,8 @@ COMMENT ON COLUMN provider_session_events.provider_type IS 'Provider 类型';
 COMMENT ON COLUMN provider_session_events.event_type IS 'Provider 事件类型';
 COMMENT ON COLUMN provider_session_events.sequence_number IS 'Provider 会话内事件序号';
 COMMENT ON COLUMN provider_session_events.payload IS '归一化后的 Provider 事件负载';
-COMMENT ON COLUMN provider_session_events.request_id IS '触发该事件的平台请求 ID，可为空';
-COMMENT ON COLUMN provider_session_events.command_id IS '触发该事件的平台命令 ID，可为空';
+COMMENT ON COLUMN provider_session_events.request_id IS '触发该事件的平台请求 ID，request_id 或 command_id 至少填写一个';
+COMMENT ON COLUMN provider_session_events.command_id IS '触发该事件的平台命令 ID，request_id 或 command_id 至少填写一个';
 COMMENT ON COLUMN provider_session_events.raw_event_ref IS '原始输出对象存储引用或摘要引用';
 COMMENT ON COLUMN provider_session_events.metadata IS 'Provider 会话事件扩展元数据';
 COMMENT ON COLUMN provider_session_events.created_at IS 'Provider 会话事件创建时间';

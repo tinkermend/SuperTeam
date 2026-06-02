@@ -1379,6 +1379,11 @@ components:
         - sequence_number
         - payload
         - created_at
+      anyOf:
+        - required:
+            - request_id
+        - required:
+            - command_id
       properties:
         id:
           type: string
@@ -1410,8 +1415,10 @@ components:
           additionalProperties: true
         request_id:
           type: string
+          minLength: 1
         command_id:
           type: string
+          minLength: 1
         raw_event_ref:
           type: string
         metadata:
@@ -1426,6 +1433,11 @@ components:
         - event_type
         - sequence_number
         - payload
+      anyOf:
+        - required:
+            - request_id
+        - required:
+            - command_id
       properties:
         event_type:
           type: string
@@ -1437,8 +1449,10 @@ components:
           additionalProperties: true
         request_id:
           type: string
+          minLength: 1
         command_id:
           type: string
+          minLength: 1
         raw_event_ref:
           type: string
         metadata:
