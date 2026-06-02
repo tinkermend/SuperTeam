@@ -340,7 +340,7 @@ type RuntimeEnrollment struct {
 	// 所属租户 ID
 	TenantID uuid.UUID `json:"tenant_id"`
 	// Runtime 节点 UUID
-	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	RuntimeNodeID uuid.NullUUID `json:"runtime_node_id"`
 	// Runtime 外部业务节点 ID
 	NodeID string `json:"node_id"`
 	// 用于发起接入的有效引导密钥 ID，不能为空

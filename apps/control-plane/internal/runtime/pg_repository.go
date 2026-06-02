@@ -32,6 +32,7 @@ func (r *PgRepository) CreateNode(ctx context.Context, params CreateNodeParams) 
 	}
 	return NodeRecord{
 		ID:                 node.ID,
+		TenantID:           node.TenantID,
 		NodeID:             node.NodeID,
 		Name:               node.Name,
 		SupportedProviders: node.SupportedProviders,
@@ -52,6 +53,7 @@ func (r *PgRepository) GetNode(ctx context.Context, nodeID string) (NodeRecord, 
 	}
 	return NodeRecord{
 		ID:                 node.ID,
+		TenantID:           node.TenantID,
 		NodeID:             node.NodeID,
 		Name:               node.Name,
 		SupportedProviders: node.SupportedProviders,
@@ -78,6 +80,7 @@ func (r *PgRepository) ListNodes(ctx context.Context, params ListNodesParams) ([
 	for i, node := range nodes {
 		records[i] = NodeRecord{
 			ID:                 node.ID,
+			TenantID:           node.TenantID,
 			NodeID:             node.NodeID,
 			Name:               node.Name,
 			SupportedProviders: node.SupportedProviders,
@@ -102,6 +105,7 @@ func (r *PgRepository) ListOnlineNodes(ctx context.Context, threshold pgtype.Tim
 	for i, node := range nodes {
 		records[i] = NodeRecord{
 			ID:                 node.ID,
+			TenantID:           node.TenantID,
 			NodeID:             node.NodeID,
 			Name:               node.Name,
 			SupportedProviders: node.SupportedProviders,
@@ -127,6 +131,7 @@ func (r *PgRepository) UpdateHeartbeat(ctx context.Context, params UpdateHeartbe
 	}
 	return NodeRecord{
 		ID:                 node.ID,
+		TenantID:           node.TenantID,
 		NodeID:             node.NodeID,
 		Name:               node.Name,
 		SupportedProviders: node.SupportedProviders,
@@ -150,6 +155,7 @@ func (r *PgRepository) UpdateLoad(ctx context.Context, params UpdateLoadParams) 
 	}
 	return NodeRecord{
 		ID:                 node.ID,
+		TenantID:           node.TenantID,
 		NodeID:             node.NodeID,
 		Name:               node.Name,
 		SupportedProviders: node.SupportedProviders,
@@ -173,6 +179,7 @@ func (r *PgRepository) UpdateStatus(ctx context.Context, params UpdateStatusPara
 	}
 	return NodeRecord{
 		ID:                 node.ID,
+		TenantID:           node.TenantID,
 		NodeID:             node.NodeID,
 		Name:               node.Name,
 		SupportedProviders: node.SupportedProviders,
@@ -217,7 +224,6 @@ func (r *PgRepository) UpsertRuntimeEnrollmentFromHello(ctx context.Context, par
 		RequestPayload: params.RequestPayload,
 		LastHelloAt:    params.LastHelloAt,
 		BootstrapKeyID: params.BootstrapKeyID,
-		RuntimeNodeID:  params.RuntimeNodeID,
 		TenantID:       params.TenantID,
 	})
 	if err != nil {
@@ -226,11 +232,54 @@ func (r *PgRepository) UpsertRuntimeEnrollmentFromHello(ctx context.Context, par
 	return runtimeEnrollmentRecordFromQuery(enrollment), nil
 }
 
+func (r *PgRepository) GetRuntimeEnrollment(ctx context.Context, tenantID, enrollmentID uuid.UUID) (RuntimeEnrollmentRecord, error) {
+	enrollment, err := r.q.GetRuntimeEnrollment(ctx, queries.GetRuntimeEnrollmentParams{
+		TenantID: tenantID,
+		ID:       enrollmentID,
+	})
+	if err != nil {
+		return RuntimeEnrollmentRecord{}, err
+	}
+	return runtimeEnrollmentRecordFromQuery(enrollment), nil
+}
+
+func (r *PgRepository) UpsertRuntimeNodeForTenant(ctx context.Context, params UpsertRuntimeNodeForTenantParams) (NodeRecord, error) {
+	node, err := r.q.UpsertRuntimeNodeForTenant(ctx, queries.UpsertRuntimeNodeForTenantParams{
+		Name:               params.Name,
+		SupportedProviders: params.SupportedProviders,
+		MaxSlots:           params.MaxSlots,
+		CurrentLoad:        params.CurrentLoad,
+		Status:             params.Status,
+		Metadata:           params.Metadata,
+		LastHeartbeatAt:    params.LastHeartbeatAt,
+		TenantID:           params.TenantID,
+		NodeID:             params.NodeID,
+	})
+	if err != nil {
+		return NodeRecord{}, err
+	}
+	return NodeRecord{
+		ID:                 node.ID,
+		TenantID:           node.TenantID,
+		NodeID:             node.NodeID,
+		Name:               node.Name,
+		SupportedProviders: node.SupportedProviders,
+		MaxSlots:           node.MaxSlots,
+		CurrentLoad:        node.CurrentLoad,
+		Status:             node.Status,
+		Metadata:           node.Metadata,
+		LastHeartbeatAt:    node.LastHeartbeatAt,
+		CreatedAt:          node.CreatedAt,
+		UpdatedAt:          node.UpdatedAt,
+	}, nil
+}
+
 func (r *PgRepository) ApproveRuntimeEnrollment(ctx context.Context, params ApproveRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error) {
 	enrollment, err := r.q.ApproveRuntimeEnrollment(ctx, queries.ApproveRuntimeEnrollmentParams{
-		ApprovedBy: uuid.NullUUID{UUID: params.ApprovedBy, Valid: params.ApprovedBy != uuid.Nil},
-		ID:         params.EnrollmentID,
-		TenantID:   params.TenantID,
+		RuntimeNodeID: params.RuntimeNodeID,
+		ApprovedBy:    uuid.NullUUID{UUID: params.ApprovedBy, Valid: params.ApprovedBy != uuid.Nil},
+		ID:            params.EnrollmentID,
+		TenantID:      params.TenantID,
 	})
 	if err != nil {
 		return RuntimeEnrollmentRecord{}, err
@@ -264,7 +313,7 @@ func (r *PgRepository) RevokeRuntimeEnrollment(ctx context.Context, params Revok
 	return RuntimeEnrollmentRecord{
 		ID:             enrollment.ID,
 		TenantID:       enrollment.TenantID,
-		RuntimeNodeID:  enrollment.RuntimeNodeID,
+		RuntimeNodeID:  uuidFromNull(enrollment.RuntimeNodeID),
 		NodeID:         enrollment.NodeID,
 		BootstrapKeyID: enrollment.BootstrapKeyID,
 		Status:         RuntimeEnrollmentStatus(enrollment.Status),
@@ -299,10 +348,7 @@ func (r *PgRepository) CreateRuntimeSession(ctx context.Context, params CreateRu
 }
 
 func (r *PgRepository) GetActiveRuntimeSessionByLookupHash(ctx context.Context, params GetActiveRuntimeSessionByLookupHashParams) (RuntimeSessionRecord, error) {
-	session, err := r.q.GetActiveRuntimeSessionByLookupHash(ctx, queries.GetActiveRuntimeSessionByLookupHashParams{
-		TenantID:        params.TenantID,
-		TokenLookupHash: params.TokenLookupHash,
-	})
+	session, err := r.q.GetActiveRuntimeSessionByLookupHash(ctx, params.TokenLookupHash)
 	if err != nil {
 		return RuntimeSessionRecord{}, err
 	}
@@ -388,7 +434,7 @@ func runtimeEnrollmentRecordFromQuery(enrollment queries.RuntimeEnrollment) Runt
 	return RuntimeEnrollmentRecord{
 		ID:             enrollment.ID,
 		TenantID:       enrollment.TenantID,
-		RuntimeNodeID:  enrollment.RuntimeNodeID,
+		RuntimeNodeID:  uuidFromNull(enrollment.RuntimeNodeID),
 		NodeID:         enrollment.NodeID,
 		BootstrapKeyID: enrollment.BootstrapKeyID,
 		Status:         RuntimeEnrollmentStatus(enrollment.Status),
@@ -405,6 +451,13 @@ func runtimeEnrollmentRecordFromQuery(enrollment queries.RuntimeEnrollment) Runt
 		CreatedAt:      enrollment.CreatedAt,
 		UpdatedAt:      enrollment.UpdatedAt,
 	}
+}
+
+func uuidFromNull(id uuid.NullUUID) uuid.UUID {
+	if !id.Valid {
+		return uuid.Nil
+	}
+	return id.UUID
 }
 
 func runtimeSessionRecordFromQuery(session queries.RuntimeSession, nodeID string) RuntimeSessionRecord {

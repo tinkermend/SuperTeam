@@ -8,6 +8,7 @@ package queries
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -353,6 +354,119 @@ type UpdateRuntimeNodeStatusParams struct {
 func (q *Queries) UpdateRuntimeNodeStatus(ctx context.Context, arg UpdateRuntimeNodeStatusParams) (RuntimeNode, error) {
 	row := q.db.QueryRow(ctx, UpdateRuntimeNodeStatus, arg.NodeID, arg.Status)
 	var i RuntimeNode
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.NodeID,
+		&i.Name,
+		&i.SupportedProviders,
+		&i.MaxSlots,
+		&i.CurrentLoad,
+		&i.Status,
+		&i.Metadata,
+		&i.LastHeartbeatAt,
+		&i.DisabledAt,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const UpsertRuntimeNodeForTenant = `-- name: UpsertRuntimeNodeForTenant :one
+WITH updated AS (
+    UPDATE runtime_nodes
+    SET name = $1::varchar,
+        supported_providers = $2::jsonb,
+        max_slots = $3::integer,
+        current_load = $4::integer,
+        status = $5::varchar,
+        metadata = COALESCE($6::jsonb, '{}'::jsonb),
+        last_heartbeat_at = $7::timestamptz,
+        disabled_at = NULL,
+        archived_at = NULL,
+        updated_at = NOW()
+    WHERE tenant_id = $8::uuid
+      AND node_id = $9::varchar
+    RETURNING id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at
+),
+inserted AS (
+    INSERT INTO runtime_nodes (
+        tenant_id,
+        node_id,
+        name,
+        supported_providers,
+        max_slots,
+        current_load,
+        status,
+        metadata,
+        last_heartbeat_at
+    )
+    SELECT
+        $8::uuid,
+        $9::varchar,
+        $1::varchar,
+        $2::jsonb,
+        $3::integer,
+        $4::integer,
+        $5::varchar,
+        COALESCE($6::jsonb, '{}'::jsonb),
+        $7::timestamptz
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM runtime_nodes
+        WHERE node_id = $9::varchar
+    )
+    RETURNING id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at
+)
+SELECT id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at FROM updated
+UNION ALL
+SELECT id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at FROM inserted
+LIMIT 1
+`
+
+type UpsertRuntimeNodeForTenantParams struct {
+	Name               string             `json:"name"`
+	SupportedProviders []byte             `json:"supported_providers"`
+	MaxSlots           int32              `json:"max_slots"`
+	CurrentLoad        int32              `json:"current_load"`
+	Status             string             `json:"status"`
+	Metadata           []byte             `json:"metadata"`
+	LastHeartbeatAt    pgtype.Timestamptz `json:"last_heartbeat_at"`
+	TenantID           uuid.UUID          `json:"tenant_id"`
+	NodeID             string             `json:"node_id"`
+}
+
+type UpsertRuntimeNodeForTenantRow struct {
+	ID                 uuid.UUID          `json:"id"`
+	TenantID           uuid.UUID          `json:"tenant_id"`
+	NodeID             string             `json:"node_id"`
+	Name               string             `json:"name"`
+	SupportedProviders []byte             `json:"supported_providers"`
+	MaxSlots           int32              `json:"max_slots"`
+	CurrentLoad        int32              `json:"current_load"`
+	Status             string             `json:"status"`
+	Metadata           []byte             `json:"metadata"`
+	LastHeartbeatAt    pgtype.Timestamptz `json:"last_heartbeat_at"`
+	DisabledAt         pgtype.Timestamptz `json:"disabled_at"`
+	ArchivedAt         pgtype.Timestamptz `json:"archived_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpsertRuntimeNodeForTenant(ctx context.Context, arg UpsertRuntimeNodeForTenantParams) (UpsertRuntimeNodeForTenantRow, error) {
+	row := q.db.QueryRow(ctx, UpsertRuntimeNodeForTenant,
+		arg.Name,
+		arg.SupportedProviders,
+		arg.MaxSlots,
+		arg.CurrentLoad,
+		arg.Status,
+		arg.Metadata,
+		arg.LastHeartbeatAt,
+		arg.TenantID,
+		arg.NodeID,
+	)
+	var i UpsertRuntimeNodeForTenantRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,

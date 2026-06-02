@@ -23,6 +23,8 @@ type Repository interface {
 type EnrollmentRepository interface {
 	ListActiveRuntimeBootstrapKeys(ctx context.Context, tenantID uuid.UUID) ([]RuntimeBootstrapKeyRecord, error)
 	UpsertRuntimeEnrollmentFromHello(ctx context.Context, params UpsertRuntimeEnrollmentFromHelloParams) (RuntimeEnrollmentRecord, error)
+	GetRuntimeEnrollment(ctx context.Context, tenantID, enrollmentID uuid.UUID) (RuntimeEnrollmentRecord, error)
+	UpsertRuntimeNodeForTenant(ctx context.Context, params UpsertRuntimeNodeForTenantParams) (NodeRecord, error)
 	ApproveRuntimeEnrollment(ctx context.Context, params ApproveRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error)
 	RejectRuntimeEnrollment(ctx context.Context, params RejectRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error)
 	RevokeRuntimeEnrollment(ctx context.Context, params RevokeRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error)
@@ -51,6 +53,7 @@ type CreateNodeParams struct {
 // NodeRecord represents a node record from the database
 type NodeRecord struct {
 	ID                 uuid.UUID
+	TenantID           uuid.UUID
 	NodeID             string
 	Name               string
 	SupportedProviders []byte
@@ -90,7 +93,6 @@ type UpdateStatusParams struct {
 
 type UpsertRuntimeEnrollmentFromHelloParams struct {
 	TenantID       uuid.UUID
-	RuntimeNodeID  uuid.UUID
 	NodeID         string
 	BootstrapKeyID uuid.UUID
 	RequestPayload []byte
@@ -98,9 +100,10 @@ type UpsertRuntimeEnrollmentFromHelloParams struct {
 }
 
 type ApproveRuntimeEnrollmentParams struct {
-	TenantID     uuid.UUID
-	EnrollmentID uuid.UUID
-	ApprovedBy   uuid.UUID
+	TenantID      uuid.UUID
+	EnrollmentID  uuid.UUID
+	RuntimeNodeID uuid.UUID
+	ApprovedBy    uuid.UUID
 }
 
 type RejectRuntimeEnrollmentParams struct {
@@ -127,8 +130,19 @@ type CreateRuntimeSessionParams struct {
 }
 
 type GetActiveRuntimeSessionByLookupHashParams struct {
-	TenantID        uuid.UUID
 	TokenLookupHash string
+}
+
+type UpsertRuntimeNodeForTenantParams struct {
+	TenantID           uuid.UUID
+	NodeID             string
+	Name               string
+	SupportedProviders []byte
+	MaxSlots           int32
+	CurrentLoad        int32
+	Status             string
+	Metadata           []byte
+	LastHeartbeatAt    pgtype.Timestamptz
 }
 
 type RenewRuntimeSessionParams struct {

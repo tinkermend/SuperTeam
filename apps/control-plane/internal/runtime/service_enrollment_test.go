@@ -42,7 +42,7 @@ func TestEnrollHelloCreatesPendingWithoutSession(t *testing.T) {
 	require.Equal(t, "runtime-dev-1", resp.Enrollment.NodeID)
 	require.Nil(t, resp.Session)
 	require.Empty(t, resp.SessionToken)
-	require.Contains(t, repo.nodes, "runtime-dev-1")
+	require.Empty(t, repo.nodes)
 	require.Len(t, repo.enrollmentsByNode, 1)
 }
 
@@ -55,8 +55,8 @@ func TestEnrollHelloApprovedIssuesSession(t *testing.T) {
 	bootstrapSecret := "boot_test_approved"
 	bootstrapHash, err := HashRuntimeSecret(bootstrapSecret)
 	require.NoError(t, err)
-	node := repo.seedNode("runtime-approved", "Runtime Approved", []string{"codex"})
-	enrollment := repo.seedEnrollment("runtime-approved", RuntimeEnrollmentStatusApproved, node.ID, runtimeTestUUID(20), bootstrapHash)
+	node := repo.seedNode(DefaultTenantID, "runtime-approved", "Runtime Approved", []string{"codex"})
+	enrollment := repo.seedEnrollment(DefaultTenantID, "runtime-approved", RuntimeEnrollmentStatusApproved, node.ID, runtimeTestUUID(20), bootstrapHash)
 
 	resp, err := service.EnrollHello(ctx, EnrollHelloRequest{
 		NodeID:             "runtime-approved",
@@ -133,8 +133,7 @@ func TestEnrollHelloRejectedOrRevokedDoesNotIssueSession(t *testing.T) {
 			bootstrapSecret := "boot_test_terminal"
 			bootstrapHash, err := HashRuntimeSecret(bootstrapSecret)
 			require.NoError(t, err)
-			node := repo.seedNode("runtime-terminal", "Runtime Terminal", []string{"codex"})
-			repo.seedEnrollment("runtime-terminal", status, node.ID, runtimeTestUUID(40), bootstrapHash)
+			repo.seedEnrollment(DefaultTenantID, "runtime-terminal", status, uuid.Nil, runtimeTestUUID(40), bootstrapHash)
 
 			resp, err := service.EnrollHello(ctx, EnrollHelloRequest{
 				NodeID:       "runtime-terminal",
@@ -146,6 +145,7 @@ func TestEnrollHelloRejectedOrRevokedDoesNotIssueSession(t *testing.T) {
 			require.Equal(t, status, resp.Enrollment.Status)
 			require.Nil(t, resp.Session)
 			require.Empty(t, resp.SessionToken)
+			require.Empty(t, repo.nodes)
 		})
 	}
 }
@@ -158,8 +158,10 @@ func TestApproveEnrollmentCreatesOrReusesRuntimeNode(t *testing.T) {
 
 	bootstrapHash, err := HashRuntimeSecret("boot_approve")
 	require.NoError(t, err)
-	node := repo.seedNode("runtime-approve", "Runtime Approve", []string{"codex"})
-	enrollment := repo.seedEnrollment("runtime-approve", RuntimeEnrollmentStatusPending, node.ID, runtimeTestUUID(50), bootstrapHash)
+	enrollment := repo.seedEnrollment(DefaultTenantID, "runtime-approve", RuntimeEnrollmentStatusPending, uuid.Nil, runtimeTestUUID(50), bootstrapHash)
+	enrollment.RequestPayload = mustRuntimePayload(t, "runtime-approve", "Runtime Approve", []string{"codex"}, 4, map[string]interface{}{"region": "local"})
+	repo.enrollmentsByID[enrollment.ID] = enrollment
+	repo.enrollmentsByNode[repo.enrollmentKey(DefaultTenantID, "runtime-approve")] = enrollment
 
 	approved, err := service.ApproveEnrollment(ctx, ApproveEnrollmentRequest{
 		TenantID:     DefaultTenantID,
@@ -168,8 +170,87 @@ func TestApproveEnrollmentCreatesOrReusesRuntimeNode(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, RuntimeEnrollmentStatusApproved, approved.Status)
-	require.Equal(t, node.ID, approved.RuntimeNodeID)
-	require.Contains(t, repo.nodes, "runtime-approve")
+	require.NotEqual(t, uuid.Nil, approved.RuntimeNodeID)
+	require.Contains(t, repo.nodes, repo.nodeKey(DefaultTenantID, "runtime-approve"))
+
+	// Re-approving another pending enrollment with the same tenant/node should reuse the same runtime node.
+	firstNodeID := approved.RuntimeNodeID
+	second := repo.seedEnrollment(DefaultTenantID, "runtime-approve", RuntimeEnrollmentStatusPending, uuid.Nil, runtimeTestUUID(52), bootstrapHash)
+	second.RequestPayload = mustRuntimePayload(t, "runtime-approve", "Runtime Approve Reused", []string{"codex"}, 2, nil)
+	repo.enrollmentsByID[second.ID] = second
+	repo.enrollmentsByNode[repo.enrollmentKey(DefaultTenantID, "runtime-approve")] = second
+	approvedAgain, err := service.ApproveEnrollment(ctx, ApproveEnrollmentRequest{
+		TenantID:     DefaultTenantID,
+		EnrollmentID: second.ID,
+		ApprovedBy:   runtimeTestUUID(53),
+	})
+	require.NoError(t, err)
+	require.Equal(t, firstNodeID, approvedAgain.RuntimeNodeID)
+}
+
+func TestNonDefaultTenantEnrollmentSessionLifecycle(t *testing.T) {
+	ctx := context.Background()
+	tenantID := runtimeTestUUID(900)
+	repo := newEnrollmentFake(t)
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	bootstrapSecret := "boot_non_default"
+	bootstrapHash, err := HashRuntimeSecret(bootstrapSecret)
+	require.NoError(t, err)
+	repo.bootstrapKeys = append(repo.bootstrapKeys, RuntimeBootstrapKeyRecord{
+		ID:       runtimeTestUUID(901),
+		TenantID: tenantID,
+		KeyHash:  bootstrapHash,
+		Status:   "active",
+	})
+
+	pending, err := service.EnrollHello(ctx, EnrollHelloRequest{
+		TenantID:           tenantID,
+		NodeID:             "tenant-runtime",
+		Name:               "Tenant Runtime",
+		BootstrapKey:       bootstrapSecret,
+		SupportedProviders: []string{"codex"},
+		MaxSlots:           5,
+		Metadata:           map[string]interface{}{"zone": "tenant-a"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, RuntimeEnrollmentStatusPending, pending.Enrollment.Status)
+	require.Equal(t, tenantID, pending.Enrollment.TenantID)
+	require.Equal(t, uuid.Nil, pending.Enrollment.RuntimeNodeID)
+	require.Empty(t, repo.nodes)
+
+	approved, err := service.ApproveEnrollment(ctx, ApproveEnrollmentRequest{
+		TenantID:     tenantID,
+		EnrollmentID: pending.Enrollment.ID,
+		ApprovedBy:   runtimeTestUUID(902),
+	})
+	require.NoError(t, err)
+	require.Equal(t, RuntimeEnrollmentStatusApproved, approved.Status)
+	require.NotEqual(t, uuid.Nil, approved.RuntimeNodeID)
+	require.Equal(t, tenantID, repo.nodes[repo.nodeKey(tenantID, "tenant-runtime")].TenantID)
+
+	approvedHello, err := service.EnrollHello(ctx, EnrollHelloRequest{
+		TenantID:     tenantID,
+		NodeID:       "tenant-runtime",
+		Name:         "Tenant Runtime",
+		BootstrapKey: bootstrapSecret,
+	})
+	require.NoError(t, err)
+	require.Equal(t, RuntimeEnrollmentStatusApproved, approvedHello.Enrollment.Status)
+	require.NotNil(t, approvedHello.Session)
+	require.NotEmpty(t, approvedHello.SessionToken)
+
+	validation, err := service.ValidateRuntimeSession(ctx, approvedHello.SessionToken)
+	require.NoError(t, err)
+	require.Equal(t, tenantID, validation.TenantID)
+	require.Equal(t, "tenant-runtime", validation.NodeID)
+
+	before := approvedHello.Session.ExpiresAt
+	renewed, err := service.RenewRuntimeSession(ctx, approvedHello.SessionToken)
+	require.NoError(t, err)
+	require.Equal(t, tenantID, renewed.TenantID)
+	require.True(t, renewed.ExpiresAt.After(before))
 }
 
 func TestRenewRuntimeSessionRequiresValidTokenAndExtends(t *testing.T) {
@@ -214,7 +295,7 @@ func TestRevokeEnrollmentInvalidatesSessions(t *testing.T) {
 	require.NoError(t, err)
 
 	token := repo.seedApprovedSession(t, "runtime-revoke", "boot_revoke", time.Now().Add(10*time.Minute))
-	enrollment := repo.enrollmentsByNode["runtime-revoke"]
+	enrollment := repo.enrollmentsByNode[repo.enrollmentKey(DefaultTenantID, "runtime-revoke")]
 
 	revoked, err := service.RevokeEnrollment(ctx, RevokeEnrollmentRequest{
 		TenantID:     DefaultTenantID,
@@ -250,11 +331,33 @@ func newEnrollmentFake(t *testing.T) *enrollmentFake {
 	}
 }
 
-func (f *enrollmentFake) seedNode(nodeID, name string, providers []string) NodeRecord {
+func mustRuntimePayload(t *testing.T, nodeID, name string, providers []string, maxSlots int32, metadata map[string]interface{}) []byte {
+	t.Helper()
+	payload, err := json.Marshal(map[string]interface{}{
+		"node_id":             nodeID,
+		"name":                name,
+		"supported_providers": providers,
+		"max_slots":           maxSlots,
+		"metadata":            metadata,
+	})
+	require.NoError(t, err)
+	return payload
+}
+
+func (f *enrollmentFake) nodeKey(tenantID uuid.UUID, nodeID string) string {
+	return tenantID.String() + "/" + nodeID
+}
+
+func (f *enrollmentFake) enrollmentKey(tenantID uuid.UUID, nodeID string) string {
+	return tenantID.String() + "/" + nodeID
+}
+
+func (f *enrollmentFake) seedNode(tenantID uuid.UUID, nodeID, name string, providers []string) NodeRecord {
 	providersJSON, err := json.Marshal(providers)
 	require.NoError(f.t, err)
 	record := NodeRecord{
 		ID:                 runtimeTestUUID(len(f.nodes) + 100),
+		TenantID:           tenantID,
 		NodeID:             nodeID,
 		Name:               name,
 		SupportedProviders: providersJSON,
@@ -266,20 +369,20 @@ func (f *enrollmentFake) seedNode(nodeID, name string, providers []string) NodeR
 		CreatedAt:          timestamptzFromTime(time.Now()),
 		UpdatedAt:          timestamptzFromTime(time.Now()),
 	}
-	f.nodes[nodeID] = record
+	f.nodes[f.nodeKey(tenantID, nodeID)] = record
 	return record
 }
 
-func (f *enrollmentFake) seedEnrollment(nodeID string, status RuntimeEnrollmentStatus, runtimeNodeID uuid.UUID, bootstrapKeyID uuid.UUID, bootstrapHash string) RuntimeEnrollmentRecord {
+func (f *enrollmentFake) seedEnrollment(tenantID uuid.UUID, nodeID string, status RuntimeEnrollmentStatus, runtimeNodeID uuid.UUID, bootstrapKeyID uuid.UUID, bootstrapHash string) RuntimeEnrollmentRecord {
 	f.bootstrapKeys = append(f.bootstrapKeys, RuntimeBootstrapKeyRecord{
 		ID:       bootstrapKeyID,
-		TenantID: DefaultTenantID,
+		TenantID: tenantID,
 		KeyHash:  bootstrapHash,
 		Status:   "active",
 	})
 	record := RuntimeEnrollmentRecord{
 		ID:             runtimeTestUUID(len(f.enrollmentsByID) + 200),
-		TenantID:       DefaultTenantID,
+		TenantID:       tenantID,
 		RuntimeNodeID:  runtimeNodeID,
 		NodeID:         nodeID,
 		BootstrapKeyID: bootstrapKeyID,
@@ -290,7 +393,7 @@ func (f *enrollmentFake) seedEnrollment(nodeID string, status RuntimeEnrollmentS
 		UpdatedAt:      timestamptzFromTime(time.Now()),
 	}
 	f.enrollmentsByID[record.ID] = record
-	f.enrollmentsByNode[nodeID] = record
+	f.enrollmentsByNode[f.enrollmentKey(tenantID, nodeID)] = record
 	return record
 }
 
@@ -298,8 +401,8 @@ func (f *enrollmentFake) seedApprovedSession(t *testing.T, nodeID, bootstrapSecr
 	t.Helper()
 	bootstrapHash, err := HashRuntimeSecret(bootstrapSecret)
 	require.NoError(t, err)
-	node := f.seedNode(nodeID, nodeID, []string{"codex"})
-	enrollment := f.seedEnrollment(nodeID, RuntimeEnrollmentStatusApproved, node.ID, runtimeTestUUID(len(f.bootstrapKeys)+300), bootstrapHash)
+	node := f.seedNode(DefaultTenantID, nodeID, nodeID, []string{"codex"})
+	enrollment := f.seedEnrollment(DefaultTenantID, nodeID, RuntimeEnrollmentStatusApproved, node.ID, runtimeTestUUID(len(f.bootstrapKeys)+300), bootstrapHash)
 	token, err := GenerateRuntimeSessionToken()
 	require.NoError(t, err)
 	secretHash, err := HashRuntimeSecret(token)
@@ -323,6 +426,7 @@ func (f *enrollmentFake) seedApprovedSession(t *testing.T, nodeID, bootstrapSecr
 func (f *enrollmentFake) CreateNode(_ context.Context, params CreateNodeParams) (NodeRecord, error) {
 	record := NodeRecord{
 		ID:                 runtimeTestUUID(len(f.nodes) + 100),
+		TenantID:           DefaultTenantID,
 		NodeID:             params.NodeID,
 		Name:               params.Name,
 		SupportedProviders: params.SupportedProviders,
@@ -334,12 +438,12 @@ func (f *enrollmentFake) CreateNode(_ context.Context, params CreateNodeParams) 
 		CreatedAt:          timestamptzFromTime(time.Now()),
 		UpdatedAt:          timestamptzFromTime(time.Now()),
 	}
-	f.nodes[params.NodeID] = record
+	f.nodes[f.nodeKey(DefaultTenantID, params.NodeID)] = record
 	return record, nil
 }
 
 func (f *enrollmentFake) GetNode(_ context.Context, nodeID string) (NodeRecord, error) {
-	record, ok := f.nodes[nodeID]
+	record, ok := f.nodes[f.nodeKey(DefaultTenantID, nodeID)]
 	if !ok {
 		return NodeRecord{}, errors.New("not found")
 	}
@@ -355,26 +459,29 @@ func (f *enrollmentFake) ListOnlineNodes(context.Context, pgtype.Timestamptz) ([
 }
 
 func (f *enrollmentFake) UpdateHeartbeat(_ context.Context, params UpdateHeartbeatParams) (NodeRecord, error) {
-	record, ok := f.nodes[params.NodeID]
+	key := f.nodeKey(DefaultTenantID, params.NodeID)
+	record, ok := f.nodes[key]
 	if !ok {
 		return NodeRecord{}, errors.New("not found")
 	}
 	record.LastHeartbeatAt = params.LastHeartbeatAt
-	f.nodes[params.NodeID] = record
+	f.nodes[key] = record
 	return record, nil
 }
 
 func (f *enrollmentFake) UpdateLoad(_ context.Context, params UpdateLoadParams) (NodeRecord, error) {
-	record := f.nodes[params.NodeID]
+	key := f.nodeKey(DefaultTenantID, params.NodeID)
+	record := f.nodes[key]
 	record.CurrentLoad = params.CurrentLoad
-	f.nodes[params.NodeID] = record
+	f.nodes[key] = record
 	return record, nil
 }
 
 func (f *enrollmentFake) UpdateStatus(_ context.Context, params UpdateStatusParams) (NodeRecord, error) {
-	record := f.nodes[params.NodeID]
+	key := f.nodeKey(DefaultTenantID, params.NodeID)
+	record := f.nodes[key]
 	record.Status = params.Status
-	f.nodes[params.NodeID] = record
+	f.nodes[key] = record
 	return record, nil
 }
 
@@ -393,10 +500,11 @@ func (f *enrollmentFake) ListActiveRuntimeBootstrapKeys(_ context.Context, tenan
 }
 
 func (f *enrollmentFake) UpsertRuntimeEnrollmentFromHello(_ context.Context, params UpsertRuntimeEnrollmentFromHelloParams) (RuntimeEnrollmentRecord, error) {
-	if existing, ok := f.enrollmentsByNode[params.NodeID]; ok {
+	key := f.enrollmentKey(params.TenantID, params.NodeID)
+	if existing, ok := f.enrollmentsByNode[key]; ok {
 		if existing.Status == RuntimeEnrollmentStatusApproved || existing.Status == RuntimeEnrollmentStatusRejected || existing.Status == RuntimeEnrollmentStatusRevoked {
 			existing.LastHelloAt = params.LastHelloAt
-			f.enrollmentsByNode[params.NodeID] = existing
+			f.enrollmentsByNode[key] = existing
 			f.enrollmentsByID[existing.ID] = existing
 			return existing, nil
 		}
@@ -404,7 +512,7 @@ func (f *enrollmentFake) UpsertRuntimeEnrollmentFromHello(_ context.Context, par
 	record := RuntimeEnrollmentRecord{
 		ID:             runtimeTestUUID(len(f.enrollmentsByID) + 200),
 		TenantID:       params.TenantID,
-		RuntimeNodeID:  params.RuntimeNodeID,
+		RuntimeNodeID:  uuid.Nil,
 		NodeID:         params.NodeID,
 		BootstrapKeyID: params.BootstrapKeyID,
 		Status:         RuntimeEnrollmentStatusPending,
@@ -414,7 +522,45 @@ func (f *enrollmentFake) UpsertRuntimeEnrollmentFromHello(_ context.Context, par
 		UpdatedAt:      timestamptzFromTime(time.Now()),
 	}
 	f.enrollmentsByID[record.ID] = record
-	f.enrollmentsByNode[record.NodeID] = record
+	f.enrollmentsByNode[key] = record
+	return record, nil
+}
+
+func (f *enrollmentFake) GetRuntimeEnrollment(_ context.Context, tenantID, enrollmentID uuid.UUID) (RuntimeEnrollmentRecord, error) {
+	record, ok := f.enrollmentsByID[enrollmentID]
+	if !ok || record.TenantID != tenantID {
+		return RuntimeEnrollmentRecord{}, errors.New("not found")
+	}
+	return record, nil
+}
+
+func (f *enrollmentFake) UpsertRuntimeNodeForTenant(_ context.Context, params UpsertRuntimeNodeForTenantParams) (NodeRecord, error) {
+	key := f.nodeKey(params.TenantID, params.NodeID)
+	if existing, ok := f.nodes[key]; ok {
+		existing.Name = params.Name
+		existing.SupportedProviders = params.SupportedProviders
+		existing.MaxSlots = params.MaxSlots
+		existing.Metadata = params.Metadata
+		existing.Status = params.Status
+		existing.LastHeartbeatAt = params.LastHeartbeatAt
+		f.nodes[key] = existing
+		return existing, nil
+	}
+	record := NodeRecord{
+		ID:                 runtimeTestUUID(len(f.nodes) + 100),
+		TenantID:           params.TenantID,
+		NodeID:             params.NodeID,
+		Name:               params.Name,
+		SupportedProviders: params.SupportedProviders,
+		MaxSlots:           params.MaxSlots,
+		CurrentLoad:        params.CurrentLoad,
+		Status:             params.Status,
+		Metadata:           params.Metadata,
+		LastHeartbeatAt:    params.LastHeartbeatAt,
+		CreatedAt:          timestamptzFromTime(time.Now()),
+		UpdatedAt:          timestamptzFromTime(time.Now()),
+	}
+	f.nodes[key] = record
 	return record, nil
 }
 
@@ -423,11 +569,17 @@ func (f *enrollmentFake) ApproveRuntimeEnrollment(_ context.Context, params Appr
 	if !ok || record.TenantID != params.TenantID || record.Status != RuntimeEnrollmentStatusPending {
 		return RuntimeEnrollmentRecord{}, errors.New("not found")
 	}
+	nodeKey := f.nodeKey(params.TenantID, record.NodeID)
+	node, ok := f.nodes[nodeKey]
+	if !ok || node.ID != params.RuntimeNodeID {
+		return RuntimeEnrollmentRecord{}, errors.New("runtime node not found")
+	}
+	record.RuntimeNodeID = params.RuntimeNodeID
 	record.Status = RuntimeEnrollmentStatusApproved
 	record.ApprovedBy = uuid.NullUUID{UUID: params.ApprovedBy, Valid: params.ApprovedBy != uuid.Nil}
 	record.ApprovedAt = timestamptzFromTime(time.Now())
 	f.enrollmentsByID[record.ID] = record
-	f.enrollmentsByNode[record.NodeID] = record
+	f.enrollmentsByNode[f.enrollmentKey(record.TenantID, record.NodeID)] = record
 	return record, nil
 }
 
@@ -436,7 +588,7 @@ func (f *enrollmentFake) RejectRuntimeEnrollment(_ context.Context, params Rejec
 	record.Status = RuntimeEnrollmentStatusRejected
 	record.RejectReason = textFromString(&params.Reason)
 	f.enrollmentsByID[record.ID] = record
-	f.enrollmentsByNode[record.NodeID] = record
+	f.enrollmentsByNode[f.enrollmentKey(record.TenantID, record.NodeID)] = record
 	return record, nil
 }
 
@@ -446,7 +598,7 @@ func (f *enrollmentFake) RevokeRuntimeEnrollment(_ context.Context, params Revok
 	record.RevokeReason = textFromString(&params.Reason)
 	record.RevokedAt = timestamptzFromTime(time.Now())
 	f.enrollmentsByID[record.ID] = record
-	f.enrollmentsByNode[record.NodeID] = record
+	f.enrollmentsByNode[f.enrollmentKey(record.TenantID, record.NodeID)] = record
 	for lookup, session := range f.sessionsByLookup {
 		if session.EnrollmentID.Valid && session.EnrollmentID.UUID == record.ID {
 			session.RevokedAt = timestamptzFromTime(time.Now())
@@ -480,7 +632,7 @@ func (f *enrollmentFake) CreateRuntimeSession(_ context.Context, params CreateRu
 
 func (f *enrollmentFake) GetActiveRuntimeSessionByLookupHash(_ context.Context, params GetActiveRuntimeSessionByLookupHashParams) (RuntimeSessionRecord, error) {
 	session, ok := f.sessionsByLookup[params.TokenLookupHash]
-	if !ok || session.TenantID != params.TenantID || session.RevokedAt.Valid || !session.ExpiresAt.Time.After(time.Now()) {
+	if !ok || session.RevokedAt.Valid || !session.ExpiresAt.Time.After(time.Now()) {
 		return RuntimeSessionRecord{}, errors.New("not found")
 	}
 	enrollment := f.enrollmentsByID[session.EnrollmentID.UUID]

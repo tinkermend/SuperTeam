@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Runtime session token 采用确定性 lookup hash 加 bcrypt secret hash 的双哈希模型，避免原始 token 或可直接校验的单一 hash 明文落库。
 - Runtime hello 会扫描有效 Bootstrap Key 并用 bcrypt 校验原始 secret；pending 接入不会返回 session，approved 且已挂接 Runtime 节点的接入才签发短期 session。
 - Runtime enrollment 撤销会使关联 active session 失效，session 校验与续期会重新检查接入仍处于 approved 且未撤销状态。
+- 修正 Runtime 接入服务的多租户路径：hello 阶段不再创建默认租户 Runtime 节点，改为仅写入 pending enrollment；批准阶段按租户创建或复用 Runtime 节点并 attach，session 校验改为按全局 lookup hash 查找，支持非默认租户续期。
 
 #### Control Plane 渐进式授权边界 (2026-06-01)
 

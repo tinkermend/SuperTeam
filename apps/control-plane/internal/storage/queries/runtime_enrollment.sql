@@ -58,25 +58,19 @@ INSERT INTO runtime_enrollments (
     request_payload,
     last_hello_at
 ) SELECT
-    rn.tenant_id,
-    rn.id,
+    rbk.tenant_id,
+    NULL::uuid,
     sqlc.arg('node_id')::varchar,
     rbk.id,
     'pending'::varchar,
     COALESCE(sqlc.arg('request_payload')::jsonb, '{}'::jsonb),
     sqlc.arg('last_hello_at')::timestamptz
-FROM runtime_nodes rn
-JOIN runtime_bootstrap_keys rbk
-  ON rbk.id = sqlc.arg('bootstrap_key_id')::uuid
- AND rbk.tenant_id = rn.tenant_id
- AND rbk.status = 'active'
- AND rbk.revoked_at IS NULL
- AND (rbk.expires_at IS NULL OR rbk.expires_at > NOW())
-WHERE rn.id = sqlc.arg('runtime_node_id')::uuid
-  AND rn.tenant_id = sqlc.arg('tenant_id')::uuid
-  AND rn.node_id = sqlc.arg('node_id')::varchar
-  AND rn.disabled_at IS NULL
-  AND rn.archived_at IS NULL
+FROM runtime_bootstrap_keys rbk
+WHERE rbk.id = sqlc.arg('bootstrap_key_id')::uuid
+  AND rbk.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND rbk.status = 'active'
+  AND rbk.revoked_at IS NULL
+  AND (rbk.expires_at IS NULL OR rbk.expires_at > NOW())
 ON CONFLICT (tenant_id, node_id) DO UPDATE SET
     runtime_node_id = CASE
         WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.runtime_node_id
@@ -104,6 +98,12 @@ FROM runtime_enrollments
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND node_id = sqlc.arg('node_id')::varchar;
 
+-- name: GetRuntimeEnrollment :one
+SELECT *
+FROM runtime_enrollments
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid;
+
 -- name: ListRuntimeEnrollments :many
 SELECT *
 FROM runtime_enrollments
@@ -115,6 +115,7 @@ LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 -- name: ApproveRuntimeEnrollment :one
 UPDATE runtime_enrollments
 SET status = 'approved',
+    runtime_node_id = sqlc.arg('runtime_node_id')::uuid,
     approved_by = sqlc.narg('approved_by')::uuid,
     approved_at = NOW(),
     rejected_by = NULL,
@@ -127,6 +128,15 @@ SET status = 'approved',
 WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
   AND status = 'pending'
+  AND EXISTS (
+      SELECT 1
+      FROM runtime_nodes rn
+      WHERE rn.id = sqlc.arg('runtime_node_id')::uuid
+        AND rn.tenant_id = runtime_enrollments.tenant_id
+        AND rn.node_id = runtime_enrollments.node_id
+        AND rn.disabled_at IS NULL
+        AND rn.archived_at IS NULL
+  )
 RETURNING *;
 
 -- name: RejectRuntimeEnrollment :one
@@ -211,8 +221,7 @@ JOIN runtime_nodes rn
   ON rn.id = rs.runtime_node_id
  AND rn.tenant_id = rs.tenant_id
  AND rn.archived_at IS NULL
-WHERE rs.tenant_id = sqlc.arg('tenant_id')::uuid
-  AND rs.token_lookup_hash = sqlc.arg('token_lookup_hash')::varchar
+WHERE rs.token_lookup_hash = sqlc.arg('token_lookup_hash')::varchar
   AND rs.expires_at > NOW()
   AND rs.revoked_at IS NULL;
 

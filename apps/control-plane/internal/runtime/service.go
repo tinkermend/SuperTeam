@@ -77,21 +77,11 @@ func (s *Service) EnrollHello(ctx context.Context, req EnrollHelloRequest) (*Enr
 		metadata["version"] = req.Version
 	}
 
-	node, err := s.RegisterNode(ctx, RegisterNodeRequest{
-		NodeID:             req.NodeID,
-		Name:               nodeName,
-		SupportedProviders: supportedProviders,
-		MaxSlots:           maxSlots,
-		Metadata:           metadata,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create or refresh runtime node: %w", err)
-	}
-
 	payload, err := json.Marshal(map[string]interface{}{
 		"node_id":             req.NodeID,
 		"name":                nodeName,
 		"supported_providers": supportedProviders,
+		"max_slots":           maxSlots,
 		"metadata":            metadata,
 		"version":             req.Version,
 		"capability_count":    len(req.Capabilities),
@@ -102,7 +92,6 @@ func (s *Service) EnrollHello(ctx context.Context, req EnrollHelloRequest) (*Enr
 
 	enrollmentRecord, err := enrollmentRepo.UpsertRuntimeEnrollmentFromHello(ctx, UpsertRuntimeEnrollmentFromHelloParams{
 		TenantID:       tenantID,
-		RuntimeNodeID:  node.ID,
 		NodeID:         req.NodeID,
 		BootstrapKeyID: bootstrapKey.ID,
 		RequestPayload: payload,
@@ -136,10 +125,37 @@ func (s *Service) ApproveEnrollment(ctx context.Context, req ApproveEnrollmentRe
 	if req.EnrollmentID == uuid.Nil {
 		return nil, errors.New("enrollment_id is required")
 	}
+	tenantID := tenantOrDefault(req.TenantID)
+	enrollment, err := enrollmentRepo.GetRuntimeEnrollment(ctx, tenantID, req.EnrollmentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get runtime enrollment: %w", err)
+	}
+	if enrollment.Status != RuntimeEnrollmentStatusPending {
+		return nil, errors.New("runtime enrollment must be pending")
+	}
+	nodeRequest, err := parseRuntimeNodeRequest(enrollment)
+	if err != nil {
+		return nil, err
+	}
+	nodeRecord, err := enrollmentRepo.UpsertRuntimeNodeForTenant(ctx, UpsertRuntimeNodeForTenantParams{
+		TenantID:           tenantID,
+		NodeID:             enrollment.NodeID,
+		Name:               nodeRequest.Name,
+		SupportedProviders: nodeRequest.SupportedProviders,
+		MaxSlots:           nodeRequest.MaxSlots,
+		CurrentLoad:        0,
+		Status:             string(NodeStatusOnline),
+		Metadata:           nodeRequest.Metadata,
+		LastHeartbeatAt:    timestamptzFromTime(time.Now()),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create or reuse runtime node: %w", err)
+	}
 	record, err := enrollmentRepo.ApproveRuntimeEnrollment(ctx, ApproveRuntimeEnrollmentParams{
-		TenantID:     tenantOrDefault(req.TenantID),
-		EnrollmentID: req.EnrollmentID,
-		ApprovedBy:   req.ApprovedBy,
+		TenantID:      tenantID,
+		EnrollmentID:  req.EnrollmentID,
+		RuntimeNodeID: nodeRecord.ID,
+		ApprovedBy:    req.ApprovedBy,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to approve runtime enrollment: %w", err)
@@ -252,7 +268,6 @@ func (s *Service) ValidateRuntimeSession(ctx context.Context, token string) (*Ru
 		return nil, errors.New("runtime session token is required")
 	}
 	session, err := enrollmentRepo.GetActiveRuntimeSessionByLookupHash(ctx, GetActiveRuntimeSessionByLookupHashParams{
-		TenantID:        DefaultTenantID,
 		TokenLookupHash: LookupRuntimeSessionTokenHash(token),
 	})
 	if err != nil {
@@ -672,4 +687,53 @@ func defaultMap(in map[string]interface{}) map[string]interface{} {
 		return map[string]interface{}{}
 	}
 	return in
+}
+
+type runtimeNodeApprovalPayload struct {
+	Name               string                 `json:"name"`
+	SupportedProviders []string               `json:"supported_providers"`
+	MaxSlots           int32                  `json:"max_slots"`
+	Metadata           map[string]interface{} `json:"metadata"`
+}
+
+type parsedRuntimeNodeRequest struct {
+	Name               string
+	SupportedProviders []byte
+	MaxSlots           int32
+	Metadata           []byte
+}
+
+func parseRuntimeNodeRequest(enrollment RuntimeEnrollmentRecord) (parsedRuntimeNodeRequest, error) {
+	var payload runtimeNodeApprovalPayload
+	if len(enrollment.RequestPayload) > 0 {
+		if err := json.Unmarshal(enrollment.RequestPayload, &payload); err != nil {
+			return parsedRuntimeNodeRequest{}, fmt.Errorf("failed to deserialize enrollment payload: %w", err)
+		}
+	}
+	if payload.Name == "" {
+		payload.Name = enrollment.NodeID
+	}
+	if len(payload.SupportedProviders) == 0 {
+		payload.SupportedProviders = []string{"runtime"}
+	}
+	if payload.MaxSlots <= 0 {
+		payload.MaxSlots = 1
+	}
+	if payload.Metadata == nil {
+		payload.Metadata = map[string]interface{}{}
+	}
+	providersJSON, err := json.Marshal(payload.SupportedProviders)
+	if err != nil {
+		return parsedRuntimeNodeRequest{}, fmt.Errorf("failed to serialize supported_providers: %w", err)
+	}
+	metadataJSON, err := json.Marshal(payload.Metadata)
+	if err != nil {
+		return parsedRuntimeNodeRequest{}, fmt.Errorf("failed to serialize metadata: %w", err)
+	}
+	return parsedRuntimeNodeRequest{
+		Name:               payload.Name,
+		SupportedProviders: providersJSON,
+		MaxSlots:           payload.MaxSlots,
+		Metadata:           metadataJSON,
+	}, nil
 }

@@ -146,7 +146,7 @@ CREATE TABLE runtime_bootstrap_keys (
 CREATE TABLE runtime_enrollments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
-    runtime_node_id UUID NOT NULL,
+    runtime_node_id UUID,
     node_id VARCHAR(255) NOT NULL,
     bootstrap_key_id UUID NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
