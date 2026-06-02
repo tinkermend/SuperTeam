@@ -18,17 +18,18 @@ import (
 )
 
 type Container struct {
-	Queries        *queries.Queries
-	TaskService    *task.Service
-	RuntimeService *runtimepkg.Service
-	AuthService    *auth.Service
-	Authorizer     authz.Authorizer
-	AuthzCenter    *authzcenter.Service
-	Poller         *runtimepkg.Poller
-	TaskHandler    *handlers.TaskHandler
-	RuntimeHandler *handlers.RuntimeHandler
-	AuthzHandler   *authzcenter.HTTPHandler
-	Server         *api.Server
+	Queries         *queries.Queries
+	TaskService     *task.Service
+	RuntimeService  *runtimepkg.Service
+	RuntimeCommands *runtimepkg.ConnectionRegistry
+	AuthService     *auth.Service
+	Authorizer      authz.Authorizer
+	AuthzCenter     *authzcenter.Service
+	Poller          *runtimepkg.Poller
+	TaskHandler     *handlers.TaskHandler
+	RuntimeHandler  *handlers.RuntimeHandler
+	AuthzHandler    *authzcenter.HTTPHandler
+	Server          *api.Server
 }
 
 func NewHealthOnlyRouter() http.Handler {
@@ -67,22 +68,25 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	authzCenterHandler := authzcenter.NewHandler(authzCenterService, authService)
 
 	poller := runtimepkg.NewPoller()
+	runtimeCommands := runtimepkg.NewConnectionRegistry()
 	taskHandler := handlers.NewTaskHandler(taskService)
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
+	runtimeHandler.SetConnectionRegistry(runtimeCommands)
 	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
 
 	return &Container{
-		Queries:        q,
-		TaskService:    taskService,
-		RuntimeService: runtimeService,
-		AuthService:    authService,
-		Authorizer:     authorizer,
-		AuthzCenter:    authzCenterService,
-		Poller:         poller,
-		TaskHandler:    taskHandler,
-		RuntimeHandler: runtimeHandler,
-		AuthzHandler:   authzCenterHandler,
-		Server:         server,
+		Queries:         q,
+		TaskService:     taskService,
+		RuntimeService:  runtimeService,
+		RuntimeCommands: runtimeCommands,
+		AuthService:     authService,
+		Authorizer:      authorizer,
+		AuthzCenter:     authzCenterService,
+		Poller:          poller,
+		TaskHandler:     taskHandler,
+		RuntimeHandler:  runtimeHandler,
+		AuthzHandler:    authzCenterHandler,
+		Server:          server,
 	}, nil
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
+	"nhooyr.io/websocket"
 )
 
 const routeTaskID = "11111111-1111-1111-1111-111111111111"
@@ -1066,6 +1067,94 @@ func TestRuntimeCapabilitiesSuccessReturnsTopLevelArray(t *testing.T) {
 	}
 	if len(body) != 1 || body[0]["capability_type"] != "provider" || body[0]["capability_key"] != "codex" {
 		t.Fatalf("unexpected capabilities response: %#v", body)
+	}
+}
+
+func TestRuntimeWebSocketRequiresRuntimeSessionAuth(t *testing.T) {
+	service := &routeRuntimeService{}
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+		service,
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/ws", nil)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected websocket route to require runtime session auth, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestRuntimeWebSocketRejectsLegacyRuntimeToken(t *testing.T) {
+	service := &routeRuntimeService{}
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+		service,
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/ws", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("X-Node-ID", "node-1")
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected websocket route to reject legacy runtime token, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestRuntimeWebSocketSendsDispatchedCommand(t *testing.T) {
+	service := &routeRuntimeService{}
+	registry := runtime.NewConnectionRegistry()
+	runtimeHandler := handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{})
+	runtimeHandler.SetConnectionRegistry(registry)
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		runtimeHandler,
+		&routeRuntimeAuthService{},
+		service,
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/v1/runtime/ws"
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer session-token")
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: headers})
+	if err != nil {
+		t.Fatalf("dial runtime websocket: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test done")
+
+	command := runtime.RuntimeCommand{
+		ID:      "cmd-1",
+		Type:    "task.claim",
+		Payload: json.RawMessage(`{"task_id":"task-1"}`),
+	}
+	if err := registry.Dispatch(ctx, "node-session", command); err != nil {
+		t.Fatalf("dispatch command: %v", err)
+	}
+
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read websocket command: %v", err)
+	}
+	if messageType != websocket.MessageText {
+		t.Fatalf("expected text websocket message, got %v", messageType)
+	}
+	var got runtime.RuntimeCommand
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("decode websocket command: %v; data=%s", err, string(data))
+	}
+	if got.ID != command.ID || got.Type != command.Type || string(got.Payload) != string(command.Payload) {
+		t.Fatalf("unexpected websocket command: %#v", got)
 	}
 }
 

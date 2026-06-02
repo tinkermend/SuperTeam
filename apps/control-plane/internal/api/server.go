@@ -148,6 +148,7 @@ func (s *Server) registerRoutes() {
 				r.Post("/sessions/{sessionId}/renew", s.runtimeHandler.RenewRuntimeSession)
 				r.Put("/nodes/{nodeId}/capabilities", s.runtimeHandler.UpsertCapabilities)
 				r.Post("/capabilities", s.runtimeHandler.UpsertCapabilities)
+				r.Get("/ws", s.runtimeHandler.WebSocket)
 			})
 
 			r.Group(func(r chi.Router) {

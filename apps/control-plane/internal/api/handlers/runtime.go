@@ -16,6 +16,7 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
+	"nhooyr.io/websocket"
 )
 
 type RuntimeService interface {
@@ -37,10 +38,11 @@ type Poller interface {
 }
 
 type RuntimeHandler struct {
-	runtimeService RuntimeService
-	taskService    TaskService
-	poller         Poller
-	authorizer     authz.Authorizer
+	runtimeService     RuntimeService
+	taskService        TaskService
+	poller             Poller
+	authorizer         authz.Authorizer
+	connectionRegistry *runtime.ConnectionRegistry
 }
 
 func NewRuntimeHandler(runtimeService RuntimeService, taskService TaskService, poller Poller, authorizer ...authz.Authorizer) *RuntimeHandler {
@@ -58,6 +60,10 @@ func NewRuntimeHandler(runtimeService RuntimeService, taskService TaskService, p
 
 func (h *RuntimeHandler) SetAuthorizer(authorizer authz.Authorizer) {
 	h.authorizer = authorizer
+}
+
+func (h *RuntimeHandler) SetConnectionRegistry(registry *runtime.ConnectionRegistry) {
+	h.connectionRegistry = registry
 }
 
 func (h *RuntimeHandler) RegisterNode(w http.ResponseWriter, r *http.Request) {
@@ -325,6 +331,47 @@ func (h *RuntimeHandler) UpsertCapabilities(w http.ResponseWriter, r *http.Reque
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(newRuntimeCapabilityResponses(result))
+}
+
+func (h *RuntimeHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
+	if h.connectionRegistry == nil {
+		http.Error(w, "runtime command registry is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	nodeID := middleware.GetNodeID(r.Context())
+	if nodeID == "" {
+		http.Error(w, "node_id not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "runtime websocket closed")
+
+	connection := h.connectionRegistry.Register(nodeID)
+	defer h.connectionRegistry.Unregister(nodeID, connection.ID)
+
+	ctx := conn.CloseRead(r.Context())
+	for {
+		select {
+		case command, ok := <-connection.Commands:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(command)
+			if err != nil {
+				conn.Close(websocket.StatusInternalError, "failed to encode runtime command")
+				return
+			}
+			if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func (h *RuntimeHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
