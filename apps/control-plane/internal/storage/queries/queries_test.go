@@ -1197,6 +1197,13 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+	otherTenantID := uuid.MustParse("00000000-0000-0000-0000-000000000201")
+	_, err := testDB.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'digital-employee-other', 'Digital Employee Other Tenant', 'active')
+		ON CONFLICT (id) DO NOTHING
+	`, otherTenantID)
+	require.NoError(t, err)
 
 	now := pgtype.Timestamptz{}
 	require.NoError(t, now.Scan(time.Now()))
@@ -1262,6 +1269,32 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	assert.Equal(t, instance.ID, updatedInstance.ID)
 	assert.Equal(t, "/data/superteam/workspaces/agents/requirements-analyst-updated", updatedInstance.AgentHomeDir)
 	assert.JSONEq(t, `{"mode":"new"}`, string(updatedInstance.SessionPolicy))
+
+	wrongTenantInstance, err := testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+		TenantID:             otherTenantID,
+		DigitalEmployeeID:    employee.ID,
+		RuntimeNodeID:        node.ID,
+		ProviderType:         "claude-code",
+		AgentHomeDir:         "/data/superteam/workspaces/agents/wrong-tenant",
+		WorkspacePolicy:      []byte(`{"base_dir":"/wrong-tenant"}`),
+		SessionPolicy:        []byte(`{"mode":"ephemeral"}`),
+		RuntimeSelector:      []byte(`{"labels":{"tenant":"other"}}`),
+		CapacityRequirements: []byte(`{"slots":3}`),
+		FallbackPolicy:       []byte(`{"enabled":false}`),
+		Status:               "provisioning",
+		Metadata:             []byte(`{"source":"wrong-tenant"}`),
+	})
+	require.NoError(t, err)
+	assert.NotEqual(t, updatedInstance.ID, wrongTenantInstance.ID)
+	assert.Equal(t, otherTenantID, wrongTenantInstance.TenantID)
+
+	tenantInstance, err := testQueries.GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx, queries.GetDigitalEmployeeExecutionInstanceByEmployeeIDParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employee.ID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, updatedInstance.ID, tenantInstance.ID)
+	assert.Equal(t, "/data/superteam/workspaces/agents/requirements-analyst-updated", tenantInstance.AgentHomeDir)
 
 	readyInstance, err := testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
 		ID:       instance.ID,

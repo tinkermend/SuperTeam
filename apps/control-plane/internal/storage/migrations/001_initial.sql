@@ -490,7 +490,7 @@ CREATE INDEX idx_auth_sessions_expires_at ON auth_sessions(expires_at);
 CREATE INDEX idx_digital_employees_tenant_status ON digital_employees(tenant_id, status, created_at DESC);
 CREATE INDEX idx_digital_employees_team_status ON digital_employees(tenant_id, team_id, status, created_at DESC);
 CREATE UNIQUE INDEX uq_digital_employees_active_name ON digital_employees(tenant_id, name) WHERE deleted_at IS NULL;
-CREATE UNIQUE INDEX uq_digital_employee_execution_instances_employee ON digital_employee_execution_instances(digital_employee_id) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_digital_employee_execution_instances_tenant_employee ON digital_employee_execution_instances(tenant_id, digital_employee_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_digital_employee_execution_instances_tenant_status ON digital_employee_execution_instances(tenant_id, status, created_at DESC);
 CREATE INDEX idx_digital_employee_execution_instances_runtime ON digital_employee_execution_instances(tenant_id, runtime_node_id);
 CREATE INDEX idx_digital_employee_execution_instances_provider ON digital_employee_execution_instances(tenant_id, provider_type, status);

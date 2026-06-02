@@ -120,7 +120,7 @@ INSERT INTO digital_employee_execution_instances (
     sqlc.arg('status')::varchar,
     COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
 )
-ON CONFLICT (digital_employee_id) WHERE deleted_at IS NULL DO UPDATE SET
+ON CONFLICT (tenant_id, digital_employee_id) WHERE deleted_at IS NULL DO UPDATE SET
     runtime_node_id = EXCLUDED.runtime_node_id,
     provider_type = EXCLUDED.provider_type,
     agent_home_dir = EXCLUDED.agent_home_dir,
