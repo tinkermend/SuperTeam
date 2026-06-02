@@ -343,8 +343,8 @@ type RuntimeEnrollment struct {
 	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
 	// Runtime 外部业务节点 ID
 	NodeID string `json:"node_id"`
-	// 用于发起接入的引导密钥 ID
-	BootstrapKeyID uuid.NullUUID `json:"bootstrap_key_id"`
+	// 用于发起接入的有效引导密钥 ID，不能为空
+	BootstrapKeyID uuid.UUID `json:"bootstrap_key_id"`
 	// 接入审批状态：pending、approved、rejected 或 revoked
 	Status string `json:"status"`
 	// Runtime hello 上报的接入请求快照

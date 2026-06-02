@@ -659,7 +659,7 @@ type RevokeRuntimeEnrollmentRow struct {
 	TenantID       uuid.UUID          `json:"tenant_id"`
 	RuntimeNodeID  uuid.UUID          `json:"runtime_node_id"`
 	NodeID         string             `json:"node_id"`
-	BootstrapKeyID uuid.NullUUID      `json:"bootstrap_key_id"`
+	BootstrapKeyID uuid.UUID          `json:"bootstrap_key_id"`
 	Status         string             `json:"status"`
 	RequestPayload []byte             `json:"request_payload"`
 	ApprovedBy     uuid.NullUUID      `json:"approved_by"`
@@ -922,22 +922,22 @@ INSERT INTO runtime_enrollments (
     rn.tenant_id,
     rn.id,
     $1::varchar,
-    $2::uuid,
-    $3::varchar,
-    COALESCE($4::jsonb, '{}'::jsonb),
-    $5::timestamptz
+    rbk.id,
+    'pending'::varchar,
+    COALESCE($2::jsonb, '{}'::jsonb),
+    $3::timestamptz
 FROM runtime_nodes rn
-LEFT JOIN runtime_bootstrap_keys rbk
-  ON rbk.id = $2::uuid
+JOIN runtime_bootstrap_keys rbk
+  ON rbk.id = $4::uuid
  AND rbk.tenant_id = rn.tenant_id
  AND rbk.status = 'active'
  AND rbk.revoked_at IS NULL
  AND (rbk.expires_at IS NULL OR rbk.expires_at > NOW())
-WHERE rn.id = $6::uuid
-  AND rn.tenant_id = $7::uuid
+WHERE rn.id = $5::uuid
+  AND rn.tenant_id = $6::uuid
+  AND rn.node_id = $1::varchar
   AND rn.disabled_at IS NULL
   AND rn.archived_at IS NULL
-  AND ($2::uuid IS NULL OR rbk.id IS NOT NULL)
 ON CONFLICT (tenant_id, node_id) DO UPDATE SET
     runtime_node_id = CASE
         WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.runtime_node_id
@@ -949,7 +949,7 @@ ON CONFLICT (tenant_id, node_id) DO UPDATE SET
     END,
     status = CASE
         WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.status
-        ELSE EXCLUDED.status
+        ELSE 'pending'
     END,
     request_payload = CASE
         WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.request_payload
@@ -962,10 +962,9 @@ RETURNING id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, req
 
 type UpsertRuntimeEnrollmentParams struct {
 	NodeID         string             `json:"node_id"`
-	BootstrapKeyID uuid.NullUUID      `json:"bootstrap_key_id"`
-	Status         string             `json:"status"`
 	RequestPayload []byte             `json:"request_payload"`
 	LastHelloAt    pgtype.Timestamptz `json:"last_hello_at"`
+	BootstrapKeyID uuid.UUID          `json:"bootstrap_key_id"`
 	RuntimeNodeID  uuid.UUID          `json:"runtime_node_id"`
 	TenantID       uuid.UUID          `json:"tenant_id"`
 }
@@ -973,10 +972,9 @@ type UpsertRuntimeEnrollmentParams struct {
 func (q *Queries) UpsertRuntimeEnrollment(ctx context.Context, arg UpsertRuntimeEnrollmentParams) (RuntimeEnrollment, error) {
 	row := q.db.QueryRow(ctx, UpsertRuntimeEnrollment,
 		arg.NodeID,
-		arg.BootstrapKeyID,
-		arg.Status,
 		arg.RequestPayload,
 		arg.LastHelloAt,
+		arg.BootstrapKeyID,
 		arg.RuntimeNodeID,
 		arg.TenantID,
 	)

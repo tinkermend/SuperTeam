@@ -858,6 +858,7 @@ components:
         - tenant_id
         - runtime_node_id
         - node_id
+        - bootstrap_key_id
         - status
         - created_at
         - updated_at

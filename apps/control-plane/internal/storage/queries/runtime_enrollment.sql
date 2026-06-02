@@ -52,22 +52,22 @@ INSERT INTO runtime_enrollments (
     rn.tenant_id,
     rn.id,
     sqlc.arg('node_id')::varchar,
-    sqlc.narg('bootstrap_key_id')::uuid,
-    sqlc.arg('status')::varchar,
+    rbk.id,
+    'pending'::varchar,
     COALESCE(sqlc.arg('request_payload')::jsonb, '{}'::jsonb),
     sqlc.arg('last_hello_at')::timestamptz
 FROM runtime_nodes rn
-LEFT JOIN runtime_bootstrap_keys rbk
-  ON rbk.id = sqlc.narg('bootstrap_key_id')::uuid
+JOIN runtime_bootstrap_keys rbk
+  ON rbk.id = sqlc.arg('bootstrap_key_id')::uuid
  AND rbk.tenant_id = rn.tenant_id
  AND rbk.status = 'active'
  AND rbk.revoked_at IS NULL
  AND (rbk.expires_at IS NULL OR rbk.expires_at > NOW())
 WHERE rn.id = sqlc.arg('runtime_node_id')::uuid
   AND rn.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND rn.node_id = sqlc.arg('node_id')::varchar
   AND rn.disabled_at IS NULL
   AND rn.archived_at IS NULL
-  AND (sqlc.narg('bootstrap_key_id')::uuid IS NULL OR rbk.id IS NOT NULL)
 ON CONFLICT (tenant_id, node_id) DO UPDATE SET
     runtime_node_id = CASE
         WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.runtime_node_id
@@ -79,7 +79,7 @@ ON CONFLICT (tenant_id, node_id) DO UPDATE SET
     END,
     status = CASE
         WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.status
-        ELSE EXCLUDED.status
+        ELSE 'pending'
     END,
     request_payload = CASE
         WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.request_payload

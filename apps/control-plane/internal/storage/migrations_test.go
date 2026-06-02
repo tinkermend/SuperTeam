@@ -223,6 +223,19 @@ func TestProviderSessionEventsRequireCorrelationID(t *testing.T) {
 	}
 }
 
+func TestRuntimeEnrollmentRequiresBootstrapKey(t *testing.T) {
+	body, err := os.ReadFile("migrations/001_initial.sql")
+	if err != nil {
+		t.Fatalf("read initial migration: %v", err)
+	}
+	sql := string(body)
+	block := createTableBlock(t, sql, "runtime_enrollments")
+
+	if !strings.Contains(block, "bootstrap_key_id UUID NOT NULL") {
+		t.Fatalf("expected runtime_enrollments.bootstrap_key_id to be NOT NULL, got block:\n%s", block)
+	}
+}
+
 func createTableBlock(t *testing.T, sql string, table string) string {
 	t.Helper()
 	startMarker := "CREATE TABLE " + table + " ("

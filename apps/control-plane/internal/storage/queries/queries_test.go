@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -1012,6 +1013,18 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	replacementBootstrapKey, err := testQueries.CreateRuntimeBootstrapKey(ctx, queries.CreateRuntimeBootstrapKeyParams{
+		TenantID:    uuid.NullUUID{UUID: tenantID, Valid: true},
+		Name:        "replacement-bootstrap",
+		KeyHash:     "replacement-bootstrap-key-hash",
+		Status:      "active",
+		ExpiresAt:   keyExpiresAt,
+		CreatedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		Description: pgtype.Text{String: "Replacement enrollment key", Valid: true},
+		Metadata:    []byte(`{"environment":"customer-vm"}`),
+	})
+	require.NoError(t, err)
+
 	activeKey, err := testQueries.GetActiveRuntimeBootstrapKeyByHash(ctx, queries.GetActiveRuntimeBootstrapKeyByHashParams{
 		TenantID: tenantID,
 		KeyHash:  "bootstrap-key-hash",
@@ -1036,6 +1049,42 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	alternateNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
 		NodeID:             "runtime-enroll-node-rebound",
 		Name:               "Runtime Enrollment Rebound Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           4,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	callerApprovedNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "runtime-enroll-node-caller-approved",
+		Name:               "Runtime Enrollment Caller Approved Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           4,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	rejectedNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "runtime-enroll-node-rejected",
+		Name:               "Runtime Enrollment Rejected Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           4,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	revokedNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "runtime-enroll-node-revoked",
+		Name:               "Runtime Enrollment Revoked Node",
 		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
 		MaxSlots:           4,
 		CurrentLoad:        0,
@@ -1089,12 +1138,14 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	`, otherTenantID, now).Scan(&otherTenantRuntimeNodeID)
 	require.NoError(t, err)
 
+	_, hasStatus := reflect.TypeOf(queries.UpsertRuntimeEnrollmentParams{}).FieldByName("Status")
+	assert.False(t, hasStatus)
+
 	enrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
 		TenantID:       tenantID,
 		RuntimeNodeID:  node.ID,
 		NodeID:         "runtime-enroll-node",
-		BootstrapKeyID: uuid.NullUUID{UUID: bootstrapKey.ID, Valid: true},
-		Status:         "pending",
+		BootstrapKeyID: bootstrapKey.ID,
 		RequestPayload: []byte(`{"node_id":"runtime-enroll-node","version":"0.1.0"}`),
 		LastHelloAt:    now,
 	})
@@ -1102,12 +1153,52 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	assert.Equal(t, "pending", enrollment.Status)
 
 	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  node.ID,
+		NodeID:         "runtime-enroll-node-no-bootstrap",
+		BootstrapKeyID: uuid.Nil,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-no-bootstrap"}`),
+		LastHelloAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	callerApprovedEnrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  callerApprovedNode.ID,
+		NodeID:         "runtime-enroll-node-caller-approved",
+		BootstrapKeyID: bootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-caller-approved"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "pending", callerApprovedEnrollment.Status)
+
+	_, err = testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   callerApprovedNode.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: callerApprovedEnrollment.ID, Valid: true},
+		TokenLookupHash: "0b0b4a2f2c33c8f20a7a50e617b9eac6f6e26f629dddf1cdaff1301ff68c60d5",
+		TokenSecretHash: "$2a$10$callerApprovedEnrollmentSessionHash",
+		ExpiresAt:       keyExpiresAt,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
 		TenantID:       otherTenantID,
 		RuntimeNodeID:  uuid.New(),
 		NodeID:         "runtime-enroll-node",
-		BootstrapKeyID: uuid.NullUUID{UUID: bootstrapKey.ID, Valid: true},
-		Status:         "pending",
+		BootstrapKeyID: bootstrapKey.ID,
 		RequestPayload: []byte(`{"node_id":"runtime-enroll-node","tenant":"other"}`),
+		LastHelloAt:    now,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  node.ID,
+		NodeID:         "runtime-enroll-node-mismatched",
+		BootstrapKeyID: bootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-mismatched"}`),
 		LastHelloAt:    now,
 	})
 	assert.ErrorIs(t, err, pgx.ErrNoRows)
@@ -1116,8 +1207,7 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 		TenantID:       tenantID,
 		RuntimeNodeID:  otherTenantRuntimeNodeID,
 		NodeID:         "runtime-enroll-node-wrong-runtime-tenant",
-		BootstrapKeyID: uuid.NullUUID{UUID: bootstrapKey.ID, Valid: true},
-		Status:         "pending",
+		BootstrapKeyID: bootstrapKey.ID,
 		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-wrong-runtime-tenant"}`),
 		LastHelloAt:    now,
 	})
@@ -1127,8 +1217,7 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 		TenantID:       tenantID,
 		RuntimeNodeID:  disabledNode.ID,
 		NodeID:         "runtime-enroll-node-disabled",
-		BootstrapKeyID: uuid.NullUUID{UUID: bootstrapKey.ID, Valid: true},
-		Status:         "pending",
+		BootstrapKeyID: bootstrapKey.ID,
 		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-disabled"}`),
 		LastHelloAt:    now,
 	})
@@ -1138,8 +1227,7 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 		TenantID:       tenantID,
 		RuntimeNodeID:  node.ID,
 		NodeID:         "runtime-enroll-node-wrong-bootstrap-tenant",
-		BootstrapKeyID: uuid.NullUUID{UUID: otherTenantBootstrapKey.ID, Valid: true},
-		Status:         "pending",
+		BootstrapKeyID: otherTenantBootstrapKey.ID,
 		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-wrong-bootstrap-tenant"}`),
 		LastHelloAt:    now,
 	})
@@ -1149,8 +1237,7 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 		TenantID:       tenantID,
 		RuntimeNodeID:  node.ID,
 		NodeID:         "runtime-enroll-node-revoked-bootstrap",
-		BootstrapKeyID: uuid.NullUUID{UUID: revokedBootstrapKey.ID, Valid: true},
-		Status:         "pending",
+		BootstrapKeyID: revokedBootstrapKey.ID,
 		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-revoked-bootstrap"}`),
 		LastHelloAt:    now,
 	})
@@ -1161,6 +1248,8 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 		SELECT COUNT(*)
 		FROM runtime_enrollments
 		WHERE node_id IN (
+			'runtime-enroll-node-no-bootstrap',
+			'runtime-enroll-node-mismatched',
 			'runtime-enroll-node-wrong-runtime-tenant',
 			'runtime-enroll-node-disabled',
 			'runtime-enroll-node-wrong-bootstrap-tenant',
@@ -1203,10 +1292,9 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	require.NoError(t, terminalHelloAt.Scan(time.Now().Add(2*time.Minute)))
 	terminalHello, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
 		TenantID:       tenantID,
-		RuntimeNodeID:  alternateNode.ID,
+		RuntimeNodeID:  node.ID,
 		NodeID:         "runtime-enroll-node",
-		BootstrapKeyID: uuid.NullUUID{},
-		Status:         "pending",
+		BootstrapKeyID: replacementBootstrapKey.ID,
 		RequestPayload: []byte(`{"node_id":"runtime-enroll-node","version":"rebound"}`),
 		LastHelloAt:    terminalHelloAt,
 	})
@@ -1214,8 +1302,7 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	assert.Equal(t, approved.ID, terminalHello.ID)
 	assert.Equal(t, "approved", terminalHello.Status)
 	assert.Equal(t, node.ID, terminalHello.RuntimeNodeID)
-	require.True(t, terminalHello.BootstrapKeyID.Valid)
-	assert.Equal(t, bootstrapKey.ID, terminalHello.BootstrapKeyID.UUID)
+	assert.Equal(t, bootstrapKey.ID, terminalHello.BootstrapKeyID)
 	assert.JSONEq(t, `{"node_id":"runtime-enroll-node","version":"0.1.0"}`, string(terminalHello.RequestPayload))
 	assert.WithinDuration(t, terminalHelloAt.Time, terminalHello.LastHelloAt.Time, time.Second)
 
@@ -1229,10 +1316,9 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 
 	rejectedEnrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
 		TenantID:       tenantID,
-		RuntimeNodeID:  node.ID,
+		RuntimeNodeID:  rejectedNode.ID,
 		NodeID:         "runtime-enroll-node-rejected",
-		BootstrapKeyID: uuid.NullUUID{UUID: bootstrapKey.ID, Valid: true},
-		Status:         "pending",
+		BootstrapKeyID: bootstrapKey.ID,
 		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-rejected"}`),
 		LastHelloAt:    now,
 	})
@@ -1263,10 +1349,9 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 
 	revokedEnrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
 		TenantID:       tenantID,
-		RuntimeNodeID:  node.ID,
+		RuntimeNodeID:  revokedNode.ID,
 		NodeID:         "runtime-enroll-node-revoked",
-		BootstrapKeyID: uuid.NullUUID{UUID: bootstrapKey.ID, Valid: true},
-		Status:         "pending",
+		BootstrapKeyID: bootstrapKey.ID,
 		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-revoked"}`),
 		LastHelloAt:    now,
 	})
@@ -1524,6 +1609,20 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	digitalBootstrapKeyExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, digitalBootstrapKeyExpiresAt.Scan(time.Now().Add(24*time.Hour)))
+	digitalBootstrapKey, err := testQueries.CreateRuntimeBootstrapKey(ctx, queries.CreateRuntimeBootstrapKeyParams{
+		TenantID:    uuid.NullUUID{UUID: tenantID, Valid: true},
+		Name:        "digital-employee-bootstrap",
+		KeyHash:     "digital-employee-bootstrap-key-hash",
+		Status:      "active",
+		ExpiresAt:   digitalBootstrapKeyExpiresAt,
+		CreatedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		Description: pgtype.Text{String: "Digital employee runtime enrollment key", Valid: true},
+		Metadata:    []byte(`{"environment":"digital-employee-test"}`),
+	})
+	require.NoError(t, err)
+
 	employee, err := testQueries.CreateDigitalEmployee(ctx, queries.CreateDigitalEmployeeParams{
 		TenantID:         tenantID,
 		TeamID:           uuid.NullUUID{UUID: teamID, Valid: true},
@@ -1559,8 +1658,7 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 		TenantID:       tenantID,
 		RuntimeNodeID:  node.ID,
 		NodeID:         "digital-employee-runtime-node",
-		BootstrapKeyID: uuid.NullUUID{},
-		Status:         "pending",
+		BootstrapKeyID: digitalBootstrapKey.ID,
 		RequestPayload: []byte(`{"node_id":"digital-employee-runtime-node","version":"0.1.0"}`),
 		LastHelloAt:    now,
 	})

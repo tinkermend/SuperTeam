@@ -148,7 +148,7 @@ CREATE TABLE runtime_enrollments (
     tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     runtime_node_id UUID NOT NULL,
     node_id VARCHAR(255) NOT NULL,
-    bootstrap_key_id UUID,
+    bootstrap_key_id UUID NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
     request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     approved_by UUID,
@@ -713,7 +713,7 @@ COMMENT ON COLUMN runtime_enrollments.id IS 'Runtime 接入记录主键 UUID';
 COMMENT ON COLUMN runtime_enrollments.tenant_id IS '所属租户 ID';
 COMMENT ON COLUMN runtime_enrollments.runtime_node_id IS 'Runtime 节点 UUID';
 COMMENT ON COLUMN runtime_enrollments.node_id IS 'Runtime 外部业务节点 ID';
-COMMENT ON COLUMN runtime_enrollments.bootstrap_key_id IS '用于发起接入的引导密钥 ID';
+COMMENT ON COLUMN runtime_enrollments.bootstrap_key_id IS '用于发起接入的有效引导密钥 ID，不能为空';
 COMMENT ON COLUMN runtime_enrollments.status IS '接入审批状态：pending、approved、rejected 或 revoked';
 COMMENT ON COLUMN runtime_enrollments.request_payload IS 'Runtime hello 上报的接入请求快照';
 COMMENT ON COLUMN runtime_enrollments.approved_by IS '批准接入的用户 ID';
