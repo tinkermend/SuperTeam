@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/runtime"
 )
 
@@ -26,6 +27,34 @@ type AuthService interface {
 
 type RuntimeSessionAuthService interface {
 	ValidateRuntimeSession(ctx context.Context, token string) (*runtime.RuntimeSessionValidation, error)
+}
+
+type ConsoleUserAuthService interface {
+	GetCurrentUserContext(ctx context.Context, token string) (*auth.CurrentUserContext, error)
+}
+
+func ConsoleUserAuth(authService ConsoleUserAuthService) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if authService == nil {
+				http.Error(w, "console auth is not configured", http.StatusUnauthorized)
+				return
+			}
+			cookie, err := r.Cookie(auth.SessionCookieName)
+			if err != nil || strings.TrimSpace(cookie.Value) == "" {
+				http.Error(w, "missing session cookie", http.StatusUnauthorized)
+				return
+			}
+			current, err := authService.GetCurrentUserContext(r.Context(), cookie.Value)
+			if err != nil {
+				http.Error(w, "invalid session", http.StatusUnauthorized)
+				return
+			}
+			ctx := context.WithValue(r.Context(), UserIDKey, current.User.ID)
+			ctx = context.WithValue(ctx, TenantIDKey, current.TenantID)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }
 
 func RuntimeAuth(authService AuthService) func(http.Handler) http.Handler {

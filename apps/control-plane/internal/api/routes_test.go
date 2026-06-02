@@ -96,6 +96,112 @@ func TestRuntimeEnrollmentHelloUsesCurrentContractPathWithoutRuntimeSessionAuth(
 	}
 }
 
+func TestRuntimeEnrollmentManagementRoutesRequireConsoleUserAuth(t *testing.T) {
+	service := &routeRuntimeService{}
+	server := NewServer(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+	)
+
+	tests := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodGet, path: "/api/v1/runtime/enrollments"},
+		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/" + routeTaskID + "/approve"},
+		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/" + routeTaskID + "/reject", body: `{"reason":"no"}`},
+		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/" + routeTaskID + "/revoke", body: `{"reason":"rotated"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			resp := httptest.NewRecorder()
+
+			server.ServeHTTP(resp, req)
+
+			if resp.Code != http.StatusUnauthorized {
+				t.Fatalf("expected unauthenticated enrollment management route to return 401, got %d: %s", resp.Code, resp.Body.String())
+			}
+		})
+	}
+	if service.listEnrollmentsCalled || service.approveEnrollmentCalled || service.rejectEnrollmentCalled || service.revokeEnrollmentCalled {
+		t.Fatalf("expected unauthenticated management routes not to call runtime service: %#v", service)
+	}
+}
+
+func TestRuntimeEnrollmentManagementRoutesUseConsoleUserAuth(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeRuntimeService{}
+	server := NewServerWithAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		authService,
+	)
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"admin","password":"admin"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp := httptest.NewRecorder()
+	server.ServeHTTP(loginResp, loginReq)
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("expected login to succeed, got %d: %s", loginResp.Code, loginResp.Body.String())
+	}
+	cookie := loginResp.Result().Cookies()[0]
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/enrollments", nil)
+	listReq.AddCookie(cookie)
+	listResp := httptest.NewRecorder()
+	server.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected authenticated list enrollments to succeed, got %d: %s", listResp.Code, listResp.Body.String())
+	}
+	if !service.listEnrollmentsCalled {
+		t.Fatalf("expected list enrollments to call runtime service")
+	}
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/enrollments/"+routeTaskID+"/approve", nil)
+	approveReq.AddCookie(cookie)
+	approveResp := httptest.NewRecorder()
+	server.ServeHTTP(approveResp, approveReq)
+	if approveResp.Code != http.StatusOK {
+		t.Fatalf("expected authenticated approve enrollment to succeed, got %d: %s", approveResp.Code, approveResp.Body.String())
+	}
+	if !service.approveEnrollmentCalled || service.approvedEnrollmentID.String() != routeTaskID {
+		t.Fatalf("expected approve enrollment service call, got called=%v id=%s", service.approveEnrollmentCalled, service.approvedEnrollmentID)
+	}
+
+	rejectReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/enrollments/"+routeTaskID+"/reject", strings.NewReader(`{"reason":"bad bootstrap"}`))
+	rejectReq.Header.Set("Content-Type", "application/json")
+	rejectReq.AddCookie(cookie)
+	rejectResp := httptest.NewRecorder()
+	server.ServeHTTP(rejectResp, rejectReq)
+	if rejectResp.Code != http.StatusOK {
+		t.Fatalf("expected authenticated reject enrollment to succeed, got %d: %s", rejectResp.Code, rejectResp.Body.String())
+	}
+	if !service.rejectEnrollmentCalled || service.rejectedReason != "bad bootstrap" {
+		t.Fatalf("expected reject enrollment service call with reason, got called=%v reason=%q", service.rejectEnrollmentCalled, service.rejectedReason)
+	}
+
+	revokeReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/enrollments/"+routeTaskID+"/revoke", strings.NewReader(`{"reason":"rotated"}`))
+	revokeReq.Header.Set("Content-Type", "application/json")
+	revokeReq.AddCookie(cookie)
+	revokeResp := httptest.NewRecorder()
+	server.ServeHTTP(revokeResp, revokeReq)
+	if revokeResp.Code != http.StatusOK {
+		t.Fatalf("expected authenticated revoke enrollment to succeed, got %d: %s", revokeResp.Code, revokeResp.Body.String())
+	}
+	if !service.revokeEnrollmentCalled || service.revokedReason != "rotated" {
+		t.Fatalf("expected revoke enrollment service call with reason, got called=%v reason=%q", service.revokeEnrollmentCalled, service.revokedReason)
+	}
+}
+
 func TestLegacyRuntimeClaimRouteIsNotRegistered(t *testing.T) {
 	server := NewServer(
 		handlers.NewTaskHandler(&routeTaskService{}),
@@ -690,7 +796,7 @@ func TestRuntimeBootstrapHelloBodyCannotAccessProtectedRuntimeRoutes(t *testing.
 	}
 }
 
-func TestRuntimeSessionRenewRequiresSessionAuthAndReturnsRenewedSession(t *testing.T) {
+func TestRuntimeSessionRenewRequiresSessionAuthAndReturnsBareSession(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServerWithRuntimeSessionAuth(
 		handlers.NewTaskHandler(&routeTaskService{}),
@@ -718,15 +824,54 @@ func TestRuntimeSessionRenewRequiresSessionAuthAndReturnsRenewedSession(t *testi
 		t.Fatalf("expected renew to use bearer session token, got %q", service.renewedSessionToken)
 	}
 	var body struct {
-		Session struct {
-			NodeID string `json:"node_id"`
-		} `json:"session"`
+		ID        string `json:"id"`
+		NodeID    string `json:"node_id"`
+		ExpiresAt string `json:"expires_at"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode renew response: %v", err)
 	}
-	if body.Session.NodeID != "node-session" {
-		t.Fatalf("expected renewed session node id, got %#v", body.Session)
+	if body.ID != "33333333-3333-3333-3333-333333333333" || body.NodeID != "node-session" || body.ExpiresAt == "" {
+		t.Fatalf("expected bare renewed session response, got %#v", body)
+	}
+}
+
+func TestRuntimeSessionCanonicalRenewValidatesPathSessionID(t *testing.T) {
+	service := &routeRuntimeService{}
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+		service,
+	)
+
+	mismatchReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/sessions/55555555-5555-5555-5555-555555555555/renew", nil)
+	mismatchReq.Header.Set("Authorization", "Bearer session-token")
+	mismatchResp := httptest.NewRecorder()
+	server.ServeHTTP(mismatchResp, mismatchReq)
+	if mismatchResp.Code != http.StatusForbidden {
+		t.Fatalf("expected canonical renew path session mismatch to be rejected, got %d: %s", mismatchResp.Code, mismatchResp.Body.String())
+	}
+	if service.renewedSessionToken != "" {
+		t.Fatalf("expected mismatch not to call renew service, got token %q", service.renewedSessionToken)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/sessions/33333333-3333-3333-3333-333333333333/renew", nil)
+	req.Header.Set("Authorization", "Bearer session-token")
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected canonical renew to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode canonical renew response: %v", err)
+	}
+	if body["id"] != "33333333-3333-3333-3333-333333333333" || body["expires_at"] == nil {
+		t.Fatalf("expected canonical renew to return bare runtime session, got %#v", body)
+	}
+	if _, ok := body["session"]; ok {
+		t.Fatalf("did not expect wrapped session response, got %#v", body)
 	}
 }
 
@@ -754,6 +899,33 @@ func TestRuntimeCapabilitiesRejectPathNodeMismatch(t *testing.T) {
 	}
 }
 
+func TestRuntimeCapabilitiesSuccessReturnsTopLevelArray(t *testing.T) {
+	service := &routeRuntimeService{}
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+		service,
+	)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/runtime/nodes/node-session/capabilities", strings.NewReader(`{"capabilities":[{"capability_type":"provider","capability_key":"codex","provider_type":"codex","available":true}]}`))
+	req.Header.Set("Authorization", "Bearer session-token")
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected capabilities upsert to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("expected top-level capability array response: %v; body=%s", err, resp.Body.String())
+	}
+	if len(body) != 1 || body[0]["capability_type"] != "provider" || body[0]["capability_key"] != "codex" {
+		t.Fatalf("unexpected capabilities response: %#v", body)
+	}
+}
+
 func TestRuntimeRegisterRejectsMismatchedAuthenticatedNodeIdentity(t *testing.T) {
 	server := NewServer(
 		handlers.NewTaskHandler(&routeTaskService{}),
@@ -775,11 +947,18 @@ func TestRuntimeRegisterRejectsMismatchedAuthenticatedNodeIdentity(t *testing.T)
 }
 
 type routeRuntimeService struct {
-	enrollHelloReq        runtime.EnrollHelloRequest
-	heartbeatReq          runtime.UpdateHeartbeatRequest
-	validatedSessionToken string
-	renewedSessionToken   string
-	upsertedCapabilities  []runtime.RuntimeCapabilityInput
+	enrollHelloReq          runtime.EnrollHelloRequest
+	heartbeatReq            runtime.UpdateHeartbeatRequest
+	validatedSessionToken   string
+	renewedSessionToken     string
+	upsertedCapabilities    []runtime.RuntimeCapabilityInput
+	listEnrollmentsCalled   bool
+	approveEnrollmentCalled bool
+	rejectEnrollmentCalled  bool
+	revokeEnrollmentCalled  bool
+	approvedEnrollmentID    uuid.UUID
+	rejectedReason          string
+	revokedReason           string
 }
 
 func (s *routeRuntimeService) RegisterNode(ctx context.Context, req runtime.RegisterNodeRequest) (*runtime.Node, error) {
@@ -817,18 +996,25 @@ func (s *routeRuntimeService) EnrollHello(ctx context.Context, req runtime.Enrol
 }
 
 func (s *routeRuntimeService) ListRuntimeEnrollments(ctx context.Context, filter runtime.ListRuntimeEnrollmentsFilter) ([]*runtime.RuntimeEnrollment, error) {
+	s.listEnrollmentsCalled = true
 	return []*runtime.RuntimeEnrollment{}, nil
 }
 
 func (s *routeRuntimeService) ApproveEnrollment(ctx context.Context, req runtime.ApproveEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
+	s.approveEnrollmentCalled = true
+	s.approvedEnrollmentID = req.EnrollmentID
 	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusApproved}, nil
 }
 
 func (s *routeRuntimeService) RejectEnrollment(ctx context.Context, req runtime.RejectEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
+	s.rejectEnrollmentCalled = true
+	s.rejectedReason = req.Reason
 	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRejected, RejectReason: &req.Reason}, nil
 }
 
 func (s *routeRuntimeService) RevokeEnrollment(ctx context.Context, req runtime.RevokeEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
+	s.revokeEnrollmentCalled = true
+	s.revokedReason = req.Reason
 	return &runtime.RuntimeEnrollment{ID: req.EnrollmentID, TenantID: runtime.DefaultTenantID, Status: runtime.RuntimeEnrollmentStatusRevoked, RevokeReason: &req.Reason}, nil
 }
 
@@ -862,7 +1048,20 @@ func (s *routeRuntimeService) RenewRuntimeSession(ctx context.Context, token str
 
 func (s *routeRuntimeService) UpsertCapabilities(ctx context.Context, token string, capabilities []runtime.RuntimeCapabilityInput) ([]runtime.RuntimeCapability, error) {
 	s.upsertedCapabilities = capabilities
-	return []runtime.RuntimeCapability{}, nil
+	return []runtime.RuntimeCapability{{
+		ID:             uuid.MustParse("66666666-6666-6666-6666-666666666666"),
+		TenantID:       runtime.DefaultTenantID,
+		RuntimeNodeID:  uuid.MustParse("44444444-4444-4444-4444-444444444444"),
+		CapabilityType: capabilities[0].CapabilityType,
+		CapabilityKey:  capabilities[0].CapabilityKey,
+		ProviderType:   capabilities[0].ProviderType,
+		Available:      capabilities[0].Available,
+		Status:         "active",
+		HealthStatus:   "ok",
+		LastSeenAt:     time.Now(),
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}}, nil
 }
 
 type routeTaskService struct {

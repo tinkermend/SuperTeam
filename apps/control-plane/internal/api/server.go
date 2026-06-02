@@ -77,12 +77,7 @@ func NewServerWithAuthz(
 	if authorizer != nil && runtimeHandler != nil {
 		runtimeHandler.SetAuthorizer(authorizer)
 	}
-	if authService != nil {
-		auth.HandlerFromMux(auth.NewHandler(authService, authorizer), server.router)
-	}
-	if server.authzCenterHandler != nil {
-		authzcenter.HandlerFromMux(server.authzCenterHandler, server.router)
-	}
+	server.registerRoutes()
 	return server
 }
 
@@ -131,10 +126,14 @@ func (s *Server) registerRoutes() {
 			r.Get("/nodes/{id}", s.runtimeHandler.GetNodeByID)
 			r.Post("/enrollments/hello", s.runtimeHandler.EnrollHello)
 			r.Post("/enroll/hello", s.runtimeHandler.EnrollHello)
-			r.Get("/enrollments", s.runtimeHandler.ListRuntimeEnrollments)
-			r.Post("/enrollments/{enrollmentId}/approve", s.runtimeHandler.ApproveEnrollment)
-			r.Post("/enrollments/{enrollmentId}/reject", s.runtimeHandler.RejectEnrollment)
-			r.Post("/enrollments/{enrollmentId}/revoke", s.runtimeHandler.RevokeEnrollment)
+
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/enrollments", s.runtimeHandler.ListRuntimeEnrollments)
+				r.Post("/enrollments/{enrollmentId}/approve", s.runtimeHandler.ApproveEnrollment)
+				r.Post("/enrollments/{enrollmentId}/reject", s.runtimeHandler.RejectEnrollment)
+				r.Post("/enrollments/{enrollmentId}/revoke", s.runtimeHandler.RevokeEnrollment)
+			})
 
 			r.Group(func(r chi.Router) {
 				if s.runtimeAuthService != nil {

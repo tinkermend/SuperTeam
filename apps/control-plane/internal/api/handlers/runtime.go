@@ -219,6 +219,17 @@ func (h *RuntimeHandler) RevokeEnrollment(w http.ResponseWriter, r *http.Request
 }
 
 func (h *RuntimeHandler) RenewRuntimeSession(w http.ResponseWriter, r *http.Request) {
+	if sessionIDText := chi.URLParam(r, "sessionId"); sessionIDText != "" {
+		sessionID, err := uuid.Parse(sessionIDText)
+		if err != nil {
+			http.Error(w, "invalid session id", http.StatusBadRequest)
+			return
+		}
+		if sessionID != middleware.GetRuntimeSessionID(r.Context()) {
+			http.Error(w, "authenticated session does not match path session_id", http.StatusForbidden)
+			return
+		}
+	}
 	token := middleware.GetRuntimeToken(r.Context())
 	if token == "" {
 		http.Error(w, "runtime session token not found in context", http.StatusUnauthorized)
@@ -230,7 +241,7 @@ func (h *RuntimeHandler) RenewRuntimeSession(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(runtimeSessionRenewResponse{Session: newRuntimeSessionResponse(session)})
+	json.NewEncoder(w).Encode(newRuntimeSessionResponse(session))
 }
 
 func (h *RuntimeHandler) UpsertCapabilities(w http.ResponseWriter, r *http.Request) {
@@ -262,7 +273,7 @@ func (h *RuntimeHandler) UpsertCapabilities(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(runtimeCapabilitiesResponse{Capabilities: newRuntimeCapabilityResponses(result)})
+	json.NewEncoder(w).Encode(newRuntimeCapabilityResponses(result))
 }
 
 func (h *RuntimeHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {

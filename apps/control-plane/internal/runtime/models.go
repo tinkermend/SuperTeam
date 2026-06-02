@@ -114,19 +114,19 @@ type RuntimeSession struct {
 }
 
 type RuntimeCapabilityInput struct {
-	CapabilityType   string
-	CapabilityKey    string
-	ProviderType     string
-	ProviderVersion  *string
-	BinaryPath       *string
-	Available        bool
-	WorkspaceBaseDir *string
-	Capacity         map[string]interface{}
-	Labels           map[string]interface{}
-	Status           string
-	Details          map[string]interface{}
-	HealthStatus     string
-	Metadata         map[string]interface{}
+	CapabilityType   string                 `json:"capability_type"`
+	CapabilityKey    string                 `json:"capability_key"`
+	ProviderType     string                 `json:"provider_type"`
+	ProviderVersion  *string                `json:"provider_version"`
+	BinaryPath       *string                `json:"binary_path"`
+	Available        bool                   `json:"available"`
+	WorkspaceBaseDir *string                `json:"workspace_base_dir"`
+	Capacity         map[string]interface{} `json:"capacity"`
+	Labels           map[string]interface{} `json:"labels"`
+	Status           string                 `json:"status"`
+	Details          map[string]interface{} `json:"details"`
+	HealthStatus     string                 `json:"health_status"`
+	Metadata         map[string]interface{} `json:"metadata"`
 }
 
 type RuntimeCapability struct {
