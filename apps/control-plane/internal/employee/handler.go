@@ -31,6 +31,10 @@ func NewHandler(service HandlerService) *HTTPHandler {
 }
 
 func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Request) {
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
 	tenantID, ok := tenantIDFromContext(w, r)
 	if !ok {
 		return
@@ -39,7 +43,7 @@ func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Reques
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	status := DigitalEmployeeStatus(r.URL.Query().Get("status"))
 
-	employees, err := h.service.ListDigitalEmployees(r.Context(), ListDigitalEmployeesRequest{
+	employees, err := service.ListDigitalEmployees(r.Context(), ListDigitalEmployeesRequest{
 		TenantID: tenantID,
 		Status:   status,
 		Offset:   int32(offset),
@@ -53,6 +57,10 @@ func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Request) {
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
 	tenantID, ok := tenantIDFromContext(w, r)
 	if !ok {
 		return
@@ -72,7 +80,7 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	employee, err := h.service.CreateDraft(r.Context(), CreateDraftRequest{
+	employee, err := service.CreateDraft(r.Context(), CreateDraftRequest{
 		TenantID:         tenantID,
 		TeamID:           req.TeamID,
 		Name:             req.Name,
@@ -92,11 +100,15 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *HTTPHandler) GetDigitalEmployee(w http.ResponseWriter, r *http.Request) {
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
 	tenantID, employeeID, ok := tenantAndEmployeeIDFromRequest(w, r)
 	if !ok {
 		return
 	}
-	employee, err := h.service.GetDigitalEmployee(r.Context(), tenantID, employeeID)
+	employee, err := service.GetDigitalEmployee(r.Context(), tenantID, employeeID)
 	if err != nil {
 		writeHandlerError(w, err)
 		return
@@ -105,6 +117,10 @@ func (h *HTTPHandler) GetDigitalEmployee(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *HTTPHandler) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request) {
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
 	tenantID, employeeID, ok := tenantAndEmployeeIDFromRequest(w, r)
 	if !ok {
 		return
@@ -116,7 +132,7 @@ func (h *HTTPHandler) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	employee, err := h.service.UpdateStatus(r.Context(), UpdateStatusRequest{
+	employee, err := service.UpdateStatus(r.Context(), UpdateStatusRequest{
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
 		Status:            req.Status,
@@ -129,11 +145,15 @@ func (h *HTTPHandler) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http
 }
 
 func (h *HTTPHandler) GetDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request) {
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
 	tenantID, employeeID, ok := tenantAndEmployeeIDFromRequest(w, r)
 	if !ok {
 		return
 	}
-	instance, err := h.service.GetExecutionInstance(r.Context(), tenantID, employeeID)
+	instance, err := service.GetExecutionInstance(r.Context(), tenantID, employeeID)
 	if err != nil {
 		writeHandlerError(w, err)
 		return
@@ -142,6 +162,10 @@ func (h *HTTPHandler) GetDigitalEmployeeExecutionInstance(w http.ResponseWriter,
 }
 
 func (h *HTTPHandler) UpsertDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request) {
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
 	tenantID, employeeID, ok := tenantAndEmployeeIDFromRequest(w, r)
 	if !ok {
 		return
@@ -161,7 +185,7 @@ func (h *HTTPHandler) UpsertDigitalEmployeeExecutionInstance(w http.ResponseWrit
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	instance, err := h.service.BindExecutionInstance(r.Context(), BindExecutionInstanceRequest{
+	instance, err := service.BindExecutionInstance(r.Context(), BindExecutionInstanceRequest{
 		TenantID:             tenantID,
 		DigitalEmployeeID:    employeeID,
 		RuntimeNodeID:        req.RuntimeNodeID,
@@ -179,6 +203,14 @@ func (h *HTTPHandler) UpsertDigitalEmployeeExecutionInstance(w http.ResponseWrit
 		return
 	}
 	writeJSON(w, http.StatusOK, executionInstanceResponseFromDomain(instance))
+}
+
+func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService, bool) {
+	if h == nil || h.service == nil {
+		http.Error(w, "employee service is not configured", http.StatusServiceUnavailable)
+		return nil, false
+	}
+	return h.service, true
 }
 
 type digitalEmployeeResponse struct {

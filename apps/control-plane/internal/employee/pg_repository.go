@@ -22,6 +22,23 @@ func NewPgRepository(q *queries.Queries) Repository {
 }
 
 func (r *PgRepository) CreateDigitalEmployee(ctx context.Context, params CreateDigitalEmployeeParams) (DigitalEmployeeRecord, error) {
+	permissionPolicy, err := jsonbFromMap(params.PermissionPolicy, "permission_policy")
+	if err != nil {
+		return DigitalEmployeeRecord{}, err
+	}
+	contextPolicy, err := jsonbFromMap(params.ContextPolicy, "context_policy")
+	if err != nil {
+		return DigitalEmployeeRecord{}, err
+	}
+	approvalPolicy, err := jsonbFromMap(params.ApprovalPolicy, "approval_policy")
+	if err != nil {
+		return DigitalEmployeeRecord{}, err
+	}
+	metadata, err := jsonbFromMap(params.Metadata, "metadata")
+	if err != nil {
+		return DigitalEmployeeRecord{}, err
+	}
+
 	employee, err := r.q.CreateDigitalEmployee(ctx, queries.CreateDigitalEmployeeParams{
 		TenantID:         params.TenantID,
 		TeamID:           nullUUIDFromPtr(params.TeamID),
@@ -29,11 +46,11 @@ func (r *PgRepository) CreateDigitalEmployee(ctx context.Context, params CreateD
 		Role:             params.Role,
 		Description:      textFromPtr(params.Description),
 		Status:           string(params.Status),
-		PermissionPolicy: jsonbFromMap(params.PermissionPolicy),
-		ContextPolicy:    jsonbFromMap(params.ContextPolicy),
-		ApprovalPolicy:   jsonbFromMap(params.ApprovalPolicy),
+		PermissionPolicy: permissionPolicy,
+		ContextPolicy:    contextPolicy,
+		ApprovalPolicy:   approvalPolicy,
 		RiskLevel:        params.RiskLevel,
-		Metadata:         jsonbFromMap(params.Metadata),
+		Metadata:         metadata,
 	})
 	if err != nil {
 		return DigitalEmployeeRecord{}, err
@@ -87,16 +104,41 @@ func (r *PgRepository) UpdateDigitalEmployeeStatus(ctx context.Context, tenantID
 }
 
 func (r *PgRepository) UpsertDigitalEmployeeExecutionInstance(ctx context.Context, params UpsertExecutionInstanceParams) (DigitalEmployeeExecutionInstanceRecord, error) {
+	workspacePolicy, err := jsonbFromMap(params.WorkspacePolicy, "workspace_policy")
+	if err != nil {
+		return DigitalEmployeeExecutionInstanceRecord{}, err
+	}
+	sessionPolicy, err := jsonbFromMap(params.SessionPolicy, "session_policy")
+	if err != nil {
+		return DigitalEmployeeExecutionInstanceRecord{}, err
+	}
+	runtimeSelector, err := jsonbFromMap(params.RuntimeSelector, "runtime_selector")
+	if err != nil {
+		return DigitalEmployeeExecutionInstanceRecord{}, err
+	}
+	capacityRequirements, err := jsonbFromMap(params.CapacityRequirements, "capacity_requirements")
+	if err != nil {
+		return DigitalEmployeeExecutionInstanceRecord{}, err
+	}
+	fallbackPolicy, err := jsonbFromMap(params.FallbackPolicy, "fallback_policy")
+	if err != nil {
+		return DigitalEmployeeExecutionInstanceRecord{}, err
+	}
+	metadata, err := jsonbFromMap(params.Metadata, "metadata")
+	if err != nil {
+		return DigitalEmployeeExecutionInstanceRecord{}, err
+	}
+
 	instance, err := r.q.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
 		ProviderType:         params.ProviderType,
 		AgentHomeDir:         params.AgentHomeDir,
-		WorkspacePolicy:      jsonbFromMap(params.WorkspacePolicy),
-		SessionPolicy:        jsonbFromMap(params.SessionPolicy),
-		RuntimeSelector:      jsonbFromMap(params.RuntimeSelector),
-		CapacityRequirements: jsonbFromMap(params.CapacityRequirements),
-		FallbackPolicy:       jsonbFromMap(params.FallbackPolicy),
+		WorkspacePolicy:      workspacePolicy,
+		SessionPolicy:        sessionPolicy,
+		RuntimeSelector:      runtimeSelector,
+		CapacityRequirements: capacityRequirements,
+		FallbackPolicy:       fallbackPolicy,
 		Status:               string(params.Status),
-		Metadata:             jsonbFromMap(params.Metadata),
+		Metadata:             metadata,
 		RuntimeNodeID:        params.RuntimeNodeID,
 		DigitalEmployeeID:    params.DigitalEmployeeID,
 		TenantID:             params.TenantID,
@@ -262,12 +304,12 @@ func timeFromTimestamptz(value pgtype.Timestamptz) time.Time {
 	return value.Time.UTC()
 }
 
-func jsonbFromMap(value map[string]any) []byte {
+func jsonbFromMap(value map[string]any, field string) ([]byte, error) {
 	encoded, err := json.Marshal(cloneMap(value))
 	if err != nil {
-		return []byte(`{}`)
+		return nil, fmt.Errorf("encode %s: %w", field, err)
 	}
-	return encoded
+	return encoded, nil
 }
 
 func mapFromJSONB(raw []byte, field string) (map[string]any, error) {

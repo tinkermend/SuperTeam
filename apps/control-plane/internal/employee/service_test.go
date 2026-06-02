@@ -3,6 +3,7 @@ package employee
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -169,6 +170,16 @@ func TestServiceValidation(t *testing.T) {
 				t.Fatalf("expected validation error")
 			}
 		})
+	}
+}
+
+func TestJSONBFromMapRejectsUnsupportedValues(t *testing.T) {
+	_, err := jsonbFromMap(map[string]any{"bad": func() {}}, "metadata")
+	if err == nil {
+		t.Fatalf("expected JSONB encoding error")
+	}
+	if !strings.Contains(err.Error(), "metadata") {
+		t.Fatalf("expected field name in error, got %v", err)
 	}
 }
 
