@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Web 登录页按中心品牌版视觉方向重做，新增浅蓝网格背景、SuperTeam 品牌标识、中文登录表单和更稳定的输入/按钮尺寸节奏。
 - Control Plane 初始数据库 schema 重写为 UUID-first 形态，合并早期 auth session、Web 登录日志、操作日志和中文注释迁移，并新增默认租户/团队骨架以支撑后续分布式与多团队数字员工管理。
 - 任务、执行、审计、工件、Web 登录日志和操作日志改为应用层校验的 UUID 引用，避免跨模块重 FK 和级联删除；任务、工件、用户、Runtime 节点等核心实体补充软删除、禁用、归档、取消或终止时间戳。
 - Runtime 任务状态机允许已领取任务直接进入 completed/failed，修复当前 claim -> events -> complete/fail HTTP 合约没有单独 running 接口时的完成链路阻断。

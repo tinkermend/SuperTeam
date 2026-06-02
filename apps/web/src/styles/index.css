@@ -38,6 +38,54 @@
   }
 }
 
+@layer components {
+  .superteam-auth-shell {
+    background:
+      linear-gradient(132deg, rgba(207, 232, 246, 0.82), rgba(255, 255, 255, 0.96) 42%, rgba(210, 229, 250, 0.88)),
+      repeating-linear-gradient(90deg, rgba(37, 99, 235, 0.045) 0 1px, transparent 1px 34px),
+      repeating-linear-gradient(0deg, rgba(37, 99, 235, 0.04) 0 1px, transparent 1px 34px);
+  }
+
+  .superteam-auth-shell::before {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(168deg, transparent 0 39%, rgba(235, 248, 255, 0.74) 40% 56%, transparent 57%),
+      linear-gradient(350deg, transparent 0 57%, rgba(230, 246, 255, 0.48) 58% 70%, transparent 71%);
+    content: '';
+  }
+
+  .superteam-auth-shell::after {
+    position: absolute;
+    inset: 26% -8% auto;
+    height: 28%;
+    background: linear-gradient(172deg, transparent, rgba(255, 255, 255, 0.42) 42%, transparent 76%);
+    content: '';
+  }
+
+  .superteam-auth-mark {
+    position: relative;
+    display: grid;
+    width: 5.25rem;
+    height: 5.25rem;
+    place-items: center;
+    border: 1px solid rgba(147, 197, 253, 0.66);
+    border-radius: 1.35rem;
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(226, 242, 255, 0.92)),
+      var(--superteam-glass-bg, rgba(255, 255, 255, 0.78));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.96),
+      0 18px 42px rgba(37, 99, 235, 0.16);
+  }
+
+  .superteam-auth-card {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 24px 70px rgba(15, 23, 42, 0.1);
+  }
+}
+
 @utility container {
   margin-inline: auto;
   padding-inline: 2rem;

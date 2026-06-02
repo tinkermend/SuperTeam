@@ -26,7 +26,7 @@ describe('UserAuthForm', () => {
   it('shows validation messages when submitting empty form', async () => {
     const screen = await render(<UserAuthForm />)
 
-    await userEvent.click(screen.getByRole('button', { name: /^Sign in$/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^登录$/i }))
 
     await expect.element(screen.getByText('请输入用户名。')).toBeVisible()
     await expect.element(screen.getByText('请输入密码。')).toBeVisible()
@@ -36,11 +36,11 @@ describe('UserAuthForm', () => {
     const screen = await render(<UserAuthForm />)
 
     await userEvent.fill(
-      screen.getByRole('textbox', { name: /^Username$/i }),
+      screen.getByRole('textbox', { name: /^账号$/i }),
       'admin'
     )
-    await userEvent.fill(screen.getByLabelText(/^Password$/i), 'admin')
-    await userEvent.click(screen.getByRole('button', { name: /^Sign in$/i }))
+    await userEvent.fill(screen.getByLabelText(/^密码$/i), 'admin')
+    await userEvent.click(screen.getByRole('button', { name: /^登录$/i }))
 
     await vi.waitFor(() =>
       expect(login).toHaveBeenCalledWith({
@@ -55,11 +55,11 @@ describe('UserAuthForm', () => {
     const screen = await render(<UserAuthForm redirectTo='/tasks' />)
 
     await userEvent.fill(
-      screen.getByRole('textbox', { name: /^Username$/i }),
+      screen.getByRole('textbox', { name: /^账号$/i }),
       'admin'
     )
-    await userEvent.fill(screen.getByLabelText(/^Password$/i), 'admin')
-    await userEvent.click(screen.getByRole('button', { name: /^Sign in$/i }))
+    await userEvent.fill(screen.getByLabelText(/^密码$/i), 'admin')
+    await userEvent.click(screen.getByRole('button', { name: /^登录$/i }))
 
     await vi.waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: '/tasks', replace: true })
@@ -71,11 +71,11 @@ describe('UserAuthForm', () => {
     const screen = await render(<UserAuthForm />)
 
     await userEvent.fill(
-      screen.getByRole('textbox', { name: /^Username$/i }),
+      screen.getByRole('textbox', { name: /^账号$/i }),
       'admin'
     )
-    await userEvent.fill(screen.getByLabelText(/^Password$/i), 'wrong')
-    await userEvent.click(screen.getByRole('button', { name: /^Sign in$/i }))
+    await userEvent.fill(screen.getByLabelText(/^密码$/i), 'wrong')
+    await userEvent.click(screen.getByRole('button', { name: /^登录$/i }))
 
     await expect.element(screen.getByText('用户名或密码不正确')).toBeVisible()
     expect(navigate).not.toHaveBeenCalled()

@@ -63,7 +63,7 @@ export function UserAuthForm({
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className={cn('grid gap-3', className)}
+        className={cn('flex flex-col gap-4', className)}
         {...props}
       >
         <FormField
@@ -71,9 +71,13 @@ export function UserAuthForm({
           name='username'
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Username</FormLabel>
+              <FormLabel>账号</FormLabel>
               <FormControl>
-                <Input placeholder='admin' {...field} />
+                <Input
+                  className='h-11 rounded-lg bg-white/88 px-4'
+                  placeholder='admin'
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -84,9 +88,13 @@ export function UserAuthForm({
           name='password'
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Password</FormLabel>
+              <FormLabel>密码</FormLabel>
               <FormControl>
-                <PasswordInput placeholder='********' {...field} />
+                <PasswordInput
+                  className='h-11 rounded-lg bg-white/88 px-4 pe-10'
+                  placeholder='请输入密码'
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -97,9 +105,13 @@ export function UserAuthForm({
             {formError}
           </p>
         ) : null}
-        <Button className='mt-2' disabled={isLoading}>
-          {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
-          Sign in
+        <Button className='mt-1 h-12 rounded-lg text-base' disabled={isLoading}>
+          {isLoading ? (
+            <Loader2 className='animate-spin' data-icon='inline-start' />
+          ) : (
+            <LogIn data-icon='inline-start' />
+          )}
+          登录
         </Button>
       </form>
     </Form>
