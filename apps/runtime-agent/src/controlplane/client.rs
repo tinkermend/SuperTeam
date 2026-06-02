@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use super::models::{
     EnrollHelloRequest, EnrollHelloResponse, HeartbeatRequest, HeartbeatResponse,
-    RegisterNodeRequest, RegisterNodeResponse, RuntimeCapabilityInput, RuntimeCapabilityResponse,
-    RuntimeSessionResponse, Task,
+    RegisterNodeRequest, RegisterNodeResponse, RuntimeCapabilitiesRequest, RuntimeCapabilityInput,
+    RuntimeCapabilityResponse, RuntimeSessionResponse, Task,
 };
 
 /// Control Plane HTTP client
@@ -147,7 +147,7 @@ impl ControlPlaneClient {
             .put(&url)
             .bearer_auth(&self.token)
             .headers(self.runtime_headers()?)
-            .json(&capabilities)
+            .json(&RuntimeCapabilitiesRequest { capabilities })
             .send()
             .await
             .context("Failed to send runtime capabilities request")?;

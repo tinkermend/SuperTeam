@@ -2,6 +2,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 use serde_json::json;
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use tokio::task::JoinHandle;
 
 use crate::config::RuntimeConfig;
 use crate::controlplane::client::ControlPlaneClient;
@@ -10,6 +12,10 @@ use crate::controlplane::models::{
 };
 use crate::executor::TaskExecutor;
 use crate::session::RuntimeSession;
+
+const SESSION_RENEWAL_MARGIN: Duration = Duration::from_secs(5 * 60);
+const SESSION_RENEWAL_RETRY_DELAY: Duration = Duration::from_secs(30);
+const SESSION_RENEWAL_FALLBACK_DELAY: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeSnapshot {
@@ -60,14 +66,14 @@ impl RuntimeDaemon {
             return Ok(());
         }
 
+        let Some(session_response) = hello.session.as_ref() else {
+            anyhow::bail!("approved runtime enrollment did not return a session");
+        };
         let session = RuntimeSession::new(
             hello.session_token.unwrap_or_default(),
-            hello
-                .session
-                .as_ref()
-                .map(|session| session.expires_at.clone()),
+            Some(session_response.expires_at.clone()),
         );
-        if hello.session.is_none() || session.is_empty() {
+        if session.is_empty() {
             anyhow::bail!("approved runtime enrollment did not return a session token");
         }
 
@@ -75,6 +81,11 @@ impl RuntimeDaemon {
             &self.config.runtime.control_plane_url,
             &session.token,
             &self.config.runtime.node_id,
+        );
+        spawn_session_renewal_loop(
+            client.clone(),
+            session_response.id.clone(),
+            session.expires_at.clone(),
         );
         println!("Runtime session established");
 
@@ -89,6 +100,58 @@ impl RuntimeDaemon {
 
         Ok(())
     }
+}
+
+pub fn spawn_session_renewal_loop(
+    client: ControlPlaneClient,
+    session_id: String,
+    expires_at: Option<String>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        session_renewal_loop(client, session_id, expires_at).await;
+    })
+}
+
+async fn session_renewal_loop(
+    client: ControlPlaneClient,
+    session_id: String,
+    mut expires_at: Option<String>,
+) {
+    loop {
+        let delay = session_renewal_delay(expires_at.as_deref());
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
+        }
+
+        match client.renew_session(&session_id).await {
+            Ok(session) => {
+                expires_at = Some(session.expires_at);
+            }
+            Err(error) => {
+                eprintln!("Runtime session renew failed: {}", error);
+                tokio::time::sleep(SESSION_RENEWAL_RETRY_DELAY).await;
+            }
+        }
+    }
+}
+
+fn session_renewal_delay(expires_at: Option<&str>) -> Duration {
+    let Some(expires_at) = expires_at else {
+        return SESSION_RENEWAL_FALLBACK_DELAY;
+    };
+    let Ok(expires_at) = OffsetDateTime::parse(expires_at, &Rfc3339) else {
+        return SESSION_RENEWAL_FALLBACK_DELAY;
+    };
+
+    let renew_at = expires_at - time::Duration::seconds(SESSION_RENEWAL_MARGIN.as_secs() as i64);
+    let now = OffsetDateTime::now_utc();
+    if renew_at <= now {
+        return Duration::ZERO;
+    }
+
+    (renew_at - now)
+        .try_into()
+        .unwrap_or(SESSION_RENEWAL_FALLBACK_DELAY)
 }
 
 fn build_supported_providers(config: &RuntimeConfig) -> Vec<String> {

@@ -1,6 +1,12 @@
 use std::process::Command;
 use superteam_runtime_agent::config::{RuntimeConfig, RuntimeConfigOverrides};
-use superteam_runtime_agent::daemon::RuntimeDaemon;
+use superteam_runtime_agent::controlplane::ControlPlaneClient;
+use superteam_runtime_agent::daemon::{RuntimeDaemon, spawn_session_renewal_loop};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+    sync::oneshot,
+};
 
 #[test]
 fn snapshot_uses_configured_node_id() {
@@ -264,4 +270,55 @@ runtime:
     );
     let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
     assert!(stdout.contains("runtime-agent node=arg-cli-node status=idle"));
+}
+
+#[tokio::test]
+async fn daemon_runtime_session_renewal_loop_attempts_renew_before_expiry() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (request_tx, request_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buffer = vec![0; 4096];
+        let bytes_read = socket.read(&mut buffer).await.unwrap();
+        let request = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+        let _ = request_tx.send(request);
+
+        socket
+            .write_all(
+                br#"HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 396
+
+{"id":"55555555-5555-4555-8555-555555555555","tenant_id":"22222222-2222-4222-8222-222222222222","runtime_node_id":"33333333-3333-4333-8333-333333333333","node_id":"node-1","enrollment_id":"11111111-1111-4111-8111-111111111111","expires_at":"2026-06-03T00:00:00Z","last_seen_at":"2026-06-02T00:00:00Z","created_at":"2026-06-02T00:00:00Z","updated_at":"2026-06-02T00:00:00Z"}"#,
+            )
+            .await
+            .unwrap();
+    });
+
+    let client = ControlPlaneClient::with_session_token(
+        format!("http://{}", addr),
+        "session-token",
+        "node-1",
+    );
+    let handle = spawn_session_renewal_loop(
+        client,
+        "55555555-5555-4555-8555-555555555555".to_string(),
+        Some("2026-06-01T00:00:00Z".to_string()),
+    );
+
+    let request = tokio::time::timeout(std::time::Duration::from_secs(2), request_rx)
+        .await
+        .expect("renew request should be attempted")
+        .expect("renew request should be captured");
+    handle.abort();
+
+    let request_line = request.lines().next().unwrap();
+    assert_eq!(
+        request_line,
+        "POST /api/v1/runtime/sessions/55555555-5555-4555-8555-555555555555/renew HTTP/1.1"
+    );
+    assert!(request.contains("authorization: Bearer session-token"));
+    assert!(request.contains("x-node-id: node-1"));
 }

@@ -299,3 +299,74 @@ async fn controlplane_client_claim_task_sends_runtime_identity_headers() {
     assert!(request.contains("authorization: Bearer test-token"));
     assert!(request.contains("x-node-id: node-1"));
 }
+
+#[tokio::test]
+async fn controlplane_client_upsert_capabilities_sends_openapi_wrapper_body() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (request_tx, request_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buffer = vec![0; 4096];
+        let bytes_read = socket.read(&mut buffer).await.unwrap();
+        let request = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+        let _ = request_tx.send(request);
+
+        socket
+            .write_all(
+                br#"HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 2
+
+[]"#,
+            )
+            .await
+            .unwrap();
+    });
+
+    let client = ControlPlaneClient::with_session_token(
+        format!("http://{}", addr),
+        "session-token",
+        "node-1",
+    );
+    let result = client
+        .upsert_capabilities(
+            "node-1",
+            vec![RuntimeCapabilityInput {
+                capability_type: "provider".to_string(),
+                capability_key: "claude-code".to_string(),
+                provider_type: "claude-code".to_string(),
+                provider_version: None,
+                binary_path: Some("claude".to_string()),
+                available: true,
+                workspace_base_dir: None,
+                capacity: None,
+                labels: None,
+                status: "available".to_string(),
+                details: None,
+                health_status: "configured".to_string(),
+                metadata: None,
+            }],
+        )
+        .await
+        .unwrap();
+
+    assert!(result.is_empty());
+
+    let request = request_rx.await.unwrap();
+    let request_line = request.lines().next().unwrap();
+    assert_eq!(
+        request_line,
+        "PUT /api/v1/runtime/nodes/node-1/capabilities HTTP/1.1"
+    );
+    assert!(request.contains("authorization: Bearer session-token"));
+    assert!(request.contains("x-node-id: node-1"));
+    let (_, body) = request.split_once("\r\n\r\n").expect("http body");
+    let body: serde_json::Value = serde_json::from_str(body).expect("json body");
+    assert!(body.as_object().is_some());
+    assert_eq!(
+        body["capabilities"][0]["capability_type"],
+        serde_json::json!("provider")
+    );
+}
