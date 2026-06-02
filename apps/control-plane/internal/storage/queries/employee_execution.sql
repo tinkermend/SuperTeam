@@ -106,10 +106,10 @@ INSERT INTO digital_employee_execution_instances (
     fallback_policy,
     status,
     metadata
-) VALUES (
-    sqlc.arg('tenant_id')::uuid,
-    sqlc.arg('digital_employee_id')::uuid,
-    sqlc.arg('runtime_node_id')::uuid,
+) SELECT
+    de.tenant_id,
+    de.id,
+    rn.id,
     sqlc.arg('provider_type')::varchar,
     sqlc.arg('agent_home_dir')::text,
     COALESCE(sqlc.arg('workspace_policy')::jsonb, '{}'::jsonb),
@@ -119,7 +119,15 @@ INSERT INTO digital_employee_execution_instances (
     COALESCE(sqlc.arg('fallback_policy')::jsonb, '{}'::jsonb),
     sqlc.arg('status')::varchar,
     COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
-)
+FROM digital_employees de
+JOIN runtime_nodes rn
+  ON rn.id = sqlc.arg('runtime_node_id')::uuid
+ AND rn.tenant_id = de.tenant_id
+ AND rn.archived_at IS NULL
+WHERE de.id = sqlc.arg('digital_employee_id')::uuid
+  AND de.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND de.deleted_at IS NULL
+  AND de.archived_at IS NULL
 ON CONFLICT (tenant_id, digital_employee_id) WHERE deleted_at IS NULL DO UPDATE SET
     runtime_node_id = EXCLUDED.runtime_node_id,
     provider_type = EXCLUDED.provider_type,

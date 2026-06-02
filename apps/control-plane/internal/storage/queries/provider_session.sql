@@ -10,18 +10,34 @@ INSERT INTO provider_sessions (
     recoverable,
     last_active_at,
     metadata
-) VALUES (
-    sqlc.arg('tenant_id')::uuid,
+) SELECT
+    dei.tenant_id,
     sqlc.arg('provider_session_id')::varchar,
-    sqlc.arg('digital_employee_id')::uuid,
-    sqlc.arg('execution_instance_id')::uuid,
-    sqlc.arg('runtime_node_id')::uuid,
-    sqlc.arg('provider_type')::varchar,
+    dei.digital_employee_id,
+    dei.id,
+    dei.runtime_node_id,
+    dei.provider_type,
     sqlc.arg('status')::varchar,
     sqlc.arg('recoverable')::boolean,
     sqlc.arg('last_active_at')::timestamptz,
     COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
-) RETURNING *;
+FROM digital_employee_execution_instances dei
+JOIN digital_employees de
+  ON de.id = dei.digital_employee_id
+ AND de.tenant_id = dei.tenant_id
+ AND de.deleted_at IS NULL
+ AND de.archived_at IS NULL
+JOIN runtime_nodes rn
+  ON rn.id = dei.runtime_node_id
+ AND rn.tenant_id = dei.tenant_id
+ AND rn.archived_at IS NULL
+WHERE dei.id = sqlc.arg('execution_instance_id')::uuid
+  AND dei.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND dei.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND dei.runtime_node_id = sqlc.arg('runtime_node_id')::uuid
+  AND dei.provider_type = sqlc.arg('provider_type')::varchar
+  AND dei.deleted_at IS NULL
+RETURNING *;
 
 -- name: GetProviderSession :one
 SELECT *

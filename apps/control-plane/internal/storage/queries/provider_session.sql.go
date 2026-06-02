@@ -24,45 +24,61 @@ INSERT INTO provider_sessions (
     recoverable,
     last_active_at,
     metadata
-) VALUES (
-    $1::uuid,
+) SELECT
+    dei.tenant_id,
+    $1::varchar,
+    dei.digital_employee_id,
+    dei.id,
+    dei.runtime_node_id,
+    dei.provider_type,
     $2::varchar,
-    $3::uuid,
-    $4::uuid,
-    $5::uuid,
-    $6::varchar,
-    $7::varchar,
-    $8::boolean,
-    $9::timestamptz,
-    COALESCE($10::jsonb, '{}'::jsonb)
-) RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at
+    $3::boolean,
+    $4::timestamptz,
+    COALESCE($5::jsonb, '{}'::jsonb)
+FROM digital_employee_execution_instances dei
+JOIN digital_employees de
+  ON de.id = dei.digital_employee_id
+ AND de.tenant_id = dei.tenant_id
+ AND de.deleted_at IS NULL
+ AND de.archived_at IS NULL
+JOIN runtime_nodes rn
+  ON rn.id = dei.runtime_node_id
+ AND rn.tenant_id = dei.tenant_id
+ AND rn.archived_at IS NULL
+WHERE dei.id = $6::uuid
+  AND dei.tenant_id = $7::uuid
+  AND dei.digital_employee_id = $8::uuid
+  AND dei.runtime_node_id = $9::uuid
+  AND dei.provider_type = $10::varchar
+  AND dei.deleted_at IS NULL
+RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at
 `
 
 type CreateProviderSessionParams struct {
-	TenantID            uuid.UUID          `json:"tenant_id"`
 	ProviderSessionID   string             `json:"provider_session_id"`
-	DigitalEmployeeID   uuid.UUID          `json:"digital_employee_id"`
-	ExecutionInstanceID uuid.UUID          `json:"execution_instance_id"`
-	RuntimeNodeID       uuid.UUID          `json:"runtime_node_id"`
-	ProviderType        string             `json:"provider_type"`
 	Status              string             `json:"status"`
 	Recoverable         bool               `json:"recoverable"`
 	LastActiveAt        pgtype.Timestamptz `json:"last_active_at"`
 	Metadata            []byte             `json:"metadata"`
+	ExecutionInstanceID uuid.UUID          `json:"execution_instance_id"`
+	TenantID            uuid.UUID          `json:"tenant_id"`
+	DigitalEmployeeID   uuid.UUID          `json:"digital_employee_id"`
+	RuntimeNodeID       uuid.UUID          `json:"runtime_node_id"`
+	ProviderType        string             `json:"provider_type"`
 }
 
 func (q *Queries) CreateProviderSession(ctx context.Context, arg CreateProviderSessionParams) (ProviderSession, error) {
 	row := q.db.QueryRow(ctx, CreateProviderSession,
-		arg.TenantID,
 		arg.ProviderSessionID,
-		arg.DigitalEmployeeID,
-		arg.ExecutionInstanceID,
-		arg.RuntimeNodeID,
-		arg.ProviderType,
 		arg.Status,
 		arg.Recoverable,
 		arg.LastActiveAt,
 		arg.Metadata,
+		arg.ExecutionInstanceID,
+		arg.TenantID,
+		arg.DigitalEmployeeID,
+		arg.RuntimeNodeID,
+		arg.ProviderType,
 	)
 	var i ProviderSession
 	err := row.Scan(

@@ -58,13 +58,22 @@ INSERT INTO runtime_enrollments (
     sqlc.arg('last_hello_at')::timestamptz
 )
 ON CONFLICT (tenant_id, node_id) DO UPDATE SET
-    runtime_node_id = EXCLUDED.runtime_node_id,
-    bootstrap_key_id = EXCLUDED.bootstrap_key_id,
+    runtime_node_id = CASE
+        WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.runtime_node_id
+        ELSE EXCLUDED.runtime_node_id
+    END,
+    bootstrap_key_id = CASE
+        WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.bootstrap_key_id
+        ELSE EXCLUDED.bootstrap_key_id
+    END,
     status = CASE
         WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.status
         ELSE EXCLUDED.status
     END,
-    request_payload = EXCLUDED.request_payload,
+    request_payload = CASE
+        WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.request_payload
+        ELSE EXCLUDED.request_payload
+    END,
     last_hello_at = EXCLUDED.last_hello_at,
     updated_at = NOW()
 RETURNING *;
@@ -97,6 +106,7 @@ SET status = 'approved',
     updated_at = NOW()
 WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND status = 'pending'
 RETURNING *;
 
 -- name: RejectRuntimeEnrollment :one
@@ -108,6 +118,7 @@ SET status = 'rejected',
     updated_at = NOW()
 WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND status = 'pending'
 RETURNING *;
 
 -- name: RevokeRuntimeEnrollment :one
@@ -119,6 +130,7 @@ SET status = 'revoked',
     updated_at = NOW()
 WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND status IN ('pending', 'approved')
 RETURNING *;
 
 -- name: CreateRuntimeSession :one
@@ -129,14 +141,24 @@ INSERT INTO runtime_sessions (
     token_lookup_hash,
     token_secret_hash,
     expires_at
-) VALUES (
-    sqlc.arg('tenant_id')::uuid,
-    sqlc.arg('runtime_node_id')::uuid,
-    sqlc.narg('enrollment_id')::uuid,
+) SELECT
+    re.tenant_id,
+    rn.id,
+    re.id,
     sqlc.arg('token_lookup_hash')::varchar,
     sqlc.arg('token_secret_hash')::varchar,
     sqlc.arg('expires_at')::timestamptz
-) RETURNING *;
+FROM runtime_enrollments re
+JOIN runtime_nodes rn
+  ON rn.id = re.runtime_node_id
+ AND rn.tenant_id = re.tenant_id
+ AND rn.archived_at IS NULL
+WHERE re.id = sqlc.narg('enrollment_id')::uuid
+  AND re.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND re.status = 'approved'
+  AND re.runtime_node_id IS NOT NULL
+  AND rn.id = sqlc.arg('runtime_node_id')::uuid
+RETURNING *;
 
 -- name: GetActiveRuntimeSessionByLookupHash :one
 SELECT *
@@ -194,9 +216,9 @@ INSERT INTO runtime_capabilities (
     health_status,
     metadata,
     last_seen_at
-) VALUES (
-    sqlc.arg('tenant_id')::uuid,
-    sqlc.arg('runtime_node_id')::uuid,
+) SELECT
+    rn.tenant_id,
+    rn.id,
     sqlc.arg('capability_type')::varchar,
     sqlc.arg('capability_key')::varchar,
     sqlc.arg('provider_type')::varchar,
@@ -211,7 +233,10 @@ INSERT INTO runtime_capabilities (
     sqlc.arg('health_status')::varchar,
     COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb),
     sqlc.arg('last_seen_at')::timestamptz
-)
+FROM runtime_nodes rn
+WHERE rn.id = sqlc.arg('runtime_node_id')::uuid
+  AND rn.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND rn.archived_at IS NULL
 ON CONFLICT (tenant_id, runtime_node_id, capability_type, capability_key) DO UPDATE SET
     provider_type = EXCLUDED.provider_type,
     provider_version = EXCLUDED.provider_version,

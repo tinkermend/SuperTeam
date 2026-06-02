@@ -26,6 +26,7 @@ SET status = 'approved',
     updated_at = NOW()
 WHERE id = $2::uuid
   AND tenant_id = $3::uuid
+  AND status = 'pending'
 RETURNING id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
 `
 
@@ -133,33 +134,43 @@ INSERT INTO runtime_sessions (
     token_lookup_hash,
     token_secret_hash,
     expires_at
-) VALUES (
-    $1::uuid,
-    $2::uuid,
-    $3::uuid,
-    $4::varchar,
-    $5::varchar,
-    $6::timestamptz
-) RETURNING id, tenant_id, runtime_node_id, enrollment_id, token_lookup_hash, token_secret_hash, expires_at, last_seen_at, revoked_at, revoked_reason, created_at, updated_at
+) SELECT
+    re.tenant_id,
+    rn.id,
+    re.id,
+    $1::varchar,
+    $2::varchar,
+    $3::timestamptz
+FROM runtime_enrollments re
+JOIN runtime_nodes rn
+  ON rn.id = re.runtime_node_id
+ AND rn.tenant_id = re.tenant_id
+ AND rn.archived_at IS NULL
+WHERE re.id = $4::uuid
+  AND re.tenant_id = $5::uuid
+  AND re.status = 'approved'
+  AND re.runtime_node_id IS NOT NULL
+  AND rn.id = $6::uuid
+RETURNING id, tenant_id, runtime_node_id, enrollment_id, token_lookup_hash, token_secret_hash, expires_at, last_seen_at, revoked_at, revoked_reason, created_at, updated_at
 `
 
 type CreateRuntimeSessionParams struct {
-	TenantID        uuid.UUID          `json:"tenant_id"`
-	RuntimeNodeID   uuid.UUID          `json:"runtime_node_id"`
-	EnrollmentID    uuid.NullUUID      `json:"enrollment_id"`
 	TokenLookupHash string             `json:"token_lookup_hash"`
 	TokenSecretHash string             `json:"token_secret_hash"`
 	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	EnrollmentID    uuid.NullUUID      `json:"enrollment_id"`
+	TenantID        uuid.UUID          `json:"tenant_id"`
+	RuntimeNodeID   uuid.UUID          `json:"runtime_node_id"`
 }
 
 func (q *Queries) CreateRuntimeSession(ctx context.Context, arg CreateRuntimeSessionParams) (RuntimeSession, error) {
 	row := q.db.QueryRow(ctx, CreateRuntimeSession,
-		arg.TenantID,
-		arg.RuntimeNodeID,
-		arg.EnrollmentID,
 		arg.TokenLookupHash,
 		arg.TokenSecretHash,
 		arg.ExpiresAt,
+		arg.EnrollmentID,
+		arg.TenantID,
+		arg.RuntimeNodeID,
 	)
 	var i RuntimeSession
 	err := row.Scan(
@@ -464,6 +475,7 @@ SET status = 'rejected',
     updated_at = NOW()
 WHERE id = $3::uuid
   AND tenant_id = $4::uuid
+  AND status = 'pending'
 RETURNING id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
 `
 
@@ -598,6 +610,7 @@ SET status = 'revoked',
     updated_at = NOW()
 WHERE id = $3::uuid
   AND tenant_id = $4::uuid
+  AND status IN ('pending', 'approved')
 RETURNING id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at
 `
 
@@ -729,24 +742,27 @@ INSERT INTO runtime_capabilities (
     health_status,
     metadata,
     last_seen_at
-) VALUES (
-    $1::uuid,
-    $2::uuid,
+) SELECT
+    rn.tenant_id,
+    rn.id,
+    $1::varchar,
+    $2::varchar,
     $3::varchar,
     $4::varchar,
-    $5::varchar,
-    $6::varchar,
+    $5::text,
+    $6::boolean,
     $7::text,
-    $8::boolean,
-    $9::text,
-    COALESCE($10::jsonb, '{}'::jsonb),
+    COALESCE($8::jsonb, '{}'::jsonb),
+    COALESCE($9::jsonb, '{}'::jsonb),
+    $10::varchar,
     COALESCE($11::jsonb, '{}'::jsonb),
     $12::varchar,
     COALESCE($13::jsonb, '{}'::jsonb),
-    $14::varchar,
-    COALESCE($15::jsonb, '{}'::jsonb),
-    $16::timestamptz
-)
+    $14::timestamptz
+FROM runtime_nodes rn
+WHERE rn.id = $15::uuid
+  AND rn.tenant_id = $16::uuid
+  AND rn.archived_at IS NULL
 ON CONFLICT (tenant_id, runtime_node_id, capability_type, capability_key) DO UPDATE SET
     provider_type = EXCLUDED.provider_type,
     provider_version = EXCLUDED.provider_version,
@@ -765,8 +781,6 @@ RETURNING id, tenant_id, runtime_node_id, capability_type, capability_key, provi
 `
 
 type UpsertRuntimeCapabilityParams struct {
-	TenantID         uuid.UUID          `json:"tenant_id"`
-	RuntimeNodeID    uuid.UUID          `json:"runtime_node_id"`
 	CapabilityType   string             `json:"capability_type"`
 	CapabilityKey    string             `json:"capability_key"`
 	ProviderType     string             `json:"provider_type"`
@@ -781,12 +795,12 @@ type UpsertRuntimeCapabilityParams struct {
 	HealthStatus     string             `json:"health_status"`
 	Metadata         []byte             `json:"metadata"`
 	LastSeenAt       pgtype.Timestamptz `json:"last_seen_at"`
+	RuntimeNodeID    uuid.UUID          `json:"runtime_node_id"`
+	TenantID         uuid.UUID          `json:"tenant_id"`
 }
 
 func (q *Queries) UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntimeCapabilityParams) (RuntimeCapability, error) {
 	row := q.db.QueryRow(ctx, UpsertRuntimeCapability,
-		arg.TenantID,
-		arg.RuntimeNodeID,
 		arg.CapabilityType,
 		arg.CapabilityKey,
 		arg.ProviderType,
@@ -801,6 +815,8 @@ func (q *Queries) UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntime
 		arg.HealthStatus,
 		arg.Metadata,
 		arg.LastSeenAt,
+		arg.RuntimeNodeID,
+		arg.TenantID,
 	)
 	var i RuntimeCapability
 	err := row.Scan(
@@ -848,13 +864,22 @@ INSERT INTO runtime_enrollments (
     $7::timestamptz
 )
 ON CONFLICT (tenant_id, node_id) DO UPDATE SET
-    runtime_node_id = EXCLUDED.runtime_node_id,
-    bootstrap_key_id = EXCLUDED.bootstrap_key_id,
+    runtime_node_id = CASE
+        WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.runtime_node_id
+        ELSE EXCLUDED.runtime_node_id
+    END,
+    bootstrap_key_id = CASE
+        WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.bootstrap_key_id
+        ELSE EXCLUDED.bootstrap_key_id
+    END,
     status = CASE
         WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.status
         ELSE EXCLUDED.status
     END,
-    request_payload = EXCLUDED.request_payload,
+    request_payload = CASE
+        WHEN runtime_enrollments.status IN ('approved', 'rejected', 'revoked') THEN runtime_enrollments.request_payload
+        ELSE EXCLUDED.request_payload
+    END,
     last_hello_at = EXCLUDED.last_hello_at,
     updated_at = NOW()
 RETURNING id, tenant_id, runtime_node_id, node_id, bootstrap_key_id, status, request_payload, approved_by, approved_at, rejected_by, rejected_at, reject_reason, revoked_by, revoked_at, revoke_reason, last_hello_at, created_at, updated_at

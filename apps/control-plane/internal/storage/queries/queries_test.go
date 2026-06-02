@@ -994,6 +994,18 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	alternateNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "runtime-enroll-node-rebound",
+		Name:               "Runtime Enrollment Rebound Node",
+		SupportedProviders: []byte(`{"providers":["claude-code"]}`),
+		MaxSlots:           4,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"region":"local"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
 	enrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
 		TenantID:       tenantID,
 		RuntimeNodeID:  node.ID,
@@ -1027,6 +1039,18 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	assert.Equal(t, enrollment.ID, defaultEnrollment.ID)
 	assert.Equal(t, tenantID, defaultEnrollment.TenantID)
 
+	sessionExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, sessionExpiresAt.Scan(time.Now().Add(12*time.Hour)))
+	_, err = testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   node.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: enrollment.ID, Valid: true},
+		TokenLookupHash: "7019a7eed9f6c05309b6b9402fe9bc59d41f9a6dfc0c1b8c40b6a4d829148a11",
+		TokenSecretHash: "$2a$10$pendingRuntimeSessionSecretHash",
+		ExpiresAt:       sessionExpiresAt,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
 	approved, err := testQueries.ApproveRuntimeEnrollment(ctx, queries.ApproveRuntimeEnrollmentParams{
 		ID:         enrollment.ID,
 		TenantID:   tenantID,
@@ -1036,8 +1060,104 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	assert.Equal(t, "approved", approved.Status)
 	require.True(t, approved.ApprovedAt.Valid)
 
-	sessionExpiresAt := pgtype.Timestamptz{}
-	require.NoError(t, sessionExpiresAt.Scan(time.Now().Add(12*time.Hour)))
+	terminalHelloAt := pgtype.Timestamptz{}
+	require.NoError(t, terminalHelloAt.Scan(time.Now().Add(2*time.Minute)))
+	terminalHello, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  alternateNode.ID,
+		NodeID:         "runtime-enroll-node",
+		BootstrapKeyID: uuid.NullUUID{},
+		Status:         "pending",
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node","version":"rebound"}`),
+		LastHelloAt:    terminalHelloAt,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, approved.ID, terminalHello.ID)
+	assert.Equal(t, "approved", terminalHello.Status)
+	assert.Equal(t, node.ID, terminalHello.RuntimeNodeID)
+	require.True(t, terminalHello.BootstrapKeyID.Valid)
+	assert.Equal(t, bootstrapKey.ID, terminalHello.BootstrapKeyID.UUID)
+	assert.JSONEq(t, `{"node_id":"runtime-enroll-node","version":"0.1.0"}`, string(terminalHello.RequestPayload))
+	assert.WithinDuration(t, terminalHelloAt.Time, terminalHello.LastHelloAt.Time, time.Second)
+
+	_, err = testQueries.RejectRuntimeEnrollment(ctx, queries.RejectRuntimeEnrollmentParams{
+		ID:           approved.ID,
+		TenantID:     tenantID,
+		RejectedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RejectReason: pgtype.Text{String: "approved enrollments cannot be rejected", Valid: true},
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	rejectedEnrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  node.ID,
+		NodeID:         "runtime-enroll-node-rejected",
+		BootstrapKeyID: uuid.NullUUID{UUID: bootstrapKey.ID, Valid: true},
+		Status:         "pending",
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-rejected"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+	rejected, err := testQueries.RejectRuntimeEnrollment(ctx, queries.RejectRuntimeEnrollmentParams{
+		ID:           rejectedEnrollment.ID,
+		TenantID:     tenantID,
+		RejectedBy:   uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RejectReason: pgtype.Text{String: "operator rejected", Valid: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "rejected", rejected.Status)
+
+	_, err = testQueries.ApproveRuntimeEnrollment(ctx, queries.ApproveRuntimeEnrollmentParams{
+		ID:         rejectedEnrollment.ID,
+		TenantID:   tenantID,
+		ApprovedBy: uuid.NullUUID{UUID: uuid.New(), Valid: true},
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.RevokeRuntimeEnrollment(ctx, queries.RevokeRuntimeEnrollmentParams{
+		ID:           rejectedEnrollment.ID,
+		TenantID:     tenantID,
+		RevokedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RevokeReason: pgtype.Text{String: "rejected enrollments cannot be revoked", Valid: true},
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	revokedEnrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  node.ID,
+		NodeID:         "runtime-enroll-node-revoked",
+		BootstrapKeyID: uuid.NullUUID{UUID: bootstrapKey.ID, Valid: true},
+		Status:         "pending",
+		RequestPayload: []byte(`{"node_id":"runtime-enroll-node-revoked"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+	revokedEnrollment, err = testQueries.RevokeRuntimeEnrollment(ctx, queries.RevokeRuntimeEnrollmentParams{
+		ID:           revokedEnrollment.ID,
+		TenantID:     tenantID,
+		RevokedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RevokeReason: pgtype.Text{String: "operator revoked", Valid: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "revoked", revokedEnrollment.Status)
+
+	_, err = testQueries.ApproveRuntimeEnrollment(ctx, queries.ApproveRuntimeEnrollmentParams{
+		ID:         revokedEnrollment.ID,
+		TenantID:   tenantID,
+		ApprovedBy: uuid.NullUUID{UUID: uuid.New(), Valid: true},
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   alternateNode.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: approved.ID, Valid: true},
+		TokenLookupHash: "0d89688e9f4af8f3cc501cc9406a9daa9ae98b512704fcb69c4fdf818175c998",
+		TokenSecretHash: "$2a$10$mismatchedRuntimeSessionSecretHash",
+		ExpiresAt:       sessionExpiresAt,
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
 	session, err := testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
 		TenantID:        tenantID,
 		RuntimeNodeID:   node.ID,
@@ -1146,7 +1266,7 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 	assert.Equal(t, "degraded", refreshedCapability.HealthStatus)
 	assert.JSONEq(t, `{"source":"refresh"}`, string(refreshedCapability.Metadata))
 
-	otherCapability, err := testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+	_, err = testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
 		TenantID:         otherTenantID,
 		RuntimeNodeID:    node.ID,
 		CapabilityType:   "provider",
@@ -1164,9 +1284,30 @@ func TestRuntimeEnrollmentAndSessionQueries(t *testing.T) {
 		Metadata:         []byte(`{"source":"other"}`),
 		LastSeenAt:       later,
 	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	persistedCapability, err := testQueries.GetRuntimeCapability(ctx, queries.GetRuntimeCapabilityParams{
+		TenantID:       tenantID,
+		RuntimeNodeID:  node.ID,
+		CapabilityType: "provider",
+		CapabilityKey:  "claude-code",
+	})
 	require.NoError(t, err)
-	assert.NotEqual(t, capability.ID, otherCapability.ID)
-	assert.Equal(t, otherTenantID, otherCapability.TenantID)
+	assert.Equal(t, refreshedCapability.ID, persistedCapability.ID)
+	assert.Equal(t, "degraded", persistedCapability.Status)
+	assert.JSONEq(t, `{"source":"refresh"}`, string(persistedCapability.Metadata))
+
+	var otherTenantCapabilityCount int
+	err = testDB.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM runtime_capabilities
+		WHERE tenant_id = $1
+		  AND runtime_node_id = $2
+		  AND capability_type = 'provider'
+		  AND capability_key = 'claude-code'
+	`, otherTenantID, node.ID).Scan(&otherTenantCapabilityCount)
+	require.NoError(t, err)
+	assert.Zero(t, otherTenantCapabilityCount)
 
 	capabilities, err := testQueries.ListRuntimeCapabilities(ctx, queries.ListRuntimeCapabilitiesParams{
 		TenantID:      tenantID,
@@ -1270,7 +1411,7 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	assert.Equal(t, "/data/superteam/workspaces/agents/requirements-analyst-updated", updatedInstance.AgentHomeDir)
 	assert.JSONEq(t, `{"mode":"new"}`, string(updatedInstance.SessionPolicy))
 
-	wrongTenantInstance, err := testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
+	_, err = testQueries.UpsertDigitalEmployeeExecutionInstance(ctx, queries.UpsertDigitalEmployeeExecutionInstanceParams{
 		TenantID:             otherTenantID,
 		DigitalEmployeeID:    employee.ID,
 		RuntimeNodeID:        node.ID,
@@ -1284,9 +1425,7 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 		Status:               "provisioning",
 		Metadata:             []byte(`{"source":"wrong-tenant"}`),
 	})
-	require.NoError(t, err)
-	assert.NotEqual(t, updatedInstance.ID, wrongTenantInstance.ID)
-	assert.Equal(t, otherTenantID, wrongTenantInstance.TenantID)
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
 
 	tenantInstance, err := testQueries.GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx, queries.GetDigitalEmployeeExecutionInstanceByEmployeeIDParams{
 		TenantID:          tenantID,
@@ -1295,6 +1434,17 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, updatedInstance.ID, tenantInstance.ID)
 	assert.Equal(t, "/data/superteam/workspaces/agents/requirements-analyst-updated", tenantInstance.AgentHomeDir)
+
+	var otherTenantInstanceCount int
+	err = testDB.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM digital_employee_execution_instances
+		WHERE tenant_id = $1
+		  AND digital_employee_id = $2
+		  AND deleted_at IS NULL
+	`, otherTenantID, employee.ID).Scan(&otherTenantInstanceCount)
+	require.NoError(t, err)
+	assert.Zero(t, otherTenantInstanceCount)
 
 	readyInstance, err := testQueries.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
 		ID:       instance.ID,
@@ -1326,6 +1476,61 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 		Metadata:            []byte(`{"mode":"resume"}`),
 	})
 	require.NoError(t, err)
+
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            otherTenantID,
+		ProviderSessionID:   "claude-session-wrong-tenant",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"wrong-tenant"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-mismatched-runtime",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       uuid.New(),
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"mismatched-runtime"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	_, err = testQueries.CreateProviderSession(ctx, queries.CreateProviderSessionParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "claude-session-mismatched-provider",
+		DigitalEmployeeID:   employee.ID,
+		ExecutionInstanceID: instance.ID,
+		RuntimeNodeID:       node.ID,
+		ProviderType:        "codex",
+		Status:              "running",
+		Recoverable:         true,
+		LastActiveAt:        now,
+		Metadata:            []byte(`{"mode":"mismatched-provider"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	var pollutedProviderSessionCount int
+	err = testDB.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM provider_sessions
+		WHERE provider_session_id IN (
+			'claude-session-wrong-tenant',
+			'claude-session-mismatched-runtime',
+			'claude-session-mismatched-provider'
+		)
+	`).Scan(&pollutedProviderSessionCount)
+	require.NoError(t, err)
+	assert.Zero(t, pollutedProviderSessionCount)
 
 	eventPayload1 := []byte(`{"message":"session started"}`)
 	event1, err := testQueries.CreateProviderSessionEvent(ctx, queries.CreateProviderSessionEventParams{
