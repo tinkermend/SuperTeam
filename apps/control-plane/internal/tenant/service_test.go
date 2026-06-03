@@ -41,6 +41,7 @@ func TestCreateTeamDefaultsActiveStatus(t *testing.T) {
 
 	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
 		TenantID:         uuid.New(),
+		ActorUserID:      uuid.New(),
 		Slug:             "engineering",
 		Name:             "Engineering",
 		HumanOwnerUserID: &ownerID,
@@ -49,8 +50,8 @@ func TestCreateTeamDefaultsActiveStatus(t *testing.T) {
 		t.Fatalf("create team: %v", err)
 	}
 
-	if team.Status != TeamStatusActive {
-		t.Fatalf("expected active default status, got %q", team.Status)
+	if team.Team.Status != TeamStatusActive {
+		t.Fatalf("expected active default status, got %q", team.Team.Status)
 	}
 }
 
@@ -62,9 +63,10 @@ func TestCreateTeamRequiresHumanOwner(t *testing.T) {
 	}
 
 	_, err = svc.CreateTeam(context.Background(), CreateTeamRequest{
-		TenantID: uuid.New(),
-		Slug:     "engineering",
-		Name:     "Engineering",
+		TenantID:    uuid.New(),
+		ActorUserID: uuid.New(),
+		Slug:        "engineering",
+		Name:        "Engineering",
 	})
 
 	if !errors.Is(err, ErrInvalidInput) {
@@ -72,6 +74,112 @@ func TestCreateTeamRequiresHumanOwner(t *testing.T) {
 	}
 	if repo.createTeamCalled {
 		t.Fatalf("expected invalid team not to reach repository")
+	}
+}
+
+func TestCreateTeamCreatesOwnerAndInitialMembers(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewServiceWithoutAuditForTest(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	memberID := uuid.New()
+	viewerID := uuid.New()
+	repo.activeUsers[ownerID] = true
+	repo.activeUsers[memberID] = true
+	repo.activeUsers[viewerID] = true
+
+	overview, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         tenantID,
+		ActorUserID:      actorID,
+		Slug:             "security",
+		Name:             "安全团队",
+		HumanOwnerUserID: &ownerID,
+		InitialMembers: []InitialTeamMemberInput{
+			{UserID: memberID, Role: TeamRoleMember},
+			{UserID: viewerID, Role: TeamRoleViewer},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+
+	if overview.Team == nil || overview.Team.Slug != "security" {
+		t.Fatalf("expected created overview team, got %#v", overview.Team)
+	}
+	if overview.MemberCount != 3 {
+		t.Fatalf("expected owner plus two members in overview, got %d", overview.MemberCount)
+	}
+	if repo.createdTeamWithMembers.OwnerUserID != ownerID {
+		t.Fatalf("expected owner %s, got %s", ownerID, repo.createdTeamWithMembers.OwnerUserID)
+	}
+	if got := repo.createdTeamWithMembers.InitialMembers; !reflect.DeepEqual(got, []InitialTeamMemberInput{
+		{UserID: memberID, Role: TeamRoleMember},
+		{UserID: viewerID, Role: TeamRoleViewer},
+	}) {
+		t.Fatalf("expected initial members preserved, got %#v", got)
+	}
+	if len(repo.auditEvents) != 4 {
+		t.Fatalf("expected team create and member audit events, got %#v", repo.auditEvents)
+	}
+	if repo.auditEvents[0].Action != "team.create" {
+		t.Fatalf("expected first audit action team.create, got %#v", repo.auditEvents)
+	}
+}
+
+func TestCreateTeamRejectsPrivilegedInitialMemberRoles(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewServiceWithoutAuditForTest(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	ownerID := uuid.New()
+	actorID := uuid.New()
+	targetID := uuid.New()
+	repo.activeUsers[ownerID] = true
+	repo.activeUsers[targetID] = true
+
+	_, err = svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         uuid.New(),
+		ActorUserID:      actorID,
+		Slug:             "security",
+		Name:             "安全团队",
+		HumanOwnerUserID: &ownerID,
+		InitialMembers:   []InitialTeamMemberInput{{UserID: targetID, Role: TeamRoleAdmin}},
+	})
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for admin initial member, got %v", err)
+	}
+	if repo.createTeamWithMembersCalled {
+		t.Fatalf("expected invalid request not to reach repository")
+	}
+}
+
+func TestCreateTeamRejectsOwnerDuplicatedAsInitialMember(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewServiceWithoutAuditForTest(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	ownerID := uuid.New()
+	actorID := uuid.New()
+	repo.activeUsers[ownerID] = true
+
+	_, err = svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         uuid.New(),
+		ActorUserID:      actorID,
+		Slug:             "security",
+		Name:             "安全团队",
+		HumanOwnerUserID: &ownerID,
+		InitialMembers:   []InitialTeamMemberInput{{UserID: ownerID, Role: TeamRoleMember}},
+	})
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for duplicated owner, got %v", err)
 	}
 }
 
@@ -86,6 +194,7 @@ func TestCreateTeamConfigRevisionDefaultsActiveStatus(t *testing.T) {
 	approvedBy := uuid.New()
 	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
 		TenantID:         tenantID,
+		ActorUserID:      uuid.New(),
 		Slug:             "engineering",
 		Name:             "Engineering",
 		HumanOwnerUserID: &ownerID,
@@ -96,7 +205,7 @@ func TestCreateTeamConfigRevisionDefaultsActiveStatus(t *testing.T) {
 
 	revision, err := svc.CreateConfigRevision(context.Background(), CreateTeamConfigRevisionRequest{
 		TenantID:                    tenantID,
-		TeamID:                      team.ID,
+		TeamID:                      team.Team.ID,
 		Constitution:                map[string]any{"principle": "review before execute"},
 		CapabilityPolicy:            map[string]any{"providers": []any{"codex"}},
 		ContextPolicy:               map[string]any{"sources": []any{"task"}},
@@ -146,6 +255,7 @@ func TestCreateTeamConfigRevisionRequiresExistingTeam(t *testing.T) {
 	otherTenantID := uuid.New()
 	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
 		TenantID:         tenantID,
+		ActorUserID:      uuid.New(),
 		Slug:             "engineering",
 		Name:             "Engineering",
 		HumanOwnerUserID: &ownerID,
@@ -160,7 +270,7 @@ func TestCreateTeamConfigRevisionRequiresExistingTeam(t *testing.T) {
 		teamID   uuid.UUID
 	}{
 		{name: "missing team", tenantID: tenantID, teamID: uuid.New()},
-		{name: "wrong tenant", tenantID: otherTenantID, teamID: team.ID},
+		{name: "wrong tenant", tenantID: otherTenantID, teamID: team.Team.ID},
 	}
 
 	for _, tt := range tests {
@@ -191,6 +301,7 @@ func TestCreateTeamConfigRevisionRejectsSecondActiveBeforeInsert(t *testing.T) {
 	ownerID := uuid.New()
 	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
 		TenantID:         tenantID,
+		ActorUserID:      uuid.New(),
 		Slug:             "engineering",
 		Name:             "Engineering",
 		HumanOwnerUserID: &ownerID,
@@ -200,7 +311,7 @@ func TestCreateTeamConfigRevisionRejectsSecondActiveBeforeInsert(t *testing.T) {
 	}
 	if _, err := svc.CreateConfigRevision(context.Background(), CreateTeamConfigRevisionRequest{
 		TenantID:         tenantID,
-		TeamID:           team.ID,
+		TeamID:           team.Team.ID,
 		HumanOwnerUserID: &ownerID,
 	}); err != nil {
 		t.Fatalf("create first active revision: %v", err)
@@ -209,7 +320,7 @@ func TestCreateTeamConfigRevisionRejectsSecondActiveBeforeInsert(t *testing.T) {
 
 	_, err = svc.CreateConfigRevision(context.Background(), CreateTeamConfigRevisionRequest{
 		TenantID:         tenantID,
-		TeamID:           team.ID,
+		TeamID:           team.Team.ID,
 		HumanOwnerUserID: &ownerID,
 	})
 	if !errors.Is(err, ErrInvalidInput) {
@@ -231,6 +342,7 @@ func TestCreateTeamConfigRevisionDraftHasNoApprovalMetadata(t *testing.T) {
 	approvedBy := uuid.New()
 	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
 		TenantID:         tenantID,
+		ActorUserID:      uuid.New(),
 		Slug:             "engineering",
 		Name:             "Engineering",
 		HumanOwnerUserID: &ownerID,
@@ -241,7 +353,7 @@ func TestCreateTeamConfigRevisionDraftHasNoApprovalMetadata(t *testing.T) {
 
 	revision, err := svc.CreateConfigRevision(context.Background(), CreateTeamConfigRevisionRequest{
 		TenantID:         tenantID,
-		TeamID:           team.ID,
+		TeamID:           team.Team.ID,
 		HumanOwnerUserID: &ownerID,
 		Status:           TeamConfigRevisionStatusDraft,
 		ApprovedBy:       &approvedBy,
@@ -274,6 +386,7 @@ func TestApproveGovernanceDraftArchivesPreviousActive(t *testing.T) {
 	approvedBy := uuid.New()
 	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
 		TenantID:         tenantID,
+		ActorUserID:      uuid.New(),
 		Slug:             "platform",
 		Name:             "Platform",
 		HumanOwnerUserID: &ownerID,
@@ -287,7 +400,7 @@ func TestApproveGovernanceDraftArchivesPreviousActive(t *testing.T) {
 	repo.revisions[activeID] = TeamConfigRevisionRecord{
 		ID:                          activeID,
 		TenantID:                    tenantID,
-		TeamID:                      team.ID,
+		TeamID:                      team.Team.ID,
 		RevisionNumber:              7,
 		Constitution:                map[string]any{"hard_rules": []any{"existing approval rule"}},
 		CapabilityPolicy:            map[string]any{"skill_bindings": []any{"incident-diagnosis"}},
@@ -305,7 +418,7 @@ func TestApproveGovernanceDraftArchivesPreviousActive(t *testing.T) {
 	repo.revisions[draftID] = TeamConfigRevisionRecord{
 		ID:                          draftID,
 		TenantID:                    tenantID,
-		TeamID:                      team.ID,
+		TeamID:                      team.Team.ID,
 		RevisionNumber:              8,
 		Constitution:                map[string]any{"hard_rules": []any{"existing approval rule", "new production write rule"}},
 		CapabilityPolicy:            map[string]any{"skill_bindings": []any{"incident-diagnosis", "release-review"}},
@@ -320,7 +433,7 @@ func TestApproveGovernanceDraftArchivesPreviousActive(t *testing.T) {
 		UpdatedAt:                   now,
 	}
 
-	approved, err := svc.ApproveGovernanceDraft(context.Background(), tenantID, team.ID, draftID, approvedBy)
+	approved, err := svc.ApproveGovernanceDraft(context.Background(), tenantID, team.Team.ID, draftID, approvedBy)
 	if err != nil {
 		t.Fatalf("approve governance draft: %v", err)
 	}
@@ -349,6 +462,7 @@ func TestUpdateGovernanceDraftStoresCapabilityBindings(t *testing.T) {
 	ownerID := uuid.New()
 	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
 		TenantID:         tenantID,
+		ActorUserID:      uuid.New(),
 		Slug:             "platform",
 		Name:             "Platform",
 		HumanOwnerUserID: &ownerID,
@@ -361,7 +475,7 @@ func TestUpdateGovernanceDraftStoresCapabilityBindings(t *testing.T) {
 	repo.revisions[draftID] = TeamConfigRevisionRecord{
 		ID:                          draftID,
 		TenantID:                    tenantID,
-		TeamID:                      team.ID,
+		TeamID:                      team.Team.ID,
 		RevisionNumber:              8,
 		Constitution:                map[string]any{"hard_rules": []any{"human approval before deploy"}},
 		CapabilityPolicy:            map[string]any{},
@@ -382,7 +496,7 @@ func TestUpdateGovernanceDraftStoresCapabilityBindings(t *testing.T) {
 		"external_capability_bindings": []any{"deploy-api"},
 	}
 
-	updated, err := svc.UpdateGovernanceDraft(context.Background(), tenantID, team.ID, draftID, GovernanceDraftInput{
+	updated, err := svc.UpdateGovernanceDraft(context.Background(), tenantID, team.Team.ID, draftID, GovernanceDraftInput{
 		Constitution:                map[string]any{"hard_rules": []any{"human approval before deploy"}},
 		CapabilityPolicy:            expectedCapabilityPolicy,
 		ContextPolicy:               map[string]any{"sources": []any{"task"}},
@@ -456,6 +570,7 @@ func TestUpdateTeamPreservesOwnerAndMetadataWhenOmitted(t *testing.T) {
 	ownerID := uuid.New()
 	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
 		TenantID:         tenantID,
+		ActorUserID:      uuid.New(),
 		Slug:             "ops",
 		Name:             "Ops",
 		HumanOwnerUserID: &ownerID,
@@ -467,7 +582,7 @@ func TestUpdateTeamPreservesOwnerAndMetadataWhenOmitted(t *testing.T) {
 
 	updated, err := svc.UpdateTeam(context.Background(), UpdateTeamRequest{
 		TenantID: tenantID,
-		TeamID:   team.ID,
+		TeamID:   team.Team.ID,
 		Slug:     "platform-ops",
 		Name:     "Platform Ops",
 	})
@@ -514,6 +629,7 @@ func TestGetOverviewUsesTeamSummaryAggregate(t *testing.T) {
 	ownerID := uuid.New()
 	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
 		TenantID:         tenantID,
+		ActorUserID:      uuid.New(),
 		Slug:             "ops",
 		Name:             "Ops",
 		HumanOwnerUserID: &ownerID,
@@ -521,15 +637,15 @@ func TestGetOverviewUsesTeamSummaryAggregate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create team: %v", err)
 	}
-	repo.teamSummaries[team.ID] = TeamListItemRecord{
-		Team:                 *team,
+	repo.teamSummaries[team.Team.ID] = TeamListItemRecord{
+		Team:                 *team.Team,
 		MemberCount:          18,
 		DigitalEmployeeCount: 6,
 		CapabilityCount:      12,
 		PendingDraftCount:    3,
 	}
 
-	overview, err := svc.GetOverview(context.Background(), tenantID, team.ID)
+	overview, err := svc.GetOverview(context.Background(), tenantID, team.Team.ID)
 	if err != nil {
 		t.Fatalf("get overview: %v", err)
 	}
@@ -564,6 +680,26 @@ func TestListTeamSummariesDefaultsLimit(t *testing.T) {
 	}
 	if repo.lastListTeamSummariesParams.Limit != 50 {
 		t.Fatalf("expected default limit 50, got %d", repo.lastListTeamSummariesParams.Limit)
+	}
+}
+
+func TestListTeamSummariesPassesGovernanceStatusFilter(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewServiceWithoutAuditForTest(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = svc.ListTeamSummaries(context.Background(), ListTeamsRequest{
+		TenantID:         uuid.New(),
+		GovernanceStatus: GovernanceSummaryDraftPending,
+	})
+	if err != nil {
+		t.Fatalf("list team summaries: %v", err)
+	}
+
+	if repo.lastListTeamSummariesParams.GovernanceStatus != GovernanceSummaryDraftPending {
+		t.Fatalf("expected governance status filter to reach repository, got %#v", repo.lastListTeamSummariesParams)
 	}
 }
 
@@ -680,7 +816,10 @@ type memoryRepository struct {
 	revisions                   map[uuid.UUID]TeamConfigRevisionRecord
 	teamMembers                 map[uuid.UUID]TeamMemberRecord
 	roleRequests                map[uuid.UUID]TeamMemberRoleRequestRecord
+	activeUsers                 map[uuid.UUID]bool
+	auditEvents                 []memoryAuditEvent
 	createTeamCalled            bool
+	createTeamWithMembersCalled bool
 	listTeamsCalled             bool
 	listTeamSummariesCalled     bool
 	getTeamSummaryCalled        bool
@@ -692,8 +831,15 @@ type memoryRepository struct {
 	approveRevisionErr          error
 	lastListTeamSummariesParams ListTeamSummariesParams
 	lastAddTeamMemberParams     AddTeamMemberParams
+	createdTeamWithMembers      CreateTeamWithInitialMembersParams
 	createRevisionCalls         int
 	createdRevision             CreateTeamConfigRevisionParams
+}
+
+type memoryAuditEvent struct {
+	Action       string
+	ResourceType string
+	ResourceID   uuid.UUID
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -703,6 +849,8 @@ func newMemoryRepository() *memoryRepository {
 		revisions:     map[uuid.UUID]TeamConfigRevisionRecord{},
 		teamMembers:   map[uuid.UUID]TeamMemberRecord{},
 		roleRequests:  map[uuid.UUID]TeamMemberRoleRequestRecord{},
+		activeUsers:   map[uuid.UUID]bool{},
+		auditEvents:   []memoryAuditEvent{},
 	}
 }
 
@@ -722,6 +870,66 @@ func (r *memoryRepository) CreateTeam(_ context.Context, params CreateTeamParams
 	}
 	r.teams[record.ID] = record
 	return record, nil
+}
+
+func (r *memoryRepository) CreateTeamWithInitialMembers(_ context.Context, params CreateTeamWithInitialMembersParams) (TeamRecord, error) {
+	r.createTeamWithMembersCalled = true
+	r.createdTeamWithMembers = params
+	if len(r.activeUsers) > 0 && !r.activeUsers[params.OwnerUserID] {
+		return TeamRecord{}, ErrNotFound
+	}
+	for _, member := range params.InitialMembers {
+		if len(r.activeUsers) > 0 && !r.activeUsers[member.UserID] {
+			return TeamRecord{}, ErrNotFound
+		}
+	}
+	now := time.Now().UTC()
+	team := TeamRecord{
+		ID:               uuid.New(),
+		TenantID:         params.TenantID,
+		Slug:             params.Slug,
+		Name:             params.Name,
+		Status:           params.Status,
+		HumanOwnerUserID: &params.OwnerUserID,
+		Metadata:         cloneMap(params.Metadata),
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	r.teams[team.ID] = team
+	ownerMembership := TeamMemberRecord{
+		MembershipID:     uuid.New(),
+		TenantID:         params.TenantID,
+		TeamID:           team.ID,
+		UserID:           params.OwnerUserID,
+		Role:             TeamRoleOwner,
+		MembershipStatus: "active",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	r.teamMembers[ownerMembership.MembershipID] = ownerMembership
+	r.auditEvents = append(r.auditEvents,
+		memoryAuditEvent{Action: "team.create", ResourceType: "team", ResourceID: team.ID},
+		memoryAuditEvent{Action: "team.member.add", ResourceType: "team_member", ResourceID: ownerMembership.MembershipID},
+	)
+	for _, member := range params.InitialMembers {
+		membership := TeamMemberRecord{
+			MembershipID:     uuid.New(),
+			TenantID:         params.TenantID,
+			TeamID:           team.ID,
+			UserID:           member.UserID,
+			Role:             member.Role,
+			MembershipStatus: "active",
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		r.teamMembers[membership.MembershipID] = membership
+		r.auditEvents = append(r.auditEvents, memoryAuditEvent{
+			Action:       "team.member.add",
+			ResourceType: "team_member",
+			ResourceID:   membership.MembershipID,
+		})
+	}
+	return team, nil
 }
 
 func (r *memoryRepository) ListTeams(_ context.Context, params ListTeamsParams) ([]TeamRecord, error) {
@@ -756,7 +964,13 @@ func (r *memoryRepository) GetTeamSummary(_ context.Context, tenantID, teamID uu
 	if !ok || record.TenantID != tenantID {
 		return TeamListItemRecord{}, ErrNotFound
 	}
-	return TeamListItemRecord{Team: record}, nil
+	var memberCount int32
+	for _, member := range r.teamMembers {
+		if member.TenantID == tenantID && member.TeamID == teamID && member.MembershipStatus == "active" {
+			memberCount++
+		}
+	}
+	return TeamListItemRecord{Team: record, MemberCount: memberCount}, nil
 }
 
 func (r *memoryRepository) GetTeam(_ context.Context, tenantID, teamID uuid.UUID) (TeamRecord, error) {

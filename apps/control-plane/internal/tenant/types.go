@@ -38,6 +38,15 @@ const (
 	GovernanceSummaryNeedsUpdate   GovernanceSummaryStatus = "needs_update"
 )
 
+func (s GovernanceSummaryStatus) IsValid() bool {
+	switch s {
+	case GovernanceSummaryNotConfigured, GovernanceSummaryDraftPending, GovernanceSummaryActive, GovernanceSummaryNeedsUpdate:
+		return true
+	default:
+		return false
+	}
+}
+
 type AllowedTeamAction string
 
 type TeamConfigRevisionStatus string
@@ -106,9 +115,18 @@ type Team struct {
 	Name             string
 	Status           TeamStatus
 	HumanOwnerUserID *uuid.UUID
+	HumanOwner       *TeamHumanOwner
 	Metadata         map[string]any
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+}
+
+type TeamHumanOwner struct {
+	UserID      uuid.UUID
+	Username    string
+	DisplayName string
+	Email       string
+	Status      string
 }
 
 type TeamListItem struct {
@@ -186,19 +204,27 @@ type TeamMemberRoleRequest struct {
 
 type CreateTeamRequest struct {
 	TenantID         uuid.UUID
+	ActorUserID      uuid.UUID
 	Slug             string
 	Name             string
 	Status           TeamStatus
 	HumanOwnerUserID *uuid.UUID
+	InitialMembers   []InitialTeamMemberInput
 	Metadata         map[string]any
 }
 
+type InitialTeamMemberInput struct {
+	UserID uuid.UUID
+	Role   string
+}
+
 type ListTeamsRequest struct {
-	TenantID uuid.UUID
-	Status   TeamStatus
-	Q        string
-	Offset   int32
-	Limit    int32
+	TenantID         uuid.UUID
+	Status           TeamStatus
+	GovernanceStatus GovernanceSummaryStatus
+	Q                string
+	Offset           int32
+	Limit            int32
 }
 
 type UpdateTeamRequest struct {

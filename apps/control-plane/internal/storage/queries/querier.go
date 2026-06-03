@@ -14,6 +14,7 @@ import (
 type Querier interface {
 	ActivateTenantTeamConfigRevision(ctx context.Context, arg ActivateTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (TenantMember, error)
+	AddTeamOwnerMembership(ctx context.Context, arg AddTeamOwnerMembershipParams) (TenantMember, error)
 	ApproveRuntimeEnrollment(ctx context.Context, arg ApproveRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	ApproveRuntimeEnrollmentWithNode(ctx context.Context, arg ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollment, error)
 	ArchiveActiveTenantTeamConfigRevision(ctx context.Context, arg ArchiveActiveTenantTeamConfigRevisionParams) ([]TenantTeamConfigRevision, error)
@@ -60,6 +61,7 @@ type Querier interface {
 	GetActiveRuntimeSessionByLookupHash(ctx context.Context, tokenLookupHash string) (GetActiveRuntimeSessionByLookupHashRow, error)
 	GetActiveTeamMembership(ctx context.Context, arg GetActiveTeamMembershipParams) (TenantMember, error)
 	GetActiveTenantMembership(ctx context.Context, arg GetActiveTenantMembershipParams) (TenantMember, error)
+	GetActiveTenantUserForTeamCreate(ctx context.Context, arg GetActiveTenantUserForTeamCreateParams) (GetActiveTenantUserForTeamCreateRow, error)
 	GetAuditEvent(ctx context.Context, id uuid.UUID) (AuditEvent, error)
 	GetCurrentDigitalEmployeeConfigRevision(ctx context.Context, arg GetCurrentDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
 	GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, arg GetCurrentDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error)

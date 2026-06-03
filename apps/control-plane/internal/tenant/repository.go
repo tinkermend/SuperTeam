@@ -9,6 +9,7 @@ import (
 
 type Repository interface {
 	CreateTeam(ctx context.Context, params CreateTeamParams) (TeamRecord, error)
+	CreateTeamWithInitialMembers(ctx context.Context, params CreateTeamWithInitialMembersParams) (TeamRecord, error)
 	ListTeams(ctx context.Context, params ListTeamsParams) ([]TeamRecord, error)
 	ListTeamSummaries(ctx context.Context, params ListTeamSummariesParams) ([]TeamListItemRecord, error)
 	GetTeamSummary(ctx context.Context, tenantID, teamID uuid.UUID) (TeamListItemRecord, error)
@@ -44,12 +45,24 @@ type CreateTeamParams struct {
 	Metadata         map[string]any
 }
 
+type CreateTeamWithInitialMembersParams struct {
+	TenantID       uuid.UUID
+	ActorUserID    uuid.UUID
+	Slug           string
+	Name           string
+	Status         TeamStatus
+	OwnerUserID    uuid.UUID
+	InitialMembers []InitialTeamMemberInput
+	Metadata       map[string]any
+}
+
 type ListTeamsParams struct {
-	TenantID uuid.UUID
-	Status   TeamStatus
-	Q        string
-	Offset   int32
-	Limit    int32
+	TenantID         uuid.UUID
+	Status           TeamStatus
+	GovernanceStatus GovernanceSummaryStatus
+	Q                string
+	Offset           int32
+	Limit            int32
 }
 
 type ListTeamSummariesParams = ListTeamsParams

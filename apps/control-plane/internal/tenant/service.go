@@ -38,9 +38,12 @@ func NewServiceWithoutAuditForTest(repository Repository) (*Service, error) {
 	return &Service{repository: repository}, nil
 }
 
-func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*Team, error) {
+func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamOverview, error) {
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.ActorUserID == uuid.Nil {
+		return nil, fmt.Errorf("%w: actor_user_id is required", ErrInvalidInput)
 	}
 	slug := strings.TrimSpace(req.Slug)
 	if slug == "" {
@@ -60,19 +63,44 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*Team,
 	if !status.IsValid() {
 		return nil, fmt.Errorf("%w: invalid team status", ErrInvalidInput)
 	}
+	initialMembers, err := normalizeInitialMembers(*req.HumanOwnerUserID, req.InitialMembers)
+	if err != nil {
+		return nil, err
+	}
 
-	record, err := s.repository.CreateTeam(ctx, CreateTeamParams{
-		TenantID:         req.TenantID,
-		Slug:             slug,
-		Name:             name,
-		Status:           status,
-		HumanOwnerUserID: validUUIDPtr(req.HumanOwnerUserID),
-		Metadata:         cloneMap(req.Metadata),
+	team, err := s.repository.CreateTeamWithInitialMembers(ctx, CreateTeamWithInitialMembersParams{
+		TenantID:       req.TenantID,
+		ActorUserID:    req.ActorUserID,
+		Slug:           slug,
+		Name:           name,
+		Status:         status,
+		OwnerUserID:    *req.HumanOwnerUserID,
+		InitialMembers: initialMembers,
+		Metadata:       cloneMap(req.Metadata),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create team: %w", err)
+		return nil, fmt.Errorf("create team with initial members: %w", err)
 	}
-	return teamFromRecord(record), nil
+	return s.GetOverview(ctx, team.TenantID, team.ID)
+}
+
+func normalizeInitialMembers(ownerUserID uuid.UUID, members []InitialTeamMemberInput) ([]InitialTeamMemberInput, error) {
+	seen := map[uuid.UUID]struct{}{ownerUserID: {}}
+	normalized := make([]InitialTeamMemberInput, 0, len(members))
+	for _, member := range members {
+		if member.UserID == uuid.Nil {
+			return nil, fmt.Errorf("%w: initial member user_id is required", ErrInvalidInput)
+		}
+		if member.Role != TeamRoleMember && member.Role != TeamRoleViewer {
+			return nil, fmt.Errorf("%w: initial member role must be member or viewer", ErrInvalidInput)
+		}
+		if _, ok := seen[member.UserID]; ok {
+			return nil, fmt.Errorf("%w: duplicate initial member", ErrInvalidInput)
+		}
+		seen[member.UserID] = struct{}{}
+		normalized = append(normalized, member)
+	}
+	return normalized, nil
 }
 
 func (s *Service) ListTeams(ctx context.Context, req ListTeamsRequest) ([]*Team, error) {
@@ -81,11 +109,12 @@ func (s *Service) ListTeams(ctx context.Context, req ListTeamsRequest) ([]*Team,
 		return nil, err
 	}
 	records, err := s.repository.ListTeams(ctx, ListTeamsParams{
-		TenantID: req.TenantID,
-		Status:   req.Status,
-		Q:        req.Q,
-		Offset:   req.Offset,
-		Limit:    req.Limit,
+		TenantID:         req.TenantID,
+		Status:           req.Status,
+		GovernanceStatus: req.GovernanceStatus,
+		Q:                req.Q,
+		Offset:           req.Offset,
+		Limit:            req.Limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list teams: %w", err)
@@ -103,11 +132,12 @@ func (s *Service) ListTeamSummaries(ctx context.Context, req ListTeamsRequest) (
 		return nil, err
 	}
 	records, err := s.repository.ListTeamSummaries(ctx, ListTeamSummariesParams{
-		TenantID: req.TenantID,
-		Status:   req.Status,
-		Q:        req.Q,
-		Offset:   req.Offset,
-		Limit:    req.Limit,
+		TenantID:         req.TenantID,
+		Status:           req.Status,
+		GovernanceStatus: req.GovernanceStatus,
+		Q:                req.Q,
+		Offset:           req.Offset,
+		Limit:            req.Limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list team summaries: %w", err)
@@ -675,6 +705,9 @@ func normalizeListTeamsRequest(req ListTeamsRequest) (ListTeamsRequest, error) {
 	if req.Status != "" && !req.Status.IsValid() {
 		return req, fmt.Errorf("%w: invalid team status", ErrInvalidInput)
 	}
+	if req.GovernanceStatus != "" && !req.GovernanceStatus.IsValid() {
+		return req, fmt.Errorf("%w: invalid governance status", ErrInvalidInput)
+	}
 	if req.Offset < 0 {
 		return req, fmt.Errorf("%w: offset must be non-negative", ErrInvalidInput)
 	}
@@ -911,9 +944,23 @@ func teamFromRecord(record TeamRecord) *Team {
 		Name:             record.Name,
 		Status:           record.Status,
 		HumanOwnerUserID: validUUIDPtr(record.HumanOwnerUserID),
+		HumanOwner:       cloneTeamHumanOwner(record.HumanOwner),
 		Metadata:         cloneMap(record.Metadata),
 		CreatedAt:        record.CreatedAt,
 		UpdatedAt:        record.UpdatedAt,
+	}
+}
+
+func cloneTeamHumanOwner(owner *TeamHumanOwner) *TeamHumanOwner {
+	if owner == nil {
+		return nil
+	}
+	return &TeamHumanOwner{
+		UserID:      owner.UserID,
+		Username:    owner.Username,
+		DisplayName: owner.DisplayName,
+		Email:       owner.Email,
+		Status:      owner.Status,
 	}
 }
 

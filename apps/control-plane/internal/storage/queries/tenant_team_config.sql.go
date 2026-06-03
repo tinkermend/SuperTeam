@@ -118,6 +118,54 @@ func (q *Queries) AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (T
 	return i, err
 }
 
+const AddTeamOwnerMembership = `-- name: AddTeamOwnerMembership :one
+INSERT INTO tenant_members (
+    tenant_id,
+    team_id,
+    principal_type,
+    principal_id,
+    role,
+    status
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    'user',
+    $3::uuid,
+    'owner',
+    'active'
+)
+ON CONFLICT (tenant_id, team_id, principal_type, principal_id, role)
+DO UPDATE SET
+    status = 'active',
+    disabled_at = NULL,
+    updated_at = NOW()
+RETURNING id, tenant_id, team_id, principal_type, principal_id, role, status, disabled_at, created_at, updated_at
+`
+
+type AddTeamOwnerMembershipParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+	UserID   uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) AddTeamOwnerMembership(ctx context.Context, arg AddTeamOwnerMembershipParams) (TenantMember, error) {
+	row := q.db.QueryRow(ctx, AddTeamOwnerMembership, arg.TenantID, arg.TeamID, arg.UserID)
+	var i TenantMember
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.PrincipalType,
+		&i.PrincipalID,
+		&i.Role,
+		&i.Status,
+		&i.DisabledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const ArchiveActiveTenantTeamConfigRevision = `-- name: ArchiveActiveTenantTeamConfigRevision :many
 UPDATE tenant_team_config_revisions
 SET status = 'archived',
@@ -487,6 +535,46 @@ func (q *Queries) DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemb
 	return i, err
 }
 
+const GetActiveTenantUserForTeamCreate = `-- name: GetActiveTenantUserForTeamCreate :one
+SELECT au.id, au.username, au.display_name, au.email, au.status
+FROM auth_users au
+JOIN tenant_members tm ON tm.principal_id = au.id
+WHERE au.id = $1::uuid
+  AND au.status = 'active'
+  AND au.deleted_at IS NULL
+  AND tm.tenant_id = $2::uuid
+  AND tm.principal_type = 'user'
+  AND tm.status = 'active'
+  AND tm.disabled_at IS NULL
+LIMIT 1
+`
+
+type GetActiveTenantUserForTeamCreateParams struct {
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenant_id"`
+}
+
+type GetActiveTenantUserForTeamCreateRow struct {
+	ID          uuid.UUID   `json:"id"`
+	Username    string      `json:"username"`
+	DisplayName pgtype.Text `json:"display_name"`
+	Email       pgtype.Text `json:"email"`
+	Status      string      `json:"status"`
+}
+
+func (q *Queries) GetActiveTenantUserForTeamCreate(ctx context.Context, arg GetActiveTenantUserForTeamCreateParams) (GetActiveTenantUserForTeamCreateRow, error) {
+	row := q.db.QueryRow(ctx, GetActiveTenantUserForTeamCreate, arg.ID, arg.TenantID)
+	var i GetActiveTenantUserForTeamCreateRow
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.DisplayName,
+		&i.Email,
+		&i.Status,
+	)
+	return i, err
+}
+
 const GetCurrentTenantTeamConfigRevision = `-- name: GetCurrentTenantTeamConfigRevision :one
 SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
 FROM tenant_team_config_revisions
@@ -763,6 +851,11 @@ employee_counts AS (
 )
 SELECT
   tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.human_owner_user_id, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at,
+  owner.id AS owner_user_id,
+  owner.username AS owner_username,
+  owner.display_name AS owner_display_name,
+  owner.email AS owner_email,
+  owner.status AS owner_status,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
   (
@@ -788,6 +881,7 @@ LEFT JOIN current_config cc ON cc.tenant_id = tt.tenant_id AND cc.team_id = tt.i
 LEFT JOIN draft_counts dc ON dc.tenant_id = tt.tenant_id AND dc.team_id = tt.id
 LEFT JOIN member_counts mc ON mc.tenant_id = tt.tenant_id AND mc.team_id = tt.id
 LEFT JOIN employee_counts ec ON ec.tenant_id = tt.tenant_id AND ec.team_id = tt.id
+LEFT JOIN auth_users owner ON owner.id = tt.human_owner_user_id AND owner.deleted_at IS NULL
 WHERE tt.id = $1::uuid
   AND tt.tenant_id = $2::uuid
   AND tt.deleted_at IS NULL
@@ -811,6 +905,11 @@ type GetTenantTeamSummaryRow struct {
 	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	OwnerUserID          uuid.NullUUID      `json:"owner_user_id"`
+	OwnerUsername        pgtype.Text        `json:"owner_username"`
+	OwnerDisplayName     pgtype.Text        `json:"owner_display_name"`
+	OwnerEmail           pgtype.Text        `json:"owner_email"`
+	OwnerStatus          pgtype.Text        `json:"owner_status"`
 	MemberCount          int32              `json:"member_count"`
 	DigitalEmployeeCount int32              `json:"digital_employee_count"`
 	CapabilityCount      int32              `json:"capability_count"`
@@ -836,6 +935,11 @@ func (q *Queries) GetTenantTeamSummary(ctx context.Context, arg GetTenantTeamSum
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OwnerUserID,
+		&i.OwnerUsername,
+		&i.OwnerDisplayName,
+		&i.OwnerEmail,
+		&i.OwnerStatus,
 		&i.MemberCount,
 		&i.DigitalEmployeeCount,
 		&i.CapabilityCount,
@@ -1098,6 +1202,11 @@ employee_counts AS (
 )
 SELECT
   tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.human_owner_user_id, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at,
+  owner.id AS owner_user_id,
+  owner.username AS owner_username,
+  owner.display_name AS owner_display_name,
+  owner.email AS owner_email,
+  owner.status AS owner_status,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
   (
@@ -1123,25 +1232,35 @@ LEFT JOIN current_config cc ON cc.tenant_id = tt.tenant_id AND cc.team_id = tt.i
 LEFT JOIN draft_counts dc ON dc.tenant_id = tt.tenant_id AND dc.team_id = tt.id
 LEFT JOIN member_counts mc ON mc.tenant_id = tt.tenant_id AND mc.team_id = tt.id
 LEFT JOIN employee_counts ec ON ec.tenant_id = tt.tenant_id AND ec.team_id = tt.id
+LEFT JOIN auth_users owner ON owner.id = tt.human_owner_user_id AND owner.deleted_at IS NULL
 WHERE tt.tenant_id = $1::uuid
   AND tt.deleted_at IS NULL
   AND ($2::varchar IS NULL OR tt.status = $2::varchar)
   AND ($2::varchar IS NOT NULL OR tt.status <> 'archived')
   AND (
     $3::varchar IS NULL
-    OR tt.name ILIKE '%' || $3::varchar || '%'
-    OR tt.slug ILIKE '%' || $3::varchar || '%'
+    OR CASE
+      WHEN cc.team_id IS NULL THEN 'not_configured'
+      WHEN COALESCE(dc.pending_draft_count, 0) > 0 THEN 'draft_pending'
+      ELSE 'active'
+    END = $3::varchar
+  )
+  AND (
+    $4::varchar IS NULL
+    OR tt.name ILIKE '%' || $4::varchar || '%'
+    OR tt.slug ILIKE '%' || $4::varchar || '%'
   )
 ORDER BY tt.updated_at DESC, tt.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type ListTenantTeamSummariesParams struct {
-	TenantID uuid.UUID   `json:"tenant_id"`
-	Status   pgtype.Text `json:"status"`
-	Q        pgtype.Text `json:"q"`
-	Offset   int32       `json:"offset"`
-	Limit    int32       `json:"limit"`
+	TenantID         uuid.UUID   `json:"tenant_id"`
+	Status           pgtype.Text `json:"status"`
+	GovernanceStatus pgtype.Text `json:"governance_status"`
+	Q                pgtype.Text `json:"q"`
+	Offset           int32       `json:"offset"`
+	Limit            int32       `json:"limit"`
 }
 
 type ListTenantTeamSummariesRow struct {
@@ -1157,6 +1276,11 @@ type ListTenantTeamSummariesRow struct {
 	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	OwnerUserID          uuid.NullUUID      `json:"owner_user_id"`
+	OwnerUsername        pgtype.Text        `json:"owner_username"`
+	OwnerDisplayName     pgtype.Text        `json:"owner_display_name"`
+	OwnerEmail           pgtype.Text        `json:"owner_email"`
+	OwnerStatus          pgtype.Text        `json:"owner_status"`
 	MemberCount          int32              `json:"member_count"`
 	DigitalEmployeeCount int32              `json:"digital_employee_count"`
 	CapabilityCount      int32              `json:"capability_count"`
@@ -1170,6 +1294,7 @@ func (q *Queries) ListTenantTeamSummaries(ctx context.Context, arg ListTenantTea
 	rows, err := q.db.Query(ctx, ListTenantTeamSummaries,
 		arg.TenantID,
 		arg.Status,
+		arg.GovernanceStatus,
 		arg.Q,
 		arg.Offset,
 		arg.Limit,
@@ -1194,6 +1319,11 @@ func (q *Queries) ListTenantTeamSummaries(ctx context.Context, arg ListTenantTea
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OwnerUserID,
+			&i.OwnerUsername,
+			&i.OwnerDisplayName,
+			&i.OwnerEmail,
+			&i.OwnerStatus,
 			&i.MemberCount,
 			&i.DigitalEmployeeCount,
 			&i.CapabilityCount,

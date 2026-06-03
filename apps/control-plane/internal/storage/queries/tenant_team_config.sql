@@ -184,6 +184,11 @@ employee_counts AS (
 )
 SELECT
   tt.*,
+  owner.id AS owner_user_id,
+  owner.username AS owner_username,
+  owner.display_name AS owner_display_name,
+  owner.email AS owner_email,
+  owner.status AS owner_status,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
   (
@@ -209,10 +214,19 @@ LEFT JOIN current_config cc ON cc.tenant_id = tt.tenant_id AND cc.team_id = tt.i
 LEFT JOIN draft_counts dc ON dc.tenant_id = tt.tenant_id AND dc.team_id = tt.id
 LEFT JOIN member_counts mc ON mc.tenant_id = tt.tenant_id AND mc.team_id = tt.id
 LEFT JOIN employee_counts ec ON ec.tenant_id = tt.tenant_id AND ec.team_id = tt.id
+LEFT JOIN auth_users owner ON owner.id = tt.human_owner_user_id AND owner.deleted_at IS NULL
 WHERE tt.tenant_id = sqlc.arg('tenant_id')::uuid
   AND tt.deleted_at IS NULL
   AND (sqlc.narg('status')::varchar IS NULL OR tt.status = sqlc.narg('status')::varchar)
   AND (sqlc.narg('status')::varchar IS NOT NULL OR tt.status <> 'archived')
+  AND (
+    sqlc.narg('governance_status')::varchar IS NULL
+    OR CASE
+      WHEN cc.team_id IS NULL THEN 'not_configured'
+      WHEN COALESCE(dc.pending_draft_count, 0) > 0 THEN 'draft_pending'
+      ELSE 'active'
+    END = sqlc.narg('governance_status')::varchar
+  )
   AND (
     sqlc.narg('q')::varchar IS NULL
     OR tt.name ILIKE '%' || sqlc.narg('q')::varchar || '%'
@@ -260,6 +274,11 @@ employee_counts AS (
 )
 SELECT
   tt.*,
+  owner.id AS owner_user_id,
+  owner.username AS owner_username,
+  owner.display_name AS owner_display_name,
+  owner.email AS owner_email,
+  owner.status AS owner_status,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
   (
@@ -285,6 +304,7 @@ LEFT JOIN current_config cc ON cc.tenant_id = tt.tenant_id AND cc.team_id = tt.i
 LEFT JOIN draft_counts dc ON dc.tenant_id = tt.tenant_id AND dc.team_id = tt.id
 LEFT JOIN member_counts mc ON mc.tenant_id = tt.tenant_id AND mc.team_id = tt.id
 LEFT JOIN employee_counts ec ON ec.tenant_id = tt.tenant_id AND ec.team_id = tt.id
+LEFT JOIN auth_users owner ON owner.id = tt.human_owner_user_id AND owner.deleted_at IS NULL
 WHERE tt.id = sqlc.arg('id')::uuid
   AND tt.tenant_id = sqlc.arg('tenant_id')::uuid
   AND tt.deleted_at IS NULL;
@@ -371,6 +391,42 @@ VALUES (
     'user',
     sqlc.arg('user_id')::uuid,
     sqlc.arg('role')::varchar,
+    'active'
+)
+ON CONFLICT (tenant_id, team_id, principal_type, principal_id, role)
+DO UPDATE SET
+    status = 'active',
+    disabled_at = NULL,
+    updated_at = NOW()
+RETURNING *;
+
+-- name: GetActiveTenantUserForTeamCreate :one
+SELECT au.id, au.username, au.display_name, au.email, au.status
+FROM auth_users au
+JOIN tenant_members tm ON tm.principal_id = au.id
+WHERE au.id = sqlc.arg('id')::uuid
+  AND au.status = 'active'
+  AND au.deleted_at IS NULL
+  AND tm.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tm.principal_type = 'user'
+  AND tm.status = 'active'
+  AND tm.disabled_at IS NULL
+LIMIT 1;
+
+-- name: AddTeamOwnerMembership :one
+INSERT INTO tenant_members (
+    tenant_id,
+    team_id,
+    principal_type,
+    principal_id,
+    role,
+    status
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('team_id')::uuid,
+    'user',
+    sqlc.arg('user_id')::uuid,
+    'owner',
     'active'
 )
 ON CONFLICT (tenant_id, team_id, principal_type, principal_id, role)
