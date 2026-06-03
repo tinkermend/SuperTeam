@@ -10,7 +10,7 @@ use crate::events::ProviderEvent;
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
 use crate::providers::claude::ClaudeProvider;
 use crate::providers::opencode::OpenCodeProvider;
-use crate::providers::{ProviderAdapter, ProviderRequest};
+use crate::providers::{ProviderAdapter, ProviderEventStream, ProviderRequest};
 use crate::runs::{RunSpec, RunStatus, RuntimeCommandRunContext, RuntimeRunStore};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,12 +108,42 @@ impl RuntimeCommandExecutor {
             provider_type: payload.provider_type.clone(),
             provider_session_id: session_id,
         });
-        self.spawn_provider_run(snapshot.id.clone(), provider, spec);
+        let run_id = snapshot.id.clone();
+        let provider_run = match provider.start(provider_request(&spec)).await {
+            Ok(provider_run) => provider_run,
+            Err(error) => {
+                let message = error.to_string();
+                let _ = self.runs.finish_failed(&run_id, message).await;
+                self.registry.record_run_finished(&run_id);
+                return Ok(RuntimeCommandOutcome {
+                    command_id: payload.command_id,
+                    accepted: true,
+                    run_id: Some(run_id),
+                });
+            }
+        };
+
+        if let Err(error) = self
+            .runs
+            .attach_handle(&run_id, provider_run.handle.clone())
+            .await
+        {
+            let message = error.to_string();
+            let _ = provider_run.handle.cancel().await;
+            let _ = self.runs.finish_failed(&run_id, message).await;
+            self.registry.record_run_finished(&run_id);
+            return Ok(RuntimeCommandOutcome {
+                command_id: payload.command_id,
+                accepted: true,
+                run_id: Some(run_id),
+            });
+        }
+        self.spawn_provider_event_drain(run_id.clone(), provider_run.events);
 
         Ok(RuntimeCommandOutcome {
             command_id: payload.command_id,
             accepted: true,
-            run_id: Some(snapshot.id),
+            run_id: Some(run_id),
         })
     }
 
@@ -277,23 +307,12 @@ impl RuntimeCommandExecutor {
         }
     }
 
-    fn spawn_provider_run(
-        &self,
-        run_id: String,
-        provider: Box<dyn ProviderAdapter>,
-        spec: RunSpec,
-    ) {
+    fn spawn_provider_event_drain(&self, run_id: String, events: ProviderEventStream) {
         let runs = self.runs.clone();
         let registry = self.registry.clone();
         tokio::spawn(async move {
-            let result = run_provider_stream(
-                runs.clone(),
-                registry.clone(),
-                run_id.clone(),
-                provider,
-                spec,
-            )
-            .await;
+            let result =
+                drain_provider_events(runs.clone(), registry.clone(), run_id.clone(), events).await;
 
             if let Err(error) = result {
                 if !run_is_cancelled(&runs, &run_id).await {
@@ -311,25 +330,12 @@ impl RuntimeCommandExecutor {
     }
 }
 
-async fn run_provider_stream(
+async fn drain_provider_events(
     runs: RuntimeRunStore,
     registry: RuntimeCommandRegistry,
     run_id: String,
-    provider: Box<dyn ProviderAdapter>,
-    spec: RunSpec,
+    mut events: ProviderEventStream,
 ) -> anyhow::Result<()> {
-    let provider_run = provider
-        .start(ProviderRequest {
-            prompt: spec.prompt,
-            workspace_path: spec.workspace_path,
-            session_id: spec.session_id,
-            continue_session: spec.continue_session,
-            model: spec.model,
-        })
-        .await?;
-
-    runs.attach_handle(&run_id, provider_run.handle).await?;
-    let mut events = provider_run.events;
     while let Some(event) = events.next().await {
         let event = event?;
         if let ProviderEvent::SessionStarted { session_id } = &event {
@@ -338,6 +344,16 @@ async fn run_provider_stream(
         runs.record_event(&run_id, event).await?;
     }
     Ok(())
+}
+
+fn provider_request(spec: &RunSpec) -> ProviderRequest {
+    ProviderRequest {
+        prompt: spec.prompt.clone(),
+        workspace_path: spec.workspace_path.clone(),
+        session_id: spec.session_id.clone(),
+        continue_session: spec.continue_session,
+        model: spec.model.clone(),
+    }
 }
 
 async fn run_is_cancelled(runs: &RuntimeRunStore, run_id: &str) -> bool {

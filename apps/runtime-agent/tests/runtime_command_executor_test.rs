@@ -348,6 +348,59 @@ sleep 5
     assert_eq!(snapshot.status, RunStatus::Cancelled);
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn stop_session_immediately_after_start_kills_provider_before_output() {
+    let temp = TempDir::new().expect("tempdir");
+    let marker_file = temp.path().join("provider-marker.txt");
+    let fake_claude = make_script(
+        temp.path(),
+        "slow-start-claude",
+        &format!(
+            r#"#!/usr/bin/env bash
+sleep 0.25
+printf '%s\n' marker > {}
+sleep 5
+"#,
+            shell_quote(&marker_file)
+        ),
+    );
+    let executor = configure_runtime(&temp, fake_claude);
+
+    let start = executor
+        .handle_command(session_command(
+            "cmd-start-racy",
+            RuntimeCommandType::StartSession,
+            "new",
+            None,
+            Some("start cancellable work"),
+            None,
+        ))
+        .await
+        .expect("start_session accepted");
+    let started_run_id = start.run_id.expect("started run id");
+
+    let stop = executor
+        .handle_command(session_command(
+            "cmd-stop-racy",
+            RuntimeCommandType::StopSession,
+            "new",
+            None,
+            Some(""),
+            None,
+        ))
+        .await
+        .expect("stop_session accepted");
+
+    assert_eq!(stop.run_id.as_deref(), Some(started_run_id.as_str()));
+    wait_for_status(&executor.runs(), &started_run_id, RunStatus::Cancelled).await;
+
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert!(
+        !marker_file.exists(),
+        "provider kept running after immediate stop_session"
+    );
+}
+
 #[tokio::test]
 async fn send_input_without_session_or_reuse_latest_is_rejected() {
     let temp = TempDir::new().expect("tempdir");
