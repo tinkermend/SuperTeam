@@ -247,6 +247,34 @@ describe("PermissionsCenter", () => {
     });
   });
 
+  it("derives team resources when diagnostics action targets team governance", async () => {
+    const { fetcher, requests } = createAuthzFetcher();
+    const screen = await renderPermissionsCenter(fetcher);
+
+    await userEvent.click(screen.getByRole("tab", { name: "权限诊断" }));
+    await userEvent.fill(screen.getByLabelText("Actor ID"), actorId);
+    await userEvent.fill(screen.getByLabelText("租户 ID"), defaultTenantId);
+    await userEvent.fill(screen.getByLabelText("团队 ID"), teamId);
+    await userEvent.click(screen.getByRole("combobox", { name: "动作" }));
+    await userEvent.click(screen.getByRole("option", { name: "team.governance.approve" }));
+    await userEvent.click(screen.getByRole("button", { name: "开始诊断" }));
+
+    await expect.element(screen.getByText("允许")).toBeVisible();
+
+    const checkRequest = requests.find(
+      (request) => request.pathname === "/api/authz/check" && request.method === "POST",
+    );
+    expect(checkRequest?.body).toMatchObject({
+      action: "team.governance.approve",
+      resource: {
+        id: teamId,
+        type: "team",
+      },
+      team_id: teamId,
+      tenant_id: defaultTenantId,
+    });
+  });
+
   it("creates tenant runtime scopes with backend-derived scope value", async () => {
     const { fetcher, requests } = createAuthzFetcher();
     const screen = await renderPermissionsCenter(fetcher);

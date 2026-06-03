@@ -127,7 +127,24 @@ export type CheckPermissionRequest = {
     | "team.access"
     | "task.claim"
     | "authz_center.read"
-    | "runtime_scope.manage";
+    | "runtime_scope.manage"
+    | "team.create"
+    | "team.read"
+    | "team.update"
+    | "team.disable"
+    | "team.archive"
+    | "team.restore"
+    | "team.member.add"
+    | "team.member.remove"
+    | "team.member.change_role"
+    | "team.member.request_privileged_role"
+    | "team.member.approve_privileged_role"
+    | "team.governance.read"
+    | "team.governance.edit"
+    | "team.governance.approve"
+    | "team.capability.bind"
+    | "team.capability.unbind"
+    | "team.audit.read";
   resource: AuthzRef;
   tenant_id: string;
   team_id?: string | null;

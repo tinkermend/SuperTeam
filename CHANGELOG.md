@@ -48,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### 团队管理权限底座 (2026-06-03)
+
+- Control Plane `authz` 新增 OpenFGA-ready 团队管理 action 语义，覆盖团队 CRUD、禁用/归档/恢复、成员增删改、特权角色申请/批准、治理配置读写/批准、能力绑定和团队审计读取。
+- `DBAuthorizer` 新增团队管理授权矩阵：租户 owner/admin 可创建并管理所有团队；团队 owner/admin 可维护本团队基础信息和普通成员；团队 owner 或 approver 可批准治理配置；直接添加/提升 owner/admin/approver 会要求走特权角色申请/批准语义，并保留最后团队负责人保护。
+- 团队 API 路由停止复用 `runtime_scope.manage`，改为按路由发送 `team.create`、`team.read`、`team.governance.edit`、`team.governance.approve` 和 `team.governance.read` 等业务 action。
+- 权限中心诊断契约和 Web 表单补齐团队管理 action 枚举，能按 action 自动派生 tenant/team resource，为后续 OpenFGA Authorizer 或 tuple 同步保留稳定 actor/action/resource 边界。
+
 #### Web 数字员工创建流程 (2026-06-03)
 
 - 数字员工页面新增创建草稿员工并预览生效配置流程，可基于团队当前治理配置生成个人配置修订，成功预览后提示可提交负责人确认，阻断错误或预览失败时给出页面反馈。
@@ -58,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### 团队治理后端 (2026-06-03)
 
-- Control Plane 新增租户团队领域服务、PostgreSQL repository 和 API 路由，支持团队负责人、共享治理配置版本创建与当前版本查询；相关路由由 Web 控制台会话认证保护，并统一经过 `runtime_scope.manage` 授权校验。
+- Control Plane 新增租户团队领域服务、PostgreSQL repository 和 API 路由，支持团队负责人、共享治理配置版本创建与当前版本查询；相关路由由 Web 控制台会话认证保护，并统一经过 `team.*` 业务授权校验。
 - 数字员工服务新增个人配置版本、生效配置预览与校验、审批落库能力；预览会阻断团队能力白名单外的个人能力、团队上下文范围外的上下文覆盖以及降低团队审批要求的个人审批覆盖。
 - 数字员工创建新增同租户团队存在性校验；生效配置预览与审批只接受 active 团队治理配置版本，避免 draft 配置绕过团队负责人确认。
 - 团队治理配置版本创建不再接受客户端指定 `approved_by`，审批归属由当前 Web 控制台登录用户在服务端注入。

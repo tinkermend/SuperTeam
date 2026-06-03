@@ -36,7 +36,7 @@ func (h *HTTPHandler) SetAuthorizer(authorizer authz.Authorizer) {
 }
 
 func (h *HTTPHandler) ListTeams(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeTeamManagement(w, r, "team list")
+	tenantID, ok := h.authorizeTenantTeamAction(w, r, authz.ActionTeamRead, "team list")
 	if !ok {
 		return
 	}
@@ -68,7 +68,7 @@ func (h *HTTPHandler) ListTeams(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeTeamManagement(w, r, "team create")
+	tenantID, ok := h.authorizeTenantTeamAction(w, r, authz.ActionTeamCreate, "team create")
 	if !ok {
 		return
 	}
@@ -103,15 +103,15 @@ func (h *HTTPHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) GetTeam(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeTeamManagement(w, r, "team read")
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamRead, "team read")
 	if !ok {
 		return
 	}
 	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	teamID, ok := teamIDFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -124,14 +124,6 @@ func (h *HTTPHandler) GetTeam(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) CreateTeamConfigRevision(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeTeamManagement(w, r, "team config revision create")
-	if !ok {
-		return
-	}
-	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
 	teamID, ok := teamIDFromRequest(w, r)
 	if !ok {
 		return
@@ -149,6 +141,18 @@ func (h *HTTPHandler) CreateTeamConfigRevision(w http.ResponseWriter, r *http.Re
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	action := authz.ActionTeamGovernanceApprove
+	if req.Status == TeamConfigRevisionStatusDraft {
+		action = authz.ActionTeamGovernanceEdit
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, action, "team config revision create")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
 		return
 	}
 	approvedBy := middleware.GetUserID(r.Context())
@@ -174,15 +178,15 @@ func (h *HTTPHandler) CreateTeamConfigRevision(w http.ResponseWriter, r *http.Re
 }
 
 func (h *HTTPHandler) GetCurrentTeamConfigRevision(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeTeamManagement(w, r, "team config revision current read")
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceRead, "team config revision current read")
 	if !ok {
 		return
 	}
 	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	teamID, ok := teamIDFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -202,7 +206,22 @@ func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService,
 	return h.service, true
 }
 
-func (h *HTTPHandler) authorizeTeamManagement(w http.ResponseWriter, r *http.Request, auditReason string) (uuid.UUID, bool) {
+func (h *HTTPHandler) authorizeTenantTeamAction(w http.ResponseWriter, r *http.Request, action, auditReason string) (uuid.UUID, bool) {
+	tenantID := middleware.GetTenantID(r.Context())
+	return h.authorizeTeamRequest(w, r, action, authz.ResourceRef{
+		Type: authz.ResourceTenant,
+		ID:   tenantID.String(),
+	}, nil, auditReason)
+}
+
+func (h *HTTPHandler) authorizeTeamAction(w http.ResponseWriter, r *http.Request, teamID uuid.UUID, action, auditReason string) (uuid.UUID, bool) {
+	return h.authorizeTeamRequest(w, r, action, authz.ResourceRef{
+		Type: authz.ResourceTeam,
+		ID:   teamID.String(),
+	}, &teamID, auditReason)
+}
+
+func (h *HTTPHandler) authorizeTeamRequest(w http.ResponseWriter, r *http.Request, action string, resource authz.ResourceRef, teamID *uuid.UUID, auditReason string) (uuid.UUID, bool) {
 	if h == nil || h.authorizer == nil {
 		http.Error(w, "team authorization is not configured", http.StatusForbidden)
 		return uuid.Nil, false
@@ -218,12 +237,10 @@ func (h *HTTPHandler) authorizeTeamManagement(w http.ResponseWriter, r *http.Req
 			Type: authz.ActorUser,
 			ID:   userID.String(),
 		},
-		Action: authz.ActionRuntimeScopeManage,
-		Resource: authz.ResourceRef{
-			Type: authz.ResourceTenant,
-			ID:   tenantID.String(),
-		},
+		Action:      action,
+		Resource:    resource,
 		TenantID:    tenantID,
+		TeamID:      teamID,
 		AuditReason: auditReason,
 	})
 	if err != nil {

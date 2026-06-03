@@ -355,6 +355,653 @@ func TestDBAuthorizerAuthzCenterReadRequiresTenantOwnerOrAdmin(t *testing.T) {
 	}
 }
 
+func TestDBAuthorizerTeamManagementActionsUseOpenFGAReadyRoles(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+
+	tests := []struct {
+		name         string
+		action       string
+		resource     ResourceRef
+		teamID       *uuid.UUID
+		tenantRole   string
+		teamRole     string
+		context      map[string]any
+		allowed      bool
+		matchedRule  string
+		denyReason   string
+		resourceTeam bool
+	}{
+		{
+			name:        "tenant owner creates team at tenant resource",
+			action:      ActionTeamCreate,
+			resource:    ResourceRef{Type: ResourceTenant, ID: tenantID.String()},
+			tenantRole:  RoleOwner,
+			allowed:     true,
+			matchedRule: "tenant.owner",
+		},
+		{
+			name:       "tenant member cannot create team",
+			action:     ActionTeamCreate,
+			resource:   ResourceRef{Type: ResourceTenant, ID: tenantID.String()},
+			tenantRole: RoleMember,
+			denyReason: ReasonNoMembership,
+		},
+		{
+			name:         "team member reads own team",
+			action:       ActionTeamRead,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleMember,
+			allowed:      true,
+			matchedRule:  "team.member",
+			resourceTeam: true,
+		},
+		{
+			name:        "tenant admin lists teams at tenant resource",
+			action:      ActionTeamRead,
+			resource:    ResourceRef{Type: ResourceTenant, ID: tenantID.String()},
+			tenantRole:  RoleAdmin,
+			allowed:     true,
+			matchedRule: "tenant.admin",
+		},
+		{
+			name:       "tenant member cannot list all teams at tenant resource",
+			action:     ActionTeamRead,
+			resource:   ResourceRef{Type: ResourceTenant, ID: tenantID.String()},
+			tenantRole: RoleMember,
+			denyReason: ReasonNoMembership,
+		},
+		{
+			name:         "team admin updates own team",
+			action:       ActionTeamUpdate,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleAdmin,
+			allowed:      true,
+			matchedRule:  "team.admin",
+			resourceTeam: true,
+		},
+		{
+			name:         "team viewer cannot update team",
+			action:       ActionTeamUpdate,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleViewer,
+			denyReason:   ReasonNoMembership,
+			resourceTeam: true,
+		},
+		{
+			name:         "team owner disables own team",
+			action:       ActionTeamDisable,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleOwner,
+			allowed:      true,
+			matchedRule:  "team.owner",
+			resourceTeam: true,
+		},
+		{
+			name:         "team admin archives own team",
+			action:       ActionTeamArchive,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleAdmin,
+			allowed:      true,
+			matchedRule:  "team.admin",
+			resourceTeam: true,
+		},
+		{
+			name:         "team owner restores own team",
+			action:       ActionTeamRestore,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleOwner,
+			allowed:      true,
+			matchedRule:  "team.owner",
+			resourceTeam: true,
+		},
+		{
+			name:         "team admin adds ordinary member",
+			action:       ActionTeamMemberAdd,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleAdmin,
+			context:      map[string]any{"target_role": RoleMember},
+			allowed:      true,
+			matchedRule:  "team.admin",
+			resourceTeam: true,
+		},
+		{
+			name:         "team admin cannot directly add privileged role",
+			action:       ActionTeamMemberAdd,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleAdmin,
+			context:      map[string]any{"target_role": RoleOwner},
+			denyReason:   ReasonPrivilegedRoleRequiresApproval,
+			resourceTeam: true,
+		},
+		{
+			name:         "team admin changes ordinary member role",
+			action:       ActionTeamMemberChangeRole,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleAdmin,
+			context:      map[string]any{"target_role": RoleViewer},
+			allowed:      true,
+			matchedRule:  "team.admin",
+			resourceTeam: true,
+		},
+		{
+			name:         "team admin cannot directly promote privileged role",
+			action:       ActionTeamMemberChangeRole,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleAdmin,
+			context:      map[string]any{"target_role": RoleApprover},
+			denyReason:   ReasonPrivilegedRoleRequiresApproval,
+			resourceTeam: true,
+		},
+		{
+			name:         "team admin removes ordinary member",
+			action:       ActionTeamMemberRemove,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleAdmin,
+			context:      map[string]any{"target_role": RoleMember},
+			allowed:      true,
+			matchedRule:  "team.admin",
+			resourceTeam: true,
+		},
+		{
+			name:         "last team owner cannot be removed",
+			action:       ActionTeamMemberRemove,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleOwner,
+			context:      map[string]any{"target_role": RoleOwner, "last_team_owner": true},
+			denyReason:   ReasonLastTeamOwner,
+			resourceTeam: true,
+		},
+		{
+			name:         "team admin requests privileged role change",
+			action:       ActionTeamMemberRequestPrivilegedRole,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleAdmin,
+			context:      map[string]any{"target_role": RoleApprover},
+			allowed:      true,
+			matchedRule:  "team.admin",
+			resourceTeam: true,
+		},
+		{
+			name:         "team owner approves privileged role change",
+			action:       ActionTeamMemberApprovePrivilegedRole,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleOwner,
+			context:      map[string]any{"target_role": RoleAdmin},
+			allowed:      true,
+			matchedRule:  "team.owner",
+			resourceTeam: true,
+		},
+		{
+			name:         "team admin cannot approve privileged role change",
+			action:       ActionTeamMemberApprovePrivilegedRole,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleAdmin,
+			context:      map[string]any{"target_role": RoleOwner},
+			denyReason:   ReasonNoMembership,
+			resourceTeam: true,
+		},
+		{
+			name:         "team viewer reads governance",
+			action:       ActionTeamGovernanceRead,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleViewer,
+			allowed:      true,
+			matchedRule:  "team.viewer",
+			resourceTeam: true,
+		},
+		{
+			name:         "team admin edits governance draft",
+			action:       ActionTeamGovernanceEdit,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleAdmin,
+			allowed:      true,
+			matchedRule:  "team.admin",
+			resourceTeam: true,
+		},
+		{
+			name:         "team approver approves governance",
+			action:       ActionTeamGovernanceApprove,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleApprover,
+			allowed:      true,
+			matchedRule:  "team.approver",
+			resourceTeam: true,
+		},
+		{
+			name:         "team admin cannot approve governance without approver role",
+			action:       ActionTeamGovernanceApprove,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleAdmin,
+			denyReason:   ReasonNoMembership,
+			resourceTeam: true,
+		},
+		{
+			name:         "team owner binds capability",
+			action:       ActionTeamCapabilityBind,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleOwner,
+			allowed:      true,
+			matchedRule:  "team.owner",
+			resourceTeam: true,
+		},
+		{
+			name:         "team admin unbinds capability",
+			action:       ActionTeamCapabilityUnbind,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleAdmin,
+			allowed:      true,
+			matchedRule:  "team.admin",
+			resourceTeam: true,
+		},
+		{
+			name:         "team owner reads audit",
+			action:       ActionTeamAuditRead,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleOwner,
+			allowed:      true,
+			matchedRule:  "team.owner",
+			resourceTeam: true,
+		},
+		{
+			name:         "team viewer cannot read audit",
+			action:       ActionTeamAuditRead,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			teamRole:     RoleViewer,
+			denyReason:   ReasonNoMembership,
+			resourceTeam: true,
+		},
+		{
+			name:         "tenant admin manages any team",
+			action:       ActionTeamMemberChangeRole,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			tenantRole:   RoleAdmin,
+			context:      map[string]any{"target_role": RoleMember},
+			allowed:      true,
+			matchedRule:  "tenant.admin",
+			resourceTeam: true,
+		},
+		{
+			name:         "missing membership denies team action",
+			action:       ActionTeamUpdate,
+			resource:     ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:       &teamID,
+			denyReason:   ReasonNoMembership,
+			resourceTeam: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			userID := uuid.New()
+			repo := &memoryRepository{
+				tenantRoles: map[string]string{},
+				teamRoles:   map[string]string{},
+			}
+			if tt.tenantRole != "" {
+				repo.tenantRoles[tenantID.String()+":user:"+userID.String()] = tt.tenantRole
+			}
+			if tt.teamRole != "" {
+				repo.teamRoles[tenantID.String()+":"+teamID.String()+":user:"+userID.String()] = tt.teamRole
+			}
+			authorizer := NewDBAuthorizer(repo)
+
+			decision, err := authorizer.Check(context.Background(), CheckRequest{
+				Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+				Action:   tt.action,
+				Resource: tt.resource,
+				TenantID: tenantID,
+				TeamID:   tt.teamID,
+				Context:  tt.context,
+			})
+
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if decision.Allowed != tt.allowed {
+				t.Fatalf("expected allowed=%v, got %#v", tt.allowed, decision)
+			}
+			if tt.matchedRule != "" && decision.MatchedRule != tt.matchedRule {
+				t.Fatalf("expected matched rule %q, got %q", tt.matchedRule, decision.MatchedRule)
+			}
+			if tt.denyReason != "" && decision.Reason != tt.denyReason {
+				t.Fatalf("expected deny reason %q, got %q", tt.denyReason, decision.Reason)
+			}
+		})
+	}
+}
+
+func TestDBAuthorizerTeamManagementActionsDenyWrongResource(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000013")
+	repo := &memoryRepository{
+		tenantRoles: map[string]string{
+			tenantID.String() + ":user:" + userID.String(): RoleOwner,
+		},
+		teamRoles: map[string]string{
+			tenantID.String() + ":" + teamID.String() + ":user:" + userID.String(): RoleOwner,
+		},
+	}
+	authorizer := NewDBAuthorizer(repo)
+
+	tests := []struct {
+		name     string
+		action   string
+		resource ResourceRef
+		teamID   *uuid.UUID
+	}{
+		{
+			name:     "team create requires tenant resource",
+			action:   ActionTeamCreate,
+			resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+			teamID:   &teamID,
+		},
+		{
+			name:     "team update requires matching team resource",
+			action:   ActionTeamUpdate,
+			resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()},
+			teamID:   &teamID,
+		},
+		{
+			name:     "team governance approve requires team id",
+			action:   ActionTeamGovernanceApprove,
+			resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decision, err := authorizer.Check(context.Background(), CheckRequest{
+				Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+				Action:   tt.action,
+				Resource: tt.resource,
+				TenantID: tenantID,
+				TeamID:   tt.teamID,
+			})
+
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if decision.Allowed {
+				t.Fatalf("expected invalid resource denial, got %#v", decision)
+			}
+			if decision.Reason != ReasonInvalidResource {
+				t.Fatalf("expected invalid resource reason, got %q", decision.Reason)
+			}
+		})
+	}
+}
+
+func TestDBAuthorizerTeamManagementActionsDenyWithoutMembership(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+
+	tests := []struct {
+		name     string
+		action   string
+		resource ResourceRef
+		teamID   *uuid.UUID
+		context  map[string]any
+	}{
+		{name: "team create", action: ActionTeamCreate, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}},
+		{name: "team collection read", action: ActionTeamRead, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}},
+		{name: "team read", action: ActionTeamRead, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID},
+		{name: "team update", action: ActionTeamUpdate, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID},
+		{name: "team disable", action: ActionTeamDisable, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID},
+		{name: "team archive", action: ActionTeamArchive, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID},
+		{name: "team restore", action: ActionTeamRestore, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID},
+		{name: "member add", action: ActionTeamMemberAdd, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, context: map[string]any{"target_role": RoleMember}},
+		{name: "member remove", action: ActionTeamMemberRemove, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, context: map[string]any{"target_role": RoleMember}},
+		{name: "member change role", action: ActionTeamMemberChangeRole, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, context: map[string]any{"target_role": RoleViewer}},
+		{name: "member request privileged role", action: ActionTeamMemberRequestPrivilegedRole, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, context: map[string]any{"target_role": RoleApprover}},
+		{name: "member approve privileged role", action: ActionTeamMemberApprovePrivilegedRole, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, context: map[string]any{"target_role": RoleAdmin}},
+		{name: "governance read", action: ActionTeamGovernanceRead, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID},
+		{name: "governance edit", action: ActionTeamGovernanceEdit, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID},
+		{name: "governance approve", action: ActionTeamGovernanceApprove, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID},
+		{name: "capability bind", action: ActionTeamCapabilityBind, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID},
+		{name: "capability unbind", action: ActionTeamCapabilityUnbind, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID},
+		{name: "audit read", action: ActionTeamAuditRead, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authorizer := NewDBAuthorizer(&memoryRepository{
+				tenantRoles: map[string]string{},
+				teamRoles:   map[string]string{},
+			})
+			decision, err := authorizer.Check(context.Background(), CheckRequest{
+				Actor:    ActorRef{Type: ActorUser, ID: uuid.New().String()},
+				Action:   tt.action,
+				Resource: tt.resource,
+				TenantID: tenantID,
+				TeamID:   tt.teamID,
+				Context:  tt.context,
+			})
+
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if decision.Allowed || decision.Reason != ReasonNoMembership {
+				t.Fatalf("expected no membership denial, got %#v", decision)
+			}
+		})
+	}
+}
+
+func TestDBAuthorizerTeamManagementActionsValidateResourceShape(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	otherTenantID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000015")
+	repo := &memoryRepository{
+		tenantRoles: map[string]string{
+			tenantID.String() + ":user:" + userID.String(): RoleOwner,
+		},
+		teamRoles: map[string]string{
+			tenantID.String() + ":" + teamID.String() + ":user:" + userID.String(): RoleOwner,
+		},
+	}
+	authorizer := NewDBAuthorizer(repo)
+
+	tests := []struct {
+		name     string
+		action   string
+		resource ResourceRef
+		teamID   *uuid.UUID
+	}{
+		{name: "team create rejects team resource", action: ActionTeamCreate, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID},
+		{name: "team collection read rejects wrong tenant", action: ActionTeamRead, resource: ResourceRef{Type: ResourceTenant, ID: otherTenantID.String()}},
+		{name: "team read rejects tenant resource with team context", action: ActionTeamRead, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "team update rejects tenant resource", action: ActionTeamUpdate, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "team disable rejects tenant resource", action: ActionTeamDisable, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "team archive rejects tenant resource", action: ActionTeamArchive, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "team restore rejects tenant resource", action: ActionTeamRestore, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "member add rejects tenant resource", action: ActionTeamMemberAdd, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "member remove rejects tenant resource", action: ActionTeamMemberRemove, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "member change role rejects tenant resource", action: ActionTeamMemberChangeRole, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "member request privileged role rejects tenant resource", action: ActionTeamMemberRequestPrivilegedRole, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "member approve privileged role rejects tenant resource", action: ActionTeamMemberApprovePrivilegedRole, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "governance read rejects tenant resource", action: ActionTeamGovernanceRead, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "governance edit rejects tenant resource", action: ActionTeamGovernanceEdit, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "governance approve rejects tenant resource", action: ActionTeamGovernanceApprove, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "capability bind rejects tenant resource", action: ActionTeamCapabilityBind, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "capability unbind rejects tenant resource", action: ActionTeamCapabilityUnbind, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+		{name: "audit read rejects tenant resource", action: ActionTeamAuditRead, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, teamID: &teamID},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decision, err := authorizer.Check(context.Background(), CheckRequest{
+				Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+				Action:   tt.action,
+				Resource: tt.resource,
+				TenantID: tenantID,
+				TeamID:   tt.teamID,
+			})
+
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if decision.Allowed || decision.Reason != ReasonInvalidResource {
+				t.Fatalf("expected invalid resource denial, got %#v", decision)
+			}
+		})
+	}
+}
+
+func TestDBAuthorizerRecordsTeamManagementDecision(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000014")
+	recorder := &memoryRecorder{}
+	repo := &memoryRepository{
+		teamRoles: map[string]string{
+			tenantID.String() + ":" + teamID.String() + ":user:" + userID.String(): RoleOwner,
+		},
+	}
+	authorizer := NewDBAuthorizer(repo, recorder)
+
+	decision, err := authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+		Action:   ActionTeamGovernanceApprove,
+		Resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()},
+		TenantID: tenantID,
+		TeamID:   &teamID,
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !decision.Allowed {
+		t.Fatalf("expected allowed decision, got %#v", decision)
+	}
+	if len(recorder.records) != 1 {
+		t.Fatalf("expected one decision record, got %#v", recorder.records)
+	}
+	record := recorder.records[0]
+	if record.Action != ActionTeamGovernanceApprove || record.ResourceType != ResourceTeam || record.ResourceID != teamID.String() {
+		t.Fatalf("unexpected action/resource record: %#v", record)
+	}
+	if record.TeamID == nil || *record.TeamID != teamID {
+		t.Fatalf("expected team context in record, got %#v", record)
+	}
+	if !record.Allowed || record.MatchedRule != "team.owner" {
+		t.Fatalf("unexpected decision record: %#v", record)
+	}
+}
+
+func TestDBAuthorizerRecordsAllTeamManagementActions(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+
+	tests := []struct {
+		name         string
+		action       string
+		resource     ResourceRef
+		teamID       *uuid.UUID
+		tenantRole   string
+		teamRole     string
+		context      map[string]any
+		matchedRule  string
+		resourceTeam bool
+	}{
+		{name: "team create", action: ActionTeamCreate, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, tenantRole: RoleOwner, matchedRule: "tenant.owner"},
+		{name: "team collection read", action: ActionTeamRead, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, tenantRole: RoleAdmin, matchedRule: "tenant.admin"},
+		{name: "team read", action: ActionTeamRead, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleMember, matchedRule: "team.member", resourceTeam: true},
+		{name: "team update", action: ActionTeamUpdate, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleAdmin, matchedRule: "team.admin", resourceTeam: true},
+		{name: "team disable", action: ActionTeamDisable, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleOwner, matchedRule: "team.owner", resourceTeam: true},
+		{name: "team archive", action: ActionTeamArchive, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleAdmin, matchedRule: "team.admin", resourceTeam: true},
+		{name: "team restore", action: ActionTeamRestore, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleOwner, matchedRule: "team.owner", resourceTeam: true},
+		{name: "member add", action: ActionTeamMemberAdd, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleAdmin, context: map[string]any{"target_role": RoleMember}, matchedRule: "team.admin", resourceTeam: true},
+		{name: "member remove", action: ActionTeamMemberRemove, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleAdmin, context: map[string]any{"target_role": RoleMember}, matchedRule: "team.admin", resourceTeam: true},
+		{name: "member change role", action: ActionTeamMemberChangeRole, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleAdmin, context: map[string]any{"target_role": RoleViewer}, matchedRule: "team.admin", resourceTeam: true},
+		{name: "member request privileged role", action: ActionTeamMemberRequestPrivilegedRole, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleAdmin, context: map[string]any{"target_role": RoleApprover}, matchedRule: "team.admin", resourceTeam: true},
+		{name: "member approve privileged role", action: ActionTeamMemberApprovePrivilegedRole, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleOwner, context: map[string]any{"target_role": RoleAdmin}, matchedRule: "team.owner", resourceTeam: true},
+		{name: "governance read", action: ActionTeamGovernanceRead, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleViewer, matchedRule: "team.viewer", resourceTeam: true},
+		{name: "governance edit", action: ActionTeamGovernanceEdit, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleAdmin, matchedRule: "team.admin", resourceTeam: true},
+		{name: "governance approve", action: ActionTeamGovernanceApprove, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleApprover, matchedRule: "team.approver", resourceTeam: true},
+		{name: "capability bind", action: ActionTeamCapabilityBind, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleOwner, matchedRule: "team.owner", resourceTeam: true},
+		{name: "capability unbind", action: ActionTeamCapabilityUnbind, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleAdmin, matchedRule: "team.admin", resourceTeam: true},
+		{name: "audit read", action: ActionTeamAuditRead, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleOwner, matchedRule: "team.owner", resourceTeam: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			userID := uuid.New()
+			recorder := &memoryRecorder{}
+			repo := &memoryRepository{
+				tenantRoles: map[string]string{},
+				teamRoles:   map[string]string{},
+			}
+			if tt.tenantRole != "" {
+				repo.tenantRoles[tenantID.String()+":user:"+userID.String()] = tt.tenantRole
+			}
+			if tt.teamRole != "" {
+				repo.teamRoles[tenantID.String()+":"+teamID.String()+":user:"+userID.String()] = tt.teamRole
+			}
+			authorizer := NewDBAuthorizer(repo, recorder)
+
+			decision, err := authorizer.Check(context.Background(), CheckRequest{
+				Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+				Action:   tt.action,
+				Resource: tt.resource,
+				TenantID: tenantID,
+				TeamID:   tt.teamID,
+				Context:  tt.context,
+			})
+
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if !decision.Allowed {
+				t.Fatalf("expected allowed decision, got %#v", decision)
+			}
+			if len(recorder.records) != 1 {
+				t.Fatalf("expected one decision record, got %#v", recorder.records)
+			}
+			record := recorder.records[0]
+			if record.Action != tt.action || record.ResourceType != tt.resource.Type || record.ResourceID != tt.resource.ID {
+				t.Fatalf("unexpected action/resource record: %#v", record)
+			}
+			if record.MatchedRule != tt.matchedRule || !record.Allowed {
+				t.Fatalf("unexpected decision record: %#v", record)
+			}
+			if tt.resourceTeam {
+				if record.TeamID == nil || *record.TeamID != teamID {
+					t.Fatalf("expected team context in record, got %#v", record)
+				}
+			} else if record.TeamID != nil {
+				t.Fatalf("expected no team context in record, got %#v", record)
+			}
+		})
+	}
+}
+
 func TestDBAuthorizerDeniesTeamAccessWithMismatchedTeamResourceID(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")

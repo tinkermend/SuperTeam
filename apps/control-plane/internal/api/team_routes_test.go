@@ -210,16 +210,20 @@ func TestTeamRoutesRequireManagementAuthorization(t *testing.T) {
 	ownerID := uuid.New().String()
 
 	tests := []struct {
-		name   string
-		method string
-		path   string
-		body   string
+		name         string
+		method       string
+		path         string
+		body         string
+		action       string
+		resourceType string
+		resourceID   string
+		teamID       *uuid.UUID
 	}{
-		{name: "list", method: http.MethodGet, path: "/api/v1/teams"},
-		{name: "create", method: http.MethodPost, path: "/api/v1/teams", body: `{"slug":"platform","name":"Platform","human_owner_user_id":"` + ownerID + `"}`},
-		{name: "get", method: http.MethodGet, path: "/api/v1/teams/" + teamID},
-		{name: "create config revision", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/config-revisions", body: `{"human_owner_user_id":"` + ownerID + `"}`},
-		{name: "current config revision", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/config-revisions/current"},
+		{name: "list", method: http.MethodGet, path: "/api/v1/teams", action: authz.ActionTeamRead, resourceType: authz.ResourceTenant},
+		{name: "create", method: http.MethodPost, path: "/api/v1/teams", body: `{"slug":"platform","name":"Platform","human_owner_user_id":"` + ownerID + `"}`, action: authz.ActionTeamCreate, resourceType: authz.ResourceTenant},
+		{name: "get", method: http.MethodGet, path: "/api/v1/teams/" + teamID, action: authz.ActionTeamRead, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "create config revision", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/config-revisions", body: `{"human_owner_user_id":"` + ownerID + `"}`, action: authz.ActionTeamGovernanceApprove, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "current config revision", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/config-revisions/current", action: authz.ActionTeamGovernanceRead, resourceType: authz.ResourceTeam, resourceID: teamID},
 	}
 
 	for _, tt := range tests {
@@ -241,16 +245,72 @@ func TestTeamRoutesRequireManagementAuthorization(t *testing.T) {
 		t.Fatalf("expected one authorization check per request, got %#v", authorizer.checks)
 	}
 	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
-	for _, check := range authorizer.checks {
-		if check.Action != authz.ActionRuntimeScopeManage {
-			t.Fatalf("expected runtime scope management action, got %#v", check)
+	for i, check := range authorizer.checks {
+		expected := tests[i]
+		expectedResourceID := expected.resourceID
+		if expectedResourceID == "" {
+			expectedResourceID = expectedTenantID.String()
+		}
+		if check.Action != expected.action {
+			t.Fatalf("expected action %s for %s, got %#v", expected.action, expected.name, check)
 		}
 		if check.Actor.Type != authz.ActorUser {
 			t.Fatalf("expected user actor, got %#v", check)
 		}
-		if check.Resource.Type != authz.ResourceTenant || check.Resource.ID != expectedTenantID.String() || check.TenantID != expectedTenantID {
-			t.Fatalf("expected tenant resource %s, got %#v", expectedTenantID, check)
+		if check.Resource.Type != expected.resourceType || check.Resource.ID != expectedResourceID || check.TenantID != expectedTenantID {
+			t.Fatalf("expected resource %s/%s for %s, got %#v", expected.resourceType, expectedResourceID, expected.name, check)
 		}
+		if expected.resourceType == authz.ResourceTeam {
+			expectedTeamID := uuid.MustParse(expected.resourceID)
+			if check.TeamID == nil || *check.TeamID != expectedTeamID {
+				t.Fatalf("expected team context %s for %s, got %#v", expectedTeamID, expected.name, check)
+			}
+		} else if check.TeamID != nil {
+			t.Fatalf("expected no team context for %s, got %#v", expected.name, check)
+		}
+	}
+}
+
+func TestTeamConfigRevisionDraftUsesGovernanceEditAuthorization(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeTeamService{}
+	authorizer := &routeAuthorizer{allowed: true}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		authorizer,
+	)
+	server.SetTenantHandler(tenant.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+	teamID := uuid.New()
+	ownerID := uuid.New()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+teamID.String()+"/config-revisions", strings.NewReader(`{"human_owner_user_id":"`+ownerID.String()+`","status":"draft"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected draft config revision to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if len(authorizer.checks) == 0 {
+		t.Fatalf("expected authorization check")
+	}
+	check := authorizer.checks[len(authorizer.checks)-1]
+	if check.Action != authz.ActionTeamGovernanceEdit {
+		t.Fatalf("expected governance edit action, got %#v", check)
+	}
+	if check.Resource.Type != authz.ResourceTeam || check.Resource.ID != teamID.String() || check.TeamID == nil || *check.TeamID != teamID {
+		t.Fatalf("expected team resource %s, got %#v", teamID, check)
 	}
 }
 

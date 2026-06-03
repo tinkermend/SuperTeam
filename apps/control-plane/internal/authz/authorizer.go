@@ -67,6 +67,42 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 			break
 		}
 		decision, err = a.checkTenantAdminAccess(ctx, req)
+	case ActionTeamCreate:
+		if !resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) {
+			decision = deny(ReasonInvalidResource)
+			break
+		}
+		decision, err = a.checkTenantAdminAccess(ctx, req)
+	case ActionTeamRead:
+		if resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) && req.TeamID == nil {
+			decision, err = a.checkTenantAdminAccess(ctx, req)
+			break
+		}
+		if req.TeamID == nil || !resourceMatchesUUID(req.Resource, ResourceTeam, *req.TeamID) {
+			decision = deny(ReasonInvalidResource)
+			break
+		}
+		decision, err = a.checkTeamManagementAction(ctx, req)
+	case ActionTeamUpdate,
+		ActionTeamDisable,
+		ActionTeamArchive,
+		ActionTeamRestore,
+		ActionTeamMemberAdd,
+		ActionTeamMemberRemove,
+		ActionTeamMemberChangeRole,
+		ActionTeamMemberRequestPrivilegedRole,
+		ActionTeamMemberApprovePrivilegedRole,
+		ActionTeamGovernanceRead,
+		ActionTeamGovernanceEdit,
+		ActionTeamGovernanceApprove,
+		ActionTeamCapabilityBind,
+		ActionTeamCapabilityUnbind,
+		ActionTeamAuditRead:
+		if req.TeamID == nil || !resourceMatchesUUID(req.Resource, ResourceTeam, *req.TeamID) {
+			decision = deny(ReasonInvalidResource)
+			break
+		}
+		decision, err = a.checkTeamManagementAction(ctx, req)
 	default:
 		return Decision{Allowed: false, Reason: ReasonUnsupportedAction, RequiresAudit: true}, ErrUnsupportedAction
 	}
@@ -166,6 +202,49 @@ func (a *DBAuthorizer) checkTenantAdminAccess(ctx context.Context, req CheckRequ
 	return deny(ReasonNoMembership), nil
 }
 
+func (a *DBAuthorizer) checkTeamManagementAction(ctx context.Context, req CheckRequest) (Decision, error) {
+	if req.TeamID == nil {
+		return deny(ReasonInvalidResource), nil
+	}
+	if teamActionRequiresOrdinaryRoleTarget(req.Action) && isPrivilegedTargetRole(req.Context) {
+		return deny(ReasonPrivilegedRoleRequiresApproval), nil
+	}
+	if teamActionCanRemoveOwner(req.Action) && contextBool(req.Context, "last_team_owner") {
+		return deny(ReasonLastTeamOwner), nil
+	}
+	principalID, ok := parseUUIDActor(req.Actor, ActorUser)
+	if !ok {
+		return deny(ReasonInvalidActor), nil
+	}
+	tenantMembership, err := a.repository.GetActiveTenantMembership(ctx, TenantMembershipParams{
+		TenantID:      req.TenantID,
+		PrincipalType: ActorUser,
+		PrincipalID:   principalID,
+	})
+	if err == nil && roleAllowsTenantAdminAccess(tenantMembership.Role) {
+		return allow("tenant."+tenantMembership.Role, tenantMembership.Role), nil
+	}
+	if err != nil && !errors.Is(err, ErrNoMembership) {
+		return Decision{}, err
+	}
+	teamMembership, err := a.repository.GetActiveTeamMembership(ctx, TeamMembershipParams{
+		TenantID:      req.TenantID,
+		TeamID:        *req.TeamID,
+		PrincipalType: ActorUser,
+		PrincipalID:   principalID,
+	})
+	if err != nil {
+		if errors.Is(err, ErrNoMembership) {
+			return deny(ReasonNoMembership), nil
+		}
+		return Decision{}, err
+	}
+	if roleAllowsTeamAction(req.Action, teamMembership.Role) {
+		return allow("team."+teamMembership.Role, teamMembership.Role), nil
+	}
+	return deny(ReasonNoMembership), nil
+}
+
 func (a *DBAuthorizer) checkRuntimeTaskClaim(ctx context.Context, req CheckRequest) (Decision, error) {
 	if req.Actor.Type != ActorRuntimeNode || req.Actor.ID == "" {
 		return deny(ReasonInvalidActor), nil
@@ -233,6 +312,105 @@ func roleAllowsTenantAdminAccess(role string) bool {
 	default:
 		return false
 	}
+}
+
+func roleAllowsTeamAction(action, role string) bool {
+	switch action {
+	case ActionTeamRead, ActionTeamGovernanceRead:
+		return roleAllowsTeamRead(role)
+	case ActionTeamUpdate,
+		ActionTeamDisable,
+		ActionTeamArchive,
+		ActionTeamRestore,
+		ActionTeamMemberAdd,
+		ActionTeamMemberRemove,
+		ActionTeamMemberChangeRole,
+		ActionTeamMemberRequestPrivilegedRole,
+		ActionTeamGovernanceEdit,
+		ActionTeamCapabilityBind,
+		ActionTeamCapabilityUnbind,
+		ActionTeamAuditRead:
+		return roleAllowsTeamManagement(role)
+	case ActionTeamMemberApprovePrivilegedRole:
+		return role == RoleOwner
+	case ActionTeamGovernanceApprove:
+		return role == RoleOwner || role == RoleApprover
+	default:
+		return false
+	}
+}
+
+func roleAllowsTeamRead(role string) bool {
+	switch role {
+	case RoleOwner, RoleAdmin, RoleApprover, RoleMember, RoleViewer:
+		return true
+	default:
+		return false
+	}
+}
+
+func roleAllowsTeamManagement(role string) bool {
+	switch role {
+	case RoleOwner, RoleAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+func teamActionRequiresOrdinaryRoleTarget(action string) bool {
+	switch action {
+	case ActionTeamMemberAdd, ActionTeamMemberChangeRole:
+		return true
+	default:
+		return false
+	}
+}
+
+func teamActionCanRemoveOwner(action string) bool {
+	switch action {
+	case ActionTeamMemberRemove, ActionTeamMemberChangeRole:
+		return true
+	default:
+		return false
+	}
+}
+
+func isPrivilegedTargetRole(context map[string]any) bool {
+	role, ok := contextString(context, "target_role")
+	if !ok {
+		return false
+	}
+	switch role {
+	case RoleOwner, RoleAdmin, RoleApprover:
+		return true
+	default:
+		return false
+	}
+}
+
+func contextString(context map[string]any, key string) (string, bool) {
+	if context == nil {
+		return "", false
+	}
+	value, ok := context[key]
+	if !ok {
+		return "", false
+	}
+	text, ok := value.(string)
+	return text, ok
+}
+
+func contextBool(context map[string]any, key string) bool {
+	if context == nil {
+		return false
+	}
+	value, ok := context[key]
+	if !ok {
+		return false
+	}
+	enabled, ok := value.(bool)
+	return ok && enabled
 }
 
 func allow(rule string, role string) Decision {

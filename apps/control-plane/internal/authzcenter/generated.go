@@ -26,12 +26,29 @@ const (
 
 // Defines values for CheckPermissionRequestAction.
 const (
-	AuthzCenterRead    CheckPermissionRequestAction = "authz_center.read"
-	ConsoleAccess      CheckPermissionRequestAction = "console.access"
-	RuntimeScopeManage CheckPermissionRequestAction = "runtime_scope.manage"
-	TaskClaim          CheckPermissionRequestAction = "task.claim"
-	TeamAccess         CheckPermissionRequestAction = "team.access"
-	TenantAccess       CheckPermissionRequestAction = "tenant.access"
+	AuthzCenterRead                 CheckPermissionRequestAction = "authz_center.read"
+	ConsoleAccess                   CheckPermissionRequestAction = "console.access"
+	RuntimeScopeManage              CheckPermissionRequestAction = "runtime_scope.manage"
+	TaskClaim                       CheckPermissionRequestAction = "task.claim"
+	TeamAccess                      CheckPermissionRequestAction = "team.access"
+	TeamArchive                     CheckPermissionRequestAction = "team.archive"
+	TeamAuditRead                   CheckPermissionRequestAction = "team.audit.read"
+	TeamCapabilityBind              CheckPermissionRequestAction = "team.capability.bind"
+	TeamCapabilityUnbind            CheckPermissionRequestAction = "team.capability.unbind"
+	TeamCreate                      CheckPermissionRequestAction = "team.create"
+	TeamDisable                     CheckPermissionRequestAction = "team.disable"
+	TeamGovernanceApprove           CheckPermissionRequestAction = "team.governance.approve"
+	TeamGovernanceEdit              CheckPermissionRequestAction = "team.governance.edit"
+	TeamGovernanceRead              CheckPermissionRequestAction = "team.governance.read"
+	TeamMemberAdd                   CheckPermissionRequestAction = "team.member.add"
+	TeamMemberApprovePrivilegedRole CheckPermissionRequestAction = "team.member.approve_privileged_role"
+	TeamMemberChangeRole            CheckPermissionRequestAction = "team.member.change_role"
+	TeamMemberRemove                CheckPermissionRequestAction = "team.member.remove"
+	TeamMemberRequestPrivilegedRole CheckPermissionRequestAction = "team.member.request_privileged_role"
+	TeamRead                        CheckPermissionRequestAction = "team.read"
+	TeamRestore                     CheckPermissionRequestAction = "team.restore"
+	TeamUpdate                      CheckPermissionRequestAction = "team.update"
+	TenantAccess                    CheckPermissionRequestAction = "tenant.access"
 )
 
 // Defines values for CreateRuntimeScopeRequestScopeType.

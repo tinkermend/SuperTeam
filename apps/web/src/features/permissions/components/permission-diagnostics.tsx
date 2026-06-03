@@ -22,6 +22,23 @@ const actionOptions: CheckPermissionRequest["action"][] = [
   "task.claim",
   "authz_center.read",
   "runtime_scope.manage",
+  "team.create",
+  "team.read",
+  "team.update",
+  "team.disable",
+  "team.archive",
+  "team.restore",
+  "team.member.add",
+  "team.member.remove",
+  "team.member.change_role",
+  "team.member.request_privileged_role",
+  "team.member.approve_privileged_role",
+  "team.governance.read",
+  "team.governance.edit",
+  "team.governance.approve",
+  "team.capability.bind",
+  "team.capability.unbind",
+  "team.audit.read",
 ];
 
 export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps) {
@@ -95,7 +112,7 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
     setTenantId(value);
     const nextTenantId = value.trim();
 
-    if (usesTenantResource(action) && (!resourceId.trim() || resourceId.trim() === tenantId.trim())) {
+    if (usesTenantResource(action, resourceType) && (!resourceId.trim() || resourceId.trim() === tenantId.trim())) {
       setResourceId(nextTenantId);
     }
   }
@@ -104,7 +121,7 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
     setTeamId(value);
     const nextTeamId = value.trim();
 
-    if (action === "team.access" && (!resourceId.trim() || resourceId.trim() === teamId.trim())) {
+    if (usesTeamResource(action, resourceType) && (!resourceId.trim() || resourceId.trim() === teamId.trim())) {
       setResourceId(nextTeamId);
     }
   }
@@ -159,7 +176,7 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="diagnostic-resource-type">资源类型</Label>
-              <Input id="diagnostic-resource-type" required aria-invalid={Boolean(formError && resourceType.trim() !== expectedResourceType(action))} value={resourceType} onChange={(event) => setResourceType(event.target.value)} />
+              <Input id="diagnostic-resource-type" required aria-invalid={Boolean(formError && !expectedResourceTypes(action).includes(resourceType.trim()))} value={resourceType} onChange={(event) => setResourceType(event.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="diagnostic-resource-id">资源 ID</Label>
@@ -171,7 +188,7 @@ export function PermissionDiagnostics({ apiOptions }: PermissionDiagnosticsProps
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="diagnostic-team-id">团队 ID</Label>
-              <Input id="diagnostic-team-id" required={action === "team.access"} aria-invalid={Boolean(formError && action === "team.access" && !trimmedTeamId)} value={teamId} onChange={(event) => handleTeamIdChange(event.target.value)} />
+              <Input id="diagnostic-team-id" required={usesTeamResource(action, resourceType)} aria-invalid={Boolean(formError && usesTeamResource(action, resourceType) && !trimmedTeamId)} value={teamId} onChange={(event) => handleTeamIdChange(event.target.value)} />
             </div>
             <div className="flex items-end">
               <Button type="submit" disabled={checkMutation.isPending}>
@@ -204,11 +221,38 @@ function getResourceDefaults(
     case "tenant.access":
     case "authz_center.read":
     case "runtime_scope.manage":
+    case "team.create":
+      return {
+        resourceId: scopeIds.tenantId,
+        resourceType: "tenant",
+      };
+    case "team.read":
+      if (scopeIds.teamId) {
+        return {
+          resourceId: scopeIds.teamId,
+          resourceType: "team",
+        };
+      }
       return {
         resourceId: scopeIds.tenantId,
         resourceType: "tenant",
       };
     case "team.access":
+    case "team.update":
+    case "team.disable":
+    case "team.archive":
+    case "team.restore":
+    case "team.member.add":
+    case "team.member.remove":
+    case "team.member.change_role":
+    case "team.member.request_privileged_role":
+    case "team.member.approve_privileged_role":
+    case "team.governance.read":
+    case "team.governance.edit":
+    case "team.governance.approve":
+    case "team.capability.bind":
+    case "team.capability.unbind":
+    case "team.audit.read":
       return {
         resourceId: scopeIds.teamId,
         resourceType: "team",
@@ -221,12 +265,42 @@ function getResourceDefaults(
   }
 }
 
-function expectedResourceType(action: CheckPermissionRequest["action"]) {
-  return getResourceDefaults(action, { teamId: "", tenantId: "" }).resourceType;
+function expectedResourceTypes(action: CheckPermissionRequest["action"]) {
+  if (action === "team.read") {
+    return ["tenant", "team"];
+  }
+  return [getResourceDefaults(action, { teamId: "", tenantId: "" }).resourceType];
 }
 
-function usesTenantResource(action: CheckPermissionRequest["action"]) {
-  return action === "tenant.access" || action === "authz_center.read" || action === "runtime_scope.manage";
+function usesTenantResource(action: CheckPermissionRequest["action"], resourceType: string) {
+  return action === "tenant.access" || action === "authz_center.read" || action === "runtime_scope.manage" || action === "team.create" || (action === "team.read" && resourceType.trim() === "tenant");
+}
+
+function usesTeamResource(action: CheckPermissionRequest["action"], resourceType: string) {
+  if (action === "team.read") {
+    return resourceType.trim() === "team";
+  }
+  switch (action) {
+    case "team.access":
+    case "team.update":
+    case "team.disable":
+    case "team.archive":
+    case "team.restore":
+    case "team.member.add":
+    case "team.member.remove":
+    case "team.member.change_role":
+    case "team.member.request_privileged_role":
+    case "team.member.approve_privileged_role":
+    case "team.governance.read":
+    case "team.governance.edit":
+    case "team.governance.approve":
+    case "team.capability.bind":
+    case "team.capability.unbind":
+    case "team.audit.read":
+      return true;
+    default:
+      return false;
+  }
 }
 
 function validateDiagnosticForm({
@@ -248,21 +322,21 @@ function validateDiagnosticForm({
     return "请填写 Actor ID 和租户 ID。";
   }
 
-  const expectedType = expectedResourceType(action);
-  if (resourceType.trim() !== expectedType) {
-    return `动作 ${action} 需要资源类型 ${expectedType}。`;
+  const expectedTypes = expectedResourceTypes(action);
+  if (!expectedTypes.includes(resourceType.trim())) {
+    return `动作 ${action} 需要资源类型 ${expectedTypes.join(" 或 ")}。`;
   }
 
   if (action === "console.access" && resourceId !== "web") {
     return "console.access 的资源 ID 应为 web。";
   }
 
-  if (usesTenantResource(action) && !resourceId) {
+  if (usesTenantResource(action, resourceType) && !resourceId) {
     return `动作 ${action} 需要租户资源 ID。`;
   }
 
-  if (action === "team.access" && (!teamId || !resourceId)) {
-    return "team.access 需要团队 ID 和团队资源 ID。";
+  if (usesTeamResource(action, resourceType) && (!teamId || !resourceId)) {
+    return `动作 ${action} 需要团队 ID 和团队资源 ID。`;
   }
 
   if (action === "task.claim" && !resourceId) {

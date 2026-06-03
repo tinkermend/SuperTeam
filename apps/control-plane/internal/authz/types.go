@@ -28,22 +28,43 @@ const (
 	ActionTaskClaim          = "task.claim"
 	ActionRuntimeScopeManage = "runtime_scope.manage"
 	ActionAuthzCenterRead    = "authz_center.read"
+
+	ActionTeamCreate                      = "team.create"
+	ActionTeamRead                        = "team.read"
+	ActionTeamUpdate                      = "team.update"
+	ActionTeamDisable                     = "team.disable"
+	ActionTeamArchive                     = "team.archive"
+	ActionTeamRestore                     = "team.restore"
+	ActionTeamMemberAdd                   = "team.member.add"
+	ActionTeamMemberRemove                = "team.member.remove"
+	ActionTeamMemberChangeRole            = "team.member.change_role"
+	ActionTeamMemberRequestPrivilegedRole = "team.member.request_privileged_role"
+	ActionTeamMemberApprovePrivilegedRole = "team.member.approve_privileged_role"
+	ActionTeamGovernanceRead              = "team.governance.read"
+	ActionTeamGovernanceEdit              = "team.governance.edit"
+	ActionTeamGovernanceApprove           = "team.governance.approve"
+	ActionTeamCapabilityBind              = "team.capability.bind"
+	ActionTeamCapabilityUnbind            = "team.capability.unbind"
+	ActionTeamAuditRead                   = "team.audit.read"
 )
 
 const (
-	RoleOwner  = "owner"
-	RoleAdmin  = "admin"
-	RoleMember = "member"
-	RoleViewer = "viewer"
+	RoleOwner    = "owner"
+	RoleAdmin    = "admin"
+	RoleApprover = "approver"
+	RoleMember   = "member"
+	RoleViewer   = "viewer"
 )
 
 const (
-	ReasonAllowed             = "allowed"
-	ReasonNoMembership        = "no active membership"
-	ReasonInvalidActor        = "invalid actor"
-	ReasonInvalidResource     = "invalid resource"
-	ReasonUnsupportedAction   = "unsupported action"
-	ReasonRuntimeScopeMissing = "runtime scope does not cover task"
+	ReasonAllowed                        = "allowed"
+	ReasonNoMembership                   = "no active membership"
+	ReasonInvalidActor                   = "invalid actor"
+	ReasonInvalidResource                = "invalid resource"
+	ReasonUnsupportedAction              = "unsupported action"
+	ReasonRuntimeScopeMissing            = "runtime scope does not cover task"
+	ReasonPrivilegedRoleRequiresApproval = "privileged role requires approval"
+	ReasonLastTeamOwner                  = "cannot remove last team owner"
 )
 
 var (

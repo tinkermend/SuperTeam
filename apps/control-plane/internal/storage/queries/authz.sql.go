@@ -25,9 +25,10 @@ ORDER BY
   CASE role
     WHEN 'owner' THEN 1
     WHEN 'admin' THEN 2
-    WHEN 'member' THEN 3
-    WHEN 'viewer' THEN 4
-    ELSE 5
+    WHEN 'approver' THEN 3
+    WHEN 'member' THEN 4
+    WHEN 'viewer' THEN 5
+    ELSE 6
   END
 LIMIT 1
 `
@@ -75,9 +76,10 @@ ORDER BY
   CASE role
     WHEN 'owner' THEN 1
     WHEN 'admin' THEN 2
-    WHEN 'member' THEN 3
-    WHEN 'viewer' THEN 4
-    ELSE 5
+    WHEN 'approver' THEN 3
+    WHEN 'member' THEN 4
+    WHEN 'viewer' THEN 5
+    ELSE 6
   END
 LIMIT 1
 `
