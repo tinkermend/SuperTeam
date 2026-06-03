@@ -68,15 +68,10 @@ impl RuntimeSessionCommandPayload {
     }
 
     pub fn provider_kind(&self) -> &'static str {
-        let provider_type = self.provider_type.trim();
-        if provider_type.eq_ignore_ascii_case("claude-code")
-            || provider_type.eq_ignore_ascii_case("claude")
-        {
-            "claude"
-        } else if provider_type.eq_ignore_ascii_case("opencode") {
-            "opencode"
-        } else {
-            "unsupported"
+        match self.provider_type.as_str() {
+            "claude-code" => "claude",
+            "opencode" => "opencode",
+            _ => "unsupported",
         }
     }
 
@@ -97,15 +92,15 @@ impl RuntimeSessionCommandPayload {
         }
 
         if self.session_policy.mode == SessionPolicyMode::Resume {
-            let has_provider_session_id = self
-                .session_policy
-                .provider_session_id
-                .as_deref()
-                .map(str::trim)
-                .is_some_and(|value| !value.is_empty());
-            if !has_provider_session_id {
+            if !self.has_provider_session_id() {
                 anyhow::bail!("provider_session_id is required for resume");
             }
+        }
+
+        if matches!(command.command_type, RuntimeCommandType::ResumeSession)
+            && !self.has_provider_session_id()
+        {
+            anyhow::bail!("provider_session_id is required for resume_session");
         }
 
         if !matches!(command.command_type, RuntimeCommandType::StopSession)
@@ -115,6 +110,14 @@ impl RuntimeSessionCommandPayload {
         }
 
         Ok(())
+    }
+
+    fn has_provider_session_id(&self) -> bool {
+        self.session_policy
+            .provider_session_id
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty())
     }
 }
 

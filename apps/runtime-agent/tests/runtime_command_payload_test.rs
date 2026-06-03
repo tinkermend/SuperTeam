@@ -47,6 +47,29 @@ fn parses_valid_start_session_payload() {
 }
 
 #[test]
+fn parses_opencode_provider_kind() {
+    let mut payload = valid_payload();
+    payload["provider_type"] = json!("opencode");
+
+    let parsed = RuntimeSessionCommandPayload::from_command(&command(payload))
+        .expect("valid opencode payload");
+
+    assert_eq!(parsed.provider_type, "opencode");
+    assert_eq!(parsed.provider_kind(), "opencode");
+}
+
+#[test]
+fn rejects_local_provider_kind_as_provider_type() {
+    let mut payload = valid_payload();
+    payload["provider_type"] = json!("claude");
+
+    let error = RuntimeSessionCommandPayload::from_command(&command(payload))
+        .expect_err("local provider_kind should not be accepted as provider_type");
+
+    assert!(error.to_string().contains("unsupported provider_type"));
+}
+
+#[test]
 fn rejects_command_id_mismatch() {
     let mut payload = valid_payload();
     payload["command_id"] = json!("different-command");
@@ -111,5 +134,22 @@ fn resume_requires_provider_session_id() {
         error
             .to_string()
             .contains("provider_session_id is required for resume")
+    );
+}
+
+#[test]
+fn resume_session_requires_explicit_provider_session_id_even_when_mode_is_new() {
+    let mut command = command(valid_payload());
+    command.command_type = RuntimeCommandType::ResumeSession;
+    command.payload["session_policy"] =
+        json!({"mode": "new", "provider_session_id": null, "recoverable": true});
+
+    let error = RuntimeSessionCommandPayload::from_command(&command)
+        .expect_err("resume_session without provider_session_id should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("provider_session_id is required for resume_session")
     );
 }
