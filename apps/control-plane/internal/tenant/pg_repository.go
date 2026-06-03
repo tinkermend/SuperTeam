@@ -15,11 +15,16 @@ import (
 )
 
 type PgRepository struct {
-	q *queries.Queries
+	q         *queries.Queries
+	txStarter transactionStarter
 }
 
-func NewPgRepository(q *queries.Queries) Repository {
-	return &PgRepository{q: q}
+type transactionStarter interface {
+	Begin(context.Context) (pgx.Tx, error)
+}
+
+func NewPgRepository(q *queries.Queries, txStarter transactionStarter) Repository {
+	return &PgRepository{q: q, txStarter: txStarter}
 }
 
 func (r *PgRepository) CreateTeam(ctx context.Context, params CreateTeamParams) (TeamRecord, error) {
@@ -220,6 +225,128 @@ func (r *PgRepository) GetNextTeamConfigRevisionNumber(ctx context.Context, tena
 		return 0, err
 	}
 	return nextRevision, nil
+}
+
+func (r *PgRepository) ListTeamConfigDrafts(ctx context.Context, params ListTeamConfigDraftsParams) ([]TeamConfigRevisionRecord, error) {
+	revisions, err := r.q.ListTenantTeamConfigDrafts(ctx, queries.ListTenantTeamConfigDraftsParams{
+		TenantID: params.TenantID,
+		TeamID:   params.TeamID,
+		Offset:   params.Offset,
+		Limit:    params.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	records := make([]TeamConfigRevisionRecord, 0, len(revisions))
+	for _, revision := range revisions {
+		record, err := configRevisionRecordFromQuery(revision)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+func (r *PgRepository) UpdateTeamConfigRevisionDraft(ctx context.Context, params UpdateTeamConfigRevisionDraftParams) (TeamConfigRevisionRecord, error) {
+	constitution, err := jsonbFromOptionalMap(params.Constitution, "constitution")
+	if err != nil {
+		return TeamConfigRevisionRecord{}, err
+	}
+	capabilityPolicy, err := jsonbFromOptionalMap(params.CapabilityPolicy, "capability_policy")
+	if err != nil {
+		return TeamConfigRevisionRecord{}, err
+	}
+	contextPolicy, err := jsonbFromOptionalMap(params.ContextPolicy, "context_policy")
+	if err != nil {
+		return TeamConfigRevisionRecord{}, err
+	}
+	approvalPolicy, err := jsonbFromOptionalMap(params.ApprovalPolicy, "approval_policy")
+	if err != nil {
+		return TeamConfigRevisionRecord{}, err
+	}
+	artifactContract, err := jsonbFromOptionalMap(params.ArtifactContract, "artifact_contract")
+	if err != nil {
+		return TeamConfigRevisionRecord{}, err
+	}
+	internalCollaborationPolicy, err := jsonbFromOptionalMap(params.InternalCollaborationPolicy, "internal_collaboration_policy")
+	if err != nil {
+		return TeamConfigRevisionRecord{}, err
+	}
+	runtimeScopePolicy, err := jsonbFromOptionalMap(params.RuntimeScopePolicy, "runtime_scope_policy")
+	if err != nil {
+		return TeamConfigRevisionRecord{}, err
+	}
+	revision, err := r.q.UpdateTenantTeamConfigRevisionDraft(ctx, queries.UpdateTenantTeamConfigRevisionDraftParams{
+		ID:                          params.RevisionID,
+		TenantID:                    params.TenantID,
+		TeamID:                      params.TeamID,
+		Constitution:                constitution,
+		CapabilityPolicy:            capabilityPolicy,
+		ContextPolicy:               contextPolicy,
+		ApprovalPolicy:              approvalPolicy,
+		ArtifactContract:            artifactContract,
+		InternalCollaborationPolicy: internalCollaborationPolicy,
+		RuntimeScopePolicy:          runtimeScopePolicy,
+		HumanOwnerUserID:            nullUUIDFromPtr(params.HumanOwnerUserID),
+	})
+	if err != nil {
+		return TeamConfigRevisionRecord{}, mapNoRows(err)
+	}
+	return configRevisionRecordFromQuery(revision)
+}
+
+func (r *PgRepository) ApproveTeamConfigRevision(ctx context.Context, params ActivateTeamConfigRevisionParams) (TeamConfigRevisionRecord, error) {
+	if r.txStarter == nil {
+		return TeamConfigRevisionRecord{}, fmt.Errorf("%w: transaction starter is required", ErrInvalidInput)
+	}
+	tx, err := r.txStarter.Begin(ctx)
+	if err != nil {
+		return TeamConfigRevisionRecord{}, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+	qtx := r.q.WithTx(tx)
+	if _, err := qtx.ArchiveActiveTenantTeamConfigRevision(ctx, queries.ArchiveActiveTenantTeamConfigRevisionParams{
+		TenantID: params.TenantID,
+		TeamID:   params.TeamID,
+	}); err != nil {
+		return TeamConfigRevisionRecord{}, err
+	}
+	revision, err := qtx.ActivateTenantTeamConfigRevision(ctx, queries.ActivateTenantTeamConfigRevisionParams{
+		ID:         params.RevisionID,
+		TenantID:   params.TenantID,
+		TeamID:     params.TeamID,
+		ApprovedBy: params.ApprovedBy,
+	})
+	if err != nil {
+		return TeamConfigRevisionRecord{}, mapNoRows(err)
+	}
+	record, err := configRevisionRecordFromQuery(revision)
+	if err != nil {
+		return TeamConfigRevisionRecord{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return TeamConfigRevisionRecord{}, err
+	}
+	committed = true
+	return record, nil
+}
+
+func (r *PgRepository) RejectTeamConfigRevision(ctx context.Context, tenantID, teamID, revisionID uuid.UUID) (TeamConfigRevisionRecord, error) {
+	revision, err := r.q.RejectTenantTeamConfigRevision(ctx, queries.RejectTenantTeamConfigRevisionParams{
+		ID:       revisionID,
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	if err != nil {
+		return TeamConfigRevisionRecord{}, mapNoRows(err)
+	}
+	return configRevisionRecordFromQuery(revision)
 }
 
 func teamRecordFromQuery(team queries.TenantTeam) (TeamRecord, error) {
@@ -448,6 +575,13 @@ func jsonbFromMap(value map[string]any, field string) ([]byte, error) {
 		return nil, fmt.Errorf("encode %s: %w", field, err)
 	}
 	return encoded, nil
+}
+
+func jsonbFromOptionalMap(value map[string]any, field string) ([]byte, error) {
+	if value == nil {
+		return nil, nil
+	}
+	return jsonbFromMap(value, field)
 }
 
 func mapFromJSONB(raw []byte, field string) (map[string]any, error) {

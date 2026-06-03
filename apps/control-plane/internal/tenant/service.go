@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -225,6 +226,9 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateTeamConfig
 	if !status.IsValid() {
 		return nil, fmt.Errorf("%w: invalid config revision status", ErrInvalidInput)
 	}
+	if status != TeamConfigRevisionStatusDraft && status != TeamConfigRevisionStatusActive {
+		return nil, fmt.Errorf("%w: config revision status must be draft or active", ErrInvalidInput)
+	}
 
 	if _, err := s.repository.GetTeam(ctx, req.TenantID, req.TeamID); err != nil {
 		return nil, fmt.Errorf("get team: %w", err)
@@ -299,6 +303,138 @@ func (s *Service) GetCurrentConfigRevision(ctx context.Context, tenantID, teamID
 	return configRevisionFromRecord(record), nil
 }
 
+func (s *Service) ListGovernanceDrafts(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*TeamConfigRevision, error) {
+	params, err := normalizeListTeamConfigDraftsRequest(tenantID, teamID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	records, err := s.repository.ListTeamConfigDrafts(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("list team config drafts: %w", err)
+	}
+	drafts := make([]*TeamConfigRevision, 0, len(records))
+	for _, record := range records {
+		drafts = append(drafts, configRevisionFromRecord(record))
+	}
+	return drafts, nil
+}
+
+func (s *Service) CreateGovernanceDraft(ctx context.Context, req CreateTeamConfigRevisionRequest) (*TeamConfigRevision, error) {
+	req.Status = TeamConfigRevisionStatusDraft
+	req.ApprovedBy = nil
+	return s.CreateConfigRevision(ctx, req)
+}
+
+func (s *Service) UpdateGovernanceDraft(ctx context.Context, tenantID, teamID, draftID uuid.UUID, input GovernanceDraftInput) (*TeamConfigRevision, error) {
+	if err := validateGovernanceRevisionIDs(tenantID, teamID, draftID); err != nil {
+		return nil, err
+	}
+	if issues := validateCapabilityBindingArrays(input.CapabilityPolicy); len(issues) > 0 {
+		return nil, fmt.Errorf("%w: capability policy has invalid binding arrays", ErrInvalidInput)
+	}
+	record, err := s.repository.UpdateTeamConfigRevisionDraft(ctx, UpdateTeamConfigRevisionDraftParams{
+		TenantID:                    tenantID,
+		TeamID:                      teamID,
+		RevisionID:                  draftID,
+		Constitution:                cloneOptionalMap(input.Constitution),
+		CapabilityPolicy:            cloneOptionalMap(input.CapabilityPolicy),
+		ContextPolicy:               cloneOptionalMap(input.ContextPolicy),
+		ApprovalPolicy:              cloneOptionalMap(input.ApprovalPolicy),
+		ArtifactContract:            cloneOptionalMap(input.ArtifactContract),
+		InternalCollaborationPolicy: cloneOptionalMap(input.InternalCollaborationPolicy),
+		RuntimeScopePolicy:          cloneOptionalMap(input.RuntimeScopePolicy),
+		HumanOwnerUserID:            validUUIDPtr(input.HumanOwnerUserID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("update governance draft: %w", err)
+	}
+	return configRevisionFromRecord(record), nil
+}
+
+func (s *Service) ApproveGovernanceDraft(ctx context.Context, tenantID, teamID, draftID, approvedBy uuid.UUID) (*TeamConfigRevision, error) {
+	if err := validateGovernanceRevisionIDs(tenantID, teamID, draftID); err != nil {
+		return nil, err
+	}
+	if approvedBy == uuid.Nil {
+		return nil, fmt.Errorf("%w: approved_by is required", ErrInvalidInput)
+	}
+	team, err := s.repository.GetTeam(ctx, tenantID, teamID)
+	if err != nil {
+		return nil, fmt.Errorf("get team: %w", err)
+	}
+	if team.Status == TeamStatusDisabled || team.Status == TeamStatusArchived {
+		return nil, fmt.Errorf("%w: disabled or archived team cannot approve governance drafts", ErrInvalidInput)
+	}
+	draft, err := s.repository.GetTeamConfigRevision(ctx, tenantID, draftID)
+	if err != nil {
+		return nil, fmt.Errorf("get governance draft: %w", err)
+	}
+	if draft.TeamID != teamID {
+		return nil, fmt.Errorf("%w: governance draft does not belong to team", ErrInvalidInput)
+	}
+	if draft.Status != TeamConfigRevisionStatusDraft {
+		return nil, fmt.Errorf("%w: governance revision must be draft", ErrInvalidInput)
+	}
+	_, blockingErrors := validateGovernancePolicies(draft.Constitution, draft.CapabilityPolicy, true)
+	if len(blockingErrors) > 0 {
+		return nil, fmt.Errorf("%w: governance draft has blocking validation errors", ErrInvalidInput)
+	}
+	record, err := s.repository.ApproveTeamConfigRevision(ctx, ActivateTeamConfigRevisionParams{
+		TenantID:   tenantID,
+		TeamID:     teamID,
+		RevisionID: draftID,
+		ApprovedBy: approvedBy,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("approve governance draft: %w", err)
+	}
+	return configRevisionFromRecord(record), nil
+}
+
+func (s *Service) RejectGovernanceDraft(ctx context.Context, tenantID, teamID, draftID uuid.UUID) (*TeamConfigRevision, error) {
+	if err := validateGovernanceRevisionIDs(tenantID, teamID, draftID); err != nil {
+		return nil, err
+	}
+	record, err := s.repository.RejectTeamConfigRevision(ctx, tenantID, teamID, draftID)
+	if err != nil {
+		return nil, fmt.Errorf("reject governance draft: %w", err)
+	}
+	return configRevisionFromRecord(record), nil
+}
+
+func (s *Service) PreviewGovernanceDiff(ctx context.Context, tenantID, teamID, draftID uuid.UUID) (*GovernanceDiffSummary, error) {
+	if err := validateGovernanceRevisionIDs(tenantID, teamID, draftID); err != nil {
+		return nil, err
+	}
+	draft, err := s.repository.GetTeamConfigRevision(ctx, tenantID, draftID)
+	if err != nil {
+		return nil, fmt.Errorf("get governance draft: %w", err)
+	}
+	if draft.TeamID != teamID {
+		return nil, fmt.Errorf("%w: governance draft does not belong to team", ErrInvalidInput)
+	}
+	if draft.Status != TeamConfigRevisionStatusDraft {
+		return nil, fmt.Errorf("%w: governance revision must be draft", ErrInvalidInput)
+	}
+	active, err := s.repository.GetCurrentTeamConfigRevision(ctx, tenantID, teamID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, fmt.Errorf("get current team config revision: %w", err)
+	}
+	warnings, blockingErrors := validateGovernancePolicies(draft.Constitution, draft.CapabilityPolicy, true)
+	summary := &GovernanceDiffSummary{
+		AddedHardRules: countAddedHardRules(active.Constitution, draft.Constitution),
+		Warnings:       warnings,
+		BlockingErrors: blockingErrors,
+	}
+	if jsonMapChanged(active.CapabilityPolicy, draft.CapabilityPolicy) {
+		summary.ChangedCapabilities = 1
+	}
+	if jsonMapChanged(active.ApprovalPolicy, draft.ApprovalPolicy) {
+		summary.ChangedApprovalRules = 1
+	}
+	return summary, nil
+}
+
 func normalizeListTeamsRequest(req ListTeamsRequest) (ListTeamsRequest, error) {
 	if req.TenantID == uuid.Nil {
 		return req, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
@@ -320,6 +456,46 @@ func normalizeListTeamsRequest(req ListTeamsRequest) (ListTeamsRequest, error) {
 	}
 	req.Q = strings.TrimSpace(req.Q)
 	return req, nil
+}
+
+func normalizeListTeamConfigDraftsRequest(tenantID, teamID uuid.UUID, limit, offset int32) (ListTeamConfigDraftsParams, error) {
+	if tenantID == uuid.Nil {
+		return ListTeamConfigDraftsParams{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if teamID == uuid.Nil {
+		return ListTeamConfigDraftsParams{}, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if offset < 0 {
+		return ListTeamConfigDraftsParams{}, fmt.Errorf("%w: offset must be non-negative", ErrInvalidInput)
+	}
+	if limit < 0 {
+		return ListTeamConfigDraftsParams{}, fmt.Errorf("%w: limit must be non-negative", ErrInvalidInput)
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	return ListTeamConfigDraftsParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+		Offset:   offset,
+		Limit:    limit,
+	}, nil
+}
+
+func validateGovernanceRevisionIDs(tenantID, teamID, revisionID uuid.UUID) error {
+	if tenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if teamID == uuid.Nil {
+		return fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if revisionID == uuid.Nil {
+		return fmt.Errorf("%w: config_revision_id is required", ErrInvalidInput)
+	}
+	return nil
 }
 
 func teamFromRecord(record TeamRecord) *Team {
@@ -372,6 +548,133 @@ func configRevisionFromRecord(record TeamConfigRevisionRecord) *TeamConfigRevisi
 	}
 }
 
+func validateGovernancePolicies(constitution, capabilityPolicy map[string]any, requireHardRules bool) ([]ValidationIssue, []ValidationIssue) {
+	warnings := []ValidationIssue{}
+	blockingErrors := []ValidationIssue{}
+	if requireHardRules {
+		rules, ok, hardRuleIssues := hardRulesFromConstitution(constitution)
+		blockingErrors = append(blockingErrors, hardRuleIssues...)
+		if len(hardRuleIssues) == 0 && (!ok || len(rules) == 0) {
+			blockingErrors = append(blockingErrors, ValidationIssue{
+				Field:    "constitution.hard_rules",
+				Message:  "hard_rules must be an array with at least one non-empty string",
+				Severity: "error",
+			})
+		}
+	}
+	blockingErrors = append(blockingErrors, validateCapabilityBindingArrays(capabilityPolicy)...)
+	return warnings, blockingErrors
+}
+
+func validateCapabilityBindingArrays(capabilityPolicy map[string]any) []ValidationIssue {
+	keys := []string{
+		"skill_bindings",
+		"mcp_bindings",
+		"knowledge_base_bindings",
+		"external_capability_bindings",
+		"allowed_skills",
+		"allowed_mcp_servers",
+		"allowed_plugins",
+		"allowed_provider_types",
+	}
+	issues := []ValidationIssue{}
+	for _, key := range keys {
+		value, ok := capabilityPolicy[key]
+		if !ok {
+			continue
+		}
+		path := fmt.Sprintf("capability_policy.%s", key)
+		switch typed := value.(type) {
+		case []string:
+			continue
+		case []any:
+			for index, item := range typed {
+				if _, ok := item.(string); !ok {
+					issues = append(issues, invalidGovernanceIssue(path, fmt.Sprintf("binding item %d must be a string", index)))
+				}
+			}
+		default:
+			issues = append(issues, invalidGovernanceIssue(path, "binding value must be an array of strings"))
+		}
+	}
+	return issues
+}
+
+func invalidGovernanceIssue(field, message string) ValidationIssue {
+	return ValidationIssue{
+		Field:    field,
+		Message:  message,
+		Severity: "error",
+	}
+}
+
+func countAddedHardRules(activeConstitution, draftConstitution map[string]any) int32 {
+	activeRules, _, _ := hardRulesFromConstitution(activeConstitution)
+	draftRules, _, _ := hardRulesFromConstitution(draftConstitution)
+	activeSet := map[string]bool{}
+	for _, rule := range activeRules {
+		activeSet[rule] = true
+	}
+	seenDraft := map[string]bool{}
+	var added int32
+	for _, rule := range draftRules {
+		if activeSet[rule] || seenDraft[rule] {
+			continue
+		}
+		seenDraft[rule] = true
+		added++
+	}
+	return added
+}
+
+func hardRulesFromConstitution(constitution map[string]any) ([]string, bool, []ValidationIssue) {
+	value, ok := constitution["hard_rules"]
+	if !ok {
+		return nil, false, nil
+	}
+	switch typed := value.(type) {
+	case []string:
+		return normalizedStringList(typed), true, nil
+	case []any:
+		rules := make([]string, 0, len(typed))
+		issues := []ValidationIssue{}
+		for index, item := range typed {
+			text, ok := item.(string)
+			if !ok {
+				issues = append(issues, invalidGovernanceIssue("constitution.hard_rules", fmt.Sprintf("hard_rules item %d must be a string", index)))
+				continue
+			}
+			trimmed := strings.TrimSpace(text)
+			if trimmed != "" {
+				rules = append(rules, trimmed)
+			}
+		}
+		return rules, true, issues
+	default:
+		return nil, false, []ValidationIssue{invalidGovernanceIssue("constitution.hard_rules", "hard_rules must be an array of strings")}
+	}
+}
+
+func normalizedStringList(values []string) []string {
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			items = append(items, trimmed)
+		}
+	}
+	return items
+}
+
+func jsonMapChanged(left, right map[string]any) bool {
+	leftJSON, leftErr := json.Marshal(cloneMap(left))
+	rightJSON, rightErr := json.Marshal(cloneMap(right))
+	if leftErr != nil || rightErr != nil {
+		return true
+	}
+	return string(leftJSON) != string(rightJSON)
+}
+
 func cloneInt32Ptr(value *int32) *int32 {
 	if value == nil {
 		return nil
@@ -394,6 +697,13 @@ func cloneMap(value map[string]any) map[string]any {
 		cloned[key] = item
 	}
 	return cloned
+}
+
+func cloneOptionalMap(value map[string]any) map[string]any {
+	if value == nil {
+		return nil
+	}
+	return cloneMap(value)
 }
 
 func cloneTimePtr(value *time.Time) *time.Time {

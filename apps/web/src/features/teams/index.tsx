@@ -4,7 +4,14 @@ import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
-import { archiveTeam, disableTeam, getTeamOverview, listTeamSummaries, restoreTeam } from "@/lib/api/teams";
+import {
+  archiveTeam,
+  disableTeam,
+  getCurrentTeamGovernance,
+  getTeamOverview,
+  listTeamSummaries,
+  restoreTeam,
+} from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { TeamDetailLayout } from "./components/team-detail-layout";
 import { TeamListTable } from "./components/team-list-table";
@@ -64,27 +71,34 @@ type TeamDetailViewProps = {
 };
 
 export function TeamDetailView({ apiBaseUrl, fetcher, teamId }: TeamDetailViewProps) {
+  const apiOptions = { baseUrl: apiBaseUrl, fetcher };
   const overview = useQuery({
     queryKey: ["team-overview", teamId],
-    queryFn: () => getTeamOverview({ baseUrl: apiBaseUrl, fetcher }, teamId),
+    queryFn: () => getTeamOverview(apiOptions, teamId),
   });
-  const lifecycleOptions = { baseUrl: apiBaseUrl, fetcher };
+  const currentGovernance = useQuery({
+    queryKey: ["team-governance-current", teamId],
+    queryFn: () => getCurrentTeamGovernance(apiOptions, teamId),
+  });
   const disableMutation = useMutation({
-    mutationFn: () => disableTeam(lifecycleOptions, teamId),
+    mutationFn: () => disableTeam(apiOptions, teamId),
     onSuccess: () => {
       void overview.refetch();
+      void currentGovernance.refetch();
     },
   });
   const archiveMutation = useMutation({
-    mutationFn: () => archiveTeam(lifecycleOptions, teamId),
+    mutationFn: () => archiveTeam(apiOptions, teamId),
     onSuccess: () => {
       void overview.refetch();
+      void currentGovernance.refetch();
     },
   });
   const restoreMutation = useMutation({
-    mutationFn: () => restoreTeam(lifecycleOptions, teamId),
+    mutationFn: () => restoreTeam(apiOptions, teamId),
     onSuccess: () => {
       void overview.refetch();
+      void currentGovernance.refetch();
     },
   });
 
@@ -99,6 +113,8 @@ export function TeamDetailView({ apiBaseUrl, fetcher, teamId }: TeamDetailViewPr
         {overview.isError ? <p className="text-sm text-destructive">团队概览加载失败</p> : null}
         {overview.data ? (
           <TeamDetailLayout
+            apiOptions={apiOptions}
+            currentRevision={currentGovernance.data ?? overview.data.current_revision}
             onArchiveTeam={() => archiveMutation.mutate()}
             onDisableTeam={() => disableMutation.mutate()}
             onRestoreTeam={() => restoreMutation.mutate()}

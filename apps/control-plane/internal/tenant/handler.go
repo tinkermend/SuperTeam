@@ -23,6 +23,12 @@ type HandlerService interface {
 	ChangeTeamStatus(ctx context.Context, req ChangeTeamStatusRequest) (*Team, error)
 	CreateConfigRevision(ctx context.Context, req CreateTeamConfigRevisionRequest) (*TeamConfigRevision, error)
 	GetCurrentConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamConfigRevision, error)
+	ListGovernanceDrafts(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*TeamConfigRevision, error)
+	CreateGovernanceDraft(ctx context.Context, req CreateTeamConfigRevisionRequest) (*TeamConfigRevision, error)
+	UpdateGovernanceDraft(ctx context.Context, tenantID, teamID, draftID uuid.UUID, input GovernanceDraftInput) (*TeamConfigRevision, error)
+	ApproveGovernanceDraft(ctx context.Context, tenantID, teamID, draftID, approvedBy uuid.UUID) (*TeamConfigRevision, error)
+	RejectGovernanceDraft(ctx context.Context, tenantID, teamID, draftID uuid.UUID) (*TeamConfigRevision, error)
+	PreviewGovernanceDiff(ctx context.Context, tenantID, teamID, draftID uuid.UUID) (*GovernanceDiffSummary, error)
 }
 
 type HTTPHandler struct {
@@ -275,6 +281,161 @@ func (h *HTTPHandler) GetCurrentTeamConfigRevision(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, configRevisionResponseFromDomain(revision))
 }
 
+func (h *HTTPHandler) ListGovernanceDrafts(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceRead, "team governance drafts read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	limit, ok := nonNegativeInt32QueryParam(w, r, "limit")
+	if !ok {
+		return
+	}
+	offset, ok := nonNegativeInt32QueryParam(w, r, "offset")
+	if !ok {
+		return
+	}
+	drafts, err := service.ListGovernanceDrafts(r.Context(), tenantID, teamID, limit, offset)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, configRevisionResponses(drafts))
+}
+
+func (h *HTTPHandler) CreateGovernanceDraft(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceEdit, "team governance draft create")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	input, ok := governanceDraftInputFromRequest(w, r)
+	if !ok {
+		return
+	}
+	revision, err := service.CreateGovernanceDraft(r.Context(), CreateTeamConfigRevisionRequest{
+		TenantID:                    tenantID,
+		TeamID:                      teamID,
+		Constitution:                input.Constitution,
+		CapabilityPolicy:            input.CapabilityPolicy,
+		ContextPolicy:               input.ContextPolicy,
+		ApprovalPolicy:              input.ApprovalPolicy,
+		ArtifactContract:            input.ArtifactContract,
+		InternalCollaborationPolicy: input.InternalCollaborationPolicy,
+		RuntimeScopePolicy:          input.RuntimeScopePolicy,
+		HumanOwnerUserID:            input.HumanOwnerUserID,
+		Status:                      TeamConfigRevisionStatusDraft,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, configRevisionResponseFromDomain(revision))
+}
+
+func (h *HTTPHandler) UpdateGovernanceDraft(w http.ResponseWriter, r *http.Request) {
+	teamID, draftID, ok := teamAndDraftIDsFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceEdit, "team governance draft update")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	input, ok := governanceDraftInputFromRequest(w, r)
+	if !ok {
+		return
+	}
+	revision, err := service.UpdateGovernanceDraft(r.Context(), tenantID, teamID, draftID, input)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, configRevisionResponseFromDomain(revision))
+}
+
+func (h *HTTPHandler) ApproveGovernanceDraft(w http.ResponseWriter, r *http.Request) {
+	teamID, draftID, ok := teamAndDraftIDsFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceApprove, "team governance draft approve")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	approvedBy := middleware.GetUserID(r.Context())
+	revision, err := service.ApproveGovernanceDraft(r.Context(), tenantID, teamID, draftID, approvedBy)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, configRevisionResponseFromDomain(revision))
+}
+
+func (h *HTTPHandler) RejectGovernanceDraft(w http.ResponseWriter, r *http.Request) {
+	teamID, draftID, ok := teamAndDraftIDsFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceApprove, "team governance draft reject")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	revision, err := service.RejectGovernanceDraft(r.Context(), tenantID, teamID, draftID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, configRevisionResponseFromDomain(revision))
+}
+
+func (h *HTTPHandler) PreviewGovernanceDiff(w http.ResponseWriter, r *http.Request) {
+	teamID, draftID, ok := teamAndDraftIDsFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamGovernanceRead, "team governance draft diff read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	diff, err := service.PreviewGovernanceDiff(r.Context(), tenantID, teamID, draftID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, governanceDiffSummaryResponseFromDomain(diff))
+}
+
 var overviewActions = []string{
 	authz.ActionTeamUpdate,
 	authz.ActionTeamDisable,
@@ -463,6 +624,20 @@ type configRevisionResponse struct {
 	UpdatedAt                   string                   `json:"updated_at,omitempty"`
 }
 
+type governanceDiffSummaryResponse struct {
+	AddedHardRules       int32                     `json:"added_hard_rules"`
+	ChangedCapabilities  int32                     `json:"changed_capabilities"`
+	ChangedApprovalRules int32                     `json:"changed_approval_rules"`
+	Warnings             []validationIssueResponse `json:"warnings"`
+	BlockingErrors       []validationIssueResponse `json:"blocking_errors"`
+}
+
+type validationIssueResponse struct {
+	Field    string `json:"field"`
+	Message  string `json:"message"`
+	Severity string `json:"severity"`
+}
+
 func teamIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	teamID, err := uuid.Parse(chi.URLParam(r, "teamId"))
 	if err != nil || teamID == uuid.Nil {
@@ -470,6 +645,46 @@ func teamIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool)
 		return uuid.Nil, false
 	}
 	return teamID, true
+}
+
+func teamAndDraftIDsFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, bool) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return uuid.Nil, uuid.Nil, false
+	}
+	draftID, err := uuid.Parse(chi.URLParam(r, "draftId"))
+	if err != nil || draftID == uuid.Nil {
+		http.Error(w, "invalid draft id", http.StatusBadRequest)
+		return uuid.Nil, uuid.Nil, false
+	}
+	return teamID, draftID, true
+}
+
+func governanceDraftInputFromRequest(w http.ResponseWriter, r *http.Request) (GovernanceDraftInput, bool) {
+	var req struct {
+		Constitution                map[string]any `json:"constitution"`
+		CapabilityPolicy            map[string]any `json:"capability_policy"`
+		ContextPolicy               map[string]any `json:"context_policy"`
+		ApprovalPolicy              map[string]any `json:"approval_policy"`
+		ArtifactContract            map[string]any `json:"artifact_contract"`
+		InternalCollaborationPolicy map[string]any `json:"internal_collaboration_policy"`
+		RuntimeScopePolicy          map[string]any `json:"runtime_scope_policy"`
+		HumanOwnerUserID            *uuid.UUID     `json:"human_owner_user_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return GovernanceDraftInput{}, false
+	}
+	return GovernanceDraftInput{
+		Constitution:                req.Constitution,
+		CapabilityPolicy:            req.CapabilityPolicy,
+		ContextPolicy:               req.ContextPolicy,
+		ApprovalPolicy:              req.ApprovalPolicy,
+		ArtifactContract:            req.ArtifactContract,
+		InternalCollaborationPolicy: req.InternalCollaborationPolicy,
+		RuntimeScopePolicy:          req.RuntimeScopePolicy,
+		HumanOwnerUserID:            req.HumanOwnerUserID,
+	}, true
 }
 
 func writeHandlerError(w http.ResponseWriter, err error) {
@@ -564,6 +779,14 @@ func teamOverviewResponseFromDomain(overview *TeamOverview) teamOverviewResponse
 	return response
 }
 
+func configRevisionResponses(revisions []*TeamConfigRevision) []configRevisionResponse {
+	responses := make([]configRevisionResponse, 0, len(revisions))
+	for _, revision := range revisions {
+		responses = append(responses, configRevisionResponseFromDomain(revision))
+	}
+	return responses
+}
+
 func configRevisionResponseFromDomain(revision *TeamConfigRevision) configRevisionResponse {
 	return configRevisionResponse{
 		ID:                          revision.ID.String(),
@@ -584,6 +807,34 @@ func configRevisionResponseFromDomain(revision *TeamConfigRevision) configRevisi
 		CreatedAt:                   timeString(revision.CreatedAt),
 		UpdatedAt:                   timeString(revision.UpdatedAt),
 	}
+}
+
+func governanceDiffSummaryResponseFromDomain(summary *GovernanceDiffSummary) governanceDiffSummaryResponse {
+	if summary == nil {
+		return governanceDiffSummaryResponse{
+			Warnings:       []validationIssueResponse{},
+			BlockingErrors: []validationIssueResponse{},
+		}
+	}
+	return governanceDiffSummaryResponse{
+		AddedHardRules:       summary.AddedHardRules,
+		ChangedCapabilities:  summary.ChangedCapabilities,
+		ChangedApprovalRules: summary.ChangedApprovalRules,
+		Warnings:             validationIssueResponses(summary.Warnings),
+		BlockingErrors:       validationIssueResponses(summary.BlockingErrors),
+	}
+}
+
+func validationIssueResponses(issues []ValidationIssue) []validationIssueResponse {
+	responses := make([]validationIssueResponse, 0, len(issues))
+	for _, issue := range issues {
+		responses = append(responses, validationIssueResponse{
+			Field:    issue.Field,
+			Message:  issue.Message,
+			Severity: issue.Severity,
+		})
+	}
+	return responses
 }
 
 func uuidStringPtr(value *uuid.UUID) *string {

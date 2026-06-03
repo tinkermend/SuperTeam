@@ -41,6 +41,35 @@ function createTeamsFetcher(options: { disabledOverview?: boolean } = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
+    const governanceRevision = {
+      id: "governance-current",
+      tenant_id: "tenant-1",
+      team_id: "team-1",
+      revision_number: 7,
+      constitution: {
+        hard_rules: ["所有生产写操作必须审批"],
+        principles: ["安全优先，稳定可靠"],
+      },
+      capability_policy: {
+        external_capability_bindings: ["告警系统"],
+        knowledge_base_bindings: ["运维知识库"],
+        mcp_bindings: ["ops-mcp-server"],
+        skill_bindings: ["incident-diagnosis"],
+      },
+      context_policy: {},
+      approval_policy: { high_risk: "required" },
+      artifact_contract: {},
+      internal_collaboration_policy: {},
+      runtime_scope_policy: { provider_types: ["codex"] },
+      human_owner_user_id: "human-owner-1",
+      status: "active",
+    };
+    const governanceDraft = {
+      ...governanceRevision,
+      id: "governance-draft-1",
+      revision_number: 8,
+      status: "draft",
+    };
 
     if (url.pathname === "/api/v1/teams" && method === "GET") {
       return jsonResponse([
@@ -79,7 +108,49 @@ function createTeamsFetcher(options: { disabledOverview?: boolean } = {}) {
         pending_item_count: 3,
         allowed_actions: options.disabledOverview
           ? ["team.restore"]
-          : ["team.update", "team.disable", "team.archive", "team.member.add", "team.governance.edit"],
+          : [
+              "team.update",
+              "team.disable",
+              "team.archive",
+              "team.member.add",
+              "team.governance.edit",
+              "team.governance.approve",
+            ],
+        current_revision: governanceRevision,
+      });
+    }
+
+    if (url.pathname === "/api/v1/teams/team-1/governance/current" && method === "GET") {
+      return jsonResponse(governanceRevision);
+    }
+
+    if (url.pathname === "/api/v1/teams/team-1/governance/drafts" && method === "GET") {
+      return jsonResponse([governanceDraft]);
+    }
+
+    if (url.pathname === "/api/v1/teams/team-1/governance/drafts" && method === "POST") {
+      return jsonResponse(governanceDraft, 201);
+    }
+
+    if (url.pathname === "/api/v1/teams/team-1/governance/drafts/governance-draft-1" && method === "PATCH") {
+      return jsonResponse(governanceDraft);
+    }
+
+    if (url.pathname === "/api/v1/teams/team-1/governance/drafts/governance-draft-1/approve" && method === "POST") {
+      return jsonResponse({ ...governanceDraft, status: "active" });
+    }
+
+    if (url.pathname === "/api/v1/teams/team-1/governance/drafts/governance-draft-1/reject" && method === "POST") {
+      return jsonResponse({ ...governanceDraft, status: "rejected" });
+    }
+
+    if (url.pathname === "/api/v1/teams/team-1/governance/drafts/governance-draft-1/diff" && method === "GET") {
+      return jsonResponse({
+        added_hard_rules: 1,
+        changed_approval_rules: 1,
+        changed_capabilities: 1,
+        blocking_errors: [],
+        warnings: [{ field: "constitution.hard_rules", message: "新增硬性规则需要复核", severity: "warning" }],
       });
     }
 
@@ -138,6 +209,69 @@ describe("TeamDetailView", () => {
     await expect.element(screen.getByRole("button", { name: "创建治理草案" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "禁用团队" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "归档团队" })).toBeVisible();
+  });
+
+  it("renders capabilities and saves binding changes as a governance draft", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamDetailView apiBaseUrl="http://control-plane.local" fetcher={fetcher} teamId="team-1" />,
+    );
+
+    await screen.getByRole("tab", { name: "能力与知识" }).click();
+
+    for (const section of ["Skills", "MCP", "知识库", "外部能力"]) {
+      await expect.element(screen.getByText(section, { exact: true })).toBeVisible();
+    }
+    await expect.element(screen.getByText("绑定不会立即生效")).toBeVisible();
+    await screen.getByRole("button", { name: "保存绑定草稿" }).click();
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+      expect.objectContaining({
+        credentials: "include",
+        method: "PATCH",
+      }),
+    );
+  });
+
+  it("renders governance editor with JSON preview and approval action", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamDetailView apiBaseUrl="http://control-plane.local" fetcher={fetcher} teamId="team-1" />,
+    );
+
+    await screen.getByRole("tab", { name: "治理策略" }).click();
+
+    await expect.element(screen.getByLabelText("团队宪法")).toBeVisible();
+    await expect.element(screen.getByLabelText("审批策略")).toBeVisible();
+    await expect.element(screen.getByText("JSON 快照预览")).toBeVisible();
+    await expect.element(screen.getByText("新增硬性规则需要复核")).toBeVisible();
+    await screen.getByRole("button", { name: "保存草稿" }).click();
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team-1/governance/drafts/governance-draft-1",
+      expect.objectContaining({
+        credentials: "include",
+        method: "PATCH",
+      }),
+    );
+
+    await screen.getByRole("button", { name: "提交负责人批准" }).click();
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team-1/governance/drafts/governance-draft-1/approve",
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+      }),
+    );
+
+    await screen.getByRole("button", { name: "驳回草稿" }).click();
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team-1/governance/drafts/governance-draft-1/reject",
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+      }),
+    );
   });
 
   it("calls lifecycle APIs from detail actions", async () => {
