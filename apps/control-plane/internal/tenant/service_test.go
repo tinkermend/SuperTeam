@@ -163,6 +163,48 @@ func TestCreateTeamAcceptsMetadataDisplay(t *testing.T) {
 	}
 }
 
+func TestCreateTeamMetadataDisplayDoesNotMutateOrShareInput(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewServiceWithoutAuditForTest(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerID := uuid.New()
+	display := map[string]any{
+		"icon_key":   " security ",
+		"color_tone": " teal ",
+	}
+	metadata := map[string]any{"display": display}
+
+	_, err = svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         uuid.New(),
+		ActorUserID:      uuid.New(),
+		Slug:             "security",
+		Name:             "安全团队",
+		HumanOwnerUserID: &ownerID,
+		Metadata:         metadata,
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+
+	if display["icon_key"] != " security " || display["color_tone"] != " teal " {
+		t.Fatalf("expected input display map not to be trimmed, got %#v", display)
+	}
+	createdDisplay := repo.createdTeamWithMembers.Metadata["display"].(map[string]any)
+	if createdDisplay["icon_key"] != "security" || createdDisplay["color_tone"] != "teal" {
+		t.Fatalf("expected repository metadata display to be trimmed, got %#v", createdDisplay)
+	}
+	display["icon_key"] = "changed"
+	if createdDisplay["icon_key"] != "security" {
+		t.Fatalf("expected repository metadata display not to share input display map, got %#v", createdDisplay)
+	}
+	createdDisplay["color_tone"] = "blue"
+	if display["color_tone"] != " teal " {
+		t.Fatalf("expected input display map not to share repository metadata display, got %#v", display)
+	}
+}
+
 func TestCreateTeamRejectsInvalidMetadataDisplay(t *testing.T) {
 	repo := newMemoryRepository()
 	svc, err := NewServiceWithoutAuditForTest(repo)
@@ -667,6 +709,59 @@ func TestUpdateTeamPreservesOwnerAndMetadataWhenOmitted(t *testing.T) {
 	}
 	if updated.Metadata["cost_center"] != "ops" {
 		t.Fatalf("expected metadata to be preserved, got %#v", updated.Metadata)
+	}
+}
+
+func TestUpdateTeamMetadataDisplayDoesNotMutateOrShareInput(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewServiceWithoutAuditForTest(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         tenantID,
+		ActorUserID:      uuid.New(),
+		Slug:             "ops",
+		Name:             "Ops",
+		HumanOwnerUserID: &ownerID,
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	display := map[string]any{
+		"icon_key":   " ops ",
+		"color_tone": " teal ",
+	}
+	metadata := map[string]any{"display": display}
+
+	updated, err := svc.UpdateTeam(context.Background(), UpdateTeamRequest{
+		TenantID: tenantID,
+		TeamID:   team.Team.ID,
+		Slug:     "platform-ops",
+		Name:     "Platform Ops",
+		Metadata: metadata,
+	})
+	if err != nil {
+		t.Fatalf("update team: %v", err)
+	}
+
+	if display["icon_key"] != " ops " || display["color_tone"] != " teal " {
+		t.Fatalf("expected input display map not to be trimmed, got %#v", display)
+	}
+	updatedDisplay := updated.Metadata["display"].(map[string]any)
+	if updatedDisplay["icon_key"] != "ops" || updatedDisplay["color_tone"] != "teal" {
+		t.Fatalf("expected updated metadata display to be trimmed, got %#v", updatedDisplay)
+	}
+	display["icon_key"] = "changed"
+	storedDisplay := repo.teams[team.Team.ID].Metadata["display"].(map[string]any)
+	if storedDisplay["icon_key"] != "ops" {
+		t.Fatalf("expected stored metadata display not to share input display map, got %#v", storedDisplay)
+	}
+	updatedDisplay["color_tone"] = "blue"
+	if display["color_tone"] != " teal " {
+		t.Fatalf("expected input display map not to share updated metadata display, got %#v", display)
 	}
 }
 

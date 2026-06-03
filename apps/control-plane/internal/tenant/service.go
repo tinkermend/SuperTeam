@@ -1082,6 +1082,8 @@ func normalizeTeamMetadata(metadata map[string]any) (map[string]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("%w: metadata.display must be object", ErrInvalidInput)
 	}
+	display = cloneMap(display)
+	cloned["display"] = display
 	for _, key := range []string{"icon_key", "color_tone"} {
 		value, ok := display[key]
 		if !ok || value == nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -804,7 +805,7 @@ func teamHumanOwnerFromQuery(
 		DisplayName: stringFromText(displayName),
 		Email:       stringFromText(email),
 		Status:      stringFromText(status),
-		Avatar:      avatarFromFields(avatarProvider, avatarStyle, avatarSeed, avatarOptions),
+		Avatar:      avatarFromFields(stringFromText(username), avatarProvider, avatarStyle, avatarSeed, avatarOptions),
 	}
 }
 
@@ -868,7 +869,7 @@ func teamMemberRecordFromListRow(row queries.ListTeamMembersRow) (TeamMemberReco
 		stringFromText(row.DisplayName),
 		stringFromText(row.Email),
 		row.AccountStatus,
-		avatarFromMemberFields(row.AvatarProvider, row.AvatarStyle, row.AvatarSeed, row.AvatarOptions),
+		avatarFromMemberFields(row.Username, row.AvatarProvider, row.AvatarStyle, row.AvatarSeed, row.AvatarOptions),
 		row.Role,
 		row.MembershipStatus,
 		row.CreatedAt,
@@ -886,7 +887,7 @@ func teamMemberRecordFromGetRow(row queries.GetTeamMemberRow) (TeamMemberRecord,
 		stringFromText(row.DisplayName),
 		stringFromText(row.Email),
 		row.AccountStatus,
-		avatarFromMemberFields(row.AvatarProvider, row.AvatarStyle, row.AvatarSeed, row.AvatarOptions),
+		avatarFromMemberFields(row.Username, row.AvatarProvider, row.AvatarStyle, row.AvatarSeed, row.AvatarOptions),
 		row.Role,
 		row.MembershipStatus,
 		row.CreatedAt,
@@ -947,21 +948,24 @@ func teamMemberRecordFromParts(
 	}, nil
 }
 
-func avatarFromFields(provider, style, seed pgtype.Text, options []byte) *UserAvatarConfig {
-	if !provider.Valid || !style.Valid || !seed.Valid {
+func avatarFromFields(username string, provider, style, seed pgtype.Text, options []byte) *UserAvatarConfig {
+	if !provider.Valid || !style.Valid {
 		return nil
 	}
-	return avatarFromValues(provider.String, style.String, seed.String, options)
+	return avatarFromValues(username, provider.String, style.String, stringFromText(seed), options)
 }
 
-func avatarFromMemberFields(provider, style string, seed pgtype.Text, options []byte) *UserAvatarConfig {
-	if provider == "" || style == "" || !seed.Valid {
+func avatarFromMemberFields(username, provider, style string, seed pgtype.Text, options []byte) *UserAvatarConfig {
+	if provider == "" || style == "" {
 		return nil
 	}
-	return avatarFromValues(provider, style, seed.String, options)
+	return avatarFromValues(username, provider, style, stringFromText(seed), options)
 }
 
-func avatarFromValues(provider, style, seed string, options []byte) *UserAvatarConfig {
+func avatarFromValues(username, provider, style, seed string, options []byte) *UserAvatarConfig {
+	if strings.TrimSpace(seed) == "" {
+		seed = "user:" + strings.TrimSpace(username)
+	}
 	avatar := &UserAvatarConfig{
 		Provider: provider,
 		Style:    style,

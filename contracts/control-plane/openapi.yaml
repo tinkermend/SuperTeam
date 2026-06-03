@@ -1669,6 +1669,8 @@ components:
           enum: [adventurer]
         seed:
           type: string
+          minLength: 1
+          maxLength: 255
         options:
           type: object
           additionalProperties: true
