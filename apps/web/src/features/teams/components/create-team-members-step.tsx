@@ -35,6 +35,7 @@ export function CreateTeamMembersStep({
   fetcher,
   onChange,
 }: CreateTeamMembersStepProps) {
+  const [candidateRoles, setCandidateRoles] = useState<Record<string, DirectTeamRole>>({});
   const [roleFilter, setRoleFilter] = useState<MemberRoleFilter>("all");
   const [query, setQuery] = useState("");
   const users = useQuery({
@@ -53,12 +54,16 @@ export function CreateTeamMembersStep({
     () => new Map(draft.initial_members.map((member) => [member.user_id, member])),
     [draft.initial_members],
   );
+  function candidateRoleFor(userId: string) {
+    return selectedByUserId.get(userId)?.role ?? candidateRoles[userId] ?? "member";
+  }
+
   const userItems = (users.data?.items ?? [])
     .filter((user) => user.id !== draft.owner?.id)
     .filter((user) => {
       if (roleFilter === "all") return true;
 
-      return selectedByUserId.get(user.id)?.role === roleFilter;
+      return candidateRoleFor(user.id) === roleFilter;
     });
 
   function upsertMember(user: UserSummary, role: DirectTeamRole = "member") {
@@ -87,12 +92,22 @@ export function CreateTeamMembersStep({
   }
 
   function updateSelectedRole(userId: string, role: DirectTeamRole) {
+    setCandidateRoles((current) => ({ ...current, [userId]: role }));
     onChange({
       ...draft,
       initial_members: draft.initial_members.map((member) =>
         member.user_id === userId ? { ...member, role } : member,
       ),
     });
+  }
+
+  function changeCandidateRole(user: UserSummary, role: DirectTeamRole) {
+    if (selectedByUserId.has(user.id)) {
+      updateSelectedRole(user.id, role);
+      return;
+    }
+
+    setCandidateRoles((current) => ({ ...current, [user.id]: role }));
   }
 
   return (
@@ -173,7 +188,7 @@ export function CreateTeamMembersStep({
             <TableBody>
               {userItems.map((user) => {
                 const selected = selectedByUserId.get(user.id);
-                const role = selected?.role ?? "member";
+                const role = candidateRoleFor(user.id);
 
                 return (
                   <TableRow data-state={selected ? "selected" : undefined} key={user.id}>
@@ -183,7 +198,7 @@ export function CreateTeamMembersStep({
                         checked={Boolean(selected)}
                         onCheckedChange={(checked) => {
                           if (checked) {
-                            upsertMember(user, role);
+                            upsertMember(user, candidateRoleFor(user.id));
                           } else {
                             removeMember(user.id);
                           }
@@ -196,7 +211,7 @@ export function CreateTeamMembersStep({
                     <TableCell>
                       <TeamRoleSelect
                         mode="direct"
-                        onChange={(nextRole) => upsertMember(user, nextRole)}
+                        onChange={(nextRole) => changeCandidateRole(user, nextRole)}
                         value={role}
                       />
                     </TableCell>

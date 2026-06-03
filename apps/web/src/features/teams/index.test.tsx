@@ -679,6 +679,48 @@ async function renderWithQueryClient(children: ReactNode) {
   );
 }
 
+async function openCreateTeamMembersStep(
+  screen: Awaited<ReturnType<typeof renderWithQueryClient>>,
+) {
+  await userEvent.click(screen.getByRole("button", { name: "新建团队" }));
+  await userEvent.fill(
+    screen.getByRole("textbox", { name: "团队名称", exact: true }),
+    "安全团队",
+  );
+  await userEvent.fill(
+    screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
+    "security",
+  );
+  await userEvent.type(
+    screen.getByRole("searchbox", { name: "负责人" }),
+    "owner",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "选择 owner" }));
+  await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+  await expect
+    .element(screen.getByRole("heading", { name: "基础信息" }))
+    .toBeVisible();
+}
+
+async function selectRoleFilter(
+  screen: Awaited<ReturnType<typeof renderWithQueryClient>>,
+  optionName: string,
+) {
+  await userEvent.click(screen.getByRole("combobox", { name: "角色筛选" }));
+  await userEvent.click(screen.getByRole("option", { name: optionName }));
+}
+
+async function changeCandidateRole(
+  screen: Awaited<ReturnType<typeof renderWithQueryClient>>,
+  index: number,
+  optionName: string,
+) {
+  await userEvent.click(
+    document.querySelectorAll('[role="combobox"][aria-label="团队角色"]')[index],
+  );
+  await userEvent.click(screen.getByRole("option", { name: optionName }));
+}
+
 describe("TeamsView", () => {
   it("renders a dense team summary table", async () => {
     const fetcher = createTeamsFetcher();
@@ -961,6 +1003,64 @@ describe("TeamsView", () => {
       human_owner_user_id: "owner-user",
       initial_members: [{ role: "member", user_id: "member-user" }],
       metadata: { display: { color_tone: "teal", icon_key: "security" } },
+      name: "安全团队",
+      slug: "security",
+    });
+  });
+
+  it("filters create member candidates by effective candidate role", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await openCreateTeamMembersStep(screen);
+
+    await selectRoleFilter(screen, "普通成员");
+    await expect
+      .element(screen.getByLabelText("选择 member 为初始成员"))
+      .toBeVisible();
+    await expect
+      .element(screen.getByLabelText("选择 viewer 为初始成员"))
+      .toBeVisible();
+
+    await selectRoleFilter(screen, "全部");
+    await changeCandidateRole(screen, 1, "只读观察者");
+    await selectRoleFilter(screen, "只读观察者");
+
+    await expect
+      .element(screen.getByLabelText("选择 viewer 为初始成员"))
+      .toBeVisible();
+    await expect
+      .element(screen.getByLabelText("选择 member 为初始成员"))
+      .not.toBeInTheDocument();
+  });
+
+  it("does not submit unselected candidates after changing candidate role", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await openCreateTeamMembersStep(screen);
+    await expect
+      .element(screen.getByLabelText("选择 viewer 为初始成员"))
+      .toBeVisible();
+    await changeCandidateRole(screen, 1, "只读观察者");
+
+    await expect
+      .element(screen.getByText("已选择的初始成员（0）"))
+      .toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "创建团队" }));
+
+    await expect.poll(() => createTeamPostIndex(fetcher)).not.toBe(-1);
+    const postCall = fetchCalls(fetcher).find(
+      ([url, init]) =>
+        String(url).endsWith("/api/v1/teams") && init?.method === "POST",
+    );
+    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
+      human_owner_user_id: "owner-user",
+      initial_members: [],
       name: "安全团队",
       slug: "security",
     });
