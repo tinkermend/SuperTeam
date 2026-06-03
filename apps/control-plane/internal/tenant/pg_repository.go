@@ -15,11 +15,20 @@ import (
 )
 
 type PgRepository struct {
-	q *queries.Queries
+	q  *queries.Queries
+	db txBeginner
 }
 
-func NewPgRepository(q *queries.Queries) Repository {
-	return &PgRepository{q: q}
+type txBeginner interface {
+	Begin(context.Context) (pgx.Tx, error)
+}
+
+func NewPgRepository(q *queries.Queries, db ...txBeginner) Repository {
+	var txDB txBeginner
+	if len(db) > 0 {
+		txDB = db[0]
+	}
+	return &PgRepository{q: q, db: txDB}
 }
 
 func (r *PgRepository) CreateTeam(ctx context.Context, params CreateTeamParams) (TeamRecord, error) {
@@ -222,6 +231,187 @@ func (r *PgRepository) GetNextTeamConfigRevisionNumber(ctx context.Context, tena
 	return nextRevision, nil
 }
 
+func (r *PgRepository) ListTeamMembers(ctx context.Context, params ListTeamMembersParams) ([]TeamMemberRecord, error) {
+	rows, err := r.q.ListTeamMembers(ctx, queries.ListTeamMembersParams{
+		TenantID: params.TenantID,
+		TeamID:   params.TeamID,
+		Offset:   params.Offset,
+		Limit:    params.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	records := make([]TeamMemberRecord, 0, len(rows))
+	for _, row := range rows {
+		record, err := teamMemberRecordFromListRow(row)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+func (r *PgRepository) GetTeamMember(ctx context.Context, tenantID, teamID, membershipID uuid.UUID) (TeamMemberRecord, error) {
+	row, err := r.q.GetTeamMember(ctx, queries.GetTeamMemberParams{
+		MembershipID: membershipID,
+		TenantID:     tenantID,
+		TeamID:       teamID,
+	})
+	if err != nil {
+		return TeamMemberRecord{}, mapNoRows(err)
+	}
+	return teamMemberRecordFromGetRow(row)
+}
+
+func (r *PgRepository) AddTeamMember(ctx context.Context, params AddTeamMemberParams) (TeamMemberRecord, error) {
+	member, err := r.q.AddTeamMember(ctx, queries.AddTeamMemberParams{
+		TenantID: params.TenantID,
+		TeamID:   params.TeamID,
+		UserID:   params.UserID,
+		Role:     params.Role,
+	})
+	if err != nil {
+		return TeamMemberRecord{}, mapConstraintError(err)
+	}
+	return teamMemberRecordFromTenantMember(member)
+}
+
+func (r *PgRepository) DisableTeamMemberRole(ctx context.Context, params DisableTeamMemberRoleParams) (TeamMemberRecord, error) {
+	member, err := r.q.DisableTeamMemberRole(ctx, queries.DisableTeamMemberRoleParams{
+		MembershipID: params.MembershipID,
+		TenantID:     params.TenantID,
+		TeamID:       params.TeamID,
+	})
+	if err != nil {
+		return TeamMemberRecord{}, mapNoRows(err)
+	}
+	return teamMemberRecordFromTenantMember(member)
+}
+
+func (r *PgRepository) CountTeamOwners(ctx context.Context, tenantID, teamID uuid.UUID) (int32, error) {
+	return r.q.CountTeamOwners(ctx, queries.CountTeamOwnersParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+}
+
+func (r *PgRepository) CreateTeamMemberRoleRequest(ctx context.Context, params CreateTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
+	request, err := r.q.CreateTeamMemberRoleRequest(ctx, queries.CreateTeamMemberRoleRequestParams{
+		TenantID:      params.TenantID,
+		TeamID:        params.TeamID,
+		TargetUserID:  params.TargetUserID,
+		RequestedRole: params.RequestedRole,
+		RequestedBy:   params.RequestedBy,
+		Reason:        params.Reason,
+	})
+	if err != nil {
+		return TeamMemberRoleRequestRecord{}, mapConstraintError(err)
+	}
+	return roleRequestRecordFromQuery(request), nil
+}
+
+func (r *PgRepository) GetTeamMemberRoleRequest(ctx context.Context, tenantID, teamID, requestID uuid.UUID) (TeamMemberRoleRequestRecord, error) {
+	request, err := r.q.GetTeamMemberRoleRequest(ctx, queries.GetTeamMemberRoleRequestParams{
+		ID:       requestID,
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	if err != nil {
+		return TeamMemberRoleRequestRecord{}, mapNoRows(err)
+	}
+	return roleRequestRecordFromQuery(request), nil
+}
+
+func (r *PgRepository) ListTeamMemberRoleRequests(ctx context.Context, params ListTeamMemberRoleRequestsParams) ([]TeamMemberRoleRequestRecord, error) {
+	requests, err := r.q.ListTeamMemberRoleRequests(ctx, queries.ListTeamMemberRoleRequestsParams{
+		TenantID: params.TenantID,
+		TeamID:   params.TeamID,
+		Status:   textFromRoleRequestStatus(params.Status),
+		Offset:   params.Offset,
+		Limit:    params.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	records := make([]TeamMemberRoleRequestRecord, 0, len(requests))
+	for _, request := range requests {
+		records = append(records, roleRequestRecordFromQuery(request))
+	}
+	return records, nil
+}
+
+func (r *PgRepository) ApproveTeamMemberRoleRequest(ctx context.Context, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
+	if r.db == nil {
+		return r.approveTeamMemberRoleRequestWithQueries(ctx, r.q, params)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return TeamMemberRoleRequestRecord{}, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+	record, err := r.approveTeamMemberRoleRequestWithQueries(ctx, r.q.WithTx(tx), params)
+	if err != nil {
+		return TeamMemberRoleRequestRecord{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return TeamMemberRoleRequestRecord{}, err
+	}
+	committed = true
+	return record, nil
+}
+
+func (r *PgRepository) approveTeamMemberRoleRequestWithQueries(ctx context.Context, q *queries.Queries, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
+	pending, err := q.GetTeamMemberRoleRequest(ctx, queries.GetTeamMemberRoleRequestParams{
+		ID:       params.RequestID,
+		TenantID: params.TenantID,
+		TeamID:   params.TeamID,
+	})
+	if err != nil {
+		return TeamMemberRoleRequestRecord{}, mapNoRows(err)
+	}
+	if _, err := q.AddTeamMember(ctx, queries.AddTeamMemberParams{
+		TenantID: pending.TenantID,
+		TeamID:   pending.TeamID,
+		UserID:   pending.TargetUserID,
+		Role:     pending.RequestedRole,
+	}); err != nil {
+		return TeamMemberRoleRequestRecord{}, mapConstraintError(err)
+	}
+	decided, err := q.DecideTeamMemberRoleRequest(ctx, queries.DecideTeamMemberRoleRequestParams{
+		ID:             params.RequestID,
+		TenantID:       params.TenantID,
+		TeamID:         params.TeamID,
+		Status:         string(TeamMemberRoleRequestStatusApproved),
+		DecidedBy:      params.DecidedBy,
+		DecisionReason: params.DecisionReason,
+	})
+	if err != nil {
+		return TeamMemberRoleRequestRecord{}, mapNoRows(err)
+	}
+	return roleRequestRecordFromQuery(decided), nil
+}
+
+func (r *PgRepository) DecideTeamMemberRoleRequest(ctx context.Context, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
+	request, err := r.q.DecideTeamMemberRoleRequest(ctx, queries.DecideTeamMemberRoleRequestParams{
+		ID:             params.RequestID,
+		TenantID:       params.TenantID,
+		TeamID:         params.TeamID,
+		Status:         string(params.Status),
+		DecidedBy:      params.DecidedBy,
+		DecisionReason: params.DecisionReason,
+	})
+	if err != nil {
+		return TeamMemberRoleRequestRecord{}, mapNoRows(err)
+	}
+	return roleRequestRecordFromQuery(request), nil
+}
+
 func teamRecordFromQuery(team queries.TenantTeam) (TeamRecord, error) {
 	metadata, err := mapFromJSONB(team.Metadata, "metadata")
 	if err != nil {
@@ -368,6 +558,108 @@ func configRevisionRecordFromQuery(revision queries.TenantTeamConfigRevision) (T
 	}, nil
 }
 
+func teamMemberRecordFromListRow(row queries.ListTeamMembersRow) (TeamMemberRecord, error) {
+	return teamMemberRecordFromParts(
+		row.MembershipID,
+		row.TenantID,
+		row.TeamID,
+		row.UserID,
+		row.Username,
+		stringFromText(row.DisplayName),
+		stringFromText(row.Email),
+		row.AccountStatus,
+		row.Role,
+		row.MembershipStatus,
+		row.CreatedAt,
+		row.UpdatedAt,
+	)
+}
+
+func teamMemberRecordFromGetRow(row queries.GetTeamMemberRow) (TeamMemberRecord, error) {
+	return teamMemberRecordFromParts(
+		row.MembershipID,
+		row.TenantID,
+		row.TeamID,
+		row.UserID,
+		row.Username,
+		stringFromText(row.DisplayName),
+		stringFromText(row.Email),
+		row.AccountStatus,
+		row.Role,
+		row.MembershipStatus,
+		row.CreatedAt,
+		row.UpdatedAt,
+	)
+}
+
+func teamMemberRecordFromTenantMember(member queries.TenantMember) (TeamMemberRecord, error) {
+	return teamMemberRecordFromParts(
+		member.ID,
+		member.TenantID,
+		member.TeamID,
+		member.PrincipalID,
+		"",
+		"",
+		"",
+		"",
+		member.Role,
+		member.Status,
+		member.CreatedAt,
+		member.UpdatedAt,
+	)
+}
+
+func teamMemberRecordFromParts(
+	membershipID uuid.UUID,
+	tenantID uuid.UUID,
+	teamID uuid.NullUUID,
+	userID uuid.UUID,
+	username string,
+	displayName string,
+	email string,
+	accountStatus string,
+	role string,
+	membershipStatus string,
+	createdAt pgtype.Timestamptz,
+	updatedAt pgtype.Timestamptz,
+) (TeamMemberRecord, error) {
+	if !teamID.Valid || teamID.UUID == uuid.Nil {
+		return TeamMemberRecord{}, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	return TeamMemberRecord{
+		MembershipID:     membershipID,
+		TenantID:         tenantID,
+		TeamID:           teamID.UUID,
+		UserID:           userID,
+		Username:         username,
+		DisplayName:      displayName,
+		Email:            email,
+		AccountStatus:    accountStatus,
+		Role:             role,
+		MembershipStatus: membershipStatus,
+		CreatedAt:        timeFromTimestamptz(createdAt),
+		UpdatedAt:        timeFromTimestamptz(updatedAt),
+	}, nil
+}
+
+func roleRequestRecordFromQuery(request queries.TenantTeamMemberRoleRequest) TeamMemberRoleRequestRecord {
+	return TeamMemberRoleRequestRecord{
+		ID:             request.ID,
+		TenantID:       request.TenantID,
+		TeamID:         request.TeamID,
+		TargetUserID:   request.TargetUserID,
+		RequestedRole:  request.RequestedRole,
+		RequestedBy:    request.RequestedBy,
+		Status:         TeamMemberRoleRequestStatus(request.Status),
+		Reason:         request.Reason,
+		DecidedBy:      uuidPtrFromNull(request.DecidedBy),
+		DecidedAt:      timePtrFromTimestamptz(request.DecidedAt),
+		DecisionReason: request.DecisionReason,
+		CreatedAt:      timeFromTimestamptz(request.CreatedAt),
+		UpdatedAt:      timeFromTimestamptz(request.UpdatedAt),
+	}
+}
+
 func mapNoRows(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
@@ -410,6 +702,20 @@ func textFromString(value string) pgtype.Text {
 		return pgtype.Text{}
 	}
 	return pgtype.Text{String: value, Valid: true}
+}
+
+func textFromRoleRequestStatus(status TeamMemberRoleRequestStatus) pgtype.Text {
+	if status == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: string(status), Valid: true}
+}
+
+func stringFromText(value pgtype.Text) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
 }
 
 func int32PtrFromInt4(value pgtype.Int4) *int32 {

@@ -299,6 +299,209 @@ func (s *Service) GetCurrentConfigRevision(ctx context.Context, tenantID, teamID
 	return configRevisionFromRecord(record), nil
 }
 
+func (s *Service) ListTeamMembers(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*TeamMember, error) {
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if teamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	limit, offset, err := normalizeLimitOffset(limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	records, err := s.repository.ListTeamMembers(ctx, ListTeamMembersParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+		Limit:    limit,
+		Offset:   offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list team members: %w", err)
+	}
+	members := make([]*TeamMember, 0, len(records))
+	for _, record := range records {
+		members = append(members, teamMemberFromRecord(record))
+	}
+	return members, nil
+}
+
+func (s *Service) AddTeamMember(ctx context.Context, req AddTeamMemberRequest) (*TeamMember, error) {
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if req.UserID == uuid.Nil {
+		return nil, fmt.Errorf("%w: user_id is required", ErrInvalidInput)
+	}
+	role, err := normalizeTeamRole(req.Role, TeamRoleMember)
+	if err != nil {
+		return nil, err
+	}
+	if !isDirectTeamRole(role) {
+		return nil, fmt.Errorf("%w: privileged role requires approval", ErrInvalidInput)
+	}
+	record, err := s.repository.AddTeamMember(ctx, AddTeamMemberParams{
+		TenantID: req.TenantID,
+		TeamID:   req.TeamID,
+		UserID:   req.UserID,
+		Role:     role,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("add team member: %w", err)
+	}
+	return teamMemberFromRecord(record), nil
+}
+
+func (s *Service) RemoveTeamMember(ctx context.Context, req RemoveTeamMemberRequest) error {
+	if req.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if req.MembershipID == uuid.Nil {
+		return fmt.Errorf("%w: membership_id is required", ErrInvalidInput)
+	}
+	member, err := s.repository.GetTeamMember(ctx, req.TenantID, req.TeamID, req.MembershipID)
+	if err != nil {
+		return fmt.Errorf("get team member: %w", err)
+	}
+	if member.Role == TeamRoleOwner {
+		ownerCount, err := s.repository.CountTeamOwners(ctx, req.TenantID, req.TeamID)
+		if err != nil {
+			return fmt.Errorf("count team owners: %w", err)
+		}
+		if ownerCount <= 1 {
+			return fmt.Errorf("%w: cannot remove the final team owner", ErrInvalidInput)
+		}
+	}
+	if _, err := s.repository.DisableTeamMemberRole(ctx, DisableTeamMemberRoleParams{
+		TenantID:     req.TenantID,
+		TeamID:       req.TeamID,
+		MembershipID: req.MembershipID,
+	}); err != nil {
+		return fmt.Errorf("disable team member role: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) CreateRoleRequest(ctx context.Context, req CreateRoleRequestRequest) (*TeamMemberRoleRequest, error) {
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if req.TargetUserID == uuid.Nil {
+		return nil, fmt.Errorf("%w: target_user_id is required", ErrInvalidInput)
+	}
+	if req.RequestedBy == uuid.Nil {
+		return nil, fmt.Errorf("%w: requested_by is required", ErrInvalidInput)
+	}
+	role, err := normalizeTeamRole(req.RequestedRole, "")
+	if err != nil {
+		return nil, err
+	}
+	if !isPrivilegedTeamRole(role) {
+		return nil, fmt.Errorf("%w: role request must target a privileged role", ErrInvalidInput)
+	}
+	record, err := s.repository.CreateTeamMemberRoleRequest(ctx, CreateTeamMemberRoleRequestParams{
+		TenantID:      req.TenantID,
+		TeamID:        req.TeamID,
+		TargetUserID:  req.TargetUserID,
+		RequestedRole: role,
+		RequestedBy:   req.RequestedBy,
+		Reason:        strings.TrimSpace(req.Reason),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create team member role request: %w", err)
+	}
+	return roleRequestFromRecord(record), nil
+}
+
+func (s *Service) ListRoleRequests(ctx context.Context, tenantID, teamID uuid.UUID, status TeamMemberRoleRequestStatus, limit, offset int32) ([]*TeamMemberRoleRequest, error) {
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if teamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if status != "" && !isValidRoleRequestStatus(status) {
+		return nil, fmt.Errorf("%w: invalid role request status", ErrInvalidInput)
+	}
+	limit, offset, err := normalizeLimitOffset(limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	records, err := s.repository.ListTeamMemberRoleRequests(ctx, ListTeamMemberRoleRequestsParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+		Status:   status,
+		Limit:    limit,
+		Offset:   offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list team member role requests: %w", err)
+	}
+	requests := make([]*TeamMemberRoleRequest, 0, len(records))
+	for _, record := range records {
+		requests = append(requests, roleRequestFromRecord(record))
+	}
+	return requests, nil
+}
+
+func (s *Service) ApproveRoleRequest(ctx context.Context, req DecideRoleRequestRequest) (*TeamMemberRoleRequest, error) {
+	return s.decideRoleRequest(ctx, req, TeamMemberRoleRequestStatusApproved)
+}
+
+func (s *Service) RejectRoleRequest(ctx context.Context, req DecideRoleRequestRequest) (*TeamMemberRoleRequest, error) {
+	return s.decideRoleRequest(ctx, req, TeamMemberRoleRequestStatusRejected)
+}
+
+func (s *Service) decideRoleRequest(ctx context.Context, req DecideRoleRequestRequest, status TeamMemberRoleRequestStatus) (*TeamMemberRoleRequest, error) {
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if req.RequestID == uuid.Nil {
+		return nil, fmt.Errorf("%w: request_id is required", ErrInvalidInput)
+	}
+	if req.DecidedBy == uuid.Nil {
+		return nil, fmt.Errorf("%w: decided_by is required", ErrInvalidInput)
+	}
+	if status == TeamMemberRoleRequestStatusApproved {
+		record, err := s.repository.ApproveTeamMemberRoleRequest(ctx, DecideTeamMemberRoleRequestParams{
+			TenantID:       req.TenantID,
+			TeamID:         req.TeamID,
+			RequestID:      req.RequestID,
+			Status:         TeamMemberRoleRequestStatusApproved,
+			DecidedBy:      req.DecidedBy,
+			DecisionReason: strings.TrimSpace(req.DecisionReason),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("approve team member role request: %w", err)
+		}
+		return roleRequestFromRecord(record), nil
+	}
+	record, err := s.repository.DecideTeamMemberRoleRequest(ctx, DecideTeamMemberRoleRequestParams{
+		TenantID:       req.TenantID,
+		TeamID:         req.TeamID,
+		RequestID:      req.RequestID,
+		Status:         status,
+		DecidedBy:      req.DecidedBy,
+		DecisionReason: strings.TrimSpace(req.DecisionReason),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("decide team member role request: %w", err)
+	}
+	return roleRequestFromRecord(record), nil
+}
+
 func normalizeListTeamsRequest(req ListTeamsRequest) (ListTeamsRequest, error) {
 	if req.TenantID == uuid.Nil {
 		return req, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
@@ -322,6 +525,59 @@ func normalizeListTeamsRequest(req ListTeamsRequest) (ListTeamsRequest, error) {
 	return req, nil
 }
 
+func normalizeLimitOffset(limit, offset int32) (int32, int32, error) {
+	if offset < 0 {
+		return 0, 0, fmt.Errorf("%w: offset must be non-negative", ErrInvalidInput)
+	}
+	if limit < 0 {
+		return 0, 0, fmt.Errorf("%w: limit must be non-negative", ErrInvalidInput)
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	return limit, offset, nil
+}
+
+func normalizeTeamRole(role string, defaultRole string) (string, error) {
+	role = strings.TrimSpace(role)
+	if role == "" {
+		role = defaultRole
+	}
+	if !isKnownTeamRole(role) {
+		return "", fmt.Errorf("%w: invalid team role", ErrInvalidInput)
+	}
+	return role, nil
+}
+
+func isKnownTeamRole(role string) bool {
+	return isDirectTeamRole(role) || isPrivilegedTeamRole(role)
+}
+
+func isDirectTeamRole(role string) bool {
+	return role == TeamRoleMember || role == TeamRoleViewer
+}
+
+func isPrivilegedTeamRole(role string) bool {
+	switch role {
+	case TeamRoleOwner, TeamRoleAdmin, TeamRoleApprover:
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidRoleRequestStatus(status TeamMemberRoleRequestStatus) bool {
+	switch status {
+	case TeamMemberRoleRequestStatusPending, TeamMemberRoleRequestStatusApproved, TeamMemberRoleRequestStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
 func teamFromRecord(record TeamRecord) *Team {
 	return &Team{
 		ID:               record.ID,
@@ -333,6 +589,41 @@ func teamFromRecord(record TeamRecord) *Team {
 		Metadata:         cloneMap(record.Metadata),
 		CreatedAt:        record.CreatedAt,
 		UpdatedAt:        record.UpdatedAt,
+	}
+}
+
+func teamMemberFromRecord(record TeamMemberRecord) *TeamMember {
+	return &TeamMember{
+		MembershipID:     record.MembershipID,
+		TenantID:         record.TenantID,
+		TeamID:           record.TeamID,
+		UserID:           record.UserID,
+		Username:         record.Username,
+		DisplayName:      record.DisplayName,
+		Email:            record.Email,
+		AccountStatus:    record.AccountStatus,
+		Role:             record.Role,
+		MembershipStatus: record.MembershipStatus,
+		CreatedAt:        record.CreatedAt,
+		UpdatedAt:        record.UpdatedAt,
+	}
+}
+
+func roleRequestFromRecord(record TeamMemberRoleRequestRecord) *TeamMemberRoleRequest {
+	return &TeamMemberRoleRequest{
+		ID:             record.ID,
+		TenantID:       record.TenantID,
+		TeamID:         record.TeamID,
+		TargetUserID:   record.TargetUserID,
+		RequestedRole:  record.RequestedRole,
+		RequestedBy:    record.RequestedBy,
+		Status:         record.Status,
+		Reason:         record.Reason,
+		DecidedBy:      validUUIDPtr(record.DecidedBy),
+		DecidedAt:      cloneTimePtr(record.DecidedAt),
+		DecisionReason: record.DecisionReason,
+		CreatedAt:      record.CreatedAt,
+		UpdatedAt:      record.UpdatedAt,
 	}
 }
 

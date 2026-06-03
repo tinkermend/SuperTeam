@@ -56,6 +56,22 @@ func (s TeamConfigRevisionStatus) IsValid() bool {
 	}
 }
 
+const (
+	TeamRoleOwner    = "owner"
+	TeamRoleAdmin    = "admin"
+	TeamRoleApprover = "approver"
+	TeamRoleMember   = "member"
+	TeamRoleViewer   = "viewer"
+)
+
+type TeamMemberRoleRequestStatus string
+
+const (
+	TeamMemberRoleRequestStatusPending  TeamMemberRoleRequestStatus = "pending"
+	TeamMemberRoleRequestStatusApproved TeamMemberRoleRequestStatus = "approved"
+	TeamMemberRoleRequestStatusRejected TeamMemberRoleRequestStatus = "rejected"
+)
+
 type Team struct {
 	ID               uuid.UUID
 	TenantID         uuid.UUID
@@ -110,6 +126,37 @@ type TeamConfigRevision struct {
 	UpdatedAt                   time.Time
 }
 
+type TeamMember struct {
+	MembershipID     uuid.UUID
+	TenantID         uuid.UUID
+	TeamID           uuid.UUID
+	UserID           uuid.UUID
+	Username         string
+	DisplayName      string
+	Email            string
+	AccountStatus    string
+	Role             string
+	MembershipStatus string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type TeamMemberRoleRequest struct {
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	TeamID         uuid.UUID
+	TargetUserID   uuid.UUID
+	RequestedRole  string
+	RequestedBy    uuid.UUID
+	Status         TeamMemberRoleRequestStatus
+	Reason         string
+	DecidedBy      *uuid.UUID
+	DecidedAt      *time.Time
+	DecisionReason string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 type CreateTeamRequest struct {
 	TenantID         uuid.UUID
 	Slug             string
@@ -155,4 +202,34 @@ type CreateTeamConfigRevisionRequest struct {
 	HumanOwnerUserID            *uuid.UUID
 	Status                      TeamConfigRevisionStatus
 	ApprovedBy                  *uuid.UUID
+}
+
+type AddTeamMemberRequest struct {
+	TenantID uuid.UUID
+	TeamID   uuid.UUID
+	UserID   uuid.UUID
+	Role     string
+}
+
+type RemoveTeamMemberRequest struct {
+	TenantID     uuid.UUID
+	TeamID       uuid.UUID
+	MembershipID uuid.UUID
+}
+
+type CreateRoleRequestRequest struct {
+	TenantID      uuid.UUID
+	TeamID        uuid.UUID
+	TargetUserID  uuid.UUID
+	RequestedRole string
+	RequestedBy   uuid.UUID
+	Reason        string
+}
+
+type DecideRoleRequestRequest struct {
+	TenantID       uuid.UUID
+	TeamID         uuid.UUID
+	RequestID      uuid.UUID
+	DecidedBy      uuid.UUID
+	DecisionReason string
 }

@@ -831,6 +831,36 @@ type TenantTeamConfigRevision struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 团队高权限角色变更申请表
+type TenantTeamMemberRoleRequest struct {
+	// 角色变更申请ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 团队ID
+	TeamID uuid.UUID `json:"team_id"`
+	// 目标用户ID
+	TargetUserID uuid.UUID `json:"target_user_id"`
+	// 申请授予的团队角色
+	RequestedRole string `json:"requested_role"`
+	// 申请人用户ID
+	RequestedBy uuid.UUID `json:"requested_by"`
+	// 申请状态：pending、approved、rejected
+	Status string `json:"status"`
+	// 申请原因
+	Reason string `json:"reason"`
+	// 审批人用户ID
+	DecidedBy uuid.NullUUID `json:"decided_by"`
+	// 审批时间
+	DecidedAt pgtype.Timestamptz `json:"decided_at"`
+	// 审批说明
+	DecisionReason string `json:"decision_reason"`
+	// 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Web 控制台登录日志表
 type WebLoginLog struct {
 	// 登录日志主键 UUID

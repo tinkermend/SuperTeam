@@ -266,6 +266,7 @@ func TestTeamRoutesRequireManagementAuthorization(t *testing.T) {
 		action       string
 		resourceType string
 		resourceID   string
+		targetRole   string
 		teamID       *uuid.UUID
 	}{
 		{name: "list", method: http.MethodGet, path: "/api/v1/teams", action: authz.ActionTeamRead, resourceType: authz.ResourceTenant},
@@ -278,6 +279,13 @@ func TestTeamRoutesRequireManagementAuthorization(t *testing.T) {
 		{name: "restore", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/restore", action: authz.ActionTeamRestore, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "create config revision", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/config-revisions", body: `{"human_owner_user_id":"` + ownerID + `"}`, action: authz.ActionTeamGovernanceApprove, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "current config revision", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/config-revisions/current", action: authz.ActionTeamGovernanceRead, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "list members", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/members", action: authz.ActionTeamRead, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "add member", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/members", body: `{"user_id":"` + uuid.New().String() + `","role":"member"}`, action: authz.ActionTeamMemberAdd, resourceType: authz.ResourceTeam, resourceID: teamID, targetRole: "member"},
+		{name: "remove member", method: http.MethodDelete, path: "/api/v1/teams/" + teamID + "/members/" + uuid.New().String(), action: authz.ActionTeamMemberRemove, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "list role requests", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/member-role-requests", action: authz.ActionTeamRead, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "create role request", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/member-role-requests", body: `{"target_user_id":"` + uuid.New().String() + `","requested_role":"admin","reason":"需要维护成员"}`, action: authz.ActionTeamMemberRequestPrivilegedRole, resourceType: authz.ResourceTeam, resourceID: teamID, targetRole: "admin"},
+		{name: "approve role request", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/member-role-requests/" + uuid.New().String() + "/approve", body: `{"decision_reason":"允许"}`, action: authz.ActionTeamMemberApprovePrivilegedRole, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "reject role request", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/member-role-requests/" + uuid.New().String() + "/reject", body: `{"decision_reason":"拒绝"}`, action: authz.ActionTeamMemberApprovePrivilegedRole, resourceType: authz.ResourceTeam, resourceID: teamID},
 	}
 
 	for _, tt := range tests {
@@ -322,6 +330,118 @@ func TestTeamRoutesRequireManagementAuthorization(t *testing.T) {
 		} else if check.TeamID != nil {
 			t.Fatalf("expected no team context for %s, got %#v", expected.name, check)
 		}
+		if expected.targetRole != "" {
+			if check.Context["target_role"] != expected.targetRole {
+				t.Fatalf("expected target role %s for %s, got %#v", expected.targetRole, expected.name, check.Context)
+			}
+		}
+	}
+}
+
+func TestTeamMemberRoutesUseConsoleTenant(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	user, err := authService.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeTeamService{}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetTenantHandler(tenant.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	teamID := uuid.New()
+	targetUserID := uuid.New()
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+teamID.String()+"/members?limit=25&offset=5", nil)
+	listReq.AddCookie(cookie)
+	listResp := httptest.NewRecorder()
+	server.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected list members to succeed, got %d: %s", listResp.Code, listResp.Body.String())
+	}
+	if service.listMembersTenantID != expectedTenantID || service.listMembersTeamID != teamID || service.listMembersLimit != 25 || service.listMembersOffset != 5 {
+		t.Fatalf("unexpected list members args: tenant=%s team=%s limit=%d offset=%d", service.listMembersTenantID, service.listMembersTeamID, service.listMembersLimit, service.listMembersOffset)
+	}
+
+	addReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+teamID.String()+"/members", strings.NewReader(`{"user_id":"`+targetUserID.String()+`","role":"viewer"}`))
+	addReq.Header.Set("Content-Type", "application/json")
+	addReq.AddCookie(cookie)
+	addResp := httptest.NewRecorder()
+	server.ServeHTTP(addResp, addReq)
+	if addResp.Code != http.StatusCreated {
+		t.Fatalf("expected add member to succeed, got %d: %s", addResp.Code, addResp.Body.String())
+	}
+	if service.addMemberReq.TenantID != expectedTenantID || service.addMemberReq.TeamID != teamID || service.addMemberReq.UserID != targetUserID || service.addMemberReq.Role != tenant.TeamRoleViewer {
+		t.Fatalf("unexpected add member request: %#v", service.addMemberReq)
+	}
+
+	memberID := uuid.New()
+	removeReq := httptest.NewRequest(http.MethodDelete, "/api/v1/teams/"+teamID.String()+"/members/"+memberID.String(), nil)
+	removeReq.AddCookie(cookie)
+	removeResp := httptest.NewRecorder()
+	server.ServeHTTP(removeResp, removeReq)
+	if removeResp.Code != http.StatusNoContent {
+		t.Fatalf("expected remove member to succeed, got %d: %s", removeResp.Code, removeResp.Body.String())
+	}
+	if service.removeMemberReq.TenantID != expectedTenantID || service.removeMemberReq.TeamID != teamID || service.removeMemberReq.MembershipID != memberID {
+		t.Fatalf("unexpected remove member request: %#v", service.removeMemberReq)
+	}
+
+	createRoleReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+teamID.String()+"/member-role-requests", strings.NewReader(`{"target_user_id":"`+targetUserID.String()+`","requested_role":"admin","reason":"需要维护成员"}`))
+	createRoleReq.Header.Set("Content-Type", "application/json")
+	createRoleReq.AddCookie(cookie)
+	createRoleResp := httptest.NewRecorder()
+	server.ServeHTTP(createRoleResp, createRoleReq)
+	if createRoleResp.Code != http.StatusCreated {
+		t.Fatalf("expected create role request to succeed, got %d: %s", createRoleResp.Code, createRoleResp.Body.String())
+	}
+	if service.createRoleReq.TenantID != expectedTenantID || service.createRoleReq.TeamID != teamID || service.createRoleReq.TargetUserID != targetUserID || service.createRoleReq.RequestedBy != user.ID {
+		t.Fatalf("unexpected role request: %#v", service.createRoleReq)
+	}
+
+	listRoleReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+teamID.String()+"/member-role-requests?status=pending", nil)
+	listRoleReq.AddCookie(cookie)
+	listRoleResp := httptest.NewRecorder()
+	server.ServeHTTP(listRoleResp, listRoleReq)
+	if listRoleResp.Code != http.StatusOK {
+		t.Fatalf("expected list role requests to succeed, got %d: %s", listRoleResp.Code, listRoleResp.Body.String())
+	}
+	if !service.listRoleRequestsCalled || service.listRoleRequestsID != teamID {
+		t.Fatalf("expected list role requests to call service for team %s", teamID)
+	}
+
+	roleRequestID := uuid.New()
+	approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+teamID.String()+"/member-role-requests/"+roleRequestID.String()+"/approve", strings.NewReader(`{"decision_reason":"允许"}`))
+	approveReq.Header.Set("Content-Type", "application/json")
+	approveReq.AddCookie(cookie)
+	approveResp := httptest.NewRecorder()
+	server.ServeHTTP(approveResp, approveReq)
+	if approveResp.Code != http.StatusOK {
+		t.Fatalf("expected approve role request to succeed, got %d: %s", approveResp.Code, approveResp.Body.String())
+	}
+	if service.decideRoleReq.TenantID != expectedTenantID || service.decideRoleReq.TeamID != teamID || service.decideRoleReq.RequestID != roleRequestID || service.decideRoleReq.DecidedBy != user.ID {
+		t.Fatalf("unexpected approve request: %#v", service.decideRoleReq)
+	}
+
+	rejectReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+teamID.String()+"/member-role-requests/"+roleRequestID.String()+"/reject", strings.NewReader(`{"decision_reason":"拒绝"}`))
+	rejectReq.Header.Set("Content-Type", "application/json")
+	rejectReq.AddCookie(cookie)
+	rejectResp := httptest.NewRecorder()
+	server.ServeHTTP(rejectResp, rejectReq)
+	if rejectResp.Code != http.StatusOK {
+		t.Fatalf("expected reject role request to succeed, got %d: %s", rejectResp.Code, rejectResp.Body.String())
+	}
+	if !service.rejectRoleCalled {
+		t.Fatalf("expected reject route to call RejectRoleRequest")
 	}
 }
 
@@ -595,28 +715,44 @@ func TestTeamRoutesDoNotSubstituteConsoleUserAsHumanOwner(t *testing.T) {
 }
 
 type routeTeamService struct {
-	createReq            tenant.CreateTeamRequest
-	listReq              tenant.ListTeamsRequest
-	updateReq            tenant.UpdateTeamRequest
-	changeStatusReq      tenant.ChangeTeamStatusRequest
-	createRevisionReq    tenant.CreateTeamConfigRevisionRequest
-	getTenantID          uuid.UUID
-	getTeamID            uuid.UUID
-	overviewTenantID     uuid.UUID
-	overviewTeamID       uuid.UUID
-	currentTenantID      uuid.UUID
-	currentTeamID        uuid.UUID
-	createCalled         bool
-	listCalled           bool
-	getCalled            bool
-	overviewCalled       bool
-	updateCalled         bool
-	changeStatusCalled   bool
-	createRevisionCalled bool
-	currentCalled        bool
-	createdID            uuid.UUID
-	rejectMissingOwner   bool
-	listErr              error
+	createReq              tenant.CreateTeamRequest
+	listReq                tenant.ListTeamsRequest
+	updateReq              tenant.UpdateTeamRequest
+	changeStatusReq        tenant.ChangeTeamStatusRequest
+	createRevisionReq      tenant.CreateTeamConfigRevisionRequest
+	addMemberReq           tenant.AddTeamMemberRequest
+	removeMemberReq        tenant.RemoveTeamMemberRequest
+	createRoleReq          tenant.CreateRoleRequestRequest
+	decideRoleReq          tenant.DecideRoleRequestRequest
+	getTenantID            uuid.UUID
+	getTeamID              uuid.UUID
+	overviewTenantID       uuid.UUID
+	overviewTeamID         uuid.UUID
+	currentTenantID        uuid.UUID
+	currentTeamID          uuid.UUID
+	listMembersTenantID    uuid.UUID
+	listMembersTeamID      uuid.UUID
+	listMembersLimit       int32
+	listMembersOffset      int32
+	listRoleRequestsID     uuid.UUID
+	createCalled           bool
+	listCalled             bool
+	getCalled              bool
+	overviewCalled         bool
+	updateCalled           bool
+	changeStatusCalled     bool
+	createRevisionCalled   bool
+	currentCalled          bool
+	listMembersCalled      bool
+	addMemberCalled        bool
+	removeMemberCalled     bool
+	createRoleCalled       bool
+	listRoleRequestsCalled bool
+	approveRoleCalled      bool
+	rejectRoleCalled       bool
+	createdID              uuid.UUID
+	rejectMissingOwner     bool
+	listErr                error
 }
 
 func (s *routeTeamService) CreateTeam(ctx context.Context, req tenant.CreateTeamRequest) (*tenant.Team, error) {
@@ -786,6 +922,127 @@ func (s *routeTeamService) GetCurrentConfigRevision(ctx context.Context, tenantI
 	}, nil
 }
 
+func (s *routeTeamService) ListTeamMembers(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*tenant.TeamMember, error) {
+	s.listMembersCalled = true
+	s.listMembersTenantID = tenantID
+	s.listMembersTeamID = teamID
+	s.listMembersLimit = limit
+	s.listMembersOffset = offset
+	now := time.Now().UTC()
+	return []*tenant.TeamMember{
+		{
+			MembershipID:     uuid.New(),
+			TenantID:         tenantID,
+			TeamID:           teamID,
+			UserID:           uuid.New(),
+			Username:         "member",
+			DisplayName:      "Member",
+			Email:            "member@example.com",
+			AccountStatus:    "active",
+			Role:             tenant.TeamRoleMember,
+			MembershipStatus: "active",
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		},
+	}, nil
+}
+
+func (s *routeTeamService) AddTeamMember(ctx context.Context, req tenant.AddTeamMemberRequest) (*tenant.TeamMember, error) {
+	s.addMemberCalled = true
+	s.addMemberReq = req
+	now := time.Now().UTC()
+	return &tenant.TeamMember{
+		MembershipID:     uuid.New(),
+		TenantID:         req.TenantID,
+		TeamID:           req.TeamID,
+		UserID:           req.UserID,
+		Username:         "member",
+		AccountStatus:    "active",
+		Role:             req.Role,
+		MembershipStatus: "active",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}, nil
+}
+
+func (s *routeTeamService) RemoveTeamMember(ctx context.Context, req tenant.RemoveTeamMemberRequest) error {
+	s.removeMemberCalled = true
+	s.removeMemberReq = req
+	return nil
+}
+
+func (s *routeTeamService) CreateRoleRequest(ctx context.Context, req tenant.CreateRoleRequestRequest) (*tenant.TeamMemberRoleRequest, error) {
+	s.createRoleCalled = true
+	s.createRoleReq = req
+	now := time.Now().UTC()
+	return &tenant.TeamMemberRoleRequest{
+		ID:            uuid.New(),
+		TenantID:      req.TenantID,
+		TeamID:        req.TeamID,
+		TargetUserID:  req.TargetUserID,
+		RequestedRole: req.RequestedRole,
+		RequestedBy:   req.RequestedBy,
+		Status:        tenant.TeamMemberRoleRequestStatusPending,
+		Reason:        req.Reason,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}, nil
+}
+
+func (s *routeTeamService) ListRoleRequests(ctx context.Context, tenantID, teamID uuid.UUID, status tenant.TeamMemberRoleRequestStatus, limit, offset int32) ([]*tenant.TeamMemberRoleRequest, error) {
+	s.listRoleRequestsCalled = true
+	s.listRoleRequestsID = teamID
+	now := time.Now().UTC()
+	return []*tenant.TeamMemberRoleRequest{
+		{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			TeamID:        teamID,
+			TargetUserID:  uuid.New(),
+			RequestedRole: tenant.TeamRoleAdmin,
+			RequestedBy:   uuid.New(),
+			Status:        tenant.TeamMemberRoleRequestStatusPending,
+			Reason:        "需要维护成员",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		},
+	}, nil
+}
+
+func (s *routeTeamService) ApproveRoleRequest(ctx context.Context, req tenant.DecideRoleRequestRequest) (*tenant.TeamMemberRoleRequest, error) {
+	s.approveRoleCalled = true
+	s.decideRoleReq = req
+	now := time.Now().UTC()
+	return &tenant.TeamMemberRoleRequest{
+		ID:             req.RequestID,
+		TenantID:       req.TenantID,
+		TeamID:         req.TeamID,
+		Status:         tenant.TeamMemberRoleRequestStatusApproved,
+		DecidedBy:      &req.DecidedBy,
+		DecidedAt:      &now,
+		DecisionReason: req.DecisionReason,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}, nil
+}
+
+func (s *routeTeamService) RejectRoleRequest(ctx context.Context, req tenant.DecideRoleRequestRequest) (*tenant.TeamMemberRoleRequest, error) {
+	s.rejectRoleCalled = true
+	s.decideRoleReq = req
+	now := time.Now().UTC()
+	return &tenant.TeamMemberRoleRequest{
+		ID:             req.RequestID,
+		TenantID:       req.TenantID,
+		TeamID:         req.TeamID,
+		Status:         tenant.TeamMemberRoleRequestStatusRejected,
+		DecidedBy:      &req.DecidedBy,
+		DecidedAt:      &now,
+		DecisionReason: req.DecisionReason,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}, nil
+}
+
 func (s *routeTeamService) called() bool {
 	return s.createCalled ||
 		s.listCalled ||
@@ -794,7 +1051,14 @@ func (s *routeTeamService) called() bool {
 		s.updateCalled ||
 		s.changeStatusCalled ||
 		s.createRevisionCalled ||
-		s.currentCalled
+		s.currentCalled ||
+		s.listMembersCalled ||
+		s.addMemberCalled ||
+		s.removeMemberCalled ||
+		s.createRoleCalled ||
+		s.listRoleRequestsCalled ||
+		s.approveRoleCalled ||
+		s.rejectRoleCalled
 }
 
 var _ tenant.HandlerService = (*routeTeamService)(nil)

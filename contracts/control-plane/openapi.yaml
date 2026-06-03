@@ -588,6 +588,131 @@ paths:
                 $ref: "#/components/schemas/TeamConfigRevision"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/members:
+    get:
+      operationId: listTeamMembers
+      summary: List team human members
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Team member list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamMember"
+    post:
+      operationId: addTeamMember
+      summary: Add a direct team member role
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddTeamMemberRequest"
+      responses:
+        "201":
+          description: Team member added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMember"
+  /api/v1/teams/{teamId}/members/{memberId}:
+    delete:
+      operationId: removeTeamMember
+      summary: Remove a team member role
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/MemberId"
+      responses:
+        "204":
+          description: Team member removed
+  /api/v1/teams/{teamId}/member-role-requests:
+    get:
+      operationId: listTeamMemberRoleRequests
+      summary: List privileged team role requests
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/TeamMemberRoleRequestStatus"
+      responses:
+        "200":
+          description: Privileged role request list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamMemberRoleRequest"
+    post:
+      operationId: createTeamMemberRoleRequest
+      summary: Create a privileged team role request
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTeamMemberRoleRequest"
+      responses:
+        "201":
+          description: Privileged role request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMemberRoleRequest"
+  /api/v1/teams/{teamId}/member-role-requests/{requestId}/approve:
+    post:
+      operationId: approveTeamMemberRoleRequest
+      summary: Approve a privileged team role request
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideTeamMemberRoleRequest"
+      responses:
+        "200":
+          description: Privileged role request approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMemberRoleRequest"
+  /api/v1/teams/{teamId}/member-role-requests/{requestId}/reject:
+    post:
+      operationId: rejectTeamMemberRoleRequest
+      summary: Reject a privileged team role request
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideTeamMemberRoleRequest"
+      responses:
+        "200":
+          description: Privileged role request rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMemberRoleRequest"
   /api/v1/digital-employees:
     get:
       operationId: listDigitalEmployees
@@ -860,6 +985,20 @@ components:
         format: uuid
     TeamId:
       name: teamId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RequestId:
+      name: requestId
       in: path
       required: true
       schema:
@@ -1435,6 +1574,150 @@ components:
         - team.capability.bind
         - team.capability.unbind
         - team.audit.read
+    TeamMemberRole:
+      type: string
+      enum:
+        - owner
+        - admin
+        - approver
+        - member
+        - viewer
+    TeamMember:
+      type: object
+      required:
+        - membership_id
+        - tenant_id
+        - team_id
+        - user_id
+        - username
+        - account_status
+        - role
+        - membership_status
+      properties:
+        membership_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        display_name:
+          type: string
+        email:
+          type: string
+        account_status:
+          type: string
+        role:
+          $ref: "#/components/schemas/TeamMemberRole"
+        membership_status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AddTeamMemberRequest:
+      type: object
+      required:
+        - user_id
+        - role
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - member
+            - viewer
+    TeamMemberRoleRequestStatus:
+      type: string
+      enum:
+        - pending
+        - approved
+        - rejected
+    TeamMemberRoleRequest:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - team_id
+        - target_user_id
+        - requested_role
+        - requested_by
+        - status
+        - reason
+        - decision_reason
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        target_user_id:
+          type: string
+          format: uuid
+        requested_role:
+          type: string
+          enum:
+            - owner
+            - admin
+            - approver
+        requested_by:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/TeamMemberRoleRequestStatus"
+        reason:
+          type: string
+        decided_by:
+          type: string
+          format: uuid
+        decided_at:
+          type: string
+          format: date-time
+        decision_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateTeamMemberRoleRequest:
+      type: object
+      required:
+        - target_user_id
+        - requested_role
+      properties:
+        target_user_id:
+          type: string
+          format: uuid
+        requested_role:
+          type: string
+          enum:
+            - owner
+            - admin
+            - approver
+        reason:
+          type: string
+    DecideTeamMemberRoleRequest:
+      type: object
+      properties:
+        decision_reason:
+          type: string
     TeamConfigRevision:
       type: object
       required:

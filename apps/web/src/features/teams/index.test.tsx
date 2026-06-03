@@ -79,8 +79,96 @@ function createTeamsFetcher(options: { disabledOverview?: boolean } = {}) {
         pending_item_count: 3,
         allowed_actions: options.disabledOverview
           ? ["team.restore"]
-          : ["team.update", "team.disable", "team.archive", "team.member.add", "team.governance.edit"],
+          : [
+              "team.update",
+              "team.disable",
+              "team.archive",
+              "team.member.add",
+              "team.member.request_privileged_role",
+              "team.governance.edit",
+            ],
       });
+    }
+
+    if (url.pathname === "/api/v1/teams/team-1/members" && method === "GET") {
+      return jsonResponse([
+        {
+          membership_id: "membership-owner",
+          tenant_id: "tenant-1",
+          team_id: "team-1",
+          user_id: "owner-user",
+          username: "owner",
+          display_name: "负责人甲",
+          email: "owner@example.com",
+          account_status: "active",
+          role: "owner",
+          membership_status: "active",
+        },
+        {
+          membership_id: "membership-admin",
+          tenant_id: "tenant-1",
+          team_id: "team-1",
+          user_id: "admin-user",
+          username: "admin",
+          display_name: "管理员乙",
+          email: "admin@example.com",
+          account_status: "active",
+          role: "admin",
+          membership_status: "active",
+        },
+        {
+          membership_id: "membership-approver",
+          tenant_id: "tenant-1",
+          team_id: "team-1",
+          user_id: "approver-user",
+          username: "approver",
+          display_name: "审批人丙",
+          email: "approver@example.com",
+          account_status: "active",
+          role: "approver",
+          membership_status: "active",
+        },
+        {
+          membership_id: "membership-member",
+          tenant_id: "tenant-1",
+          team_id: "team-1",
+          user_id: "member-user",
+          username: "member",
+          display_name: "普通成员丁",
+          email: "member@example.com",
+          account_status: "active",
+          role: "member",
+          membership_status: "active",
+        },
+        {
+          membership_id: "membership-viewer",
+          tenant_id: "tenant-1",
+          team_id: "team-1",
+          user_id: "viewer-user",
+          username: "viewer",
+          display_name: "观察者戊",
+          email: "viewer@example.com",
+          account_status: "active",
+          role: "viewer",
+          membership_status: "active",
+        },
+      ]);
+    }
+
+    if (url.pathname === "/api/v1/teams/team-1/member-role-requests" && method === "GET") {
+      return jsonResponse([
+        {
+          id: "request-admin",
+          tenant_id: "tenant-1",
+          team_id: "team-1",
+          target_user_id: "candidate-admin",
+          requested_role: "admin",
+          requested_by: "owner-user",
+          status: "pending",
+          reason: "需要维护成员配置",
+          decision_reason: "",
+        },
+      ]);
     }
 
     if (url.pathname === "/api/v1/teams/team-1/disable" && method === "POST") {
@@ -133,8 +221,8 @@ describe("TeamDetailView", () => {
       await expect.element(screen.getByRole("tab", { name: tab })).toBeVisible();
     }
     await screen.getByRole("tab", { name: "成员" }).click();
-    await expect.element(screen.getByText("Plan 2 会接入成员与角色管理。")).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "添加成员" })).toBeVisible();
+    await expect.element(screen.getByText("成员名册")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "添加成员" }).first()).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "创建治理草案" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "禁用团队" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "归档团队" })).toBeVisible();
@@ -185,5 +273,33 @@ describe("TeamDetailView", () => {
         method: "POST",
       }),
     );
+  });
+
+  it("renders members tab roster, safe direct roles, pending requests, and owner protection", async () => {
+    const screen = await renderWithQueryClient(
+      <TeamDetailView apiBaseUrl="http://control-plane.local" fetcher={createTeamsFetcher()} teamId="team-1" />,
+    );
+
+    await screen.getByRole("tab", { name: "成员" }).click();
+
+    await expect.element(screen.getByText("负责人甲")).toBeVisible();
+    for (const label of ["人类成员", "负责人", "管理员", "审批人", "直接生效角色"]) {
+      expect(document.body.textContent).toContain(label);
+    }
+    await expect.element(screen.getByText("管理员乙")).toBeVisible();
+    await expect.element(screen.getByText("审批人丙")).toBeVisible();
+    await expect.element(screen.getByText("普通成员丁")).toBeVisible();
+    await expect.element(screen.getByText("观察者戊")).toBeVisible();
+    await expect.element(screen.getByText("删除或禁用最后一位负责人会被控制平面拒绝；请先完成负责人交接，再移除原负责人。")).toBeVisible();
+
+    const directRoleSelect = document.querySelector("#team-member-role") as HTMLSelectElement;
+    expect(Array.from(directRoleSelect.options).map((option) => option.textContent)).toEqual([
+      "普通成员",
+      "只读观察者",
+    ]);
+
+    await expect.element(screen.getByText("candidate-admin")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "拒绝" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "审批" })).toBeVisible();
   });
 });

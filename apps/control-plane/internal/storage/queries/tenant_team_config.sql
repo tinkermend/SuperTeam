@@ -242,6 +242,158 @@ WHERE id = sqlc.arg('id')::uuid
   AND deleted_at IS NULL
 RETURNING *;
 
+-- name: ListTeamMembers :many
+SELECT
+  tm.id AS membership_id,
+  tm.tenant_id,
+  tm.team_id,
+  tm.principal_id AS user_id,
+  au.username,
+  au.display_name,
+  au.email,
+  au.status AS account_status,
+  tm.role,
+  tm.status AS membership_status,
+  tm.disabled_at,
+  tm.created_at,
+  tm.updated_at
+FROM tenant_members tm
+JOIN auth_users au ON au.id = tm.principal_id
+WHERE tm.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tm.team_id = sqlc.arg('team_id')::uuid
+  AND tm.principal_type = 'user'
+  AND tm.status = 'active'
+  AND tm.disabled_at IS NULL
+  AND au.deleted_at IS NULL
+ORDER BY
+  CASE tm.role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2 WHEN 'approver' THEN 3 WHEN 'member' THEN 4 WHEN 'viewer' THEN 5 ELSE 6 END,
+  au.display_name NULLS LAST,
+  au.username
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: GetTeamMember :one
+SELECT
+  tm.id AS membership_id,
+  tm.tenant_id,
+  tm.team_id,
+  tm.principal_id AS user_id,
+  au.username,
+  au.display_name,
+  au.email,
+  au.status AS account_status,
+  tm.role,
+  tm.status AS membership_status,
+  tm.disabled_at,
+  tm.created_at,
+  tm.updated_at
+FROM tenant_members tm
+JOIN auth_users au ON au.id = tm.principal_id
+WHERE tm.id = sqlc.arg('membership_id')::uuid
+  AND tm.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tm.team_id = sqlc.arg('team_id')::uuid
+  AND tm.principal_type = 'user'
+  AND tm.status = 'active'
+  AND tm.disabled_at IS NULL
+  AND au.deleted_at IS NULL;
+
+-- name: AddTeamMember :one
+INSERT INTO tenant_members (
+    tenant_id,
+    team_id,
+    principal_type,
+    principal_id,
+    role,
+    status
+)
+VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('team_id')::uuid,
+    'user',
+    sqlc.arg('user_id')::uuid,
+    sqlc.arg('role')::varchar,
+    'active'
+)
+ON CONFLICT (tenant_id, team_id, principal_type, principal_id, role)
+DO UPDATE SET
+    status = 'active',
+    disabled_at = NULL,
+    updated_at = NOW()
+RETURNING *;
+
+-- name: DisableTeamMemberRole :one
+UPDATE tenant_members
+SET
+  status = 'disabled',
+  disabled_at = COALESCE(disabled_at, NOW()),
+  updated_at = NOW()
+WHERE id = sqlc.arg('membership_id')::uuid
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND team_id = sqlc.arg('team_id')::uuid
+  AND principal_type = 'user'
+  AND disabled_at IS NULL
+RETURNING *;
+
+-- name: CountTeamOwners :one
+SELECT COUNT(*)::integer
+FROM tenant_members
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND team_id = sqlc.arg('team_id')::uuid
+  AND principal_type = 'user'
+  AND role = 'owner'
+  AND status = 'active'
+  AND disabled_at IS NULL;
+
+-- name: CreateTeamMemberRoleRequest :one
+INSERT INTO tenant_team_member_role_requests (
+    tenant_id,
+    team_id,
+    target_user_id,
+    requested_role,
+    requested_by,
+    reason
+)
+VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('team_id')::uuid,
+    sqlc.arg('target_user_id')::uuid,
+    sqlc.arg('requested_role')::varchar,
+    sqlc.arg('requested_by')::uuid,
+    sqlc.arg('reason')::text
+)
+RETURNING *;
+
+-- name: ListTeamMemberRoleRequests :many
+SELECT *
+FROM tenant_team_member_role_requests
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND team_id = sqlc.arg('team_id')::uuid
+  AND (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar)
+ORDER BY created_at DESC, id DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: GetTeamMemberRoleRequest :one
+SELECT *
+FROM tenant_team_member_role_requests
+WHERE id = sqlc.arg('id')::uuid
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND team_id = sqlc.arg('team_id')::uuid
+  AND status = 'pending';
+
+-- name: DecideTeamMemberRoleRequest :one
+UPDATE tenant_team_member_role_requests
+SET
+  status = sqlc.arg('status')::varchar,
+  decided_by = sqlc.arg('decided_by')::uuid,
+  decided_at = NOW(),
+  decision_reason = sqlc.arg('decision_reason')::text,
+  updated_at = NOW()
+WHERE id = sqlc.arg('id')::uuid
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND team_id = sqlc.arg('team_id')::uuid
+  AND status = 'pending'
+  AND sqlc.arg('status')::varchar IN ('approved', 'rejected')
+RETURNING *;
+
 -- name: SetTenantTeamStatus :one
 UPDATE tenant_teams
 SET

@@ -4,6 +4,8 @@ import { buildApiUrl, parseJson } from "./client";
 export type TeamStatus = "active" | "disabled" | "archived";
 export type TeamConfigRevisionStatus = "draft" | "active";
 export type GovernanceSummaryStatus = "not_configured" | "draft_pending" | "active" | "needs_update";
+export type TeamMemberRole = "owner" | "admin" | "approver" | "member" | "viewer";
+export type TeamMemberRoleRequestStatus = "pending" | "approved" | "rejected";
 export type AllowedTeamAction =
   | "team.update"
   | "team.disable"
@@ -70,6 +72,37 @@ export type TeamOverview = {
   allowed_actions: AllowedTeamAction[];
 };
 
+export type TeamMember = {
+  membership_id: string;
+  tenant_id: string;
+  team_id: string;
+  user_id: string;
+  username: string;
+  display_name: string;
+  email: string;
+  account_status: string;
+  role: TeamMemberRole;
+  membership_status: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type TeamMemberRoleRequest = {
+  id: string;
+  tenant_id: string;
+  team_id: string;
+  target_user_id: string;
+  requested_role: TeamMemberRole;
+  requested_by: string;
+  status: TeamMemberRoleRequestStatus;
+  reason: string;
+  decided_by?: string;
+  decided_at?: string;
+  decision_reason: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type CreateTeamInput = {
   slug: string;
   name: string;
@@ -102,6 +135,21 @@ export type CreateTeamConfigRevisionInput = {
   status?: TeamConfigRevisionStatus;
 };
 
+export type AddTeamMemberInput = {
+  user_id: string;
+  role: Extract<TeamMemberRole, "member" | "viewer">;
+};
+
+export type CreateTeamMemberRoleRequestInput = {
+  target_user_id: string;
+  requested_role: Extract<TeamMemberRole, "owner" | "admin" | "approver">;
+  reason: string;
+};
+
+export type DecideTeamMemberRoleRequestInput = {
+  decision_reason?: string;
+};
+
 async function getJson<T>(options: ApiClientOptions, path: string, resource: string): Promise<T> {
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(buildApiUrl(options.baseUrl, path), {
@@ -111,6 +159,19 @@ async function getJson<T>(options: ApiClientOptions, path: string, resource: str
   });
 
   return parseJson<T>(response, resource);
+}
+
+async function deleteResource(options: ApiClientOptions, path: string, resource: string): Promise<void> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
+    credentials: "include",
+    headers: { accept: "application/json" },
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    await parseJson<unknown>(response, resource);
+  }
 }
 
 async function postJson<T>(options: ApiClientOptions, path: string, input: unknown, resource: string): Promise<T> {
@@ -210,5 +271,75 @@ export function getCurrentTeamConfigRevision(
     options,
     teamPath(teamId, "/config-revisions/current"),
     "current team config revision",
+  );
+}
+
+export function listTeamMembers(options: ApiClientOptions, teamId: string): Promise<TeamMember[]> {
+  return getJson<TeamMember[]>(options, teamPath(teamId, "/members"), "team members");
+}
+
+export function addTeamMember(
+  options: ApiClientOptions,
+  teamId: string,
+  input: AddTeamMemberInput,
+): Promise<TeamMember> {
+  return postJson<TeamMember>(options, teamPath(teamId, "/members"), input, "add team member");
+}
+
+export function removeTeamMember(options: ApiClientOptions, teamId: string, memberId: string): Promise<void> {
+  return deleteResource(options, teamPath(teamId, `/members/${encodeURIComponent(memberId)}`), "remove team member");
+}
+
+export function listTeamMemberRoleRequests(
+  options: ApiClientOptions,
+  teamId: string,
+  status?: TeamMemberRoleRequestStatus,
+): Promise<TeamMemberRoleRequest[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  return getJson<TeamMemberRoleRequest[]>(
+    options,
+    teamPath(teamId, `/member-role-requests${query}`),
+    "team member role requests",
+  );
+}
+
+export function createTeamMemberRoleRequest(
+  options: ApiClientOptions,
+  teamId: string,
+  input: CreateTeamMemberRoleRequestInput,
+): Promise<TeamMemberRoleRequest> {
+  return postJson<TeamMemberRoleRequest>(
+    options,
+    teamPath(teamId, "/member-role-requests"),
+    input,
+    "create team member role request",
+  );
+}
+
+export function approveTeamMemberRoleRequest(
+  options: ApiClientOptions,
+  teamId: string,
+  requestId: string,
+  input: DecideTeamMemberRoleRequestInput = {},
+): Promise<TeamMemberRoleRequest> {
+  return postJson<TeamMemberRoleRequest>(
+    options,
+    teamPath(teamId, `/member-role-requests/${encodeURIComponent(requestId)}/approve`),
+    input,
+    "approve team member role request",
+  );
+}
+
+export function rejectTeamMemberRoleRequest(
+  options: ApiClientOptions,
+  teamId: string,
+  requestId: string,
+  input: DecideTeamMemberRoleRequestInput = {},
+): Promise<TeamMemberRoleRequest> {
+  return postJson<TeamMemberRoleRequest>(
+    options,
+    teamPath(teamId, `/member-role-requests/${encodeURIComponent(requestId)}/reject`),
+    input,
+    "reject team member role request",
   );
 }

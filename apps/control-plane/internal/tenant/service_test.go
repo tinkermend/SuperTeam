@@ -413,17 +413,130 @@ func TestListTeamSummariesDefaultsLimit(t *testing.T) {
 	}
 }
 
+func TestAddTeamMemberRejectsPrivilegedRole(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	for _, role := range []string{TeamRoleOwner, TeamRoleAdmin, TeamRoleApprover} {
+		t.Run(role, func(t *testing.T) {
+			repo.addTeamMemberCalled = false
+			_, err := svc.AddTeamMember(context.Background(), AddTeamMemberRequest{
+				TenantID: uuid.New(),
+				TeamID:   uuid.New(),
+				UserID:   uuid.New(),
+				Role:     role,
+			})
+
+			if !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("expected invalid input for privileged role %q, got %v", role, err)
+			}
+			if repo.addTeamMemberCalled {
+				t.Fatalf("expected privileged role %q not to reach repository", role)
+			}
+		})
+	}
+}
+
+func TestRemoveTeamMemberRejectsLastOwner(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	membershipID := uuid.New()
+	repo.teamMembers[membershipID] = TeamMemberRecord{
+		MembershipID:     membershipID,
+		TenantID:         tenantID,
+		TeamID:           teamID,
+		UserID:           uuid.New(),
+		Username:         "owner",
+		AccountStatus:    "active",
+		Role:             TeamRoleOwner,
+		MembershipStatus: "active",
+	}
+
+	err = svc.RemoveTeamMember(context.Background(), RemoveTeamMemberRequest{
+		TenantID:     tenantID,
+		TeamID:       teamID,
+		MembershipID: membershipID,
+	})
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input when removing last owner, got %v", err)
+	}
+	if repo.disableTeamMemberCalled {
+		t.Fatalf("expected last owner not to be disabled")
+	}
+}
+
+func TestApprovePrivilegedRoleRequestAddsRole(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	requestID := uuid.New()
+	targetUserID := uuid.New()
+	decidedBy := uuid.New()
+	repo.roleRequests[requestID] = TeamMemberRoleRequestRecord{
+		ID:            requestID,
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		TargetUserID:  targetUserID,
+		RequestedRole: TeamRoleAdmin,
+		RequestedBy:   uuid.New(),
+		Status:        TeamMemberRoleRequestStatusPending,
+		Reason:        "需要维护成员",
+		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
+	}
+
+	request, err := svc.ApproveRoleRequest(context.Background(), DecideRoleRequestRequest{
+		TenantID:       tenantID,
+		TeamID:         teamID,
+		RequestID:      requestID,
+		DecidedBy:      decidedBy,
+		DecisionReason: "允许",
+	})
+	if err != nil {
+		t.Fatalf("approve role request: %v", err)
+	}
+
+	if request.Status != TeamMemberRoleRequestStatusApproved {
+		t.Fatalf("expected approved request, got %q", request.Status)
+	}
+	if !repo.addTeamMemberCalled {
+		t.Fatalf("expected approval to add requested team role")
+	}
+	if repo.lastAddTeamMemberParams.UserID != targetUserID || repo.lastAddTeamMemberParams.Role != TeamRoleAdmin {
+		t.Fatalf("expected admin role add for target user, got %#v", repo.lastAddTeamMemberParams)
+	}
+}
+
 type memoryRepository struct {
 	teams                       map[uuid.UUID]TeamRecord
 	teamSummaries               map[uuid.UUID]TeamListItemRecord
 	revisions                   map[uuid.UUID]TeamConfigRevisionRecord
+	teamMembers                 map[uuid.UUID]TeamMemberRecord
+	roleRequests                map[uuid.UUID]TeamMemberRoleRequestRecord
 	createTeamCalled            bool
 	listTeamsCalled             bool
 	listTeamSummariesCalled     bool
 	getTeamSummaryCalled        bool
 	updateTeamCalled            bool
 	setTeamStatusCalled         bool
+	addTeamMemberCalled         bool
+	disableTeamMemberCalled     bool
+	decideRoleRequestCalled     bool
 	lastListTeamSummariesParams ListTeamSummariesParams
+	lastAddTeamMemberParams     AddTeamMemberParams
 	createRevisionCalls         int
 	createdRevision             CreateTeamConfigRevisionParams
 }
@@ -433,6 +546,8 @@ func newMemoryRepository() *memoryRepository {
 		teams:         map[uuid.UUID]TeamRecord{},
 		teamSummaries: map[uuid.UUID]TeamListItemRecord{},
 		revisions:     map[uuid.UUID]TeamConfigRevisionRecord{},
+		teamMembers:   map[uuid.UUID]TeamMemberRecord{},
+		roleRequests:  map[uuid.UUID]TeamMemberRoleRequestRecord{},
 	}
 }
 
@@ -576,4 +691,133 @@ func (r *memoryRepository) GetNextTeamConfigRevisionNumber(_ context.Context, te
 		}
 	}
 	return next, nil
+}
+
+func (r *memoryRepository) ListTeamMembers(_ context.Context, params ListTeamMembersParams) ([]TeamMemberRecord, error) {
+	records := make([]TeamMemberRecord, 0, len(r.teamMembers))
+	for _, record := range r.teamMembers {
+		if record.TenantID == params.TenantID && record.TeamID == params.TeamID && record.MembershipStatus == "active" {
+			records = append(records, record)
+		}
+	}
+	return records, nil
+}
+
+func (r *memoryRepository) GetTeamMember(_ context.Context, tenantID, teamID, membershipID uuid.UUID) (TeamMemberRecord, error) {
+	record, ok := r.teamMembers[membershipID]
+	if !ok || record.TenantID != tenantID || record.TeamID != teamID || record.MembershipStatus != "active" {
+		return TeamMemberRecord{}, ErrNotFound
+	}
+	return record, nil
+}
+
+func (r *memoryRepository) AddTeamMember(_ context.Context, params AddTeamMemberParams) (TeamMemberRecord, error) {
+	r.addTeamMemberCalled = true
+	r.lastAddTeamMemberParams = params
+	now := time.Now().UTC()
+	record := TeamMemberRecord{
+		MembershipID:     uuid.New(),
+		TenantID:         params.TenantID,
+		TeamID:           params.TeamID,
+		UserID:           params.UserID,
+		Username:         "member",
+		AccountStatus:    "active",
+		Role:             params.Role,
+		MembershipStatus: "active",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	r.teamMembers[record.MembershipID] = record
+	return record, nil
+}
+
+func (r *memoryRepository) DisableTeamMemberRole(_ context.Context, params DisableTeamMemberRoleParams) (TeamMemberRecord, error) {
+	r.disableTeamMemberCalled = true
+	record, ok := r.teamMembers[params.MembershipID]
+	if !ok || record.TenantID != params.TenantID || record.TeamID != params.TeamID {
+		return TeamMemberRecord{}, ErrNotFound
+	}
+	record.MembershipStatus = "disabled"
+	record.UpdatedAt = time.Now().UTC()
+	r.teamMembers[record.MembershipID] = record
+	return record, nil
+}
+
+func (r *memoryRepository) CountTeamOwners(_ context.Context, tenantID, teamID uuid.UUID) (int32, error) {
+	var count int32
+	for _, record := range r.teamMembers {
+		if record.TenantID == tenantID && record.TeamID == teamID && record.Role == TeamRoleOwner && record.MembershipStatus == "active" {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (r *memoryRepository) CreateTeamMemberRoleRequest(_ context.Context, params CreateTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
+	now := time.Now().UTC()
+	record := TeamMemberRoleRequestRecord{
+		ID:            uuid.New(),
+		TenantID:      params.TenantID,
+		TeamID:        params.TeamID,
+		TargetUserID:  params.TargetUserID,
+		RequestedRole: params.RequestedRole,
+		RequestedBy:   params.RequestedBy,
+		Status:        TeamMemberRoleRequestStatusPending,
+		Reason:        params.Reason,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	r.roleRequests[record.ID] = record
+	return record, nil
+}
+
+func (r *memoryRepository) GetTeamMemberRoleRequest(_ context.Context, tenantID, teamID, requestID uuid.UUID) (TeamMemberRoleRequestRecord, error) {
+	record, ok := r.roleRequests[requestID]
+	if !ok || record.TenantID != tenantID || record.TeamID != teamID || record.Status != TeamMemberRoleRequestStatusPending {
+		return TeamMemberRoleRequestRecord{}, ErrNotFound
+	}
+	return record, nil
+}
+
+func (r *memoryRepository) ListTeamMemberRoleRequests(_ context.Context, params ListTeamMemberRoleRequestsParams) ([]TeamMemberRoleRequestRecord, error) {
+	records := make([]TeamMemberRoleRequestRecord, 0, len(r.roleRequests))
+	for _, record := range r.roleRequests {
+		if record.TenantID == params.TenantID && record.TeamID == params.TeamID && (params.Status == "" || record.Status == params.Status) {
+			records = append(records, record)
+		}
+	}
+	return records, nil
+}
+
+func (r *memoryRepository) ApproveTeamMemberRoleRequest(ctx context.Context, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
+	pending, err := r.GetTeamMemberRoleRequest(ctx, params.TenantID, params.TeamID, params.RequestID)
+	if err != nil {
+		return TeamMemberRoleRequestRecord{}, err
+	}
+	if _, err := r.AddTeamMember(ctx, AddTeamMemberParams{
+		TenantID: pending.TenantID,
+		TeamID:   pending.TeamID,
+		UserID:   pending.TargetUserID,
+		Role:     pending.RequestedRole,
+	}); err != nil {
+		return TeamMemberRoleRequestRecord{}, err
+	}
+	params.Status = TeamMemberRoleRequestStatusApproved
+	return r.DecideTeamMemberRoleRequest(ctx, params)
+}
+
+func (r *memoryRepository) DecideTeamMemberRoleRequest(_ context.Context, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error) {
+	r.decideRoleRequestCalled = true
+	record, ok := r.roleRequests[params.RequestID]
+	if !ok || record.TenantID != params.TenantID || record.TeamID != params.TeamID || record.Status != TeamMemberRoleRequestStatusPending {
+		return TeamMemberRoleRequestRecord{}, ErrNotFound
+	}
+	now := time.Now().UTC()
+	record.Status = params.Status
+	record.DecidedBy = &params.DecidedBy
+	record.DecidedAt = &now
+	record.DecisionReason = params.DecisionReason
+	record.UpdatedAt = now
+	r.roleRequests[record.ID] = record
+	return record, nil
 }

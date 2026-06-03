@@ -99,6 +99,8 @@ export function TeamDetailView({ apiBaseUrl, fetcher, teamId }: TeamDetailViewPr
         {overview.isError ? <p className="text-sm text-destructive">团队概览加载失败</p> : null}
         {overview.data ? (
           <TeamDetailLayout
+            apiBaseUrl={apiBaseUrl}
+            fetcher={fetcher}
             onArchiveTeam={() => archiveMutation.mutate()}
             onDisableTeam={() => disableMutation.mutate()}
             onRestoreTeam={() => restoreMutation.mutate()}

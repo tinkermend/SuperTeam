@@ -12,11 +12,13 @@ import (
 )
 
 type Querier interface {
+	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (TenantMember, error)
 	ApproveRuntimeEnrollment(ctx context.Context, arg ApproveRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	ApproveRuntimeEnrollmentWithNode(ctx context.Context, arg ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollment, error)
 	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
 	CountAuditEvents(ctx context.Context, arg CountAuditEventsParams) (int64, error)
 	CountAuthzDecisionsSince(ctx context.Context, arg CountAuthzDecisionsSinceParams) (CountAuthzDecisionsSinceRow, error)
+	CountTeamOwners(ctx context.Context, arg CountTeamOwnersParams) (int32, error)
 	CreateAuditEvent(ctx context.Context, arg CreateAuditEventParams) (AuditEvent, error)
 	CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEmployeeParams) (DigitalEmployee, error)
 	CreateDigitalEmployeeConfigRevision(ctx context.Context, arg CreateDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
@@ -34,11 +36,13 @@ type Querier interface {
 	CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams) (TaskEvent, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
 	CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) (TaskStateHistory, error)
+	CreateTeamMemberRoleRequest(ctx context.Context, arg CreateTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	CreateTenantTeam(ctx context.Context, arg CreateTenantTeamParams) (TenantTeam, error)
 	CreateTenantTeamConfigRevision(ctx context.Context, arg CreateTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error)
 	CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogParams) (WebLoginLog, error)
 	CreateWebOperationLog(ctx context.Context, arg CreateWebOperationLogParams) (WebOperationLog, error)
+	DecideTeamMemberRoleRequest(ctx context.Context, arg DecideTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	DeleteDigitalEmployee(ctx context.Context, arg DeleteDigitalEmployeeParams) error
 	DeleteDigitalEmployeeExecutionInstance(ctx context.Context, arg DeleteDigitalEmployeeExecutionInstanceParams) error
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
@@ -49,6 +53,7 @@ type Querier interface {
 	DeleteTask(ctx context.Context, arg DeleteTaskParams) error
 	DeleteTaskArtifact(ctx context.Context, arg DeleteTaskArtifactParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
 	GetActiveRuntimeBootstrapKeyByHash(ctx context.Context, arg GetActiveRuntimeBootstrapKeyByHashParams) (RuntimeBootstrapKey, error)
 	GetActiveRuntimeSessionByLookupHash(ctx context.Context, tokenLookupHash string) (GetActiveRuntimeSessionByLookupHashRow, error)
 	GetActiveTeamMembership(ctx context.Context, arg GetActiveTeamMembershipParams) (TenantMember, error)
@@ -81,6 +86,8 @@ type Querier interface {
 	GetTaskArtifact(ctx context.Context, arg GetTaskArtifactParams) (TaskArtifact, error)
 	GetTaskEvent(ctx context.Context, arg GetTaskEventParams) (TaskEvent, error)
 	GetTaskRun(ctx context.Context, arg GetTaskRunParams) (TaskRun, error)
+	GetTeamMember(ctx context.Context, arg GetTeamMemberParams) (GetTeamMemberRow, error)
+	GetTeamMemberRoleRequest(ctx context.Context, arg GetTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	GetTenantTeam(ctx context.Context, arg GetTenantTeamParams) (TenantTeam, error)
 	GetTenantTeamConfigRevision(ctx context.Context, arg GetTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
 	GetTenantTeamSummary(ctx context.Context, arg GetTenantTeamSummaryParams) (GetTenantTeamSummaryRow, error)
@@ -109,6 +116,8 @@ type Querier interface {
 	ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]TaskRun, error)
 	ListTaskStateHistory(ctx context.Context, arg ListTaskStateHistoryParams) ([]TaskStateHistory, error)
 	ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error)
+	ListTeamMemberRoleRequests(ctx context.Context, arg ListTeamMemberRoleRequestsParams) ([]TenantTeamMemberRoleRequest, error)
+	ListTeamMembers(ctx context.Context, arg ListTeamMembersParams) ([]ListTeamMembersRow, error)
 	ListTenantTeamSummaries(ctx context.Context, arg ListTenantTeamSummariesParams) ([]ListTenantTeamSummariesRow, error)
 	ListTenantTeams(ctx context.Context, arg ListTenantTeamsParams) ([]TenantTeam, error)
 	ListTopDeniedAuthzActionsSince(ctx context.Context, arg ListTopDeniedAuthzActionsSinceParams) ([]ListTopDeniedAuthzActionsSinceRow, error)

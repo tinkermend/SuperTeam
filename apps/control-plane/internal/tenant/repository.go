@@ -19,6 +19,16 @@ type Repository interface {
 	GetTeamConfigRevision(ctx context.Context, tenantID, revisionID uuid.UUID) (TeamConfigRevisionRecord, error)
 	GetCurrentTeamConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (TeamConfigRevisionRecord, error)
 	GetNextTeamConfigRevisionNumber(ctx context.Context, tenantID, teamID uuid.UUID) (int32, error)
+	ListTeamMembers(ctx context.Context, params ListTeamMembersParams) ([]TeamMemberRecord, error)
+	GetTeamMember(ctx context.Context, tenantID, teamID, membershipID uuid.UUID) (TeamMemberRecord, error)
+	AddTeamMember(ctx context.Context, params AddTeamMemberParams) (TeamMemberRecord, error)
+	DisableTeamMemberRole(ctx context.Context, params DisableTeamMemberRoleParams) (TeamMemberRecord, error)
+	CountTeamOwners(ctx context.Context, tenantID, teamID uuid.UUID) (int32, error)
+	CreateTeamMemberRoleRequest(ctx context.Context, params CreateTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error)
+	GetTeamMemberRoleRequest(ctx context.Context, tenantID, teamID, requestID uuid.UUID) (TeamMemberRoleRequestRecord, error)
+	ListTeamMemberRoleRequests(ctx context.Context, params ListTeamMemberRoleRequestsParams) ([]TeamMemberRoleRequestRecord, error)
+	ApproveTeamMemberRoleRequest(ctx context.Context, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error)
+	DecideTeamMemberRoleRequest(ctx context.Context, params DecideTeamMemberRoleRequestParams) (TeamMemberRoleRequestRecord, error)
 }
 
 type CreateTeamParams struct {
@@ -72,8 +82,58 @@ type CreateTeamConfigRevisionParams struct {
 	ApprovedAt                  *time.Time
 }
 
+type ListTeamMembersParams struct {
+	TenantID uuid.UUID
+	TeamID   uuid.UUID
+	Offset   int32
+	Limit    int32
+}
+
+type AddTeamMemberParams struct {
+	TenantID uuid.UUID
+	TeamID   uuid.UUID
+	UserID   uuid.UUID
+	Role     string
+}
+
+type DisableTeamMemberRoleParams struct {
+	TenantID     uuid.UUID
+	TeamID       uuid.UUID
+	MembershipID uuid.UUID
+}
+
+type CreateTeamMemberRoleRequestParams struct {
+	TenantID      uuid.UUID
+	TeamID        uuid.UUID
+	TargetUserID  uuid.UUID
+	RequestedRole string
+	RequestedBy   uuid.UUID
+	Reason        string
+}
+
+type ListTeamMemberRoleRequestsParams struct {
+	TenantID uuid.UUID
+	TeamID   uuid.UUID
+	Status   TeamMemberRoleRequestStatus
+	Offset   int32
+	Limit    int32
+}
+
+type DecideTeamMemberRoleRequestParams struct {
+	TenantID       uuid.UUID
+	TeamID         uuid.UUID
+	RequestID      uuid.UUID
+	Status         TeamMemberRoleRequestStatus
+	DecidedBy      uuid.UUID
+	DecisionReason string
+}
+
 type TeamRecord = Team
 
 type TeamListItemRecord = TeamListItem
 
 type TeamConfigRevisionRecord = TeamConfigRevision
+
+type TeamMemberRecord = TeamMember
+
+type TeamMemberRoleRequestRecord = TeamMemberRoleRequest

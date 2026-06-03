@@ -67,7 +67,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		return nil, err
 	}
 
-	tenantRepository := tenant.NewPgRepository(q)
+	tenantRepository := tenant.NewPgRepository(q, stores.Postgres)
 	tenantService, err := tenant.NewService(tenantRepository)
 	if err != nil {
 		return nil, err

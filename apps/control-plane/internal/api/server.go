@@ -169,6 +169,13 @@ func (s *Server) registerRoutes() {
 				r.Post("/teams/{teamId}/restore", s.tenantHandler.RestoreTeam)
 				r.Post("/teams/{teamId}/config-revisions", s.tenantHandler.CreateTeamConfigRevision)
 				r.Get("/teams/{teamId}/config-revisions/current", s.tenantHandler.GetCurrentTeamConfigRevision)
+				r.Get("/teams/{teamId}/members", s.tenantHandler.ListTeamMembers)
+				r.Post("/teams/{teamId}/members", s.tenantHandler.AddTeamMember)
+				r.Delete("/teams/{teamId}/members/{memberId}", s.tenantHandler.RemoveTeamMember)
+				r.Get("/teams/{teamId}/member-role-requests", s.tenantHandler.ListTeamMemberRoleRequests)
+				r.Post("/teams/{teamId}/member-role-requests", s.tenantHandler.CreateTeamMemberRoleRequest)
+				r.Post("/teams/{teamId}/member-role-requests/{requestId}/approve", s.tenantHandler.ApproveTeamMemberRoleRequest)
+				r.Post("/teams/{teamId}/member-role-requests/{requestId}/reject", s.tenantHandler.RejectTeamMemberRoleRequest)
 			})
 		}
 
