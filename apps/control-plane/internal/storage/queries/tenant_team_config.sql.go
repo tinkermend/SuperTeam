@@ -646,6 +646,10 @@ SELECT
   au.display_name,
   au.email,
   au.status AS account_status,
+  au.avatar_provider,
+  au.avatar_style,
+  au.avatar_seed,
+  au.avatar_options,
   tm.role,
   tm.status AS membership_status,
   tm.disabled_at,
@@ -677,6 +681,10 @@ type GetTeamMemberRow struct {
 	DisplayName      pgtype.Text        `json:"display_name"`
 	Email            pgtype.Text        `json:"email"`
 	AccountStatus    string             `json:"account_status"`
+	AvatarProvider   string             `json:"avatar_provider"`
+	AvatarStyle      string             `json:"avatar_style"`
+	AvatarSeed       pgtype.Text        `json:"avatar_seed"`
+	AvatarOptions    []byte             `json:"avatar_options"`
 	Role             string             `json:"role"`
 	MembershipStatus string             `json:"membership_status"`
 	DisabledAt       pgtype.Timestamptz `json:"disabled_at"`
@@ -696,6 +704,10 @@ func (q *Queries) GetTeamMember(ctx context.Context, arg GetTeamMemberParams) (G
 		&i.DisplayName,
 		&i.Email,
 		&i.AccountStatus,
+		&i.AvatarProvider,
+		&i.AvatarStyle,
+		&i.AvatarSeed,
+		&i.AvatarOptions,
 		&i.Role,
 		&i.MembershipStatus,
 		&i.DisabledAt,
@@ -856,6 +868,10 @@ SELECT
   owner.display_name AS owner_display_name,
   owner.email AS owner_email,
   owner.status AS owner_status,
+  owner.avatar_provider AS owner_avatar_provider,
+  owner.avatar_style AS owner_avatar_style,
+  owner.avatar_seed AS owner_avatar_seed,
+  owner.avatar_options AS owner_avatar_options,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
   (
@@ -910,6 +926,10 @@ type GetTenantTeamSummaryRow struct {
 	OwnerDisplayName     pgtype.Text        `json:"owner_display_name"`
 	OwnerEmail           pgtype.Text        `json:"owner_email"`
 	OwnerStatus          pgtype.Text        `json:"owner_status"`
+	OwnerAvatarProvider  pgtype.Text        `json:"owner_avatar_provider"`
+	OwnerAvatarStyle     pgtype.Text        `json:"owner_avatar_style"`
+	OwnerAvatarSeed      pgtype.Text        `json:"owner_avatar_seed"`
+	OwnerAvatarOptions   []byte             `json:"owner_avatar_options"`
 	MemberCount          int32              `json:"member_count"`
 	DigitalEmployeeCount int32              `json:"digital_employee_count"`
 	CapabilityCount      int32              `json:"capability_count"`
@@ -940,6 +960,10 @@ func (q *Queries) GetTenantTeamSummary(ctx context.Context, arg GetTenantTeamSum
 		&i.OwnerDisplayName,
 		&i.OwnerEmail,
 		&i.OwnerStatus,
+		&i.OwnerAvatarProvider,
+		&i.OwnerAvatarStyle,
+		&i.OwnerAvatarSeed,
+		&i.OwnerAvatarOptions,
 		&i.MemberCount,
 		&i.DigitalEmployeeCount,
 		&i.CapabilityCount,
@@ -1019,6 +1043,10 @@ SELECT
   au.display_name,
   au.email,
   au.status AS account_status,
+  au.avatar_provider,
+  au.avatar_style,
+  au.avatar_seed,
+  au.avatar_options,
   tm.role,
   tm.status AS membership_status,
   tm.disabled_at,
@@ -1055,6 +1083,10 @@ type ListTeamMembersRow struct {
 	DisplayName      pgtype.Text        `json:"display_name"`
 	Email            pgtype.Text        `json:"email"`
 	AccountStatus    string             `json:"account_status"`
+	AvatarProvider   string             `json:"avatar_provider"`
+	AvatarStyle      string             `json:"avatar_style"`
+	AvatarSeed       pgtype.Text        `json:"avatar_seed"`
+	AvatarOptions    []byte             `json:"avatar_options"`
 	Role             string             `json:"role"`
 	MembershipStatus string             `json:"membership_status"`
 	DisabledAt       pgtype.Timestamptz `json:"disabled_at"`
@@ -1085,6 +1117,10 @@ func (q *Queries) ListTeamMembers(ctx context.Context, arg ListTeamMembersParams
 			&i.DisplayName,
 			&i.Email,
 			&i.AccountStatus,
+			&i.AvatarProvider,
+			&i.AvatarStyle,
+			&i.AvatarSeed,
+			&i.AvatarOptions,
 			&i.Role,
 			&i.MembershipStatus,
 			&i.DisabledAt,
@@ -1207,6 +1243,10 @@ SELECT
   owner.display_name AS owner_display_name,
   owner.email AS owner_email,
   owner.status AS owner_status,
+  owner.avatar_provider AS owner_avatar_provider,
+  owner.avatar_style AS owner_avatar_style,
+  owner.avatar_seed AS owner_avatar_seed,
+  owner.avatar_options AS owner_avatar_options,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
   (
@@ -1281,6 +1321,10 @@ type ListTenantTeamSummariesRow struct {
 	OwnerDisplayName     pgtype.Text        `json:"owner_display_name"`
 	OwnerEmail           pgtype.Text        `json:"owner_email"`
 	OwnerStatus          pgtype.Text        `json:"owner_status"`
+	OwnerAvatarProvider  pgtype.Text        `json:"owner_avatar_provider"`
+	OwnerAvatarStyle     pgtype.Text        `json:"owner_avatar_style"`
+	OwnerAvatarSeed      pgtype.Text        `json:"owner_avatar_seed"`
+	OwnerAvatarOptions   []byte             `json:"owner_avatar_options"`
 	MemberCount          int32              `json:"member_count"`
 	DigitalEmployeeCount int32              `json:"digital_employee_count"`
 	CapabilityCount      int32              `json:"capability_count"`
@@ -1324,6 +1368,10 @@ func (q *Queries) ListTenantTeamSummaries(ctx context.Context, arg ListTenantTea
 			&i.OwnerDisplayName,
 			&i.OwnerEmail,
 			&i.OwnerStatus,
+			&i.OwnerAvatarProvider,
+			&i.OwnerAvatarStyle,
+			&i.OwnerAvatarSeed,
+			&i.OwnerAvatarOptions,
 			&i.MemberCount,
 			&i.DigitalEmployeeCount,
 			&i.CapabilityCount,

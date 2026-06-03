@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,6 +128,77 @@ func TestCreateTeamCreatesOwnerAndInitialMembers(t *testing.T) {
 	}
 	if repo.auditEvents[0].Action != "team.create" {
 		t.Fatalf("expected first audit action team.create, got %#v", repo.auditEvents)
+	}
+}
+
+func TestCreateTeamAcceptsMetadataDisplay(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewServiceWithoutAuditForTest(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	ownerID := uuid.New()
+
+	_, err = svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         tenantID,
+		ActorUserID:      actorID,
+		Slug:             "security",
+		Name:             "安全团队",
+		HumanOwnerUserID: &ownerID,
+		Metadata: map[string]any{
+			"display": map[string]any{
+				"icon_key":   "security",
+				"color_tone": "teal",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected metadata display to pass validation, got %v", err)
+	}
+	display := repo.createdTeamWithMembers.Metadata["display"].(map[string]any)
+	if display["icon_key"] != "security" || display["color_tone"] != "teal" {
+		t.Fatalf("expected metadata display to be preserved, got %#v", display)
+	}
+}
+
+func TestCreateTeamRejectsInvalidMetadataDisplay(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewServiceWithoutAuditForTest(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	longValue := strings.Repeat("x", 41)
+
+	cases := []struct {
+		name     string
+		metadata map[string]any
+	}{
+		{name: "display is not object", metadata: map[string]any{"display": "security"}},
+		{name: "icon key is not string", metadata: map[string]any{"display": map[string]any{"icon_key": 123}}},
+		{name: "color tone is not string", metadata: map[string]any{"display": map[string]any{"color_tone": 123}}},
+		{name: "icon key too long", metadata: map[string]any{"display": map[string]any{"icon_key": longValue}}},
+		{name: "color tone too long", metadata: map[string]any{"display": map[string]any{"color_tone": longValue}}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
+				TenantID:         tenantID,
+				ActorUserID:      actorID,
+				Slug:             "security",
+				Name:             "安全团队",
+				HumanOwnerUserID: &ownerID,
+				Metadata:         tc.metadata,
+			})
+			if !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("expected invalid input, got %v", err)
+			}
+		})
 	}
 }
 

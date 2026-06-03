@@ -127,6 +127,14 @@ type TeamHumanOwner struct {
 	DisplayName string
 	Email       string
 	Status      string
+	Avatar      *UserAvatarConfig
+}
+
+type UserAvatarConfig struct {
+	Provider string         `json:"provider"`
+	Style    string         `json:"style"`
+	Seed     string         `json:"seed"`
+	Options  map[string]any `json:"options,omitempty"`
 }
 
 type TeamListItem struct {
@@ -180,6 +188,7 @@ type TeamMember struct {
 	DisplayName      string
 	Email            string
 	AccountStatus    string
+	Avatar           *UserAvatarConfig
 	Role             string
 	MembershipStatus string
 	CreatedAt        time.Time

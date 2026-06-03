@@ -1655,6 +1655,23 @@ components:
           type: string
         status:
           type: string
+        avatar:
+          $ref: "#/components/schemas/TeamUserAvatar"
+    TeamUserAvatar:
+      type: object
+      required: [provider, style, seed]
+      properties:
+        provider:
+          type: string
+          enum: [dicebear]
+        style:
+          type: string
+          enum: [adventurer]
+        seed:
+          type: string
+        options:
+          type: object
+          additionalProperties: true
     TeamListItem:
       allOf:
         - $ref: "#/components/schemas/Team"
@@ -1826,6 +1843,8 @@ components:
           type: string
         account_status:
           type: string
+        avatar:
+          $ref: "#/components/schemas/TeamUserAvatar"
         role:
           $ref: "#/components/schemas/TeamMemberRole"
         membership_status:

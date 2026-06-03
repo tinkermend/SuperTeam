@@ -118,6 +118,9 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 			DisplayName string `json:"display_name"`
 			Email       string `json:"email"`
 			Status      string `json:"status"`
+			Avatar      *struct {
+				Seed string `json:"seed"`
+			} `json:"avatar"`
 		} `json:"human_owner"`
 	}
 	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
@@ -125,6 +128,9 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if len(listed) != 1 || listed[0].HumanOwner == nil || listed[0].HumanOwner.Username != "owner" || listed[0].HumanOwner.DisplayName != "Owner Person" || listed[0].HumanOwner.Email != "owner@example.com" {
 		t.Fatalf("expected list response to include human owner summary, got %#v", listed)
+	}
+	if listed[0].HumanOwner.Avatar == nil || listed[0].HumanOwner.Avatar.Seed != "user:owner" {
+		t.Fatalf("expected list response to include human owner avatar, got %#v", listed)
 	}
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.Team.ID, nil)
@@ -516,6 +522,17 @@ func TestTeamMemberRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if service.listMembersTenantID != expectedTenantID || service.listMembersTeamID != teamID || service.listMembersLimit != 25 || service.listMembersOffset != 5 {
 		t.Fatalf("unexpected list members args: tenant=%s team=%s limit=%d offset=%d", service.listMembersTenantID, service.listMembersTeamID, service.listMembersLimit, service.listMembersOffset)
+	}
+	var listedMembers []struct {
+		Avatar *struct {
+			Seed string `json:"seed"`
+		} `json:"avatar"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&listedMembers); err != nil {
+		t.Fatalf("decode listed members: %v", err)
+	}
+	if len(listedMembers) != 1 || listedMembers[0].Avatar == nil || listedMembers[0].Avatar.Seed != "user:member" {
+		t.Fatalf("expected list members response to include member avatar, got %#v", listedMembers)
 	}
 
 	addReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+teamID.String()+"/members", strings.NewReader(`{"user_id":"`+targetUserID.String()+`","role":"viewer"}`))
@@ -1032,6 +1049,12 @@ func (s *routeTeamService) ListTeamSummaries(ctx context.Context, req tenant.Lis
 					DisplayName: "Owner Person",
 					Email:       "owner@example.com",
 					Status:      "active",
+					Avatar: &tenant.UserAvatarConfig{
+						Provider: "dicebear",
+						Style:    "adventurer",
+						Seed:     "user:owner",
+						Options:  map[string]any{"backgroundColor": []any{"e6fbf5"}},
+					},
 				},
 				Metadata:  map[string]any{},
 				CreatedAt: time.Now().UTC(),
@@ -1277,14 +1300,20 @@ func (s *routeTeamService) ListTeamMembers(ctx context.Context, tenantID, teamID
 	now := time.Now().UTC()
 	return []*tenant.TeamMember{
 		{
-			MembershipID:     uuid.New(),
-			TenantID:         tenantID,
-			TeamID:           teamID,
-			UserID:           uuid.New(),
-			Username:         "member",
-			DisplayName:      "Member",
-			Email:            "member@example.com",
-			AccountStatus:    "active",
+			MembershipID:  uuid.New(),
+			TenantID:      tenantID,
+			TeamID:        teamID,
+			UserID:        uuid.New(),
+			Username:      "member",
+			DisplayName:   "Member",
+			Email:         "member@example.com",
+			AccountStatus: "active",
+			Avatar: &tenant.UserAvatarConfig{
+				Provider: "dicebear",
+				Style:    "adventurer",
+				Seed:     "user:member",
+				Options:  map[string]any{"backgroundColor": []any{"e6fbf5"}},
+			},
 			Role:             tenant.TeamRoleMember,
 			MembershipStatus: "active",
 			CreatedAt:        now,

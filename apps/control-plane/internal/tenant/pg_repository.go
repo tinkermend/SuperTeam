@@ -705,7 +705,17 @@ func teamListItemRecordFromQuery(row queries.ListTenantTeamSummariesRow) (TeamLi
 		row.PendingDraftCount,
 		row.GovernanceStatus,
 		row.RiskSummary,
-		teamHumanOwnerFromQuery(row.OwnerUserID, row.OwnerUsername, row.OwnerDisplayName, row.OwnerEmail, row.OwnerStatus),
+		teamHumanOwnerFromQuery(
+			row.OwnerUserID,
+			row.OwnerUsername,
+			row.OwnerDisplayName,
+			row.OwnerEmail,
+			row.OwnerStatus,
+			row.OwnerAvatarProvider,
+			row.OwnerAvatarStyle,
+			row.OwnerAvatarSeed,
+			row.OwnerAvatarOptions,
+		),
 	)
 }
 
@@ -732,7 +742,17 @@ func teamListItemRecordFromGetSummaryQuery(row queries.GetTenantTeamSummaryRow) 
 		row.PendingDraftCount,
 		row.GovernanceStatus,
 		row.RiskSummary,
-		teamHumanOwnerFromQuery(row.OwnerUserID, row.OwnerUsername, row.OwnerDisplayName, row.OwnerEmail, row.OwnerStatus),
+		teamHumanOwnerFromQuery(
+			row.OwnerUserID,
+			row.OwnerUsername,
+			row.OwnerDisplayName,
+			row.OwnerEmail,
+			row.OwnerStatus,
+			row.OwnerAvatarProvider,
+			row.OwnerAvatarStyle,
+			row.OwnerAvatarSeed,
+			row.OwnerAvatarOptions,
+		),
 	)
 }
 
@@ -770,6 +790,10 @@ func teamHumanOwnerFromQuery(
 	displayName pgtype.Text,
 	email pgtype.Text,
 	status pgtype.Text,
+	avatarProvider pgtype.Text,
+	avatarStyle pgtype.Text,
+	avatarSeed pgtype.Text,
+	avatarOptions []byte,
 ) *TeamHumanOwner {
 	if !userID.Valid {
 		return nil
@@ -780,6 +804,7 @@ func teamHumanOwnerFromQuery(
 		DisplayName: stringFromText(displayName),
 		Email:       stringFromText(email),
 		Status:      stringFromText(status),
+		Avatar:      avatarFromFields(avatarProvider, avatarStyle, avatarSeed, avatarOptions),
 	}
 }
 
@@ -843,6 +868,7 @@ func teamMemberRecordFromListRow(row queries.ListTeamMembersRow) (TeamMemberReco
 		stringFromText(row.DisplayName),
 		stringFromText(row.Email),
 		row.AccountStatus,
+		avatarFromMemberFields(row.AvatarProvider, row.AvatarStyle, row.AvatarSeed, row.AvatarOptions),
 		row.Role,
 		row.MembershipStatus,
 		row.CreatedAt,
@@ -860,6 +886,7 @@ func teamMemberRecordFromGetRow(row queries.GetTeamMemberRow) (TeamMemberRecord,
 		stringFromText(row.DisplayName),
 		stringFromText(row.Email),
 		row.AccountStatus,
+		avatarFromMemberFields(row.AvatarProvider, row.AvatarStyle, row.AvatarSeed, row.AvatarOptions),
 		row.Role,
 		row.MembershipStatus,
 		row.CreatedAt,
@@ -877,6 +904,7 @@ func teamMemberRecordFromTenantMember(member queries.TenantMember) (TeamMemberRe
 		"",
 		"",
 		"",
+		nil,
 		member.Role,
 		member.Status,
 		member.CreatedAt,
@@ -893,6 +921,7 @@ func teamMemberRecordFromParts(
 	displayName string,
 	email string,
 	accountStatus string,
+	avatar *UserAvatarConfig,
 	role string,
 	membershipStatus string,
 	createdAt pgtype.Timestamptz,
@@ -910,11 +939,41 @@ func teamMemberRecordFromParts(
 		DisplayName:      displayName,
 		Email:            email,
 		AccountStatus:    accountStatus,
+		Avatar:           cloneUserAvatarConfig(avatar),
 		Role:             role,
 		MembershipStatus: membershipStatus,
 		CreatedAt:        timeFromTimestamptz(createdAt),
 		UpdatedAt:        timeFromTimestamptz(updatedAt),
 	}, nil
+}
+
+func avatarFromFields(provider, style, seed pgtype.Text, options []byte) *UserAvatarConfig {
+	if !provider.Valid || !style.Valid || !seed.Valid {
+		return nil
+	}
+	return avatarFromValues(provider.String, style.String, seed.String, options)
+}
+
+func avatarFromMemberFields(provider, style string, seed pgtype.Text, options []byte) *UserAvatarConfig {
+	if provider == "" || style == "" || !seed.Valid {
+		return nil
+	}
+	return avatarFromValues(provider, style, seed.String, options)
+}
+
+func avatarFromValues(provider, style, seed string, options []byte) *UserAvatarConfig {
+	avatar := &UserAvatarConfig{
+		Provider: provider,
+		Style:    style,
+		Seed:     seed,
+	}
+	if len(options) > 0 {
+		var parsed map[string]any
+		if err := json.Unmarshal(options, &parsed); err == nil && parsed != nil {
+			avatar.Options = parsed
+		}
+	}
+	return avatar
 }
 
 func roleRequestRecordFromQuery(request queries.TenantTeamMemberRoleRequest) TeamMemberRoleRequestRecord {

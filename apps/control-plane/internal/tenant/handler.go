@@ -860,11 +860,12 @@ type teamListItemResponse struct {
 }
 
 type teamHumanOwnerResponse struct {
-	UserID      string `json:"user_id"`
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	Email       string `json:"email"`
-	Status      string `json:"status"`
+	UserID      string              `json:"user_id"`
+	Username    string              `json:"username"`
+	DisplayName string              `json:"display_name"`
+	Email       string              `json:"email"`
+	Status      string              `json:"status"`
+	Avatar      *userAvatarResponse `json:"avatar,omitempty"`
 }
 
 type teamOverviewResponse struct {
@@ -913,18 +914,26 @@ type validationIssueResponse struct {
 }
 
 type teamMemberResponse struct {
-	MembershipID     string `json:"membership_id"`
-	TenantID         string `json:"tenant_id"`
-	TeamID           string `json:"team_id"`
-	UserID           string `json:"user_id"`
-	Username         string `json:"username"`
-	DisplayName      string `json:"display_name"`
-	Email            string `json:"email"`
-	AccountStatus    string `json:"account_status"`
-	Role             string `json:"role"`
-	MembershipStatus string `json:"membership_status"`
-	CreatedAt        string `json:"created_at,omitempty"`
-	UpdatedAt        string `json:"updated_at,omitempty"`
+	MembershipID     string              `json:"membership_id"`
+	TenantID         string              `json:"tenant_id"`
+	TeamID           string              `json:"team_id"`
+	UserID           string              `json:"user_id"`
+	Username         string              `json:"username"`
+	DisplayName      string              `json:"display_name"`
+	Email            string              `json:"email"`
+	AccountStatus    string              `json:"account_status"`
+	Avatar           *userAvatarResponse `json:"avatar,omitempty"`
+	Role             string              `json:"role"`
+	MembershipStatus string              `json:"membership_status"`
+	CreatedAt        string              `json:"created_at,omitempty"`
+	UpdatedAt        string              `json:"updated_at,omitempty"`
+}
+
+type userAvatarResponse struct {
+	Provider string         `json:"provider"`
+	Style    string         `json:"style"`
+	Seed     string         `json:"seed"`
+	Options  map[string]any `json:"options,omitempty"`
 }
 
 type roleRequestResponse struct {
@@ -1109,6 +1118,19 @@ func teamHumanOwnerResponseFromDomain(owner *TeamHumanOwner) *teamHumanOwnerResp
 		DisplayName: owner.DisplayName,
 		Email:       owner.Email,
 		Status:      owner.Status,
+		Avatar:      userAvatarResponseFromDomain(owner.Avatar),
+	}
+}
+
+func userAvatarResponseFromDomain(avatar *UserAvatarConfig) *userAvatarResponse {
+	if avatar == nil {
+		return nil
+	}
+	return &userAvatarResponse{
+		Provider: avatar.Provider,
+		Style:    avatar.Style,
+		Seed:     avatar.Seed,
+		Options:  cloneMap(avatar.Options),
 	}
 }
 
@@ -1215,6 +1237,7 @@ func teamMemberResponseFromDomain(member *TeamMember) teamMemberResponse {
 		DisplayName:      member.DisplayName,
 		Email:            member.Email,
 		AccountStatus:    member.AccountStatus,
+		Avatar:           userAvatarResponseFromDomain(member.Avatar),
 		Role:             member.Role,
 		MembershipStatus: member.MembershipStatus,
 		CreatedAt:        timeString(member.CreatedAt),

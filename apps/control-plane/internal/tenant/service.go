@@ -67,6 +67,10 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamO
 	if err != nil {
 		return nil, err
 	}
+	metadata, err := normalizeTeamMetadata(req.Metadata)
+	if err != nil {
+		return nil, err
+	}
 
 	team, err := s.repository.CreateTeamWithInitialMembers(ctx, CreateTeamWithInitialMembersParams{
 		TenantID:       req.TenantID,
@@ -76,7 +80,7 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamO
 		Status:         status,
 		OwnerUserID:    *req.HumanOwnerUserID,
 		InitialMembers: initialMembers,
-		Metadata:       cloneMap(req.Metadata),
+		Metadata:       metadata,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create team with initial members: %w", err)
@@ -179,7 +183,14 @@ func (s *Service) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team,
 		return nil, fmt.Errorf("%w: name is required", ErrInvalidInput)
 	}
 	humanOwnerUserID := validUUIDPtr(req.HumanOwnerUserID)
-	metadata := cloneMap(req.Metadata)
+	var metadata map[string]any
+	if req.Metadata != nil {
+		var err error
+		metadata, err = normalizeTeamMetadata(req.Metadata)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if req.HumanOwnerUserID == nil || req.Metadata == nil {
 		existing, err := s.repository.GetTeam(ctx, req.TenantID, req.TeamID)
 		if err != nil {
@@ -961,6 +972,7 @@ func cloneTeamHumanOwner(owner *TeamHumanOwner) *TeamHumanOwner {
 		DisplayName: owner.DisplayName,
 		Email:       owner.Email,
 		Status:      owner.Status,
+		Avatar:      cloneUserAvatarConfig(owner.Avatar),
 	}
 }
 
@@ -974,6 +986,7 @@ func teamMemberFromRecord(record TeamMemberRecord) *TeamMember {
 		DisplayName:      record.DisplayName,
 		Email:            record.Email,
 		AccountStatus:    record.AccountStatus,
+		Avatar:           cloneUserAvatarConfig(record.Avatar),
 		Role:             record.Role,
 		MembershipStatus: record.MembershipStatus,
 		CreatedAt:        record.CreatedAt,
@@ -1057,6 +1070,45 @@ func cloneMap(value map[string]any) map[string]any {
 		cloned[key] = item
 	}
 	return cloned
+}
+
+func normalizeTeamMetadata(metadata map[string]any) (map[string]any, error) {
+	cloned := cloneMap(metadata)
+	displayValue, ok := cloned["display"]
+	if !ok || displayValue == nil {
+		return cloned, nil
+	}
+	display, ok := displayValue.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%w: metadata.display must be object", ErrInvalidInput)
+	}
+	for _, key := range []string{"icon_key", "color_tone"} {
+		value, ok := display[key]
+		if !ok || value == nil {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("%w: metadata.display.%s must be string", ErrInvalidInput, key)
+		}
+		if len(strings.TrimSpace(text)) > 40 {
+			return nil, fmt.Errorf("%w: metadata.display.%s is too long", ErrInvalidInput, key)
+		}
+		display[key] = strings.TrimSpace(text)
+	}
+	return cloned, nil
+}
+
+func cloneUserAvatarConfig(avatar *UserAvatarConfig) *UserAvatarConfig {
+	if avatar == nil {
+		return nil
+	}
+	return &UserAvatarConfig{
+		Provider: avatar.Provider,
+		Style:    avatar.Style,
+		Seed:     avatar.Seed,
+		Options:  cloneMap(avatar.Options),
+	}
 }
 
 func cloneOptionalMap(value map[string]any) map[string]any {
