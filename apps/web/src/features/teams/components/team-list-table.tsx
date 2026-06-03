@@ -132,7 +132,7 @@ export function TeamListTable({
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
-                        aria-label={`${team.name} 行操作`}
+                        aria-label={`${team.name} (${team.slug}) 行操作`}
                         size="icon"
                         type="button"
                         variant="ghost"

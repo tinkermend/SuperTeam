@@ -727,7 +727,48 @@ describe("TeamsView", () => {
       .element(screen.getByRole("button", { name: "下一页" }))
       .toBeDisabled();
     await userEvent.click(
-      screen.getByRole("button", { name: "团队 21 行操作" }),
+      screen.getByRole("button", { name: "团队 21 (team-21) 行操作" }),
+    );
+    await expect
+      .element(screen.getByRole("menuitem", { name: "查看详情" }))
+      .toBeInTheDocument();
+  });
+
+  it("opens row actions for teams with duplicate names by unique slug label", async () => {
+    const teams = [
+      {
+        ...makeTeamSummary(1),
+        id: "team-platform-a",
+        name: "平台团队",
+        slug: "platform-a",
+      },
+      {
+        ...makeTeamSummary(2),
+        id: "team-platform-b",
+        name: "平台团队",
+        slug: "platform-b",
+      },
+    ];
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/api/v1/teams") {
+        return jsonResponse(teams);
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "平台团队 (platform-a) 行操作" }),
+    );
+    await expect
+      .element(screen.getByRole("menuitem", { name: "查看详情" }))
+      .toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(
+      screen.getByRole("button", { name: "平台团队 (platform-b) 行操作" }),
     );
     await expect
       .element(screen.getByRole("menuitem", { name: "查看详情" }))
@@ -925,6 +966,15 @@ describe("TeamsView", () => {
             init?.method === "GET",
         ),
     ).toBe(true);
+    expect(
+      fetchCalls(fetcher)
+        .slice(postIndex + 1)
+        .some(
+          ([url, init]) =>
+            String(url).includes("limit=20&offset=20") &&
+            init?.method === "GET",
+        ),
+    ).toBe(false);
   });
 });
 
