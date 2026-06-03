@@ -43,6 +43,7 @@ pub struct RunSpec {
     pub session_id: Option<String>,
     pub continue_session: bool,
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_context: Option<RuntimeCommandRunContext>,
 }
 
@@ -55,6 +56,7 @@ pub struct RunSnapshot {
     pub session_id: Option<String>,
     pub continue_session: bool,
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_context: Option<RuntimeCommandRunContext>,
     pub provider_session_id: Option<String>,
     pub status: RunStatus,

@@ -58,6 +58,8 @@ async fn store_records_provider_session_events_and_replays_them() {
         snapshot.provider_session_id.as_deref(),
         Some("claude-session-1")
     );
+    let snapshot_json = serde_json::to_value(&snapshot).expect("snapshot json");
+    assert!(snapshot_json.get("command_context").is_none());
 
     let events = store.events(&run.id).await.expect("events");
     assert_eq!(events.len(), 3);
