@@ -26,12 +26,10 @@ impl OpenCodeProvider {
         if let Some(model) = &request.model {
             command.arg("--model").arg(model);
         }
-        if request.continue_session {
-            if let Some(session_id) = &request.session_id {
-                command.arg("--session").arg(session_id);
-            } else {
-                command.arg("--continue");
-            }
+        if let Some(session_id) = &request.session_id {
+            command.arg("--session").arg(session_id);
+        } else if request.continue_session {
+            command.arg("--continue");
         }
         command.arg(&request.prompt);
         command

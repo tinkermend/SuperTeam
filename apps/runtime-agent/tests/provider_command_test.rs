@@ -62,3 +62,20 @@ fn opencode_continue_uses_session_flag() {
             .any(|window| window == ["--session", "oc-session"])
     );
 }
+
+#[test]
+fn opencode_new_turn_pins_explicit_session_id() {
+    let provider = OpenCodeProvider::new("opencode");
+    let command = provider.build_command(&request(Some("oc-new-session"), false));
+    let args: Vec<_> = command
+        .as_std()
+        .get_args()
+        .map(|arg| arg.to_string_lossy().to_string())
+        .collect();
+
+    assert!(
+        args.windows(2)
+            .any(|window| window == ["--session", "oc-new-session"])
+    );
+    assert!(!args.iter().any(|arg| arg == "--continue"));
+}
