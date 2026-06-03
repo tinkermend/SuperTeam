@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, UsersRound } from "lucide-react";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
@@ -45,6 +45,7 @@ type TeamsViewProps = {
 };
 
 export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
+  const queryClient = useQueryClient();
   const [filters, setFilters] = useState<TeamListFilters>({ q: "" });
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(20);
@@ -77,8 +78,9 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
       ),
     onSuccess: (overview) => {
       setCreateOpen(false);
+      setPageIndex(0);
       setHighlightedTeamId(overview.team.id);
-      void teams.refetch();
+      void queryClient.invalidateQueries({ queryKey: ["team-summaries"] });
     },
   });
 

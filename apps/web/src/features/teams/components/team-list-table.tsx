@@ -1,6 +1,12 @@
 import { MoreHorizontal } from "lucide-react";
-import { TeamIconTile, type TeamDisplayMetadata } from "@/components/superteam/team-icon-tile";
-import { UserIdentity, type UserIdentityData } from "@/components/superteam/user-identity";
+import {
+  TeamIconTile,
+  type TeamDisplayMetadata,
+} from "@/components/superteam/team-icon-tile";
+import {
+  UserIdentity,
+  type UserIdentityData,
+} from "@/components/superteam/user-identity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +29,8 @@ import type {
   TeamListItem,
   TeamStatus,
 } from "@/lib/api/teams";
+
+const TEAM_LIST_COLUMN_COUNT = 10;
 
 type TeamListTableProps = {
   teams: TeamListItem[];
@@ -47,18 +55,6 @@ export function TeamListTable({
   pageSize,
   teams,
 }: TeamListTableProps) {
-  if (isLoading) {
-    return <p className="text-sm text-muted-foreground">加载中</p>;
-  }
-
-  if (isError) {
-    return <p className="text-sm text-destructive">团队列表加载失败</p>;
-  }
-
-  if (teams.length === 0) {
-    return <p className="text-sm text-muted-foreground">暂无团队</p>;
-  }
-
   return (
     <div className="rounded-md border">
       <Table>
@@ -79,73 +75,83 @@ export function TeamListTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {teams.map((team) => (
-            <TableRow
-              className={
-                team.id === highlightedTeamId
-                  ? "bg-[var(--superteam-menu-accent-soft)]"
-                  : undefined
-              }
-              key={team.id}
-            >
-              <TableCell>
-                <div className="flex min-w-0 items-center gap-3">
-                  <TeamIconTile metadata={getTeamMetadata(team)} />
-                  <div className="min-w-0">
-                    <a
-                      className="truncate font-medium hover:underline"
-                      href={`/teams/${team.id}`}
-                    >
-                      {team.name}
-                    </a>
-                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                      <span className="truncate">{team.slug}</span>
-                      <TeamStatusBadge status={team.status} />
+          {isLoading ? (
+            <TeamListStateRow message="加载中" />
+          ) : isError ? (
+            <TeamListStateRow message="团队列表加载失败" tone="destructive" />
+          ) : teams.length === 0 ? (
+            <TeamListStateRow message="暂无团队" />
+          ) : (
+            teams.map((team) => (
+              <TableRow
+                className={
+                  team.id === highlightedTeamId
+                    ? "bg-[var(--superteam-menu-accent-soft)]"
+                    : undefined
+                }
+                key={team.id}
+              >
+                <TableCell>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <TeamIconTile metadata={getTeamMetadata(team)} />
+                    <div className="min-w-0">
+                      <a
+                        className="truncate font-medium hover:underline"
+                        href={`/teams/${team.id}`}
+                      >
+                        {team.name}
+                      </a>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="truncate">{team.slug}</span>
+                        <TeamStatusBadge status={team.status} />
+                      </div>
                     </div>
                   </div>
-                </div>
-              </TableCell>
-              <TableCell>
-                <TeamOwnerIdentity team={team} />
-              </TableCell>
-              <TableCell>{team.member_count}</TableCell>
-              <TableCell>{team.digital_employee_count}</TableCell>
-              <TableCell>{team.capability_count}</TableCell>
-              <TableCell>
-                <GovernanceStatusBadge status={team.governance_status} />
-              </TableCell>
-              <TableCell>
-                {team.current_revision ? `v${team.current_revision}` : "未配置"}
-              </TableCell>
-              <TableCell>{team.pending_draft_count}</TableCell>
-              <TableCell>
-                {team.updated_at
-                  ? new Date(team.updated_at).toLocaleString("zh-CN")
-                  : "-"}
-              </TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      aria-label="团队行操作"
-                      size="icon"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <MoreHorizontal />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuGroup>
-                      <DropdownMenuItem asChild>
-                        <a href={`/teams/${team.id}`}>查看详情</a>
-                      </DropdownMenuItem>
-                    </DropdownMenuGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-            </TableRow>
-          ))}
+                </TableCell>
+                <TableCell>
+                  <TeamOwnerIdentity team={team} />
+                </TableCell>
+                <TableCell>{team.member_count}</TableCell>
+                <TableCell>{team.digital_employee_count}</TableCell>
+                <TableCell>{team.capability_count}</TableCell>
+                <TableCell>
+                  <GovernanceStatusBadge status={team.governance_status} />
+                </TableCell>
+                <TableCell>
+                  {team.current_revision
+                    ? `v${team.current_revision}`
+                    : "未配置"}
+                </TableCell>
+                <TableCell>{team.pending_draft_count}</TableCell>
+                <TableCell>
+                  {team.updated_at
+                    ? new Date(team.updated_at).toLocaleString("zh-CN")
+                    : "-"}
+                </TableCell>
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        aria-label={`${team.name} 行操作`}
+                        size="icon"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <MoreHorizontal />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuGroup>
+                        <DropdownMenuItem asChild>
+                          <a href={`/teams/${team.id}`}>查看详情</a>
+                        </DropdownMenuItem>
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
         </TableBody>
       </Table>
       <div className="flex items-center justify-between border-t px-3 py-3 text-sm text-muted-foreground">
@@ -161,6 +167,7 @@ export function TeamListTable({
             上一页
           </Button>
           <select
+            aria-label="每页数量"
             className="h-9 rounded-md border bg-background px-2 text-sm"
             onChange={(event) => onPageSizeChange(Number(event.target.value))}
             value={pageSize}
@@ -183,6 +190,29 @@ export function TeamListTable({
         </div>
       </div>
     </div>
+  );
+}
+
+function TeamListStateRow({
+  message,
+  tone = "muted",
+}: {
+  message: string;
+  tone?: "destructive" | "muted";
+}) {
+  return (
+    <TableRow>
+      <TableCell
+        className={
+          tone === "destructive"
+            ? "h-24 text-center text-sm text-destructive"
+            : "h-24 text-center text-sm text-muted-foreground"
+        }
+        colSpan={TEAM_LIST_COLUMN_COUNT}
+      >
+        {message}
+      </TableCell>
+    </TableRow>
   );
 }
 

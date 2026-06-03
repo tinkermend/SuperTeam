@@ -86,7 +86,12 @@ function makeTeamSummary(index: number) {
   };
 }
 
-function createTeamsFetcher(options: { disabledOverview?: boolean } = {}) {
+function createTeamsFetcher(
+  options: {
+    disabledOverview?: boolean;
+    secondPageMode?: "empty" | "error" | "normal";
+  } = {},
+) {
   const fetcher = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
@@ -123,11 +128,16 @@ function createTeamsFetcher(options: { disabledOverview?: boolean } = {}) {
 
       if (url.pathname === "/api/v1/teams" && method === "GET") {
         const offset = Number(url.searchParams.get("offset") ?? 0);
+        if (offset >= 20 && options.secondPageMode === "error") {
+          return jsonResponse({ error: "team list unavailable" }, 500);
+        }
         const page =
           offset >= 20
-            ? Array.from({ length: 5 }, (_, index) =>
-                makeTeamSummary(index + 21),
-              )
+            ? options.secondPageMode === "empty"
+              ? []
+              : Array.from({ length: 5 }, (_, index) =>
+                  makeTeamSummary(index + 21),
+                )
             : Array.from({ length: 20 }, (_, index) =>
                 makeTeamSummary(index + 1),
               );
@@ -712,12 +722,52 @@ describe("TeamsView", () => {
         String(input).includes("limit=20&offset=20"),
       ),
     ).toBe(true);
+    await expect.element(screen.getByText("第 2 页")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: "下一页" }))
+      .toBeDisabled();
     await userEvent.click(
-      screen.getByRole("button", { name: "团队行操作" }).first(),
+      screen.getByRole("button", { name: "团队 21 行操作" }),
     );
     await expect
       .element(screen.getByRole("menuitem", { name: "查看详情" }))
       .toBeInTheDocument();
+  });
+
+  it("keeps pagination recoverable on an empty page", async () => {
+    const fetcher = createTeamsFetcher({ secondPageMode: "empty" });
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
+
+    await expect.element(screen.getByText("第 2 页")).toBeInTheDocument();
+    await expect.element(screen.getByText("暂无团队")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: "上一页" }))
+      .toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "上一页" }));
+    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
+  });
+
+  it("keeps pagination recoverable on an error page", async () => {
+    const fetcher = createTeamsFetcher({ secondPageMode: "error" });
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
+
+    await expect.element(screen.getByText("第 2 页")).toBeInTheDocument();
+    await expect
+      .element(screen.getByText("团队列表加载失败"))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: "上一页" }))
+      .toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "上一页" }));
+    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
   });
 
   it("filters team summaries through the real list endpoint", async () => {
@@ -751,6 +801,39 @@ describe("TeamsView", () => {
       );
   });
 
+  it("resets pagination when filters or page size change", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await expect.element(screen.getByText("第 2 页")).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("团队状态"), "active");
+
+    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
+    expect(
+      fetchCalls(fetcher).some(([input]) =>
+        String(input).includes("status=active&limit=20&offset=0"),
+      ),
+    ).toBe(true);
+
+    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await expect.element(screen.getByText("第 2 页")).toBeInTheDocument();
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "每页数量" }),
+      "50",
+    );
+
+    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
+    expect(
+      fetchCalls(fetcher).some(([input]) =>
+        String(input).includes("limit=50&offset=0"),
+      ),
+    ).toBe(true);
+  });
+
   it("opens create team drawer and requires name slug and owner before next step", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
@@ -777,6 +860,8 @@ describe("TeamsView", () => {
       <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
+    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await expect.element(screen.getByText("第 2 页")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "新建团队" }));
     await userEvent.type(
       screen.getByRole("textbox", { name: "团队名称", exact: true }),
@@ -826,6 +911,20 @@ describe("TeamsView", () => {
         { user_id: "viewer-user", role: "viewer" },
       ],
     });
+    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
+    const postIndex = fetchCalls(fetcher).findIndex(
+      ([url, init]) =>
+        String(url).endsWith("/api/v1/teams") && init?.method === "POST",
+    );
+    expect(
+      fetchCalls(fetcher)
+        .slice(postIndex + 1)
+        .some(
+          ([url, init]) =>
+            String(url).includes("limit=20&offset=0") &&
+            init?.method === "GET",
+        ),
+    ).toBe(true);
   });
 });
 
