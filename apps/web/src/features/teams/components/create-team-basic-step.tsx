@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { TeamIconTile } from "@/components/superteam/team-icon-tile";
+import { UserSearchSelect } from "@/components/superteam/user-search-select";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { listUsers } from "@/lib/api/auth";
-import type { CreateTeamDraft } from "./create-team-drawer";
+import { cn } from "@/lib/utils";
+import type { CreateTeamDraft, TeamDisplayDraft } from "./create-team-drawer";
 
 type CreateTeamBasicStepProps = {
   apiBaseUrl: string;
@@ -13,6 +14,14 @@ type CreateTeamBasicStepProps = {
   value: CreateTeamDraft;
 };
 
+const iconOptions = [
+  { color_tone: "cyan", icon_key: "ops", label: "选择运维团队图标" },
+  { color_tone: "blue", icon_key: "dev", label: "选择研发团队图标" },
+  { color_tone: "violet", icon_key: "qa", label: "选择测试团队图标" },
+  { color_tone: "teal", icon_key: "security", label: "选择安全团队图标" },
+  { color_tone: "neutral", icon_key: "default", label: "选择默认团队图标" },
+] as const;
+
 export function CreateTeamBasicStep({
   apiBaseUrl,
   errors,
@@ -20,29 +29,40 @@ export function CreateTeamBasicStep({
   onChange,
   value,
 }: CreateTeamBasicStepProps) {
-  const [ownerQuery, setOwnerQuery] = useState("");
-  const owners = useQuery({
-    queryKey: ["team-owner-candidates", ownerQuery],
-    queryFn: () =>
-      listUsers({
-        baseUrl: apiBaseUrl,
-        fetcher,
-        limit: 20,
-        offset: 0,
-        q: ownerQuery,
-        status: "active",
-      }),
-  });
-  const ownerItems = owners.data?.items ?? [];
+  function updateName(name: string) {
+    onChange({
+      ...value,
+      display:
+        value.display.icon_key === "default"
+          ? inferDisplay(`${name} ${value.slug}`)
+          : value.display,
+      name,
+    });
+  }
+
+  function updateSlug(slug: string) {
+    onChange({
+      ...value,
+      display:
+        value.display.icon_key === "default"
+          ? inferDisplay(`${value.name} ${slug}`)
+          : value.display,
+      slug,
+    });
+  }
+
+  function updateDisplay(display: TeamDisplayDraft) {
+    onChange({ ...value, display });
+  }
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <div className="grid gap-2">
         <Label htmlFor="team-name">团队名称</Label>
         <Input
           id="team-name"
           value={value.name}
-          onChange={(event) => onChange({ ...value, name: event.target.value })}
+          onChange={(event) => updateName(event.target.value)}
         />
         {errors.name ? (
           <span className="text-sm text-destructive">{errors.name}</span>
@@ -53,60 +73,68 @@ export function CreateTeamBasicStep({
         <Input
           id="team-slug"
           value={value.slug}
-          onChange={(event) => onChange({ ...value, slug: event.target.value })}
+          onChange={(event) => updateSlug(event.target.value)}
         />
         {errors.slug ? (
           <span className="text-sm text-destructive">{errors.slug}</span>
         ) : null}
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="team-owner-search">负责人</Label>
-        <Input
-          id="team-owner-search"
-          placeholder="搜索负责人用户名、姓名或邮箱"
-          value={ownerQuery}
-          onChange={(event) => setOwnerQuery(event.target.value)}
-        />
-        <div className="divide-y rounded-md border">
-          {ownerItems.map((user) => {
-            const selected = user.id === value.owner?.id;
+        <Label>团队图标</Label>
+        <div className="grid grid-cols-5 gap-2">
+          {iconOptions.map((option) => {
+            const selected = option.icon_key === value.display.icon_key;
+
             return (
-              <button
-                className={[
-                  "flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted",
-                  selected ? "bg-[var(--superteam-menu-accent-soft)]" : "",
-                ].join(" ")}
-                key={user.id}
-                onClick={() => onChange({ ...value, owner: user })}
+              <Button
+                aria-label={option.label}
+                aria-pressed={selected}
+                className={cn("h-12 justify-center", selected ? "border-primary ring-2 ring-ring/30" : "")}
+                key={option.icon_key}
+                onClick={() =>
+                  updateDisplay({
+                    color_tone: option.color_tone,
+                    icon_key: option.icon_key,
+                  })
+                }
                 type="button"
+                variant="outline"
               >
-                <span>{user.username}</span>
-                <span className="text-muted-foreground">
-                  {selected ? "已选择" : user.status}
-                </span>
-              </button>
+                <TeamIconTile
+                  metadata={{
+                    display: {
+                      color_tone: option.color_tone,
+                      icon_key: option.icon_key,
+                    },
+                  }}
+                />
+              </Button>
             );
           })}
-          {owners.isLoading ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">
-              加载负责人候选中
-            </div>
-          ) : null}
-          {!owners.isLoading && ownerItems.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">
-              未找到匹配的负责人
-            </div>
-          ) : null}
         </div>
-        {value.owner ? (
-          <span className="text-sm text-muted-foreground">
-            已选择：{value.owner.username}
-          </span>
-        ) : null}
+      </div>
+      <div className="grid gap-2">
+        <Label>负责人</Label>
+        <UserSearchSelect
+          apiBaseUrl={apiBaseUrl}
+          fetcher={fetcher}
+          onSelect={(owner) => onChange({ ...value, owner })}
+          placeholder="负责人"
+          value={value.owner}
+        />
         {errors.owner ? (
           <span className="text-sm text-destructive">{errors.owner}</span>
         ) : null}
       </div>
     </div>
   );
+}
+
+function inferDisplay(value: string): TeamDisplayDraft {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("ops") || normalized.includes("运维")) return { color_tone: "cyan", icon_key: "ops" };
+  if (normalized.includes("dev") || normalized.includes("研发")) return { color_tone: "blue", icon_key: "dev" };
+  if (normalized.includes("qa") || normalized.includes("测试")) return { color_tone: "violet", icon_key: "qa" };
+  if (normalized.includes("security") || normalized.includes("安全")) return { color_tone: "teal", icon_key: "security" };
+  return { color_tone: "neutral", icon_key: "default" };
 }

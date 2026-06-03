@@ -74,6 +74,12 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
           slug: draft.slug.trim(),
           human_owner_user_id: draft.owner?.id ?? "",
           initial_members: draft.initial_members,
+          metadata: {
+            display: {
+              color_tone: draft.display.color_tone,
+              icon_key: draft.display.icon_key,
+            },
+          },
         },
       ),
     onSuccess: (overview) => {

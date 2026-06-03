@@ -915,6 +915,57 @@ describe("TeamsView", () => {
     await expect.element(screen.getByText("请选择负责人")).toBeInTheDocument();
   });
 
+  it("creates team with display metadata and editable initial members", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "新建团队" }));
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "团队名称", exact: true }),
+      "安全团队",
+    );
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
+      "security",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "选择安全团队图标" }),
+    );
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "负责人" }),
+      "owner",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "选择 owner" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect
+      .element(screen.getByRole("heading", { name: "基础信息" }))
+      .toBeVisible();
+    await userEvent.click(screen.getByLabelText("选择 member 为初始成员"));
+    await userEvent.click(screen.getByLabelText("选择 viewer 为初始成员"));
+    await userEvent.click(
+      document.querySelectorAll('[role="combobox"][aria-label="团队角色"]')[1],
+    );
+    await userEvent.click(screen.getByRole("option", { name: "只读观察者" }));
+    await userEvent.click(screen.getByRole("button", { name: "移除 viewer" }));
+    await userEvent.click(screen.getByRole("button", { name: "创建团队" }));
+
+    await expect.poll(() => createTeamPostIndex(fetcher)).not.toBe(-1);
+    const postCall = fetchCalls(fetcher).find(
+      ([url, init]) =>
+        String(url).endsWith("/api/v1/teams") && init?.method === "POST",
+    );
+    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
+      human_owner_user_id: "owner-user",
+      initial_members: [{ role: "member", user_id: "member-user" }],
+      metadata: { display: { color_tone: "teal", icon_key: "security" } },
+      name: "安全团队",
+      slug: "security",
+    });
+  });
+
   it("refetches the first team page after creating while already on the first page", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
@@ -934,7 +985,7 @@ describe("TeamsView", () => {
       "security",
     );
     await userEvent.type(
-      screen.getByRole("textbox", { name: "负责人", exact: true }),
+      screen.getByRole("searchbox", { name: "负责人" }),
       "owner",
     );
     await expect
@@ -942,7 +993,7 @@ describe("TeamsView", () => {
       .toContain(
         "http://control-plane.local/api/auth/users?q=owner&status=active&limit=20&offset=0",
       );
-    await userEvent.click(screen.getByRole("button", { name: "owner" }));
+    await userEvent.click(screen.getByRole("button", { name: "选择 owner" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "创建团队" }));
 
@@ -985,7 +1036,7 @@ describe("TeamsView", () => {
       "security",
     );
     await userEvent.type(
-      screen.getByRole("textbox", { name: "负责人", exact: true }),
+      screen.getByRole("searchbox", { name: "负责人" }),
       "owner",
     );
     await expect
@@ -993,14 +1044,14 @@ describe("TeamsView", () => {
       .toContain(
         "http://control-plane.local/api/auth/users?q=owner&status=active&limit=20&offset=0",
       );
-    await userEvent.click(screen.getByRole("button", { name: "owner" }));
+    await userEvent.click(screen.getByRole("button", { name: "选择 owner" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByLabelText("选择 member 为初始成员"));
+    await userEvent.click(screen.getByLabelText("选择 viewer 为初始成员"));
     await userEvent.click(
-      screen.getByRole("button", { name: "添加 member 为普通成员" }),
+      document.querySelectorAll('[role="combobox"][aria-label="团队角色"]')[1],
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: "添加 viewer 为只读观察者" }),
-    );
+    await userEvent.click(screen.getByRole("option", { name: "只读观察者" }));
     await userEvent.click(screen.getByRole("button", { name: "创建团队" }));
 
     await expect
@@ -1015,7 +1066,7 @@ describe("TeamsView", () => {
       ([url, init]) =>
         String(url).endsWith("/api/v1/teams") && init?.method === "POST",
     );
-    expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({
+    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
       name: "安全团队",
       slug: "security",
       human_owner_user_id: "owner-user",
@@ -1023,6 +1074,7 @@ describe("TeamsView", () => {
         { user_id: "member-user", role: "member" },
         { user_id: "viewer-user", role: "viewer" },
       ],
+      metadata: { display: { color_tone: "teal", icon_key: "security" } },
     });
     await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
     const postIndex = fetchCalls(fetcher).findIndex(
