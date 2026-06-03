@@ -1,6 +1,7 @@
 import { Archive, Plus, RotateCcw, ShieldCheck, UserPlus } from "lucide-react";
+import { LiquidTabsList, LiquidTabsTrigger } from "@/components/superteam";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import type { ApiClientOptions } from "@/lib/api/client";
 import type { TeamOverview } from "@/lib/api/teams";
 import { TeamAuditTab } from "./team-audit-tab";
@@ -89,14 +90,14 @@ export function TeamDetailLayout({
       </div>
 
       <Tabs defaultValue="overview">
-        <TabsList className="w-full justify-start overflow-x-auto">
-          <TabsTrigger value="overview">概览</TabsTrigger>
-          <TabsTrigger value="members">成员</TabsTrigger>
-          <TabsTrigger value="employees">数字员工</TabsTrigger>
-          <TabsTrigger value="capabilities">能力与知识</TabsTrigger>
-          <TabsTrigger value="governance">治理策略</TabsTrigger>
-          <TabsTrigger value="audit">审计记录</TabsTrigger>
-        </TabsList>
+        <LiquidTabsList>
+          <LiquidTabsTrigger value="overview">概览</LiquidTabsTrigger>
+          <LiquidTabsTrigger value="members">成员</LiquidTabsTrigger>
+          <LiquidTabsTrigger value="employees">数字员工</LiquidTabsTrigger>
+          <LiquidTabsTrigger value="capabilities">能力与知识</LiquidTabsTrigger>
+          <LiquidTabsTrigger value="governance">治理策略</LiquidTabsTrigger>
+          <LiquidTabsTrigger value="audit">审计记录</LiquidTabsTrigger>
+        </LiquidTabsList>
         <TabsContent value="overview">
           <TeamOverviewTab overview={overview} />
         </TabsContent>

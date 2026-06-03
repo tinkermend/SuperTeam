@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import type { ApiClientOptions } from "@/lib/api";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LiquidTabsList, LiquidTabsTrigger } from "@/components/superteam";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
@@ -40,13 +41,13 @@ export function PermissionsCenter({ apiBaseUrl = resolveControlPlaneUrl(), fetch
           <p className="text-sm text-muted-foreground">集中查看授权决策、Runtime 执行范围和成员角色。</p>
         </div>
         <Tabs defaultValue="overview" className="gap-4">
-          <TabsList className="flex h-auto w-full flex-wrap justify-start">
+          <LiquidTabsList className="flex-wrap">
             {tabItems.map((tab) => (
-              <TabsTrigger key={tab.value} value={tab.value}>
+              <LiquidTabsTrigger key={tab.value} value={tab.value}>
                 {tab.label}
-              </TabsTrigger>
+              </LiquidTabsTrigger>
             ))}
-          </TabsList>
+          </LiquidTabsList>
           <TabsContent value="overview">
             <AuthorizationOverview apiOptions={apiOptions} />
           </TabsContent>

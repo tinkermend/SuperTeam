@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 
 type Tone =
@@ -58,6 +59,38 @@ function LiquidPill({
       data-slot='liquid-pill'
       className={cn(
         'superteam-liquid-pill inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-foreground',
+        className
+      )}
+    />
+  )
+}
+
+function LiquidTabsList({
+  className,
+  ...props
+}: ComponentProps<typeof TabsList>) {
+  return (
+    <TabsList
+      {...props}
+      data-slot='liquid-tabs-list'
+      className={cn(
+        'superteam-tabs-list flex h-auto w-full justify-start overflow-x-auto bg-transparent p-1 text-foreground',
+        className
+      )}
+    />
+  )
+}
+
+function LiquidTabsTrigger({
+  className,
+  ...props
+}: ComponentProps<typeof TabsTrigger>) {
+  return (
+    <TabsTrigger
+      {...props}
+      data-slot='liquid-tabs-trigger'
+      className={cn(
+        'superteam-tabs-trigger h-12 min-w-max flex-1 rounded-lg px-4 py-2 text-sm font-semibold tracking-normal text-foreground shadow-none data-[state=active]:bg-transparent data-[state=active]:shadow-none',
         className
       )}
     />
@@ -198,6 +231,8 @@ function MetricCard({
 export {
   LiquidCard,
   LiquidPill,
+  LiquidTabsList,
+  LiquidTabsTrigger,
   MetricCard,
   PrimaryLiquidButton,
   SemanticIconTile,

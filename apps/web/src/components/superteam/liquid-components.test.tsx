@@ -4,11 +4,14 @@ import { render } from 'vitest-browser-react'
 import {
   LiquidCard,
   LiquidPill,
+  LiquidTabsList,
+  LiquidTabsTrigger,
   MetricCard,
   PrimaryLiquidButton,
   SemanticIconTile,
   StatusBadge,
 } from './liquid-components'
+import { Tabs } from '@/components/ui/tabs'
 
 describe('SuperTeam liquid design components', () => {
   it('renders liquid cards with the shared glass surface class', async () => {
@@ -29,6 +32,26 @@ describe('SuperTeam liquid design components', () => {
     const pill = getByText('最近 30 天')
     await expect.element(pill).toHaveAttribute('data-slot', 'liquid-pill')
     await expect.element(pill).toHaveClass('superteam-liquid-pill')
+  })
+
+  it('renders reusable liquid tabs with SuperTeam active-state styling hooks', async () => {
+    const { getByRole } = await render(
+      <Tabs defaultValue='employees'>
+        <LiquidTabsList aria-label='团队详情'>
+          <LiquidTabsTrigger value='overview'>概览</LiquidTabsTrigger>
+          <LiquidTabsTrigger value='employees'>数字员工</LiquidTabsTrigger>
+        </LiquidTabsList>
+      </Tabs>
+    )
+
+    const list = getByRole('tablist', { name: '团队详情' })
+    const activeTab = getByRole('tab', { name: '数字员工' })
+
+    await expect.element(list).toHaveAttribute('data-slot', 'liquid-tabs-list')
+    await expect.element(list).toHaveClass('superteam-tabs-list')
+    await expect.element(activeTab).toHaveAttribute('data-slot', 'liquid-tabs-trigger')
+    await expect.element(activeTab).toHaveClass('superteam-tabs-trigger')
+    await expect.element(activeTab).toHaveAttribute('data-state', 'active')
   })
 
   it('renders primary liquid buttons on top of the shared button primitive', async () => {

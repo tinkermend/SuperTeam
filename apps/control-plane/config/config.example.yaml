@@ -1,5 +1,5 @@
 http:
-  addr: ":8080"
+  addr: ":8081"
 
 postgres:
   url: "postgres://superteam:xxxx@115.190.247.9:35432/superteam?sslmode=disable"

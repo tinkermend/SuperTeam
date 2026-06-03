@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 数据库迁移规范明确普通功能开发必须新增 forward migration，禁止回写已存在于 `atlas.sum` 的迁移文件，并将 rebuild-only 限定为需当次确认和写明备份、重建、验证命令的例外流程。
 - Control Plane 请求日志新增 `remote`、`ua` 和 `referer` 字段，便于定位未知请求来源。
 - Control Plane 与 Runtime Agent 本地开发配置统一收敛为 YAML 文件：Control Plane 使用被 Git 忽略的 `apps/control-plane/config/config.yaml`，Runtime Agent 使用被 Git 忽略的 `apps/runtime-agent/config.yaml`；Runtime Agent 示例配置从 TOML 切换为 `config.example.yaml`，并移除 Control Plane / Runtime Agent 的 `.env.example` 示例入口。
+- Web 与 Control Plane 示例配置同步本地默认端口到 `8081`，避免前端示例 API 地址和后端示例监听端口不一致导致开发登录误报为用户名或密码错误。
 - Control Plane 本地开发脚本默认加载 `apps/control-plane/config/config.yaml`，并兼容 `pnpm dev:control-plane -- --config ...` 的参数传递形式；配置入口统一以 YAML 文件为准。
 - Web 控制台从旧 Next.js + 前端 workspace packages 结构激进重铺为 Vite + TanStack Router + shadcn-admin 单应用结构；前端 API client、认证状态、页面和 UI 组件集中到 `apps/web/src`，后端 Control Plane API 契约保持不变。
 - Web 控制台移除 shadcn-admin demo 路由和 mock 数据页面，改为 SuperTeam 工作台、用户管理和任务/审批/审计等领域入口。
@@ -81,6 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Web 液态玻璃组件化 (2026-06-03)
 
 - 新增 `apps/web/src/components/superteam` 项目级设计组件层，沉淀 `LiquidCard`、`LiquidPill`、`PrimaryLiquidButton`、`SemanticIconTile`、`StatusBadge` 和 `MetricCard`。
+- 新增 `LiquidTabsList` 和 `LiquidTabsTrigger` 复用组件，将页面 Tab 统一为玻璃胶囊选中态与底边流光指示，并迁移权限中心和团队详情页。
 - 工作台首页指标卡改为复用 `MetricCard`，减少页面内手写玻璃卡片、语义图标和状态胶囊样式。
 - 为液态玻璃设计组件补充 Vitest 浏览器组件测试，锁定组件 slot、核心 class 和基础渲染行为。
 
