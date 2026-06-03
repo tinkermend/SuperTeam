@@ -1,3 +1,4 @@
-h1:gdZnGo/bXYfVgZaeKZlsfv1y2sWJzAis7QZQiVBpomI=
-001_initial.sql h1:ng+EH4ffWqMOJiXgETQ3Ypf7rt1QtxKviC2bpEqfTX4=
-002_seed_dev_admin.sql h1:3TwaQJTlkSEhDVGR3sar7yKdyJfLqS1BnJTsByinSoQ=
+h1:uXhOsNY+oY3HIFflACjczlqvroXdoHwhfHRmbJ3tPsE=
+001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
+002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
+003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=

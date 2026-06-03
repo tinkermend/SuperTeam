@@ -58,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 数字员工服务新增个人配置版本、生效配置预览与校验、审批落库能力；预览会阻断团队能力白名单外的个人能力、团队上下文范围外的上下文覆盖以及降低团队审批要求的个人审批覆盖。
 - 数字员工创建新增同租户团队存在性校验；生效配置预览与审批只接受 active 团队治理配置版本，避免 draft 配置绕过团队负责人确认。
 - 团队治理配置版本创建不再接受客户端指定 `approved_by`，审批归属由当前 Web 控制台登录用户在服务端注入。
+- 新增 `003_add_team_governance_config.sql` forward migration，补齐已执行旧版 001/002 的远端库中的团队治理配置、数字员工个人配置和生效配置快照表。
 - 数字员工生效配置审批要求已有 ready 或 active 的唯一执行实例，并新增 `/api/v1/digital-employees/{employeeId}/config-revisions`、`/effective-configs/preview`、`/effective-configs/approve` API 路由。
 - OpenAPI 与基础契约守卫补齐团队治理、数字员工配置版本和生效配置预览/审批 API，确保新增后端路由纳入契约核验。
 - Web API client 新增团队列表、团队创建、团队治理配置版本创建与当前版本查询能力，并补齐数字员工个人配置版本、生效配置预览和审批调用入口。
