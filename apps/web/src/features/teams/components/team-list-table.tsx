@@ -56,8 +56,8 @@ export function TeamListTable({
   teams,
 }: TeamListTableProps) {
   return (
-    <div className="rounded-md border">
-      <Table>
+    <div className="w-full max-w-full min-w-0 overflow-hidden rounded-md border">
+      <Table className="min-w-[1040px]">
         <TableHeader>
           <TableRow>
             <TableHead className="min-w-52">团队</TableHead>
@@ -154,9 +154,9 @@ export function TeamListTable({
           )}
         </TableBody>
       </Table>
-      <div className="flex items-center justify-between border-t px-3 py-3 text-sm text-muted-foreground">
+      <div className="flex flex-col gap-3 border-t px-3 py-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
         <span>第 {pageIndex + 1} 页</span>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             disabled={pageIndex === 0 || isLoading}
             onClick={() => onPageChange(pageIndex - 1)}

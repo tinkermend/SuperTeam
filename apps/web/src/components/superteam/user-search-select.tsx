@@ -48,7 +48,7 @@ export function UserSearchSelect({
     <div className="flex min-w-0 flex-col gap-2">
       {value ? (
         <div className="rounded-md border bg-muted/30 p-2">
-          <UserIdentity showSecondary user={value} />
+          <UserIdentity className="w-full" showSecondary user={value} />
         </div>
       ) : null}
       <Input
@@ -70,14 +70,14 @@ export function UserSearchSelect({
           users.map((user) => (
             <Button
               aria-label={`选择 ${user.username}`}
-              className="h-auto justify-start rounded-md px-2 py-2"
+              className="h-auto w-full min-w-0 justify-start overflow-hidden rounded-md px-2 py-2"
               disabled={disabled}
               key={user.id}
               onClick={() => onSelect(user)}
               type="button"
               variant="ghost"
             >
-              <UserIdentity showSecondary user={user} />
+              <UserIdentity className="w-full" showSecondary user={user} />
             </Button>
           ))
         )}

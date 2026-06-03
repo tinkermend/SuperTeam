@@ -107,8 +107,8 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
         <Search />
         <ThemeSwitch />
       </Header>
-      <Main>
-        <div className="mb-4 flex items-center justify-between gap-3">
+      <Main className="min-w-0 overflow-x-hidden">
+        <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex size-10 items-center justify-center rounded-md border bg-muted">
               <UsersRound />
@@ -120,7 +120,7 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
               </p>
             </div>
           </div>
-          <Button onClick={() => setCreateOpen(true)} type="button">
+          <Button className="self-start sm:self-auto" onClick={() => setCreateOpen(true)} type="button">
             <Plus data-icon="inline-start" />
             新建团队
           </Button>
