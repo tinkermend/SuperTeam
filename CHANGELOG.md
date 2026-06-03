@@ -51,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-04 04:02：Runtime Agent 新增 runtime command execution layer，支持 `start_session`、`resume_session`、`send_input`、`stop_session` 在本地解析 payload、创建执行实例目录、驱动 Provider run、维护 command/session/run 映射并取消 active run；Runtime 仅执行本地命令，不判断租户、团队或审批。
 - 2026-06-04 02:29：团队接口头像回显兼容历史用户空头像种子，按用户名生成稳定 fallback，并修复团队 metadata display 规范化时修改调用方输入的问题。
 - 2026-06-04 01:49：用户管理补齐 DiceBear adventurer 头像配置字段、OpenAPI 响应和 Web 列表展示；Control Plane 存储头像来源、样式、种子和扩展选项，前端使用本地 DiceBear JS 包生成稳定 SVG 头像。
 
