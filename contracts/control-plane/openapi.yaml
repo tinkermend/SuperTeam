@@ -607,6 +607,126 @@ paths:
                 $ref: "#/components/schemas/TeamConfigRevision"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/governance/current:
+    get:
+      operationId: getCurrentTeamGovernance
+      summary: Get the current active team governance revision
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Current team governance revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamConfigRevision"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/governance/drafts:
+    get:
+      operationId: listTeamGovernanceDrafts
+      summary: List draft team governance revisions
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Draft governance revisions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamConfigRevision"
+    post:
+      operationId: createTeamGovernanceDraft
+      summary: Create a draft team governance revision
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GovernanceDraftInput"
+      responses:
+        "201":
+          description: Draft governance revision created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamConfigRevision"
+  /api/v1/teams/{teamId}/governance/drafts/{draftId}:
+    patch:
+      operationId: updateTeamGovernanceDraft
+      summary: Update a draft team governance revision
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/GovernanceDraftId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GovernanceDraftInput"
+      responses:
+        "200":
+          description: Draft governance revision updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamConfigRevision"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/governance/drafts/{draftId}/approve:
+    post:
+      operationId: approveTeamGovernanceDraft
+      summary: Approve a draft team governance revision
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/GovernanceDraftId"
+      responses:
+        "200":
+          description: Governance draft approved and activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamConfigRevision"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/governance/drafts/{draftId}/reject:
+    post:
+      operationId: rejectTeamGovernanceDraft
+      summary: Reject a draft team governance revision
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/GovernanceDraftId"
+      responses:
+        "200":
+          description: Governance draft rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamConfigRevision"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/governance/drafts/{draftId}/diff:
+    get:
+      operationId: previewTeamGovernanceDiff
+      summary: Preview governance draft differences before approval
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/GovernanceDraftId"
+      responses:
+        "200":
+          description: Governance draft difference summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GovernanceDiffSummary"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}/members:
     get:
       operationId: listTeamMembers
@@ -1004,6 +1124,13 @@ components:
         format: uuid
     TeamId:
       name: teamId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    GovernanceDraftId:
+      name: draftId
       in: path
       required: true
       schema:
@@ -1833,6 +1960,8 @@ components:
           enum:
             - draft
             - active
+            - rejected
+            - archived
         approved_by:
           type: string
           format: uuid
@@ -1914,6 +2043,72 @@ components:
           enum:
             - draft
             - active
+    GovernanceDraftInput:
+      type: object
+      properties:
+        constitution:
+          type: object
+          additionalProperties: true
+        capability_policy:
+          type: object
+          additionalProperties: true
+        context_policy:
+          type: object
+          additionalProperties: true
+        approval_policy:
+          type: object
+          additionalProperties: true
+        artifact_contract:
+          type: object
+          additionalProperties: true
+        internal_collaboration_policy:
+          type: object
+          additionalProperties: true
+        runtime_scope_policy:
+          type: object
+          additionalProperties: true
+        human_owner_user_id:
+          type: string
+          format: uuid
+    GovernanceDiffSummary:
+      type: object
+      required:
+        - added_hard_rules
+        - changed_capabilities
+        - changed_approval_rules
+        - warnings
+        - blocking_errors
+      properties:
+        added_hard_rules:
+          type: integer
+          format: int32
+        changed_capabilities:
+          type: integer
+          format: int32
+        changed_approval_rules:
+          type: integer
+          format: int32
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GovernanceValidationIssue"
+        blocking_errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/GovernanceValidationIssue"
+    GovernanceValidationIssue:
+      type: object
+      required:
+        - field
+        - message
+        - severity
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
     DigitalEmployeeStatus:
       type: string
       enum:

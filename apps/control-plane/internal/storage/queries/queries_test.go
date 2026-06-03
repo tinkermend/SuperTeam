@@ -238,6 +238,61 @@ func seedDefaultTenant(t *testing.T, db *pgxpool.Pool) {
 	require.NoError(t, err)
 }
 
+func seedTestTenant(t *testing.T, db *pgxpool.Pool) uuid.UUID {
+	t.Helper()
+	tenantID := uuid.New()
+	_, err := db.Exec(context.Background(), `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, $2, '测试租户', 'active')
+	`, tenantID, fmt.Sprintf("tenant-%s", tenantID.String()))
+	require.NoError(t, err)
+	return tenantID
+}
+
+func seedTestTeam(t *testing.T, db *pgxpool.Pool, tenantID uuid.UUID, slug, name string) uuid.UUID {
+	t.Helper()
+	teamID := uuid.New()
+	_, err := db.Exec(context.Background(), `
+		INSERT INTO tenant_teams (id, tenant_id, slug, name, status, metadata)
+		VALUES ($1, $2, $3, $4, 'active', '{}'::jsonb)
+	`, teamID, tenantID, slug, name)
+	require.NoError(t, err)
+	return teamID
+}
+
+func seedTestAuthUser(t *testing.T, db *pgxpool.Pool, username string) uuid.UUID {
+	t.Helper()
+	user, err := queries.New(db).CreateUser(context.Background(), queries.CreateUserParams{
+		Username:     username,
+		DisplayName:  pgtype.Text{String: username, Valid: true},
+		Email:        pgtype.Text{String: fmt.Sprintf("%s@example.com", username), Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
+		Status:       "active",
+	})
+	require.NoError(t, err)
+	return user.ID
+}
+
+func seedTestTeamConfigRevision(t *testing.T, db *pgxpool.Pool, tenantID, teamID uuid.UUID, status string, revisionNumber int32, ownerID uuid.NullUUID) queries.TenantTeamConfigRevision {
+	t.Helper()
+	revision, err := queries.New(db).CreateTenantTeamConfigRevision(context.Background(), queries.CreateTenantTeamConfigRevisionParams{
+		TenantID:                    tenantID,
+		TeamID:                      teamID,
+		RevisionNumber:              revisionNumber,
+		Constitution:                []byte(`{}`),
+		CapabilityPolicy:            []byte(`{}`),
+		ContextPolicy:               []byte(`{}`),
+		ApprovalPolicy:              []byte(`{}`),
+		ArtifactContract:            []byte(`{}`),
+		InternalCollaborationPolicy: []byte(`{}`),
+		RuntimeScopePolicy:          []byte(`{}`),
+		HumanOwnerUserID:            ownerID,
+		Status:                      status,
+	})
+	require.NoError(t, err)
+	return revision
+}
+
 func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
 	ctx := context.Background()
 	cleanupTestData(t, testDB)
@@ -365,6 +420,117 @@ func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, effective.ID, currentEffective.ID)
+}
+
+func TestTeamGovernanceDraftLifecycleQueries(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+	db := testDB
+	q := queries.New(db)
+	tenantID := seedTestTenant(t, db)
+	teamID := seedTestTeam(t, db, tenantID, "ops", "运维团队")
+	active := seedTestTeamConfigRevision(t, db, tenantID, teamID, "active", 1, uuid.NullUUID{})
+	draftOwnerID := seedTestAuthUser(t, db, "draft-owner")
+	draft := seedTestTeamConfigRevision(t, db, tenantID, teamID, "draft", 2, uuid.NullUUID{UUID: draftOwnerID, Valid: true})
+
+	updated, err := q.UpdateTenantTeamConfigRevisionDraft(ctx, queries.UpdateTenantTeamConfigRevisionDraftParams{
+		ID:               draft.ID,
+		TenantID:         tenantID,
+		TeamID:           teamID,
+		Constitution:     []byte(`{"hard_rules":["禁止未审批生产写操作"]}`),
+		CapabilityPolicy: []byte(`{"skill_bindings":["incident-diagnosis"]}`),
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(2), updated.RevisionNumber)
+	require.Equal(t, uuid.NullUUID{UUID: draftOwnerID, Valid: true}, updated.HumanOwnerUserID)
+	require.JSONEq(t, `{"hard_rules":["禁止未审批生产写操作"]}`, string(updated.Constitution))
+	require.JSONEq(t, `{"skill_bindings":["incident-diagnosis"]}`, string(updated.CapabilityPolicy))
+	require.JSONEq(t, string(draft.ContextPolicy), string(updated.ContextPolicy))
+	require.JSONEq(t, string(draft.ApprovalPolicy), string(updated.ApprovalPolicy))
+
+	archived, err := q.ArchiveActiveTenantTeamConfigRevision(ctx, queries.ArchiveActiveTenantTeamConfigRevisionParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	require.NoError(t, err)
+	require.Len(t, archived, 1)
+	require.Equal(t, active.ID, archived[0].ID)
+	require.Equal(t, "archived", archived[0].Status)
+	require.True(t, archived[0].ArchivedAt.Valid)
+
+	approverID := seedTestAuthUser(t, db, "approver")
+	approved, err := q.ActivateTenantTeamConfigRevision(ctx, queries.ActivateTenantTeamConfigRevisionParams{
+		ID:         draft.ID,
+		TenantID:   tenantID,
+		TeamID:     teamID,
+		ApprovedBy: approverID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "active", approved.Status)
+	require.Equal(t, approverID, approved.ApprovedBy.UUID)
+	require.True(t, approved.ApprovedAt.Valid)
+
+	rejectedDraft := seedTestTeamConfigRevision(t, db, tenantID, teamID, "draft", 3, uuid.NullUUID{UUID: draftOwnerID, Valid: true})
+	rejected, err := q.RejectTenantTeamConfigRevision(ctx, queries.RejectTenantTeamConfigRevisionParams{
+		ID:       rejectedDraft.ID,
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "rejected", rejected.Status)
+	require.True(t, rejected.ArchivedAt.Valid)
+
+	fetchedRejected, err := q.GetTenantTeamConfigRevision(ctx, queries.GetTenantTeamConfigRevisionParams{
+		ID:       rejectedDraft.ID,
+		TenantID: tenantID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, rejectedDraft.ID, fetchedRejected.ID)
+	require.Equal(t, "rejected", fetchedRejected.Status)
+	require.True(t, fetchedRejected.ArchivedAt.Valid)
+}
+
+func TestTeamGovernanceDraftApprovalTransactionRollbackQueries(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+	db := testDB
+	q := queries.New(db)
+	tenantID := seedTestTenant(t, db)
+	teamID := seedTestTeam(t, db, tenantID, "rollback-ops", "回滚运维团队")
+	active := seedTestTeamConfigRevision(t, db, tenantID, teamID, "active", 1, uuid.NullUUID{})
+	draftOwnerID := seedTestAuthUser(t, db, "rollback-draft-owner")
+	_ = seedTestTeamConfigRevision(t, db, tenantID, teamID, "draft", 2, uuid.NullUUID{UUID: draftOwnerID, Valid: true})
+
+	tx, err := db.Begin(ctx)
+	require.NoError(t, err)
+	qtx := q.WithTx(tx)
+
+	archived, err := qtx.ArchiveActiveTenantTeamConfigRevision(ctx, queries.ArchiveActiveTenantTeamConfigRevisionParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	require.NoError(t, err)
+	require.Len(t, archived, 1)
+	require.Equal(t, "archived", archived[0].Status)
+
+	approverID := seedTestAuthUser(t, db, "rollback-approver")
+	_, err = qtx.ActivateTenantTeamConfigRevision(ctx, queries.ActivateTenantTeamConfigRevisionParams{
+		ID:         uuid.New(),
+		TenantID:   tenantID,
+		TeamID:     teamID,
+		ApprovedBy: approverID,
+	})
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+	require.NoError(t, tx.Rollback(ctx))
+
+	current, err := q.GetCurrentTenantTeamConfigRevision(ctx, queries.GetCurrentTenantTeamConfigRevisionParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, active.ID, current.ID)
+	require.Equal(t, "active", current.Status)
+	require.False(t, current.ArchivedAt.Valid)
 }
 
 // ============================================================================

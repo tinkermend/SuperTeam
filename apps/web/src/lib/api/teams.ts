@@ -2,7 +2,7 @@ import type { ApiClientOptions } from "./client";
 import { buildApiUrl, parseJson } from "./client";
 
 export type TeamStatus = "active" | "disabled" | "archived";
-export type TeamConfigRevisionStatus = "draft" | "active";
+export type TeamConfigRevisionStatus = "draft" | "active" | "rejected" | "archived";
 export type GovernanceSummaryStatus = "not_configured" | "draft_pending" | "active" | "needs_update";
 export type TeamMemberRole = "owner" | "admin" | "approver" | "member" | "viewer";
 export type TeamMemberRoleRequestStatus = "pending" | "approved" | "rejected";
@@ -154,6 +154,31 @@ export type CreateTeamConfigRevisionInput = {
   status?: TeamConfigRevisionStatus;
 };
 
+export type GovernanceDraftInput = {
+  human_owner_user_id?: string;
+  constitution?: Record<string, unknown>;
+  capability_policy?: Record<string, unknown>;
+  context_policy?: Record<string, unknown>;
+  approval_policy?: Record<string, unknown>;
+  artifact_contract?: Record<string, unknown>;
+  internal_collaboration_policy?: Record<string, unknown>;
+  runtime_scope_policy?: Record<string, unknown>;
+};
+
+export type GovernanceValidationIssue = {
+  field: string;
+  message: string;
+  severity: string;
+};
+
+export type GovernanceDiffSummary = {
+  added_hard_rules: number;
+  changed_capabilities: number;
+  changed_approval_rules: number;
+  warnings: GovernanceValidationIssue[];
+  blocking_errors: GovernanceValidationIssue[];
+};
+
 export type AddTeamMemberInput = {
   user_id: string;
   role: Extract<TeamMemberRole, "member" | "viewer">;
@@ -302,6 +327,74 @@ export function getCurrentTeamConfigRevision(
     options,
     teamPath(teamId, "/config-revisions/current"),
     "current team config revision",
+  );
+}
+
+export function getCurrentTeamGovernance(options: ApiClientOptions, teamId: string): Promise<TeamConfigRevision> {
+  return getJson<TeamConfigRevision>(options, teamPath(teamId, "/governance/current"), "current team governance");
+}
+
+export function listTeamGovernanceDrafts(options: ApiClientOptions, teamId: string): Promise<TeamConfigRevision[]> {
+  return getJson<TeamConfigRevision[]>(options, teamPath(teamId, "/governance/drafts"), "team governance drafts");
+}
+
+export function createTeamGovernanceDraft(
+  options: ApiClientOptions,
+  teamId: string,
+  input: GovernanceDraftInput,
+): Promise<TeamConfigRevision> {
+  return postJson<TeamConfigRevision>(options, teamPath(teamId, "/governance/drafts"), input, "create governance draft");
+}
+
+export function updateTeamGovernanceDraft(
+  options: ApiClientOptions,
+  teamId: string,
+  draftId: string,
+  input: GovernanceDraftInput,
+): Promise<TeamConfigRevision> {
+  return patchJson<TeamConfigRevision>(
+    options,
+    teamPath(teamId, `/governance/drafts/${encodeURIComponent(draftId)}`),
+    input,
+    "update governance draft",
+  );
+}
+
+export function approveTeamGovernanceDraft(
+  options: ApiClientOptions,
+  teamId: string,
+  draftId: string,
+): Promise<TeamConfigRevision> {
+  return postJson<TeamConfigRevision>(
+    options,
+    teamPath(teamId, `/governance/drafts/${encodeURIComponent(draftId)}/approve`),
+    {},
+    "approve governance draft",
+  );
+}
+
+export function rejectTeamGovernanceDraft(
+  options: ApiClientOptions,
+  teamId: string,
+  draftId: string,
+): Promise<TeamConfigRevision> {
+  return postJson<TeamConfigRevision>(
+    options,
+    teamPath(teamId, `/governance/drafts/${encodeURIComponent(draftId)}/reject`),
+    {},
+    "reject governance draft",
+  );
+}
+
+export function previewTeamGovernanceDiff(
+  options: ApiClientOptions,
+  teamId: string,
+  draftId: string,
+): Promise<GovernanceDiffSummary> {
+  return getJson<GovernanceDiffSummary>(
+    options,
+    teamPath(teamId, `/governance/drafts/${encodeURIComponent(draftId)}/diff`),
+    "preview governance diff",
   );
 }
 

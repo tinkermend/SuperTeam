@@ -19,6 +19,10 @@ type Repository interface {
 	GetTeamConfigRevision(ctx context.Context, tenantID, revisionID uuid.UUID) (TeamConfigRevisionRecord, error)
 	GetCurrentTeamConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (TeamConfigRevisionRecord, error)
 	GetNextTeamConfigRevisionNumber(ctx context.Context, tenantID, teamID uuid.UUID) (int32, error)
+	ListTeamConfigDrafts(ctx context.Context, params ListTeamConfigDraftsParams) ([]TeamConfigRevisionRecord, error)
+	UpdateTeamConfigRevisionDraft(ctx context.Context, params UpdateTeamConfigRevisionDraftParams) (TeamConfigRevisionRecord, error)
+	ApproveTeamConfigRevision(ctx context.Context, params ActivateTeamConfigRevisionParams) (TeamConfigRevisionRecord, error)
+	RejectTeamConfigRevision(ctx context.Context, tenantID, teamID, revisionID uuid.UUID) (TeamConfigRevisionRecord, error)
 	ListTeamMembers(ctx context.Context, params ListTeamMembersParams) ([]TeamMemberRecord, error)
 	GetTeamMember(ctx context.Context, tenantID, teamID, membershipID uuid.UUID) (TeamMemberRecord, error)
 	AddTeamMember(ctx context.Context, params AddTeamMemberParams) (TeamMemberRecord, error)
@@ -80,6 +84,34 @@ type CreateTeamConfigRevisionParams struct {
 	Status                      TeamConfigRevisionStatus
 	ApprovedBy                  *uuid.UUID
 	ApprovedAt                  *time.Time
+}
+
+type ListTeamConfigDraftsParams struct {
+	TenantID uuid.UUID
+	TeamID   uuid.UUID
+	Offset   int32
+	Limit    int32
+}
+
+type UpdateTeamConfigRevisionDraftParams struct {
+	TenantID                    uuid.UUID
+	TeamID                      uuid.UUID
+	RevisionID                  uuid.UUID
+	Constitution                map[string]any
+	CapabilityPolicy            map[string]any
+	ContextPolicy               map[string]any
+	ApprovalPolicy              map[string]any
+	ArtifactContract            map[string]any
+	InternalCollaborationPolicy map[string]any
+	RuntimeScopePolicy          map[string]any
+	HumanOwnerUserID            *uuid.UUID
+}
+
+type ActivateTeamConfigRevisionParams struct {
+	TenantID   uuid.UUID
+	TeamID     uuid.UUID
+	RevisionID uuid.UUID
+	ApprovedBy uuid.UUID
 }
 
 type ListTeamMembersParams struct {

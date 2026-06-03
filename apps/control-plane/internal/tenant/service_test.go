@@ -3,6 +3,8 @@ package tenant
 import (
 	"context"
 	"errors"
+	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -258,6 +260,147 @@ func TestCreateTeamConfigRevisionDraftHasNoApprovalMetadata(t *testing.T) {
 	}
 	if repo.createdRevision.ApprovedAt != nil || repo.createdRevision.ApprovedBy != nil {
 		t.Fatalf("expected draft approval metadata cleared before repository insert, got approved_at=%v approved_by=%v", repo.createdRevision.ApprovedAt, repo.createdRevision.ApprovedBy)
+	}
+}
+
+func TestApproveGovernanceDraftArchivesPreviousActive(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewServiceWithoutAuditForTest(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	approvedBy := uuid.New()
+	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         tenantID,
+		Slug:             "platform",
+		Name:             "Platform",
+		HumanOwnerUserID: &ownerID,
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	now := time.Now().UTC()
+	activeID := uuid.New()
+	draftID := uuid.New()
+	repo.revisions[activeID] = TeamConfigRevisionRecord{
+		ID:                          activeID,
+		TenantID:                    tenantID,
+		TeamID:                      team.ID,
+		RevisionNumber:              7,
+		Constitution:                map[string]any{"hard_rules": []any{"existing approval rule"}},
+		CapabilityPolicy:            map[string]any{"skill_bindings": []any{"incident-diagnosis"}},
+		ContextPolicy:               map[string]any{},
+		ApprovalPolicy:              map[string]any{},
+		ArtifactContract:            map[string]any{},
+		InternalCollaborationPolicy: map[string]any{},
+		RuntimeScopePolicy:          map[string]any{},
+		HumanOwnerUserID:            &ownerID,
+		Status:                      TeamConfigRevisionStatusActive,
+		ApprovedAt:                  &now,
+		CreatedAt:                   now,
+		UpdatedAt:                   now,
+	}
+	repo.revisions[draftID] = TeamConfigRevisionRecord{
+		ID:                          draftID,
+		TenantID:                    tenantID,
+		TeamID:                      team.ID,
+		RevisionNumber:              8,
+		Constitution:                map[string]any{"hard_rules": []any{"existing approval rule", "new production write rule"}},
+		CapabilityPolicy:            map[string]any{"skill_bindings": []any{"incident-diagnosis", "release-review"}},
+		ContextPolicy:               map[string]any{},
+		ApprovalPolicy:              map[string]any{},
+		ArtifactContract:            map[string]any{},
+		InternalCollaborationPolicy: map[string]any{},
+		RuntimeScopePolicy:          map[string]any{},
+		HumanOwnerUserID:            &ownerID,
+		Status:                      TeamConfigRevisionStatusDraft,
+		CreatedAt:                   now,
+		UpdatedAt:                   now,
+	}
+
+	approved, err := svc.ApproveGovernanceDraft(context.Background(), tenantID, team.ID, draftID, approvedBy)
+	if err != nil {
+		t.Fatalf("approve governance draft: %v", err)
+	}
+
+	if approved.Status != TeamConfigRevisionStatusActive || approved.RevisionNumber != 8 {
+		t.Fatalf("expected draft v8 to become active, got status=%q revision=%d", approved.Status, approved.RevisionNumber)
+	}
+	if approved.ApprovedBy == nil || *approved.ApprovedBy != approvedBy {
+		t.Fatalf("expected approved_by %s, got %#v", approvedBy, approved.ApprovedBy)
+	}
+	if repo.revisions[activeID].Status != TeamConfigRevisionStatusArchived {
+		t.Fatalf("expected active v7 to be archived, got %q", repo.revisions[activeID].Status)
+	}
+	if repo.revisions[draftID].Status != TeamConfigRevisionStatusActive {
+		t.Fatalf("expected draft v8 to be active in repository, got %q", repo.revisions[draftID].Status)
+	}
+}
+
+func TestUpdateGovernanceDraftStoresCapabilityBindings(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewServiceWithoutAuditForTest(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         tenantID,
+		Slug:             "platform",
+		Name:             "Platform",
+		HumanOwnerUserID: &ownerID,
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	draftID := uuid.New()
+	now := time.Now().UTC()
+	repo.revisions[draftID] = TeamConfigRevisionRecord{
+		ID:                          draftID,
+		TenantID:                    tenantID,
+		TeamID:                      team.ID,
+		RevisionNumber:              8,
+		Constitution:                map[string]any{"hard_rules": []any{"human approval before deploy"}},
+		CapabilityPolicy:            map[string]any{},
+		ContextPolicy:               map[string]any{},
+		ApprovalPolicy:              map[string]any{},
+		ArtifactContract:            map[string]any{},
+		InternalCollaborationPolicy: map[string]any{},
+		RuntimeScopePolicy:          map[string]any{},
+		HumanOwnerUserID:            &ownerID,
+		Status:                      TeamConfigRevisionStatusDraft,
+		CreatedAt:                   now,
+		UpdatedAt:                   now,
+	}
+	expectedCapabilityPolicy := map[string]any{
+		"skill_bindings":               []any{"incident-diagnosis", "release-review"},
+		"mcp_bindings":                 []any{"prometheus"},
+		"knowledge_base_bindings":      []any{"runbook-prod"},
+		"external_capability_bindings": []any{"deploy-api"},
+	}
+
+	updated, err := svc.UpdateGovernanceDraft(context.Background(), tenantID, team.ID, draftID, GovernanceDraftInput{
+		Constitution:                map[string]any{"hard_rules": []any{"human approval before deploy"}},
+		CapabilityPolicy:            expectedCapabilityPolicy,
+		ContextPolicy:               map[string]any{"sources": []any{"task"}},
+		ApprovalPolicy:              map[string]any{"min_risk_for_human": "high"},
+		ArtifactContract:            map[string]any{"required": []any{"handoff"}},
+		InternalCollaborationPolicy: map[string]any{"mode": "structured"},
+		RuntimeScopePolicy:          map[string]any{"scope": "team"},
+		HumanOwnerUserID:            &ownerID,
+	})
+	if err != nil {
+		t.Fatalf("update governance draft: %v", err)
+	}
+
+	if !reflect.DeepEqual(expectedCapabilityPolicy, updated.CapabilityPolicy) {
+		t.Fatalf("expected capability bindings to remain in capability_policy, got %#v", updated.CapabilityPolicy)
+	}
+	if !reflect.DeepEqual(expectedCapabilityPolicy, repo.revisions[draftID].CapabilityPolicy) {
+		t.Fatalf("expected repository to store capability bindings, got %#v", repo.revisions[draftID].CapabilityPolicy)
 	}
 }
 
@@ -546,6 +689,7 @@ type memoryRepository struct {
 	addTeamMemberCalled         bool
 	disableTeamMemberCalled     bool
 	decideRoleRequestCalled     bool
+	approveRevisionErr          error
 	lastListTeamSummariesParams ListTeamSummariesParams
 	lastAddTeamMemberParams     AddTeamMemberParams
 	createRevisionCalls         int
@@ -702,6 +846,111 @@ func (r *memoryRepository) GetNextTeamConfigRevisionNumber(_ context.Context, te
 		}
 	}
 	return next, nil
+}
+
+func (r *memoryRepository) ListTeamConfigDrafts(_ context.Context, params ListTeamConfigDraftsParams) ([]TeamConfigRevisionRecord, error) {
+	records := make([]TeamConfigRevisionRecord, 0, len(r.revisions))
+	for _, record := range r.revisions {
+		if record.TenantID == params.TenantID && record.TeamID == params.TeamID && record.Status == TeamConfigRevisionStatusDraft {
+			records = append(records, cloneRevisionRecord(record))
+		}
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].RevisionNumber > records[j].RevisionNumber
+	})
+	start := int(params.Offset)
+	if start >= len(records) {
+		return []TeamConfigRevisionRecord{}, nil
+	}
+	end := start + int(params.Limit)
+	if end > len(records) {
+		end = len(records)
+	}
+	return records[start:end], nil
+}
+
+func (r *memoryRepository) UpdateTeamConfigRevisionDraft(_ context.Context, params UpdateTeamConfigRevisionDraftParams) (TeamConfigRevisionRecord, error) {
+	record, ok := r.revisions[params.RevisionID]
+	if !ok || record.TenantID != params.TenantID || record.TeamID != params.TeamID || record.Status != TeamConfigRevisionStatusDraft {
+		return TeamConfigRevisionRecord{}, ErrNotFound
+	}
+	if params.Constitution != nil {
+		record.Constitution = cloneMap(params.Constitution)
+	}
+	if params.CapabilityPolicy != nil {
+		record.CapabilityPolicy = cloneMap(params.CapabilityPolicy)
+	}
+	if params.ContextPolicy != nil {
+		record.ContextPolicy = cloneMap(params.ContextPolicy)
+	}
+	if params.ApprovalPolicy != nil {
+		record.ApprovalPolicy = cloneMap(params.ApprovalPolicy)
+	}
+	if params.ArtifactContract != nil {
+		record.ArtifactContract = cloneMap(params.ArtifactContract)
+	}
+	if params.InternalCollaborationPolicy != nil {
+		record.InternalCollaborationPolicy = cloneMap(params.InternalCollaborationPolicy)
+	}
+	if params.RuntimeScopePolicy != nil {
+		record.RuntimeScopePolicy = cloneMap(params.RuntimeScopePolicy)
+	}
+	if params.HumanOwnerUserID != nil {
+		record.HumanOwnerUserID = params.HumanOwnerUserID
+	}
+	record.UpdatedAt = time.Now().UTC()
+	r.revisions[record.ID] = record
+	return cloneRevisionRecord(record), nil
+}
+
+func (r *memoryRepository) ApproveTeamConfigRevision(_ context.Context, params ActivateTeamConfigRevisionParams) (TeamConfigRevisionRecord, error) {
+	if r.approveRevisionErr != nil {
+		return TeamConfigRevisionRecord{}, r.approveRevisionErr
+	}
+	record, ok := r.revisions[params.RevisionID]
+	if !ok || record.TenantID != params.TenantID || record.TeamID != params.TeamID || record.Status != TeamConfigRevisionStatusDraft {
+		return TeamConfigRevisionRecord{}, ErrNotFound
+	}
+	for id, active := range r.revisions {
+		if active.TenantID == params.TenantID && active.TeamID == params.TeamID && active.Status == TeamConfigRevisionStatusActive {
+			active.Status = TeamConfigRevisionStatusArchived
+			active.UpdatedAt = time.Now().UTC()
+			r.revisions[id] = active
+		}
+	}
+	now := time.Now().UTC()
+	approvedBy := params.ApprovedBy
+	record.Status = TeamConfigRevisionStatusActive
+	record.ApprovedBy = &approvedBy
+	record.ApprovedAt = &now
+	record.UpdatedAt = now
+	r.revisions[record.ID] = record
+	return cloneRevisionRecord(record), nil
+}
+
+func (r *memoryRepository) RejectTeamConfigRevision(_ context.Context, tenantID, teamID, revisionID uuid.UUID) (TeamConfigRevisionRecord, error) {
+	record, ok := r.revisions[revisionID]
+	if !ok || record.TenantID != tenantID || record.TeamID != teamID || record.Status != TeamConfigRevisionStatusDraft {
+		return TeamConfigRevisionRecord{}, ErrNotFound
+	}
+	record.Status = TeamConfigRevisionStatusRejected
+	record.UpdatedAt = time.Now().UTC()
+	r.revisions[record.ID] = record
+	return cloneRevisionRecord(record), nil
+}
+
+func cloneRevisionRecord(record TeamConfigRevisionRecord) TeamConfigRevisionRecord {
+	record.Constitution = cloneMap(record.Constitution)
+	record.CapabilityPolicy = cloneMap(record.CapabilityPolicy)
+	record.ContextPolicy = cloneMap(record.ContextPolicy)
+	record.ApprovalPolicy = cloneMap(record.ApprovalPolicy)
+	record.ArtifactContract = cloneMap(record.ArtifactContract)
+	record.InternalCollaborationPolicy = cloneMap(record.InternalCollaborationPolicy)
+	record.RuntimeScopePolicy = cloneMap(record.RuntimeScopePolicy)
+	record.HumanOwnerUserID = validUUIDPtr(record.HumanOwnerUserID)
+	record.ApprovedBy = validUUIDPtr(record.ApprovedBy)
+	record.ApprovedAt = cloneTimePtr(record.ApprovedAt)
+	return record
 }
 
 func (r *memoryRepository) ListTeamMembers(_ context.Context, params ListTeamMembersParams) ([]TeamMemberRecord, error) {

@@ -177,6 +177,13 @@ func (s *Server) registerRoutes() {
 				r.Post("/teams/{teamId}/member-role-requests", s.tenantHandler.CreateTeamMemberRoleRequest)
 				r.Post("/teams/{teamId}/member-role-requests/{requestId}/approve", s.tenantHandler.ApproveTeamMemberRoleRequest)
 				r.Post("/teams/{teamId}/member-role-requests/{requestId}/reject", s.tenantHandler.RejectTeamMemberRoleRequest)
+				r.Get("/teams/{teamId}/governance/current", s.tenantHandler.GetCurrentTeamConfigRevision)
+				r.Get("/teams/{teamId}/governance/drafts", s.tenantHandler.ListGovernanceDrafts)
+				r.Post("/teams/{teamId}/governance/drafts", s.tenantHandler.CreateGovernanceDraft)
+				r.Patch("/teams/{teamId}/governance/drafts/{draftId}", s.tenantHandler.UpdateGovernanceDraft)
+				r.Post("/teams/{teamId}/governance/drafts/{draftId}/approve", s.tenantHandler.ApproveGovernanceDraft)
+				r.Post("/teams/{teamId}/governance/drafts/{draftId}/reject", s.tenantHandler.RejectGovernanceDraft)
+				r.Get("/teams/{teamId}/governance/drafts/{draftId}/diff", s.tenantHandler.PreviewGovernanceDiff)
 			})
 		}
 

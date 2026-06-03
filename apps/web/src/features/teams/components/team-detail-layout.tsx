@@ -1,36 +1,38 @@
-import { Archive, FileText, Plus, RotateCcw, ShieldCheck, UserPlus } from "lucide-react";
+import { Archive, Plus, RotateCcw, ShieldCheck, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { ApiClientOptions } from "@/lib/api/client";
 import type { TeamOverview } from "@/lib/api/teams";
 import { TeamAuditTab } from "./team-audit-tab";
+import { TeamCapabilitiesTab } from "./team-capabilities-tab";
 import { TeamDigitalEmployeesTab } from "./team-digital-employees-tab";
+import { TeamGovernanceTab } from "./team-governance-tab";
 import { TeamStatusBadge } from "./team-list-table";
 import { TeamMembersTab } from "./team-members-tab";
 import { TeamOverviewTab } from "./team-overview-tab";
 
 type TeamDetailLayoutProps = {
-  apiBaseUrl: string;
-  fetcher?: typeof fetch;
+  apiOptions: ApiClientOptions;
+  currentRevision?: TeamOverview["current_revision"];
   onArchiveTeam?: () => void;
   onDisableTeam?: () => void;
   onRestoreTeam?: () => void;
   overview: TeamOverview;
-  teamId: string;
 };
 
 export function TeamDetailLayout({
-  apiBaseUrl,
-  fetcher,
+  apiOptions,
+  currentRevision,
   onArchiveTeam,
   onDisableTeam,
   onRestoreTeam,
   overview,
-  teamId,
 }: TeamDetailLayoutProps) {
   const team = overview.team;
   const isActive = team.status === "active";
   const canAddMember = isActive && overview.allowed_actions.includes("team.member.add");
   const canCreateGovernance = isActive && overview.allowed_actions.includes("team.governance.edit");
+  const canApproveGovernance = isActive && overview.allowed_actions.includes("team.governance.approve");
   const canDisable = isActive && overview.allowed_actions.includes("team.disable");
   const canArchive = team.status !== "archived" && overview.allowed_actions.includes("team.archive");
   const canRestore = team.status !== "active" && overview.allowed_actions.includes("team.restore");
@@ -101,33 +103,35 @@ export function TeamDetailLayout({
         <TabsContent value="members">
           <TeamMembersTab
             allowedActions={overview.allowed_actions}
-            apiBaseUrl={apiBaseUrl}
-            fetcher={fetcher}
+            apiBaseUrl={apiOptions.baseUrl}
+            fetcher={apiOptions.fetcher}
             teamId={team.id}
           />
         </TabsContent>
         <TabsContent value="employees">
-          <TeamDigitalEmployeesTab apiBaseUrl={apiBaseUrl} fetcher={fetcher} teamId={teamId} />
+          <TeamDigitalEmployeesTab apiBaseUrl={apiOptions.baseUrl} fetcher={apiOptions.fetcher} teamId={team.id} />
         </TabsContent>
         <TabsContent value="capabilities">
-          <ScopedPlaceholder text="Plan 3 会接入 Skills、MCP、知识库和外部能力绑定。" />
+          <TeamCapabilitiesTab
+            apiOptions={apiOptions}
+            canEdit={canCreateGovernance}
+            currentRevision={currentRevision ?? overview.current_revision}
+            teamId={team.id}
+          />
         </TabsContent>
         <TabsContent value="governance">
-          <ScopedPlaceholder text="Plan 3 会接入宪法、审批策略和治理草案。" />
+          <TeamGovernanceTab
+            apiOptions={apiOptions}
+            canApprove={canApproveGovernance}
+            canEdit={canCreateGovernance}
+            currentRevision={currentRevision ?? overview.current_revision}
+            teamId={team.id}
+          />
         </TabsContent>
         <TabsContent value="audit">
-          <TeamAuditTab apiBaseUrl={apiBaseUrl} fetcher={fetcher} teamId={teamId} />
+          <TeamAuditTab apiBaseUrl={apiOptions.baseUrl} fetcher={apiOptions.fetcher} teamId={team.id} />
         </TabsContent>
       </Tabs>
-    </div>
-  );
-}
-
-function ScopedPlaceholder({ text }: { text: string }) {
-  return (
-    <div className="flex min-h-32 items-center gap-3 rounded-md border p-4 text-sm text-muted-foreground">
-      <FileText />
-      <span>{text}</span>
     </div>
   );
 }

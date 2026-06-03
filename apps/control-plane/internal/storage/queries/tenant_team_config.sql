@@ -76,8 +76,68 @@ LIMIT 1;
 SELECT *
 FROM tenant_team_config_revisions
 WHERE id = sqlc.arg('id')::uuid
+  AND tenant_id = sqlc.arg('tenant_id')::uuid;
+
+-- name: ListTenantTeamConfigDrafts :many
+SELECT *
+FROM tenant_team_config_revisions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND team_id = sqlc.arg('team_id')::uuid
+  AND status = 'draft'
+  AND archived_at IS NULL
+ORDER BY revision_number DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: UpdateTenantTeamConfigRevisionDraft :one
+UPDATE tenant_team_config_revisions
+SET
+  constitution = COALESCE(sqlc.arg('constitution')::jsonb, constitution),
+  capability_policy = COALESCE(sqlc.arg('capability_policy')::jsonb, capability_policy),
+  context_policy = COALESCE(sqlc.arg('context_policy')::jsonb, context_policy),
+  approval_policy = COALESCE(sqlc.arg('approval_policy')::jsonb, approval_policy),
+  artifact_contract = COALESCE(sqlc.arg('artifact_contract')::jsonb, artifact_contract),
+  internal_collaboration_policy = COALESCE(sqlc.arg('internal_collaboration_policy')::jsonb, internal_collaboration_policy),
+  runtime_scope_policy = COALESCE(sqlc.arg('runtime_scope_policy')::jsonb, runtime_scope_policy),
+  human_owner_user_id = COALESCE(sqlc.narg('human_owner_user_id')::uuid, human_owner_user_id)
+WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
-  AND archived_at IS NULL;
+  AND team_id = sqlc.arg('team_id')::uuid
+  AND status = 'draft'
+  AND archived_at IS NULL
+RETURNING *;
+
+-- name: ArchiveActiveTenantTeamConfigRevision :many
+UPDATE tenant_team_config_revisions
+SET status = 'archived',
+    archived_at = COALESCE(archived_at, NOW())
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND team_id = sqlc.arg('team_id')::uuid
+  AND status = 'active'
+  AND archived_at IS NULL
+RETURNING *;
+
+-- name: ActivateTenantTeamConfigRevision :one
+UPDATE tenant_team_config_revisions
+SET status = 'active',
+    approved_by = sqlc.arg('approved_by')::uuid,
+    approved_at = NOW()
+WHERE id = sqlc.arg('id')::uuid
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND team_id = sqlc.arg('team_id')::uuid
+  AND status = 'draft'
+  AND archived_at IS NULL
+RETURNING *;
+
+-- name: RejectTenantTeamConfigRevision :one
+UPDATE tenant_team_config_revisions
+SET status = 'rejected',
+    archived_at = COALESCE(archived_at, NOW())
+WHERE id = sqlc.arg('id')::uuid
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND team_id = sqlc.arg('team_id')::uuid
+  AND status = 'draft'
+  AND archived_at IS NULL
+RETURNING *;
 
 -- name: GetNextTenantTeamConfigRevisionNumber :one
 SELECT (COALESCE(MAX(revision_number), 0) + 1)::integer

@@ -43,13 +43,15 @@ type AllowedTeamAction string
 type TeamConfigRevisionStatus string
 
 const (
-	TeamConfigRevisionStatusDraft  TeamConfigRevisionStatus = "draft"
-	TeamConfigRevisionStatusActive TeamConfigRevisionStatus = "active"
+	TeamConfigRevisionStatusDraft    TeamConfigRevisionStatus = "draft"
+	TeamConfigRevisionStatusActive   TeamConfigRevisionStatus = "active"
+	TeamConfigRevisionStatusRejected TeamConfigRevisionStatus = "rejected"
+	TeamConfigRevisionStatusArchived TeamConfigRevisionStatus = "archived"
 )
 
 func (s TeamConfigRevisionStatus) IsValid() bool {
 	switch s {
-	case TeamConfigRevisionStatusDraft, TeamConfigRevisionStatusActive:
+	case TeamConfigRevisionStatusDraft, TeamConfigRevisionStatusActive, TeamConfigRevisionStatusRejected, TeamConfigRevisionStatusArchived:
 		return true
 	default:
 		return false
@@ -71,6 +73,31 @@ const (
 	TeamMemberRoleRequestStatusApproved TeamMemberRoleRequestStatus = "approved"
 	TeamMemberRoleRequestStatusRejected TeamMemberRoleRequestStatus = "rejected"
 )
+
+type ValidationIssue struct {
+	Field    string
+	Message  string
+	Severity string
+}
+
+type GovernanceDraftInput struct {
+	Constitution                map[string]any
+	CapabilityPolicy            map[string]any
+	ContextPolicy               map[string]any
+	ApprovalPolicy              map[string]any
+	ArtifactContract            map[string]any
+	InternalCollaborationPolicy map[string]any
+	RuntimeScopePolicy          map[string]any
+	HumanOwnerUserID            *uuid.UUID
+}
+
+type GovernanceDiffSummary struct {
+	AddedHardRules       int32
+	ChangedCapabilities  int32
+	ChangedApprovalRules int32
+	Warnings             []ValidationIssue
+	BlockingErrors       []ValidationIssue
+}
 
 type Team struct {
 	ID               uuid.UUID

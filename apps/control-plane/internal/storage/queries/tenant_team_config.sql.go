@@ -12,6 +12,57 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const ActivateTenantTeamConfigRevision = `-- name: ActivateTenantTeamConfigRevision :one
+UPDATE tenant_team_config_revisions
+SET status = 'active',
+    approved_by = $1::uuid,
+    approved_at = NOW()
+WHERE id = $2::uuid
+  AND tenant_id = $3::uuid
+  AND team_id = $4::uuid
+  AND status = 'draft'
+  AND archived_at IS NULL
+RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+`
+
+type ActivateTenantTeamConfigRevisionParams struct {
+	ApprovedBy uuid.UUID `json:"approved_by"`
+	ID         uuid.UUID `json:"id"`
+	TenantID   uuid.UUID `json:"tenant_id"`
+	TeamID     uuid.UUID `json:"team_id"`
+}
+
+func (q *Queries) ActivateTenantTeamConfigRevision(ctx context.Context, arg ActivateTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error) {
+	row := q.db.QueryRow(ctx, ActivateTenantTeamConfigRevision,
+		arg.ApprovedBy,
+		arg.ID,
+		arg.TenantID,
+		arg.TeamID,
+	)
+	var i TenantTeamConfigRevision
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.RevisionNumber,
+		&i.Constitution,
+		&i.CapabilityPolicy,
+		&i.ContextPolicy,
+		&i.ApprovalPolicy,
+		&i.ArtifactContract,
+		&i.InternalCollaborationPolicy,
+		&i.RuntimeScopePolicy,
+		&i.HumanOwnerUserID,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const AddTeamMember = `-- name: AddTeamMember :one
 INSERT INTO tenant_members (
     tenant_id,
@@ -65,6 +116,61 @@ func (q *Queries) AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (T
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const ArchiveActiveTenantTeamConfigRevision = `-- name: ArchiveActiveTenantTeamConfigRevision :many
+UPDATE tenant_team_config_revisions
+SET status = 'archived',
+    archived_at = COALESCE(archived_at, NOW())
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+  AND status = 'active'
+  AND archived_at IS NULL
+RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+`
+
+type ArchiveActiveTenantTeamConfigRevisionParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+func (q *Queries) ArchiveActiveTenantTeamConfigRevision(ctx context.Context, arg ArchiveActiveTenantTeamConfigRevisionParams) ([]TenantTeamConfigRevision, error) {
+	rows, err := q.db.Query(ctx, ArchiveActiveTenantTeamConfigRevision, arg.TenantID, arg.TeamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TenantTeamConfigRevision{}
+	for rows.Next() {
+		var i TenantTeamConfigRevision
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.TeamID,
+			&i.RevisionNumber,
+			&i.Constitution,
+			&i.CapabilityPolicy,
+			&i.ContextPolicy,
+			&i.ApprovalPolicy,
+			&i.ArtifactContract,
+			&i.InternalCollaborationPolicy,
+			&i.RuntimeScopePolicy,
+			&i.HumanOwnerUserID,
+			&i.Status,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+			&i.ArchivedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const CountTeamOwners = `-- name: CountTeamOwners :one
@@ -585,7 +691,6 @@ SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy,
 FROM tenant_team_config_revisions
 WHERE id = $1::uuid
   AND tenant_id = $2::uuid
-  AND archived_at IS NULL
 `
 
 type GetTenantTeamConfigRevisionParams struct {
@@ -892,6 +997,68 @@ func (q *Queries) ListTeamMembers(ctx context.Context, arg ListTeamMembersParams
 	return items, nil
 }
 
+const ListTenantTeamConfigDrafts = `-- name: ListTenantTeamConfigDrafts :many
+SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+FROM tenant_team_config_revisions
+WHERE tenant_id = $1::uuid
+  AND team_id = $2::uuid
+  AND status = 'draft'
+  AND archived_at IS NULL
+ORDER BY revision_number DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListTenantTeamConfigDraftsParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+	Offset   int32     `json:"offset"`
+	Limit    int32     `json:"limit"`
+}
+
+func (q *Queries) ListTenantTeamConfigDrafts(ctx context.Context, arg ListTenantTeamConfigDraftsParams) ([]TenantTeamConfigRevision, error) {
+	rows, err := q.db.Query(ctx, ListTenantTeamConfigDrafts,
+		arg.TenantID,
+		arg.TeamID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TenantTeamConfigRevision{}
+	for rows.Next() {
+		var i TenantTeamConfigRevision
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.TeamID,
+			&i.RevisionNumber,
+			&i.Constitution,
+			&i.CapabilityPolicy,
+			&i.ContextPolicy,
+			&i.ApprovalPolicy,
+			&i.ArtifactContract,
+			&i.InternalCollaborationPolicy,
+			&i.RuntimeScopePolicy,
+			&i.HumanOwnerUserID,
+			&i.Status,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+			&i.ArchivedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListTenantTeamSummaries = `-- name: ListTenantTeamSummaries :many
 WITH current_config AS (
   SELECT DISTINCT ON (tenant_id, team_id)
@@ -1101,6 +1268,50 @@ func (q *Queries) ListTenantTeams(ctx context.Context, arg ListTenantTeamsParams
 	return items, nil
 }
 
+const RejectTenantTeamConfigRevision = `-- name: RejectTenantTeamConfigRevision :one
+UPDATE tenant_team_config_revisions
+SET status = 'rejected',
+    archived_at = COALESCE(archived_at, NOW())
+WHERE id = $1::uuid
+  AND tenant_id = $2::uuid
+  AND team_id = $3::uuid
+  AND status = 'draft'
+  AND archived_at IS NULL
+RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+`
+
+type RejectTenantTeamConfigRevisionParams struct {
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+func (q *Queries) RejectTenantTeamConfigRevision(ctx context.Context, arg RejectTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error) {
+	row := q.db.QueryRow(ctx, RejectTenantTeamConfigRevision, arg.ID, arg.TenantID, arg.TeamID)
+	var i TenantTeamConfigRevision
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.RevisionNumber,
+		&i.Constitution,
+		&i.CapabilityPolicy,
+		&i.ContextPolicy,
+		&i.ApprovalPolicy,
+		&i.ArtifactContract,
+		&i.InternalCollaborationPolicy,
+		&i.RuntimeScopePolicy,
+		&i.HumanOwnerUserID,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const SetTenantTeamStatus = `-- name: SetTenantTeamStatus :one
 UPDATE tenant_teams
 SET
@@ -1192,6 +1403,77 @@ func (q *Queries) UpdateTenantTeam(ctx context.Context, arg UpdateTenantTeamPara
 		&i.ArchivedAt,
 		&i.DisabledAt,
 		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const UpdateTenantTeamConfigRevisionDraft = `-- name: UpdateTenantTeamConfigRevisionDraft :one
+UPDATE tenant_team_config_revisions
+SET
+  constitution = COALESCE($1::jsonb, constitution),
+  capability_policy = COALESCE($2::jsonb, capability_policy),
+  context_policy = COALESCE($3::jsonb, context_policy),
+  approval_policy = COALESCE($4::jsonb, approval_policy),
+  artifact_contract = COALESCE($5::jsonb, artifact_contract),
+  internal_collaboration_policy = COALESCE($6::jsonb, internal_collaboration_policy),
+  runtime_scope_policy = COALESCE($7::jsonb, runtime_scope_policy),
+  human_owner_user_id = COALESCE($8::uuid, human_owner_user_id)
+WHERE id = $9::uuid
+  AND tenant_id = $10::uuid
+  AND team_id = $11::uuid
+  AND status = 'draft'
+  AND archived_at IS NULL
+RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+`
+
+type UpdateTenantTeamConfigRevisionDraftParams struct {
+	Constitution                []byte        `json:"constitution"`
+	CapabilityPolicy            []byte        `json:"capability_policy"`
+	ContextPolicy               []byte        `json:"context_policy"`
+	ApprovalPolicy              []byte        `json:"approval_policy"`
+	ArtifactContract            []byte        `json:"artifact_contract"`
+	InternalCollaborationPolicy []byte        `json:"internal_collaboration_policy"`
+	RuntimeScopePolicy          []byte        `json:"runtime_scope_policy"`
+	HumanOwnerUserID            uuid.NullUUID `json:"human_owner_user_id"`
+	ID                          uuid.UUID     `json:"id"`
+	TenantID                    uuid.UUID     `json:"tenant_id"`
+	TeamID                      uuid.UUID     `json:"team_id"`
+}
+
+func (q *Queries) UpdateTenantTeamConfigRevisionDraft(ctx context.Context, arg UpdateTenantTeamConfigRevisionDraftParams) (TenantTeamConfigRevision, error) {
+	row := q.db.QueryRow(ctx, UpdateTenantTeamConfigRevisionDraft,
+		arg.Constitution,
+		arg.CapabilityPolicy,
+		arg.ContextPolicy,
+		arg.ApprovalPolicy,
+		arg.ArtifactContract,
+		arg.InternalCollaborationPolicy,
+		arg.RuntimeScopePolicy,
+		arg.HumanOwnerUserID,
+		arg.ID,
+		arg.TenantID,
+		arg.TeamID,
+	)
+	var i TenantTeamConfigRevision
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.RevisionNumber,
+		&i.Constitution,
+		&i.CapabilityPolicy,
+		&i.ContextPolicy,
+		&i.ApprovalPolicy,
+		&i.ArtifactContract,
+		&i.InternalCollaborationPolicy,
+		&i.RuntimeScopePolicy,
+		&i.HumanOwnerUserID,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
