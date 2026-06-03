@@ -6,9 +6,9 @@ use http::HeaderValue;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
+use crate::commands::executor::RuntimeCommandExecutor;
 use crate::config::RuntimeConfig;
-use crate::controlplane::models::{EnsureInstanceCommand, RuntimeCommand, RuntimeCommandType};
-use crate::instances::{EnsureInstanceRequest, ensure_instance};
+use crate::controlplane::models::RuntimeCommand;
 
 const COMMAND_LOOP_RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
@@ -16,9 +16,10 @@ pub async fn run_command_loop(config: RuntimeConfig, session_token: String) -> R
     let ws_url = runtime_ws_url(&config.runtime.control_plane_url)?;
     let authorization = HeaderValue::from_str(&format!("Bearer {session_token}"))
         .context("runtime session token is not a valid websocket authorization header")?;
+    let executor = RuntimeCommandExecutor::new(config);
 
     loop {
-        if let Err(error) = run_command_loop_once(&config, &ws_url, &authorization).await {
+        if let Err(error) = run_command_loop_once(&executor, &ws_url, &authorization).await {
             eprintln!("Runtime command loop connection failed: {}", error);
         }
         tokio::time::sleep(COMMAND_LOOP_RECONNECT_DELAY).await;
@@ -26,7 +27,7 @@ pub async fn run_command_loop(config: RuntimeConfig, session_token: String) -> R
 }
 
 async fn run_command_loop_once(
-    config: &RuntimeConfig,
+    executor: &RuntimeCommandExecutor,
     ws_url: &str,
     authorization: &HeaderValue,
 ) -> Result<()> {
@@ -54,33 +55,16 @@ async fn run_command_loop_once(
                 continue;
             }
         };
-        if let Err(error) = handle_text_command(config, text) {
+        if let Err(error) = handle_text_command(executor, text).await {
             eprintln!("Runtime command handling failed: {}", error);
         }
     }
     Ok(())
 }
 
-fn handle_text_command(config: &RuntimeConfig, text: &str) -> Result<()> {
+async fn handle_text_command(executor: &RuntimeCommandExecutor, text: &str) -> Result<()> {
     let command: RuntimeCommand = serde_json::from_str(text)?;
-    handle_command(config, command)
-}
-
-fn handle_command(config: &RuntimeConfig, command: RuntimeCommand) -> Result<()> {
-    match command.command_type {
-        RuntimeCommandType::EnsureInstance => {
-            let payload: EnsureInstanceCommand = serde_json::from_value(command.payload)?;
-            ensure_instance(EnsureInstanceRequest {
-                base_dir: config.workspace.base_dir.clone(),
-                execution_instance_id: payload.execution_instance_id,
-            })?;
-        }
-        RuntimeCommandType::StartSession
-        | RuntimeCommandType::ResumeSession
-        | RuntimeCommandType::SendInput
-        | RuntimeCommandType::StopSession
-        | RuntimeCommandType::Unsupported(_) => {}
-    }
+    executor.handle_command(command).await?;
     Ok(())
 }
 
@@ -98,13 +82,24 @@ fn runtime_ws_url(control_plane_url: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{handle_text_command, run_command_loop_once, runtime_ws_url};
+    use crate::commands::executor::RuntimeCommandExecutor;
     use crate::config::RuntimeConfig;
+    use crate::runs::{RunSnapshot, RunStatus, RuntimeRunStore};
     use futures_util::SinkExt;
     use http::HeaderValue;
+    use serde_json::json;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+    use std::time::Duration;
+    use tempfile::TempDir;
     use tokio::net::TcpListener;
     use tokio_tungstenite::accept_hdr_async;
     use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+
+    const DIGITAL_EMPLOYEE_ID: &str = "11111111-1111-4111-8111-111111111111";
+    const EXECUTION_INSTANCE_ID: &str = "22222222-2222-4222-8222-222222222222";
 
     #[test]
     fn runtime_ws_url_uses_runtime_ws_endpoint() {
@@ -118,14 +113,16 @@ mod tests {
         );
     }
 
-    #[test]
-    fn handle_text_command_ignores_unsupported_command_types() {
+    #[tokio::test]
+    async fn handle_text_command_ignores_unsupported_command_types() {
         let config = RuntimeConfig::new("node-1").expect("config");
+        let executor = RuntimeCommandExecutor::new(config);
 
         handle_text_command(
-            &config,
+            &executor,
             r#"{"id":"cmd-legacy","type":"task.claim","payload":{}}"#,
         )
+        .await
         .expect("unsupported command should be ignored");
     }
 
@@ -172,9 +169,10 @@ mod tests {
         let mut config = RuntimeConfig::new("node-1").expect("config");
         config.runtime.control_plane_url = format!("http://{addr}");
         config.workspace.base_dir = temp.path().to_path_buf();
+        let executor = RuntimeCommandExecutor::new(config.clone());
         let authorization = HeaderValue::from_static("Bearer session-token");
         run_command_loop_once(
-            &config,
+            &executor,
             &runtime_ws_url(&config.runtime.control_plane_url).expect("ws url"),
             &authorization,
         )
@@ -186,5 +184,142 @@ mod tests {
         assert!(agent_home_dir.join("state").is_dir());
         assert!(agent_home_dir.join("sessions").is_dir());
         assert!(agent_home_dir.join("runs").is_dir());
+    }
+
+    #[tokio::test]
+    async fn command_loop_executes_start_session_commands() {
+        let temp = TempDir::new().expect("tempdir");
+        let fake_claude = make_script(
+            temp.path(),
+            "fake-claude",
+            r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"system","session_id":"session-from-ws-command"}'
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"hello from websocket command"}]}}'
+printf '%s\n' '{"type":"result","result":"done"}'
+"#,
+        );
+        let mut config = RuntimeConfig::new("node-1").expect("config");
+        config.runs.log_dir = temp.path().join("run-logs");
+        config.workspace.base_dir = temp.path().join("workspaces");
+        config.providers.claude_code.enabled = true;
+        config.providers.claude_code.binary_path = fake_claude;
+        config.providers.opencode.enabled = false;
+        config.providers.opencode.binary_path = temp.path().join("missing-opencode");
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let addr = listener.local_addr().expect("local addr");
+        config.runtime.control_plane_url = format!("http://{addr}");
+
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            let callback = |request: &Request, response: Response| {
+                assert_eq!(request.uri().path(), "/api/v1/runtime/ws");
+                assert_eq!(
+                    request.headers().get("Authorization"),
+                    Some(&HeaderValue::from_static("Bearer session-token"))
+                );
+                Ok(response)
+            };
+            let mut socket = accept_hdr_async(stream, callback).await.expect("ws accept");
+            socket
+                .send(Message::Text(
+                    json!({
+                        "id": "cmd-ws-start",
+                        "type": "start_session",
+                        "payload": {
+                            "command_id": "cmd-ws-start",
+                            "digital_employee_id": DIGITAL_EMPLOYEE_ID,
+                            "execution_instance_id": EXECUTION_INSTANCE_ID,
+                            "provider_type": "claude-code",
+                            "session_policy": {
+                                "mode": "new",
+                                "provider_session_id": null,
+                                "recoverable": true
+                            },
+                            "prompt": "write a websocket summary",
+                            "input": null,
+                            "context_refs": [],
+                            "artifact_refs": [],
+                            "model": null,
+                            "metadata": {"source": "ws-test"}
+                        }
+                    })
+                    .to_string()
+                    .into(),
+                ))
+                .await
+                .expect("send start_session command");
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            socket.close(None).await.expect("close socket");
+        });
+
+        let executor = RuntimeCommandExecutor::new(config.clone());
+        let authorization = HeaderValue::from_static("Bearer session-token");
+        run_command_loop_once(
+            &executor,
+            &runtime_ws_url(&config.runtime.control_plane_url).expect("ws url"),
+            &authorization,
+        )
+        .await
+        .expect("command loop once");
+        server.await.expect("server task");
+
+        let run_id = wait_for_command_run(&executor, "cmd-ws-start").await;
+        let snapshot = wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+        assert_eq!(
+            snapshot.provider_session_id.as_deref(),
+            Some("session-from-ws-command")
+        );
+        let command_context = snapshot.command_context.expect("command context");
+        assert_eq!(command_context.command_id, "cmd-ws-start");
+    }
+
+    fn make_script(dir: &Path, name: &str, body: &str) -> PathBuf {
+        let path = dir.join(name);
+        fs::write(&path, body).expect("write fake provider script");
+        let mut permissions = fs::metadata(&path).expect("metadata").permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).expect("chmod fake provider script");
+        path
+    }
+
+    async fn wait_for_command_run(executor: &RuntimeCommandExecutor, command_id: &str) -> String {
+        for _ in 0..100 {
+            if let Some(run_id) = executor.registry().run_for_command(command_id) {
+                return run_id;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        panic!("run was not registered for command {command_id}");
+    }
+
+    async fn wait_for_status(
+        runs: &RuntimeRunStore,
+        run_id: &str,
+        expected: RunStatus,
+    ) -> RunSnapshot {
+        for _ in 0..100 {
+            if let Some(snapshot) = runs.get_run(run_id).await {
+                if snapshot.status == expected {
+                    return snapshot;
+                }
+                if matches!(snapshot.status, RunStatus::Failed)
+                    && !matches!(expected, RunStatus::Failed)
+                {
+                    panic!("run {run_id} failed unexpectedly: {:?}", snapshot.error);
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        let snapshot = runs
+            .get_run(run_id)
+            .await
+            .unwrap_or_else(|| panic!("run {run_id} not found"));
+        panic!(
+            "run {run_id} did not reach {:?}; latest status: {:?}",
+            expected, snapshot.status
+        );
     }
 }
