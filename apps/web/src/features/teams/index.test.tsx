@@ -48,6 +48,44 @@ function fetchCalls(fetcher: typeof fetch) {
   ).mock.calls;
 }
 
+function makeTeamSummary(index: number) {
+  const isPrimary = index === 1;
+
+  return {
+    id: `team-${index}`,
+    tenant_id: "tenant-1",
+    slug: isPrimary ? "ops" : `team-${index}`,
+    name: isPrimary ? "运维团队" : `团队 ${index}`,
+    status: "active",
+    human_owner_user_id: isPrimary ? "human-owner-1" : `human-owner-${index}`,
+    human_owner: {
+      user_id: isPrimary ? "human-owner-1" : `human-owner-${index}`,
+      username: isPrimary ? "owner" : `owner-${index}`,
+      display_name: isPrimary ? "负责人甲" : `负责人 ${index}`,
+      email: isPrimary ? "owner@example.com" : `owner-${index}@example.com`,
+      status: "active",
+      avatar: {
+        provider: "dicebear",
+        seed: isPrimary ? "owner" : `owner-${index}`,
+        style: "adventurer",
+      },
+    },
+    member_count: isPrimary ? 18 : index,
+    digital_employee_count: isPrimary ? 6 : 1,
+    capability_count: isPrimary ? 12 : 2,
+    governance_status: "active",
+    current_revision: isPrimary ? 7 : 1,
+    pending_draft_count: isPrimary ? 3 : 0,
+    risk_summary: isPrimary ? "生产写操作需审批" : "常规团队策略",
+    metadata: {
+      display: {
+        color_tone: isPrimary ? "cyan" : "neutral",
+        icon_key: isPrimary ? "ops" : "default",
+      },
+    },
+  };
+}
+
 function createTeamsFetcher(options: { disabledOverview?: boolean } = {}) {
   const fetcher = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -84,30 +122,17 @@ function createTeamsFetcher(options: { disabledOverview?: boolean } = {}) {
       };
 
       if (url.pathname === "/api/v1/teams" && method === "GET") {
-        return jsonResponse([
-          {
-            id: "team-1",
-            tenant_id: "tenant-1",
-            slug: "ops",
-            name: "运维团队",
-            status: "active",
-            human_owner_user_id: "human-owner-1",
-            human_owner: {
-              user_id: "human-owner-1",
-              username: "owner",
-              display_name: "负责人甲",
-              email: "owner@example.com",
-              status: "active",
-            },
-            member_count: 18,
-            digital_employee_count: 6,
-            capability_count: 12,
-            governance_status: "active",
-            current_revision: 7,
-            pending_draft_count: 3,
-            risk_summary: "生产写操作需审批",
-          },
-        ]);
+        const offset = Number(url.searchParams.get("offset") ?? 0);
+        const page =
+          offset >= 20
+            ? Array.from({ length: 5 }, (_, index) =>
+                makeTeamSummary(index + 21),
+              )
+            : Array.from({ length: 20 }, (_, index) =>
+                makeTeamSummary(index + 1),
+              );
+
+        return jsonResponse(page);
       }
 
       if (url.pathname === "/api/auth/users" && method === "GET") {
@@ -649,11 +674,50 @@ describe("TeamsView", () => {
     }
     await expect.element(screen.getByText("运维团队")).toBeVisible();
     await expect
+      .element(screen.getByLabelText("运维团队图标"))
+      .toBeVisible();
+    await expect
       .element(screen.getByText("负责人甲", { exact: true }))
       .toBeVisible();
-    await expect.element(screen.getByText("18")).toBeVisible();
-    await expect.element(screen.getByText("v7")).toBeVisible();
-    await expect.element(screen.getByText("3")).toBeVisible();
+    await expect
+      .element(screen.getByText("owner@example.com", { exact: true }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByRole("cell", { name: "18" }).first())
+      .toBeVisible();
+    await expect
+      .element(screen.getByRole("cell", { name: "v7" }).first())
+      .toBeVisible();
+    await expect
+      .element(screen.getByRole("cell", { name: "3" }).first())
+      .toBeVisible();
+  });
+
+  it("paginates team summaries and opens row actions", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: "上一页" }))
+      .toBeDisabled();
+    await expect
+      .element(screen.getByRole("button", { name: "下一页" }))
+      .toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
+    expect(
+      fetchCalls(fetcher).some(([input]) =>
+        String(input).includes("limit=20&offset=20"),
+      ),
+    ).toBe(true);
+    await userEvent.click(
+      screen.getByRole("button", { name: "团队行操作" }).first(),
+    );
+    await expect
+      .element(screen.getByRole("menuitem", { name: "查看详情" }))
+      .toBeInTheDocument();
   });
 
   it("filters team summaries through the real list endpoint", async () => {
@@ -683,7 +747,7 @@ describe("TeamsView", () => {
     await expect
       .poll(() => fetchCalls(fetcher).map(([url]) => String(url)))
       .toContain(
-        "http://control-plane.local/api/v1/teams?status=active&governance_status=draft_pending&q=%E5%AE%89%E5%85%A8",
+        "http://control-plane.local/api/v1/teams?status=active&governance_status=draft_pending&q=%E5%AE%89%E5%85%A8&limit=20&offset=0",
       );
   });
 

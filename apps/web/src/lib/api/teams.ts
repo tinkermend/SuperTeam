@@ -45,12 +45,20 @@ export type Team = {
   updated_at?: string;
 };
 
+export type TeamUserAvatar = {
+  options?: Record<string, unknown>;
+  provider: "dicebear";
+  seed: string;
+  style: "adventurer";
+};
+
 export type TeamHumanOwner = {
+  avatar?: TeamUserAvatar;
+  display_name?: string;
+  email?: string;
+  status: string;
   user_id: string;
   username: string;
-  display_name: string;
-  email: string;
-  status: string;
 };
 
 export type TeamConfigRevision = {
@@ -95,6 +103,7 @@ export type TeamOverview = {
 };
 
 export type TeamMember = {
+  avatar?: TeamUserAvatar;
   membership_id: string;
   tenant_id: string;
   team_id: string;
@@ -157,6 +166,8 @@ export type ListTeamSummariesFilters = {
   status?: TeamStatus;
   governance_status?: GovernanceSummaryStatus;
   q?: string;
+  limit?: number;
+  offset?: number;
 };
 
 export type ListTeamAuditEventsFilters = {
@@ -304,6 +315,12 @@ function teamListPath(filters: ListTeamSummariesFilters = {}): string {
   const q = filters.q?.trim();
   if (q) {
     params.set("q", q);
+  }
+  if (filters.limit !== undefined) {
+    params.set("limit", String(filters.limit));
+  }
+  if (filters.offset !== undefined) {
+    params.set("offset", String(filters.offset));
   }
   const query = params.toString();
   return query ? `/api/v1/teams?${query}` : "/api/v1/teams";

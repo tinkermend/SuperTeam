@@ -109,6 +109,30 @@ describe("team API", () => {
     );
   });
 
+  it("lists team summaries with weak pagination filters", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify([]), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await listTeamSummaries(
+      { baseUrl: "http://control-plane.local", fetcher },
+      { limit: 20, offset: 40, q: "ops", status: "active" },
+    );
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams?status=active&q=ops&limit=20&offset=40",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
   it("gets team overview with encoded team id", async () => {
     const overview = {
       team: {

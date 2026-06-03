@@ -46,15 +46,19 @@ type TeamsViewProps = {
 
 export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
   const [filters, setFilters] = useState<TeamListFilters>({ q: "" });
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
   const [createOpen, setCreateOpen] = useState(false);
   const [highlightedTeamId, setHighlightedTeamId] = useState<string>();
   const teams = useQuery({
-    queryKey: ["team-summaries", filters],
+    queryKey: ["team-summaries", filters, pageIndex, pageSize],
     queryFn: () =>
       listTeamSummaries(
         { baseUrl: apiBaseUrl, fetcher },
         {
           governance_status: filters.governance_status,
+          limit: pageSize,
+          offset: pageIndex * pageSize,
           q: filters.q,
           status: filters.status,
         },
@@ -105,13 +109,27 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
 
         <TeamManagementToolbar
           filters={filters}
-          onChange={setFilters}
-          onReset={() => setFilters({ q: "" })}
+          onChange={(nextFilters) => {
+            setPageIndex(0);
+            setFilters(nextFilters);
+          }}
+          onReset={() => {
+            setPageIndex(0);
+            setFilters({ q: "" });
+          }}
         />
         <TeamListTable
+          canGoNext={teams.data?.length === pageSize}
           highlightedTeamId={highlightedTeamId}
           isError={teams.isError}
           isLoading={teams.isLoading}
+          onPageChange={setPageIndex}
+          onPageSizeChange={(nextPageSize) => {
+            setPageIndex(0);
+            setPageSize(nextPageSize);
+          }}
+          pageIndex={pageIndex}
+          pageSize={pageSize}
           teams={teams.data ?? []}
         />
         <CreateTeamDrawer

@@ -1,4 +1,15 @@
+import { MoreHorizontal } from "lucide-react";
+import { TeamIconTile, type TeamDisplayMetadata } from "@/components/superteam/team-icon-tile";
+import { UserIdentity, type UserIdentityData } from "@/components/superteam/user-identity";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -15,15 +26,25 @@ import type {
 
 type TeamListTableProps = {
   teams: TeamListItem[];
+  canGoNext: boolean;
   highlightedTeamId?: string;
   isError?: boolean;
   isLoading?: boolean;
+  onPageChange: (pageIndex: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+  pageIndex: number;
+  pageSize: number;
 };
 
 export function TeamListTable({
+  canGoNext,
   highlightedTeamId,
   isError,
   isLoading,
+  onPageChange,
+  onPageSizeChange,
+  pageIndex,
+  pageSize,
   teams,
 }: TeamListTableProps) {
   if (isLoading) {
@@ -52,6 +73,9 @@ export function TeamListTable({
             <TableHead>当前版本</TableHead>
             <TableHead>待批准</TableHead>
             <TableHead>更新时间</TableHead>
+            <TableHead className="w-12">
+              <span className="sr-only">操作</span>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -65,24 +89,24 @@ export function TeamListTable({
               key={team.id}
             >
               <TableCell>
-                <a
-                  className="font-medium hover:underline"
-                  href={`/teams/${team.id}`}
-                >
-                  {team.name}
-                </a>
-                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{team.slug}</span>
-                  <TeamStatusBadge status={team.status} />
+                <div className="flex min-w-0 items-center gap-3">
+                  <TeamIconTile metadata={getTeamMetadata(team)} />
+                  <div className="min-w-0">
+                    <a
+                      className="truncate font-medium hover:underline"
+                      href={`/teams/${team.id}`}
+                    >
+                      {team.name}
+                    </a>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="truncate">{team.slug}</span>
+                      <TeamStatusBadge status={team.status} />
+                    </div>
+                  </div>
                 </div>
               </TableCell>
               <TableCell>
-                <div className="font-medium">{teamOwnerLabel(team)}</div>
-                {team.human_owner?.email ? (
-                  <div className="text-xs text-muted-foreground">
-                    {team.human_owner.email}
-                  </div>
-                ) : null}
+                <TeamOwnerIdentity team={team} />
               </TableCell>
               <TableCell>{team.member_count}</TableCell>
               <TableCell>{team.digital_employee_count}</TableCell>
@@ -99,24 +123,103 @@ export function TeamListTable({
                   ? new Date(team.updated_at).toLocaleString("zh-CN")
                   : "-"}
               </TableCell>
+              <TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      aria-label="团队行操作"
+                      size="icon"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <MoreHorizontal />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuGroup>
+                      <DropdownMenuItem asChild>
+                        <a href={`/teams/${team.id}`}>查看详情</a>
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
+      <div className="flex items-center justify-between border-t px-3 py-3 text-sm text-muted-foreground">
+        <span>第 {pageIndex + 1} 页</span>
+        <div className="flex items-center gap-2">
+          <Button
+            disabled={pageIndex === 0 || isLoading}
+            onClick={() => onPageChange(pageIndex - 1)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            上一页
+          </Button>
+          <select
+            className="h-9 rounded-md border bg-background px-2 text-sm"
+            onChange={(event) => onPageSizeChange(Number(event.target.value))}
+            value={pageSize}
+          >
+            {[10, 20, 50].map((size) => (
+              <option key={size} value={size}>
+                {size} 条/页
+              </option>
+            ))}
+          </select>
+          <Button
+            disabled={!canGoNext || isLoading}
+            onClick={() => onPageChange(pageIndex + 1)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            下一页
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
 
-function teamOwnerLabel(team: TeamListItem) {
-  if (team.human_owner) {
-    return (
-      team.human_owner.display_name ||
-      team.human_owner.username ||
-      team.human_owner.email ||
-      team.human_owner.user_id
-    );
+function TeamOwnerIdentity({ team }: { team: TeamListItem }) {
+  const owner = getTeamOwnerIdentity(team);
+
+  if (!owner) {
+    return <span className="text-sm text-muted-foreground">未设置</span>;
   }
-  return team.human_owner_user_id ?? "未设置";
+
+  return <UserIdentity showSecondary size="sm" user={owner} />;
+}
+
+function getTeamOwnerIdentity(team: TeamListItem): UserIdentityData | undefined {
+  if (team.human_owner) {
+    return {
+      avatar: team.human_owner.avatar,
+      display_name: team.human_owner.display_name,
+      email: team.human_owner.email,
+      id: team.human_owner.user_id,
+      status: team.human_owner.status,
+      username: team.human_owner.username,
+    };
+  }
+
+  if (team.human_owner_user_id) {
+    return {
+      id: team.human_owner_user_id,
+      status: "active",
+    };
+  }
+
+  return undefined;
+}
+
+function getTeamMetadata(team: TeamListItem): TeamDisplayMetadata {
+  return (team.metadata ?? {}) as TeamDisplayMetadata;
 }
 
 export function TeamStatusBadge({ status }: { status: TeamStatus }) {
@@ -144,10 +247,15 @@ function GovernanceStatusBadge({
     needs_update: "需更新",
     not_configured: "未配置",
   };
+  const variant: Record<
+    GovernanceSummaryStatus,
+    "default" | "outline" | "secondary"
+  > = {
+    active: "default",
+    draft_pending: "outline",
+    needs_update: "outline",
+    not_configured: "secondary",
+  };
 
-  return (
-    <Badge variant={status === "active" ? "default" : "secondary"}>
-      {label[status]}
-    </Badge>
-  );
+  return <Badge variant={variant[status]}>{label[status]}</Badge>;
 }
