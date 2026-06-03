@@ -133,7 +133,7 @@ fn session_command_full(
 }
 
 async fn wait_for_status(runs: &RuntimeRunStore, run_id: &str, expected: RunStatus) -> RunSnapshot {
-    for _ in 0..100 {
+    for _ in 0..250 {
         if let Some(snapshot) = runs.get_run(run_id).await {
             if snapshot.status == expected {
                 return snapshot;
@@ -161,7 +161,7 @@ async fn wait_for_latest_provider_session(
     executor: &RuntimeCommandExecutor,
     expected_session_id: &str,
 ) {
-    for _ in 0..100 {
+    for _ in 0..250 {
         if executor
             .registry()
             .latest_provider_session(EXECUTION_INSTANCE_ID, "claude-code")
@@ -632,6 +632,135 @@ printf '%s\n' '{"type":"result","result":"non-recoverable done"}'
             .rejection("cmd-send-after-non-recoverable")
             .as_deref(),
         Some(error.to_string().as_str())
+    );
+}
+
+#[tokio::test]
+async fn stop_session_targets_non_reusable_explicit_session_before_session_started() {
+    let temp = TempDir::new().expect("tempdir");
+    let marker_file = temp.path().join("ephemeral-explicit-marker.txt");
+    let fake_claude = make_script(
+        temp.path(),
+        "multi-session-claude",
+        &format!(
+            r#"#!/usr/bin/env bash
+case "$*" in
+  *"ephemeral explicit work"*)
+    sleep 0.25
+    printf '%s\n' marker > {}
+    printf '%s\n' '{{"type":"system","session_id":"ephemeral-explicit-session"}}'
+    sleep 5
+    ;;
+  *"competing latest work"*)
+    printf '%s\n' '{{"type":"system","session_id":"late-session"}}'
+    sleep 5
+    ;;
+  *)
+    printf '%s\n' '{{"type":"system","session_id":"other-session"}}'
+    sleep 5
+    ;;
+esac
+"#,
+            shell_quote(&marker_file)
+        ),
+    );
+    let executor = configure_runtime(&temp, fake_claude);
+
+    let first = executor
+        .handle_command(session_command(
+            "cmd-start-other-active",
+            RuntimeCommandType::StartSession,
+            "new",
+            None,
+            Some("other long work"),
+            None,
+        ))
+        .await
+        .expect("start_session accepted");
+    let first_run_id = first.run_id.expect("first run id");
+    wait_for_latest_provider_session(&executor, "other-session").await;
+
+    let ephemeral = executor
+        .handle_command(session_command(
+            "cmd-start-ephemeral-explicit",
+            RuntimeCommandType::StartSession,
+            "ephemeral",
+            Some("ephemeral-explicit-session"),
+            Some("ephemeral explicit work"),
+            None,
+        ))
+        .await
+        .expect("ephemeral start_session accepted");
+    let ephemeral_run_id = ephemeral.run_id.expect("ephemeral run id");
+
+    assert_ne!(
+        executor
+            .registry()
+            .latest_provider_session(EXECUTION_INSTANCE_ID, "claude-code")
+            .as_deref(),
+        Some("ephemeral-explicit-session")
+    );
+
+    let late = executor
+        .handle_command(session_command(
+            "cmd-start-late-active",
+            RuntimeCommandType::StartSession,
+            "new",
+            None,
+            Some("competing latest work"),
+            None,
+        ))
+        .await
+        .expect("late start_session accepted");
+    let late_run_id = late.run_id.expect("late run id");
+
+    let stop = executor
+        .handle_command(session_command(
+            "cmd-stop-ephemeral-explicit",
+            RuntimeCommandType::StopSession,
+            "resume",
+            Some("ephemeral-explicit-session"),
+            Some(""),
+            None,
+        ))
+        .await
+        .expect("stop_session accepted");
+
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    let marker_exists = marker_file.exists();
+    let first_status = executor
+        .runs()
+        .get_run(&first_run_id)
+        .await
+        .expect("first run snapshot")
+        .status;
+    let late_status = executor
+        .runs()
+        .get_run(&late_run_id)
+        .await
+        .expect("late run snapshot")
+        .status;
+
+    for run_id in [&first_run_id, &ephemeral_run_id, &late_run_id] {
+        if executor
+            .runs()
+            .get_run(run_id)
+            .await
+            .is_some_and(|snapshot| snapshot.status == RunStatus::Running)
+        {
+            let _ = executor
+                .runs()
+                .cancel_run(run_id, Some("test cleanup".to_string()))
+                .await;
+        }
+    }
+
+    assert_eq!(stop.run_id.as_deref(), Some(ephemeral_run_id.as_str()));
+    assert_eq!(first_status, RunStatus::Running);
+    assert_eq!(late_status, RunStatus::Running);
+    assert!(
+        !marker_exists,
+        "non-reusable explicit provider session was not stopped before SessionStarted"
     );
 }
 

@@ -110,6 +110,12 @@ impl RuntimeCommandExecutor {
             provider_session_id: session_id.clone().filter(|_| reusable_provider_session),
         });
         let run_id = snapshot.id.clone();
+        if !reusable_provider_session {
+            if let Some(session_id) = &session_id {
+                self.registry
+                    .record_provider_session_with_recoverability(&run_id, session_id, false);
+            }
+        }
         let provider_run = match provider.start(provider_request(&spec)).await {
             Ok(provider_run) => provider_run,
             Err(error) => {
