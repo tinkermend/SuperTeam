@@ -48,6 +48,26 @@ function fetchCalls(fetcher: typeof fetch) {
   ).mock.calls;
 }
 
+function teamSummaryGetCalls(fetcher: typeof fetch, offset?: number) {
+  return fetchCalls(fetcher).filter(([input, init]) => {
+    const url = new URL(String(input));
+
+    if (url.pathname !== "/api/v1/teams" || init?.method !== "GET") {
+      return false;
+    }
+
+    return offset === undefined
+      ? true
+      : url.searchParams.get("offset") === String(offset);
+  });
+}
+
+function createTeamPostIndex(fetcher: typeof fetch) {
+  return fetchCalls(fetcher).findIndex(([url, init]) => {
+    return String(url).endsWith("/api/v1/teams") && init?.method === "POST";
+  });
+}
+
 function makeTeamSummary(index: number) {
   const isPrimary = index === 1;
 
@@ -895,6 +915,58 @@ describe("TeamsView", () => {
     await expect.element(screen.getByText("请选择负责人")).toBeInTheDocument();
   });
 
+  it("refetches the first team page after creating while already on the first page", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
+    expect(teamSummaryGetCalls(fetcher, 0)).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "新建团队" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "团队名称", exact: true }),
+      "安全团队",
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
+      "security",
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "负责人", exact: true }),
+      "owner",
+    );
+    await expect
+      .poll(() => fetchCalls(fetcher).map(([url]) => String(url)))
+      .toContain(
+        "http://control-plane.local/api/auth/users?q=owner&status=active&limit=20&offset=0",
+      );
+    await userEvent.click(screen.getByRole("button", { name: "owner" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "创建团队" }));
+
+    await expect.poll(() => createTeamPostIndex(fetcher)).not.toBe(-1);
+    const postIndex = createTeamPostIndex(fetcher);
+    await expect
+      .poll(
+        () =>
+          fetchCalls(fetcher)
+            .slice(postIndex + 1)
+            .filter(([url, init]) => {
+              const requestUrl = new URL(String(url));
+
+              return (
+                requestUrl.pathname === "/api/v1/teams" &&
+                requestUrl.searchParams.get("limit") === "20" &&
+                requestUrl.searchParams.get("offset") === "0" &&
+                init?.method === "GET"
+              );
+            }).length,
+      )
+      .toBe(1);
+  });
+
   it("creates a team with selected owner and initial members", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
@@ -960,21 +1032,21 @@ describe("TeamsView", () => {
     expect(
       fetchCalls(fetcher)
         .slice(postIndex + 1)
-        .some(
+        .filter(
           ([url, init]) =>
             String(url).includes("limit=20&offset=0") &&
             init?.method === "GET",
         ),
-    ).toBe(true);
+    ).toHaveLength(1);
     expect(
       fetchCalls(fetcher)
         .slice(postIndex + 1)
-        .some(
+        .filter(
           ([url, init]) =>
             String(url).includes("limit=20&offset=20") &&
             init?.method === "GET",
         ),
-    ).toBe(false);
+    ).toHaveLength(0);
   });
 });
 

@@ -78,12 +78,20 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
       ),
     onSuccess: (overview) => {
       setCreateOpen(false);
+      setHighlightedTeamId(overview.team.id);
       void queryClient.invalidateQueries({
         queryKey: ["team-summaries"],
         refetchType: "none",
       });
-      setPageIndex(0);
-      setHighlightedTeamId(overview.team.id);
+      if (pageIndex === 0) {
+        void queryClient.refetchQueries({
+          exact: true,
+          queryKey: ["team-summaries", filters, 0, pageSize],
+          type: "active",
+        });
+      } else {
+        setPageIndex(0);
+      }
     },
   });
 
