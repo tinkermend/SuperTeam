@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/handlers"
+	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/tenant"
@@ -368,6 +369,51 @@ func TestTeamConfigRevisionDraftUsesGovernanceEditAuthorization(t *testing.T) {
 	}
 }
 
+func TestTeamAuditRouteUsesTeamAuditRead(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeTeamService{}
+	authorizer := &routeAuthorizer{allowed: true}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		authorizer,
+	)
+	server.SetTenantHandler(tenant.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+	teamID := uuid.New()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+teamID.String()+"/audit", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected team audit route to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if len(authorizer.checks) == 0 {
+		t.Fatalf("expected authorization check for team audit route, got status %d: %s", resp.Code, resp.Body.String())
+	}
+	check := authorizer.checks[len(authorizer.checks)-1]
+	if check.Action != authz.ActionTeamAuditRead {
+		t.Fatalf("expected team audit read action, got %#v", check)
+	}
+	if check.Resource.Type != authz.ResourceTeam || check.Resource.ID != teamID.String() || check.TeamID == nil || *check.TeamID != teamID {
+		t.Fatalf("expected team resource %s, got %#v", teamID, check)
+	}
+	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	if service.auditTenantID != expectedTenantID || service.auditTeamID != teamID {
+		t.Fatalf("expected service tenant/team %s/%s, got %s/%s", expectedTenantID, teamID, service.auditTenantID, service.auditTeamID)
+	}
+}
+
 func TestTeamOverviewAllowedActionsFilterDeniedDecisions(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -606,6 +652,10 @@ type routeTeamService struct {
 	overviewTeamID       uuid.UUID
 	currentTenantID      uuid.UUID
 	currentTeamID        uuid.UUID
+	auditTenantID        uuid.UUID
+	auditTeamID          uuid.UUID
+	auditLimit           int32
+	auditOffset          int32
 	createCalled         bool
 	listCalled           bool
 	getCalled            bool
@@ -614,6 +664,7 @@ type routeTeamService struct {
 	changeStatusCalled   bool
 	createRevisionCalled bool
 	currentCalled        bool
+	auditCalled          bool
 	createdID            uuid.UUID
 	rejectMissingOwner   bool
 	listErr              error
@@ -786,6 +837,15 @@ func (s *routeTeamService) GetCurrentConfigRevision(ctx context.Context, tenantI
 	}, nil
 }
 
+func (s *routeTeamService) ListTeamAuditEvents(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*audit.Event, error) {
+	s.auditCalled = true
+	s.auditTenantID = tenantID
+	s.auditTeamID = teamID
+	s.auditLimit = limit
+	s.auditOffset = offset
+	return []*audit.Event{}, nil
+}
+
 func (s *routeTeamService) called() bool {
 	return s.createCalled ||
 		s.listCalled ||
@@ -794,7 +854,8 @@ func (s *routeTeamService) called() bool {
 		s.updateCalled ||
 		s.changeStatusCalled ||
 		s.createRevisionCalled ||
-		s.currentCalled
+		s.currentCalled ||
+		s.auditCalled
 }
 
 var _ tenant.HandlerService = (*routeTeamService)(nil)

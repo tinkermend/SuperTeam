@@ -15,7 +15,10 @@ export type DigitalEmployee = {
   context_policy?: Record<string, unknown>;
   approval_policy?: Record<string, unknown>;
   risk_level?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> & {
+    effective_config_label?: string;
+    effective_config_status?: "approved" | "draft" | "stale" | "missing" | string;
+  };
   created_at?: string;
   updated_at?: string;
 };
@@ -41,6 +44,10 @@ export type CreateDigitalEmployeeInput = {
   name: string;
   role: string;
   description?: string;
+};
+
+export type ListDigitalEmployeesFilters = {
+  team_id?: string;
 };
 
 export type DigitalEmployeeConfigRevision = {
@@ -131,9 +138,18 @@ async function postJson<T>(options: ApiClientOptions, path: string, input: unkno
   return parseJson<T>(response, resource);
 }
 
-export async function listDigitalEmployees(options: ApiClientOptions): Promise<DigitalEmployee[]> {
+export async function listDigitalEmployees(
+  options: ApiClientOptions,
+  filters: ListDigitalEmployeesFilters = {},
+): Promise<DigitalEmployee[]> {
   const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/v1/digital-employees"), {
+  const searchParams = new URLSearchParams();
+  if (filters.team_id) {
+    searchParams.set("team_id", filters.team_id);
+  }
+  const query = searchParams.toString();
+  const path = `/api/v1/digital-employees${query ? `?${query}` : ""}`;
+  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
     credentials: "include",
     headers: { accept: "application/json" },
     method: "GET",

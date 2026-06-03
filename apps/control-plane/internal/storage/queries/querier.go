@@ -109,6 +109,7 @@ type Querier interface {
 	ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]TaskRun, error)
 	ListTaskStateHistory(ctx context.Context, arg ListTaskStateHistoryParams) ([]TaskStateHistory, error)
 	ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error)
+	ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]AuditEvent, error)
 	ListTenantTeamSummaries(ctx context.Context, arg ListTenantTeamSummariesParams) ([]ListTenantTeamSummariesRow, error)
 	ListTenantTeams(ctx context.Context, arg ListTenantTeamsParams) ([]TenantTeam, error)
 	ListTopDeniedAuthzActionsSince(ctx context.Context, arg ListTopDeniedAuthzActionsSinceParams) ([]ListTopDeniedAuthzActionsSinceRow, error)

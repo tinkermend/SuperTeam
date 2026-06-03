@@ -2,17 +2,30 @@ import { Archive, FileText, Plus, RotateCcw, ShieldCheck, UserPlus } from "lucid
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { TeamOverview } from "@/lib/api/teams";
+import { TeamAuditTab } from "./team-audit-tab";
+import { TeamDigitalEmployeesTab } from "./team-digital-employees-tab";
 import { TeamStatusBadge } from "./team-list-table";
 import { TeamOverviewTab } from "./team-overview-tab";
 
 type TeamDetailLayoutProps = {
+  apiBaseUrl: string;
+  fetcher?: typeof fetch;
   onArchiveTeam?: () => void;
   onDisableTeam?: () => void;
   onRestoreTeam?: () => void;
   overview: TeamOverview;
+  teamId: string;
 };
 
-export function TeamDetailLayout({ onArchiveTeam, onDisableTeam, onRestoreTeam, overview }: TeamDetailLayoutProps) {
+export function TeamDetailLayout({
+  apiBaseUrl,
+  fetcher,
+  onArchiveTeam,
+  onDisableTeam,
+  onRestoreTeam,
+  overview,
+  teamId,
+}: TeamDetailLayoutProps) {
   const team = overview.team;
   const isActive = team.status === "active";
   const canAddMember = isActive && overview.allowed_actions.includes("team.member.add");
@@ -88,7 +101,7 @@ export function TeamDetailLayout({ onArchiveTeam, onDisableTeam, onRestoreTeam, 
           <ScopedPlaceholder text="Plan 2 会接入成员与角色管理。" />
         </TabsContent>
         <TabsContent value="employees">
-          <ScopedPlaceholder text="Plan 4 会接入团队数字员工列表和快速创建。" />
+          <TeamDigitalEmployeesTab apiBaseUrl={apiBaseUrl} fetcher={fetcher} teamId={teamId} />
         </TabsContent>
         <TabsContent value="capabilities">
           <ScopedPlaceholder text="Plan 3 会接入 Skills、MCP、知识库和外部能力绑定。" />
@@ -97,7 +110,7 @@ export function TeamDetailLayout({ onArchiveTeam, onDisableTeam, onRestoreTeam, 
           <ScopedPlaceholder text="Plan 3 会接入宪法、审批策略和治理草案。" />
         </TabsContent>
         <TabsContent value="audit">
-          <ScopedPlaceholder text="Plan 4 会接入团队审计记录。" />
+          <TeamAuditTab apiBaseUrl={apiBaseUrl} fetcher={fetcher} teamId={teamId} />
         </TabsContent>
       </Tabs>
     </div>

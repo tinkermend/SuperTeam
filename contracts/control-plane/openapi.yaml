@@ -515,6 +515,25 @@ paths:
                 $ref: "#/components/schemas/TeamOverview"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/audit:
+    get:
+      operationId: listTeamAuditEvents
+      summary: List team audit events
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Team audit events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamAuditEvent"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}/disable:
     post:
       operationId: disableTeam
@@ -1414,6 +1433,45 @@ components:
         - active
         - disabled
         - archived
+    TeamAuditEvent:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - event_type
+        - actor_type
+        - actor_id
+        - resource_type
+        - resource_id
+        - action
+        - details
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        actor_type:
+          type: string
+        actor_id:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        action:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        ip_address:
+          type: string
+        created_at:
+          type: string
+          format: date-time
     GovernanceSummaryStatus:
       type: string
       enum:

@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/authz"
 )
 
@@ -23,6 +24,7 @@ type HandlerService interface {
 	ChangeTeamStatus(ctx context.Context, req ChangeTeamStatusRequest) (*Team, error)
 	CreateConfigRevision(ctx context.Context, req CreateTeamConfigRevisionRequest) (*TeamConfigRevision, error)
 	GetCurrentConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamConfigRevision, error)
+	ListTeamAuditEvents(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*audit.Event, error)
 }
 
 type HTTPHandler struct {
@@ -275,6 +277,35 @@ func (h *HTTPHandler) GetCurrentTeamConfigRevision(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, configRevisionResponseFromDomain(revision))
 }
 
+func (h *HTTPHandler) ListTeamAudit(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamAuditRead, "team audit read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	limit, ok := nonNegativeInt32QueryParam(w, r, "limit")
+	if !ok {
+		return
+	}
+	offset, ok := nonNegativeInt32QueryParam(w, r, "offset")
+	if !ok {
+		return
+	}
+	events, err := service.ListTeamAuditEvents(r.Context(), tenantID, teamID, limit, offset)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, teamAuditEventResponses(events))
+}
+
 var overviewActions = []string{
 	authz.ActionTeamUpdate,
 	authz.ActionTeamDisable,
@@ -463,6 +494,20 @@ type configRevisionResponse struct {
 	UpdatedAt                   string                   `json:"updated_at,omitempty"`
 }
 
+type teamAuditEventResponse struct {
+	ID           string         `json:"id"`
+	TenantID     string         `json:"tenant_id"`
+	EventType    string         `json:"event_type"`
+	ActorType    string         `json:"actor_type"`
+	ActorID      string         `json:"actor_id"`
+	ResourceType string         `json:"resource_type"`
+	ResourceID   string         `json:"resource_id"`
+	Action       string         `json:"action"`
+	Details      map[string]any `json:"details"`
+	IPAddress    string         `json:"ip_address"`
+	CreatedAt    string         `json:"created_at,omitempty"`
+}
+
 func teamIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	teamID, err := uuid.Parse(chi.URLParam(r, "teamId"))
 	if err != nil || teamID == uuid.Nil {
@@ -583,6 +628,30 @@ func configRevisionResponseFromDomain(revision *TeamConfigRevision) configRevisi
 		ApprovedAt:                  timeStringPtr(revision.ApprovedAt),
 		CreatedAt:                   timeString(revision.CreatedAt),
 		UpdatedAt:                   timeString(revision.UpdatedAt),
+	}
+}
+
+func teamAuditEventResponses(events []*audit.Event) []teamAuditEventResponse {
+	responses := make([]teamAuditEventResponse, 0, len(events))
+	for _, event := range events {
+		responses = append(responses, teamAuditEventResponseFromDomain(event))
+	}
+	return responses
+}
+
+func teamAuditEventResponseFromDomain(event *audit.Event) teamAuditEventResponse {
+	return teamAuditEventResponse{
+		ID:           event.ID.String(),
+		TenantID:     event.TenantID.String(),
+		EventType:    event.EventType,
+		ActorType:    event.ActorType,
+		ActorID:      event.ActorID,
+		ResourceType: event.ResourceType,
+		ResourceID:   event.ResourceID,
+		Action:       event.Action,
+		Details:      cloneMap(event.Details),
+		IPAddress:    event.IPAddress,
+		CreatedAt:    timeString(event.CreatedAt),
 	}
 }
 
