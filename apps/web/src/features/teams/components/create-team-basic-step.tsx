@@ -32,10 +32,9 @@ export function CreateTeamBasicStep({
   function updateName(name: string) {
     onChange({
       ...value,
-      display:
-        value.display.icon_key === "default"
-          ? inferDisplay(`${name} ${value.slug}`)
-          : value.display,
+      display: value.displayTouched
+        ? value.display
+        : inferDisplay(`${name} ${value.slug}`),
       name,
     });
   }
@@ -43,16 +42,29 @@ export function CreateTeamBasicStep({
   function updateSlug(slug: string) {
     onChange({
       ...value,
-      display:
-        value.display.icon_key === "default"
-          ? inferDisplay(`${value.name} ${slug}`)
-          : value.display,
+      display: value.displayTouched
+        ? value.display
+        : inferDisplay(`${value.name} ${slug}`),
       slug,
     });
   }
 
   function updateDisplay(display: TeamDisplayDraft) {
-    onChange({ ...value, display });
+    onChange({ ...value, display, displayTouched: true });
+  }
+
+  function updateOwner(owner: CreateTeamDraft["owner"]) {
+    if (!owner) return;
+    const memberUsers = { ...value.memberUsers };
+    delete memberUsers[owner.id];
+    onChange({
+      ...value,
+      initial_members: value.initial_members.filter(
+        (member) => member.user_id !== owner.id,
+      ),
+      memberUsers,
+      owner,
+    });
   }
 
   return (
@@ -118,7 +130,7 @@ export function CreateTeamBasicStep({
         <UserSearchSelect
           apiBaseUrl={apiBaseUrl}
           fetcher={fetcher}
-          onSelect={(owner) => onChange({ ...value, owner })}
+          onSelect={updateOwner}
           placeholder="负责人"
           value={value.owner}
         />

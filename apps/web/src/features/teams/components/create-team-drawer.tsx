@@ -20,6 +20,7 @@ export type TeamDisplayDraft = {
 
 export type CreateTeamDraft = {
   display: TeamDisplayDraft;
+  displayTouched: boolean;
   initial_members: InitialTeamMemberInput[];
   memberUsers: Record<string, UserSummary>;
   name: string;
@@ -39,6 +40,7 @@ type CreateTeamDrawerProps = {
 
 const emptyDraft: CreateTeamDraft = {
   display: { color_tone: "neutral", icon_key: "default" },
+  displayTouched: false,
   initial_members: [],
   memberUsers: {},
   name: "",

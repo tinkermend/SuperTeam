@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
-import { TeamRoleSelect, type DirectTeamRole } from "@/components/superteam/team-role";
+import { directTeamRoles, type DirectTeamRole } from "@/components/superteam/team-role";
 import { UserIdentity } from "@/components/superteam/user-identity";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -210,6 +210,7 @@ export function CreateTeamMembersStep({
                     </TableCell>
                     <TableCell>
                       <TeamRoleSelect
+                        ariaLabel={`${user.username} 初始角色`}
                         mode="direct"
                         onChange={(nextRole) => changeCandidateRole(user, nextRole)}
                         value={role}
@@ -287,7 +288,12 @@ function SelectedMemberRow({
         <UserIdentity showSecondary size="sm" user={visibleUser} />
       </TableCell>
       <TableCell>
-        <TeamRoleSelect mode="direct" onChange={onRoleChange} value={member.role} />
+        <TeamRoleSelect
+          ariaLabel={`${visibleUser.username} 已选角色`}
+          mode="direct"
+          onChange={onRoleChange}
+          value={member.role}
+        />
       </TableCell>
       <TableCell className="text-right">
         <Button aria-label={`移除 ${visibleUser.username}`} onClick={onRemove} size="icon" type="button" variant="ghost">
@@ -295,5 +301,33 @@ function SelectedMemberRow({
         </Button>
       </TableCell>
     </TableRow>
+  );
+}
+
+function TeamRoleSelect({
+  ariaLabel,
+  onChange,
+  value,
+}: {
+  ariaLabel: string;
+  mode: "direct";
+  onChange: (role: DirectTeamRole) => void;
+  value: DirectTeamRole;
+}) {
+  return (
+    <Select onValueChange={(role) => onChange(role as DirectTeamRole)} value={value}>
+      <SelectTrigger aria-label={ariaLabel} className="w-40" size="sm">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {directTeamRoles.map((role) => (
+            <SelectItem key={role.value} value={role.value}>
+              {role.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }
