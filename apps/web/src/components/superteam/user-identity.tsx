@@ -35,8 +35,8 @@ export function getUserIdentityLabel(user: UserIdentityData) {
   };
 }
 
-export function buildUserAvatarDataUri(avatar: UserAvatarDescriptor, username: string) {
-  if (avatar.provider !== "dicebear" || avatar.style !== "adventurer") {
+export function buildUserAvatarDataUri(avatar: UserAvatarDescriptor | null | undefined, username: string) {
+  if (!avatar || avatar.provider !== "dicebear" || avatar.style !== "adventurer") {
     return "";
   }
 
@@ -72,19 +72,23 @@ export function UserIdentityAvatar({ className, user }: UserIdentityAvatarProps)
 
 type UserIdentityProps = {
   className?: string;
+  size?: "sm" | "md";
   showSecondary?: boolean;
   user: UserIdentityData;
 };
 
-export function UserIdentity({ className, showSecondary = false, user }: UserIdentityProps) {
+export function UserIdentity({ className, size = "md", showSecondary = false, user }: UserIdentityProps) {
   const label = getUserIdentityLabel(user);
+  const isSmall = size === "sm";
 
   return (
-    <div className={cn("flex min-w-0 items-center gap-3", className)}>
-      <UserIdentityAvatar user={user} />
+    <div className={cn("flex min-w-0 items-center", isSmall ? "gap-2" : "gap-3", className)} data-size={size}>
+      <UserIdentityAvatar className={isSmall ? "size-7" : "size-9"} user={user} />
       <div className="min-w-0">
-        <div className="truncate text-sm font-medium">{label.primary}</div>
-        {showSecondary ? <div className="truncate text-xs text-muted-foreground">{label.secondary}</div> : null}
+        <div className={cn("truncate font-medium", isSmall ? "text-xs" : "text-sm")}>{label.primary}</div>
+        {showSecondary ? (
+          <div className={cn("truncate text-muted-foreground", isSmall ? "text-[11px]" : "text-xs")}>{label.secondary}</div>
+        ) : null}
       </div>
     </div>
   );

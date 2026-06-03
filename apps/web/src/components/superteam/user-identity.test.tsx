@@ -23,6 +23,24 @@ describe("UserIdentity", () => {
     await expect.element(screen.getByAltText("周敏 的头像")).toBeInTheDocument();
   });
 
+  it("renders compact identity with small size API", async () => {
+    const screen = await render(
+      <UserIdentity
+        size="sm"
+        user={{
+          avatar: { provider: "dicebear", seed: "user:xu", style: "adventurer" },
+          display_name: "许越",
+          id: "user-3",
+          status: "active",
+          username: "xuyue",
+        }}
+      />,
+    );
+
+    await expect.element(screen.getByText("许越")).toBeInTheDocument();
+    await expect.element(screen.getByAltText("许越 的头像")).toBeInTheDocument();
+  });
+
   it("falls back to username and initials without avatar", () => {
     expect(
       getUserIdentityLabel({
@@ -40,5 +58,10 @@ describe("UserIdentity", () => {
         "operator",
       ),
     ).toBe("");
+  });
+
+  it("builds empty src for missing avatar descriptor", () => {
+    expect(buildUserAvatarDataUri(undefined, "operator")).toBe("");
+    expect(buildUserAvatarDataUri(null, "operator")).toBe("");
   });
 });
