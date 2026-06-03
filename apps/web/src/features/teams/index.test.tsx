@@ -166,12 +166,44 @@ function createTeamsFetcher(
       }
 
       if (url.pathname === "/api/auth/users" && method === "GET") {
+        const q = url.searchParams.get("q")?.trim().toLowerCase();
+        const users = [
+          {
+            avatar: {
+              provider: "dicebear",
+              seed: "owner",
+              style: "adventurer",
+            },
+            id: "owner-user",
+            status: "active",
+            username: "owner",
+          },
+          {
+            avatar: {
+              provider: "dicebear",
+              seed: "member",
+              style: "adventurer",
+            },
+            id: "member-user",
+            status: "active",
+            username: "member",
+          },
+          {
+            avatar: {
+              provider: "dicebear",
+              seed: "viewer",
+              style: "adventurer",
+            },
+            id: "viewer-user",
+            status: "active",
+            username: "viewer",
+          },
+        ];
+
         return jsonResponse({
-          items: [
-            { id: "owner-user", username: "owner", status: "active" },
-            { id: "member-user", username: "member", status: "active" },
-            { id: "viewer-user", username: "viewer", status: "active" },
-          ],
+          items: q
+            ? users.filter((user) => user.username.includes(q))
+            : users,
         });
       }
 
@@ -343,10 +375,15 @@ function createTeamsFetcher(
             membership_id: "membership-member",
             tenant_id: "tenant-1",
             team_id: "team-1",
-            user_id: "member-user",
+            user_id: "roster-member-user",
             username: "member",
             display_name: "普通成员丁",
             email: "member@example.com",
+            avatar: {
+              provider: "dicebear",
+              seed: "roster-member",
+              style: "adventurer",
+            },
             account_status: "active",
             role: "member",
             membership_status: "active",
@@ -355,10 +392,15 @@ function createTeamsFetcher(
             membership_id: "membership-viewer",
             tenant_id: "tenant-1",
             team_id: "team-1",
-            user_id: "viewer-user",
+            user_id: "roster-viewer-user",
             username: "viewer",
             display_name: "观察者戊",
             email: "viewer@example.com",
+            avatar: {
+              provider: "dicebear",
+              seed: "roster-viewer",
+              style: "adventurer",
+            },
             account_status: "active",
             role: "viewer",
             membership_status: "active",
@@ -383,6 +425,44 @@ function createTeamsFetcher(
             decision_reason: "",
           },
         ]);
+      }
+
+      if (url.pathname === "/api/v1/teams/team-1/members" && method === "POST") {
+        return jsonResponse(
+          {
+            membership_id: "membership-added",
+            tenant_id: "tenant-1",
+            team_id: "team-1",
+            user_id: "member-user",
+            username: "member",
+            display_name: "新增成员",
+            email: "member-new@example.com",
+            account_status: "active",
+            role: "member",
+            membership_status: "active",
+          },
+          201,
+        );
+      }
+
+      if (
+        url.pathname === "/api/v1/teams/team-1/member-role-requests" &&
+        method === "POST"
+      ) {
+        return jsonResponse(
+          {
+            id: "request-viewer-admin",
+            tenant_id: "tenant-1",
+            team_id: "team-1",
+            target_user_id: "viewer-user",
+            requested_role: "admin",
+            requested_by: "owner-user",
+            status: "pending",
+            reason: "需要维护团队治理",
+            decision_reason: "",
+          },
+          201,
+        );
       }
 
       if (
@@ -1481,7 +1561,7 @@ describe("TeamDetailView", () => {
 
     await screen.getByRole("tab", { name: "成员" }).click();
 
-    await expect.element(screen.getByText("负责人甲")).toBeVisible();
+    await expect.element(screen.getByText("负责人甲", { exact: true })).toBeVisible();
     for (const label of [
       "人类成员",
       "负责人",
@@ -1503,13 +1583,6 @@ describe("TeamDetailView", () => {
       )
       .toBeVisible();
 
-    const directRoleSelect = document.querySelector(
-      "#team-member-role",
-    ) as HTMLSelectElement;
-    expect(
-      Array.from(directRoleSelect.options).map((option) => option.textContent),
-    ).toEqual(["普通成员", "只读观察者"]);
-
     await expect.element(screen.getByText("candidate-admin")).toBeVisible();
     await expect
       .element(screen.getByRole("button", { name: "拒绝" }))
@@ -1517,6 +1590,81 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByRole("button", { name: "审批" }))
       .toBeVisible();
+  });
+
+  it("uses user search for direct member add and privileged role requests", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamDetailView
+        apiBaseUrl="http://control-plane.local"
+        fetcher={fetcher}
+        teamId="team-1"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "搜索用户" }).first(),
+      "member",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /member/ }).first(),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "添加成员" }).last(),
+    );
+
+    await expect
+      .poll(() =>
+        fetchCalls(fetcher).find(
+          ([url, init]) =>
+            String(url).endsWith("/api/v1/teams/team-1/members") &&
+            init?.method === "POST",
+        ),
+      )
+      .toBeTruthy();
+    const addMemberCall = fetchCalls(fetcher).find(
+      ([url, init]) =>
+        String(url).endsWith("/api/v1/teams/team-1/members") &&
+        init?.method === "POST",
+    );
+    expect(JSON.parse(String(addMemberCall?.[1]?.body))).toMatchObject({
+      role: "member",
+      user_id: "member-user",
+    });
+
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "搜索用户" }).last(),
+      "viewer",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /viewer/ }));
+    await userEvent.type(
+      screen.getByLabelText("申请原因"),
+      "需要维护团队治理",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "提交申请" }));
+
+    await expect
+      .poll(() =>
+        fetchCalls(fetcher).find(
+          ([url, init]) =>
+            String(url).endsWith(
+              "/api/v1/teams/team-1/member-role-requests",
+            ) && init?.method === "POST",
+        ),
+      )
+      .toBeTruthy();
+    const requestCall = fetchCalls(fetcher).find(
+      ([url, init]) =>
+        String(url).endsWith("/api/v1/teams/team-1/member-role-requests") &&
+        init?.method === "POST",
+    );
+    expect(JSON.parse(String(requestCall?.[1]?.body))).toMatchObject({
+      reason: "需要维护团队治理",
+      requested_role: "admin",
+      target_user_id: "viewer-user",
+    });
   });
 
   it("renders the team digital employees tab with metrics, table, and team-scoped quick create", async () => {

@@ -1,15 +1,24 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check, ShieldAlert, Trash2, UserPlus, X } from "lucide-react";
+import {
+  TeamRoleBadge,
+  TeamRoleSelect,
+  teamRoleLabel,
+  type DirectTeamRole,
+  type PrivilegedTeamRole,
+} from "@/components/superteam/team-role";
+import { UserIdentity } from "@/components/superteam/user-identity";
+import { UserSearchSelect } from "@/components/superteam/user-search-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import type { UserSummary } from "@/lib/api";
 import {
   addTeamMember,
   approveTeamMemberRoleRequest,
@@ -20,7 +29,6 @@ import {
   removeTeamMember,
   type AllowedTeamAction,
   type TeamMember,
-  type TeamMemberRole,
   type TeamMemberRoleRequest,
 } from "@/lib/api/teams";
 
@@ -30,25 +38,6 @@ type TeamMembersTabProps = {
   fetcher?: typeof fetch;
   teamId: string;
 };
-
-const roleLabels: Record<TeamMemberRole, string> = {
-  owner: "负责人",
-  admin: "管理员",
-  approver: "审批人",
-  member: "普通成员",
-  viewer: "只读观察者",
-};
-
-const directRoles = [
-  { label: "普通成员", value: "member" },
-  { label: "只读观察者", value: "viewer" },
-] as const;
-
-const privilegedRoles = [
-  { label: "负责人", value: "owner" },
-  { label: "管理员", value: "admin" },
-  { label: "审批人", value: "approver" },
-] as const;
 
 export function TeamMembersTab({ allowedActions, apiBaseUrl, fetcher, teamId }: TeamMembersTabProps) {
   const apiOptions = useMemo(() => ({ baseUrl: apiBaseUrl, fetcher }), [apiBaseUrl, fetcher]);
@@ -92,6 +81,7 @@ export function TeamMembersTab({ allowedActions, apiBaseUrl, fetcher, teamId }: 
   const roster = members.data ?? [];
   const requests = roleRequests.data ?? [];
   const counters = countMembers(roster);
+  const existingUserIds = roster.map((member) => member.user_id);
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -149,12 +139,18 @@ export function TeamMembersTab({ allowedActions, apiBaseUrl, fetcher, teamId }: 
 
       <aside className="flex min-w-0 flex-col gap-4">
         <DirectAddPanel
+          apiBaseUrl={apiBaseUrl}
           canAdd={canAddMember}
+          existingUserIds={existingUserIds}
+          fetcher={fetcher}
           isPending={addMutation.isPending}
           onSubmit={(input) => addMutation.mutate(input)}
         />
         <PrivilegedRequestPanel
+          apiBaseUrl={apiBaseUrl}
           canRequest={canRequestPrivilegedRole}
+          existingUserIds={existingUserIds}
+          fetcher={fetcher}
           isPending={createRequestMutation.isPending}
           onSubmit={(input) => createRequestMutation.mutate(input)}
         />
@@ -180,18 +176,22 @@ function Metric({ label, value }: { label: string; value: number }) {
 }
 
 function MemberRow({ member, onRemove }: { member: TeamMember; onRemove: () => void }) {
-  const displayName = member.display_name || member.username;
-
   return (
     <TableRow>
       <TableCell>
-        <div className="flex min-w-0 flex-col">
-          <span className="font-medium">{displayName}</span>
-          <span className="text-xs text-muted-foreground">{member.email || member.user_id}</span>
-        </div>
+        <UserIdentity
+          user={{
+            avatar: member.avatar,
+            display_name: member.display_name,
+            email: member.email,
+            id: member.user_id,
+            status: member.account_status,
+            username: member.username,
+          }}
+        />
       </TableCell>
       <TableCell>
-        <Badge variant={member.role === "owner" ? "default" : "secondary"}>{roleLabels[member.role]}</Badge>
+        <TeamRoleBadge role={member.role} />
       </TableCell>
       <TableCell>{member.account_status || member.membership_status}</TableCell>
       <TableCell className="text-right">
@@ -205,16 +205,22 @@ function MemberRow({ member, onRemove }: { member: TeamMember; onRemove: () => v
 }
 
 function DirectAddPanel({
+  apiBaseUrl,
   canAdd,
+  existingUserIds,
+  fetcher,
   isPending,
   onSubmit,
 }: {
+  apiBaseUrl: string;
   canAdd: boolean;
+  existingUserIds: string[];
+  fetcher?: typeof fetch;
   isPending: boolean;
-  onSubmit: (input: { role: "member" | "viewer"; user_id: string }) => void;
+  onSubmit: (input: { role: DirectTeamRole; user_id: string }) => void;
 }) {
-  const [userId, setUserId] = useState("");
-  const [role, setRole] = useState<"member" | "viewer">("member");
+  const [selectedUser, setSelectedUser] = useState<UserSummary | undefined>();
+  const [role, setRole] = useState<DirectTeamRole>("member");
 
   return (
     <Card className="rounded-md">
@@ -227,38 +233,31 @@ function DirectAddPanel({
           className="flex flex-col gap-3"
           onSubmit={(event) => {
             event.preventDefault();
-            if (userId.trim()) {
-              onSubmit({ role, user_id: userId.trim() });
+            if (selectedUser) {
+              onSubmit({ role, user_id: selectedUser.id });
             }
           }}
         >
           <div className="flex flex-col gap-2">
-            <Label htmlFor="team-member-user-id">用户 ID</Label>
-            <Input
-              disabled={!canAdd || isPending}
-              id="team-member-user-id"
-              onChange={(event) => setUserId(event.target.value)}
-              placeholder="auth user uuid"
-              value={userId}
+            <Label>用户</Label>
+            <UserSearchSelect
+              apiBaseUrl={apiBaseUrl}
+              excludedUserIds={existingUserIds}
+              fetcher={fetcher}
+              onSelect={setSelectedUser}
+              value={selectedUser}
             />
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="team-member-role">直接生效角色</Label>
-            <select
-              className="h-9 rounded-md border bg-background px-3 text-sm shadow-xs"
+            <Label>直接生效角色</Label>
+            <TeamRoleSelect
               disabled={!canAdd || isPending}
-              id="team-member-role"
-              onChange={(event) => setRole(event.target.value as "member" | "viewer")}
+              mode="direct"
+              onChange={setRole}
               value={role}
-            >
-              {directRoles.map((directRole) => (
-                <option key={directRole.value} value={directRole.value}>
-                  {directRole.label}
-                </option>
-              ))}
-            </select>
+            />
           </div>
-          <Button disabled={!canAdd || isPending || !userId.trim()} type="submit">
+          <Button disabled={!canAdd || isPending || !selectedUser} type="submit">
             <UserPlus data-icon="inline-start" />
             添加成员
           </Button>
@@ -269,16 +268,22 @@ function DirectAddPanel({
 }
 
 function PrivilegedRequestPanel({
+  apiBaseUrl,
   canRequest,
+  existingUserIds,
+  fetcher,
   isPending,
   onSubmit,
 }: {
+  apiBaseUrl: string;
   canRequest: boolean;
+  existingUserIds: string[];
+  fetcher?: typeof fetch;
   isPending: boolean;
-  onSubmit: (input: { reason: string; requested_role: "owner" | "admin" | "approver"; target_user_id: string }) => void;
+  onSubmit: (input: { reason: string; requested_role: PrivilegedTeamRole; target_user_id: string }) => void;
 }) {
-  const [targetUserId, setTargetUserId] = useState("");
-  const [requestedRole, setRequestedRole] = useState<"owner" | "admin" | "approver">("admin");
+  const [selectedUser, setSelectedUser] = useState<UserSummary | undefined>();
+  const [requestedRole, setRequestedRole] = useState<PrivilegedTeamRole>("admin");
   const [reason, setReason] = useState("");
 
   return (
@@ -292,40 +297,33 @@ function PrivilegedRequestPanel({
           className="flex flex-col gap-3"
           onSubmit={(event) => {
             event.preventDefault();
-            if (targetUserId.trim()) {
+            if (selectedUser) {
               onSubmit({
                 reason: reason.trim(),
                 requested_role: requestedRole,
-                target_user_id: targetUserId.trim(),
+                target_user_id: selectedUser.id,
               });
             }
           }}
         >
           <div className="flex flex-col gap-2">
-            <Label htmlFor="team-member-request-user-id">目标用户 ID</Label>
-            <Input
-              disabled={!canRequest || isPending}
-              id="team-member-request-user-id"
-              onChange={(event) => setTargetUserId(event.target.value)}
-              placeholder="auth user uuid"
-              value={targetUserId}
+            <Label>目标用户</Label>
+            <UserSearchSelect
+              apiBaseUrl={apiBaseUrl}
+              excludedUserIds={existingUserIds}
+              fetcher={fetcher}
+              onSelect={setSelectedUser}
+              value={selectedUser}
             />
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="team-member-request-role">申请角色</Label>
-            <select
-              className="h-9 rounded-md border bg-background px-3 text-sm shadow-xs"
+            <Label>申请角色</Label>
+            <TeamRoleSelect
               disabled={!canRequest || isPending}
-              id="team-member-request-role"
-              onChange={(event) => setRequestedRole(event.target.value as "owner" | "admin" | "approver")}
+              mode="privileged"
+              onChange={setRequestedRole}
               value={requestedRole}
-            >
-              {privilegedRoles.map((privilegedRole) => (
-                <option key={privilegedRole.value} value={privilegedRole.value}>
-                  {privilegedRole.label}
-                </option>
-              ))}
-            </select>
+            />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="team-member-request-reason">申请原因</Label>
@@ -336,7 +334,7 @@ function PrivilegedRequestPanel({
               value={reason}
             />
           </div>
-          <Button disabled={!canRequest || isPending || !targetUserId.trim()} type="submit" variant="outline">
+          <Button disabled={!canRequest || isPending || !selectedUser} type="submit" variant="outline">
             <ShieldAlert data-icon="inline-start" />
             提交申请
           </Button>
@@ -372,7 +370,7 @@ function PendingRequestsPanel({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium">{request.target_user_id}</p>
-                <p className="text-xs text-muted-foreground">申请成为 {roleLabels[request.requested_role]}</p>
+                <p className="text-xs text-muted-foreground">申请成为 {teamRoleLabel(request.requested_role)}</p>
               </div>
               <Badge variant="outline">待审批</Badge>
             </div>
