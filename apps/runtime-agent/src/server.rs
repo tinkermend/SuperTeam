@@ -132,6 +132,7 @@ async fn create_run(
         session_id: request.session_id,
         continue_session: request.continue_session,
         model: request.model,
+        command_context: None,
     };
     validate_run_spec(&spec)?;
 

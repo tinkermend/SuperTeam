@@ -23,7 +23,19 @@ pub enum RunStatus {
     Cancelled,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeCommandRunContext {
+    pub command_id: String,
+    pub digital_employee_id: String,
+    pub execution_instance_id: String,
+    pub provider_type: String,
+    pub session_policy: serde_json::Value,
+    pub context_refs: Vec<serde_json::Value>,
+    pub artifact_refs: Vec<serde_json::Value>,
+    pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunSpec {
     pub provider_kind: String,
     pub workspace_path: PathBuf,
@@ -31,9 +43,10 @@ pub struct RunSpec {
     pub session_id: Option<String>,
     pub continue_session: bool,
     pub model: Option<String>,
+    pub command_context: Option<RuntimeCommandRunContext>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunSnapshot {
     pub id: String,
     pub provider_kind: String,
@@ -42,6 +55,7 @@ pub struct RunSnapshot {
     pub session_id: Option<String>,
     pub continue_session: bool,
     pub model: Option<String>,
+    pub command_context: Option<RuntimeCommandRunContext>,
     pub provider_session_id: Option<String>,
     pub status: RunStatus,
     pub started_at_ms: u64,
@@ -95,6 +109,7 @@ impl RuntimeRunStore {
             session_id: spec.session_id,
             continue_session: spec.continue_session,
             model: spec.model,
+            command_context: spec.command_context,
             provider_session_id: None,
             status: RunStatus::Running,
             started_at_ms: now_ms(),

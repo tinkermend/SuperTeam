@@ -17,6 +17,7 @@ async fn store_records_provider_session_events_and_replays_them() {
                 session_id: None,
                 continue_session: false,
                 model: None,
+                command_context: None,
             },
             None,
         )
@@ -73,4 +74,39 @@ async fn store_records_provider_session_events_and_replays_them() {
     let persisted = std::fs::read_to_string(event_log).expect("event log");
     assert!(persisted.contains("\"type\":\"session_started\""));
     assert!(persisted.contains("\"type\":\"turn_completed\""));
+}
+
+#[tokio::test]
+async fn store_preserves_runtime_command_metadata_on_snapshot() {
+    let temp = TempDir::new().expect("tempdir");
+    let store = RuntimeRunStore::new(temp.path().join("runs"));
+    let command_context = superteam_runtime_agent::runs::RuntimeCommandRunContext {
+        command_id: "cmd-001".to_string(),
+        digital_employee_id: "11111111-1111-4111-8111-111111111111".to_string(),
+        execution_instance_id: "22222222-2222-4222-8222-222222222222".to_string(),
+        provider_type: "claude-code".to_string(),
+        session_policy: serde_json::json!({"mode":"new","recoverable":true}),
+        context_refs: vec![serde_json::json!({"id":"ctx-1","kind":"memory"})],
+        artifact_refs: vec![serde_json::json!({"id":"artifact-1","kind":"input"})],
+        metadata: serde_json::json!({"source":"runtime-command-test"}),
+    };
+
+    let run = store
+        .start_run(
+            RunSpec {
+                provider_kind: "claude".to_string(),
+                workspace_path: PathBuf::from("/tmp/workspace"),
+                prompt: "hello".to_string(),
+                session_id: None,
+                continue_session: false,
+                model: None,
+                command_context: Some(command_context.clone()),
+            },
+            None,
+        )
+        .await
+        .expect("start run");
+
+    let snapshot = store.get_run(&run.id).await.expect("run snapshot");
+    assert_eq!(snapshot.command_context, Some(command_context));
 }
