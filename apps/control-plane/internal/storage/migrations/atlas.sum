@@ -1,5 +1,6 @@
-h1:AW1TnVDVKDzcPBxyKb1oP+57bLYGTtCmsCJ/WG48PzM=
+h1:C+pbeoPhBJ2SKCqs0kWhMqMP6w7JBgwGrmPAorXmvq8=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
 004_team_member_role_requests.sql h1:aEylB43E6rf3B8PWjDA5hAfZFJCfZLVex/vATne/uY8=
+005_add_auth_user_avatar.sql h1:G3uZ+RXpvnld3P6AeBMK9S3OHddMPAXbW/xfg836Zrk=

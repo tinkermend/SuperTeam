@@ -37,6 +37,16 @@ const (
 	UpdateUserStatusRequestStatusDisabled UpdateUserStatusRequestStatus = "disabled"
 )
 
+// Defines values for UserAvatarProvider.
+const (
+	Dicebear UserAvatarProvider = "dicebear"
+)
+
+// Defines values for UserAvatarStyle.
+const (
+	Adventurer UserAvatarStyle = "adventurer"
+)
+
 // Defines values for UserSummaryStatus.
 const (
 	UserSummaryStatusActive   UserSummaryStatus = "active"
@@ -51,8 +61,9 @@ const (
 
 // CreateUserRequest defines model for CreateUserRequest.
 type CreateUserRequest struct {
-	Password string `json:"password"`
-	Username string `json:"username"`
+	Avatar   *UserAvatar `json:"avatar,omitempty"`
+	Password string      `json:"password"`
+	Username string      `json:"username"`
 }
 
 // CurrentUserResponse defines model for CurrentUserResponse.
@@ -109,6 +120,20 @@ type UpdateUserStatusRequest struct {
 // UpdateUserStatusRequestStatus defines model for UpdateUserStatusRequest.Status.
 type UpdateUserStatusRequestStatus string
 
+// UserAvatar defines model for UserAvatar.
+type UserAvatar struct {
+	Options  *map[string]interface{} `json:"options,omitempty"`
+	Provider UserAvatarProvider      `json:"provider"`
+	Seed     string                  `json:"seed"`
+	Style    UserAvatarStyle         `json:"style"`
+}
+
+// UserAvatarProvider defines model for UserAvatar.Provider.
+type UserAvatarProvider string
+
+// UserAvatarStyle defines model for UserAvatar.Style.
+type UserAvatarStyle string
+
 // UserListResponse defines model for UserListResponse.
 type UserListResponse struct {
 	Items []UserSummary `json:"items"`
@@ -121,6 +146,7 @@ type UserResponse struct {
 
 // UserSummary defines model for UserSummary.
 type UserSummary struct {
+	Avatar   UserAvatar         `json:"avatar"`
 	Id       openapi_types.UUID `json:"id"`
 	Status   UserSummaryStatus  `json:"status"`
 	Username string             `json:"username"`

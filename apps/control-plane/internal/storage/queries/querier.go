@@ -154,6 +154,7 @@ type Querier interface {
 	UpdateTenantTeam(ctx context.Context, arg UpdateTenantTeamParams) (TenantTeam, error)
 	UpdateTenantTeamConfigRevisionDraft(ctx context.Context, arg UpdateTenantTeamConfigRevisionDraftParams) (TenantTeamConfigRevision, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUser, error)
+	UpdateUserAvatar(ctx context.Context, arg UpdateUserAvatarParams) (AuthUser, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error)
 	UpsertDigitalEmployeeExecutionInstance(ctx context.Context, arg UpsertDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
 	UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntimeCapabilityParams) (RuntimeCapability, error)

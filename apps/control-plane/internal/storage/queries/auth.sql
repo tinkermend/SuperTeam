@@ -13,6 +13,17 @@ INSERT INTO auth_users (
     sqlc.arg('status')::varchar
 ) RETURNING *;
 
+-- name: UpdateUserAvatar :one
+UPDATE auth_users
+SET
+    avatar_provider = sqlc.arg('avatar_provider')::varchar,
+    avatar_style = sqlc.arg('avatar_style')::varchar,
+    avatar_seed = sqlc.narg('avatar_seed')::varchar,
+    avatar_options = sqlc.arg('avatar_options')::jsonb,
+    updated_at = NOW()
+WHERE id = sqlc.arg('id')::uuid
+RETURNING *;
+
 -- name: GetUser :one
 SELECT * FROM auth_users
 WHERE id = $1;

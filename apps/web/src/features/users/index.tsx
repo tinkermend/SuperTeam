@@ -7,6 +7,7 @@ import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
+import { UserAvatar } from "./components/user-avatar";
 
 const apiBaseUrl = resolveControlPlaneUrl();
 
@@ -43,8 +44,11 @@ export function Users() {
             ) : (
               <div className="divide-y rounded-md border">
                 {users.map((user) => (
-                  <div key={user.id} className="flex items-center justify-between p-3 text-sm">
-                    <span className="font-medium">{user.username}</span>
+                  <div key={user.id} className="flex items-center justify-between gap-4 p-3 text-sm">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <UserAvatar avatar={user.avatar} username={user.username} />
+                      <span className="truncate font-medium">{user.username}</span>
+                    </div>
                     <Badge variant={user.status === "active" ? "default" : "secondary"}>{user.status}</Badge>
                   </div>
                 ))}

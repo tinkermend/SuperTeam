@@ -146,6 +146,7 @@ func (h *HTTPHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	user, err := h.service.CreateManagedUser(r.Context(), toActor(actorUser), CreateManagedUserInput{
 		Username: body.Username,
 		Password: body.Password,
+		Avatar:   userAvatarFromGenerated(body.Avatar),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -253,9 +254,39 @@ func toGeneratedLoginLogRecord(log LoginLog) LoginLogRecord {
 
 func toGeneratedUserSummary(user *User) UserSummary {
 	return UserSummary{
+		Avatar:   toGeneratedUserAvatar(user.Avatar),
 		Id:       openapiUUID(user.ID),
 		Status:   UserSummaryStatus(user.Status),
 		Username: user.Username,
+	}
+}
+
+func toGeneratedUserAvatar(avatar UserAvatarConfig) UserAvatar {
+	options := avatar.Options
+	if options == nil {
+		options = map[string]any{}
+	}
+	return UserAvatar{
+		Options:  &options,
+		Provider: UserAvatarProvider(avatar.Provider),
+		Seed:     avatar.Seed,
+		Style:    UserAvatarStyle(avatar.Style),
+	}
+}
+
+func userAvatarFromGenerated(avatar *UserAvatar) UserAvatarConfig {
+	if avatar == nil {
+		return UserAvatarConfig{}
+	}
+	options := map[string]any{}
+	if avatar.Options != nil {
+		options = *avatar.Options
+	}
+	return UserAvatarConfig{
+		Provider: string(avatar.Provider),
+		Style:    string(avatar.Style),
+		Seed:     avatar.Seed,
+		Options:  options,
 	}
 }
 

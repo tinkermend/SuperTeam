@@ -8,13 +8,22 @@ import (
 
 // User 用户模型
 type User struct {
-	ID           uuid.UUID  `db:"id"`
-	Username     string     `db:"username"`
-	PasswordHash string     `db:"password_hash"`
-	Status       string     `db:"status"`
-	CreatedAt    time.Time  `db:"created_at"`
-	UpdatedAt    time.Time  `db:"updated_at"`
-	LastLoginAt  *time.Time `db:"last_login_at"`
+	ID           uuid.UUID        `db:"id"`
+	Username     string           `db:"username"`
+	PasswordHash string           `db:"password_hash"`
+	Status       string           `db:"status"`
+	Avatar       UserAvatarConfig `db:"-"`
+	CreatedAt    time.Time        `db:"created_at"`
+	UpdatedAt    time.Time        `db:"updated_at"`
+	LastLoginAt  *time.Time       `db:"last_login_at"`
+}
+
+// UserAvatarConfig 表示平台用户头像生成配置。当前只支持 DiceBear，但保留结构化扩展字段。
+type UserAvatarConfig struct {
+	Provider string         `json:"provider"`
+	Style    string         `json:"style"`
+	Seed     string         `json:"seed"`
+	Options  map[string]any `json:"options,omitempty"`
 }
 
 // Session 会话模型
@@ -81,6 +90,7 @@ type ListUsersFilter struct {
 type CreateManagedUserInput struct {
 	Username string
 	Password string
+	Avatar   UserAvatarConfig
 }
 
 // LoginLog Web 控制台登录日志。

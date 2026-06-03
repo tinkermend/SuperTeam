@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,11 +19,28 @@ func NewPgRepository(q *queries.Queries) Repository {
 	return &PgRepository{q: q}
 }
 
-func (r *PgRepository) CreateUser(ctx context.Context, username, passwordHash string) (*User, error) {
+func (r *PgRepository) CreateUser(ctx context.Context, username, passwordHash string, avatar UserAvatarConfig) (*User, error) {
+	avatarOptions, err := json.Marshal(avatar.Options)
+	if err != nil {
+		return nil, err
+	}
 	user, err := r.q.CreateUser(ctx, queries.CreateUserParams{
 		Username:     username,
 		PasswordHash: passwordHash,
 		Status:       UserStatusActive,
+	})
+	if err != nil {
+		return nil, err
+	}
+	user, err = r.q.UpdateUserAvatar(ctx, queries.UpdateUserAvatarParams{
+		ID:             user.ID,
+		AvatarProvider: avatar.Provider,
+		AvatarStyle:    avatar.Style,
+		AvatarSeed: pgtype.Text{
+			String: avatar.Seed,
+			Valid:  avatar.Seed != "",
+		},
+		AvatarOptions: avatarOptions,
 	})
 	if err != nil {
 		return nil, err
@@ -92,14 +110,32 @@ func (r *PgRepository) UpdateUserPassword(ctx context.Context, userID uuid.UUID,
 }
 
 func toDomainUser(user queries.AuthUser) *User {
+	avatar := normalizeUserAvatarConfig(user.Username, UserAvatarConfig{
+		Provider: user.AvatarProvider,
+		Style:    user.AvatarStyle,
+		Seed:     user.AvatarSeed.String,
+		Options:  userAvatarOptions(user.AvatarOptions),
+	})
 	return &User{
 		ID:           user.ID,
 		Username:     user.Username,
 		PasswordHash: user.PasswordHash,
 		Status:       user.Status,
+		Avatar:       avatar,
 		CreatedAt:    user.CreatedAt.Time,
 		UpdatedAt:    user.UpdatedAt.Time,
 	}
+}
+
+func userAvatarOptions(raw []byte) map[string]any {
+	if len(raw) == 0 {
+		return map[string]any{}
+	}
+	var options map[string]any
+	if err := json.Unmarshal(raw, &options); err != nil || options == nil {
+		return map[string]any{}
+	}
+	return options
 }
 
 func (r *PgRepository) CreateRuntimeToken(ctx context.Context, nodeID, tokenHash string, expiresAt time.Time) error {

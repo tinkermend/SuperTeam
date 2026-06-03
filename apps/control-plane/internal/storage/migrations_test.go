@@ -157,6 +157,32 @@ func TestForwardOnlyAuthAndWebLogMigrationsWereMergedIntoInitialSchema(t *testin
 	}
 }
 
+func TestAuthUserAvatarMigrationAddsGeneratedAvatarConfig(t *testing.T) {
+	body, err := os.ReadFile("migrations/005_add_auth_user_avatar.sql")
+	if err != nil {
+		t.Fatalf("read auth avatar migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"ADD COLUMN IF NOT EXISTS avatar_provider VARCHAR(50) NOT NULL DEFAULT 'dicebear'",
+		"ADD COLUMN IF NOT EXISTS avatar_style VARCHAR(100) NOT NULL DEFAULT 'adventurer'",
+		"ADD COLUMN IF NOT EXISTS avatar_seed VARCHAR(255)",
+		"ADD COLUMN IF NOT EXISTS avatar_options JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"ADD CONSTRAINT chk_auth_users_avatar_provider CHECK (avatar_provider IN ('dicebear'))",
+		"ADD CONSTRAINT chk_auth_users_avatar_style CHECK (avatar_style <> '')",
+		"ADD CONSTRAINT chk_auth_users_avatar_options_object CHECK (jsonb_typeof(avatar_options) = 'object')",
+		"COMMENT ON COLUMN auth_users.avatar_provider IS '用户头像来源，MVP 使用 DiceBear 生成稳定卡通头像'",
+		"COMMENT ON COLUMN auth_users.avatar_style IS '用户头像样式标识，MVP 默认为 DiceBear adventurer'",
+		"COMMENT ON COLUMN auth_users.avatar_seed IS '用户头像生成种子；为空时由服务端使用 username 生成稳定种子'",
+		"COMMENT ON COLUMN auth_users.avatar_options IS '用户头像生成选项 JSON，保留颜色、配件等后续扩展配置'",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected auth avatar migration to contain %q", expected)
+		}
+	}
+}
+
 func TestInitialSchemaPreservesHistoryWithoutHeavyForeignKeys(t *testing.T) {
 	body, err := os.ReadFile("migrations/001_initial.sql")
 	if err != nil {

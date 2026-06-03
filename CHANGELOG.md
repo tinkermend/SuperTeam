@@ -51,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-04 01:49：用户管理补齐 DiceBear adventurer 头像配置字段、OpenAPI 响应和 Web 列表展示；Control Plane 存储头像来源、样式、种子和扩展选项，前端使用本地 DiceBear JS 包生成稳定 SVG 头像。
+
 #### 团队管理权限底座 (2026-06-03)
 
 - Control Plane `authz` 新增 OpenFGA-ready 团队管理 action 语义，覆盖团队 CRUD、禁用/归档/恢复、成员增删改、特权角色申请/批准、治理配置读写/批准、能力绑定和团队审计读取。

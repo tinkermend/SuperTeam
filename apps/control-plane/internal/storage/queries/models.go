@@ -103,6 +103,14 @@ type AuthUser struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 用户最后更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 用户头像来源，MVP 使用 DiceBear 生成稳定卡通头像
+	AvatarProvider string `json:"avatar_provider"`
+	// 用户头像样式标识，MVP 默认为 DiceBear adventurer
+	AvatarStyle string `json:"avatar_style"`
+	// 用户头像生成种子；为空时由服务端使用 username 生成稳定种子
+	AvatarSeed pgtype.Text `json:"avatar_seed"`
+	// 用户头像生成选项 JSON，保留颜色、配件等后续扩展配置
+	AvatarOptions []byte `json:"avatar_options"`
 }
 
 // 数字员工业务身份表

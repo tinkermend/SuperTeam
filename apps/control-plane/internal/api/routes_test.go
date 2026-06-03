@@ -543,7 +543,7 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	}
 	cookie := loginResp.Result().Cookies()[0]
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/auth/users", strings.NewReader(`{"username":"operator","password":"secret"}`))
+	createReq := httptest.NewRequest(http.MethodPost, "/api/auth/users", strings.NewReader(`{"username":"operator","password":"secret","avatar":{"provider":"dicebear","style":"adventurer","seed":"operator-avatar"}}`))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.AddCookie(cookie)
 	createResp := httptest.NewRecorder()
@@ -553,7 +553,12 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	}
 	var createBody struct {
 		User struct {
-			ID string `json:"id"`
+			ID     string `json:"id"`
+			Avatar struct {
+				Provider string `json:"provider"`
+				Style    string `json:"style"`
+				Seed     string `json:"seed"`
+			} `json:"avatar"`
 		} `json:"user"`
 	}
 	if err := json.NewDecoder(createResp.Body).Decode(&createBody); err != nil {
@@ -562,6 +567,9 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	operatorID, err := uuid.Parse(createBody.User.ID)
 	if err != nil {
 		t.Fatalf("expected created user ID to be UUID, got %q: %v", createBody.User.ID, err)
+	}
+	if createBody.User.Avatar.Provider != "dicebear" || createBody.User.Avatar.Style != "adventurer" || createBody.User.Avatar.Seed != "operator-avatar" {
+		t.Fatalf("expected created user avatar to round-trip, got %#v", createBody.User.Avatar)
 	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/auth/users?q=operator&status=active&limit=10&offset=0", nil)
@@ -575,6 +583,11 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 		Items []struct {
 			Username string `json:"username"`
 			Status   string `json:"status"`
+			Avatar   struct {
+				Provider string `json:"provider"`
+				Style    string `json:"style"`
+				Seed     string `json:"seed"`
+			} `json:"avatar"`
 		} `json:"items"`
 	}
 	if err := json.NewDecoder(listResp.Body).Decode(&listBody); err != nil {
@@ -585,6 +598,9 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	}
 	if len(listBody.Items) != 1 || listBody.Items[0].Username != "operator" {
 		t.Fatalf("expected only operator user, got %#v", listBody.Items)
+	}
+	if listBody.Items[0].Avatar.Seed != "operator-avatar" {
+		t.Fatalf("expected listed user avatar seed to be preserved, got %#v", listBody.Items[0].Avatar)
 	}
 
 	statusReq := httptest.NewRequest(http.MethodPatch, "/api/auth/users/"+operatorID.String()+"/status", strings.NewReader(`{"status":"disabled"}`))
@@ -1440,11 +1456,11 @@ func (s *routeRuntimeAuthService) ValidateRuntimeToken(ctx context.Context, node
 }
 
 type routeAuthRepo struct {
-	users         map[string]*auth.User
-	usersByID     map[uuid.UUID]*auth.User
-	sessions      map[string]*auth.Session
-	loginLogs     []auth.LoginLog
-	operationLogs []auth.CreateOperationLogParams
+	users               map[string]*auth.User
+	usersByID           map[uuid.UUID]*auth.User
+	sessions            map[string]*auth.Session
+	loginLogs           []auth.LoginLog
+	operationLogs       []auth.CreateOperationLogParams
 	lastListUsersFilter auth.ListUsersFilter
 }
 
@@ -1458,8 +1474,8 @@ func newRouteAuthRepo() *routeAuthRepo {
 	}
 }
 
-func (r *routeAuthRepo) CreateUser(ctx context.Context, username, passwordHash string) (*auth.User, error) {
-	user := &auth.User{ID: uuid.New(), Username: username, PasswordHash: passwordHash, Status: "active"}
+func (r *routeAuthRepo) CreateUser(ctx context.Context, username, passwordHash string, avatar auth.UserAvatarConfig) (*auth.User, error) {
+	user := &auth.User{ID: uuid.New(), Username: username, PasswordHash: passwordHash, Status: "active", Avatar: avatar}
 	r.users[username] = user
 	r.usersByID[user.ID] = user
 	return user, nil

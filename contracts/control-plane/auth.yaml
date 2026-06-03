@@ -329,6 +329,8 @@ components:
           type: string
           format: password
           minLength: 1
+        avatar:
+          $ref: '#/components/schemas/UserAvatar'
 
     UpdateUserStatusRequest:
       type: object
@@ -385,7 +387,7 @@ components:
 
     UserSummary:
       type: object
-      required: [id, username, status]
+      required: [id, username, status, avatar]
       properties:
         id:
           type: string
@@ -395,6 +397,26 @@ components:
         status:
           type: string
           enum: [active, disabled]
+        avatar:
+          $ref: '#/components/schemas/UserAvatar'
+
+    UserAvatar:
+      type: object
+      required: [provider, style, seed]
+      properties:
+        provider:
+          type: string
+          enum: [dicebear]
+        style:
+          type: string
+          enum: [adventurer]
+        seed:
+          type: string
+          minLength: 1
+          maxLength: 255
+        options:
+          type: object
+          additionalProperties: true
 
     ErrorResponse:
       type: object

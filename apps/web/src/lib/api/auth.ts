@@ -4,9 +4,17 @@ import { ApiRequestError, buildApiUrl, parseJson } from "./client";
 export { ApiRequestError };
 
 export type UserSummary = {
+  avatar: UserAvatar;
   id: string;
   status: "active" | "disabled";
   username: string;
+};
+
+export type UserAvatar = {
+  options?: Record<string, unknown>;
+  provider: "dicebear";
+  seed: string;
+  style: "adventurer";
 };
 
 export type LoginRequest = {
@@ -38,6 +46,7 @@ export type ListUsersOptions = ApiClientOptions & {
 };
 
 export type CreateUserRequest = {
+  avatar?: UserAvatar;
   password: string;
   username: string;
 };

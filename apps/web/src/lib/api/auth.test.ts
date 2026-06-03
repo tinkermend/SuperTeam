@@ -192,6 +192,11 @@ describe("auth api client", () => {
               id: userId,
               username: "admin",
               status: "active",
+              avatar: {
+                provider: "dicebear",
+                style: "adventurer",
+                seed: "admin-avatar",
+              },
             },
           ],
         }),
@@ -213,7 +218,7 @@ describe("auth api client", () => {
         status: "active",
       }),
     ).resolves.toMatchObject({
-      items: [{ username: "admin", status: "active" }],
+      items: [{ username: "admin", status: "active", avatar: { provider: "dicebear", style: "adventurer", seed: "admin-avatar" } }],
     });
 
     expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/auth/users?status=active&limit=20&offset=0", {
@@ -260,6 +265,11 @@ describe("auth api client", () => {
             id: operatorUserId,
             username: "operator",
             status: "active",
+            avatar: {
+              provider: "dicebear",
+              style: "adventurer",
+              seed: "operator-avatar",
+            },
           },
         }),
         {
@@ -271,12 +281,23 @@ describe("auth api client", () => {
       ),
     );
 
-    await createUser({ baseUrl: "http://control-plane.local/", fetcher }, { username: "operator", password: "secret" });
+    await createUser(
+      { baseUrl: "http://control-plane.local/", fetcher },
+      {
+        username: "operator",
+        password: "secret",
+        avatar: { provider: "dicebear", style: "adventurer", seed: "operator-avatar" },
+      },
+    );
     await updateUserStatus({ baseUrl: "http://control-plane.local/", fetcher }, operatorUserId, "disabled");
     await resetUserPassword({ baseUrl: "http://control-plane.local/", fetcher }, operatorUserId, "new-secret");
 
     expect(fetcher).toHaveBeenNthCalledWith(1, "http://control-plane.local/api/auth/users", {
-      body: JSON.stringify({ username: "operator", password: "secret" }),
+      body: JSON.stringify({
+        username: "operator",
+        password: "secret",
+        avatar: { provider: "dicebear", style: "adventurer", seed: "operator-avatar" },
+      }),
       credentials: "include",
       headers: {
         accept: "application/json",

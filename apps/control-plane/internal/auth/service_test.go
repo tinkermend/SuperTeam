@@ -11,12 +11,12 @@ import (
 )
 
 type mockRepo struct {
-	users         map[string]*User
-	usersByID     map[uuid.UUID]*User
-	runtimeTokens map[string]*RuntimeToken
-	sessions      map[string]*Session
-	loginLogs     []mockLoginLog
-	operationLogs []mockOperationLog
+	users               map[string]*User
+	usersByID           map[uuid.UUID]*User
+	runtimeTokens       map[string]*RuntimeToken
+	sessions            map[string]*Session
+	loginLogs           []mockLoginLog
+	operationLogs       []mockOperationLog
 	lastListUsersFilter ListUsersFilter
 }
 
@@ -52,12 +52,13 @@ type mockOperationLog struct {
 	Result       string
 }
 
-func (m *mockRepo) CreateUser(ctx context.Context, username, passwordHash string) (*User, error) {
+func (m *mockRepo) CreateUser(ctx context.Context, username, passwordHash string, avatar UserAvatarConfig) (*User, error) {
 	user := &User{
 		ID:           uuid.New(),
 		Username:     username,
 		PasswordHash: passwordHash,
 		Status:       "active",
+		Avatar:       avatar,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
@@ -276,12 +277,20 @@ func TestCreateManagedUserRecordsOperationLog(t *testing.T) {
 	created, err := svc.CreateManagedUser(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, CreateManagedUserInput{
 		Username: "operator",
 		Password: "secret",
+		Avatar: UserAvatarConfig{
+			Provider: "dicebear",
+			Style:    "adventurer",
+			Seed:     "operator-avatar",
+		},
 	})
 	if err != nil {
 		t.Fatalf("create managed user: %v", err)
 	}
 	if created.Username != "operator" || created.Status != UserStatusActive {
 		t.Fatalf("unexpected created user: %#v", created)
+	}
+	if created.Avatar.Provider != "dicebear" || created.Avatar.Style != "adventurer" || created.Avatar.Seed != "operator-avatar" {
+		t.Fatalf("expected created user avatar to be preserved, got %#v", created.Avatar)
 	}
 	if len(repo.operationLogs) != 1 {
 		t.Fatalf("expected operation log, got %d", len(repo.operationLogs))
@@ -292,6 +301,26 @@ func TestCreateManagedUserRecordsOperationLog(t *testing.T) {
 	}
 	if log.UserID == nil || *log.UserID != actor.ID || log.Username != actor.Username {
 		t.Fatalf("expected actor in operation log, got %#v", log)
+	}
+}
+
+func TestCreateManagedUserDefaultsAvatarSeed(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	actor, err := svc.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+
+	created, err := svc.CreateManagedUser(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, CreateManagedUserInput{
+		Username: "reviewer",
+		Password: "secret",
+	})
+	if err != nil {
+		t.Fatalf("create managed user: %v", err)
+	}
+	if created.Avatar.Provider != "dicebear" || created.Avatar.Style != "adventurer" || created.Avatar.Seed != "user:reviewer" {
+		t.Fatalf("expected deterministic default avatar, got %#v", created.Avatar)
 	}
 }
 

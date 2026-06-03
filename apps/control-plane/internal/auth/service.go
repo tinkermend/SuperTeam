@@ -13,7 +13,7 @@ import (
 const DefaultTenantID = "00000000-0000-0000-0000-000000000001"
 
 type Repository interface {
-	CreateUser(ctx context.Context, username, passwordHash string) (*User, error)
+	CreateUser(ctx context.Context, username, passwordHash string, avatar UserAvatarConfig) (*User, error)
 	ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error)
 	GetUserByUsername(ctx context.Context, username string) (*User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (*User, error)
@@ -52,7 +52,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password string) (*U
 	if err != nil {
 		return nil, err
 	}
-	return s.repo.CreateUser(ctx, username, string(hash))
+	return s.repo.CreateUser(ctx, username, string(hash), defaultUserAvatarConfig(username))
 }
 
 func (s *Service) ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error) {
@@ -71,13 +71,33 @@ func (s *Service) CreateManagedUser(ctx context.Context, actor Actor, input Crea
 	if err != nil {
 		return nil, err
 	}
-	user, err := s.repo.CreateUser(ctx, input.Username, string(hash))
+	user, err := s.repo.CreateUser(ctx, input.Username, string(hash), normalizeUserAvatarConfig(input.Username, input.Avatar))
 	if err != nil {
 		_ = s.recordUserOperation(ctx, actor, uuid.Nil, OperationActionUserCreate, OperationResultFailed)
 		return nil, err
 	}
 	_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserCreate, OperationResultSucceeded)
 	return user, nil
+}
+
+func normalizeUserAvatarConfig(username string, avatar UserAvatarConfig) UserAvatarConfig {
+	if avatar.Provider == "" {
+		avatar.Provider = "dicebear"
+	}
+	if avatar.Style == "" {
+		avatar.Style = "adventurer"
+	}
+	if avatar.Seed == "" {
+		avatar.Seed = "user:" + strings.TrimSpace(username)
+	}
+	if avatar.Options == nil {
+		avatar.Options = map[string]any{}
+	}
+	return avatar
+}
+
+func defaultUserAvatarConfig(username string) UserAvatarConfig {
+	return normalizeUserAvatarConfig(username, UserAvatarConfig{})
 }
 
 func (s *Service) UpdateManagedUserStatus(ctx context.Context, actor Actor, userID uuid.UUID, status string) (*User, error) {
