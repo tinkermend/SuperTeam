@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,8 +28,8 @@ struct RuntimeCommandRegistryState {
     command_runs: HashMap<String, String>,
     run_bindings: HashMap<String, RuntimeRunBinding>,
     latest_session_by_instance: HashMap<String, String>,
-    active_runs_by_session: HashMap<String, HashSet<String>>,
-    active_runs_by_instance: HashMap<String, HashSet<String>>,
+    active_runs_by_session: HashMap<String, Vec<String>>,
+    active_runs_by_instance: HashMap<String, Vec<String>>,
     rejected_commands: HashMap<String, String>,
 }
 
@@ -47,8 +47,14 @@ impl RuntimeCommandRegistry {
         state
             .active_runs_by_instance
             .entry(instance_key.clone())
-            .or_default()
-            .insert(binding.run_id.clone());
+            .or_default();
+        insert_active_run(
+            state
+                .active_runs_by_instance
+                .get_mut(&instance_key)
+                .expect("active instance list exists"),
+            &binding.run_id,
+        );
 
         if let Some(provider_session_id) = &binding.provider_session_id {
             state
@@ -57,8 +63,14 @@ impl RuntimeCommandRegistry {
             state
                 .active_runs_by_session
                 .entry(provider_session_id.clone())
-                .or_default()
-                .insert(binding.run_id.clone());
+                .or_default();
+            insert_active_run(
+                state
+                    .active_runs_by_session
+                    .get_mut(provider_session_id)
+                    .expect("active session list exists"),
+                &binding.run_id,
+            );
         }
 
         state.run_bindings.insert(binding.run_id.clone(), binding);
@@ -89,8 +101,14 @@ impl RuntimeCommandRegistry {
         state
             .active_runs_by_session
             .entry(provider_session_id.to_string())
-            .or_default()
-            .insert(run_id.to_string());
+            .or_default();
+        insert_active_run(
+            state
+                .active_runs_by_session
+                .get_mut(provider_session_id)
+                .expect("active session list exists"),
+            run_id,
+        );
 
         if let Some(binding) = state.run_bindings.get_mut(run_id) {
             binding.provider_session_id = Some(provider_session_id.to_string());
@@ -198,29 +216,35 @@ impl RuntimeCommandRegistryState {
                     &binding.execution_instance_id,
                     &binding.provider_type,
                 ))
-                .is_some_and(|run_ids| run_ids.contains(run_id))
+                .is_some_and(|run_ids| run_ids.iter().any(|active_run_id| active_run_id == run_id))
         })
     }
 }
 
 fn first_active_run(
     state: &RuntimeCommandRegistryState,
-    active_runs: &HashMap<String, HashSet<String>>,
+    active_runs: &HashMap<String, Vec<String>>,
     key: &str,
 ) -> Option<String> {
     active_runs
         .get(key)?
         .iter()
+        .rev()
         .find(|run_id| state.is_active_run(run_id))
         .cloned()
 }
 
-fn remove_active_run(active_runs: &mut HashMap<String, HashSet<String>>, key: &str, run_id: &str) {
+fn insert_active_run(run_ids: &mut Vec<String>, run_id: &str) {
+    run_ids.retain(|active_run_id| active_run_id != run_id);
+    run_ids.push(run_id.to_string());
+}
+
+fn remove_active_run(active_runs: &mut HashMap<String, Vec<String>>, key: &str, run_id: &str) {
     let Some(run_ids) = active_runs.get_mut(key) else {
         return;
     };
 
-    run_ids.remove(run_id);
+    run_ids.retain(|active_run_id| active_run_id != run_id);
     if run_ids.is_empty() {
         active_runs.remove(key);
     }
