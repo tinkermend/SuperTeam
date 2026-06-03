@@ -108,6 +108,49 @@ fn registry_prioritizes_command_then_provider_session_then_instance_latest() {
 }
 
 #[test]
+fn registry_does_not_fallback_to_instance_when_explicit_provider_session_misses() {
+    let registry = RuntimeCommandRegistry::default();
+    registry.record_run_started(binding_for("cmd-active", "run-active", None));
+
+    assert!(
+        registry
+            .active_run(ActiveRunLookup {
+                command_id: None,
+                provider_session_id: Some("missing-session"),
+                execution_instance_id: "22222222-2222-4222-8222-222222222222",
+                provider_type: "claude-code",
+            })
+            .is_none()
+    );
+}
+
+#[test]
+fn registry_records_initial_provider_session_as_active_without_marking_latest() {
+    let registry = RuntimeCommandRegistry::default();
+    registry.record_run_started(binding_for(
+        "cmd-preconfirmed",
+        "run-preconfirmed",
+        Some("preconfirmed-session"),
+    ));
+
+    assert_eq!(
+        registry
+            .active_run(ActiveRunLookup {
+                command_id: None,
+                provider_session_id: Some("preconfirmed-session"),
+                execution_instance_id: "22222222-2222-4222-8222-222222222222",
+                provider_type: "claude-code",
+            })
+            .as_deref(),
+        Some("run-preconfirmed")
+    );
+    assert_eq!(
+        registry.latest_provider_session("22222222-2222-4222-8222-222222222222", "claude-code"),
+        None
+    );
+}
+
+#[test]
 fn registry_returns_latest_active_run_for_provider_session_deterministically() {
     for attempt in 0..64 {
         let registry = RuntimeCommandRegistry::default();

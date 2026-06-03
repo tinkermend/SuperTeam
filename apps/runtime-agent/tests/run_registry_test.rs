@@ -112,3 +112,42 @@ async fn store_preserves_runtime_command_metadata_on_snapshot() {
     let snapshot = store.get_run(&run.id).await.expect("run snapshot");
     assert_eq!(snapshot.command_context, Some(command_context));
 }
+
+#[tokio::test]
+async fn store_does_not_cancel_completed_runs() {
+    let temp = TempDir::new().expect("tempdir");
+    let store = RuntimeRunStore::new(temp.path().join("runs"));
+    let run = store
+        .start_run(
+            RunSpec {
+                provider_kind: "claude".to_string(),
+                workspace_path: PathBuf::from("/tmp/workspace"),
+                prompt: "hello".to_string(),
+                session_id: None,
+                continue_session: false,
+                model: None,
+                command_context: None,
+            },
+            None,
+        )
+        .await
+        .expect("start run");
+
+    store
+        .record_event(
+            &run.id,
+            ProviderEvent::TurnCompleted {
+                summary: Some("done".to_string()),
+            },
+        )
+        .await
+        .expect("record completion");
+    store
+        .cancel_run(&run.id, Some("stop arrived late".to_string()))
+        .await
+        .expect("late cancel ignored");
+
+    let snapshot = store.get_run(&run.id).await.expect("run snapshot");
+    assert_eq!(snapshot.status, RunStatus::Completed);
+    assert_eq!(snapshot.error, None);
+}

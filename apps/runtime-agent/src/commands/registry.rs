@@ -58,9 +58,6 @@ impl RuntimeCommandRegistry {
 
         if let Some(provider_session_id) = &binding.provider_session_id {
             state
-                .latest_session_by_instance
-                .insert(instance_key, provider_session_id.clone());
-            state
                 .active_runs_by_session
                 .entry(provider_session_id.clone())
                 .or_default();
@@ -186,14 +183,12 @@ impl RuntimeCommandRegistry {
         }
 
         if let Some(provider_session_id) = lookup.provider_session_id {
-            if let Some(run_id) = first_active_run_for_session(
+            return first_active_run_for_session(
                 &state,
                 provider_session_id,
                 lookup.execution_instance_id,
                 lookup.provider_type,
-            ) {
-                return Some(run_id);
-            }
+            );
         }
 
         first_active_run(

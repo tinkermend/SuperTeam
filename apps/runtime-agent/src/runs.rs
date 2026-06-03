@@ -181,6 +181,9 @@ impl RuntimeRunStore {
             let state = runs
                 .get_mut(run_id)
                 .ok_or_else(|| anyhow::anyhow!("run not found: {run_id}"))?;
+            if state.snapshot.status != RunStatus::Running {
+                return Ok(());
+            }
             state.snapshot.status = RunStatus::Cancelled;
             state.snapshot.finished_at_ms = Some(now_ms());
             state.snapshot.error = reason.clone();
