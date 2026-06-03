@@ -75,4 +75,30 @@ describe("UserSearchSelect", () => {
 
     expect(onSelect).toHaveBeenCalledWith(visibleUser);
   });
+
+  it("does not allow selecting users while disabled", async () => {
+    const onSelect = vi.fn();
+    const visibleUser: UserSummary = {
+      avatar: { provider: "dicebear", seed: "visible-user", style: "adventurer" },
+      id: "user-visible",
+      status: "active",
+      username: "zhoumin",
+    };
+    const fetcher = vi.fn(async () => jsonResponse({ items: [visibleUser] }));
+
+    const screen = await renderWithQueryClient(
+      <UserSearchSelect
+        apiBaseUrl="https://control-plane.example"
+        disabled
+        fetcher={fetcher}
+        inputLabel="选择团队成员"
+        onSelect={onSelect}
+      />,
+    );
+
+    await expect.element(screen.getByRole("searchbox", { name: "选择团队成员" })).toBeDisabled();
+    await expect.element(screen.getByText("zhoumin")).not.toBeInTheDocument();
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });

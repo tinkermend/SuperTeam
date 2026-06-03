@@ -1605,8 +1605,14 @@ describe("TeamDetailView", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "成员" }));
 
+    await expect
+      .element(screen.getByRole("searchbox", { name: "搜索直接添加用户" }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByRole("searchbox", { name: "搜索高权限申请目标用户" }))
+      .toBeVisible();
     await userEvent.type(
-      screen.getByRole("searchbox", { name: "搜索用户" }).first(),
+      screen.getByRole("searchbox", { name: "搜索直接添加用户" }),
       "member",
     );
     await userEvent.click(
@@ -1639,7 +1645,7 @@ describe("TeamDetailView", () => {
       .toBeDisabled();
 
     await userEvent.type(
-      screen.getByRole("searchbox", { name: "搜索用户" }).last(),
+      screen.getByRole("searchbox", { name: "搜索高权限申请目标用户" }),
       "viewer",
     );
     await userEvent.click(screen.getByRole("button", { name: /viewer/ }));

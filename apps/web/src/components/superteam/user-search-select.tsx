@@ -8,8 +8,10 @@ import { UserIdentity } from "./user-identity";
 
 export type UserSearchSelectProps = {
   apiBaseUrl: string;
+  disabled?: boolean;
   excludedUserIds?: string[];
   fetcher?: typeof fetch;
+  inputLabel?: string;
   onSelect: (user: UserSummary) => void;
   placeholder?: string;
   value?: UserSummary;
@@ -17,8 +19,10 @@ export type UserSearchSelectProps = {
 
 export function UserSearchSelect({
   apiBaseUrl,
+  disabled = false,
   excludedUserIds = [],
   fetcher,
+  inputLabel,
   onSelect,
   placeholder = "搜索用户",
   value,
@@ -34,10 +38,11 @@ export function UserSearchSelect({
         q,
         status: "active",
       }),
+    enabled: !disabled,
     queryKey: ["superteam", "user-search-select", apiBaseUrl, q],
   });
   const excluded = new Set(excludedUserIds);
-  const users = (usersQuery.data?.items ?? []).filter((user) => !excluded.has(user.id));
+  const users = disabled ? [] : (usersQuery.data?.items ?? []).filter((user) => !excluded.has(user.id));
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -47,7 +52,8 @@ export function UserSearchSelect({
         </div>
       ) : null}
       <Input
-        aria-label={placeholder}
+        aria-label={inputLabel ?? placeholder}
+        disabled={disabled}
         onChange={(event) => setQ(event.target.value)}
         placeholder={placeholder}
         type="search"
@@ -65,6 +71,7 @@ export function UserSearchSelect({
             <Button
               aria-label={`选择 ${user.username}`}
               className="h-auto justify-start rounded-md px-2 py-2"
+              disabled={disabled}
               key={user.id}
               onClick={() => onSelect(user)}
               type="button"

@@ -260,8 +260,10 @@ function DirectAddPanel({
             <Label>用户</Label>
             <UserSearchSelect
               apiBaseUrl={apiBaseUrl}
+              disabled={!canAdd || isPending}
               excludedUserIds={existingUserIds}
               fetcher={fetcher}
+              inputLabel="搜索直接添加用户"
               onSelect={setSelectedUser}
               value={selectedUser}
             />
@@ -336,8 +338,10 @@ function PrivilegedRequestPanel({
             <Label>目标用户</Label>
             <UserSearchSelect
               apiBaseUrl={apiBaseUrl}
+              disabled={!canRequest || isPending}
               excludedUserIds={existingUserIds}
               fetcher={fetcher}
+              inputLabel="搜索高权限申请目标用户"
               onSelect={setSelectedUser}
               value={selectedUser}
             />
