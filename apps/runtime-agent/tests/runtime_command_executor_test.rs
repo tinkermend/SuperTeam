@@ -63,6 +63,52 @@ fn session_command_with_refs(
     context_refs: Vec<serde_json::Value>,
     artifact_refs: Vec<serde_json::Value>,
 ) -> RuntimeCommand {
+    session_command_full(
+        command_id,
+        command_type,
+        mode,
+        provider_session_id,
+        prompt,
+        input,
+        context_refs,
+        artifact_refs,
+        true,
+    )
+}
+
+fn session_command_with_recoverable(
+    command_id: &str,
+    command_type: RuntimeCommandType,
+    mode: &str,
+    provider_session_id: Option<&str>,
+    prompt: Option<&str>,
+    input: Option<&str>,
+    recoverable: bool,
+) -> RuntimeCommand {
+    session_command_full(
+        command_id,
+        command_type,
+        mode,
+        provider_session_id,
+        prompt,
+        input,
+        Vec::new(),
+        Vec::new(),
+        recoverable,
+    )
+}
+
+fn session_command_full(
+    command_id: &str,
+    command_type: RuntimeCommandType,
+    mode: &str,
+    provider_session_id: Option<&str>,
+    prompt: Option<&str>,
+    input: Option<&str>,
+    context_refs: Vec<serde_json::Value>,
+    artifact_refs: Vec<serde_json::Value>,
+    recoverable: bool,
+) -> RuntimeCommand {
     RuntimeCommand {
         id: command_id.to_string(),
         command_type,
@@ -74,7 +120,7 @@ fn session_command_with_refs(
             "session_policy": {
                 "mode": mode,
                 "provider_session_id": provider_session_id,
-                "recoverable": true
+                "recoverable": recoverable
             },
             "prompt": prompt,
             "input": input,
@@ -460,6 +506,133 @@ sleep 5
         .await
         .expect("completed run snapshot");
     assert_eq!(snapshot.status, RunStatus::Completed);
+}
+
+#[tokio::test]
+async fn send_input_reuse_latest_ignores_ephemeral_sessions() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_claude = make_script(
+        temp.path(),
+        "ephemeral-claude",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"system","session_id":"ephemeral-session"}'
+printf '%s\n' '{"type":"result","result":"ephemeral done"}'
+"#,
+    );
+    let executor = configure_runtime(&temp, fake_claude);
+
+    let start = executor
+        .handle_command(session_command(
+            "cmd-start-ephemeral",
+            RuntimeCommandType::StartSession,
+            "ephemeral",
+            None,
+            Some("temporary provider turn"),
+            None,
+        ))
+        .await
+        .expect("start_session accepted");
+    let started_run_id = start.run_id.expect("started run id");
+    let snapshot = wait_for_status(&executor.runs(), &started_run_id, RunStatus::Completed).await;
+
+    assert_eq!(
+        snapshot.provider_session_id.as_deref(),
+        Some("ephemeral-session")
+    );
+    assert_eq!(
+        executor
+            .registry()
+            .latest_provider_session(EXECUTION_INSTANCE_ID, "claude-code"),
+        None
+    );
+
+    let error = executor
+        .handle_command(session_command(
+            "cmd-send-after-ephemeral",
+            RuntimeCommandType::SendInput,
+            "reuse_latest",
+            None,
+            None,
+            Some("try to reuse ephemeral"),
+        ))
+        .await
+        .expect_err("send_input should not reuse an ephemeral provider session");
+
+    assert!(
+        error.to_string().contains("provider session"),
+        "unexpected error: {error}"
+    );
+    assert_eq!(
+        executor
+            .registry()
+            .rejection("cmd-send-after-ephemeral")
+            .as_deref(),
+        Some(error.to_string().as_str())
+    );
+}
+
+#[tokio::test]
+async fn send_input_reuse_latest_ignores_non_recoverable_sessions() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_claude = make_script(
+        temp.path(),
+        "non-recoverable-claude",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"system","session_id":"non-recoverable-session"}'
+printf '%s\n' '{"type":"result","result":"non-recoverable done"}'
+"#,
+    );
+    let executor = configure_runtime(&temp, fake_claude);
+
+    let start = executor
+        .handle_command(session_command_with_recoverable(
+            "cmd-start-non-recoverable",
+            RuntimeCommandType::StartSession,
+            "new",
+            None,
+            Some("non recoverable provider turn"),
+            None,
+            false,
+        ))
+        .await
+        .expect("start_session accepted");
+    let started_run_id = start.run_id.expect("started run id");
+    let snapshot = wait_for_status(&executor.runs(), &started_run_id, RunStatus::Completed).await;
+
+    assert_eq!(
+        snapshot.provider_session_id.as_deref(),
+        Some("non-recoverable-session")
+    );
+    assert_eq!(
+        executor
+            .registry()
+            .latest_provider_session(EXECUTION_INSTANCE_ID, "claude-code"),
+        None
+    );
+
+    let error = executor
+        .handle_command(session_command(
+            "cmd-send-after-non-recoverable",
+            RuntimeCommandType::SendInput,
+            "reuse_latest",
+            None,
+            None,
+            Some("try to reuse non recoverable"),
+        ))
+        .await
+        .expect_err("send_input should not reuse a non-recoverable provider session");
+
+    assert!(
+        error.to_string().contains("provider session"),
+        "unexpected error: {error}"
+    );
+    assert_eq!(
+        executor
+            .registry()
+            .rejection("cmd-send-after-non-recoverable")
+            .as_deref(),
+        Some(error.to_string().as_str())
+    );
 }
 
 #[tokio::test]

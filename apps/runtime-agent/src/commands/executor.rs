@@ -71,6 +71,7 @@ impl RuntimeCommandExecutor {
             self.recorded_error(&command.id, anyhow::anyhow!("prompt or input is required"))
         })?;
         let session_id = self.input_session_id(&command, &payload)?;
+        let reusable_provider_session = reusable_provider_session(&payload);
         let provider = self.select_provider(&command.id, &payload)?;
         let workspace_path = self.ensure_command_instance(&command.id, &payload)?;
         let spec = RunSpec {
@@ -106,7 +107,7 @@ impl RuntimeCommandExecutor {
             run_id: snapshot.id.clone(),
             execution_instance_id: payload.execution_instance_id.clone(),
             provider_type: payload.provider_type.clone(),
-            provider_session_id: session_id,
+            provider_session_id: session_id.clone().filter(|_| reusable_provider_session),
         });
         let run_id = snapshot.id.clone();
         let provider_run = match provider.start(provider_request(&spec)).await {
@@ -138,7 +139,11 @@ impl RuntimeCommandExecutor {
                 run_id: Some(run_id),
             });
         }
-        self.spawn_provider_event_drain(run_id.clone(), provider_run.events);
+        self.spawn_provider_event_drain(
+            run_id.clone(),
+            provider_run.events,
+            reusable_provider_session,
+        );
 
         Ok(RuntimeCommandOutcome {
             command_id: payload.command_id,
@@ -307,12 +312,23 @@ impl RuntimeCommandExecutor {
         }
     }
 
-    fn spawn_provider_event_drain(&self, run_id: String, events: ProviderEventStream) {
+    fn spawn_provider_event_drain(
+        &self,
+        run_id: String,
+        events: ProviderEventStream,
+        reusable_provider_session: bool,
+    ) {
         let runs = self.runs.clone();
         let registry = self.registry.clone();
         tokio::spawn(async move {
-            let result =
-                drain_provider_events(runs.clone(), registry.clone(), run_id.clone(), events).await;
+            let result = drain_provider_events(
+                runs.clone(),
+                registry.clone(),
+                run_id.clone(),
+                events,
+                reusable_provider_session,
+            )
+            .await;
 
             if let Err(error) = result {
                 if !run_is_cancelled(&runs, &run_id).await {
@@ -335,11 +351,16 @@ async fn drain_provider_events(
     registry: RuntimeCommandRegistry,
     run_id: String,
     mut events: ProviderEventStream,
+    reusable_provider_session: bool,
 ) -> anyhow::Result<()> {
     while let Some(event) = events.next().await {
         let event = event?;
         if let ProviderEvent::SessionStarted { session_id } = &event {
-            registry.record_provider_session(&run_id, session_id);
+            registry.record_provider_session_with_recoverability(
+                &run_id,
+                session_id,
+                reusable_provider_session,
+            );
         }
         let is_terminal = matches!(
             event,
@@ -377,4 +398,9 @@ fn non_empty_session_id(payload: &RuntimeSessionCommandPayload) -> Option<String
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
+}
+
+fn reusable_provider_session(payload: &RuntimeSessionCommandPayload) -> bool {
+    payload.session_policy.recoverable
+        && payload.session_policy.mode != SessionPolicyMode::Ephemeral
 }

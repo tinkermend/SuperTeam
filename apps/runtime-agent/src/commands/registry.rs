@@ -77,6 +77,15 @@ impl RuntimeCommandRegistry {
     }
 
     pub fn record_provider_session(&self, run_id: &str, provider_session_id: &str) {
+        self.record_provider_session_with_recoverability(run_id, provider_session_id, true);
+    }
+
+    pub fn record_provider_session_with_recoverability(
+        &self,
+        run_id: &str,
+        provider_session_id: &str,
+        reusable: bool,
+    ) {
         let mut state = self
             .state
             .lock()
@@ -95,9 +104,11 @@ impl RuntimeCommandRegistry {
         }
 
         let instance_key = instance_key(&binding.execution_instance_id, &binding.provider_type);
-        state
-            .latest_session_by_instance
-            .insert(instance_key, provider_session_id.to_string());
+        if reusable {
+            state
+                .latest_session_by_instance
+                .insert(instance_key, provider_session_id.to_string());
+        }
         state
             .active_runs_by_session
             .entry(provider_session_id.to_string())

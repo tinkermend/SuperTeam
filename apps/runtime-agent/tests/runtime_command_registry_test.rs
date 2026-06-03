@@ -229,6 +229,29 @@ fn registry_returns_active_runs_for_stop_priority() {
 }
 
 #[test]
+fn registry_can_record_active_provider_session_without_updating_latest() {
+    let registry = RuntimeCommandRegistry::default();
+    registry.record_run_started(binding());
+    registry.record_provider_session_with_recoverability("run-001", "ephemeral-session", false);
+
+    assert_eq!(
+        registry.latest_provider_session("22222222-2222-4222-8222-222222222222", "claude-code"),
+        None
+    );
+    assert_eq!(
+        registry
+            .active_run(ActiveRunLookup {
+                command_id: None,
+                provider_session_id: Some("ephemeral-session"),
+                execution_instance_id: "22222222-2222-4222-8222-222222222222",
+                provider_type: "claude-code",
+            })
+            .as_deref(),
+        Some("run-001")
+    );
+}
+
+#[test]
 fn registry_records_rejected_commands() {
     let registry = RuntimeCommandRegistry::default();
     registry.record_rejection("cmd-bad", "prompt or input is required");
