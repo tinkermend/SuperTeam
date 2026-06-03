@@ -341,7 +341,14 @@ async fn drain_provider_events(
         if let ProviderEvent::SessionStarted { session_id } = &event {
             registry.record_provider_session(&run_id, session_id);
         }
+        let is_terminal = matches!(
+            event,
+            ProviderEvent::TurnCompleted { .. } | ProviderEvent::TurnError { .. }
+        );
         runs.record_event(&run_id, event).await?;
+        if is_terminal {
+            registry.record_run_finished(&run_id);
+        }
     }
     Ok(())
 }

@@ -402,6 +402,67 @@ sleep 5
 }
 
 #[tokio::test]
+async fn stop_session_after_turn_completed_does_not_cancel_completed_run() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_claude = make_script(
+        temp.path(),
+        "completed-but-open-claude",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"system","session_id":"completed-session"}'
+printf '%s\n' '{"type":"result","result":"done"}'
+sleep 5
+"#,
+    );
+    let executor = configure_runtime(&temp, fake_claude);
+
+    let start = executor
+        .handle_command(session_command(
+            "cmd-start-completed-open",
+            RuntimeCommandType::StartSession,
+            "new",
+            None,
+            Some("complete then stay open"),
+            None,
+        ))
+        .await
+        .expect("start_session accepted");
+    let started_run_id = start.run_id.expect("started run id");
+    wait_for_status(&executor.runs(), &started_run_id, RunStatus::Completed).await;
+
+    let stop_error = executor
+        .handle_command(session_command(
+            "cmd-stop-completed-open",
+            RuntimeCommandType::StopSession,
+            "resume",
+            Some("completed-session"),
+            Some(""),
+            None,
+        ))
+        .await
+        .expect_err("stop_session should not target a completed run");
+
+    assert!(
+        stop_error.to_string().contains("no active run found"),
+        "unexpected error: {stop_error}"
+    );
+    assert_eq!(
+        executor
+            .registry()
+            .rejection("cmd-stop-completed-open")
+            .as_deref(),
+        Some(stop_error.to_string().as_str())
+    );
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let snapshot = executor
+        .runs()
+        .get_run(&started_run_id)
+        .await
+        .expect("completed run snapshot");
+    assert_eq!(snapshot.status, RunStatus::Completed);
+}
+
+#[tokio::test]
 async fn send_input_without_session_or_reuse_latest_is_rejected() {
     let temp = TempDir::new().expect("tempdir");
     let fake_claude = make_script(
