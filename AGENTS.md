@@ -1,6 +1,6 @@
 ## 项目定位
 
-SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。
+SuperTeam 目标是把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。
 
 数据员工包含 agent 和 人类 ,人类主要作为审核与决策者角色参与
 
@@ -27,6 +27,7 @@ SuperTeam 是企业级数字员工控制平面。目标是把 AI 执行能力、
 - 表单校验：React Hook Form + Zod
 - 图标：lucide-react
 - 测试：Vitest、Playwright、Go test + testify、Rust cargo test、Temporal workflow test suite
+- 
 
 ## 数据库设计规则
 

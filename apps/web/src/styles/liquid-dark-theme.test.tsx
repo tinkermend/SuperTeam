@@ -6,7 +6,11 @@ describe('liquid glass dark theme styles', () => {
   it('does not reuse light-mode glare on dark sidebar and card surfaces', async () => {
     await render(
       <div className='dark'>
-        <aside data-testid='sidebar-inner' data-slot='sidebar-inner'>
+        <aside
+          data-sidebar='sidebar'
+          data-testid='sidebar-inner'
+          data-slot='sidebar-inner'
+        >
           sidebar
         </aside>
         <section data-testid='liquid-card' className='superteam-liquid-card'>
