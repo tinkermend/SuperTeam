@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check, ShieldAlert, Trash2, UserPlus, X } from "lucide-react";
 import {
@@ -43,6 +43,8 @@ export function TeamMembersTab({ allowedActions, apiBaseUrl, fetcher, teamId }: 
   const apiOptions = useMemo(() => ({ baseUrl: apiBaseUrl, fetcher }), [apiBaseUrl, fetcher]);
   const canAddMember = allowedActions.includes("team.member.add");
   const canRequestPrivilegedRole = allowedActions.includes("team.member.request_privileged_role");
+  const [directAddResetToken, setDirectAddResetToken] = useState(0);
+  const [privilegedRequestResetToken, setPrivilegedRequestResetToken] = useState(0);
   const members = useQuery({
     queryKey: ["team-members", teamId],
     queryFn: () => listTeamMembers(apiOptions, teamId),
@@ -57,7 +59,10 @@ export function TeamMembersTab({ allowedActions, apiBaseUrl, fetcher, teamId }: 
   };
   const addMutation = useMutation({
     mutationFn: (input: { role: "member" | "viewer"; user_id: string }) => addTeamMember(apiOptions, teamId, input),
-    onSuccess: refetchRoster,
+    onSuccess: () => {
+      refetchRoster();
+      setDirectAddResetToken((token) => token + 1);
+    },
   });
   const removeMutation = useMutation({
     mutationFn: (memberId: string) => removeTeamMember(apiOptions, teamId, memberId),
@@ -66,7 +71,10 @@ export function TeamMembersTab({ allowedActions, apiBaseUrl, fetcher, teamId }: 
   const createRequestMutation = useMutation({
     mutationFn: (input: { reason: string; requested_role: "owner" | "admin" | "approver"; target_user_id: string }) =>
       createTeamMemberRoleRequest(apiOptions, teamId, input),
-    onSuccess: refetchRoster,
+    onSuccess: () => {
+      refetchRoster();
+      setPrivilegedRequestResetToken((token) => token + 1);
+    },
   });
   const approveMutation = useMutation({
     mutationFn: (requestId: string) =>
@@ -145,6 +153,7 @@ export function TeamMembersTab({ allowedActions, apiBaseUrl, fetcher, teamId }: 
           fetcher={fetcher}
           isPending={addMutation.isPending}
           onSubmit={(input) => addMutation.mutate(input)}
+          resetToken={directAddResetToken}
         />
         <PrivilegedRequestPanel
           apiBaseUrl={apiBaseUrl}
@@ -153,6 +162,7 @@ export function TeamMembersTab({ allowedActions, apiBaseUrl, fetcher, teamId }: 
           fetcher={fetcher}
           isPending={createRequestMutation.isPending}
           onSubmit={(input) => createRequestMutation.mutate(input)}
+          resetToken={privilegedRequestResetToken}
         />
         <PendingRequestsPanel
           approvePending={approveMutation.isPending}
@@ -212,6 +222,7 @@ function DirectAddPanel({
   fetcher,
   isPending,
   onSubmit,
+  resetToken,
 }: {
   apiBaseUrl: string;
   canAdd: boolean;
@@ -219,9 +230,15 @@ function DirectAddPanel({
   fetcher?: typeof fetch;
   isPending: boolean;
   onSubmit: (input: { role: DirectTeamRole; user_id: string }) => void;
+  resetToken: number;
 }) {
   const [selectedUser, setSelectedUser] = useState<UserSummary | undefined>();
   const [role, setRole] = useState<DirectTeamRole>("member");
+
+  useEffect(() => {
+    setSelectedUser(undefined);
+    setRole("member");
+  }, [resetToken]);
 
   return (
     <Card className="rounded-md">
@@ -275,6 +292,7 @@ function PrivilegedRequestPanel({
   fetcher,
   isPending,
   onSubmit,
+  resetToken,
 }: {
   apiBaseUrl: string;
   canRequest: boolean;
@@ -282,10 +300,17 @@ function PrivilegedRequestPanel({
   fetcher?: typeof fetch;
   isPending: boolean;
   onSubmit: (input: { reason: string; requested_role: PrivilegedTeamRole; target_user_id: string }) => void;
+  resetToken: number;
 }) {
   const [selectedUser, setSelectedUser] = useState<UserSummary | undefined>();
   const [requestedRole, setRequestedRole] = useState<PrivilegedTeamRole>("admin");
   const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    setSelectedUser(undefined);
+    setRequestedRole("admin");
+    setReason("");
+  }, [resetToken]);
 
   return (
     <Card className="rounded-md">

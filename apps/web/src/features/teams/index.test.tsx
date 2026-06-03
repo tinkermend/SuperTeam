@@ -1634,6 +1634,9 @@ describe("TeamDetailView", () => {
       role: "member",
       user_id: "member-user",
     });
+    await expect
+      .element(screen.getByRole("button", { name: "添加成员" }).last())
+      .toBeDisabled();
 
     await userEvent.type(
       screen.getByRole("searchbox", { name: "搜索用户" }).last(),
@@ -1666,6 +1669,20 @@ describe("TeamDetailView", () => {
       requested_role: "admin",
       target_user_id: "viewer-user",
     });
+    await expect.element(screen.getByLabelText("申请原因")).toHaveValue("");
+    await expect
+      .element(screen.getByRole("button", { name: "提交申请" }))
+      .toBeDisabled();
+    await expect
+      .element(screen.getByRole("button", { name: "添加成员" }).last())
+      .toBeDisabled();
+    expect(
+      fetchCalls(fetcher).filter(
+        ([url, init]) =>
+          String(url).endsWith("/api/v1/teams/team-1/members") &&
+          init?.method === "POST",
+      ),
+    ).toHaveLength(1);
   });
 
   it("renders the team digital employees tab with metrics, table, and team-scoped quick create", async () => {
