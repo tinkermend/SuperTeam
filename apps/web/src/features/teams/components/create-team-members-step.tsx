@@ -36,6 +36,7 @@ export function CreateTeamMembersStep({
       return;
     onChange({ ...draft, initial_members: [...draft.initial_members, member] });
   }
+  const userItems = users.data?.items ?? [];
 
   return (
     <div className="space-y-5">
@@ -44,7 +45,22 @@ export function CreateTeamMembersStep({
       </div>
       <div className="space-y-2">
         <h3 className="text-sm font-medium">候选用户</h3>
-        {(users.data?.items ?? []).map((user) => {
+        {users.isLoading ? (
+          <div className="rounded-md border px-3 py-2 text-sm text-muted-foreground">
+            加载候选用户中
+          </div>
+        ) : null}
+        {users.isError ? (
+          <div className="rounded-md border px-3 py-2 text-sm text-destructive">
+            候选用户加载失败
+          </div>
+        ) : null}
+        {!users.isLoading && !users.isError && userItems.length === 0 ? (
+          <div className="rounded-md border px-3 py-2 text-sm text-muted-foreground">
+            暂无可添加的候选用户
+          </div>
+        ) : null}
+        {userItems.map((user) => {
           const isOwner = user.id === draft.owner?.id;
           return (
             <div

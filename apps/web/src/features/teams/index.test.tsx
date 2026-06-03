@@ -722,6 +722,15 @@ describe("TeamsView", () => {
       screen.getByRole("textbox", { name: "团队标识 slug", exact: true }),
       "security",
     );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "负责人", exact: true }),
+      "owner",
+    );
+    await expect
+      .poll(() => fetchCalls(fetcher).map(([url]) => String(url)))
+      .toContain(
+        "http://control-plane.local/api/auth/users?q=owner&status=active&limit=20&offset=0",
+      );
     await userEvent.click(screen.getByRole("button", { name: "owner" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(
