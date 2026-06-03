@@ -39,11 +39,12 @@ describe("team API", () => {
         human_owner_user_id: "33333333-3333-4333-8333-333333333333",
       },
     ];
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(teams), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(teams), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -53,11 +54,14 @@ describe("team API", () => {
       }),
     ).resolves.toEqual(teams);
 
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams", {
-      credentials: "include",
-      headers: { accept: "application/json" },
-      method: "GET",
-    });
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
   });
 
   it("lists team summaries with filters", async () => {
@@ -77,11 +81,12 @@ describe("team API", () => {
         risk_summary: "生产写操作需审批",
       },
     ];
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(teams), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(teams), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -94,11 +99,14 @@ describe("team API", () => {
       ),
     ).resolves.toEqual(teams);
 
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams?status=active&governance_status=draft_pending&q=ops", {
-      credentials: "include",
-      headers: { accept: "application/json" },
-      method: "GET",
-    });
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams?status=active&governance_status=draft_pending&q=ops",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
   });
 
   it("gets team overview with encoded team id", async () => {
@@ -117,11 +125,12 @@ describe("team API", () => {
       pending_item_count: 3,
       allowed_actions: ["team.update", "team.disable"],
     };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(overview), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(overview), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -153,11 +162,12 @@ describe("team API", () => {
       status: "active",
       human_owner_user_id: "33333333-3333-4333-8333-333333333333",
     };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(team), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(team), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -175,16 +185,22 @@ describe("team API", () => {
       ),
     ).resolves.toEqual(team);
 
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams/team%201%2Fprimary", {
-      body: JSON.stringify({
-        slug: "ops",
-        name: "运维团队",
-        human_owner_user_id: "33333333-3333-4333-8333-333333333333",
-      }),
-      credentials: "include",
-      headers: { accept: "application/json", "content-type": "application/json" },
-      method: "PATCH",
-    });
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team%201%2Fprimary",
+      {
+        body: JSON.stringify({
+          slug: "ops",
+          name: "运维团队",
+          human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+        }),
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        method: "PATCH",
+      },
+    );
   });
 
   it.each([
@@ -199,11 +215,12 @@ describe("team API", () => {
       name: "运维团队",
       status: "active",
     };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(team), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(team), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -216,12 +233,18 @@ describe("team API", () => {
       ),
     ).resolves.toEqual(team);
 
-    expect(fetcher).toHaveBeenCalledWith(`http://control-plane.local/api/v1/teams/team%201%2Fprimary${suffix}`, {
-      body: JSON.stringify({}),
-      credentials: "include",
-      headers: { accept: "application/json", "content-type": "application/json" },
-      method: "POST",
-    });
+    expect(fetcher).toHaveBeenCalledWith(
+      `http://control-plane.local/api/v1/teams/team%201%2Fprimary${suffix}`,
+      {
+        body: JSON.stringify({}),
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        method: "POST",
+      },
+    );
   });
 
   it("creates team with owner and initial members and parses overview", async () => {
@@ -248,11 +271,12 @@ describe("team API", () => {
       pending_item_count: 0,
       allowed_actions: ["team.update"],
     };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(overview), {
-        headers: { "content-type": "application/json" },
-        status: 201,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(overview), {
+          headers: { "content-type": "application/json" },
+          status: 201,
+        }),
     );
 
     await expect(
@@ -273,20 +297,26 @@ describe("team API", () => {
       ),
     ).resolves.toEqual(overview);
 
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams", {
-      body: JSON.stringify({
-        slug: "security",
-        name: "安全团队",
-        human_owner_user_id: "33333333-3333-4333-8333-333333333333",
-        initial_members: [
-          { user_id: "44444444-4444-4444-8444-444444444444", role: "member" },
-          { user_id: "55555555-5555-4555-8555-555555555555", role: "viewer" },
-        ],
-      }),
-      credentials: "include",
-      headers: { accept: "application/json", "content-type": "application/json" },
-      method: "POST",
-    });
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams",
+      {
+        body: JSON.stringify({
+          slug: "security",
+          name: "安全团队",
+          human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+          initial_members: [
+            { user_id: "44444444-4444-4444-8444-444444444444", role: "member" },
+            { user_id: "55555555-5555-4555-8555-555555555555", role: "viewer" },
+          ],
+        }),
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        method: "POST",
+      },
+    );
   });
 
   it("creates team config revision with encoded team id and JSON body", async () => {
@@ -305,11 +335,12 @@ describe("team API", () => {
       human_owner_user_id: "33333333-3333-4333-8333-333333333333",
       status: "active",
     };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(revision), {
-        headers: { "content-type": "application/json" },
-        status: 201,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(revision), {
+          headers: { "content-type": "application/json" },
+          status: 201,
+        }),
     );
 
     await expect(
@@ -338,7 +369,10 @@ describe("team API", () => {
           status: "active",
         }),
         credentials: "include",
-        headers: { accept: "application/json", "content-type": "application/json" },
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
         method: "POST",
       },
     );
@@ -360,11 +394,12 @@ describe("team API", () => {
       human_owner_user_id: "33333333-3333-4333-8333-333333333333",
       status: "active",
     };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(revision), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(revision), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -408,31 +443,53 @@ describe("team API", () => {
       changed_approval_rules: 1,
       changed_capabilities: 1,
       blocking_errors: [],
-      warnings: [{ field: "constitution.hard_rules", message: "新增硬性规则需要复核", severity: "warning" }],
+      warnings: [
+        {
+          field: "constitution.hard_rules",
+          message: "新增硬性规则需要复核",
+          severity: "warning",
+        },
+      ],
     };
-    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = new URL(String(input));
-      if (url.pathname.endsWith("/governance/drafts") && (init?.method ?? "GET") === "GET") {
-        return new Response(JSON.stringify([revision]), {
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        if (
+          url.pathname.endsWith("/governance/drafts") &&
+          (init?.method ?? "GET") === "GET"
+        ) {
+          return new Response(JSON.stringify([revision]), {
+            headers: { "content-type": "application/json" },
+            status: 200,
+          });
+        }
+        if (
+          url.pathname.endsWith("/diff") &&
+          (init?.method ?? "GET") === "GET"
+        ) {
+          return new Response(JSON.stringify(diff), {
+            headers: { "content-type": "application/json" },
+            status: 200,
+          });
+        }
+        return new Response(JSON.stringify(revision), {
           headers: { "content-type": "application/json" },
-          status: 200,
+          status:
+            init?.method === "POST" &&
+            url.pathname.endsWith("/governance/drafts")
+              ? 201
+              : 200,
         });
-      }
-      if (url.pathname.endsWith("/diff") && (init?.method ?? "GET") === "GET") {
-        return new Response(JSON.stringify(diff), {
-          headers: { "content-type": "application/json" },
-          status: 200,
-        });
-      }
-      return new Response(JSON.stringify(revision), {
-        headers: { "content-type": "application/json" },
-        status: init?.method === "POST" && url.pathname.endsWith("/governance/drafts") ? 201 : 200,
-      });
-    }) as unknown as typeof fetch;
+      },
+    ) as unknown as typeof fetch;
     const options = { baseUrl: "http://control-plane.local", fetcher };
 
-    await expect(getCurrentTeamGovernance(options, "team 1/primary")).resolves.toEqual(revision);
-    await expect(listTeamGovernanceDrafts(options, "team 1/primary")).resolves.toEqual([revision]);
+    await expect(
+      getCurrentTeamGovernance(options, "team 1/primary"),
+    ).resolves.toEqual(revision);
+    await expect(
+      listTeamGovernanceDrafts(options, "team 1/primary"),
+    ).resolves.toEqual([revision]);
     await expect(
       createTeamGovernanceDraft(options, "team 1/primary", {
         constitution: { hard_rules: ["提交前必须审批"] },
@@ -444,20 +501,32 @@ describe("team API", () => {
         capability_policy: { mcp_bindings: ["ops-mcp-server"] },
       }),
     ).resolves.toEqual(revision);
-    await expect(approveTeamGovernanceDraft(options, "team 1/primary", "draft 1/primary")).resolves.toEqual(revision);
-    await expect(rejectTeamGovernanceDraft(options, "team 1/primary", "draft 1/primary")).resolves.toEqual(revision);
-    await expect(previewTeamGovernanceDiff(options, "team 1/primary", "draft 1/primary")).resolves.toEqual(diff);
+    await expect(
+      approveTeamGovernanceDraft(options, "team 1/primary", "draft 1/primary"),
+    ).resolves.toEqual(revision);
+    await expect(
+      rejectTeamGovernanceDraft(options, "team 1/primary", "draft 1/primary"),
+    ).resolves.toEqual(revision);
+    await expect(
+      previewTeamGovernanceDiff(options, "team 1/primary", "draft 1/primary"),
+    ).resolves.toEqual(diff);
 
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams/team%201%2Fprimary/governance/current", {
-      credentials: "include",
-      headers: { accept: "application/json" },
-      method: "GET",
-    });
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams/team%201%2Fprimary/governance/drafts", {
-      credentials: "include",
-      headers: { accept: "application/json" },
-      method: "GET",
-    });
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/governance/current",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/governance/drafts",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/teams/team%201%2Fprimary/governance/drafts",
       expect.objectContaining({
@@ -472,7 +541,9 @@ describe("team API", () => {
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/teams/team%201%2Fprimary/governance/drafts/draft%201%2Fprimary",
       expect.objectContaining({
-        body: JSON.stringify({ capability_policy: { mcp_bindings: ["ops-mcp-server"] } }),
+        body: JSON.stringify({
+          capability_policy: { mcp_bindings: ["ops-mcp-server"] },
+        }),
         credentials: "include",
         method: "PATCH",
       }),
@@ -510,19 +581,27 @@ describe("team API", () => {
         membership_status: "active",
       },
     ];
-    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === "DELETE") {
-        return new Response(null, { status: 204 });
-      }
-      return new Response(JSON.stringify(init?.method === "POST" ? members[0] : members), {
-        headers: { "content-type": "application/json" },
-        status: init?.method === "POST" ? 201 : 200,
-      });
-    }) as unknown as typeof fetch;
+    const fetcher = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "DELETE") {
+          return new Response(null, { status: 204 });
+        }
+        return new Response(
+          JSON.stringify(init?.method === "POST" ? members[0] : members),
+          {
+            headers: { "content-type": "application/json" },
+            status: init?.method === "POST" ? 201 : 200,
+          },
+        );
+      },
+    ) as unknown as typeof fetch;
 
-    await expect(listTeamMembers({ baseUrl: "http://control-plane.local", fetcher }, "team 1/primary")).resolves.toEqual(
-      members,
-    );
+    await expect(
+      listTeamMembers(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "team 1/primary",
+      ),
+    ).resolves.toEqual(members);
     await expect(
       addTeamMember(
         {
@@ -534,20 +613,36 @@ describe("team API", () => {
       ),
     ).resolves.toEqual(members[0]);
     await expect(
-      removeTeamMember({ baseUrl: "http://control-plane.local", fetcher }, "team 1/primary", "membership 1/primary"),
+      removeTeamMember(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "team 1/primary",
+        "membership 1/primary",
+      ),
     ).resolves.toBeUndefined();
 
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams/team%201%2Fprimary/members", {
-      credentials: "include",
-      headers: { accept: "application/json" },
-      method: "GET",
-    });
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams/team%201%2Fprimary/members", {
-      body: JSON.stringify({ role: "member", user_id: "33333333-3333-4333-8333-333333333333" }),
-      credentials: "include",
-      headers: { accept: "application/json", "content-type": "application/json" },
-      method: "POST",
-    });
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/members",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/members",
+      {
+        body: JSON.stringify({
+          role: "member",
+          user_id: "33333333-3333-4333-8333-333333333333",
+        }),
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        method: "POST",
+      },
+    );
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/teams/team%201%2Fprimary/members/membership%201%2Fprimary",
       {
@@ -574,11 +669,12 @@ describe("team API", () => {
         created_at: "2026-06-03T09:30:00Z",
       },
     ];
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(events), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(events), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -592,11 +688,14 @@ describe("team API", () => {
       ),
     ).resolves.toEqual(events);
 
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams/team-1/audit?limit=20&offset=0", {
-      credentials: "include",
-      headers: { accept: "application/json" },
-      method: "GET",
-    });
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team-1/audit?limit=20&offset=0",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
   });
 
   it("manages privileged role requests", async () => {
@@ -611,15 +710,23 @@ describe("team API", () => {
       reason: "需要维护成员",
       decision_reason: "",
     };
-    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
-      new Response(JSON.stringify(init?.method === "GET" ? [roleRequest] : roleRequest), {
-        headers: { "content-type": "application/json" },
-        status: init?.method === "POST" ? 201 : 200,
-      }),
+    const fetcher = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Response(
+          JSON.stringify(init?.method === "GET" ? [roleRequest] : roleRequest),
+          {
+            headers: { "content-type": "application/json" },
+            status: init?.method === "POST" ? 201 : 200,
+          },
+        ),
     ) as unknown as typeof fetch;
 
     await expect(
-      listTeamMemberRoleRequests({ baseUrl: "http://control-plane.local", fetcher }, "team 1/primary", "pending"),
+      listTeamMemberRoleRequests(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "team 1/primary",
+        "pending",
+      ),
     ).resolves.toEqual([roleRequest]);
     await expect(
       createTeamMemberRoleRequest(
@@ -669,7 +776,10 @@ describe("team API", () => {
           target_user_id: "33333333-3333-4333-8333-333333333333",
         }),
         credentials: "include",
-        headers: { accept: "application/json", "content-type": "application/json" },
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
         method: "POST",
       },
     );
@@ -678,7 +788,10 @@ describe("team API", () => {
       {
         body: JSON.stringify({ decision_reason: "同意" }),
         credentials: "include",
-        headers: { accept: "application/json", "content-type": "application/json" },
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
         method: "POST",
       },
     );
@@ -687,7 +800,10 @@ describe("team API", () => {
       {
         body: JSON.stringify({ decision_reason: "权限过高" }),
         credentials: "include",
-        headers: { accept: "application/json", "content-type": "application/json" },
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
         method: "POST",
       },
     );

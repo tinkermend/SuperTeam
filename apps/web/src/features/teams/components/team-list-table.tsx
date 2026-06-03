@@ -7,15 +7,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { GovernanceSummaryStatus, TeamListItem, TeamStatus } from "@/lib/api/teams";
+import type {
+  GovernanceSummaryStatus,
+  TeamListItem,
+  TeamStatus,
+} from "@/lib/api/teams";
 
 type TeamListTableProps = {
   teams: TeamListItem[];
+  highlightedTeamId?: string;
   isError?: boolean;
   isLoading?: boolean;
 };
 
-export function TeamListTable({ isError, isLoading, teams }: TeamListTableProps) {
+export function TeamListTable({
+  highlightedTeamId,
+  isError,
+  isLoading,
+  teams,
+}: TeamListTableProps) {
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">加载中</p>;
   }
@@ -41,13 +51,24 @@ export function TeamListTable({ isError, isLoading, teams }: TeamListTableProps)
             <TableHead>治理状态</TableHead>
             <TableHead>当前版本</TableHead>
             <TableHead>待批准</TableHead>
+            <TableHead>更新时间</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {teams.map((team) => (
-            <TableRow key={team.id}>
+            <TableRow
+              className={
+                team.id === highlightedTeamId
+                  ? "bg-[var(--superteam-menu-accent-soft)]"
+                  : undefined
+              }
+              key={team.id}
+            >
               <TableCell>
-                <a className="font-medium hover:underline" href={`/teams/${team.id}`}>
+                <a
+                  className="font-medium hover:underline"
+                  href={`/teams/${team.id}`}
+                >
                   {team.name}
                 </a>
                 <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
@@ -55,21 +76,47 @@ export function TeamListTable({ isError, isLoading, teams }: TeamListTableProps)
                   <TeamStatusBadge status={team.status} />
                 </div>
               </TableCell>
-              <TableCell>{team.human_owner_user_id ?? "未设置"}</TableCell>
+              <TableCell>
+                <div className="font-medium">{teamOwnerLabel(team)}</div>
+                {team.human_owner?.email ? (
+                  <div className="text-xs text-muted-foreground">
+                    {team.human_owner.email}
+                  </div>
+                ) : null}
+              </TableCell>
               <TableCell>{team.member_count}</TableCell>
               <TableCell>{team.digital_employee_count}</TableCell>
               <TableCell>{team.capability_count}</TableCell>
               <TableCell>
                 <GovernanceStatusBadge status={team.governance_status} />
               </TableCell>
-              <TableCell>{team.current_revision ? `v${team.current_revision}` : "未配置"}</TableCell>
+              <TableCell>
+                {team.current_revision ? `v${team.current_revision}` : "未配置"}
+              </TableCell>
               <TableCell>{team.pending_draft_count}</TableCell>
+              <TableCell>
+                {team.updated_at
+                  ? new Date(team.updated_at).toLocaleString("zh-CN")
+                  : "-"}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
     </div>
   );
+}
+
+function teamOwnerLabel(team: TeamListItem) {
+  if (team.human_owner) {
+    return (
+      team.human_owner.display_name ||
+      team.human_owner.username ||
+      team.human_owner.email ||
+      team.human_owner.user_id
+    );
+  }
+  return team.human_owner_user_id ?? "未设置";
 }
 
 export function TeamStatusBadge({ status }: { status: TeamStatus }) {
@@ -79,10 +126,18 @@ export function TeamStatusBadge({ status }: { status: TeamStatus }) {
     disabled: "已禁用",
   };
 
-  return <Badge variant={status === "active" ? "default" : "secondary"}>{label[status]}</Badge>;
+  return (
+    <Badge variant={status === "active" ? "default" : "secondary"}>
+      {label[status]}
+    </Badge>
+  );
 }
 
-function GovernanceStatusBadge({ status }: { status: GovernanceSummaryStatus }) {
+function GovernanceStatusBadge({
+  status,
+}: {
+  status: GovernanceSummaryStatus;
+}) {
   const label: Record<GovernanceSummaryStatus, string> = {
     active: "已生效",
     draft_pending: "草案待批准",
@@ -90,5 +145,9 @@ function GovernanceStatusBadge({ status }: { status: GovernanceSummaryStatus }) 
     not_configured: "未配置",
   };
 
-  return <Badge variant={status === "active" ? "default" : "secondary"}>{label[status]}</Badge>;
+  return (
+    <Badge variant={status === "active" ? "default" : "secondary"}>
+      {label[status]}
+    </Badge>
+  );
 }

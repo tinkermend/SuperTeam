@@ -51,7 +51,7 @@ export function TeamDetailLayout({
               <TeamStatusBadge status={team.status} />
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              {team.slug} / 负责人 {team.human_owner_user_id ?? "未设置"}
+              {team.slug} / 负责人 {teamOwnerLabel(team)}
             </p>
           </div>
         </div>
@@ -135,4 +135,11 @@ export function TeamDetailLayout({
       </Tabs>
     </div>
   );
+}
+
+function teamOwnerLabel(team: TeamOverview["team"]) {
+  if (team.human_owner) {
+    return team.human_owner.display_name || team.human_owner.username || team.human_owner.email || team.human_owner.user_id;
+  }
+  return team.human_owner_user_id ?? "未设置";
 }
