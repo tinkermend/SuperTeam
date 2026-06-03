@@ -17,6 +17,7 @@ type mockRepo struct {
 	sessions      map[string]*Session
 	loginLogs     []mockLoginLog
 	operationLogs []mockOperationLog
+	lastListUsersFilter ListUsersFilter
 }
 
 func newMockRepo() *mockRepo {
@@ -66,6 +67,7 @@ func (m *mockRepo) CreateUser(ctx context.Context, username, passwordHash string
 }
 
 func (m *mockRepo) ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error) {
+	m.lastListUsersFilter = filter
 	users := make([]*User, 0, len(m.usersByID))
 	for _, user := range m.usersByID {
 		if filter.Status != "" && user.Status != filter.Status {
@@ -233,6 +235,33 @@ func TestListUsersUsesStatusFilter(t *testing.T) {
 	}
 	if len(users) != 1 || users[0].ID != activeUser.ID {
 		t.Fatalf("expected only active user %s, got %#v", activeUser.ID, users)
+	}
+}
+
+func TestListUsersNormalizesSearchQuery(t *testing.T) {
+	repo := &mockRepo{}
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	if _, err := svc.ListUsers(context.Background(), ListUsersFilter{
+		Q:      "  owner@example.com  ",
+		Status: UserStatusActive,
+		Limit:  200,
+		Offset: -5,
+	}); err != nil {
+		t.Fatalf("list users: %v", err)
+	}
+
+	if repo.lastListUsersFilter.Q != "owner@example.com" {
+		t.Fatalf("expected trimmed query, got %q", repo.lastListUsersFilter.Q)
+	}
+	if repo.lastListUsersFilter.Status != UserStatusActive {
+		t.Fatalf("expected active status filter, got %q", repo.lastListUsersFilter.Status)
+	}
+	if repo.lastListUsersFilter.Limit != 20 || repo.lastListUsersFilter.Offset != 0 {
+		t.Fatalf("expected normalized pagination 20/0, got %d/%d", repo.lastListUsersFilter.Limit, repo.lastListUsersFilter.Offset)
 	}
 }
 

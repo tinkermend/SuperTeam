@@ -225,6 +225,33 @@ describe("auth api client", () => {
     });
   });
 
+  it("lists users with search query and active filter", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify({ items: [] }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await listUsers({
+      baseUrl: "http://control-plane.local",
+      fetcher,
+      limit: 20,
+      offset: 0,
+      q: "owner",
+      status: "active",
+    });
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/auth/users?q=owner&status=active&limit=20&offset=0",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
   it("creates and manages users with cookie credentials", async () => {
     const fetcher = vi.fn(async () =>
       new Response(

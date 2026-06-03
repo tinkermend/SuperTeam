@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -55,6 +56,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password string) (*U
 }
 
 func (s *Service) ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error) {
+	filter.Q = strings.TrimSpace(filter.Q)
 	if filter.Limit <= 0 || filter.Limit > 100 {
 		filter.Limit = 20
 	}

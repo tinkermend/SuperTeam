@@ -152,6 +152,8 @@ type ListLoginLogsParams struct {
 
 // ListUsersParams defines parameters for ListUsers.
 type ListUsersParams struct {
+	// Q 按用户名、显示名称或邮箱搜索
+	Q      *string                `form:"q,omitempty" json:"q,omitempty"`
 	Status *ListUsersParamsStatus `form:"status,omitempty" json:"status,omitempty"`
 	Limit  *int32                 `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset *int32                 `form:"offset,omitempty" json:"offset,omitempty"`
@@ -358,6 +360,14 @@ func (siw *ServerInterfaceWrapper) ListUsers(w http.ResponseWriter, r *http.Requ
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListUsersParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "q", r.URL.Query(), &params.Q)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		return
+	}
 
 	// ------------- Optional query parameter "status" -------------
 

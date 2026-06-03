@@ -109,7 +109,12 @@ func (h *HTTPHandler) ListUsers(w http.ResponseWriter, r *http.Request, params L
 	if params.Status != nil {
 		status = string(*params.Status)
 	}
+	q := ""
+	if params.Q != nil {
+		q = *params.Q
+	}
 	users, err := h.service.ListUsers(r.Context(), ListUsersFilter{
+		Q:      q,
 		Status: status,
 		Limit:  valueOrDefault(params.Limit, 20),
 		Offset: valueOrDefault(params.Offset, 0),

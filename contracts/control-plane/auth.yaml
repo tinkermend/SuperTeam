@@ -140,6 +140,13 @@ paths:
       security:
         - cookieAuth: []
       parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+          description: 按用户名、显示名称或邮箱搜索
         - name: status
           in: query
           required: false

@@ -44,6 +44,12 @@ RETURNING *;
 SELECT * FROM auth_users
 WHERE deleted_at IS NULL
   AND (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar)
+  AND (
+    sqlc.narg('q')::text IS NULL
+    OR username ILIKE '%' || sqlc.narg('q')::text || '%'
+    OR COALESCE(display_name, '') ILIKE '%' || sqlc.narg('q')::text || '%'
+    OR COALESCE(email, '') ILIKE '%' || sqlc.narg('q')::text || '%'
+  )
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 

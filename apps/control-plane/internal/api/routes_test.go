@@ -564,7 +564,7 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 		t.Fatalf("expected created user ID to be UUID, got %q: %v", createBody.User.ID, err)
 	}
 
-	listReq := httptest.NewRequest(http.MethodGet, "/api/auth/users?limit=10&offset=0", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api/auth/users?q=operator&status=active&limit=10&offset=0", nil)
 	listReq.AddCookie(cookie)
 	listResp := httptest.NewRecorder()
 	server.ServeHTTP(listResp, listReq)
@@ -580,8 +580,11 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	if err := json.NewDecoder(listResp.Body).Decode(&listBody); err != nil {
 		t.Fatalf("decode list users response: %v", err)
 	}
-	if len(listBody.Items) != 2 {
-		t.Fatalf("expected two users, got %#v", listBody.Items)
+	if authRepo.lastListUsersFilter.Q != "operator" || authRepo.lastListUsersFilter.Status != auth.UserStatusActive {
+		t.Fatalf("expected user list q/status operator/active, got %#v", authRepo.lastListUsersFilter)
+	}
+	if len(listBody.Items) != 1 || listBody.Items[0].Username != "operator" {
+		t.Fatalf("expected only operator user, got %#v", listBody.Items)
 	}
 
 	statusReq := httptest.NewRequest(http.MethodPatch, "/api/auth/users/"+operatorID.String()+"/status", strings.NewReader(`{"status":"disabled"}`))
@@ -1442,6 +1445,7 @@ type routeAuthRepo struct {
 	sessions      map[string]*auth.Session
 	loginLogs     []auth.LoginLog
 	operationLogs []auth.CreateOperationLogParams
+	lastListUsersFilter auth.ListUsersFilter
 }
 
 func newRouteAuthRepo() *routeAuthRepo {
@@ -1470,9 +1474,13 @@ func (r *routeAuthRepo) GetUserByUsername(ctx context.Context, username string) 
 }
 
 func (r *routeAuthRepo) ListUsers(ctx context.Context, filter auth.ListUsersFilter) ([]*auth.User, error) {
+	r.lastListUsersFilter = filter
 	users := make([]*auth.User, 0, len(r.usersByID))
 	for _, user := range r.usersByID {
 		if filter.Status != "" && user.Status != filter.Status {
+			continue
+		}
+		if filter.Q != "" && !strings.Contains(user.Username, filter.Q) {
 			continue
 		}
 		users = append(users, user)

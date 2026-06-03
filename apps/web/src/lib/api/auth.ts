@@ -33,6 +33,7 @@ export type UserResponse = {
 export type ListUsersOptions = ApiClientOptions & {
   limit?: number;
   offset?: number;
+  q?: string;
   status?: UserSummary["status"];
 };
 
@@ -133,6 +134,10 @@ export async function listLoginLogs(options: ListLoginLogsOptions): Promise<Logi
 export async function listUsers(options: ListUsersOptions): Promise<UserListResponse> {
   const fetcher = options.fetcher ?? fetch;
   const params = new URLSearchParams();
+  const q = options.q?.trim();
+  if (q) {
+    params.set("q", q);
+  }
   if (options.status !== undefined) {
     params.set("status", options.status);
   }

@@ -408,18 +408,30 @@ const ListUsers = `-- name: ListUsers :many
 SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at FROM auth_users
 WHERE deleted_at IS NULL
   AND ($1::varchar IS NULL OR status = $1::varchar)
+  AND (
+    $2::text IS NULL
+    OR username ILIKE '%' || $2::text || '%'
+    OR COALESCE(display_name, '') ILIKE '%' || $2::text || '%'
+    OR COALESCE(email, '') ILIKE '%' || $2::text || '%'
+  )
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type ListUsersParams struct {
 	Status pgtype.Text `json:"status"`
+	Q      pgtype.Text `json:"q"`
 	Offset int32       `json:"offset"`
 	Limit  int32       `json:"limit"`
 }
 
 func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error) {
-	rows, err := q.db.Query(ctx, ListUsers, arg.Status, arg.Offset, arg.Limit)
+	rows, err := q.db.Query(ctx, ListUsers,
+		arg.Status,
+		arg.Q,
+		arg.Offset,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -32,6 +32,10 @@ func (r *PgRepository) CreateUser(ctx context.Context, username, passwordHash st
 
 func (r *PgRepository) ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error) {
 	rows, err := r.q.ListUsers(ctx, queries.ListUsersParams{
+		Q: pgtype.Text{
+			String: filter.Q,
+			Valid:  filter.Q != "",
+		},
 		Status: pgtype.Text{
 			String: filter.Status,
 			Valid:  filter.Status != "",

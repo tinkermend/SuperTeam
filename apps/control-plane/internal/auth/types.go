@@ -71,6 +71,7 @@ type Actor struct {
 
 // ListUsersFilter 用户列表过滤条件。
 type ListUsersFilter struct {
+	Q      string
 	Status string
 	Limit  int32
 	Offset int32
