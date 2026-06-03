@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  archiveTeam,
   createTeam,
   createTeamConfigRevision,
+  disableTeam,
   getCurrentTeamConfigRevision,
+  getTeamOverview,
+  listTeamSummaries,
   listTeams,
+  restoreTeam,
+  updateTeam,
 } from "./teams";
 
 describe("team API", () => {
@@ -36,6 +42,170 @@ describe("team API", () => {
       credentials: "include",
       headers: { accept: "application/json" },
       method: "GET",
+    });
+  });
+
+  it("lists team summaries with filters", async () => {
+    const teams = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        tenant_id: "22222222-2222-4222-8222-222222222222",
+        slug: "ops",
+        name: "运维团队",
+        status: "active",
+        member_count: 18,
+        digital_employee_count: 6,
+        capability_count: 12,
+        governance_status: "active",
+        current_revision: 7,
+        pending_draft_count: 2,
+        risk_summary: "生产写操作需审批",
+      },
+    ];
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(teams), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      listTeamSummaries(
+        {
+          baseUrl: "http://control-plane.local",
+          fetcher,
+        },
+        { q: "ops", status: "active" },
+      ),
+    ).resolves.toEqual(teams);
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams?status=active&q=ops", {
+      credentials: "include",
+      headers: { accept: "application/json" },
+      method: "GET",
+    });
+  });
+
+  it("gets team overview with encoded team id", async () => {
+    const overview = {
+      team: {
+        id: "11111111-1111-4111-8111-111111111111",
+        tenant_id: "22222222-2222-4222-8222-222222222222",
+        slug: "ops",
+        name: "运维团队",
+        status: "active",
+      },
+      member_count: 18,
+      digital_employee_count: 6,
+      capability_count: 12,
+      pending_draft_count: 2,
+      pending_item_count: 3,
+      allowed_actions: ["team.update", "team.disable"],
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(overview), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      getTeamOverview(
+        {
+          baseUrl: "http://control-plane.local",
+          fetcher,
+        },
+        "team 1/primary",
+      ),
+    ).resolves.toEqual(overview);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/teams/team%201%2Fprimary/overview",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
+  it("updates team with PATCH and JSON body", async () => {
+    const team = {
+      id: "11111111-1111-4111-8111-111111111111",
+      tenant_id: "22222222-2222-4222-8222-222222222222",
+      slug: "ops",
+      name: "运维团队",
+      status: "active",
+      human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(team), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      updateTeam(
+        {
+          baseUrl: "http://control-plane.local",
+          fetcher,
+        },
+        "team 1/primary",
+        {
+          slug: "ops",
+          name: "运维团队",
+          human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+        },
+      ),
+    ).resolves.toEqual(team);
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams/team%201%2Fprimary", {
+      body: JSON.stringify({
+        slug: "ops",
+        name: "运维团队",
+        human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+      }),
+      credentials: "include",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      method: "PATCH",
+    });
+  });
+
+  it.each([
+    ["disables", disableTeam, "/disable"],
+    ["archives", archiveTeam, "/archive"],
+    ["restores", restoreTeam, "/restore"],
+  ] as const)("%s team with POST", async (_label, action, suffix) => {
+    const team = {
+      id: "11111111-1111-4111-8111-111111111111",
+      tenant_id: "22222222-2222-4222-8222-222222222222",
+      slug: "ops",
+      name: "运维团队",
+      status: "active",
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(team), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      action(
+        {
+          baseUrl: "http://control-plane.local",
+          fetcher,
+        },
+        "team 1/primary",
+      ),
+    ).resolves.toEqual(team);
+
+    expect(fetcher).toHaveBeenCalledWith(`http://control-plane.local/api/v1/teams/team%201%2Fprimary${suffix}`, {
+      body: JSON.stringify({}),
+      credentials: "include",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      method: "POST",
     });
   });
 

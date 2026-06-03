@@ -558,6 +558,124 @@ func TestAuthzRuntimeNodeCoversTaskScope(t *testing.T) {
 	assert.False(t, staleNodeCovered)
 }
 
+func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	owner, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "summary-owner",
+		DisplayName:  pgtype.Text{String: "Summary Owner", Valid: true},
+		Email:        pgtype.Text{String: "summary-owner@example.com", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
+		Status:       "active",
+	})
+	require.NoError(t, err)
+
+	member, err := testQueries.CreateUser(ctx, queries.CreateUserParams{
+		Username:     "summary-member",
+		DisplayName:  pgtype.Text{String: "Summary Member", Valid: true},
+		Email:        pgtype.Text{String: "summary-member@example.com", Valid: true},
+		PasswordHash: "$2a$10$hashedpassword",
+		Status:       "active",
+	})
+	require.NoError(t, err)
+
+	team, err := testQueries.CreateTenantTeam(ctx, queries.CreateTenantTeamParams{
+		TenantID:         tenantID,
+		Slug:             "ops-summary",
+		Name:             "运维团队",
+		HumanOwnerUserID: uuid.NullUUID{UUID: owner.ID, Valid: true},
+		Metadata:         []byte(`{"domain":"operations"}`),
+	})
+	require.NoError(t, err)
+
+	_, err = testDB.Exec(ctx, `
+		INSERT INTO tenant_members (tenant_id, team_id, principal_type, principal_id, role, status)
+		VALUES ($1, $2, 'user', $3, 'member', 'active')
+	`, tenantID, team.ID, member.ID)
+	require.NoError(t, err)
+
+	_, err = testQueries.CreateDigitalEmployee(ctx, queries.CreateDigitalEmployeeParams{
+		TenantID:  tenantID,
+		TeamID:    uuid.NullUUID{UUID: team.ID, Valid: true},
+		Name:      "数据库运维员工",
+		Role:      "database_operator",
+		Status:    "active",
+		RiskLevel: "medium",
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.CreateTenantTeamConfigRevision(ctx, queries.CreateTenantTeamConfigRevisionParams{
+		TenantID:                    tenantID,
+		TeamID:                      team.ID,
+		RevisionNumber:              1,
+		Constitution:                []byte(`{"hard_rules":["禁止执行未审批的生产写操作"]}`),
+		CapabilityPolicy:            []byte(`{"skill_bindings":["incident-diagnosis"],"mcp_bindings":["prometheus"],"knowledge_base_bindings":[],"external_capability_bindings":["deploy-api"],"allowed_provider_types":["codex"]}`),
+		ContextPolicy:               []byte(`{"sources":["monitoring","logs"]}`),
+		ApprovalPolicy:              []byte(`{"risk_summary":"生产写操作需审批"}`),
+		ArtifactContract:            []byte(`{"required":["Finding","Risk","DecisionRequest"]}`),
+		InternalCollaborationPolicy: []byte(`{"allowed_request_types":["info_request","review_request"]}`),
+		RuntimeScopePolicy:          []byte(`{"allowed_provider_types":["codex"]}`),
+		HumanOwnerUserID:            uuid.NullUUID{UUID: owner.ID, Valid: true},
+		Status:                      "active",
+		ApprovedBy:                  uuid.NullUUID{UUID: owner.ID, Valid: true},
+		ApprovedAt:                  pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	require.NoError(t, err)
+
+	rows, err := testQueries.ListTenantTeamSummaries(ctx, queries.ListTenantTeamSummariesParams{
+		TenantID: tenantID,
+		Q:        pgtype.Text{String: "ops", Valid: true},
+		Limit:    20,
+		Offset:   0,
+	})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, int32(1), rows[0].MemberCount)
+	assert.Equal(t, int32(1), rows[0].DigitalEmployeeCount)
+	assert.Equal(t, int32(4), rows[0].CapabilityCount)
+	assert.Equal(t, int32(1), rows[0].CurrentRevision.Int32)
+	assert.Equal(t, "active", rows[0].GovernanceStatus)
+	assert.Equal(t, "生产写操作需审批", rows[0].RiskSummary)
+
+	archivedTeam, err := testQueries.CreateTenantTeam(ctx, queries.CreateTenantTeamParams{
+		TenantID:         tenantID,
+		Slug:             "archive-summary",
+		Name:             "归档团队",
+		Status:           "archived",
+		HumanOwnerUserID: uuid.NullUUID{UUID: owner.ID, Valid: true},
+		Metadata:         []byte(`{}`),
+	})
+	require.NoError(t, err)
+	_, err = testQueries.SetTenantTeamStatus(ctx, queries.SetTenantTeamStatusParams{
+		TenantID: tenantID,
+		ID:       archivedTeam.ID,
+		Status:   "archived",
+	})
+	require.NoError(t, err)
+
+	defaultRows, err := testQueries.ListTenantTeamSummaries(ctx, queries.ListTenantTeamSummariesParams{
+		TenantID: tenantID,
+		Q:        pgtype.Text{String: "archive-summary", Valid: true},
+		Limit:    20,
+		Offset:   0,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, defaultRows, "archived teams should be hidden from the default list")
+
+	archivedRows, err := testQueries.ListTenantTeamSummaries(ctx, queries.ListTenantTeamSummariesParams{
+		TenantID: tenantID,
+		Status:   pgtype.Text{String: "archived", Valid: true},
+		Q:        pgtype.Text{String: "archive-summary", Valid: true},
+		Limit:    20,
+		Offset:   0,
+	})
+	require.NoError(t, err)
+	require.Len(t, archivedRows, 1)
+	assert.Equal(t, "archived", archivedRows[0].Status)
+}
+
 func TestAuthzRuntimeNodeRejectsMalformedTenantScopePayloads(t *testing.T) {
 	ctx := context.Background()
 	cleanupTestData(t, testDB)

@@ -69,7 +69,7 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 		t.Fatalf("expected metadata in response, got %#v", created.Metadata)
 	}
 
-	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams?status=active&q=ops", nil)
 	listReq.AddCookie(cookie)
 	listResp := httptest.NewRecorder()
 	server.ServeHTTP(listResp, listReq)
@@ -78,6 +78,9 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if service.listReq.TenantID != expectedTenantID {
 		t.Fatalf("expected list tenant %s, got %s", expectedTenantID, service.listReq.TenantID)
+	}
+	if service.listReq.Status != tenant.TeamStatusActive || service.listReq.Q != "ops" {
+		t.Fatalf("expected list filters active/ops, got %#v", service.listReq)
 	}
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.ID, nil)
@@ -89,6 +92,52 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if service.getTenantID != expectedTenantID {
 		t.Fatalf("expected get tenant %s, got %s", expectedTenantID, service.getTenantID)
+	}
+
+	overviewReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.ID+"/overview", nil)
+	overviewReq.AddCookie(cookie)
+	overviewResp := httptest.NewRecorder()
+	server.ServeHTTP(overviewResp, overviewReq)
+	if overviewResp.Code != http.StatusOK {
+		t.Fatalf("expected overview to succeed, got %d: %s", overviewResp.Code, overviewResp.Body.String())
+	}
+	if service.overviewTenantID != expectedTenantID || service.overviewTeamID.String() != created.ID {
+		t.Fatalf("expected overview tenant/team %s/%s, got %s/%s", expectedTenantID, created.ID, service.overviewTenantID, service.overviewTeamID)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.ID, strings.NewReader(`{"slug":"platform-sre","name":"Platform SRE","human_owner_user_id":"`+ownerID.String()+`","metadata":{"cost_center":"ops"}}`))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.AddCookie(cookie)
+	updateResp := httptest.NewRecorder()
+	server.ServeHTTP(updateResp, updateReq)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("expected update team to succeed, got %d: %s", updateResp.Code, updateResp.Body.String())
+	}
+	if service.updateReq.TenantID != expectedTenantID || service.updateReq.TeamID.String() != created.ID || service.updateReq.Name != "Platform SRE" {
+		t.Fatalf("expected update request for tenant/team/name, got %#v", service.updateReq)
+	}
+
+	for _, tt := range []struct {
+		name   string
+		path   string
+		status tenant.TeamStatus
+	}{
+		{name: "disable", path: "/disable", status: tenant.TeamStatusDisabled},
+		{name: "archive", path: "/archive", status: tenant.TeamStatusArchived},
+		{name: "restore", path: "/restore", status: tenant.TeamStatusActive},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+tt.path, nil)
+			req.AddCookie(cookie)
+			resp := httptest.NewRecorder()
+			server.ServeHTTP(resp, req)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("expected %s to succeed, got %d: %s", tt.name, resp.Code, resp.Body.String())
+			}
+			if service.changeStatusReq.TenantID != expectedTenantID || service.changeStatusReq.TeamID.String() != created.ID || service.changeStatusReq.Status != tt.status {
+				t.Fatalf("expected %s status request %#v, got %#v", tt.name, tt.status, service.changeStatusReq)
+			}
+		})
 	}
 
 	clientApprovedBy := uuid.New()
@@ -222,6 +271,11 @@ func TestTeamRoutesRequireManagementAuthorization(t *testing.T) {
 		{name: "list", method: http.MethodGet, path: "/api/v1/teams", action: authz.ActionTeamRead, resourceType: authz.ResourceTenant},
 		{name: "create", method: http.MethodPost, path: "/api/v1/teams", body: `{"slug":"platform","name":"Platform","human_owner_user_id":"` + ownerID + `"}`, action: authz.ActionTeamCreate, resourceType: authz.ResourceTenant},
 		{name: "get", method: http.MethodGet, path: "/api/v1/teams/" + teamID, action: authz.ActionTeamRead, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "overview", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/overview", action: authz.ActionTeamRead, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "update", method: http.MethodPatch, path: "/api/v1/teams/" + teamID, body: `{"slug":"platform","name":"Platform"}`, action: authz.ActionTeamUpdate, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "disable", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/disable", action: authz.ActionTeamDisable, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "archive", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/archive", action: authz.ActionTeamArchive, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "restore", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/restore", action: authz.ActionTeamRestore, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "create config revision", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/config-revisions", body: `{"human_owner_user_id":"` + ownerID + `"}`, action: authz.ActionTeamGovernanceApprove, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "current config revision", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/config-revisions/current", action: authz.ActionTeamGovernanceRead, resourceType: authz.ResourceTeam, resourceID: teamID},
 	}
@@ -311,6 +365,54 @@ func TestTeamConfigRevisionDraftUsesGovernanceEditAuthorization(t *testing.T) {
 	}
 	if check.Resource.Type != authz.ResourceTeam || check.Resource.ID != teamID.String() || check.TeamID == nil || *check.TeamID != teamID {
 		t.Fatalf("expected team resource %s, got %#v", teamID, check)
+	}
+}
+
+func TestTeamOverviewAllowedActionsFilterDeniedDecisions(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeTeamService{}
+	authorizer := &routeAuthorizer{
+		allowed: true,
+		denyActions: map[string]bool{
+			authz.ActionTeamArchive: true,
+		},
+	}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		authorizer,
+	)
+	server.SetTenantHandler(tenant.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+	teamID := uuid.New()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+teamID.String()+"/overview", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected overview to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		AllowedActions []string `json:"allowed_actions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode overview: %v", err)
+	}
+	if !containsString(body.AllowedActions, authz.ActionTeamUpdate) {
+		t.Fatalf("expected allowed team update action, got %#v", body.AllowedActions)
+	}
+	if containsString(body.AllowedActions, authz.ActionTeamArchive) {
+		t.Fatalf("expected denied archive action to be filtered, got %#v", body.AllowedActions)
 	}
 }
 
@@ -495,14 +597,21 @@ func TestTeamRoutesDoNotSubstituteConsoleUserAsHumanOwner(t *testing.T) {
 type routeTeamService struct {
 	createReq            tenant.CreateTeamRequest
 	listReq              tenant.ListTeamsRequest
+	updateReq            tenant.UpdateTeamRequest
+	changeStatusReq      tenant.ChangeTeamStatusRequest
 	createRevisionReq    tenant.CreateTeamConfigRevisionRequest
 	getTenantID          uuid.UUID
 	getTeamID            uuid.UUID
+	overviewTenantID     uuid.UUID
+	overviewTeamID       uuid.UUID
 	currentTenantID      uuid.UUID
 	currentTeamID        uuid.UUID
 	createCalled         bool
 	listCalled           bool
 	getCalled            bool
+	overviewCalled       bool
+	updateCalled         bool
+	changeStatusCalled   bool
 	createRevisionCalled bool
 	currentCalled        bool
 	createdID            uuid.UUID
@@ -535,13 +644,13 @@ func (s *routeTeamService) CreateTeam(ctx context.Context, req tenant.CreateTeam
 	}, nil
 }
 
-func (s *routeTeamService) ListTeams(ctx context.Context, req tenant.ListTeamsRequest) ([]*tenant.Team, error) {
+func (s *routeTeamService) ListTeamSummaries(ctx context.Context, req tenant.ListTeamsRequest) ([]*tenant.TeamListItem, error) {
 	s.listCalled = true
 	s.listReq = req
 	if s.listErr != nil {
 		return nil, s.listErr
 	}
-	return []*tenant.Team{}, nil
+	return []*tenant.TeamListItem{}, nil
 }
 
 func (s *routeTeamService) GetTeam(ctx context.Context, tenantID, teamID uuid.UUID) (*tenant.Team, error) {
@@ -559,6 +668,65 @@ func (s *routeTeamService) GetTeam(ctx context.Context, tenantID, teamID uuid.UU
 		Metadata:         map[string]any{},
 		CreatedAt:        now,
 		UpdatedAt:        now,
+	}, nil
+}
+
+func (s *routeTeamService) GetOverview(ctx context.Context, tenantID, teamID uuid.UUID) (*tenant.TeamOverview, error) {
+	s.overviewCalled = true
+	s.overviewTenantID = tenantID
+	s.overviewTeamID = teamID
+	now := time.Now().UTC()
+	return &tenant.TeamOverview{
+		Team: &tenant.Team{
+			ID:        teamID,
+			TenantID:  tenantID,
+			Slug:      "platform",
+			Name:      "Platform",
+			Status:    tenant.TeamStatusActive,
+			Metadata:  map[string]any{},
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		MemberCount:      3,
+		CapabilityCount:  2,
+		PendingItemCount: 1,
+		AllowedActions: []tenant.AllowedTeamAction{
+			tenant.AllowedTeamAction(authz.ActionTeamUpdate),
+			tenant.AllowedTeamAction(authz.ActionTeamDisable),
+		},
+	}, nil
+}
+
+func (s *routeTeamService) UpdateTeam(ctx context.Context, req tenant.UpdateTeamRequest) (*tenant.Team, error) {
+	s.updateCalled = true
+	s.updateReq = req
+	now := time.Now().UTC()
+	return &tenant.Team{
+		ID:               req.TeamID,
+		TenantID:         req.TenantID,
+		Slug:             req.Slug,
+		Name:             req.Name,
+		Status:           tenant.TeamStatusActive,
+		HumanOwnerUserID: req.HumanOwnerUserID,
+		Metadata:         req.Metadata,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}, nil
+}
+
+func (s *routeTeamService) ChangeTeamStatus(ctx context.Context, req tenant.ChangeTeamStatusRequest) (*tenant.Team, error) {
+	s.changeStatusCalled = true
+	s.changeStatusReq = req
+	now := time.Now().UTC()
+	return &tenant.Team{
+		ID:        req.TeamID,
+		TenantID:  req.TenantID,
+		Slug:      "platform",
+		Name:      "Platform",
+		Status:    req.Status,
+		Metadata:  map[string]any{},
+		CreatedAt: now,
+		UpdatedAt: now,
 	}, nil
 }
 
@@ -622,6 +790,9 @@ func (s *routeTeamService) called() bool {
 	return s.createCalled ||
 		s.listCalled ||
 		s.getCalled ||
+		s.overviewCalled ||
+		s.updateCalled ||
+		s.changeStatusCalled ||
 		s.createRevisionCalled ||
 		s.currentCalled
 }

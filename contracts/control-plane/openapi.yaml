@@ -434,6 +434,12 @@ paths:
             enum:
               - active
               - disabled
+              - archived
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         "200":
           description: Team list
@@ -442,7 +448,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Team"
+                  $ref: "#/components/schemas/TeamListItem"
     post:
       operationId: createTeam
       summary: Create a tenant team
@@ -474,6 +480,80 @@ paths:
                 $ref: "#/components/schemas/Team"
         "404":
           $ref: "#/components/responses/Error"
+    patch:
+      operationId: updateTeam
+      summary: Update a tenant team
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTeamRequest"
+      responses:
+        "200":
+          description: Team updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/overview:
+    get:
+      operationId: getTeamOverview
+      summary: Get the team management overview
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamOverview"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/disable:
+    post:
+      operationId: disableTeam
+      summary: Disable a tenant team
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+  /api/v1/teams/{teamId}/archive:
+    post:
+      operationId: archiveTeam
+      summary: Archive a tenant team
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+  /api/v1/teams/{teamId}/restore:
+    post:
+      operationId: restoreTeam
+      summary: Restore a tenant team to active
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
   /api/v1/teams/{teamId}/config-revisions:
     post:
       operationId: createTeamConfigRevision
@@ -1250,10 +1330,7 @@ components:
         name:
           type: string
         status:
-          type: string
-          enum:
-            - active
-            - disabled
+          $ref: "#/components/schemas/TeamStatus"
         human_owner_user_id:
           type: string
           format: uuid
@@ -1266,6 +1343,98 @@ components:
         updated_at:
           type: string
           format: date-time
+    TeamListItem:
+      allOf:
+        - $ref: "#/components/schemas/Team"
+        - type: object
+          required:
+            - member_count
+            - digital_employee_count
+            - capability_count
+            - governance_status
+            - pending_draft_count
+            - risk_summary
+          properties:
+            member_count:
+              type: integer
+              format: int32
+            digital_employee_count:
+              type: integer
+              format: int32
+            capability_count:
+              type: integer
+              format: int32
+            governance_status:
+              $ref: "#/components/schemas/GovernanceSummaryStatus"
+            current_revision:
+              type: integer
+              format: int32
+            pending_draft_count:
+              type: integer
+              format: int32
+            risk_summary:
+              type: string
+    TeamOverview:
+      type: object
+      required:
+        - team
+        - member_count
+        - digital_employee_count
+        - capability_count
+        - pending_draft_count
+        - pending_item_count
+        - allowed_actions
+      properties:
+        team:
+          $ref: "#/components/schemas/Team"
+        member_count:
+          type: integer
+          format: int32
+        digital_employee_count:
+          type: integer
+          format: int32
+        capability_count:
+          type: integer
+          format: int32
+        current_revision:
+          $ref: "#/components/schemas/TeamConfigRevision"
+        pending_draft_count:
+          type: integer
+          format: int32
+        pending_item_count:
+          type: integer
+          format: int32
+        allowed_actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AllowedTeamAction"
+    TeamStatus:
+      type: string
+      enum:
+        - active
+        - disabled
+        - archived
+    GovernanceSummaryStatus:
+      type: string
+      enum:
+        - not_configured
+        - draft_pending
+        - active
+        - needs_update
+    AllowedTeamAction:
+      type: string
+      enum:
+        - team.update
+        - team.disable
+        - team.archive
+        - team.restore
+        - team.member.add
+        - team.member.request_privileged_role
+        - team.governance.edit
+        - team.governance.approve
+        - team.capability.bind
+        - team.capability.unbind
+        - team.audit.read
     TeamConfigRevision:
       type: object
       required:
@@ -1347,10 +1516,23 @@ components:
         name:
           type: string
         status:
+          $ref: "#/components/schemas/TeamStatus"
+        human_owner_user_id:
           type: string
-          enum:
-            - active
-            - disabled
+          format: uuid
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateTeamRequest:
+      type: object
+      required:
+        - slug
+        - name
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
         human_owner_user_id:
           type: string
           format: uuid

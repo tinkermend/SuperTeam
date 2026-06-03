@@ -16,8 +16,11 @@ import (
 
 type HandlerService interface {
 	CreateTeam(ctx context.Context, req CreateTeamRequest) (*Team, error)
-	ListTeams(ctx context.Context, req ListTeamsRequest) ([]*Team, error)
+	ListTeamSummaries(ctx context.Context, req ListTeamsRequest) ([]*TeamListItem, error)
 	GetTeam(ctx context.Context, tenantID, teamID uuid.UUID) (*Team, error)
+	GetOverview(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamOverview, error)
+	UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team, error)
+	ChangeTeamStatus(ctx context.Context, req ChangeTeamStatusRequest) (*Team, error)
 	CreateConfigRevision(ctx context.Context, req CreateTeamConfigRevisionRequest) (*TeamConfigRevision, error)
 	GetCurrentConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamConfigRevision, error)
 }
@@ -53,10 +56,12 @@ func (h *HTTPHandler) ListTeams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status := TeamStatus(r.URL.Query().Get("status"))
+	q := r.URL.Query().Get("q")
 
-	teams, err := service.ListTeams(r.Context(), ListTeamsRequest{
+	teams, err := service.ListTeamSummaries(r.Context(), ListTeamsRequest{
 		TenantID: tenantID,
 		Status:   status,
+		Q:        q,
 		Offset:   offset,
 		Limit:    limit,
 	})
@@ -64,7 +69,7 @@ func (h *HTTPHandler) ListTeams(w http.ResponseWriter, r *http.Request) {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, teamResponses(teams))
+	writeJSON(w, http.StatusOK, teamListItemResponses(teams))
 }
 
 func (h *HTTPHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +126,78 @@ func (h *HTTPHandler) GetTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, teamResponseFromDomain(team))
+}
+
+func (h *HTTPHandler) GetTeamOverview(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamRead, "team overview read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	overview, err := service.GetOverview(r.Context(), tenantID, teamID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	overview.AllowedActions = h.allowedTeamActions(r, tenantID, teamID)
+	writeJSON(w, http.StatusOK, teamOverviewResponseFromDomain(overview))
+}
+
+func (h *HTTPHandler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, authz.ActionTeamUpdate, "team update")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var req struct {
+		Slug             string         `json:"slug"`
+		Name             string         `json:"name"`
+		HumanOwnerUserID *uuid.UUID     `json:"human_owner_user_id"`
+		Metadata         map[string]any `json:"metadata"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	team, err := service.UpdateTeam(r.Context(), UpdateTeamRequest{
+		TenantID:         tenantID,
+		TeamID:           teamID,
+		Slug:             req.Slug,
+		Name:             req.Name,
+		HumanOwnerUserID: req.HumanOwnerUserID,
+		Metadata:         req.Metadata,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, teamResponseFromDomain(team))
+}
+
+func (h *HTTPHandler) DisableTeam(w http.ResponseWriter, r *http.Request) {
+	h.changeTeamStatus(w, r, TeamStatusDisabled, authz.ActionTeamDisable, "team disable")
+}
+
+func (h *HTTPHandler) ArchiveTeam(w http.ResponseWriter, r *http.Request) {
+	h.changeTeamStatus(w, r, TeamStatusArchived, authz.ActionTeamArchive, "team archive")
+}
+
+func (h *HTTPHandler) RestoreTeam(w http.ResponseWriter, r *http.Request) {
+	h.changeTeamStatus(w, r, TeamStatusActive, authz.ActionTeamRestore, "team restore")
 }
 
 func (h *HTTPHandler) CreateTeamConfigRevision(w http.ResponseWriter, r *http.Request) {
@@ -198,6 +275,76 @@ func (h *HTTPHandler) GetCurrentTeamConfigRevision(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, configRevisionResponseFromDomain(revision))
 }
 
+var overviewActions = []string{
+	authz.ActionTeamUpdate,
+	authz.ActionTeamDisable,
+	authz.ActionTeamArchive,
+	authz.ActionTeamRestore,
+	authz.ActionTeamMemberAdd,
+	authz.ActionTeamMemberRequestPrivilegedRole,
+	authz.ActionTeamGovernanceEdit,
+	authz.ActionTeamGovernanceApprove,
+	authz.ActionTeamCapabilityBind,
+	authz.ActionTeamCapabilityUnbind,
+	authz.ActionTeamAuditRead,
+}
+
+func (h *HTTPHandler) changeTeamStatus(w http.ResponseWriter, r *http.Request, status TeamStatus, action, auditReason string) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeTeamAction(w, r, teamID, action, auditReason)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	team, err := service.ChangeTeamStatus(r.Context(), ChangeTeamStatusRequest{
+		TenantID: tenantID,
+		TeamID:   teamID,
+		Status:   status,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, teamResponseFromDomain(team))
+}
+
+func (h *HTTPHandler) allowedTeamActions(r *http.Request, tenantID, teamID uuid.UUID) []AllowedTeamAction {
+	if h == nil || h.authorizer == nil {
+		return []AllowedTeamAction{}
+	}
+	userID := middleware.GetUserID(r.Context())
+	if tenantID == uuid.Nil || userID == uuid.Nil || teamID == uuid.Nil {
+		return []AllowedTeamAction{}
+	}
+	allowed := make([]AllowedTeamAction, 0, len(overviewActions))
+	for _, action := range overviewActions {
+		decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
+			Actor: authz.ActorRef{
+				Type: authz.ActorUser,
+				ID:   userID.String(),
+			},
+			Action: action,
+			Resource: authz.ResourceRef{
+				Type: authz.ResourceTeam,
+				ID:   teamID.String(),
+			},
+			TenantID:    tenantID,
+			TeamID:      &teamID,
+			AuditReason: "team overview allowed action",
+		})
+		if err == nil && decision.Allowed {
+			allowed = append(allowed, AllowedTeamAction(action))
+		}
+	}
+	return allowed
+}
+
 func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService, bool) {
 	if h == nil || h.service == nil {
 		http.Error(w, "tenant service is not configured", http.StatusServiceUnavailable)
@@ -266,6 +413,36 @@ type teamResponse struct {
 	UpdatedAt        string         `json:"updated_at,omitempty"`
 }
 
+type teamListItemResponse struct {
+	ID                   string                  `json:"id"`
+	TenantID             string                  `json:"tenant_id"`
+	Slug                 string                  `json:"slug"`
+	Name                 string                  `json:"name"`
+	Status               TeamStatus              `json:"status"`
+	HumanOwnerUserID     *string                 `json:"human_owner_user_id,omitempty"`
+	Metadata             map[string]any          `json:"metadata"`
+	CreatedAt            string                  `json:"created_at,omitempty"`
+	UpdatedAt            string                  `json:"updated_at,omitempty"`
+	MemberCount          int32                   `json:"member_count"`
+	DigitalEmployeeCount int32                   `json:"digital_employee_count"`
+	CapabilityCount      int32                   `json:"capability_count"`
+	GovernanceStatus     GovernanceSummaryStatus `json:"governance_status"`
+	CurrentRevision      *int32                  `json:"current_revision,omitempty"`
+	PendingDraftCount    int32                   `json:"pending_draft_count"`
+	RiskSummary          string                  `json:"risk_summary"`
+}
+
+type teamOverviewResponse struct {
+	Team                 teamResponse            `json:"team"`
+	MemberCount          int32                   `json:"member_count"`
+	DigitalEmployeeCount int32                   `json:"digital_employee_count"`
+	CapabilityCount      int32                   `json:"capability_count"`
+	CurrentRevision      *configRevisionResponse `json:"current_revision,omitempty"`
+	PendingDraftCount    int32                   `json:"pending_draft_count"`
+	PendingItemCount     int32                   `json:"pending_item_count"`
+	AllowedActions       []AllowedTeamAction     `json:"allowed_actions"`
+}
+
 type configRevisionResponse struct {
 	ID                          string                   `json:"id"`
 	TenantID                    string                   `json:"tenant_id"`
@@ -325,10 +502,10 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func teamResponses(teams []*Team) []teamResponse {
-	responses := make([]teamResponse, 0, len(teams))
+func teamListItemResponses(teams []*TeamListItem) []teamListItemResponse {
+	responses := make([]teamListItemResponse, 0, len(teams))
 	for _, team := range teams {
-		responses = append(responses, teamResponseFromDomain(team))
+		responses = append(responses, teamListItemResponseFromDomain(team))
 	}
 	return responses
 }
@@ -345,6 +522,46 @@ func teamResponseFromDomain(team *Team) teamResponse {
 		CreatedAt:        timeString(team.CreatedAt),
 		UpdatedAt:        timeString(team.UpdatedAt),
 	}
+}
+
+func teamListItemResponseFromDomain(item *TeamListItem) teamListItemResponse {
+	return teamListItemResponse{
+		ID:                   item.ID.String(),
+		TenantID:             item.TenantID.String(),
+		Slug:                 item.Slug,
+		Name:                 item.Name,
+		Status:               item.Status,
+		HumanOwnerUserID:     uuidStringPtr(item.HumanOwnerUserID),
+		Metadata:             cloneMap(item.Metadata),
+		CreatedAt:            timeString(item.CreatedAt),
+		UpdatedAt:            timeString(item.UpdatedAt),
+		MemberCount:          item.MemberCount,
+		DigitalEmployeeCount: item.DigitalEmployeeCount,
+		CapabilityCount:      item.CapabilityCount,
+		GovernanceStatus:     item.GovernanceStatus,
+		CurrentRevision:      cloneInt32Ptr(item.CurrentRevision),
+		PendingDraftCount:    item.PendingDraftCount,
+		RiskSummary:          item.RiskSummary,
+	}
+}
+
+func teamOverviewResponseFromDomain(overview *TeamOverview) teamOverviewResponse {
+	response := teamOverviewResponse{
+		MemberCount:          overview.MemberCount,
+		DigitalEmployeeCount: overview.DigitalEmployeeCount,
+		CapabilityCount:      overview.CapabilityCount,
+		PendingDraftCount:    overview.PendingDraftCount,
+		PendingItemCount:     overview.PendingItemCount,
+		AllowedActions:       append([]AllowedTeamAction{}, overview.AllowedActions...),
+	}
+	if overview.Team != nil {
+		response.Team = teamResponseFromDomain(overview.Team)
+	}
+	if overview.CurrentRevision != nil {
+		revision := configRevisionResponseFromDomain(overview.CurrentRevision)
+		response.CurrentRevision = &revision
+	}
+	return response
 }
 
 func configRevisionResponseFromDomain(revision *TeamConfigRevision) configRevisionResponse {

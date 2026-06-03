@@ -288,12 +288,289 @@ func (q *Queries) GetTenantTeamConfigRevision(ctx context.Context, arg GetTenant
 	return i, err
 }
 
+const GetTenantTeamSummary = `-- name: GetTenantTeamSummary :one
+WITH current_config AS (
+  SELECT DISTINCT ON (tenant_id, team_id)
+    tenant_id,
+    team_id,
+    revision_number,
+    capability_policy,
+    approval_policy
+  FROM tenant_team_config_revisions
+  WHERE status = 'active'
+    AND archived_at IS NULL
+  ORDER BY tenant_id, team_id, revision_number DESC
+),
+draft_counts AS (
+  SELECT tenant_id, team_id, COUNT(*)::integer AS pending_draft_count
+  FROM tenant_team_config_revisions
+  WHERE status = 'draft'
+    AND archived_at IS NULL
+  GROUP BY tenant_id, team_id
+),
+member_counts AS (
+  SELECT tenant_id, team_id, COUNT(DISTINCT principal_id)::integer AS member_count
+  FROM tenant_members
+  WHERE team_id IS NOT NULL
+    AND principal_type = 'user'
+    AND status = 'active'
+    AND disabled_at IS NULL
+  GROUP BY tenant_id, team_id
+),
+employee_counts AS (
+  SELECT tenant_id, team_id, COUNT(*)::integer AS digital_employee_count
+  FROM digital_employees
+  WHERE team_id IS NOT NULL
+    AND deleted_at IS NULL
+    AND archived_at IS NULL
+  GROUP BY tenant_id, team_id
+)
+SELECT
+  tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.human_owner_user_id, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at,
+  COALESCE(mc.member_count, 0)::integer AS member_count,
+  COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
+  (
+    COALESCE(jsonb_array_length(cc.capability_policy->'skill_bindings'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'mcp_bindings'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'knowledge_base_bindings'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'external_capability_bindings'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'allowed_skills'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'allowed_mcp_servers'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'allowed_plugins'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'allowed_provider_types'), 0)
+  )::integer AS capability_count,
+  cc.revision_number AS current_revision,
+  COALESCE(dc.pending_draft_count, 0)::integer AS pending_draft_count,
+  CASE
+    WHEN cc.team_id IS NULL THEN 'not_configured'
+    WHEN COALESCE(dc.pending_draft_count, 0) > 0 THEN 'draft_pending'
+    ELSE 'active'
+  END::varchar AS governance_status,
+  COALESCE(cc.approval_policy->>'risk_summary', '')::varchar AS risk_summary
+FROM tenant_teams tt
+LEFT JOIN current_config cc ON cc.tenant_id = tt.tenant_id AND cc.team_id = tt.id
+LEFT JOIN draft_counts dc ON dc.tenant_id = tt.tenant_id AND dc.team_id = tt.id
+LEFT JOIN member_counts mc ON mc.tenant_id = tt.tenant_id AND mc.team_id = tt.id
+LEFT JOIN employee_counts ec ON ec.tenant_id = tt.tenant_id AND ec.team_id = tt.id
+WHERE tt.id = $1::uuid
+  AND tt.tenant_id = $2::uuid
+  AND tt.deleted_at IS NULL
+`
+
+type GetTenantTeamSummaryParams struct {
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenant_id"`
+}
+
+type GetTenantTeamSummaryRow struct {
+	ID                   uuid.UUID          `json:"id"`
+	TenantID             uuid.UUID          `json:"tenant_id"`
+	Slug                 string             `json:"slug"`
+	Name                 string             `json:"name"`
+	Status               string             `json:"status"`
+	HumanOwnerUserID     uuid.NullUUID      `json:"human_owner_user_id"`
+	Metadata             []byte             `json:"metadata"`
+	ArchivedAt           pgtype.Timestamptz `json:"archived_at"`
+	DisabledAt           pgtype.Timestamptz `json:"disabled_at"`
+	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	MemberCount          int32              `json:"member_count"`
+	DigitalEmployeeCount int32              `json:"digital_employee_count"`
+	CapabilityCount      int32              `json:"capability_count"`
+	CurrentRevision      pgtype.Int4        `json:"current_revision"`
+	PendingDraftCount    int32              `json:"pending_draft_count"`
+	GovernanceStatus     string             `json:"governance_status"`
+	RiskSummary          string             `json:"risk_summary"`
+}
+
+func (q *Queries) GetTenantTeamSummary(ctx context.Context, arg GetTenantTeamSummaryParams) (GetTenantTeamSummaryRow, error) {
+	row := q.db.QueryRow(ctx, GetTenantTeamSummary, arg.ID, arg.TenantID)
+	var i GetTenantTeamSummaryRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Slug,
+		&i.Name,
+		&i.Status,
+		&i.HumanOwnerUserID,
+		&i.Metadata,
+		&i.ArchivedAt,
+		&i.DisabledAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.MemberCount,
+		&i.DigitalEmployeeCount,
+		&i.CapabilityCount,
+		&i.CurrentRevision,
+		&i.PendingDraftCount,
+		&i.GovernanceStatus,
+		&i.RiskSummary,
+	)
+	return i, err
+}
+
+const ListTenantTeamSummaries = `-- name: ListTenantTeamSummaries :many
+WITH current_config AS (
+  SELECT DISTINCT ON (tenant_id, team_id)
+    tenant_id,
+    team_id,
+    revision_number,
+    capability_policy,
+    approval_policy
+  FROM tenant_team_config_revisions
+  WHERE status = 'active'
+    AND archived_at IS NULL
+  ORDER BY tenant_id, team_id, revision_number DESC
+),
+draft_counts AS (
+  SELECT tenant_id, team_id, COUNT(*)::integer AS pending_draft_count
+  FROM tenant_team_config_revisions
+  WHERE status = 'draft'
+    AND archived_at IS NULL
+  GROUP BY tenant_id, team_id
+),
+member_counts AS (
+  SELECT tenant_id, team_id, COUNT(DISTINCT principal_id)::integer AS member_count
+  FROM tenant_members
+  WHERE team_id IS NOT NULL
+    AND principal_type = 'user'
+    AND status = 'active'
+    AND disabled_at IS NULL
+  GROUP BY tenant_id, team_id
+),
+employee_counts AS (
+  SELECT tenant_id, team_id, COUNT(*)::integer AS digital_employee_count
+  FROM digital_employees
+  WHERE team_id IS NOT NULL
+    AND deleted_at IS NULL
+    AND archived_at IS NULL
+  GROUP BY tenant_id, team_id
+)
+SELECT
+  tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.human_owner_user_id, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at,
+  COALESCE(mc.member_count, 0)::integer AS member_count,
+  COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
+  (
+    COALESCE(jsonb_array_length(cc.capability_policy->'skill_bindings'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'mcp_bindings'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'knowledge_base_bindings'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'external_capability_bindings'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'allowed_skills'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'allowed_mcp_servers'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'allowed_plugins'), 0) +
+    COALESCE(jsonb_array_length(cc.capability_policy->'allowed_provider_types'), 0)
+  )::integer AS capability_count,
+  cc.revision_number AS current_revision,
+  COALESCE(dc.pending_draft_count, 0)::integer AS pending_draft_count,
+  CASE
+    WHEN cc.team_id IS NULL THEN 'not_configured'
+    WHEN COALESCE(dc.pending_draft_count, 0) > 0 THEN 'draft_pending'
+    ELSE 'active'
+  END::varchar AS governance_status,
+  COALESCE(cc.approval_policy->>'risk_summary', '')::varchar AS risk_summary
+FROM tenant_teams tt
+LEFT JOIN current_config cc ON cc.tenant_id = tt.tenant_id AND cc.team_id = tt.id
+LEFT JOIN draft_counts dc ON dc.tenant_id = tt.tenant_id AND dc.team_id = tt.id
+LEFT JOIN member_counts mc ON mc.tenant_id = tt.tenant_id AND mc.team_id = tt.id
+LEFT JOIN employee_counts ec ON ec.tenant_id = tt.tenant_id AND ec.team_id = tt.id
+WHERE tt.tenant_id = $1::uuid
+  AND tt.deleted_at IS NULL
+  AND ($2::varchar IS NULL OR tt.status = $2::varchar)
+  AND ($2::varchar IS NOT NULL OR tt.status <> 'archived')
+  AND (
+    $3::varchar IS NULL
+    OR tt.name ILIKE '%' || $3::varchar || '%'
+    OR tt.slug ILIKE '%' || $3::varchar || '%'
+  )
+ORDER BY tt.updated_at DESC, tt.created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListTenantTeamSummariesParams struct {
+	TenantID uuid.UUID   `json:"tenant_id"`
+	Status   pgtype.Text `json:"status"`
+	Q        pgtype.Text `json:"q"`
+	Offset   int32       `json:"offset"`
+	Limit    int32       `json:"limit"`
+}
+
+type ListTenantTeamSummariesRow struct {
+	ID                   uuid.UUID          `json:"id"`
+	TenantID             uuid.UUID          `json:"tenant_id"`
+	Slug                 string             `json:"slug"`
+	Name                 string             `json:"name"`
+	Status               string             `json:"status"`
+	HumanOwnerUserID     uuid.NullUUID      `json:"human_owner_user_id"`
+	Metadata             []byte             `json:"metadata"`
+	ArchivedAt           pgtype.Timestamptz `json:"archived_at"`
+	DisabledAt           pgtype.Timestamptz `json:"disabled_at"`
+	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	MemberCount          int32              `json:"member_count"`
+	DigitalEmployeeCount int32              `json:"digital_employee_count"`
+	CapabilityCount      int32              `json:"capability_count"`
+	CurrentRevision      pgtype.Int4        `json:"current_revision"`
+	PendingDraftCount    int32              `json:"pending_draft_count"`
+	GovernanceStatus     string             `json:"governance_status"`
+	RiskSummary          string             `json:"risk_summary"`
+}
+
+func (q *Queries) ListTenantTeamSummaries(ctx context.Context, arg ListTenantTeamSummariesParams) ([]ListTenantTeamSummariesRow, error) {
+	rows, err := q.db.Query(ctx, ListTenantTeamSummaries,
+		arg.TenantID,
+		arg.Status,
+		arg.Q,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTenantTeamSummariesRow{}
+	for rows.Next() {
+		var i ListTenantTeamSummariesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Slug,
+			&i.Name,
+			&i.Status,
+			&i.HumanOwnerUserID,
+			&i.Metadata,
+			&i.ArchivedAt,
+			&i.DisabledAt,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.MemberCount,
+			&i.DigitalEmployeeCount,
+			&i.CapabilityCount,
+			&i.CurrentRevision,
+			&i.PendingDraftCount,
+			&i.GovernanceStatus,
+			&i.RiskSummary,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListTenantTeams = `-- name: ListTenantTeams :many
 SELECT id, tenant_id, slug, name, status, human_owner_user_id, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at
 FROM tenant_teams
 WHERE tenant_id = $1::uuid
   AND deleted_at IS NULL
   AND ($2::varchar IS NULL OR status = $2::varchar)
+  AND ($2::varchar IS NOT NULL OR status <> 'archived')
 ORDER BY created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -341,4 +618,101 @@ func (q *Queries) ListTenantTeams(ctx context.Context, arg ListTenantTeamsParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const SetTenantTeamStatus = `-- name: SetTenantTeamStatus :one
+UPDATE tenant_teams
+SET
+  status = $1::varchar,
+  disabled_at = CASE
+    WHEN $1::varchar = 'disabled' THEN COALESCE(disabled_at, NOW())
+    WHEN $1::varchar = 'active' THEN NULL
+    ELSE disabled_at
+  END,
+  archived_at = CASE
+    WHEN $1::varchar = 'archived' THEN COALESCE(archived_at, NOW())
+    WHEN $1::varchar = 'active' THEN NULL
+    ELSE archived_at
+  END,
+  updated_at = NOW()
+WHERE id = $2::uuid
+  AND tenant_id = $3::uuid
+  AND deleted_at IS NULL
+RETURNING id, tenant_id, slug, name, status, human_owner_user_id, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at
+`
+
+type SetTenantTeamStatusParams struct {
+	Status   string    `json:"status"`
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) SetTenantTeamStatus(ctx context.Context, arg SetTenantTeamStatusParams) (TenantTeam, error) {
+	row := q.db.QueryRow(ctx, SetTenantTeamStatus, arg.Status, arg.ID, arg.TenantID)
+	var i TenantTeam
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Slug,
+		&i.Name,
+		&i.Status,
+		&i.HumanOwnerUserID,
+		&i.Metadata,
+		&i.ArchivedAt,
+		&i.DisabledAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const UpdateTenantTeam = `-- name: UpdateTenantTeam :one
+UPDATE tenant_teams
+SET
+  slug = $1::varchar,
+  name = $2::varchar,
+  human_owner_user_id = $3::uuid,
+  metadata = COALESCE($4::jsonb, '{}'::jsonb),
+  updated_at = NOW()
+WHERE id = $5::uuid
+  AND tenant_id = $6::uuid
+  AND deleted_at IS NULL
+RETURNING id, tenant_id, slug, name, status, human_owner_user_id, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at
+`
+
+type UpdateTenantTeamParams struct {
+	Slug             string        `json:"slug"`
+	Name             string        `json:"name"`
+	HumanOwnerUserID uuid.NullUUID `json:"human_owner_user_id"`
+	Metadata         []byte        `json:"metadata"`
+	ID               uuid.UUID     `json:"id"`
+	TenantID         uuid.UUID     `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateTenantTeam(ctx context.Context, arg UpdateTenantTeamParams) (TenantTeam, error) {
+	row := q.db.QueryRow(ctx, UpdateTenantTeam,
+		arg.Slug,
+		arg.Name,
+		arg.HumanOwnerUserID,
+		arg.Metadata,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i TenantTeam
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Slug,
+		&i.Name,
+		&i.Status,
+		&i.HumanOwnerUserID,
+		&i.Metadata,
+		&i.ArchivedAt,
+		&i.DisabledAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

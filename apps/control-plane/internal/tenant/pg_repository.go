@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
@@ -35,7 +36,7 @@ func (r *PgRepository) CreateTeam(ctx context.Context, params CreateTeamParams) 
 		Metadata:         metadata,
 	})
 	if err != nil {
-		return TeamRecord{}, err
+		return TeamRecord{}, mapConstraintError(err)
 	}
 	return teamRecordFromQuery(team)
 }
@@ -61,10 +62,74 @@ func (r *PgRepository) ListTeams(ctx context.Context, params ListTeamsParams) ([
 	return records, nil
 }
 
+func (r *PgRepository) ListTeamSummaries(ctx context.Context, params ListTeamSummariesParams) ([]TeamListItemRecord, error) {
+	rows, err := r.q.ListTenantTeamSummaries(ctx, queries.ListTenantTeamSummariesParams{
+		TenantID: params.TenantID,
+		Status:   textFromTeamStatus(params.Status),
+		Q:        textFromString(params.Q),
+		Offset:   params.Offset,
+		Limit:    params.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	records := make([]TeamListItemRecord, 0, len(rows))
+	for _, row := range rows {
+		record, err := teamListItemRecordFromQuery(row)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+func (r *PgRepository) GetTeamSummary(ctx context.Context, tenantID, teamID uuid.UUID) (TeamListItemRecord, error) {
+	row, err := r.q.GetTenantTeamSummary(ctx, queries.GetTenantTeamSummaryParams{
+		ID:       teamID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return TeamListItemRecord{}, mapNoRows(err)
+	}
+	return teamListItemRecordFromGetSummaryQuery(row)
+}
+
 func (r *PgRepository) GetTeam(ctx context.Context, tenantID, teamID uuid.UUID) (TeamRecord, error) {
 	team, err := r.q.GetTenantTeam(ctx, queries.GetTenantTeamParams{
 		ID:       teamID,
 		TenantID: tenantID,
+	})
+	if err != nil {
+		return TeamRecord{}, mapConstraintError(mapNoRows(err))
+	}
+	return teamRecordFromQuery(team)
+}
+
+func (r *PgRepository) UpdateTeam(ctx context.Context, params UpdateTeamParams) (TeamRecord, error) {
+	metadata, err := jsonbFromMap(params.Metadata, "metadata")
+	if err != nil {
+		return TeamRecord{}, err
+	}
+	team, err := r.q.UpdateTenantTeam(ctx, queries.UpdateTenantTeamParams{
+		ID:               params.TeamID,
+		TenantID:         params.TenantID,
+		Slug:             params.Slug,
+		Name:             params.Name,
+		HumanOwnerUserID: nullUUIDFromPtr(params.HumanOwnerUserID),
+		Metadata:         metadata,
+	})
+	if err != nil {
+		return TeamRecord{}, mapNoRows(err)
+	}
+	return teamRecordFromQuery(team)
+}
+
+func (r *PgRepository) SetTeamStatus(ctx context.Context, params SetTeamStatusParams) (TeamRecord, error) {
+	team, err := r.q.SetTenantTeamStatus(ctx, queries.SetTenantTeamStatusParams{
+		ID:       params.TeamID,
+		TenantID: params.TenantID,
+		Status:   string(params.Status),
 	})
 	if err != nil {
 		return TeamRecord{}, mapNoRows(err)
@@ -175,6 +240,84 @@ func teamRecordFromQuery(team queries.TenantTeam) (TeamRecord, error) {
 	}, nil
 }
 
+func teamListItemRecordFromQuery(row queries.ListTenantTeamSummariesRow) (TeamListItemRecord, error) {
+	return teamListItemRecordFromSummaryParts(
+		queries.TenantTeam{
+			ID:               row.ID,
+			TenantID:         row.TenantID,
+			Slug:             row.Slug,
+			Name:             row.Name,
+			Status:           row.Status,
+			HumanOwnerUserID: row.HumanOwnerUserID,
+			Metadata:         row.Metadata,
+			ArchivedAt:       row.ArchivedAt,
+			DisabledAt:       row.DisabledAt,
+			DeletedAt:        row.DeletedAt,
+			CreatedAt:        row.CreatedAt,
+			UpdatedAt:        row.UpdatedAt,
+		},
+		row.MemberCount,
+		row.DigitalEmployeeCount,
+		row.CapabilityCount,
+		row.CurrentRevision,
+		row.PendingDraftCount,
+		row.GovernanceStatus,
+		row.RiskSummary,
+	)
+}
+
+func teamListItemRecordFromGetSummaryQuery(row queries.GetTenantTeamSummaryRow) (TeamListItemRecord, error) {
+	return teamListItemRecordFromSummaryParts(
+		queries.TenantTeam{
+			ID:               row.ID,
+			TenantID:         row.TenantID,
+			Slug:             row.Slug,
+			Name:             row.Name,
+			Status:           row.Status,
+			HumanOwnerUserID: row.HumanOwnerUserID,
+			Metadata:         row.Metadata,
+			ArchivedAt:       row.ArchivedAt,
+			DisabledAt:       row.DisabledAt,
+			DeletedAt:        row.DeletedAt,
+			CreatedAt:        row.CreatedAt,
+			UpdatedAt:        row.UpdatedAt,
+		},
+		row.MemberCount,
+		row.DigitalEmployeeCount,
+		row.CapabilityCount,
+		row.CurrentRevision,
+		row.PendingDraftCount,
+		row.GovernanceStatus,
+		row.RiskSummary,
+	)
+}
+
+func teamListItemRecordFromSummaryParts(
+	tenantTeam queries.TenantTeam,
+	memberCount int32,
+	digitalEmployeeCount int32,
+	capabilityCount int32,
+	currentRevision pgtype.Int4,
+	pendingDraftCount int32,
+	governanceStatus string,
+	riskSummary string,
+) (TeamListItemRecord, error) {
+	team, err := teamRecordFromQuery(tenantTeam)
+	if err != nil {
+		return TeamListItemRecord{}, err
+	}
+	return TeamListItemRecord{
+		Team:                 team,
+		MemberCount:          memberCount,
+		DigitalEmployeeCount: digitalEmployeeCount,
+		CapabilityCount:      capabilityCount,
+		CurrentRevision:      int32PtrFromInt4(currentRevision),
+		PendingDraftCount:    pendingDraftCount,
+		GovernanceStatus:     GovernanceSummaryStatus(governanceStatus),
+		RiskSummary:          riskSummary,
+	}, nil
+}
+
 func configRevisionRecordFromQuery(revision queries.TenantTeamConfigRevision) (TeamConfigRevisionRecord, error) {
 	constitution, err := mapFromJSONB(revision.Constitution, "constitution")
 	if err != nil {
@@ -232,6 +375,14 @@ func mapNoRows(err error) error {
 	return err
 }
 
+func mapConstraintError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return fmt.Errorf("%w: unique constraint violation", ErrInvalidInput)
+	}
+	return err
+}
+
 func nullUUIDFromPtr(value *uuid.UUID) uuid.NullUUID {
 	if value == nil || *value == uuid.Nil {
 		return uuid.NullUUID{}
@@ -252,6 +403,21 @@ func textFromTeamStatus(status TeamStatus) pgtype.Text {
 		return pgtype.Text{}
 	}
 	return pgtype.Text{String: string(status), Valid: true}
+}
+
+func textFromString(value string) pgtype.Text {
+	if value == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: value, Valid: true}
+}
+
+func int32PtrFromInt4(value pgtype.Int4) *int32 {
+	if !value.Valid {
+		return nil
+	}
+	copied := value.Int32
+	return &copied
 }
 
 func timestamptzFromPtr(value *time.Time) pgtype.Timestamptz {

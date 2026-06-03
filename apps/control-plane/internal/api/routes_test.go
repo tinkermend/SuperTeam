@@ -1597,9 +1597,10 @@ func routeLogin(t *testing.T, server *Server, username, password string) *http.C
 }
 
 type routeAuthorizer struct {
-	allowed bool
-	err     error
-	checks  []authz.CheckRequest
+	allowed     bool
+	denyActions map[string]bool
+	err         error
+	checks      []authz.CheckRequest
 }
 
 func (a *routeAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (authz.Decision, error) {
@@ -1607,10 +1608,22 @@ func (a *routeAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (au
 	if a.err != nil {
 		return authz.Decision{}, a.err
 	}
+	if a.denyActions[req.Action] {
+		return authz.Decision{Allowed: false, Reason: authz.ReasonNoMembership, RequiresAudit: true}, nil
+	}
 	if a.allowed {
 		return authz.Decision{Allowed: true, Reason: authz.ReasonAllowed, MatchedRule: "test.allow"}, nil
 	}
 	return authz.Decision{Allowed: false, Reason: authz.ReasonNoMembership, RequiresAudit: true}, nil
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 type routeAuthzCenterRepo struct {

@@ -9,6 +9,38 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestTeamStatusAllowsArchived(t *testing.T) {
+	if !TeamStatusArchived.IsValid() {
+		t.Fatalf("expected archived team status to be valid")
+	}
+	if TeamStatus("paused").IsValid() {
+		t.Fatalf("expected unknown team status to be invalid")
+	}
+}
+
+func TestCreateTeamDefaultsActiveStatus(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	ownerID := uuid.New()
+
+	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         uuid.New(),
+		Slug:             "engineering",
+		Name:             "Engineering",
+		HumanOwnerUserID: &ownerID,
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+
+	if team.Status != TeamStatusActive {
+		t.Fatalf("expected active default status, got %q", team.Status)
+	}
+}
+
 func TestCreateTeamRequiresHumanOwner(t *testing.T) {
 	repo := newMemoryRepository()
 	svc, err := NewService(repo)
@@ -238,19 +270,169 @@ func TestListTeamsRejectsNegativeOffset(t *testing.T) {
 	}
 }
 
+func TestUpdateTeamRejectsEmptyName(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = svc.UpdateTeam(context.Background(), UpdateTeamRequest{
+		TenantID: uuid.New(),
+		TeamID:   uuid.New(),
+		Slug:     "ops",
+		Name:     "   ",
+	})
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for empty name, got %v", err)
+	}
+	if repo.updateTeamCalled {
+		t.Fatalf("expected invalid update request not to reach repository")
+	}
+}
+
+func TestUpdateTeamPreservesOwnerAndMetadataWhenOmitted(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         tenantID,
+		Slug:             "ops",
+		Name:             "Ops",
+		HumanOwnerUserID: &ownerID,
+		Metadata:         map[string]any{"cost_center": "ops"},
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+
+	updated, err := svc.UpdateTeam(context.Background(), UpdateTeamRequest{
+		TenantID: tenantID,
+		TeamID:   team.ID,
+		Slug:     "platform-ops",
+		Name:     "Platform Ops",
+	})
+	if err != nil {
+		t.Fatalf("update team: %v", err)
+	}
+
+	if updated.HumanOwnerUserID == nil || *updated.HumanOwnerUserID != ownerID {
+		t.Fatalf("expected owner to be preserved, got %#v", updated.HumanOwnerUserID)
+	}
+	if updated.Metadata["cost_center"] != "ops" {
+		t.Fatalf("expected metadata to be preserved, got %#v", updated.Metadata)
+	}
+}
+
+func TestChangeTeamStatusRejectsInvalidStatus(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = svc.ChangeTeamStatus(context.Background(), ChangeTeamStatusRequest{
+		TenantID: uuid.New(),
+		TeamID:   uuid.New(),
+		Status:   TeamStatus("paused"),
+	})
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for unknown status, got %v", err)
+	}
+	if repo.setTeamStatusCalled {
+		t.Fatalf("expected invalid status request not to reach repository")
+	}
+}
+
+func TestGetOverviewUsesTeamSummaryAggregate(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	team, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
+		TenantID:         tenantID,
+		Slug:             "ops",
+		Name:             "Ops",
+		HumanOwnerUserID: &ownerID,
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	repo.teamSummaries[team.ID] = TeamListItemRecord{
+		Team:                 *team,
+		MemberCount:          18,
+		DigitalEmployeeCount: 6,
+		CapabilityCount:      12,
+		PendingDraftCount:    3,
+	}
+
+	overview, err := svc.GetOverview(context.Background(), tenantID, team.ID)
+	if err != nil {
+		t.Fatalf("get overview: %v", err)
+	}
+
+	if !repo.getTeamSummaryCalled {
+		t.Fatalf("expected overview to use team-scoped summary aggregate")
+	}
+	if repo.listTeamSummariesCalled {
+		t.Fatalf("expected overview not to use paginated summary list")
+	}
+	if overview.MemberCount != 18 || overview.DigitalEmployeeCount != 6 || overview.CapabilityCount != 12 || overview.PendingItemCount != 3 {
+		t.Fatalf("unexpected overview counts: %#v", overview)
+	}
+}
+
+func TestListTeamSummariesDefaultsLimit(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = svc.ListTeamSummaries(context.Background(), ListTeamsRequest{
+		TenantID: uuid.New(),
+	})
+	if err != nil {
+		t.Fatalf("list team summaries: %v", err)
+	}
+
+	if !repo.listTeamSummariesCalled {
+		t.Fatalf("expected list summary request to reach repository")
+	}
+	if repo.lastListTeamSummariesParams.Limit != 50 {
+		t.Fatalf("expected default limit 50, got %d", repo.lastListTeamSummariesParams.Limit)
+	}
+}
+
 type memoryRepository struct {
-	teams               map[uuid.UUID]TeamRecord
-	revisions           map[uuid.UUID]TeamConfigRevisionRecord
-	createTeamCalled    bool
-	listTeamsCalled     bool
-	createRevisionCalls int
-	createdRevision     CreateTeamConfigRevisionParams
+	teams                       map[uuid.UUID]TeamRecord
+	teamSummaries               map[uuid.UUID]TeamListItemRecord
+	revisions                   map[uuid.UUID]TeamConfigRevisionRecord
+	createTeamCalled            bool
+	listTeamsCalled             bool
+	listTeamSummariesCalled     bool
+	getTeamSummaryCalled        bool
+	updateTeamCalled            bool
+	setTeamStatusCalled         bool
+	lastListTeamSummariesParams ListTeamSummariesParams
+	createRevisionCalls         int
+	createdRevision             CreateTeamConfigRevisionParams
 }
 
 func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{
-		teams:     map[uuid.UUID]TeamRecord{},
-		revisions: map[uuid.UUID]TeamConfigRevisionRecord{},
+		teams:         map[uuid.UUID]TeamRecord{},
+		teamSummaries: map[uuid.UUID]TeamListItemRecord{},
+		revisions:     map[uuid.UUID]TeamConfigRevisionRecord{},
 	}
 }
 
@@ -283,11 +465,62 @@ func (r *memoryRepository) ListTeams(_ context.Context, params ListTeamsParams) 
 	return records, nil
 }
 
+func (r *memoryRepository) ListTeamSummaries(_ context.Context, params ListTeamSummariesParams) ([]TeamListItemRecord, error) {
+	r.listTeamSummariesCalled = true
+	r.lastListTeamSummariesParams = params
+	records := make([]TeamListItemRecord, 0, len(r.teams))
+	for _, record := range r.teams {
+		if record.TenantID == params.TenantID {
+			records = append(records, TeamListItemRecord{Team: record})
+		}
+	}
+	return records, nil
+}
+
+func (r *memoryRepository) GetTeamSummary(_ context.Context, tenantID, teamID uuid.UUID) (TeamListItemRecord, error) {
+	r.getTeamSummaryCalled = true
+	if record, ok := r.teamSummaries[teamID]; ok && record.TenantID == tenantID {
+		return record, nil
+	}
+	record, ok := r.teams[teamID]
+	if !ok || record.TenantID != tenantID {
+		return TeamListItemRecord{}, ErrNotFound
+	}
+	return TeamListItemRecord{Team: record}, nil
+}
+
 func (r *memoryRepository) GetTeam(_ context.Context, tenantID, teamID uuid.UUID) (TeamRecord, error) {
 	record, ok := r.teams[teamID]
 	if !ok || record.TenantID != tenantID {
 		return TeamRecord{}, ErrNotFound
 	}
+	return record, nil
+}
+
+func (r *memoryRepository) UpdateTeam(_ context.Context, params UpdateTeamParams) (TeamRecord, error) {
+	r.updateTeamCalled = true
+	record, ok := r.teams[params.TeamID]
+	if !ok || record.TenantID != params.TenantID {
+		return TeamRecord{}, ErrNotFound
+	}
+	record.Slug = params.Slug
+	record.Name = params.Name
+	record.HumanOwnerUserID = params.HumanOwnerUserID
+	record.Metadata = cloneMap(params.Metadata)
+	record.UpdatedAt = time.Now().UTC()
+	r.teams[record.ID] = record
+	return record, nil
+}
+
+func (r *memoryRepository) SetTeamStatus(_ context.Context, params SetTeamStatusParams) (TeamRecord, error) {
+	r.setTeamStatusCalled = true
+	record, ok := r.teams[params.TeamID]
+	if !ok || record.TenantID != params.TenantID {
+		return TeamRecord{}, ErrNotFound
+	}
+	record.Status = params.Status
+	record.UpdatedAt = time.Now().UTC()
+	r.teams[record.ID] = record
 	return record, nil
 }
 

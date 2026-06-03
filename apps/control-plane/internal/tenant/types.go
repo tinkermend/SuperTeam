@@ -17,16 +17,28 @@ type TeamStatus string
 const (
 	TeamStatusActive   TeamStatus = "active"
 	TeamStatusDisabled TeamStatus = "disabled"
+	TeamStatusArchived TeamStatus = "archived"
 )
 
 func (s TeamStatus) IsValid() bool {
 	switch s {
-	case TeamStatusActive, TeamStatusDisabled:
+	case TeamStatusActive, TeamStatusDisabled, TeamStatusArchived:
 		return true
 	default:
 		return false
 	}
 }
+
+type GovernanceSummaryStatus string
+
+const (
+	GovernanceSummaryNotConfigured GovernanceSummaryStatus = "not_configured"
+	GovernanceSummaryDraftPending  GovernanceSummaryStatus = "draft_pending"
+	GovernanceSummaryActive        GovernanceSummaryStatus = "active"
+	GovernanceSummaryNeedsUpdate   GovernanceSummaryStatus = "needs_update"
+)
+
+type AllowedTeamAction string
 
 type TeamConfigRevisionStatus string
 
@@ -54,6 +66,28 @@ type Team struct {
 	Metadata         map[string]any
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+}
+
+type TeamListItem struct {
+	Team
+	MemberCount          int32
+	DigitalEmployeeCount int32
+	CapabilityCount      int32
+	GovernanceStatus     GovernanceSummaryStatus
+	CurrentRevision      *int32
+	PendingDraftCount    int32
+	RiskSummary          string
+}
+
+type TeamOverview struct {
+	Team                 *Team
+	MemberCount          int32
+	DigitalEmployeeCount int32
+	CapabilityCount      int32
+	CurrentRevision      *TeamConfigRevision
+	PendingDraftCount    int32
+	PendingItemCount     int32
+	AllowedActions       []AllowedTeamAction
 }
 
 type TeamConfigRevision struct {
@@ -88,8 +122,24 @@ type CreateTeamRequest struct {
 type ListTeamsRequest struct {
 	TenantID uuid.UUID
 	Status   TeamStatus
+	Q        string
 	Offset   int32
 	Limit    int32
+}
+
+type UpdateTeamRequest struct {
+	TenantID         uuid.UUID
+	TeamID           uuid.UUID
+	Name             string
+	Slug             string
+	HumanOwnerUserID *uuid.UUID
+	Metadata         map[string]any
+}
+
+type ChangeTeamStatusRequest struct {
+	TenantID uuid.UUID
+	TeamID   uuid.UUID
+	Status   TeamStatus
 }
 
 type CreateTeamConfigRevisionRequest struct {

@@ -10,7 +10,11 @@ import (
 type Repository interface {
 	CreateTeam(ctx context.Context, params CreateTeamParams) (TeamRecord, error)
 	ListTeams(ctx context.Context, params ListTeamsParams) ([]TeamRecord, error)
+	ListTeamSummaries(ctx context.Context, params ListTeamSummariesParams) ([]TeamListItemRecord, error)
+	GetTeamSummary(ctx context.Context, tenantID, teamID uuid.UUID) (TeamListItemRecord, error)
 	GetTeam(ctx context.Context, tenantID, teamID uuid.UUID) (TeamRecord, error)
+	UpdateTeam(ctx context.Context, params UpdateTeamParams) (TeamRecord, error)
+	SetTeamStatus(ctx context.Context, params SetTeamStatusParams) (TeamRecord, error)
 	CreateTeamConfigRevision(ctx context.Context, params CreateTeamConfigRevisionParams) (TeamConfigRevisionRecord, error)
 	GetTeamConfigRevision(ctx context.Context, tenantID, revisionID uuid.UUID) (TeamConfigRevisionRecord, error)
 	GetCurrentTeamConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (TeamConfigRevisionRecord, error)
@@ -29,8 +33,26 @@ type CreateTeamParams struct {
 type ListTeamsParams struct {
 	TenantID uuid.UUID
 	Status   TeamStatus
+	Q        string
 	Offset   int32
 	Limit    int32
+}
+
+type ListTeamSummariesParams = ListTeamsParams
+
+type UpdateTeamParams struct {
+	TenantID         uuid.UUID
+	TeamID           uuid.UUID
+	Slug             string
+	Name             string
+	HumanOwnerUserID *uuid.UUID
+	Metadata         map[string]any
+}
+
+type SetTeamStatusParams struct {
+	TenantID uuid.UUID
+	TeamID   uuid.UUID
+	Status   TeamStatus
 }
 
 type CreateTeamConfigRevisionParams struct {
@@ -51,5 +73,7 @@ type CreateTeamConfigRevisionParams struct {
 }
 
 type TeamRecord = Team
+
+type TeamListItemRecord = TeamListItem
 
 type TeamConfigRevisionRecord = TeamConfigRevision

@@ -1,8 +1,21 @@
 import type { ApiClientOptions } from "./client";
 import { buildApiUrl, parseJson } from "./client";
 
-export type TeamStatus = "active" | "disabled";
+export type TeamStatus = "active" | "disabled" | "archived";
 export type TeamConfigRevisionStatus = "draft" | "active";
+export type GovernanceSummaryStatus = "not_configured" | "draft_pending" | "active" | "needs_update";
+export type AllowedTeamAction =
+  | "team.update"
+  | "team.disable"
+  | "team.archive"
+  | "team.restore"
+  | "team.member.add"
+  | "team.member.request_privileged_role"
+  | "team.governance.edit"
+  | "team.governance.approve"
+  | "team.capability.bind"
+  | "team.capability.unbind"
+  | "team.audit.read";
 
 export type Team = {
   id: string;
@@ -36,11 +49,44 @@ export type TeamConfigRevision = {
   updated_at?: string;
 };
 
+export type TeamListItem = Team & {
+  member_count: number;
+  digital_employee_count: number;
+  capability_count: number;
+  governance_status: GovernanceSummaryStatus;
+  current_revision?: number;
+  pending_draft_count: number;
+  risk_summary: string;
+};
+
+export type TeamOverview = {
+  team: Team;
+  member_count: number;
+  digital_employee_count: number;
+  capability_count: number;
+  current_revision?: TeamConfigRevision;
+  pending_draft_count: number;
+  pending_item_count: number;
+  allowed_actions: AllowedTeamAction[];
+};
+
 export type CreateTeamInput = {
   slug: string;
   name: string;
   human_owner_user_id: string;
   status?: TeamStatus;
+  metadata?: Record<string, unknown>;
+};
+
+export type ListTeamSummariesFilters = {
+  status?: TeamStatus;
+  q?: string;
+};
+
+export type UpdateTeamInput = {
+  slug: string;
+  name: string;
+  human_owner_user_id?: string;
   metadata?: Record<string, unknown>;
 };
 
@@ -79,12 +125,68 @@ async function postJson<T>(options: ApiClientOptions, path: string, input: unkno
   return parseJson<T>(response, resource);
 }
 
-export function listTeams(options: ApiClientOptions): Promise<Team[]> {
-  return getJson<Team[]>(options, "/api/v1/teams", "teams");
+async function patchJson<T>(options: ApiClientOptions, path: string, input: unknown, resource: string): Promise<T> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
+    body: JSON.stringify(input),
+    credentials: "include",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    method: "PATCH",
+  });
+
+  return parseJson<T>(response, resource);
+}
+
+function teamPath(teamId: string, suffix = ""): string {
+  return `/api/v1/teams/${encodeURIComponent(teamId)}${suffix}`;
+}
+
+function teamListPath(filters: ListTeamSummariesFilters = {}): string {
+  const params = new URLSearchParams();
+  if (filters.status) {
+    params.set("status", filters.status);
+  }
+  const q = filters.q?.trim();
+  if (q) {
+    params.set("q", q);
+  }
+  const query = params.toString();
+  return query ? `/api/v1/teams?${query}` : "/api/v1/teams";
+}
+
+export function listTeamSummaries(
+  options: ApiClientOptions,
+  filters: ListTeamSummariesFilters = {},
+): Promise<TeamListItem[]> {
+  return getJson<TeamListItem[]>(options, teamListPath(filters), "team summaries");
+}
+
+export function listTeams(options: ApiClientOptions): Promise<TeamListItem[]> {
+  return listTeamSummaries(options);
 }
 
 export function createTeam(options: ApiClientOptions, input: CreateTeamInput): Promise<Team> {
   return postJson<Team>(options, "/api/v1/teams", input, "create team");
+}
+
+export function getTeamOverview(options: ApiClientOptions, teamId: string): Promise<TeamOverview> {
+  return getJson<TeamOverview>(options, teamPath(teamId, "/overview"), "team overview");
+}
+
+export function updateTeam(options: ApiClientOptions, teamId: string, input: UpdateTeamInput): Promise<Team> {
+  return patchJson<Team>(options, teamPath(teamId), input, "update team");
+}
+
+export function disableTeam(options: ApiClientOptions, teamId: string): Promise<Team> {
+  return postJson<Team>(options, teamPath(teamId, "/disable"), {}, "disable team");
+}
+
+export function archiveTeam(options: ApiClientOptions, teamId: string): Promise<Team> {
+  return postJson<Team>(options, teamPath(teamId, "/archive"), {}, "archive team");
+}
+
+export function restoreTeam(options: ApiClientOptions, teamId: string): Promise<Team> {
+  return postJson<Team>(options, teamPath(teamId, "/restore"), {}, "restore team");
 }
 
 export function createTeamConfigRevision(
@@ -92,10 +194,9 @@ export function createTeamConfigRevision(
   teamId: string,
   input: CreateTeamConfigRevisionInput,
 ): Promise<TeamConfigRevision> {
-  const encodedTeamId = encodeURIComponent(teamId);
   return postJson<TeamConfigRevision>(
     options,
-    `/api/v1/teams/${encodedTeamId}/config-revisions`,
+    teamPath(teamId, "/config-revisions"),
     input,
     "create team config revision",
   );
@@ -105,10 +206,9 @@ export function getCurrentTeamConfigRevision(
   options: ApiClientOptions,
   teamId: string,
 ): Promise<TeamConfigRevision> {
-  const encodedTeamId = encodeURIComponent(teamId);
   return getJson<TeamConfigRevision>(
     options,
-    `/api/v1/teams/${encodedTeamId}/config-revisions/current`,
+    teamPath(teamId, "/config-revisions/current"),
     "current team config revision",
   );
 }
