@@ -1128,6 +1128,40 @@ describe("TeamsView", () => {
     });
   });
 
+  it("resets the create drawer draft after a successful create", async () => {
+    const fetcher = createTeamsFetcher();
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await openCreateTeamMembersStep(screen);
+    await userEvent.click(screen.getByLabelText("选择 member 为初始成员"));
+    await expect
+      .element(screen.getByText("已选择的初始成员（1）"))
+      .toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "创建团队" }));
+
+    await expect.poll(() => createTeamPostIndex(fetcher)).not.toBe(-1);
+    await expect
+      .element(screen.getByRole("heading", { name: "新建团队" }))
+      .not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "新建团队" }));
+
+    await expect
+      .element(screen.getByRole("textbox", { name: "团队名称", exact: true }))
+      .toHaveValue("");
+    await expect
+      .element(screen.getByRole("textbox", { name: "团队标识 slug", exact: true }))
+      .toHaveValue("");
+    await expect
+      .element(screen.getByRole("heading", { name: "基础信息" }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByText("已选择的初始成员（1）"))
+      .not.toBeInTheDocument();
+  });
+
   it("refetches the first team page after creating while already on the first page", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(

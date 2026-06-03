@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -56,12 +56,22 @@ export function CreateTeamDrawer(props: CreateTeamDrawerProps) {
     [draft],
   );
 
+  const resetDraft = useCallback(() => {
+    setStep("basic");
+    setDraft(emptyDraft);
+    setErrors({});
+  }, []);
+
+  useEffect(() => {
+    if (!props.open) {
+      resetDraft();
+    }
+  }, [props.open, resetDraft]);
+
   function handleOpenChange(open: boolean) {
     props.onOpenChange(open);
     if (!open) {
-      setStep("basic");
-      setDraft(emptyDraft);
-      setErrors({});
+      resetDraft();
     }
   }
 
