@@ -28,6 +28,10 @@ func (m *memoryRepository) ListEvents(ctx context.Context, limit, offset int) ([
 	return m.events[offset:end], nil
 }
 
+func (m *memoryRepository) ListTeamEvents(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int) ([]*Event, error) {
+	return m.ListEvents(ctx, limit, offset)
+}
+
 func TestNewServiceRequiresRepository(t *testing.T) {
 	if _, err := NewService(nil); err == nil {
 		t.Fatal("expected nil repository to fail")

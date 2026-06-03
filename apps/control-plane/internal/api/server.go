@@ -162,6 +162,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/teams", s.tenantHandler.ListTeams)
 				r.Post("/teams", s.tenantHandler.CreateTeam)
 				r.Get("/teams/{teamId}/overview", s.tenantHandler.GetTeamOverview)
+				r.Get("/teams/{teamId}/audit", s.tenantHandler.ListTeamAudit)
 				r.Patch("/teams/{teamId}", s.tenantHandler.UpdateTeam)
 				r.Get("/teams/{teamId}", s.tenantHandler.GetTeam)
 				r.Post("/teams/{teamId}/disable", s.tenantHandler.DisableTeam)

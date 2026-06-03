@@ -7,6 +7,7 @@ import (
 
 	"github.com/superteam/control-plane/internal/api"
 	"github.com/superteam/control-plane/internal/api/handlers"
+	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
@@ -25,6 +26,7 @@ type Container struct {
 	RuntimeService  *runtimepkg.Service
 	EmployeeService *employee.Service
 	TenantService   *tenant.Service
+	AuditService    *audit.Service
 	RuntimeCommands *runtimepkg.ConnectionRegistry
 	AuthService     *auth.Service
 	Authorizer      authz.Authorizer
@@ -67,8 +69,14 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		return nil, err
 	}
 
+	auditRepository := audit.NewPgRepository(q)
+	auditService, err := audit.NewService(auditRepository)
+	if err != nil {
+		return nil, err
+	}
+
 	tenantRepository := tenant.NewPgRepository(q, stores.Postgres)
-	tenantService, err := tenant.NewService(tenantRepository)
+	tenantService, err := tenant.NewService(tenantRepository, auditService)
 	if err != nil {
 		return nil, err
 	}
@@ -102,6 +110,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		RuntimeService:  runtimeService,
 		EmployeeService: employeeService,
 		TenantService:   tenantService,
+		AuditService:    auditService,
 		RuntimeCommands: runtimeCommands,
 		AuthService:     authService,
 		Authorizer:      authorizer,

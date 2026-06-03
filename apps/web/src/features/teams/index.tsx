@@ -105,6 +105,7 @@ export function TeamDetailView({ apiBaseUrl, fetcher, teamId }: TeamDetailViewPr
             onDisableTeam={() => disableMutation.mutate()}
             onRestoreTeam={() => restoreMutation.mutate()}
             overview={overview.data}
+            teamId={teamId}
           />
         ) : null}
       </Main>

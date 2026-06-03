@@ -42,6 +42,44 @@ describe("digital employee API", () => {
     );
   });
 
+  it("lists digital employees filtered by team id", async () => {
+    const teamId = "99999999-9999-4999-8999-999999999999";
+    const employees = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        team_id: teamId,
+        name: "需求分析员工",
+        role: "requirements_analyst",
+        status: "draft",
+      },
+    ];
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(employees), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      listDigitalEmployees(
+        {
+          baseUrl: "http://control-plane.local",
+          fetcher,
+        },
+        { team_id: teamId },
+      ),
+    ).resolves.toEqual(employees);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      `http://control-plane.local/api/v1/digital-employees?team_id=${teamId}`,
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
   it("creates digital employee with team id and cookie credentials", async () => {
     const employee = {
       id: "11111111-1111-4111-8111-111111111111",

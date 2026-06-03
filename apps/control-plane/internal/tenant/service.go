@@ -8,13 +8,29 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/audit"
 )
 
 type Service struct {
-	repository Repository
+	repository  Repository
+	auditReader TeamAuditReader
 }
 
-func NewService(repository Repository) (*Service, error) {
+type TeamAuditReader interface {
+	ListTeamEvents(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int) ([]*audit.Event, error)
+}
+
+func NewService(repository Repository, auditReader TeamAuditReader) (*Service, error) {
+	if repository == nil {
+		return nil, fmt.Errorf("%w: repository is required", ErrInvalidInput)
+	}
+	if auditReader == nil {
+		return nil, fmt.Errorf("%w: team audit reader is required", ErrInvalidInput)
+	}
+	return &Service{repository: repository, auditReader: auditReader}, nil
+}
+
+func NewServiceWithoutAuditForTest(repository Repository) (*Service, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("%w: repository is required", ErrInvalidInput)
 	}
@@ -500,6 +516,23 @@ func (s *Service) decideRoleRequest(ctx context.Context, req DecideRoleRequestRe
 		return nil, fmt.Errorf("decide team member role request: %w", err)
 	}
 	return roleRequestFromRecord(record), nil
+}
+
+func (s *Service) ListTeamAuditEvents(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int32) ([]*audit.Event, error) {
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if teamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	limit, offset, err := normalizeLimitOffset(limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	if s.auditReader == nil {
+		return nil, errors.New("team audit reader is not configured")
+	}
+	return s.auditReader.ListTeamEvents(ctx, tenantID, teamID, int(limit), int(offset))
 }
 
 func normalizeListTeamsRequest(req ListTeamsRequest) (ListTeamsRequest, error) {

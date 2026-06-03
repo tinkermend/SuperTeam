@@ -103,6 +103,20 @@ export type TeamMemberRoleRequest = {
   updated_at?: string;
 };
 
+export type TeamAuditEvent = {
+  id: string;
+  tenant_id: string;
+  event_type: string;
+  actor_type: string;
+  actor_id: string;
+  resource_type: string;
+  resource_id: string;
+  action: string;
+  details: Record<string, unknown>;
+  ip_address?: string;
+  created_at?: string;
+};
+
 export type CreateTeamInput = {
   slug: string;
   name: string;
@@ -114,6 +128,11 @@ export type CreateTeamInput = {
 export type ListTeamSummariesFilters = {
   status?: TeamStatus;
   q?: string;
+};
+
+export type ListTeamAuditEventsFilters = {
+  limit?: number;
+  offset?: number;
 };
 
 export type UpdateTeamInput = {
@@ -213,6 +232,18 @@ function teamListPath(filters: ListTeamSummariesFilters = {}): string {
   }
   const query = params.toString();
   return query ? `/api/v1/teams?${query}` : "/api/v1/teams";
+}
+
+function teamAuditPath(teamId: string, filters: ListTeamAuditEventsFilters = {}): string {
+  const params = new URLSearchParams();
+  if (filters.limit !== undefined) {
+    params.set("limit", String(filters.limit));
+  }
+  if (filters.offset !== undefined) {
+    params.set("offset", String(filters.offset));
+  }
+  const query = params.toString();
+  return `${teamPath(teamId, "/audit")}${query ? `?${query}` : ""}`;
 }
 
 export function listTeamSummaries(
@@ -342,4 +373,12 @@ export function rejectTeamMemberRoleRequest(
     input,
     "reject team member role request",
   );
+}
+
+export function listTeamAuditEvents(
+  options: ApiClientOptions,
+  teamId: string,
+  filters: ListTeamAuditEventsFilters = {},
+): Promise<TeamAuditEvent[]> {
+  return getJson<TeamAuditEvent[]>(options, teamAuditPath(teamId, filters), "team audit events");
 }

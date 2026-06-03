@@ -3491,6 +3491,98 @@ func TestListAuditEvents(t *testing.T) {
 	}
 }
 
+func TestListTeamAuditEvents(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	otherTenantID := uuid.New()
+	teamID := uuid.New()
+	otherTeamID := uuid.New()
+	detailsJSON, err := json.Marshal(map[string]interface{}{"test": true})
+	require.NoError(t, err)
+
+	_, err = testDB.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'other-audit-tenant', 'Other Audit Tenant', 'active')
+	`, otherTenantID)
+	require.NoError(t, err)
+
+	included, err := testQueries.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: true},
+		EventType:    "team.updated",
+		ActorType:    "user",
+		ActorID:      "auditor",
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: teamID.String(), Valid: true},
+		Action:       "team.update",
+		Details:      detailsJSON,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: otherTenantID, Valid: true},
+		EventType:    "team.updated",
+		ActorType:    "user",
+		ActorID:      "auditor",
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: teamID.String(), Valid: true},
+		Action:       "team.update",
+		Details:      detailsJSON,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: true},
+		EventType:    "team.updated",
+		ActorType:    "user",
+		ActorID:      "auditor",
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: otherTeamID.String(), Valid: true},
+		Action:       "team.update",
+		Details:      detailsJSON,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: true},
+		EventType:    "task.updated",
+		ActorType:    "user",
+		ActorID:      "auditor",
+		ResourceType: pgtype.Text{String: "task", Valid: true},
+		ResourceID:   pgtype.Text{String: teamID.String(), Valid: true},
+		Action:       "team.update",
+		Details:      detailsJSON,
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: true},
+		EventType:    "team.read",
+		ActorType:    "user",
+		ActorID:      "auditor",
+		ResourceType: pgtype.Text{String: "team", Valid: true},
+		ResourceID:   pgtype.Text{String: teamID.String(), Valid: true},
+		Action:       "authz.check",
+		Details:      detailsJSON,
+	})
+	require.NoError(t, err)
+
+	events, err := testQueries.ListTeamAuditEvents(ctx, queries.ListTeamAuditEventsParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+		Offset:   0,
+		Limit:    10,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, included.ID, events[0].ID)
+	assert.Equal(t, tenantID, events[0].TenantID)
+	assert.Equal(t, "team", events[0].ResourceType.String)
+	assert.Equal(t, teamID.String(), events[0].ResourceID.String)
+	assert.Equal(t, "team.update", events[0].Action)
+}
+
 func TestCountAuditEvents(t *testing.T) {
 	ctx := context.Background()
 	cleanupTestData(t, testDB)

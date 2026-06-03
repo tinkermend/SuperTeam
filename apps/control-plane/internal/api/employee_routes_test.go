@@ -176,6 +176,39 @@ func TestDigitalEmployeeRoutesRequireConsoleAuth(t *testing.T) {
 	}
 }
 
+func TestEmployeeListAcceptsTeamFilter(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeEmployeeService{}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetEmployeeHandler(employee.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+	teamID := uuid.New()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees?team_id="+teamID.String(), nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected list digital employees to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.listReq.TeamID == nil || *service.listReq.TeamID != teamID {
+		t.Fatalf("expected list team %s, got %#v", teamID, service.listReq.TeamID)
+	}
+}
+
 func TestDigitalEmployeeRoutesRequireManagementAuthorization(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {

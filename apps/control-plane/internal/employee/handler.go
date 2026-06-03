@@ -51,9 +51,19 @@ func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Reques
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	status := DigitalEmployeeStatus(r.URL.Query().Get("status"))
+	var teamID *uuid.UUID
+	if rawTeamID := r.URL.Query().Get("team_id"); rawTeamID != "" {
+		parsedTeamID, err := uuid.Parse(rawTeamID)
+		if err != nil {
+			http.Error(w, "invalid team_id", http.StatusBadRequest)
+			return
+		}
+		teamID = &parsedTeamID
+	}
 
 	employees, err := service.ListDigitalEmployees(r.Context(), ListDigitalEmployeesRequest{
 		TenantID: tenantID,
+		TeamID:   teamID,
 		Status:   status,
 		Offset:   int32(offset),
 		Limit:    int32(limit),

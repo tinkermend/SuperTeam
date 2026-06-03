@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/audit"
 )
 
 func TestTeamStatusAllowsArchived(t *testing.T) {
@@ -18,9 +19,19 @@ func TestTeamStatusAllowsArchived(t *testing.T) {
 	}
 }
 
+func TestNewServiceRequiresTeamAuditReader(t *testing.T) {
+	repo := newMemoryRepository()
+	if _, err := NewService(repo, nil); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected missing team audit reader to fail with invalid input, got %v", err)
+	}
+	if _, err := NewService(repo, &fakeTeamAuditReader{}); err != nil {
+		t.Fatalf("expected service with team audit reader: %v", err)
+	}
+}
+
 func TestCreateTeamDefaultsActiveStatus(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -43,7 +54,7 @@ func TestCreateTeamDefaultsActiveStatus(t *testing.T) {
 
 func TestCreateTeamRequiresHumanOwner(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -64,7 +75,7 @@ func TestCreateTeamRequiresHumanOwner(t *testing.T) {
 
 func TestCreateTeamConfigRevisionDefaultsActiveStatus(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -124,7 +135,7 @@ func TestCreateTeamConfigRevisionDefaultsActiveStatus(t *testing.T) {
 
 func TestCreateTeamConfigRevisionRequiresExistingTeam(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -170,7 +181,7 @@ func TestCreateTeamConfigRevisionRequiresExistingTeam(t *testing.T) {
 
 func TestCreateTeamConfigRevisionRejectsSecondActiveBeforeInsert(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -209,7 +220,7 @@ func TestCreateTeamConfigRevisionRejectsSecondActiveBeforeInsert(t *testing.T) {
 
 func TestCreateTeamConfigRevisionDraftHasNoApprovalMetadata(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -252,7 +263,7 @@ func TestCreateTeamConfigRevisionDraftHasNoApprovalMetadata(t *testing.T) {
 
 func TestListTeamsRejectsNegativeOffset(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -272,7 +283,7 @@ func TestListTeamsRejectsNegativeOffset(t *testing.T) {
 
 func TestUpdateTeamRejectsEmptyName(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -294,7 +305,7 @@ func TestUpdateTeamRejectsEmptyName(t *testing.T) {
 
 func TestUpdateTeamPreservesOwnerAndMetadataWhenOmitted(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -331,7 +342,7 @@ func TestUpdateTeamPreservesOwnerAndMetadataWhenOmitted(t *testing.T) {
 
 func TestChangeTeamStatusRejectsInvalidStatus(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -352,7 +363,7 @@ func TestChangeTeamStatusRejectsInvalidStatus(t *testing.T) {
 
 func TestGetOverviewUsesTeamSummaryAggregate(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -393,7 +404,7 @@ func TestGetOverviewUsesTeamSummaryAggregate(t *testing.T) {
 
 func TestListTeamSummariesDefaultsLimit(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -415,7 +426,7 @@ func TestListTeamSummariesDefaultsLimit(t *testing.T) {
 
 func TestAddTeamMemberRejectsPrivilegedRole(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -442,7 +453,7 @@ func TestAddTeamMemberRejectsPrivilegedRole(t *testing.T) {
 
 func TestRemoveTeamMemberRejectsLastOwner(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -476,7 +487,7 @@ func TestRemoveTeamMemberRejectsLastOwner(t *testing.T) {
 
 func TestApprovePrivilegedRoleRequestAddsRole(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithoutAuditForTest(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -820,4 +831,10 @@ func (r *memoryRepository) DecideTeamMemberRoleRequest(_ context.Context, params
 	record.UpdatedAt = now
 	r.roleRequests[record.ID] = record
 	return record, nil
+}
+
+type fakeTeamAuditReader struct{}
+
+func (r *fakeTeamAuditReader) ListTeamEvents(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int) ([]*audit.Event, error) {
+	return []*audit.Event{}, nil
 }

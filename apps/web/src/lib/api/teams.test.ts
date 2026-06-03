@@ -9,6 +9,7 @@ import {
   disableTeam,
   getCurrentTeamConfigRevision,
   getTeamOverview,
+  listTeamAuditEvents,
   listTeamMemberRoleRequests,
   listTeamMembers,
   listTeamSummaries,
@@ -417,6 +418,47 @@ describe("team API", () => {
         method: "DELETE",
       },
     );
+  });
+
+  it("lists team audit events with pagination filters", async () => {
+    const events = [
+      {
+        id: "55555555-5555-4555-8555-555555555555",
+        tenant_id: "22222222-2222-4222-8222-222222222222",
+        event_type: "team_management",
+        actor_type: "user",
+        actor_id: "33333333-3333-4333-8333-333333333333",
+        resource_type: "team",
+        resource_id: "team-1",
+        action: "team.create",
+        details: { summary: "创建团队" },
+        ip_address: "10.20.2.15",
+        created_at: "2026-06-03T09:30:00Z",
+      },
+    ];
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(events), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      listTeamAuditEvents(
+        {
+          baseUrl: "http://control-plane.local",
+          fetcher,
+        },
+        "team-1",
+        { limit: 20, offset: 0 },
+      ),
+    ).resolves.toEqual(events);
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams/team-1/audit?limit=20&offset=0", {
+      credentials: "include",
+      headers: { accept: "application/json" },
+      method: "GET",
+    });
   });
 
   it("manages privileged role requests", async () => {
