@@ -17,11 +17,27 @@ fn binding_for(
     run_id: &str,
     provider_session_id: Option<&str>,
 ) -> RuntimeRunBinding {
+    binding_for_provider(
+        command_id,
+        run_id,
+        "22222222-2222-4222-8222-222222222222",
+        "claude-code",
+        provider_session_id,
+    )
+}
+
+fn binding_for_provider(
+    command_id: &str,
+    run_id: &str,
+    execution_instance_id: &str,
+    provider_type: &str,
+    provider_session_id: Option<&str>,
+) -> RuntimeRunBinding {
     RuntimeRunBinding {
         command_id: command_id.to_string(),
         run_id: run_id.to_string(),
-        execution_instance_id: "22222222-2222-4222-8222-222222222222".to_string(),
-        provider_type: "claude-code".to_string(),
+        execution_instance_id: execution_instance_id.to_string(),
+        provider_type: provider_type.to_string(),
         provider_session_id: provider_session_id.map(str::to_string),
     }
 }
@@ -135,6 +151,50 @@ fn registry_returns_latest_active_run_for_provider_session_deterministically() {
             Some(prior_run.as_str())
         );
     }
+}
+
+#[test]
+fn registry_scopes_provider_session_lookup_by_instance_and_provider() {
+    let registry = RuntimeCommandRegistry::default();
+    let execution_instance_id = "22222222-2222-4222-8222-222222222222";
+
+    registry.record_run_started(binding_for_provider(
+        "cmd-claude",
+        "run-claude",
+        execution_instance_id,
+        "claude-code",
+        Some("shared-session"),
+    ));
+    registry.record_run_started(binding_for_provider(
+        "cmd-opencode",
+        "run-opencode",
+        execution_instance_id,
+        "opencode",
+        Some("shared-session"),
+    ));
+
+    assert_eq!(
+        registry
+            .active_run(ActiveRunLookup {
+                command_id: None,
+                provider_session_id: Some("shared-session"),
+                execution_instance_id,
+                provider_type: "claude-code",
+            })
+            .as_deref(),
+        Some("run-claude")
+    );
+    assert_eq!(
+        registry
+            .active_run(ActiveRunLookup {
+                command_id: None,
+                provider_session_id: Some("shared-session"),
+                execution_instance_id,
+                provider_type: "opencode",
+            })
+            .as_deref(),
+        Some("run-opencode")
+    );
 }
 
 #[test]

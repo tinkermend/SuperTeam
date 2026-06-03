@@ -175,9 +175,12 @@ impl RuntimeCommandRegistry {
         }
 
         if let Some(provider_session_id) = lookup.provider_session_id {
-            if let Some(run_id) =
-                first_active_run(&state, &state.active_runs_by_session, provider_session_id)
-            {
+            if let Some(run_id) = first_active_run_for_session(
+                &state,
+                provider_session_id,
+                lookup.execution_instance_id,
+                lookup.provider_type,
+            ) {
                 return Some(run_id);
             }
         }
@@ -231,6 +234,27 @@ fn first_active_run(
         .iter()
         .rev()
         .find(|run_id| state.is_active_run(run_id))
+        .cloned()
+}
+
+fn first_active_run_for_session(
+    state: &RuntimeCommandRegistryState,
+    provider_session_id: &str,
+    execution_instance_id: &str,
+    provider_type: &str,
+) -> Option<String> {
+    state
+        .active_runs_by_session
+        .get(provider_session_id)?
+        .iter()
+        .rev()
+        .find(|run_id| {
+            state.is_active_run(run_id)
+                && state.run_bindings.get(*run_id).is_some_and(|binding| {
+                    binding.execution_instance_id == execution_instance_id
+                        && binding.provider_type == provider_type
+                })
+        })
         .cloned()
 }
 
