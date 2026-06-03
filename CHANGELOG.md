@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-03 23:15：`AGENTS.md` 明确要求每条新增 `CHANGELOG.md` 变更记录带具体时间，默认使用本地 `Asia/Shanghai` 时间。
 - Web 设计系统收敛为浅色液态玻璃控制台方向，`DESIGN.md` 明确蓝绿色主强调、液态玻璃卡片、胶囊按钮、语义图标和“只迁移 UI/UX 样式、不带入示例业务内容”的规则。
 - Web 登录页、认证后 Shell 和工作台首页按浅色液态玻璃设计语言更新，统一按钮、卡片、背景、导航激活态、搜索框和输入控件质感。
 - `DESIGN.md` 补充页面级和模块级 Tab 设计规则，明确玻璃胶囊激活态、底边流光锚点、中文长标签适配和 SuperTeam 组合组件复用边界。
