@@ -435,6 +435,11 @@ paths:
               - active
               - disabled
               - archived
+        - name: governance_status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/GovernanceSummaryStatus"
         - name: q
           in: query
           required: false
@@ -464,7 +469,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Team"
+                $ref: "#/components/schemas/TeamOverview"
   /api/v1/teams/{teamId}:
     get:
       operationId: getTeam
@@ -1619,6 +1624,8 @@ components:
         human_owner_user_id:
           type: string
           format: uuid
+        human_owner:
+          $ref: "#/components/schemas/TeamHumanOwner"
         metadata:
           type: object
           additionalProperties: true
@@ -1628,6 +1635,26 @@ components:
         updated_at:
           type: string
           format: date-time
+    TeamHumanOwner:
+      type: object
+      required:
+        - user_id
+        - username
+        - display_name
+        - email
+        - status
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        display_name:
+          type: string
+        email:
+          type: string
+        status:
+          type: string
     TeamListItem:
       allOf:
         - $ref: "#/components/schemas/Team"
@@ -1990,6 +2017,22 @@ components:
         human_owner_user_id:
           type: string
           format: uuid
+        initial_members:
+          type: array
+          items:
+            type: object
+            required:
+              - user_id
+              - role
+            properties:
+              user_id:
+                type: string
+                format: uuid
+              role:
+                type: string
+                enum:
+                  - member
+                  - viewer
         metadata:
           type: object
           additionalProperties: true

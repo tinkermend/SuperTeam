@@ -17,7 +17,7 @@ import (
 )
 
 type HandlerService interface {
-	CreateTeam(ctx context.Context, req CreateTeamRequest) (*Team, error)
+	CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamOverview, error)
 	ListTeamSummaries(ctx context.Context, req ListTeamsRequest) ([]*TeamListItem, error)
 	GetTeam(ctx context.Context, tenantID, teamID uuid.UUID) (*Team, error)
 	GetOverview(ctx context.Context, tenantID, teamID uuid.UUID) (*TeamOverview, error)
@@ -72,14 +72,16 @@ func (h *HTTPHandler) ListTeams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status := TeamStatus(r.URL.Query().Get("status"))
+	governanceStatus := GovernanceSummaryStatus(r.URL.Query().Get("governance_status"))
 	q := r.URL.Query().Get("q")
 
 	teams, err := service.ListTeamSummaries(r.Context(), ListTeamsRequest{
-		TenantID: tenantID,
-		Status:   status,
-		Q:        q,
-		Offset:   offset,
-		Limit:    limit,
+		TenantID:         tenantID,
+		Status:           status,
+		GovernanceStatus: governanceStatus,
+		Q:                q,
+		Offset:           offset,
+		Limit:            limit,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -98,29 +100,33 @@ func (h *HTTPHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Slug             string         `json:"slug"`
-		Name             string         `json:"name"`
-		Status           TeamStatus     `json:"status"`
-		HumanOwnerUserID *uuid.UUID     `json:"human_owner_user_id"`
-		Metadata         map[string]any `json:"metadata"`
+		Slug             string                   `json:"slug"`
+		Name             string                   `json:"name"`
+		Status           TeamStatus               `json:"status"`
+		HumanOwnerUserID *uuid.UUID               `json:"human_owner_user_id"`
+		InitialMembers   []InitialTeamMemberInput `json:"initial_members"`
+		Metadata         map[string]any           `json:"metadata"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	team, err := service.CreateTeam(r.Context(), CreateTeamRequest{
+	overview, err := service.CreateTeam(r.Context(), CreateTeamRequest{
 		TenantID:         tenantID,
+		ActorUserID:      middleware.GetUserID(r.Context()),
 		Slug:             req.Slug,
 		Name:             req.Name,
 		Status:           req.Status,
 		HumanOwnerUserID: req.HumanOwnerUserID,
+		InitialMembers:   req.InitialMembers,
 		Metadata:         req.Metadata,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, teamResponseFromDomain(team))
+	overview.AllowedActions = h.allowedTeamActions(r, tenantID, overview.Team.ID)
+	writeJSON(w, http.StatusCreated, teamOverviewResponseFromDomain(overview))
 }
 
 func (h *HTTPHandler) GetTeam(w http.ResponseWriter, r *http.Request) {
@@ -821,15 +827,16 @@ func (h *HTTPHandler) authorizeTeamRequest(w http.ResponseWriter, r *http.Reques
 }
 
 type teamResponse struct {
-	ID               string         `json:"id"`
-	TenantID         string         `json:"tenant_id"`
-	Slug             string         `json:"slug"`
-	Name             string         `json:"name"`
-	Status           TeamStatus     `json:"status"`
-	HumanOwnerUserID *string        `json:"human_owner_user_id,omitempty"`
-	Metadata         map[string]any `json:"metadata"`
-	CreatedAt        string         `json:"created_at,omitempty"`
-	UpdatedAt        string         `json:"updated_at,omitempty"`
+	ID               string                  `json:"id"`
+	TenantID         string                  `json:"tenant_id"`
+	Slug             string                  `json:"slug"`
+	Name             string                  `json:"name"`
+	Status           TeamStatus              `json:"status"`
+	HumanOwnerUserID *string                 `json:"human_owner_user_id,omitempty"`
+	HumanOwner       *teamHumanOwnerResponse `json:"human_owner,omitempty"`
+	Metadata         map[string]any          `json:"metadata"`
+	CreatedAt        string                  `json:"created_at,omitempty"`
+	UpdatedAt        string                  `json:"updated_at,omitempty"`
 }
 
 type teamListItemResponse struct {
@@ -839,6 +846,7 @@ type teamListItemResponse struct {
 	Name                 string                  `json:"name"`
 	Status               TeamStatus              `json:"status"`
 	HumanOwnerUserID     *string                 `json:"human_owner_user_id,omitempty"`
+	HumanOwner           *teamHumanOwnerResponse `json:"human_owner,omitempty"`
 	Metadata             map[string]any          `json:"metadata"`
 	CreatedAt            string                  `json:"created_at,omitempty"`
 	UpdatedAt            string                  `json:"updated_at,omitempty"`
@@ -849,6 +857,14 @@ type teamListItemResponse struct {
 	CurrentRevision      *int32                  `json:"current_revision,omitempty"`
 	PendingDraftCount    int32                   `json:"pending_draft_count"`
 	RiskSummary          string                  `json:"risk_summary"`
+}
+
+type teamHumanOwnerResponse struct {
+	UserID      string `json:"user_id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	Status      string `json:"status"`
 }
 
 type teamOverviewResponse struct {
@@ -1054,6 +1070,7 @@ func teamResponseFromDomain(team *Team) teamResponse {
 		Name:             team.Name,
 		Status:           team.Status,
 		HumanOwnerUserID: uuidStringPtr(team.HumanOwnerUserID),
+		HumanOwner:       teamHumanOwnerResponseFromDomain(team.HumanOwner),
 		Metadata:         cloneMap(team.Metadata),
 		CreatedAt:        timeString(team.CreatedAt),
 		UpdatedAt:        timeString(team.UpdatedAt),
@@ -1068,6 +1085,7 @@ func teamListItemResponseFromDomain(item *TeamListItem) teamListItemResponse {
 		Name:                 item.Name,
 		Status:               item.Status,
 		HumanOwnerUserID:     uuidStringPtr(item.HumanOwnerUserID),
+		HumanOwner:           teamHumanOwnerResponseFromDomain(item.HumanOwner),
 		Metadata:             cloneMap(item.Metadata),
 		CreatedAt:            timeString(item.CreatedAt),
 		UpdatedAt:            timeString(item.UpdatedAt),
@@ -1078,6 +1096,19 @@ func teamListItemResponseFromDomain(item *TeamListItem) teamListItemResponse {
 		CurrentRevision:      cloneInt32Ptr(item.CurrentRevision),
 		PendingDraftCount:    item.PendingDraftCount,
 		RiskSummary:          item.RiskSummary,
+	}
+}
+
+func teamHumanOwnerResponseFromDomain(owner *TeamHumanOwner) *teamHumanOwnerResponse {
+	if owner == nil {
+		return nil
+	}
+	return &teamHumanOwnerResponse{
+		UserID:      owner.UserID.String(),
+		Username:    owner.Username,
+		DisplayName: owner.DisplayName,
+		Email:       owner.Email,
+		Status:      owner.Status,
 	}
 }
 

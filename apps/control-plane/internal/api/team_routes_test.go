@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -39,8 +40,20 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	cookie := routeLogin(t, server, "admin", "admin")
 	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
 	ownerID := uuid.New()
+	memberID := uuid.New()
+	viewerID := uuid.New()
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"slug":"platform","name":"Platform","human_owner_user_id":"`+ownerID.String()+`","metadata":{"cost_center":"r-and-d"}}`))
+	createBody := `{
+		"slug":"platform",
+		"name":"Platform",
+		"human_owner_user_id":"` + ownerID.String() + `",
+		"initial_members":[
+			{"user_id":"` + memberID.String() + `","role":"member"},
+			{"user_id":"` + viewerID.String() + `","role":"viewer"}
+		],
+		"metadata":{"cost_center":"r-and-d"}
+	}`
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.AddCookie(cookie)
 	createResp := httptest.NewRecorder()
@@ -54,23 +67,38 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	if service.createReq.HumanOwnerUserID == nil || *service.createReq.HumanOwnerUserID != ownerID {
 		t.Fatalf("expected request human owner %s, got %#v", ownerID, service.createReq.HumanOwnerUserID)
 	}
+	if service.createReq.ActorUserID != user.ID {
+		t.Fatalf("expected actor user %s, got %s", user.ID, service.createReq.ActorUserID)
+	}
+	if !reflect.DeepEqual(service.createReq.InitialMembers, []tenant.InitialTeamMemberInput{
+		{UserID: memberID, Role: tenant.TeamRoleMember},
+		{UserID: viewerID, Role: tenant.TeamRoleViewer},
+	}) {
+		t.Fatalf("expected initial members in create request, got %#v", service.createReq.InitialMembers)
+	}
 	var created struct {
-		ID               string         `json:"id"`
-		TenantID         string         `json:"tenant_id"`
-		HumanOwnerUserID string         `json:"human_owner_user_id"`
-		Metadata         map[string]any `json:"metadata"`
+		Team struct {
+			ID               string         `json:"id"`
+			TenantID         string         `json:"tenant_id"`
+			HumanOwnerUserID string         `json:"human_owner_user_id"`
+			Metadata         map[string]any `json:"metadata"`
+		} `json:"team"`
+		AllowedActions []string `json:"allowed_actions"`
 	}
 	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
 		t.Fatalf("decode created team: %v", err)
 	}
-	if created.TenantID != expectedTenantID.String() || created.HumanOwnerUserID != ownerID.String() {
+	if created.Team.TenantID != expectedTenantID.String() || created.Team.HumanOwnerUserID != ownerID.String() {
 		t.Fatalf("expected response tenant/owner %s/%s, got %#v", expectedTenantID, ownerID, created)
 	}
-	if created.Metadata["cost_center"] != "r-and-d" {
-		t.Fatalf("expected metadata in response, got %#v", created.Metadata)
+	if created.Team.Metadata["cost_center"] != "r-and-d" {
+		t.Fatalf("expected metadata in response, got %#v", created.Team.Metadata)
+	}
+	if len(created.AllowedActions) == 0 {
+		t.Fatalf("expected create response to include allowed actions, got %#v", created)
 	}
 
-	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams?status=active&q=ops", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams?status=active&q=ops&governance_status=draft_pending", nil)
 	listReq.AddCookie(cookie)
 	listResp := httptest.NewRecorder()
 	server.ServeHTTP(listResp, listReq)
@@ -80,11 +108,26 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	if service.listReq.TenantID != expectedTenantID {
 		t.Fatalf("expected list tenant %s, got %s", expectedTenantID, service.listReq.TenantID)
 	}
-	if service.listReq.Status != tenant.TeamStatusActive || service.listReq.Q != "ops" {
-		t.Fatalf("expected list filters active/ops, got %#v", service.listReq)
+	if service.listReq.Status != tenant.TeamStatusActive || service.listReq.Q != "ops" || service.listReq.GovernanceStatus != tenant.GovernanceSummaryDraftPending {
+		t.Fatalf("expected list filters active/ops/draft_pending, got %#v", service.listReq)
+	}
+	var listed []struct {
+		HumanOwner *struct {
+			UserID      string `json:"user_id"`
+			Username    string `json:"username"`
+			DisplayName string `json:"display_name"`
+			Email       string `json:"email"`
+			Status      string `json:"status"`
+		} `json:"human_owner"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode listed teams: %v", err)
+	}
+	if len(listed) != 1 || listed[0].HumanOwner == nil || listed[0].HumanOwner.Username != "owner" || listed[0].HumanOwner.DisplayName != "Owner Person" || listed[0].HumanOwner.Email != "owner@example.com" {
+		t.Fatalf("expected list response to include human owner summary, got %#v", listed)
 	}
 
-	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.ID, nil)
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.Team.ID, nil)
 	getReq.AddCookie(cookie)
 	getResp := httptest.NewRecorder()
 	server.ServeHTTP(getResp, getReq)
@@ -95,18 +138,18 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 		t.Fatalf("expected get tenant %s, got %s", expectedTenantID, service.getTenantID)
 	}
 
-	overviewReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.ID+"/overview", nil)
+	overviewReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.Team.ID+"/overview", nil)
 	overviewReq.AddCookie(cookie)
 	overviewResp := httptest.NewRecorder()
 	server.ServeHTTP(overviewResp, overviewReq)
 	if overviewResp.Code != http.StatusOK {
 		t.Fatalf("expected overview to succeed, got %d: %s", overviewResp.Code, overviewResp.Body.String())
 	}
-	if service.overviewTenantID != expectedTenantID || service.overviewTeamID.String() != created.ID {
-		t.Fatalf("expected overview tenant/team %s/%s, got %s/%s", expectedTenantID, created.ID, service.overviewTenantID, service.overviewTeamID)
+	if service.overviewTenantID != expectedTenantID || service.overviewTeamID.String() != created.Team.ID {
+		t.Fatalf("expected overview tenant/team %s/%s, got %s/%s", expectedTenantID, created.Team.ID, service.overviewTenantID, service.overviewTeamID)
 	}
 
-	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.ID, strings.NewReader(`{"slug":"platform-sre","name":"Platform SRE","human_owner_user_id":"`+ownerID.String()+`","metadata":{"cost_center":"ops"}}`))
+	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.Team.ID, strings.NewReader(`{"slug":"platform-sre","name":"Platform SRE","human_owner_user_id":"`+ownerID.String()+`","metadata":{"cost_center":"ops"}}`))
 	updateReq.Header.Set("Content-Type", "application/json")
 	updateReq.AddCookie(cookie)
 	updateResp := httptest.NewRecorder()
@@ -114,7 +157,7 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	if updateResp.Code != http.StatusOK {
 		t.Fatalf("expected update team to succeed, got %d: %s", updateResp.Code, updateResp.Body.String())
 	}
-	if service.updateReq.TenantID != expectedTenantID || service.updateReq.TeamID.String() != created.ID || service.updateReq.Name != "Platform SRE" {
+	if service.updateReq.TenantID != expectedTenantID || service.updateReq.TeamID.String() != created.Team.ID || service.updateReq.Name != "Platform SRE" {
 		t.Fatalf("expected update request for tenant/team/name, got %#v", service.updateReq)
 	}
 
@@ -128,21 +171,21 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 		{name: "restore", path: "/restore", status: tenant.TeamStatusActive},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+tt.path, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+tt.path, nil)
 			req.AddCookie(cookie)
 			resp := httptest.NewRecorder()
 			server.ServeHTTP(resp, req)
 			if resp.Code != http.StatusOK {
 				t.Fatalf("expected %s to succeed, got %d: %s", tt.name, resp.Code, resp.Body.String())
 			}
-			if service.changeStatusReq.TenantID != expectedTenantID || service.changeStatusReq.TeamID.String() != created.ID || service.changeStatusReq.Status != tt.status {
+			if service.changeStatusReq.TenantID != expectedTenantID || service.changeStatusReq.TeamID.String() != created.Team.ID || service.changeStatusReq.Status != tt.status {
 				t.Fatalf("expected %s status request %#v, got %#v", tt.name, tt.status, service.changeStatusReq)
 			}
 		})
 	}
 
 	clientApprovedBy := uuid.New()
-	revisionReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+"/config-revisions", strings.NewReader(`{"human_owner_user_id":"`+ownerID.String()+`","approved_by":"`+clientApprovedBy.String()+`","constitution":{"principle":"review"}}`))
+	revisionReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+"/config-revisions", strings.NewReader(`{"human_owner_user_id":"`+ownerID.String()+`","approved_by":"`+clientApprovedBy.String()+`","constitution":{"principle":"review"}}`))
 	revisionReq.Header.Set("Content-Type", "application/json")
 	revisionReq.AddCookie(cookie)
 	revisionResp := httptest.NewRecorder()
@@ -150,8 +193,8 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	if revisionResp.Code != http.StatusCreated {
 		t.Fatalf("expected create config revision to succeed, got %d: %s", revisionResp.Code, revisionResp.Body.String())
 	}
-	if service.createRevisionReq.TenantID != expectedTenantID || service.createRevisionReq.TeamID.String() != created.ID {
-		t.Fatalf("expected revision tenant/team %s/%s, got %s/%s", expectedTenantID, created.ID, service.createRevisionReq.TenantID, service.createRevisionReq.TeamID)
+	if service.createRevisionReq.TenantID != expectedTenantID || service.createRevisionReq.TeamID.String() != created.Team.ID {
+		t.Fatalf("expected revision tenant/team %s/%s, got %s/%s", expectedTenantID, created.Team.ID, service.createRevisionReq.TenantID, service.createRevisionReq.TeamID)
 	}
 	if service.createRevisionReq.HumanOwnerUserID == nil || *service.createRevisionReq.HumanOwnerUserID != ownerID {
 		t.Fatalf("expected revision human owner %s, got %#v", ownerID, service.createRevisionReq.HumanOwnerUserID)
@@ -163,40 +206,40 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 		t.Fatalf("expected handler to ignore client supplied approved_by %s", clientApprovedBy)
 	}
 
-	currentReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.ID+"/config-revisions/current", nil)
+	currentReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.Team.ID+"/config-revisions/current", nil)
 	currentReq.AddCookie(cookie)
 	currentResp := httptest.NewRecorder()
 	server.ServeHTTP(currentResp, currentReq)
 	if currentResp.Code != http.StatusOK {
 		t.Fatalf("expected current config revision to succeed, got %d: %s", currentResp.Code, currentResp.Body.String())
 	}
-	if service.currentTenantID != expectedTenantID || service.currentTeamID.String() != created.ID {
-		t.Fatalf("expected current revision tenant/team %s/%s, got %s/%s", expectedTenantID, created.ID, service.currentTenantID, service.currentTeamID)
+	if service.currentTenantID != expectedTenantID || service.currentTeamID.String() != created.Team.ID {
+		t.Fatalf("expected current revision tenant/team %s/%s, got %s/%s", expectedTenantID, created.Team.ID, service.currentTenantID, service.currentTeamID)
 	}
 
-	governanceCurrentReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.ID+"/governance/current", nil)
+	governanceCurrentReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.Team.ID+"/governance/current", nil)
 	governanceCurrentReq.AddCookie(cookie)
 	governanceCurrentResp := httptest.NewRecorder()
 	server.ServeHTTP(governanceCurrentResp, governanceCurrentReq)
 	if governanceCurrentResp.Code != http.StatusOK {
 		t.Fatalf("expected current governance revision to succeed, got %d: %s", governanceCurrentResp.Code, governanceCurrentResp.Body.String())
 	}
-	if service.currentTenantID != expectedTenantID || service.currentTeamID.String() != created.ID {
-		t.Fatalf("expected current governance tenant/team %s/%s, got %s/%s", expectedTenantID, created.ID, service.currentTenantID, service.currentTeamID)
+	if service.currentTenantID != expectedTenantID || service.currentTeamID.String() != created.Team.ID {
+		t.Fatalf("expected current governance tenant/team %s/%s, got %s/%s", expectedTenantID, created.Team.ID, service.currentTenantID, service.currentTeamID)
 	}
 
-	listDraftsReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.ID+"/governance/drafts?limit=25&offset=5", nil)
+	listDraftsReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.Team.ID+"/governance/drafts?limit=25&offset=5", nil)
 	listDraftsReq.AddCookie(cookie)
 	listDraftsResp := httptest.NewRecorder()
 	server.ServeHTTP(listDraftsResp, listDraftsReq)
 	if listDraftsResp.Code != http.StatusOK {
 		t.Fatalf("expected list governance drafts to succeed, got %d: %s", listDraftsResp.Code, listDraftsResp.Body.String())
 	}
-	if service.listDraftsTenantID != expectedTenantID || service.listDraftsTeamID.String() != created.ID || service.listDraftsLimit != 25 || service.listDraftsOffset != 5 {
-		t.Fatalf("expected list drafts tenant/team/pagination %s/%s/25/5, got %s/%s/%d/%d", expectedTenantID, created.ID, service.listDraftsTenantID, service.listDraftsTeamID, service.listDraftsLimit, service.listDraftsOffset)
+	if service.listDraftsTenantID != expectedTenantID || service.listDraftsTeamID.String() != created.Team.ID || service.listDraftsLimit != 25 || service.listDraftsOffset != 5 {
+		t.Fatalf("expected list drafts tenant/team/pagination %s/%s/25/5, got %s/%s/%d/%d", expectedTenantID, created.Team.ID, service.listDraftsTenantID, service.listDraftsTeamID, service.listDraftsLimit, service.listDraftsOffset)
 	}
 
-	createDraftReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+"/governance/drafts", strings.NewReader(`{"human_owner_user_id":"`+ownerID.String()+`","approved_by":"`+uuid.New().String()+`","constitution":{"hard_rules":["review before deploy"]}}`))
+	createDraftReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+"/governance/drafts", strings.NewReader(`{"human_owner_user_id":"`+ownerID.String()+`","approved_by":"`+uuid.New().String()+`","constitution":{"hard_rules":["review before deploy"]}}`))
 	createDraftReq.Header.Set("Content-Type", "application/json")
 	createDraftReq.AddCookie(cookie)
 	createDraftResp := httptest.NewRecorder()
@@ -204,15 +247,15 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	if createDraftResp.Code != http.StatusCreated {
 		t.Fatalf("expected create governance draft to succeed, got %d: %s", createDraftResp.Code, createDraftResp.Body.String())
 	}
-	if service.createDraftReq.TenantID != expectedTenantID || service.createDraftReq.TeamID.String() != created.ID {
-		t.Fatalf("expected create draft tenant/team %s/%s, got %s/%s", expectedTenantID, created.ID, service.createDraftReq.TenantID, service.createDraftReq.TeamID)
+	if service.createDraftReq.TenantID != expectedTenantID || service.createDraftReq.TeamID.String() != created.Team.ID {
+		t.Fatalf("expected create draft tenant/team %s/%s, got %s/%s", expectedTenantID, created.Team.ID, service.createDraftReq.TenantID, service.createDraftReq.TeamID)
 	}
 	if service.createDraftReq.ApprovedBy != nil {
 		t.Fatalf("expected create draft to ignore client approved_by, got %#v", service.createDraftReq.ApprovedBy)
 	}
 
 	draftID := uuid.New()
-	updateDraftReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.ID+"/governance/drafts/"+draftID.String(), strings.NewReader(`{"human_owner_user_id":"`+ownerID.String()+`","constitution":{"hard_rules":["keep audit trail"]},"capability_policy":{"bindings":["runtime:read"]}}`))
+	updateDraftReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.Team.ID+"/governance/drafts/"+draftID.String(), strings.NewReader(`{"human_owner_user_id":"`+ownerID.String()+`","constitution":{"hard_rules":["keep audit trail"]},"capability_policy":{"bindings":["runtime:read"]}}`))
 	updateDraftReq.Header.Set("Content-Type", "application/json")
 	updateDraftReq.AddCookie(cookie)
 	updateDraftResp := httptest.NewRecorder()
@@ -220,14 +263,14 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	if updateDraftResp.Code != http.StatusOK {
 		t.Fatalf("expected update governance draft to succeed, got %d: %s", updateDraftResp.Code, updateDraftResp.Body.String())
 	}
-	if service.updateDraftTenantID != expectedTenantID || service.updateDraftTeamID.String() != created.ID || service.updateDraftID != draftID {
-		t.Fatalf("expected update draft tenant/team/draft %s/%s/%s, got %s/%s/%s", expectedTenantID, created.ID, draftID, service.updateDraftTenantID, service.updateDraftTeamID, service.updateDraftID)
+	if service.updateDraftTenantID != expectedTenantID || service.updateDraftTeamID.String() != created.Team.ID || service.updateDraftID != draftID {
+		t.Fatalf("expected update draft tenant/team/draft %s/%s/%s, got %s/%s/%s", expectedTenantID, created.Team.ID, draftID, service.updateDraftTenantID, service.updateDraftTeamID, service.updateDraftID)
 	}
 	if service.updateDraftInput.HumanOwnerUserID == nil || *service.updateDraftInput.HumanOwnerUserID != ownerID {
 		t.Fatalf("expected update draft human owner %s, got %#v", ownerID, service.updateDraftInput.HumanOwnerUserID)
 	}
 
-	approveDraftReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+"/governance/drafts/"+draftID.String()+"/approve", strings.NewReader(`{"approved_by":"`+uuid.New().String()+`"}`))
+	approveDraftReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+"/governance/drafts/"+draftID.String()+"/approve", strings.NewReader(`{"approved_by":"`+uuid.New().String()+`"}`))
 	approveDraftReq.Header.Set("Content-Type", "application/json")
 	approveDraftReq.AddCookie(cookie)
 	approveDraftResp := httptest.NewRecorder()
@@ -235,33 +278,33 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	if approveDraftResp.Code != http.StatusOK {
 		t.Fatalf("expected approve governance draft to succeed, got %d: %s", approveDraftResp.Code, approveDraftResp.Body.String())
 	}
-	if service.approveDraftTenantID != expectedTenantID || service.approveDraftTeamID.String() != created.ID || service.approveDraftID != draftID {
-		t.Fatalf("expected approve draft tenant/team/draft %s/%s/%s, got %s/%s/%s", expectedTenantID, created.ID, draftID, service.approveDraftTenantID, service.approveDraftTeamID, service.approveDraftID)
+	if service.approveDraftTenantID != expectedTenantID || service.approveDraftTeamID.String() != created.Team.ID || service.approveDraftID != draftID {
+		t.Fatalf("expected approve draft tenant/team/draft %s/%s/%s, got %s/%s/%s", expectedTenantID, created.Team.ID, draftID, service.approveDraftTenantID, service.approveDraftTeamID, service.approveDraftID)
 	}
 	if service.approveDraftApprovedBy != user.ID {
 		t.Fatalf("expected approve draft to use current user %s, got %s", user.ID, service.approveDraftApprovedBy)
 	}
 
-	rejectDraftReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+"/governance/drafts/"+draftID.String()+"/reject", nil)
+	rejectDraftReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+"/governance/drafts/"+draftID.String()+"/reject", nil)
 	rejectDraftReq.AddCookie(cookie)
 	rejectDraftResp := httptest.NewRecorder()
 	server.ServeHTTP(rejectDraftResp, rejectDraftReq)
 	if rejectDraftResp.Code != http.StatusOK {
 		t.Fatalf("expected reject governance draft to succeed, got %d: %s", rejectDraftResp.Code, rejectDraftResp.Body.String())
 	}
-	if service.rejectDraftTenantID != expectedTenantID || service.rejectDraftTeamID.String() != created.ID || service.rejectDraftID != draftID {
-		t.Fatalf("expected reject draft tenant/team/draft %s/%s/%s, got %s/%s/%s", expectedTenantID, created.ID, draftID, service.rejectDraftTenantID, service.rejectDraftTeamID, service.rejectDraftID)
+	if service.rejectDraftTenantID != expectedTenantID || service.rejectDraftTeamID.String() != created.Team.ID || service.rejectDraftID != draftID {
+		t.Fatalf("expected reject draft tenant/team/draft %s/%s/%s, got %s/%s/%s", expectedTenantID, created.Team.ID, draftID, service.rejectDraftTenantID, service.rejectDraftTeamID, service.rejectDraftID)
 	}
 
-	diffReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.ID+"/governance/drafts/"+draftID.String()+"/diff", nil)
+	diffReq := httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.Team.ID+"/governance/drafts/"+draftID.String()+"/diff", nil)
 	diffReq.AddCookie(cookie)
 	diffResp := httptest.NewRecorder()
 	server.ServeHTTP(diffResp, diffReq)
 	if diffResp.Code != http.StatusOK {
 		t.Fatalf("expected preview governance diff to succeed, got %d: %s", diffResp.Code, diffResp.Body.String())
 	}
-	if service.diffTenantID != expectedTenantID || service.diffTeamID.String() != created.ID || service.diffDraftID != draftID {
-		t.Fatalf("expected diff tenant/team/draft %s/%s/%s, got %s/%s/%s", expectedTenantID, created.ID, draftID, service.diffTenantID, service.diffTeamID, service.diffDraftID)
+	if service.diffTenantID != expectedTenantID || service.diffTeamID.String() != created.Team.ID || service.diffDraftID != draftID {
+		t.Fatalf("expected diff tenant/team/draft %s/%s/%s, got %s/%s/%s", expectedTenantID, created.Team.ID, draftID, service.diffTenantID, service.diffTeamID, service.diffDraftID)
 	}
 }
 
@@ -933,7 +976,7 @@ type routeTeamService struct {
 	listErr                error
 }
 
-func (s *routeTeamService) CreateTeam(ctx context.Context, req tenant.CreateTeamRequest) (*tenant.Team, error) {
+func (s *routeTeamService) CreateTeam(ctx context.Context, req tenant.CreateTeamRequest) (*tenant.TeamOverview, error) {
 	s.createCalled = true
 	s.createReq = req
 	if s.rejectMissingOwner && req.HumanOwnerUserID == nil {
@@ -945,7 +988,7 @@ func (s *routeTeamService) CreateTeam(ctx context.Context, req tenant.CreateTeam
 	if status == "" {
 		status = tenant.TeamStatusActive
 	}
-	return &tenant.Team{
+	team := &tenant.Team{
 		ID:               s.createdID,
 		TenantID:         req.TenantID,
 		Slug:             req.Slug,
@@ -955,6 +998,15 @@ func (s *routeTeamService) CreateTeam(ctx context.Context, req tenant.CreateTeam
 		Metadata:         req.Metadata,
 		CreatedAt:        now,
 		UpdatedAt:        now,
+	}
+	return &tenant.TeamOverview{
+		Team:                 team,
+		MemberCount:          int32(len(req.InitialMembers) + 1),
+		DigitalEmployeeCount: 0,
+		CapabilityCount:      0,
+		PendingDraftCount:    0,
+		PendingItemCount:     0,
+		AllowedActions:       []tenant.AllowedTeamAction{tenant.AllowedTeamAction(authz.ActionTeamUpdate)},
 	}, nil
 }
 
@@ -964,7 +1016,30 @@ func (s *routeTeamService) ListTeamSummaries(ctx context.Context, req tenant.Lis
 	if s.listErr != nil {
 		return nil, s.listErr
 	}
-	return []*tenant.TeamListItem{}, nil
+	ownerID := uuid.New()
+	return []*tenant.TeamListItem{
+		{
+			Team: tenant.Team{
+				ID:               uuid.New(),
+				TenantID:         req.TenantID,
+				Slug:             "ops",
+				Name:             "Ops",
+				Status:           tenant.TeamStatusActive,
+				HumanOwnerUserID: &ownerID,
+				HumanOwner: &tenant.TeamHumanOwner{
+					UserID:      ownerID,
+					Username:    "owner",
+					DisplayName: "Owner Person",
+					Email:       "owner@example.com",
+					Status:      "active",
+				},
+				Metadata:  map[string]any{},
+				CreatedAt: time.Now().UTC(),
+				UpdatedAt: time.Now().UTC(),
+			},
+			GovernanceStatus: tenant.GovernanceSummaryDraftPending,
+		},
+	}, nil
 }
 
 func (s *routeTeamService) GetTeam(ctx context.Context, tenantID, teamID uuid.UUID) (*tenant.Team, error) {

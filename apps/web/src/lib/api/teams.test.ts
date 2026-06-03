@@ -90,11 +90,11 @@ describe("team API", () => {
           baseUrl: "http://control-plane.local",
           fetcher,
         },
-        { q: "ops", status: "active" },
+        { governance_status: "draft_pending", q: "ops", status: "active" },
       ),
     ).resolves.toEqual(teams);
 
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams?status=active&q=ops", {
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams?status=active&governance_status=draft_pending&q=ops", {
       credentials: "include",
       headers: { accept: "application/json" },
       method: "GET",
@@ -224,17 +224,32 @@ describe("team API", () => {
     });
   });
 
-  it("creates team with human owner user id", async () => {
-    const team = {
-      id: "11111111-1111-4111-8111-111111111111",
-      tenant_id: "22222222-2222-4222-8222-222222222222",
-      slug: "platform",
-      name: "平台团队",
-      status: "active",
-      human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+  it("creates team with owner and initial members and parses overview", async () => {
+    const overview = {
+      team: {
+        id: "11111111-1111-4111-8111-111111111111",
+        tenant_id: "22222222-2222-4222-8222-222222222222",
+        slug: "security",
+        name: "安全团队",
+        status: "active",
+        human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+        human_owner: {
+          user_id: "33333333-3333-4333-8333-333333333333",
+          username: "owner",
+          display_name: "负责人",
+          email: "owner@example.com",
+          status: "active",
+        },
+      },
+      member_count: 3,
+      digital_employee_count: 0,
+      capability_count: 0,
+      pending_draft_count: 0,
+      pending_item_count: 0,
+      allowed_actions: ["team.update"],
     };
     const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(team), {
+      new Response(JSON.stringify(overview), {
         headers: { "content-type": "application/json" },
         status: 201,
       }),
@@ -247,18 +262,26 @@ describe("team API", () => {
           fetcher,
         },
         {
-          slug: "platform",
-          name: "平台团队",
+          slug: "security",
+          name: "安全团队",
           human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+          initial_members: [
+            { user_id: "44444444-4444-4444-8444-444444444444", role: "member" },
+            { user_id: "55555555-5555-4555-8555-555555555555", role: "viewer" },
+          ],
         },
       ),
-    ).resolves.toEqual(team);
+    ).resolves.toEqual(overview);
 
     expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/teams", {
       body: JSON.stringify({
-        slug: "platform",
-        name: "平台团队",
+        slug: "security",
+        name: "安全团队",
         human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+        initial_members: [
+          { user_id: "44444444-4444-4444-8444-444444444444", role: "member" },
+          { user_id: "55555555-5555-4555-8555-555555555555", role: "viewer" },
+        ],
       }),
       credentials: "include",
       headers: { accept: "application/json", "content-type": "application/json" },

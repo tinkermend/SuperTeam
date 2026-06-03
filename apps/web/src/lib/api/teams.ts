@@ -26,9 +26,18 @@ export type Team = {
   name: string;
   status: TeamStatus;
   human_owner_user_id?: string;
+  human_owner?: TeamHumanOwner;
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
+};
+
+export type TeamHumanOwner = {
+  user_id: string;
+  username: string;
+  display_name: string;
+  email: string;
+  status: string;
 };
 
 export type TeamConfigRevision = {
@@ -121,12 +130,19 @@ export type CreateTeamInput = {
   slug: string;
   name: string;
   human_owner_user_id: string;
+  initial_members?: InitialTeamMemberInput[];
   status?: TeamStatus;
   metadata?: Record<string, unknown>;
 };
 
+export type InitialTeamMemberInput = {
+  user_id: string;
+  role: Extract<TeamMemberRole, "member" | "viewer">;
+};
+
 export type ListTeamSummariesFilters = {
   status?: TeamStatus;
+  governance_status?: GovernanceSummaryStatus;
   q?: string;
 };
 
@@ -251,6 +267,9 @@ function teamListPath(filters: ListTeamSummariesFilters = {}): string {
   if (filters.status) {
     params.set("status", filters.status);
   }
+  if (filters.governance_status) {
+    params.set("governance_status", filters.governance_status);
+  }
   const q = filters.q?.trim();
   if (q) {
     params.set("q", q);
@@ -282,8 +301,8 @@ export function listTeams(options: ApiClientOptions): Promise<TeamListItem[]> {
   return listTeamSummaries(options);
 }
 
-export function createTeam(options: ApiClientOptions, input: CreateTeamInput): Promise<Team> {
-  return postJson<Team>(options, "/api/v1/teams", input, "create team");
+export function createTeam(options: ApiClientOptions, input: CreateTeamInput): Promise<TeamOverview> {
+  return postJson<TeamOverview>(options, "/api/v1/teams", input, "create team");
 }
 
 export function getTeamOverview(options: ApiClientOptions, teamId: string): Promise<TeamOverview> {
@@ -311,9 +330,10 @@ export function createTeamConfigRevision(
   teamId: string,
   input: CreateTeamConfigRevisionInput,
 ): Promise<TeamConfigRevision> {
+  const encodedTeamId = encodeURIComponent(teamId);
   return postJson<TeamConfigRevision>(
     options,
-    teamPath(teamId, "/config-revisions"),
+    `/api/v1/teams/${encodedTeamId}/config-revisions`,
     input,
     "create team config revision",
   );
@@ -323,9 +343,10 @@ export function getCurrentTeamConfigRevision(
   options: ApiClientOptions,
   teamId: string,
 ): Promise<TeamConfigRevision> {
+  const encodedTeamId = encodeURIComponent(teamId);
   return getJson<TeamConfigRevision>(
     options,
-    teamPath(teamId, "/config-revisions/current"),
+    `/api/v1/teams/${encodedTeamId}/config-revisions/current`,
     "current team config revision",
   );
 }

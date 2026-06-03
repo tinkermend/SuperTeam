@@ -214,8 +214,8 @@ type CreateTeamRequest struct {
 }
 
 type InitialTeamMemberInput struct {
-	UserID uuid.UUID
-	Role   string
+	UserID uuid.UUID `json:"user_id"`
+	Role   string    `json:"role"`
 }
 
 type ListTeamsRequest struct {
