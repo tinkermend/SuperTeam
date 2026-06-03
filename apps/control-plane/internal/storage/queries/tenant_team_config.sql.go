@@ -1289,6 +1289,9 @@ WHERE tt.tenant_id = $1::uuid
     $4::varchar IS NULL
     OR tt.name ILIKE '%' || $4::varchar || '%'
     OR tt.slug ILIKE '%' || $4::varchar || '%'
+    OR owner.username ILIKE '%' || $4::varchar || '%'
+    OR owner.display_name ILIKE '%' || $4::varchar || '%'
+    OR owner.email ILIKE '%' || $4::varchar || '%'
   )
 ORDER BY tt.updated_at DESC, tt.created_at DESC
 LIMIT $6 OFFSET $5

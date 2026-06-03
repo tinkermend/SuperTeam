@@ -108,6 +108,7 @@ function makeTeamSummary(index: number) {
 
 function createTeamsFetcher(
   options: {
+    createStatus?: number;
     disabledOverview?: boolean;
     secondPageMode?: "empty" | "error" | "normal";
   } = {},
@@ -208,6 +209,10 @@ function createTeamsFetcher(
       }
 
       if (url.pathname === "/api/v1/teams" && method === "POST") {
+        if (options.createStatus && options.createStatus >= 400) {
+          return jsonResponse({ error: "create team unavailable" }, options.createStatus);
+        }
+
         return jsonResponse(
           {
             team: {
@@ -1239,6 +1244,32 @@ describe("TeamsView", () => {
       .not.toBeInTheDocument();
     await expect
       .element(screen.getByText("已选择的初始成员（1）"))
+      .not.toBeInTheDocument();
+  });
+
+  it("clears a failed create error after closing and reopening the drawer", async () => {
+    const fetcher = createTeamsFetcher({ createStatus: 500 });
+    const screen = await renderWithQueryClient(
+      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await openCreateTeamMembersStep(screen);
+    await userEvent.click(screen.getByRole("button", { name: "创建团队" }));
+
+    await expect.poll(() => createTeamPostIndex(fetcher)).not.toBe(-1);
+    await expect
+      .element(screen.getByText("create team request failed with status 500"))
+      .toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "取消" }));
+    await expect
+      .element(screen.getByRole("heading", { name: "新建团队" }))
+      .not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "新建团队" }));
+
+    await expect
+      .element(screen.getByText("create team request failed with status 500"))
       .not.toBeInTheDocument();
   });
 

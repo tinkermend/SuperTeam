@@ -155,7 +155,10 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
           apiBaseUrl={apiBaseUrl}
           fetcher={fetcher}
           isSubmitting={createMutation.isPending}
-          onOpenChange={setCreateOpen}
+          onOpenChange={(open) => {
+            createMutation.reset();
+            setCreateOpen(open);
+          }}
           onSubmit={(draft) => createMutation.mutate(draft)}
           open={createOpen}
           submitError={

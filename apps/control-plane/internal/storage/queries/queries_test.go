@@ -806,6 +806,18 @@ func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
 	assert.Equal(t, "active", rows[0].GovernanceStatus)
 	assert.Equal(t, "生产写操作需审批", rows[0].RiskSummary)
 
+	for _, query := range []string{"summary-owner", "Summary Owner", "summary-owner@example.com"} {
+		ownerRows, err := testQueries.ListTenantTeamSummaries(ctx, queries.ListTenantTeamSummariesParams{
+			TenantID: tenantID,
+			Q:        pgtype.Text{String: query, Valid: true},
+			Limit:    20,
+			Offset:   0,
+		})
+		require.NoError(t, err)
+		require.Len(t, ownerRows, 1, "expected owner search %q to find the team", query)
+		assert.Equal(t, team.ID, ownerRows[0].ID)
+	}
+
 	archivedTeam, err := testQueries.CreateTenantTeam(ctx, queries.CreateTenantTeamParams{
 		TenantID:         tenantID,
 		Slug:             "archive-summary",

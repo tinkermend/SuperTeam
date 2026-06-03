@@ -235,6 +235,9 @@ WHERE tt.tenant_id = sqlc.arg('tenant_id')::uuid
     sqlc.narg('q')::varchar IS NULL
     OR tt.name ILIKE '%' || sqlc.narg('q')::varchar || '%'
     OR tt.slug ILIKE '%' || sqlc.narg('q')::varchar || '%'
+    OR owner.username ILIKE '%' || sqlc.narg('q')::varchar || '%'
+    OR owner.display_name ILIKE '%' || sqlc.narg('q')::varchar || '%'
+    OR owner.email ILIKE '%' || sqlc.narg('q')::varchar || '%'
   )
 ORDER BY tt.updated_at DESC, tt.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
