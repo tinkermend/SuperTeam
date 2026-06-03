@@ -8,14 +8,14 @@
 
 当前缺口主要来自目标界面和当前实现之间的产品体验差异：
 
-1. 用户身份展示不足：头像、展示名、邮箱没有形成可复用展示组件。
+1. 用户身份展示不足：用户管理已经补齐 DiceBear 头像配置，但团队管理还没有消费头像，展示名、邮箱仍需要按接口可用性兼容。
 2. 团队展示信息不足：团队图标、团队语义色、运维/研发/测试/安全等视觉识别还没有稳定约定。
 3. 创建团队抽屉仍偏 MVP：缺 stepper、基础信息确认卡、成员勾选表、角色筛选、已选成员可删除/改角色。
 4. 团队列表缺弱分页、团队图标、负责人身份展示和行级导航菜单。
 5. 团队详情成员页仍要求输入 raw user UUID。
 6. 状态、角色、用户身份等 UI 模式还没有沉淀成团队管理复用组件。
 
-本设计采用分阶段总设计，第一阶段只做团队管理体验补齐，不实现用户头像上传和完整分页总数。
+本设计采用分阶段总设计，第一阶段只做团队管理体验补齐，不实现用户头像上传、头像存储策略和完整分页总数。
 
 ## 目标
 
@@ -31,8 +31,8 @@
 
 第一阶段不做以下事情：
 
-- 不实现头像上传、头像对象存储、用户资料编辑。
-- 不在团队管理任务中修改用户头像存储方案；头像字段由用户管理任务提供。
+- 不实现头像上传、头像对象存储、头像裁剪、头像删除或用户资料编辑。
+- 不在团队管理任务中修改用户头像存储方案；头像生成配置由用户管理模块提供。
 - 不把团队类型做成强枚举或独立 registry。
 - 不把团队列表响应升级为 `{ items, total }`。
 - 不实现准确总数分页。
@@ -42,7 +42,7 @@
 ## 已确认决策
 
 - 总体方案采用分阶段增强。
-- 用户头像能力作为用户管理模块外部依赖；团队管理只消费 `UserSummary` / `UserIdentity`，并提供 initials fallback。
+- 用户头像能力已经由用户管理模块提供为结构化 avatar 配置；团队管理只消费 `UserSummary.avatar` / `UserIdentity`，并提供 initials fallback。
 - 团队图标和色调第一阶段使用 `metadata.display.icon_key/color_tone` 约定。
 - 创建团队抽屉第一阶段贴近目标图：stepper、基础信息确认卡、候选成员搜索、角色筛选、checkbox 选择、已选成员表、删除/改角色。
 - 列表分页第一阶段使用弱分页：`limit/offset` + 上一页/下一页 + 每页数量，不显示准确总数。
@@ -51,14 +51,21 @@
 
 ## 外部依赖与冲突规避
 
-用户管理头像能力正在独立会话中推进。本设计不抢占该工作范围：
+用户管理头像能力已经在独立会话中补齐基础链路：
+
+- 后端 `auth_users` 增加 `avatar_provider`、`avatar_style`、`avatar_seed`、`avatar_options`。
+- 迁移文件为 `005_add_auth_user_avatar.sql`。
+- `UserSummary` 固定返回 `avatar`。
+- 当前 Web 用户管理页用 DiceBear `adventurer` 生成 SVG data URI，并通过 shadcn `Avatar` 展示。
+
+本设计不抢占用户管理后续工作范围：
 
 - 不新增或修改头像上传接口。
 - 不决定头像文件存储位置。
 - 不实现头像裁剪、删除、替换或权限策略。
-- 团队管理只定义消费模型和 fallback。
+- 团队管理只定义头像配置消费方式和 fallback。
 
-如果用户管理先完成 `avatar_url/display_name/email` contract，团队管理在实现时直接接入；如果尚未完成，团队管理仍以 `username` 和 initials fallback 交付第一阶段体验。
+团队管理实现时应消费当前 `avatar` descriptor，而不是设计新的 `avatar_url` 字段。`display_name/email` 仍按接口可用性兼容：如果用户搜索响应提供则展示，否则使用 `username` 和用户 ID 降级。
 
 ## 阶段划分
 
@@ -72,15 +79,14 @@
 - 组件层：沉淀用户身份、团队图标、角色和角色选择组件。
 - 数据策略：使用 `metadata.display`，不新增团队表 typed 字段。
 
-### Phase 2：用户身份真实接入
+### Phase 2：用户资料字段扩展接入
 
-由用户管理模块提供头像和资料字段后，团队管理消费：
+由用户管理模块进一步提供资料字段后，团队管理消费：
 
-- `avatar_url`
 - `display_name`
 - `email`
 
-团队页不负责头像上传或用户资料生命周期。
+头像基础配置已经可在 Phase 1 消费。团队页不负责头像上传或用户资料生命周期。
 
 ### Phase 3：完整分页与深链接扩展
 
@@ -97,9 +103,14 @@ type UserIdentityData = {
   id: string
   username: string
   status?: "active" | "disabled" | string
+  avatar?: {
+    provider: "dicebear"
+    style: "adventurer"
+    seed: string
+    options?: Record<string, unknown>
+  }
   display_name?: string | null
   email?: string | null
-  avatar_url?: string | null
 }
 ```
 
@@ -107,10 +118,10 @@ type UserIdentityData = {
 
 1. 主名称优先级：`display_name` -> `username` -> `email` -> `id`。
 2. 次级信息优先级：`email` -> `username` -> `id`。
-3. 头像优先级：`avatar_url` -> initials。
-4. `avatar_url` 加载失败时回退 initials，不显示 broken image。
+3. 头像优先级：有效 `avatar` descriptor -> initials。
+4. avatar SVG data URI 生成失败、provider/style 不支持或图片加载失败时回退 initials，不显示 broken image。
 
-第一阶段不要求后端立即提供 `avatar_url`。如果另一个用户管理会话已经扩展 `UserSummary`，团队管理直接消费；如果没有扩展，组件仍能用 `id/username/status` 工作。
+第一阶段按当前 `UserSummary.avatar` 消费 DiceBear `adventurer` 配置。`display_name/email` 仍为 optional，组件必须能只用 `id/username/status/avatar` 工作。
 
 ### 团队展示元数据
 
@@ -208,8 +219,10 @@ type CreateTeamInput = {
 
 - 统一展示人类用户身份。
 - 支持紧凑模式和完整模式。
-- 支持头像 URL 和 initials fallback。
+- 支持 DiceBear avatar descriptor 和 initials fallback。
 - 供团队列表、创建团队抽屉、团队详情成员页复用。
+
+用户管理页已有头像渲染组件；团队管理实现时应把通用头像渲染能力提升到共享组件层，避免团队模块从 `features/users` 反向导入。
 
 接口建议：
 
@@ -390,8 +403,8 @@ Step 2：初始成员
 ### 前端单元与组件测试
 
 - `UserIdentity`
-  - 有 `avatar_url`。
-  - `avatar_url` 缺失时 initials fallback。
+  - 有 DiceBear `avatar` descriptor。
+  - avatar descriptor 缺失或无效时 initials fallback。
   - 有 `display_name/email`。
   - 只有 `username`。
 - `TeamIconTile`
@@ -450,7 +463,7 @@ Step 2：初始成员
 - 团队列表可显示团队图标、负责人身份、弱分页和查看详情菜单。
 - 创建团队可完成目标图中的主要交互：两步流程、基础确认、候选成员勾选、角色分配、已选成员修改和删除。
 - 团队详情成员页不再要求手输 raw UUID。
-- 头像字段缺失时页面仍专业可用。
+- avatar descriptor 缺失或无效时页面仍专业可用。
 - 不要求真实头像上传。
 - 不要求准确总数分页。
 - 不新增团队类型强枚举。
@@ -468,7 +481,7 @@ Step 2：初始成员
 ## 后续待设计项
 
 - 用户管理头像上传、存储、裁剪和头像权限策略。
-- 用户资料字段正式进入 `UserSummary` 的 contract 收敛。
+- `display_name/email` 是否进入 `/api/auth/users` 的 `UserSummary` contract。
 - 团队展示 registry 是否需要服务端注册表。
 - 准确分页总数响应协议。
 - 团队列表生命周期动作是否需要 per-row `allowed_actions`。
