@@ -1572,6 +1572,7 @@ describe("TeamDetailView", () => {
       expect(document.body.textContent).toContain(label);
     }
     await expect.element(screen.getByText("管理员乙")).toBeVisible();
+    await expect.element(screen.getByText("admin@example.com", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("审批人丙")).toBeVisible();
     await expect.element(screen.getByText("普通成员丁")).toBeVisible();
     await expect.element(screen.getByText("观察者戊")).toBeVisible();

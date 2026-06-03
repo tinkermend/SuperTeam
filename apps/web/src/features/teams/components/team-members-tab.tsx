@@ -180,6 +180,7 @@ function MemberRow({ member, onRemove }: { member: TeamMember; onRemove: () => v
     <TableRow>
       <TableCell>
         <UserIdentity
+          showSecondary
           user={{
             avatar: member.avatar,
             display_name: member.display_name,
