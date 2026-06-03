@@ -1586,6 +1586,12 @@ describe("TeamDetailView", () => {
 
     await expect.element(screen.getByText("candidate-admin")).toBeVisible();
     await expect
+      .element(screen.getByRole("combobox", { name: "直接生效角色" }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByRole("combobox", { name: "申请角色" }))
+      .toBeVisible();
+    await expect
       .element(screen.getByRole("button", { name: "拒绝" }))
       .toBeVisible();
     await expect

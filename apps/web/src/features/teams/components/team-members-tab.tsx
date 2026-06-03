@@ -271,6 +271,7 @@ function DirectAddPanel({
           <div className="flex flex-col gap-2">
             <Label>直接生效角色</Label>
             <TeamRoleSelect
+              ariaLabel="直接生效角色"
               disabled={!canAdd || isPending}
               mode="direct"
               onChange={setRole}
@@ -349,6 +350,7 @@ function PrivilegedRequestPanel({
           <div className="flex flex-col gap-2">
             <Label>申请角色</Label>
             <TeamRoleSelect
+              ariaLabel="申请角色"
               disabled={!canRequest || isPending}
               mode="privileged"
               onChange={setRequestedRole}

@@ -47,12 +47,14 @@ export function TeamRoleBadge({ role }: TeamRoleBadgeProps) {
 
 type TeamRoleSelectProps =
   | {
+      ariaLabel?: string;
       disabled?: boolean;
       mode: "direct";
       onChange: (role: DirectTeamRole) => void;
       value: DirectTeamRole;
     }
   | {
+      ariaLabel?: string;
       disabled?: boolean;
       mode: "privileged";
       onChange: (role: PrivilegedTeamRole) => void;
@@ -79,7 +81,7 @@ export function TeamRoleSelect(props: TeamRoleSelectProps) {
 
   return (
     <Select disabled={props.disabled} onValueChange={handleValueChange} value={props.value}>
-      <SelectTrigger aria-label="团队角色" className="w-40" size="sm">
+      <SelectTrigger aria-label={props.ariaLabel ?? "团队角色"} className="w-40" size="sm">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
