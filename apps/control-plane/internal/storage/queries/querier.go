@@ -31,7 +31,7 @@ type Querier interface {
 	CreateProviderSessionEvent(ctx context.Context, arg CreateProviderSessionEventParams) (ProviderSessionEvent, error)
 	CreateProviderSessionEventIfAbsent(ctx context.Context, arg CreateProviderSessionEventIfAbsentParams) (CreateProviderSessionEventIfAbsentRow, error)
 	CreateRuntimeBootstrapKey(ctx context.Context, arg CreateRuntimeBootstrapKeyParams) (RuntimeBootstrapKey, error)
-	CreateRuntimeCommandReceipt(ctx context.Context, arg CreateRuntimeCommandReceiptParams) (RuntimeCommandReceipt, error)
+	CreateRuntimeCommandReceipt(ctx context.Context, arg CreateRuntimeCommandReceiptParams) (CreateRuntimeCommandReceiptRow, error)
 	CreateRuntimeNode(ctx context.Context, arg CreateRuntimeNodeParams) (RuntimeNode, error)
 	CreateRuntimeNodeScope(ctx context.Context, arg CreateRuntimeNodeScopeParams) (RuntimeNodeScope, error)
 	CreateRuntimeSession(ctx context.Context, arg CreateRuntimeSessionParams) (RuntimeSession, error)

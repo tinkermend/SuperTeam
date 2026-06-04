@@ -243,7 +243,24 @@ WHERE id = sqlc.arg('id')::uuid
 RETURNING *;
 
 -- name: CreateDigitalEmployeeTaskRun :one
-WITH created_task AS (
+WITH existing_run AS (
+    SELECT
+        t.id AS task_id,
+        tr.id AS run_id,
+        tr.command_id,
+        t.status AS task_status,
+        tr.status AS run_status
+    FROM task_runs tr
+    JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+    WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+      AND tr.idempotency_key = sqlc.narg('idempotency_key')::varchar
+      AND sqlc.narg('idempotency_key')::varchar IS NOT NULL
+      AND t.deleted_at IS NULL
+    ORDER BY tr.created_at DESC
+    LIMIT 1
+),
+created_task AS (
     INSERT INTO tasks (
         tenant_id,
         team_id,
@@ -258,7 +275,8 @@ WITH created_task AS (
         params,
         idempotency_key,
         risk_level
-    ) VALUES (
+    )
+    SELECT
         sqlc.arg('tenant_id')::uuid,
         sqlc.arg('team_id')::uuid,
         sqlc.arg('title')::varchar,
@@ -272,7 +290,7 @@ WITH created_task AS (
         COALESCE(sqlc.arg('params')::jsonb, '{}'::jsonb),
         sqlc.narg('idempotency_key')::varchar,
         COALESCE(sqlc.narg('risk_level')::varchar, 'normal')
-    )
+    WHERE NOT EXISTS (SELECT 1 FROM existing_run)
     RETURNING *
 ),
 created_run AS (
@@ -304,16 +322,42 @@ created_run AS (
         sqlc.narg('timeout_sec')::integer,
         sqlc.narg('grace_sec')::integer
     FROM created_task
+    ON CONFLICT (tenant_id, digital_employee_id, idempotency_key)
+    WHERE digital_employee_id IS NOT NULL AND idempotency_key IS NOT NULL
+    DO UPDATE SET updated_at = task_runs.updated_at
     RETURNING *
 )
+SELECT
+    existing_run.task_id,
+    existing_run.run_id,
+    existing_run.command_id,
+    existing_run.task_status,
+    existing_run.run_status
+FROM existing_run
+UNION ALL
 SELECT
     created_task.id AS task_id,
     created_run.id AS run_id,
     created_run.command_id,
     created_task.status AS task_status,
     created_run.status AS run_status
-FROM created_task
-JOIN created_run ON created_run.task_id = created_task.id;
+FROM created_run
+JOIN created_task ON created_task.id = created_run.task_id
+UNION ALL
+SELECT
+    t.id AS task_id,
+    created_run.id AS run_id,
+    created_run.command_id,
+    t.status AS task_status,
+    created_run.status AS run_status
+FROM created_run
+JOIN tasks t ON t.id = created_run.task_id AND t.tenant_id = created_run.tenant_id
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM created_task
+    WHERE created_task.id = created_run.task_id
+)
+LIMIT 1;
 
 -- name: GetActiveDigitalEmployeeRun :one
 SELECT tr.*

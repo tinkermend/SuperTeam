@@ -13,29 +13,40 @@ import (
 )
 
 const CreateRuntimeCommandReceipt = `-- name: CreateRuntimeCommandReceipt :one
-INSERT INTO runtime_command_receipts (
-    tenant_id,
-    command_id,
-    command_type,
-    runtime_node_id,
-    node_id,
-    resource_type,
-    resource_id,
-    status,
-    payload,
-    dispatched_at
-) VALUES (
-    $1::uuid,
-    $2::varchar,
-    $3::varchar,
-    $4::uuid,
-    $5::varchar,
-    $6::varchar,
-    $7::uuid,
-    $8::varchar,
-    COALESCE($9::jsonb, '{}'::jsonb),
-    $10::timestamptz
-) RETURNING id, tenant_id, command_id, command_type, runtime_node_id, node_id, resource_type, resource_id, status, payload, result, error_message, dispatched_at, completed_at, created_at, updated_at
+WITH inserted AS (
+    INSERT INTO runtime_command_receipts (
+        tenant_id,
+        command_id,
+        command_type,
+        runtime_node_id,
+        node_id,
+        resource_type,
+        resource_id,
+        status,
+        payload,
+        dispatched_at
+    ) VALUES (
+        $1::uuid,
+        $2::varchar,
+        $3::varchar,
+        $4::uuid,
+        $5::varchar,
+        $6::varchar,
+        $7::uuid,
+        $8::varchar,
+        COALESCE($9::jsonb, '{}'::jsonb),
+        $10::timestamptz
+    )
+    ON CONFLICT (tenant_id, command_id) DO NOTHING
+    RETURNING id, tenant_id, command_id, command_type, runtime_node_id, node_id, resource_type, resource_id, status, payload, result, error_message, dispatched_at, completed_at, created_at, updated_at
+)
+SELECT id, tenant_id, command_id, command_type, runtime_node_id, node_id, resource_type, resource_id, status, payload, result, error_message, dispatched_at, completed_at, created_at, updated_at FROM inserted
+UNION ALL
+SELECT id, tenant_id, command_id, command_type, runtime_node_id, node_id, resource_type, resource_id, status, payload, result, error_message, dispatched_at, completed_at, created_at, updated_at
+FROM runtime_command_receipts
+WHERE tenant_id = $1::uuid
+  AND command_id = $2::varchar
+LIMIT 1
 `
 
 type CreateRuntimeCommandReceiptParams struct {
@@ -51,7 +62,26 @@ type CreateRuntimeCommandReceiptParams struct {
 	DispatchedAt  pgtype.Timestamptz `json:"dispatched_at"`
 }
 
-func (q *Queries) CreateRuntimeCommandReceipt(ctx context.Context, arg CreateRuntimeCommandReceiptParams) (RuntimeCommandReceipt, error) {
+type CreateRuntimeCommandReceiptRow struct {
+	ID            uuid.UUID          `json:"id"`
+	TenantID      uuid.UUID          `json:"tenant_id"`
+	CommandID     string             `json:"command_id"`
+	CommandType   string             `json:"command_type"`
+	RuntimeNodeID uuid.UUID          `json:"runtime_node_id"`
+	NodeID        string             `json:"node_id"`
+	ResourceType  string             `json:"resource_type"`
+	ResourceID    uuid.UUID          `json:"resource_id"`
+	Status        string             `json:"status"`
+	Payload       []byte             `json:"payload"`
+	Result        []byte             `json:"result"`
+	ErrorMessage  pgtype.Text        `json:"error_message"`
+	DispatchedAt  pgtype.Timestamptz `json:"dispatched_at"`
+	CompletedAt   pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateRuntimeCommandReceipt(ctx context.Context, arg CreateRuntimeCommandReceiptParams) (CreateRuntimeCommandReceiptRow, error) {
 	row := q.db.QueryRow(ctx, CreateRuntimeCommandReceipt,
 		arg.TenantID,
 		arg.CommandID,
@@ -64,7 +94,7 @@ func (q *Queries) CreateRuntimeCommandReceipt(ctx context.Context, arg CreateRun
 		arg.Payload,
 		arg.DispatchedAt,
 	)
-	var i RuntimeCommandReceipt
+	var i CreateRuntimeCommandReceiptRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,

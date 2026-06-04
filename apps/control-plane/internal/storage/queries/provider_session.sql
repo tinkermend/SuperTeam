@@ -224,18 +224,51 @@ INSERT INTO provider_sessions (
     COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
 )
 ON CONFLICT (tenant_id, provider_type, provider_session_id) DO UPDATE SET
-    status = EXCLUDED.status,
-    last_active_at = NOW(),
-    session_display_id = COALESCE(EXCLUDED.session_display_id, provider_sessions.session_display_id),
-    session_params = EXCLUDED.session_params,
-    session_state = EXCLUDED.session_state,
+    status = CASE
+        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.status
+        ELSE provider_sessions.status
+    END,
+    last_active_at = CASE
+        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN NOW()
+        ELSE provider_sessions.last_active_at
+    END,
+    session_display_id = CASE
+        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN COALESCE(EXCLUDED.session_display_id, provider_sessions.session_display_id)
+        ELSE provider_sessions.session_display_id
+    END,
+    session_params = CASE
+        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.session_params
+        ELSE provider_sessions.session_params
+    END,
+    session_state = CASE
+        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.session_state
+        ELSE provider_sessions.session_state
+    END,
     last_sequence_number = GREATEST(provider_sessions.last_sequence_number, EXCLUDED.last_sequence_number),
-    last_command_id = EXCLUDED.last_command_id,
-    last_run_id = EXCLUDED.last_run_id,
-    last_error_family = EXCLUDED.last_error_family,
-    last_runtime_seen_at = NOW(),
-    metadata = EXCLUDED.metadata,
-    updated_at = NOW()
+    last_command_id = CASE
+        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.last_command_id
+        ELSE provider_sessions.last_command_id
+    END,
+    last_run_id = CASE
+        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.last_run_id
+        ELSE provider_sessions.last_run_id
+    END,
+    last_error_family = CASE
+        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.last_error_family
+        ELSE provider_sessions.last_error_family
+    END,
+    last_runtime_seen_at = CASE
+        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN NOW()
+        ELSE provider_sessions.last_runtime_seen_at
+    END,
+    metadata = CASE
+        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.metadata
+        ELSE provider_sessions.metadata
+    END,
+    updated_at = CASE
+        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN NOW()
+        ELSE provider_sessions.updated_at
+    END
 RETURNING *;
 
 -- name: CreateProviderSessionEventIfAbsent :one
@@ -283,6 +316,17 @@ UNION ALL
 SELECT *
 FROM provider_session_events
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND command_id = sqlc.narg('command_id')::varchar
+  AND provider_session_id = sqlc.arg('provider_session_uuid')::uuid
   AND sequence_number = sqlc.arg('sequence_number')::integer
+  AND (
+      (
+          sqlc.narg('command_id')::varchar IS NOT NULL
+          AND command_id = sqlc.narg('command_id')::varchar
+      )
+      OR (
+          sqlc.narg('command_id')::varchar IS NULL
+          AND sqlc.narg('request_id')::varchar IS NOT NULL
+          AND request_id = sqlc.narg('request_id')::varchar
+      )
+  )
 LIMIT 1;

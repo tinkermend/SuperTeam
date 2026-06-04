@@ -207,13 +207,18 @@ func TestDigitalEmployeeRunLoopMigrationAddsPersistenceSchema(t *testing.T) {
 		"ADD COLUMN session_state_patch JSONB NOT NULL DEFAULT '{}'::jsonb",
 		"CREATE UNIQUE INDEX uq_task_runs_command_id",
 		"CREATE UNIQUE INDEX uq_task_runs_employee_idempotency",
+		"DROP INDEX IF EXISTS uq_task_events_task_sequence",
 		"DROP INDEX IF EXISTS uq_task_events_run_sequence",
 		"CREATE UNIQUE INDEX uq_task_events_run_sequence",
 		"ON task_events(tenant_id, run_id, sequence_number)",
 		"CREATE UNIQUE INDEX uq_provider_session_events_command_sequence",
 		"CREATE TRIGGER update_runtime_command_receipts_updated_at",
-		"COMMENT ON TABLE runtime_command_receipts IS",
-		"COMMENT ON COLUMN provider_sessions.session_state IS",
+		"COMMENT ON TABLE runtime_command_receipts IS 'Runtime 命令回执表，记录下发、回写和终态结果'",
+		"COMMENT ON COLUMN runtime_command_receipts.command_id IS '控制平面生成的命令ID'",
+		"COMMENT ON COLUMN task_runs.command_id IS '运行关联的Runtime命令ID'",
+		"COMMENT ON COLUMN task_events.metadata IS '任务事件扩展元数据'",
+		"COMMENT ON COLUMN provider_sessions.session_state IS 'Provider适配器可恢复的会话状态'",
+		"COMMENT ON COLUMN provider_session_events.session_state_patch IS '事件携带的会话状态增量'",
 	} {
 		if !strings.Contains(sql, expected) {
 			t.Fatalf("expected digital employee run loop migration to contain %q", expected)

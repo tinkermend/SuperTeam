@@ -55,7 +55,24 @@ func (q *Queries) CancelTask(ctx context.Context, arg CancelTaskParams) (Task, e
 }
 
 const CreateDigitalEmployeeTaskRun = `-- name: CreateDigitalEmployeeTaskRun :one
-WITH created_task AS (
+WITH existing_run AS (
+    SELECT
+        t.id AS task_id,
+        tr.id AS run_id,
+        tr.command_id,
+        t.status AS task_status,
+        tr.status AS run_status
+    FROM task_runs tr
+    JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+    WHERE tr.tenant_id = $1::uuid
+      AND tr.digital_employee_id = $2::uuid
+      AND tr.idempotency_key = $3::varchar
+      AND $3::varchar IS NOT NULL
+      AND t.deleted_at IS NULL
+    ORDER BY tr.created_at DESC
+    LIMIT 1
+),
+created_task AS (
     INSERT INTO tasks (
         tenant_id,
         team_id,
@@ -70,21 +87,22 @@ WITH created_task AS (
         params,
         idempotency_key,
         risk_level
-    ) VALUES (
-        $1::uuid,
-        $2::uuid,
-        $3::varchar,
-        $4::text,
-        'pending',
-        $5::integer,
-        $6::varchar,
-        $7::uuid,
-        $8::varchar,
-        $9::text,
-        COALESCE($10::jsonb, '{}'::jsonb),
-        $11::varchar,
-        COALESCE($12::varchar, 'normal')
     )
+    SELECT
+        $1::uuid,
+        $4::uuid,
+        $5::varchar,
+        $6::text,
+        'pending',
+        $7::integer,
+        $8::varchar,
+        $9::uuid,
+        $10::varchar,
+        $11::text,
+        COALESCE($12::jsonb, '{}'::jsonb),
+        $3::varchar,
+        COALESCE($13::varchar, 'normal')
+    WHERE NOT EXISTS (SELECT 1 FROM existing_run)
     RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at
 ),
 created_run AS (
@@ -105,31 +123,59 @@ created_run AS (
     SELECT
         created_task.tenant_id,
         created_task.id,
-        $13::varchar,
-        $14::uuid,
-        $15::varchar,
+        $14::varchar,
+        $15::uuid,
         $16::varchar,
         $17::varchar,
-        $18::uuid,
+        $18::varchar,
+        $2::uuid,
         $19::uuid,
-        $11::varchar,
+        $3::varchar,
         $20::integer,
         $21::integer
     FROM created_task
+    ON CONFLICT (tenant_id, digital_employee_id, idempotency_key)
+    WHERE digital_employee_id IS NOT NULL AND idempotency_key IS NOT NULL
+    DO UPDATE SET updated_at = task_runs.updated_at
     RETURNING id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_session_external_id
 )
+SELECT
+    existing_run.task_id,
+    existing_run.run_id,
+    existing_run.command_id,
+    existing_run.task_status,
+    existing_run.run_status
+FROM existing_run
+UNION ALL
 SELECT
     created_task.id AS task_id,
     created_run.id AS run_id,
     created_run.command_id,
     created_task.status AS task_status,
     created_run.status AS run_status
-FROM created_task
-JOIN created_run ON created_run.task_id = created_task.id
+FROM created_run
+JOIN created_task ON created_task.id = created_run.task_id
+UNION ALL
+SELECT
+    t.id AS task_id,
+    created_run.id AS run_id,
+    created_run.command_id,
+    t.status AS task_status,
+    created_run.status AS run_status
+FROM created_run
+JOIN tasks t ON t.id = created_run.task_id AND t.tenant_id = created_run.tenant_id
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM created_task
+    WHERE created_task.id = created_run.task_id
+)
+LIMIT 1
 `
 
 type CreateDigitalEmployeeTaskRunParams struct {
 	TenantID            uuid.UUID     `json:"tenant_id"`
+	DigitalEmployeeID   uuid.UUID     `json:"digital_employee_id"`
+	IdempotencyKey      pgtype.Text   `json:"idempotency_key"`
 	TeamID              uuid.UUID     `json:"team_id"`
 	Title               string        `json:"title"`
 	Description         pgtype.Text   `json:"description"`
@@ -139,14 +185,12 @@ type CreateDigitalEmployeeTaskRunParams struct {
 	TargetNodeID        string        `json:"target_node_id"`
 	WorkspacePath       pgtype.Text   `json:"workspace_path"`
 	Params              []byte        `json:"params"`
-	IdempotencyKey      pgtype.Text   `json:"idempotency_key"`
 	RiskLevel           pgtype.Text   `json:"risk_level"`
 	NodeID              string        `json:"node_id"`
 	RuntimeNodeID       uuid.UUID     `json:"runtime_node_id"`
 	ProviderSessionID   pgtype.Text   `json:"provider_session_id"`
 	RunStatus           string        `json:"run_status"`
 	CommandID           string        `json:"command_id"`
-	DigitalEmployeeID   uuid.UUID     `json:"digital_employee_id"`
 	ExecutionInstanceID uuid.UUID     `json:"execution_instance_id"`
 	TimeoutSec          pgtype.Int4   `json:"timeout_sec"`
 	GraceSec            pgtype.Int4   `json:"grace_sec"`
@@ -163,6 +207,8 @@ type CreateDigitalEmployeeTaskRunRow struct {
 func (q *Queries) CreateDigitalEmployeeTaskRun(ctx context.Context, arg CreateDigitalEmployeeTaskRunParams) (CreateDigitalEmployeeTaskRunRow, error) {
 	row := q.db.QueryRow(ctx, CreateDigitalEmployeeTaskRun,
 		arg.TenantID,
+		arg.DigitalEmployeeID,
+		arg.IdempotencyKey,
 		arg.TeamID,
 		arg.Title,
 		arg.Description,
@@ -172,14 +218,12 @@ func (q *Queries) CreateDigitalEmployeeTaskRun(ctx context.Context, arg CreateDi
 		arg.TargetNodeID,
 		arg.WorkspacePath,
 		arg.Params,
-		arg.IdempotencyKey,
 		arg.RiskLevel,
 		arg.NodeID,
 		arg.RuntimeNodeID,
 		arg.ProviderSessionID,
 		arg.RunStatus,
 		arg.CommandID,
-		arg.DigitalEmployeeID,
 		arg.ExecutionInstanceID,
 		arg.TimeoutSec,
 		arg.GraceSec,

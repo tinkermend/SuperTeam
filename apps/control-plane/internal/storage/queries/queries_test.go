@@ -127,12 +127,17 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	defer conn.Close(ctx)
 
-	migrated, err := schemaAlreadyMigrated(ctx, conn)
+	runLoopMigrated, err := schemaHasTable(ctx, conn, "runtime_command_receipts")
 	if err != nil {
 		return err
 	}
-	if migrated {
+	if runLoopMigrated {
 		return nil
+	}
+
+	baseMigrated, err := schemaHasTable(ctx, conn, "runtime_nodes")
+	if err != nil {
+		return err
 	}
 
 	// 发现所有迁移文件
@@ -144,6 +149,7 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 
 	// 按文件名排序
 	sort.Strings(files)
+	files = migrationFilesForSchemaState(files, baseMigrated)
 
 	// 执行每个迁移文件
 	for _, file := range files {
@@ -160,18 +166,33 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-func schemaAlreadyMigrated(ctx context.Context, conn *pgx.Conn) (bool, error) {
+func migrationFilesForSchemaState(files []string, baseMigrated bool) []string {
+	if !baseMigrated {
+		return files
+	}
+
+	filtered := make([]string, 0, len(files))
+	for _, file := range files {
+		base := filepath.Base(file)
+		if base >= "003_add_team_governance_config.sql" {
+			filtered = append(filtered, file)
+		}
+	}
+	return filtered
+}
+
+func schemaHasTable(ctx context.Context, conn *pgx.Conn, tableName string) (bool, error) {
 	const query = `
 SELECT EXISTS (
 	SELECT 1
 	FROM information_schema.tables
 	WHERE table_schema = current_schema()
-		AND table_name = 'runtime_nodes'
+		AND table_name = $1
 )
 `
 
 	var exists bool
-	if err := conn.QueryRow(ctx, query).Scan(&exists); err != nil {
+	if err := conn.QueryRow(ctx, query, tableName).Scan(&exists); err != nil {
 		return false, err
 	}
 	return exists, nil
@@ -3398,6 +3419,61 @@ func TestTaskEvents(t *testing.T) {
 	assert.Equal(t, int32(2), maxSeq)
 }
 
+func TestTaskEventIdempotencyIsScopedByRun(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	paramsJSON, _ := json.Marshal(map[string]interface{}{"test": true})
+	task, err := testQueries.CreateTask(ctx, queries.CreateTaskParams{
+		Title:        "Run Scoped Event Test",
+		Status:       "pending",
+		Priority:     3,
+		ProviderType: "claude-code",
+		Params:       paramsJSON,
+	})
+	require.NoError(t, err)
+
+	run1, err := testQueries.CreateTaskRun(ctx, queries.CreateTaskRunParams{
+		TaskID: task.ID,
+		NodeID: "runtime-node-001",
+		Status: "running",
+	})
+	require.NoError(t, err)
+	run2, err := testQueries.CreateTaskRun(ctx, queries.CreateTaskRunParams{
+		TaskID: task.ID,
+		NodeID: "runtime-node-001",
+		Status: "running",
+	})
+	require.NoError(t, err)
+
+	event1, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
+		TenantID:       task.TenantID,
+		TaskID:         task.ID,
+		RunID:          run1.ID,
+		EventType:      "provider.text_delta",
+		SequenceNumber: 1,
+		Payload:        []byte(`{"run":1}`),
+		CommandID:      pgtype.Text{String: "cmd-run-1", Valid: true},
+		Metadata:       []byte(`{}`),
+	})
+	require.NoError(t, err)
+
+	event2, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
+		TenantID:       task.TenantID,
+		TaskID:         task.ID,
+		RunID:          run2.ID,
+		EventType:      "provider.text_delta",
+		SequenceNumber: 1,
+		Payload:        []byte(`{"run":2}`),
+		CommandID:      pgtype.Text{String: "cmd-run-2", Valid: true},
+		Metadata:       []byte(`{}`),
+	})
+	require.NoError(t, err)
+	assert.NotEqual(t, event1.ID, event2.ID)
+	assert.Equal(t, run1.ID, event1.RunID.UUID)
+	assert.Equal(t, run2.ID, event2.RunID.UUID)
+}
+
 func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 	ctx := context.Background()
 	cleanupTestData(t, testDB)
@@ -3425,6 +3501,22 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, commandID, receipt.CommandID)
 	assert.Equal(t, "dispatching", receipt.Status)
+
+	duplicateReceipt, err := testQueries.CreateRuntimeCommandReceipt(ctx, queries.CreateRuntimeCommandReceiptParams{
+		TenantID:      tenantID,
+		CommandID:     commandID,
+		CommandType:   "provider_run",
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        "runtime-node-001",
+		ResourceType:  "task_run",
+		ResourceID:    uuid.New(),
+		Status:        "dispatching",
+		Payload:       []byte(`{"objective":"duplicate should not overwrite"}`),
+		DispatchedAt:  dispatchedAt,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, receipt.ID, duplicateReceipt.ID)
+	assert.JSONEq(t, `{"objective":"diagnose failing checkout"}`, string(duplicateReceipt.Payload))
 
 	fetchedReceipt, err := testQueries.GetRuntimeCommandReceiptByCommandID(ctx, queries.GetRuntimeCommandReceiptByCommandIDParams{
 		TenantID:  tenantID,
@@ -3471,6 +3563,34 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "pending", createdRun.TaskStatus)
 	assert.Equal(t, "queued", createdRun.RunStatus)
+
+	retriedRun, err := testQueries.CreateDigitalEmployeeTaskRun(ctx, queries.CreateDigitalEmployeeTaskRunParams{
+		TenantID:            tenantID,
+		TeamID:              teamID,
+		Title:               "重复执行结账诊断",
+		Description:         pgtype.Text{String: "同一幂等键重试不应新建任务", Valid: true},
+		Priority:            1,
+		ProviderType:        "claude-code",
+		CreatorID:           uuid.NullUUID{},
+		TargetNodeID:        "runtime-node-001",
+		WorkspacePath:       pgtype.Text{String: "/workspace/superteam", Valid: true},
+		Params:              []byte(`{"objective":"duplicate retry"}`),
+		IdempotencyKey:      pgtype.Text{String: "idem-run-loop-001", Valid: true},
+		RiskLevel:           pgtype.Text{String: "normal", Valid: true},
+		NodeID:              "runtime-node-001",
+		RuntimeNodeID:       runtimeNodeID,
+		ProviderSessionID:   pgtype.Text{},
+		RunStatus:           "queued",
+		CommandID:           "cmd-run-loop-retry",
+		DigitalEmployeeID:   digitalEmployeeID,
+		ExecutionInstanceID: executionInstanceID,
+		TimeoutSec:          pgtype.Int4{Int32: 600, Valid: true},
+		GraceSec:            pgtype.Int4{Int32: 30, Valid: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, createdRun.TaskID, retriedRun.TaskID)
+	assert.Equal(t, createdRun.RunID, retriedRun.RunID)
+	assert.Equal(t, createdRun.CommandID, retriedRun.CommandID)
 
 	activeRun, err := testQueries.GetActiveDigitalEmployeeRun(ctx, queries.GetActiveDigitalEmployeeRunParams{
 		TenantID:          tenantID,
@@ -3565,7 +3685,7 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 		LastCommandID:       pgtype.Text{String: commandID, Valid: true},
 		LastRunID:           uuid.NullUUID{UUID: createdRun.RunID, Valid: true},
 		LastErrorFamily:     pgtype.Text{},
-		Metadata:            []byte(`{"source":"writeback"}`),
+		Metadata:            []byte(`{"source":"latest-writeback"}`),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "provider-session-001", session.ProviderSessionID)
@@ -3587,13 +3707,14 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 		LastCommandID:       pgtype.Text{String: commandID, Valid: true},
 		LastRunID:           uuid.NullUUID{UUID: createdRun.RunID, Valid: true},
 		LastErrorFamily:     pgtype.Text{},
-		Metadata:            []byte(`{"source":"writeback"}`),
+		Metadata:            []byte(`{"source":"stale-writeback"}`),
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "idle", session.Status)
+	assert.Equal(t, "running", session.Status)
 	assert.Equal(t, int32(7), session.LastSequenceNumber)
 	assert.Equal(t, "claude-code #001", session.SessionDisplayID.String)
-	assert.JSONEq(t, `{"phase":"idle"}`, string(session.SessionState))
+	assert.JSONEq(t, `{"phase":"running"}`, string(session.SessionState))
+	assert.JSONEq(t, `{"source":"latest-writeback"}`, string(session.Metadata))
 
 	providerEvent, err := testQueries.CreateProviderSessionEventIfAbsent(ctx, queries.CreateProviderSessionEventIfAbsentParams{
 		TenantID:            tenantID,
@@ -3627,6 +3748,71 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 	assert.Equal(t, providerEvent.ID, duplicateProviderEvent.ID)
 	assert.JSONEq(t, `{"text":"done"}`, string(duplicateProviderEvent.Payload))
 	assert.JSONEq(t, `{"last_event":"done"}`, string(duplicateProviderEvent.SessionStatePatch))
+
+	requestOnlyEvent, err := testQueries.CreateProviderSessionEventIfAbsent(ctx, queries.CreateProviderSessionEventIfAbsentParams{
+		TenantID:            tenantID,
+		ProviderSessionUuid: session.ID,
+		EventType:           "provider.tool_call",
+		SequenceNumber:      8,
+		Payload:             []byte(`{"tool":"read_file"}`),
+		RequestID:           pgtype.Text{String: "request-only-run-loop-001", Valid: true},
+		RawEventRef:         pgtype.Text{String: "s3://superteam/raw/request-only/8.json", Valid: true},
+		LogRef:              pgtype.Text{String: "s3://superteam/logs/request-only.log", Valid: true},
+		SessionStatePatch:   []byte(`{"last_event":"tool_call"}`),
+		Metadata:            []byte(`{"source":"provider"}`),
+	})
+	require.NoError(t, err)
+
+	duplicateRequestOnlyEvent, err := testQueries.CreateProviderSessionEventIfAbsent(ctx, queries.CreateProviderSessionEventIfAbsentParams{
+		TenantID:            tenantID,
+		ProviderSessionUuid: session.ID,
+		EventType:           "provider.tool_call",
+		SequenceNumber:      8,
+		Payload:             []byte(`{"tool":"duplicate"}`),
+		RequestID:           pgtype.Text{String: "request-only-run-loop-001", Valid: true},
+		RawEventRef:         pgtype.Text{String: "s3://superteam/raw/request-only/duplicate.json", Valid: true},
+		LogRef:              pgtype.Text{String: "s3://superteam/logs/request-only.log", Valid: true},
+		SessionStatePatch:   []byte(`{"last_event":"duplicate"}`),
+		Metadata:            []byte(`{"source":"provider"}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, requestOnlyEvent.ID, duplicateRequestOnlyEvent.ID)
+	assert.JSONEq(t, `{"tool":"read_file"}`, string(duplicateRequestOnlyEvent.Payload))
+
+	otherSession, err := testQueries.UpsertProviderSessionByExternalID(ctx, queries.UpsertProviderSessionByExternalIDParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "provider-session-002",
+		DigitalEmployeeID:   digitalEmployeeID,
+		ExecutionInstanceID: executionInstanceID,
+		RuntimeNodeID:       runtimeNodeID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		SessionDisplayID:    pgtype.Text{String: "claude-code #002", Valid: true},
+		SessionParams:       []byte(`{"model":"claude-sonnet"}`),
+		SessionState:        []byte(`{"phase":"running"}`),
+		LastSequenceNumber:  7,
+		LastCommandID:       pgtype.Text{String: commandID, Valid: true},
+		LastRunID:           uuid.NullUUID{UUID: createdRun.RunID, Valid: true},
+		LastErrorFamily:     pgtype.Text{},
+		Metadata:            []byte(`{"source":"other-session"}`),
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.CreateProviderSessionEventIfAbsent(ctx, queries.CreateProviderSessionEventIfAbsentParams{
+		TenantID:            tenantID,
+		ProviderSessionUuid: otherSession.ID,
+		EventType:           "provider.text_delta",
+		SequenceNumber:      7,
+		Payload:             []byte(`{"text":"other session duplicate command"}`),
+		RequestID:           pgtype.Text{String: "request-other-session", Valid: true},
+		CommandID:           pgtype.Text{String: commandID, Valid: true},
+		RawEventRef:         pgtype.Text{String: "s3://superteam/raw/other-session/7.json", Valid: true},
+		LogRef:              pgtype.Text{String: "s3://superteam/logs/other-session.log", Valid: true},
+		SessionStatePatch:   []byte(`{"last_event":"other-session"}`),
+		Metadata:            []byte(`{"source":"provider"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
 }
 
 // ============================================================================

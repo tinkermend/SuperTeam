@@ -1,27 +1,38 @@
 -- name: CreateRuntimeCommandReceipt :one
-INSERT INTO runtime_command_receipts (
-    tenant_id,
-    command_id,
-    command_type,
-    runtime_node_id,
-    node_id,
-    resource_type,
-    resource_id,
-    status,
-    payload,
-    dispatched_at
-) VALUES (
-    sqlc.arg('tenant_id')::uuid,
-    sqlc.arg('command_id')::varchar,
-    sqlc.arg('command_type')::varchar,
-    sqlc.arg('runtime_node_id')::uuid,
-    sqlc.arg('node_id')::varchar,
-    sqlc.arg('resource_type')::varchar,
-    sqlc.arg('resource_id')::uuid,
-    sqlc.arg('status')::varchar,
-    COALESCE(sqlc.arg('payload')::jsonb, '{}'::jsonb),
-    sqlc.narg('dispatched_at')::timestamptz
-) RETURNING *;
+WITH inserted AS (
+    INSERT INTO runtime_command_receipts (
+        tenant_id,
+        command_id,
+        command_type,
+        runtime_node_id,
+        node_id,
+        resource_type,
+        resource_id,
+        status,
+        payload,
+        dispatched_at
+    ) VALUES (
+        sqlc.arg('tenant_id')::uuid,
+        sqlc.arg('command_id')::varchar,
+        sqlc.arg('command_type')::varchar,
+        sqlc.arg('runtime_node_id')::uuid,
+        sqlc.arg('node_id')::varchar,
+        sqlc.arg('resource_type')::varchar,
+        sqlc.arg('resource_id')::uuid,
+        sqlc.arg('status')::varchar,
+        COALESCE(sqlc.arg('payload')::jsonb, '{}'::jsonb),
+        sqlc.narg('dispatched_at')::timestamptz
+    )
+    ON CONFLICT (tenant_id, command_id) DO NOTHING
+    RETURNING *
+)
+SELECT * FROM inserted
+UNION ALL
+SELECT *
+FROM runtime_command_receipts
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND command_id = sqlc.arg('command_id')::varchar
+LIMIT 1;
 
 -- name: GetRuntimeCommandReceiptByCommandID :one
 SELECT *
