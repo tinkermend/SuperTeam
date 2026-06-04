@@ -104,6 +104,14 @@ WHERE task_id = sqlc.arg('task_id')::uuid
   AND tenant_id = COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 ORDER BY sequence_number ASC;
 
+-- name: ListTaskEventsForRun :many
+SELECT * FROM task_events
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND task_id = sqlc.arg('task_id')::uuid
+  AND run_id = sqlc.arg('run_id')::uuid
+ORDER BY created_at ASC, sequence_number ASC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
 -- name: GetTaskEvent :one
 SELECT * FROM task_events
 WHERE task_id = sqlc.arg('task_id')::uuid

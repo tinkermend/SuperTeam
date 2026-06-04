@@ -251,6 +251,9 @@ func (s *DigitalEmployeeRunService) StopRun(ctx context.Context, req StopDigital
 		return nil, fmt.Errorf("%w: run_id is required", ErrInvalidInput)
 	}
 	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		return nil, fmt.Errorf("%w: reason is required", ErrInvalidInput)
+	}
 
 	run, err := s.repository.GetRun(ctx, req.TenantID, req.DigitalEmployeeID, req.RunID)
 	if err != nil {
@@ -356,11 +359,11 @@ func (s *DigitalEmployeeRunService) GetRun(ctx context.Context, tenantID, employ
 }
 
 func (s *DigitalEmployeeRunService) ListRunEvents(ctx context.Context, tenantID, employeeID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error) {
-	if _, err := s.GetRun(ctx, tenantID, employeeID, runID); err != nil {
+	run, err := s.GetRun(ctx, tenantID, employeeID, runID)
+	if err != nil {
 		return nil, err
 	}
-	// TODO: expose persisted task_events/provider_session_events once the run event query contract is finalized.
-	return []RuntimeCommandEventWriteback{}, nil
+	return s.repository.ListRunEvents(ctx, tenantID, run.TaskID, run.ID, limit, offset)
 }
 
 func validateRunPreflight(preflight RunPreflight) error {

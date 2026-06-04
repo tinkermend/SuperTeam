@@ -3,9 +3,15 @@ import {
   approveDigitalEmployeeEffectiveConfig,
   createDigitalEmployee,
   createDigitalEmployeeConfigRevision,
+  createDigitalEmployeeRun,
+  getDigitalEmployee,
   getDigitalEmployeeExecutionInstance,
+  getDigitalEmployeeRun,
+  listDigitalEmployeeRunEvents,
+  listDigitalEmployeeRuns,
   listDigitalEmployees,
   previewDigitalEmployeeEffectiveConfig,
+  stopDigitalEmployeeRun,
 } from "./employees";
 
 describe("digital employee API", () => {
@@ -119,6 +125,40 @@ describe("digital employee API", () => {
       headers: { accept: "application/json", "content-type": "application/json" },
       method: "POST",
     });
+  });
+
+  it("gets one digital employee with encoded employee id", async () => {
+    const employee = {
+      id: "employee 1/primary",
+      name: "需求分析员工",
+      role: "requirements_analyst",
+      status: "active",
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(employee), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      getDigitalEmployee(
+        {
+          baseUrl: "http://control-plane.local",
+          fetcher,
+        },
+        "employee 1/primary",
+      ),
+    ).resolves.toEqual(employee);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
   });
 
   it("creates config revision with encoded employee id and JSON body", async () => {
@@ -311,6 +351,232 @@ describe("digital employee API", () => {
         credentials: "include",
         headers: { accept: "application/json" },
         method: "GET",
+      },
+    );
+  });
+
+  it("creates a digital employee run with encoded employee id and JSON body", async () => {
+    const run = {
+      id: "run 1/primary",
+      tenant_id: "22222222-2222-4222-8222-222222222222",
+      task_id: "task-1",
+      digital_employee_id: "employee 1/primary",
+      execution_instance_id: "instance-1",
+      runtime_node_id: "runtime-1",
+      node_id: "node-a",
+      command_id: "cmd-1",
+      provider_type: "codex",
+      status: "dispatching",
+      result: {},
+      diagnostic: {},
+      work_products: [],
+      session_state: {},
+      timed_out: false,
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(run), {
+        headers: { "content-type": "application/json" },
+        status: 201,
+      }),
+    );
+
+    await expect(
+      createDigitalEmployeeRun(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "employee 1/primary",
+        {
+          objective: "整理上线风险",
+          prompt: "检查最近失败任务",
+          allowed_actions: ["artifact.read"],
+          timeout_sec: 900,
+        },
+      ),
+    ).resolves.toEqual(run);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/runs",
+      {
+        body: JSON.stringify({
+          objective: "整理上线风险",
+          prompt: "检查最近失败任务",
+          allowed_actions: ["artifact.read"],
+          timeout_sec: 900,
+        }),
+        credentials: "include",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        method: "POST",
+      },
+    );
+  });
+
+  it("lists digital employee runs with encoded employee id and pagination", async () => {
+    const runs = [
+      {
+        id: "run-1",
+        tenant_id: "tenant-1",
+        task_id: "task-1",
+        digital_employee_id: "employee 1/primary",
+        execution_instance_id: "instance-1",
+        runtime_node_id: "runtime-1",
+        node_id: "node-a",
+        command_id: "cmd-1",
+        provider_type: "codex",
+        status: "running",
+        result: {},
+        diagnostic: {},
+        work_products: [],
+        session_state: {},
+        timed_out: false,
+      },
+    ];
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(runs), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      listDigitalEmployeeRuns(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "employee 1/primary",
+        { limit: 10, offset: 20 },
+      ),
+    ).resolves.toEqual(runs);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/runs?limit=10&offset=20",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
+  it("gets a digital employee run with encoded employee and run ids", async () => {
+    const run = {
+      id: "run 1/primary",
+      tenant_id: "tenant-1",
+      task_id: "task-1",
+      digital_employee_id: "employee 1/primary",
+      execution_instance_id: "instance-1",
+      runtime_node_id: "runtime-1",
+      node_id: "node-a",
+      command_id: "cmd-1",
+      provider_type: "codex",
+      status: "completed",
+      result: { summary: "完成" },
+      diagnostic: {},
+      work_products: [],
+      session_state: {},
+      timed_out: false,
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(run), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      getDigitalEmployeeRun(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "employee 1/primary",
+        "run 1/primary",
+      ),
+    ).resolves.toEqual(run);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/runs/run%201%2Fprimary",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
+  it("lists digital employee run events with encoded ids and pagination", async () => {
+    const events = [
+      {
+        event_type: "provider.stdout",
+        sequence_number: 7,
+        payload: { text: "分析中" },
+        provider_session_external_id: "session-ext-1",
+        session_state_patch: { cursor: 7 },
+        log_ref: "s3://logs/run-1",
+        raw_event_ref: "s3://events/run-1/7",
+        metadata: { source: "runtime" },
+      },
+    ];
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(events), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      listDigitalEmployeeRunEvents(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "employee 1/primary",
+        "run 1/primary",
+        { limit: 25, offset: 5 },
+      ),
+    ).resolves.toEqual(events);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/runs/run%201%2Fprimary/events?limit=25&offset=5",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
+  it("stops a digital employee run with encoded ids and reason", async () => {
+    const run = {
+      id: "run 1/primary",
+      tenant_id: "tenant-1",
+      task_id: "task-1",
+      digital_employee_id: "employee 1/primary",
+      execution_instance_id: "instance-1",
+      runtime_node_id: "runtime-1",
+      node_id: "node-a",
+      command_id: "cmd-1",
+      provider_type: "codex",
+      status: "cancelling",
+      result: {},
+      diagnostic: {},
+      work_products: [],
+      session_state: {},
+      timed_out: false,
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(run), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      stopDigitalEmployeeRun(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "employee 1/primary",
+        "run 1/primary",
+        { reason: "用户从 Web 停止" },
+      ),
+    ).resolves.toEqual(run);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/runs/run%201%2Fprimary/stop",
+      {
+        body: JSON.stringify({ reason: "用户从 Web 停止" }),
+        credentials: "include",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        method: "POST",
       },
     );
   });

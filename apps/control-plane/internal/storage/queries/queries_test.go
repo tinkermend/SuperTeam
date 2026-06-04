@@ -3887,6 +3887,18 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 	assert.JSONEq(t, `{"deadline":"exceeded"}`, string(updatedRun.Diagnostic))
 	assert.JSONEq(t, `[{"type":"ExecutionResult","ref":"artifact://result"}]`, string(updatedRun.WorkProducts))
 
+	dispatchedTaskEvent, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
+		TenantID:       tenantID,
+		TaskID:         createdRun.TaskID,
+		RunID:          createdRun.RunID,
+		EventType:      "run_dispatched",
+		SequenceNumber: -1,
+		Payload:        []byte(`{"source":"control-plane"}`),
+		CommandID:      pgtype.Text{String: commandID, Valid: true},
+		Metadata:       []byte(`{"source":"control-plane"}`),
+	})
+	require.NoError(t, err)
+
 	taskEvent, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
 		TenantID:       tenantID,
 		TaskID:         createdRun.TaskID,
@@ -3916,6 +3928,44 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, taskEvent.ID, duplicateTaskEvent.ID)
 	assert.JSONEq(t, `{"text":"working"}`, string(duplicateTaskEvent.Payload))
+
+	stopRequestedTaskEvent, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
+		TenantID:       tenantID,
+		TaskID:         createdRun.TaskID,
+		RunID:          createdRun.RunID,
+		EventType:      "stop_requested",
+		SequenceNumber: -2,
+		Payload:        []byte(`{"source":"control-plane"}`),
+		CommandID:      pgtype.Text{String: "cmd-stop-run-loop-001", Valid: true},
+		Metadata:       []byte(`{"source":"control-plane"}`),
+	})
+	require.NoError(t, err)
+
+	baseEventTime := time.Now().UTC().Add(-3 * time.Minute)
+	_, err = testDB.Exec(ctx, `
+		UPDATE task_events
+		SET created_at = CASE id
+			WHEN $1 THEN $4
+			WHEN $2 THEN $5
+			WHEN $3 THEN $6
+			ELSE created_at
+		END
+		WHERE tenant_id = $7
+		  AND id IN ($1, $2, $3)
+	`, dispatchedTaskEvent.ID, taskEvent.ID, stopRequestedTaskEvent.ID, baseEventTime, baseEventTime.Add(time.Minute), baseEventTime.Add(2*time.Minute), tenantID)
+	require.NoError(t, err)
+
+	runEvents, err := testQueries.ListTaskEventsForRun(ctx, queries.ListTaskEventsForRunParams{
+		TenantID: tenantID,
+		TaskID:   createdRun.TaskID,
+		RunID:    createdRun.RunID,
+		Limit:    10,
+		Offset:   0,
+	})
+	require.NoError(t, err)
+	require.Len(t, runEvents, 3)
+	assert.Equal(t, []string{"run_dispatched", "provider.text_delta", "stop_requested"}, []string{runEvents[0].EventType, runEvents[1].EventType, runEvents[2].EventType})
+	assert.Equal(t, []int32{-1, 1, -2}, []int32{runEvents[0].SequenceNumber, runEvents[1].SequenceNumber, runEvents[2].SequenceNumber})
 
 	session, err := testQueries.UpsertProviderSessionByExternalID(ctx, queries.UpsertProviderSessionByExternalIDParams{
 		TenantID:            tenantID,

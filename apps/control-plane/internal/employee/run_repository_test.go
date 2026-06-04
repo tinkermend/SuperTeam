@@ -87,6 +87,29 @@ func TestDigitalEmployeeRunFromQueryMapsProviderTypeAndJSONFields(t *testing.T) 
 	require.Equal(t, "json", mapped.WorkProducts[0].Metadata["format"])
 }
 
+func TestRuntimeCommandEventFromTaskEventMapsPersistedEventFields(t *testing.T) {
+	logRef := "s3://logs/run.log"
+	rawRef := "s3://events/1.json"
+	event := queries.TaskEvent{
+		EventType:      "text_delta",
+		SequenceNumber: 7,
+		Payload:        []byte(`{"text":"ok","token":"[redacted]"}`),
+		LogRef:         pgtype.Text{String: logRef, Valid: true},
+		RawEventRef:    pgtype.Text{String: rawRef, Valid: true},
+		Metadata:       []byte(`{"provider":"codex"}`),
+	}
+
+	mapped := runtimeCommandEventFromTaskEvent(event)
+
+	require.Equal(t, "text_delta", mapped.EventType)
+	require.Equal(t, int32(7), mapped.SequenceNumber)
+	require.Equal(t, "ok", mapped.Payload["text"])
+	require.Equal(t, "[redacted]", mapped.Payload["token"])
+	require.Equal(t, &logRef, mapped.LogRef)
+	require.Equal(t, &rawRef, mapped.RawEventRef)
+	require.Equal(t, "codex", mapped.Metadata["provider"])
+}
+
 func TestRunPreflightFromQueryRejectsMissingTeam(t *testing.T) {
 	_, err := runPreflightFromQuery(queries.GetDigitalEmployeeRunPreflightRow{
 		TenantID:              uuid.New(),

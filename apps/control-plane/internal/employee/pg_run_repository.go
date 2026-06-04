@@ -168,6 +168,25 @@ func (r *PgRunRepository) ListRuns(ctx context.Context, tenantID, employeeID uui
 	return out, nil
 }
 
+func (r *PgRunRepository) ListRunEvents(ctx context.Context, tenantID, taskID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error) {
+	events, err := r.q.ListTaskEventsForRun(ctx, queries.ListTaskEventsForRunParams{
+		TenantID: tenantID,
+		TaskID:   taskID,
+		RunID:    runID,
+		Limit:    limit,
+		Offset:   offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]RuntimeCommandEventWriteback, 0, len(events))
+	for _, event := range events {
+		out = append(out, runtimeCommandEventFromTaskEvent(event))
+	}
+	return out, nil
+}
+
 func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error) {
 	if req.TeamID == uuid.Nil {
 		return nil, fmt.Errorf("%w: team_id is required for digital employee run", ErrInvalidInput)
@@ -569,6 +588,17 @@ func digitalEmployeeRunFromQuery(run queries.TaskRun) *DigitalEmployeeRun {
 		FinishedAt:                timePtrFromTimestamptz(run.FinishedAt),
 		CreatedAt:                 timeFromTimestamptz(run.CreatedAt),
 		UpdatedAt:                 timeFromTimestamptz(run.UpdatedAt),
+	}
+}
+
+func runtimeCommandEventFromTaskEvent(event queries.TaskEvent) RuntimeCommandEventWriteback {
+	return RuntimeCommandEventWriteback{
+		EventType:      event.EventType,
+		SequenceNumber: event.SequenceNumber,
+		Payload:        jsonMapFromBytes(event.Payload),
+		LogRef:         stringPtrFromText(event.LogRef),
+		RawEventRef:    stringPtrFromText(event.RawEventRef),
+		Metadata:       jsonMapFromBytes(event.Metadata),
 	}
 }
 

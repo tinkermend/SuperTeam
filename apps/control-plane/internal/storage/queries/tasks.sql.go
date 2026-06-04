@@ -1371,6 +1371,62 @@ func (q *Queries) ListTaskEvents(ctx context.Context, arg ListTaskEventsParams) 
 	return items, nil
 }
 
+const ListTaskEventsForRun = `-- name: ListTaskEventsForRun :many
+SELECT id, tenant_id, task_id, run_id, event_type, sequence_number, payload, created_at, command_id, raw_event_ref, log_ref, metadata FROM task_events
+WHERE tenant_id = $1::uuid
+  AND task_id = $2::uuid
+  AND run_id = $3::uuid
+ORDER BY created_at ASC, sequence_number ASC
+LIMIT $5 OFFSET $4
+`
+
+type ListTaskEventsForRunParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TaskID   uuid.UUID `json:"task_id"`
+	RunID    uuid.UUID `json:"run_id"`
+	Offset   int32     `json:"offset"`
+	Limit    int32     `json:"limit"`
+}
+
+func (q *Queries) ListTaskEventsForRun(ctx context.Context, arg ListTaskEventsForRunParams) ([]TaskEvent, error) {
+	rows, err := q.db.Query(ctx, ListTaskEventsForRun,
+		arg.TenantID,
+		arg.TaskID,
+		arg.RunID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskEvent{}
+	for rows.Next() {
+		var i TaskEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.TaskID,
+			&i.RunID,
+			&i.EventType,
+			&i.SequenceNumber,
+			&i.Payload,
+			&i.CreatedAt,
+			&i.CommandID,
+			&i.RawEventRef,
+			&i.LogRef,
+			&i.Metadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListTaskRuns = `-- name: ListTaskRuns :many
 SELECT id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id FROM task_runs
 WHERE task_id = $1::uuid

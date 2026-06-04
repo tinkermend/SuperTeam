@@ -127,6 +127,36 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 	}
 }
 
+func TestRunServiceListRunEventsReturnsPersistedEvents(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.run = validRunServiceRun(DigitalEmployeeRunStatusRunning)
+	repo.runEvents = []RuntimeCommandEventWriteback{
+		{
+			EventType:      "text_delta",
+			SequenceNumber: 2,
+			Payload:        map[string]any{"text": "hello"},
+			Metadata:       map[string]any{"provider": "codex"},
+		},
+	}
+	dispatcher := newFakeRunServiceDispatcher()
+	service := mustNewRunService(t, repo, dispatcher)
+
+	events, err := service.ListRunEvents(context.Background(), repo.run.TenantID, repo.run.DigitalEmployeeID, repo.run.ID, 50, 0)
+
+	if err != nil {
+		t.Fatalf("list run events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected one run event, got %#v", events)
+	}
+	if events[0].EventType != "text_delta" || events[0].Payload["text"] != "hello" {
+		t.Fatalf("unexpected run event: %#v", events[0])
+	}
+	if repo.listRunEventsTaskID != repo.run.TaskID || repo.listRunEventsRunID != repo.run.ID {
+		t.Fatalf("expected service to list events by run task/run ids, got task=%s run=%s", repo.listRunEventsTaskID, repo.listRunEventsRunID)
+	}
+}
+
 func TestRunServiceCreateRunReconcilesIdempotentQueuedRunWithoutReceipt(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()
@@ -384,6 +414,28 @@ func TestRunServiceStopRunMovesToCancellingAndDispatchesStop(t *testing.T) {
 	}
 }
 
+func TestRunServiceStopRunRejectsBlankReason(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.run = validRunServiceRun(DigitalEmployeeRunStatusRunning)
+	dispatcher := newFakeRunServiceDispatcher()
+	service := mustNewRunService(t, repo, dispatcher, &fakeRunServiceAuditLogger{})
+
+	_, err := service.StopRun(context.Background(), StopDigitalEmployeeRunRequest{
+		TenantID:          repo.run.TenantID,
+		UserID:            uuid.New(),
+		DigitalEmployeeID: repo.run.DigitalEmployeeID,
+		RunID:             repo.run.ID,
+		Reason:            "  ",
+	})
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for blank stop reason, got %v", err)
+	}
+	if len(repo.statusUpdates) != 0 || len(dispatcher.commands) != 0 {
+		t.Fatalf("expected blank stop reason not to mutate run or dispatch, updates=%#v commands=%#v", repo.statusUpdates, dispatcher.commands)
+	}
+}
+
 func TestRunServiceStopRunRejectsAlreadyCancelling(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.run = validRunServiceRun(DigitalEmployeeRunStatusCancelling)
@@ -623,17 +675,20 @@ var (
 )
 
 type fakeRunServiceRepository struct {
-	preflight         RunPreflight
-	activeRun         *DigitalEmployeeRun
-	run               *DigitalEmployeeRun
-	createdRun        *DigitalEmployeeRun
-	createdRunCount   int
-	createRunRequests []CreateRunRecordRequest
-	statusUpdates     []UpdateRunStatusRequest
-	events            []CreateRunEventRecordRequest
-	commandReceipt    *RuntimeCommandReceipt
-	commandReceipts   []CreateRuntimeCommandReceiptRequest
-	receiptUpdates    []UpdateRuntimeCommandReceiptRequest
+	preflight           RunPreflight
+	activeRun           *DigitalEmployeeRun
+	run                 *DigitalEmployeeRun
+	createdRun          *DigitalEmployeeRun
+	createdRunCount     int
+	createRunRequests   []CreateRunRecordRequest
+	statusUpdates       []UpdateRunStatusRequest
+	events              []CreateRunEventRecordRequest
+	runEvents           []RuntimeCommandEventWriteback
+	listRunEventsTaskID uuid.UUID
+	listRunEventsRunID  uuid.UUID
+	commandReceipt      *RuntimeCommandReceipt
+	commandReceipts     []CreateRuntimeCommandReceiptRequest
+	receiptUpdates      []UpdateRuntimeCommandReceiptRequest
 }
 
 func newFakeRunServiceRepository() *fakeRunServiceRepository {
@@ -678,6 +733,12 @@ func (f *fakeRunServiceRepository) GetRunByCommandID(context.Context, uuid.UUID,
 
 func (f *fakeRunServiceRepository) ListRuns(context.Context, uuid.UUID, uuid.UUID, int32, int32) ([]*DigitalEmployeeRun, error) {
 	return nil, nil
+}
+
+func (f *fakeRunServiceRepository) ListRunEvents(_ context.Context, _ uuid.UUID, taskID, runID uuid.UUID, _ int32, _ int32) ([]RuntimeCommandEventWriteback, error) {
+	f.listRunEventsTaskID = taskID
+	f.listRunEventsRunID = runID
+	return f.runEvents, nil
 }
 
 func (f *fakeRunServiceRepository) CreateRun(_ context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error) {

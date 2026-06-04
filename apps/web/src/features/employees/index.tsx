@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Bot, Plus } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -263,9 +264,16 @@ function EmployeeRow({ apiBaseUrl, employee, fetcher }: EmployeeRowProps) {
           {instance.isError && !isUnbound ? <p className="mt-1 text-xs text-destructive">执行实例加载失败</p> : null}
         </div>
       </div>
-      <div className="text-left text-xs text-muted-foreground sm:text-right">
-        <p>{employee.risk_level || "medium"}</p>
-        <p className="mt-1 max-w-full truncate">{runtimeText}</p>
+      <div className="flex flex-col gap-2 text-left text-xs text-muted-foreground sm:items-end sm:text-right">
+        <div>
+          <p>{employee.risk_level || "medium"}</p>
+          <p className="mt-1 max-w-full truncate">{runtimeText}</p>
+        </div>
+        <Button asChild size="sm" type="button" variant="outline">
+          <Link params={{ employeeId: employee.id }} to="/employees/$employeeId">
+            详情
+          </Link>
+        </Button>
       </div>
     </div>
   );

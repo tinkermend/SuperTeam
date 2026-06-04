@@ -737,6 +737,10 @@ func (f *fakeRunWritebackRepository) HasRunEventSequence(_ context.Context, tena
 	return exists, nil
 }
 
+func (f *fakeRunWritebackRepository) ListRunEvents(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, int32, int32) ([]RuntimeCommandEventWriteback, error) {
+	return nil, nil
+}
+
 func (f *fakeRunWritebackRepository) CreateTaskEventIfAbsent(_ context.Context, req CreateRunEventRecordRequest) error {
 	key := fmt.Sprintf("%s:%s:%d", req.TenantID, req.RunID, req.SequenceNumber)
 	if _, exists := f.taskEventKeys[key]; exists {

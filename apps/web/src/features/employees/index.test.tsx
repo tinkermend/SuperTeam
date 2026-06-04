@@ -21,6 +21,12 @@ vi.mock("@/components/theme-switch", () => ({
   ThemeSwitch: () => <button type="button">Toggle theme</button>,
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, params, to }: { children: ReactNode; params?: Record<string, string>; to: string }) => (
+    <a href={params?.employeeId ? to.replace("$employeeId", encodeURIComponent(params.employeeId)) : to}>{children}</a>
+  ),
+}));
+
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
@@ -259,6 +265,9 @@ describe("EmployeesView", () => {
     await expect.element(screen.getByText("负责需求拆解和交付风险识别")).toBeVisible();
     await expect.element(screen.getByText("codex · ready")).toBeVisible();
     await expect.element(screen.getByText("33333333-3333-4333-8333-333333333333")).toBeVisible();
+    await expect
+      .element(screen.getByRole("link", { name: "详情" }))
+      .toHaveAttribute("href", "/employees/11111111-1111-4111-8111-111111111111");
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/digital-employees/11111111-1111-4111-8111-111111111111/execution-instance",
       expect.objectContaining({
