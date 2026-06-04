@@ -86,6 +86,40 @@ func TestDigitalEmployeeRunFromQueryMapsProviderTypeAndJSONFields(t *testing.T) 
 	require.Equal(t, "json", mapped.WorkProducts[0].Metadata["format"])
 }
 
+func TestRunPreflightFromQueryRejectsMissingTeam(t *testing.T) {
+	_, err := runPreflightFromQuery(queries.GetDigitalEmployeeRunPreflightRow{
+		TenantID:              uuid.New(),
+		TeamID:                uuid.NullUUID{},
+		DigitalEmployeeID:     uuid.New(),
+		DigitalEmployeeStatus: string(DigitalEmployeeStatusReady),
+		ExecutionInstanceID:   uuid.New(),
+		ExecutionStatus:       string(ExecutionInstanceStatusReady),
+		RuntimeNodeID:         uuid.New(),
+		NodeID:                "runtime-authoritative",
+		ProviderType:          "codex",
+		AgentHomeDir:          "/var/lib/superteam/agents/employee",
+		RuntimeSelector:       []byte(`{}`),
+		SessionPolicy:         []byte(`{}`),
+		WorkspacePolicy:       []byte(`{}`),
+	})
+
+	require.ErrorIs(t, err, ErrInvalidInput)
+}
+
+func TestMapCreateRunErrorMapsIdempotencyFingerprintMismatch(t *testing.T) {
+	idempotencyKey := "idem-1"
+
+	err := mapCreateRunError(pgx.ErrNoRows, CreateRunRecordRequest{
+		IdempotencyKey: &idempotencyKey,
+	})
+
+	require.ErrorIs(t, err, ErrConflict)
+	require.Contains(t, err.Error(), "idempotency fingerprint mismatch")
+
+	err = mapCreateRunError(pgx.ErrNoRows, CreateRunRecordRequest{})
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+}
+
 func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *testing.T) {
 	ctx := context.Background()
 	cfg, ok := employeeRunRepositoryTestConfig()

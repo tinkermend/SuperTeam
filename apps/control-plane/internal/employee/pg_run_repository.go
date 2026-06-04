@@ -30,6 +30,14 @@ func (r *PgRunRepository) GetRunPreflight(ctx context.Context, tenantID, employe
 		return RunPreflight{}, mapNoRows(err)
 	}
 
+	return runPreflightFromQuery(preflight)
+}
+
+func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) (RunPreflight, error) {
+	if !preflight.TeamID.Valid {
+		return RunPreflight{}, fmt.Errorf("%w: digital employee team_id is required for run preflight", ErrInvalidInput)
+	}
+
 	runtimeSelector, err := mapFromJSONB(preflight.RuntimeSelector, "runtime_selector")
 	if err != nil {
 		return RunPreflight{}, err
@@ -44,8 +52,8 @@ func (r *PgRunRepository) GetRunPreflight(ctx context.Context, tenantID, employe
 	}
 
 	return RunPreflight{
-		TenantID:              tenantID,
-		TeamID:                uuidFromNull(preflight.TeamID),
+		TenantID:              preflight.TenantID,
+		TeamID:                preflight.TeamID.UUID,
 		DigitalEmployeeID:     preflight.DigitalEmployeeID,
 		DigitalEmployeeStatus: DigitalEmployeeStatus(preflight.DigitalEmployeeStatus),
 		ExecutionInstanceID:   preflight.ExecutionInstanceID,
@@ -116,6 +124,10 @@ func (r *PgRunRepository) ListRuns(ctx context.Context, tenantID, employeeID uui
 }
 
 func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error) {
+	if req.TeamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: team_id is required for digital employee run", ErrInvalidInput)
+	}
+
 	params, err := jsonBytesFromMap(req.Params, "params")
 	if err != nil {
 		return nil, err
@@ -146,10 +158,17 @@ func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequ
 		GraceSec:               int4FromPtr(req.GraceSec),
 	})
 	if err != nil {
-		return nil, err
+		return nil, mapCreateRunError(err, req)
 	}
 
 	return r.GetRun(ctx, req.TenantID, req.DigitalEmployeeID, row.RunID)
+}
+
+func mapCreateRunError(err error, req CreateRunRecordRequest) error {
+	if errors.Is(err, pgx.ErrNoRows) && req.IdempotencyKey != nil {
+		return fmt.Errorf("%w: idempotency fingerprint mismatch", ErrConflict)
+	}
+	return err
 }
 
 func (r *PgRunRepository) UpdateRunStatus(ctx context.Context, req UpdateRunStatusRequest) (*DigitalEmployeeRun, error) {
