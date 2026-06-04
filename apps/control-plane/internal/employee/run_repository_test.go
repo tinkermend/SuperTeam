@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
@@ -118,6 +119,24 @@ func TestMapCreateRunErrorMapsIdempotencyFingerprintMismatch(t *testing.T) {
 
 	err = mapCreateRunError(pgx.ErrNoRows, CreateRunRecordRequest{})
 	require.ErrorIs(t, err, pgx.ErrNoRows)
+}
+
+func TestPgRunRepositoryCreateRunRejectsMissingTeam(t *testing.T) {
+	repo := NewPgRunRepository(nil)
+
+	_, err := repo.CreateRun(context.Background(), CreateRunRecordRequest{})
+
+	require.ErrorIs(t, err, ErrInvalidInput)
+}
+
+func TestPgRunRepositoryCreateRunMapsIdempotencyFingerprintMismatch(t *testing.T) {
+	idempotencyKey := "idem-1"
+	repo := NewPgRunRepository(queries.New(fakeRunRepositoryDBTX{rowErr: pgx.ErrNoRows}))
+
+	_, err := repo.CreateRun(context.Background(), validCreateRunRecordRequest(idempotencyKey))
+
+	require.ErrorIs(t, err, ErrConflict)
+	require.Contains(t, err.Error(), "idempotency fingerprint mismatch")
 }
 
 func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *testing.T) {
@@ -250,6 +269,49 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 	require.Equal(t, executionInstanceID, preflight.ExecutionInstanceID)
 	require.Equal(t, "codex", preflight.ProviderType)
 	require.Equal(t, "isolated", preflight.WorkspacePolicy["workspace"])
+}
+
+func validCreateRunRecordRequest(idempotencyKey string) CreateRunRecordRequest {
+	return CreateRunRecordRequest{
+		IdempotencyKey:      &idempotencyKey,
+		TenantID:            uuid.New(),
+		DigitalEmployeeID:   uuid.New(),
+		TeamID:              uuid.New(),
+		Title:               "修复一个测试失败",
+		Priority:            1,
+		ProviderType:        "codex",
+		TargetNodeID:        "runtime-a",
+		Params:              map[string]any{"objective": "修复一个测试失败"},
+		NodeID:              "runtime-a",
+		RuntimeNodeID:       uuid.New(),
+		RunStatus:           DigitalEmployeeRunStatusDispatching,
+		CommandID:           "cmd-1",
+		ExecutionInstanceID: uuid.New(),
+	}
+}
+
+type fakeRunRepositoryDBTX struct {
+	rowErr error
+}
+
+func (f fakeRunRepositoryDBTX) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, fmt.Errorf("unexpected Exec")
+}
+
+func (f fakeRunRepositoryDBTX) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+	return nil, fmt.Errorf("unexpected Query")
+}
+
+func (f fakeRunRepositoryDBTX) QueryRow(context.Context, string, ...interface{}) pgx.Row {
+	return fakeRunRepositoryRow{err: f.rowErr}
+}
+
+type fakeRunRepositoryRow struct {
+	err error
+}
+
+func (r fakeRunRepositoryRow) Scan(...interface{}) error {
+	return r.err
 }
 
 type employeeRunRepositoryIntegrationConfig struct {
