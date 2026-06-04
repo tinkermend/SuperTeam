@@ -81,6 +81,21 @@ func (r *ConnectionRegistry) Dispatch(ctx context.Context, nodeID string, comman
 	return connection.send(ctx, command)
 }
 
+func (r *ConnectionRegistry) IsConnected(nodeID string) bool {
+	r.mu.Lock()
+	connection := r.connections[nodeID]
+	r.mu.Unlock()
+	if connection == nil {
+		return false
+	}
+	select {
+	case <-connection.Done():
+		return false
+	default:
+		return true
+	}
+}
+
 func (c *RuntimeConnection) Done() <-chan struct{} {
 	return c.closed
 }

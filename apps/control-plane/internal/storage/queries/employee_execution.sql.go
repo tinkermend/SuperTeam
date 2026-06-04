@@ -261,7 +261,28 @@ SELECT
     dei.agent_home_dir,
     dei.runtime_selector,
     dei.session_policy,
-    dei.workspace_policy
+    dei.workspace_policy,
+    EXISTS (
+        SELECT 1
+        FROM digital_employee_effective_configs dec
+        WHERE dec.tenant_id = de.tenant_id
+          AND dec.digital_employee_id = de.id
+          AND dec.status = 'approved'
+          AND dec.revoked_at IS NULL
+    ) AS has_approved_effective_config,
+    EXISTS (
+        SELECT 1
+        FROM runtime_capabilities rc
+        WHERE rc.tenant_id = de.tenant_id
+          AND rc.runtime_node_id = dei.runtime_node_id
+          AND rc.capability_type = 'provider'
+          AND rc.provider_type = dei.provider_type
+          AND rc.available = true
+          AND rc.status = 'healthy'
+          AND rc.health_status = 'healthy'
+          AND rc.disabled_at IS NULL
+          AND rc.archived_at IS NULL
+    ) AS provider_healthy
 FROM digital_employees de
 JOIN digital_employee_execution_instances dei
   ON dei.digital_employee_id = de.id
@@ -283,19 +304,21 @@ type GetDigitalEmployeeRunPreflightParams struct {
 }
 
 type GetDigitalEmployeeRunPreflightRow struct {
-	TenantID              uuid.UUID     `json:"tenant_id"`
-	TeamID                uuid.NullUUID `json:"team_id"`
-	DigitalEmployeeID     uuid.UUID     `json:"digital_employee_id"`
-	DigitalEmployeeStatus string        `json:"digital_employee_status"`
-	ExecutionInstanceID   uuid.UUID     `json:"execution_instance_id"`
-	ExecutionStatus       string        `json:"execution_status"`
-	RuntimeNodeID         uuid.UUID     `json:"runtime_node_id"`
-	NodeID                string        `json:"node_id"`
-	ProviderType          string        `json:"provider_type"`
-	AgentHomeDir          string        `json:"agent_home_dir"`
-	RuntimeSelector       []byte        `json:"runtime_selector"`
-	SessionPolicy         []byte        `json:"session_policy"`
-	WorkspacePolicy       []byte        `json:"workspace_policy"`
+	TenantID                   uuid.UUID     `json:"tenant_id"`
+	TeamID                     uuid.NullUUID `json:"team_id"`
+	DigitalEmployeeID          uuid.UUID     `json:"digital_employee_id"`
+	DigitalEmployeeStatus      string        `json:"digital_employee_status"`
+	ExecutionInstanceID        uuid.UUID     `json:"execution_instance_id"`
+	ExecutionStatus            string        `json:"execution_status"`
+	RuntimeNodeID              uuid.UUID     `json:"runtime_node_id"`
+	NodeID                     string        `json:"node_id"`
+	ProviderType               string        `json:"provider_type"`
+	AgentHomeDir               string        `json:"agent_home_dir"`
+	RuntimeSelector            []byte        `json:"runtime_selector"`
+	SessionPolicy              []byte        `json:"session_policy"`
+	WorkspacePolicy            []byte        `json:"workspace_policy"`
+	HasApprovedEffectiveConfig bool          `json:"has_approved_effective_config"`
+	ProviderHealthy            bool          `json:"provider_healthy"`
 }
 
 func (q *Queries) GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDigitalEmployeeRunPreflightParams) (GetDigitalEmployeeRunPreflightRow, error) {
@@ -315,6 +338,8 @@ func (q *Queries) GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDig
 		&i.RuntimeSelector,
 		&i.SessionPolicy,
 		&i.WorkspacePolicy,
+		&i.HasApprovedEffectiveConfig,
+		&i.ProviderHealthy,
 	)
 	return i, err
 }

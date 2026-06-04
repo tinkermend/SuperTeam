@@ -24,19 +24,21 @@ type DigitalEmployeeRunRepository interface {
 }
 
 type RunPreflight struct {
-	TenantID              uuid.UUID
-	TeamID                uuid.UUID
-	DigitalEmployeeID     uuid.UUID
-	DigitalEmployeeStatus DigitalEmployeeStatus
-	ExecutionInstanceID   uuid.UUID
-	ExecutionStatus       ExecutionInstanceStatus
-	RuntimeNodeID         uuid.UUID
-	NodeID                string
-	ProviderType          string
-	AgentHomeDir          string
-	RuntimeSelector       map[string]any
-	SessionPolicy         map[string]any
-	WorkspacePolicy       map[string]any
+	TenantID                   uuid.UUID
+	TeamID                     uuid.UUID
+	DigitalEmployeeID          uuid.UUID
+	DigitalEmployeeStatus      DigitalEmployeeStatus
+	ExecutionInstanceID        uuid.UUID
+	ExecutionStatus            ExecutionInstanceStatus
+	RuntimeNodeID              uuid.UUID
+	NodeID                     string
+	ProviderType               string
+	AgentHomeDir               string
+	RuntimeSelector            map[string]any
+	SessionPolicy              map[string]any
+	WorkspacePolicy            map[string]any
+	HasApprovedEffectiveConfig bool
+	ProviderHealthy            bool
 }
 
 type CreateRunRecordRequest struct {

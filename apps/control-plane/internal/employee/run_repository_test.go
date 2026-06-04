@@ -165,6 +165,8 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 	runtimeNodeID := uuid.New()
 	employeeID := uuid.New()
 	executionInstanceID := uuid.New()
+	teamConfigRevisionID := uuid.New()
+	employeeConfigRevisionID := uuid.New()
 	authoritativeNodeID := "runtime-authoritative"
 
 	_, err = conn.Exec(ctx, `
@@ -196,6 +198,42 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 			2,
 			0,
 			'online',
+			'{}'::jsonb,
+			NOW()
+		);
+
+		INSERT INTO runtime_capabilities (
+			tenant_id,
+			runtime_node_id,
+			capability_type,
+			capability_key,
+			provider_type,
+			provider_version,
+			binary_path,
+			available,
+			workspace_base_dir,
+			capacity,
+			labels,
+			status,
+			details,
+			health_status,
+			metadata,
+			last_seen_at
+		) VALUES (
+			$1,
+			$3,
+			'provider',
+			'provider:codex',
+			'codex',
+			'1.0.0',
+			'/usr/local/bin/codex',
+			true,
+			'/tmp/superteam',
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'healthy',
+			'{}'::jsonb,
+			'healthy',
 			'{}'::jsonb,
 			NOW()
 		);
@@ -257,7 +295,83 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 			NOW(),
 			'{}'::jsonb
 		);
-	`, tenantID, teamID, runtimeNodeID, authoritativeNodeID, employeeID, executionInstanceID)
+
+		INSERT INTO tenant_team_config_revisions (
+			id,
+			tenant_id,
+			team_id,
+			revision_number,
+			constitution,
+			capability_policy,
+			context_policy,
+			approval_policy,
+			artifact_contract,
+			internal_collaboration_policy,
+			runtime_scope_policy,
+			status,
+			approved_at
+		) VALUES (
+			$7,
+			$1,
+			$2,
+			1,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'active',
+			NOW()
+		);
+
+		INSERT INTO digital_employee_config_revisions (
+			id,
+			tenant_id,
+			digital_employee_id,
+			revision_number,
+			role_profile,
+			constitution_addendum,
+			capability_selection,
+			context_policy_override,
+			approval_policy_override,
+			output_contract_addendum,
+			status
+		) VALUES (
+			$8,
+			$1,
+			$5,
+			1,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'draft'
+		);
+
+		INSERT INTO digital_employee_effective_configs (
+			tenant_id,
+			digital_employee_id,
+			tenant_team_config_revision_id,
+			employee_config_revision_id,
+			effective_config_snapshot,
+			validation_result,
+			status,
+			approved_at
+		) VALUES (
+			$1,
+			$5,
+			$7,
+			$8,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'approved',
+			NOW()
+		);
+	`, tenantID, teamID, runtimeNodeID, authoritativeNodeID, employeeID, executionInstanceID, teamConfigRevisionID, employeeConfigRevisionID)
 	require.NoError(t, err)
 
 	repo := NewPgRunRepository(queries.New(conn))
@@ -269,6 +383,8 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 	require.Equal(t, executionInstanceID, preflight.ExecutionInstanceID)
 	require.Equal(t, "codex", preflight.ProviderType)
 	require.Equal(t, "isolated", preflight.WorkspacePolicy["workspace"])
+	require.True(t, preflight.HasApprovedEffectiveConfig)
+	require.True(t, preflight.ProviderHealthy)
 }
 
 func validCreateRunRecordRequest(idempotencyKey string) CreateRunRecordRequest {

@@ -52,19 +52,21 @@ func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) 
 	}
 
 	return RunPreflight{
-		TenantID:              preflight.TenantID,
-		TeamID:                preflight.TeamID.UUID,
-		DigitalEmployeeID:     preflight.DigitalEmployeeID,
-		DigitalEmployeeStatus: DigitalEmployeeStatus(preflight.DigitalEmployeeStatus),
-		ExecutionInstanceID:   preflight.ExecutionInstanceID,
-		ExecutionStatus:       ExecutionInstanceStatus(preflight.ExecutionStatus),
-		RuntimeNodeID:         preflight.RuntimeNodeID,
-		NodeID:                preflight.NodeID,
-		ProviderType:          preflight.ProviderType,
-		AgentHomeDir:          preflight.AgentHomeDir,
-		RuntimeSelector:       runtimeSelector,
-		SessionPolicy:         sessionPolicy,
-		WorkspacePolicy:       workspacePolicy,
+		TenantID:                   preflight.TenantID,
+		TeamID:                     preflight.TeamID.UUID,
+		DigitalEmployeeID:          preflight.DigitalEmployeeID,
+		DigitalEmployeeStatus:      DigitalEmployeeStatus(preflight.DigitalEmployeeStatus),
+		ExecutionInstanceID:        preflight.ExecutionInstanceID,
+		ExecutionStatus:            ExecutionInstanceStatus(preflight.ExecutionStatus),
+		RuntimeNodeID:              preflight.RuntimeNodeID,
+		NodeID:                     preflight.NodeID,
+		ProviderType:               preflight.ProviderType,
+		AgentHomeDir:               preflight.AgentHomeDir,
+		RuntimeSelector:            runtimeSelector,
+		SessionPolicy:              sessionPolicy,
+		WorkspacePolicy:            workspacePolicy,
+		HasApprovedEffectiveConfig: preflight.HasApprovedEffectiveConfig,
+		ProviderHealthy:            preflight.ProviderHealthy,
 	}, nil
 }
 
