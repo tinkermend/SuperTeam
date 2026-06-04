@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SuperTeam Tab Style Options</title>
+    <style>
+      :root {
+        --background: #f8fbf7;
+        --foreground: #07140e;
+        --muted-foreground: #64748b;
+        --primary: #2cc7aa;
+        --primary-deep: #0a806f;
+        --primary-soft: #e6fbf5;
+        --glass-border: rgba(156, 242, 218, 0.44);
+        --glass-highlight: rgba(255, 255, 255, 0.92);
+        --shadow-low: 0 18px 45px rgba(38, 72, 56, 0.08);
+        --shadow-mid: 0 26px 80px rgba(38, 72, 56, 0.13);
+        --runtime: #0891b2;
+        --permission: #6366f1;
+        --warning: #f59e0b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--foreground);
+        font-family:
+          Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system,
+          BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at 18% 4%, rgba(192, 246, 239, 0.36), transparent 32rem),
+          radial-gradient(circle at 58% 0%, rgba(255, 239, 207, 0.5), transparent 36rem),
+          radial-gradient(circle at 94% 5%, rgba(255, 244, 220, 0.44), transparent 34rem),
+          linear-gradient(135deg, rgba(244, 253, 249, 0.98), rgba(255, 250, 232, 0.94) 48%, rgba(235, 248, 244, 0.98)),
+          var(--background);
+      }
+
+      .frame {
+        width: 1800px;
+        min-height: 520px;
+        padding: 38px 42px 40px;
+      }
+
+      .divider {
+        height: 1px;
+        margin-bottom: 28px;
+        background: linear-gradient(90deg, transparent, rgba(44, 199, 170, 0.34), rgba(8, 145, 178, 0.2), transparent);
+      }
+
+      .label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 16px;
+        padding: 6px 10px;
+        border: 1px solid rgba(156, 242, 218, 0.46);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.54);
+        color: #0a806f;
+        font-size: 13px;
+        font-weight: 650;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+      }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: var(--primary);
+        box-shadow: 0 0 0 4px rgba(44, 199, 170, 0.12);
+      }
+
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        align-items: center;
+      }
+
+      .tab {
+        position: relative;
+        display: flex;
+        min-width: 0;
+        height: 48px;
+        align-items: center;
+        justify-content: center;
+        padding: 0 22px;
+        border: 0;
+        color: #0b1b16;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: 0;
+        white-space: nowrap;
+      }
+
+      .option-a .tab-list {
+        position: relative;
+        overflow: hidden;
+        padding: 5px;
+        border: 1px solid rgba(156, 242, 218, 0.5);
+        border-radius: 10px;
+        background:
+          radial-gradient(circle at 14% 0%, rgba(255, 255, 255, 0.88), transparent 30%),
+          linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(239, 250, 247, 0.58));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.92),
+          0 18px 45px rgba(38, 72, 56, 0.08);
+        backdrop-filter: blur(20px) saturate(1.18);
+      }
+
+      .option-a .tab-list::before {
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.34), transparent 30%, rgba(156, 242, 218, 0.16)),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.46), transparent 68%);
+        content: "";
+        pointer-events: none;
+      }
+
+      .option-a .tab {
+        z-index: 1;
+        border-radius: 8px;
+      }
+
+      .option-a .tab.active {
+        border: 1px solid rgba(255, 255, 255, 0.9);
+        color: #042f2e;
+        background:
+          radial-gradient(circle at 24% 0%, rgba(255, 255, 255, 0.95), transparent 34%),
+          linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(230, 251, 245, 0.84));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.95),
+          0 14px 34px rgba(38, 72, 56, 0.13),
+          0 0 0 1px rgba(44, 199, 170, 0.08);
+      }
+
+      .option-a .tab.active::after {
+        position: absolute;
+        right: 26px;
+        bottom: 9px;
+        left: 26px;
+        height: 2px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--primary), var(--primary-deep));
+        content: "";
+      }
+
+      .option-a .tab:not(.active)::after {
+        position: absolute;
+        right: 0;
+        width: 1px;
+        height: 18px;
+        background: rgba(100, 116, 139, 0.12);
+        content: "";
+      }
+
+      .option-a .tab:last-child::after,
+      .option-a .tab.active::after {
+        right: 26px;
+      }
+
+      .option-b .tab-list {
+        position: relative;
+        overflow: hidden;
+        padding: 0 6px;
+        border-bottom: 1px solid rgba(44, 199, 170, 0.18);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.18)),
+          linear-gradient(90deg, rgba(230, 251, 245, 0.74), rgba(255, 255, 255, 0.55));
+        box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.72);
+      }
+
+      .option-b .tab {
+        height: 58px;
+        color: #25423a;
+      }
+
+      .option-b .tab::before {
+        position: absolute;
+        inset: 10px 8px 9px;
+        border-radius: 8px;
+        background: transparent;
+        content: "";
+        transition: background 150ms ease;
+      }
+
+      .option-b .tab.active {
+        color: #063f39;
+      }
+
+      .option-b .tab.active::before {
+        border: 1px solid rgba(156, 242, 218, 0.48);
+        background:
+          radial-gradient(circle at 22% 0%, rgba(255, 255, 255, 0.94), transparent 34%),
+          linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(230, 251, 245, 0.58));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.92),
+          0 12px 28px rgba(44, 199, 170, 0.1);
+      }
+
+      .option-b .tab span {
+        position: relative;
+        z-index: 1;
+      }
+
+      .option-b .tab.active::after {
+        position: absolute;
+        right: 30px;
+        bottom: 0;
+        left: 30px;
+        height: 3px;
+        border-radius: 999px 999px 0 0;
+        background:
+          linear-gradient(90deg, rgba(8, 145, 178, 0), var(--primary), var(--runtime), rgba(8, 145, 178, 0)),
+          var(--primary);
+        box-shadow: 0 -8px 24px rgba(44, 199, 170, 0.22);
+        content: "";
+      }
+
+      .option-b .tab:not(.active) span {
+        color: #3d5f56;
+      }
+
+      .option-c .tab-list {
+        position: relative;
+        overflow: hidden;
+        padding: 5px;
+        border: 1px solid rgba(156, 242, 218, 0.5);
+        border-radius: 10px;
+        background:
+          radial-gradient(circle at 14% 0%, rgba(255, 255, 255, 0.88), transparent 30%),
+          linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(239, 250, 247, 0.58));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.92),
+          0 18px 45px rgba(38, 72, 56, 0.08);
+        backdrop-filter: blur(20px) saturate(1.18);
+      }
+
+      .option-c .tab-list::before {
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.34), transparent 30%, rgba(156, 242, 218, 0.16)),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.46), transparent 68%);
+        content: "";
+        pointer-events: none;
+      }
+
+      .option-c .tab {
+        z-index: 1;
+        border-radius: 8px;
+      }
+
+      .option-c .tab.active {
+        border: 1px solid rgba(255, 255, 255, 0.9);
+        color: #042f2e;
+        background:
+          radial-gradient(circle at 24% 0%, rgba(255, 255, 255, 0.95), transparent 34%),
+          linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(230, 251, 245, 0.84));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.95),
+          0 14px 34px rgba(38, 72, 56, 0.13),
+          0 0 0 1px rgba(44, 199, 170, 0.08);
+      }
+
+      .option-c .tab.active::after {
+        position: absolute;
+        right: 30px;
+        bottom: 2px;
+        left: 30px;
+        height: 3px;
+        border-radius: 999px 999px 0 0;
+        background:
+          linear-gradient(90deg, rgba(8, 145, 178, 0), var(--primary), var(--runtime), rgba(8, 145, 178, 0)),
+          var(--primary);
+        box-shadow: 0 -8px 24px rgba(44, 199, 170, 0.2);
+        content: "";
+      }
+
+      .option-c .tab:not(.active)::after {
+        position: absolute;
+        right: 0;
+        width: 1px;
+        height: 18px;
+        background: rgba(100, 116, 139, 0.12);
+        content: "";
+      }
+
+      .option-c .tab:last-child::after,
+      .option-c .tab.active::after {
+        right: 30px;
+      }
+
+      .content {
+        display: grid;
+        grid-template-columns: 1.3fr 0.7fr;
+        gap: 18px;
+        margin-top: 22px;
+      }
+
+      .panel {
+        min-height: 132px;
+        padding: 22px;
+        border: 1px solid rgba(255, 255, 255, 0.86);
+        border-radius: 14px;
+        background:
+          linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.62)),
+          rgba(255, 255, 255, 0.72);
+        box-shadow: var(--shadow-low);
+        backdrop-filter: blur(20px) saturate(1.15);
+      }
+
+      .panel-title {
+        margin: 0 0 10px;
+        font-size: 18px;
+        font-weight: 760;
+      }
+
+      .panel-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-top: 12px;
+        color: var(--muted-foreground);
+        font-size: 14px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: rgba(230, 251, 245, 0.78);
+        color: #0a806f;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .mini-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+
+      .rail {
+        display: grid;
+        gap: 10px;
+      }
+
+      .rail-item {
+        height: 24px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(44, 199, 170, 0.18), rgba(8, 145, 178, 0.08));
+      }
+
+      .rail-item:nth-child(2) {
+        width: 74%;
+        background: linear-gradient(90deg, rgba(99, 102, 241, 0.18), rgba(139, 92, 246, 0.08));
+      }
+
+      .rail-item:nth-child(3) {
+        width: 58%;
+        background: linear-gradient(90deg, rgba(245, 158, 11, 0.2), rgba(245, 158, 11, 0.06));
+      }
+    </style>
+  </head>
+  <body>
+    <main class="frame option-a" id="option-a">
+      <div class="divider"></div>
+      <p class="label"><span class="dot"></span>方案 A / 液态玻璃胶囊 Tab</p>
+      <section class="tab-list">
+        <div class="tabs">
+          <div class="tab"><span>概览</span></div>
+          <div class="tab"><span>成员</span></div>
+          <div class="tab active"><span>数字员工</span></div>
+          <div class="tab"><span>能力与知识</span></div>
+          <div class="tab"><span>治理策略</span></div>
+          <div class="tab"><span>审计记录</span></div>
+        </div>
+      </section>
+      <section class="content">
+        <div class="panel">
+          <h2 class="panel-title">数字员工</h2>
+          <div class="panel-row">
+            <span class="chip"><span class="mini-dot"></span>执行角色</span>
+            <span>任务、能力、审批边界保持在当前团队上下文中。</span>
+          </div>
+          <div class="panel-row">激活态更像一个可选中的玻璃面板，适合团队详情、权限中心这类主内容分组。</div>
+        </div>
+        <div class="panel rail">
+          <div class="rail-item"></div>
+          <div class="rail-item"></div>
+          <div class="rail-item"></div>
+        </div>
+      </section>
+    </main>
+    <main class="frame option-b" id="option-b">
+      <div class="divider"></div>
+      <p class="label"><span class="dot"></span>方案 B / 分隔式流光 Tab</p>
+      <section class="tab-list">
+        <div class="tabs">
+          <div class="tab"><span>概览</span></div>
+          <div class="tab"><span>成员</span></div>
+          <div class="tab active"><span>数字员工</span></div>
+          <div class="tab"><span>能力与知识</span></div>
+          <div class="tab"><span>治理策略</span></div>
+          <div class="tab"><span>审计记录</span></div>
+        </div>
+      </section>
+      <section class="content">
+        <div class="panel">
+          <h2 class="panel-title">数字员工</h2>
+          <div class="panel-row">
+            <span class="chip"><span class="mini-dot"></span>执行角色</span>
+            <span>保留后台工具的扫描效率，active 由底部主色流光和轻面板共同表达。</span>
+          </div>
+          <div class="panel-row">更克制，适合表格、审计、权限等长时间浏览页面。</div>
+        </div>
+        <div class="panel rail">
+          <div class="rail-item"></div>
+          <div class="rail-item"></div>
+          <div class="rail-item"></div>
+        </div>
+      </section>
+    </main>
+    <main class="frame option-c" id="option-c">
+      <div class="divider"></div>
+      <p class="label"><span class="dot"></span>方案 A-2 / 玻璃胶囊 + 底边流光</p>
+      <section class="tab-list">
+        <div class="tabs">
+          <div class="tab"><span>概览</span></div>
+          <div class="tab"><span>成员</span></div>
+          <div class="tab active"><span>数字员工</span></div>
+          <div class="tab"><span>能力与知识</span></div>
+          <div class="tab"><span>治理策略</span></div>
+          <div class="tab"><span>审计记录</span></div>
+        </div>
+      </section>
+      <section class="content">
+        <div class="panel">
+          <h2 class="panel-title">数字员工</h2>
+          <div class="panel-row">
+            <span class="chip"><span class="mini-dot"></span>执行角色</span>
+            <span>保留 A 的玻璃选中面，指示线下移为底边状态锚点。</span>
+          </div>
+          <div class="panel-row">选中态由面板质感负责，底边流光只做辅助定位，不干扰中文标签阅读。</div>
+        </div>
+        <div class="panel rail">
+          <div class="rail-item"></div>
+          <div class="rail-item"></div>
+          <div class="rail-item"></div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
