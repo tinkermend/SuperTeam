@@ -96,6 +96,21 @@ func (r *PgRunRepository) GetRun(ctx context.Context, tenantID, employeeID, runI
 	return digitalEmployeeRunFromQuery(run), nil
 }
 
+func (r *PgRunRepository) GetRunByID(ctx context.Context, tenantID, runID uuid.UUID) (*DigitalEmployeeRun, error) {
+	run, err := r.q.GetTaskRun(ctx, queries.GetTaskRunParams{
+		TenantID: uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
+		ID:       runID,
+	})
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	mapped := digitalEmployeeRunFromQuery(run)
+	if mapped.DigitalEmployeeID == uuid.Nil || mapped.CommandID == "" {
+		return nil, ErrNotFound
+	}
+	return mapped, nil
+}
+
 func (r *PgRunRepository) GetRunByCommandID(ctx context.Context, tenantID uuid.UUID, commandID string) (*DigitalEmployeeRun, error) {
 	run, err := r.q.GetDigitalEmployeeRunByCommandID(ctx, queries.GetDigitalEmployeeRunByCommandIDParams{
 		TenantID:  tenantID,

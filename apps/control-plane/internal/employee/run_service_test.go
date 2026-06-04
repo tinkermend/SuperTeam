@@ -655,6 +655,19 @@ func (f *fakeRunServiceRepository) GetRun(_ context.Context, tenantID, employeeI
 	return cloneRun(f.run), nil
 }
 
+func (f *fakeRunServiceRepository) GetRunByID(_ context.Context, tenantID, runID uuid.UUID) (*DigitalEmployeeRun, error) {
+	if f.run != nil && f.run.TenantID == tenantID && f.run.ID == runID {
+		return cloneRun(f.run), nil
+	}
+	if f.activeRun != nil && f.activeRun.TenantID == tenantID && f.activeRun.ID == runID {
+		return cloneRun(f.activeRun), nil
+	}
+	if f.createdRun != nil && f.createdRun.TenantID == tenantID && f.createdRun.ID == runID {
+		return cloneRun(f.createdRun), nil
+	}
+	return nil, ErrNotFound
+}
+
 func (f *fakeRunServiceRepository) GetRunByCommandID(context.Context, uuid.UUID, string) (*DigitalEmployeeRun, error) {
 	return nil, ErrNotFound
 }

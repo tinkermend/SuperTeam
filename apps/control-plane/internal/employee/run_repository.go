@@ -11,6 +11,7 @@ type DigitalEmployeeRunRepository interface {
 	GetRunPreflight(ctx context.Context, tenantID, employeeID uuid.UUID) (RunPreflight, error)
 	GetActiveRun(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeRun, error)
 	GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error)
+	GetRunByID(ctx context.Context, tenantID, runID uuid.UUID) (*DigitalEmployeeRun, error)
 	GetRunByCommandID(ctx context.Context, tenantID uuid.UUID, commandID string) (*DigitalEmployeeRun, error)
 	ListRuns(ctx context.Context, tenantID, employeeID uuid.UUID, limit, offset int32) ([]*DigitalEmployeeRun, error)
 	CreateRun(ctx context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error)
@@ -82,6 +83,7 @@ type UpdateRunStatusRequest struct {
 	ExitCode                  *int32
 	Signal                    *string
 	ProviderSessionExternalID *string
+	TimedOut                  bool
 }
 
 type CreateRunEventRecordRequest struct {
