@@ -199,17 +199,19 @@ type DigitalEmployeeExecutionInstance struct {
 }
 
 type RuntimeProvisioningPreflight struct {
-	TenantID             uuid.UUID
-	TeamID               uuid.UUID
-	RuntimeNodeID        uuid.UUID
-	NodeID               string
-	AgentHomeDir         string
-	GovernanceSnapshot   map[string]any
-	HasActiveTeamConfig  bool
-	RuntimeOnline        bool
-	EnrollmentApproved   bool
-	RuntimeSessionActive bool
-	ProviderAvailable    bool
+	TenantID              uuid.UUID
+	TeamID                uuid.UUID
+	RuntimeNodeID         uuid.UUID
+	NodeID                string
+	AgentHomeDir          string
+	GovernanceSnapshot    map[string]any
+	HasActiveTeamConfig   bool
+	RuntimeOnline         bool
+	EnrollmentApproved    bool
+	RuntimeSessionActive  bool
+	ProviderAvailable     bool
+	ProviderPolicyAllowed bool
+	RuntimePolicyAllowed  bool
 }
 
 type CreateDraftRequest struct {

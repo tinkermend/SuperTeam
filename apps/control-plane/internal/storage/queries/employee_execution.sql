@@ -222,12 +222,46 @@ SELECT
     EXISTS (
         SELECT 1
         FROM runtime_sessions rs
+        JOIN runtime_enrollments re
+          ON re.id = rs.enrollment_id
+         AND re.tenant_id = rs.tenant_id
+         AND re.runtime_node_id = rs.runtime_node_id
+         AND re.status = 'approved'
+         AND re.rejected_at IS NULL
+         AND re.revoked_at IS NULL
         WHERE rs.tenant_id = tt.tenant_id
           AND rs.runtime_node_id = rn.id
           AND rs.expires_at > NOW()
           AND rs.revoked_at IS NULL
     )::boolean AS runtime_session_active,
-    (provider_capability.id IS NOT NULL)::boolean AS provider_available
+    (provider_capability.id IS NOT NULL)::boolean AS provider_available,
+    (
+        active_team_config.id IS NOT NULL
+        AND CASE
+            WHEN NOT (active_team_config.capability_policy ? 'allowed_provider_types') THEN true
+            WHEN jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array' THEN
+                jsonb_array_length(active_team_config.capability_policy -> 'allowed_provider_types') = 0
+                OR (active_team_config.capability_policy -> 'allowed_provider_types') ? sqlc.arg('provider_type')::varchar
+            ELSE false
+        END
+    )::boolean AS provider_policy_allowed,
+    (
+        active_team_config.id IS NOT NULL
+        AND CASE
+            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids') THEN true
+            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array' THEN
+                jsonb_array_length(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 0
+                OR (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
+            ELSE false
+        END
+        AND CASE
+            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_node_ids') THEN true
+            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 'array' THEN
+                jsonb_array_length(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 0
+                OR (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
+            ELSE false
+        END
+    )::boolean AS runtime_policy_allowed
 FROM tenant_teams tt
 JOIN runtime_nodes rn
   ON rn.id = sqlc.arg('runtime_node_id')::uuid

@@ -366,7 +366,7 @@ func (r *PgRunRepository) CreateProviderSessionEventIfAbsent(ctx context.Context
 }
 
 func (r *PgRunRepository) CreateCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error {
-	payload, err := jsonBytesFromMap(req.Payload, "payload")
+	payload, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Payload), "payload")
 	if err != nil {
 		return err
 	}

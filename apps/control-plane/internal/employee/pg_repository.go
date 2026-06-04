@@ -116,17 +116,19 @@ func (r *PgRepository) GetRuntimeProvisioningPreflight(ctx context.Context, tena
 		return RuntimeProvisioningPreflight{}, err
 	}
 	return RuntimeProvisioningPreflight{
-		TenantID:             preflight.TenantID,
-		TeamID:               preflight.TeamID,
-		RuntimeNodeID:        preflight.RuntimeNodeID,
-		NodeID:               preflight.NodeID,
-		AgentHomeDir:         preflight.AgentHomeDir,
-		GovernanceSnapshot:   governanceSnapshot,
-		HasActiveTeamConfig:  preflight.HasActiveTeamConfig,
-		RuntimeOnline:        preflight.RuntimeOnline,
-		EnrollmentApproved:   preflight.EnrollmentApproved,
-		RuntimeSessionActive: preflight.RuntimeSessionActive,
-		ProviderAvailable:    preflight.ProviderAvailable,
+		TenantID:              preflight.TenantID,
+		TeamID:                preflight.TeamID,
+		RuntimeNodeID:         preflight.RuntimeNodeID,
+		NodeID:                preflight.NodeID,
+		AgentHomeDir:          preflight.AgentHomeDir,
+		GovernanceSnapshot:    governanceSnapshot,
+		HasActiveTeamConfig:   preflight.HasActiveTeamConfig,
+		RuntimeOnline:         preflight.RuntimeOnline,
+		EnrollmentApproved:    preflight.EnrollmentApproved,
+		RuntimeSessionActive:  preflight.RuntimeSessionActive,
+		ProviderAvailable:     preflight.ProviderAvailable,
+		ProviderPolicyAllowed: preflight.ProviderPolicyAllowed,
+		RuntimePolicyAllowed:  preflight.RuntimePolicyAllowed,
 	}, nil
 }
 
@@ -189,7 +191,7 @@ func (r *PgRepository) UpsertDigitalEmployeeExecutionInstance(ctx context.Contex
 }
 
 func (r *PgRepository) CreateRuntimeCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error {
-	payload, err := jsonbFromMap(req.Payload, "payload")
+	payload, err := jsonbFromMap(redactRuntimeEventPayload(req.Payload), "payload")
 	if err != nil {
 		return err
 	}

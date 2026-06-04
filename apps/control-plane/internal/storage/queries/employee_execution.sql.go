@@ -407,8 +407,8 @@ const GetRuntimeProvisioningPreflight = `-- name: GetRuntimeProvisioningPrefligh
 WITH active_team_config AS (
     SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
     FROM tenant_team_config_revisions
-    WHERE tenant_id = $2::uuid
-      AND team_id = $3::uuid
+    WHERE tenant_id = $3::uuid
+      AND team_id = $4::uuid
       AND status = 'active'
       AND archived_at IS NULL
     ORDER BY revision_number DESC
@@ -417,10 +417,10 @@ WITH active_team_config AS (
 provider_capability AS (
     SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
     FROM runtime_capabilities
-    WHERE tenant_id = $2::uuid
-      AND runtime_node_id = $1::uuid
+    WHERE tenant_id = $3::uuid
+      AND runtime_node_id = $2::uuid
       AND capability_type = 'provider'
-      AND provider_type = $4::varchar
+      AND provider_type = $1::varchar
       AND available = true
       AND status = 'healthy'
       AND health_status = 'healthy'
@@ -475,20 +475,54 @@ SELECT
     EXISTS (
         SELECT 1
         FROM runtime_sessions rs
+        JOIN runtime_enrollments re
+          ON re.id = rs.enrollment_id
+         AND re.tenant_id = rs.tenant_id
+         AND re.runtime_node_id = rs.runtime_node_id
+         AND re.status = 'approved'
+         AND re.rejected_at IS NULL
+         AND re.revoked_at IS NULL
         WHERE rs.tenant_id = tt.tenant_id
           AND rs.runtime_node_id = rn.id
           AND rs.expires_at > NOW()
           AND rs.revoked_at IS NULL
     )::boolean AS runtime_session_active,
-    (provider_capability.id IS NOT NULL)::boolean AS provider_available
+    (provider_capability.id IS NOT NULL)::boolean AS provider_available,
+    (
+        active_team_config.id IS NOT NULL
+        AND CASE
+            WHEN NOT (active_team_config.capability_policy ? 'allowed_provider_types') THEN true
+            WHEN jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array' THEN
+                jsonb_array_length(active_team_config.capability_policy -> 'allowed_provider_types') = 0
+                OR (active_team_config.capability_policy -> 'allowed_provider_types') ? $1::varchar
+            ELSE false
+        END
+    )::boolean AS provider_policy_allowed,
+    (
+        active_team_config.id IS NOT NULL
+        AND CASE
+            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids') THEN true
+            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array' THEN
+                jsonb_array_length(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 0
+                OR (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
+            ELSE false
+        END
+        AND CASE
+            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_node_ids') THEN true
+            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 'array' THEN
+                jsonb_array_length(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 0
+                OR (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
+            ELSE false
+        END
+    )::boolean AS runtime_policy_allowed
 FROM tenant_teams tt
 JOIN runtime_nodes rn
-  ON rn.id = $1::uuid
+  ON rn.id = $2::uuid
  AND rn.tenant_id = tt.tenant_id
 LEFT JOIN active_team_config ON TRUE
 LEFT JOIN provider_capability ON TRUE
-WHERE tt.tenant_id = $2::uuid
-  AND tt.id = $3::uuid
+WHERE tt.tenant_id = $3::uuid
+  AND tt.id = $4::uuid
   AND tt.status = 'active'
   AND tt.disabled_at IS NULL
   AND tt.archived_at IS NULL
@@ -496,32 +530,34 @@ WHERE tt.tenant_id = $2::uuid
 `
 
 type GetRuntimeProvisioningPreflightParams struct {
+	ProviderType  string    `json:"provider_type"`
 	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
 	TenantID      uuid.UUID `json:"tenant_id"`
 	TeamID        uuid.UUID `json:"team_id"`
-	ProviderType  string    `json:"provider_type"`
 }
 
 type GetRuntimeProvisioningPreflightRow struct {
-	TenantID             uuid.UUID   `json:"tenant_id"`
-	TeamID               uuid.UUID   `json:"team_id"`
-	RuntimeNodeID        uuid.UUID   `json:"runtime_node_id"`
-	NodeID               string      `json:"node_id"`
-	AgentHomeDir         string      `json:"agent_home_dir"`
-	GovernanceSnapshot   interface{} `json:"governance_snapshot"`
-	HasActiveTeamConfig  bool        `json:"has_active_team_config"`
-	RuntimeOnline        bool        `json:"runtime_online"`
-	EnrollmentApproved   bool        `json:"enrollment_approved"`
-	RuntimeSessionActive bool        `json:"runtime_session_active"`
-	ProviderAvailable    bool        `json:"provider_available"`
+	TenantID              uuid.UUID   `json:"tenant_id"`
+	TeamID                uuid.UUID   `json:"team_id"`
+	RuntimeNodeID         uuid.UUID   `json:"runtime_node_id"`
+	NodeID                string      `json:"node_id"`
+	AgentHomeDir          string      `json:"agent_home_dir"`
+	GovernanceSnapshot    interface{} `json:"governance_snapshot"`
+	HasActiveTeamConfig   bool        `json:"has_active_team_config"`
+	RuntimeOnline         bool        `json:"runtime_online"`
+	EnrollmentApproved    bool        `json:"enrollment_approved"`
+	RuntimeSessionActive  bool        `json:"runtime_session_active"`
+	ProviderAvailable     bool        `json:"provider_available"`
+	ProviderPolicyAllowed bool        `json:"provider_policy_allowed"`
+	RuntimePolicyAllowed  bool        `json:"runtime_policy_allowed"`
 }
 
 func (q *Queries) GetRuntimeProvisioningPreflight(ctx context.Context, arg GetRuntimeProvisioningPreflightParams) (GetRuntimeProvisioningPreflightRow, error) {
 	row := q.db.QueryRow(ctx, GetRuntimeProvisioningPreflight,
+		arg.ProviderType,
 		arg.RuntimeNodeID,
 		arg.TenantID,
 		arg.TeamID,
-		arg.ProviderType,
 	)
 	var i GetRuntimeProvisioningPreflightRow
 	err := row.Scan(
@@ -536,6 +572,8 @@ func (q *Queries) GetRuntimeProvisioningPreflight(ctx context.Context, arg GetRu
 		&i.EnrollmentApproved,
 		&i.RuntimeSessionActive,
 		&i.ProviderAvailable,
+		&i.ProviderPolicyAllowed,
+		&i.RuntimePolicyAllowed,
 	)
 	return i, err
 }

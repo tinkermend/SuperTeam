@@ -20,6 +20,7 @@ type Service struct {
 const (
 	defaultProvisioningTimeout      = 10 * time.Second
 	defaultProvisioningPollInterval = 250 * time.Millisecond
+	defaultProvisioningAbortTimeout = 5 * time.Second
 )
 
 func NewService(repository Repository) (*Service, error) {
@@ -120,7 +121,7 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dig
 		},
 	})
 	if err != nil {
-		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, uuid.Nil, "create provisioning execution instance failed: "+err.Error())
+		abortErr := s.abortProvisioning(req.TenantID, record.ID, uuid.Nil, "create provisioning execution instance failed: "+err.Error())
 		return nil, provisioningErrorWithAbort(fmt.Errorf("create digital employee execution instance: %w", err), abortErr)
 	}
 
@@ -137,17 +138,17 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dig
 		Status:        "pending",
 		Payload:       payload,
 	}); err != nil {
-		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "create provisioning command receipt failed: "+err.Error())
+		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "create provisioning command receipt failed: "+err.Error())
 		return nil, provisioningErrorWithAbort(fmt.Errorf("create provisioning command receipt: %w", err), abortErr)
 	}
 
 	command, err := runtimeCommand(commandID, "provision_instance", payload)
 	if err != nil {
-		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "encode provisioning command failed: "+err.Error())
+		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "encode provisioning command failed: "+err.Error())
 		return nil, provisioningErrorWithAbort(err, abortErr)
 	}
 	if err := s.dispatcher.Dispatch(ctx, preflight.NodeID, command); err != nil {
-		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "dispatch provisioning command failed: "+err.Error())
+		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "dispatch provisioning command failed: "+err.Error())
 		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: dispatch provision instance: %w", ErrRuntimeUnavailable, err), abortErr)
 	}
 
@@ -155,11 +156,11 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dig
 	defer cancel()
 	receipt, err := s.repository.WaitForRuntimeCommandCompletion(waitCtx, req.TenantID, commandID, s.provisioningPollInterval)
 	if err != nil {
-		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "wait for provisioning command completion failed: "+err.Error())
+		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "wait for provisioning command completion failed: "+err.Error())
 		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: wait for provisioning command completion: %w", ErrRuntimeUnavailable, err), abortErr)
 	}
 	if receipt == nil {
-		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "provisioning command receipt missing")
+		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "provisioning command receipt missing")
 		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command receipt missing", ErrRuntimeUnavailable), abortErr)
 	}
 	switch receipt.Status {
@@ -170,12 +171,18 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dig
 		}
 		return employeeFromRecord(readyRecord), nil
 	case string(DigitalEmployeeRunStatusFailed), string(DigitalEmployeeRunStatusTimedOut), string(DigitalEmployeeRunStatusCancelled):
-		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "provisioning command "+receipt.Status)
+		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "provisioning command "+receipt.Status)
 		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command %s", ErrRuntimeUnavailable, receipt.Status), abortErr)
 	default:
-		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "provisioning command did not reach terminal status")
+		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "provisioning command did not reach terminal status")
 		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command did not reach terminal status %q", ErrRuntimeUnavailable, receipt.Status), abortErr)
 	}
+}
+
+func (s *Service) abortProvisioning(tenantID, employeeID, executionInstanceID uuid.UUID, reason string) error {
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), defaultProvisioningAbortTimeout)
+	defer cancel()
+	return s.repository.AbortProvisionedDigitalEmployee(cleanupCtx, tenantID, employeeID, executionInstanceID, reason)
 }
 
 func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight) error {
@@ -203,6 +210,12 @@ func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight
 	if !preflight.ProviderAvailable {
 		return fmt.Errorf("%w: provider capability is unavailable", ErrProviderUnavailable)
 	}
+	if !preflight.ProviderPolicyAllowed {
+		return fmt.Errorf("%w: provider type is outside team capability policy", ErrProviderUnavailable)
+	}
+	if !preflight.RuntimePolicyAllowed {
+		return fmt.Errorf("%w: runtime node is outside team runtime policy", ErrRuntimeUnavailable)
+	}
 	if strings.TrimSpace(preflight.AgentHomeDir) == "" {
 		return fmt.Errorf("%w: runtime agent home dir is unavailable", ErrProviderUnavailable)
 	}
@@ -210,7 +223,7 @@ func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight
 }
 
 func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRecord, instance DigitalEmployeeExecutionInstanceRecord, providerType string, preflight RuntimeProvisioningPreflight, req CreateDraftRequest) map[string]any {
-	return map[string]any{
+	return redactRuntimeEventPayload(map[string]any{
 		"command_id":             commandID,
 		"digital_employee_id":    employee.ID.String(),
 		"execution_instance_id":  instance.ID.String(),
@@ -227,7 +240,7 @@ func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRec
 		"approval_policy":        cloneMap(employee.ApprovalPolicy),
 		"employee_metadata":      cloneMap(employee.Metadata),
 		"execution_instance_ref": instance.ID.String(),
-	}
+	})
 }
 
 func provisioningErrorWithAbort(cause error, abortErr error) error {
