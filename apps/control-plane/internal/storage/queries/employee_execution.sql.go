@@ -247,6 +247,78 @@ func (q *Queries) GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Co
 	return i, err
 }
 
+const GetDigitalEmployeeRunPreflight = `-- name: GetDigitalEmployeeRunPreflight :one
+SELECT
+    de.tenant_id,
+    de.team_id,
+    de.id AS digital_employee_id,
+    de.status AS digital_employee_status,
+    dei.id AS execution_instance_id,
+    dei.status AS execution_status,
+    dei.runtime_node_id,
+    rn.node_id,
+    dei.provider_type,
+    dei.agent_home_dir,
+    dei.runtime_selector,
+    dei.session_policy,
+    dei.workspace_policy
+FROM digital_employees de
+JOIN digital_employee_execution_instances dei
+  ON dei.digital_employee_id = de.id
+ AND dei.tenant_id = de.tenant_id
+ AND dei.deleted_at IS NULL
+JOIN runtime_nodes rn
+  ON rn.id = dei.runtime_node_id
+ AND rn.tenant_id = de.tenant_id
+ AND rn.archived_at IS NULL
+WHERE de.id = $1::uuid
+  AND de.tenant_id = $2::uuid
+  AND de.deleted_at IS NULL
+  AND de.archived_at IS NULL
+`
+
+type GetDigitalEmployeeRunPreflightParams struct {
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	TenantID          uuid.UUID `json:"tenant_id"`
+}
+
+type GetDigitalEmployeeRunPreflightRow struct {
+	TenantID              uuid.UUID     `json:"tenant_id"`
+	TeamID                uuid.NullUUID `json:"team_id"`
+	DigitalEmployeeID     uuid.UUID     `json:"digital_employee_id"`
+	DigitalEmployeeStatus string        `json:"digital_employee_status"`
+	ExecutionInstanceID   uuid.UUID     `json:"execution_instance_id"`
+	ExecutionStatus       string        `json:"execution_status"`
+	RuntimeNodeID         uuid.UUID     `json:"runtime_node_id"`
+	NodeID                string        `json:"node_id"`
+	ProviderType          string        `json:"provider_type"`
+	AgentHomeDir          string        `json:"agent_home_dir"`
+	RuntimeSelector       []byte        `json:"runtime_selector"`
+	SessionPolicy         []byte        `json:"session_policy"`
+	WorkspacePolicy       []byte        `json:"workspace_policy"`
+}
+
+func (q *Queries) GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDigitalEmployeeRunPreflightParams) (GetDigitalEmployeeRunPreflightRow, error) {
+	row := q.db.QueryRow(ctx, GetDigitalEmployeeRunPreflight, arg.DigitalEmployeeID, arg.TenantID)
+	var i GetDigitalEmployeeRunPreflightRow
+	err := row.Scan(
+		&i.TenantID,
+		&i.TeamID,
+		&i.DigitalEmployeeID,
+		&i.DigitalEmployeeStatus,
+		&i.ExecutionInstanceID,
+		&i.ExecutionStatus,
+		&i.RuntimeNodeID,
+		&i.NodeID,
+		&i.ProviderType,
+		&i.AgentHomeDir,
+		&i.RuntimeSelector,
+		&i.SessionPolicy,
+		&i.WorkspacePolicy,
+	)
+	return i, err
+}
+
 const ListDigitalEmployeeExecutionInstances = `-- name: ListDigitalEmployeeExecutionInstances :many
 SELECT id, tenant_id, digital_employee_id, runtime_node_id, provider_type, agent_home_dir, workspace_policy, session_policy, runtime_selector, capacity_requirements, fallback_policy, status, ready_at, disabled_at, error_at, error_message, deleted_at, metadata, created_at, updated_at
 FROM digital_employee_execution_instances

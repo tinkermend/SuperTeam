@@ -150,6 +150,35 @@ WHERE digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
   AND deleted_at IS NULL;
 
+-- name: GetDigitalEmployeeRunPreflight :one
+SELECT
+    de.tenant_id,
+    de.team_id,
+    de.id AS digital_employee_id,
+    de.status AS digital_employee_status,
+    dei.id AS execution_instance_id,
+    dei.status AS execution_status,
+    dei.runtime_node_id,
+    rn.node_id,
+    dei.provider_type,
+    dei.agent_home_dir,
+    dei.runtime_selector,
+    dei.session_policy,
+    dei.workspace_policy
+FROM digital_employees de
+JOIN digital_employee_execution_instances dei
+  ON dei.digital_employee_id = de.id
+ AND dei.tenant_id = de.tenant_id
+ AND dei.deleted_at IS NULL
+JOIN runtime_nodes rn
+  ON rn.id = dei.runtime_node_id
+ AND rn.tenant_id = de.tenant_id
+ AND rn.archived_at IS NULL
+WHERE de.id = sqlc.arg('digital_employee_id')::uuid
+  AND de.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND de.deleted_at IS NULL
+  AND de.archived_at IS NULL;
+
 -- name: ListDigitalEmployeeExecutionInstances :many
 SELECT *
 FROM digital_employee_execution_instances

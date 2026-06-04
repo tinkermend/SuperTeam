@@ -77,6 +77,7 @@ type Querier interface {
 	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, arg GetDigitalEmployeeExecutionInstanceByEmployeeIDParams) (DigitalEmployeeExecutionInstance, error)
 	GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmployeeRunParams) (TaskRun, error)
 	GetDigitalEmployeeRunByCommandID(ctx context.Context, arg GetDigitalEmployeeRunByCommandIDParams) (TaskRun, error)
+	GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDigitalEmployeeRunPreflightParams) (GetDigitalEmployeeRunPreflightRow, error)
 	GetLatestDigitalEmployeeConfigRevision(ctx context.Context, arg GetLatestDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
 	GetLatestDigitalEmployeeEffectiveConfig(ctx context.Context, arg GetLatestDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error)
 	GetLatestProviderSessionEventSequence(ctx context.Context, arg GetLatestProviderSessionEventSequenceParams) (int32, error)

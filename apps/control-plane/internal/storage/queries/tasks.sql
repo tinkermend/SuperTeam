@@ -370,7 +370,8 @@ created_run AS (
         idempotency_key,
         idempotency_fingerprint,
         timeout_sec,
-        grace_sec
+        grace_sec,
+        provider_type
     )
     SELECT
         created_task.tenant_id,
@@ -385,7 +386,8 @@ created_run AS (
         idempotency_input.idempotency_key,
         idempotency_input.idempotency_fingerprint,
         sqlc.narg('timeout_sec')::integer,
-        sqlc.narg('grace_sec')::integer
+        sqlc.narg('grace_sec')::integer,
+        sqlc.arg('provider_type')::varchar
     FROM created_task
     CROSS JOIN idempotency_input
     WHERE NOT EXISTS (SELECT 1 FROM existing_run)

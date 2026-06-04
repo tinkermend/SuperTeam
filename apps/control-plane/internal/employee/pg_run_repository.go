@@ -22,15 +22,7 @@ func NewPgRunRepository(q *queries.Queries) DigitalEmployeeRunRepository {
 }
 
 func (r *PgRunRepository) GetRunPreflight(ctx context.Context, tenantID, employeeID uuid.UUID) (RunPreflight, error) {
-	employee, err := r.q.GetDigitalEmployee(ctx, queries.GetDigitalEmployeeParams{
-		ID:       employeeID,
-		TenantID: tenantID,
-	})
-	if err != nil {
-		return RunPreflight{}, mapNoRows(err)
-	}
-
-	instance, err := r.q.GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx, queries.GetDigitalEmployeeExecutionInstanceByEmployeeIDParams{
+	preflight, err := r.q.GetDigitalEmployeeRunPreflight(ctx, queries.GetDigitalEmployeeRunPreflightParams{
 		DigitalEmployeeID: employeeID,
 		TenantID:          tenantID,
 	})
@@ -38,30 +30,30 @@ func (r *PgRunRepository) GetRunPreflight(ctx context.Context, tenantID, employe
 		return RunPreflight{}, mapNoRows(err)
 	}
 
-	runtimeSelector, err := mapFromJSONB(instance.RuntimeSelector, "runtime_selector")
+	runtimeSelector, err := mapFromJSONB(preflight.RuntimeSelector, "runtime_selector")
 	if err != nil {
 		return RunPreflight{}, err
 	}
-	sessionPolicy, err := mapFromJSONB(instance.SessionPolicy, "session_policy")
+	sessionPolicy, err := mapFromJSONB(preflight.SessionPolicy, "session_policy")
 	if err != nil {
 		return RunPreflight{}, err
 	}
-	workspacePolicy, err := mapFromJSONB(instance.WorkspacePolicy, "workspace_policy")
+	workspacePolicy, err := mapFromJSONB(preflight.WorkspacePolicy, "workspace_policy")
 	if err != nil {
 		return RunPreflight{}, err
 	}
 
 	return RunPreflight{
 		TenantID:              tenantID,
-		TeamID:                employee.TeamID.UUID,
-		DigitalEmployeeID:     employee.ID,
-		DigitalEmployeeStatus: DigitalEmployeeStatus(employee.Status),
-		ExecutionInstanceID:   instance.ID,
-		ExecutionStatus:       ExecutionInstanceStatus(instance.Status),
-		RuntimeNodeID:         instance.RuntimeNodeID,
-		NodeID:                stringFromMap(runtimeSelector, "node_id"),
-		ProviderType:          instance.ProviderType,
-		AgentHomeDir:          instance.AgentHomeDir,
+		TeamID:                uuidFromNull(preflight.TeamID),
+		DigitalEmployeeID:     preflight.DigitalEmployeeID,
+		DigitalEmployeeStatus: DigitalEmployeeStatus(preflight.DigitalEmployeeStatus),
+		ExecutionInstanceID:   preflight.ExecutionInstanceID,
+		ExecutionStatus:       ExecutionInstanceStatus(preflight.ExecutionStatus),
+		RuntimeNodeID:         preflight.RuntimeNodeID,
+		NodeID:                preflight.NodeID,
+		ProviderType:          preflight.ProviderType,
+		AgentHomeDir:          preflight.AgentHomeDir,
 		RuntimeSelector:       runtimeSelector,
 		SessionPolicy:         sessionPolicy,
 		WorkspacePolicy:       workspacePolicy,
@@ -387,13 +379,30 @@ func redactMap(payload map[string]any, blocked map[string]struct{}) map[string]a
 			redacted[key] = "[redacted]"
 			continue
 		}
-		if nested, ok := value.(map[string]any); ok {
-			redacted[key] = redactMap(nested, blocked)
-			continue
-		}
-		redacted[key] = value
+		redacted[key] = redactValue(value, blocked)
 	}
 	return redacted
+}
+
+func redactValue(value any, blocked map[string]struct{}) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return redactMap(typed, blocked)
+	case []any:
+		redacted := make([]any, len(typed))
+		for i, item := range typed {
+			redacted[i] = redactValue(item, blocked)
+		}
+		return redacted
+	case []map[string]any:
+		redacted := make([]map[string]any, len(typed))
+		for i, item := range typed {
+			redacted[i] = redactMap(item, blocked)
+		}
+		return redacted
+	default:
+		return value
+	}
 }
 
 func digitalEmployeeRunFromQuery(run queries.TaskRun) *DigitalEmployeeRun {
@@ -406,6 +415,7 @@ func digitalEmployeeRunFromQuery(run queries.TaskRun) *DigitalEmployeeRun {
 		RuntimeNodeID:             uuidFromNull(run.RuntimeNodeID),
 		NodeID:                    run.NodeID,
 		CommandID:                 stringFromText(run.CommandID),
+		ProviderType:              stringFromText(run.ProviderType),
 		ProviderSessionID:         stringPtrFromText(run.ProviderSessionID),
 		ProviderSessionExternalID: stringPtrFromText(run.ProviderSessionExternalID),
 		Status:                    runStatusFromString(run.Status),

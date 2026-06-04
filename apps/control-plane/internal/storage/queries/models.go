@@ -783,6 +783,8 @@ type TaskRun struct {
 	Signal pgtype.Text `json:"signal"`
 	// 运行是否因超时终止
 	TimedOut bool `json:"timed_out"`
+	// 运行使用的Provider类型
+	ProviderType pgtype.Text `json:"provider_type"`
 	// Provider外部会话ID
 	ProviderSessionExternalID pgtype.Text `json:"provider_session_external_id"`
 }

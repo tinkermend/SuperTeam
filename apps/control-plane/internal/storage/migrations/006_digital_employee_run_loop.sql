@@ -36,6 +36,7 @@ ALTER TABLE task_runs
     ADD COLUMN exit_code INTEGER,
     ADD COLUMN signal VARCHAR(100),
     ADD COLUMN timed_out BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN provider_type VARCHAR(100),
     ADD COLUMN provider_session_external_id VARCHAR(255);
 
 ALTER TABLE task_events
@@ -121,6 +122,7 @@ COMMENT ON COLUMN task_runs.error_family IS '运行错误分类';
 COMMENT ON COLUMN task_runs.exit_code IS 'Provider进程退出码';
 COMMENT ON COLUMN task_runs.signal IS 'Provider进程退出信号';
 COMMENT ON COLUMN task_runs.timed_out IS '运行是否因超时终止';
+COMMENT ON COLUMN task_runs.provider_type IS '运行使用的Provider类型';
 COMMENT ON COLUMN task_runs.provider_session_external_id IS 'Provider外部会话ID';
 
 COMMENT ON COLUMN task_events.command_id IS '事件关联的Runtime命令ID';
