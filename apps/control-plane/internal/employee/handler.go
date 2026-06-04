@@ -40,7 +40,7 @@ func (h *HTTPHandler) SetAuthorizer(authorizer authz.Authorizer) {
 }
 
 func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee manage")
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, nil, "digital employee read")
 	if !ok {
 		return
 	}
@@ -76,7 +76,7 @@ func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee create")
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeCreate, nil, "digital employee create")
 	if !ok {
 		return
 	}
@@ -119,15 +119,15 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *HTTPHandler) GetDigitalEmployee(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee read")
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee read")
 	if !ok {
 		return
 	}
 	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	employeeID, ok := employeeIDFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -140,15 +140,15 @@ func (h *HTTPHandler) GetDigitalEmployee(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *HTTPHandler) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee status update")
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeStatusUpdate, &employeeID, "digital employee status update")
 	if !ok {
 		return
 	}
 	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	employeeID, ok := employeeIDFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -172,15 +172,15 @@ func (h *HTTPHandler) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http
 }
 
 func (h *HTTPHandler) GetDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee execution instance read")
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee execution instance read")
 	if !ok {
 		return
 	}
 	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	employeeID, ok := employeeIDFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -193,15 +193,15 @@ func (h *HTTPHandler) GetDigitalEmployeeExecutionInstance(w http.ResponseWriter,
 }
 
 func (h *HTTPHandler) UpsertDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee execution instance bind")
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeExecutionBind, &employeeID, "digital employee execution instance bind")
 	if !ok {
 		return
 	}
 	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	employeeID, ok := employeeIDFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -241,15 +241,15 @@ func (h *HTTPHandler) UpsertDigitalEmployeeExecutionInstance(w http.ResponseWrit
 }
 
 func (h *HTTPHandler) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee config revision create")
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeConfigCreate, &employeeID, "digital employee config revision create")
 	if !ok {
 		return
 	}
 	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	employeeID, ok := employeeIDFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -285,15 +285,15 @@ func (h *HTTPHandler) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter,
 }
 
 func (h *HTTPHandler) PreviewDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee effective config preview")
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeConfigPreview, &employeeID, "digital employee effective config preview")
 	if !ok {
 		return
 	}
 	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	employeeID, ok := employeeIDFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -323,15 +323,15 @@ func (h *HTTPHandler) PreviewDigitalEmployeeEffectiveConfig(w http.ResponseWrite
 }
 
 func (h *HTTPHandler) ApproveDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, "digital employee effective config approve")
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeConfigApprove, &employeeID, "digital employee effective config approve")
 	if !ok {
 		return
 	}
 	service, ok := h.serviceFromRequest(w)
-	if !ok {
-		return
-	}
-	employeeID, ok := employeeIDFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -372,7 +372,7 @@ func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService,
 	return h.service, true
 }
 
-func (h *HTTPHandler) authorizeDigitalEmployeeManagement(w http.ResponseWriter, r *http.Request, auditReason string) (uuid.UUID, bool) {
+func (h *HTTPHandler) authorizeDigitalEmployeeManagement(w http.ResponseWriter, r *http.Request, action string, employeeID *uuid.UUID, auditReason string) (uuid.UUID, bool) {
 	if h == nil || h.authorizer == nil {
 		http.Error(w, "digital employee authorization is not configured", http.StatusForbidden)
 		return uuid.Nil, false
@@ -383,16 +383,23 @@ func (h *HTTPHandler) authorizeDigitalEmployeeManagement(w http.ResponseWriter, 
 		http.Error(w, "console identity not found in context", http.StatusForbidden)
 		return uuid.Nil, false
 	}
+	resource := authz.ResourceRef{
+		Type: authz.ResourceTenant,
+		ID:   tenantID.String(),
+	}
+	if employeeID != nil {
+		resource = authz.ResourceRef{
+			Type: authz.ResourceEmployee,
+			ID:   employeeID.String(),
+		}
+	}
 	decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
 		Actor: authz.ActorRef{
 			Type: authz.ActorUser,
 			ID:   userID.String(),
 		},
-		Action: authz.ActionRuntimeScopeManage,
-		Resource: authz.ResourceRef{
-			Type: authz.ResourceTenant,
-			ID:   tenantID.String(),
-		},
+		Action:      action,
+		Resource:    resource,
 		TenantID:    tenantID,
 		AuditReason: auditReason,
 	})

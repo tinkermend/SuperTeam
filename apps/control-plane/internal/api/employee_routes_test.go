@@ -232,20 +232,23 @@ func TestDigitalEmployeeRoutesRequireManagementAuthorization(t *testing.T) {
 	runtimeNodeID := uuid.New().String()
 
 	tests := []struct {
-		name   string
-		method string
-		path   string
-		body   string
+		name         string
+		method       string
+		path         string
+		body         string
+		action       string
+		resourceType string
+		resourceID   string
 	}{
-		{name: "list", method: http.MethodGet, path: "/api/v1/digital-employees"},
-		{name: "create", method: http.MethodPost, path: "/api/v1/digital-employees", body: `{"team_id":"` + uuid.New().String() + `","name":"Requirements analyst","role":"requirements_analyst"}`},
-		{name: "get", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID},
-		{name: "status", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/status", body: `{"status":"active"}`},
-		{name: "get execution instance", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance"},
-		{name: "upsert execution instance", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance", body: `{"runtime_node_id":"` + runtimeNodeID + `","provider_type":"codex","agent_home_dir":"/srv/agents/requirements"}`},
-		{name: "create config revision", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/config-revisions", body: `{"role_profile":{"title":"analyst"}}`},
-		{name: "preview effective config", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/effective-configs/preview", body: `{"team_config":{"id":"` + uuid.New().String() + `"},"employee_config":{"id":"` + uuid.New().String() + `"}}`},
-		{name: "approve effective config", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/effective-configs/approve", body: `{"preview":{"team_config":{"id":"` + uuid.New().String() + `"},"employee_config":{"id":"` + uuid.New().String() + `"}}}`},
+		{name: "list", method: http.MethodGet, path: "/api/v1/digital-employees", action: authz.ActionEmployeeRead, resourceType: authz.ResourceTenant},
+		{name: "create", method: http.MethodPost, path: "/api/v1/digital-employees", body: `{"team_id":"` + uuid.New().String() + `","name":"Requirements analyst","role":"requirements_analyst"}`, action: authz.ActionEmployeeCreate, resourceType: authz.ResourceTenant},
+		{name: "get", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID, action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "status", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/status", body: `{"status":"active"}`, action: authz.ActionEmployeeStatusUpdate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "get execution instance", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "upsert execution instance", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance", body: `{"runtime_node_id":"` + runtimeNodeID + `","provider_type":"codex","agent_home_dir":"/srv/agents/requirements"}`, action: authz.ActionEmployeeExecutionBind, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "create config revision", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/config-revisions", body: `{"role_profile":{"title":"analyst"}}`, action: authz.ActionEmployeeConfigCreate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "preview effective config", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/effective-configs/preview", body: `{"team_config":{"id":"` + uuid.New().String() + `"},"employee_config":{"id":"` + uuid.New().String() + `"}}`, action: authz.ActionEmployeeConfigPreview, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "approve effective config", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/effective-configs/approve", body: `{"preview":{"team_config":{"id":"` + uuid.New().String() + `"},"employee_config":{"id":"` + uuid.New().String() + `"}}}`, action: authz.ActionEmployeeConfigApprove, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 	}
 
 	for _, tt := range tests {
@@ -267,14 +270,19 @@ func TestDigitalEmployeeRoutesRequireManagementAuthorization(t *testing.T) {
 		t.Fatalf("expected one authorization check per request, got %#v", authorizer.checks)
 	}
 	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
-	for _, check := range authorizer.checks {
-		if check.Action != authz.ActionRuntimeScopeManage {
-			t.Fatalf("expected runtime scope management action, got %#v", check)
+	for idx, check := range authorizer.checks {
+		expected := tests[idx]
+		if check.Action != expected.action {
+			t.Fatalf("expected %s action, got %#v", expected.action, check)
 		}
 		if check.Actor.Type != authz.ActorUser {
 			t.Fatalf("expected user actor, got %#v", check)
 		}
-		if check.Resource.Type != authz.ResourceTenant || check.Resource.ID != expectedTenantID.String() || check.TenantID != expectedTenantID {
+		expectedResourceID := expected.resourceID
+		if expectedResourceID == "" {
+			expectedResourceID = expectedTenantID.String()
+		}
+		if check.Resource.Type != expected.resourceType || check.Resource.ID != expectedResourceID || check.TenantID != expectedTenantID {
 			t.Fatalf("expected tenant resource %s, got %#v", expectedTenantID, check)
 		}
 	}

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-04 14:33：数字员工 API 授权从复用 `runtime_scope.manage` 改为独立 `employee.*` 业务 action，并按 tenant 集合资源和单个 employee 资源记录授权决策，为后续 OpenFGA 渐进接入保留稳定边界。
 - 2026-06-04 11:00：Web `Main` 布局组件改为默认铺满内容区，并新增 `contained` 窄版选项，后续控制台页面无需逐页传 `fluid` 即可复用权限中心式全宽布局。
 - 2026-06-03 23:15：`AGENTS.md` 明确要求每条新增 `CHANGELOG.md` 变更记录带具体时间，默认使用本地 `Asia/Shanghai` 时间。
 - Web 设计系统收敛为浅色液态玻璃控制台方向，`DESIGN.md` 明确蓝绿色主强调、液态玻璃卡片、胶囊按钮、语义图标和“只迁移 UI/UX 样式、不带入示例业务内容”的规则。

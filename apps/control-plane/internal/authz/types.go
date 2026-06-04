@@ -15,10 +15,11 @@ const (
 )
 
 const (
-	ResourceConsole = "console"
-	ResourceTenant  = "tenant"
-	ResourceTeam    = "team"
-	ResourceTask    = "task"
+	ResourceConsole  = "console"
+	ResourceTenant   = "tenant"
+	ResourceTeam     = "team"
+	ResourceEmployee = "employee"
+	ResourceTask     = "task"
 )
 
 const (
@@ -28,6 +29,14 @@ const (
 	ActionTaskClaim          = "task.claim"
 	ActionRuntimeScopeManage = "runtime_scope.manage"
 	ActionAuthzCenterRead    = "authz_center.read"
+
+	ActionEmployeeCreate        = "employee.create"
+	ActionEmployeeRead          = "employee.read"
+	ActionEmployeeStatusUpdate  = "employee.status.update"
+	ActionEmployeeExecutionBind = "employee.execution.bind"
+	ActionEmployeeConfigCreate  = "employee.config.create"
+	ActionEmployeeConfigPreview = "employee.config.preview"
+	ActionEmployeeConfigApprove = "employee.config.approve"
 
 	ActionTeamCreate                      = "team.create"
 	ActionTeamRead                        = "team.read"

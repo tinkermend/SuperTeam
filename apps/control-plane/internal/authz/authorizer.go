@@ -67,6 +67,32 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 			break
 		}
 		decision, err = a.checkTenantAdminAccess(ctx, req)
+	case ActionEmployeeCreate:
+		if !resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) {
+			decision = deny(ReasonInvalidResource)
+			break
+		}
+		decision, err = a.checkTenantAdminAccess(ctx, req)
+	case ActionEmployeeRead:
+		if resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) {
+			decision, err = a.checkTenantAdminAccess(ctx, req)
+			break
+		}
+		if !validUUIDResource(req.Resource, ResourceEmployee) {
+			decision = deny(ReasonInvalidResource)
+			break
+		}
+		decision, err = a.checkTenantAdminAccess(ctx, req)
+	case ActionEmployeeStatusUpdate,
+		ActionEmployeeExecutionBind,
+		ActionEmployeeConfigCreate,
+		ActionEmployeeConfigPreview,
+		ActionEmployeeConfigApprove:
+		if !validUUIDResource(req.Resource, ResourceEmployee) {
+			decision = deny(ReasonInvalidResource)
+			break
+		}
+		decision, err = a.checkTenantAdminAccess(ctx, req)
 	case ActionTeamCreate:
 		if !resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) {
 			decision = deny(ReasonInvalidResource)
@@ -294,6 +320,14 @@ func resourceMatchesUUID(resource ResourceRef, expectedType string, expectedID u
 	}
 	id, err := uuid.Parse(resource.ID)
 	return err == nil && id == expectedID
+}
+
+func validUUIDResource(resource ResourceRef, expectedType string) bool {
+	if resource.Type != expectedType {
+		return false
+	}
+	_, err := uuid.Parse(resource.ID)
+	return err == nil
 }
 
 func roleAllowsTenantAccess(role string) bool {

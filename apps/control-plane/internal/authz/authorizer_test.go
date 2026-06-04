@@ -355,6 +355,73 @@ func TestDBAuthorizerAuthzCenterReadRequiresTenantOwnerOrAdmin(t *testing.T) {
 	}
 }
 
+func TestDBAuthorizerEmployeeActionsUseBusinessActionSurface(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	employeeID := uuid.MustParse("00000000-0000-0000-0000-000000000201")
+
+	tests := []struct {
+		name         string
+		action       string
+		resource     ResourceRef
+		tenantRole   string
+		allowed      bool
+		matchedRule  string
+		denyReason   string
+		resourceType string
+		resourceID   string
+	}{
+		{name: "owner creates employee at tenant", action: ActionEmployeeCreate, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, tenantRole: RoleOwner, allowed: true, matchedRule: "tenant.owner", resourceType: ResourceTenant, resourceID: tenantID.String()},
+		{name: "admin lists employees at tenant", action: ActionEmployeeRead, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceTenant, resourceID: tenantID.String()},
+		{name: "admin reads employee resource", action: ActionEmployeeRead, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
+		{name: "admin updates employee status", action: ActionEmployeeStatusUpdate, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
+		{name: "admin binds execution instance", action: ActionEmployeeExecutionBind, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
+		{name: "admin creates employee config", action: ActionEmployeeConfigCreate, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
+		{name: "admin previews employee config", action: ActionEmployeeConfigPreview, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
+		{name: "owner approves employee config", action: ActionEmployeeConfigApprove, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleOwner, allowed: true, matchedRule: "tenant.owner", resourceType: ResourceEmployee, resourceID: employeeID.String()},
+		{name: "member cannot manage employees", action: ActionEmployeeCreate, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, tenantRole: RoleMember, denyReason: ReasonNoMembership, resourceType: ResourceTenant, resourceID: tenantID.String()},
+		{name: "employee action rejects invalid resource", action: ActionEmployeeStatusUpdate, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, tenantRole: RoleOwner, denyReason: ReasonInvalidResource, resourceType: ResourceTenant, resourceID: tenantID.String()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			userID := uuid.New()
+			recorder := &memoryRecorder{}
+			repo := &memoryRepository{tenantRoles: map[string]string{}}
+			if tt.tenantRole != "" {
+				repo.tenantRoles[tenantID.String()+":user:"+userID.String()] = tt.tenantRole
+			}
+			authorizer := NewDBAuthorizer(repo, recorder)
+
+			decision, err := authorizer.Check(context.Background(), CheckRequest{
+				Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+				Action:   tt.action,
+				Resource: tt.resource,
+				TenantID: tenantID,
+			})
+
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if decision.Allowed != tt.allowed {
+				t.Fatalf("expected allowed=%v, got %#v", tt.allowed, decision)
+			}
+			if tt.matchedRule != "" && decision.MatchedRule != tt.matchedRule {
+				t.Fatalf("expected matched rule %s, got %#v", tt.matchedRule, decision)
+			}
+			if tt.denyReason != "" && decision.Reason != tt.denyReason {
+				t.Fatalf("expected deny reason %s, got %#v", tt.denyReason, decision)
+			}
+			if len(recorder.records) != 1 {
+				t.Fatalf("expected one decision record, got %#v", recorder.records)
+			}
+			record := recorder.records[0]
+			if record.Action != tt.action || record.ResourceType != tt.resourceType || record.ResourceID != tt.resourceID {
+				t.Fatalf("unexpected decision record: %#v", record)
+			}
+		})
+	}
+}
+
 func TestDBAuthorizerTeamManagementActionsUseOpenFGAReadyRoles(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
