@@ -65,9 +65,10 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	if err != nil {
 		return nil, err
 	}
+	runtimeCommands := runtimepkg.NewConnectionRegistry()
 
 	employeeRepository := employee.NewPgRepository(q)
-	employeeService, err := employee.NewService(employeeRepository)
+	employeeService, err := employee.NewServiceWithProvisioning(employeeRepository, runtimeCommands)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,6 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	authzCenterHandler := authzcenter.NewHandler(authzCenterService, authService)
 
 	poller := runtimepkg.NewPoller()
-	runtimeCommands := runtimepkg.NewConnectionRegistry()
 	runRepository := employee.NewPgRunRepository(q, stores.Postgres)
 	runService, err := employee.NewDigitalEmployeeRunService(runRepository, runtimeCommands, auditService)
 	if err != nil {

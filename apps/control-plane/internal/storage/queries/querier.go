@@ -12,6 +12,7 @@ import (
 )
 
 type Querier interface {
+	AbortProvisionedDigitalEmployee(ctx context.Context, arg AbortProvisionedDigitalEmployeeParams) error
 	ActivateTenantTeamConfigRevision(ctx context.Context, arg ActivateTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (TenantMember, error)
 	AddTeamOwnerMembership(ctx context.Context, arg AddTeamOwnerMembershipParams) (TenantMember, error)
@@ -93,6 +94,7 @@ type Querier interface {
 	GetRuntimeEnrollment(ctx context.Context, arg GetRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	GetRuntimeEnrollmentByNodeID(ctx context.Context, arg GetRuntimeEnrollmentByNodeIDParams) (RuntimeEnrollment, error)
 	GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNode, error)
+	GetRuntimeProvisioningPreflight(ctx context.Context, arg GetRuntimeProvisioningPreflightParams) (GetRuntimeProvisioningPreflightRow, error)
 	GetRuntimeToken(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (AuthSession, error)

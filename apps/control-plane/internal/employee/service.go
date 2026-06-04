@@ -11,14 +11,31 @@ import (
 )
 
 type Service struct {
-	repository Repository
+	repository               Repository
+	dispatcher               RuntimeCommandDispatcher
+	provisioningTimeout      time.Duration
+	provisioningPollInterval time.Duration
 }
 
+const (
+	defaultProvisioningTimeout      = 10 * time.Second
+	defaultProvisioningPollInterval = 250 * time.Millisecond
+)
+
 func NewService(repository Repository) (*Service, error) {
+	return NewServiceWithProvisioning(repository, nil)
+}
+
+func NewServiceWithProvisioning(repository Repository, dispatcher RuntimeCommandDispatcher) (*Service, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("%w: repository is required", ErrInvalidInput)
 	}
-	return &Service{repository: repository}, nil
+	return &Service{
+		repository:               repository,
+		dispatcher:               dispatcher,
+		provisioningTimeout:      defaultProvisioningTimeout,
+		provisioningPollInterval: defaultProvisioningPollInterval,
+	}, nil
 }
 
 func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*DigitalEmployee, error) {
@@ -41,8 +58,31 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dig
 	if riskLevel == "" {
 		riskLevel = "medium"
 	}
+	if req.RuntimeNodeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: runtime_node_id is required", ErrInvalidInput)
+	}
+	providerType := strings.TrimSpace(req.ProviderType)
+	if providerType == "" {
+		return nil, fmt.Errorf("%w: provider_type is required", ErrInvalidInput)
+	}
 	if err := s.repository.EnsureTeamExists(ctx, req.TenantID, *req.TeamID); err != nil {
 		return nil, fmt.Errorf("get team: %w", err)
+	}
+	preflight, err := s.repository.GetRuntimeProvisioningPreflight(ctx, req.TenantID, *req.TeamID, req.RuntimeNodeID, providerType)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, fmt.Errorf("%w: runtime provisioning preflight unavailable", ErrRuntimeUnavailable)
+		}
+		return nil, fmt.Errorf("get runtime provisioning preflight: %w", err)
+	}
+	if err := validateRuntimeProvisioningPreflight(preflight); err != nil {
+		return nil, err
+	}
+	if s.dispatcher == nil {
+		return nil, fmt.Errorf("%w: runtime command dispatcher is required", ErrRuntimeUnavailable)
+	}
+	if !s.dispatcher.IsConnected(preflight.NodeID) {
+		return nil, fmt.Errorf("%w: runtime node is not connected", ErrRuntimeUnavailable)
 	}
 
 	record, err := s.repository.CreateDigitalEmployee(ctx, CreateDigitalEmployeeParams{
@@ -61,7 +101,140 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dig
 	if err != nil {
 		return nil, fmt.Errorf("create digital employee: %w", err)
 	}
-	return employeeFromRecord(record), nil
+
+	instance, err := s.repository.UpsertDigitalEmployeeExecutionInstance(ctx, UpsertExecutionInstanceParams{
+		TenantID:          req.TenantID,
+		DigitalEmployeeID: record.ID,
+		RuntimeNodeID:     req.RuntimeNodeID,
+		ProviderType:      providerType,
+		AgentHomeDir:      preflight.AgentHomeDir,
+		WorkspacePolicy:   cloneMap(req.WorkspacePolicy),
+		SessionPolicy:     cloneMap(req.SessionPolicy),
+		RuntimeSelector: map[string]any{
+			"runtime_node_id": preflight.RuntimeNodeID.String(),
+			"node_id":         preflight.NodeID,
+		},
+		Status: ExecutionInstanceStatusProvisioning,
+		Metadata: map[string]any{
+			"provisioned_by": "digital_employee_create",
+		},
+	})
+	if err != nil {
+		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, uuid.Nil, "create provisioning execution instance failed: "+err.Error())
+		return nil, provisioningErrorWithAbort(fmt.Errorf("create digital employee execution instance: %w", err), abortErr)
+	}
+
+	commandID := newRuntimeCommandID()
+	payload := buildProvisionInstancePayload(commandID, record, instance, providerType, preflight, req)
+	if err := s.repository.CreateRuntimeCommandReceipt(ctx, CreateRuntimeCommandReceiptRequest{
+		TenantID:      req.TenantID,
+		CommandID:     commandID,
+		CommandType:   "provision_instance",
+		RuntimeNodeID: req.RuntimeNodeID,
+		NodeID:        preflight.NodeID,
+		ResourceType:  "digital_employee_execution_instance",
+		ResourceID:    instance.ID,
+		Status:        "pending",
+		Payload:       payload,
+	}); err != nil {
+		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "create provisioning command receipt failed: "+err.Error())
+		return nil, provisioningErrorWithAbort(fmt.Errorf("create provisioning command receipt: %w", err), abortErr)
+	}
+
+	command, err := runtimeCommand(commandID, "provision_instance", payload)
+	if err != nil {
+		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "encode provisioning command failed: "+err.Error())
+		return nil, provisioningErrorWithAbort(err, abortErr)
+	}
+	if err := s.dispatcher.Dispatch(ctx, preflight.NodeID, command); err != nil {
+		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "dispatch provisioning command failed: "+err.Error())
+		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: dispatch provision instance: %w", ErrRuntimeUnavailable, err), abortErr)
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, s.provisioningTimeout)
+	defer cancel()
+	receipt, err := s.repository.WaitForRuntimeCommandCompletion(waitCtx, req.TenantID, commandID, s.provisioningPollInterval)
+	if err != nil {
+		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "wait for provisioning command completion failed: "+err.Error())
+		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: wait for provisioning command completion: %w", ErrRuntimeUnavailable, err), abortErr)
+	}
+	if receipt == nil {
+		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "provisioning command receipt missing")
+		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command receipt missing", ErrRuntimeUnavailable), abortErr)
+	}
+	switch receipt.Status {
+	case string(DigitalEmployeeRunStatusCompleted):
+		readyRecord, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, record.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get provisioned digital employee: %w", err)
+		}
+		return employeeFromRecord(readyRecord), nil
+	case string(DigitalEmployeeRunStatusFailed), string(DigitalEmployeeRunStatusTimedOut), string(DigitalEmployeeRunStatusCancelled):
+		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "provisioning command "+receipt.Status)
+		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command %s", ErrRuntimeUnavailable, receipt.Status), abortErr)
+	default:
+		abortErr := s.repository.AbortProvisionedDigitalEmployee(ctx, req.TenantID, record.ID, instance.ID, "provisioning command did not reach terminal status")
+		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command did not reach terminal status %q", ErrRuntimeUnavailable, receipt.Status), abortErr)
+	}
+}
+
+func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight) error {
+	if preflight.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: provisioning tenant_id is required", ErrRuntimeUnavailable)
+	}
+	if preflight.TeamID == uuid.Nil {
+		return fmt.Errorf("%w: provisioning team_id is required", ErrRuntimeUnavailable)
+	}
+	if preflight.RuntimeNodeID == uuid.Nil || strings.TrimSpace(preflight.NodeID) == "" {
+		return fmt.Errorf("%w: runtime node is unavailable", ErrRuntimeUnavailable)
+	}
+	if !preflight.HasActiveTeamConfig {
+		return fmt.Errorf("%w: active team governance config is required before provisioning", ErrEffectiveConfigRequired)
+	}
+	if !preflight.RuntimeOnline {
+		return fmt.Errorf("%w: runtime node is not online", ErrRuntimeUnavailable)
+	}
+	if !preflight.EnrollmentApproved {
+		return fmt.Errorf("%w: runtime enrollment is not approved", ErrRuntimeUnavailable)
+	}
+	if !preflight.RuntimeSessionActive {
+		return fmt.Errorf("%w: runtime session is not active", ErrRuntimeUnavailable)
+	}
+	if !preflight.ProviderAvailable {
+		return fmt.Errorf("%w: provider capability is unavailable", ErrProviderUnavailable)
+	}
+	if strings.TrimSpace(preflight.AgentHomeDir) == "" {
+		return fmt.Errorf("%w: runtime agent home dir is unavailable", ErrProviderUnavailable)
+	}
+	return nil
+}
+
+func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRecord, instance DigitalEmployeeExecutionInstanceRecord, providerType string, preflight RuntimeProvisioningPreflight, req CreateDraftRequest) map[string]any {
+	return map[string]any{
+		"command_id":             commandID,
+		"digital_employee_id":    employee.ID.String(),
+		"execution_instance_id":  instance.ID.String(),
+		"team_id":                preflight.TeamID.String(),
+		"runtime_node_id":        preflight.RuntimeNodeID.String(),
+		"node_id":                preflight.NodeID,
+		"provider_type":          providerType,
+		"provider_run_protocol":  providerRunProtocol,
+		"governance_snapshot":    cloneMap(preflight.GovernanceSnapshot),
+		"session_policy":         cloneMap(req.SessionPolicy),
+		"workspace_policy":       cloneMap(req.WorkspacePolicy),
+		"permission_policy":      cloneMap(employee.PermissionPolicy),
+		"context_policy":         cloneMap(employee.ContextPolicy),
+		"approval_policy":        cloneMap(employee.ApprovalPolicy),
+		"employee_metadata":      cloneMap(employee.Metadata),
+		"execution_instance_ref": instance.ID.String(),
+	}
+}
+
+func provisioningErrorWithAbort(cause error, abortErr error) error {
+	if abortErr != nil {
+		return fmt.Errorf("%w; abort provisioning: %v", cause, abortErr)
+	}
+	return cause
 }
 
 func (s *Service) ListDigitalEmployees(ctx context.Context, req ListDigitalEmployeesRequest) ([]*DigitalEmployee, error) {

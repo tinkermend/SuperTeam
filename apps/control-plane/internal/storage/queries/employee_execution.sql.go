@@ -12,6 +12,65 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const AbortProvisionedDigitalEmployee = `-- name: AbortProvisionedDigitalEmployee :exec
+WITH aborted_instance AS (
+    UPDATE digital_employee_execution_instances
+    SET status = 'error',
+        error_at = COALESCE(error_at, NOW()),
+        error_message = $1::text,
+        deleted_at = COALESCE(deleted_at, NOW()),
+        updated_at = NOW()
+    WHERE id = $2::uuid
+      AND tenant_id = $3::uuid
+      AND digital_employee_id = $4::uuid
+    RETURNING id
+),
+aborted_employee AS (
+    UPDATE digital_employees
+    SET status = 'error',
+        deleted_at = COALESCE(deleted_at, NOW()),
+        updated_at = NOW()
+    WHERE id = $4::uuid
+      AND tenant_id = $3::uuid
+    RETURNING id
+),
+aborted_receipts AS (
+    UPDATE runtime_command_receipts
+    SET status = CASE
+            WHEN status IN ('completed', 'failed', 'cancelled', 'timed_out') THEN status
+            ELSE 'failed'
+        END,
+        error_message = COALESCE(error_message, $1::text),
+        completed_at = CASE
+            WHEN status IN ('completed', 'failed', 'cancelled', 'timed_out') THEN completed_at
+            ELSE COALESCE(completed_at, NOW())
+        END,
+        updated_at = NOW()
+    WHERE tenant_id = $3::uuid
+      AND resource_type = 'digital_employee_execution_instance'
+      AND resource_id = $2::uuid
+    RETURNING id
+)
+SELECT 1
+`
+
+type AbortProvisionedDigitalEmployeeParams struct {
+	Reason              string    `json:"reason"`
+	ExecutionInstanceID uuid.UUID `json:"execution_instance_id"`
+	TenantID            uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID   uuid.UUID `json:"digital_employee_id"`
+}
+
+func (q *Queries) AbortProvisionedDigitalEmployee(ctx context.Context, arg AbortProvisionedDigitalEmployeeParams) error {
+	_, err := q.db.Exec(ctx, AbortProvisionedDigitalEmployee,
+		arg.Reason,
+		arg.ExecutionInstanceID,
+		arg.TenantID,
+		arg.DigitalEmployeeID,
+	)
+	return err
+}
+
 const CreateDigitalEmployee = `-- name: CreateDigitalEmployee :one
 INSERT INTO digital_employees (
     tenant_id,
@@ -340,6 +399,143 @@ func (q *Queries) GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDig
 		&i.WorkspacePolicy,
 		&i.HasApprovedEffectiveConfig,
 		&i.ProviderHealthy,
+	)
+	return i, err
+}
+
+const GetRuntimeProvisioningPreflight = `-- name: GetRuntimeProvisioningPreflight :one
+WITH active_team_config AS (
+    SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+    FROM tenant_team_config_revisions
+    WHERE tenant_id = $2::uuid
+      AND team_id = $3::uuid
+      AND status = 'active'
+      AND archived_at IS NULL
+    ORDER BY revision_number DESC
+    LIMIT 1
+),
+provider_capability AS (
+    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+    FROM runtime_capabilities
+    WHERE tenant_id = $2::uuid
+      AND runtime_node_id = $1::uuid
+      AND capability_type = 'provider'
+      AND provider_type = $4::varchar
+      AND available = true
+      AND status = 'healthy'
+      AND health_status = 'healthy'
+      AND disabled_at IS NULL
+      AND archived_at IS NULL
+    ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
+    LIMIT 1
+)
+SELECT
+    tt.tenant_id,
+    tt.id AS team_id,
+    rn.id AS runtime_node_id,
+    rn.node_id,
+    COALESCE(
+        provider_capability.details ->> 'agent_home_dir',
+        provider_capability.metadata ->> 'agent_home_dir',
+        provider_capability.workspace_base_dir,
+        rn.metadata ->> 'agent_home_dir',
+        ''
+    )::text AS agent_home_dir,
+    COALESCE(
+        jsonb_build_object(
+            'team_config_revision_id', active_team_config.id,
+            'revision_number', active_team_config.revision_number,
+            'constitution', active_team_config.constitution,
+            'capability_policy', active_team_config.capability_policy,
+            'context_policy', active_team_config.context_policy,
+            'approval_policy', active_team_config.approval_policy,
+            'artifact_contract', active_team_config.artifact_contract,
+            'internal_collaboration_policy', active_team_config.internal_collaboration_policy,
+            'runtime_scope_policy', active_team_config.runtime_scope_policy,
+            'approved_by', active_team_config.approved_by,
+            'approved_at', active_team_config.approved_at
+        ),
+        '{}'::jsonb
+    ) AS governance_snapshot,
+    (active_team_config.id IS NOT NULL)::boolean AS has_active_team_config,
+    (
+        rn.status = 'online'
+        AND rn.disabled_at IS NULL
+        AND rn.archived_at IS NULL
+    )::boolean AS runtime_online,
+    EXISTS (
+        SELECT 1
+        FROM runtime_enrollments re
+        WHERE re.tenant_id = tt.tenant_id
+          AND re.runtime_node_id = rn.id
+          AND re.status = 'approved'
+          AND re.rejected_at IS NULL
+          AND re.revoked_at IS NULL
+    )::boolean AS enrollment_approved,
+    EXISTS (
+        SELECT 1
+        FROM runtime_sessions rs
+        WHERE rs.tenant_id = tt.tenant_id
+          AND rs.runtime_node_id = rn.id
+          AND rs.expires_at > NOW()
+          AND rs.revoked_at IS NULL
+    )::boolean AS runtime_session_active,
+    (provider_capability.id IS NOT NULL)::boolean AS provider_available
+FROM tenant_teams tt
+JOIN runtime_nodes rn
+  ON rn.id = $1::uuid
+ AND rn.tenant_id = tt.tenant_id
+LEFT JOIN active_team_config ON TRUE
+LEFT JOIN provider_capability ON TRUE
+WHERE tt.tenant_id = $2::uuid
+  AND tt.id = $3::uuid
+  AND tt.status = 'active'
+  AND tt.disabled_at IS NULL
+  AND tt.archived_at IS NULL
+  AND tt.deleted_at IS NULL
+`
+
+type GetRuntimeProvisioningPreflightParams struct {
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	TenantID      uuid.UUID `json:"tenant_id"`
+	TeamID        uuid.UUID `json:"team_id"`
+	ProviderType  string    `json:"provider_type"`
+}
+
+type GetRuntimeProvisioningPreflightRow struct {
+	TenantID             uuid.UUID   `json:"tenant_id"`
+	TeamID               uuid.UUID   `json:"team_id"`
+	RuntimeNodeID        uuid.UUID   `json:"runtime_node_id"`
+	NodeID               string      `json:"node_id"`
+	AgentHomeDir         string      `json:"agent_home_dir"`
+	GovernanceSnapshot   interface{} `json:"governance_snapshot"`
+	HasActiveTeamConfig  bool        `json:"has_active_team_config"`
+	RuntimeOnline        bool        `json:"runtime_online"`
+	EnrollmentApproved   bool        `json:"enrollment_approved"`
+	RuntimeSessionActive bool        `json:"runtime_session_active"`
+	ProviderAvailable    bool        `json:"provider_available"`
+}
+
+func (q *Queries) GetRuntimeProvisioningPreflight(ctx context.Context, arg GetRuntimeProvisioningPreflightParams) (GetRuntimeProvisioningPreflightRow, error) {
+	row := q.db.QueryRow(ctx, GetRuntimeProvisioningPreflight,
+		arg.RuntimeNodeID,
+		arg.TenantID,
+		arg.TeamID,
+		arg.ProviderType,
+	)
+	var i GetRuntimeProvisioningPreflightRow
+	err := row.Scan(
+		&i.TenantID,
+		&i.TeamID,
+		&i.RuntimeNodeID,
+		&i.NodeID,
+		&i.AgentHomeDir,
+		&i.GovernanceSnapshot,
+		&i.HasActiveTeamConfig,
+		&i.RuntimeOnline,
+		&i.EnrollmentApproved,
+		&i.RuntimeSessionActive,
+		&i.ProviderAvailable,
 	)
 	return i, err
 }

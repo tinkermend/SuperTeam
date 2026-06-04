@@ -37,8 +37,9 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	server.SetEmployeeHandler(employee.NewHandler(service))
 	cookie := routeLogin(t, server, "admin", "admin")
 	teamID := uuid.New()
+	runtimeNodeID := uuid.New()
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees", strings.NewReader(`{"team_id":"`+teamID.String()+`","name":"Requirements analyst","role":"requirements_analyst"}`))
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees", strings.NewReader(`{"team_id":"`+teamID.String()+`","name":"Requirements analyst","role":"requirements_analyst","runtime_node_id":"`+runtimeNodeID.String()+`","provider_type":"codex","session_policy":{"mode":"reuse_latest"},"workspace_policy":{"labels":{"tier":"standard"}}}`))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.AddCookie(cookie)
 	createResp := httptest.NewRecorder()
@@ -52,6 +53,16 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if service.createReq.TeamID == nil || *service.createReq.TeamID != teamID {
 		t.Fatalf("expected create team %s, got %#v", teamID, service.createReq.TeamID)
+	}
+	if service.createReq.RuntimeNodeID != runtimeNodeID || service.createReq.ProviderType != "codex" {
+		t.Fatalf("expected create runtime/provider %s/codex, got %s/%q", runtimeNodeID, service.createReq.RuntimeNodeID, service.createReq.ProviderType)
+	}
+	if service.createReq.SessionPolicy["mode"] != "reuse_latest" {
+		t.Fatalf("expected session policy from create body, got %#v", service.createReq.SessionPolicy)
+	}
+	workspaceLabels, ok := service.createReq.WorkspacePolicy["labels"].(map[string]any)
+	if !ok || workspaceLabels["tier"] != "standard" {
+		t.Fatalf("expected workspace policy from create body, got %#v", service.createReq.WorkspacePolicy)
 	}
 	var created struct {
 		ID               string         `json:"id"`
@@ -96,8 +107,8 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 		t.Fatalf("expected get tenant %s, got %s", expectedTenantID, service.getTenantID)
 	}
 
-	runtimeNodeID := uuid.New()
-	upsertReq := httptest.NewRequest(http.MethodPut, "/api/v1/digital-employees/"+created.ID+"/execution-instance", strings.NewReader(`{"runtime_node_id":"`+runtimeNodeID.String()+`","provider_type":"codex","agent_home_dir":"/srv/agents/requirements","workspace_policy":{},"session_policy":{}}`))
+	bindRuntimeNodeID := uuid.New()
+	upsertReq := httptest.NewRequest(http.MethodPut, "/api/v1/digital-employees/"+created.ID+"/execution-instance", strings.NewReader(`{"runtime_node_id":"`+bindRuntimeNodeID.String()+`","provider_type":"codex","agent_home_dir":"/srv/agents/requirements","workspace_policy":{},"session_policy":{}}`))
 	upsertReq.Header.Set("Content-Type", "application/json")
 	upsertReq.AddCookie(cookie)
 	upsertResp := httptest.NewRecorder()
@@ -105,8 +116,8 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if upsertResp.Code != http.StatusOK {
 		t.Fatalf("expected upsert execution instance to succeed, got %d: %s", upsertResp.Code, upsertResp.Body.String())
 	}
-	if service.bindReq.TenantID != expectedTenantID || service.bindReq.RuntimeNodeID != runtimeNodeID {
-		t.Fatalf("expected bind tenant/runtime %s/%s, got %s/%s", expectedTenantID, runtimeNodeID, service.bindReq.TenantID, service.bindReq.RuntimeNodeID)
+	if service.bindReq.TenantID != expectedTenantID || service.bindReq.RuntimeNodeID != bindRuntimeNodeID {
+		t.Fatalf("expected bind tenant/runtime %s/%s, got %s/%s", expectedTenantID, bindRuntimeNodeID, service.bindReq.TenantID, service.bindReq.RuntimeNodeID)
 	}
 
 	spoofedConfigApproverID := uuid.New()

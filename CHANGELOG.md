@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-05 01:18：数字员工创建改为 Runtime provisioning 主链路，创建时要求 Runtime 节点和 Provider 类型，完成 DB preflight、WebSocket 在线校验、`provision_instance` command 下发、receipt 等待与失败清理，避免 Web 看到半成品执行实例。
 - 2026-06-05 01:04：Runtime command terminal 重放修复 task event 的 `raw_event_ref` 与 `log_ref` 投影，确保最小重放请求也使用已持久化 run 的结果与日志引用。
 - 2026-06-05 01:00：Runtime command writeback 继续收紧终态重放：Runtime 事件 metadata 写入前脱敏，同状态 terminal 重放改用已持久化 run 事实修补 receipt、task event 和 Provider projection，并拒绝冲突的结果投影。
 - 2026-06-05 00:52：Runtime command writeback 改为校验已认证 Runtime 节点身份，终态与 provisioning 回写在事务内锁定 command receipt 并修补重放投影，同时合并 Provider session patch 并脱敏 Runtime 来源的结构化敏感字段。

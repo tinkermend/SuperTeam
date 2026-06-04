@@ -103,6 +103,10 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		ApprovalPolicy   map[string]any `json:"approval_policy"`
 		RiskLevel        string         `json:"risk_level"`
 		Metadata         map[string]any `json:"metadata"`
+		RuntimeNodeID    uuid.UUID      `json:"runtime_node_id"`
+		ProviderType     string         `json:"provider_type"`
+		SessionPolicy    map[string]any `json:"session_policy"`
+		WorkspacePolicy  map[string]any `json:"workspace_policy"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -119,6 +123,10 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		ApprovalPolicy:   req.ApprovalPolicy,
 		RiskLevel:        req.RiskLevel,
 		Metadata:         req.Metadata,
+		RuntimeNodeID:    req.RuntimeNodeID,
+		ProviderType:     req.ProviderType,
+		SessionPolicy:    req.SessionPolicy,
+		WorkspacePolicy:  req.WorkspacePolicy,
 	})
 	if err != nil {
 		writeHandlerError(w, err)

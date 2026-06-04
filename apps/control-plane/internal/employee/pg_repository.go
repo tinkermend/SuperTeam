@@ -101,6 +101,35 @@ func (r *PgRepository) EnsureTeamExists(ctx context.Context, tenantID, teamID uu
 	return nil
 }
 
+func (r *PgRepository) GetRuntimeProvisioningPreflight(ctx context.Context, tenantID, teamID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error) {
+	preflight, err := r.q.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: runtimeNodeID,
+		ProviderType:  providerType,
+	})
+	if err != nil {
+		return RuntimeProvisioningPreflight{}, mapNoRows(err)
+	}
+	governanceSnapshot, err := mapFromJSONValue(preflight.GovernanceSnapshot, "governance_snapshot")
+	if err != nil {
+		return RuntimeProvisioningPreflight{}, err
+	}
+	return RuntimeProvisioningPreflight{
+		TenantID:             preflight.TenantID,
+		TeamID:               preflight.TeamID,
+		RuntimeNodeID:        preflight.RuntimeNodeID,
+		NodeID:               preflight.NodeID,
+		AgentHomeDir:         preflight.AgentHomeDir,
+		GovernanceSnapshot:   governanceSnapshot,
+		HasActiveTeamConfig:  preflight.HasActiveTeamConfig,
+		RuntimeOnline:        preflight.RuntimeOnline,
+		EnrollmentApproved:   preflight.EnrollmentApproved,
+		RuntimeSessionActive: preflight.RuntimeSessionActive,
+		ProviderAvailable:    preflight.ProviderAvailable,
+	}, nil
+}
+
 func (r *PgRepository) UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
 	employee, err := r.q.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
 		Status:   string(status),
@@ -157,6 +186,62 @@ func (r *PgRepository) UpsertDigitalEmployeeExecutionInstance(ctx context.Contex
 		return DigitalEmployeeExecutionInstanceRecord{}, mapNoRows(err)
 	}
 	return executionInstanceRecordFromQuery(instance)
+}
+
+func (r *PgRepository) CreateRuntimeCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error {
+	payload, err := jsonbFromMap(req.Payload, "payload")
+	if err != nil {
+		return err
+	}
+	_, err = r.q.CreateRuntimeCommandReceipt(ctx, queries.CreateRuntimeCommandReceiptParams{
+		TenantID:      req.TenantID,
+		CommandID:     req.CommandID,
+		CommandType:   req.CommandType,
+		RuntimeNodeID: req.RuntimeNodeID,
+		NodeID:        req.NodeID,
+		ResourceType:  req.ResourceType,
+		ResourceID:    req.ResourceID,
+		Status:        req.Status,
+		Payload:       payload,
+		DispatchedAt:  timestamptzFromPtr(req.DispatchedAt),
+	})
+	return err
+}
+
+func (r *PgRepository) WaitForRuntimeCommandCompletion(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeCommandReceipt, error) {
+	if interval <= 0 {
+		interval = defaultProvisioningPollInterval
+	}
+	for {
+		receipt, err := r.q.GetRuntimeCommandReceiptByCommandID(ctx, queries.GetRuntimeCommandReceiptByCommandIDParams{
+			TenantID:  tenantID,
+			CommandID: commandID,
+		})
+		if err != nil {
+			return nil, mapNoRows(err)
+		}
+		mapped := runtimeCommandReceiptFromQuery(receipt)
+		if isTerminalReceiptStatus(mapped.Status) {
+			return mapped, nil
+		}
+
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func (r *PgRepository) AbortProvisionedDigitalEmployee(ctx context.Context, tenantID, employeeID, executionInstanceID uuid.UUID, reason string) error {
+	return r.q.AbortProvisionedDigitalEmployee(ctx, queries.AbortProvisionedDigitalEmployeeParams{
+		TenantID:            tenantID,
+		DigitalEmployeeID:   employeeID,
+		ExecutionInstanceID: executionInstanceID,
+		Reason:              reason,
+	})
 }
 
 func (r *PgRepository) GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeExecutionInstanceRecord, error) {
@@ -318,6 +403,7 @@ func digitalEmployeeRecordFromQuery(employee queries.DigitalEmployee) (DigitalEm
 		Metadata:         metadata,
 		DisabledAt:       timePtrFromTimestamptz(employee.DisabledAt),
 		ArchivedAt:       timePtrFromTimestamptz(employee.ArchivedAt),
+		DeletedAt:        timePtrFromTimestamptz(employee.DeletedAt),
 		CreatedAt:        timeFromTimestamptz(employee.CreatedAt),
 		UpdatedAt:        timeFromTimestamptz(employee.UpdatedAt),
 	}, nil
@@ -500,6 +586,7 @@ func executionInstanceRecordFromQuery(instance queries.DigitalEmployeeExecutionI
 		DisabledAt:           timePtrFromTimestamptz(instance.DisabledAt),
 		ErrorAt:              timePtrFromTimestamptz(instance.ErrorAt),
 		ErrorMessage:         stringPtrFromText(instance.ErrorMessage),
+		DeletedAt:            timePtrFromTimestamptz(instance.DeletedAt),
 		Metadata:             metadata,
 		CreatedAt:            timeFromTimestamptz(instance.CreatedAt),
 		UpdatedAt:            timeFromTimestamptz(instance.UpdatedAt),
@@ -592,4 +679,23 @@ func mapFromJSONB(raw []byte, field string) (map[string]any, error) {
 		return map[string]any{}, nil
 	}
 	return decoded, nil
+}
+
+func mapFromJSONValue(value any, field string) (map[string]any, error) {
+	switch typed := value.(type) {
+	case nil:
+		return map[string]any{}, nil
+	case []byte:
+		return mapFromJSONB(typed, field)
+	case string:
+		return mapFromJSONB([]byte(typed), field)
+	case map[string]any:
+		return cloneMap(typed), nil
+	default:
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			return nil, fmt.Errorf("encode %s: %w", field, err)
+		}
+		return mapFromJSONB(encoded, field)
+	}
 }

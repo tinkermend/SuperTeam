@@ -198,6 +198,20 @@ type DigitalEmployeeExecutionInstance struct {
 	UpdatedAt            time.Time
 }
 
+type RuntimeProvisioningPreflight struct {
+	TenantID             uuid.UUID
+	TeamID               uuid.UUID
+	RuntimeNodeID        uuid.UUID
+	NodeID               string
+	AgentHomeDir         string
+	GovernanceSnapshot   map[string]any
+	HasActiveTeamConfig  bool
+	RuntimeOnline        bool
+	EnrollmentApproved   bool
+	RuntimeSessionActive bool
+	ProviderAvailable    bool
+}
+
 type CreateDraftRequest struct {
 	TenantID         uuid.UUID
 	TeamID           *uuid.UUID
@@ -209,6 +223,10 @@ type CreateDraftRequest struct {
 	ApprovalPolicy   map[string]any
 	RiskLevel        string
 	Metadata         map[string]any
+	RuntimeNodeID    uuid.UUID
+	ProviderType     string
+	SessionPolicy    map[string]any
+	WorkspacePolicy  map[string]any
 }
 
 type CreateDigitalEmployeeConfigRevisionRequest struct {
