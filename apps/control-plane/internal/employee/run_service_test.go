@@ -252,6 +252,45 @@ func TestRunServiceCreateRunMarksFailedWhenReceiptFailed(t *testing.T) {
 	}
 }
 
+func TestRunServiceCreateRunDoesNotRestartTerminalReceipt(t *testing.T) {
+	for _, receiptStatus := range []string{"completed", "cancelled", "timed_out"} {
+		t.Run(receiptStatus, func(t *testing.T) {
+			repo := newFakeRunServiceRepository()
+			repo.preflight = validRunServicePreflight()
+			dispatcher := newFakeRunServiceDispatcher()
+			dispatcher.connected[repo.preflight.NodeID] = true
+			service := mustNewRunService(t, repo, dispatcher)
+			req := validCreateRunServiceRequest()
+			idempotencyKey := "idem-receipt-" + receiptStatus
+			req.IdempotencyKey = &idempotencyKey
+			fingerprint, err := computeRunIdempotencyFingerprint(req, strings.TrimSpace(req.Objective), strings.TrimSpace(req.Prompt), repo.preflight)
+			if err != nil {
+				t.Fatalf("compute fingerprint: %v", err)
+			}
+			repo.activeRun = validRunServiceRun(DigitalEmployeeRunStatusQueued)
+			repo.activeRun.IdempotencyKey = &idempotencyKey
+			repo.activeRun.IdempotencyFingerprint = &fingerprint
+			repo.commandReceipt = &RuntimeCommandReceipt{
+				TenantID:  repo.activeRun.TenantID,
+				CommandID: repo.activeRun.CommandID,
+				Status:    receiptStatus,
+			}
+
+			run, err := service.CreateRun(context.Background(), req)
+
+			if err != nil {
+				t.Fatalf("create run retry: %v", err)
+			}
+			if run.Status != DigitalEmployeeRunStatusQueued {
+				t.Fatalf("expected existing queued run returned for terminal receipt, got %s", run.Status)
+			}
+			if len(dispatcher.commands) != 0 || len(repo.commandReceipts) != 0 || len(repo.statusUpdates) != 0 || len(repo.events) != 0 {
+				t.Fatalf("expected terminal receipt not to restart/write, commands=%#v receipts=%#v status=%#v events=%#v", dispatcher.commands, repo.commandReceipts, repo.statusUpdates, repo.events)
+			}
+		})
+	}
+}
+
 func TestRunServiceCreateRunDoesNotRestartRunningOrTerminalIdempotentRun(t *testing.T) {
 	for _, status := range []DigitalEmployeeRunStatus{
 		DigitalEmployeeRunStatusRunning,
