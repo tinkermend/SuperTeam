@@ -8,6 +8,7 @@ import (
 )
 
 type DigitalEmployeeRunRepository interface {
+	WithTransaction(ctx context.Context, fn func(DigitalEmployeeRunRepository) error) error
 	GetRunPreflight(ctx context.Context, tenantID, employeeID uuid.UUID) (RunPreflight, error)
 	GetActiveRun(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeRun, error)
 	GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error)
@@ -22,6 +23,7 @@ type DigitalEmployeeRunRepository interface {
 	CreateProviderSessionEventIfAbsent(ctx context.Context, req CreateProviderSessionEventRecordRequest) error
 	CreateCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error
 	GetCommandReceipt(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error)
+	GetCommandReceiptForUpdate(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error)
 	UpdateCommandReceipt(ctx context.Context, req UpdateRuntimeCommandReceiptRequest) (*RuntimeCommandReceipt, error)
 	UpdateExecutionInstanceStatus(ctx context.Context, tenantID, executionInstanceID uuid.UUID, status ExecutionInstanceStatus, errorMessage *string) (DigitalEmployeeExecutionInstanceRecord, error)
 	UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error)

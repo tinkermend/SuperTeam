@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-05 00:52：Runtime command writeback 改为校验已认证 Runtime 节点身份，终态与 provisioning 回写在事务内锁定 command receipt 并修补重放投影，同时合并 Provider session patch 并脱敏 Runtime 来源的结构化敏感字段。
 - 2026-06-05 00:30：Runtime command writeback 补齐数字员工执行实例 provisioning 成功/失败的 ready 与清理状态回写，并允许终态 run 重放已持久化事件序号保持幂等。
 - 2026-06-05 00:08：数字员工 run Console API 分页参数改为按 int32 范围解析，避免超大 `offset` 在下传查询前发生整数截断。
 - 2026-06-05 00:03：数字员工 run Console API 移除响应中的内部 `idempotency_fingerprint`，补齐列表与事件分页参数校验和默认值，并将 Runtime dispatch 失败统一映射为运行时不可用。

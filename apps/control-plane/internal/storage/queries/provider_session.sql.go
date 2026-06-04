@@ -712,48 +712,48 @@ INSERT INTO provider_sessions (
 )
 ON CONFLICT (tenant_id, provider_type, provider_session_id) DO UPDATE SET
     status = CASE
-        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.status
+        WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN EXCLUDED.status
         ELSE provider_sessions.status
     END,
     last_active_at = CASE
-        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN NOW()
+        WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN NOW()
         ELSE provider_sessions.last_active_at
     END,
     session_display_id = CASE
-        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN COALESCE(EXCLUDED.session_display_id, provider_sessions.session_display_id)
+        WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN COALESCE(EXCLUDED.session_display_id, provider_sessions.session_display_id)
         ELSE provider_sessions.session_display_id
     END,
     session_params = CASE
-        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.session_params
+        WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number AND EXCLUDED.session_params <> '{}'::jsonb THEN EXCLUDED.session_params
         ELSE provider_sessions.session_params
     END,
     session_state = CASE
-        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.session_state
+        WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN COALESCE(provider_sessions.session_state, '{}'::jsonb) || COALESCE(EXCLUDED.session_state, '{}'::jsonb)
         ELSE provider_sessions.session_state
     END,
     last_sequence_number = GREATEST(provider_sessions.last_sequence_number, EXCLUDED.last_sequence_number),
     last_command_id = CASE
-        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.last_command_id
+        WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN EXCLUDED.last_command_id
         ELSE provider_sessions.last_command_id
     END,
     last_run_id = CASE
-        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.last_run_id
+        WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN EXCLUDED.last_run_id
         ELSE provider_sessions.last_run_id
     END,
     last_error_family = CASE
-        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.last_error_family
+        WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN EXCLUDED.last_error_family
         ELSE provider_sessions.last_error_family
     END,
     last_runtime_seen_at = CASE
-        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN NOW()
+        WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN NOW()
         ELSE provider_sessions.last_runtime_seen_at
     END,
     metadata = CASE
-        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN EXCLUDED.metadata
+        WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN COALESCE(provider_sessions.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb)
         ELSE provider_sessions.metadata
     END,
     updated_at = CASE
-        WHEN EXCLUDED.last_sequence_number >= provider_sessions.last_sequence_number THEN NOW()
+        WHEN EXCLUDED.last_sequence_number > provider_sessions.last_sequence_number THEN NOW()
         ELSE provider_sessions.updated_at
     END
 RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at

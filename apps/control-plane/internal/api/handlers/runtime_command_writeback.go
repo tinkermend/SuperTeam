@@ -14,11 +14,11 @@ import (
 )
 
 type RuntimeCommandWritebackService interface {
-	RecordEvent(ctx context.Context, tenantID uuid.UUID, commandID string, event employee.RuntimeCommandEventWriteback) error
-	Complete(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error
-	Fail(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error
-	Cancel(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error
-	TimedOut(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error
+	RecordEvent(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, event employee.RuntimeCommandEventWriteback) error
+	Complete(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error
+	Fail(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error
+	Cancel(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error
+	TimedOut(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error
 }
 
 type RuntimeCommandWritebackHandler struct {
@@ -30,7 +30,7 @@ func NewRuntimeCommandWritebackHandler(service RuntimeCommandWritebackService) *
 }
 
 func (h *RuntimeCommandWritebackHandler) RecordEvent(w http.ResponseWriter, r *http.Request) {
-	tenantID, commandID, ok := runtimeCommandWritebackIdentity(w, r)
+	identity, commandID, ok := runtimeCommandWritebackIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -41,7 +41,7 @@ func (h *RuntimeCommandWritebackHandler) RecordEvent(w http.ResponseWriter, r *h
 	if !h.ensureService(w) {
 		return
 	}
-	if err := h.service.RecordEvent(r.Context(), tenantID, commandID, event); err != nil {
+	if err := h.service.RecordEvent(r.Context(), identity, commandID, event); err != nil {
 		writeRuntimeCommandWritebackError(w, err)
 		return
 	}
@@ -49,31 +49,31 @@ func (h *RuntimeCommandWritebackHandler) RecordEvent(w http.ResponseWriter, r *h
 }
 
 func (h *RuntimeCommandWritebackHandler) Complete(w http.ResponseWriter, r *http.Request) {
-	h.handleTerminal(w, r, func(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
-		return h.service.Complete(ctx, tenantID, commandID, terminal)
+	h.handleTerminal(w, r, func(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
+		return h.service.Complete(ctx, identity, commandID, terminal)
 	})
 }
 
 func (h *RuntimeCommandWritebackHandler) Fail(w http.ResponseWriter, r *http.Request) {
-	h.handleTerminal(w, r, func(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
-		return h.service.Fail(ctx, tenantID, commandID, terminal)
+	h.handleTerminal(w, r, func(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
+		return h.service.Fail(ctx, identity, commandID, terminal)
 	})
 }
 
 func (h *RuntimeCommandWritebackHandler) Cancel(w http.ResponseWriter, r *http.Request) {
-	h.handleTerminal(w, r, func(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
-		return h.service.Cancel(ctx, tenantID, commandID, terminal)
+	h.handleTerminal(w, r, func(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
+		return h.service.Cancel(ctx, identity, commandID, terminal)
 	})
 }
 
 func (h *RuntimeCommandWritebackHandler) TimedOut(w http.ResponseWriter, r *http.Request) {
-	h.handleTerminal(w, r, func(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
-		return h.service.TimedOut(ctx, tenantID, commandID, terminal)
+	h.handleTerminal(w, r, func(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
+		return h.service.TimedOut(ctx, identity, commandID, terminal)
 	})
 }
 
-func (h *RuntimeCommandWritebackHandler) handleTerminal(w http.ResponseWriter, r *http.Request, call func(context.Context, uuid.UUID, string, employee.RuntimeCommandTerminalWriteback) error) {
-	tenantID, commandID, ok := runtimeCommandWritebackIdentity(w, r)
+func (h *RuntimeCommandWritebackHandler) handleTerminal(w http.ResponseWriter, r *http.Request, call func(context.Context, employee.RuntimeCommandWritebackIdentity, string, employee.RuntimeCommandTerminalWriteback) error) {
+	identity, commandID, ok := runtimeCommandWritebackIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -84,7 +84,7 @@ func (h *RuntimeCommandWritebackHandler) handleTerminal(w http.ResponseWriter, r
 	if !h.ensureService(w) {
 		return
 	}
-	if err := call(r.Context(), tenantID, commandID, terminal); err != nil {
+	if err := call(r.Context(), identity, commandID, terminal); err != nil {
 		writeRuntimeCommandWritebackError(w, err)
 		return
 	}
@@ -99,18 +99,32 @@ func (h *RuntimeCommandWritebackHandler) ensureService(w http.ResponseWriter) bo
 	return true
 }
 
-func runtimeCommandWritebackIdentity(w http.ResponseWriter, r *http.Request) (uuid.UUID, string, bool) {
+func runtimeCommandWritebackIdentity(w http.ResponseWriter, r *http.Request) (employee.RuntimeCommandWritebackIdentity, string, bool) {
 	tenantID := middleware.GetTenantID(r.Context())
 	if tenantID == uuid.Nil {
 		http.Error(w, "tenant_id not found in context", http.StatusUnauthorized)
-		return uuid.Nil, "", false
+		return employee.RuntimeCommandWritebackIdentity{}, "", false
+	}
+	runtimeNodeID := middleware.GetRuntimeNodeID(r.Context())
+	if runtimeNodeID == uuid.Nil {
+		http.Error(w, "runtime_node_id not found in context", http.StatusUnauthorized)
+		return employee.RuntimeCommandWritebackIdentity{}, "", false
+	}
+	nodeID := strings.TrimSpace(middleware.GetNodeID(r.Context()))
+	if nodeID == "" {
+		http.Error(w, "node_id not found in context", http.StatusUnauthorized)
+		return employee.RuntimeCommandWritebackIdentity{}, "", false
 	}
 	commandID := strings.TrimSpace(chi.URLParam(r, "commandId"))
 	if commandID == "" {
 		http.Error(w, "command_id is required", http.StatusBadRequest)
-		return uuid.Nil, "", false
+		return employee.RuntimeCommandWritebackIdentity{}, "", false
 	}
-	return tenantID, commandID, true
+	return employee.RuntimeCommandWritebackIdentity{
+		TenantID:      tenantID,
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        nodeID,
+	}, commandID, true
 }
 
 func decodeRuntimeCommandWritebackJSON(w http.ResponseWriter, r *http.Request, target any) bool {
@@ -129,6 +143,8 @@ func writeRuntimeCommandWritebackError(w http.ResponseWriter, err error) {
 		http.Error(w, "not found", http.StatusNotFound)
 	case errors.Is(err, employee.ErrConflict):
 		http.Error(w, "conflict", http.StatusConflict)
+	case errors.Is(err, employee.ErrRuntimeIdentityMismatch):
+		http.Error(w, "runtime identity mismatch", http.StatusForbidden)
 	default:
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}

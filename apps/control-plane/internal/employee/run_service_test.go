@@ -644,6 +644,10 @@ func (f *fakeRunServiceRepository) GetRunPreflight(context.Context, uuid.UUID, u
 	return f.preflight, nil
 }
 
+func (f *fakeRunServiceRepository) WithTransaction(ctx context.Context, fn func(DigitalEmployeeRunRepository) error) error {
+	return fn(f)
+}
+
 func (f *fakeRunServiceRepository) GetActiveRun(context.Context, uuid.UUID, uuid.UUID) (*DigitalEmployeeRun, error) {
 	return f.activeRun, nil
 }
@@ -743,6 +747,10 @@ func (f *fakeRunServiceRepository) GetCommandReceipt(_ context.Context, tenantID
 		return &copied, nil
 	}
 	return nil, ErrNotFound
+}
+
+func (f *fakeRunServiceRepository) GetCommandReceiptForUpdate(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error) {
+	return f.GetCommandReceipt(ctx, tenantID, commandID)
 }
 
 func (f *fakeRunServiceRepository) UpdateCommandReceipt(_ context.Context, req UpdateRuntimeCommandReceiptRequest) (*RuntimeCommandReceipt, error) {

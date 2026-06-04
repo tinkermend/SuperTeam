@@ -38,7 +38,7 @@ func TestRuntimeCommandWritebackRoutesUseRuntimeSessionAuth(t *testing.T) {
 		t.Fatalf("expected one writeback service call, got %#v", writebackService.calls)
 	}
 	call := writebackService.calls[0]
-	if call.method != "event" || call.tenantID != runtime.DefaultTenantID || call.commandID != "cmd-1" {
+	if call.method != "event" || call.identity.TenantID != runtime.DefaultTenantID || call.identity.RuntimeNodeID != routeRuntimeSessionRuntimeNodeID || call.identity.NodeID != "node-session" || call.commandID != "cmd-1" {
 		t.Fatalf("expected tenant/command from runtime session route, got %#v", call)
 	}
 }
@@ -74,31 +74,33 @@ type routeRuntimeCommandWritebackService struct {
 
 type routeRuntimeCommandWritebackCall struct {
 	method    string
-	tenantID  uuid.UUID
+	identity  employee.RuntimeCommandWritebackIdentity
 	commandID string
 }
 
-func (s *routeRuntimeCommandWritebackService) RecordEvent(ctx context.Context, tenantID uuid.UUID, commandID string, event employee.RuntimeCommandEventWriteback) error {
-	s.calls = append(s.calls, routeRuntimeCommandWritebackCall{method: "event", tenantID: tenantID, commandID: commandID})
+func (s *routeRuntimeCommandWritebackService) RecordEvent(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, event employee.RuntimeCommandEventWriteback) error {
+	s.calls = append(s.calls, routeRuntimeCommandWritebackCall{method: "event", identity: identity, commandID: commandID})
 	return nil
 }
 
-func (s *routeRuntimeCommandWritebackService) Complete(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
-	s.calls = append(s.calls, routeRuntimeCommandWritebackCall{method: "complete", tenantID: tenantID, commandID: commandID})
+func (s *routeRuntimeCommandWritebackService) Complete(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
+	s.calls = append(s.calls, routeRuntimeCommandWritebackCall{method: "complete", identity: identity, commandID: commandID})
 	return nil
 }
 
-func (s *routeRuntimeCommandWritebackService) Fail(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
-	s.calls = append(s.calls, routeRuntimeCommandWritebackCall{method: "fail", tenantID: tenantID, commandID: commandID})
+func (s *routeRuntimeCommandWritebackService) Fail(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
+	s.calls = append(s.calls, routeRuntimeCommandWritebackCall{method: "fail", identity: identity, commandID: commandID})
 	return nil
 }
 
-func (s *routeRuntimeCommandWritebackService) Cancel(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
-	s.calls = append(s.calls, routeRuntimeCommandWritebackCall{method: "cancel", tenantID: tenantID, commandID: commandID})
+func (s *routeRuntimeCommandWritebackService) Cancel(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
+	s.calls = append(s.calls, routeRuntimeCommandWritebackCall{method: "cancel", identity: identity, commandID: commandID})
 	return nil
 }
 
-func (s *routeRuntimeCommandWritebackService) TimedOut(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
-	s.calls = append(s.calls, routeRuntimeCommandWritebackCall{method: "timed_out", tenantID: tenantID, commandID: commandID})
+func (s *routeRuntimeCommandWritebackService) TimedOut(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
+	s.calls = append(s.calls, routeRuntimeCommandWritebackCall{method: "timed_out", identity: identity, commandID: commandID})
 	return nil
 }
+
+var routeRuntimeSessionRuntimeNodeID = uuid.MustParse("44444444-4444-4444-4444-444444444444")

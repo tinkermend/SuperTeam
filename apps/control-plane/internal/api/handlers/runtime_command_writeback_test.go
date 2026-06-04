@@ -74,7 +74,7 @@ func TestRuntimeCommandWritebackEndpointsDecodeBodyAndReturnAccepted(t *testing.
 				t.Fatalf("expected one service call, got %#v", service.calls)
 			}
 			call := service.calls[0]
-			if call.method != tt.wantMethod || call.tenantID != tenantID || call.commandID != "cmd-1" {
+			if call.method != tt.wantMethod || call.identity.TenantID != tenantID || call.identity.RuntimeNodeID != runtimeCommandWritebackRuntimeNodeID || call.identity.NodeID != "runtime-node-1" || call.commandID != "cmd-1" {
 				t.Fatalf("unexpected service call: %#v", call)
 			}
 			if tt.wantMethod == "event" {
@@ -101,6 +101,19 @@ func TestRuntimeCommandWritebackConflictMapsTo409(t *testing.T) {
 
 	if resp.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestRuntimeCommandWritebackIdentityMismatchMapsTo403(t *testing.T) {
+	service := &fakeRuntimeCommandWritebackService{err: employee.ErrRuntimeIdentityMismatch}
+	handler := NewRuntimeCommandWritebackHandler(service)
+	req := runtimeCommandWritebackRequest(http.MethodPost, "/api/v1/runtime/commands/cmd-1/events", "cmd-1", runtimeCommandWritebackTenantID, `{"event_type":"text_delta","sequence_number":1}`)
+	resp := httptest.NewRecorder()
+
+	handler.RecordEvent(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", resp.Code, resp.Body.String())
 	}
 }
 
@@ -136,6 +149,24 @@ func TestRuntimeCommandWritebackMissingTenantMapsToUnauthorized(t *testing.T) {
 	}
 }
 
+func TestRuntimeCommandWritebackMissingRuntimeIdentityMapsToUnauthorized(t *testing.T) {
+	service := &fakeRuntimeCommandWritebackService{}
+	handler := NewRuntimeCommandWritebackHandler(service)
+	req := runtimeCommandWritebackRequest(http.MethodPost, "/api/v1/runtime/commands/cmd-1/events", "cmd-1", runtimeCommandWritebackTenantID, `{"event_type":"text_delta","sequence_number":1}`)
+	ctx := context.WithValue(req.Context(), middleware.RuntimeNodeIDKey, uuid.Nil)
+	req = req.WithContext(ctx)
+	resp := httptest.NewRecorder()
+
+	handler.RecordEvent(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if len(service.calls) != 0 {
+		t.Fatalf("expected missing runtime identity not to call service, got %#v", service.calls)
+	}
+}
+
 func runtimeCommandWritebackRequest(method, path, commandID string, tenantID uuid.UUID, body string) *http.Request {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -144,11 +175,16 @@ func runtimeCommandWritebackRequest(method, path, commandID string, tenantID uui
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, routeContext)
 	if tenantID != uuid.Nil {
 		ctx = context.WithValue(ctx, middleware.TenantIDKey, tenantID)
+		ctx = context.WithValue(ctx, middleware.RuntimeNodeIDKey, runtimeCommandWritebackRuntimeNodeID)
+		ctx = context.WithValue(ctx, middleware.NodeIDKey, "runtime-node-1")
 	}
 	return req.WithContext(ctx)
 }
 
-var runtimeCommandWritebackTenantID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+var (
+	runtimeCommandWritebackTenantID      = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	runtimeCommandWritebackRuntimeNodeID = uuid.MustParse("00000000-0000-0000-0000-000000000444")
+)
 
 type fakeRuntimeCommandWritebackService struct {
 	err   error
@@ -157,33 +193,33 @@ type fakeRuntimeCommandWritebackService struct {
 
 type runtimeCommandWritebackCall struct {
 	method    string
-	tenantID  uuid.UUID
+	identity  employee.RuntimeCommandWritebackIdentity
 	commandID string
 	event     employee.RuntimeCommandEventWriteback
 	terminal  employee.RuntimeCommandTerminalWriteback
 }
 
-func (f *fakeRuntimeCommandWritebackService) RecordEvent(ctx context.Context, tenantID uuid.UUID, commandID string, event employee.RuntimeCommandEventWriteback) error {
-	f.calls = append(f.calls, runtimeCommandWritebackCall{method: "event", tenantID: tenantID, commandID: commandID, event: event})
+func (f *fakeRuntimeCommandWritebackService) RecordEvent(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, event employee.RuntimeCommandEventWriteback) error {
+	f.calls = append(f.calls, runtimeCommandWritebackCall{method: "event", identity: identity, commandID: commandID, event: event})
 	return f.err
 }
 
-func (f *fakeRuntimeCommandWritebackService) Complete(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
-	f.calls = append(f.calls, runtimeCommandWritebackCall{method: "complete", tenantID: tenantID, commandID: commandID, terminal: terminal})
+func (f *fakeRuntimeCommandWritebackService) Complete(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
+	f.calls = append(f.calls, runtimeCommandWritebackCall{method: "complete", identity: identity, commandID: commandID, terminal: terminal})
 	return f.err
 }
 
-func (f *fakeRuntimeCommandWritebackService) Fail(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
-	f.calls = append(f.calls, runtimeCommandWritebackCall{method: "fail", tenantID: tenantID, commandID: commandID, terminal: terminal})
+func (f *fakeRuntimeCommandWritebackService) Fail(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
+	f.calls = append(f.calls, runtimeCommandWritebackCall{method: "fail", identity: identity, commandID: commandID, terminal: terminal})
 	return f.err
 }
 
-func (f *fakeRuntimeCommandWritebackService) Cancel(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
-	f.calls = append(f.calls, runtimeCommandWritebackCall{method: "cancel", tenantID: tenantID, commandID: commandID, terminal: terminal})
+func (f *fakeRuntimeCommandWritebackService) Cancel(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
+	f.calls = append(f.calls, runtimeCommandWritebackCall{method: "cancel", identity: identity, commandID: commandID, terminal: terminal})
 	return f.err
 }
 
-func (f *fakeRuntimeCommandWritebackService) TimedOut(ctx context.Context, tenantID uuid.UUID, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
-	f.calls = append(f.calls, runtimeCommandWritebackCall{method: "timed_out", tenantID: tenantID, commandID: commandID, terminal: terminal})
+func (f *fakeRuntimeCommandWritebackService) TimedOut(ctx context.Context, identity employee.RuntimeCommandWritebackIdentity, commandID string, terminal employee.RuntimeCommandTerminalWriteback) error {
+	f.calls = append(f.calls, runtimeCommandWritebackCall{method: "timed_out", identity: identity, commandID: commandID, terminal: terminal})
 	return f.err
 }

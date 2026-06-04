@@ -108,6 +108,12 @@ type StopDigitalEmployeeRunRequest struct {
 	Reason            string
 }
 
+type RuntimeCommandWritebackIdentity struct {
+	TenantID      uuid.UUID
+	RuntimeNodeID uuid.UUID
+	NodeID        string
+}
+
 type RuntimeCommandEventWriteback struct {
 	EventType                 string         `json:"event_type"`
 	SequenceNumber            int32          `json:"sequence_number"`

@@ -26,10 +26,11 @@ func TestWritebackEventCreatesTaskAndProviderSessionEventsIdempotently(t *testin
 		Metadata:                  map[string]any{"stream": "stdout"},
 	}
 
-	if err := service.RecordEvent(context.Background(), run.TenantID, "cmd-1", event); err != nil {
+	identity := validWritebackIdentity(run)
+	if err := service.RecordEvent(context.Background(), identity, "cmd-1", event); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
-	if err := service.RecordEvent(context.Background(), run.TenantID, "cmd-1", event); err != nil {
+	if err := service.RecordEvent(context.Background(), identity, "cmd-1", event); err != nil {
 		t.Fatalf("record duplicate event: %v", err)
 	}
 
@@ -71,7 +72,8 @@ func TestWritebackTerminalDoesNotChangeExistingTerminalRun(t *testing.T) {
 	repo.putReceipt(validWritebackReceipt(run))
 	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
 
-	if err := service.Complete(context.Background(), run.TenantID, "cmd-1", RuntimeCommandTerminalWriteback{
+	identity := validWritebackIdentity(run)
+	if err := service.Complete(context.Background(), identity, "cmd-1", RuntimeCommandTerminalWriteback{
 		Status:  DigitalEmployeeRunStatusCompleted,
 		Summary: "done",
 		Result:  map[string]any{"summary": "done"},
@@ -79,7 +81,7 @@ func TestWritebackTerminalDoesNotChangeExistingTerminalRun(t *testing.T) {
 		t.Fatalf("complete run: %v", err)
 	}
 	lateFailure := "late failure"
-	err := service.Fail(context.Background(), run.TenantID, "cmd-1", RuntimeCommandTerminalWriteback{
+	err := service.Fail(context.Background(), identity, "cmd-1", RuntimeCommandTerminalWriteback{
 		Status:       DigitalEmployeeRunStatusFailed,
 		ErrorMessage: &lateFailure,
 	})
@@ -106,22 +108,22 @@ func TestWritebackCancelledAndTimedOutSetRunAndReceiptStatus(t *testing.T) {
 	tests := []struct {
 		name          string
 		status        DigitalEmployeeRunStatus
-		writeback     func(context.Context, *DigitalEmployeeRunWritebackService, uuid.UUID, string, RuntimeCommandTerminalWriteback) error
+		writeback     func(context.Context, *DigitalEmployeeRunWritebackService, RuntimeCommandWritebackIdentity, string, RuntimeCommandTerminalWriteback) error
 		wantTimedOut  bool
 		wantResultKey string
 	}{
 		{
 			name:   "cancelled",
 			status: DigitalEmployeeRunStatusCancelled,
-			writeback: func(ctx context.Context, service *DigitalEmployeeRunWritebackService, tenantID uuid.UUID, commandID string, terminal RuntimeCommandTerminalWriteback) error {
-				return service.Cancel(ctx, tenantID, commandID, terminal)
+			writeback: func(ctx context.Context, service *DigitalEmployeeRunWritebackService, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback) error {
+				return service.Cancel(ctx, identity, commandID, terminal)
 			},
 		},
 		{
 			name:   "timed_out",
 			status: DigitalEmployeeRunStatusTimedOut,
-			writeback: func(ctx context.Context, service *DigitalEmployeeRunWritebackService, tenantID uuid.UUID, commandID string, terminal RuntimeCommandTerminalWriteback) error {
-				return service.TimedOut(ctx, tenantID, commandID, terminal)
+			writeback: func(ctx context.Context, service *DigitalEmployeeRunWritebackService, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback) error {
+				return service.TimedOut(ctx, identity, commandID, terminal)
 			},
 			wantTimedOut:  true,
 			wantResultKey: "timed_out",
@@ -136,7 +138,7 @@ func TestWritebackCancelledAndTimedOutSetRunAndReceiptStatus(t *testing.T) {
 			repo.putReceipt(validWritebackReceipt(run))
 			service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
 
-			if err := tt.writeback(context.Background(), service, run.TenantID, run.CommandID, RuntimeCommandTerminalWriteback{
+			if err := tt.writeback(context.Background(), service, validWritebackIdentity(run), run.CommandID, RuntimeCommandTerminalWriteback{
 				Status: tt.status,
 			}); err != nil {
 				t.Fatalf("%s writeback: %v", tt.name, err)
@@ -162,7 +164,11 @@ func TestWritebackMissingCommandReturnsNotFound(t *testing.T) {
 	repo := newFakeRunWritebackRepository()
 	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
 
-	err := service.RecordEvent(context.Background(), runWritebackTenantID, "cmd-missing", RuntimeCommandEventWriteback{
+	err := service.RecordEvent(context.Background(), RuntimeCommandWritebackIdentity{
+		TenantID:      runWritebackTenantID,
+		RuntimeNodeID: runWritebackRuntimeNodeID,
+		NodeID:        "runtime-node-1",
+	}, "cmd-missing", RuntimeCommandEventWriteback{
 		EventType:      "text_delta",
 		SequenceNumber: 1,
 		Payload:        map[string]any{"text": "hello"},
@@ -173,6 +179,29 @@ func TestWritebackMissingCommandReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestWritebackWrongRuntimeIdentityRejected(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
+	identity := validWritebackIdentity(run)
+	identity.NodeID = "runtime-node-other"
+
+	err := service.RecordEvent(context.Background(), identity, "cmd-1", RuntimeCommandEventWriteback{
+		EventType:      "text_delta",
+		SequenceNumber: 1,
+		Payload:        map[string]any{"text": "hello"},
+	})
+
+	if !errors.Is(err, ErrRuntimeIdentityMismatch) {
+		t.Fatalf("expected ErrRuntimeIdentityMismatch, got %v", err)
+	}
+	if repo.taskEventInsertCount != 0 || len(repo.providerSessionUpserts) != 0 {
+		t.Fatalf("expected wrong runtime identity to reject before writes, events=%d upserts=%#v", repo.taskEventInsertCount, repo.providerSessionUpserts)
+	}
+}
+
 func TestWritebackTerminalStatusMismatchRejected(t *testing.T) {
 	repo := newFakeRunWritebackRepository()
 	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
@@ -180,7 +209,7 @@ func TestWritebackTerminalStatusMismatchRejected(t *testing.T) {
 	repo.putReceipt(validWritebackReceipt(run))
 	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
 
-	err := service.Complete(context.Background(), run.TenantID, "cmd-1", RuntimeCommandTerminalWriteback{
+	err := service.Complete(context.Background(), validWritebackIdentity(run), "cmd-1", RuntimeCommandTerminalWriteback{
 		Status: DigitalEmployeeRunStatusFailed,
 	})
 
@@ -192,6 +221,89 @@ func TestWritebackTerminalStatusMismatchRejected(t *testing.T) {
 	}
 }
 
+func TestWritebackTerminalReplayRepairsReceiptAndEventProjection(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusCompleted, "cmd-1")
+	run.Result = map[string]any{"summary": "done", "status": string(DigitalEmployeeRunStatusCompleted)}
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
+
+	if err := service.Complete(context.Background(), validWritebackIdentity(run), "cmd-1", RuntimeCommandTerminalWriteback{
+		Status:  DigitalEmployeeRunStatusCompleted,
+		Summary: "done",
+	}); err != nil {
+		t.Fatalf("replay completed terminal writeback: %v", err)
+	}
+
+	if len(repo.runUpdates) != 0 {
+		t.Fatalf("expected terminal replay not to mutate run status, got %#v", repo.runUpdates)
+	}
+	if repo.taskEventInsertCount != 1 {
+		t.Fatalf("expected terminal replay to repair missing task event, got %d", repo.taskEventInsertCount)
+	}
+	if len(repo.receiptUpdates) != 1 || repo.receiptUpdates[0].Status != string(DigitalEmployeeRunStatusCompleted) {
+		t.Fatalf("expected terminal replay to repair receipt status, got %#v", repo.receiptUpdates)
+	}
+	if repo.transactionCount != 1 || repo.lockedReceiptReadCount != 1 {
+		t.Fatalf("expected terminal replay to lock receipt in transaction, tx=%d locks=%d", repo.transactionCount, repo.lockedReceiptReadCount)
+	}
+}
+
+func TestWritebackTerminalRedactsRuntimeOriginatedJSON(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
+	providerSessionExternalID := "provider-session-1"
+
+	if err := service.Complete(context.Background(), validWritebackIdentity(run), "cmd-1", RuntimeCommandTerminalWriteback{
+		Status:                    DigitalEmployeeRunStatusCompleted,
+		Result:                    map[string]any{"token": "secret", "nested": map[string]any{"api_key": "key"}},
+		Diagnostic:                map[string]any{"access_token": "access"},
+		SessionStatePatch:         map[string]any{"refresh_token": "refresh", "cursor": "seq-10"},
+		ProviderSessionExternalID: &providerSessionExternalID,
+		WorkProducts: []WorkProduct{{
+			Type:     "report",
+			Title:    "报告",
+			Metadata: map[string]any{"secret": "hidden", "path": "s3://safe/ref"},
+		}},
+	}); err != nil {
+		t.Fatalf("complete run: %v", err)
+	}
+
+	if len(repo.runUpdates) != 1 {
+		t.Fatalf("expected one run update, got %#v", repo.runUpdates)
+	}
+	update := repo.runUpdates[0]
+	if update.Result["token"] != "[redacted]" {
+		t.Fatalf("expected result token redacted, got %#v", update.Result)
+	}
+	nested, ok := update.Result["nested"].(map[string]any)
+	if !ok || nested["api_key"] != "[redacted]" {
+		t.Fatalf("expected nested api_key redacted, got %#v", update.Result)
+	}
+	if update.Diagnostic["access_token"] != "[redacted]" {
+		t.Fatalf("expected diagnostic access_token redacted, got %#v", update.Diagnostic)
+	}
+	if update.SessionState["refresh_token"] != "[redacted]" || update.SessionState["cursor"] != "seq-10" {
+		t.Fatalf("expected session state patch redacted and safe fields preserved, got %#v", update.SessionState)
+	}
+	if len(update.WorkProducts) != 1 || update.WorkProducts[0].Metadata["secret"] != "[redacted]" {
+		t.Fatalf("expected work product metadata redacted, got %#v", update.WorkProducts)
+	}
+	if len(repo.receiptUpdates) != 1 || repo.receiptUpdates[0].Result["token"] != "[redacted]" {
+		t.Fatalf("expected receipt result redacted, got %#v", repo.receiptUpdates)
+	}
+	if len(repo.providerSessionUpserts) != 1 || repo.providerSessionUpserts[0].SessionState["refresh_token"] != "[redacted]" {
+		t.Fatalf("expected provider session state redacted, got %#v", repo.providerSessionUpserts)
+	}
+	if len(repo.providerSessionEvents) != 1 || repo.providerSessionEvents[0].SessionStatePatch["refresh_token"] != "[redacted]" {
+		t.Fatalf("expected provider session event patch redacted, got %#v", repo.providerSessionEvents)
+	}
+}
+
 func TestWritebackEventWithoutProviderSessionStillWritesTaskEvent(t *testing.T) {
 	repo := newFakeRunWritebackRepository()
 	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
@@ -199,7 +311,7 @@ func TestWritebackEventWithoutProviderSessionStillWritesTaskEvent(t *testing.T) 
 	repo.putReceipt(validWritebackReceipt(run))
 	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
 
-	if err := service.RecordEvent(context.Background(), run.TenantID, "cmd-1", RuntimeCommandEventWriteback{
+	if err := service.RecordEvent(context.Background(), validWritebackIdentity(run), "cmd-1", RuntimeCommandEventWriteback{
 		EventType:      "text_delta",
 		SequenceNumber: 2,
 		Payload:        map[string]any{"text": "hello"},
@@ -227,19 +339,20 @@ func TestWritebackDuplicateEventAfterTerminalRunIsAcceptedIdempotently(t *testin
 		Payload:        map[string]any{"text": "hello"},
 	}
 
-	if err := service.RecordEvent(context.Background(), run.TenantID, "cmd-1", event); err != nil {
+	identity := validWritebackIdentity(run)
+	if err := service.RecordEvent(context.Background(), identity, "cmd-1", event); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
-	if err := service.Complete(context.Background(), run.TenantID, "cmd-1", RuntimeCommandTerminalWriteback{
+	if err := service.Complete(context.Background(), identity, "cmd-1", RuntimeCommandTerminalWriteback{
 		Status:  DigitalEmployeeRunStatusCompleted,
 		Summary: "done",
 	}); err != nil {
 		t.Fatalf("complete run: %v", err)
 	}
-	if err := service.RecordEvent(context.Background(), run.TenantID, "cmd-1", event); err != nil {
+	if err := service.RecordEvent(context.Background(), identity, "cmd-1", event); err != nil {
 		t.Fatalf("duplicate terminal event should be idempotent: %v", err)
 	}
-	err := service.RecordEvent(context.Background(), run.TenantID, "cmd-1", RuntimeCommandEventWriteback{
+	err := service.RecordEvent(context.Background(), identity, "cmd-1", RuntimeCommandEventWriteback{
 		EventType:      "text_delta",
 		SequenceNumber: 8,
 		Payload:        map[string]any{"text": "late"},
@@ -261,7 +374,7 @@ func TestWritebackCompleteProvisioningMarksInstanceAndEmployeeReady(t *testing.T
 	audit := &fakeWritebackAuditLogger{}
 	service := mustNewRunWritebackService(t, repo, audit)
 
-	if err := service.Complete(context.Background(), receipt.TenantID, receipt.CommandID, RuntimeCommandTerminalWriteback{
+	if err := service.Complete(context.Background(), validProvisioningIdentity(receipt), receipt.CommandID, RuntimeCommandTerminalWriteback{
 		Status: DigitalEmployeeRunStatusCompleted,
 		Result: map[string]any{"agent_home_dir": "/srv/agents/code"},
 	}); err != nil {
@@ -292,7 +405,7 @@ func TestWritebackFailProvisioningDeletesEmployeeAndInstance(t *testing.T) {
 	service := mustNewRunWritebackService(t, repo, audit)
 	errorMessage := "runtime failed to create workspace"
 
-	if err := service.Fail(context.Background(), receipt.TenantID, receipt.CommandID, RuntimeCommandTerminalWriteback{
+	if err := service.Fail(context.Background(), validProvisioningIdentity(receipt), receipt.CommandID, RuntimeCommandTerminalWriteback{
 		Status:       DigitalEmployeeRunStatusFailed,
 		ErrorMessage: &errorMessage,
 	}); err != nil {
@@ -367,6 +480,22 @@ func validWritebackReceipt(run *DigitalEmployeeRun) *RuntimeCommandReceipt {
 	}
 }
 
+func validWritebackIdentity(run *DigitalEmployeeRun) RuntimeCommandWritebackIdentity {
+	return RuntimeCommandWritebackIdentity{
+		TenantID:      run.TenantID,
+		RuntimeNodeID: run.RuntimeNodeID,
+		NodeID:        run.NodeID,
+	}
+}
+
+func validProvisioningIdentity(receipt *RuntimeCommandReceipt) RuntimeCommandWritebackIdentity {
+	return RuntimeCommandWritebackIdentity{
+		TenantID:      receipt.TenantID,
+		RuntimeNodeID: receipt.RuntimeNodeID,
+		NodeID:        receipt.NodeID,
+	}
+}
+
 func validProvisioningReceipt(commandID string) *RuntimeCommandReceipt {
 	return &RuntimeCommandReceipt{
 		ID:            uuid.New(),
@@ -426,6 +555,8 @@ type fakeRunWritebackRepository struct {
 	deletedEmployees                []uuid.UUID
 	taskEventInsertCount            int
 	providerSessionEventInsertCount int
+	transactionCount                int
+	lockedReceiptReadCount          int
 }
 
 type fakeExecutionInstanceStatusUpdate struct {
@@ -469,6 +600,11 @@ func (f *fakeRunWritebackRepository) putExecutionInstance(instance DigitalEmploy
 
 func (f *fakeRunWritebackRepository) GetRunPreflight(context.Context, uuid.UUID, uuid.UUID) (RunPreflight, error) {
 	return RunPreflight{}, ErrNotFound
+}
+
+func (f *fakeRunWritebackRepository) WithTransaction(ctx context.Context, fn func(DigitalEmployeeRunRepository) error) error {
+	f.transactionCount++
+	return fn(f)
 }
 
 func (f *fakeRunWritebackRepository) GetActiveRun(context.Context, uuid.UUID, uuid.UUID) (*DigitalEmployeeRun, error) {
@@ -595,6 +731,11 @@ func (f *fakeRunWritebackRepository) GetCommandReceipt(_ context.Context, tenant
 	}
 	copied := *receipt
 	return &copied, nil
+}
+
+func (f *fakeRunWritebackRepository) GetCommandReceiptForUpdate(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error) {
+	f.lockedReceiptReadCount++
+	return f.GetCommandReceipt(ctx, tenantID, commandID)
 }
 
 func (f *fakeRunWritebackRepository) UpdateCommandReceipt(_ context.Context, req UpdateRuntimeCommandReceiptRequest) (*RuntimeCommandReceipt, error) {

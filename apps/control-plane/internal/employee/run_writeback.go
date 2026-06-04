@@ -31,8 +31,8 @@ func NewDigitalEmployeeRunWritebackService(repository DigitalEmployeeRunReposito
 	}, nil
 }
 
-func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, tenantID uuid.UUID, commandID string, event RuntimeCommandEventWriteback) error {
-	commandID, err := validateWritebackCommandInput(tenantID, commandID)
+func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, event RuntimeCommandEventWriteback) error {
+	identity, commandID, err := validateWritebackIdentity(identity, commandID)
 	if err != nil {
 		return err
 	}
@@ -44,7 +44,7 @@ func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, te
 		return fmt.Errorf("%w: sequence_number is required", ErrInvalidInput)
 	}
 
-	_, run, err := s.loadCommandRun(ctx, tenantID, commandID)
+	_, run, err := s.loadCommandRun(ctx, identity, commandID, false)
 	if err != nil {
 		return err
 	}
@@ -52,7 +52,7 @@ func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, te
 		return fmt.Errorf("%w: command is not associated with a run", ErrNotFound)
 	}
 	if run.Status.IsTerminal() {
-		exists, err := s.repository.HasRunEventSequence(ctx, tenantID, run.TaskID, run.ID, event.SequenceNumber)
+		exists, err := s.repository.HasRunEventSequence(ctx, identity.TenantID, run.TaskID, run.ID, event.SequenceNumber)
 		if err != nil {
 			return fmt.Errorf("check existing terminal run event: %w", err)
 		}
@@ -63,7 +63,7 @@ func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, te
 
 	commandIDRef := commandID
 	if err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
-		TenantID:       tenantID,
+		TenantID:       identity.TenantID,
 		TaskID:         run.TaskID,
 		RunID:          run.ID,
 		EventType:      eventType,
@@ -91,11 +91,11 @@ func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, te
 	return nil
 }
 
-func (s *DigitalEmployeeRunWritebackService) Complete(ctx context.Context, tenantID uuid.UUID, commandID string, terminal RuntimeCommandTerminalWriteback) error {
+func (s *DigitalEmployeeRunWritebackService) Complete(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback) error {
 	if terminal.Status != DigitalEmployeeRunStatusCompleted {
 		return fmt.Errorf("%w: complete writeback requires completed status", ErrInvalidInput)
 	}
-	return s.recordTerminal(ctx, tenantID, commandID, terminal, terminalSpec{
+	return s.recordTerminal(ctx, identity, commandID, terminal, terminalSpec{
 		status:          DigitalEmployeeRunStatusCompleted,
 		eventType:       "run_completed",
 		sequenceNumber:  terminalCompletedSequence,
@@ -107,11 +107,11 @@ func (s *DigitalEmployeeRunWritebackService) Complete(ctx context.Context, tenan
 	})
 }
 
-func (s *DigitalEmployeeRunWritebackService) Fail(ctx context.Context, tenantID uuid.UUID, commandID string, terminal RuntimeCommandTerminalWriteback) error {
+func (s *DigitalEmployeeRunWritebackService) Fail(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback) error {
 	if terminal.Status != DigitalEmployeeRunStatusFailed {
 		return fmt.Errorf("%w: fail writeback requires failed status", ErrInvalidInput)
 	}
-	return s.recordTerminal(ctx, tenantID, commandID, terminal, terminalSpec{
+	return s.recordTerminal(ctx, identity, commandID, terminal, terminalSpec{
 		status:         DigitalEmployeeRunStatusFailed,
 		eventType:      "run_failed",
 		sequenceNumber: terminalFailedSequence,
@@ -122,11 +122,11 @@ func (s *DigitalEmployeeRunWritebackService) Fail(ctx context.Context, tenantID 
 	})
 }
 
-func (s *DigitalEmployeeRunWritebackService) Cancel(ctx context.Context, tenantID uuid.UUID, commandID string, terminal RuntimeCommandTerminalWriteback) error {
+func (s *DigitalEmployeeRunWritebackService) Cancel(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback) error {
 	if terminal.Status != DigitalEmployeeRunStatusCancelled {
 		return fmt.Errorf("%w: cancelled writeback requires cancelled status", ErrInvalidInput)
 	}
-	return s.recordTerminal(ctx, tenantID, commandID, terminal, terminalSpec{
+	return s.recordTerminal(ctx, identity, commandID, terminal, terminalSpec{
 		status:         DigitalEmployeeRunStatusCancelled,
 		eventType:      "run_cancelled",
 		sequenceNumber: terminalCancelledSequence,
@@ -137,7 +137,7 @@ func (s *DigitalEmployeeRunWritebackService) Cancel(ctx context.Context, tenantI
 	})
 }
 
-func (s *DigitalEmployeeRunWritebackService) TimedOut(ctx context.Context, tenantID uuid.UUID, commandID string, terminal RuntimeCommandTerminalWriteback) error {
+func (s *DigitalEmployeeRunWritebackService) TimedOut(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback) error {
 	if terminal.Status != DigitalEmployeeRunStatusTimedOut {
 		return fmt.Errorf("%w: timed-out writeback requires timed_out status", ErrInvalidInput)
 	}
@@ -145,7 +145,7 @@ func (s *DigitalEmployeeRunWritebackService) TimedOut(ctx context.Context, tenan
 	if terminal.ErrorFamily == nil {
 		terminal.ErrorFamily = stringPtr("timeout")
 	}
-	return s.recordTerminal(ctx, tenantID, commandID, terminal, terminalSpec{
+	return s.recordTerminal(ctx, identity, commandID, terminal, terminalSpec{
 		status:         DigitalEmployeeRunStatusTimedOut,
 		eventType:      "run_timed_out",
 		sequenceNumber: terminalTimedOutSequence,
@@ -167,12 +167,20 @@ type terminalSpec struct {
 	receiptErrorMsg *string
 }
 
-func (s *DigitalEmployeeRunWritebackService) recordTerminal(ctx context.Context, tenantID uuid.UUID, commandID string, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
-	commandID, err := validateWritebackCommandInput(tenantID, commandID)
+func (s *DigitalEmployeeRunWritebackService) recordTerminal(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
+	identity, commandID, err := validateWritebackIdentity(identity, commandID)
 	if err != nil {
 		return err
 	}
-	receipt, run, err := s.loadCommandRun(ctx, tenantID, commandID)
+	return s.repository.WithTransaction(ctx, func(repository DigitalEmployeeRunRepository) error {
+		txService := *s
+		txService.repository = repository
+		return txService.recordTerminalLocked(ctx, identity, commandID, terminal, spec)
+	})
+}
+
+func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
+	receipt, run, err := s.loadCommandRun(ctx, identity, commandID, true)
 	if err != nil {
 		return err
 	}
@@ -180,46 +188,48 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminal(ctx context.Context,
 		return fmt.Errorf("%w: command receipt is already terminal with status %s", ErrConflict, receipt.Status)
 	}
 	if run == nil {
-		return s.recordProvisioningTerminal(ctx, tenantID, commandID, receipt, terminal, spec)
+		return s.recordProvisioningTerminal(ctx, identity, commandID, receipt, terminal, spec)
 	}
-	if run.Status.IsTerminal() {
+	wasTerminal := run.Status.IsTerminal()
+	updatedRun := run
+	if wasTerminal {
 		if run.Status != spec.status {
 			return fmt.Errorf("%w: run is already terminal with status %s", ErrConflict, run.Status)
 		}
 		if !terminalCompatibleWithRun(run, terminal) {
 			return fmt.Errorf("%w: terminal writeback conflicts with persisted run", ErrConflict)
 		}
-		return nil
-	}
-
-	result := terminalResult(terminal, spec.status)
-	diagnostic := terminalDiagnostic(terminal, spec.status)
-	sessionState := mergeSessionStatePatch(run.SessionState, terminal.SessionStatePatch)
-	updatedRun, err := s.repository.UpdateRunStatus(ctx, UpdateRunStatusRequest{
-		TenantID:                  tenantID,
-		RunID:                     run.ID,
-		Status:                    spec.status,
-		Result:                    result,
-		ErrorMessage:              terminal.ErrorMessage,
-		Diagnostic:                diagnostic,
-		LogRef:                    terminal.LogRef,
-		RawResultRef:              terminal.RawResultRef,
-		WorkProducts:              append([]WorkProduct(nil), terminal.WorkProducts...),
-		SessionState:              sessionState,
-		ErrorCode:                 terminal.ErrorCode,
-		ErrorFamily:               terminal.ErrorFamily,
-		ExitCode:                  terminal.ExitCode,
-		Signal:                    terminal.Signal,
-		ProviderSessionExternalID: trimmedOptionalValue(terminal.ProviderSessionExternalID),
-		TimedOut:                  spec.status == DigitalEmployeeRunStatusTimedOut || terminal.TimedOut,
-	})
-	if err != nil {
-		return fmt.Errorf("update run terminal status: %w", err)
+	} else {
+		result := terminalResult(terminal, spec.status)
+		diagnostic := terminalDiagnostic(terminal, spec.status)
+		sessionState := mergeSessionStatePatch(run.SessionState, terminal.SessionStatePatch)
+		workProducts := redactWorkProducts(terminal.WorkProducts)
+		updatedRun, err = s.repository.UpdateRunStatus(ctx, UpdateRunStatusRequest{
+			TenantID:                  identity.TenantID,
+			RunID:                     run.ID,
+			Status:                    spec.status,
+			Result:                    result,
+			ErrorMessage:              terminal.ErrorMessage,
+			Diagnostic:                diagnostic,
+			LogRef:                    terminal.LogRef,
+			RawResultRef:              terminal.RawResultRef,
+			WorkProducts:              workProducts,
+			SessionState:              sessionState,
+			ErrorCode:                 terminal.ErrorCode,
+			ErrorFamily:               terminal.ErrorFamily,
+			ExitCode:                  terminal.ExitCode,
+			Signal:                    terminal.Signal,
+			ProviderSessionExternalID: trimmedOptionalValue(terminal.ProviderSessionExternalID),
+			TimedOut:                  spec.status == DigitalEmployeeRunStatusTimedOut || terminal.TimedOut,
+		})
+		if err != nil {
+			return fmt.Errorf("update run terminal status: %w", err)
+		}
 	}
 
 	commandIDRef := commandID
 	if err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
-		TenantID:       tenantID,
+		TenantID:       identity.TenantID,
 		TaskID:         run.TaskID,
 		RunID:          run.ID,
 		EventType:      spec.eventType,
@@ -249,7 +259,7 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminal(ctx context.Context,
 
 	receiptResult := terminalReceiptResult(terminal, spec.status)
 	if _, err := s.repository.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
-		TenantID:     tenantID,
+		TenantID:     identity.TenantID,
 		CommandID:    commandID,
 		Status:       string(spec.status),
 		Result:       receiptResult,
@@ -257,52 +267,63 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminal(ctx context.Context,
 	}); err != nil {
 		return fmt.Errorf("update command receipt terminal status: %w", err)
 	}
+	if wasTerminal {
+		return nil
+	}
 	return s.logRuntimeAudit(ctx, spec.auditEventType, run.NodeID, "digital_employee_run", run.ID.String(), spec.auditAction)
 }
 
-func (s *DigitalEmployeeRunWritebackService) recordProvisioningTerminal(ctx context.Context, tenantID uuid.UUID, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
+func (s *DigitalEmployeeRunWritebackService) recordProvisioningTerminal(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
 	switch spec.status {
 	case DigitalEmployeeRunStatusCompleted:
-		return s.completeProvisioning(ctx, tenantID, commandID, receipt, terminal)
+		return s.completeProvisioning(ctx, identity, commandID, receipt, terminal)
 	case DigitalEmployeeRunStatusFailed:
-		return s.failProvisioning(ctx, tenantID, commandID, receipt, terminal)
+		return s.failProvisioning(ctx, identity, commandID, receipt, terminal)
 	default:
 		return fmt.Errorf("%w: provisioning command only accepts completed or failed terminal writeback", ErrInvalidInput)
 	}
 }
 
-func (s *DigitalEmployeeRunWritebackService) CompleteProvisioning(ctx context.Context, tenantID uuid.UUID, commandID string, terminal RuntimeCommandTerminalWriteback) error {
+func (s *DigitalEmployeeRunWritebackService) CompleteProvisioning(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback) error {
 	if terminal.Status != DigitalEmployeeRunStatusCompleted {
 		return fmt.Errorf("%w: provisioning complete writeback requires completed status", ErrInvalidInput)
 	}
-	commandID, err := validateWritebackCommandInput(tenantID, commandID)
+	identity, commandID, err := validateWritebackIdentity(identity, commandID)
 	if err != nil {
 		return err
 	}
-	receipt, err := s.repository.GetCommandReceipt(ctx, tenantID, commandID)
-	if err != nil {
-		return fmt.Errorf("get provisioning command receipt: %w", err)
-	}
-	return s.completeProvisioning(ctx, tenantID, commandID, receipt, terminal)
+	return s.repository.WithTransaction(ctx, func(repository DigitalEmployeeRunRepository) error {
+		txService := *s
+		txService.repository = repository
+		receipt, err := repository.GetCommandReceiptForUpdate(ctx, identity.TenantID, commandID)
+		if err != nil {
+			return fmt.Errorf("get provisioning command receipt: %w", err)
+		}
+		return txService.completeProvisioning(ctx, identity, commandID, receipt, terminal)
+	})
 }
 
-func (s *DigitalEmployeeRunWritebackService) FailProvisioning(ctx context.Context, tenantID uuid.UUID, commandID string, terminal RuntimeCommandTerminalWriteback) error {
+func (s *DigitalEmployeeRunWritebackService) FailProvisioning(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback) error {
 	if terminal.Status != DigitalEmployeeRunStatusFailed {
 		return fmt.Errorf("%w: provisioning fail writeback requires failed status", ErrInvalidInput)
 	}
-	commandID, err := validateWritebackCommandInput(tenantID, commandID)
+	identity, commandID, err := validateWritebackIdentity(identity, commandID)
 	if err != nil {
 		return err
 	}
-	receipt, err := s.repository.GetCommandReceipt(ctx, tenantID, commandID)
-	if err != nil {
-		return fmt.Errorf("get provisioning command receipt: %w", err)
-	}
-	return s.failProvisioning(ctx, tenantID, commandID, receipt, terminal)
+	return s.repository.WithTransaction(ctx, func(repository DigitalEmployeeRunRepository) error {
+		txService := *s
+		txService.repository = repository
+		receipt, err := repository.GetCommandReceiptForUpdate(ctx, identity.TenantID, commandID)
+		if err != nil {
+			return fmt.Errorf("get provisioning command receipt: %w", err)
+		}
+		return txService.failProvisioning(ctx, identity, commandID, receipt, terminal)
+	})
 }
 
-func (s *DigitalEmployeeRunWritebackService) completeProvisioning(ctx context.Context, tenantID uuid.UUID, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback) error {
-	if err := validateProvisioningReceipt(tenantID, commandID, receipt); err != nil {
+func (s *DigitalEmployeeRunWritebackService) completeProvisioning(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback) error {
+	if err := validateProvisioningReceipt(identity, commandID, receipt); err != nil {
 		return err
 	}
 	if isTerminalReceiptStatus(receipt.Status) {
@@ -312,15 +333,15 @@ func (s *DigitalEmployeeRunWritebackService) completeProvisioning(ctx context.Co
 		return fmt.Errorf("%w: provisioning command receipt is already terminal with status %s", ErrConflict, receipt.Status)
 	}
 
-	instance, err := s.repository.UpdateExecutionInstanceStatus(ctx, tenantID, receipt.ResourceID, ExecutionInstanceStatusReady, nil)
+	instance, err := s.repository.UpdateExecutionInstanceStatus(ctx, identity.TenantID, receipt.ResourceID, ExecutionInstanceStatusReady, nil)
 	if err != nil {
 		return fmt.Errorf("mark execution instance ready: %w", err)
 	}
-	if _, err := s.repository.UpdateDigitalEmployeeStatus(ctx, tenantID, instance.DigitalEmployeeID, DigitalEmployeeStatusReady); err != nil {
+	if _, err := s.repository.UpdateDigitalEmployeeStatus(ctx, identity.TenantID, instance.DigitalEmployeeID, DigitalEmployeeStatusReady); err != nil {
 		return fmt.Errorf("mark digital employee ready: %w", err)
 	}
 	if _, err := s.repository.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
-		TenantID:     tenantID,
+		TenantID:     identity.TenantID,
 		CommandID:    commandID,
 		Status:       string(DigitalEmployeeRunStatusCompleted),
 		Result:       terminalReceiptResult(terminal, DigitalEmployeeRunStatusCompleted),
@@ -331,8 +352,8 @@ func (s *DigitalEmployeeRunWritebackService) completeProvisioning(ctx context.Co
 	return s.logRuntimeAudit(ctx, "digital_employee_instance_provisioned", receipt.NodeID, receipt.ResourceType, receipt.ResourceID.String(), "employee.instance.provision")
 }
 
-func (s *DigitalEmployeeRunWritebackService) failProvisioning(ctx context.Context, tenantID uuid.UUID, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback) error {
-	if err := validateProvisioningReceipt(tenantID, commandID, receipt); err != nil {
+func (s *DigitalEmployeeRunWritebackService) failProvisioning(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback) error {
+	if err := validateProvisioningReceipt(identity, commandID, receipt); err != nil {
 		return err
 	}
 	if isTerminalReceiptStatus(receipt.Status) {
@@ -342,18 +363,18 @@ func (s *DigitalEmployeeRunWritebackService) failProvisioning(ctx context.Contex
 		return fmt.Errorf("%w: provisioning command receipt is already terminal with status %s", ErrConflict, receipt.Status)
 	}
 
-	instance, err := s.repository.UpdateExecutionInstanceStatus(ctx, tenantID, receipt.ResourceID, ExecutionInstanceStatusError, terminal.ErrorMessage)
+	instance, err := s.repository.UpdateExecutionInstanceStatus(ctx, identity.TenantID, receipt.ResourceID, ExecutionInstanceStatusError, terminal.ErrorMessage)
 	if err != nil {
 		return fmt.Errorf("mark execution instance error: %w", err)
 	}
-	if err := s.repository.DeleteExecutionInstance(ctx, tenantID, instance.ID); err != nil {
+	if err := s.repository.DeleteExecutionInstance(ctx, identity.TenantID, instance.ID); err != nil {
 		return fmt.Errorf("delete failed provisioning execution instance: %w", err)
 	}
-	if err := s.repository.DeleteDigitalEmployee(ctx, tenantID, instance.DigitalEmployeeID); err != nil {
+	if err := s.repository.DeleteDigitalEmployee(ctx, identity.TenantID, instance.DigitalEmployeeID); err != nil {
 		return fmt.Errorf("delete failed provisioning digital employee: %w", err)
 	}
 	if _, err := s.repository.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
-		TenantID:     tenantID,
+		TenantID:     identity.TenantID,
 		CommandID:    commandID,
 		Status:       string(DigitalEmployeeRunStatusFailed),
 		Result:       terminalReceiptResult(terminal, DigitalEmployeeRunStatusFailed),
@@ -364,18 +385,29 @@ func (s *DigitalEmployeeRunWritebackService) failProvisioning(ctx context.Contex
 	return s.logRuntimeAudit(ctx, "digital_employee_instance_provision_failed", receipt.NodeID, receipt.ResourceType, receipt.ResourceID.String(), "employee.instance.provision_failed")
 }
 
-func (s *DigitalEmployeeRunWritebackService) loadCommandRun(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, *DigitalEmployeeRun, error) {
-	receipt, err := s.repository.GetCommandReceipt(ctx, tenantID, commandID)
+func (s *DigitalEmployeeRunWritebackService) loadCommandRun(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, forUpdate bool) (*RuntimeCommandReceipt, *DigitalEmployeeRun, error) {
+	var (
+		receipt *RuntimeCommandReceipt
+		err     error
+	)
+	if forUpdate {
+		receipt, err = s.repository.GetCommandReceiptForUpdate(ctx, identity.TenantID, commandID)
+	} else {
+		receipt, err = s.repository.GetCommandReceipt(ctx, identity.TenantID, commandID)
+	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("get command receipt: %w", err)
 	}
-	if receipt == nil || receipt.TenantID != tenantID || receipt.CommandID != commandID {
+	if receipt == nil || receipt.TenantID != identity.TenantID || receipt.CommandID != commandID {
 		return nil, nil, fmt.Errorf("%w: command receipt does not match request", ErrInvalidInput)
 	}
+	if err := ensureReceiptRuntimeIdentity(identity, receipt); err != nil {
+		return nil, nil, err
+	}
 
-	run, err := s.repository.GetRunByCommandID(ctx, tenantID, commandID)
+	run, err := s.repository.GetRunByCommandID(ctx, identity.TenantID, commandID)
 	if errors.Is(err, ErrNotFound) && receipt.ResourceType == "digital_employee_run" && receipt.ResourceID != uuid.Nil {
-		run, err = s.repository.GetRunByID(ctx, tenantID, receipt.ResourceID)
+		run, err = s.repository.GetRunByID(ctx, identity.TenantID, receipt.ResourceID)
 	}
 	if errors.Is(err, ErrNotFound) && receipt.ResourceType == "digital_employee_execution_instance" {
 		return receipt, nil, nil
@@ -386,8 +418,11 @@ func (s *DigitalEmployeeRunWritebackService) loadCommandRun(ctx context.Context,
 	if run == nil {
 		return nil, nil, fmt.Errorf("%w: command run is missing", ErrNotFound)
 	}
-	if run.TenantID != tenantID {
+	if run.TenantID != identity.TenantID {
 		return nil, nil, fmt.Errorf("%w: run tenant does not match command", ErrInvalidInput)
+	}
+	if err := ensureRunRuntimeIdentity(identity, run); err != nil {
+		return nil, nil, err
 	}
 	if run.CommandID != commandID {
 		if receipt.ResourceType != "digital_employee_run" || receipt.ResourceID != run.ID {
@@ -411,12 +446,12 @@ func (s *DigitalEmployeeRunWritebackService) upsertProviderSession(ctx context.C
 		ProviderType:        run.ProviderType,
 		Status:              status,
 		Recoverable:         recoverable,
-		SessionState:        cloneMap(sessionState),
+		SessionState:        redactRuntimeEventPayload(sessionState),
 		LastSequenceNumber:  sequenceNumber,
 		LastCommandID:       commandID,
 		LastRunID:           &runID,
 		LastErrorFamily:     errorFamily,
-		Metadata:            cloneMap(metadata),
+		Metadata:            redactRuntimeEventPayload(metadata),
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("upsert provider session: %w", err)
@@ -431,35 +466,65 @@ func (s *DigitalEmployeeRunWritebackService) createProviderSessionEvent(ctx cont
 		ProviderSessionUUID: providerSessionUUID,
 		EventType:           eventType,
 		SequenceNumber:      sequenceNumber,
-		Payload:             cloneMap(payload),
+		Payload:             redactRuntimeEventPayload(payload),
 		CommandID:           &commandIDRef,
 		RawEventRef:         rawEventRef,
 		LogRef:              logRef,
-		SessionStatePatch:   cloneMap(sessionStatePatch),
-		Metadata:            cloneMap(metadata),
+		SessionStatePatch:   redactRuntimeEventPayload(sessionStatePatch),
+		Metadata:            redactRuntimeEventPayload(metadata),
 	}); err != nil {
 		return fmt.Errorf("create provider session event: %w", err)
 	}
 	return nil
 }
 
-func validateWritebackCommandInput(tenantID uuid.UUID, commandID string) (string, error) {
-	if tenantID == uuid.Nil {
-		return "", fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+func validateWritebackIdentity(identity RuntimeCommandWritebackIdentity, commandID string) (RuntimeCommandWritebackIdentity, string, error) {
+	if identity.TenantID == uuid.Nil {
+		return RuntimeCommandWritebackIdentity{}, "", fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if identity.RuntimeNodeID == uuid.Nil {
+		return RuntimeCommandWritebackIdentity{}, "", fmt.Errorf("%w: runtime_node_id is required", ErrInvalidInput)
+	}
+	identity.NodeID = strings.TrimSpace(identity.NodeID)
+	if identity.NodeID == "" {
+		return RuntimeCommandWritebackIdentity{}, "", fmt.Errorf("%w: node_id is required", ErrInvalidInput)
 	}
 	commandID = strings.TrimSpace(commandID)
 	if commandID == "" {
-		return "", fmt.Errorf("%w: command_id is required", ErrInvalidInput)
+		return RuntimeCommandWritebackIdentity{}, "", fmt.Errorf("%w: command_id is required", ErrInvalidInput)
 	}
-	return commandID, nil
+	return identity, commandID, nil
 }
 
-func validateProvisioningReceipt(tenantID uuid.UUID, commandID string, receipt *RuntimeCommandReceipt) error {
+func ensureReceiptRuntimeIdentity(identity RuntimeCommandWritebackIdentity, receipt *RuntimeCommandReceipt) error {
+	if receipt == nil {
+		return fmt.Errorf("%w: command receipt is missing", ErrNotFound)
+	}
+	if receipt.RuntimeNodeID != identity.RuntimeNodeID || strings.TrimSpace(receipt.NodeID) != identity.NodeID {
+		return fmt.Errorf("%w: command receipt runtime identity does not match authenticated runtime", ErrRuntimeIdentityMismatch)
+	}
+	return nil
+}
+
+func ensureRunRuntimeIdentity(identity RuntimeCommandWritebackIdentity, run *DigitalEmployeeRun) error {
+	if run == nil {
+		return fmt.Errorf("%w: command run is missing", ErrNotFound)
+	}
+	if run.RuntimeNodeID != identity.RuntimeNodeID || strings.TrimSpace(run.NodeID) != identity.NodeID {
+		return fmt.Errorf("%w: run runtime identity does not match authenticated runtime", ErrRuntimeIdentityMismatch)
+	}
+	return nil
+}
+
+func validateProvisioningReceipt(identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt) error {
 	if receipt == nil {
 		return fmt.Errorf("%w: provisioning command receipt is missing", ErrNotFound)
 	}
-	if receipt.TenantID != tenantID || receipt.CommandID != commandID {
+	if receipt.TenantID != identity.TenantID || receipt.CommandID != commandID {
 		return fmt.Errorf("%w: provisioning command receipt does not match request", ErrInvalidInput)
+	}
+	if err := ensureReceiptRuntimeIdentity(identity, receipt); err != nil {
+		return err
 	}
 	if receipt.ResourceType != "digital_employee_execution_instance" || receipt.ResourceID == uuid.Nil {
 		return fmt.Errorf("%w: command receipt is not a digital employee execution instance provisioning command", ErrInvalidInput)
@@ -506,7 +571,7 @@ func sameOptionalString(left, right *string) bool {
 }
 
 func terminalResult(terminal RuntimeCommandTerminalWriteback, status DigitalEmployeeRunStatus) map[string]any {
-	result := cloneMap(terminal.Result)
+	result := redactRuntimeEventPayload(terminal.Result)
 	if terminal.Summary != "" {
 		result["summary"] = terminal.Summary
 	}
@@ -518,7 +583,7 @@ func terminalResult(terminal RuntimeCommandTerminalWriteback, status DigitalEmpl
 }
 
 func terminalDiagnostic(terminal RuntimeCommandTerminalWriteback, status DigitalEmployeeRunStatus) map[string]any {
-	diagnostic := cloneMap(terminal.Diagnostic)
+	diagnostic := redactRuntimeEventPayload(terminal.Diagnostic)
 	if terminal.ErrorCode != nil {
 		diagnostic["error_code"] = *terminal.ErrorCode
 	}
@@ -540,10 +605,10 @@ func terminalDiagnostic(terminal RuntimeCommandTerminalWriteback, status Digital
 func terminalEventPayload(terminal RuntimeCommandTerminalWriteback, status DigitalEmployeeRunStatus) map[string]any {
 	payload := terminalReceiptResult(terminal, status)
 	if len(terminal.WorkProducts) > 0 {
-		payload["work_products"] = append([]WorkProduct(nil), terminal.WorkProducts...)
+		payload["work_products"] = redactWorkProducts(terminal.WorkProducts)
 	}
 	if terminal.SessionStatePatch != nil {
-		payload["session_state_patch"] = cloneMap(terminal.SessionStatePatch)
+		payload["session_state_patch"] = redactRuntimeEventPayload(terminal.SessionStatePatch)
 	}
 	return payload
 }
@@ -570,10 +635,22 @@ func mergeSessionStatePatch(existing, patch map[string]any) map[string]any {
 		return nil
 	}
 	merged := cloneMap(existing)
-	for key, value := range patch {
+	for key, value := range redactRuntimeEventPayload(patch) {
 		merged[key] = value
 	}
 	return merged
+}
+
+func redactWorkProducts(products []WorkProduct) []WorkProduct {
+	if products == nil {
+		return nil
+	}
+	redacted := make([]WorkProduct, len(products))
+	for i, product := range products {
+		redacted[i] = product
+		redacted[i].Metadata = redactRuntimeEventPayload(product.Metadata)
+	}
+	return redacted
 }
 
 func (s *DigitalEmployeeRunWritebackService) logRuntimeAudit(ctx context.Context, eventType, actorID, resourceType, resourceID, action string) error {

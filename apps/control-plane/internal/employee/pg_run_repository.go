@@ -14,11 +14,39 @@ import (
 )
 
 type PgRunRepository struct {
-	q *queries.Queries
+	q  *queries.Queries
+	db runTransactionBeginner
 }
 
-func NewPgRunRepository(q *queries.Queries) DigitalEmployeeRunRepository {
-	return &PgRunRepository{q: q}
+type runTransactionBeginner interface {
+	Begin(context.Context) (pgx.Tx, error)
+}
+
+func NewPgRunRepository(q *queries.Queries, db ...runTransactionBeginner) DigitalEmployeeRunRepository {
+	var beginner runTransactionBeginner
+	if len(db) > 0 {
+		beginner = db[0]
+	}
+	return &PgRunRepository{q: q, db: beginner}
+}
+
+func (r *PgRunRepository) WithTransaction(ctx context.Context, fn func(DigitalEmployeeRunRepository) error) error {
+	if r.db == nil {
+		return fn(r)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin run transaction: %w", err)
+	}
+	txRepo := &PgRunRepository{q: r.q.WithTx(tx)}
+	if err := fn(txRepo); err != nil {
+		_ = tx.Rollback(ctx)
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit run transaction: %w", err)
+	}
+	return nil
 }
 
 func (r *PgRunRepository) GetRunPreflight(ctx context.Context, tenantID, employeeID uuid.UUID) (RunPreflight, error) {
@@ -359,6 +387,17 @@ func (r *PgRunRepository) CreateCommandReceipt(ctx context.Context, req CreateRu
 
 func (r *PgRunRepository) GetCommandReceipt(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error) {
 	receipt, err := r.q.GetRuntimeCommandReceiptByCommandID(ctx, queries.GetRuntimeCommandReceiptByCommandIDParams{
+		TenantID:  tenantID,
+		CommandID: commandID,
+	})
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	return runtimeCommandReceiptFromQuery(receipt), nil
+}
+
+func (r *PgRunRepository) GetCommandReceiptForUpdate(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error) {
+	receipt, err := r.q.GetRuntimeCommandReceiptByCommandIDForUpdate(ctx, queries.GetRuntimeCommandReceiptByCommandIDForUpdateParams{
 		TenantID:  tenantID,
 		CommandID: commandID,
 	})
