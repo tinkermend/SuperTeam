@@ -173,6 +173,35 @@ func TestRunServiceStopRunMovesToCancellingAndDispatchesStop(t *testing.T) {
 	}
 }
 
+func TestRunServiceStopRunRecordsStopRequestedBeforeDispatchFailure(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.run = validRunServiceRun(DigitalEmployeeRunStatusRunning)
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.dispatchErr = errors.New("ws write failed")
+	service := mustNewRunService(t, repo, dispatcher, &fakeRunServiceAuditLogger{})
+
+	_, err := service.StopRun(context.Background(), StopDigitalEmployeeRunRequest{
+		TenantID:          repo.run.TenantID,
+		UserID:            uuid.New(),
+		DigitalEmployeeID: repo.run.DigitalEmployeeID,
+		RunID:             repo.run.ID,
+		Reason:            "human stop",
+	})
+
+	if err == nil {
+		t.Fatalf("expected stop dispatch error")
+	}
+	if len(repo.statusUpdates) != 1 || repo.statusUpdates[0].Status != DigitalEmployeeRunStatusCancelling {
+		t.Fatalf("expected run to move to cancelling, got %#v", repo.statusUpdates)
+	}
+	if len(repo.events) != 1 || repo.events[0].EventType != "stop_requested" {
+		t.Fatalf("expected stop_requested event before dispatch failure, got %#v", repo.events)
+	}
+	if len(repo.receiptUpdates) != 1 || repo.receiptUpdates[0].Status != "failed" {
+		t.Fatalf("expected failed stop receipt update, got %#v", repo.receiptUpdates)
+	}
+}
+
 func TestRunServiceCreateRunRejectsPreflightWithoutApprovedEffectiveConfig(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()

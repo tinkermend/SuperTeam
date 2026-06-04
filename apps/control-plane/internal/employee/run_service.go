@@ -244,6 +244,22 @@ func (s *DigitalEmployeeRunService) StopRun(ctx context.Context, req StopDigital
 	if err != nil {
 		return nil, err
 	}
+	if err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
+		TenantID:       req.TenantID,
+		TaskID:         run.TaskID,
+		RunID:          run.ID,
+		EventType:      "stop_requested",
+		SequenceNumber: 2,
+		Payload: map[string]any{
+			"command_id":       stopCommandID,
+			"start_command_id": run.CommandID,
+			"reason":           reason,
+		},
+		CommandID: &stopCommandID,
+		Metadata:  map[string]any{"source": "control-plane"},
+	}); err != nil {
+		return nil, fmt.Errorf("append stop requested event: %w", err)
+	}
 	if err := s.dispatcher.Dispatch(ctx, run.NodeID, command); err != nil {
 		_, _ = s.repository.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
 			TenantID:     req.TenantID,
@@ -260,22 +276,6 @@ func (s *DigitalEmployeeRunService) StopRun(ctx context.Context, req StopDigital
 		Result:    map[string]any{"dispatched": true},
 	}); err != nil {
 		return nil, fmt.Errorf("mark stop command receipt dispatched: %w", err)
-	}
-	if err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
-		TenantID:       req.TenantID,
-		TaskID:         run.TaskID,
-		RunID:          run.ID,
-		EventType:      "stop_requested",
-		SequenceNumber: 2,
-		Payload: map[string]any{
-			"command_id":       stopCommandID,
-			"start_command_id": run.CommandID,
-			"reason":           reason,
-		},
-		CommandID: &stopCommandID,
-		Metadata:  map[string]any{"source": "control-plane"},
-	}); err != nil {
-		return nil, fmt.Errorf("append stop requested event: %w", err)
 	}
 	if err := s.logAudit(ctx, "digital_employee_run_stop_requested", req.UserID, run.ID, "employee.run.stop"); err != nil {
 		return nil, err
