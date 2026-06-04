@@ -354,7 +354,7 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 		t.Fatalf("expected clamped list pagination limit=100 offset=6, got limit=%d offset=%d", runService.listLimit, runService.listOffset)
 	}
 
-	for _, query := range []string{"limit=bad", "offset=bad", "limit=0", "limit=-1", "offset=-1"} {
+	for _, query := range []string{"limit=bad", "offset=bad", "limit=0", "limit=-1", "offset=-1", "offset=2147483648"} {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs?"+query, nil)
 		req.AddCookie(cookie)
 		resp := httptest.NewRecorder()
@@ -416,7 +416,7 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 		t.Fatalf("expected clamped events pagination limit=100 offset=8, got limit=%d offset=%d", runService.eventsLimit, runService.eventsOffset)
 	}
 
-	for _, query := range []string{"limit=bad", "offset=bad", "limit=0", "limit=-1", "offset=-1"} {
+	for _, query := range []string{"limit=bad", "offset=bad", "limit=0", "limit=-1", "offset=-1", "offset=2147483648"} {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs/"+runID.String()+"/events?"+query, nil)
 		req.AddCookie(cookie)
 		resp := httptest.NewRecorder()
@@ -451,7 +451,7 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 	expectedChecks := []string{
 		authz.ActionEmployeeRunCreate,
 	}
-	for i := 0; i < 17; i++ {
+	for i := 0; i < 19; i++ {
 		expectedChecks = append(expectedChecks, authz.ActionEmployeeRead)
 	}
 	expectedChecks = append(expectedChecks, authz.ActionEmployeeRunStop)

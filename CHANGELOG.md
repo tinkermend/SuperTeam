@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-05 00:08：数字员工 run Console API 分页参数改为按 int32 范围解析，避免超大 `offset` 在下传查询前发生整数截断。
 - 2026-06-05 00:03：数字员工 run Console API 移除响应中的内部 `idempotency_fingerprint`，补齐列表与事件分页参数校验和默认值，并将 Runtime dispatch 失败统一映射为运行时不可用。
 - 2026-06-04 14:49：Runtime Agent 删除旧版 `auth_token` 配置兼容入口，YAML、`RUNTIME_AGENT_AUTH_TOKEN` 环境变量和 CLI `--auth-token` 不再作为 `bootstrap_key` 兜底。
 - 2026-06-04 14:33：数字员工 API 授权从复用 `runtime_scope.manage` 改为独立 `employee.*` 业务 action，并按 tenant 集合资源和单个 employee 资源记录授权决策，为后续 OpenFGA 渐进接入保留稳定边界。

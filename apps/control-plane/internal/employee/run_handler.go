@@ -98,7 +98,7 @@ func (h *HTTPHandler) ListDigitalEmployeeRuns(w http.ResponseWriter, r *http.Req
 		http.Error(w, parseErr, http.StatusBadRequest)
 		return
 	}
-	runs, err := service.ListRuns(r.Context(), tenantID, employeeID, int32(limit), int32(offset))
+	runs, err := service.ListRuns(r.Context(), tenantID, employeeID, limit, offset)
 	if err != nil {
 		writeHandlerError(w, err)
 		return
@@ -145,7 +145,7 @@ func (h *HTTPHandler) ListDigitalEmployeeRunEvents(w http.ResponseWriter, r *htt
 		http.Error(w, parseErr, http.StatusBadRequest)
 		return
 	}
-	events, err := service.ListRunEvents(r.Context(), tenantID, employeeID, runID, int32(limit), int32(offset))
+	events, err := service.ListRunEvents(r.Context(), tenantID, employeeID, runID, limit, offset)
 	if err != nil {
 		writeHandlerError(w, err)
 		return
@@ -195,11 +195,11 @@ func (h *HTTPHandler) runServiceFromRequest(w http.ResponseWriter) (RunHandlerSe
 	return h.runService, true
 }
 
-func parseRunPagination(r *http.Request) (int, int, string) {
+func parseRunPagination(r *http.Request) (int32, int32, string) {
 	query := r.URL.Query()
-	limit := defaultRunPageLimit
+	limit := int32(defaultRunPageLimit)
 	if raw := query.Get("limit"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
+		parsed, err := strconv.ParseInt(raw, 10, 32)
 		if err != nil {
 			return 0, 0, "limit must be an integer"
 		}
@@ -209,19 +209,19 @@ func parseRunPagination(r *http.Request) (int, int, string) {
 		if parsed > maxRunPageLimit {
 			parsed = maxRunPageLimit
 		}
-		limit = parsed
+		limit = int32(parsed)
 	}
 
-	offset := 0
+	var offset int32
 	if raw := query.Get("offset"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
+		parsed, err := strconv.ParseInt(raw, 10, 32)
 		if err != nil {
 			return 0, 0, "offset must be an integer"
 		}
 		if parsed < 0 {
 			return 0, 0, "offset must be greater than or equal to 0"
 		}
-		offset = parsed
+		offset = int32(parsed)
 	}
 	return limit, offset, ""
 }
