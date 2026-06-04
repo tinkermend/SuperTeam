@@ -1,10 +1,13 @@
 import {
+  Blocks,
   Bot,
   ClipboardList,
   FileClock,
+  FolderKanban,
   GitBranch,
   KeyRound,
   LayoutDashboard,
+  MessagesSquare,
   Puzzle,
   Server,
   ShieldCheck,
@@ -37,6 +40,18 @@ export const sidebarData: SidebarData = {
           iconTone: "employee",
         },
         {
+          title: "技能管理",
+          url: "/skills",
+          icon: Blocks,
+          iconTone: "capability",
+        },
+        {
+          title: "项目管理",
+          url: "/projects",
+          icon: FolderKanban,
+          iconTone: "workflow",
+        },
+        {
           title: "团队管理",
           url: "/teams",
           icon: UsersRound,
@@ -58,6 +73,12 @@ export const sidebarData: SidebarData = {
           url: "/capabilities",
           icon: Puzzle,
           iconTone: "capability",
+        },
+        {
+          title: "协作集成",
+          url: "/collaboration",
+          icon: MessagesSquare,
+          iconTone: "approval",
         },
         {
           title: "审批中心",

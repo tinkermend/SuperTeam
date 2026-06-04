@@ -22,9 +22,12 @@ import { Route as AuthenticatedWorkflowsIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedTeamsIndexRouteImport } from './routes/_authenticated/teams/index'
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
+import { Route as AuthenticatedSkillsIndexRouteImport } from './routes/_authenticated/skills/index'
 import { Route as AuthenticatedRuntimeIndexRouteImport } from './routes/_authenticated/runtime/index'
+import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as AuthenticatedPermissionsIndexRouteImport } from './routes/_authenticated/permissions/index'
 import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authenticated/employees/index'
+import { Route as AuthenticatedCollaborationIndexRouteImport } from './routes/_authenticated/collaboration/index'
 import { Route as AuthenticatedCapabilitiesIndexRouteImport } from './routes/_authenticated/capabilities/index'
 import { Route as AuthenticatedAuditIndexRouteImport } from './routes/_authenticated/audit/index'
 import { Route as AuthenticatedApprovalsIndexRouteImport } from './routes/_authenticated/approvals/index'
@@ -96,10 +99,22 @@ const AuthenticatedTasksIndexRoute = AuthenticatedTasksIndexRouteImport.update({
   path: '/tasks/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSkillsIndexRoute =
+  AuthenticatedSkillsIndexRouteImport.update({
+    id: '/skills/',
+    path: '/skills/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedRuntimeIndexRoute =
   AuthenticatedRuntimeIndexRouteImport.update({
     id: '/runtime/',
     path: '/runtime/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedProjectsIndexRoute =
+  AuthenticatedProjectsIndexRouteImport.update({
+    id: '/projects/',
+    path: '/projects/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedPermissionsIndexRoute =
@@ -112,6 +127,12 @@ const AuthenticatedEmployeesIndexRoute =
   AuthenticatedEmployeesIndexRouteImport.update({
     id: '/employees/',
     path: '/employees/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedCollaborationIndexRoute =
+  AuthenticatedCollaborationIndexRouteImport.update({
+    id: '/collaboration/',
+    path: '/collaboration/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedCapabilitiesIndexRoute =
@@ -158,9 +179,12 @@ export interface FileRoutesByFullPath {
   '/approvals/': typeof AuthenticatedApprovalsIndexRoute
   '/audit/': typeof AuthenticatedAuditIndexRoute
   '/capabilities/': typeof AuthenticatedCapabilitiesIndexRoute
+  '/collaboration/': typeof AuthenticatedCollaborationIndexRoute
   '/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/permissions/': typeof AuthenticatedPermissionsIndexRoute
+  '/projects/': typeof AuthenticatedProjectsIndexRoute
   '/runtime/': typeof AuthenticatedRuntimeIndexRoute
+  '/skills/': typeof AuthenticatedSkillsIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
   '/teams/': typeof AuthenticatedTeamsIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
@@ -180,9 +204,12 @@ export interface FileRoutesByTo {
   '/approvals': typeof AuthenticatedApprovalsIndexRoute
   '/audit': typeof AuthenticatedAuditIndexRoute
   '/capabilities': typeof AuthenticatedCapabilitiesIndexRoute
+  '/collaboration': typeof AuthenticatedCollaborationIndexRoute
   '/employees': typeof AuthenticatedEmployeesIndexRoute
   '/permissions': typeof AuthenticatedPermissionsIndexRoute
+  '/projects': typeof AuthenticatedProjectsIndexRoute
   '/runtime': typeof AuthenticatedRuntimeIndexRoute
+  '/skills': typeof AuthenticatedSkillsIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/teams': typeof AuthenticatedTeamsIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
@@ -204,9 +231,12 @@ export interface FileRoutesById {
   '/_authenticated/approvals/': typeof AuthenticatedApprovalsIndexRoute
   '/_authenticated/audit/': typeof AuthenticatedAuditIndexRoute
   '/_authenticated/capabilities/': typeof AuthenticatedCapabilitiesIndexRoute
+  '/_authenticated/collaboration/': typeof AuthenticatedCollaborationIndexRoute
   '/_authenticated/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/_authenticated/permissions/': typeof AuthenticatedPermissionsIndexRoute
+  '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
   '/_authenticated/runtime/': typeof AuthenticatedRuntimeIndexRoute
+  '/_authenticated/skills/': typeof AuthenticatedSkillsIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/teams/': typeof AuthenticatedTeamsIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
@@ -228,9 +258,12 @@ export interface FileRouteTypes {
     | '/approvals/'
     | '/audit/'
     | '/capabilities/'
+    | '/collaboration/'
     | '/employees/'
     | '/permissions/'
+    | '/projects/'
     | '/runtime/'
+    | '/skills/'
     | '/tasks/'
     | '/teams/'
     | '/users/'
@@ -250,9 +283,12 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/audit'
     | '/capabilities'
+    | '/collaboration'
     | '/employees'
     | '/permissions'
+    | '/projects'
     | '/runtime'
+    | '/skills'
     | '/tasks'
     | '/teams'
     | '/users'
@@ -273,9 +309,12 @@ export interface FileRouteTypes {
     | '/_authenticated/approvals/'
     | '/_authenticated/audit/'
     | '/_authenticated/capabilities/'
+    | '/_authenticated/collaboration/'
     | '/_authenticated/employees/'
     | '/_authenticated/permissions/'
+    | '/_authenticated/projects/'
     | '/_authenticated/runtime/'
+    | '/_authenticated/skills/'
     | '/_authenticated/tasks/'
     | '/_authenticated/teams/'
     | '/_authenticated/users/'
@@ -386,11 +425,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTasksIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/skills/': {
+      id: '/_authenticated/skills/'
+      path: '/skills'
+      fullPath: '/skills/'
+      preLoaderRoute: typeof AuthenticatedSkillsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/runtime/': {
       id: '/_authenticated/runtime/'
       path: '/runtime'
       fullPath: '/runtime/'
       preLoaderRoute: typeof AuthenticatedRuntimeIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/projects/': {
+      id: '/_authenticated/projects/'
+      path: '/projects'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof AuthenticatedProjectsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/permissions/': {
@@ -405,6 +458,13 @@ declare module '@tanstack/react-router' {
       path: '/employees'
       fullPath: '/employees/'
       preLoaderRoute: typeof AuthenticatedEmployeesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/collaboration/': {
+      id: '/_authenticated/collaboration/'
+      path: '/collaboration'
+      fullPath: '/collaboration/'
+      preLoaderRoute: typeof AuthenticatedCollaborationIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/capabilities/': {
@@ -452,9 +512,12 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedApprovalsIndexRoute: typeof AuthenticatedApprovalsIndexRoute
   AuthenticatedAuditIndexRoute: typeof AuthenticatedAuditIndexRoute
   AuthenticatedCapabilitiesIndexRoute: typeof AuthenticatedCapabilitiesIndexRoute
+  AuthenticatedCollaborationIndexRoute: typeof AuthenticatedCollaborationIndexRoute
   AuthenticatedEmployeesIndexRoute: typeof AuthenticatedEmployeesIndexRoute
   AuthenticatedPermissionsIndexRoute: typeof AuthenticatedPermissionsIndexRoute
+  AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
   AuthenticatedRuntimeIndexRoute: typeof AuthenticatedRuntimeIndexRoute
+  AuthenticatedSkillsIndexRoute: typeof AuthenticatedSkillsIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
   AuthenticatedTeamsIndexRoute: typeof AuthenticatedTeamsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
@@ -468,9 +531,12 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedApprovalsIndexRoute: AuthenticatedApprovalsIndexRoute,
   AuthenticatedAuditIndexRoute: AuthenticatedAuditIndexRoute,
   AuthenticatedCapabilitiesIndexRoute: AuthenticatedCapabilitiesIndexRoute,
+  AuthenticatedCollaborationIndexRoute: AuthenticatedCollaborationIndexRoute,
   AuthenticatedEmployeesIndexRoute: AuthenticatedEmployeesIndexRoute,
   AuthenticatedPermissionsIndexRoute: AuthenticatedPermissionsIndexRoute,
+  AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
   AuthenticatedRuntimeIndexRoute: AuthenticatedRuntimeIndexRoute,
+  AuthenticatedSkillsIndexRoute: AuthenticatedSkillsIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
   AuthenticatedTeamsIndexRoute: AuthenticatedTeamsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
