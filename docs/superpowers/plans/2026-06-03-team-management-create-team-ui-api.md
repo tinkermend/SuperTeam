@@ -22,24 +22,26 @@ This plan covers one coherent vertical slice: team list filtering, create-team t
 - Modify `apps/control-plane/internal/auth/pg_repository.go`: pass `q` into sqlc.
 - Modify `apps/control-plane/internal/storage/queries/auth.sql`: add `q` filtering to `ListUsers`.
 - Regenerate `apps/control-plane/internal/storage/queries/auth.sql.go` with `make -C apps/control-plane generate-sqlc`.
-- Leave `apps/control-plane/internal/auth/generated.go` unchanged in this slice; `/api/auth/users` already has manual handler binding and the public contract update is recorded in `contracts/control-plane/openapi.yaml`.
+- Regenerate `apps/control-plane/internal/auth/generated.go` with `make -C apps/control-plane generate-openapi` after updating `contracts/control-plane/auth.yaml`; the oapi-codegen generated `ListUsersParams` will then include the `Q` field.
 - Modify `apps/control-plane/internal/tenant/types.go`: add `InitialTeamMemberInput`, `CreateTeamRequest.InitialMembers`, and membership validation helpers.
 - Modify `apps/control-plane/internal/tenant/repository.go`: add `CreateTeamWithInitialMembers`.
 - Modify `apps/control-plane/internal/tenant/pg_repository.go`: implement the atomic transaction.
-- Modify `apps/control-plane/internal/storage/queries/tenant_team_config.sql`: add active-user lookup and owner/member insert queries.
+- Modify `apps/control-plane/internal/storage/queries/tenant_team_config.sql`: add active same-tenant user lookup and owner/member insert queries against `tenant_members`.
 - Regenerate `apps/control-plane/internal/storage/queries/tenant_team_config.sql.go`.
 - Modify `apps/control-plane/internal/tenant/service.go`: validate atomic create input and return `TeamOverview`.
 - Modify `apps/control-plane/internal/tenant/handler.go`: decode `initial_members`, return `TeamOverview`, and keep backend authorization.
+- Modify `apps/control-plane/internal/tenant/types.go` and repository params: carry the current actor user ID into team creation so audit events can be written inside the same repository transaction.
+- Modify `apps/control-plane/internal/tenant/pg_repository.go`: write `team.create` and `team.member.add` audit events inside the same transaction that creates the team and memberships.
 - Modify `apps/control-plane/internal/api/team_routes_test.go`: route and response coverage.
 - Modify `apps/control-plane/internal/tenant/service_test.go`: domain validation coverage.
-- Modify `contracts/control-plane/openapi.yaml`: document create payload, overview response, list filters, and user search query.
+- Modify `contracts/control-plane/openapi.yaml`: document create payload, overview response, and team list filters.
 - Modify `apps/web/src/lib/api/auth.ts` and `apps/web/src/lib/api/auth.test.ts`: add `q` to `listUsers`.
 - Modify `apps/web/src/lib/api/teams.ts` and `apps/web/src/lib/api/teams.test.ts`: add `initial_members`, `allowed_actions`, pagination filters, and `TeamOverview` create response.
 - Create `apps/web/src/features/teams/components/team-management-toolbar.tsx`: list filters.
 - Modify `apps/web/src/features/teams/components/team-list-table.tsx`: high-density visual table, row actions, owner display, highlighted row.
 - Create `apps/web/src/features/teams/components/create-team-drawer.tsx`: drawer shell and step controller.
 - Create `apps/web/src/features/teams/components/create-team-basic-step.tsx`: name, slug, owner search.
-- Create `apps/web/src/features/teams/components/create-team-members-step.tsx`: user search, role assignment, selected members.
+- Create `apps/web/src/features/teams/components/create-team-members-step.tsx`: create a minimal stub in Task 5 so typecheck passes, then replace it with user search, role assignment, and selected members in Task 6.
 - Modify `apps/web/src/features/teams/index.tsx`: query filters, drawer mutation, success refresh, highlight.
 - Modify `apps/web/src/features/teams/index.test.tsx`: frontend workflow coverage.
 - Modify `CHANGELOG.md`: add a timestamped Unreleased entry after implementation.
@@ -54,7 +56,8 @@ This plan covers one coherent vertical slice: team list filtering, create-team t
 - Modify: `apps/control-plane/internal/auth/pg_repository.go`
 - Modify: `apps/control-plane/internal/storage/queries/auth.sql`
 - Modify after generation: `apps/control-plane/internal/storage/queries/auth.sql.go`
-- Modify: `contracts/control-plane/openapi.yaml`
+- Modify: `contracts/control-plane/auth.yaml`
+- Modify after generation: `apps/control-plane/internal/auth/generated.go`
 - Test: `apps/control-plane/internal/auth/service_test.go`
 - Test: `apps/control-plane/internal/api/routes_test.go`
 - Test: `apps/web/src/lib/api/auth.test.ts`
@@ -141,14 +144,18 @@ func (s *Service) ListUsers(ctx context.Context, filter ListUsersFilter) ([]*Use
 }
 ```
 
-In `apps/control-plane/internal/auth/handler.go`, pass `q` into the service:
+In `apps/control-plane/internal/auth/handler.go`, update `ListUsers` to read the generated `params.Q`:
 
 ```go
+q := ""
+if params.Q != nil {
+    q = *params.Q
+}
 users, err := h.service.ListUsers(r.Context(), ListUsersFilter{
-	Q:      r.URL.Query().Get("q"),
-	Status: status,
-	Limit:  limit,
-	Offset: offset,
+    Q:      q,
+    Status: status,
+    Limit:  valueOrDefault(params.Limit, 20),
+    Offset: valueOrDefault(params.Offset, 0),
 })
 ```
 
@@ -190,7 +197,25 @@ make -C apps/control-plane generate-sqlc
 
 Expected: sqlc regeneration succeeds.
 
-Update `contracts/control-plane/openapi.yaml` so `GET /api/auth/users` documents optional `q`, `status`, `limit`, and `offset` query parameters. Keep `apps/control-plane/internal/auth/generated.go` unchanged for this slice because this route already binds manually through `auth.HTTPHandler.ListUsers`.
+Update `contracts/control-plane/auth.yaml` — add an optional `q` query parameter to `GET /api/auth/users`:
+
+```yaml
+- name: q
+  in: query
+  required: false
+  schema:
+    type: string
+    minLength: 1
+  description: 按用户名、显示名称或邮箱搜索
+```
+
+Regenerate the auth OpenAPI code:
+
+```bash
+make -C apps/control-plane generate-openapi
+```
+
+Expected: `apps/control-plane/internal/auth/generated.go` now has `Q *string` in `ListUsersParams`. The handler will read `params.Q` instead of bypassing the generated types.
 
 - [ ] **Step 5: Add route coverage for `q`**
 
@@ -277,7 +302,7 @@ Expected: all targeted tests pass.
 - [ ] **Step 9: Commit Task 1**
 
 ```bash
-git add apps/control-plane/internal/auth apps/control-plane/internal/storage/queries/auth.sql apps/control-plane/internal/storage/queries/auth.sql.go apps/control-plane/internal/api/routes_test.go apps/web/src/lib/api/auth.ts apps/web/src/lib/api/auth.test.ts contracts/control-plane/openapi.yaml
+git add apps/control-plane/internal/auth apps/control-plane/internal/storage/queries/auth.sql apps/control-plane/internal/storage/queries/auth.sql.go apps/control-plane/internal/api/routes_test.go apps/web/src/lib/api/auth.ts apps/web/src/lib/api/auth.test.ts contracts/control-plane/auth.yaml
 git commit -m "feat: add searchable active user listing"
 ```
 
@@ -303,6 +328,7 @@ func TestCreateTeamCreatesOwnerAndInitialMembers(t *testing.T) {
 		t.Fatalf("new service: %v", err)
 	}
 	tenantID := uuid.New()
+	actorID := uuid.New()
 	ownerID := uuid.New()
 	memberID := uuid.New()
 	viewerID := uuid.New()
@@ -312,6 +338,7 @@ func TestCreateTeamCreatesOwnerAndInitialMembers(t *testing.T) {
 
 	overview, err := svc.CreateTeam(context.Background(), CreateTeamRequest{
 		TenantID:         tenantID,
+		ActorUserID:      actorID,
 		Slug:             "security",
 		Name:             "安全团队",
 		HumanOwnerUserID: &ownerID,
@@ -345,12 +372,14 @@ func TestCreateTeamRejectsPrivilegedInitialMemberRoles(t *testing.T) {
 		t.Fatalf("new service: %v", err)
 	}
 	ownerID := uuid.New()
+	actorID := uuid.New()
 	targetID := uuid.New()
 	repo.activeUsers[ownerID] = true
 	repo.activeUsers[targetID] = true
 
 	_, err = svc.CreateTeam(context.Background(), CreateTeamRequest{
 		TenantID:         uuid.New(),
+		ActorUserID:      actorID,
 		Slug:             "security",
 		Name:             "安全团队",
 		HumanOwnerUserID: &ownerID,
@@ -372,10 +401,12 @@ func TestCreateTeamRejectsOwnerDuplicatedAsInitialMember(t *testing.T) {
 		t.Fatalf("new service: %v", err)
 	}
 	ownerID := uuid.New()
+	actorID := uuid.New()
 	repo.activeUsers[ownerID] = true
 
 	_, err = svc.CreateTeam(context.Background(), CreateTeamRequest{
 		TenantID:         uuid.New(),
+		ActorUserID:      actorID,
 		Slug:             "security",
 		Name:             "安全团队",
 		HumanOwnerUserID: &ownerID,
@@ -388,13 +419,70 @@ func TestCreateTeamRejectsOwnerDuplicatedAsInitialMember(t *testing.T) {
 }
 ```
 
-Extend `memoryRepository` with `activeUsers`, `CreateTeamWithInitialMembers`, and enough `GetTeamSummary` behavior for the tests:
+Extend `memoryRepository` with `activeUsers`, `CreateTeamWithInitialMembers`, and enough `GetTeamSummary` behavior for the tests. The key requirement: `CreateTeamWithInitialMembers` must write the created team into `memoryRepository.teams` and the owner/member memberships into the existing `memoryRepository.teamMembers` map so that the subsequent `GetOverview` call can read them back:
 
 ```go
 activeUsers                 map[uuid.UUID]bool
 createTeamWithMembersCalled bool
 createdTeamWithMembers      CreateTeamWithInitialMembersParams
 ```
+
+Initialize `activeUsers` in `newMemoryRepository`:
+
+```go
+activeUsers: map[uuid.UUID]bool{},
+```
+
+```go
+func (m *memoryRepository) CreateTeamWithInitialMembers(ctx context.Context, params CreateTeamWithInitialMembersParams) (TeamRecord, error) {
+	m.createTeamWithMembersCalled = true
+	m.createdTeamWithMembers = params
+	if !m.activeUsers[params.OwnerUserID] {
+		return TeamRecord{}, ErrNotFound
+	}
+	for _, mbr := range params.InitialMembers {
+		if !m.activeUsers[mbr.UserID] {
+			return TeamRecord{}, ErrNotFound
+		}
+	}
+	// store team so GetTeamSummary can find it
+	team := TeamRecord{
+		ID:               uuid.New(),
+		TenantID:         params.TenantID,
+		Slug:             params.Slug,
+		Name:             params.Name,
+		Status:           params.Status,
+		HumanOwnerUserID: &params.OwnerUserID,
+		Metadata:         params.Metadata,
+	}
+	m.teams[team.ID] = team
+	// store owner membership so summary aggregation picks it up
+	ownerMembership := TeamMemberRecord{
+		MembershipID: uuid.New(),
+		TenantID:     params.TenantID,
+		TeamID:       team.ID,
+		UserID:       params.OwnerUserID,
+		Role:         TeamRoleOwner,
+		MembershipStatus: "active",
+	}
+	m.teamMembers[ownerMembership.MembershipID] = ownerMembership
+	// store initial members
+	for _, mbr := range params.InitialMembers {
+		membership := TeamMemberRecord{
+			MembershipID: uuid.New(),
+			TenantID:     params.TenantID,
+			TeamID:       team.ID,
+			UserID:       mbr.UserID,
+			Role:         mbr.Role,
+			MembershipStatus: "active",
+		}
+		m.teamMembers[membership.MembershipID] = membership
+	}
+	return team, nil
+}
+```
+
+Also update `GetTeamSummary` in `memoryRepository` so it returns a valid `TeamListItemRecord` for the stored team with `MemberCount` set to the number of active entries in `teamMembers` for that `tenantID/teamID`.
 
 - [ ] **Step 2: Run domain tests and verify they fail**
 
@@ -422,6 +510,7 @@ Change `CreateTeamRequest`:
 ```go
 type CreateTeamRequest struct {
 	TenantID         uuid.UUID
+	ActorUserID      uuid.UUID
 	Slug             string
 	Name             string
 	Status           TeamStatus
@@ -430,6 +519,8 @@ type CreateTeamRequest struct {
 	Metadata         map[string]any
 }
 ```
+
+Update every existing `CreateTeamRequest` test fixture in `apps/control-plane/internal/tenant/service_test.go` and `apps/control-plane/internal/api/team_routes_test.go` to pass a non-nil `ActorUserID`. This includes tests that create a team only as setup for governance/config revision assertions.
 
 In `apps/control-plane/internal/tenant/repository.go`, add to `Repository`:
 
@@ -442,6 +533,7 @@ Add the params type:
 ```go
 type CreateTeamWithInitialMembersParams struct {
 	TenantID       uuid.UUID
+	ActorUserID    uuid.UUID
 	Slug           string
 	Name           string
 	Status         TeamStatus
@@ -459,6 +551,9 @@ In `apps/control-plane/internal/tenant/service.go`, change `CreateTeam` to retur
 func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamOverview, error) {
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.ActorUserID == uuid.Nil {
+		return nil, fmt.Errorf("%w: actor_user_id is required", ErrInvalidInput)
 	}
 	slug := strings.TrimSpace(req.Slug)
 	if slug == "" {
@@ -485,6 +580,7 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamO
 
 	team, err := s.repository.CreateTeamWithInitialMembers(ctx, CreateTeamWithInitialMembersParams{
 		TenantID:       req.TenantID,
+		ActorUserID:    req.ActorUserID,
 		Slug:           slug,
 		Name:           name,
 		Status:         status,
@@ -524,18 +620,26 @@ func normalizeInitialMembers(ownerUserID uuid.UUID, members []InitialTeamMemberI
 
 - [ ] **Step 5: Add sqlc queries for transaction**
 
+> **Design note — cross-domain query:** `GetActiveTenantUserForTeamCreate` queries `auth_users` and `tenant_members` but lives in `tenant_team_config.sql`. This is intentional: the atomic team-creation transaction runs inside a single sqlc `Queries` instance (via `WithTx`), so all queries the transaction needs must reside in the same sqlc package. sqlc does not support cross-package `WithTx`. The generated Go code in `tenant_team_config.sql.go` will include auth-user row types, which is acceptable for this transactional boundary.
+
 In `apps/control-plane/internal/storage/queries/tenant_team_config.sql`, add:
 
 ```sql
--- name: GetActiveAuthUserForTeamCreate :one
-SELECT id, username, display_name, email, status
-FROM auth_users
-WHERE id = sqlc.arg('id')::uuid
-  AND status = 'active'
-  AND deleted_at IS NULL;
+-- name: GetActiveTenantUserForTeamCreate :one
+SELECT au.id, au.username, au.display_name, au.email, au.status
+FROM auth_users au
+JOIN tenant_members tm ON tm.principal_id = au.id
+WHERE au.id = sqlc.arg('id')::uuid
+  AND au.status = 'active'
+  AND au.deleted_at IS NULL
+  AND tm.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tm.principal_type = 'user'
+  AND tm.status = 'active'
+  AND tm.disabled_at IS NULL
+LIMIT 1;
 
 -- name: AddTeamOwnerMembership :one
-INSERT INTO tenant_team_members (
+INSERT INTO tenant_members (
     tenant_id,
     team_id,
     principal_type,
@@ -545,15 +649,20 @@ INSERT INTO tenant_team_members (
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('team_id')::uuid,
-    'human_user',
+    'user',
     sqlc.arg('user_id')::uuid,
     'owner',
     'active'
 )
+ON CONFLICT (tenant_id, team_id, principal_type, principal_id, role)
+DO UPDATE SET
+    status = 'active',
+    disabled_at = NULL,
+    updated_at = NOW()
 RETURNING *;
 ```
 
-Use the existing `AddTeamMember` query for `member` and `viewer` if it already inserts `principal_type = 'human_user'`; otherwise add a dedicated `AddInitialTeamMemberMembership` query with the same column list and `sqlc.arg('role')`.
+Use the existing `AddTeamMember` query for `member` and `viewer`; it already inserts into `tenant_members` with `principal_type = 'user'`.
 
 - [ ] **Step 6: Regenerate sqlc**
 
@@ -566,6 +675,8 @@ make -C apps/control-plane generate-sqlc
 Expected: sqlc generation succeeds and updates `tenant_team_config.sql.go`.
 
 - [ ] **Step 7: Implement repository transaction**
+
+> **Design note — `AddTeamMember` ON CONFLICT behavior:** The existing `AddTeamMember` sqlc query uses `ON CONFLICT DO UPDATE SET status='active'`. In the initial-members loop, this means a previously-disabled member will be reactivated rather than inserted as a new row. This is the desired behavior: if a user was previously a member and was later disabled, adding them as an initial member should restore their membership to active. If conflicting memberships need to be rejected with an error instead, replace the query with `ON CONFLICT DO NOTHING` and check `RowsAffected`.
 
 In `apps/control-plane/internal/tenant/pg_repository.go`, implement:
 
@@ -589,11 +700,17 @@ func (r *PgRepository) CreateTeamWithInitialMembers(ctx context.Context, params 
 		}
 	}()
 	qtx := r.q.WithTx(tx)
-	if _, err := qtx.GetActiveAuthUserForTeamCreate(ctx, params.OwnerUserID); err != nil {
+	if _, err := qtx.GetActiveTenantUserForTeamCreate(ctx, queries.GetActiveTenantUserForTeamCreateParams{
+		ID:       params.OwnerUserID,
+		TenantID: params.TenantID,
+	}); err != nil {
 		return TeamRecord{}, mapNoRows(err)
 	}
 	for _, member := range params.InitialMembers {
-		if _, err := qtx.GetActiveAuthUserForTeamCreate(ctx, member.UserID); err != nil {
+		if _, err := qtx.GetActiveTenantUserForTeamCreate(ctx, queries.GetActiveTenantUserForTeamCreateParams{
+			ID:       member.UserID,
+			TenantID: params.TenantID,
+		}); err != nil {
 			return TeamRecord{}, mapNoRows(err)
 		}
 	}
@@ -637,7 +754,47 @@ func (r *PgRepository) CreateTeamWithInitialMembers(ctx context.Context, params 
 }
 ```
 
-- [ ] **Step 8: Verify Task 2**
+- [ ] **Step 8: Add required audit writing inside the transaction**
+
+The spec requires team creation and initial member additions to produce audit events as part of the create flow. Add audit writing inside `CreateTeamWithInitialMembers` before `tx.Commit(ctx)` by using the same transaction-bound `qtx`. The event details must include at least `team_id`, `slug`, `human_owner_user_id`, and the `initial_members` count.
+
+Audit actions:
+
+```text
+team.create
+team.member.add
+```
+
+Repository transaction shape:
+
+```go
+if _, err := qtx.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	TenantID:     params.TenantID,
+	EventType:    "team_management",
+	ActorType:    "user",
+	ActorID:      params.ActorUserID.String(),
+	ResourceType: "team",
+	ResourceID:   team.ID.String(),
+	Action:       "team.create",
+	Details:      auditDetailsJSON,
+}); err != nil {
+	return TeamRecord{}, err
+}
+```
+
+For each owner/member membership inserted in the same transaction, create a `team.member.add` audit event with `resource_type = "team_member"` and `resource_id` set to the membership ID.
+
+Add service or route tests that assert successful create emits audit events:
+
+```go
+if len(repo.auditEvents) < 2 {
+	t.Fatalf("expected team create and member audit events, got %#v", repo.auditEvents)
+}
+```
+
+Do not make audit optional for this create path. Unit tests that do not exercise create-team auditing may keep a no-op fake, but the create-team tests in this task must assert the audit events.
+
+- [ ] **Step 9: Verify Task 2**
 
 Run:
 
@@ -647,7 +804,7 @@ go test ./apps/control-plane/internal/tenant -run 'TestCreateTeam|TestTeamStatus
 
 Expected: all targeted tenant tests pass.
 
-- [ ] **Step 9: Commit Task 2**
+- [ ] **Step 10: Commit Task 2**
 
 ```bash
 git add apps/control-plane/internal/tenant apps/control-plane/internal/storage/queries/tenant_team_config.sql apps/control-plane/internal/storage/queries/tenant_team_config.sql.go
@@ -738,6 +895,7 @@ Return overview:
 ```go
 overview, err := service.CreateTeam(r.Context(), CreateTeamRequest{
 	TenantID:         tenantID,
+	ActorUserID:      middleware.GetUserID(r.Context()),
 	Slug:             req.Slug,
 	Name:             req.Name,
 	Status:           req.Status,
@@ -752,6 +910,20 @@ if err != nil {
 overview.AllowedActions = h.allowedTeamActions(r, tenantID, overview.Team.ID)
 writeJSON(w, http.StatusCreated, teamOverviewResponseFromDomain(overview))
 ```
+
+Update `apps/control-plane/internal/tenant/handler.go` `HandlerService` interface — change:
+```go
+CreateTeam(ctx context.Context, req CreateTeamRequest) (*Team, error)
+```
+to:
+```go
+CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamOverview, error)
+```
+
+Update `apps/control-plane/internal/api/team_routes_test.go` `routeTeamService` mock:
+- Change `CreateTeam` return type from `(*tenant.Team, error)` to `(*tenant.TeamOverview, error)`.
+- Return `&tenant.TeamOverview{Team: &tenant.Team{...}, AllowedActions: []tenant.AllowedTeamAction{"team.update"}}` so existing assertions on `team.id`/`team.tenant_id` fields continue to pass under the `overview.team` nesting.
+- Update the existing `TestTeamRoutesUseConsoleTenant` response decode to unwrap the overview envelope before checking the team fields. The test already decodes `var created struct { Team struct { ... } }` into a `created` variable; ensure the assertions access `created.Team.ID` etc.
 
 - [ ] **Step 4: Update OpenAPI**
 
@@ -1053,7 +1225,7 @@ Render toolbar before the table:
 
 - [ ] **Step 5: Update table visual and states**
 
-In `team-list-table.tsx`, add `highlightedTeamId?: string` prop and render:
+In `team-list-table.tsx`, update the component's props type/interface to include `highlightedTeamId?: string`. Add the prop and render:
 
 ```tsx
 <TableRow
@@ -1104,6 +1276,7 @@ git commit -m "feat: add team management filters"
 **Files:**
 - Create: `apps/web/src/features/teams/components/create-team-drawer.tsx`
 - Create: `apps/web/src/features/teams/components/create-team-basic-step.tsx`
+- Create: `apps/web/src/features/teams/components/create-team-members-step.tsx`
 - Modify: `apps/web/src/features/teams/index.tsx`
 - Test: `apps/web/src/features/teams/index.test.tsx`
 
@@ -1237,7 +1410,34 @@ export function CreateTeamDrawer(props: CreateTeamDrawerProps) {
 
 Use shadcn `Button` instead of raw `button` when imports are available in the implementation pass; keep labels and disabled behavior identical.
 
-- [ ] **Step 4: Create basic step with owner search**
+- [ ] **Step 4: Create minimal members step stub so Task 5 typecheck passes**
+
+Create `apps/web/src/features/teams/components/create-team-members-step.tsx`:
+
+```tsx
+import type { CreateTeamDraft } from "./create-team-drawer";
+
+type CreateTeamMembersStepProps = {
+  apiBaseUrl: string;
+  draft: CreateTeamDraft;
+  fetcher?: typeof fetch;
+  onChange: (draft: CreateTeamDraft) => void;
+};
+
+export function CreateTeamMembersStep(_props: CreateTeamMembersStepProps) {
+  return (
+    <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
+      初始成员将在下一步接入真实用户搜索。
+    </div>
+  );
+}
+```
+
+Task 6 replaces this stub with the full candidate-user list and role assignment UI.
+
+- [ ] **Step 5: Create basic step with owner search**
+
+> **UX note:** The owner search triggers on every keystroke in the team name field. For a production-quality implementation, add a `useDebounce` hook (e.g. 300ms) on the search query to avoid hammering the API on every keystroke. Show a loading spinner (`owners.isLoading`) while the user list is fetching, and an empty-state message when no active users match the query.
 
 Create `create-team-basic-step.tsx`:
 
@@ -1296,7 +1496,7 @@ export function CreateTeamBasicStep({ apiBaseUrl, errors, fetcher, onChange, val
 }
 ```
 
-- [ ] **Step 5: Add button and drawer to TeamsView**
+- [ ] **Step 6: Add button and drawer to TeamsView**
 
 In `index.tsx`, render the primary button and drawer:
 
@@ -1321,7 +1521,7 @@ const [createOpen, setCreateOpen] = useState(false);
 />
 ```
 
-- [ ] **Step 6: Verify Task 5**
+- [ ] **Step 7: Verify Task 5**
 
 Run:
 
@@ -1332,17 +1532,17 @@ pnpm --filter @superteam/web typecheck
 
 Expected: test and typecheck pass.
 
-- [ ] **Step 7: Commit Task 5**
+- [ ] **Step 8: Commit Task 5**
 
 ```bash
-git add apps/web/src/features/teams/components/create-team-drawer.tsx apps/web/src/features/teams/components/create-team-basic-step.tsx apps/web/src/features/teams/index.tsx apps/web/src/features/teams/index.test.tsx
+git add apps/web/src/features/teams/components/create-team-drawer.tsx apps/web/src/features/teams/components/create-team-basic-step.tsx apps/web/src/features/teams/components/create-team-members-step.tsx apps/web/src/features/teams/index.tsx apps/web/src/features/teams/index.test.tsx
 git commit -m "feat: add create team drawer basic step"
 ```
 
 ## Task 6: Initial Members Step And Submit
 
 **Files:**
-- Create: `apps/web/src/features/teams/components/create-team-members-step.tsx`
+- Modify: `apps/web/src/features/teams/components/create-team-members-step.tsx`
 - Modify: `apps/web/src/features/teams/components/create-team-drawer.tsx`
 - Modify: `apps/web/src/features/teams/index.tsx`
 - Test: `apps/web/src/features/teams/index.test.tsx`
@@ -1418,6 +1618,8 @@ pnpm --filter @superteam/web test src/features/teams/index.test.tsx
 Expected: FAIL because members step and submit are incomplete.
 
 - [ ] **Step 3: Create members step**
+
+> **UX note — duplicate feedback:** The `addMember` function silently skips users who are already the owner or already in `initial_members`. Consider adding a visual hint (e.g. disabling the "add" button with a tooltip "已是团队成员") instead of silently no-opping, so the user understands why clicking has no effect.
 
 Create `create-team-members-step.tsx`:
 
@@ -1637,7 +1839,7 @@ FROM tenant_teams
 WHERE slug = 'security';
 
 SELECT role, principal_id, status
-FROM tenant_team_members
+FROM tenant_members
 WHERE team_id = (
   SELECT id FROM tenant_teams WHERE slug = 'security'
 )
@@ -1650,7 +1852,7 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
-Expected: one team row, one `owner` membership, selected `member`/`viewer` memberships, and audit rows for team creation/member addition if audit writing is implemented in the transaction.
+Expected: one team row, one `owner` membership, selected `member`/`viewer` memberships, and audit rows for `team.create` and `team.member.add`.
 
 - [ ] **Step 7: Stop services**
 
