@@ -269,6 +269,16 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 	if len(runService.createReq.AllowedActions) != 1 || runService.createReq.AllowedActions[0] != "read_context" {
 		t.Fatalf("expected allowed actions to map, got %#v", runService.createReq.AllowedActions)
 	}
+	var createdRaw map[string]json.RawMessage
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createdRaw); err != nil {
+		t.Fatalf("decode raw created run: %v", err)
+	}
+	if _, ok := createdRaw["idempotency_fingerprint"]; ok {
+		t.Fatalf("run response must not expose idempotency_fingerprint: %s", string(createdRaw["idempotency_fingerprint"]))
+	}
+	if string(createdRaw["idempotency_key"]) != `"idem-route-test"` {
+		t.Fatalf("expected run response to expose idempotency_key, got %s", string(createdRaw["idempotency_key"]))
+	}
 	var created struct {
 		ID                string                 `json:"id"`
 		TenantID          string                 `json:"tenant_id"`
@@ -279,7 +289,7 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 		LogRef            *string                `json:"log_ref"`
 		WorkProducts      []employee.WorkProduct `json:"work_products"`
 	}
-	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode created run: %v", err)
 	}
 	if created.ID == "" || created.TenantID != tenantID.String() || created.DigitalEmployeeID != employeeID.String() || created.CommandID != "cmd-route-test" || created.Status != string(employee.DigitalEmployeeRunStatusDispatching) {
@@ -287,6 +297,17 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 	}
 	if created.Result["summary"] != "queued" || created.LogRef == nil || *created.LogRef != "s3://logs/run.log" || len(created.WorkProducts) != 1 {
 		t.Fatalf("expected run response fields, got %#v", created)
+	}
+
+	defaultListReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs", nil)
+	defaultListReq.AddCookie(cookie)
+	defaultListResp := httptest.NewRecorder()
+	server.ServeHTTP(defaultListResp, defaultListReq)
+	if defaultListResp.Code != http.StatusOK {
+		t.Fatalf("expected default list runs to succeed, got %d: %s", defaultListResp.Code, defaultListResp.Body.String())
+	}
+	if runService.listLimit != 50 || runService.listOffset != 0 {
+		t.Fatalf("expected default list pagination limit=50 offset=0, got limit=%d offset=%d", runService.listLimit, runService.listOffset)
 	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs?limit=25&offset=5", nil)
@@ -299,14 +320,48 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 	if runService.listTenantID != tenantID || runService.listEmployeeID != employeeID || runService.listLimit != 25 || runService.listOffset != 5 {
 		t.Fatalf("unexpected list mapping: tenant=%s employee=%s limit=%d offset=%d", runService.listTenantID, runService.listEmployeeID, runService.listLimit, runService.listOffset)
 	}
+	var listRaw []map[string]json.RawMessage
+	if err := json.Unmarshal(listResp.Body.Bytes(), &listRaw); err != nil {
+		t.Fatalf("decode raw list runs: %v", err)
+	}
+	if len(listRaw) != 1 {
+		t.Fatalf("unexpected raw list runs response: %#v", listRaw)
+	}
+	if _, ok := listRaw[0]["idempotency_fingerprint"]; ok {
+		t.Fatalf("list run response must not expose idempotency_fingerprint: %s", string(listRaw[0]["idempotency_fingerprint"]))
+	}
+	if string(listRaw[0]["idempotency_key"]) != `"idem-route-test"` {
+		t.Fatalf("expected list run response to expose idempotency_key, got %s", string(listRaw[0]["idempotency_key"]))
+	}
 	var listBody []struct {
 		ID string `json:"id"`
 	}
-	if err := json.NewDecoder(listResp.Body).Decode(&listBody); err != nil {
+	if err := json.Unmarshal(listResp.Body.Bytes(), &listBody); err != nil {
 		t.Fatalf("decode list runs: %v", err)
 	}
 	if len(listBody) != 1 || listBody[0].ID != created.ID {
 		t.Fatalf("unexpected list runs response: %#v", listBody)
+	}
+
+	clampListReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs?limit=500&offset=6", nil)
+	clampListReq.AddCookie(cookie)
+	clampListResp := httptest.NewRecorder()
+	server.ServeHTTP(clampListResp, clampListReq)
+	if clampListResp.Code != http.StatusOK {
+		t.Fatalf("expected clamped list runs to succeed, got %d: %s", clampListResp.Code, clampListResp.Body.String())
+	}
+	if runService.listLimit != 100 || runService.listOffset != 6 {
+		t.Fatalf("expected clamped list pagination limit=100 offset=6, got limit=%d offset=%d", runService.listLimit, runService.listOffset)
+	}
+
+	for _, query := range []string{"limit=bad", "offset=bad", "limit=0", "limit=-1", "offset=-1"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs?"+query, nil)
+		req.AddCookie(cookie)
+		resp := httptest.NewRecorder()
+		server.ServeHTTP(resp, req)
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("expected list runs query %q to return 400, got %d: %s", query, resp.Code, resp.Body.String())
+		}
 	}
 
 	runID := uuid.MustParse(created.ID)
@@ -319,6 +374,17 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 	}
 	if runService.getTenantID != tenantID || runService.getEmployeeID != employeeID || runService.getRunID != runID {
 		t.Fatalf("unexpected get mapping: tenant=%s employee=%s run=%s", runService.getTenantID, runService.getEmployeeID, runService.getRunID)
+	}
+
+	defaultEventsReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs/"+runID.String()+"/events", nil)
+	defaultEventsReq.AddCookie(cookie)
+	defaultEventsResp := httptest.NewRecorder()
+	server.ServeHTTP(defaultEventsResp, defaultEventsReq)
+	if defaultEventsResp.Code != http.StatusOK {
+		t.Fatalf("expected default list run events to succeed, got %d: %s", defaultEventsResp.Code, defaultEventsResp.Body.String())
+	}
+	if runService.eventsLimit != 50 || runService.eventsOffset != 0 {
+		t.Fatalf("expected default events pagination limit=50 offset=0, got limit=%d offset=%d", runService.eventsLimit, runService.eventsOffset)
 	}
 
 	eventsReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs/"+runID.String()+"/events?limit=10&offset=2", nil)
@@ -337,6 +403,27 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 	}
 	if len(eventsBody) != 1 || eventsBody[0].EventType != "provider_output" || eventsBody[0].SequenceNumber != 7 {
 		t.Fatalf("unexpected events response: %#v", eventsBody)
+	}
+
+	clampEventsReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs/"+runID.String()+"/events?limit=500&offset=8", nil)
+	clampEventsReq.AddCookie(cookie)
+	clampEventsResp := httptest.NewRecorder()
+	server.ServeHTTP(clampEventsResp, clampEventsReq)
+	if clampEventsResp.Code != http.StatusOK {
+		t.Fatalf("expected clamped list run events to succeed, got %d: %s", clampEventsResp.Code, clampEventsResp.Body.String())
+	}
+	if runService.eventsLimit != 100 || runService.eventsOffset != 8 {
+		t.Fatalf("expected clamped events pagination limit=100 offset=8, got limit=%d offset=%d", runService.eventsLimit, runService.eventsOffset)
+	}
+
+	for _, query := range []string{"limit=bad", "offset=bad", "limit=0", "limit=-1", "offset=-1"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs/"+runID.String()+"/events?"+query, nil)
+		req.AddCookie(cookie)
+		resp := httptest.NewRecorder()
+		server.ServeHTTP(resp, req)
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("expected list run events query %q to return 400, got %d: %s", query, resp.Code, resp.Body.String())
+		}
 	}
 
 	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees/"+employeeID.String()+"/runs/"+runID.String()+"/stop", strings.NewReader(`{"reason":"用户取消"}`))
@@ -363,11 +450,11 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 
 	expectedChecks := []string{
 		authz.ActionEmployeeRunCreate,
-		authz.ActionEmployeeRead,
-		authz.ActionEmployeeRead,
-		authz.ActionEmployeeRead,
-		authz.ActionEmployeeRunStop,
 	}
+	for i := 0; i < 17; i++ {
+		expectedChecks = append(expectedChecks, authz.ActionEmployeeRead)
+	}
+	expectedChecks = append(expectedChecks, authz.ActionEmployeeRunStop)
 	if len(authorizer.checks) < len(expectedChecks) {
 		t.Fatalf("expected at least %d authorization checks, got %#v", len(expectedChecks), authorizer.checks)
 	}
@@ -829,6 +916,8 @@ func (s *routeEmployeeRunService) StopRun(ctx context.Context, req employee.Stop
 func routeEmployeeRun(tenantID, employeeID uuid.UUID, status employee.DigitalEmployeeRunStatus) *employee.DigitalEmployeeRun {
 	now := time.Now().UTC()
 	logRef := "s3://logs/run.log"
+	idempotencyKey := "idem-route-test"
+	idempotencyFingerprint := "fingerprint-route-test"
 	return &employee.DigitalEmployeeRun{
 		ID:                  uuid.New(),
 		TenantID:            tenantID,
@@ -849,12 +938,14 @@ func routeEmployeeRun(tenantID, employeeID uuid.UUID, status employee.DigitalEmp
 			Ref:       "artifact://risk-list",
 			CreatedAt: now,
 		}},
-		SessionState: map[string]any{"step": "dispatch"},
-		TimeoutSec:   int32Ptr(600),
-		GraceSec:     int32Ptr(30),
-		StartedAt:    now,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		SessionState:           map[string]any{"step": "dispatch"},
+		IdempotencyKey:         &idempotencyKey,
+		IdempotencyFingerprint: &idempotencyFingerprint,
+		TimeoutSec:             int32Ptr(600),
+		GraceSec:               int32Ptr(30),
+		StartedAt:              now,
+		CreatedAt:              now,
+		UpdatedAt:              now,
 	}
 }
 

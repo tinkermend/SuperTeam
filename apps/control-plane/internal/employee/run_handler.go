@@ -20,6 +20,11 @@ type RunHandlerService interface {
 	StopRun(ctx context.Context, req StopDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error)
 }
 
+const (
+	defaultRunPageLimit = 50
+	maxRunPageLimit     = 100
+)
+
 func (h *HTTPHandler) CreateDigitalEmployeeRun(w http.ResponseWriter, r *http.Request) {
 	employeeID, ok := employeeIDFromRequest(w, r)
 	if !ok {
@@ -88,8 +93,11 @@ func (h *HTTPHandler) ListDigitalEmployeeRuns(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, offset, parseErr := parseRunPagination(r)
+	if parseErr != "" {
+		http.Error(w, parseErr, http.StatusBadRequest)
+		return
+	}
 	runs, err := service.ListRuns(r.Context(), tenantID, employeeID, int32(limit), int32(offset))
 	if err != nil {
 		writeHandlerError(w, err)
@@ -132,8 +140,11 @@ func (h *HTTPHandler) ListDigitalEmployeeRunEvents(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, offset, parseErr := parseRunPagination(r)
+	if parseErr != "" {
+		http.Error(w, parseErr, http.StatusBadRequest)
+		return
+	}
 	events, err := service.ListRunEvents(r.Context(), tenantID, employeeID, runID, int32(limit), int32(offset))
 	if err != nil {
 		writeHandlerError(w, err)
@@ -184,6 +195,37 @@ func (h *HTTPHandler) runServiceFromRequest(w http.ResponseWriter) (RunHandlerSe
 	return h.runService, true
 }
 
+func parseRunPagination(r *http.Request) (int, int, string) {
+	query := r.URL.Query()
+	limit := defaultRunPageLimit
+	if raw := query.Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			return 0, 0, "limit must be an integer"
+		}
+		if parsed <= 0 {
+			return 0, 0, "limit must be greater than 0"
+		}
+		if parsed > maxRunPageLimit {
+			parsed = maxRunPageLimit
+		}
+		limit = parsed
+	}
+
+	offset := 0
+	if raw := query.Get("offset"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			return 0, 0, "offset must be an integer"
+		}
+		if parsed < 0 {
+			return 0, 0, "offset must be greater than or equal to 0"
+		}
+		offset = parsed
+	}
+	return limit, offset, ""
+}
+
 type digitalEmployeeRunResponse struct {
 	ID                        string                   `json:"id"`
 	TenantID                  string                   `json:"tenant_id"`
@@ -210,7 +252,6 @@ type digitalEmployeeRunResponse struct {
 	Signal                    *string                  `json:"signal,omitempty"`
 	TimedOut                  bool                     `json:"timed_out"`
 	IdempotencyKey            *string                  `json:"idempotency_key,omitempty"`
-	IdempotencyFingerprint    *string                  `json:"idempotency_fingerprint,omitempty"`
 	TimeoutSec                *int32                   `json:"timeout_sec,omitempty"`
 	GraceSec                  *int32                   `json:"grace_sec,omitempty"`
 	StartedAt                 string                   `json:"started_at,omitempty"`
@@ -255,7 +296,6 @@ func runResponseFromDomain(run *DigitalEmployeeRun) digitalEmployeeRunResponse {
 		Signal:                    run.Signal,
 		TimedOut:                  run.TimedOut,
 		IdempotencyKey:            run.IdempotencyKey,
-		IdempotencyFingerprint:    run.IdempotencyFingerprint,
 		TimeoutSec:                run.TimeoutSec,
 		GraceSec:                  run.GraceSec,
 		StartedAt:                 timeString(run.StartedAt),

@@ -193,7 +193,7 @@ func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, re
 			ErrorFamily:  stringPtr("dispatch_failed"),
 		})
 		_ = s.logAudit(ctx, "digital_employee_run_dispatch_failed", req.UserID, run.ID, "employee.run.create")
-		return nil, fmt.Errorf("dispatch start session: %w", err)
+		return nil, fmt.Errorf("%w: dispatch start session: %w", ErrRuntimeUnavailable, err)
 	}
 
 	if _, err := s.repository.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
@@ -316,7 +316,7 @@ func (s *DigitalEmployeeRunService) StopRun(ctx context.Context, req StopDigital
 			Status:       "failed",
 			ErrorMessage: stringPtr(err.Error()),
 		})
-		return nil, fmt.Errorf("dispatch stop session: %w", err)
+		return nil, fmt.Errorf("%w: dispatch stop session: %w", ErrRuntimeUnavailable, err)
 	}
 	if _, err := s.repository.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
 		TenantID:  req.TenantID,

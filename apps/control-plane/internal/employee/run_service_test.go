@@ -424,6 +424,12 @@ func TestRunServiceStopRunRecordsStopRequestedBeforeDispatchFailure(t *testing.T
 	if err == nil {
 		t.Fatalf("expected stop dispatch error")
 	}
+	if !errors.Is(err, ErrRuntimeUnavailable) {
+		t.Fatalf("expected ErrRuntimeUnavailable, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "ws write failed") {
+		t.Fatalf("expected original dispatch error context, got %v", err)
+	}
 	if len(repo.statusUpdates) != 1 || repo.statusUpdates[0].Status != DigitalEmployeeRunStatusCancelling {
 		t.Fatalf("expected run to move to cancelling, got %#v", repo.statusUpdates)
 	}
@@ -486,6 +492,12 @@ func TestRunServiceCreateRunDispatchFailureMarksRunFailed(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected dispatch error")
 	}
+	if !errors.Is(err, ErrRuntimeUnavailable) {
+		t.Fatalf("expected ErrRuntimeUnavailable, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "ws write failed") {
+		t.Fatalf("expected original dispatch error context, got %v", err)
+	}
 	if len(repo.receiptUpdates) != 1 || repo.receiptUpdates[0].Status != "failed" {
 		t.Fatalf("expected failed receipt update, got %#v", repo.receiptUpdates)
 	}
@@ -497,6 +509,24 @@ func TestRunServiceCreateRunDispatchFailureMarksRunFailed(t *testing.T) {
 	}
 	if len(audit.events) != 1 || audit.events[0].eventType != "digital_employee_run_dispatch_failed" {
 		t.Fatalf("expected dispatch failure audit, got %#v", audit.events)
+	}
+}
+
+func TestRunServiceCreateRunDispatchRuntimeNotConnectedMapsRuntimeUnavailable(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	dispatcher.dispatchErr = cpruntime.ErrRuntimeNotConnected
+	service := mustNewRunService(t, repo, dispatcher)
+
+	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+
+	if !errors.Is(err, ErrRuntimeUnavailable) {
+		t.Fatalf("expected ErrRuntimeUnavailable, got %v", err)
+	}
+	if !errors.Is(err, cpruntime.ErrRuntimeNotConnected) {
+		t.Fatalf("expected original runtime error to be preserved, got %v", err)
 	}
 }
 
