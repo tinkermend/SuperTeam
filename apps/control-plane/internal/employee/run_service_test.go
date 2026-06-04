@@ -170,6 +170,128 @@ func TestRunServiceCreateRunReconcilesIdempotentQueuedRunWithoutReceipt(t *testi
 	}
 }
 
+func TestRunServiceCreateRunReconcilesDispatchedReceiptForQueuedRun(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	audit := &fakeRunServiceAuditLogger{}
+	service := mustNewRunService(t, repo, dispatcher, audit)
+	req := validCreateRunServiceRequest()
+	idempotencyKey := "idem-dispatched"
+	req.IdempotencyKey = &idempotencyKey
+	fingerprint, err := computeRunIdempotencyFingerprint(req, strings.TrimSpace(req.Objective), strings.TrimSpace(req.Prompt), repo.preflight)
+	if err != nil {
+		t.Fatalf("compute fingerprint: %v", err)
+	}
+	repo.activeRun = validRunServiceRun(DigitalEmployeeRunStatusQueued)
+	repo.activeRun.IdempotencyKey = &idempotencyKey
+	repo.activeRun.IdempotencyFingerprint = &fingerprint
+	repo.commandReceipt = &RuntimeCommandReceipt{
+		TenantID:  repo.activeRun.TenantID,
+		CommandID: repo.activeRun.CommandID,
+		Status:    "dispatched",
+	}
+
+	run, err := service.CreateRun(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("create run retry: %v", err)
+	}
+	if run.Status != DigitalEmployeeRunStatusDispatching {
+		t.Fatalf("expected queued run with dispatched receipt to be marked dispatching, got %s", run.Status)
+	}
+	if len(dispatcher.commands) != 0 || len(repo.commandReceipts) != 0 {
+		t.Fatalf("expected dispatched receipt retry not to redispatch/create receipt, commands=%#v receipts=%#v", dispatcher.commands, repo.commandReceipts)
+	}
+	if len(repo.events) != 1 || repo.events[0].SequenceNumber != runDispatchedLifecycleSequence {
+		t.Fatalf("expected run_dispatched lifecycle event, got %#v", repo.events)
+	}
+	if len(audit.events) != 1 || audit.events[0].action != "employee.run.create" {
+		t.Fatalf("expected create audit for dispatched receipt reconciliation, got %#v", audit.events)
+	}
+}
+
+func TestRunServiceCreateRunMarksFailedWhenReceiptFailed(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+	req := validCreateRunServiceRequest()
+	idempotencyKey := "idem-failed"
+	req.IdempotencyKey = &idempotencyKey
+	fingerprint, err := computeRunIdempotencyFingerprint(req, strings.TrimSpace(req.Objective), strings.TrimSpace(req.Prompt), repo.preflight)
+	if err != nil {
+		t.Fatalf("compute fingerprint: %v", err)
+	}
+	errorMessage := "ws write failed"
+	repo.activeRun = validRunServiceRun(DigitalEmployeeRunStatusQueued)
+	repo.activeRun.IdempotencyKey = &idempotencyKey
+	repo.activeRun.IdempotencyFingerprint = &fingerprint
+	repo.commandReceipt = &RuntimeCommandReceipt{
+		TenantID:     repo.activeRun.TenantID,
+		CommandID:    repo.activeRun.CommandID,
+		Status:       "failed",
+		ErrorMessage: &errorMessage,
+	}
+
+	run, err := service.CreateRun(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("create run retry: %v", err)
+	}
+	if run.Status != DigitalEmployeeRunStatusFailed {
+		t.Fatalf("expected failed run from failed receipt, got %s", run.Status)
+	}
+	if len(dispatcher.commands) != 0 || len(repo.events) != 0 {
+		t.Fatalf("expected failed receipt retry not to dispatch/events, commands=%#v events=%#v", dispatcher.commands, repo.events)
+	}
+	if len(repo.statusUpdates) != 1 || repo.statusUpdates[0].Status != DigitalEmployeeRunStatusFailed {
+		t.Fatalf("expected failed run status update, got %#v", repo.statusUpdates)
+	}
+}
+
+func TestRunServiceCreateRunDoesNotRestartRunningOrTerminalIdempotentRun(t *testing.T) {
+	for _, status := range []DigitalEmployeeRunStatus{
+		DigitalEmployeeRunStatusRunning,
+		DigitalEmployeeRunStatusCompleted,
+		DigitalEmployeeRunStatusFailed,
+		DigitalEmployeeRunStatusCancelled,
+		DigitalEmployeeRunStatusTimedOut,
+	} {
+		t.Run(string(status), func(t *testing.T) {
+			repo := newFakeRunServiceRepository()
+			repo.preflight = validRunServicePreflight()
+			dispatcher := newFakeRunServiceDispatcher()
+			dispatcher.connected[repo.preflight.NodeID] = true
+			service := mustNewRunService(t, repo, dispatcher)
+			req := validCreateRunServiceRequest()
+			idempotencyKey := "idem-" + string(status)
+			req.IdempotencyKey = &idempotencyKey
+			fingerprint, err := computeRunIdempotencyFingerprint(req, strings.TrimSpace(req.Objective), strings.TrimSpace(req.Prompt), repo.preflight)
+			if err != nil {
+				t.Fatalf("compute fingerprint: %v", err)
+			}
+			repo.activeRun = validRunServiceRun(status)
+			repo.activeRun.IdempotencyKey = &idempotencyKey
+			repo.activeRun.IdempotencyFingerprint = &fingerprint
+
+			run, err := service.CreateRun(context.Background(), req)
+
+			if err != nil {
+				t.Fatalf("create run retry: %v", err)
+			}
+			if run.Status != status {
+				t.Fatalf("expected existing %s run returned, got %s", status, run.Status)
+			}
+			if len(dispatcher.commands) != 0 || len(repo.commandReceipts) != 0 || len(repo.statusUpdates) != 0 {
+				t.Fatalf("expected no restart writes, commands=%#v receipts=%#v status=%#v", dispatcher.commands, repo.commandReceipts, repo.statusUpdates)
+			}
+		})
+	}
+}
+
 func TestRunServiceStopRunMovesToCancellingAndDispatchesStop(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.run = validRunServiceRun(DigitalEmployeeRunStatusRunning)
@@ -440,6 +562,7 @@ type fakeRunServiceRepository struct {
 	createRunRequests []CreateRunRecordRequest
 	statusUpdates     []UpdateRunStatusRequest
 	events            []CreateRunEventRecordRequest
+	commandReceipt    *RuntimeCommandReceipt
 	commandReceipts   []CreateRuntimeCommandReceiptRequest
 	receiptUpdates    []UpdateRuntimeCommandReceiptRequest
 }
@@ -528,7 +651,11 @@ func (f *fakeRunServiceRepository) CreateCommandReceipt(_ context.Context, req C
 	return nil
 }
 
-func (f *fakeRunServiceRepository) GetCommandReceipt(context.Context, uuid.UUID, string) (*RuntimeCommandReceipt, error) {
+func (f *fakeRunServiceRepository) GetCommandReceipt(_ context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error) {
+	if f.commandReceipt != nil && f.commandReceipt.TenantID == tenantID && f.commandReceipt.CommandID == commandID {
+		copied := *f.commandReceipt
+		return &copied, nil
+	}
 	return nil, ErrNotFound
 }
 
