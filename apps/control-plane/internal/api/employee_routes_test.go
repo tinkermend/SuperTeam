@@ -209,6 +209,177 @@ func TestEmployeeListAcceptsTeamFilter(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	user, err := authService.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	employeeService := &routeEmployeeService{}
+	runService := &routeEmployeeRunService{}
+	authorizer := &routeAuthorizer{allowed: true}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		authorizer,
+	)
+	handler := employee.NewHandler(employeeService)
+	handler.SetRunService(runService)
+	server.SetEmployeeHandler(handler)
+	cookie := routeLogin(t, server, "admin", "admin")
+	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	employeeID := uuid.New()
+
+	createBody := `{
+		"objective":"审查需求",
+		"prompt":"请输出风险点",
+		"context_refs":[{"type":"doc","ref":"ctx://req"}],
+		"artifact_refs":[{"type":"file","ref":"s3://bucket/input.md"}],
+		"output_schema":{"type":"object"},
+		"allowed_actions":["read_context"],
+		"forbidden_actions":["deploy"],
+		"secret_refs":["jira-token"],
+		"idempotency_key":"idem-1",
+		"timeout_sec":600,
+		"grace_sec":30,
+		"metadata":{"source":"route-test"}
+	}`
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees/"+employeeID.String()+"/runs", strings.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.AddCookie(cookie)
+	createResp := httptest.NewRecorder()
+	server.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected create run to succeed, got %d: %s", createResp.Code, createResp.Body.String())
+	}
+	if runService.createReq.TenantID != tenantID || runService.createReq.UserID != user.ID || runService.createReq.DigitalEmployeeID != employeeID {
+		t.Fatalf("unexpected create run identity mapping: %#v", runService.createReq)
+	}
+	if runService.createReq.Objective != "审查需求" || runService.createReq.Prompt != "请输出风险点" || runService.createReq.IdempotencyKey == nil || *runService.createReq.IdempotencyKey != "idem-1" {
+		t.Fatalf("unexpected create run body mapping: %#v", runService.createReq)
+	}
+	if len(runService.createReq.ContextRefs) != 1 || runService.createReq.ContextRefs[0]["ref"] != "ctx://req" {
+		t.Fatalf("expected context refs to map, got %#v", runService.createReq.ContextRefs)
+	}
+	if len(runService.createReq.AllowedActions) != 1 || runService.createReq.AllowedActions[0] != "read_context" {
+		t.Fatalf("expected allowed actions to map, got %#v", runService.createReq.AllowedActions)
+	}
+	var created struct {
+		ID                string                 `json:"id"`
+		TenantID          string                 `json:"tenant_id"`
+		DigitalEmployeeID string                 `json:"digital_employee_id"`
+		CommandID         string                 `json:"command_id"`
+		Status            string                 `json:"status"`
+		Result            map[string]any         `json:"result"`
+		LogRef            *string                `json:"log_ref"`
+		WorkProducts      []employee.WorkProduct `json:"work_products"`
+	}
+	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created run: %v", err)
+	}
+	if created.ID == "" || created.TenantID != tenantID.String() || created.DigitalEmployeeID != employeeID.String() || created.CommandID != "cmd-route-test" || created.Status != string(employee.DigitalEmployeeRunStatusDispatching) {
+		t.Fatalf("unexpected created run response: %#v", created)
+	}
+	if created.Result["summary"] != "queued" || created.LogRef == nil || *created.LogRef != "s3://logs/run.log" || len(created.WorkProducts) != 1 {
+		t.Fatalf("expected run response fields, got %#v", created)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs?limit=25&offset=5", nil)
+	listReq.AddCookie(cookie)
+	listResp := httptest.NewRecorder()
+	server.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected list runs to succeed, got %d: %s", listResp.Code, listResp.Body.String())
+	}
+	if runService.listTenantID != tenantID || runService.listEmployeeID != employeeID || runService.listLimit != 25 || runService.listOffset != 5 {
+		t.Fatalf("unexpected list mapping: tenant=%s employee=%s limit=%d offset=%d", runService.listTenantID, runService.listEmployeeID, runService.listLimit, runService.listOffset)
+	}
+	var listBody []struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&listBody); err != nil {
+		t.Fatalf("decode list runs: %v", err)
+	}
+	if len(listBody) != 1 || listBody[0].ID != created.ID {
+		t.Fatalf("unexpected list runs response: %#v", listBody)
+	}
+
+	runID := uuid.MustParse(created.ID)
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs/"+runID.String(), nil)
+	getReq.AddCookie(cookie)
+	getResp := httptest.NewRecorder()
+	server.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("expected get run to succeed, got %d: %s", getResp.Code, getResp.Body.String())
+	}
+	if runService.getTenantID != tenantID || runService.getEmployeeID != employeeID || runService.getRunID != runID {
+		t.Fatalf("unexpected get mapping: tenant=%s employee=%s run=%s", runService.getTenantID, runService.getEmployeeID, runService.getRunID)
+	}
+
+	eventsReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/runs/"+runID.String()+"/events?limit=10&offset=2", nil)
+	eventsReq.AddCookie(cookie)
+	eventsResp := httptest.NewRecorder()
+	server.ServeHTTP(eventsResp, eventsReq)
+	if eventsResp.Code != http.StatusOK {
+		t.Fatalf("expected list run events to succeed, got %d: %s", eventsResp.Code, eventsResp.Body.String())
+	}
+	if runService.eventsTenantID != tenantID || runService.eventsEmployeeID != employeeID || runService.eventsRunID != runID || runService.eventsLimit != 10 || runService.eventsOffset != 2 {
+		t.Fatalf("unexpected events mapping: tenant=%s employee=%s run=%s limit=%d offset=%d", runService.eventsTenantID, runService.eventsEmployeeID, runService.eventsRunID, runService.eventsLimit, runService.eventsOffset)
+	}
+	var eventsBody []employee.RuntimeCommandEventWriteback
+	if err := json.NewDecoder(eventsResp.Body).Decode(&eventsBody); err != nil {
+		t.Fatalf("decode events response: %v", err)
+	}
+	if len(eventsBody) != 1 || eventsBody[0].EventType != "provider_output" || eventsBody[0].SequenceNumber != 7 {
+		t.Fatalf("unexpected events response: %#v", eventsBody)
+	}
+
+	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees/"+employeeID.String()+"/runs/"+runID.String()+"/stop", strings.NewReader(`{"reason":"用户取消"}`))
+	stopReq.Header.Set("Content-Type", "application/json")
+	stopReq.AddCookie(cookie)
+	stopResp := httptest.NewRecorder()
+	server.ServeHTTP(stopResp, stopReq)
+	if stopResp.Code != http.StatusOK {
+		t.Fatalf("expected stop run to succeed, got %d: %s", stopResp.Code, stopResp.Body.String())
+	}
+	if runService.stopReq.TenantID != tenantID || runService.stopReq.UserID != user.ID || runService.stopReq.DigitalEmployeeID != employeeID || runService.stopReq.RunID != runID || runService.stopReq.Reason != "用户取消" {
+		t.Fatalf("unexpected stop mapping: %#v", runService.stopReq)
+	}
+	var stopped struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(stopResp.Body).Decode(&stopped); err != nil {
+		t.Fatalf("decode stopped run: %v", err)
+	}
+	if stopped.ID != runID.String() || stopped.Status != string(employee.DigitalEmployeeRunStatusCancelling) {
+		t.Fatalf("unexpected stopped run response: %#v", stopped)
+	}
+
+	expectedChecks := []string{
+		authz.ActionEmployeeRunCreate,
+		authz.ActionEmployeeRead,
+		authz.ActionEmployeeRead,
+		authz.ActionEmployeeRead,
+		authz.ActionEmployeeRunStop,
+	}
+	if len(authorizer.checks) < len(expectedChecks) {
+		t.Fatalf("expected at least %d authorization checks, got %#v", len(expectedChecks), authorizer.checks)
+	}
+	runChecks := authorizer.checks[len(authorizer.checks)-len(expectedChecks):]
+	for i, action := range expectedChecks {
+		check := runChecks[i]
+		if check.Action != action || check.Resource.Type != authz.ResourceEmployee || check.Resource.ID != employeeID.String() || check.TenantID != tenantID {
+			t.Fatalf("unexpected run authz check at %d: %#v", i, check)
+		}
+	}
+}
+
 func TestDigitalEmployeeRoutesRequireManagementAuthorization(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -588,3 +759,107 @@ func (s *routeEmployeeService) called() bool {
 }
 
 var _ employee.HandlerService = (*routeEmployeeService)(nil)
+
+type routeEmployeeRunService struct {
+	createReq        employee.CreateDigitalEmployeeRunRequest
+	stopReq          employee.StopDigitalEmployeeRunRequest
+	listTenantID     uuid.UUID
+	listEmployeeID   uuid.UUID
+	listLimit        int32
+	listOffset       int32
+	getTenantID      uuid.UUID
+	getEmployeeID    uuid.UUID
+	getRunID         uuid.UUID
+	eventsTenantID   uuid.UUID
+	eventsEmployeeID uuid.UUID
+	eventsRunID      uuid.UUID
+	eventsLimit      int32
+	eventsOffset     int32
+	createdRun       *employee.DigitalEmployeeRun
+}
+
+func (s *routeEmployeeRunService) CreateRun(ctx context.Context, req employee.CreateDigitalEmployeeRunRequest) (*employee.DigitalEmployeeRun, error) {
+	s.createReq = req
+	run := routeEmployeeRun(req.TenantID, req.DigitalEmployeeID, employee.DigitalEmployeeRunStatusDispatching)
+	s.createdRun = run
+	return run, nil
+}
+
+func (s *routeEmployeeRunService) ListRuns(ctx context.Context, tenantID, employeeID uuid.UUID, limit, offset int32) ([]*employee.DigitalEmployeeRun, error) {
+	s.listTenantID = tenantID
+	s.listEmployeeID = employeeID
+	s.listLimit = limit
+	s.listOffset = offset
+	if s.createdRun != nil {
+		return []*employee.DigitalEmployeeRun{s.createdRun}, nil
+	}
+	return []*employee.DigitalEmployeeRun{routeEmployeeRun(tenantID, employeeID, employee.DigitalEmployeeRunStatusDispatching)}, nil
+}
+
+func (s *routeEmployeeRunService) GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*employee.DigitalEmployeeRun, error) {
+	s.getTenantID = tenantID
+	s.getEmployeeID = employeeID
+	s.getRunID = runID
+	run := routeEmployeeRun(tenantID, employeeID, employee.DigitalEmployeeRunStatusDispatching)
+	run.ID = runID
+	return run, nil
+}
+
+func (s *routeEmployeeRunService) ListRunEvents(ctx context.Context, tenantID, employeeID, runID uuid.UUID, limit, offset int32) ([]employee.RuntimeCommandEventWriteback, error) {
+	s.eventsTenantID = tenantID
+	s.eventsEmployeeID = employeeID
+	s.eventsRunID = runID
+	s.eventsLimit = limit
+	s.eventsOffset = offset
+	return []employee.RuntimeCommandEventWriteback{{
+		EventType:      "provider_output",
+		SequenceNumber: 7,
+		Payload:        map[string]any{"text": "running"},
+		Metadata:       map[string]any{"source": "test"},
+	}}, nil
+}
+
+func (s *routeEmployeeRunService) StopRun(ctx context.Context, req employee.StopDigitalEmployeeRunRequest) (*employee.DigitalEmployeeRun, error) {
+	s.stopReq = req
+	run := routeEmployeeRun(req.TenantID, req.DigitalEmployeeID, employee.DigitalEmployeeRunStatusCancelling)
+	run.ID = req.RunID
+	return run, nil
+}
+
+func routeEmployeeRun(tenantID, employeeID uuid.UUID, status employee.DigitalEmployeeRunStatus) *employee.DigitalEmployeeRun {
+	now := time.Now().UTC()
+	logRef := "s3://logs/run.log"
+	return &employee.DigitalEmployeeRun{
+		ID:                  uuid.New(),
+		TenantID:            tenantID,
+		TaskID:              uuid.New(),
+		DigitalEmployeeID:   employeeID,
+		ExecutionInstanceID: uuid.New(),
+		RuntimeNodeID:       uuid.New(),
+		NodeID:              "runtime-node-1",
+		CommandID:           "cmd-route-test",
+		ProviderType:        "codex",
+		Status:              status,
+		Result:              map[string]any{"summary": "queued"},
+		Diagnostic:          map[string]any{"phase": "dispatch"},
+		LogRef:              &logRef,
+		WorkProducts: []employee.WorkProduct{{
+			Type:      "finding",
+			Title:     "风险清单",
+			Ref:       "artifact://risk-list",
+			CreatedAt: now,
+		}},
+		SessionState: map[string]any{"step": "dispatch"},
+		TimeoutSec:   int32Ptr(600),
+		GraceSec:     int32Ptr(30),
+		StartedAt:    now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+}
+
+func int32Ptr(value int32) *int32 {
+	return &value
+}
+
+var _ employee.RunHandlerService = (*routeEmployeeRunService)(nil)

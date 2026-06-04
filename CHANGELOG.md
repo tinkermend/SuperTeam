@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-04 23:48：Control Plane 暴露数字员工 run Console API 路由，支持创建、列表、详情、事件查询和停止，并接入独立 `employee.run.*` 授权 action 与真实 app wiring。
 - 2026-06-04 14:28：新增 `scripts/dev-services.sh` 本地开发服务管理脚本，支持 Control Plane、Web 和 Runtime Agent 的状态检查、启动、停止和重启，并以 `.scratch/dev-services` 记录 PID 与日志；新增脚本级测试覆盖启停与重启流程。
 - 2026-06-04 10:38：用户管理页按“用户 360 详情台”方向升级为主从详情工作台，使用权限中心一致的铺满页面布局，并调整为更宽的用户列表和三等宽概览卡片；页面接入用户列表、权限中心成员角色、登录日志和授权拒绝记录，并补齐新建用户、启用/禁用账号和重置密码入口。
 - 2026-06-04 05:20：团队列表搜索补齐负责人用户名、显示名和邮箱匹配，并修复新建团队失败后关闭重开抽屉仍显示旧错误的问题。

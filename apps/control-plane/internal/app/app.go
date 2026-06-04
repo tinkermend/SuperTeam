@@ -25,6 +25,7 @@ type Container struct {
 	TaskService     *task.Service
 	RuntimeService  *runtimepkg.Service
 	EmployeeService *employee.Service
+	EmployeeRun     *employee.DigitalEmployeeRunService
 	TenantService   *tenant.Service
 	AuditService    *audit.Service
 	RuntimeCommands *runtimepkg.ConnectionRegistry
@@ -95,9 +96,14 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 
 	poller := runtimepkg.NewPoller()
 	runtimeCommands := runtimepkg.NewConnectionRegistry()
+	runRepository := employee.NewPgRunRepository(q)
+	runService, err := employee.NewDigitalEmployeeRunService(runRepository, runtimeCommands, auditService)
+	if err != nil {
+		return nil, err
+	}
 	taskHandler := handlers.NewTaskHandler(taskService)
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
-	employeeHandler := employee.NewHandler(employeeService)
+	employeeHandler := employee.NewHandlerWithRunService(employeeService, runService)
 	tenantHandler := tenant.NewHandler(tenantService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
 	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
@@ -109,6 +115,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		TaskService:     taskService,
 		RuntimeService:  runtimeService,
 		EmployeeService: employeeService,
+		EmployeeRun:     runService,
 		TenantService:   tenantService,
 		AuditService:    auditService,
 		RuntimeCommands: runtimeCommands,

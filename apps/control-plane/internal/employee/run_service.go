@@ -332,6 +332,37 @@ func (s *DigitalEmployeeRunService) StopRun(ctx context.Context, req StopDigital
 	return cancellingRun, nil
 }
 
+func (s *DigitalEmployeeRunService) ListRuns(ctx context.Context, tenantID, employeeID uuid.UUID, limit, offset int32) ([]*DigitalEmployeeRun, error) {
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if employeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	return s.repository.ListRuns(ctx, tenantID, employeeID, limit, offset)
+}
+
+func (s *DigitalEmployeeRunService) GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error) {
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if employeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	if runID == uuid.Nil {
+		return nil, fmt.Errorf("%w: run_id is required", ErrInvalidInput)
+	}
+	return s.repository.GetRun(ctx, tenantID, employeeID, runID)
+}
+
+func (s *DigitalEmployeeRunService) ListRunEvents(ctx context.Context, tenantID, employeeID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error) {
+	if _, err := s.GetRun(ctx, tenantID, employeeID, runID); err != nil {
+		return nil, err
+	}
+	// TODO: expose persisted task_events/provider_session_events once the run event query contract is finalized.
+	return []RuntimeCommandEventWriteback{}, nil
+}
+
 func validateRunPreflight(preflight RunPreflight) error {
 	if preflight.TenantID == uuid.Nil {
 		return fmt.Errorf("%w: preflight tenant_id is required", ErrInvalidInput)

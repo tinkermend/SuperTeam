@@ -28,6 +28,7 @@ type HandlerService interface {
 
 type HTTPHandler struct {
 	service    HandlerService
+	runService RunHandlerService
 	authorizer authz.Authorizer
 }
 
@@ -35,8 +36,16 @@ func NewHandler(service HandlerService) *HTTPHandler {
 	return &HTTPHandler{service: service}
 }
 
+func NewHandlerWithRunService(service HandlerService, runService RunHandlerService) *HTTPHandler {
+	return &HTTPHandler{service: service, runService: runService}
+}
+
 func (h *HTTPHandler) SetAuthorizer(authorizer authz.Authorizer) {
 	h.authorizer = authorizer
+}
+
+func (h *HTTPHandler) SetRunService(runService RunHandlerService) {
+	h.runService = runService
 }
 
 func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Request) {

@@ -153,6 +153,11 @@ func (s *Server) registerRoutes() {
 				r.Post("/digital-employees/{employeeId}/config-revisions", s.employeeHandler.CreateDigitalEmployeeConfigRevision)
 				r.Post("/digital-employees/{employeeId}/effective-configs/preview", s.employeeHandler.PreviewDigitalEmployeeEffectiveConfig)
 				r.Post("/digital-employees/{employeeId}/effective-configs/approve", s.employeeHandler.ApproveDigitalEmployeeEffectiveConfig)
+				r.Post("/digital-employees/{employeeId}/runs", s.employeeHandler.CreateDigitalEmployeeRun)
+				r.Get("/digital-employees/{employeeId}/runs", s.employeeHandler.ListDigitalEmployeeRuns)
+				r.Get("/digital-employees/{employeeId}/runs/{runId}", s.employeeHandler.GetDigitalEmployeeRun)
+				r.Get("/digital-employees/{employeeId}/runs/{runId}/events", s.employeeHandler.ListDigitalEmployeeRunEvents)
+				r.Post("/digital-employees/{employeeId}/runs/{runId}/stop", s.employeeHandler.StopDigitalEmployeeRun)
 			})
 		}
 
