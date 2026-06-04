@@ -182,3 +182,107 @@ SELECT COALESCE(MAX(sequence_number), 0)::integer AS max_sequence
 FROM provider_session_events
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND provider_session_id = sqlc.arg('provider_session_id')::uuid;
+
+-- name: UpsertProviderSessionByExternalID :one
+INSERT INTO provider_sessions (
+    tenant_id,
+    provider_session_id,
+    digital_employee_id,
+    execution_instance_id,
+    runtime_node_id,
+    provider_type,
+    status,
+    recoverable,
+    last_active_at,
+    session_display_id,
+    session_params,
+    session_state,
+    last_sequence_number,
+    last_command_id,
+    last_run_id,
+    last_error_family,
+    last_runtime_seen_at,
+    metadata
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('provider_session_id')::varchar,
+    sqlc.arg('digital_employee_id')::uuid,
+    sqlc.arg('execution_instance_id')::uuid,
+    sqlc.arg('runtime_node_id')::uuid,
+    sqlc.arg('provider_type')::varchar,
+    sqlc.arg('status')::varchar,
+    sqlc.arg('recoverable')::boolean,
+    NOW(),
+    sqlc.narg('session_display_id')::varchar,
+    COALESCE(sqlc.arg('session_params')::jsonb, '{}'::jsonb),
+    COALESCE(sqlc.arg('session_state')::jsonb, '{}'::jsonb),
+    sqlc.arg('last_sequence_number')::integer,
+    sqlc.narg('last_command_id')::varchar,
+    sqlc.narg('last_run_id')::uuid,
+    sqlc.narg('last_error_family')::varchar,
+    NOW(),
+    COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
+)
+ON CONFLICT (tenant_id, provider_type, provider_session_id) DO UPDATE SET
+    status = EXCLUDED.status,
+    last_active_at = NOW(),
+    session_display_id = COALESCE(EXCLUDED.session_display_id, provider_sessions.session_display_id),
+    session_params = EXCLUDED.session_params,
+    session_state = EXCLUDED.session_state,
+    last_sequence_number = GREATEST(provider_sessions.last_sequence_number, EXCLUDED.last_sequence_number),
+    last_command_id = EXCLUDED.last_command_id,
+    last_run_id = EXCLUDED.last_run_id,
+    last_error_family = EXCLUDED.last_error_family,
+    last_runtime_seen_at = NOW(),
+    metadata = EXCLUDED.metadata,
+    updated_at = NOW()
+RETURNING *;
+
+-- name: CreateProviderSessionEventIfAbsent :one
+WITH inserted AS (
+    INSERT INTO provider_session_events (
+        tenant_id,
+        provider_session_id,
+        digital_employee_id,
+        execution_instance_id,
+        runtime_node_id,
+        provider_type,
+        event_type,
+        sequence_number,
+        payload,
+        request_id,
+        command_id,
+        raw_event_ref,
+        log_ref,
+        session_state_patch,
+        metadata
+    ) SELECT
+        ps.tenant_id,
+        ps.id,
+        ps.digital_employee_id,
+        ps.execution_instance_id,
+        ps.runtime_node_id,
+        ps.provider_type,
+        sqlc.arg('event_type')::varchar,
+        sqlc.arg('sequence_number')::integer,
+        COALESCE(sqlc.arg('payload')::jsonb, '{}'::jsonb),
+        sqlc.narg('request_id')::varchar,
+        sqlc.narg('command_id')::varchar,
+        sqlc.narg('raw_event_ref')::text,
+        sqlc.narg('log_ref')::text,
+        COALESCE(sqlc.arg('session_state_patch')::jsonb, '{}'::jsonb),
+        COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
+    FROM provider_sessions ps
+    WHERE ps.id = sqlc.arg('provider_session_uuid')::uuid
+      AND ps.tenant_id = sqlc.arg('tenant_id')::uuid
+    ON CONFLICT DO NOTHING
+    RETURNING *
+)
+SELECT * FROM inserted
+UNION ALL
+SELECT *
+FROM provider_session_events
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND command_id = sqlc.narg('command_id')::varchar
+  AND sequence_number = sqlc.arg('sequence_number')::integer
+LIMIT 1;

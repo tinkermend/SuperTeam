@@ -70,7 +70,7 @@ WHERE dei.id = $6::uuid
         AND rs.expires_at > NOW()
         AND rs.revoked_at IS NULL
   )
-RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at
+RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at
 `
 
 type CreateProviderSessionParams struct {
@@ -116,6 +116,14 @@ func (q *Queries) CreateProviderSession(ctx context.Context, arg CreateProviderS
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SessionDisplayID,
+		&i.SessionParams,
+		&i.SessionState,
+		&i.LastSequenceNumber,
+		&i.LastCommandID,
+		&i.LastRunID,
+		&i.LastErrorFamily,
+		&i.LastRuntimeSeenAt,
 	)
 	return i, err
 }
@@ -190,7 +198,7 @@ WHERE ps.id = $9::uuid
         AND rs.expires_at > NOW()
         AND rs.revoked_at IS NULL
   )
-RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, request_id, command_id, raw_event_ref, metadata, created_at
+RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, request_id, command_id, raw_event_ref, metadata, created_at, log_ref, session_state_patch
 `
 
 type CreateProviderSessionEventParams struct {
@@ -236,6 +244,129 @@ func (q *Queries) CreateProviderSessionEvent(ctx context.Context, arg CreateProv
 		&i.RawEventRef,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.LogRef,
+		&i.SessionStatePatch,
+	)
+	return i, err
+}
+
+const CreateProviderSessionEventIfAbsent = `-- name: CreateProviderSessionEventIfAbsent :one
+WITH inserted AS (
+    INSERT INTO provider_session_events (
+        tenant_id,
+        provider_session_id,
+        digital_employee_id,
+        execution_instance_id,
+        runtime_node_id,
+        provider_type,
+        event_type,
+        sequence_number,
+        payload,
+        request_id,
+        command_id,
+        raw_event_ref,
+        log_ref,
+        session_state_patch,
+        metadata
+    ) SELECT
+        ps.tenant_id,
+        ps.id,
+        ps.digital_employee_id,
+        ps.execution_instance_id,
+        ps.runtime_node_id,
+        ps.provider_type,
+        $1::varchar,
+        $2::integer,
+        COALESCE($3::jsonb, '{}'::jsonb),
+        $4::varchar,
+        $5::varchar,
+        $6::text,
+        $7::text,
+        COALESCE($8::jsonb, '{}'::jsonb),
+        COALESCE($9::jsonb, '{}'::jsonb)
+    FROM provider_sessions ps
+    WHERE ps.id = $10::uuid
+      AND ps.tenant_id = $11::uuid
+    ON CONFLICT DO NOTHING
+    RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, request_id, command_id, raw_event_ref, metadata, created_at, log_ref, session_state_patch
+)
+SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, request_id, command_id, raw_event_ref, metadata, created_at, log_ref, session_state_patch FROM inserted
+UNION ALL
+SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, request_id, command_id, raw_event_ref, metadata, created_at, log_ref, session_state_patch
+FROM provider_session_events
+WHERE tenant_id = $11::uuid
+  AND command_id = $5::varchar
+  AND sequence_number = $2::integer
+LIMIT 1
+`
+
+type CreateProviderSessionEventIfAbsentParams struct {
+	EventType           string      `json:"event_type"`
+	SequenceNumber      int32       `json:"sequence_number"`
+	Payload             []byte      `json:"payload"`
+	RequestID           pgtype.Text `json:"request_id"`
+	CommandID           pgtype.Text `json:"command_id"`
+	RawEventRef         pgtype.Text `json:"raw_event_ref"`
+	LogRef              pgtype.Text `json:"log_ref"`
+	SessionStatePatch   []byte      `json:"session_state_patch"`
+	Metadata            []byte      `json:"metadata"`
+	ProviderSessionUuid uuid.UUID   `json:"provider_session_uuid"`
+	TenantID            uuid.UUID   `json:"tenant_id"`
+}
+
+type CreateProviderSessionEventIfAbsentRow struct {
+	ID                  uuid.UUID          `json:"id"`
+	TenantID            uuid.UUID          `json:"tenant_id"`
+	ProviderSessionID   uuid.UUID          `json:"provider_session_id"`
+	DigitalEmployeeID   uuid.UUID          `json:"digital_employee_id"`
+	ExecutionInstanceID uuid.UUID          `json:"execution_instance_id"`
+	RuntimeNodeID       uuid.UUID          `json:"runtime_node_id"`
+	ProviderType        string             `json:"provider_type"`
+	EventType           string             `json:"event_type"`
+	SequenceNumber      int32              `json:"sequence_number"`
+	Payload             []byte             `json:"payload"`
+	RequestID           pgtype.Text        `json:"request_id"`
+	CommandID           pgtype.Text        `json:"command_id"`
+	RawEventRef         pgtype.Text        `json:"raw_event_ref"`
+	Metadata            []byte             `json:"metadata"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	LogRef              pgtype.Text        `json:"log_ref"`
+	SessionStatePatch   []byte             `json:"session_state_patch"`
+}
+
+func (q *Queries) CreateProviderSessionEventIfAbsent(ctx context.Context, arg CreateProviderSessionEventIfAbsentParams) (CreateProviderSessionEventIfAbsentRow, error) {
+	row := q.db.QueryRow(ctx, CreateProviderSessionEventIfAbsent,
+		arg.EventType,
+		arg.SequenceNumber,
+		arg.Payload,
+		arg.RequestID,
+		arg.CommandID,
+		arg.RawEventRef,
+		arg.LogRef,
+		arg.SessionStatePatch,
+		arg.Metadata,
+		arg.ProviderSessionUuid,
+		arg.TenantID,
+	)
+	var i CreateProviderSessionEventIfAbsentRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProviderSessionID,
+		&i.DigitalEmployeeID,
+		&i.ExecutionInstanceID,
+		&i.RuntimeNodeID,
+		&i.ProviderType,
+		&i.EventType,
+		&i.SequenceNumber,
+		&i.Payload,
+		&i.RequestID,
+		&i.CommandID,
+		&i.RawEventRef,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.LogRef,
+		&i.SessionStatePatch,
 	)
 	return i, err
 }
@@ -260,7 +391,7 @@ func (q *Queries) GetLatestProviderSessionEventSequence(ctx context.Context, arg
 }
 
 const GetProviderSession = `-- name: GetProviderSession :one
-SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at
+SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at
 FROM provider_sessions
 WHERE id = $1::uuid
   AND tenant_id = $2::uuid
@@ -290,12 +421,20 @@ func (q *Queries) GetProviderSession(ctx context.Context, arg GetProviderSession
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SessionDisplayID,
+		&i.SessionParams,
+		&i.SessionState,
+		&i.LastSequenceNumber,
+		&i.LastCommandID,
+		&i.LastRunID,
+		&i.LastErrorFamily,
+		&i.LastRuntimeSeenAt,
 	)
 	return i, err
 }
 
 const GetProviderSessionByExternalID = `-- name: GetProviderSessionByExternalID :one
-SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at
+SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at
 FROM provider_sessions
 WHERE tenant_id = $1::uuid
   AND provider_type = $2::varchar
@@ -327,12 +466,20 @@ func (q *Queries) GetProviderSessionByExternalID(ctx context.Context, arg GetPro
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SessionDisplayID,
+		&i.SessionParams,
+		&i.SessionState,
+		&i.LastSequenceNumber,
+		&i.LastCommandID,
+		&i.LastRunID,
+		&i.LastErrorFamily,
+		&i.LastRuntimeSeenAt,
 	)
 	return i, err
 }
 
 const ListProviderSessionEvents = `-- name: ListProviderSessionEvents :many
-SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, request_id, command_id, raw_event_ref, metadata, created_at
+SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, event_type, sequence_number, payload, request_id, command_id, raw_event_ref, metadata, created_at, log_ref, session_state_patch
 FROM provider_session_events
 WHERE tenant_id = $1::uuid
   AND provider_session_id = $2::uuid
@@ -369,6 +516,8 @@ func (q *Queries) ListProviderSessionEvents(ctx context.Context, arg ListProvide
 			&i.RawEventRef,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.LogRef,
+			&i.SessionStatePatch,
 		); err != nil {
 			return nil, err
 		}
@@ -381,7 +530,7 @@ func (q *Queries) ListProviderSessionEvents(ctx context.Context, arg ListProvide
 }
 
 const ListProviderSessionsForDigitalEmployee = `-- name: ListProviderSessionsForDigitalEmployee :many
-SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at
+SELECT id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at
 FROM provider_sessions
 WHERE tenant_id = $1::uuid
   AND digital_employee_id = $2::uuid
@@ -429,6 +578,14 @@ func (q *Queries) ListProviderSessionsForDigitalEmployee(ctx context.Context, ar
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SessionDisplayID,
+			&i.SessionParams,
+			&i.SessionState,
+			&i.LastSequenceNumber,
+			&i.LastCommandID,
+			&i.LastRunID,
+			&i.LastErrorFamily,
+			&i.LastRuntimeSeenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -456,7 +613,7 @@ SET status = $1::varchar,
     updated_at = NOW()
 WHERE id = $3::uuid
   AND tenant_id = $4::uuid
-RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at
+RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at
 `
 
 type UpdateProviderSessionStatusParams struct {
@@ -490,6 +647,137 @@ func (q *Queries) UpdateProviderSessionStatus(ctx context.Context, arg UpdatePro
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SessionDisplayID,
+		&i.SessionParams,
+		&i.SessionState,
+		&i.LastSequenceNumber,
+		&i.LastCommandID,
+		&i.LastRunID,
+		&i.LastErrorFamily,
+		&i.LastRuntimeSeenAt,
+	)
+	return i, err
+}
+
+const UpsertProviderSessionByExternalID = `-- name: UpsertProviderSessionByExternalID :one
+INSERT INTO provider_sessions (
+    tenant_id,
+    provider_session_id,
+    digital_employee_id,
+    execution_instance_id,
+    runtime_node_id,
+    provider_type,
+    status,
+    recoverable,
+    last_active_at,
+    session_display_id,
+    session_params,
+    session_state,
+    last_sequence_number,
+    last_command_id,
+    last_run_id,
+    last_error_family,
+    last_runtime_seen_at,
+    metadata
+) VALUES (
+    $1::uuid,
+    $2::varchar,
+    $3::uuid,
+    $4::uuid,
+    $5::uuid,
+    $6::varchar,
+    $7::varchar,
+    $8::boolean,
+    NOW(),
+    $9::varchar,
+    COALESCE($10::jsonb, '{}'::jsonb),
+    COALESCE($11::jsonb, '{}'::jsonb),
+    $12::integer,
+    $13::varchar,
+    $14::uuid,
+    $15::varchar,
+    NOW(),
+    COALESCE($16::jsonb, '{}'::jsonb)
+)
+ON CONFLICT (tenant_id, provider_type, provider_session_id) DO UPDATE SET
+    status = EXCLUDED.status,
+    last_active_at = NOW(),
+    session_display_id = COALESCE(EXCLUDED.session_display_id, provider_sessions.session_display_id),
+    session_params = EXCLUDED.session_params,
+    session_state = EXCLUDED.session_state,
+    last_sequence_number = GREATEST(provider_sessions.last_sequence_number, EXCLUDED.last_sequence_number),
+    last_command_id = EXCLUDED.last_command_id,
+    last_run_id = EXCLUDED.last_run_id,
+    last_error_family = EXCLUDED.last_error_family,
+    last_runtime_seen_at = NOW(),
+    metadata = EXCLUDED.metadata,
+    updated_at = NOW()
+RETURNING id, tenant_id, provider_session_id, digital_employee_id, execution_instance_id, runtime_node_id, provider_type, status, recoverable, last_active_at, closed_at, error_message, metadata, created_at, updated_at, session_display_id, session_params, session_state, last_sequence_number, last_command_id, last_run_id, last_error_family, last_runtime_seen_at
+`
+
+type UpsertProviderSessionByExternalIDParams struct {
+	TenantID            uuid.UUID     `json:"tenant_id"`
+	ProviderSessionID   string        `json:"provider_session_id"`
+	DigitalEmployeeID   uuid.UUID     `json:"digital_employee_id"`
+	ExecutionInstanceID uuid.UUID     `json:"execution_instance_id"`
+	RuntimeNodeID       uuid.UUID     `json:"runtime_node_id"`
+	ProviderType        string        `json:"provider_type"`
+	Status              string        `json:"status"`
+	Recoverable         bool          `json:"recoverable"`
+	SessionDisplayID    pgtype.Text   `json:"session_display_id"`
+	SessionParams       []byte        `json:"session_params"`
+	SessionState        []byte        `json:"session_state"`
+	LastSequenceNumber  int32         `json:"last_sequence_number"`
+	LastCommandID       pgtype.Text   `json:"last_command_id"`
+	LastRunID           uuid.NullUUID `json:"last_run_id"`
+	LastErrorFamily     pgtype.Text   `json:"last_error_family"`
+	Metadata            []byte        `json:"metadata"`
+}
+
+func (q *Queries) UpsertProviderSessionByExternalID(ctx context.Context, arg UpsertProviderSessionByExternalIDParams) (ProviderSession, error) {
+	row := q.db.QueryRow(ctx, UpsertProviderSessionByExternalID,
+		arg.TenantID,
+		arg.ProviderSessionID,
+		arg.DigitalEmployeeID,
+		arg.ExecutionInstanceID,
+		arg.RuntimeNodeID,
+		arg.ProviderType,
+		arg.Status,
+		arg.Recoverable,
+		arg.SessionDisplayID,
+		arg.SessionParams,
+		arg.SessionState,
+		arg.LastSequenceNumber,
+		arg.LastCommandID,
+		arg.LastRunID,
+		arg.LastErrorFamily,
+		arg.Metadata,
+	)
+	var i ProviderSession
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProviderSessionID,
+		&i.DigitalEmployeeID,
+		&i.ExecutionInstanceID,
+		&i.RuntimeNodeID,
+		&i.ProviderType,
+		&i.Status,
+		&i.Recoverable,
+		&i.LastActiveAt,
+		&i.ClosedAt,
+		&i.ErrorMessage,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SessionDisplayID,
+		&i.SessionParams,
+		&i.SessionState,
+		&i.LastSequenceNumber,
+		&i.LastCommandID,
+		&i.LastRunID,
+		&i.LastErrorFamily,
+		&i.LastRuntimeSeenAt,
 	)
 	return i, err
 }

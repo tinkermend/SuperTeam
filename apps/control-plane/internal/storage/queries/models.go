@@ -292,7 +292,16 @@ type ProviderSession struct {
 	// Provider 会话创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// Provider 会话最后更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	SessionDisplayID pgtype.Text        `json:"session_display_id"`
+	SessionParams    []byte             `json:"session_params"`
+	// Adapter-defined recoverable provider session state
+	SessionState       []byte             `json:"session_state"`
+	LastSequenceNumber int32              `json:"last_sequence_number"`
+	LastCommandID      pgtype.Text        `json:"last_command_id"`
+	LastRunID          uuid.NullUUID      `json:"last_run_id"`
+	LastErrorFamily    pgtype.Text        `json:"last_error_family"`
+	LastRuntimeSeenAt  pgtype.Timestamptz `json:"last_runtime_seen_at"`
 }
 
 // Provider 会话事件流表
@@ -326,7 +335,9 @@ type ProviderSessionEvent struct {
 	// Provider 会话事件扩展元数据
 	Metadata []byte `json:"metadata"`
 	// Provider 会话事件创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	LogRef            pgtype.Text        `json:"log_ref"`
+	SessionStatePatch []byte             `json:"session_state_patch"`
 }
 
 // Runtime Agent 环境级接入引导密钥表
@@ -405,6 +416,26 @@ type RuntimeCapability struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// Runtime 能力最后更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Runtime command dispatch and HTTP writeback receipts
+type RuntimeCommandReceipt struct {
+	ID            uuid.UUID          `json:"id"`
+	TenantID      uuid.UUID          `json:"tenant_id"`
+	CommandID     string             `json:"command_id"`
+	CommandType   string             `json:"command_type"`
+	RuntimeNodeID uuid.UUID          `json:"runtime_node_id"`
+	NodeID        string             `json:"node_id"`
+	ResourceType  string             `json:"resource_type"`
+	ResourceID    uuid.UUID          `json:"resource_id"`
+	Status        string             `json:"status"`
+	Payload       []byte             `json:"payload"`
+	Result        []byte             `json:"result"`
+	ErrorMessage  pgtype.Text        `json:"error_message"`
+	DispatchedAt  pgtype.Timestamptz `json:"dispatched_at"`
+	CompletedAt   pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Runtime Agent 接入审批状态表
@@ -650,7 +681,11 @@ type TaskEvent struct {
 	// 任务事件负载
 	Payload []byte `json:"payload"`
 	// 任务事件创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	CommandID   pgtype.Text        `json:"command_id"`
+	RawEventRef pgtype.Text        `json:"raw_event_ref"`
+	LogRef      pgtype.Text        `json:"log_ref"`
+	Metadata    []byte             `json:"metadata"`
 }
 
 // 任务运行记录表
@@ -685,6 +720,27 @@ type TaskRun struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 任务运行最后更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// Control Plane generated runtime command ID
+	CommandID pgtype.Text `json:"command_id"`
+	// Digital employee that owns this run
+	DigitalEmployeeID uuid.NullUUID `json:"digital_employee_id"`
+	// Execution instance used by this run
+	ExecutionInstanceID uuid.NullUUID `json:"execution_instance_id"`
+	IdempotencyKey      pgtype.Text   `json:"idempotency_key"`
+	TimeoutSec          pgtype.Int4   `json:"timeout_sec"`
+	GraceSec            pgtype.Int4   `json:"grace_sec"`
+	Diagnostic          []byte        `json:"diagnostic"`
+	LogRef              pgtype.Text   `json:"log_ref"`
+	RawResultRef        pgtype.Text   `json:"raw_result_ref"`
+	// Structured run outputs indexed for Web and workflow consumption
+	WorkProducts              []byte      `json:"work_products"`
+	SessionState              []byte      `json:"session_state"`
+	ErrorCode                 pgtype.Text `json:"error_code"`
+	ErrorFamily               pgtype.Text `json:"error_family"`
+	ExitCode                  pgtype.Int4 `json:"exit_code"`
+	Signal                    pgtype.Text `json:"signal"`
+	TimedOut                  bool        `json:"timed_out"`
+	ProviderSessionExternalID pgtype.Text `json:"provider_session_external_id"`
 }
 
 // 任务状态变更历史表
