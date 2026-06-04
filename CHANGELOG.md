@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-04 14:49：Runtime Agent 删除旧版 `auth_token` 配置兼容入口，YAML、`RUNTIME_AGENT_AUTH_TOKEN` 环境变量和 CLI `--auth-token` 不再作为 `bootstrap_key` 兜底。
 - 2026-06-04 14:33：数字员工 API 授权从复用 `runtime_scope.manage` 改为独立 `employee.*` 业务 action，并按 tenant 集合资源和单个 employee 资源记录授权决策，为后续 OpenFGA 渐进接入保留稳定边界。
 - 2026-06-04 11:00：Web `Main` 布局组件改为默认铺满内容区，并新增 `contained` 窄版选项，后续控制台页面无需逐页传 `fluid` 即可复用权限中心式全宽布局。
 - 2026-06-03 23:15：`AGENTS.md` 明确要求每条新增 `CHANGELOG.md` 变更记录带具体时间，默认使用本地 `Asia/Shanghai` 时间。
@@ -53,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-04 14:28：新增 `scripts/dev-services.sh` 本地开发服务管理脚本，支持 Control Plane、Web 和 Runtime Agent 的状态检查、启动、停止和重启，并以 `.scratch/dev-services` 记录 PID 与日志；新增脚本级测试覆盖启停与重启流程。
 - 2026-06-04 10:38：用户管理页按“用户 360 详情台”方向升级为主从详情工作台，使用权限中心一致的铺满页面布局，并调整为更宽的用户列表和三等宽概览卡片；页面接入用户列表、权限中心成员角色、登录日志和授权拒绝记录，并补齐新建用户、启用/禁用账号和重置密码入口。
 - 2026-06-04 05:20：团队列表搜索补齐负责人用户名、显示名和邮箱匹配，并修复新建团队失败后关闭重开抽屉仍显示旧错误的问题。
 - 2026-06-04 05:02：团队管理体验补齐团队图标、用户头像身份展示、弱分页、目标化两步创建抽屉和详情成员页用户搜索，继续沿用浅色液态玻璃企业控制台设计风格。

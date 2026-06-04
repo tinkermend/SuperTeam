@@ -73,6 +73,7 @@ localstack/
 *.log
 logs/
 .superteam/
+.scratch/dev-services/
 
 # OS
 Thumbs.db

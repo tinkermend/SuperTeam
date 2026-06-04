@@ -65,7 +65,6 @@ pub struct LoggingSection {
 pub struct RuntimeConfigOverrides {
     pub node_id: Option<String>,
     pub bootstrap_key: Option<String>,
-    pub auth_token: Option<String>,
     pub http_addr: Option<SocketAddr>,
     pub run_log_dir: Option<PathBuf>,
     pub claude_bin: Option<PathBuf>,
@@ -87,7 +86,6 @@ struct FileRuntimeSection {
     node_id: Option<String>,
     control_plane_url: Option<String>,
     bootstrap_key: Option<String>,
-    auth_token: Option<String>,
     heartbeat_interval: Option<u64>,
     max_concurrent_tasks: Option<u16>,
 }
@@ -185,10 +183,7 @@ impl RuntimeConfig {
                 &mut self.runtime.control_plane_url,
                 runtime.control_plane_url,
             );
-            apply_string(
-                &mut self.runtime.bootstrap_key,
-                runtime.bootstrap_key.or(runtime.auth_token),
-            );
+            apply_string(&mut self.runtime.bootstrap_key, runtime.bootstrap_key);
             apply_copy(
                 &mut self.runtime.heartbeat_interval,
                 runtime.heartbeat_interval,
@@ -240,27 +235,10 @@ impl RuntimeConfig {
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        let env_vars: Vec<(String, String)> = env_vars
-            .into_iter()
-            .map(|(key, value)| (key.as_ref().to_string(), value.as_ref().to_string()))
-            .collect();
-        let bootstrap_key_from_env = env_vars
-            .iter()
-            .any(|(key, value)| key == "RUNTIME_AGENT_BOOTSTRAP_KEY" && !value.is_empty());
-        let mut legacy_auth_token = None;
-
         for (key, value) in env_vars {
-            if key == "RUNTIME_AGENT_AUTH_TOKEN" {
-                if !value.is_empty() {
-                    legacy_auth_token = Some(value);
-                }
-                continue;
-            }
-            self.apply_env_value(&key, &value)?;
-        }
-
-        if !bootstrap_key_from_env {
-            apply_string(&mut self.runtime.bootstrap_key, legacy_auth_token);
+            let key = key.as_ref();
+            let value = value.as_ref();
+            self.apply_env_value(key, value)?;
         }
         Ok(())
     }
@@ -322,10 +300,7 @@ impl RuntimeConfig {
 
     fn apply_overrides(&mut self, overrides: RuntimeConfigOverrides) {
         apply_string(&mut self.runtime.node_id, overrides.node_id);
-        apply_string(
-            &mut self.runtime.bootstrap_key,
-            overrides.bootstrap_key.or(overrides.auth_token),
-        );
+        apply_string(&mut self.runtime.bootstrap_key, overrides.bootstrap_key);
         apply_copy(&mut self.http.addr, overrides.http_addr);
         apply_path(&mut self.runs.log_dir, overrides.run_log_dir);
         apply_path(

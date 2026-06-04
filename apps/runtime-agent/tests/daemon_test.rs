@@ -206,7 +206,7 @@ runtime:
 }
 
 #[test]
-fn config_accepts_legacy_auth_token_alias_when_bootstrap_key_absent() {
+fn config_ignores_legacy_auth_token_aliases() {
     let temp = tempfile::TempDir::new().expect("tempdir");
     let config_path = temp.path().join("runtime-agent.yaml");
     std::fs::write(
@@ -225,7 +225,7 @@ runtime:
     )
     .expect("load file config");
 
-    assert_eq!(file_config.runtime.bootstrap_key, "file-token");
+    assert_eq!(file_config.runtime.bootstrap_key, "local-dev-bootstrap-key");
 
     let env_config = RuntimeConfig::load_with_env(
         Some(&config_path),
@@ -234,7 +234,28 @@ runtime:
     )
     .expect("load env config");
 
-    assert_eq!(env_config.runtime.bootstrap_key, "env-token");
+    assert_eq!(env_config.runtime.bootstrap_key, "local-dev-bootstrap-key");
+}
+
+#[test]
+fn cli_rejects_legacy_auth_token_flag() {
+    let output = Command::new(env!("CARGO_BIN_EXE_runtime-agent"))
+        .arg("--auth-token")
+        .arg("legacy-token")
+        .arg("--once")
+        .output()
+        .expect("run runtime-agent");
+
+    assert!(
+        !output.status.success(),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--auth-token"),
+        "stderr should mention rejected flag, got: {stderr}"
+    );
 }
 
 #[test]
