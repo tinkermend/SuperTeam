@@ -215,6 +215,110 @@ func TestWritebackEventWithoutProviderSessionStillWritesTaskEvent(t *testing.T) 
 	}
 }
 
+func TestWritebackDuplicateEventAfterTerminalRunIsAcceptedIdempotently(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
+	event := RuntimeCommandEventWriteback{
+		EventType:      "text_delta",
+		SequenceNumber: 7,
+		Payload:        map[string]any{"text": "hello"},
+	}
+
+	if err := service.RecordEvent(context.Background(), run.TenantID, "cmd-1", event); err != nil {
+		t.Fatalf("record event: %v", err)
+	}
+	if err := service.Complete(context.Background(), run.TenantID, "cmd-1", RuntimeCommandTerminalWriteback{
+		Status:  DigitalEmployeeRunStatusCompleted,
+		Summary: "done",
+	}); err != nil {
+		t.Fatalf("complete run: %v", err)
+	}
+	if err := service.RecordEvent(context.Background(), run.TenantID, "cmd-1", event); err != nil {
+		t.Fatalf("duplicate terminal event should be idempotent: %v", err)
+	}
+	err := service.RecordEvent(context.Background(), run.TenantID, "cmd-1", RuntimeCommandEventWriteback{
+		EventType:      "text_delta",
+		SequenceNumber: 8,
+		Payload:        map[string]any{"text": "late"},
+	})
+
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected ErrConflict for new terminal event, got %v", err)
+	}
+	if repo.taskEventInsertCount != 2 {
+		t.Fatalf("expected original event plus terminal event only, got %d", repo.taskEventInsertCount)
+	}
+}
+
+func TestWritebackCompleteProvisioningMarksInstanceAndEmployeeReady(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	receipt := validProvisioningReceipt("provision-cmd-1")
+	repo.putReceipt(receipt)
+	repo.putExecutionInstance(validProvisioningInstance(receipt.ResourceID))
+	audit := &fakeWritebackAuditLogger{}
+	service := mustNewRunWritebackService(t, repo, audit)
+
+	if err := service.Complete(context.Background(), receipt.TenantID, receipt.CommandID, RuntimeCommandTerminalWriteback{
+		Status: DigitalEmployeeRunStatusCompleted,
+		Result: map[string]any{"agent_home_dir": "/srv/agents/code"},
+	}); err != nil {
+		t.Fatalf("complete provisioning: %v", err)
+	}
+
+	if len(repo.executionInstanceStatusUpdates) != 1 || repo.executionInstanceStatusUpdates[0].status != ExecutionInstanceStatusReady {
+		t.Fatalf("expected execution instance ready update, got %#v", repo.executionInstanceStatusUpdates)
+	}
+	if len(repo.employeeStatusUpdates) != 1 || repo.employeeStatusUpdates[0].status != DigitalEmployeeStatusReady {
+		t.Fatalf("expected employee ready update, got %#v", repo.employeeStatusUpdates)
+	}
+	if len(repo.receiptUpdates) != 1 || repo.receiptUpdates[0].Status != string(DigitalEmployeeRunStatusCompleted) {
+		t.Fatalf("expected completed receipt update, got %#v", repo.receiptUpdates)
+	}
+	if len(audit.events) != 1 || audit.events[0].eventType != "digital_employee_instance_provisioned" {
+		t.Fatalf("expected provisioning audit event, got %#v", audit.events)
+	}
+}
+
+func TestWritebackFailProvisioningDeletesEmployeeAndInstance(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	receipt := validProvisioningReceipt("provision-cmd-1")
+	repo.putReceipt(receipt)
+	instance := validProvisioningInstance(receipt.ResourceID)
+	repo.putExecutionInstance(instance)
+	audit := &fakeWritebackAuditLogger{}
+	service := mustNewRunWritebackService(t, repo, audit)
+	errorMessage := "runtime failed to create workspace"
+
+	if err := service.Fail(context.Background(), receipt.TenantID, receipt.CommandID, RuntimeCommandTerminalWriteback{
+		Status:       DigitalEmployeeRunStatusFailed,
+		ErrorMessage: &errorMessage,
+	}); err != nil {
+		t.Fatalf("fail provisioning: %v", err)
+	}
+
+	if len(repo.executionInstanceStatusUpdates) != 1 || repo.executionInstanceStatusUpdates[0].status != ExecutionInstanceStatusError {
+		t.Fatalf("expected execution instance error update, got %#v", repo.executionInstanceStatusUpdates)
+	}
+	if repo.executionInstanceStatusUpdates[0].errorMessage == nil || *repo.executionInstanceStatusUpdates[0].errorMessage != errorMessage {
+		t.Fatalf("expected execution instance error message, got %#v", repo.executionInstanceStatusUpdates[0].errorMessage)
+	}
+	if len(repo.deletedExecutionInstances) != 1 || repo.deletedExecutionInstances[0] != instance.ID {
+		t.Fatalf("expected execution instance deletion, got %#v", repo.deletedExecutionInstances)
+	}
+	if len(repo.deletedEmployees) != 1 || repo.deletedEmployees[0] != instance.DigitalEmployeeID {
+		t.Fatalf("expected employee deletion, got %#v", repo.deletedEmployees)
+	}
+	if len(repo.receiptUpdates) != 1 || repo.receiptUpdates[0].Status != string(DigitalEmployeeRunStatusFailed) {
+		t.Fatalf("expected failed receipt update, got %#v", repo.receiptUpdates)
+	}
+	if len(audit.events) != 1 || audit.events[0].eventType != "digital_employee_instance_provision_failed" {
+		t.Fatalf("expected provisioning failure audit event, got %#v", audit.events)
+	}
+}
+
 func mustNewRunWritebackService(t *testing.T, repo DigitalEmployeeRunRepository, audit AuditLogger) *DigitalEmployeeRunWritebackService {
 	t.Helper()
 	service, err := NewDigitalEmployeeRunWritebackService(repo, audit)
@@ -263,6 +367,39 @@ func validWritebackReceipt(run *DigitalEmployeeRun) *RuntimeCommandReceipt {
 	}
 }
 
+func validProvisioningReceipt(commandID string) *RuntimeCommandReceipt {
+	return &RuntimeCommandReceipt{
+		ID:            uuid.New(),
+		TenantID:      runWritebackTenantID,
+		CommandID:     commandID,
+		CommandType:   "provision_instance",
+		RuntimeNodeID: runWritebackRuntimeNodeID,
+		NodeID:        "runtime-node-1",
+		ResourceType:  "digital_employee_execution_instance",
+		ResourceID:    runWritebackExecutionInstanceID,
+		Status:        "dispatched",
+		Payload:       map[string]any{"command_id": commandID},
+		Result:        map[string]any{},
+		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
+	}
+}
+
+func validProvisioningInstance(instanceID uuid.UUID) DigitalEmployeeExecutionInstanceRecord {
+	return DigitalEmployeeExecutionInstanceRecord{
+		ID:                instanceID,
+		TenantID:          runWritebackTenantID,
+		DigitalEmployeeID: runWritebackEmployeeID,
+		RuntimeNodeID:     runWritebackRuntimeNodeID,
+		ProviderType:      "codex",
+		AgentHomeDir:      "/srv/agents/code",
+		Status:            ExecutionInstanceStatusProvisioning,
+		Metadata:          map[string]any{},
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+	}
+}
+
 var (
 	runWritebackTenantID            = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	runWritebackEmployeeID          = uuid.MustParse("00000000-0000-0000-0000-000000000501")
@@ -274,6 +411,7 @@ type fakeRunWritebackRepository struct {
 	runsByCommand                   map[string]*DigitalEmployeeRun
 	runsByID                        map[uuid.UUID]*DigitalEmployeeRun
 	receipts                        map[string]*RuntimeCommandReceipt
+	executionInstances              map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord
 	taskEventKeys                   map[string]struct{}
 	providerSessionEventKeys        map[string]struct{}
 	providerSessionIDs              map[string]uuid.UUID
@@ -282,8 +420,25 @@ type fakeRunWritebackRepository struct {
 	providerSessionUpserts          []UpsertProviderSessionRequest
 	runUpdates                      []UpdateRunStatusRequest
 	receiptUpdates                  []UpdateRuntimeCommandReceiptRequest
+	executionInstanceStatusUpdates  []fakeExecutionInstanceStatusUpdate
+	employeeStatusUpdates           []fakeEmployeeStatusUpdate
+	deletedExecutionInstances       []uuid.UUID
+	deletedEmployees                []uuid.UUID
 	taskEventInsertCount            int
 	providerSessionEventInsertCount int
+}
+
+type fakeExecutionInstanceStatusUpdate struct {
+	tenantID            uuid.UUID
+	executionInstanceID uuid.UUID
+	status              ExecutionInstanceStatus
+	errorMessage        *string
+}
+
+type fakeEmployeeStatusUpdate struct {
+	tenantID   uuid.UUID
+	employeeID uuid.UUID
+	status     DigitalEmployeeStatus
 }
 
 func newFakeRunWritebackRepository() *fakeRunWritebackRepository {
@@ -291,6 +446,7 @@ func newFakeRunWritebackRepository() *fakeRunWritebackRepository {
 		runsByCommand:            map[string]*DigitalEmployeeRun{},
 		runsByID:                 map[uuid.UUID]*DigitalEmployeeRun{},
 		receipts:                 map[string]*RuntimeCommandReceipt{},
+		executionInstances:       map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord{},
 		taskEventKeys:            map[string]struct{}{},
 		providerSessionEventKeys: map[string]struct{}{},
 		providerSessionIDs:       map[string]uuid.UUID{},
@@ -305,6 +461,10 @@ func (f *fakeRunWritebackRepository) putRun(run *DigitalEmployeeRun) {
 func (f *fakeRunWritebackRepository) putReceipt(receipt *RuntimeCommandReceipt) {
 	copied := *receipt
 	f.receipts[receipt.CommandID] = &copied
+}
+
+func (f *fakeRunWritebackRepository) putExecutionInstance(instance DigitalEmployeeExecutionInstanceRecord) {
+	f.executionInstances[instance.ID] = cloneExecutionInstanceRecord(instance)
 }
 
 func (f *fakeRunWritebackRepository) GetRunPreflight(context.Context, uuid.UUID, uuid.UUID) (RunPreflight, error) {
@@ -379,6 +539,12 @@ func (f *fakeRunWritebackRepository) UpdateRunStatus(_ context.Context, req Upda
 	return cloneWritebackRun(run), nil
 }
 
+func (f *fakeRunWritebackRepository) HasRunEventSequence(_ context.Context, tenantID, _ uuid.UUID, runID uuid.UUID, sequenceNumber int32) (bool, error) {
+	key := fmt.Sprintf("%s:%s:%d", tenantID, runID, sequenceNumber)
+	_, exists := f.taskEventKeys[key]
+	return exists, nil
+}
+
 func (f *fakeRunWritebackRepository) CreateTaskEventIfAbsent(_ context.Context, req CreateRunEventRecordRequest) error {
 	key := fmt.Sprintf("%s:%s:%d", req.TenantID, req.RunID, req.SequenceNumber)
 	if _, exists := f.taskEventKeys[key]; exists {
@@ -446,6 +612,53 @@ func (f *fakeRunWritebackRepository) UpdateCommandReceipt(_ context.Context, req
 	return &copied, nil
 }
 
+func (f *fakeRunWritebackRepository) UpdateExecutionInstanceStatus(_ context.Context, tenantID, executionInstanceID uuid.UUID, status ExecutionInstanceStatus, errorMessage *string) (DigitalEmployeeExecutionInstanceRecord, error) {
+	f.executionInstanceStatusUpdates = append(f.executionInstanceStatusUpdates, fakeExecutionInstanceStatusUpdate{
+		tenantID:            tenantID,
+		executionInstanceID: executionInstanceID,
+		status:              status,
+		errorMessage:        errorMessage,
+	})
+	instance, ok := f.executionInstances[executionInstanceID]
+	if !ok || instance.TenantID != tenantID {
+		return DigitalEmployeeExecutionInstanceRecord{}, ErrNotFound
+	}
+	instance.Status = status
+	instance.ErrorMessage = errorMessage
+	f.executionInstances[executionInstanceID] = instance
+	return cloneExecutionInstanceRecord(instance), nil
+}
+
+func (f *fakeRunWritebackRepository) UpdateDigitalEmployeeStatus(_ context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
+	f.employeeStatusUpdates = append(f.employeeStatusUpdates, fakeEmployeeStatusUpdate{
+		tenantID:   tenantID,
+		employeeID: employeeID,
+		status:     status,
+	})
+	return DigitalEmployeeRecord{
+		ID:        employeeID,
+		TenantID:  tenantID,
+		Status:    status,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}, nil
+}
+
+func (f *fakeRunWritebackRepository) DeleteExecutionInstance(_ context.Context, tenantID, executionInstanceID uuid.UUID) error {
+	instance, ok := f.executionInstances[executionInstanceID]
+	if !ok || instance.TenantID != tenantID {
+		return ErrNotFound
+	}
+	f.deletedExecutionInstances = append(f.deletedExecutionInstances, executionInstanceID)
+	delete(f.executionInstances, executionInstanceID)
+	return nil
+}
+
+func (f *fakeRunWritebackRepository) DeleteDigitalEmployee(_ context.Context, tenantID, employeeID uuid.UUID) error {
+	f.deletedEmployees = append(f.deletedEmployees, employeeID)
+	return nil
+}
+
 type fakeWritebackAuditLogger struct {
 	events []fakeRunServiceAuditEvent
 }
@@ -472,4 +685,14 @@ func cloneWritebackRun(run *DigitalEmployeeRun) *DigitalEmployeeRun {
 	copied.SessionState = cloneMap(run.SessionState)
 	copied.WorkProducts = append([]WorkProduct(nil), run.WorkProducts...)
 	return &copied
+}
+
+func cloneExecutionInstanceRecord(instance DigitalEmployeeExecutionInstanceRecord) DigitalEmployeeExecutionInstanceRecord {
+	instance.WorkspacePolicy = cloneMap(instance.WorkspacePolicy)
+	instance.SessionPolicy = cloneMap(instance.SessionPolicy)
+	instance.RuntimeSelector = cloneMap(instance.RuntimeSelector)
+	instance.CapacityRequirements = cloneMap(instance.CapacityRequirements)
+	instance.FallbackPolicy = cloneMap(instance.FallbackPolicy)
+	instance.Metadata = cloneMap(instance.Metadata)
+	return instance
 }

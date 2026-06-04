@@ -229,6 +229,21 @@ func (r *PgRunRepository) UpdateRunStatus(ctx context.Context, req UpdateRunStat
 	return digitalEmployeeRunFromQuery(run), nil
 }
 
+func (r *PgRunRepository) HasRunEventSequence(ctx context.Context, tenantID, taskID, runID uuid.UUID, sequenceNumber int32) (bool, error) {
+	event, err := r.q.GetTaskEvent(ctx, queries.GetTaskEventParams{
+		TaskID:         taskID,
+		SequenceNumber: sequenceNumber,
+		TenantID:       uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
+	})
+	if err != nil {
+		if errors.Is(mapNoRows(err), ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return event.RunID.Valid && event.RunID.UUID == runID, nil
+}
+
 func (r *PgRunRepository) CreateTaskEventIfAbsent(ctx context.Context, req CreateRunEventRecordRequest) error {
 	payload, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Payload), "payload")
 	if err != nil {
@@ -370,6 +385,45 @@ func (r *PgRunRepository) UpdateCommandReceipt(ctx context.Context, req UpdateRu
 		return nil, mapNoRows(err)
 	}
 	return runtimeCommandReceiptFromQuery(receipt), nil
+}
+
+func (r *PgRunRepository) UpdateExecutionInstanceStatus(ctx context.Context, tenantID, executionInstanceID uuid.UUID, status ExecutionInstanceStatus, errorMessage *string) (DigitalEmployeeExecutionInstanceRecord, error) {
+	instance, err := r.q.UpdateDigitalEmployeeExecutionInstanceStatus(ctx, queries.UpdateDigitalEmployeeExecutionInstanceStatusParams{
+		Status:       string(status),
+		ErrorMessage: textFromPtr(errorMessage),
+		ID:           executionInstanceID,
+		TenantID:     tenantID,
+	})
+	if err != nil {
+		return DigitalEmployeeExecutionInstanceRecord{}, mapNoRows(err)
+	}
+	return executionInstanceRecordFromQuery(instance)
+}
+
+func (r *PgRunRepository) UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
+	record, err := r.q.UpdateDigitalEmployeeStatus(ctx, queries.UpdateDigitalEmployeeStatusParams{
+		Status:   string(status),
+		ID:       employeeID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return DigitalEmployeeRecord{}, mapNoRows(err)
+	}
+	return digitalEmployeeRecordFromQuery(record)
+}
+
+func (r *PgRunRepository) DeleteExecutionInstance(ctx context.Context, tenantID, executionInstanceID uuid.UUID) error {
+	return r.q.DeleteDigitalEmployeeExecutionInstance(ctx, queries.DeleteDigitalEmployeeExecutionInstanceParams{
+		ID:       executionInstanceID,
+		TenantID: tenantID,
+	})
+}
+
+func (r *PgRunRepository) DeleteDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) error {
+	return r.q.DeleteDigitalEmployee(ctx, queries.DeleteDigitalEmployeeParams{
+		ID:       employeeID,
+		TenantID: tenantID,
+	})
 }
 
 func runStatusFromString(value string) DigitalEmployeeRunStatus {

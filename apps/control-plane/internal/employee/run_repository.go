@@ -16,12 +16,17 @@ type DigitalEmployeeRunRepository interface {
 	ListRuns(ctx context.Context, tenantID, employeeID uuid.UUID, limit, offset int32) ([]*DigitalEmployeeRun, error)
 	CreateRun(ctx context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error)
 	UpdateRunStatus(ctx context.Context, req UpdateRunStatusRequest) (*DigitalEmployeeRun, error)
+	HasRunEventSequence(ctx context.Context, tenantID, taskID, runID uuid.UUID, sequenceNumber int32) (bool, error)
 	CreateTaskEventIfAbsent(ctx context.Context, req CreateRunEventRecordRequest) error
 	UpsertProviderSession(ctx context.Context, req UpsertProviderSessionRequest) (uuid.UUID, error)
 	CreateProviderSessionEventIfAbsent(ctx context.Context, req CreateProviderSessionEventRecordRequest) error
 	CreateCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error
 	GetCommandReceipt(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error)
 	UpdateCommandReceipt(ctx context.Context, req UpdateRuntimeCommandReceiptRequest) (*RuntimeCommandReceipt, error)
+	UpdateExecutionInstanceStatus(ctx context.Context, tenantID, executionInstanceID uuid.UUID, status ExecutionInstanceStatus, errorMessage *string) (DigitalEmployeeExecutionInstanceRecord, error)
+	UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error)
+	DeleteExecutionInstance(ctx context.Context, tenantID, executionInstanceID uuid.UUID) error
+	DeleteDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) error
 }
 
 type RunPreflight struct {

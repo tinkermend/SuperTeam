@@ -715,6 +715,10 @@ func (f *fakeRunServiceRepository) UpdateRunStatus(_ context.Context, req Update
 	return cloneRun(run), nil
 }
 
+func (f *fakeRunServiceRepository) HasRunEventSequence(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, int32) (bool, error) {
+	return false, nil
+}
+
 func (f *fakeRunServiceRepository) CreateTaskEventIfAbsent(_ context.Context, req CreateRunEventRecordRequest) error {
 	f.events = append(f.events, req)
 	return nil
@@ -749,6 +753,22 @@ func (f *fakeRunServiceRepository) UpdateCommandReceipt(_ context.Context, req U
 		CommandID: req.CommandID,
 		Status:    req.Status,
 	}, nil
+}
+
+func (f *fakeRunServiceRepository) UpdateExecutionInstanceStatus(context.Context, uuid.UUID, uuid.UUID, ExecutionInstanceStatus, *string) (DigitalEmployeeExecutionInstanceRecord, error) {
+	return DigitalEmployeeExecutionInstanceRecord{}, ErrInvalidInput
+}
+
+func (f *fakeRunServiceRepository) UpdateDigitalEmployeeStatus(context.Context, uuid.UUID, uuid.UUID, DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
+	return DigitalEmployeeRecord{}, ErrInvalidInput
+}
+
+func (f *fakeRunServiceRepository) DeleteExecutionInstance(context.Context, uuid.UUID, uuid.UUID) error {
+	return ErrInvalidInput
+}
+
+func (f *fakeRunServiceRepository) DeleteDigitalEmployee(context.Context, uuid.UUID, uuid.UUID) error {
+	return ErrInvalidInput
 }
 
 type fakeRunServiceDispatcher struct {
