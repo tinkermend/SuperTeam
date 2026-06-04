@@ -10,7 +10,7 @@ SuperTeam 目标是把 AI 执行能力、流程调度、人类审批、上下文
 
 - **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。
 - **Control Plane Layer**：Go 后端。负责任务、审批、审计、流程调度、上下文、工件、Runtime 注册和外部能力注册。对 Console 提供 API，也对 Runtime Agent 提供任务和心跳 API
-- **Runtime Layer**：部署在服务器节点、开发者机器或客户侧执行机上的 Rust daemon。负责领取任务、维护租约、管理本机 Provider 进程/会话、工作目录、日志、工件和执行槽位；Runtime 对外 HTTP/WS contract 参考 `AionUi` 的 WebUI/remote agent host 思路，但不承载控制台 UI 和业务策略。
+- **Runtime Layer**：部署在服务器节点、开发者机器或客户侧执行机上的 Rust daemon。负责领取任务、维护租约、管理本机 Provider 进程/会话、工作目录、日志、工件和执行槽位；Runtime 对外 HTTP/WS contract 参考 `AionUi` 的 WebUI/remote agent host 思路，但不承载控制台 UI 和业务策略,一个runtime agent 管理多个 Provider 进程/会话。
 - **Provider Layer**：Claude Code、OpenCode、Codex、Pi 等具体执行器。它们只在 Runtime Agent 管理下工作，不承载平台级状态；Provider 协议必须保持语言无关，使用结构化 schema 描述输入、事件、结果、工件和错误，Rust 只是一种 adapter 实现语言。
 - **Capability Integration Layer**：外部能力接入层。平台只负责外部能力的注册、授权、HTTP 调用和审计。
 
@@ -23,11 +23,11 @@ SuperTeam 目标是把 AI 执行能力、流程调度、人类审批、上下文
 - 数据层：PostgreSQL 为主存储；Redis 用于缓存、唤醒和轻量队列；S3 兼容存储用于日志、报告、附件和执行产物
 - Go 数据访问：pgx + sqlc + Atlas
 - 权限：先保留统一授权接口，避免业务代码散落权限判断；企业级授权目标为 OpenFGA
-- 前端状态与交互：TanStack Query、TanStack Table、xyflow、Monaco Editor、xterm.js
+- 前端状态与交互：TanStack Query、TanStack Table、Monaco Editor、xterm.js
 - 表单校验：React Hook Form + Zod
 - 图标：lucide-react
 - 测试：Vitest、Playwright、Go test + testify、Rust cargo test、Temporal workflow test suite
-- 
+- 流程图: xyflow
 
 ## 数据库设计规则
 

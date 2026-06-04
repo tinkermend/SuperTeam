@@ -9,3 +9,4 @@
 - [ ] 按资源域逐步接入 `OpenFGAAuthorizer`：先 tenant/team，再 runtime/capability，最后扩展到 task/artifact/approval。
 - [ ] 接入 OpenFGA 前完成 relation model、tuple 同步、历史数据 backfill、DB 与 OpenFGA 双跑校验和灰度切换。
 - [ ] 权限管理页面始终面向业务对象，不暴露 OpenFGA tuple、relation model 或底层 DSL。
+

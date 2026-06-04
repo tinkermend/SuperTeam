@@ -110,3 +110,6 @@ skills-lock.json
 
 # Local/private notes and sensitive documents.
 doc/
+
+.scratch/
+.tests/
