@@ -37,16 +37,11 @@ WITH inserted AS (
         COALESCE($9::jsonb, '{}'::jsonb),
         $10::timestamptz
     )
-    ON CONFLICT (tenant_id, command_id) DO NOTHING
+    ON CONFLICT (tenant_id, command_id) DO UPDATE SET
+        command_id = runtime_command_receipts.command_id
     RETURNING id, tenant_id, command_id, command_type, runtime_node_id, node_id, resource_type, resource_id, status, payload, result, error_message, dispatched_at, completed_at, created_at, updated_at
 )
 SELECT id, tenant_id, command_id, command_type, runtime_node_id, node_id, resource_type, resource_id, status, payload, result, error_message, dispatched_at, completed_at, created_at, updated_at FROM inserted
-UNION ALL
-SELECT id, tenant_id, command_id, command_type, runtime_node_id, node_id, resource_type, resource_id, status, payload, result, error_message, dispatched_at, completed_at, created_at, updated_at
-FROM runtime_command_receipts
-WHERE tenant_id = $1::uuid
-  AND command_id = $2::varchar
-LIMIT 1
 `
 
 type CreateRuntimeCommandReceiptParams struct {

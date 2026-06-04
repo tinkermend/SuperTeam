@@ -23,6 +23,7 @@ ALTER TABLE task_runs
     ADD COLUMN digital_employee_id UUID,
     ADD COLUMN execution_instance_id UUID,
     ADD COLUMN idempotency_key VARCHAR(255),
+    ADD COLUMN idempotency_fingerprint VARCHAR(255),
     ADD COLUMN timeout_sec INTEGER,
     ADD COLUMN grace_sec INTEGER,
     ADD COLUMN diagnostic JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -107,6 +108,7 @@ COMMENT ON COLUMN task_runs.command_id IS '运行关联的Runtime命令ID';
 COMMENT ON COLUMN task_runs.digital_employee_id IS '运行所属数字员工ID';
 COMMENT ON COLUMN task_runs.execution_instance_id IS '运行使用的执行实例ID';
 COMMENT ON COLUMN task_runs.idempotency_key IS '运行创建幂等键';
+COMMENT ON COLUMN task_runs.idempotency_fingerprint IS '运行创建幂等指纹';
 COMMENT ON COLUMN task_runs.timeout_sec IS '运行超时时间秒数';
 COMMENT ON COLUMN task_runs.grace_sec IS '停止宽限时间秒数';
 COMMENT ON COLUMN task_runs.diagnostic IS '运行诊断信息';

@@ -3559,6 +3559,10 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 		ExecutionInstanceID: executionInstanceID,
 		TimeoutSec:          pgtype.Int4{Int32: 600, Valid: true},
 		GraceSec:            pgtype.Int4{Int32: 30, Valid: true},
+		IdempotencyFingerprint: pgtype.Text{
+			String: "fingerprint-run-loop-001",
+			Valid:  true,
+		},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "pending", createdRun.TaskStatus)
@@ -3586,11 +3590,65 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 		ExecutionInstanceID: executionInstanceID,
 		TimeoutSec:          pgtype.Int4{Int32: 600, Valid: true},
 		GraceSec:            pgtype.Int4{Int32: 30, Valid: true},
+		IdempotencyFingerprint: pgtype.Text{
+			String: "fingerprint-run-loop-001",
+			Valid:  true,
+		},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, createdRun.TaskID, retriedRun.TaskID)
 	assert.Equal(t, createdRun.RunID, retriedRun.RunID)
 	assert.Equal(t, createdRun.CommandID, retriedRun.CommandID)
+
+	_, err = testQueries.CreateDigitalEmployeeTaskRun(ctx, queries.CreateDigitalEmployeeTaskRunParams{
+		TenantID:            tenantID,
+		TeamID:              teamID,
+		Title:               "幂等冲突执行结账诊断",
+		Description:         pgtype.Text{String: "同一幂等键不同指纹应返回冲突信号", Valid: true},
+		Priority:            1,
+		ProviderType:        "claude-code",
+		CreatorID:           uuid.NullUUID{},
+		TargetNodeID:        "runtime-node-001",
+		WorkspacePath:       pgtype.Text{String: "/workspace/superteam", Valid: true},
+		Params:              []byte(`{"objective":"conflicting retry"}`),
+		IdempotencyKey:      pgtype.Text{String: "idem-run-loop-001", Valid: true},
+		RiskLevel:           pgtype.Text{String: "normal", Valid: true},
+		NodeID:              "runtime-node-001",
+		RuntimeNodeID:       runtimeNodeID,
+		ProviderSessionID:   pgtype.Text{},
+		RunStatus:           "queued",
+		CommandID:           "cmd-run-loop-conflict",
+		DigitalEmployeeID:   digitalEmployeeID,
+		ExecutionInstanceID: executionInstanceID,
+		TimeoutSec:          pgtype.Int4{Int32: 600, Valid: true},
+		GraceSec:            pgtype.Int4{Int32: 30, Valid: true},
+		IdempotencyFingerprint: pgtype.Text{
+			String: "fingerprint-run-loop-conflict",
+			Valid:  true,
+		},
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	var taskCountAfterConflict int
+	err = testDB.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM tasks
+		WHERE tenant_id = $1
+		  AND idempotency_key = 'idem-run-loop-001'
+	`, tenantID).Scan(&taskCountAfterConflict)
+	require.NoError(t, err)
+	assert.Equal(t, 1, taskCountAfterConflict)
+
+	var runCountAfterConflict int
+	err = testDB.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM task_runs
+		WHERE tenant_id = $1
+		  AND digital_employee_id = $2
+		  AND idempotency_key = 'idem-run-loop-001'
+	`, tenantID, digitalEmployeeID).Scan(&runCountAfterConflict)
+	require.NoError(t, err)
+	assert.Equal(t, 1, runCountAfterConflict)
 
 	activeRun, err := testQueries.GetActiveDigitalEmployeeRun(ctx, queries.GetActiveDigitalEmployeeRunParams{
 		TenantID:          tenantID,

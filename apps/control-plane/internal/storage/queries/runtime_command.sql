@@ -23,16 +23,11 @@ WITH inserted AS (
         COALESCE(sqlc.arg('payload')::jsonb, '{}'::jsonb),
         sqlc.narg('dispatched_at')::timestamptz
     )
-    ON CONFLICT (tenant_id, command_id) DO NOTHING
+    ON CONFLICT (tenant_id, command_id) DO UPDATE SET
+        command_id = runtime_command_receipts.command_id
     RETURNING *
 )
-SELECT * FROM inserted
-UNION ALL
-SELECT *
-FROM runtime_command_receipts
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND command_id = sqlc.arg('command_id')::varchar
-LIMIT 1;
+SELECT * FROM inserted;
 
 -- name: GetRuntimeCommandReceiptByCommandID :one
 SELECT *

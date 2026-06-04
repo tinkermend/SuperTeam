@@ -757,6 +757,8 @@ type TaskRun struct {
 	ExecutionInstanceID uuid.NullUUID `json:"execution_instance_id"`
 	// 运行创建幂等键
 	IdempotencyKey pgtype.Text `json:"idempotency_key"`
+	// 运行创建幂等指纹
+	IdempotencyFingerprint pgtype.Text `json:"idempotency_fingerprint"`
 	// 运行超时时间秒数
 	TimeoutSec pgtype.Int4 `json:"timeout_sec"`
 	// 停止宽限时间秒数

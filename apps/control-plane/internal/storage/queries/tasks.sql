@@ -243,7 +243,33 @@ WHERE id = sqlc.arg('id')::uuid
 RETURNING *;
 
 -- name: CreateDigitalEmployeeTaskRun :one
-WITH existing_run AS (
+WITH idempotency_input AS (
+    SELECT
+        sqlc.narg('idempotency_key')::varchar AS idempotency_key,
+        sqlc.narg('idempotency_fingerprint')::varchar AS idempotency_fingerprint
+),
+idempotency_lock AS (
+    SELECT pg_advisory_xact_lock(
+        hashtextextended(
+            sqlc.arg('tenant_id')::uuid::text || ':' ||
+            sqlc.arg('digital_employee_id')::uuid::text || ':' ||
+            idempotency_input.idempotency_key,
+            0
+        )
+    ) AS locked
+    FROM idempotency_input
+    WHERE idempotency_input.idempotency_key IS NOT NULL
+),
+lock_barrier AS (
+    SELECT 1 AS ready
+    FROM idempotency_input
+    WHERE idempotency_input.idempotency_key IS NULL
+    UNION ALL
+    SELECT 1 AS ready
+    FROM idempotency_lock
+    LIMIT 1
+),
+existing_run AS (
     SELECT
         t.id AS task_id,
         tr.id AS run_id,
@@ -252,16 +278,32 @@ WITH existing_run AS (
         tr.status AS run_status
     FROM task_runs tr
     JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+    CROSS JOIN idempotency_input
+    CROSS JOIN lock_barrier
     WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
       AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
-      AND tr.idempotency_key = sqlc.narg('idempotency_key')::varchar
-      AND sqlc.narg('idempotency_key')::varchar IS NOT NULL
+      AND tr.idempotency_key = idempotency_input.idempotency_key
+      AND tr.idempotency_fingerprint IS NOT DISTINCT FROM idempotency_input.idempotency_fingerprint
+      AND idempotency_input.idempotency_key IS NOT NULL
       AND t.deleted_at IS NULL
     ORDER BY tr.created_at DESC
     LIMIT 1
 ),
+conflicting_run AS (
+    SELECT tr.id
+    FROM task_runs tr
+    CROSS JOIN idempotency_input
+    CROSS JOIN lock_barrier
+    WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+      AND tr.idempotency_key = idempotency_input.idempotency_key
+      AND tr.idempotency_fingerprint IS DISTINCT FROM idempotency_input.idempotency_fingerprint
+      AND idempotency_input.idempotency_key IS NOT NULL
+    LIMIT 1
+),
 created_task AS (
     INSERT INTO tasks (
+        id,
         tenant_id,
         team_id,
         title,
@@ -277,6 +319,16 @@ created_task AS (
         risk_level
     )
     SELECT
+        CASE
+            WHEN idempotency_input.idempotency_key IS NOT NULL THEN (
+                SUBSTRING(idempotency_hash.value FROM 1 FOR 8) || '-' ||
+                SUBSTRING(idempotency_hash.value FROM 9 FOR 4) || '-' ||
+                SUBSTRING(idempotency_hash.value FROM 13 FOR 4) || '-' ||
+                SUBSTRING(idempotency_hash.value FROM 17 FOR 4) || '-' ||
+                SUBSTRING(idempotency_hash.value FROM 21 FOR 12)
+            )::uuid
+            ELSE gen_random_uuid()
+        END,
         sqlc.arg('tenant_id')::uuid,
         sqlc.arg('team_id')::uuid,
         sqlc.arg('title')::varchar,
@@ -288,9 +340,20 @@ created_task AS (
         sqlc.arg('target_node_id')::varchar,
         sqlc.narg('workspace_path')::text,
         COALESCE(sqlc.arg('params')::jsonb, '{}'::jsonb),
-        sqlc.narg('idempotency_key')::varchar,
+        idempotency_input.idempotency_key,
         COALESCE(sqlc.narg('risk_level')::varchar, 'normal')
+    FROM idempotency_input
+    CROSS JOIN lock_barrier
+    CROSS JOIN LATERAL (
+        SELECT md5(
+            sqlc.arg('tenant_id')::uuid::text || ':' ||
+            sqlc.arg('digital_employee_id')::uuid::text || ':' ||
+            COALESCE(idempotency_input.idempotency_key, gen_random_uuid()::text)
+        ) AS value
+    ) AS idempotency_hash
     WHERE NOT EXISTS (SELECT 1 FROM existing_run)
+      AND NOT EXISTS (SELECT 1 FROM conflicting_run)
+    ON CONFLICT (id) DO UPDATE SET id = tasks.id
     RETURNING *
 ),
 created_run AS (
@@ -305,6 +368,7 @@ created_run AS (
         digital_employee_id,
         execution_instance_id,
         idempotency_key,
+        idempotency_fingerprint,
         timeout_sec,
         grace_sec
     )
@@ -318,13 +382,18 @@ created_run AS (
         sqlc.arg('command_id')::varchar,
         sqlc.arg('digital_employee_id')::uuid,
         sqlc.arg('execution_instance_id')::uuid,
-        sqlc.narg('idempotency_key')::varchar,
+        idempotency_input.idempotency_key,
+        idempotency_input.idempotency_fingerprint,
         sqlc.narg('timeout_sec')::integer,
         sqlc.narg('grace_sec')::integer
     FROM created_task
+    CROSS JOIN idempotency_input
+    WHERE NOT EXISTS (SELECT 1 FROM existing_run)
+      AND NOT EXISTS (SELECT 1 FROM conflicting_run)
     ON CONFLICT (tenant_id, digital_employee_id, idempotency_key)
     WHERE digital_employee_id IS NOT NULL AND idempotency_key IS NOT NULL
     DO UPDATE SET updated_at = task_runs.updated_at
+    WHERE task_runs.idempotency_fingerprint IS NOT DISTINCT FROM EXCLUDED.idempotency_fingerprint
     RETURNING *
 )
 SELECT
@@ -449,14 +518,9 @@ WITH inserted AS (
         sqlc.narg('log_ref')::text,
         COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
     )
-    ON CONFLICT DO NOTHING
+    ON CONFLICT (tenant_id, run_id, sequence_number)
+    WHERE run_id IS NOT NULL
+    DO UPDATE SET event_type = task_events.event_type
     RETURNING *
 )
-SELECT * FROM inserted
-UNION ALL
-SELECT *
-FROM task_events
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND run_id = sqlc.arg('run_id')::uuid
-  AND sequence_number = sqlc.arg('sequence_number')::integer
-LIMIT 1;
+SELECT * FROM inserted;
