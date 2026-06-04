@@ -23,7 +23,7 @@ func TestWritebackEventCreatesTaskAndProviderSessionEventsIdempotently(t *testin
 		Payload:                   map[string]any{"text": "hello", "token": "secret"},
 		ProviderSessionExternalID: &providerSessionExternalID,
 		SessionStatePatch:         map[string]any{"cursor": "seq-7"},
-		Metadata:                  map[string]any{"stream": "stdout"},
+		Metadata:                  map[string]any{"stream": "stdout", "token": "metadata-secret"},
 	}
 
 	identity := validWritebackIdentity(run)
@@ -50,6 +50,9 @@ func TestWritebackEventCreatesTaskAndProviderSessionEventsIdempotently(t *testin
 	if insertedTaskEvent.Payload["token"] != "[redacted]" {
 		t.Fatalf("expected fake repository to redact task event token, got %#v", insertedTaskEvent.Payload)
 	}
+	if insertedTaskEvent.Metadata["token"] != "[redacted]" {
+		t.Fatalf("expected task event metadata token redacted, got %#v", insertedTaskEvent.Metadata)
+	}
 	if event.Payload["token"] != "secret" {
 		t.Fatalf("expected service/repository not to mutate caller payload, got %#v", event.Payload)
 	}
@@ -62,6 +65,12 @@ func TestWritebackEventCreatesTaskAndProviderSessionEventsIdempotently(t *testin
 	}
 	if firstUpsert.LastSequenceNumber != 7 || firstUpsert.LastCommandID == nil || *firstUpsert.LastCommandID != "cmd-1" {
 		t.Fatalf("unexpected provider session last command/sequence: %#v", firstUpsert)
+	}
+	if firstUpsert.Metadata["token"] != "[redacted]" {
+		t.Fatalf("expected provider session metadata token redacted, got %#v", firstUpsert.Metadata)
+	}
+	if repo.providerSessionEvents[0].Metadata["token"] != "[redacted]" {
+		t.Fatalf("expected provider session event metadata token redacted, got %#v", repo.providerSessionEvents[0].Metadata)
 	}
 }
 
@@ -224,7 +233,16 @@ func TestWritebackTerminalStatusMismatchRejected(t *testing.T) {
 func TestWritebackTerminalReplayRepairsReceiptAndEventProjection(t *testing.T) {
 	repo := newFakeRunWritebackRepository()
 	run := validWritebackRun(DigitalEmployeeRunStatusCompleted, "cmd-1")
-	run.Result = map[string]any{"summary": "done", "status": string(DigitalEmployeeRunStatusCompleted)}
+	providerSessionExternalID := "provider-session-1"
+	run.ProviderSessionExternalID = &providerSessionExternalID
+	run.Result = map[string]any{"summary": "done", "status": string(DigitalEmployeeRunStatusCompleted), "details": "persisted"}
+	run.Diagnostic = map[string]any{"exit_code": float64(0)}
+	run.SessionState = map[string]any{"cursor": "seq-terminal", "token": "[redacted]"}
+	run.WorkProducts = []WorkProduct{{
+		Type:     "report",
+		Title:    "报告",
+		Metadata: map[string]any{"path": "s3://safe/ref"},
+	}}
 	repo.putRun(run)
 	repo.putReceipt(validWritebackReceipt(run))
 	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
@@ -245,8 +263,39 @@ func TestWritebackTerminalReplayRepairsReceiptAndEventProjection(t *testing.T) {
 	if len(repo.receiptUpdates) != 1 || repo.receiptUpdates[0].Status != string(DigitalEmployeeRunStatusCompleted) {
 		t.Fatalf("expected terminal replay to repair receipt status, got %#v", repo.receiptUpdates)
 	}
+	if repo.receiptUpdates[0].Result["details"] != "persisted" {
+		t.Fatalf("expected receipt replay to use persisted run result, got %#v", repo.receiptUpdates[0].Result)
+	}
+	if repo.taskEvents[0].Payload["details"] != "persisted" {
+		t.Fatalf("expected task event replay to use persisted run result, got %#v", repo.taskEvents[0].Payload)
+	}
+	if len(repo.providerSessionUpserts) != 1 || repo.providerSessionUpserts[0].SessionState["cursor"] != "seq-terminal" {
+		t.Fatalf("expected provider session replay to use persisted run session state, got %#v", repo.providerSessionUpserts)
+	}
 	if repo.transactionCount != 1 || repo.lockedReceiptReadCount != 1 {
 		t.Fatalf("expected terminal replay to lock receipt in transaction, tx=%d locks=%d", repo.transactionCount, repo.lockedReceiptReadCount)
+	}
+}
+
+func TestWritebackTerminalReplayRejectsConflictingProjection(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusCompleted, "cmd-1")
+	run.Result = map[string]any{"summary": "done", "status": string(DigitalEmployeeRunStatusCompleted), "details": "persisted"}
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
+
+	err := service.Complete(context.Background(), validWritebackIdentity(run), "cmd-1", RuntimeCommandTerminalWriteback{
+		Status:  DigitalEmployeeRunStatusCompleted,
+		Summary: "done",
+		Result:  map[string]any{"details": "different"},
+	})
+
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected ErrConflict for conflicting terminal replay, got %v", err)
+	}
+	if len(repo.receiptUpdates) != 0 || repo.taskEventInsertCount != 0 || len(repo.providerSessionUpserts) != 0 {
+		t.Fatalf("expected conflicting replay to reject before writes, receipts=%#v events=%d upserts=%#v", repo.receiptUpdates, repo.taskEventInsertCount, repo.providerSessionUpserts)
 	}
 }
 
@@ -688,12 +737,15 @@ func (f *fakeRunWritebackRepository) CreateTaskEventIfAbsent(_ context.Context, 
 	}
 	f.taskEventKeys[key] = struct{}{}
 	req.Payload = redactRuntimeEventPayload(req.Payload)
+	req.Metadata = redactRuntimeEventPayload(req.Metadata)
 	f.taskEvents = append(f.taskEvents, req)
 	f.taskEventInsertCount++
 	return nil
 }
 
 func (f *fakeRunWritebackRepository) UpsertProviderSession(_ context.Context, req UpsertProviderSessionRequest) (uuid.UUID, error) {
+	req.SessionState = redactRuntimeEventPayload(req.SessionState)
+	req.Metadata = redactRuntimeEventPayload(req.Metadata)
 	f.providerSessionUpserts = append(f.providerSessionUpserts, req)
 	key := req.TenantID.String() + ":" + req.ProviderType + ":" + req.ProviderSessionID
 	id, ok := f.providerSessionIDs[key]
@@ -715,6 +767,8 @@ func (f *fakeRunWritebackRepository) CreateProviderSessionEventIfAbsent(_ contex
 	}
 	f.providerSessionEventKeys[key] = struct{}{}
 	req.Payload = redactRuntimeEventPayload(req.Payload)
+	req.SessionStatePatch = redactRuntimeEventPayload(req.SessionStatePatch)
+	req.Metadata = redactRuntimeEventPayload(req.Metadata)
 	f.providerSessionEvents = append(f.providerSessionEvents, req)
 	f.providerSessionEventInsertCount++
 	return nil

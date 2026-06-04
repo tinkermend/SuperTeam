@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/google/uuid"
@@ -72,7 +73,7 @@ func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, id
 		CommandID:      &commandIDRef,
 		RawEventRef:    event.RawEventRef,
 		LogRef:         event.LogRef,
-		Metadata:       cloneMap(event.Metadata),
+		Metadata:       redactRuntimeEventPayload(event.Metadata),
 	}); err != nil {
 		return fmt.Errorf("create task event: %w", err)
 	}
@@ -191,6 +192,7 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 		return s.recordProvisioningTerminal(ctx, identity, commandID, receipt, terminal, spec)
 	}
 	wasTerminal := run.Status.IsTerminal()
+	projectionTerminal := terminal
 	updatedRun := run
 	if wasTerminal {
 		if run.Status != spec.status {
@@ -199,6 +201,7 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 		if !terminalCompatibleWithRun(run, terminal) {
 			return fmt.Errorf("%w: terminal writeback conflicts with persisted run", ErrConflict)
 		}
+		projectionTerminal = terminalWritebackFromRun(run)
 	} else {
 		result := terminalResult(terminal, spec.status)
 		diagnostic := terminalDiagnostic(terminal, spec.status)
@@ -234,7 +237,7 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 		RunID:          run.ID,
 		EventType:      spec.eventType,
 		SequenceNumber: spec.sequenceNumber,
-		Payload:        terminalEventPayload(terminal, spec.status),
+		Payload:        terminalEventPayload(projectionTerminal, spec.status),
 		CommandID:      &commandIDRef,
 		RawEventRef:    terminal.RawResultRef,
 		LogRef:         terminal.LogRef,
@@ -246,24 +249,24 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 		return fmt.Errorf("create terminal task event: %w", err)
 	}
 
-	providerSessionExternalID := trimmedOptionalValue(terminal.ProviderSessionExternalID)
+	providerSessionExternalID := trimmedOptionalValue(projectionTerminal.ProviderSessionExternalID)
 	if providerSessionExternalID != nil {
-		providerSessionUUID, err := s.upsertProviderSession(ctx, updatedRun, *providerSessionExternalID, spec.providerStatus, spec.recoverable, spec.sequenceNumber, &commandID, terminal.ErrorFamily, terminal.SessionStatePatch, map[string]any{"source": "runtime", "status": string(spec.status)})
+		providerSessionUUID, err := s.upsertProviderSession(ctx, updatedRun, *providerSessionExternalID, spec.providerStatus, spec.recoverable, spec.sequenceNumber, &commandID, projectionTerminal.ErrorFamily, projectionTerminal.SessionStatePatch, map[string]any{"source": "runtime", "status": string(spec.status)})
 		if err != nil {
 			return err
 		}
-		if err := s.createProviderSessionEvent(ctx, updatedRun, providerSessionUUID, commandID, spec.eventType, spec.sequenceNumber, terminalEventPayload(terminal, spec.status), terminal.RawResultRef, terminal.LogRef, terminal.SessionStatePatch, map[string]any{"source": "runtime", "status": string(spec.status)}); err != nil {
+		if err := s.createProviderSessionEvent(ctx, updatedRun, providerSessionUUID, commandID, spec.eventType, spec.sequenceNumber, terminalEventPayload(projectionTerminal, spec.status), projectionTerminal.RawResultRef, projectionTerminal.LogRef, projectionTerminal.SessionStatePatch, map[string]any{"source": "runtime", "status": string(spec.status)}); err != nil {
 			return err
 		}
 	}
 
-	receiptResult := terminalReceiptResult(terminal, spec.status)
+	receiptResult := terminalReceiptResult(projectionTerminal, spec.status)
 	if _, err := s.repository.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
 		TenantID:     identity.TenantID,
 		CommandID:    commandID,
 		Status:       string(spec.status),
 		Result:       receiptResult,
-		ErrorMessage: terminal.ErrorMessage,
+		ErrorMessage: projectionTerminal.ErrorMessage,
 	}); err != nil {
 		return fmt.Errorf("update command receipt terminal status: %w", err)
 	}
@@ -548,6 +551,18 @@ func terminalCompatibleWithRun(run *DigitalEmployeeRun, terminal RuntimeCommandT
 			return false
 		}
 	}
+	if !mapSubsetEqual(redactRuntimeEventPayload(terminal.Result), run.Result) {
+		return false
+	}
+	if !mapSubsetEqual(redactRuntimeEventPayload(terminal.Diagnostic), run.Diagnostic) {
+		return false
+	}
+	if !mapSubsetEqual(redactRuntimeEventPayload(terminal.SessionStatePatch), run.SessionState) {
+		return false
+	}
+	if len(terminal.WorkProducts) > 0 && !reflect.DeepEqual(redactWorkProducts(terminal.WorkProducts), run.WorkProducts) {
+		return false
+	}
 	if terminal.ErrorMessage != nil && !sameOptionalString(run.ErrorMessage, terminal.ErrorMessage) {
 		return false
 	}
@@ -557,8 +572,35 @@ func terminalCompatibleWithRun(run *DigitalEmployeeRun, terminal RuntimeCommandT
 	if terminal.ErrorFamily != nil && !sameOptionalString(run.ErrorFamily, terminal.ErrorFamily) {
 		return false
 	}
-	if terminal.ProviderSessionExternalID != nil && run.ProviderSessionExternalID != nil && *terminal.ProviderSessionExternalID != *run.ProviderSessionExternalID {
+	if terminal.ExitCode != nil && !sameOptionalInt32(run.ExitCode, terminal.ExitCode) {
 		return false
+	}
+	if terminal.Signal != nil && !sameOptionalString(run.Signal, terminal.Signal) {
+		return false
+	}
+	if terminal.RawResultRef != nil && !sameOptionalString(run.RawResultRef, terminal.RawResultRef) {
+		return false
+	}
+	if terminal.LogRef != nil && !sameOptionalString(run.LogRef, terminal.LogRef) {
+		return false
+	}
+	if terminal.ProviderSessionExternalID != nil && !sameOptionalString(run.ProviderSessionExternalID, terminal.ProviderSessionExternalID) {
+		return false
+	}
+	if terminal.TimedOut && !run.TimedOut {
+		return false
+	}
+	return true
+}
+
+func mapSubsetEqual(subset, superset map[string]any) bool {
+	if len(subset) == 0 {
+		return true
+	}
+	for key, value := range subset {
+		if !reflect.DeepEqual(value, superset[key]) {
+			return false
+		}
 	}
 	return true
 }
@@ -568,6 +610,36 @@ func sameOptionalString(left, right *string) bool {
 		return left == nil && right == nil
 	}
 	return *left == *right
+}
+
+func sameOptionalInt32(left, right *int32) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
+func terminalWritebackFromRun(run *DigitalEmployeeRun) RuntimeCommandTerminalWriteback {
+	terminal := RuntimeCommandTerminalWriteback{
+		Status:                    run.Status,
+		Result:                    cloneMap(run.Result),
+		Diagnostic:                cloneMap(run.Diagnostic),
+		LogRef:                    run.LogRef,
+		RawResultRef:              run.RawResultRef,
+		WorkProducts:              append([]WorkProduct(nil), run.WorkProducts...),
+		SessionStatePatch:         cloneMap(run.SessionState),
+		ErrorMessage:              run.ErrorMessage,
+		ErrorCode:                 run.ErrorCode,
+		ErrorFamily:               run.ErrorFamily,
+		ExitCode:                  run.ExitCode,
+		Signal:                    run.Signal,
+		ProviderSessionExternalID: run.ProviderSessionExternalID,
+		TimedOut:                  run.TimedOut,
+	}
+	if summary, ok := run.Result["summary"].(string); ok {
+		terminal.Summary = summary
+	}
+	return terminal
 }
 
 func terminalResult(terminal RuntimeCommandTerminalWriteback, status DigitalEmployeeRunStatus) map[string]any {

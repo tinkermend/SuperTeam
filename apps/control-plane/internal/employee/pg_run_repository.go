@@ -277,7 +277,7 @@ func (r *PgRunRepository) CreateTaskEventIfAbsent(ctx context.Context, req Creat
 	if err != nil {
 		return err
 	}
-	metadata, err := jsonBytesFromMap(req.Metadata, "metadata")
+	metadata, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Metadata), "metadata")
 	if err != nil {
 		return err
 	}
@@ -306,7 +306,7 @@ func (r *PgRunRepository) UpsertProviderSession(ctx context.Context, req UpsertP
 	if err != nil {
 		return uuid.Nil, err
 	}
-	metadata, err := jsonBytesFromMap(req.Metadata, "metadata")
+	metadata, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Metadata), "metadata")
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -344,7 +344,7 @@ func (r *PgRunRepository) CreateProviderSessionEventIfAbsent(ctx context.Context
 	if err != nil {
 		return err
 	}
-	metadata, err := jsonBytesFromMap(req.Metadata, "metadata")
+	metadata, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Metadata), "metadata")
 	if err != nil {
 		return err
 	}
