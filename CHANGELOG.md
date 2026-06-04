@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-04 10:38：用户管理页按“用户 360 详情台”方向升级为主从详情工作台，使用权限中心一致的铺满页面布局，并调整为更宽的用户列表和三等宽概览卡片；页面接入用户列表、权限中心成员角色、登录日志和授权拒绝记录，并补齐新建用户、启用/禁用账号和重置密码入口。
 - 2026-06-04 05:20：团队列表搜索补齐负责人用户名、显示名和邮箱匹配，并修复新建团队失败后关闭重开抽屉仍显示旧错误的问题。
 - 2026-06-04 05:02：团队管理体验补齐团队图标、用户头像身份展示、弱分页、目标化两步创建抽屉和详情成员页用户搜索，继续沿用浅色液态玻璃企业控制台设计风格。
 - 2026-06-04 04:02：Runtime Agent 新增 runtime command execution layer，支持 `start_session`、`resume_session`、`send_input`、`stop_session` 在本地解析 payload、创建执行实例目录、驱动 Provider run、维护 command/session/run 映射并取消 active run；Runtime 仅执行本地命令，不判断租户、团队或审批。
