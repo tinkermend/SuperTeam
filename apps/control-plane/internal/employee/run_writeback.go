@@ -239,8 +239,8 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 		SequenceNumber: spec.sequenceNumber,
 		Payload:        terminalEventPayload(projectionTerminal, spec.status),
 		CommandID:      &commandIDRef,
-		RawEventRef:    terminal.RawResultRef,
-		LogRef:         terminal.LogRef,
+		RawEventRef:    projectionTerminal.RawResultRef,
+		LogRef:         projectionTerminal.LogRef,
 		Metadata: map[string]any{
 			"source": "runtime",
 			"status": string(spec.status),

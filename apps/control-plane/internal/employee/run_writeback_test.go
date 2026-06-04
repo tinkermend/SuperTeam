@@ -234,7 +234,11 @@ func TestWritebackTerminalReplayRepairsReceiptAndEventProjection(t *testing.T) {
 	repo := newFakeRunWritebackRepository()
 	run := validWritebackRun(DigitalEmployeeRunStatusCompleted, "cmd-1")
 	providerSessionExternalID := "provider-session-1"
+	rawResultRef := "s3://runtime/results/persisted.json"
+	logRef := "s3://runtime/logs/persisted.log"
 	run.ProviderSessionExternalID = &providerSessionExternalID
+	run.RawResultRef = &rawResultRef
+	run.LogRef = &logRef
 	run.Result = map[string]any{"summary": "done", "status": string(DigitalEmployeeRunStatusCompleted), "details": "persisted"}
 	run.Diagnostic = map[string]any{"exit_code": float64(0)}
 	run.SessionState = map[string]any{"cursor": "seq-terminal", "token": "[redacted]"}
@@ -268,6 +272,9 @@ func TestWritebackTerminalReplayRepairsReceiptAndEventProjection(t *testing.T) {
 	}
 	if repo.taskEvents[0].Payload["details"] != "persisted" {
 		t.Fatalf("expected task event replay to use persisted run result, got %#v", repo.taskEvents[0].Payload)
+	}
+	if repo.taskEvents[0].RawEventRef == nil || *repo.taskEvents[0].RawEventRef != rawResultRef || repo.taskEvents[0].LogRef == nil || *repo.taskEvents[0].LogRef != logRef {
+		t.Fatalf("expected task event replay refs to use persisted run refs, got raw=%#v log=%#v", repo.taskEvents[0].RawEventRef, repo.taskEvents[0].LogRef)
 	}
 	if len(repo.providerSessionUpserts) != 1 || repo.providerSessionUpserts[0].SessionState["cursor"] != "seq-terminal" {
 		t.Fatalf("expected provider session replay to use persisted run session state, got %#v", repo.providerSessionUpserts)
