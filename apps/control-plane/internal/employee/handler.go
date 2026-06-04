@@ -508,6 +508,10 @@ func employeeIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, b
 
 func writeHandlerError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrRuntimeUnavailable), errors.Is(err, ErrProviderUnavailable):
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	case errors.Is(err, ErrEffectiveConfigRequired):
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 	case errors.Is(err, ErrInvalidInput):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNotFound):

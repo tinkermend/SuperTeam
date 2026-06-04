@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -118,8 +119,54 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 	if len(repo.events) != 1 || repo.events[0].EventType != "run_dispatched" {
 		t.Fatalf("expected run_dispatched event, got %#v", repo.events)
 	}
+	if repo.events[0].SequenceNumber != runDispatchedLifecycleSequence {
+		t.Fatalf("expected lifecycle run_dispatched sequence %d, got %d", runDispatchedLifecycleSequence, repo.events[0].SequenceNumber)
+	}
 	if len(audit.events) != 1 || audit.events[0].eventType != "digital_employee_run_created" || audit.events[0].action != "employee.run.create" {
 		t.Fatalf("expected create audit event, got %#v", audit.events)
+	}
+}
+
+func TestRunServiceCreateRunReconcilesIdempotentQueuedRunWithoutReceipt(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	audit := &fakeRunServiceAuditLogger{}
+	service := mustNewRunService(t, repo, dispatcher, audit)
+	req := validCreateRunServiceRequest()
+	idempotencyKey := "idem-1"
+	req.IdempotencyKey = &idempotencyKey
+	fingerprint, err := computeRunIdempotencyFingerprint(req, strings.TrimSpace(req.Objective), strings.TrimSpace(req.Prompt), repo.preflight)
+	if err != nil {
+		t.Fatalf("compute fingerprint: %v", err)
+	}
+	repo.activeRun = validRunServiceRun(DigitalEmployeeRunStatusQueued)
+	repo.activeRun.IdempotencyKey = &idempotencyKey
+	repo.activeRun.IdempotencyFingerprint = &fingerprint
+
+	run, err := service.CreateRun(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("create run retry: %v", err)
+	}
+	if run.Status != DigitalEmployeeRunStatusDispatching {
+		t.Fatalf("expected reconciled run dispatching, got %s", run.Status)
+	}
+	if repo.createdRunCount != 0 {
+		t.Fatalf("expected idempotent retry not to create another run, got %d creates", repo.createdRunCount)
+	}
+	if len(repo.commandReceipts) != 1 || repo.commandReceipts[0].CommandID != repo.activeRun.CommandID {
+		t.Fatalf("expected missing receipt to be recreated for existing command, got %#v", repo.commandReceipts)
+	}
+	if len(dispatcher.commands) != 1 || dispatcher.commands[0].command.ID != repo.activeRun.CommandID {
+		t.Fatalf("expected existing command to be dispatched, got %#v", dispatcher.commands)
+	}
+	if len(repo.events) != 1 || repo.events[0].SequenceNumber != runDispatchedLifecycleSequence {
+		t.Fatalf("expected run_dispatched lifecycle event, got %#v", repo.events)
+	}
+	if len(audit.events) != 1 || audit.events[0].action != "employee.run.create" {
+		t.Fatalf("expected create audit for repaired dispatch, got %#v", audit.events)
 	}
 }
 
@@ -168,8 +215,33 @@ func TestRunServiceStopRunMovesToCancellingAndDispatchesStop(t *testing.T) {
 	if len(repo.events) != 1 || repo.events[0].EventType != "stop_requested" {
 		t.Fatalf("expected stop_requested event, got %#v", repo.events)
 	}
+	if repo.events[0].SequenceNumber != stopRequestedLifecycleSequence {
+		t.Fatalf("expected lifecycle stop_requested sequence %d, got %d", stopRequestedLifecycleSequence, repo.events[0].SequenceNumber)
+	}
 	if len(audit.events) != 1 || audit.events[0].eventType != "digital_employee_run_stop_requested" || audit.events[0].action != "employee.run.stop" {
 		t.Fatalf("expected stop audit event, got %#v", audit.events)
+	}
+}
+
+func TestRunServiceStopRunRejectsAlreadyCancelling(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.run = validRunServiceRun(DigitalEmployeeRunStatusCancelling)
+	dispatcher := newFakeRunServiceDispatcher()
+	service := mustNewRunService(t, repo, dispatcher, &fakeRunServiceAuditLogger{})
+
+	_, err := service.StopRun(context.Background(), StopDigitalEmployeeRunRequest{
+		TenantID:          repo.run.TenantID,
+		UserID:            uuid.New(),
+		DigitalEmployeeID: repo.run.DigitalEmployeeID,
+		RunID:             repo.run.ID,
+		Reason:            "human stop",
+	})
+
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected ErrConflict, got %v", err)
+	}
+	if len(repo.statusUpdates) != 0 || len(repo.events) != 0 || len(dispatcher.commands) != 0 {
+		t.Fatalf("expected cancelling run rejection before writes, status=%#v events=%#v commands=%#v", repo.statusUpdates, repo.events, dispatcher.commands)
 	}
 }
 
@@ -197,6 +269,9 @@ func TestRunServiceStopRunRecordsStopRequestedBeforeDispatchFailure(t *testing.T
 	if len(repo.events) != 1 || repo.events[0].EventType != "stop_requested" {
 		t.Fatalf("expected stop_requested event before dispatch failure, got %#v", repo.events)
 	}
+	if repo.events[0].SequenceNumber != stopRequestedLifecycleSequence {
+		t.Fatalf("expected lifecycle stop_requested sequence %d, got %d", stopRequestedLifecycleSequence, repo.events[0].SequenceNumber)
+	}
 	if len(repo.receiptUpdates) != 1 || repo.receiptUpdates[0].Status != "failed" {
 		t.Fatalf("expected failed stop receipt update, got %#v", repo.receiptUpdates)
 	}
@@ -212,11 +287,27 @@ func TestRunServiceCreateRunRejectsPreflightWithoutApprovedEffectiveConfig(t *te
 
 	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
 
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	if !errors.Is(err, ErrEffectiveConfigRequired) {
+		t.Fatalf("expected ErrEffectiveConfigRequired, got %v", err)
 	}
 	if repo.createdRunCount != 0 || len(dispatcher.commands) != 0 {
 		t.Fatalf("expected preflight rejection before create/dispatch")
+	}
+}
+
+func TestRunServiceCreateRunRejectsDisconnectedRuntime(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	service := mustNewRunService(t, repo, dispatcher)
+
+	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+
+	if !errors.Is(err, ErrRuntimeUnavailable) {
+		t.Fatalf("expected ErrRuntimeUnavailable, got %v", err)
+	}
+	if repo.createdRunCount != 0 || len(dispatcher.commands) != 0 {
+		t.Fatalf("expected runtime connection rejection before create/dispatch")
 	}
 }
 
@@ -404,6 +495,8 @@ func (f *fakeRunServiceRepository) UpdateRunStatus(_ context.Context, req Update
 	var run *DigitalEmployeeRun
 	if f.createdRun != nil && f.createdRun.ID == req.RunID {
 		run = f.createdRun
+	} else if f.activeRun != nil && f.activeRun.ID == req.RunID {
+		run = f.activeRun
 	} else if f.run != nil && f.run.ID == req.RunID {
 		run = f.run
 	}

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,7 +14,11 @@ import (
 	cpruntime "github.com/superteam/control-plane/internal/runtime"
 )
 
-const providerRunProtocol = "provider-run/v1"
+const (
+	providerRunProtocol            = "provider-run/v1"
+	runDispatchedLifecycleSequence = -1
+	stopRequestedLifecycleSequence = -2
+)
 
 type RuntimeCommandDispatcher interface {
 	IsConnected(nodeID string) bool
@@ -68,7 +73,7 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 		return nil, err
 	}
 	if !s.dispatcher.IsConnected(preflight.NodeID) {
-		return nil, fmt.Errorf("%w: runtime node is not connected", ErrInvalidInput)
+		return nil, fmt.Errorf("%w: runtime node is not connected", ErrRuntimeUnavailable)
 	}
 
 	idempotencyKey := trimmedOptionalValue(req.IdempotencyKey)
@@ -83,7 +88,7 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 	}
 	if activeRun != nil {
 		if sameIdempotentRun(activeRun, idempotencyKey, fingerprint) {
-			return activeRun, nil
+			return s.dispatchStartSession(ctx, req, objective, prompt, preflight, activeRun)
 		}
 		return nil, fmt.Errorf("%w: active digital employee run exists", ErrConflict)
 	}
@@ -116,19 +121,56 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 		return nil, fmt.Errorf("create digital employee run: %w", err)
 	}
 
+	return s.dispatchStartSession(ctx, req, objective, prompt, preflight, run)
+}
+
+func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun) (*DigitalEmployeeRun, error) {
+	if run.Status.IsTerminal() || run.Status == DigitalEmployeeRunStatusRunning || run.Status == DigitalEmployeeRunStatusCancelling {
+		return run, nil
+	}
+
 	payload := buildStartSessionPayload(req, objective, prompt, preflight, run)
-	if err := s.repository.CreateCommandReceipt(ctx, CreateRuntimeCommandReceiptRequest{
-		TenantID:      req.TenantID,
-		CommandID:     run.CommandID,
-		CommandType:   "start_session",
-		RuntimeNodeID: preflight.RuntimeNodeID,
-		NodeID:        preflight.NodeID,
-		ResourceType:  "digital_employee_run",
-		ResourceID:    run.ID,
-		Status:        "pending",
-		Payload:       payload,
-	}); err != nil {
-		return nil, fmt.Errorf("create runtime command receipt: %w", err)
+	receipt, err := s.repository.GetCommandReceipt(ctx, req.TenantID, run.CommandID)
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			return nil, fmt.Errorf("get runtime command receipt: %w", err)
+		}
+		if err := s.repository.CreateCommandReceipt(ctx, CreateRuntimeCommandReceiptRequest{
+			TenantID:      req.TenantID,
+			CommandID:     run.CommandID,
+			CommandType:   "start_session",
+			RuntimeNodeID: preflight.RuntimeNodeID,
+			NodeID:        preflight.NodeID,
+			ResourceType:  "digital_employee_run",
+			ResourceID:    run.ID,
+			Status:        "pending",
+			Payload:       payload,
+		}); err != nil {
+			return nil, fmt.Errorf("create runtime command receipt: %w", err)
+		}
+	} else if receipt != nil {
+		switch receipt.Status {
+		case "dispatched":
+			if run.Status == DigitalEmployeeRunStatusQueued {
+				return s.markRunDispatched(ctx, req, preflight, run)
+			}
+			return run, nil
+		case "completed", "cancelled", "timed_out":
+			return run, nil
+		case "failed":
+			failedRun, updateErr := s.repository.UpdateRunStatus(ctx, UpdateRunStatusRequest{
+				TenantID:     req.TenantID,
+				RunID:        run.ID,
+				Status:       DigitalEmployeeRunStatusFailed,
+				ErrorMessage: receipt.ErrorMessage,
+				ErrorCode:    stringPtr("dispatch_failed"),
+				ErrorFamily:  stringPtr("dispatch_failed"),
+			})
+			if updateErr != nil {
+				return nil, fmt.Errorf("mark run failed from failed command receipt: %w", updateErr)
+			}
+			return failedRun, nil
+		}
 	}
 
 	command, err := runtimeCommand(run.CommandID, "start_session", payload)
@@ -162,6 +204,10 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 	}); err != nil {
 		return nil, fmt.Errorf("mark command receipt dispatched: %w", err)
 	}
+	return s.markRunDispatched(ctx, req, preflight, run)
+}
+
+func (s *DigitalEmployeeRunService) markRunDispatched(ctx context.Context, req CreateDigitalEmployeeRunRequest, preflight RunPreflight, run *DigitalEmployeeRun) (*DigitalEmployeeRun, error) {
 	dispatchedRun, err := s.repository.UpdateRunStatus(ctx, UpdateRunStatusRequest{
 		TenantID: req.TenantID,
 		RunID:    run.ID,
@@ -175,7 +221,7 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 		TaskID:         run.TaskID,
 		RunID:          run.ID,
 		EventType:      "run_dispatched",
-		SequenceNumber: 1,
+		SequenceNumber: runDispatchedLifecycleSequence,
 		Payload: map[string]any{
 			"command_id": run.CommandID,
 			"node_id":    preflight.NodeID,
@@ -213,6 +259,9 @@ func (s *DigitalEmployeeRunService) StopRun(ctx context.Context, req StopDigital
 	if run.TenantID != req.TenantID || run.DigitalEmployeeID != req.DigitalEmployeeID {
 		return nil, fmt.Errorf("%w: run does not belong to digital employee", ErrInvalidInput)
 	}
+	if run.Status == DigitalEmployeeRunStatusCancelling {
+		return nil, fmt.Errorf("%w: run is already cancelling", ErrConflict)
+	}
 	if !run.Status.IsActive() {
 		return nil, fmt.Errorf("%w: run is not active", ErrInvalidInput)
 	}
@@ -249,7 +298,7 @@ func (s *DigitalEmployeeRunService) StopRun(ctx context.Context, req StopDigital
 		TaskID:         run.TaskID,
 		RunID:          run.ID,
 		EventType:      "stop_requested",
-		SequenceNumber: 2,
+		SequenceNumber: stopRequestedLifecycleSequence,
 		Payload: map[string]any{
 			"command_id":       stopCommandID,
 			"start_command_id": run.CommandID,
@@ -297,7 +346,7 @@ func validateRunPreflight(preflight RunPreflight) error {
 		return fmt.Errorf("%w: digital employee must be ready or active", ErrInvalidInput)
 	}
 	if !preflight.HasApprovedEffectiveConfig {
-		return fmt.Errorf("%w: approved effective config is required", ErrInvalidInput)
+		return fmt.Errorf("%w: approved effective config is required", ErrEffectiveConfigRequired)
 	}
 	if preflight.ExecutionInstanceID == uuid.Nil {
 		return fmt.Errorf("%w: execution_instance_id is required", ErrInvalidInput)
@@ -318,7 +367,7 @@ func validateRunPreflight(preflight RunPreflight) error {
 		return fmt.Errorf("%w: agent_home_dir is required", ErrInvalidInput)
 	}
 	if !preflight.ProviderHealthy {
-		return fmt.Errorf("%w: provider capability must be healthy", ErrInvalidInput)
+		return fmt.Errorf("%w: provider capability must be healthy", ErrProviderUnavailable)
 	}
 	return nil
 }
