@@ -3185,6 +3185,196 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	assert.Equal(t, "idle", updatedSession.Status)
 }
 
+func TestRuntimeProvisioningPreflightEnforcesTeamPolicies(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+	now := pgtype.Timestamptz{}
+	require.NoError(t, now.Scan(time.Now()))
+
+	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "preflight-policy-runtime-node",
+		Name:               "Preflight Policy Runtime Node",
+		SupportedProviders: []byte(`{"providers":["codex","opencode"]}`),
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"agent_home_dir":"/nodes/preflight-policy"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	bootstrapKeyExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, bootstrapKeyExpiresAt.Scan(time.Now().Add(24*time.Hour)))
+	bootstrapKey, err := testQueries.CreateRuntimeBootstrapKey(ctx, queries.CreateRuntimeBootstrapKeyParams{
+		TenantID:  uuid.NullUUID{UUID: tenantID, Valid: true},
+		Name:      "preflight-policy-bootstrap",
+		KeyHash:   "preflight-policy-bootstrap-key-hash",
+		Status:    "active",
+		ExpiresAt: bootstrapKeyExpiresAt,
+		Metadata:  []byte(`{}`),
+	})
+	require.NoError(t, err)
+	enrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         node.NodeID,
+		BootstrapKeyID: bootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"preflight-policy-runtime-node"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+	approvedEnrollment, err := testQueries.ApproveRuntimeEnrollment(ctx, queries.ApproveRuntimeEnrollmentParams{
+		RuntimeNodeID: node.ID,
+		ID:            enrollment.ID,
+		TenantID:      tenantID,
+		ApprovedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+	})
+	require.NoError(t, err)
+	sessionExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, sessionExpiresAt.Scan(time.Now().Add(12*time.Hour)))
+	_, err = testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   node.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: approvedEnrollment.ID, Valid: true},
+		TokenLookupHash: "preflight-policy-session-lookup-hash",
+		TokenSecretHash: "$2a$10$preflightPolicySessionSecretHash",
+		ExpiresAt:       sessionExpiresAt,
+	})
+	require.NoError(t, err)
+	for _, providerType := range []string{"codex", "opencode"} {
+		_, err = testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+			TenantID:         tenantID,
+			RuntimeNodeID:    node.ID,
+			CapabilityType:   "provider",
+			CapabilityKey:    providerType,
+			ProviderType:     providerType,
+			ProviderVersion:  pgtype.Text{String: "1.0.0", Valid: true},
+			BinaryPath:       pgtype.Text{String: "/usr/local/bin/" + providerType, Valid: true},
+			Available:        true,
+			WorkspaceBaseDir: pgtype.Text{String: "/data/superteam/workspaces", Valid: true},
+			Capacity:         []byte(`{"max_slots":2}`),
+			Labels:           []byte(`{"os":"darwin"}`),
+			Status:           "healthy",
+			Details:          []byte(`{"agent_home_dir":"/provider/preflight-policy"}`),
+			HealthStatus:     "healthy",
+			Metadata:         []byte(`{}`),
+			LastSeenAt:       now,
+		})
+		require.NoError(t, err)
+	}
+
+	runtimeScopePolicy := []byte(fmt.Sprintf(`{"allowed_runtime_node_ids":["%s"],"allowed_node_ids":["%s"]}`, node.ID.String(), node.NodeID))
+	teamConfig, err := testQueries.CreateTenantTeamConfigRevision(ctx, queries.CreateTenantTeamConfigRevisionParams{
+		TenantID:                    tenantID,
+		TeamID:                      teamID,
+		RevisionNumber:              1,
+		Constitution:                []byte(`{}`),
+		CapabilityPolicy:            []byte(`{"allowed_provider_types":["codex"]}`),
+		ContextPolicy:               []byte(`{}`),
+		ApprovalPolicy:              []byte(`{}`),
+		ArtifactContract:            []byte(`{}`),
+		InternalCollaborationPolicy: []byte(`{}`),
+		RuntimeScopePolicy:          runtimeScopePolicy,
+		Status:                      "active",
+		ApprovedBy:                  uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		ApprovedAt:                  now,
+	})
+	require.NoError(t, err)
+
+	preflight, err := testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.True(t, preflight.HasActiveTeamConfig)
+	assert.True(t, preflight.RuntimeOnline)
+	assert.True(t, preflight.EnrollmentApproved)
+	assert.True(t, preflight.RuntimeSessionActive)
+	assert.True(t, preflight.ProviderAvailable)
+	assert.True(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.RuntimePolicyAllowed)
+	assert.Equal(t, "/provider/preflight-policy", preflight.AgentHomeDir)
+
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "opencode",
+	})
+	require.NoError(t, err)
+	assert.True(t, preflight.ProviderAvailable)
+	assert.False(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.RuntimePolicyAllowed)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE tenant_team_config_revisions
+		SET capability_policy = '{"allowed_provider_types":[]}'::jsonb,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, teamConfig.ID)
+	require.NoError(t, err)
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.True(t, preflight.ProviderAvailable)
+	assert.False(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.RuntimePolicyAllowed)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE tenant_team_config_revisions
+		SET capability_policy = '{"allowed_provider_types":["codex"]}'::jsonb,
+		    runtime_scope_policy = '{}'::jsonb,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, teamConfig.ID)
+	require.NoError(t, err)
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.True(t, preflight.ProviderPolicyAllowed)
+	assert.False(t, preflight.RuntimePolicyAllowed)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE tenant_team_config_revisions
+		SET runtime_scope_policy = $2::jsonb,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, teamConfig.ID, runtimeScopePolicy)
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_enrollments
+		SET status = 'revoked',
+		    revoked_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, approvedEnrollment.ID, tenantID)
+	require.NoError(t, err)
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.False(t, preflight.EnrollmentApproved)
+	assert.False(t, preflight.RuntimeSessionActive)
+	assert.True(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.RuntimePolicyAllowed)
+}
+
 // ============================================================================
 // Task Tests
 // ============================================================================

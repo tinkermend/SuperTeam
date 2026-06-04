@@ -490,28 +490,33 @@ SELECT
     (provider_capability.id IS NOT NULL)::boolean AS provider_available,
     (
         active_team_config.id IS NOT NULL
-        AND CASE
-            WHEN NOT (active_team_config.capability_policy ? 'allowed_provider_types') THEN true
-            WHEN jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array' THEN
-                jsonb_array_length(active_team_config.capability_policy -> 'allowed_provider_types') = 0
-                OR (active_team_config.capability_policy -> 'allowed_provider_types') ? $1::varchar
-            ELSE false
-        END
+        AND jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array'
+        AND (active_team_config.capability_policy -> 'allowed_provider_types') ? $1::varchar
     )::boolean AS provider_policy_allowed,
     (
         active_team_config.id IS NOT NULL
+        AND (
+            (
+                active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids'
+                AND jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
+            )
+            OR (
+                active_team_config.runtime_scope_policy ? 'allowed_node_ids'
+                AND jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
+            )
+        )
         AND CASE
             WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids') THEN true
             WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array' THEN
-                jsonb_array_length(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 0
-                OR (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
+                (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
             ELSE false
         END
         AND CASE
             WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_node_ids') THEN true
             WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 'array' THEN
-                jsonb_array_length(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 0
-                OR (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
+                (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
             ELSE false
         END
     )::boolean AS runtime_policy_allowed
