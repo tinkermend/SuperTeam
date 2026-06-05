@@ -275,6 +275,120 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	teamID := uuid.New()
+	service := &routeEmployeeService{
+		createOptions: &employee.CreateOptions{
+			TeamConfig: employee.TeamConfigCreateOption{
+				ID:             uuid.New(),
+				TenantID:       tenantID,
+				TeamID:         teamID,
+				RevisionNumber: 1,
+				Status:         employee.TeamConfigRevisionStatusActive,
+			},
+			EmployeeTypes: []employee.EmployeeTypeDefinition{{
+				Type:        "project_coordinator",
+				Label:       "Project coordinator",
+				Description: "Coordinates work",
+				DefaultRole: "project_coordinator",
+			}},
+		},
+	}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetEmployeeHandler(employee.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/create-options?team_id="+teamID.String(), nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected create options to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	var body struct {
+		TeamConfig struct {
+			AllowedEmployeeTypes        []string `json:"allowed_employee_types"`
+			AllowedProviderTypes        []string `json:"allowed_provider_types"`
+			AllowedSkills               []string `json:"allowed_skills"`
+			AllowedMCPServers           []string `json:"allowed_mcp_servers"`
+			AllowedExternalCapabilities []string `json:"allowed_external_capabilities"`
+		} `json:"team_config"`
+		EmployeeTypes []struct {
+			RecommendedSkills        []string `json:"recommended_skills"`
+			RecommendedMCPServers    []string `json:"recommended_mcp_servers"`
+			RecommendedProviderTypes []string `json:"recommended_provider_types"`
+		} `json:"employee_types"`
+		CapabilityOptions struct {
+			ProviderTypes        []string `json:"provider_types"`
+			Skills               []string `json:"skills"`
+			MCPServers           []string `json:"mcp_servers"`
+			ExternalCapabilities []string `json:"external_capabilities"`
+		} `json:"capability_options"`
+		RuntimeProviderOptions []struct{} `json:"runtime_provider_options"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode create options: %v", err)
+	}
+	assertNonNilEmptyStringSlice(t, "team_config.allowed_employee_types", body.TeamConfig.AllowedEmployeeTypes)
+	assertNonNilEmptyStringSlice(t, "team_config.allowed_provider_types", body.TeamConfig.AllowedProviderTypes)
+	assertNonNilEmptyStringSlice(t, "team_config.allowed_skills", body.TeamConfig.AllowedSkills)
+	assertNonNilEmptyStringSlice(t, "team_config.allowed_mcp_servers", body.TeamConfig.AllowedMCPServers)
+	assertNonNilEmptyStringSlice(t, "team_config.allowed_external_capabilities", body.TeamConfig.AllowedExternalCapabilities)
+	if len(body.EmployeeTypes) != 1 {
+		t.Fatalf("expected one employee type option, got %#v", body.EmployeeTypes)
+	}
+	assertNonNilEmptyStringSlice(t, "employee_types[0].recommended_skills", body.EmployeeTypes[0].RecommendedSkills)
+	assertNonNilEmptyStringSlice(t, "employee_types[0].recommended_mcp_servers", body.EmployeeTypes[0].RecommendedMCPServers)
+	assertNonNilEmptyStringSlice(t, "employee_types[0].recommended_provider_types", body.EmployeeTypes[0].RecommendedProviderTypes)
+	assertNonNilEmptyStringSlice(t, "capability_options.provider_types", body.CapabilityOptions.ProviderTypes)
+	assertNonNilEmptyStringSlice(t, "capability_options.skills", body.CapabilityOptions.Skills)
+	assertNonNilEmptyStringSlice(t, "capability_options.mcp_servers", body.CapabilityOptions.MCPServers)
+	assertNonNilEmptyStringSlice(t, "capability_options.external_capabilities", body.CapabilityOptions.ExternalCapabilities)
+	if body.RuntimeProviderOptions == nil || len(body.RuntimeProviderOptions) != 0 {
+		t.Fatalf("expected runtime_provider_options to decode as empty array, got %#v", body.RuntimeProviderOptions)
+	}
+
+	service.createOptions.EmployeeTypes = nil
+	emptyTypesReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/create-options?team_id="+teamID.String(), nil)
+	emptyTypesReq.AddCookie(cookie)
+	emptyTypesResp := httptest.NewRecorder()
+	server.ServeHTTP(emptyTypesResp, emptyTypesReq)
+	if emptyTypesResp.Code != http.StatusOK {
+		t.Fatalf("expected create options with no employee types to succeed, got %d: %s", emptyTypesResp.Code, emptyTypesResp.Body.String())
+	}
+	var emptyTypesBody struct {
+		EmployeeTypes []struct{} `json:"employee_types"`
+	}
+	if err := json.NewDecoder(emptyTypesResp.Body).Decode(&emptyTypesBody); err != nil {
+		t.Fatalf("decode create options with no employee types: %v", err)
+	}
+	if emptyTypesBody.EmployeeTypes == nil || len(emptyTypesBody.EmployeeTypes) != 0 {
+		t.Fatalf("expected employee_types to decode as empty array, got %#v", emptyTypesBody.EmployeeTypes)
+	}
+}
+
+func assertNonNilEmptyStringSlice(t *testing.T, field string, values []string) {
+	t.Helper()
+	if values == nil || len(values) != 0 {
+		t.Fatalf("expected %s to decode as empty array, got %#v", field, values)
+	}
+}
+
 func TestDigitalEmployeeRoutesRequireConsoleAuth(t *testing.T) {
 	service := &routeEmployeeService{}
 	server := NewServer(
@@ -763,6 +877,7 @@ func TestDigitalEmployeeRouteSanitizesAuthorizationBackendError(t *testing.T) {
 
 type routeEmployeeService struct {
 	createOptionsReq    employee.CreateOptionsRequest
+	createOptions       *employee.CreateOptions
 	createReq           employee.CreateDigitalEmployeeRequest
 	listReq             employee.ListDigitalEmployeesRequest
 	bindReq             employee.BindExecutionInstanceRequest
@@ -787,6 +902,9 @@ type routeEmployeeService struct {
 
 func (s *routeEmployeeService) GetCreateOptions(ctx context.Context, req employee.CreateOptionsRequest) (*employee.CreateOptions, error) {
 	s.createOptionsReq = req
+	if s.createOptions != nil {
+		return s.createOptions, nil
+	}
 	return &employee.CreateOptions{
 		TeamConfig: employee.TeamConfigCreateOption{
 			ID:                   uuid.New(),

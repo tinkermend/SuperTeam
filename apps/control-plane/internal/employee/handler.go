@@ -722,9 +722,9 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 			Label:                        definition.Label,
 			Description:                  definition.Description,
 			DefaultRole:                  definition.DefaultRole,
-			RecommendedSkills:            cloneStringSlice(definition.RecommendedSkills),
-			RecommendedMCPServers:        cloneStringSlice(definition.RecommendedMCPServers),
-			RecommendedProviderTypes:     cloneStringSlice(definition.RecommendedProviderTypes),
+			RecommendedSkills:            stringSliceForJSON(definition.RecommendedSkills),
+			RecommendedMCPServers:        stringSliceForJSON(definition.RecommendedMCPServers),
+			RecommendedProviderTypes:     stringSliceForJSON(definition.RecommendedProviderTypes),
 			DefaultCapabilitySelection:   cloneMap(definition.DefaultCapabilitySelection),
 			DefaultContextPolicyOverride: cloneMap(definition.DefaultContextPolicyOverride),
 			DefaultApprovalPolicy:        cloneMap(definition.DefaultApprovalPolicy),
@@ -738,11 +738,11 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 			TeamID:                      options.TeamConfig.TeamID.String(),
 			RevisionNumber:              options.TeamConfig.RevisionNumber,
 			Status:                      string(options.TeamConfig.Status),
-			AllowedEmployeeTypes:        cloneStringSlice(options.TeamConfig.AllowedEmployeeTypes),
-			AllowedProviderTypes:        cloneStringSlice(options.TeamConfig.AllowedProviderTypes),
-			AllowedSkills:               cloneStringSlice(options.TeamConfig.AllowedSkills),
-			AllowedMCPServers:           cloneStringSlice(options.TeamConfig.AllowedMCPServers),
-			AllowedExternalCapabilities: cloneStringSlice(options.TeamConfig.AllowedExternalCaps),
+			AllowedEmployeeTypes:        stringSliceForJSON(options.TeamConfig.AllowedEmployeeTypes),
+			AllowedProviderTypes:        stringSliceForJSON(options.TeamConfig.AllowedProviderTypes),
+			AllowedSkills:               stringSliceForJSON(options.TeamConfig.AllowedSkills),
+			AllowedMCPServers:           stringSliceForJSON(options.TeamConfig.AllowedMCPServers),
+			AllowedExternalCapabilities: stringSliceForJSON(options.TeamConfig.AllowedExternalCaps),
 			CapabilityPolicy:            cloneMap(options.TeamConfig.CapabilityPolicy),
 			ContextPolicy:               cloneMap(options.TeamConfig.ContextPolicy),
 			ApprovalPolicy:              cloneMap(options.TeamConfig.ApprovalPolicy),
@@ -752,10 +752,10 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 		},
 		EmployeeTypes: employeeTypes,
 		CapabilityOptions: capabilityOptionsResponse{
-			ProviderTypes:        cloneStringSlice(options.CapabilityOptions.ProviderTypes),
-			Skills:               cloneStringSlice(options.CapabilityOptions.Skills),
-			MCPServers:           cloneStringSlice(options.CapabilityOptions.MCPServers),
-			ExternalCapabilities: cloneStringSlice(options.CapabilityOptions.ExternalCapabilities),
+			ProviderTypes:        stringSliceForJSON(options.CapabilityOptions.ProviderTypes),
+			Skills:               stringSliceForJSON(options.CapabilityOptions.Skills),
+			MCPServers:           stringSliceForJSON(options.CapabilityOptions.MCPServers),
+			ExternalCapabilities: stringSliceForJSON(options.CapabilityOptions.ExternalCapabilities),
 		},
 		RuntimeProviderOptions: runtimeOptions,
 		PolicyDefaults: policyDefaultsResponse{
@@ -769,6 +769,13 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 			Metadata:              cloneMap(options.PolicyDefaults.Metadata),
 		},
 	}
+}
+
+func stringSliceForJSON(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return cloneStringSlice(values)
 }
 
 func executionInstanceResponseFromDomain(instance *DigitalEmployeeExecutionInstance) executionInstanceResponse {
