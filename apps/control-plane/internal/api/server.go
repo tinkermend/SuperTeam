@@ -16,16 +16,17 @@ import (
 )
 
 type Server struct {
-	router             *chi.Mux
-	taskHandler        *handlers.TaskHandler
-	runtimeHandler     *handlers.RuntimeHandler
-	runtimeAuthService middleware.AuthService
-	runtimeSessionAuth middleware.RuntimeSessionAuthService
-	authService        *auth.Service
-	authorizer         authz.Authorizer
-	authzCenterHandler *authzcenter.HTTPHandler
-	employeeHandler    *employee.HTTPHandler
-	tenantHandler      *tenant.HTTPHandler
+	router                         *chi.Mux
+	taskHandler                    *handlers.TaskHandler
+	runtimeHandler                 *handlers.RuntimeHandler
+	runtimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler
+	runtimeAuthService             middleware.AuthService
+	runtimeSessionAuth             middleware.RuntimeSessionAuthService
+	authService                    *auth.Service
+	authorizer                     authz.Authorizer
+	authzCenterHandler             *authzcenter.HTTPHandler
+	employeeHandler                *employee.HTTPHandler
+	tenantHandler                  *tenant.HTTPHandler
 }
 
 func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
@@ -116,6 +117,11 @@ func (s *Server) SetTenantHandler(tenantHandler *tenant.HTTPHandler) {
 	s.registerRoutes()
 }
 
+func (s *Server) SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler) {
+	s.runtimeCommandWritebackHandler = runtimeCommandWritebackHandler
+	s.registerRoutes()
+}
+
 func (s *Server) registerRoutes() {
 	s.router = chi.NewRouter()
 	s.router.Use(middleware.Recovery())
@@ -153,6 +159,11 @@ func (s *Server) registerRoutes() {
 				r.Post("/digital-employees/{employeeId}/config-revisions", s.employeeHandler.CreateDigitalEmployeeConfigRevision)
 				r.Post("/digital-employees/{employeeId}/effective-configs/preview", s.employeeHandler.PreviewDigitalEmployeeEffectiveConfig)
 				r.Post("/digital-employees/{employeeId}/effective-configs/approve", s.employeeHandler.ApproveDigitalEmployeeEffectiveConfig)
+				r.Post("/digital-employees/{employeeId}/runs", s.employeeHandler.CreateDigitalEmployeeRun)
+				r.Get("/digital-employees/{employeeId}/runs", s.employeeHandler.ListDigitalEmployeeRuns)
+				r.Get("/digital-employees/{employeeId}/runs/{runId}", s.employeeHandler.GetDigitalEmployeeRun)
+				r.Get("/digital-employees/{employeeId}/runs/{runId}/events", s.employeeHandler.ListDigitalEmployeeRunEvents)
+				r.Post("/digital-employees/{employeeId}/runs/{runId}/stop", s.employeeHandler.StopDigitalEmployeeRun)
 			})
 		}
 
@@ -214,6 +225,13 @@ func (s *Server) registerRoutes() {
 				r.Post("/sessions/{sessionId}/renew", s.runtimeHandler.RenewRuntimeSession)
 				r.Put("/nodes/{nodeId}/capabilities", s.runtimeHandler.UpsertCapabilities)
 				r.Post("/capabilities", s.runtimeHandler.UpsertCapabilities)
+				if s.runtimeCommandWritebackHandler != nil {
+					r.Post("/commands/{commandId}/events", s.runtimeCommandWritebackHandler.RecordEvent)
+					r.Post("/commands/{commandId}/complete", s.runtimeCommandWritebackHandler.Complete)
+					r.Post("/commands/{commandId}/fail", s.runtimeCommandWritebackHandler.Fail)
+					r.Post("/commands/{commandId}/cancelled", s.runtimeCommandWritebackHandler.Cancel)
+					r.Post("/commands/{commandId}/timed-out", s.runtimeCommandWritebackHandler.TimedOut)
+				}
 				r.Get("/ws", s.runtimeHandler.WebSocket)
 			})
 

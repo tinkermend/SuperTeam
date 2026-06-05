@@ -39,6 +39,86 @@ export type DigitalEmployeeExecutionInstance = {
   updated_at?: string;
 };
 
+export type DigitalEmployeeRunStatus =
+  | "queued"
+  | "dispatching"
+  | "running"
+  | "cancelling"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "timed_out";
+
+export type DigitalEmployeeRunInput = {
+  objective: string;
+  prompt?: string;
+  context_refs?: Array<Record<string, unknown>>;
+  artifact_refs?: Array<Record<string, unknown>>;
+  output_schema?: Record<string, unknown>;
+  allowed_actions?: string[];
+  forbidden_actions?: string[];
+  secret_refs?: string[];
+  idempotency_key?: string;
+  timeout_sec?: number;
+  grace_sec?: number;
+  metadata?: Record<string, unknown>;
+};
+
+export type DigitalEmployeeRun = {
+  id: string;
+  tenant_id: string;
+  task_id: string;
+  digital_employee_id: string;
+  execution_instance_id: string;
+  runtime_node_id: string;
+  node_id: string;
+  command_id: string;
+  provider_type: string;
+  provider_session_id?: string;
+  provider_session_external_id?: string;
+  status: DigitalEmployeeRunStatus;
+  result: Record<string, unknown>;
+  diagnostic: Record<string, unknown>;
+  log_ref?: string;
+  raw_result_ref?: string;
+  work_products: Array<Record<string, unknown>>;
+  session_state: Record<string, unknown>;
+  error_message?: string;
+  error_code?: string;
+  error_family?: string;
+  exit_code?: number;
+  signal?: string;
+  timed_out: boolean;
+  idempotency_key?: string;
+  timeout_sec?: number;
+  grace_sec?: number;
+  started_at?: string;
+  completed_at?: string;
+  finished_at?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type DigitalEmployeeRunEvent = {
+  event_type: string;
+  sequence_number: number;
+  payload: Record<string, unknown>;
+  provider_session_external_id?: string;
+  session_state_patch?: Record<string, unknown>;
+  log_ref?: string;
+  raw_event_ref?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type RunPagination = {
+  limit?: number;
+  offset?: number;
+};
+
+export type StopDigitalEmployeeRunInput = {
+  reason: string;
+};
+
 export type CreateDigitalEmployeeInput = {
   team_id: string;
   name: string;
@@ -138,6 +218,34 @@ async function postJson<T>(options: ApiClientOptions, path: string, input: unkno
   return parseJson<T>(response, resource);
 }
 
+async function getJson<T>(options: ApiClientOptions, path: string, resource: string): Promise<T> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
+    credentials: "include",
+    headers: { accept: "application/json" },
+    method: "GET",
+  });
+
+  return parseJson<T>(response, resource);
+}
+
+function encodePathSegment(value: string) {
+  return encodeURIComponent(value);
+}
+
+function paginationQuery(pagination: RunPagination = {}) {
+  const searchParams = new URLSearchParams();
+  if (pagination.limit !== undefined) {
+    searchParams.set("limit", String(pagination.limit));
+  }
+  if (pagination.offset !== undefined) {
+    searchParams.set("offset", String(pagination.offset));
+  }
+  const query = searchParams.toString();
+
+  return query ? `?${query}` : "";
+}
+
 export async function listDigitalEmployees(
   options: ApiClientOptions,
   filters: ListDigitalEmployeesFilters = {},
@@ -158,6 +266,14 @@ export async function listDigitalEmployees(
   return parseJson<DigitalEmployee[]>(response, "digital employees");
 }
 
+export function getDigitalEmployee(options: ApiClientOptions, employeeId: string): Promise<DigitalEmployee> {
+  return getJson<DigitalEmployee>(
+    options,
+    `/api/v1/digital-employees/${encodePathSegment(employeeId)}`,
+    "digital employee",
+  );
+}
+
 export async function createDigitalEmployee(
   options: ApiClientOptions,
   input: CreateDigitalEmployeeInput,
@@ -169,18 +285,13 @@ export async function getDigitalEmployeeExecutionInstance(
   options: ApiClientOptions,
   employeeId: string,
 ): Promise<DigitalEmployeeExecutionInstance> {
-  const fetcher = options.fetcher ?? fetch;
-  const encodedEmployeeId = encodeURIComponent(employeeId);
-  const response = await fetcher(
-    buildApiUrl(options.baseUrl, `/api/v1/digital-employees/${encodedEmployeeId}/execution-instance`),
-    {
-      credentials: "include",
-      headers: { accept: "application/json" },
-      method: "GET",
-    },
-  );
+  const encodedEmployeeId = encodePathSegment(employeeId);
 
-  return parseJson<DigitalEmployeeExecutionInstance>(response, "digital employee execution instance");
+  return getJson<DigitalEmployeeExecutionInstance>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/execution-instance`,
+    "digital employee execution instance",
+  );
 }
 
 export function createDigitalEmployeeConfigRevision(
@@ -188,7 +299,7 @@ export function createDigitalEmployeeConfigRevision(
   employeeId: string,
   input: CreateDigitalEmployeeConfigRevisionInput,
 ): Promise<DigitalEmployeeConfigRevision> {
-  const encodedEmployeeId = encodeURIComponent(employeeId);
+  const encodedEmployeeId = encodePathSegment(employeeId);
   return postJson<DigitalEmployeeConfigRevision>(
     options,
     `/api/v1/digital-employees/${encodedEmployeeId}/config-revisions`,
@@ -202,7 +313,7 @@ export function previewDigitalEmployeeEffectiveConfig(
   employeeId: string,
   input: EffectiveConfigPreviewInput,
 ): Promise<EffectiveConfigPreview> {
-  const encodedEmployeeId = encodeURIComponent(employeeId);
+  const encodedEmployeeId = encodePathSegment(employeeId);
   return postJson<EffectiveConfigPreview>(
     options,
     `/api/v1/digital-employees/${encodedEmployeeId}/effective-configs/preview`,
@@ -216,11 +327,88 @@ export function approveDigitalEmployeeEffectiveConfig(
   employeeId: string,
   input: ApproveEffectiveConfigInput,
 ): Promise<DigitalEmployeeEffectiveConfig> {
-  const encodedEmployeeId = encodeURIComponent(employeeId);
+  const encodedEmployeeId = encodePathSegment(employeeId);
   return postJson<DigitalEmployeeEffectiveConfig>(
     options,
     `/api/v1/digital-employees/${encodedEmployeeId}/effective-configs/approve`,
     input,
     "approve digital employee effective config",
+  );
+}
+
+export function createDigitalEmployeeRun(
+  options: ApiClientOptions,
+  employeeId: string,
+  input: DigitalEmployeeRunInput,
+): Promise<DigitalEmployeeRun> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+
+  return postJson<DigitalEmployeeRun>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/runs`,
+    input,
+    "create digital employee run",
+  );
+}
+
+export function listDigitalEmployeeRuns(
+  options: ApiClientOptions,
+  employeeId: string,
+  pagination: RunPagination = {},
+): Promise<DigitalEmployeeRun[]> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+
+  return getJson<DigitalEmployeeRun[]>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/runs${paginationQuery(pagination)}`,
+    "digital employee runs",
+  );
+}
+
+export function getDigitalEmployeeRun(
+  options: ApiClientOptions,
+  employeeId: string,
+  runId: string,
+): Promise<DigitalEmployeeRun> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+  const encodedRunId = encodePathSegment(runId);
+
+  return getJson<DigitalEmployeeRun>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/runs/${encodedRunId}`,
+    "digital employee run",
+  );
+}
+
+export function listDigitalEmployeeRunEvents(
+  options: ApiClientOptions,
+  employeeId: string,
+  runId: string,
+  pagination: RunPagination = {},
+): Promise<DigitalEmployeeRunEvent[]> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+  const encodedRunId = encodePathSegment(runId);
+
+  return getJson<DigitalEmployeeRunEvent[]>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/runs/${encodedRunId}/events${paginationQuery(pagination)}`,
+    "digital employee run events",
+  );
+}
+
+export function stopDigitalEmployeeRun(
+  options: ApiClientOptions,
+  employeeId: string,
+  runId: string,
+  input: StopDigitalEmployeeRunInput,
+): Promise<DigitalEmployeeRun> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+  const encodedRunId = encodePathSegment(runId);
+
+  return postJson<DigitalEmployeeRun>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/runs/${encodedRunId}/stop`,
+    input,
+    "stop digital employee run",
   );
 }

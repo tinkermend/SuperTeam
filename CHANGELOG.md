@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-05 02:15：数字员工详情页接入执行闭环，支持开始任务、活跃运行轮询、事件流、结果、失败原因、历史运行切换和停止操作；Control Plane run events 改为读取真实 `task_events` 时间线，并补齐 run OpenAPI 契约。
+- 2026-06-05 01:44：数字员工 Runtime provisioning preflight 改为严格执行团队 Provider 与 Runtime allowlist，空或缺失 allowlist 不再默认放行，并补齐真实 SQL 查询测试覆盖策略拒绝与 enrollment 撤销。
+- 2026-06-05 01:37：数字员工 Runtime provisioning 创建链路补齐独立清理上下文、团队 Provider/Runtime 策略准入、Runtime session/enrollment 一致校验和 provisioning command payload 脱敏。
+- 2026-06-05 01:18：数字员工创建改为 Runtime provisioning 主链路，创建时要求 Runtime 节点和 Provider 类型，完成 DB preflight、WebSocket 在线校验、`provision_instance` command 下发、receipt 等待与失败清理，避免 Web 看到半成品执行实例。
+- 2026-06-05 01:04：Runtime command terminal 重放修复 task event 的 `raw_event_ref` 与 `log_ref` 投影，确保最小重放请求也使用已持久化 run 的结果与日志引用。
+- 2026-06-05 01:00：Runtime command writeback 继续收紧终态重放：Runtime 事件 metadata 写入前脱敏，同状态 terminal 重放改用已持久化 run 事实修补 receipt、task event 和 Provider projection，并拒绝冲突的结果投影。
+- 2026-06-05 00:52：Runtime command writeback 改为校验已认证 Runtime 节点身份，终态与 provisioning 回写在事务内锁定 command receipt 并修补重放投影，同时合并 Provider session patch 并脱敏 Runtime 来源的结构化敏感字段。
+- 2026-06-05 00:30：Runtime command writeback 补齐数字员工执行实例 provisioning 成功/失败的 ready 与清理状态回写，并允许终态 run 重放已持久化事件序号保持幂等。
+- 2026-06-05 00:08：数字员工 run Console API 分页参数改为按 int32 范围解析，避免超大 `offset` 在下传查询前发生整数截断。
+- 2026-06-05 00:03：数字员工 run Console API 移除响应中的内部 `idempotency_fingerprint`，补齐列表与事件分页参数校验和默认值，并将 Runtime dispatch 失败统一映射为运行时不可用。
 - 2026-06-04 14:49：Runtime Agent 删除旧版 `auth_token` 配置兼容入口，YAML、`RUNTIME_AGENT_AUTH_TOKEN` 环境变量和 CLI `--auth-token` 不再作为 `bootstrap_key` 兜底。
 - 2026-06-04 14:33：数字员工 API 授权从复用 `runtime_scope.manage` 改为独立 `employee.*` 业务 action，并按 tenant 集合资源和单个 employee 资源记录授权决策，为后续 OpenFGA 渐进接入保留稳定边界。
 - 2026-06-04 11:00：Web `Main` 布局组件改为默认铺满内容区，并新增 `contained` 窄版选项，后续控制台页面无需逐页传 `fluid` 即可复用权限中心式全宽布局。
@@ -54,6 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-05 00:24：Control Plane 新增 Runtime command HTTP writeback API，Runtime session auth 可回写 provider 事件、完成、失败、取消和超时终态，并将事实持久化到 command receipt、task run/event 与 Provider session/event 双投影。
+- 2026-06-04 23:48：Control Plane 暴露数字员工 run Console API 路由，支持创建、列表、详情、事件查询和停止，并接入独立 `employee.run.*` 授权 action 与真实 app wiring。
 - 2026-06-04 14:28：新增 `scripts/dev-services.sh` 本地开发服务管理脚本，支持 Control Plane、Web 和 Runtime Agent 的状态检查、启动、停止和重启，并以 `.scratch/dev-services` 记录 PID 与日志；新增脚本级测试覆盖启停与重启流程。
 - 2026-06-04 10:38：用户管理页按“用户 360 详情台”方向升级为主从详情工作台，使用权限中心一致的铺满页面布局，并调整为更宽的用户列表和三等宽概览卡片；页面接入用户列表、权限中心成员角色、登录日志和授权拒绝记录，并补齐新建用户、启用/禁用账号和重置密码入口。
 - 2026-06-04 05:20：团队列表搜索补齐负责人用户名、显示名和邮箱匹配，并修复新建团队失败后关闭重开抽屉仍显示旧错误的问题。

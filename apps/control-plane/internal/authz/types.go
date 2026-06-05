@@ -37,6 +37,9 @@ const (
 	ActionEmployeeConfigCreate  = "employee.config.create"
 	ActionEmployeeConfigPreview = "employee.config.preview"
 	ActionEmployeeConfigApprove = "employee.config.approve"
+	ActionEmployeeRunCreate     = "employee.run.create"
+	ActionEmployeeRunStop       = "employee.run.stop"
+	ActionEmployeeRunLogRead    = "employee.run.log.read"
 
 	ActionTeamCreate                      = "team.create"
 	ActionTeamRead                        = "team.read"

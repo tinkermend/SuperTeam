@@ -293,6 +293,22 @@ type ProviderSession struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// Provider 会话最后更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// Provider会话展示ID
+	SessionDisplayID pgtype.Text `json:"session_display_id"`
+	// Provider会话启动参数
+	SessionParams []byte `json:"session_params"`
+	// Provider适配器可恢复的会话状态
+	SessionState []byte `json:"session_state"`
+	// 最后处理的Provider事件序号
+	LastSequenceNumber int32 `json:"last_sequence_number"`
+	// 最后关联的Runtime命令ID
+	LastCommandID pgtype.Text `json:"last_command_id"`
+	// 最后关联的任务运行ID
+	LastRunID uuid.NullUUID `json:"last_run_id"`
+	// 最后一次错误分类
+	LastErrorFamily pgtype.Text `json:"last_error_family"`
+	// Runtime最后回写会话时间
+	LastRuntimeSeenAt pgtype.Timestamptz `json:"last_runtime_seen_at"`
 }
 
 // Provider 会话事件流表
@@ -327,6 +343,10 @@ type ProviderSessionEvent struct {
 	Metadata []byte `json:"metadata"`
 	// Provider 会话事件创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// Provider事件日志对象引用
+	LogRef pgtype.Text `json:"log_ref"`
+	// 事件携带的会话状态增量
+	SessionStatePatch []byte `json:"session_state_patch"`
 }
 
 // Runtime Agent 环境级接入引导密钥表
@@ -404,6 +424,42 @@ type RuntimeCapability struct {
 	// Runtime 能力首次上报时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// Runtime 能力最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Runtime 命令回执表，记录下发、回写和终态结果
+type RuntimeCommandReceipt struct {
+	// 命令回执ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 控制平面生成的命令ID
+	CommandID string `json:"command_id"`
+	// 命令类型
+	CommandType string `json:"command_type"`
+	// 目标Runtime节点UUID
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// 目标Runtime业务节点ID
+	NodeID string `json:"node_id"`
+	// 命令关联资源类型
+	ResourceType string `json:"resource_type"`
+	// 命令关联资源ID
+	ResourceID uuid.UUID `json:"resource_id"`
+	// 命令状态
+	Status string `json:"status"`
+	// 命令下发负载
+	Payload []byte `json:"payload"`
+	// 命令回写结果
+	Result []byte `json:"result"`
+	// 命令错误信息
+	ErrorMessage pgtype.Text `json:"error_message"`
+	// 命令下发时间
+	DispatchedAt pgtype.Timestamptz `json:"dispatched_at"`
+	// 命令完成时间
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	// 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
@@ -651,6 +707,14 @@ type TaskEvent struct {
 	Payload []byte `json:"payload"`
 	// 任务事件创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 事件关联的Runtime命令ID
+	CommandID pgtype.Text `json:"command_id"`
+	// 原始事件对象引用
+	RawEventRef pgtype.Text `json:"raw_event_ref"`
+	// 事件日志对象引用
+	LogRef pgtype.Text `json:"log_ref"`
+	// 任务事件扩展元数据
+	Metadata []byte `json:"metadata"`
 }
 
 // 任务运行记录表
@@ -685,6 +749,44 @@ type TaskRun struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 任务运行最后更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 运行关联的Runtime命令ID
+	CommandID pgtype.Text `json:"command_id"`
+	// 运行所属数字员工ID
+	DigitalEmployeeID uuid.NullUUID `json:"digital_employee_id"`
+	// 运行使用的执行实例ID
+	ExecutionInstanceID uuid.NullUUID `json:"execution_instance_id"`
+	// 运行创建幂等键
+	IdempotencyKey pgtype.Text `json:"idempotency_key"`
+	// 运行创建幂等指纹
+	IdempotencyFingerprint pgtype.Text `json:"idempotency_fingerprint"`
+	// 运行超时时间秒数
+	TimeoutSec pgtype.Int4 `json:"timeout_sec"`
+	// 停止宽限时间秒数
+	GraceSec pgtype.Int4 `json:"grace_sec"`
+	// 运行诊断信息
+	Diagnostic []byte `json:"diagnostic"`
+	// 运行日志对象引用
+	LogRef pgtype.Text `json:"log_ref"`
+	// 原始结果对象引用
+	RawResultRef pgtype.Text `json:"raw_result_ref"`
+	// 结构化工作产物列表
+	WorkProducts []byte `json:"work_products"`
+	// Provider会话状态快照
+	SessionState []byte `json:"session_state"`
+	// 运行错误码
+	ErrorCode pgtype.Text `json:"error_code"`
+	// 运行错误分类
+	ErrorFamily pgtype.Text `json:"error_family"`
+	// Provider进程退出码
+	ExitCode pgtype.Int4 `json:"exit_code"`
+	// Provider进程退出信号
+	Signal pgtype.Text `json:"signal"`
+	// 运行是否因超时终止
+	TimedOut bool `json:"timed_out"`
+	// 运行使用的Provider类型
+	ProviderType pgtype.Text `json:"provider_type"`
+	// Provider外部会话ID
+	ProviderSessionExternalID pgtype.Text `json:"provider_session_external_id"`
 }
 
 // 任务状态变更历史表

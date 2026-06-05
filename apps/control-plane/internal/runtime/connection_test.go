@@ -41,6 +41,37 @@ func TestConnectionRegistryDispatchMissingNodeReturnsErrRuntimeNotConnected(t *t
 	}
 }
 
+func TestConnectionRegistryIsConnected(t *testing.T) {
+	registry := NewConnectionRegistry()
+
+	if registry.IsConnected("node-1") {
+		t.Fatalf("expected missing node to be disconnected")
+	}
+
+	connection := registry.Register("node-1")
+	if !registry.IsConnected("node-1") {
+		t.Fatalf("expected registered node to be connected")
+	}
+
+	replacement := registry.Register("node-1")
+	if !registry.IsConnected("node-1") {
+		t.Fatalf("expected replacement connection to be connected")
+	}
+	if !isConnectionClosed(connection) {
+		t.Fatalf("expected replaced connection to be closed")
+	}
+
+	registry.Unregister("node-1", connection.ID)
+	if !registry.IsConnected("node-1") {
+		t.Fatalf("expected stale unregister not to disconnect replacement")
+	}
+
+	registry.Unregister("node-1", replacement.ID)
+	if registry.IsConnected("node-1") {
+		t.Fatalf("expected unregistered node to be disconnected")
+	}
+}
+
 func TestConnectionRegistryReplacesConnectionAndIgnoresStaleUnregister(t *testing.T) {
 	registry := NewConnectionRegistry()
 	oldConnection := registry.Register("node-1")
@@ -139,6 +170,15 @@ func TestConnectionRegistryFullChannelDispatchDoesNotBlockRegisterOrUnregister(t
 	assertCompletesQuickly(t, activeUnregisterDone, "active unregister")
 	unregisterCancel()
 	assertDispatchReturnsError(t, unregisterErrCh)
+}
+
+func isConnectionClosed(connection *RuntimeConnection) bool {
+	select {
+	case <-connection.Done():
+		return true
+	default:
+		return false
+	}
 }
 
 func fillCommandChannel(connection *RuntimeConnection) {
