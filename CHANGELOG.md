@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-06 00:38：完成数字员工创建闭环，实现 Owner 归属、专业类型注册表、创建候选接口、ready 创建编排、前端四步创建向导、OpenAPI 与数据库迁移。
 - 2026-06-05 18:05：优化 `AGENTS.md` 协作宪法，将项目、项目协调员、数字员工和人类归属人的规则收敛为宪法级边界；明确 Project 是场景中立的业务闭环容器，不定义封闭项目类型枚举，详细对象和流程规则保留在项目协调员控制平面设计文档中。
 - 2026-06-05 11:12：补齐 Runtime command writeback 与数字员工 run API 的 OpenAPI/Go route/Rust client/TypeScript client 契约守卫，合并后新增接口会纳入 `verify:contracts` 门禁。
 - 2026-06-05 10:52：合并后真实验证数字员工执行闭环，补齐 Runtime `provision_instance`、Provider 事件与终态 command writeback、`start_session` 输入 payload、Provider 能力真实探测和 `provider-run/v1` 任务隔离，避免 legacy polling 抢占数字员工 run。
