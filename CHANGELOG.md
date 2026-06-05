@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-06 01:02：修复 Web 全局搜索按钮在移动端 Header 中按长占位文案撑破视口的问题，保证数字员工创建页移动端视觉验证不出现业务 Header 溢出。
 - 2026-06-06 00:38：完成数字员工创建闭环，实现 Owner 归属、专业类型注册表、创建候选接口、ready 创建编排、前端四步创建向导、OpenAPI 与数据库迁移。
 - 2026-06-05 18:05：优化 `AGENTS.md` 协作宪法，将项目、项目协调员、数字员工和人类归属人的规则收敛为宪法级边界；明确 Project 是场景中立的业务闭环容器，不定义封闭项目类型枚举，详细对象和流程规则保留在项目协调员控制平面设计文档中。
 - 2026-06-05 11:12：补齐 Runtime command writeback 与数字员工 run API 的 OpenAPI/Go route/Rust client/TypeScript client 契约守卫，合并后新增接口会纳入 `verify:contracts` 门禁。

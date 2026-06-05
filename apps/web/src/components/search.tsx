@@ -14,7 +14,7 @@ export function Search({
       {...props}
       variant='outline'
       className={cn(
-        'superteam-search-glass group relative h-9 w-full flex-1 justify-start rounded-lg text-sm font-normal text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-primary/30 sm:w-48 sm:pe-12 md:flex-none lg:w-72 xl:w-96',
+        'superteam-search-glass group relative h-9 min-w-0 flex-1 justify-start rounded-lg text-sm font-normal text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-primary/30 sm:w-48 sm:pe-12 md:flex-none lg:w-72 xl:w-96',
         className
       )}
       aria-keyshortcuts='Meta+K Control+K'
@@ -25,7 +25,7 @@ export function Search({
         className='absolute inset-s-1.5 top-1/2 -translate-y-1/2'
         size={16}
       />
-      <span className='ms-4 truncate'>{placeholder}</span>
+      <span className='ms-4 min-w-0 truncate'>{placeholder}</span>
       <kbd className='pointer-events-none absolute inset-e-[0.35rem] top-[0.35rem] hidden h-5 items-center gap-1 rounded-md border border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-primary-soft)] px-1.5 font-mono text-[10px] font-medium text-primary opacity-100 select-none sm:flex'>
         <span className='text-xs'>⌘</span>K
       </kbd>
