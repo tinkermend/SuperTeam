@@ -44,6 +44,9 @@ func TestRuntimeRoutesAreRegistered(t *testing.T) {
 		{method: http.MethodGet, path: "/api/v1/runtime/nodes/node-1"},
 		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/hello", body: `{"node_id":"node-1","bootstrap_key":"bootstrap-secret","name":"node 1","supported_providers":["codex"],"max_slots":1}`},
 		{method: http.MethodGet, path: "/api/v1/runtime/enrollments"},
+		{method: http.MethodGet, path: "/api/v1/runtime/overview"},
+		{method: http.MethodGet, path: "/api/v1/runtime/events"},
+		{method: http.MethodGet, path: "/api/v1/runtime/nodes/node-1/capabilities"},
 		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/11111111-1111-1111-1111-111111111111/approve"},
 		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/11111111-1111-1111-1111-111111111111/reject", body: `{"reason":"not allowed"}`},
 		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/11111111-1111-1111-1111-111111111111/revoke", body: `{"reason":"rotated"}`},
@@ -134,6 +137,39 @@ func TestRuntimeEnrollmentManagementRoutesRequireConsoleUserAuth(t *testing.T) {
 	}
 }
 
+func TestRuntimeOverviewRoutesRequireConsoleAuth(t *testing.T) {
+	service := &routeRuntimeService{}
+	server := NewServer(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+	)
+
+	tests := []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/api/v1/runtime/overview"},
+		{method: http.MethodGet, path: "/api/v1/runtime/events"},
+		{method: http.MethodGet, path: "/api/v1/runtime/nodes/node-1/capabilities"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			resp := httptest.NewRecorder()
+
+			server.ServeHTTP(resp, req)
+
+			if resp.Code != http.StatusUnauthorized {
+				t.Fatalf("expected unauthenticated runtime overview route to return 401, got %d: %s", resp.Code, resp.Body.String())
+			}
+		})
+	}
+	if service.getOverviewCalled || service.listEventsCalled || service.listCapabilitiesCalled {
+		t.Fatalf("expected unauthenticated runtime overview routes not to call runtime service: %#v", service)
+	}
+}
+
 func TestRuntimeEnrollmentManagementRoutesUseConsoleUserAuth(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -169,6 +205,54 @@ func TestRuntimeEnrollmentManagementRoutesUseConsoleUserAuth(t *testing.T) {
 	}
 	if !service.listEnrollmentsCalled {
 		t.Fatalf("expected list enrollments to call runtime service")
+	}
+
+	overviewReq := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/overview", nil)
+	overviewReq.AddCookie(cookie)
+	overviewResp := httptest.NewRecorder()
+	server.ServeHTTP(overviewResp, overviewReq)
+	if overviewResp.Code != http.StatusOK {
+		t.Fatalf("expected authenticated runtime overview to succeed, got %d: %s", overviewResp.Code, overviewResp.Body.String())
+	}
+	if !service.getOverviewCalled {
+		t.Fatalf("expected runtime overview to call runtime service")
+	}
+
+	eventsReq := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/events?limit=25&offset=5&event_type=capability_degraded&severity=warning&node_id=node-1&provider_type=codex", nil)
+	eventsReq.AddCookie(cookie)
+	eventsResp := httptest.NewRecorder()
+	server.ServeHTTP(eventsResp, eventsReq)
+	if eventsResp.Code != http.StatusOK {
+		t.Fatalf("expected authenticated runtime events to succeed, got %d: %s", eventsResp.Code, eventsResp.Body.String())
+	}
+	if !service.listEventsCalled {
+		t.Fatalf("expected runtime events to call runtime service")
+	}
+	if service.eventsFilter.Limit != 25 || service.eventsFilter.Offset != 5 {
+		t.Fatalf("expected runtime events pagination filter, got %#v", service.eventsFilter)
+	}
+	if service.eventsFilter.EventType == nil || *service.eventsFilter.EventType != runtime.RuntimeEventCapabilityDegraded {
+		t.Fatalf("expected runtime events event_type filter, got %#v", service.eventsFilter.EventType)
+	}
+	if service.eventsFilter.Severity == nil || *service.eventsFilter.Severity != runtime.RuntimeEventSeverity("warning") {
+		t.Fatalf("expected runtime events severity filter, got %#v", service.eventsFilter.Severity)
+	}
+	if service.eventsFilter.NodeID == nil || *service.eventsFilter.NodeID != "node-1" {
+		t.Fatalf("expected runtime events node_id filter, got %#v", service.eventsFilter.NodeID)
+	}
+	if service.eventsFilter.ProviderType == nil || *service.eventsFilter.ProviderType != "codex" {
+		t.Fatalf("expected runtime events provider_type filter, got %#v", service.eventsFilter.ProviderType)
+	}
+
+	capabilitiesReq := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/nodes/node-1/capabilities", nil)
+	capabilitiesReq.AddCookie(cookie)
+	capabilitiesResp := httptest.NewRecorder()
+	server.ServeHTTP(capabilitiesResp, capabilitiesReq)
+	if capabilitiesResp.Code != http.StatusOK {
+		t.Fatalf("expected authenticated runtime node capabilities to succeed, got %d: %s", capabilitiesResp.Code, capabilitiesResp.Body.String())
+	}
+	if !service.listCapabilitiesCalled || service.capabilitiesNodeID != "node-1" {
+		t.Fatalf("expected runtime node capabilities service call for node-1, got called=%v node=%q", service.listCapabilitiesCalled, service.capabilitiesNodeID)
 	}
 
 	approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/enrollments/"+routeTaskID+"/approve", nil)
@@ -207,6 +291,184 @@ func TestRuntimeEnrollmentManagementRoutesUseConsoleUserAuth(t *testing.T) {
 	}
 }
 
+func TestRuntimeOverviewAndEventsResponsesUseRuntimeConsoleShape(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	zeroNodeEvent := runtime.RuntimeEvent{
+		ID:            uuid.MustParse("77777777-7777-7777-7777-777777777777"),
+		TenantID:      runtime.DefaultTenantID,
+		EventType:     runtime.RuntimeEventCommandEvent,
+		Severity:      runtime.RuntimeEventSeverityInfo,
+		Source:        runtime.RuntimeEventSourceRuntimeCommand,
+		Title:         "command event",
+		ProviderType:  "codex",
+		CorrelationID: "cmd-1",
+		CreatedAt:     time.Date(2026, 6, 5, 7, 0, 0, 0, time.UTC),
+	}
+	nodeEvent := runtime.RuntimeEvent{
+		ID:            uuid.MustParse("88888888-8888-8888-8888-888888888888"),
+		TenantID:      runtime.DefaultTenantID,
+		RuntimeNodeID: uuid.MustParse("44444444-4444-4444-4444-444444444444"),
+		NodeID:        "node-1",
+		EventType:     runtime.RuntimeEventCapabilityReported,
+		Severity:      runtime.RuntimeEventSeveritySuccess,
+		Source:        runtime.RuntimeEventSourceCapability,
+		Title:         "capability reported",
+		CreatedAt:     time.Date(2026, 6, 5, 7, 1, 0, 0, time.UTC),
+	}
+	service := &routeRuntimeService{
+		runtimeOverview: &runtime.RuntimeOverview{
+			Summary: runtime.RuntimeOverviewSummary{
+				OnlineNodes:            1,
+				TotalNodes:             2,
+				PendingEnrollments:     3,
+				ActiveProviderSessions: 4,
+				BlockedEvents:          5,
+			},
+			ProviderCapabilities: []runtime.RuntimeProviderCapabilitySummary{{
+				ProviderType:   "codex",
+				NodeCount:      2,
+				AvailableCount: 1,
+				HealthyCount:   1,
+				LastSeenAt:     time.Date(2026, 6, 5, 7, 2, 0, 0, time.UTC),
+			}},
+			RecentEvents: []runtime.RuntimeEvent{zeroNodeEvent, nodeEvent},
+		},
+		runtimeEvents: []runtime.RuntimeEvent{zeroNodeEvent, nodeEvent},
+	}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	overviewReq := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/overview", nil)
+	overviewReq.AddCookie(cookie)
+	overviewResp := httptest.NewRecorder()
+	server.ServeHTTP(overviewResp, overviewReq)
+	if overviewResp.Code != http.StatusOK {
+		t.Fatalf("expected runtime overview to succeed, got %d: %s", overviewResp.Code, overviewResp.Body.String())
+	}
+	var overview map[string]any
+	if err := json.NewDecoder(overviewResp.Body).Decode(&overview); err != nil {
+		t.Fatalf("decode overview response: %v", err)
+	}
+	summary, ok := overview["summary"].(map[string]any)
+	if !ok || summary["online_nodes"] != float64(1) || summary["active_provider_sessions"] != float64(4) {
+		t.Fatalf("expected snake_case overview summary, got %#v", overview["summary"])
+	}
+	if _, ok := overview["provider_capabilities"]; !ok {
+		t.Fatalf("expected provider_capabilities key in overview response: %#v", overview)
+	}
+	overviewEvents, ok := overview["recent_events"].([]any)
+	if !ok || len(overviewEvents) != 2 {
+		t.Fatalf("expected two recent_events in overview response, got %#v", overview["recent_events"])
+	}
+	assertRuntimeEventNodeIdentityOmitted(t, overviewEvents[0])
+	assertRuntimeEventNodeIdentityPresent(t, overviewEvents[1], "44444444-4444-4444-4444-444444444444", "node-1")
+
+	eventsReq := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/events?limit=2&offset=1", nil)
+	eventsReq.AddCookie(cookie)
+	eventsResp := httptest.NewRecorder()
+	server.ServeHTTP(eventsResp, eventsReq)
+	if eventsResp.Code != http.StatusOK {
+		t.Fatalf("expected runtime events to succeed, got %d: %s", eventsResp.Code, eventsResp.Body.String())
+	}
+	var eventsBody map[string]any
+	if err := json.NewDecoder(eventsResp.Body).Decode(&eventsBody); err != nil {
+		t.Fatalf("decode events response: %v", err)
+	}
+	if eventsBody["limit"] != float64(2) || eventsBody["offset"] != float64(1) {
+		t.Fatalf("expected events pagination keys, got %#v", eventsBody)
+	}
+	items, ok := eventsBody["items"].([]any)
+	if !ok || len(items) != 2 {
+		t.Fatalf("expected events items array, got %#v", eventsBody["items"])
+	}
+	assertRuntimeEventNodeIdentityOmitted(t, items[0])
+	assertRuntimeEventNodeIdentityPresent(t, items[1], "44444444-4444-4444-4444-444444444444", "node-1")
+	firstEvent, ok := items[0].(map[string]any)
+	if !ok || firstEvent["event_type"] != string(runtime.RuntimeEventCommandEvent) || firstEvent["provider_type"] != "codex" {
+		t.Fatalf("expected snake_case runtime event fields, got %#v", items[0])
+	}
+}
+
+func TestRuntimeEventsRejectInvalidFilters(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+	}{
+		{name: "event type", path: "/api/v1/runtime/events?event_type=capability.changed"},
+		{name: "severity", path: "/api/v1/runtime/events?severity=urgent"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authService, err := auth.NewService(newRouteAuthRepo())
+			if err != nil {
+				t.Fatalf("new auth service: %v", err)
+			}
+			if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+				t.Fatalf("create user: %v", err)
+			}
+			service := &routeRuntimeService{}
+			server := NewServerWithAuthz(
+				handlers.NewTaskHandler(&routeTaskService{}),
+				handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+				authService,
+				nil,
+				&routeAuthorizer{allowed: true},
+			)
+			cookie := routeLogin(t, server, "admin", "admin")
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			req.AddCookie(cookie)
+			resp := httptest.NewRecorder()
+
+			server.ServeHTTP(resp, req)
+
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("expected invalid runtime event filter to return 400, got %d: %s", resp.Code, resp.Body.String())
+			}
+			if service.listEventsCalled {
+				t.Fatalf("expected invalid runtime event filter not to call runtime service")
+			}
+		})
+	}
+}
+
+func assertRuntimeEventNodeIdentityOmitted(t *testing.T, raw any) {
+	t.Helper()
+	event, ok := raw.(map[string]any)
+	if !ok {
+		t.Fatalf("expected runtime event object, got %#v", raw)
+	}
+	if _, ok := event["runtime_node_id"]; ok {
+		t.Fatalf("expected zero runtime_node_id to be omitted, got %#v", event)
+	}
+	if _, ok := event["node_id"]; ok {
+		t.Fatalf("expected empty node_id to be omitted, got %#v", event)
+	}
+}
+
+func assertRuntimeEventNodeIdentityPresent(t *testing.T, raw any, runtimeNodeID string, nodeID string) {
+	t.Helper()
+	event, ok := raw.(map[string]any)
+	if !ok {
+		t.Fatalf("expected runtime event object, got %#v", raw)
+	}
+	if event["runtime_node_id"] != runtimeNodeID || event["node_id"] != nodeID {
+		t.Fatalf("expected runtime event node identity %s/%s, got %#v", runtimeNodeID, nodeID, event)
+	}
+}
+
 func TestRuntimeEnrollmentManagementRoutesRequireAuthorization(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -232,6 +494,9 @@ func TestRuntimeEnrollmentManagementRoutesRequireAuthorization(t *testing.T) {
 		body   string
 	}{
 		{method: http.MethodGet, path: "/api/v1/runtime/enrollments"},
+		{method: http.MethodGet, path: "/api/v1/runtime/overview"},
+		{method: http.MethodGet, path: "/api/v1/runtime/events"},
+		{method: http.MethodGet, path: "/api/v1/runtime/nodes/node-1/capabilities"},
 		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/" + routeTaskID + "/approve"},
 		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/" + routeTaskID + "/reject", body: `{"reason":"denied"}`},
 		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/" + routeTaskID + "/revoke", body: `{"reason":"denied"}`},
@@ -250,7 +515,7 @@ func TestRuntimeEnrollmentManagementRoutesRequireAuthorization(t *testing.T) {
 			}
 		})
 	}
-	if service.listEnrollmentsCalled || service.approveEnrollmentCalled || service.rejectEnrollmentCalled || service.revokeEnrollmentCalled {
+	if service.listEnrollmentsCalled || service.getOverviewCalled || service.listEventsCalled || service.listCapabilitiesCalled || service.approveEnrollmentCalled || service.rejectEnrollmentCalled || service.revokeEnrollmentCalled {
 		t.Fatalf("expected denied management routes not to call runtime service: %#v", service)
 	}
 	if len(authorizer.checks) != len(tests) {
@@ -1267,9 +1532,18 @@ type routeRuntimeService struct {
 	renewedSessionToken     string
 	upsertedCapabilities    []runtime.RuntimeCapabilityInput
 	listEnrollmentsCalled   bool
+	getOverviewCalled       bool
+	listEventsCalled        bool
+	listCapabilitiesCalled  bool
 	approveEnrollmentCalled bool
 	rejectEnrollmentCalled  bool
 	revokeEnrollmentCalled  bool
+	overviewTenantID        uuid.UUID
+	eventsFilter            runtime.ListRuntimeEventsFilter
+	capabilitiesTenantID    uuid.UUID
+	capabilitiesNodeID      string
+	runtimeOverview         *runtime.RuntimeOverview
+	runtimeEvents           []runtime.RuntimeEvent
 	approvedEnrollmentID    uuid.UUID
 	rejectedReason          string
 	revokedReason           string
@@ -1320,6 +1594,31 @@ func (s *routeRuntimeService) ListRuntimeEnrollments(ctx context.Context, filter
 	s.listEnrollmentsCalled = true
 	s.listEnrollmentsTenantID = filter.TenantID
 	return []*runtime.RuntimeEnrollment{}, nil
+}
+
+func (s *routeRuntimeService) GetOverview(ctx context.Context, filter runtime.RuntimeOverviewFilter) (*runtime.RuntimeOverview, error) {
+	s.getOverviewCalled = true
+	s.overviewTenantID = filter.TenantID
+	if s.runtimeOverview != nil {
+		return s.runtimeOverview, nil
+	}
+	return &runtime.RuntimeOverview{}, nil
+}
+
+func (s *routeRuntimeService) ListRuntimeEvents(ctx context.Context, filter runtime.ListRuntimeEventsFilter) ([]runtime.RuntimeEvent, error) {
+	s.listEventsCalled = true
+	s.eventsFilter = filter
+	if s.runtimeEvents != nil {
+		return s.runtimeEvents, nil
+	}
+	return []runtime.RuntimeEvent{}, nil
+}
+
+func (s *routeRuntimeService) ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtime.RuntimeCapability, error) {
+	s.listCapabilitiesCalled = true
+	s.capabilitiesTenantID = tenantID
+	s.capabilitiesNodeID = nodeID
+	return []runtime.RuntimeCapability{}, nil
 }
 
 func (s *routeRuntimeService) ApproveEnrollment(ctx context.Context, req runtime.ApproveEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
@@ -1390,6 +1689,18 @@ func (s *routeRuntimeService) UpsertCapabilities(ctx context.Context, token stri
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}}, nil
+}
+
+func (s *fakeRuntimeService) GetOverview(ctx context.Context, filter runtime.RuntimeOverviewFilter) (*runtime.RuntimeOverview, error) {
+	return &runtime.RuntimeOverview{}, nil
+}
+
+func (s *fakeRuntimeService) ListRuntimeEvents(ctx context.Context, filter runtime.ListRuntimeEventsFilter) ([]runtime.RuntimeEvent, error) {
+	return []runtime.RuntimeEvent{}, nil
+}
+
+func (s *fakeRuntimeService) ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtime.RuntimeCapability, error) {
+	return []runtime.RuntimeCapability{}, nil
 }
 
 type routeTaskService struct {

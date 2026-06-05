@@ -350,6 +350,57 @@ paths:
                 $ref: "#/components/schemas/RuntimeNode"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/runtime/overview:
+    get:
+      operationId: getRuntimeOverview
+      summary: Get Runtime Agent fleet overview
+      responses:
+        "200":
+          description: Runtime overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeOverview"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/runtime/events:
+    get:
+      operationId: listRuntimeEvents
+      summary: List Runtime Agent events
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: event_type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/RuntimeEventType"
+        - name: severity
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/RuntimeEventSeverity"
+        - name: node_id
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: provider_type
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Runtime event list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeEventList"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/runtime/enrollments/hello:
     post:
       operationId: runtimeEnrollmentHello
@@ -1802,6 +1853,174 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RuntimeCapabilityInput"
+    RuntimeOverview:
+      type: object
+      required:
+        - summary
+        - pending_enrollments
+        - nodes
+        - provider_capabilities
+        - recent_events
+      properties:
+        summary:
+          $ref: "#/components/schemas/RuntimeOverviewSummary"
+        pending_enrollments:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeEnrollment"
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeNode"
+        provider_capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeProviderCapabilitySummary"
+        recent_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeEvent"
+    RuntimeOverviewSummary:
+      type: object
+      required:
+        - online_nodes
+        - total_nodes
+        - pending_enrollments
+        - active_provider_sessions
+        - blocked_events
+      properties:
+        online_nodes:
+          type: integer
+          format: int64
+        total_nodes:
+          type: integer
+          format: int64
+        pending_enrollments:
+          type: integer
+          format: int64
+        active_provider_sessions:
+          type: integer
+          format: int64
+        blocked_events:
+          type: integer
+          format: int64
+    RuntimeProviderCapabilitySummary:
+      type: object
+      required:
+        - provider_type
+        - node_count
+        - available_count
+        - healthy_count
+      properties:
+        provider_type:
+          type: string
+        node_count:
+          type: integer
+          format: int64
+        available_count:
+          type: integer
+          format: int64
+        healthy_count:
+          type: integer
+          format: int64
+        last_seen_at:
+          type: string
+          format: date-time
+    RuntimeEventType:
+      type: string
+      enum:
+        - enrollment_requested
+        - enrollment_approved
+        - enrollment_rejected
+        - enrollment_revoked
+        - node_online
+        - node_offline
+        - capability_reported
+        - capability_degraded
+        - command_event
+        - command_completed
+        - command_failed
+        - command_cancelled
+        - command_timed_out
+    RuntimeEventSeverity:
+      type: string
+      enum:
+        - info
+        - success
+        - warning
+        - error
+    RuntimeEventSource:
+      type: string
+      enum:
+        - runtime_enrollment
+        - runtime_node
+        - runtime_capability
+        - runtime_command
+        - provider_session
+    RuntimeEvent:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - event_type
+        - severity
+        - source
+        - title
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        runtime_node_id:
+          type: string
+          format: uuid
+        node_id:
+          type: string
+          minLength: 1
+        event_type:
+          $ref: "#/components/schemas/RuntimeEventType"
+        severity:
+          $ref: "#/components/schemas/RuntimeEventSeverity"
+        source:
+          $ref: "#/components/schemas/RuntimeEventSource"
+        title:
+          type: string
+        description:
+          type: string
+        provider_type:
+          type: string
+        correlation_type:
+          type: string
+        correlation_id:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    RuntimeEventList:
+      type: object
+      required:
+        - items
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeEvent"
+        limit:
+          type: integer
+          format: int32
+          minimum: 0
+        offset:
+          type: integer
+          format: int32
+          minimum: 0
     Team:
       type: object
       required:

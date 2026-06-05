@@ -33,6 +33,9 @@ type RuntimeService interface {
 	RevokeEnrollment(ctx context.Context, req runtime.RevokeEnrollmentRequest) (*runtime.RuntimeEnrollment, error)
 	RenewRuntimeSession(ctx context.Context, token string) (*runtime.RuntimeSession, error)
 	UpsertCapabilities(ctx context.Context, token string, capabilities []runtime.RuntimeCapabilityInput) ([]runtime.RuntimeCapability, error)
+	GetOverview(ctx context.Context, filter runtime.RuntimeOverviewFilter) (*runtime.RuntimeOverview, error)
+	ListRuntimeEvents(ctx context.Context, filter runtime.ListRuntimeEventsFilter) ([]runtime.RuntimeEvent, error)
+	ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtime.RuntimeCapability, error)
 }
 
 type Poller interface {
@@ -164,6 +167,92 @@ func (h *RuntimeHandler) ListRuntimeEnrollments(w http.ResponseWriter, r *http.R
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(newRuntimeEnrollmentResponses(enrollments))
+}
+
+func (h *RuntimeHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := h.authorizeRuntimeEnrollmentManagement(w, r, "runtime overview read")
+	if !ok {
+		return
+	}
+
+	overview, err := h.runtimeService.GetOverview(r.Context(), runtime.RuntimeOverviewFilter{
+		TenantID: tenantID,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(newRuntimeOverviewResponse(overview))
+}
+
+func (h *RuntimeHandler) ListRuntimeEvents(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := h.authorizeRuntimeEnrollmentManagement(w, r, "runtime events read")
+	if !ok {
+		return
+	}
+	limit, offset := runtimeListPaginationFromRequest(r)
+	filter := runtime.ListRuntimeEventsFilter{
+		TenantID: tenantID,
+		Limit:    limit,
+		Offset:   offset,
+	}
+	if eventType := r.URL.Query().Get("event_type"); eventType != "" {
+		parsed := runtime.RuntimeEventType(eventType)
+		if !parsed.IsValid() {
+			http.Error(w, "invalid event_type", http.StatusBadRequest)
+			return
+		}
+		filter.EventType = &parsed
+	}
+	if severity := r.URL.Query().Get("severity"); severity != "" {
+		parsed := runtime.RuntimeEventSeverity(severity)
+		if !parsed.IsValid() {
+			http.Error(w, "invalid severity", http.StatusBadRequest)
+			return
+		}
+		filter.Severity = &parsed
+	}
+	if nodeID := r.URL.Query().Get("node_id"); nodeID != "" {
+		filter.NodeID = &nodeID
+	}
+	if providerType := r.URL.Query().Get("provider_type"); providerType != "" {
+		filter.ProviderType = &providerType
+	}
+
+	events, err := h.runtimeService.ListRuntimeEvents(r.Context(), filter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(newRuntimeEventListResponse(events, limit, offset))
+}
+
+func (h *RuntimeHandler) ListRuntimeCapabilitiesForNode(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := h.authorizeRuntimeEnrollmentManagement(w, r, "runtime capabilities read")
+	if !ok {
+		return
+	}
+	nodeID := chi.URLParam(r, "nodeId")
+	if nodeID == "" {
+		nodeID = chi.URLParam(r, "id")
+	}
+	if nodeID == "" {
+		http.Error(w, "node id is required", http.StatusBadRequest)
+		return
+	}
+
+	capabilities, err := h.runtimeService.ListRuntimeCapabilitiesForNode(r.Context(), tenantID, nodeID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(newRuntimeCapabilityResponses(capabilities))
 }
 
 func (h *RuntimeHandler) ApproveEnrollment(w http.ResponseWriter, r *http.Request) {
@@ -716,6 +805,150 @@ func decisionReasonFromRequest(w http.ResponseWriter, r *http.Request) (string, 
 		return "", false
 	}
 	return req.Reason, true
+}
+
+func runtimeListPaginationFromRequest(r *http.Request) (int32, int32) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return int32(limit), int32(offset)
+}
+
+type runtimeOverviewResponse struct {
+	Summary              runtimeOverviewSummaryResponse             `json:"summary"`
+	PendingEnrollments   []runtimeEnrollmentResponse                `json:"pending_enrollments"`
+	Nodes                []runtimeNodeResponse                      `json:"nodes"`
+	ProviderCapabilities []runtimeProviderCapabilitySummaryResponse `json:"provider_capabilities"`
+	RecentEvents         []runtimeEventResponse                     `json:"recent_events"`
+}
+
+type runtimeOverviewSummaryResponse struct {
+	OnlineNodes            int64 `json:"online_nodes"`
+	TotalNodes             int64 `json:"total_nodes"`
+	PendingEnrollments     int64 `json:"pending_enrollments"`
+	ActiveProviderSessions int64 `json:"active_provider_sessions"`
+	BlockedEvents          int64 `json:"blocked_events"`
+}
+
+type runtimeProviderCapabilitySummaryResponse struct {
+	ProviderType   string `json:"provider_type"`
+	NodeCount      int64  `json:"node_count"`
+	AvailableCount int64  `json:"available_count"`
+	HealthyCount   int64  `json:"healthy_count"`
+	LastSeenAt     string `json:"last_seen_at,omitempty"`
+}
+
+type runtimeEventResponse struct {
+	ID              string                       `json:"id"`
+	TenantID        string                       `json:"tenant_id"`
+	RuntimeNodeID   *string                      `json:"runtime_node_id,omitempty"`
+	NodeID          string                       `json:"node_id,omitempty"`
+	EventType       runtime.RuntimeEventType     `json:"event_type"`
+	Severity        runtime.RuntimeEventSeverity `json:"severity"`
+	Source          runtime.RuntimeEventSource   `json:"source"`
+	Title           string                       `json:"title"`
+	Description     string                       `json:"description,omitempty"`
+	ProviderType    string                       `json:"provider_type,omitempty"`
+	CorrelationType string                       `json:"correlation_type,omitempty"`
+	CorrelationID   string                       `json:"correlation_id,omitempty"`
+	Payload         map[string]interface{}       `json:"payload,omitempty"`
+	CreatedAt       string                       `json:"created_at,omitempty"`
+}
+
+type runtimeEventListResponse struct {
+	Items  []runtimeEventResponse `json:"items"`
+	Limit  int32                  `json:"limit"`
+	Offset int32                  `json:"offset"`
+}
+
+func newRuntimeOverviewResponse(overview *runtime.RuntimeOverview) runtimeOverviewResponse {
+	if overview == nil {
+		return runtimeOverviewResponse{
+			PendingEnrollments:   []runtimeEnrollmentResponse{},
+			Nodes:                []runtimeNodeResponse{},
+			ProviderCapabilities: []runtimeProviderCapabilitySummaryResponse{},
+			RecentEvents:         []runtimeEventResponse{},
+		}
+	}
+	return runtimeOverviewResponse{
+		Summary: runtimeOverviewSummaryResponse{
+			OnlineNodes:            overview.Summary.OnlineNodes,
+			TotalNodes:             overview.Summary.TotalNodes,
+			PendingEnrollments:     overview.Summary.PendingEnrollments,
+			ActiveProviderSessions: overview.Summary.ActiveProviderSessions,
+			BlockedEvents:          overview.Summary.BlockedEvents,
+		},
+		PendingEnrollments:   newRuntimeEnrollmentResponses(overview.PendingEnrollments),
+		Nodes:                newRuntimeNodeResponses(overview.Nodes),
+		ProviderCapabilities: newRuntimeProviderCapabilitySummaryResponses(overview.ProviderCapabilities),
+		RecentEvents:         newRuntimeEventResponses(overview.RecentEvents),
+	}
+}
+
+func newRuntimeProviderCapabilitySummaryResponses(summaries []runtime.RuntimeProviderCapabilitySummary) []runtimeProviderCapabilitySummaryResponse {
+	responses := make([]runtimeProviderCapabilitySummaryResponse, 0, len(summaries))
+	for _, summary := range summaries {
+		response := runtimeProviderCapabilitySummaryResponse{
+			ProviderType:   summary.ProviderType,
+			NodeCount:      summary.NodeCount,
+			AvailableCount: summary.AvailableCount,
+			HealthyCount:   summary.HealthyCount,
+		}
+		if !summary.LastSeenAt.IsZero() {
+			response.LastSeenAt = summary.LastSeenAt.UTC().Format(timeRFC3339Nano)
+		}
+		responses = append(responses, response)
+	}
+	return responses
+}
+
+func newRuntimeEventListResponse(events []runtime.RuntimeEvent, limit int32, offset int32) runtimeEventListResponse {
+	return runtimeEventListResponse{
+		Items:  newRuntimeEventResponses(events),
+		Limit:  limit,
+		Offset: offset,
+	}
+}
+
+func newRuntimeEventResponses(events []runtime.RuntimeEvent) []runtimeEventResponse {
+	responses := make([]runtimeEventResponse, 0, len(events))
+	for _, event := range events {
+		responses = append(responses, newRuntimeEventResponse(event))
+	}
+	return responses
+}
+
+func newRuntimeEventResponse(event runtime.RuntimeEvent) runtimeEventResponse {
+	response := runtimeEventResponse{
+		ID:              event.ID.String(),
+		TenantID:        event.TenantID.String(),
+		NodeID:          event.NodeID,
+		EventType:       event.EventType,
+		Severity:        event.Severity,
+		Source:          event.Source,
+		Title:           event.Title,
+		Description:     event.Description,
+		ProviderType:    event.ProviderType,
+		CorrelationType: event.CorrelationType,
+		CorrelationID:   event.CorrelationID,
+		Payload:         event.Payload,
+	}
+	if event.RuntimeNodeID != uuid.Nil {
+		runtimeNodeID := event.RuntimeNodeID.String()
+		response.RuntimeNodeID = &runtimeNodeID
+	}
+	if !event.CreatedAt.IsZero() {
+		response.CreatedAt = event.CreatedAt.UTC().Format(timeRFC3339Nano)
+	}
+	return response
 }
 
 func capabilityInputsFromRequest(w http.ResponseWriter, r *http.Request) ([]runtime.RuntimeCapabilityInput, bool) {
