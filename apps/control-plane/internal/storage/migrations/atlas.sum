@@ -1,4 +1,4 @@
-h1:wIIaluvAMeWP6LLUh8IWDYFvgxcx1LpoFoecx4nvXVA=
+h1:OEmUtiTy0hkwaDU3znEQkY+0mwj6Ti5bgscE+D5qZgo=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -6,3 +6,4 @@ h1:wIIaluvAMeWP6LLUh8IWDYFvgxcx1LpoFoecx4nvXVA=
 005_add_auth_user_avatar.sql h1:G3uZ+RXpvnld3P6AeBMK9S3OHddMPAXbW/xfg836Zrk=
 006_digital_employee_run_loop.sql h1:I/b9F1GgmOhQwRDkrDJtS4QYEDhiUXsQXxEynpHTX84=
 007_runtime_events_overview.sql h1:/ISz35buSusUB3WZMO33MqRkTTL/3Ykg9aSUwUiGryU=
+008_digital_employee_creation_ready.sql h1:MnWwCc40ITh2mp0pny7fq8B0ND5mMg6eH6X6NUkyz00=

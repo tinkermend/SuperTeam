@@ -183,6 +183,40 @@ func TestAuthUserAvatarMigrationAddsGeneratedAvatarConfig(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeCreationMigrationAddsOwnerAndType(t *testing.T) {
+	body, err := os.ReadFile("migrations/008_digital_employee_creation_ready.sql")
+	if err != nil {
+		t.Fatalf("read digital employee creation migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"ADD COLUMN IF NOT EXISTS owner_user_id UUID",
+		"ADD COLUMN IF NOT EXISTS employee_type VARCHAR(100)",
+		"ALTER COLUMN owner_user_id SET NOT NULL",
+		"ALTER COLUMN employee_type SET NOT NULL",
+		"CREATE INDEX IF NOT EXISTS idx_digital_employees_owner_status",
+		"ON digital_employees(tenant_id, owner_user_id, status, created_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_digital_employees_type_status",
+		"ON digital_employees(tenant_id, employee_type, status, created_at DESC)",
+		"COMMENT ON COLUMN digital_employees.owner_user_id IS '数字员工归属人类用户ID，由控制平面从登录上下文写入'",
+		"COMMENT ON COLUMN digital_employees.employee_type IS '数字员工专业类型，由服务端注册表校验，不使用数据库枚举'",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected digital employee creation migration to contain %q", expected)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"CREATE TYPE employee_type",
+		"CHECK (employee_type IN",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("employee_type must stay registry-backed, found %q", forbidden)
+		}
+	}
+}
+
 func TestDigitalEmployeeRunLoopMigrationAddsPersistenceSchema(t *testing.T) {
 	body, err := os.ReadFile("migrations/006_digital_employee_run_loop.sql")
 	if err != nil {

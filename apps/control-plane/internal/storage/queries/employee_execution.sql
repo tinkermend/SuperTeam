@@ -2,6 +2,8 @@
 INSERT INTO digital_employees (
     tenant_id,
     team_id,
+    owner_user_id,
+    employee_type,
     name,
     role,
     description,
@@ -14,6 +16,8 @@ INSERT INTO digital_employees (
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.narg('team_id')::uuid,
+    sqlc.arg('owner_user_id')::uuid,
+    sqlc.arg('employee_type')::varchar,
     sqlc.arg('name')::varchar,
     sqlc.arg('role')::varchar,
     sqlc.narg('description')::text,
@@ -149,6 +153,127 @@ FROM digital_employee_execution_instances
 WHERE digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
   AND deleted_at IS NULL;
+
+-- name: ListRuntimeProviderOptionsForDigitalEmployeeCreate :many
+WITH active_team_config AS (
+    SELECT *
+    FROM tenant_team_config_revisions
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND team_id = sqlc.arg('team_id')::uuid
+      AND status = 'active'
+      AND archived_at IS NULL
+    ORDER BY revision_number DESC
+    LIMIT 1
+),
+runtime_sessions_active AS (
+    SELECT DISTINCT re.runtime_node_id
+    FROM runtime_sessions rs
+    JOIN runtime_enrollments re
+      ON re.id = rs.enrollment_id
+     AND re.tenant_id = rs.tenant_id
+     AND re.runtime_node_id = rs.runtime_node_id
+     AND re.status = 'approved'
+     AND re.rejected_at IS NULL
+     AND re.revoked_at IS NULL
+    WHERE rs.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND rs.expires_at > NOW()
+      AND rs.revoked_at IS NULL
+),
+provider_capabilities AS (
+    SELECT DISTINCT ON (tenant_id, runtime_node_id, provider_type)
+        *
+    FROM runtime_capabilities
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND capability_type = 'provider'
+      AND disabled_at IS NULL
+      AND archived_at IS NULL
+    ORDER BY tenant_id, runtime_node_id, provider_type, last_seen_at DESC NULLS LAST, updated_at DESC
+)
+SELECT
+    rn.id AS runtime_node_id,
+    rn.node_id,
+    rn.name AS runtime_name,
+    pc.provider_type,
+    rn.status AS runtime_status,
+    pc.status AS provider_status,
+    pc.health_status,
+    rn.current_load,
+    rn.max_slots,
+    COALESCE(
+        pc.details ->> 'agent_home_dir',
+        pc.metadata ->> 'agent_home_dir',
+        pc.workspace_base_dir,
+        rn.metadata ->> 'agent_home_dir',
+        ''
+    )::text AS agent_home_dir,
+    (
+        active_team_config.id IS NOT NULL
+        AND rn.status = 'online'
+        AND rn.disabled_at IS NULL
+        AND rn.archived_at IS NULL
+        AND pc.available = true
+        AND pc.status = 'healthy'
+        AND pc.health_status = 'healthy'
+        AND runtime_sessions_active.runtime_node_id IS NOT NULL
+        AND (
+            (
+                jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.capability_policy -> 'allowed_provider_types') ? pc.provider_type
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'allowed_provider_types') ? pc.provider_type
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'provider_types') ? pc.provider_type
+            )
+        )
+        AND CASE
+            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids') THEN true
+            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array' THEN
+                (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
+            ELSE false
+        END
+        AND CASE
+            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_node_ids') THEN true
+            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 'array' THEN
+                (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
+            ELSE false
+        END
+    )::boolean AS available,
+    CASE
+        WHEN active_team_config.id IS NULL THEN 'active_team_config_required'
+        WHEN rn.status <> 'online' OR rn.disabled_at IS NOT NULL OR rn.archived_at IS NOT NULL THEN 'runtime_not_online'
+        WHEN runtime_sessions_active.runtime_node_id IS NULL THEN 'runtime_session_inactive'
+        WHEN pc.id IS NULL THEN 'provider_missing'
+        WHEN pc.available = false OR pc.status <> 'healthy' OR pc.health_status <> 'healthy' THEN 'provider_unhealthy'
+        WHEN COALESCE(pc.provider_type, '') = '' THEN 'provider_type_missing'
+        WHEN NOT (
+            (
+                jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.capability_policy -> 'allowed_provider_types') ? pc.provider_type
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'allowed_provider_types') ? pc.provider_type
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'provider_types') ? pc.provider_type
+            )
+        ) THEN 'provider_outside_team_policy'
+        ELSE ''
+    END::varchar AS disabled_reason
+FROM runtime_nodes rn
+LEFT JOIN provider_capabilities pc
+  ON pc.runtime_node_id = rn.id
+ AND pc.tenant_id = rn.tenant_id
+LEFT JOIN active_team_config ON TRUE
+LEFT JOIN runtime_sessions_active ON runtime_sessions_active.runtime_node_id = rn.id
+WHERE rn.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pc.provider_type IS NOT NULL
+ORDER BY available DESC, rn.name ASC, pc.provider_type ASC;
 
 -- name: GetRuntimeProvisioningPreflight :one
 WITH active_team_config AS (
@@ -433,6 +558,28 @@ aborted_employee AS (
         updated_at = NOW()
     WHERE id = sqlc.arg('digital_employee_id')::uuid
       AND tenant_id = sqlc.arg('tenant_id')::uuid
+    RETURNING id
+),
+aborted_configs AS (
+    UPDATE digital_employee_config_revisions
+    SET archived_at = COALESCE(archived_at, NOW()),
+        updated_at = NOW()
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+      AND archived_at IS NULL
+    RETURNING id
+),
+aborted_effective_configs AS (
+    UPDATE digital_employee_effective_configs
+    SET status = CASE
+            WHEN status = 'revoked' THEN status
+            ELSE 'revoked'
+        END,
+        revoked_at = COALESCE(revoked_at, NOW()),
+        updated_at = NOW()
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+      AND revoked_at IS NULL
     RETURNING id
 ),
 aborted_receipts AS (

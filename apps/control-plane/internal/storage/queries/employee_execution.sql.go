@@ -34,6 +34,28 @@ aborted_employee AS (
       AND tenant_id = $3::uuid
     RETURNING id
 ),
+aborted_configs AS (
+    UPDATE digital_employee_config_revisions
+    SET archived_at = COALESCE(archived_at, NOW()),
+        updated_at = NOW()
+    WHERE tenant_id = $3::uuid
+      AND digital_employee_id = $4::uuid
+      AND archived_at IS NULL
+    RETURNING id
+),
+aborted_effective_configs AS (
+    UPDATE digital_employee_effective_configs
+    SET status = CASE
+            WHEN status = 'revoked' THEN status
+            ELSE 'revoked'
+        END,
+        revoked_at = COALESCE(revoked_at, NOW()),
+        updated_at = NOW()
+    WHERE tenant_id = $3::uuid
+      AND digital_employee_id = $4::uuid
+      AND revoked_at IS NULL
+    RETURNING id
+),
 aborted_receipts AS (
     UPDATE runtime_command_receipts
     SET status = CASE
@@ -75,6 +97,8 @@ const CreateDigitalEmployee = `-- name: CreateDigitalEmployee :one
 INSERT INTO digital_employees (
     tenant_id,
     team_id,
+    owner_user_id,
+    employee_type,
     name,
     role,
     description,
@@ -87,21 +111,25 @@ INSERT INTO digital_employees (
 ) VALUES (
     $1::uuid,
     $2::uuid,
-    $3::varchar,
+    $3::uuid,
     $4::varchar,
-    $5::text,
+    $5::varchar,
     $6::varchar,
-    COALESCE($7::jsonb, '{}'::jsonb),
-    COALESCE($8::jsonb, '{}'::jsonb),
+    $7::text,
+    $8::varchar,
     COALESCE($9::jsonb, '{}'::jsonb),
-    $10::varchar,
-    COALESCE($11::jsonb, '{}'::jsonb)
-) RETURNING id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at
+    COALESCE($10::jsonb, '{}'::jsonb),
+    COALESCE($11::jsonb, '{}'::jsonb),
+    $12::varchar,
+    COALESCE($13::jsonb, '{}'::jsonb)
+) RETURNING id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type
 `
 
 type CreateDigitalEmployeeParams struct {
 	TenantID         uuid.UUID     `json:"tenant_id"`
 	TeamID           uuid.NullUUID `json:"team_id"`
+	OwnerUserID      uuid.UUID     `json:"owner_user_id"`
+	EmployeeType     string        `json:"employee_type"`
 	Name             string        `json:"name"`
 	Role             string        `json:"role"`
 	Description      pgtype.Text   `json:"description"`
@@ -117,6 +145,8 @@ func (q *Queries) CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEm
 	row := q.db.QueryRow(ctx, CreateDigitalEmployee,
 		arg.TenantID,
 		arg.TeamID,
+		arg.OwnerUserID,
+		arg.EmployeeType,
 		arg.Name,
 		arg.Role,
 		arg.Description,
@@ -146,6 +176,8 @@ func (q *Queries) CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEm
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OwnerUserID,
+		&i.EmployeeType,
 	)
 	return i, err
 }
@@ -187,7 +219,7 @@ func (q *Queries) DeleteDigitalEmployeeExecutionInstance(ctx context.Context, ar
 }
 
 const GetDigitalEmployee = `-- name: GetDigitalEmployee :one
-SELECT id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at
+SELECT id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type
 FROM digital_employees
 WHERE id = $1::uuid
   AND tenant_id = $2::uuid
@@ -220,6 +252,8 @@ func (q *Queries) GetDigitalEmployee(ctx context.Context, arg GetDigitalEmployee
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OwnerUserID,
+		&i.EmployeeType,
 	)
 	return i, err
 }
@@ -690,7 +724,7 @@ func (q *Queries) ListDigitalEmployeeExecutionInstances(ctx context.Context, arg
 }
 
 const ListDigitalEmployees = `-- name: ListDigitalEmployees :many
-SELECT id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at
+SELECT id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type
 FROM digital_employees
 WHERE tenant_id = $1::uuid
   AND deleted_at IS NULL
@@ -741,6 +775,183 @@ func (q *Queries) ListDigitalEmployees(ctx context.Context, arg ListDigitalEmplo
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OwnerUserID,
+			&i.EmployeeType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListRuntimeProviderOptionsForDigitalEmployeeCreate = `-- name: ListRuntimeProviderOptionsForDigitalEmployeeCreate :many
+WITH active_team_config AS (
+    SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+    FROM tenant_team_config_revisions
+    WHERE tenant_id = $1::uuid
+      AND team_id = $2::uuid
+      AND status = 'active'
+      AND archived_at IS NULL
+    ORDER BY revision_number DESC
+    LIMIT 1
+),
+runtime_sessions_active AS (
+    SELECT DISTINCT re.runtime_node_id
+    FROM runtime_sessions rs
+    JOIN runtime_enrollments re
+      ON re.id = rs.enrollment_id
+     AND re.tenant_id = rs.tenant_id
+     AND re.runtime_node_id = rs.runtime_node_id
+     AND re.status = 'approved'
+     AND re.rejected_at IS NULL
+     AND re.revoked_at IS NULL
+    WHERE rs.tenant_id = $1::uuid
+      AND rs.expires_at > NOW()
+      AND rs.revoked_at IS NULL
+),
+provider_capabilities AS (
+    SELECT DISTINCT ON (tenant_id, runtime_node_id, provider_type)
+        id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+    FROM runtime_capabilities
+    WHERE tenant_id = $1::uuid
+      AND capability_type = 'provider'
+      AND disabled_at IS NULL
+      AND archived_at IS NULL
+    ORDER BY tenant_id, runtime_node_id, provider_type, last_seen_at DESC NULLS LAST, updated_at DESC
+)
+SELECT
+    rn.id AS runtime_node_id,
+    rn.node_id,
+    rn.name AS runtime_name,
+    pc.provider_type,
+    rn.status AS runtime_status,
+    pc.status AS provider_status,
+    pc.health_status,
+    rn.current_load,
+    rn.max_slots,
+    COALESCE(
+        pc.details ->> 'agent_home_dir',
+        pc.metadata ->> 'agent_home_dir',
+        pc.workspace_base_dir,
+        rn.metadata ->> 'agent_home_dir',
+        ''
+    )::text AS agent_home_dir,
+    (
+        active_team_config.id IS NOT NULL
+        AND rn.status = 'online'
+        AND rn.disabled_at IS NULL
+        AND rn.archived_at IS NULL
+        AND pc.available = true
+        AND pc.status = 'healthy'
+        AND pc.health_status = 'healthy'
+        AND runtime_sessions_active.runtime_node_id IS NOT NULL
+        AND (
+            (
+                jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.capability_policy -> 'allowed_provider_types') ? pc.provider_type
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'allowed_provider_types') ? pc.provider_type
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'provider_types') ? pc.provider_type
+            )
+        )
+        AND CASE
+            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids') THEN true
+            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array' THEN
+                (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
+            ELSE false
+        END
+        AND CASE
+            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_node_ids') THEN true
+            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 'array' THEN
+                (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
+            ELSE false
+        END
+    )::boolean AS available,
+    CASE
+        WHEN active_team_config.id IS NULL THEN 'active_team_config_required'
+        WHEN rn.status <> 'online' OR rn.disabled_at IS NOT NULL OR rn.archived_at IS NOT NULL THEN 'runtime_not_online'
+        WHEN runtime_sessions_active.runtime_node_id IS NULL THEN 'runtime_session_inactive'
+        WHEN pc.id IS NULL THEN 'provider_missing'
+        WHEN pc.available = false OR pc.status <> 'healthy' OR pc.health_status <> 'healthy' THEN 'provider_unhealthy'
+        WHEN COALESCE(pc.provider_type, '') = '' THEN 'provider_type_missing'
+        WHEN NOT (
+            (
+                jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.capability_policy -> 'allowed_provider_types') ? pc.provider_type
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'allowed_provider_types') ? pc.provider_type
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'provider_types') ? pc.provider_type
+            )
+        ) THEN 'provider_outside_team_policy'
+        ELSE ''
+    END::varchar AS disabled_reason
+FROM runtime_nodes rn
+LEFT JOIN provider_capabilities pc
+  ON pc.runtime_node_id = rn.id
+ AND pc.tenant_id = rn.tenant_id
+LEFT JOIN active_team_config ON TRUE
+LEFT JOIN runtime_sessions_active ON runtime_sessions_active.runtime_node_id = rn.id
+WHERE rn.tenant_id = $1::uuid
+  AND pc.provider_type IS NOT NULL
+ORDER BY available DESC, rn.name ASC, pc.provider_type ASC
+`
+
+type ListRuntimeProviderOptionsForDigitalEmployeeCreateParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+}
+
+type ListRuntimeProviderOptionsForDigitalEmployeeCreateRow struct {
+	RuntimeNodeID  uuid.UUID   `json:"runtime_node_id"`
+	NodeID         string      `json:"node_id"`
+	RuntimeName    string      `json:"runtime_name"`
+	ProviderType   pgtype.Text `json:"provider_type"`
+	RuntimeStatus  string      `json:"runtime_status"`
+	ProviderStatus pgtype.Text `json:"provider_status"`
+	HealthStatus   pgtype.Text `json:"health_status"`
+	CurrentLoad    int32       `json:"current_load"`
+	MaxSlots       int32       `json:"max_slots"`
+	AgentHomeDir   string      `json:"agent_home_dir"`
+	Available      bool        `json:"available"`
+	DisabledReason string      `json:"disabled_reason"`
+}
+
+func (q *Queries) ListRuntimeProviderOptionsForDigitalEmployeeCreate(ctx context.Context, arg ListRuntimeProviderOptionsForDigitalEmployeeCreateParams) ([]ListRuntimeProviderOptionsForDigitalEmployeeCreateRow, error) {
+	rows, err := q.db.Query(ctx, ListRuntimeProviderOptionsForDigitalEmployeeCreate, arg.TenantID, arg.TeamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRuntimeProviderOptionsForDigitalEmployeeCreateRow{}
+	for rows.Next() {
+		var i ListRuntimeProviderOptionsForDigitalEmployeeCreateRow
+		if err := rows.Scan(
+			&i.RuntimeNodeID,
+			&i.NodeID,
+			&i.RuntimeName,
+			&i.ProviderType,
+			&i.RuntimeStatus,
+			&i.ProviderStatus,
+			&i.HealthStatus,
+			&i.CurrentLoad,
+			&i.MaxSlots,
+			&i.AgentHomeDir,
+			&i.Available,
+			&i.DisabledReason,
 		); err != nil {
 			return nil, err
 		}
@@ -833,7 +1044,7 @@ SET status = $1::varchar,
 WHERE id = $2::uuid
   AND tenant_id = $3::uuid
   AND deleted_at IS NULL
-RETURNING id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, team_id, name, role, description, status, permission_policy, context_policy, approval_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type
 `
 
 type UpdateDigitalEmployeeStatusParams struct {
@@ -863,6 +1074,8 @@ func (q *Queries) UpdateDigitalEmployeeStatus(ctx context.Context, arg UpdateDig
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OwnerUserID,
+		&i.EmployeeType,
 	)
 	return i, err
 }

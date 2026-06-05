@@ -137,6 +137,7 @@ type Querier interface {
 	ListRuntimeNodesForTenant(ctx context.Context, arg ListRuntimeNodesForTenantParams) ([]RuntimeNode, error)
 	ListRuntimeNodesWithScopes(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeNodesWithScopesRow, error)
 	ListRuntimeProviderCapabilitiesForTenant(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeProviderCapabilitiesForTenantRow, error)
+	ListRuntimeProviderOptionsForDigitalEmployeeCreate(ctx context.Context, arg ListRuntimeProviderOptionsForDigitalEmployeeCreateParams) ([]ListRuntimeProviderOptionsForDigitalEmployeeCreateRow, error)
 	ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error)
 	ListTaskArtifacts(ctx context.Context, arg ListTaskArtifactsParams) ([]TaskArtifact, error)
 	ListTaskEvents(ctx context.Context, arg ListTaskEventsParams) ([]TaskEvent, error)

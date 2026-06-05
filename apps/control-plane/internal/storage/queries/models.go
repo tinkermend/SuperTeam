@@ -149,6 +149,10 @@ type DigitalEmployee struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 数字员工最后更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 数字员工归属人类用户ID，由控制平面从登录上下文写入
+	OwnerUserID uuid.UUID `json:"owner_user_id"`
+	// 数字员工专业类型，由服务端注册表校验，不使用数据库枚举
+	EmployeeType string `json:"employee_type"`
 }
 
 // 数字员工个人治理配置版本表
