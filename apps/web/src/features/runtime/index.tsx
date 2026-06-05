@@ -55,9 +55,11 @@ import { ThemeSwitch } from "@/components/theme-switch";
 import {
   approveRuntimeEnrollment,
   getRuntimeOverview,
+  listRuntimeEnrollments,
   listRuntimeEvents,
   rejectRuntimeEnrollment,
   type RuntimeEnrollment,
+  type RuntimeEnrollmentStatus,
   type RuntimeEvent,
   type RuntimeEventSeverity,
   type RuntimeNodeResponse,
@@ -101,6 +103,20 @@ const severityTone: Record<RuntimeEventSeverity, Tone> = {
   warning: "warning",
 };
 
+const enrollmentStatusLabel: Record<RuntimeEnrollmentStatus, string> = {
+  approved: "已接入",
+  pending: "待接入",
+  rejected: "已拒绝",
+  revoked: "已停用",
+};
+
+const enrollmentStatusTone: Record<RuntimeEnrollmentStatus, Tone> = {
+  approved: "success",
+  pending: "warning",
+  rejected: "danger",
+  revoked: "neutral",
+};
+
 export function RuntimeNodesPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
 
@@ -129,6 +145,11 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
     queryFn: () => listRuntimeEvents({ baseUrl: apiBaseUrl, fetcher, ...eventFilters }),
   });
 
+  const enrollments = useQuery({
+    queryKey: ["runtime-enrollments"],
+    queryFn: () => listRuntimeEnrollments({ baseUrl: apiBaseUrl, fetcher }),
+  });
+
   const invalidateRuntimeQueries = () => {
     void queryClient.invalidateQueries({ queryKey: ["runtime-overview"] });
     void queryClient.invalidateQueries({ queryKey: ["runtime-events"] });
@@ -153,6 +174,17 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
       invalidateRuntimeQueries();
     },
   });
+
+  const openApproveDialog = (enrollment: RuntimeEnrollment) => {
+    approve.reset();
+    setApproveTarget(enrollment);
+  };
+
+  const openRejectDialog = (enrollment: RuntimeEnrollment) => {
+    reject.reset();
+    setRejectTarget(enrollment);
+    setRejectReason("");
+  };
 
   const filterOptions = useMemo(() => {
     const overviewData = overview.data;
@@ -185,6 +217,7 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
   const overviewData = overview.data;
   const recentEvents = overviewData?.recent_events ?? [];
   const eventItems = events.data?.items ?? [];
+  const enrollmentItems = enrollments.data ?? overviewData?.pending_enrollments ?? [];
   const hasAppliedEventFilter = Boolean(
     eventFilters.event_type || eventFilters.severity || eventFilters.node_id || eventFilters.provider_type,
   );
@@ -263,11 +296,8 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
                       <NodeInventoryPanel nodes={overviewData.nodes} />
                       <PendingEnrollmentPanel
                         enrollments={overviewData.pending_enrollments}
-                        onApprove={setApproveTarget}
-                        onReject={(enrollment) => {
-                          setRejectTarget(enrollment);
-                          setRejectReason("");
-                        }}
+                        onApprove={openApproveDialog}
+                        onReject={openRejectDialog}
                       />
                     </div>
                     <div className="flex min-w-0 flex-col gap-4">
@@ -279,12 +309,11 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
 
                 <TabsContent value="enrollments">
                   <PendingEnrollmentPanel
-                    enrollments={overviewData.pending_enrollments}
-                    onApprove={setApproveTarget}
-                    onReject={(enrollment) => {
-                      setRejectTarget(enrollment);
-                      setRejectReason("");
-                    }}
+                    enrollments={enrollmentItems}
+                    isError={enrollments.isError}
+                    isLoading={enrollments.isLoading}
+                    onApprove={openApproveDialog}
+                    onReject={openRejectDialog}
                     showDescription
                   />
                 </TabsContent>
@@ -309,7 +338,15 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
           ) : null}
         </div>
 
-        <AlertDialog open={Boolean(approveTarget)} onOpenChange={(open) => !open && setApproveTarget(null)}>
+        <AlertDialog
+          open={Boolean(approveTarget)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setApproveTarget(null);
+              approve.reset();
+            }
+          }}
+        >
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>确认 Runtime 接入</AlertDialogTitle>
@@ -317,6 +354,7 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
                 批准后，{approveTarget?.node_id ?? "该节点"} 可以进入 Runtime 会话建立流程。此操作会写入审计记录。
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {approve.isError ? <MutationErrorLine error={approve.error} fallback="Runtime 接入批准失败" /> : null}
             <AlertDialogFooter>
               <AlertDialogCancel disabled={approve.isPending}>取消</AlertDialogCancel>
               <AlertDialogAction
@@ -340,6 +378,7 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
             if (!open) {
               setRejectTarget(null);
               setRejectReason("");
+              reject.reset();
             }
           }}
         >
@@ -359,8 +398,17 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
                 placeholder="例如：节点归属未完成线下确认"
               />
             </div>
+            {reject.isError ? <MutationErrorLine error={reject.error} fallback="Runtime 接入拒绝失败" /> : null}
             <DialogFooter>
-              <Button disabled={reject.isPending} type="button" variant="outline" onClick={() => setRejectTarget(null)}>
+              <Button
+                disabled={reject.isPending}
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setRejectTarget(null);
+                  reject.reset();
+                }}
+              >
                 取消
               </Button>
               <Button
@@ -439,9 +487,13 @@ function PendingEnrollmentPanel({
   enrollments,
   onApprove,
   onReject,
+  isError,
+  isLoading,
   showDescription,
 }: {
   enrollments: RuntimeEnrollment[];
+  isError?: boolean;
+  isLoading?: boolean;
   onApprove: (enrollment: RuntimeEnrollment) => void;
   onReject: (enrollment: RuntimeEnrollment) => void;
   showDescription?: boolean;
@@ -456,13 +508,14 @@ function PendingEnrollmentPanel({
         {showDescription ? <CardDescription>确认节点来源和 Provider 能力后再批准接入。</CardDescription> : null}
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        {enrollments.length === 0 ? (
-          <EmptyLine>暂无待接入 Runtime 节点</EmptyLine>
-        ) : (
+        {isLoading ? <EmptyLine>加载 Runtime 接入记录中</EmptyLine> : null}
+        {isError ? <p className="text-sm text-destructive">Runtime 接入记录加载失败</p> : null}
+        {!isLoading && enrollments.length === 0 ? <EmptyLine>暂无 Runtime 接入记录</EmptyLine> : null}
+        {enrollments.length > 0 ? (
           enrollments.map((enrollment) => (
             <EnrollmentRow key={enrollment.id} enrollment={enrollment} onApprove={onApprove} onReject={onReject} />
           ))
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -478,13 +531,14 @@ function EnrollmentRow({
   onReject: (enrollment: RuntimeEnrollment) => void;
 }) {
   const extras = getEnrollmentExtras(enrollment);
+  const isPending = enrollment.status === "pending";
 
   return (
     <div className="flex min-w-0 flex-col gap-3 rounded-md border bg-card/70 p-3 md:flex-row md:items-center md:justify-between">
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="truncate font-medium">{enrollment.node_id}</span>
-          <StatusBadge tone="warning">待接入</StatusBadge>
+          <StatusBadge tone={enrollmentStatusTone[enrollment.status]}>{enrollmentStatusLabel[enrollment.status]}</StatusBadge>
         </div>
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span>创建：{formatTime(enrollment.created_at)}</span>
@@ -492,17 +546,22 @@ function EnrollmentRow({
           <span>Slots：{extras.maxSlots ?? "-"}</span>
           <span>Provider：{extras.supportedProviders.length > 0 ? extras.supportedProviders.join(", ") : "-"}</span>
         </div>
+        {enrollment.reject_reason ? (
+          <p className="mt-2 text-sm text-muted-foreground">拒绝原因：{enrollment.reject_reason}</p>
+        ) : null}
       </div>
-      <div className="flex shrink-0 flex-wrap gap-2">
-        <Button type="button" size="sm" onClick={() => onApprove(enrollment)}>
-          <Check data-icon="inline-start" />
-          批准接入
-        </Button>
-        <Button type="button" size="sm" variant="outline" onClick={() => onReject(enrollment)}>
-          <Ban data-icon="inline-start" />
-          拒绝
-        </Button>
-      </div>
+      {isPending ? (
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button type="button" size="sm" onClick={() => onApprove(enrollment)}>
+            <Check data-icon="inline-start" />
+            批准接入
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => onReject(enrollment)}>
+            <Ban data-icon="inline-start" />
+            拒绝
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -783,6 +842,18 @@ function MetricLite({ label, value }: { label: string; value: number }) {
 
 function EmptyLine({ children }: { children: string }) {
   return <p className="rounded-md border border-dashed bg-muted/20 px-3 py-4 text-sm text-muted-foreground">{children}</p>;
+}
+
+function MutationErrorLine({ error, fallback }: { error: unknown; fallback: string }) {
+  return (
+    <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+      {readErrorMessage(error, fallback)}
+    </p>
+  );
+}
+
+function readErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
