@@ -12,9 +12,13 @@ type Repository interface {
 	ListDigitalEmployees(ctx context.Context, params ListDigitalEmployeesParams) ([]DigitalEmployeeRecord, error)
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeRecord, error)
 	EnsureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error
+	GetRuntimeProvisioningPreflight(ctx context.Context, tenantID, teamID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error)
 	UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error)
 	UpsertDigitalEmployeeExecutionInstance(ctx context.Context, params UpsertExecutionInstanceParams) (DigitalEmployeeExecutionInstanceRecord, error)
 	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeExecutionInstanceRecord, error)
+	CreateRuntimeCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error
+	WaitForRuntimeCommandCompletion(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeCommandReceipt, error)
+	AbortProvisionedDigitalEmployee(ctx context.Context, tenantID, employeeID, executionInstanceID uuid.UUID, reason string) error
 	CreateDigitalEmployeeConfigRevision(ctx context.Context, params CreateConfigRevisionParams) (DigitalEmployeeConfigRevisionRecord, error)
 	GetTeamConfigRevision(ctx context.Context, tenantID, teamConfigRevisionID uuid.UUID) (TeamConfigInput, error)
 	GetDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID, employeeConfigRevisionID uuid.UUID) (EmployeeConfigInput, error)
@@ -102,6 +106,7 @@ type DigitalEmployeeRecord struct {
 	Metadata         map[string]any
 	DisabledAt       *time.Time
 	ArchivedAt       *time.Time
+	DeletedAt        *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -123,6 +128,7 @@ type DigitalEmployeeExecutionInstanceRecord struct {
 	DisabledAt           *time.Time
 	ErrorAt              *time.Time
 	ErrorMessage         *string
+	DeletedAt            *time.Time
 	Metadata             map[string]any
 	CreatedAt            time.Time
 	UpdatedAt            time.Time

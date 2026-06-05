@@ -183,6 +183,53 @@ func TestAuthUserAvatarMigrationAddsGeneratedAvatarConfig(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeRunLoopMigrationAddsPersistenceSchema(t *testing.T) {
+	body, err := os.ReadFile("migrations/006_digital_employee_run_loop.sql")
+	if err != nil {
+		t.Fatalf("read digital employee run loop migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"CREATE TABLE runtime_command_receipts",
+		"ALTER TABLE task_runs",
+		"ADD COLUMN command_id VARCHAR(255)",
+		"ADD COLUMN digital_employee_id UUID",
+		"ADD COLUMN idempotency_fingerprint VARCHAR(255)",
+		"ADD COLUMN diagnostic JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"ADD COLUMN work_products JSONB NOT NULL DEFAULT '[]'::jsonb",
+		"ADD COLUMN session_state JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"ADD COLUMN provider_type VARCHAR(100)",
+		"ALTER TABLE task_events",
+		"ADD COLUMN raw_event_ref TEXT",
+		"ALTER TABLE provider_sessions",
+		"ADD COLUMN session_display_id VARCHAR(255)",
+		"ADD COLUMN last_sequence_number INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE provider_session_events",
+		"ADD COLUMN session_state_patch JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"CREATE UNIQUE INDEX uq_task_runs_command_id",
+		"CREATE UNIQUE INDEX uq_task_runs_employee_idempotency",
+		"DROP INDEX IF EXISTS uq_task_events_task_sequence",
+		"DROP INDEX IF EXISTS uq_task_events_run_sequence",
+		"CREATE UNIQUE INDEX uq_task_events_run_sequence",
+		"ON task_events(tenant_id, run_id, sequence_number)",
+		"CREATE UNIQUE INDEX uq_provider_session_events_command_sequence",
+		"CREATE TRIGGER update_runtime_command_receipts_updated_at",
+		"COMMENT ON TABLE runtime_command_receipts IS 'Runtime 命令回执表，记录下发、回写和终态结果'",
+		"COMMENT ON COLUMN runtime_command_receipts.command_id IS '控制平面生成的命令ID'",
+		"COMMENT ON COLUMN task_runs.command_id IS '运行关联的Runtime命令ID'",
+		"COMMENT ON COLUMN task_runs.idempotency_fingerprint IS '运行创建幂等指纹'",
+		"COMMENT ON COLUMN task_runs.provider_type IS '运行使用的Provider类型'",
+		"COMMENT ON COLUMN task_events.metadata IS '任务事件扩展元数据'",
+		"COMMENT ON COLUMN provider_sessions.session_state IS 'Provider适配器可恢复的会话状态'",
+		"COMMENT ON COLUMN provider_session_events.session_state_patch IS '事件携带的会话状态增量'",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected digital employee run loop migration to contain %q", expected)
+		}
+	}
+}
+
 func TestInitialSchemaPreservesHistoryWithoutHeavyForeignKeys(t *testing.T) {
 	body, err := os.ReadFile("migrations/001_initial.sql")
 	if err != nil {

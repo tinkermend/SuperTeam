@@ -12,6 +12,65 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const AbortProvisionedDigitalEmployee = `-- name: AbortProvisionedDigitalEmployee :exec
+WITH aborted_instance AS (
+    UPDATE digital_employee_execution_instances
+    SET status = 'error',
+        error_at = COALESCE(error_at, NOW()),
+        error_message = $1::text,
+        deleted_at = COALESCE(deleted_at, NOW()),
+        updated_at = NOW()
+    WHERE id = $2::uuid
+      AND tenant_id = $3::uuid
+      AND digital_employee_id = $4::uuid
+    RETURNING id
+),
+aborted_employee AS (
+    UPDATE digital_employees
+    SET status = 'error',
+        deleted_at = COALESCE(deleted_at, NOW()),
+        updated_at = NOW()
+    WHERE id = $4::uuid
+      AND tenant_id = $3::uuid
+    RETURNING id
+),
+aborted_receipts AS (
+    UPDATE runtime_command_receipts
+    SET status = CASE
+            WHEN status IN ('completed', 'failed', 'cancelled', 'timed_out') THEN status
+            ELSE 'failed'
+        END,
+        error_message = COALESCE(error_message, $1::text),
+        completed_at = CASE
+            WHEN status IN ('completed', 'failed', 'cancelled', 'timed_out') THEN completed_at
+            ELSE COALESCE(completed_at, NOW())
+        END,
+        updated_at = NOW()
+    WHERE tenant_id = $3::uuid
+      AND resource_type = 'digital_employee_execution_instance'
+      AND resource_id = $2::uuid
+    RETURNING id
+)
+SELECT 1
+`
+
+type AbortProvisionedDigitalEmployeeParams struct {
+	Reason              string    `json:"reason"`
+	ExecutionInstanceID uuid.UUID `json:"execution_instance_id"`
+	TenantID            uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID   uuid.UUID `json:"digital_employee_id"`
+}
+
+func (q *Queries) AbortProvisionedDigitalEmployee(ctx context.Context, arg AbortProvisionedDigitalEmployeeParams) error {
+	_, err := q.db.Exec(ctx, AbortProvisionedDigitalEmployee,
+		arg.Reason,
+		arg.ExecutionInstanceID,
+		arg.TenantID,
+		arg.DigitalEmployeeID,
+	)
+	return err
+}
+
 const CreateDigitalEmployee = `-- name: CreateDigitalEmployee :one
 INSERT INTO digital_employees (
     tenant_id,
@@ -243,6 +302,320 @@ func (q *Queries) GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Co
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const GetDigitalEmployeeRunPreflight = `-- name: GetDigitalEmployeeRunPreflight :one
+SELECT
+    de.tenant_id,
+    de.team_id,
+    de.id AS digital_employee_id,
+    de.status AS digital_employee_status,
+    dei.id AS execution_instance_id,
+    dei.status AS execution_status,
+    dei.runtime_node_id,
+    rn.node_id,
+    dei.provider_type,
+    dei.agent_home_dir,
+    dei.runtime_selector,
+    dei.session_policy,
+    dei.workspace_policy,
+    EXISTS (
+        SELECT 1
+        FROM digital_employee_effective_configs dec
+        WHERE dec.tenant_id = de.tenant_id
+          AND dec.digital_employee_id = de.id
+          AND dec.status = 'approved'
+          AND dec.revoked_at IS NULL
+    ) AS has_approved_effective_config,
+    EXISTS (
+        SELECT 1
+        FROM runtime_capabilities rc
+        WHERE rc.tenant_id = de.tenant_id
+          AND rc.runtime_node_id = dei.runtime_node_id
+          AND rc.capability_type = 'provider'
+          AND rc.provider_type = dei.provider_type
+          AND rc.available = true
+          AND rc.status = 'healthy'
+          AND rc.health_status = 'healthy'
+          AND rc.disabled_at IS NULL
+          AND rc.archived_at IS NULL
+    ) AS provider_healthy
+FROM digital_employees de
+JOIN digital_employee_execution_instances dei
+  ON dei.digital_employee_id = de.id
+ AND dei.tenant_id = de.tenant_id
+ AND dei.deleted_at IS NULL
+JOIN runtime_nodes rn
+  ON rn.id = dei.runtime_node_id
+ AND rn.tenant_id = de.tenant_id
+ AND rn.archived_at IS NULL
+WHERE de.id = $1::uuid
+  AND de.tenant_id = $2::uuid
+  AND de.deleted_at IS NULL
+  AND de.archived_at IS NULL
+`
+
+type GetDigitalEmployeeRunPreflightParams struct {
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	TenantID          uuid.UUID `json:"tenant_id"`
+}
+
+type GetDigitalEmployeeRunPreflightRow struct {
+	TenantID                   uuid.UUID     `json:"tenant_id"`
+	TeamID                     uuid.NullUUID `json:"team_id"`
+	DigitalEmployeeID          uuid.UUID     `json:"digital_employee_id"`
+	DigitalEmployeeStatus      string        `json:"digital_employee_status"`
+	ExecutionInstanceID        uuid.UUID     `json:"execution_instance_id"`
+	ExecutionStatus            string        `json:"execution_status"`
+	RuntimeNodeID              uuid.UUID     `json:"runtime_node_id"`
+	NodeID                     string        `json:"node_id"`
+	ProviderType               string        `json:"provider_type"`
+	AgentHomeDir               string        `json:"agent_home_dir"`
+	RuntimeSelector            []byte        `json:"runtime_selector"`
+	SessionPolicy              []byte        `json:"session_policy"`
+	WorkspacePolicy            []byte        `json:"workspace_policy"`
+	HasApprovedEffectiveConfig bool          `json:"has_approved_effective_config"`
+	ProviderHealthy            bool          `json:"provider_healthy"`
+}
+
+func (q *Queries) GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDigitalEmployeeRunPreflightParams) (GetDigitalEmployeeRunPreflightRow, error) {
+	row := q.db.QueryRow(ctx, GetDigitalEmployeeRunPreflight, arg.DigitalEmployeeID, arg.TenantID)
+	var i GetDigitalEmployeeRunPreflightRow
+	err := row.Scan(
+		&i.TenantID,
+		&i.TeamID,
+		&i.DigitalEmployeeID,
+		&i.DigitalEmployeeStatus,
+		&i.ExecutionInstanceID,
+		&i.ExecutionStatus,
+		&i.RuntimeNodeID,
+		&i.NodeID,
+		&i.ProviderType,
+		&i.AgentHomeDir,
+		&i.RuntimeSelector,
+		&i.SessionPolicy,
+		&i.WorkspacePolicy,
+		&i.HasApprovedEffectiveConfig,
+		&i.ProviderHealthy,
+	)
+	return i, err
+}
+
+const GetRuntimeProvisioningPreflight = `-- name: GetRuntimeProvisioningPreflight :one
+WITH active_team_config AS (
+    SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+    FROM tenant_team_config_revisions
+    WHERE tenant_id = $3::uuid
+      AND team_id = $4::uuid
+      AND status = 'active'
+      AND archived_at IS NULL
+    ORDER BY revision_number DESC
+    LIMIT 1
+),
+provider_capability AS (
+    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+    FROM runtime_capabilities
+    WHERE tenant_id = $3::uuid
+      AND runtime_node_id = $2::uuid
+      AND capability_type = 'provider'
+      AND provider_type = $1::varchar
+      AND available = true
+      AND status = 'healthy'
+      AND health_status = 'healthy'
+      AND disabled_at IS NULL
+      AND archived_at IS NULL
+    ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
+    LIMIT 1
+),
+workspace_capability AS (
+    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+    FROM runtime_capabilities
+    WHERE tenant_id = $3::uuid
+      AND runtime_node_id = $2::uuid
+      AND capability_type = 'workspace'
+      AND capability_key = 'base-dir'
+      AND available = true
+      AND disabled_at IS NULL
+      AND archived_at IS NULL
+    ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
+    LIMIT 1
+)
+SELECT
+    tt.tenant_id,
+    tt.id AS team_id,
+    rn.id AS runtime_node_id,
+    rn.node_id,
+    COALESCE(
+        provider_capability.details ->> 'agent_home_dir',
+        provider_capability.metadata ->> 'agent_home_dir',
+        provider_capability.workspace_base_dir,
+        workspace_capability.details ->> 'agent_home_dir',
+        workspace_capability.metadata ->> 'agent_home_dir',
+        workspace_capability.workspace_base_dir,
+        rn.metadata ->> 'agent_home_dir',
+        ''
+    )::text AS agent_home_dir,
+    COALESCE(
+        jsonb_build_object(
+            'team_config_revision_id', active_team_config.id,
+            'revision_number', active_team_config.revision_number,
+            'constitution', active_team_config.constitution,
+            'capability_policy', active_team_config.capability_policy,
+            'context_policy', active_team_config.context_policy,
+            'approval_policy', active_team_config.approval_policy,
+            'artifact_contract', active_team_config.artifact_contract,
+            'internal_collaboration_policy', active_team_config.internal_collaboration_policy,
+            'runtime_scope_policy', active_team_config.runtime_scope_policy,
+            'approved_by', active_team_config.approved_by,
+            'approved_at', active_team_config.approved_at
+        ),
+        '{}'::jsonb
+    ) AS governance_snapshot,
+    (active_team_config.id IS NOT NULL)::boolean AS has_active_team_config,
+    (
+        rn.status = 'online'
+        AND rn.disabled_at IS NULL
+        AND rn.archived_at IS NULL
+    )::boolean AS runtime_online,
+    EXISTS (
+        SELECT 1
+        FROM runtime_enrollments re
+        WHERE re.tenant_id = tt.tenant_id
+          AND re.runtime_node_id = rn.id
+          AND re.status = 'approved'
+          AND re.rejected_at IS NULL
+          AND re.revoked_at IS NULL
+    )::boolean AS enrollment_approved,
+    EXISTS (
+        SELECT 1
+        FROM runtime_sessions rs
+        JOIN runtime_enrollments re
+          ON re.id = rs.enrollment_id
+         AND re.tenant_id = rs.tenant_id
+         AND re.runtime_node_id = rs.runtime_node_id
+         AND re.status = 'approved'
+         AND re.rejected_at IS NULL
+         AND re.revoked_at IS NULL
+        WHERE rs.tenant_id = tt.tenant_id
+          AND rs.runtime_node_id = rn.id
+          AND rs.expires_at > NOW()
+          AND rs.revoked_at IS NULL
+    )::boolean AS runtime_session_active,
+    (provider_capability.id IS NOT NULL)::boolean AS provider_available,
+    COALESCE((
+        active_team_config.id IS NOT NULL
+        AND (
+            (
+                jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.capability_policy -> 'allowed_provider_types') ? $1::varchar
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'allowed_provider_types') ? $1::varchar
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'provider_types') ? $1::varchar
+            )
+        )
+    ), false)::boolean AS provider_policy_allowed,
+    COALESCE((
+        active_team_config.id IS NOT NULL
+        AND (
+            (
+                active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids'
+                AND jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
+            )
+            OR (
+                active_team_config.runtime_scope_policy ? 'allowed_node_ids'
+                AND jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'allowed_provider_types') ? $1::varchar
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'provider_types') ? $1::varchar
+            )
+        )
+        AND CASE
+            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids') THEN true
+            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array' THEN
+                (active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text
+            ELSE false
+        END
+        AND CASE
+            WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_node_ids') THEN true
+            WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 'array' THEN
+                (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
+            ELSE false
+        END
+    ), false)::boolean AS runtime_policy_allowed
+FROM tenant_teams tt
+JOIN runtime_nodes rn
+  ON rn.id = $2::uuid
+ AND rn.tenant_id = tt.tenant_id
+LEFT JOIN active_team_config ON TRUE
+LEFT JOIN provider_capability ON TRUE
+LEFT JOIN workspace_capability ON TRUE
+WHERE tt.tenant_id = $3::uuid
+  AND tt.id = $4::uuid
+  AND tt.status = 'active'
+  AND tt.disabled_at IS NULL
+  AND tt.archived_at IS NULL
+  AND tt.deleted_at IS NULL
+`
+
+type GetRuntimeProvisioningPreflightParams struct {
+	ProviderType  string    `json:"provider_type"`
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	TenantID      uuid.UUID `json:"tenant_id"`
+	TeamID        uuid.UUID `json:"team_id"`
+}
+
+type GetRuntimeProvisioningPreflightRow struct {
+	TenantID              uuid.UUID   `json:"tenant_id"`
+	TeamID                uuid.UUID   `json:"team_id"`
+	RuntimeNodeID         uuid.UUID   `json:"runtime_node_id"`
+	NodeID                string      `json:"node_id"`
+	AgentHomeDir          string      `json:"agent_home_dir"`
+	GovernanceSnapshot    interface{} `json:"governance_snapshot"`
+	HasActiveTeamConfig   bool        `json:"has_active_team_config"`
+	RuntimeOnline         bool        `json:"runtime_online"`
+	EnrollmentApproved    bool        `json:"enrollment_approved"`
+	RuntimeSessionActive  bool        `json:"runtime_session_active"`
+	ProviderAvailable     bool        `json:"provider_available"`
+	ProviderPolicyAllowed bool        `json:"provider_policy_allowed"`
+	RuntimePolicyAllowed  bool        `json:"runtime_policy_allowed"`
+}
+
+func (q *Queries) GetRuntimeProvisioningPreflight(ctx context.Context, arg GetRuntimeProvisioningPreflightParams) (GetRuntimeProvisioningPreflightRow, error) {
+	row := q.db.QueryRow(ctx, GetRuntimeProvisioningPreflight,
+		arg.ProviderType,
+		arg.RuntimeNodeID,
+		arg.TenantID,
+		arg.TeamID,
+	)
+	var i GetRuntimeProvisioningPreflightRow
+	err := row.Scan(
+		&i.TenantID,
+		&i.TeamID,
+		&i.RuntimeNodeID,
+		&i.NodeID,
+		&i.AgentHomeDir,
+		&i.GovernanceSnapshot,
+		&i.HasActiveTeamConfig,
+		&i.RuntimeOnline,
+		&i.EnrollmentApproved,
+		&i.RuntimeSessionActive,
+		&i.ProviderAvailable,
+		&i.ProviderPolicyAllowed,
+		&i.RuntimePolicyAllowed,
 	)
 	return i, err
 }

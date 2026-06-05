@@ -127,12 +127,17 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	defer conn.Close(ctx)
 
-	migrated, err := schemaAlreadyMigrated(ctx, conn)
+	runLoopMigrated, err := schemaHasTable(ctx, conn, "runtime_command_receipts")
 	if err != nil {
 		return err
 	}
-	if migrated {
+	if runLoopMigrated {
 		return nil
+	}
+
+	baseMigrated, err := schemaHasTable(ctx, conn, "runtime_nodes")
+	if err != nil {
+		return err
 	}
 
 	// 发现所有迁移文件
@@ -144,6 +149,7 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 
 	// 按文件名排序
 	sort.Strings(files)
+	files = migrationFilesForSchemaState(files, baseMigrated)
 
 	// 执行每个迁移文件
 	for _, file := range files {
@@ -160,18 +166,33 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-func schemaAlreadyMigrated(ctx context.Context, conn *pgx.Conn) (bool, error) {
+func migrationFilesForSchemaState(files []string, baseMigrated bool) []string {
+	if !baseMigrated {
+		return files
+	}
+
+	filtered := make([]string, 0, len(files))
+	for _, file := range files {
+		base := filepath.Base(file)
+		if base >= "003_add_team_governance_config.sql" {
+			filtered = append(filtered, file)
+		}
+	}
+	return filtered
+}
+
+func schemaHasTable(ctx context.Context, conn *pgx.Conn, tableName string) (bool, error) {
 	const query = `
 SELECT EXISTS (
 	SELECT 1
 	FROM information_schema.tables
 	WHERE table_schema = current_schema()
-		AND table_name = 'runtime_nodes'
+		AND table_name = $1
 )
 `
 
 	var exists bool
-	if err := conn.QueryRow(ctx, query).Scan(&exists); err != nil {
+	if err := conn.QueryRow(ctx, query, tableName).Scan(&exists); err != nil {
 		return false, err
 	}
 	return exists, nil
@@ -182,6 +203,7 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 	ctx := context.Background()
 	_, err := db.Exec(ctx, `
 		TRUNCATE
+			runtime_command_receipts,
 			provider_session_events,
 			provider_sessions,
 			digital_employee_execution_instances,
@@ -3163,6 +3185,275 @@ func TestDigitalEmployeeExecutionQueries(t *testing.T) {
 	assert.Equal(t, "idle", updatedSession.Status)
 }
 
+func TestRuntimeProvisioningPreflightEnforcesTeamPolicies(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+	now := pgtype.Timestamptz{}
+	require.NoError(t, now.Scan(time.Now()))
+
+	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "preflight-policy-runtime-node",
+		Name:               "Preflight Policy Runtime Node",
+		SupportedProviders: []byte(`{"providers":["codex","opencode"]}`),
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{"agent_home_dir":"/nodes/preflight-policy"}`),
+		LastHeartbeatAt:    now,
+	})
+	require.NoError(t, err)
+
+	bootstrapKeyExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, bootstrapKeyExpiresAt.Scan(time.Now().Add(24*time.Hour)))
+	bootstrapKey, err := testQueries.CreateRuntimeBootstrapKey(ctx, queries.CreateRuntimeBootstrapKeyParams{
+		TenantID:  uuid.NullUUID{UUID: tenantID, Valid: true},
+		Name:      "preflight-policy-bootstrap",
+		KeyHash:   "preflight-policy-bootstrap-key-hash",
+		Status:    "active",
+		ExpiresAt: bootstrapKeyExpiresAt,
+		Metadata:  []byte(`{}`),
+	})
+	require.NoError(t, err)
+	enrollment, err := testQueries.UpsertRuntimeEnrollment(ctx, queries.UpsertRuntimeEnrollmentParams{
+		TenantID:       tenantID,
+		NodeID:         node.NodeID,
+		BootstrapKeyID: bootstrapKey.ID,
+		RequestPayload: []byte(`{"node_id":"preflight-policy-runtime-node"}`),
+		LastHelloAt:    now,
+	})
+	require.NoError(t, err)
+	approvedEnrollment, err := testQueries.ApproveRuntimeEnrollment(ctx, queries.ApproveRuntimeEnrollmentParams{
+		RuntimeNodeID: node.ID,
+		ID:            enrollment.ID,
+		TenantID:      tenantID,
+		ApprovedBy:    uuid.NullUUID{UUID: uuid.New(), Valid: true},
+	})
+	require.NoError(t, err)
+	sessionExpiresAt := pgtype.Timestamptz{}
+	require.NoError(t, sessionExpiresAt.Scan(time.Now().Add(12*time.Hour)))
+	_, err = testQueries.CreateRuntimeSession(ctx, queries.CreateRuntimeSessionParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   node.ID,
+		EnrollmentID:    uuid.NullUUID{UUID: approvedEnrollment.ID, Valid: true},
+		TokenLookupHash: "preflight-policy-session-lookup-hash",
+		TokenSecretHash: "$2a$10$preflightPolicySessionSecretHash",
+		ExpiresAt:       sessionExpiresAt,
+	})
+	require.NoError(t, err)
+	for _, providerType := range []string{"codex", "opencode"} {
+		_, err = testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+			TenantID:         tenantID,
+			RuntimeNodeID:    node.ID,
+			CapabilityType:   "provider",
+			CapabilityKey:    providerType,
+			ProviderType:     providerType,
+			ProviderVersion:  pgtype.Text{String: "1.0.0", Valid: true},
+			BinaryPath:       pgtype.Text{String: "/usr/local/bin/" + providerType, Valid: true},
+			Available:        true,
+			WorkspaceBaseDir: pgtype.Text{String: "/data/superteam/workspaces", Valid: true},
+			Capacity:         []byte(`{"max_slots":2}`),
+			Labels:           []byte(`{"os":"darwin"}`),
+			Status:           "healthy",
+			Details:          []byte(`{"agent_home_dir":"/provider/preflight-policy"}`),
+			HealthStatus:     "healthy",
+			Metadata:         []byte(`{}`),
+			LastSeenAt:       now,
+		})
+		require.NoError(t, err)
+	}
+	_, err = testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+		TenantID:         tenantID,
+		RuntimeNodeID:    node.ID,
+		CapabilityType:   "workspace",
+		CapabilityKey:    "base-dir",
+		ProviderType:     "workspace",
+		ProviderVersion:  pgtype.Text{},
+		BinaryPath:       pgtype.Text{},
+		Available:        true,
+		WorkspaceBaseDir: pgtype.Text{String: "/data/superteam/workspaces", Valid: true},
+		Capacity:         []byte(`{}`),
+		Labels:           []byte(`{}`),
+		Status:           "available",
+		Details:          []byte(`{}`),
+		HealthStatus:     "configured",
+		Metadata:         []byte(`{}`),
+		LastSeenAt:       now,
+	})
+	require.NoError(t, err)
+
+	runtimeScopePolicy := []byte(fmt.Sprintf(`{"allowed_runtime_node_ids":["%s"],"allowed_node_ids":["%s"]}`, node.ID.String(), node.NodeID))
+	teamConfig, err := testQueries.CreateTenantTeamConfigRevision(ctx, queries.CreateTenantTeamConfigRevisionParams{
+		TenantID:                    tenantID,
+		TeamID:                      teamID,
+		RevisionNumber:              1,
+		Constitution:                []byte(`{}`),
+		CapabilityPolicy:            []byte(`{"allowed_provider_types":["codex"]}`),
+		ContextPolicy:               []byte(`{}`),
+		ApprovalPolicy:              []byte(`{}`),
+		ArtifactContract:            []byte(`{}`),
+		InternalCollaborationPolicy: []byte(`{}`),
+		RuntimeScopePolicy:          runtimeScopePolicy,
+		Status:                      "active",
+		ApprovedBy:                  uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		ApprovedAt:                  now,
+	})
+	require.NoError(t, err)
+
+	preflight, err := testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.True(t, preflight.HasActiveTeamConfig)
+	assert.True(t, preflight.RuntimeOnline)
+	assert.True(t, preflight.EnrollmentApproved)
+	assert.True(t, preflight.RuntimeSessionActive)
+	assert.True(t, preflight.ProviderAvailable)
+	assert.True(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.RuntimePolicyAllowed)
+	assert.Equal(t, "/provider/preflight-policy", preflight.AgentHomeDir)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_capabilities
+		SET details = '{}'::jsonb,
+		    workspace_base_dir = NULL,
+		    updated_at = NOW()
+		WHERE tenant_id = $1
+		  AND runtime_node_id = $2
+		  AND capability_type = 'provider'
+		  AND provider_type = 'codex'
+	`, tenantID, node.ID)
+	require.NoError(t, err)
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "/data/superteam/workspaces", preflight.AgentHomeDir)
+
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "opencode",
+	})
+	require.NoError(t, err)
+	assert.True(t, preflight.ProviderAvailable)
+	assert.False(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.RuntimePolicyAllowed)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE tenant_team_config_revisions
+		SET capability_policy = '{}'::jsonb,
+		    runtime_scope_policy = $2::jsonb,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, teamConfig.ID, runtimeScopePolicy)
+	require.NoError(t, err)
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.True(t, preflight.ProviderAvailable)
+	assert.False(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.RuntimePolicyAllowed)
+
+	runtimeScopeProviderTypes := []byte(`{"provider_types":["codex"]}`)
+	_, err = testDB.Exec(ctx, `
+		UPDATE tenant_team_config_revisions
+		SET capability_policy = '{}'::jsonb,
+		    runtime_scope_policy = $2::jsonb,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, teamConfig.ID, runtimeScopeProviderTypes)
+	require.NoError(t, err)
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.True(t, preflight.ProviderAvailable)
+	assert.True(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.RuntimePolicyAllowed)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE tenant_team_config_revisions
+		SET capability_policy = '{"allowed_provider_types":[]}'::jsonb,
+		    runtime_scope_policy = $2::jsonb,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, teamConfig.ID, runtimeScopePolicy)
+	require.NoError(t, err)
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.True(t, preflight.ProviderAvailable)
+	assert.False(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.RuntimePolicyAllowed)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE tenant_team_config_revisions
+		SET capability_policy = '{"allowed_provider_types":["codex"]}'::jsonb,
+		    runtime_scope_policy = '{}'::jsonb,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, teamConfig.ID)
+	require.NoError(t, err)
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.True(t, preflight.ProviderPolicyAllowed)
+	assert.False(t, preflight.RuntimePolicyAllowed)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE tenant_team_config_revisions
+		SET runtime_scope_policy = $2::jsonb,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, teamConfig.ID, runtimeScopePolicy)
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_enrollments
+		SET status = 'revoked',
+		    revoked_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND tenant_id = $2
+	`, approvedEnrollment.ID, tenantID)
+	require.NoError(t, err)
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.False(t, preflight.EnrollmentApproved)
+	assert.False(t, preflight.RuntimeSessionActive)
+	assert.True(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.RuntimePolicyAllowed)
+}
+
 // ============================================================================
 // Task Tests
 // ============================================================================
@@ -3395,6 +3686,510 @@ func TestTaskEvents(t *testing.T) {
 	maxSeq, err := testQueries.GetLatestTaskEventSequence(ctx, queries.GetLatestTaskEventSequenceParams{TaskID: task.ID})
 	require.NoError(t, err)
 	assert.Equal(t, int32(2), maxSeq)
+}
+
+func TestTaskEventIdempotencyIsScopedByRun(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	paramsJSON, _ := json.Marshal(map[string]interface{}{"test": true})
+	task, err := testQueries.CreateTask(ctx, queries.CreateTaskParams{
+		Title:        "Run Scoped Event Test",
+		Status:       "pending",
+		Priority:     3,
+		ProviderType: "claude-code",
+		Params:       paramsJSON,
+	})
+	require.NoError(t, err)
+
+	run1, err := testQueries.CreateTaskRun(ctx, queries.CreateTaskRunParams{
+		TaskID: task.ID,
+		NodeID: "runtime-node-001",
+		Status: "running",
+	})
+	require.NoError(t, err)
+	run2, err := testQueries.CreateTaskRun(ctx, queries.CreateTaskRunParams{
+		TaskID: task.ID,
+		NodeID: "runtime-node-001",
+		Status: "running",
+	})
+	require.NoError(t, err)
+
+	event1, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
+		TenantID:       task.TenantID,
+		TaskID:         task.ID,
+		RunID:          run1.ID,
+		EventType:      "provider.text_delta",
+		SequenceNumber: 1,
+		Payload:        []byte(`{"run":1}`),
+		CommandID:      pgtype.Text{String: "cmd-run-1", Valid: true},
+		Metadata:       []byte(`{}`),
+	})
+	require.NoError(t, err)
+
+	event2, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
+		TenantID:       task.TenantID,
+		TaskID:         task.ID,
+		RunID:          run2.ID,
+		EventType:      "provider.text_delta",
+		SequenceNumber: 1,
+		Payload:        []byte(`{"run":2}`),
+		CommandID:      pgtype.Text{String: "cmd-run-2", Valid: true},
+		Metadata:       []byte(`{}`),
+	})
+	require.NoError(t, err)
+	assert.NotEqual(t, event1.ID, event2.ID)
+	assert.Equal(t, run1.ID, event1.RunID.UUID)
+	assert.Equal(t, run2.ID, event2.RunID.UUID)
+}
+
+func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+	runtimeNodeID := uuid.New()
+	digitalEmployeeID := uuid.New()
+	executionInstanceID := uuid.New()
+	commandID := "cmd-run-loop-001"
+	dispatchedAt := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+
+	receipt, err := testQueries.CreateRuntimeCommandReceipt(ctx, queries.CreateRuntimeCommandReceiptParams{
+		TenantID:      tenantID,
+		CommandID:     commandID,
+		CommandType:   "provider_run",
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        "runtime-node-001",
+		ResourceType:  "task_run",
+		ResourceID:    uuid.New(),
+		Status:        "dispatching",
+		Payload:       []byte(`{"objective":"diagnose failing checkout"}`),
+		DispatchedAt:  dispatchedAt,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, commandID, receipt.CommandID)
+	assert.Equal(t, "dispatching", receipt.Status)
+
+	duplicateReceipt, err := testQueries.CreateRuntimeCommandReceipt(ctx, queries.CreateRuntimeCommandReceiptParams{
+		TenantID:      tenantID,
+		CommandID:     commandID,
+		CommandType:   "provider_run",
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        "runtime-node-001",
+		ResourceType:  "task_run",
+		ResourceID:    uuid.New(),
+		Status:        "dispatching",
+		Payload:       []byte(`{"objective":"duplicate should not overwrite"}`),
+		DispatchedAt:  dispatchedAt,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, receipt.ID, duplicateReceipt.ID)
+	assert.JSONEq(t, `{"objective":"diagnose failing checkout"}`, string(duplicateReceipt.Payload))
+
+	fetchedReceipt, err := testQueries.GetRuntimeCommandReceiptByCommandID(ctx, queries.GetRuntimeCommandReceiptByCommandIDParams{
+		TenantID:  tenantID,
+		CommandID: commandID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, receipt.ID, fetchedReceipt.ID)
+
+	completedReceipt, err := testQueries.UpdateRuntimeCommandReceiptStatus(ctx, queries.UpdateRuntimeCommandReceiptStatusParams{
+		TenantID:     tenantID,
+		CommandID:    commandID,
+		Status:       "completed",
+		Result:       []byte(`{"ok":true}`),
+		ErrorMessage: pgtype.Text{},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "completed", completedReceipt.Status)
+	assert.True(t, completedReceipt.CompletedAt.Valid)
+	assert.JSONEq(t, `{"ok":true}`, string(completedReceipt.Result))
+
+	createdRun, err := testQueries.CreateDigitalEmployeeTaskRun(ctx, queries.CreateDigitalEmployeeTaskRunParams{
+		TenantID:            tenantID,
+		TeamID:              teamID,
+		Title:               "执行结账诊断",
+		Description:         pgtype.Text{String: "复现并诊断结账失败", Valid: true},
+		Priority:            5,
+		ProviderType:        "claude-code",
+		CreatorID:           uuid.NullUUID{},
+		TargetNodeID:        "runtime-node-001",
+		WorkspacePath:       pgtype.Text{String: "/workspace/superteam", Valid: true},
+		Params:              []byte(`{"objective":"diagnose failing checkout"}`),
+		IdempotencyKey:      pgtype.Text{String: "idem-run-loop-001", Valid: true},
+		RiskLevel:           pgtype.Text{String: "normal", Valid: true},
+		NodeID:              "runtime-node-001",
+		RuntimeNodeID:       runtimeNodeID,
+		ProviderSessionID:   pgtype.Text{},
+		RunStatus:           "queued",
+		CommandID:           commandID,
+		DigitalEmployeeID:   digitalEmployeeID,
+		ExecutionInstanceID: executionInstanceID,
+		TimeoutSec:          pgtype.Int4{Int32: 600, Valid: true},
+		GraceSec:            pgtype.Int4{Int32: 30, Valid: true},
+		IdempotencyFingerprint: pgtype.Text{
+			String: "fingerprint-run-loop-001",
+			Valid:  true,
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "pending", createdRun.TaskStatus)
+	assert.Equal(t, "queued", createdRun.RunStatus)
+
+	retriedRun, err := testQueries.CreateDigitalEmployeeTaskRun(ctx, queries.CreateDigitalEmployeeTaskRunParams{
+		TenantID:            tenantID,
+		TeamID:              teamID,
+		Title:               "重复执行结账诊断",
+		Description:         pgtype.Text{String: "同一幂等键重试不应新建任务", Valid: true},
+		Priority:            1,
+		ProviderType:        "claude-code",
+		CreatorID:           uuid.NullUUID{},
+		TargetNodeID:        "runtime-node-001",
+		WorkspacePath:       pgtype.Text{String: "/workspace/superteam", Valid: true},
+		Params:              []byte(`{"objective":"duplicate retry"}`),
+		IdempotencyKey:      pgtype.Text{String: "idem-run-loop-001", Valid: true},
+		RiskLevel:           pgtype.Text{String: "normal", Valid: true},
+		NodeID:              "runtime-node-001",
+		RuntimeNodeID:       runtimeNodeID,
+		ProviderSessionID:   pgtype.Text{},
+		RunStatus:           "queued",
+		CommandID:           "cmd-run-loop-retry",
+		DigitalEmployeeID:   digitalEmployeeID,
+		ExecutionInstanceID: executionInstanceID,
+		TimeoutSec:          pgtype.Int4{Int32: 600, Valid: true},
+		GraceSec:            pgtype.Int4{Int32: 30, Valid: true},
+		IdempotencyFingerprint: pgtype.Text{
+			String: "fingerprint-run-loop-001",
+			Valid:  true,
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, createdRun.TaskID, retriedRun.TaskID)
+	assert.Equal(t, createdRun.RunID, retriedRun.RunID)
+	assert.Equal(t, createdRun.CommandID, retriedRun.CommandID)
+
+	_, err = testQueries.CreateDigitalEmployeeTaskRun(ctx, queries.CreateDigitalEmployeeTaskRunParams{
+		TenantID:            tenantID,
+		TeamID:              teamID,
+		Title:               "幂等冲突执行结账诊断",
+		Description:         pgtype.Text{String: "同一幂等键不同指纹应返回冲突信号", Valid: true},
+		Priority:            1,
+		ProviderType:        "claude-code",
+		CreatorID:           uuid.NullUUID{},
+		TargetNodeID:        "runtime-node-001",
+		WorkspacePath:       pgtype.Text{String: "/workspace/superteam", Valid: true},
+		Params:              []byte(`{"objective":"conflicting retry"}`),
+		IdempotencyKey:      pgtype.Text{String: "idem-run-loop-001", Valid: true},
+		RiskLevel:           pgtype.Text{String: "normal", Valid: true},
+		NodeID:              "runtime-node-001",
+		RuntimeNodeID:       runtimeNodeID,
+		ProviderSessionID:   pgtype.Text{},
+		RunStatus:           "queued",
+		CommandID:           "cmd-run-loop-conflict",
+		DigitalEmployeeID:   digitalEmployeeID,
+		ExecutionInstanceID: executionInstanceID,
+		TimeoutSec:          pgtype.Int4{Int32: 600, Valid: true},
+		GraceSec:            pgtype.Int4{Int32: 30, Valid: true},
+		IdempotencyFingerprint: pgtype.Text{
+			String: "fingerprint-run-loop-conflict",
+			Valid:  true,
+		},
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
+
+	var taskCountAfterConflict int
+	err = testDB.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM tasks
+		WHERE tenant_id = $1
+		  AND idempotency_key = 'idem-run-loop-001'
+	`, tenantID).Scan(&taskCountAfterConflict)
+	require.NoError(t, err)
+	assert.Equal(t, 1, taskCountAfterConflict)
+
+	var runCountAfterConflict int
+	err = testDB.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM task_runs
+		WHERE tenant_id = $1
+		  AND digital_employee_id = $2
+		  AND idempotency_key = 'idem-run-loop-001'
+	`, tenantID, digitalEmployeeID).Scan(&runCountAfterConflict)
+	require.NoError(t, err)
+	assert.Equal(t, 1, runCountAfterConflict)
+
+	activeRun, err := testQueries.GetActiveDigitalEmployeeRun(ctx, queries.GetActiveDigitalEmployeeRunParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, createdRun.RunID, activeRun.ID)
+
+	runByCommand, err := testQueries.GetDigitalEmployeeRunByCommandID(ctx, queries.GetDigitalEmployeeRunByCommandIDParams{
+		TenantID:  tenantID,
+		CommandID: commandID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, createdRun.RunID, runByCommand.ID)
+
+	listedRuns, err := testQueries.ListDigitalEmployeeRuns(ctx, queries.ListDigitalEmployeeRunsParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+		Limit:             10,
+		Offset:            0,
+	})
+	require.NoError(t, err)
+	require.Len(t, listedRuns, 1)
+	assert.Equal(t, createdRun.RunID, listedRuns[0].ID)
+
+	updatedRun, err := testQueries.UpdateDigitalEmployeeRunStatus(ctx, queries.UpdateDigitalEmployeeRunStatusParams{
+		TenantID:                  tenantID,
+		RunID:                     createdRun.RunID,
+		Status:                    "timed_out",
+		Result:                    []byte(`{"summary":"timeout"}`),
+		ErrorMessage:              pgtype.Text{String: "provider did not stop before deadline", Valid: true},
+		Diagnostic:                []byte(`{"deadline":"exceeded"}`),
+		LogRef:                    pgtype.Text{String: "s3://superteam/logs/cmd-run-loop-001.log", Valid: true},
+		RawResultRef:              pgtype.Text{String: "s3://superteam/results/cmd-run-loop-001.json", Valid: true},
+		WorkProducts:              []byte(`[{"type":"ExecutionResult","ref":"artifact://result"}]`),
+		SessionState:              []byte(`{"phase":"terminated"}`),
+		ErrorCode:                 pgtype.Text{String: "PROVIDER_TIMEOUT", Valid: true},
+		ErrorFamily:               pgtype.Text{String: "timeout", Valid: true},
+		ExitCode:                  pgtype.Int4{Int32: 124, Valid: true},
+		Signal:                    pgtype.Text{String: "SIGTERM", Valid: true},
+		ProviderSessionExternalID: pgtype.Text{String: "provider-session-001", Valid: true},
+	})
+	require.NoError(t, err)
+	assert.True(t, updatedRun.TimedOut)
+	assert.True(t, updatedRun.FinishedAt.Valid)
+	assert.JSONEq(t, `{"deadline":"exceeded"}`, string(updatedRun.Diagnostic))
+	assert.JSONEq(t, `[{"type":"ExecutionResult","ref":"artifact://result"}]`, string(updatedRun.WorkProducts))
+
+	dispatchedTaskEvent, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
+		TenantID:       tenantID,
+		TaskID:         createdRun.TaskID,
+		RunID:          createdRun.RunID,
+		EventType:      "run_dispatched",
+		SequenceNumber: -1,
+		Payload:        []byte(`{"source":"control-plane"}`),
+		CommandID:      pgtype.Text{String: commandID, Valid: true},
+		Metadata:       []byte(`{"source":"control-plane"}`),
+	})
+	require.NoError(t, err)
+
+	taskEvent, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
+		TenantID:       tenantID,
+		TaskID:         createdRun.TaskID,
+		RunID:          createdRun.RunID,
+		EventType:      "provider.text_delta",
+		SequenceNumber: 1,
+		Payload:        []byte(`{"text":"working"}`),
+		CommandID:      pgtype.Text{String: commandID, Valid: true},
+		RawEventRef:    pgtype.Text{String: "s3://superteam/raw/cmd-run-loop-001/1.json", Valid: true},
+		LogRef:         pgtype.Text{String: "s3://superteam/logs/cmd-run-loop-001.log", Valid: true},
+		Metadata:       []byte(`{"source":"runtime-writeback"}`),
+	})
+	require.NoError(t, err)
+
+	duplicateTaskEvent, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
+		TenantID:       tenantID,
+		TaskID:         createdRun.TaskID,
+		RunID:          createdRun.RunID,
+		EventType:      "provider.text_delta",
+		SequenceNumber: 1,
+		Payload:        []byte(`{"text":"duplicate"}`),
+		CommandID:      pgtype.Text{String: commandID, Valid: true},
+		RawEventRef:    pgtype.Text{String: "s3://superteam/raw/cmd-run-loop-001/duplicate.json", Valid: true},
+		LogRef:         pgtype.Text{String: "s3://superteam/logs/cmd-run-loop-001.log", Valid: true},
+		Metadata:       []byte(`{"source":"runtime-writeback"}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, taskEvent.ID, duplicateTaskEvent.ID)
+	assert.JSONEq(t, `{"text":"working"}`, string(duplicateTaskEvent.Payload))
+
+	stopRequestedTaskEvent, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
+		TenantID:       tenantID,
+		TaskID:         createdRun.TaskID,
+		RunID:          createdRun.RunID,
+		EventType:      "stop_requested",
+		SequenceNumber: -2,
+		Payload:        []byte(`{"source":"control-plane"}`),
+		CommandID:      pgtype.Text{String: "cmd-stop-run-loop-001", Valid: true},
+		Metadata:       []byte(`{"source":"control-plane"}`),
+	})
+	require.NoError(t, err)
+
+	baseEventTime := time.Now().UTC().Add(-3 * time.Minute)
+	_, err = testDB.Exec(ctx, `
+		UPDATE task_events
+		SET created_at = CASE id
+			WHEN $1 THEN $4
+			WHEN $2 THEN $5
+			WHEN $3 THEN $6
+			ELSE created_at
+		END
+		WHERE tenant_id = $7
+		  AND id IN ($1, $2, $3)
+	`, dispatchedTaskEvent.ID, taskEvent.ID, stopRequestedTaskEvent.ID, baseEventTime, baseEventTime.Add(time.Minute), baseEventTime.Add(2*time.Minute), tenantID)
+	require.NoError(t, err)
+
+	runEvents, err := testQueries.ListTaskEventsForRun(ctx, queries.ListTaskEventsForRunParams{
+		TenantID: tenantID,
+		TaskID:   createdRun.TaskID,
+		RunID:    createdRun.RunID,
+		Limit:    10,
+		Offset:   0,
+	})
+	require.NoError(t, err)
+	require.Len(t, runEvents, 3)
+	assert.Equal(t, []string{"run_dispatched", "provider.text_delta", "stop_requested"}, []string{runEvents[0].EventType, runEvents[1].EventType, runEvents[2].EventType})
+	assert.Equal(t, []int32{-1, 1, -2}, []int32{runEvents[0].SequenceNumber, runEvents[1].SequenceNumber, runEvents[2].SequenceNumber})
+
+	session, err := testQueries.UpsertProviderSessionByExternalID(ctx, queries.UpsertProviderSessionByExternalIDParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "provider-session-001",
+		DigitalEmployeeID:   digitalEmployeeID,
+		ExecutionInstanceID: executionInstanceID,
+		RuntimeNodeID:       runtimeNodeID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		SessionDisplayID:    pgtype.Text{String: "claude-code #001", Valid: true},
+		SessionParams:       []byte(`{"model":"claude-sonnet"}`),
+		SessionState:        []byte(`{"phase":"running"}`),
+		LastSequenceNumber:  7,
+		LastCommandID:       pgtype.Text{String: commandID, Valid: true},
+		LastRunID:           uuid.NullUUID{UUID: createdRun.RunID, Valid: true},
+		LastErrorFamily:     pgtype.Text{},
+		Metadata:            []byte(`{"source":"latest-writeback"}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "provider-session-001", session.ProviderSessionID)
+	assert.Equal(t, int32(7), session.LastSequenceNumber)
+
+	session, err = testQueries.UpsertProviderSessionByExternalID(ctx, queries.UpsertProviderSessionByExternalIDParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "provider-session-001",
+		DigitalEmployeeID:   digitalEmployeeID,
+		ExecutionInstanceID: executionInstanceID,
+		RuntimeNodeID:       runtimeNodeID,
+		ProviderType:        "claude-code",
+		Status:              "idle",
+		Recoverable:         true,
+		SessionDisplayID:    pgtype.Text{},
+		SessionParams:       []byte(`{"model":"claude-sonnet"}`),
+		SessionState:        []byte(`{"phase":"idle"}`),
+		LastSequenceNumber:  5,
+		LastCommandID:       pgtype.Text{String: commandID, Valid: true},
+		LastRunID:           uuid.NullUUID{UUID: createdRun.RunID, Valid: true},
+		LastErrorFamily:     pgtype.Text{},
+		Metadata:            []byte(`{"source":"stale-writeback"}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "running", session.Status)
+	assert.Equal(t, int32(7), session.LastSequenceNumber)
+	assert.Equal(t, "claude-code #001", session.SessionDisplayID.String)
+	assert.JSONEq(t, `{"phase":"running"}`, string(session.SessionState))
+	assert.JSONEq(t, `{"source":"latest-writeback"}`, string(session.Metadata))
+
+	providerEvent, err := testQueries.CreateProviderSessionEventIfAbsent(ctx, queries.CreateProviderSessionEventIfAbsentParams{
+		TenantID:            tenantID,
+		ProviderSessionUuid: session.ID,
+		EventType:           "provider.text_delta",
+		SequenceNumber:      7,
+		Payload:             []byte(`{"text":"done"}`),
+		RequestID:           pgtype.Text{String: "request-run-loop-001", Valid: true},
+		CommandID:           pgtype.Text{String: commandID, Valid: true},
+		RawEventRef:         pgtype.Text{String: "s3://superteam/raw/cmd-run-loop-001/7.json", Valid: true},
+		LogRef:              pgtype.Text{String: "s3://superteam/logs/cmd-run-loop-001.log", Valid: true},
+		SessionStatePatch:   []byte(`{"last_event":"done"}`),
+		Metadata:            []byte(`{"source":"provider"}`),
+	})
+	require.NoError(t, err)
+
+	duplicateProviderEvent, err := testQueries.CreateProviderSessionEventIfAbsent(ctx, queries.CreateProviderSessionEventIfAbsentParams{
+		TenantID:            tenantID,
+		ProviderSessionUuid: session.ID,
+		EventType:           "provider.text_delta",
+		SequenceNumber:      7,
+		Payload:             []byte(`{"text":"duplicate"}`),
+		RequestID:           pgtype.Text{String: "request-run-loop-001", Valid: true},
+		CommandID:           pgtype.Text{String: commandID, Valid: true},
+		RawEventRef:         pgtype.Text{String: "s3://superteam/raw/cmd-run-loop-001/duplicate.json", Valid: true},
+		LogRef:              pgtype.Text{String: "s3://superteam/logs/cmd-run-loop-001.log", Valid: true},
+		SessionStatePatch:   []byte(`{"last_event":"duplicate"}`),
+		Metadata:            []byte(`{"source":"provider"}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, providerEvent.ID, duplicateProviderEvent.ID)
+	assert.JSONEq(t, `{"text":"done"}`, string(duplicateProviderEvent.Payload))
+	assert.JSONEq(t, `{"last_event":"done"}`, string(duplicateProviderEvent.SessionStatePatch))
+
+	requestOnlyEvent, err := testQueries.CreateProviderSessionEventIfAbsent(ctx, queries.CreateProviderSessionEventIfAbsentParams{
+		TenantID:            tenantID,
+		ProviderSessionUuid: session.ID,
+		EventType:           "provider.tool_call",
+		SequenceNumber:      8,
+		Payload:             []byte(`{"tool":"read_file"}`),
+		RequestID:           pgtype.Text{String: "request-only-run-loop-001", Valid: true},
+		RawEventRef:         pgtype.Text{String: "s3://superteam/raw/request-only/8.json", Valid: true},
+		LogRef:              pgtype.Text{String: "s3://superteam/logs/request-only.log", Valid: true},
+		SessionStatePatch:   []byte(`{"last_event":"tool_call"}`),
+		Metadata:            []byte(`{"source":"provider"}`),
+	})
+	require.NoError(t, err)
+
+	duplicateRequestOnlyEvent, err := testQueries.CreateProviderSessionEventIfAbsent(ctx, queries.CreateProviderSessionEventIfAbsentParams{
+		TenantID:            tenantID,
+		ProviderSessionUuid: session.ID,
+		EventType:           "provider.tool_call",
+		SequenceNumber:      8,
+		Payload:             []byte(`{"tool":"duplicate"}`),
+		RequestID:           pgtype.Text{String: "request-only-run-loop-001", Valid: true},
+		RawEventRef:         pgtype.Text{String: "s3://superteam/raw/request-only/duplicate.json", Valid: true},
+		LogRef:              pgtype.Text{String: "s3://superteam/logs/request-only.log", Valid: true},
+		SessionStatePatch:   []byte(`{"last_event":"duplicate"}`),
+		Metadata:            []byte(`{"source":"provider"}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, requestOnlyEvent.ID, duplicateRequestOnlyEvent.ID)
+	assert.JSONEq(t, `{"tool":"read_file"}`, string(duplicateRequestOnlyEvent.Payload))
+
+	otherSession, err := testQueries.UpsertProviderSessionByExternalID(ctx, queries.UpsertProviderSessionByExternalIDParams{
+		TenantID:            tenantID,
+		ProviderSessionID:   "provider-session-002",
+		DigitalEmployeeID:   digitalEmployeeID,
+		ExecutionInstanceID: executionInstanceID,
+		RuntimeNodeID:       runtimeNodeID,
+		ProviderType:        "claude-code",
+		Status:              "running",
+		Recoverable:         true,
+		SessionDisplayID:    pgtype.Text{String: "claude-code #002", Valid: true},
+		SessionParams:       []byte(`{"model":"claude-sonnet"}`),
+		SessionState:        []byte(`{"phase":"running"}`),
+		LastSequenceNumber:  7,
+		LastCommandID:       pgtype.Text{String: commandID, Valid: true},
+		LastRunID:           uuid.NullUUID{UUID: createdRun.RunID, Valid: true},
+		LastErrorFamily:     pgtype.Text{},
+		Metadata:            []byte(`{"source":"other-session"}`),
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.CreateProviderSessionEventIfAbsent(ctx, queries.CreateProviderSessionEventIfAbsentParams{
+		TenantID:            tenantID,
+		ProviderSessionUuid: otherSession.ID,
+		EventType:           "provider.text_delta",
+		SequenceNumber:      7,
+		Payload:             []byte(`{"text":"other session duplicate command"}`),
+		RequestID:           pgtype.Text{String: "request-other-session", Valid: true},
+		CommandID:           pgtype.Text{String: commandID, Valid: true},
+		RawEventRef:         pgtype.Text{String: "s3://superteam/raw/other-session/7.json", Valid: true},
+		LogRef:              pgtype.Text{String: "s3://superteam/logs/other-session.log", Valid: true},
+		SessionStatePatch:   []byte(`{"last_event":"other-session"}`),
+		Metadata:            []byte(`{"source":"provider"}`),
+	})
+	assert.ErrorIs(t, err, pgx.ErrNoRows)
 }
 
 // ============================================================================

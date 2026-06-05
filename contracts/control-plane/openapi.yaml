@@ -1018,6 +1018,95 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DigitalEmployeeExecutionInstance"
+  /api/v1/digital-employees/{employeeId}/runs:
+    get:
+      operationId: listDigitalEmployeeRuns
+      summary: List digital employee runs
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Digital employee run list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DigitalEmployeeRun"
+    post:
+      operationId: createDigitalEmployeeRun
+      summary: Start a digital employee run
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDigitalEmployeeRunRequest"
+      responses:
+        "201":
+          description: Digital employee run created and dispatched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeRun"
+  /api/v1/digital-employees/{employeeId}/runs/{runId}:
+    get:
+      operationId: getDigitalEmployeeRun
+      summary: Get a digital employee run
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Digital employee run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeRun"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/runs/{runId}/events:
+    get:
+      operationId: listDigitalEmployeeRunEvents
+      summary: List digital employee run events
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - $ref: "#/components/parameters/RunId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Digital employee run event list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DigitalEmployeeRunEvent"
+  /api/v1/digital-employees/{employeeId}/runs/{runId}/stop:
+    post:
+      operationId: stopDigitalEmployeeRun
+      summary: Stop an active digital employee run
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - $ref: "#/components/parameters/RunId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StopDigitalEmployeeRunRequest"
+      responses:
+        "200":
+          description: Digital employee run is cancelling
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeRun"
   /api/v1/digital-employees/{employeeId}/provider-sessions:
     get:
       operationId: listProviderSessionsForDigitalEmployee
@@ -1122,6 +1211,13 @@ components:
         format: uuid
     EmployeeId:
       name: employeeId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RunId:
+      name: runId
       in: path
       required: true
       schema:
@@ -2244,6 +2340,8 @@ components:
         - team_id
         - name
         - role
+        - runtime_node_id
+        - provider_type
       properties:
         team_id:
           type: string
@@ -2265,6 +2363,17 @@ components:
           additionalProperties: true
         risk_level:
           type: string
+        runtime_node_id:
+          type: string
+          format: uuid
+        provider_type:
+          type: string
+        session_policy:
+          type: object
+          additionalProperties: true
+        workspace_policy:
+          type: object
+          additionalProperties: true
         metadata:
           type: object
           additionalProperties: true
@@ -2602,6 +2711,201 @@ components:
         metadata:
           type: object
           additionalProperties: true
+    DigitalEmployeeRunStatus:
+      type: string
+      enum:
+        - queued
+        - dispatching
+        - running
+        - cancelling
+        - completed
+        - failed
+        - cancelled
+        - timed_out
+    DigitalEmployeeRun:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - task_id
+        - digital_employee_id
+        - execution_instance_id
+        - runtime_node_id
+        - node_id
+        - command_id
+        - provider_type
+        - status
+        - result
+        - diagnostic
+        - work_products
+        - session_state
+        - timed_out
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        execution_instance_id:
+          type: string
+          format: uuid
+        runtime_node_id:
+          type: string
+          format: uuid
+        node_id:
+          type: string
+        command_id:
+          type: string
+        provider_type:
+          type: string
+        provider_session_id:
+          type: string
+        provider_session_external_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/DigitalEmployeeRunStatus"
+        result:
+          type: object
+          additionalProperties: true
+        diagnostic:
+          type: object
+          additionalProperties: true
+        log_ref:
+          type: string
+        raw_result_ref:
+          type: string
+        work_products:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        session_state:
+          type: object
+          additionalProperties: true
+        error_message:
+          type: string
+        error_code:
+          type: string
+        error_family:
+          type: string
+        exit_code:
+          type: integer
+          format: int32
+        signal:
+          type: string
+        timed_out:
+          type: boolean
+        idempotency_key:
+          type: string
+        timeout_sec:
+          type: integer
+          format: int32
+        grace_sec:
+          type: integer
+          format: int32
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateDigitalEmployeeRunRequest:
+      type: object
+      required:
+        - objective
+      properties:
+        objective:
+          type: string
+          minLength: 1
+        prompt:
+          type: string
+        context_refs:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        artifact_refs:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        output_schema:
+          type: object
+          additionalProperties: true
+        allowed_actions:
+          type: array
+          items:
+            type: string
+        forbidden_actions:
+          type: array
+          items:
+            type: string
+        secret_refs:
+          type: array
+          items:
+            type: string
+        idempotency_key:
+          type: string
+        timeout_sec:
+          type: integer
+          format: int32
+        grace_sec:
+          type: integer
+          format: int32
+        metadata:
+          type: object
+          additionalProperties: true
+    DigitalEmployeeRunEvent:
+      type: object
+      required:
+        - event_type
+        - sequence_number
+        - payload
+      properties:
+        event_type:
+          type: string
+        sequence_number:
+          type: integer
+          format: int32
+        payload:
+          type: object
+          additionalProperties: true
+        provider_session_external_id:
+          type: string
+        session_state_patch:
+          type: object
+          additionalProperties: true
+        log_ref:
+          type: string
+        raw_event_ref:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    StopDigitalEmployeeRunRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
     ProviderSession:
       type: object
       required:

@@ -146,7 +146,11 @@ impl RuntimeRunStore {
         Ok(())
     }
 
-    pub async fn record_event(&self, run_id: &str, event: ProviderEvent) -> anyhow::Result<()> {
+    pub async fn record_event(
+        &self,
+        run_id: &str,
+        event: ProviderEvent,
+    ) -> anyhow::Result<RunEventRecord> {
         let record = {
             let mut runs = self.runs.lock().await;
             let state = runs
@@ -166,13 +170,14 @@ impl RuntimeRunStore {
         };
 
         self.append_event(&record).await?;
-        let _ = self.event_sender.send(record);
-        Ok(())
+        let _ = self.event_sender.send(record.clone());
+        Ok(record)
     }
 
     pub async fn finish_failed(&self, run_id: &str, message: String) -> anyhow::Result<()> {
         self.record_event(run_id, ProviderEvent::TurnError { message })
             .await
+            .map(|_| ())
     }
 
     pub async fn cancel_run(&self, run_id: &str, reason: Option<String>) -> anyhow::Result<()> {

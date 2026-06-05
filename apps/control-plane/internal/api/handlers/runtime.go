@@ -19,6 +19,8 @@ import (
 	"nhooyr.io/websocket"
 )
 
+const runtimeCommandDrivenProviderRunProtocol = "provider-run/v1"
+
 type RuntimeService interface {
 	RegisterNode(ctx context.Context, req runtime.RegisterNodeRequest) (*runtime.Node, error)
 	UpdateHeartbeat(ctx context.Context, req runtime.UpdateHeartbeatRequest) (*runtime.Node, error)
@@ -448,6 +450,9 @@ func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, t := range tasks {
+			if isRuntimeCommandDrivenTask(t) {
+				continue
+			}
 			allowed, err := h.runtimeCanClaim(ctx, nodeID, t)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -482,6 +487,11 @@ func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isRuntimeCommandDrivenTask(t) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	allowed, err := h.runtimeCanClaim(ctx, nodeID, t)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -493,6 +503,18 @@ func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.assignTask(ctx, w, t, nodeID)
+}
+
+func isRuntimeCommandDrivenTask(t *task.Task) bool {
+	if t == nil || len(t.Params) == 0 {
+		return false
+	}
+	var params map[string]any
+	if err := json.Unmarshal(t.Params, &params); err != nil {
+		return false
+	}
+	protocol, ok := params["provider_run_protocol"].(string)
+	return ok && protocol == runtimeCommandDrivenProviderRunProtocol
 }
 
 func (h *RuntimeHandler) runtimeCanClaim(ctx context.Context, nodeID string, t *task.Task) (bool, error) {

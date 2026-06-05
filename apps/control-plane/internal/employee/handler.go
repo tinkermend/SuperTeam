@@ -28,6 +28,7 @@ type HandlerService interface {
 
 type HTTPHandler struct {
 	service    HandlerService
+	runService RunHandlerService
 	authorizer authz.Authorizer
 }
 
@@ -35,8 +36,16 @@ func NewHandler(service HandlerService) *HTTPHandler {
 	return &HTTPHandler{service: service}
 }
 
+func NewHandlerWithRunService(service HandlerService, runService RunHandlerService) *HTTPHandler {
+	return &HTTPHandler{service: service, runService: runService}
+}
+
 func (h *HTTPHandler) SetAuthorizer(authorizer authz.Authorizer) {
 	h.authorizer = authorizer
+}
+
+func (h *HTTPHandler) SetRunService(runService RunHandlerService) {
+	h.runService = runService
 }
 
 func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +103,10 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		ApprovalPolicy   map[string]any `json:"approval_policy"`
 		RiskLevel        string         `json:"risk_level"`
 		Metadata         map[string]any `json:"metadata"`
+		RuntimeNodeID    uuid.UUID      `json:"runtime_node_id"`
+		ProviderType     string         `json:"provider_type"`
+		SessionPolicy    map[string]any `json:"session_policy"`
+		WorkspacePolicy  map[string]any `json:"workspace_policy"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -110,6 +123,10 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		ApprovalPolicy:   req.ApprovalPolicy,
 		RiskLevel:        req.RiskLevel,
 		Metadata:         req.Metadata,
+		RuntimeNodeID:    req.RuntimeNodeID,
+		ProviderType:     req.ProviderType,
+		SessionPolicy:    req.SessionPolicy,
+		WorkspacePolicy:  req.WorkspacePolicy,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -508,6 +525,10 @@ func employeeIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, b
 
 func writeHandlerError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrRuntimeUnavailable), errors.Is(err, ErrProviderUnavailable):
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	case errors.Is(err, ErrEffectiveConfigRequired):
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 	case errors.Is(err, ErrInvalidInput):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNotFound):

@@ -203,6 +203,49 @@ func TestClaimTaskAssignsFirstSupportedProviderTask(t *testing.T) {
 	}
 }
 
+func TestClaimTaskSkipsRuntimeCommandDrivenTask(t *testing.T) {
+	node := &runtime.Node{
+		NodeID:             "node-1",
+		SupportedProviders: []string{"codex"},
+	}
+	commandDrivenTask := &task.Task{
+		ID:           handlerTestUUID(100),
+		ProviderType: "codex",
+		Priority:     9,
+		Params:       []byte(`{"provider_run_protocol":"provider-run/v1"}`),
+	}
+	regularTask := &task.Task{
+		ID:           handlerTestUUID(200),
+		ProviderType: "codex",
+		Priority:     1,
+		Params:       []byte(`{"kind":"legacy-task"}`),
+	}
+	taskService := &claimTaskService{
+		tasksByProvider: map[string][]*task.Task{
+			"codex": {commandDrivenTask, regularTask},
+		},
+	}
+	handler := NewRuntimeHandler(
+		&claimRuntimeService{node: node},
+		taskService,
+		&claimPoller{},
+	)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/tasks/claim?timeout=1", nil)
+	ctx := context.WithValue(request.Context(), middleware.NodeIDKey, node.NodeID)
+	request = request.WithContext(ctx)
+	response := httptest.NewRecorder()
+
+	handler.ClaimTask(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if taskService.assignedTaskID != regularTask.ID {
+		t.Fatalf("expected regular task %s to be assigned, got %s", regularTask.ID, taskService.assignedTaskID)
+	}
+}
+
 func TestClaimTaskAssignsHighestPriorityAcrossSupportedProviders(t *testing.T) {
 	node := &runtime.Node{
 		NodeID:             "node-1",
@@ -387,6 +430,47 @@ func TestClaimTaskAssignsAllowedCandidateWhenHigherPriorityDenied(t *testing.T) 
 	}
 	if !checkedTaskIDs[blockedTask.ID.String()] || !checkedTaskIDs[allowedTask.ID.String()] {
 		t.Fatalf("expected checks for blocked and allowed tasks, got %#v", authorizer.checks)
+	}
+}
+
+func TestClaimTaskSkipsPolledRuntimeCommandDrivenTask(t *testing.T) {
+	node := &runtime.Node{
+		NodeID:             "node-1",
+		SupportedProviders: []string{"codex"},
+	}
+	polledTask := &task.Task{
+		ID:           handlerTestUUID(200),
+		ProviderType: "codex",
+		Params:       []byte(`{"provider_run_protocol":"provider-run/v1"}`),
+	}
+	taskService := &claimTaskService{
+		tasksByProvider: map[string][]*task.Task{
+			"codex": nil,
+		},
+	}
+	authorizer := &claimAuthorizer{allowed: true}
+	handler := NewRuntimeHandler(
+		&claimRuntimeService{node: node},
+		taskService,
+		&claimPoller{task: polledTask},
+		authorizer,
+	)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/tasks/claim?timeout=1", nil)
+	ctx := context.WithValue(request.Context(), middleware.NodeIDKey, node.NodeID)
+	request = request.WithContext(ctx)
+	response := httptest.NewRecorder()
+
+	handler.ClaimTask(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("expected no content for command-driven task, got %d: %s", response.Code, response.Body.String())
+	}
+	if taskService.assignedTaskID != uuid.Nil {
+		t.Fatalf("expected no assignment, got %s", taskService.assignedTaskID)
+	}
+	if len(authorizer.checks) != 0 {
+		t.Fatalf("expected command-driven task to skip authz claim checks, got %#v", authorizer.checks)
 	}
 }
 

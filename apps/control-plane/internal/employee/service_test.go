@@ -2,29 +2,61 @@ package employee
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	cpruntime "github.com/superteam/control-plane/internal/runtime"
 )
 
-func TestCreateDraftDigitalEmployeeDefaultsAndTrims(t *testing.T) {
+func TestCreateDraftProvisioningDispatchesRuntimeCommandAndReturnsReadyEmployee(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	dispatcher := newFakeRuntimeCommandDispatcher()
+	svc, err := NewServiceWithProvisioning(repo, dispatcher)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
 	tenantID := uuid.New()
 	teamID := uuid.New()
+	runtimeNodeID := uuid.New()
 	repo.teams[teamID] = tenantID
+	repo.preflight = RuntimeProvisioningPreflight{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        "runtime-node-1",
+		AgentHomeDir:  "/runtime/reported/agent-home",
+		GovernanceSnapshot: map[string]any{
+			"team_config_revision_id": uuid.NewString(),
+			"authorization":           "Bearer raw-token",
+			"capability_policy":       map[string]any{"api_key": "raw-key"},
+			"approval_policy":         map[string]any{"min_risk_for_human": "high"},
+		},
+		HasActiveTeamConfig:   true,
+		RuntimeOnline:         true,
+		EnrollmentApproved:    true,
+		RuntimeSessionActive:  true,
+		ProviderAvailable:     true,
+		ProviderPolicyAllowed: true,
+		RuntimePolicyAllowed:  true,
+	}
+	repo.waitStatus = string(DigitalEmployeeRunStatusCompleted)
+	dispatcher.connected["runtime-node-1"] = true
+	sessionPolicy := map[string]any{"mode": "reuse_latest", "token": "raw-session-token"}
+	workspacePolicy := map[string]any{"labels": map[string]any{"tier": "standard"}, "secret": "raw-workspace-secret"}
 
 	created, err := svc.CreateDraft(context.Background(), CreateDraftRequest{
-		TenantID: tenantID,
-		TeamID:   &teamID,
-		Name:     "  Finance reviewer  ",
-		Role:     "  finance_reviewer  ",
+		TenantID:        tenantID,
+		TeamID:          &teamID,
+		Name:            "  Finance reviewer  ",
+		Role:            "  finance_reviewer  ",
+		RuntimeNodeID:   runtimeNodeID,
+		ProviderType:    "  codex  ",
+		SessionPolicy:   sessionPolicy,
+		WorkspacePolicy: workspacePolicy,
 	})
 	if err != nil {
 		t.Fatalf("create draft: %v", err)
@@ -42,8 +74,8 @@ func TestCreateDraftDigitalEmployeeDefaultsAndTrims(t *testing.T) {
 	if created.Role != "finance_reviewer" {
 		t.Fatalf("expected trimmed role, got %q", created.Role)
 	}
-	if created.Status != DigitalEmployeeStatusDraft {
-		t.Fatalf("expected draft status, got %q", created.Status)
+	if created.Status != DigitalEmployeeStatusReady {
+		t.Fatalf("expected ready status after provisioning completion, got %q", created.Status)
 	}
 	if created.RiskLevel != "medium" {
 		t.Fatalf("expected default risk level medium, got %q", created.RiskLevel)
@@ -52,11 +84,306 @@ func TestCreateDraftDigitalEmployeeDefaultsAndTrims(t *testing.T) {
 	assertEmptyMap(t, created.ContextPolicy, "context policy")
 	assertEmptyMap(t, created.ApprovalPolicy, "approval policy")
 	assertEmptyMap(t, created.Metadata, "metadata")
+	if repo.createdEmployeeCount != 1 {
+		t.Fatalf("expected one employee to be created, got %d", repo.createdEmployeeCount)
+	}
+	if len(repo.instances) != 1 {
+		t.Fatalf("expected one execution instance, got %#v", repo.instances)
+	}
+	var instance DigitalEmployeeExecutionInstanceRecord
+	for _, record := range repo.instances {
+		instance = record
+	}
+	if instance.Status != ExecutionInstanceStatusReady {
+		t.Fatalf("expected ready execution instance after completion, got %q", instance.Status)
+	}
+	if instance.AgentHomeDir != "/runtime/reported/agent-home" {
+		t.Fatalf("expected agent home dir from runtime preflight, got %q", instance.AgentHomeDir)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one runtime command, got %#v", dispatcher.commands)
+	}
+	command := dispatcher.commands[0]
+	if command.Type != "provision_instance" {
+		t.Fatalf("expected provision_instance command, got %q", command.Type)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(command.Payload, &payload); err != nil {
+		t.Fatalf("decode runtime command payload: %v", err)
+	}
+	if payload["command_id"] != command.ID {
+		t.Fatalf("expected payload command_id %q, got %#v", command.ID, payload["command_id"])
+	}
+	if payload["digital_employee_id"] != created.ID.String() || payload["execution_instance_id"] != instance.ID.String() {
+		t.Fatalf("unexpected provisioning ids in payload: %#v", payload)
+	}
+	if payload["provider_type"] != "codex" || payload["provider_run_protocol"] != providerRunProtocol {
+		t.Fatalf("unexpected provider payload fields: %#v", payload)
+	}
+	gotSessionPolicy, ok := payload["session_policy"].(map[string]any)
+	if !ok || gotSessionPolicy["mode"] != "reuse_latest" {
+		t.Fatalf("expected session policy in payload, got %#v", payload["session_policy"])
+	}
+	if gotSessionPolicy["token"] != "[redacted]" {
+		t.Fatalf("expected session policy token redacted in payload, got %#v", gotSessionPolicy)
+	}
+	gotWorkspacePolicy, ok := payload["workspace_policy"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected workspace policy in payload, got %#v", payload["workspace_policy"])
+	}
+	if gotWorkspacePolicy["secret"] != "[redacted]" {
+		t.Fatalf("expected workspace policy secret redacted in payload, got %#v", gotWorkspacePolicy)
+	}
+	governanceSnapshot, ok := payload["governance_snapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected governance snapshot object in payload, got %#v", payload["governance_snapshot"])
+	}
+	if governanceSnapshot["authorization"] != "[redacted]" {
+		t.Fatalf("expected governance authorization redacted in payload, got %#v", governanceSnapshot)
+	}
+	if gotCapabilityPolicy, ok := governanceSnapshot["capability_policy"].(map[string]any); !ok || gotCapabilityPolicy["api_key"] != "[redacted]" {
+		t.Fatalf("expected governance capability policy api_key redacted in payload, got %#v", governanceSnapshot["capability_policy"])
+	}
+	if gotApprovalPolicy, ok := governanceSnapshot["approval_policy"].(map[string]any); !ok || gotApprovalPolicy["min_risk_for_human"] != "high" {
+		t.Fatalf("expected governance approval policy in payload, got %#v", governanceSnapshot["approval_policy"])
+	}
+	if len(repo.commandReceipts) != 1 {
+		t.Fatalf("expected one command receipt, got %#v", repo.commandReceipts)
+	}
+	for _, receipt := range repo.commandReceipts {
+		gotSessionPolicy, ok := receipt.Payload["session_policy"].(map[string]any)
+		if !ok || gotSessionPolicy["token"] != "[redacted]" {
+			t.Fatalf("expected command receipt session policy token redacted, got %#v", receipt.Payload["session_policy"])
+		}
+		gotGovernanceSnapshot, ok := receipt.Payload["governance_snapshot"].(map[string]any)
+		if !ok || gotGovernanceSnapshot["authorization"] != "[redacted]" {
+			t.Fatalf("expected command receipt governance authorization redacted, got %#v", receipt.Payload["governance_snapshot"])
+		}
+	}
+}
+
+func TestCreateDraftRequiresRuntimeConnectionBeforeCreatingEmployee(t *testing.T) {
+	repo := newMemoryRepository()
+	dispatcher := newFakeRuntimeCommandDispatcher()
+	svc, err := NewServiceWithProvisioning(repo, dispatcher)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.teams[teamID] = tenantID
+	repo.preflight = RuntimeProvisioningPreflight{
+		TenantID:              tenantID,
+		TeamID:                teamID,
+		RuntimeNodeID:         runtimeNodeID,
+		NodeID:                "runtime-node-offline",
+		AgentHomeDir:          "/runtime/reported/agent-home",
+		GovernanceSnapshot:    map[string]any{"team_config_revision_id": uuid.NewString()},
+		HasActiveTeamConfig:   true,
+		RuntimeOnline:         true,
+		EnrollmentApproved:    true,
+		RuntimeSessionActive:  true,
+		ProviderAvailable:     true,
+		ProviderPolicyAllowed: true,
+		RuntimePolicyAllowed:  true,
+	}
+
+	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
+		TenantID:      tenantID,
+		TeamID:        &teamID,
+		Name:          "Incident analyst",
+		Role:          "incident_analyst",
+		RuntimeNodeID: runtimeNodeID,
+		ProviderType:  "codex",
+	})
+
+	if !errors.Is(err, ErrRuntimeUnavailable) {
+		t.Fatalf("expected runtime unavailable for disconnected runtime, got %v", err)
+	}
+	if repo.createdEmployeeCount != 0 {
+		t.Fatalf("expected disconnected runtime not to create employee, got %d", repo.createdEmployeeCount)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected disconnected runtime not to dispatch command, got %#v", dispatcher.commands)
+	}
+}
+
+func TestCreateDraftProvisioningFailureCleansUpEmployeeAndInstance(t *testing.T) {
+	repo := newMemoryRepository()
+	dispatcher := newFakeRuntimeCommandDispatcher()
+	svc, err := NewServiceWithProvisioning(repo, dispatcher)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.teams[teamID] = tenantID
+	repo.preflight = RuntimeProvisioningPreflight{
+		TenantID:              tenantID,
+		TeamID:                teamID,
+		RuntimeNodeID:         runtimeNodeID,
+		NodeID:                "runtime-node-1",
+		AgentHomeDir:          "/runtime/reported/agent-home",
+		GovernanceSnapshot:    map[string]any{"team_config_revision_id": uuid.NewString()},
+		HasActiveTeamConfig:   true,
+		RuntimeOnline:         true,
+		EnrollmentApproved:    true,
+		RuntimeSessionActive:  true,
+		ProviderAvailable:     true,
+		ProviderPolicyAllowed: true,
+		RuntimePolicyAllowed:  true,
+	}
+	repo.waitStatus = string(DigitalEmployeeRunStatusFailed)
+	dispatcher.connected["runtime-node-1"] = true
+
+	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
+		TenantID:      tenantID,
+		TeamID:        &teamID,
+		Name:          "Incident analyst",
+		Role:          "incident_analyst",
+		RuntimeNodeID: runtimeNodeID,
+		ProviderType:  "codex",
+	})
+
+	if !errors.Is(err, ErrRuntimeUnavailable) {
+		t.Fatalf("expected runtime unavailable for failed provisioning, got %v", err)
+	}
+	if len(repo.abortReasons) != 1 {
+		t.Fatalf("expected provisioning abort, got %#v", repo.abortReasons)
+	}
+	for _, record := range repo.employees {
+		if record.DeletedAt == nil || record.Status != DigitalEmployeeStatusError {
+			t.Fatalf("expected failed employee to be error and deleted, got %#v", record)
+		}
+	}
+	for _, record := range repo.instances {
+		if record.DeletedAt == nil || record.Status != ExecutionInstanceStatusError {
+			t.Fatalf("expected failed instance to be error and deleted, got %#v", record)
+		}
+	}
+}
+
+func TestCreateDraftRejectsProviderOutsideTeamPolicyBeforeCreatingEmployee(t *testing.T) {
+	repo := newMemoryRepository()
+	dispatcher := newFakeRuntimeCommandDispatcher()
+	svc, err := NewServiceWithProvisioning(repo, dispatcher)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.teams[teamID] = tenantID
+	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
+	repo.preflight.ProviderPolicyAllowed = false
+	dispatcher.connected["runtime-node-1"] = true
+
+	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
+		TenantID:      tenantID,
+		TeamID:        &teamID,
+		Name:          "Incident analyst",
+		Role:          "incident_analyst",
+		RuntimeNodeID: runtimeNodeID,
+		ProviderType:  "opencode",
+	})
+
+	if !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("expected provider unavailable for provider outside team policy, got %v", err)
+	}
+	if repo.createdEmployeeCount != 0 {
+		t.Fatalf("expected policy rejection not to create employee, got %d", repo.createdEmployeeCount)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected policy rejection not to dispatch command, got %#v", dispatcher.commands)
+	}
+}
+
+func TestCreateDraftRejectsRuntimeOutsideTeamPolicyBeforeCreatingEmployee(t *testing.T) {
+	repo := newMemoryRepository()
+	dispatcher := newFakeRuntimeCommandDispatcher()
+	svc, err := NewServiceWithProvisioning(repo, dispatcher)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.teams[teamID] = tenantID
+	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
+	repo.preflight.RuntimePolicyAllowed = false
+	dispatcher.connected["runtime-node-1"] = true
+
+	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
+		TenantID:      tenantID,
+		TeamID:        &teamID,
+		Name:          "Incident analyst",
+		Role:          "incident_analyst",
+		RuntimeNodeID: runtimeNodeID,
+		ProviderType:  "codex",
+	})
+
+	if !errors.Is(err, ErrRuntimeUnavailable) {
+		t.Fatalf("expected runtime unavailable for runtime outside team policy, got %v", err)
+	}
+	if repo.createdEmployeeCount != 0 {
+		t.Fatalf("expected policy rejection not to create employee, got %d", repo.createdEmployeeCount)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected policy rejection not to dispatch command, got %#v", dispatcher.commands)
+	}
+}
+
+func TestCreateDraftProvisioningWaitCancellationUsesIndependentCleanupContext(t *testing.T) {
+	repo := newMemoryRepository()
+	dispatcher := newFakeRuntimeCommandDispatcher()
+	svc, err := NewServiceWithProvisioning(repo, dispatcher)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.teams[teamID] = tenantID
+	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
+	dispatcher.connected["runtime-node-1"] = true
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = svc.CreateDraft(ctx, CreateDraftRequest{
+		TenantID:      tenantID,
+		TeamID:        &teamID,
+		Name:          "Incident analyst",
+		Role:          "incident_analyst",
+		RuntimeNodeID: runtimeNodeID,
+		ProviderType:  "codex",
+	})
+
+	if !errors.Is(err, ErrRuntimeUnavailable) || !strings.Contains(err.Error(), context.Canceled.Error()) {
+		t.Fatalf("expected runtime unavailable wrapping context cancellation, got %v", err)
+	}
+	if len(repo.abortReasons) != 1 {
+		t.Fatalf("expected provisioning abort after wait cancellation, got %#v", repo.abortReasons)
+	}
+	if len(repo.abortContextErrors) != 1 || repo.abortContextErrors[0] != nil {
+		t.Fatalf("expected abort cleanup to use independent live context, got %#v", repo.abortContextErrors)
+	}
+	for _, record := range repo.employees {
+		if record.DeletedAt == nil || record.Status != DigitalEmployeeStatusError {
+			t.Fatalf("expected cancelled provisioning employee to be error and deleted, got %#v", record)
+		}
+	}
+	for _, record := range repo.instances {
+		if record.DeletedAt == nil || record.Status != ExecutionInstanceStatusError {
+			t.Fatalf("expected cancelled provisioning instance to be error and deleted, got %#v", record)
+		}
+	}
 }
 
 func TestCreateDraftRequiresExistingTenantTeam(t *testing.T) {
 	repo := newMemoryRepository()
-	svc, err := NewService(repo)
+	svc, err := NewServiceWithProvisioning(repo, newFakeRuntimeCommandDispatcher())
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -64,10 +391,12 @@ func TestCreateDraftRequiresExistingTenantTeam(t *testing.T) {
 	teamID := uuid.New()
 
 	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
-		TenantID: tenantID,
-		TeamID:   &teamID,
-		Name:     "Incident analyst",
-		Role:     "incident_analyst",
+		TenantID:      tenantID,
+		TeamID:        &teamID,
+		Name:          "Incident analyst",
+		Role:          "incident_analyst",
+		RuntimeNodeID: uuid.New(),
+		ProviderType:  "codex",
 	})
 
 	if !errors.Is(err, ErrNotFound) {
@@ -813,10 +1142,38 @@ func assertBlockingIssuePath(t *testing.T, validation EffectiveConfigValidation,
 	t.Fatalf("expected blocking issue %q at %q, got %#v", code, path, validation.BlockingErrors)
 }
 
+func validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID uuid.UUID) RuntimeProvisioningPreflight {
+	return RuntimeProvisioningPreflight{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        "runtime-node-1",
+		AgentHomeDir:  "/runtime/reported/agent-home",
+		GovernanceSnapshot: map[string]any{
+			"team_config_revision_id": uuid.NewString(),
+		},
+		HasActiveTeamConfig:   true,
+		RuntimeOnline:         true,
+		EnrollmentApproved:    true,
+		RuntimeSessionActive:  true,
+		ProviderAvailable:     true,
+		ProviderPolicyAllowed: true,
+		RuntimePolicyAllowed:  true,
+	}
+}
+
 type memoryRepository struct {
 	teams                    map[uuid.UUID]uuid.UUID
 	employees                map[uuid.UUID]DigitalEmployeeRecord
 	instances                map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord
+	preflight                RuntimeProvisioningPreflight
+	preflightErr             error
+	commandReceipts          map[string]*RuntimeCommandReceipt
+	waitStatus               string
+	waitErr                  error
+	abortReasons             []string
+	abortContextErrors       []error
+	createdEmployeeCount     int
 	teamConfigs              map[uuid.UUID]TeamConfigInput
 	employeeConfigs          map[uuid.UUID]EmployeeConfigInput
 	effectiveConfigs         map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord
@@ -830,6 +1187,7 @@ func newMemoryRepository() *memoryRepository {
 		teams:                    make(map[uuid.UUID]uuid.UUID),
 		employees:                make(map[uuid.UUID]DigitalEmployeeRecord),
 		instances:                make(map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord),
+		commandReceipts:          make(map[string]*RuntimeCommandReceipt),
 		teamConfigs:              make(map[uuid.UUID]TeamConfigInput),
 		employeeConfigs:          make(map[uuid.UUID]EmployeeConfigInput),
 		effectiveConfigs:         make(map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord),
@@ -856,6 +1214,7 @@ func (r *memoryRepository) CreateDigitalEmployee(_ context.Context, params Creat
 		UpdatedAt:        now,
 	}
 	r.employees[record.ID] = record
+	r.createdEmployeeCount++
 	return record, nil
 }
 
@@ -1026,4 +1385,130 @@ func (r *memoryRepository) CreateDigitalEmployeeEffectiveConfig(_ context.Contex
 	}
 	r.effectiveConfigs[record.ID] = record
 	return record, nil
+}
+
+func (r *memoryRepository) GetRuntimeProvisioningPreflight(_ context.Context, tenantID, teamID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error) {
+	if r.preflightErr != nil {
+		return RuntimeProvisioningPreflight{}, r.preflightErr
+	}
+	if r.preflight.TenantID != tenantID || r.preflight.TeamID != teamID || r.preflight.RuntimeNodeID != runtimeNodeID || providerType == "" {
+		return RuntimeProvisioningPreflight{}, ErrNotFound
+	}
+	return r.preflight, nil
+}
+
+func (r *memoryRepository) CreateRuntimeCommandReceipt(_ context.Context, req CreateRuntimeCommandReceiptRequest) error {
+	r.commandReceipts[req.CommandID] = &RuntimeCommandReceipt{
+		ID:            uuid.New(),
+		TenantID:      req.TenantID,
+		CommandID:     req.CommandID,
+		CommandType:   req.CommandType,
+		RuntimeNodeID: req.RuntimeNodeID,
+		NodeID:        req.NodeID,
+		ResourceType:  req.ResourceType,
+		ResourceID:    req.ResourceID,
+		Status:        req.Status,
+		Payload:       redactRuntimeEventPayload(req.Payload),
+		DispatchedAt:  cloneTimePtr(req.DispatchedAt),
+		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
+	}
+	return nil
+}
+
+func (r *memoryRepository) WaitForRuntimeCommandCompletion(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeCommandReceipt, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if r.waitErr != nil {
+		return nil, r.waitErr
+	}
+	receipt, ok := r.commandReceipts[commandID]
+	if !ok || receipt.TenantID != tenantID {
+		return nil, ErrNotFound
+	}
+	if r.waitStatus != "" {
+		now := time.Now().UTC()
+		receipt.Status = r.waitStatus
+		receipt.CompletedAt = &now
+	}
+	if receipt.Status == string(DigitalEmployeeRunStatusCompleted) {
+		instance, ok := r.instances[receipt.ResourceID]
+		if !ok {
+			for _, record := range r.instances {
+				if record.ID == receipt.ResourceID {
+					instance = record
+					ok = true
+					break
+				}
+			}
+		}
+		if ok {
+			now := time.Now().UTC()
+			instance.Status = ExecutionInstanceStatusReady
+			instance.ReadyAt = &now
+			r.instances[instance.DigitalEmployeeID] = instance
+			employeeRecord := r.employees[instance.DigitalEmployeeID]
+			employeeRecord.Status = DigitalEmployeeStatusReady
+			employeeRecord.UpdatedAt = now
+			r.employees[instance.DigitalEmployeeID] = employeeRecord
+		}
+	}
+	return receipt, nil
+}
+
+func (r *memoryRepository) AbortProvisionedDigitalEmployee(ctx context.Context, tenantID, employeeID, executionInstanceID uuid.UUID, reason string) error {
+	r.abortReasons = append(r.abortReasons, reason)
+	r.abortContextErrors = append(r.abortContextErrors, ctx.Err())
+	now := time.Now().UTC()
+	employeeRecord, ok := r.employees[employeeID]
+	if ok && employeeRecord.TenantID == tenantID {
+		employeeRecord.Status = DigitalEmployeeStatusError
+		employeeRecord.DeletedAt = &now
+		employeeRecord.UpdatedAt = now
+		r.employees[employeeID] = employeeRecord
+	}
+	instance, ok := r.instances[employeeID]
+	if ok && instance.TenantID == tenantID && (executionInstanceID == uuid.Nil || instance.ID == executionInstanceID) {
+		instance.Status = ExecutionInstanceStatusError
+		instance.ErrorAt = &now
+		instance.ErrorMessage = &reason
+		instance.DeletedAt = &now
+		instance.UpdatedAt = now
+		r.instances[employeeID] = instance
+	}
+	for _, receipt := range r.commandReceipts {
+		if receipt.TenantID == tenantID && (executionInstanceID == uuid.Nil || receipt.ResourceID == executionInstanceID) {
+			receipt.Status = string(DigitalEmployeeRunStatusFailed)
+			receipt.ErrorMessage = &reason
+			receipt.CompletedAt = &now
+			receipt.UpdatedAt = now
+		}
+	}
+	return nil
+}
+
+type fakeRuntimeCommandDispatcher struct {
+	connected map[string]bool
+	commands  []cpruntime.RuntimeCommand
+	err       error
+}
+
+func newFakeRuntimeCommandDispatcher() *fakeRuntimeCommandDispatcher {
+	return &fakeRuntimeCommandDispatcher{connected: make(map[string]bool)}
+}
+
+func (f *fakeRuntimeCommandDispatcher) IsConnected(nodeID string) bool {
+	return f.connected[nodeID]
+}
+
+func (f *fakeRuntimeCommandDispatcher) Dispatch(_ context.Context, nodeID string, command cpruntime.RuntimeCommand) error {
+	if f.err != nil {
+		return f.err
+	}
+	if !f.IsConnected(nodeID) {
+		return cpruntime.ErrRuntimeNotConnected
+	}
+	f.commands = append(f.commands, command)
+	return nil
 }
