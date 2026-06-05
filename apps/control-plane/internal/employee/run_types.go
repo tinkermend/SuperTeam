@@ -1,6 +1,7 @@
 package employee
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -112,6 +113,25 @@ type RuntimeCommandWritebackIdentity struct {
 	TenantID      uuid.UUID
 	RuntimeNodeID uuid.UUID
 	NodeID        string
+}
+
+type RuntimeEventRecordRequest struct {
+	TenantID        uuid.UUID
+	RuntimeNodeID   uuid.UUID
+	NodeID          string
+	EventType       string
+	Severity        string
+	Source          string
+	Title           string
+	Description     string
+	ProviderType    string
+	CorrelationType string
+	CorrelationID   string
+	Payload         map[string]any
+}
+
+type RuntimeEventRecorder interface {
+	RecordRuntimeEvent(ctx context.Context, req RuntimeEventRecordRequest) error
 }
 
 type RuntimeCommandEventWriteback struct {

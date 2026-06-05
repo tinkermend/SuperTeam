@@ -127,12 +127,17 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	defer conn.Close(ctx)
 
-	runLoopMigrated, err := schemaHasTable(ctx, conn, "runtime_command_receipts")
+	runtimeEventsMigrated, err := schemaHasTable(ctx, conn, "runtime_events")
 	if err != nil {
 		return err
 	}
-	if runLoopMigrated {
+	if runtimeEventsMigrated {
 		return nil
+	}
+
+	runLoopMigrated, err := schemaHasTable(ctx, conn, "runtime_command_receipts")
+	if err != nil {
+		return err
 	}
 
 	baseMigrated, err := schemaHasTable(ctx, conn, "runtime_nodes")
@@ -149,7 +154,11 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 
 	// 按文件名排序
 	sort.Strings(files)
-	files = migrationFilesForSchemaState(files, baseMigrated)
+	files = migrationFilesForSchemaState(files, migrationSchemaState{
+		baseMigrated:          baseMigrated,
+		runLoopMigrated:       runLoopMigrated,
+		runtimeEventsMigrated: runtimeEventsMigrated,
+	})
 
 	// 执行每个迁移文件
 	for _, file := range files {
@@ -166,19 +175,52 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-func migrationFilesForSchemaState(files []string, baseMigrated bool) []string {
-	if !baseMigrated {
+type migrationSchemaState struct {
+	baseMigrated          bool
+	runLoopMigrated       bool
+	runtimeEventsMigrated bool
+}
+
+func migrationFilesForSchemaState(files []string, state migrationSchemaState) []string {
+	if state.runtimeEventsMigrated {
+		return nil
+	}
+	if state.runLoopMigrated {
+		return migrationFilesFrom(files, "007_runtime_events_overview.sql")
+	}
+	if !state.baseMigrated {
 		return files
 	}
 
+	return migrationFilesFrom(files, "003_add_team_governance_config.sql")
+}
+
+func migrationFilesFrom(files []string, firstMigration string) []string {
 	filtered := make([]string, 0, len(files))
 	for _, file := range files {
 		base := filepath.Base(file)
-		if base >= "003_add_team_governance_config.sql" {
+		if base >= firstMigration {
 			filtered = append(filtered, file)
 		}
 	}
 	return filtered
+}
+
+func TestMigrationFilesForSchemaStateAppliesRuntimeEventsAfterRunLoop(t *testing.T) {
+	files := []string{
+		filepath.Join("..", "migrations", "001_initial.sql"),
+		filepath.Join("..", "migrations", "003_add_team_governance_config.sql"),
+		filepath.Join("..", "migrations", "006_digital_employee_run_loop.sql"),
+		filepath.Join("..", "migrations", "007_runtime_events_overview.sql"),
+	}
+
+	selected := migrationFilesForSchemaState(files, migrationSchemaState{
+		baseMigrated:          true,
+		runLoopMigrated:       true,
+		runtimeEventsMigrated: false,
+	})
+
+	require.Equal(t, []string{filepath.Join("..", "migrations", "007_runtime_events_overview.sql")}, selected)
 }
 
 func schemaHasTable(ctx context.Context, conn *pgx.Conn, tableName string) (bool, error) {
@@ -203,6 +245,7 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 	ctx := context.Background()
 	_, err := db.Exec(ctx, `
 		TRUNCATE
+			runtime_events,
 			runtime_command_receipts,
 			provider_session_events,
 			provider_sessions,
@@ -745,6 +788,73 @@ func TestAuthzRuntimeNodeCoversTaskScope(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.False(t, staleNodeCovered)
+}
+
+func TestRuntimeEventsOverviewQueries(t *testing.T) {
+	if testQueries == nil {
+		t.Skip("query integration tests require TEST_DATABASE_URL")
+	}
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+	tenantID := seedTestTenant(t, testDB)
+	now := time.Now().UTC()
+
+	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "overview-node-001",
+		Name:               "overview node",
+		SupportedProviders: []byte(`["codex","claude-code"]`),
+		MaxSlots:           8,
+		CurrentLoad:        2,
+		Status:             "online",
+		Metadata:           []byte(`{"scope":"local"}`),
+		LastHeartbeatAt:    pgtype.Timestamptz{Time: now, Valid: true},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = testQueries.DeleteRuntimeNode(ctx, "overview-node-001") })
+
+	_, err = testDB.Exec(ctx, `UPDATE runtime_nodes SET tenant_id = $1 WHERE id = $2`, tenantID, node.ID)
+	require.NoError(t, err)
+
+	event, err := testQueries.CreateRuntimeEvent(ctx, queries.CreateRuntimeEventParams{
+		TenantID:        tenantID,
+		RuntimeNodeID:   uuid.NullUUID{UUID: node.ID, Valid: true},
+		NodeID:          pgtype.Text{String: "overview-node-001", Valid: true},
+		EventType:       "enrollment_approved",
+		Severity:        "success",
+		Source:          "runtime_enrollment",
+		Title:           "Runtime 节点接入通过",
+		Description:     pgtype.Text{String: "overview-node-001 已批准接入", Valid: true},
+		ProviderType:    pgtype.Text{},
+		CorrelationType: pgtype.Text{String: "runtime_enrollment", Valid: true},
+		CorrelationID:   pgtype.Text{String: "enrollment-001", Valid: true},
+		Payload:         []byte(`{"status":"approved"}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "enrollment_approved", event.EventType)
+
+	items, err := testQueries.ListRuntimeEvents(ctx, queries.ListRuntimeEventsParams{
+		TenantID:     tenantID,
+		EventType:    pgtype.Text{String: "enrollment_approved", Valid: true},
+		Severity:     pgtype.Text{},
+		NodeID:       pgtype.Text{},
+		ProviderType: pgtype.Text{},
+		Limit:        10,
+		Offset:       0,
+	})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, event.ID, items[0].ID)
+
+	totalNodes, err := testQueries.CountRuntimeNodesForTenant(ctx, tenantID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), totalNodes)
+
+	onlineNodes, err := testQueries.CountOnlineRuntimeNodesForTenant(ctx, queries.CountOnlineRuntimeNodesForTenantParams{
+		TenantID:        tenantID,
+		LastHeartbeatAt: pgtype.Timestamptz{Time: now.Add(-time.Minute), Valid: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), onlineNodes)
 }
 
 func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
@@ -3726,6 +3836,7 @@ func TestTaskEventIdempotencyIsScopedByRun(t *testing.T) {
 		Metadata:       []byte(`{}`),
 	})
 	require.NoError(t, err)
+	assert.True(t, event1.Inserted)
 
 	event2, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
 		TenantID:       task.TenantID,
@@ -3738,6 +3849,7 @@ func TestTaskEventIdempotencyIsScopedByRun(t *testing.T) {
 		Metadata:       []byte(`{}`),
 	})
 	require.NoError(t, err)
+	assert.True(t, event2.Inserted)
 	assert.NotEqual(t, event1.ID, event2.ID)
 	assert.Equal(t, run1.ID, event1.RunID.UUID)
 	assert.Equal(t, run2.ID, event2.RunID.UUID)
@@ -3991,6 +4103,7 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 		Metadata:       []byte(`{"source":"runtime-writeback"}`),
 	})
 	require.NoError(t, err)
+	assert.True(t, taskEvent.Inserted)
 
 	duplicateTaskEvent, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
 		TenantID:       tenantID,
@@ -4005,6 +4118,7 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 		Metadata:       []byte(`{"source":"runtime-writeback"}`),
 	})
 	require.NoError(t, err)
+	assert.False(t, duplicateTaskEvent.Inserted)
 	assert.Equal(t, taskEvent.ID, duplicateTaskEvent.ID)
 	assert.JSONEq(t, `{"text":"working"}`, string(duplicateTaskEvent.Payload))
 

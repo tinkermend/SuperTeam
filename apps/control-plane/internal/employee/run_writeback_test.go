@@ -15,14 +15,19 @@ func TestWritebackEventCreatesTaskAndProviderSessionEventsIdempotently(t *testin
 	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
 	repo.putRun(run)
 	repo.putReceipt(validWritebackReceipt(run))
-	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
+	recorder := &fakeRuntimeEventRecorder{}
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{}, recorder)
 	providerSessionExternalID := "provider-session-1"
+	rawEventRef := "s3://runtime/events/raw.json"
+	logRef := "s3://runtime/logs/stream.log"
 	event := RuntimeCommandEventWriteback{
 		EventType:                 "text_delta",
 		SequenceNumber:            7,
-		Payload:                   map[string]any{"text": "hello", "token": "secret"},
+		Payload:                   map[string]any{"text": "raw provider text", "token": "secret"},
 		ProviderSessionExternalID: &providerSessionExternalID,
 		SessionStatePatch:         map[string]any{"cursor": "seq-7"},
+		RawEventRef:               &rawEventRef,
+		LogRef:                    &logRef,
 		Metadata:                  map[string]any{"stream": "stdout", "token": "metadata-secret"},
 	}
 
@@ -71,6 +76,56 @@ func TestWritebackEventCreatesTaskAndProviderSessionEventsIdempotently(t *testin
 	}
 	if repo.providerSessionEvents[0].Metadata["token"] != "[redacted]" {
 		t.Fatalf("expected provider session event metadata token redacted, got %#v", repo.providerSessionEvents[0].Metadata)
+	}
+	if len(recorder.events) != 1 {
+		t.Fatalf("expected duplicate provider event to create one runtime overview event, got %#v", recorder.events)
+	}
+	overviewPayload := recorder.events[0].Payload
+	if overviewPayload["provider_event_type"] != "text_delta" || overviewPayload["sequence_number"] != int32(7) {
+		t.Fatalf("expected summary provider event metadata, got %#v", overviewPayload)
+	}
+	if overviewPayload["provider_session_external_id"] != providerSessionExternalID {
+		t.Fatalf("expected provider session id in overview payload, got %#v", overviewPayload)
+	}
+	if overviewPayload["raw_event_ref"] != rawEventRef || overviewPayload["log_ref"] != logRef {
+		t.Fatalf("expected refs in overview payload, got %#v", overviewPayload)
+	}
+	if _, ok := overviewPayload["payload"]; ok {
+		t.Fatalf("runtime overview payload must not include raw provider payload: %#v", overviewPayload)
+	}
+	if _, ok := overviewPayload["text"]; ok {
+		t.Fatalf("runtime overview payload must not include raw provider text: %#v", overviewPayload)
+	}
+}
+
+func TestWritebackDuplicateProviderEventUsesInsertSignalForRuntimeOverview(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	repo.forceMissingRunEventSequence = true
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	recorder := &fakeRuntimeEventRecorder{}
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{}, recorder)
+	providerSessionExternalID := "provider-session-1"
+	event := RuntimeCommandEventWriteback{
+		EventType:                 "text_delta",
+		SequenceNumber:            7,
+		Payload:                   map[string]any{"text": "raw provider text"},
+		ProviderSessionExternalID: &providerSessionExternalID,
+	}
+
+	if err := service.RecordEvent(context.Background(), validWritebackIdentity(run), "cmd-1", event); err != nil {
+		t.Fatalf("record event: %v", err)
+	}
+	if err := service.RecordEvent(context.Background(), validWritebackIdentity(run), "cmd-1", event); err != nil {
+		t.Fatalf("record duplicate event: %v", err)
+	}
+
+	if repo.taskEventInsertCount != 1 {
+		t.Fatalf("expected one effective task event insert, got %d", repo.taskEventInsertCount)
+	}
+	if len(recorder.events) != 1 {
+		t.Fatalf("expected overview event only for effective new task event, got %#v", recorder.events)
 	}
 }
 
@@ -360,6 +415,115 @@ func TestWritebackTerminalRedactsRuntimeOriginatedJSON(t *testing.T) {
 	}
 }
 
+func TestRunWritebackRecordsRuntimeTerminalEvent(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	recorder := &fakeRuntimeEventRecorder{}
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{}, recorder)
+	providerSessionExternalID := "provider-session-1"
+	rawResultRef := "s3://runtime/results/result.json"
+	logRef := "s3://runtime/logs/run.log"
+
+	if err := service.Complete(context.Background(), validWritebackIdentity(run), "cmd-1", RuntimeCommandTerminalWriteback{
+		Status:                    DigitalEmployeeRunStatusCompleted,
+		Summary:                   "done",
+		Result:                    map[string]any{"summary": "done", "secret_output": "raw output", "text": "raw provider text"},
+		Diagnostic:                map[string]any{"trace": "raw diagnostic"},
+		ProviderSessionExternalID: &providerSessionExternalID,
+		RawResultRef:              &rawResultRef,
+		LogRef:                    &logRef,
+		WorkProducts: []WorkProduct{{
+			Type:     "report",
+			Title:    "报告",
+			Metadata: map[string]any{"text": "raw artifact text"},
+		}},
+	}); err != nil {
+		t.Fatalf("complete run: %v", err)
+	}
+
+	if len(recorder.events) != 1 {
+		t.Fatalf("expected one runtime event, got %#v", recorder.events)
+	}
+	event := recorder.events[0]
+	if event.EventType != "command_completed" {
+		t.Fatalf("expected command_completed event, got %#v", event)
+	}
+	if event.Source != "runtime_command" {
+		t.Fatalf("expected runtime_command source, got %#v", event)
+	}
+	if event.TenantID != run.TenantID || event.RuntimeNodeID != run.RuntimeNodeID || event.NodeID != run.NodeID {
+		t.Fatalf("expected runtime identity copied to event, got %#v", event)
+	}
+	if event.ProviderType != run.ProviderType {
+		t.Fatalf("expected provider type %s, got %#v", run.ProviderType, event.ProviderType)
+	}
+	if event.CorrelationType != "runtime_command" || event.CorrelationID != run.CommandID {
+		t.Fatalf("expected runtime command correlation, got %#v", event)
+	}
+	if event.Payload["status"] != "completed" {
+		t.Fatalf("expected payload status completed, got %#v", event.Payload)
+	}
+	if event.Payload["provider_session_external_id"] != providerSessionExternalID {
+		t.Fatalf("expected provider session external id, got %#v", event.Payload)
+	}
+	if event.Payload["raw_result_ref"] != rawResultRef || event.Payload["log_ref"] != logRef {
+		t.Fatalf("expected result/log refs, got %#v", event.Payload)
+	}
+	for _, forbidden := range []string{"summary", "secret_output", "text", "diagnostic", "work_products", "session_state_patch", "error_message"} {
+		if _, ok := event.Payload[forbidden]; ok {
+			t.Fatalf("runtime overview terminal payload must not include %s: %#v", forbidden, event.Payload)
+		}
+	}
+}
+
+func TestRunWritebackRecordsRuntimeTerminalEventOnceOnReplay(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	recorder := &fakeRuntimeEventRecorder{}
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{}, recorder)
+	terminal := RuntimeCommandTerminalWriteback{
+		Status:  DigitalEmployeeRunStatusCompleted,
+		Summary: "done",
+		Result:  map[string]any{"summary": "done"},
+	}
+
+	if err := service.Complete(context.Background(), validWritebackIdentity(run), "cmd-1", terminal); err != nil {
+		t.Fatalf("complete run: %v", err)
+	}
+	if err := service.Complete(context.Background(), validWritebackIdentity(run), "cmd-1", terminal); err != nil {
+		t.Fatalf("replay completed run: %v", err)
+	}
+
+	if len(recorder.events) != 1 {
+		t.Fatalf("expected terminal replay to keep one runtime overview event, got %#v", recorder.events)
+	}
+}
+
+func TestRunWritebackRecordsRuntimeTerminalEventIgnoresRecorderFailure(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	recorder := &fakeRuntimeEventRecorder{err: errors.New("runtime overview unavailable")}
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{}, recorder)
+
+	if err := service.Complete(context.Background(), validWritebackIdentity(run), "cmd-1", RuntimeCommandTerminalWriteback{
+		Status:  DigitalEmployeeRunStatusCompleted,
+		Summary: "done",
+		Result:  map[string]any{"summary": "done"},
+	}); err != nil {
+		t.Fatalf("complete run despite recorder failure: %v", err)
+	}
+
+	if len(repo.receiptUpdates) != 1 || repo.receiptUpdates[0].Status != string(DigitalEmployeeRunStatusCompleted) {
+		t.Fatalf("expected writeback to persist despite recorder failure, got %#v", repo.receiptUpdates)
+	}
+}
+
 func TestWritebackEventWithoutProviderSessionStillWritesTaskEvent(t *testing.T) {
 	repo := newFakeRunWritebackRepository()
 	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
@@ -488,9 +652,9 @@ func TestWritebackFailProvisioningDeletesEmployeeAndInstance(t *testing.T) {
 	}
 }
 
-func mustNewRunWritebackService(t *testing.T, repo DigitalEmployeeRunRepository, audit AuditLogger) *DigitalEmployeeRunWritebackService {
+func mustNewRunWritebackService(t *testing.T, repo DigitalEmployeeRunRepository, audit AuditLogger, recorders ...RuntimeEventRecorder) *DigitalEmployeeRunWritebackService {
 	t.Helper()
-	service, err := NewDigitalEmployeeRunWritebackService(repo, audit)
+	service, err := NewDigitalEmployeeRunWritebackService(repo, audit, recorders...)
 	if err != nil {
 		t.Fatalf("new writeback service: %v", err)
 	}
@@ -613,6 +777,7 @@ type fakeRunWritebackRepository struct {
 	providerSessionEventInsertCount int
 	transactionCount                int
 	lockedReceiptReadCount          int
+	forceMissingRunEventSequence    bool
 }
 
 type fakeExecutionInstanceStatusUpdate struct {
@@ -732,6 +897,9 @@ func (f *fakeRunWritebackRepository) UpdateRunStatus(_ context.Context, req Upda
 }
 
 func (f *fakeRunWritebackRepository) HasRunEventSequence(_ context.Context, tenantID, _ uuid.UUID, runID uuid.UUID, sequenceNumber int32) (bool, error) {
+	if f.forceMissingRunEventSequence {
+		return false, nil
+	}
 	key := fmt.Sprintf("%s:%s:%d", tenantID, runID, sequenceNumber)
 	_, exists := f.taskEventKeys[key]
 	return exists, nil
@@ -741,17 +909,17 @@ func (f *fakeRunWritebackRepository) ListRunEvents(context.Context, uuid.UUID, u
 	return nil, nil
 }
 
-func (f *fakeRunWritebackRepository) CreateTaskEventIfAbsent(_ context.Context, req CreateRunEventRecordRequest) error {
+func (f *fakeRunWritebackRepository) CreateTaskEventIfAbsent(_ context.Context, req CreateRunEventRecordRequest) (bool, error) {
 	key := fmt.Sprintf("%s:%s:%d", req.TenantID, req.RunID, req.SequenceNumber)
 	if _, exists := f.taskEventKeys[key]; exists {
-		return nil
+		return false, nil
 	}
 	f.taskEventKeys[key] = struct{}{}
 	req.Payload = redactRuntimeEventPayload(req.Payload)
 	req.Metadata = redactRuntimeEventPayload(req.Metadata)
 	f.taskEvents = append(f.taskEvents, req)
 	f.taskEventInsertCount++
-	return nil
+	return true, nil
 }
 
 func (f *fakeRunWritebackRepository) UpsertProviderSession(_ context.Context, req UpsertProviderSessionRequest) (uuid.UUID, error) {
@@ -879,6 +1047,16 @@ func (f *fakeWritebackAuditLogger) LogEvent(_ context.Context, eventType, actorT
 		action:       action,
 	})
 	return nil
+}
+
+type fakeRuntimeEventRecorder struct {
+	events []RuntimeEventRecordRequest
+	err    error
+}
+
+func (f *fakeRuntimeEventRecorder) RecordRuntimeEvent(_ context.Context, req RuntimeEventRecordRequest) error {
+	f.events = append(f.events, req)
+	return f.err
 }
 
 func cloneWritebackRun(run *DigitalEmployeeRun) *DigitalEmployeeRun {

@@ -503,6 +503,40 @@ type RuntimeEnrollment struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Runtime 管理面统一事件流，用于 Runtime 总览和事件审计
+type RuntimeEvent struct {
+	// Runtime 管理面事件主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID，用于 Runtime 事件租户隔离
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 关联 Runtime 节点 UUID，可为空以支持仅有 node_id 的接入请求
+	RuntimeNodeID uuid.NullUUID `json:"runtime_node_id"`
+	// Runtime 外部业务节点 ID
+	NodeID pgtype.Text `json:"node_id"`
+	// Runtime 管理面事件类型
+	EventType string `json:"event_type"`
+	// 事件严重级别：info、success、warning 或 error
+	Severity string `json:"severity"`
+	// 事件来源模块
+	Source string `json:"source"`
+	// 事件列表展示标题
+	Title string `json:"title"`
+	// 事件摘要描述
+	Description pgtype.Text `json:"description"`
+	// 关联 Provider 类型
+	ProviderType pgtype.Text `json:"provider_type"`
+	// 原始事实类型
+	CorrelationType pgtype.Text `json:"correlation_type"`
+	// 原始事实 ID 或命令 ID
+	CorrelationID pgtype.Text `json:"correlation_id"`
+	// 脱敏后的事件扩展数据
+	Payload []byte `json:"payload"`
+	// Runtime 管理面事件创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// Runtime 管理面事件最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Runtime 任务租约表
 type RuntimeLease struct {
 	// 租约主键 UUID

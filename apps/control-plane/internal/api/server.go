@@ -206,6 +206,9 @@ func (s *Server) registerRoutes() {
 
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/overview", s.runtimeHandler.GetOverview)
+				r.Get("/events", s.runtimeHandler.ListRuntimeEvents)
+				r.Get("/nodes/{nodeId}/capabilities", s.runtimeHandler.ListRuntimeCapabilitiesForNode)
 				r.Get("/enrollments", s.runtimeHandler.ListRuntimeEnrollments)
 				r.Post("/enrollments/{enrollmentId}/approve", s.runtimeHandler.ApproveEnrollment)
 				r.Post("/enrollments/{enrollmentId}/reject", s.runtimeHandler.RejectEnrollment)

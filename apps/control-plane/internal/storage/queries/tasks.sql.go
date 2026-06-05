@@ -529,9 +529,9 @@ WITH inserted AS (
     ON CONFLICT (tenant_id, run_id, sequence_number)
     WHERE run_id IS NOT NULL
     DO UPDATE SET event_type = task_events.event_type
-    RETURNING id, tenant_id, task_id, run_id, event_type, sequence_number, payload, created_at, command_id, raw_event_ref, log_ref, metadata
+    RETURNING id, tenant_id, task_id, run_id, event_type, sequence_number, payload, created_at, command_id, raw_event_ref, log_ref, metadata, (xmax = 0) AS inserted
 )
-SELECT id, tenant_id, task_id, run_id, event_type, sequence_number, payload, created_at, command_id, raw_event_ref, log_ref, metadata FROM inserted
+SELECT id, tenant_id, task_id, run_id, event_type, sequence_number, payload, created_at, command_id, raw_event_ref, log_ref, metadata, inserted FROM inserted
 `
 
 type CreateTaskEventIfAbsentParams struct {
@@ -560,6 +560,7 @@ type CreateTaskEventIfAbsentRow struct {
 	RawEventRef    pgtype.Text        `json:"raw_event_ref"`
 	LogRef         pgtype.Text        `json:"log_ref"`
 	Metadata       []byte             `json:"metadata"`
+	Inserted       bool               `json:"inserted"`
 }
 
 func (q *Queries) CreateTaskEventIfAbsent(ctx context.Context, arg CreateTaskEventIfAbsentParams) (CreateTaskEventIfAbsentRow, error) {
@@ -589,6 +590,7 @@ func (q *Queries) CreateTaskEventIfAbsent(ctx context.Context, arg CreateTaskEve
 		&i.RawEventRef,
 		&i.LogRef,
 		&i.Metadata,
+		&i.Inserted,
 	)
 	return i, err
 }

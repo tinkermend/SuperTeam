@@ -196,6 +196,25 @@ func (q *Queries) ApproveRuntimeEnrollmentWithNode(ctx context.Context, arg Appr
 	return i, err
 }
 
+const CountRuntimeEnrollmentsForTenant = `-- name: CountRuntimeEnrollmentsForTenant :one
+SELECT COUNT(*)::bigint
+FROM runtime_enrollments
+WHERE tenant_id = $1::uuid
+  AND ($2::varchar IS NULL OR status = $2::varchar)
+`
+
+type CountRuntimeEnrollmentsForTenantParams struct {
+	TenantID uuid.UUID   `json:"tenant_id"`
+	Status   pgtype.Text `json:"status"`
+}
+
+func (q *Queries) CountRuntimeEnrollmentsForTenant(ctx context.Context, arg CountRuntimeEnrollmentsForTenantParams) (int64, error) {
+	row := q.db.QueryRow(ctx, CountRuntimeEnrollmentsForTenant, arg.TenantID, arg.Status)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const CreateRuntimeBootstrapKey = `-- name: CreateRuntimeBootstrapKey :one
 INSERT INTO runtime_bootstrap_keys (
     tenant_id,

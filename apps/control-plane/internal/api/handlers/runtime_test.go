@@ -605,6 +605,18 @@ func (s *claimRuntimeService) UpsertCapabilities(ctx context.Context, token stri
 	return []runtime.RuntimeCapability{}, nil
 }
 
+func (s *claimRuntimeService) GetOverview(ctx context.Context, filter runtime.RuntimeOverviewFilter) (*runtime.RuntimeOverview, error) {
+	return &runtime.RuntimeOverview{}, nil
+}
+
+func (s *claimRuntimeService) ListRuntimeEvents(ctx context.Context, filter runtime.ListRuntimeEventsFilter) ([]runtime.RuntimeEvent, error) {
+	return []runtime.RuntimeEvent{}, nil
+}
+
+func (s *claimRuntimeService) ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtime.RuntimeCapability, error) {
+	return []runtime.RuntimeCapability{}, nil
+}
+
 type claimTaskService struct {
 	tasksByProvider map[string][]*task.Task
 	listedProviders []string

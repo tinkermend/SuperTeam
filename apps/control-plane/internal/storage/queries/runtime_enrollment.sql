@@ -112,6 +112,12 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: CountRuntimeEnrollmentsForTenant :one
+SELECT COUNT(*)::bigint
+FROM runtime_enrollments
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar);
+
 -- name: ApproveRuntimeEnrollment :one
 UPDATE runtime_enrollments
 SET status = 'approved',

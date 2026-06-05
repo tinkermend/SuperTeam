@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -40,6 +41,25 @@ type CapabilityRepository interface {
 	UpsertRuntimeCapability(ctx context.Context, params UpsertRuntimeCapabilityParams) (RuntimeCapability, error)
 }
 
+type RuntimeEventRepository interface {
+	CreateRuntimeEvent(ctx context.Context, params CreateRuntimeEventParams) (RuntimeEvent, error)
+	ListRuntimeEvents(ctx context.Context, params ListRuntimeEventsParams) ([]RuntimeEvent, error)
+	CountBlockedRuntimeEventsSince(ctx context.Context, tenantID uuid.UUID, since time.Time) (int64, error)
+}
+
+type RuntimeOverviewRepository interface {
+	CountRuntimeNodesForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
+	CountOnlineRuntimeNodesForTenant(ctx context.Context, tenantID uuid.UUID, threshold time.Time) (int64, error)
+	CountActiveProviderSessionsForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
+	CountRuntimeEnrollmentsForTenant(ctx context.Context, tenantID uuid.UUID, status *RuntimeEnrollmentStatus) (int64, error)
+	ListRuntimeProviderCapabilitiesForTenant(ctx context.Context, tenantID uuid.UUID) ([]RuntimeProviderCapabilitySummary, error)
+	ListRuntimeNodesForTenant(ctx context.Context, params ListRuntimeNodesForTenantParams) ([]NodeRecord, error)
+}
+
+type RuntimeCapabilityReadRepository interface {
+	ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]RuntimeCapability, error)
+}
+
 // CreateNodeParams represents parameters for creating a node
 type CreateNodeParams struct {
 	NodeID             string
@@ -73,6 +93,13 @@ type ListNodesParams struct {
 	Status pgtype.Text
 	Offset int32
 	Limit  int32
+}
+
+type ListRuntimeNodesForTenantParams struct {
+	TenantID uuid.UUID
+	Status   pgtype.Text
+	Offset   int32
+	Limit    int32
 }
 
 // UpdateHeartbeatParams represents parameters for updating heartbeat
@@ -195,4 +222,29 @@ type UpsertRuntimeCapabilityParams struct {
 	HealthStatus     string
 	Metadata         []byte
 	LastSeenAt       pgtype.Timestamptz
+}
+
+type CreateRuntimeEventParams struct {
+	TenantID        uuid.UUID
+	RuntimeNodeID   uuid.UUID
+	NodeID          string
+	EventType       RuntimeEventType
+	Severity        RuntimeEventSeverity
+	Source          RuntimeEventSource
+	Title           string
+	Description     string
+	ProviderType    string
+	CorrelationType string
+	CorrelationID   string
+	Payload         map[string]interface{}
+}
+
+type ListRuntimeEventsParams struct {
+	TenantID     uuid.UUID
+	EventType    *RuntimeEventType
+	Severity     *RuntimeEventSeverity
+	NodeID       *string
+	ProviderType *string
+	Limit        int32
+	Offset       int32
 }

@@ -12,6 +12,42 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const CountOnlineRuntimeNodesForTenant = `-- name: CountOnlineRuntimeNodesForTenant :one
+SELECT COUNT(*)::bigint
+FROM runtime_nodes
+WHERE tenant_id = $1::uuid
+  AND status = 'online'
+  AND last_heartbeat_at > $2::timestamptz
+  AND disabled_at IS NULL
+  AND archived_at IS NULL
+`
+
+type CountOnlineRuntimeNodesForTenantParams struct {
+	TenantID        uuid.UUID          `json:"tenant_id"`
+	LastHeartbeatAt pgtype.Timestamptz `json:"last_heartbeat_at"`
+}
+
+func (q *Queries) CountOnlineRuntimeNodesForTenant(ctx context.Context, arg CountOnlineRuntimeNodesForTenantParams) (int64, error) {
+	row := q.db.QueryRow(ctx, CountOnlineRuntimeNodesForTenant, arg.TenantID, arg.LastHeartbeatAt)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const CountRuntimeNodesForTenant = `-- name: CountRuntimeNodesForTenant :one
+SELECT COUNT(*)::bigint
+FROM runtime_nodes
+WHERE tenant_id = $1::uuid
+  AND archived_at IS NULL
+`
+
+func (q *Queries) CountRuntimeNodesForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, CountRuntimeNodesForTenant, tenantID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const CreateRuntimeNode = `-- name: CreateRuntimeNode :one
 INSERT INTO runtime_nodes (
     node_id,
@@ -227,6 +263,62 @@ type ListRuntimeNodesParams struct {
 
 func (q *Queries) ListRuntimeNodes(ctx context.Context, arg ListRuntimeNodesParams) ([]RuntimeNode, error) {
 	rows, err := q.db.Query(ctx, ListRuntimeNodes, arg.Status, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RuntimeNode{}
+	for rows.Next() {
+		var i RuntimeNode
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.NodeID,
+			&i.Name,
+			&i.SupportedProviders,
+			&i.MaxSlots,
+			&i.CurrentLoad,
+			&i.Status,
+			&i.Metadata,
+			&i.LastHeartbeatAt,
+			&i.DisabledAt,
+			&i.ArchivedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListRuntimeNodesForTenant = `-- name: ListRuntimeNodesForTenant :many
+SELECT id, tenant_id, node_id, name, supported_providers, max_slots, current_load, status, metadata, last_heartbeat_at, disabled_at, archived_at, created_at, updated_at FROM runtime_nodes
+WHERE tenant_id = $1::uuid
+  AND ($2::varchar IS NULL OR status = $2::varchar)
+  AND archived_at IS NULL
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListRuntimeNodesForTenantParams struct {
+	TenantID uuid.UUID   `json:"tenant_id"`
+	Status   pgtype.Text `json:"status"`
+	Offset   int32       `json:"offset"`
+	Limit    int32       `json:"limit"`
+}
+
+func (q *Queries) ListRuntimeNodesForTenant(ctx context.Context, arg ListRuntimeNodesForTenantParams) ([]RuntimeNode, error) {
+	rows, err := q.db.Query(ctx, ListRuntimeNodesForTenant,
+		arg.TenantID,
+		arg.Status,
+		arg.Offset,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}

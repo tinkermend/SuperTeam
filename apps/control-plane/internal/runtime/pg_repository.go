@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -92,6 +94,36 @@ func (r *PgRepository) ListNodes(ctx context.Context, params ListNodesParams) ([
 			CreatedAt:          node.CreatedAt,
 			UpdatedAt:          node.UpdatedAt,
 		}
+	}
+	return records, nil
+}
+
+func (r *PgRepository) ListRuntimeNodesForTenant(ctx context.Context, params ListRuntimeNodesForTenantParams) ([]NodeRecord, error) {
+	nodes, err := r.q.ListRuntimeNodesForTenant(ctx, queries.ListRuntimeNodesForTenantParams{
+		TenantID: params.TenantID,
+		Status:   params.Status,
+		Offset:   params.Offset,
+		Limit:    params.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	records := make([]NodeRecord, 0, len(nodes))
+	for _, node := range nodes {
+		records = append(records, NodeRecord{
+			ID:                 node.ID,
+			TenantID:           node.TenantID,
+			NodeID:             node.NodeID,
+			Name:               node.Name,
+			SupportedProviders: node.SupportedProviders,
+			MaxSlots:           node.MaxSlots,
+			CurrentLoad:        node.CurrentLoad,
+			Status:             node.Status,
+			Metadata:           node.Metadata,
+			LastHeartbeatAt:    node.LastHeartbeatAt,
+			CreatedAt:          node.CreatedAt,
+			UpdatedAt:          node.UpdatedAt,
+		})
 	}
 	return records, nil
 }
@@ -258,6 +290,13 @@ func (r *PgRepository) ListRuntimeEnrollments(ctx context.Context, params ListRu
 		records = append(records, runtimeEnrollmentRecordFromQuery(enrollment))
 	}
 	return records, nil
+}
+
+func (r *PgRepository) CountRuntimeEnrollmentsForTenant(ctx context.Context, tenantID uuid.UUID, status *RuntimeEnrollmentStatus) (int64, error) {
+	return r.q.CountRuntimeEnrollmentsForTenant(ctx, queries.CountRuntimeEnrollmentsForTenantParams{
+		TenantID: tenantID,
+		Status:   enrollmentStatusToText(status),
+	})
 }
 
 func (r *PgRepository) UpsertRuntimeNodeForTenant(ctx context.Context, params UpsertRuntimeNodeForTenantParams) (NodeRecord, error) {
@@ -450,20 +489,107 @@ func (r *PgRepository) UpsertRuntimeCapability(ctx context.Context, params Upser
 	if err != nil {
 		return RuntimeCapability{}, err
 	}
-	return RuntimeCapability{
-		ID:             capability.ID,
-		TenantID:       capability.TenantID,
-		RuntimeNodeID:  capability.RuntimeNodeID,
-		CapabilityType: capability.CapabilityType,
-		CapabilityKey:  capability.CapabilityKey,
-		ProviderType:   capability.ProviderType,
-		Available:      capability.Available,
-		Status:         capability.Status,
-		HealthStatus:   capability.HealthStatus,
-		LastSeenAt:     timeFromTimestamptz(capability.LastSeenAt),
-		CreatedAt:      timeFromTimestamptz(capability.CreatedAt),
-		UpdatedAt:      timeFromTimestamptz(capability.UpdatedAt),
-	}, nil
+	return runtimeCapabilityFromQuery(capability), nil
+}
+
+func (r *PgRepository) CreateRuntimeEvent(ctx context.Context, params CreateRuntimeEventParams) (RuntimeEvent, error) {
+	payload, err := json.Marshal(defaultMap(params.Payload))
+	if err != nil {
+		return RuntimeEvent{}, err
+	}
+	event, err := r.q.CreateRuntimeEvent(ctx, queries.CreateRuntimeEventParams{
+		TenantID:        params.TenantID,
+		RuntimeNodeID:   uuid.NullUUID{UUID: params.RuntimeNodeID, Valid: params.RuntimeNodeID != uuid.Nil},
+		NodeID:          textFromValue(params.NodeID),
+		EventType:       string(params.EventType),
+		Severity:        string(params.Severity),
+		Source:          string(params.Source),
+		Title:           params.Title,
+		Description:     textFromValue(params.Description),
+		ProviderType:    textFromValue(params.ProviderType),
+		CorrelationType: textFromValue(params.CorrelationType),
+		CorrelationID:   textFromValue(params.CorrelationID),
+		Payload:         payload,
+	})
+	if err != nil {
+		return RuntimeEvent{}, err
+	}
+	return runtimeEventFromQuery(event), nil
+}
+
+func (r *PgRepository) ListRuntimeEvents(ctx context.Context, params ListRuntimeEventsParams) ([]RuntimeEvent, error) {
+	events, err := r.q.ListRuntimeEvents(ctx, queries.ListRuntimeEventsParams{
+		TenantID:     params.TenantID,
+		EventType:    runtimeEventTypeToText(params.EventType),
+		Severity:     runtimeEventSeverityToText(params.Severity),
+		NodeID:       textFromString(params.NodeID),
+		ProviderType: textFromString(params.ProviderType),
+		Offset:       params.Offset,
+		Limit:        params.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	records := make([]RuntimeEvent, 0, len(events))
+	for _, event := range events {
+		records = append(records, runtimeEventFromQuery(event))
+	}
+	return records, nil
+}
+
+func (r *PgRepository) CountBlockedRuntimeEventsSince(ctx context.Context, tenantID uuid.UUID, since time.Time) (int64, error) {
+	return r.q.CountBlockedRuntimeEventsSince(ctx, queries.CountBlockedRuntimeEventsSinceParams{
+		TenantID:     tenantID,
+		CreatedSince: timestamptzFromTime(since),
+	})
+}
+
+func (r *PgRepository) CountRuntimeNodesForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	return r.q.CountRuntimeNodesForTenant(ctx, tenantID)
+}
+
+func (r *PgRepository) CountOnlineRuntimeNodesForTenant(ctx context.Context, tenantID uuid.UUID, threshold time.Time) (int64, error) {
+	return r.q.CountOnlineRuntimeNodesForTenant(ctx, queries.CountOnlineRuntimeNodesForTenantParams{
+		TenantID:        tenantID,
+		LastHeartbeatAt: timestamptzFromTime(threshold),
+	})
+}
+
+func (r *PgRepository) CountActiveProviderSessionsForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	return r.q.CountActiveProviderSessionsForTenant(ctx, tenantID)
+}
+
+func (r *PgRepository) ListRuntimeProviderCapabilitiesForTenant(ctx context.Context, tenantID uuid.UUID) ([]RuntimeProviderCapabilitySummary, error) {
+	capabilities, err := r.q.ListRuntimeProviderCapabilitiesForTenant(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]RuntimeProviderCapabilitySummary, 0, len(capabilities))
+	for _, capability := range capabilities {
+		summaries = append(summaries, RuntimeProviderCapabilitySummary{
+			ProviderType:   capability.ProviderType,
+			NodeCount:      capability.NodeCount,
+			AvailableCount: capability.AvailableCount,
+			HealthyCount:   capability.HealthyCount,
+			LastSeenAt:     timeFromTimestamptz(capability.LastSeenAt),
+		})
+	}
+	return summaries, nil
+}
+
+func (r *PgRepository) ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]RuntimeCapability, error) {
+	capabilities, err := r.q.ListRuntimeCapabilitiesForNode(ctx, queries.ListRuntimeCapabilitiesForNodeParams{
+		TenantID: tenantID,
+		NodeID:   nodeID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	records := make([]RuntimeCapability, 0, len(capabilities))
+	for _, capability := range capabilities {
+		records = append(records, runtimeCapabilityFromQuery(capability))
+	}
+	return records, nil
 }
 
 func runtimeEnrollmentRecordFromQuery(enrollment queries.RuntimeEnrollment) RuntimeEnrollmentRecord {
@@ -512,4 +638,87 @@ func runtimeSessionRecordFromQuery(session queries.RuntimeSession, nodeID string
 		CreatedAt:       session.CreatedAt,
 		UpdatedAt:       session.UpdatedAt,
 	}
+}
+
+func runtimeCapabilityFromQuery(capability queries.RuntimeCapability) RuntimeCapability {
+	return RuntimeCapability{
+		ID:               capability.ID,
+		TenantID:         capability.TenantID,
+		RuntimeNodeID:    capability.RuntimeNodeID,
+		CapabilityType:   capability.CapabilityType,
+		CapabilityKey:    capability.CapabilityKey,
+		ProviderType:     capability.ProviderType,
+		ProviderVersion:  stringFromText(capability.ProviderVersion),
+		BinaryPath:       stringFromText(capability.BinaryPath),
+		Available:        capability.Available,
+		WorkspaceBaseDir: stringFromText(capability.WorkspaceBaseDir),
+		Capacity:         jsonMapFromBytes(capability.Capacity),
+		Labels:           jsonMapFromBytes(capability.Labels),
+		Status:           capability.Status,
+		Details:          jsonMapFromBytes(capability.Details),
+		HealthStatus:     capability.HealthStatus,
+		Metadata:         jsonMapFromBytes(capability.Metadata),
+		LastSeenAt:       timeFromTimestamptz(capability.LastSeenAt),
+		CreatedAt:        timeFromTimestamptz(capability.CreatedAt),
+		UpdatedAt:        timeFromTimestamptz(capability.UpdatedAt),
+	}
+}
+
+func runtimeEventFromQuery(event queries.RuntimeEvent) RuntimeEvent {
+	return RuntimeEvent{
+		ID:              event.ID,
+		TenantID:        event.TenantID,
+		RuntimeNodeID:   uuidFromNull(event.RuntimeNodeID),
+		NodeID:          textValue(event.NodeID),
+		EventType:       RuntimeEventType(event.EventType),
+		Severity:        RuntimeEventSeverity(event.Severity),
+		Source:          RuntimeEventSource(event.Source),
+		Title:           event.Title,
+		Description:     textValue(event.Description),
+		ProviderType:    textValue(event.ProviderType),
+		CorrelationType: textValue(event.CorrelationType),
+		CorrelationID:   textValue(event.CorrelationID),
+		Payload:         jsonMapFromBytes(event.Payload),
+		CreatedAt:       timeFromTimestamptz(event.CreatedAt),
+		UpdatedAt:       timeFromTimestamptz(event.UpdatedAt),
+	}
+}
+
+func jsonMapFromBytes(payload []byte) map[string]interface{} {
+	if len(payload) == 0 {
+		return map[string]interface{}{}
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(payload, &out); err != nil || out == nil {
+		return map[string]interface{}{}
+	}
+	return out
+}
+
+func textFromValue(value string) pgtype.Text {
+	if value == "" {
+		return pgtype.Text{Valid: false}
+	}
+	return pgtype.Text{String: value, Valid: true}
+}
+
+func textValue(value pgtype.Text) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
+}
+
+func runtimeEventTypeToText(eventType *RuntimeEventType) pgtype.Text {
+	if eventType == nil {
+		return pgtype.Text{Valid: false}
+	}
+	return textFromValue(string(*eventType))
+}
+
+func runtimeEventSeverityToText(severity *RuntimeEventSeverity) pgtype.Text {
+	if severity == nil {
+		return pgtype.Text{Valid: false}
+	}
+	return textFromValue(string(*severity))
 }

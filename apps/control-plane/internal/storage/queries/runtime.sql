@@ -117,6 +117,14 @@ WHERE archived_at IS NULL
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: ListRuntimeNodesForTenant :many
+SELECT * FROM runtime_nodes
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND (sqlc.narg('status')::varchar IS NULL OR status = sqlc.narg('status')::varchar)
+  AND archived_at IS NULL
+ORDER BY created_at DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
 -- name: DeleteRuntimeNode :exec
 UPDATE runtime_nodes
 SET status = 'offline',
@@ -124,3 +132,18 @@ SET status = 'offline',
     archived_at = COALESCE(archived_at, NOW()),
     updated_at = NOW()
 WHERE node_id = $1;
+
+-- name: CountRuntimeNodesForTenant :one
+SELECT COUNT(*)::bigint
+FROM runtime_nodes
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND archived_at IS NULL;
+
+-- name: CountOnlineRuntimeNodesForTenant :one
+SELECT COUNT(*)::bigint
+FROM runtime_nodes
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND status = 'online'
+  AND last_heartbeat_at > sqlc.arg('last_heartbeat_at')::timestamptz
+  AND disabled_at IS NULL
+  AND archived_at IS NULL;

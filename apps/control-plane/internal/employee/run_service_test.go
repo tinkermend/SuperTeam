@@ -788,9 +788,9 @@ func (f *fakeRunServiceRepository) HasRunEventSequence(context.Context, uuid.UUI
 	return false, nil
 }
 
-func (f *fakeRunServiceRepository) CreateTaskEventIfAbsent(_ context.Context, req CreateRunEventRecordRequest) error {
+func (f *fakeRunServiceRepository) CreateTaskEventIfAbsent(_ context.Context, req CreateRunEventRecordRequest) (bool, error) {
 	f.events = append(f.events, req)
-	return nil
+	return true, nil
 }
 
 func (f *fakeRunServiceRepository) UpsertProviderSession(context.Context, UpsertProviderSessionRequest) (uuid.UUID, error) {
