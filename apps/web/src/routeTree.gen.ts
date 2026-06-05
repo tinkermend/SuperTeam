@@ -27,6 +27,7 @@ import { Route as AuthenticatedRuntimeIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as AuthenticatedPermissionsIndexRouteImport } from './routes/_authenticated/permissions/index'
 import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authenticated/employees/index'
+import { Route as AuthenticatedCostsIndexRouteImport } from './routes/_authenticated/costs/index'
 import { Route as AuthenticatedCollaborationIndexRouteImport } from './routes/_authenticated/collaboration/index'
 import { Route as AuthenticatedCapabilitiesIndexRouteImport } from './routes/_authenticated/capabilities/index'
 import { Route as AuthenticatedAuditIndexRouteImport } from './routes/_authenticated/audit/index'
@@ -130,6 +131,11 @@ const AuthenticatedEmployeesIndexRoute =
     path: '/employees/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedCostsIndexRoute = AuthenticatedCostsIndexRouteImport.update({
+  id: '/costs/',
+  path: '/costs/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedCollaborationIndexRoute =
   AuthenticatedCollaborationIndexRouteImport.update({
     id: '/collaboration/',
@@ -188,6 +194,7 @@ export interface FileRoutesByFullPath {
   '/audit/': typeof AuthenticatedAuditIndexRoute
   '/capabilities/': typeof AuthenticatedCapabilitiesIndexRoute
   '/collaboration/': typeof AuthenticatedCollaborationIndexRoute
+  '/costs/': typeof AuthenticatedCostsIndexRoute
   '/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/permissions/': typeof AuthenticatedPermissionsIndexRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
@@ -214,6 +221,7 @@ export interface FileRoutesByTo {
   '/audit': typeof AuthenticatedAuditIndexRoute
   '/capabilities': typeof AuthenticatedCapabilitiesIndexRoute
   '/collaboration': typeof AuthenticatedCollaborationIndexRoute
+  '/costs': typeof AuthenticatedCostsIndexRoute
   '/employees': typeof AuthenticatedEmployeesIndexRoute
   '/permissions': typeof AuthenticatedPermissionsIndexRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
@@ -242,6 +250,7 @@ export interface FileRoutesById {
   '/_authenticated/audit/': typeof AuthenticatedAuditIndexRoute
   '/_authenticated/capabilities/': typeof AuthenticatedCapabilitiesIndexRoute
   '/_authenticated/collaboration/': typeof AuthenticatedCollaborationIndexRoute
+  '/_authenticated/costs/': typeof AuthenticatedCostsIndexRoute
   '/_authenticated/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/_authenticated/permissions/': typeof AuthenticatedPermissionsIndexRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
@@ -270,6 +279,7 @@ export interface FileRouteTypes {
     | '/audit/'
     | '/capabilities/'
     | '/collaboration/'
+    | '/costs/'
     | '/employees/'
     | '/permissions/'
     | '/projects/'
@@ -296,6 +306,7 @@ export interface FileRouteTypes {
     | '/audit'
     | '/capabilities'
     | '/collaboration'
+    | '/costs'
     | '/employees'
     | '/permissions'
     | '/projects'
@@ -323,6 +334,7 @@ export interface FileRouteTypes {
     | '/_authenticated/audit/'
     | '/_authenticated/capabilities/'
     | '/_authenticated/collaboration/'
+    | '/_authenticated/costs/'
     | '/_authenticated/employees/'
     | '/_authenticated/permissions/'
     | '/_authenticated/projects/'
@@ -473,6 +485,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEmployeesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/costs/': {
+      id: '/_authenticated/costs/'
+      path: '/costs'
+      fullPath: '/costs/'
+      preLoaderRoute: typeof AuthenticatedCostsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/collaboration/': {
       id: '/_authenticated/collaboration/'
       path: '/collaboration'
@@ -534,6 +553,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAuditIndexRoute: typeof AuthenticatedAuditIndexRoute
   AuthenticatedCapabilitiesIndexRoute: typeof AuthenticatedCapabilitiesIndexRoute
   AuthenticatedCollaborationIndexRoute: typeof AuthenticatedCollaborationIndexRoute
+  AuthenticatedCostsIndexRoute: typeof AuthenticatedCostsIndexRoute
   AuthenticatedEmployeesIndexRoute: typeof AuthenticatedEmployeesIndexRoute
   AuthenticatedPermissionsIndexRoute: typeof AuthenticatedPermissionsIndexRoute
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
@@ -554,6 +574,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAuditIndexRoute: AuthenticatedAuditIndexRoute,
   AuthenticatedCapabilitiesIndexRoute: AuthenticatedCapabilitiesIndexRoute,
   AuthenticatedCollaborationIndexRoute: AuthenticatedCollaborationIndexRoute,
+  AuthenticatedCostsIndexRoute: AuthenticatedCostsIndexRoute,
   AuthenticatedEmployeesIndexRoute: AuthenticatedEmployeesIndexRoute,
   AuthenticatedPermissionsIndexRoute: AuthenticatedPermissionsIndexRoute,
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,

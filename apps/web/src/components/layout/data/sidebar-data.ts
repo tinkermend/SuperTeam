@@ -1,6 +1,7 @@
 import {
   Blocks,
   Bot,
+  CircleDollarSign,
   ClipboardList,
   FileClock,
   FolderKanban,
@@ -102,6 +103,12 @@ export const sidebarData: SidebarData = {
           url: "/permissions",
           icon: KeyRound,
           iconTone: "permission",
+        },
+        {
+          title: "成本管理",
+          url: "/costs",
+          icon: CircleDollarSign,
+          iconTone: "audit",
         },
         {
           title: "用户管理",

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-05 18:05：优化 `AGENTS.md` 协作宪法，将项目、项目协调员、数字员工和人类归属人的规则收敛为宪法级边界；明确 Project 是场景中立的业务闭环容器，不定义封闭项目类型枚举，详细对象和流程规则保留在项目协调员控制平面设计文档中。
 - 2026-06-05 11:12：补齐 Runtime command writeback 与数字员工 run API 的 OpenAPI/Go route/Rust client/TypeScript client 契约守卫，合并后新增接口会纳入 `verify:contracts` 门禁。
 - 2026-06-05 10:52：合并后真实验证数字员工执行闭环，补齐 Runtime `provision_instance`、Provider 事件与终态 command writeback、`start_session` 输入 payload、Provider 能力真实探测和 `provider-run/v1` 任务隔离，避免 legacy polling 抢占数字员工 run。
 - 2026-06-05 02:15：数字员工详情页接入执行闭环，支持开始任务、活跃运行轮询、事件流、结果、失败原因、历史运行切换和停止操作；Control Plane run events 改为读取真实 `task_events` 时间线，并补齐 run OpenAPI 契约。
@@ -66,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-05 18:35：Web 控制台在“平台管理”下新增“成本管理”入口和 `/costs` 占位页，预留按数字员工查看 token 消耗成本以及每日、每月 token 成本统计视图，后续实现参考 `paperclip` 的 costs 模块。
 - 2026-06-05 16:22：为项目协调员控制平面设计补充 gpt-image2 生成的架构流程图和项目内数据流转图，便于对齐 Project、Coordinator、执行员工、Runtime、Provider、证据和人类决策关系。
 - 2026-06-05 16:06：新增项目协调员控制平面全局设计总结，明确一个项目一个协调员数字员工、人类归属人、RouteDecision/RouteOutcome、预算、置信度扩散、证据链和人类驳回机制。
 - 2026-06-05 16:12：Runtime 节点页升级为总览工作台，新增 Runtime overview/events Console API、`runtime_events` 统一事件流、Provider 能力聚合、接入批准/拒绝操作和事件审计 Tab；本期不包含 Runtime 详情页、接入密钥和诊断包功能。

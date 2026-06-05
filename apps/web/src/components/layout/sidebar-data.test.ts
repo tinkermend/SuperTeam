@@ -14,6 +14,7 @@ const expectedIconTones = new Map([
   ['审批中心', 'approval'],
   ['Runtime 节点', 'runtime'],
   ['权限中心', 'permission'],
+  ['成本管理', 'audit'],
   ['用户管理', 'neutral'],
   ['审计日志', 'audit'],
 ])
@@ -67,5 +68,23 @@ describe('sidebarData', () => {
         item.iconTone
       )
     }
+  })
+
+  it('places cost management in the platform management group', () => {
+    const platformItems = sidebarData.navGroups.find(
+      (group) => group.title === '平台管理'
+    )?.items
+
+    expect(platformItems?.map((item) => item.title)).toEqual([
+      '权限中心',
+      '成本管理',
+      '用户管理',
+      '审计日志',
+    ])
+    expect(platformItems?.[1]).toMatchObject({
+      title: '成本管理',
+      url: '/costs',
+      iconTone: 'audit',
+    })
   })
 })
