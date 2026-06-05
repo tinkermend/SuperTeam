@@ -22,15 +22,34 @@ SET owner_user_id = COALESCE(
         LIMIT 1
     ),
     (
-        SELECT au.id
-        FROM auth_users au
-        WHERE au.username = 'admin'
-          AND au.deleted_at IS NULL
-        ORDER BY au.created_at ASC
+        SELECT tm.principal_id
+        FROM tenant_members tm
+        WHERE tm.tenant_id = de.tenant_id
+          AND tm.principal_type = 'user'
+          AND tm.status = 'active'
+          AND tm.disabled_at IS NULL
+        ORDER BY
+          CASE
+              WHEN tm.team_id = de.team_id THEN 0
+              WHEN tm.team_id IS NULL THEN 1
+              ELSE 2
+          END,
+          tm.created_at ASC
         LIMIT 1
     )
 )
 WHERE de.owner_user_id IS NULL;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM digital_employees
+        WHERE owner_user_id IS NULL
+    ) THEN
+        RAISE EXCEPTION 'digital_employees.owner_user_id unresolved before NOT NULL migration';
+    END IF;
+END $$;
 
 UPDATE digital_employees
 SET employee_type = CASE

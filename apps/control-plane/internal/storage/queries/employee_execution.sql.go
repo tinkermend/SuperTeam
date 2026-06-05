@@ -41,6 +41,8 @@ aborted_configs AS (
     WHERE tenant_id = $3::uuid
       AND digital_employee_id = $4::uuid
       AND archived_at IS NULL
+      AND EXISTS (SELECT 1 FROM aborted_employee)
+      AND EXISTS (SELECT 1 FROM aborted_instance)
     RETURNING id
 ),
 aborted_effective_configs AS (
@@ -54,6 +56,8 @@ aborted_effective_configs AS (
     WHERE tenant_id = $3::uuid
       AND digital_employee_id = $4::uuid
       AND revoked_at IS NULL
+      AND EXISTS (SELECT 1 FROM aborted_employee)
+      AND EXISTS (SELECT 1 FROM aborted_instance)
     RETURNING id
 ),
 aborted_receipts AS (
@@ -880,7 +884,6 @@ SELECT
         WHEN active_team_config.id IS NULL THEN 'active_team_config_required'
         WHEN rn.status <> 'online' OR rn.disabled_at IS NOT NULL OR rn.archived_at IS NOT NULL THEN 'runtime_not_online'
         WHEN runtime_sessions_active.runtime_node_id IS NULL THEN 'runtime_session_inactive'
-        WHEN pc.id IS NULL THEN 'provider_missing'
         WHEN pc.available = false OR pc.status <> 'healthy' OR pc.health_status <> 'healthy' THEN 'provider_unhealthy'
         WHEN COALESCE(pc.provider_type, '') = '' THEN 'provider_type_missing'
         WHEN NOT (
@@ -897,6 +900,16 @@ SELECT
                 AND (active_team_config.runtime_scope_policy -> 'provider_types') ? pc.provider_type
             )
         ) THEN 'provider_outside_team_policy'
+        WHEN active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids'
+            AND (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') <> 'array'
+                OR NOT ((active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') ? rn.id::text)
+            ) THEN 'runtime_node_outside_team_policy'
+        WHEN active_team_config.runtime_scope_policy ? 'allowed_node_ids'
+            AND (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_node_ids') <> 'array'
+                OR NOT ((active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id)
+            ) THEN 'runtime_node_slug_outside_team_policy'
         ELSE ''
     END::varchar AS disabled_reason
 FROM runtime_nodes rn

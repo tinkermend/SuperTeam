@@ -193,6 +193,8 @@ func TestDigitalEmployeeCreationMigrationAddsOwnerAndType(t *testing.T) {
 	for _, expected := range []string{
 		"ADD COLUMN IF NOT EXISTS owner_user_id UUID",
 		"ADD COLUMN IF NOT EXISTS employee_type VARCHAR(100)",
+		"RAISE EXCEPTION 'digital_employees.owner_user_id unresolved before NOT NULL migration'",
+		"ELSE 2",
 		"ALTER COLUMN owner_user_id SET NOT NULL",
 		"ALTER COLUMN employee_type SET NOT NULL",
 		"CREATE INDEX IF NOT EXISTS idx_digital_employees_owner_status",
@@ -210,9 +212,41 @@ func TestDigitalEmployeeCreationMigrationAddsOwnerAndType(t *testing.T) {
 	for _, forbidden := range []string{
 		"CREATE TYPE employee_type",
 		"CHECK (employee_type IN",
+		"FROM auth_users au",
 	} {
 		if strings.Contains(sql, forbidden) {
 			t.Fatalf("employee_type must stay registry-backed, found %q", forbidden)
+		}
+	}
+
+	if got := strings.Count(sql, "FROM tenant_members tm"); got < 2 {
+		t.Fatalf("expected owner backfill to use tenant_members for privileged and general fallback, got %d tenant_members lookups", got)
+	}
+}
+
+func TestDigitalEmployeeCreationQueriesHandlePolicyReasonsAndAbortAnchoring(t *testing.T) {
+	body, err := os.ReadFile("queries/employee_execution.sql")
+	if err != nil {
+		t.Fatalf("read employee execution queries: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"THEN 'runtime_node_outside_team_policy'",
+		"THEN 'runtime_node_slug_outside_team_policy'",
+		"AND EXISTS (SELECT 1 FROM aborted_employee)",
+		"AND EXISTS (SELECT 1 FROM aborted_instance)",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected employee execution queries to contain %q", expected)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"WHEN pc.id IS NULL THEN 'provider_missing'",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("employee execution query must not contain unreachable branch %q", forbidden)
 		}
 	}
 }
