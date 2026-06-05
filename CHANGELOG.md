@@ -66,6 +66,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-05 16:22：为项目协调员控制平面设计补充 gpt-image2 生成的架构流程图和项目内数据流转图，便于对齐 Project、Coordinator、执行员工、Runtime、Provider、证据和人类决策关系。
+- 2026-06-05 16:06：新增项目协调员控制平面全局设计总结，明确一个项目一个协调员数字员工、人类归属人、RouteDecision/RouteOutcome、预算、置信度扩散、证据链和人类驳回机制。
 - 2026-06-05 01:00：Web 控制台新增“技能管理”“项目管理”和“协作集成”一级菜单及占位页，其中“协作集成”用于后续接入钉钉、飞书等企业通讯软件的消息交互、审批触达和结果通知。
 - 2026-06-05 00:24：Control Plane 新增 Runtime command HTTP writeback API，Runtime session auth 可回写 provider 事件、完成、失败、取消和超时终态，并将事实持久化到 command receipt、task run/event 与 Provider session/event 双投影。
 - 2026-06-04 23:48：Control Plane 暴露数字员工 run Console API 路由，支持创建、列表、详情、事件查询和停止，并接入独立 `employee.run.*` 授权 action 与真实 app wiring。

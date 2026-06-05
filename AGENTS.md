@@ -97,20 +97,6 @@ connectors/
 - 自我评估阶段性任务开发完成后选择性做好必要的功能测试,单元测试,回归测试
 - 页面前端样式设计风格请阅读`DESIGN.md`
 
-## Agent skills
-
-### Issue tracker
-
-Issue 以本地 markdown 文件形式存放在 `.scratch/<feature-slug>/` 下。详见 `docs/agents/issue-tracker.md`。
-
-### Triage labels
-
-五个分类标签均使用默认值：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。详见 `docs/agents/triage-labels.md`。
-
-### Domain docs
-
-单上下文布局：`CONTEXT.md` + `docs/adr/` 位于仓库根目录。详见 `docs/agents/domain.md`。
-
 ## 其他规则
 
 - 编写的文档语言都以简体中文输出
