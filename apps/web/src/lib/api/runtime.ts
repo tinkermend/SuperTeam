@@ -20,8 +20,21 @@ export type RuntimeNodeResponse = {
 
 export type RuntimeEnrollment = {
   id: string;
+  tenant_id?: string;
   node_id: string;
+  runtime_node_id?: string;
+  bootstrap_key_id?: string;
   status: RuntimeEnrollmentStatus;
+  request_payload?: Record<string, unknown>;
+  approved_by?: string;
+  approved_at?: string;
+  rejected_by?: string;
+  rejected_at?: string;
+  reject_reason?: string;
+  revoked_by?: string;
+  revoked_at?: string;
+  revoke_reason?: string;
+  last_hello_at?: string;
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
