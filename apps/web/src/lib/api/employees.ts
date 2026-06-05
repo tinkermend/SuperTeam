@@ -1,7 +1,12 @@
 import type { ApiClientOptions } from "./client";
 import { buildApiUrl, parseJson } from "./client";
 
-export type DigitalEmployeeStatus = "draft" | "ready" | "active" | "disabled" | "error";
+export type DigitalEmployeeStatus =
+  | "draft"
+  | "ready"
+  | "active"
+  | "disabled"
+  | "error";
 
 export type DigitalEmployee = {
   id: string;
@@ -19,7 +24,12 @@ export type DigitalEmployee = {
   risk_level: string;
   metadata?: Record<string, unknown> & {
     effective_config_label?: string;
-    effective_config_status?: "approved" | "draft" | "stale" | "missing" | string;
+    effective_config_status?:
+      | "approved"
+      | "draft"
+      | "stale"
+      | "missing"
+      | string;
   };
   disabled_at?: string;
   archived_at?: string;
@@ -226,6 +236,24 @@ type LegacyDraftDigitalEmployeeInput = {
   description?: string;
 };
 
+// Temporary compatibility for old inline create forms until the Task 6 creation wizard replaces them.
+function assertReadyCreateInput(
+  input: CreateDigitalEmployeeInput | LegacyDraftDigitalEmployeeInput,
+): asserts input is CreateDigitalEmployeeInput {
+  if (
+    !("employee_type" in input) ||
+    !input.employee_type ||
+    !("runtime_node_id" in input) ||
+    !input.runtime_node_id ||
+    !("provider_type" in input) ||
+    !input.provider_type
+  ) {
+    throw new Error(
+      "digital employee ready creation requires employee_type, runtime_node_id, and provider_type",
+    );
+  }
+}
+
 export type ListDigitalEmployeesFilters = {
   team_id?: string;
 };
@@ -306,7 +334,12 @@ export type ApproveEffectiveConfigInput = {
   preview: EffectiveConfigPreviewInput;
 };
 
-async function postJson<T>(options: ApiClientOptions, path: string, input: unknown, resource: string): Promise<T> {
+async function postJson<T>(
+  options: ApiClientOptions,
+  path: string,
+  input: unknown,
+  resource: string,
+): Promise<T> {
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(buildApiUrl(options.baseUrl, path), {
     body: JSON.stringify(input),
@@ -318,7 +351,11 @@ async function postJson<T>(options: ApiClientOptions, path: string, input: unkno
   return parseJson<T>(response, resource);
 }
 
-async function getJson<T>(options: ApiClientOptions, path: string, resource: string): Promise<T> {
+async function getJson<T>(
+  options: ApiClientOptions,
+  path: string,
+  resource: string,
+): Promise<T> {
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(buildApiUrl(options.baseUrl, path), {
     credentials: "include",
@@ -380,7 +417,10 @@ export function getDigitalEmployeeCreateOptions(
   );
 }
 
-export function getDigitalEmployee(options: ApiClientOptions, employeeId: string): Promise<DigitalEmployee> {
+export function getDigitalEmployee(
+  options: ApiClientOptions,
+  employeeId: string,
+): Promise<DigitalEmployee> {
   return getJson<DigitalEmployee>(
     options,
     `/api/v1/digital-employees/${encodePathSegment(employeeId)}`,
@@ -392,7 +432,13 @@ export async function createDigitalEmployee(
   options: ApiClientOptions,
   input: CreateDigitalEmployeeInput | LegacyDraftDigitalEmployeeInput,
 ): Promise<DigitalEmployee> {
-  return postJson<DigitalEmployee>(options, "/api/v1/digital-employees", input, "create digital employee");
+  assertReadyCreateInput(input);
+  return postJson<DigitalEmployee>(
+    options,
+    "/api/v1/digital-employees",
+    input,
+    "create digital employee",
+  );
 }
 
 export async function getDigitalEmployeeExecutionInstance(

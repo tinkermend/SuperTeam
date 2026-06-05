@@ -13,6 +13,8 @@ import {
   listDigitalEmployees,
   previewDigitalEmployeeEffectiveConfig,
   stopDigitalEmployeeRun,
+  type DigitalEmployee,
+  type DigitalEmployeeCreateOptions,
 } from "./employees";
 
 describe("digital employee API", () => {
@@ -20,18 +22,25 @@ describe("digital employee API", () => {
     const employees = [
       {
         id: "11111111-1111-4111-8111-111111111111",
+        tenant_id: "22222222-2222-4222-8222-222222222222",
+        team_id: "99999999-9999-4999-8999-999999999999",
         owner_user_id: "22222222-2222-4222-8222-222222222222",
-        employee_type: "coordinator",
-        name: "需求分析员工",
-        role: "requirements_analyst",
+        employee_type: "database_admin",
+        name: "数据库管理员工",
+        role: "database_admin",
         status: "draft",
+        permission_policy: { mode: "least_privilege" },
+        context_policy: { mode: "task_slice" },
+        approval_policy: { high_risk: "required" },
+        risk_level: "medium",
       },
-    ];
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(employees), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    ] satisfies DigitalEmployee[];
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(employees), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -56,19 +65,25 @@ describe("digital employee API", () => {
     const employees = [
       {
         id: "11111111-1111-4111-8111-111111111111",
+        tenant_id: "22222222-2222-4222-8222-222222222222",
         team_id: teamId,
         owner_user_id: "22222222-2222-4222-8222-222222222222",
-        employee_type: "coordinator",
-        name: "需求分析员工",
-        role: "requirements_analyst",
+        employee_type: "database_admin",
+        name: "数据库管理员工",
+        role: "database_admin",
         status: "draft",
+        permission_policy: { mode: "least_privilege" },
+        context_policy: { mode: "task_slice" },
+        approval_policy: { high_risk: "required" },
+        risk_level: "medium",
       },
-    ];
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(employees), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    ] satisfies DigitalEmployee[];
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(employees), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -99,7 +114,7 @@ describe("digital employee API", () => {
         team_id: "team 1/ops",
         revision_number: 3,
         status: "approved",
-        allowed_employee_types: ["coordinator"],
+        allowed_employee_types: ["database_admin"],
         allowed_provider_types: ["codex"],
         allowed_skills: ["incident-diagnosis"],
         allowed_mcp_servers: ["github"],
@@ -113,10 +128,10 @@ describe("digital employee API", () => {
       },
       employee_types: [
         {
-          type: "coordinator",
-          label: "项目协调员",
-          description: "分派、跟踪、汇总和证据检查",
-          default_role: "project_coordinator",
+          type: "database_admin",
+          label: "数据库管理",
+          description: "负责数据库变更、备份、性能诊断和恢复验证",
+          default_role: "database_admin",
           recommended_skills: ["incident-diagnosis"],
           recommended_mcp_servers: ["github"],
           recommended_provider_types: ["codex"],
@@ -158,12 +173,13 @@ describe("digital employee API", () => {
         session_policy: { reuse: false },
         metadata: { source: "team_config" },
       },
-    };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(createOptions), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    } satisfies DigitalEmployeeCreateOptions;
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(createOptions), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -192,20 +208,21 @@ describe("digital employee API", () => {
       tenant_id: "22222222-2222-4222-8222-222222222222",
       team_id: "99999999-9999-4999-8999-999999999999",
       owner_user_id: "33333333-3333-4333-8333-333333333333",
-      employee_type: "coordinator",
-      name: "需求分析员工",
-      role: "requirements_analyst",
+      employee_type: "database_admin",
+      name: "数据库管理员工",
+      role: "database_admin",
       status: "ready",
       permission_policy: { mode: "least_privilege" },
       context_policy: { mode: "task_slice" },
       approval_policy: { high_risk: "required" },
       risk_level: "medium",
-    };
-    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-      new Response(JSON.stringify(employee), {
-        headers: { "content-type": "application/json" },
-        status: 201,
-      }),
+    } satisfies DigitalEmployee;
+    const fetcher = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify(employee), {
+          headers: { "content-type": "application/json" },
+          status: 201,
+        }),
     );
 
     await expect(
@@ -216,16 +233,16 @@ describe("digital employee API", () => {
         },
         {
           team_id: "99999999-9999-4999-8999-999999999999",
-          employee_type: "coordinator",
-          name: "需求分析员工",
-          role: "requirements_analyst",
-          description: "负责需求分析和证据汇总",
+          employee_type: "database_admin",
+          name: "数据库管理员工",
+          role: "database_admin",
+          description: "负责数据库变更和恢复验证",
           permission_policy: { mode: "least_privilege" },
           context_policy: { mode: "task_slice" },
           approval_policy: { high_risk: "required" },
           risk_level: "medium",
           metadata: { source: "web" },
-          role_profile: { title: "requirements analyst" },
+          role_profile: { title: "database administrator" },
           constitution_addendum: { principles: ["evidence_first"] },
           capability_selection: { skills: ["incident-diagnosis"] },
           context_policy_override: { max_refs: 8 },
@@ -239,52 +256,91 @@ describe("digital employee API", () => {
       ),
     ).resolves.toEqual(employee);
 
-    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/digital-employees", {
-      body: JSON.stringify({
-        team_id: "99999999-9999-4999-8999-999999999999",
-        employee_type: "coordinator",
-        name: "需求分析员工",
-        role: "requirements_analyst",
-        description: "负责需求分析和证据汇总",
-        permission_policy: { mode: "least_privilege" },
-        context_policy: { mode: "task_slice" },
-        approval_policy: { high_risk: "required" },
-        risk_level: "medium",
-        metadata: { source: "web" },
-        role_profile: { title: "requirements analyst" },
-        constitution_addendum: { principles: ["evidence_first"] },
-        capability_selection: { skills: ["incident-diagnosis"] },
-        context_policy_override: { max_refs: 8 },
-        approval_policy_override: { high_risk: "required" },
-        output_contract_addendum: { required: ["summary"] },
-        runtime_node_id: "33333333-3333-4333-8333-333333333333",
-        provider_type: "codex",
-        session_policy: { reuse: false },
-        workspace_policy: { mode: "ephemeral" },
-      }),
-      credentials: "include",
-      headers: { accept: "application/json", "content-type": "application/json" },
-      method: "POST",
-    });
-    const [, requestInit] = fetcher.mock.calls[0] as [RequestInfo | URL, RequestInit];
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees",
+      {
+        body: JSON.stringify({
+          team_id: "99999999-9999-4999-8999-999999999999",
+          employee_type: "database_admin",
+          name: "数据库管理员工",
+          role: "database_admin",
+          description: "负责数据库变更和恢复验证",
+          permission_policy: { mode: "least_privilege" },
+          context_policy: { mode: "task_slice" },
+          approval_policy: { high_risk: "required" },
+          risk_level: "medium",
+          metadata: { source: "web" },
+          role_profile: { title: "database administrator" },
+          constitution_addendum: { principles: ["evidence_first"] },
+          capability_selection: { skills: ["incident-diagnosis"] },
+          context_policy_override: { max_refs: 8 },
+          approval_policy_override: { high_risk: "required" },
+          output_contract_addendum: { required: ["summary"] },
+          runtime_node_id: "33333333-3333-4333-8333-333333333333",
+          provider_type: "codex",
+          session_policy: { reuse: false },
+          workspace_policy: { mode: "ephemeral" },
+        }),
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+    const [, requestInit] = fetcher.mock.calls[0] as [
+      RequestInfo | URL,
+      RequestInit,
+    ];
     const requestBody = JSON.parse(String(requestInit.body));
     expect(requestBody).not.toHaveProperty("owner_user_id");
+  });
+
+  it("rejects legacy draft creation input before posting to the backend", async () => {
+    const fetcher = vi.fn();
+
+    await expect(
+      createDigitalEmployee(
+        {
+          baseUrl: "http://control-plane.local",
+          fetcher,
+        },
+        {
+          team_id: "99999999-9999-4999-8999-999999999999",
+          name: "数据库管理员工",
+          role: "database_admin",
+          description: "旧内联表单草稿",
+        } as Parameters<typeof createDigitalEmployee>[1],
+      ),
+    ).rejects.toThrow(
+      "digital employee ready creation requires employee_type, runtime_node_id, and provider_type",
+    );
+
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("gets one digital employee with encoded employee id", async () => {
     const employee = {
       id: "employee 1/primary",
+      tenant_id: "22222222-2222-4222-8222-222222222222",
+      team_id: "99999999-9999-4999-8999-999999999999",
       owner_user_id: "22222222-2222-4222-8222-222222222222",
-      employee_type: "coordinator",
-      name: "需求分析员工",
-      role: "requirements_analyst",
+      employee_type: "database_admin",
+      name: "数据库管理员工",
+      role: "database_admin",
       status: "active",
-    };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(employee), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+      permission_policy: { mode: "least_privilege" },
+      context_policy: { mode: "task_slice" },
+      approval_policy: { high_risk: "required" },
+      risk_level: "medium",
+    } satisfies DigitalEmployee;
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(employee), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -321,11 +377,12 @@ describe("digital employee API", () => {
       output_contract_addendum: {},
       status: "draft",
     };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(revision), {
-        headers: { "content-type": "application/json" },
-        status: 201,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(revision), {
+          headers: { "content-type": "application/json" },
+          status: 201,
+        }),
     );
 
     await expect(
@@ -352,7 +409,10 @@ describe("digital employee API", () => {
           status: "draft",
         }),
         credentials: "include",
-        headers: { accept: "application/json", "content-type": "application/json" },
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
         method: "POST",
       },
     );
@@ -376,11 +436,12 @@ describe("digital employee API", () => {
         warnings: [],
       },
     };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(preview), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(preview), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -405,7 +466,10 @@ describe("digital employee API", () => {
           employee_config: { id: "44444444-4444-4444-8444-444444444444" },
         }),
         credentials: "include",
-        headers: { accept: "application/json", "content-type": "application/json" },
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
         method: "POST",
       },
     );
@@ -427,11 +491,12 @@ describe("digital employee API", () => {
       },
       status: "approved",
     };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(effectiveConfig), {
-        headers: { "content-type": "application/json" },
-        status: 201,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(effectiveConfig), {
+          headers: { "content-type": "application/json" },
+          status: 201,
+        }),
     );
 
     await expect(
@@ -460,7 +525,10 @@ describe("digital employee API", () => {
           },
         }),
         credentials: "include",
-        headers: { accept: "application/json", "content-type": "application/json" },
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
         method: "POST",
       },
     );
@@ -474,11 +542,12 @@ describe("digital employee API", () => {
       provider_type: "codex",
       status: "ready",
     };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(instance), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(instance), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -519,11 +588,12 @@ describe("digital employee API", () => {
       session_state: {},
       timed_out: false,
     };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(run), {
-        headers: { "content-type": "application/json" },
-        status: 201,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(run), {
+          headers: { "content-type": "application/json" },
+          status: 201,
+        }),
     );
 
     await expect(
@@ -549,7 +619,10 @@ describe("digital employee API", () => {
           timeout_sec: 900,
         }),
         credentials: "include",
-        headers: { accept: "application/json", "content-type": "application/json" },
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
         method: "POST",
       },
     );
@@ -575,11 +648,12 @@ describe("digital employee API", () => {
         timed_out: false,
       },
     ];
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(runs), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(runs), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -618,11 +692,12 @@ describe("digital employee API", () => {
       session_state: {},
       timed_out: false,
     };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(run), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(run), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -656,11 +731,12 @@ describe("digital employee API", () => {
         metadata: { source: "runtime" },
       },
     ];
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(events), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(events), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -700,11 +776,12 @@ describe("digital employee API", () => {
       session_state: {},
       timed_out: false,
     };
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify(run), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(run), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
     );
 
     await expect(
@@ -721,7 +798,10 @@ describe("digital employee API", () => {
       {
         body: JSON.stringify({ reason: "用户从 Web 停止" }),
         credentials: "include",
-        headers: { accept: "application/json", "content-type": "application/json" },
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
         method: "POST",
       },
     );
