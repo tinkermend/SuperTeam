@@ -3836,6 +3836,7 @@ func TestTaskEventIdempotencyIsScopedByRun(t *testing.T) {
 		Metadata:       []byte(`{}`),
 	})
 	require.NoError(t, err)
+	assert.True(t, event1.Inserted)
 
 	event2, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
 		TenantID:       task.TenantID,
@@ -3848,6 +3849,7 @@ func TestTaskEventIdempotencyIsScopedByRun(t *testing.T) {
 		Metadata:       []byte(`{}`),
 	})
 	require.NoError(t, err)
+	assert.True(t, event2.Inserted)
 	assert.NotEqual(t, event1.ID, event2.ID)
 	assert.Equal(t, run1.ID, event1.RunID.UUID)
 	assert.Equal(t, run2.ID, event2.RunID.UUID)
@@ -4101,6 +4103,7 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 		Metadata:       []byte(`{"source":"runtime-writeback"}`),
 	})
 	require.NoError(t, err)
+	assert.True(t, taskEvent.Inserted)
 
 	duplicateTaskEvent, err := testQueries.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
 		TenantID:       tenantID,
@@ -4115,6 +4118,7 @@ func TestDigitalEmployeeRunLoopPersistenceQueries(t *testing.T) {
 		Metadata:       []byte(`{"source":"runtime-writeback"}`),
 	})
 	require.NoError(t, err)
+	assert.False(t, duplicateTaskEvent.Inserted)
 	assert.Equal(t, taskEvent.ID, duplicateTaskEvent.ID)
 	assert.JSONEq(t, `{"text":"working"}`, string(duplicateTaskEvent.Payload))
 

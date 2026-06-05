@@ -531,6 +531,6 @@ WITH inserted AS (
     ON CONFLICT (tenant_id, run_id, sequence_number)
     WHERE run_id IS NOT NULL
     DO UPDATE SET event_type = task_events.event_type
-    RETURNING *
+    RETURNING *, (xmax = 0) AS inserted
 )
 SELECT * FROM inserted;

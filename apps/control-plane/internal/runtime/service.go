@@ -115,6 +115,13 @@ func (s *Service) EnrollHello(ctx context.Context, req EnrollHelloRequest) (*Enr
 		resp.Session = session
 		resp.SessionToken = token
 	}
+	s.recordRuntimeEventBestEffort(ctx, runtimeEnrollmentEventRequest(
+		*enrollment,
+		RuntimeEventEnrollmentRequested,
+		RuntimeEventSeverityInfo,
+		"Runtime 节点申请接入",
+		"",
+	))
 	return resp, nil
 }
 
@@ -184,7 +191,18 @@ func (s *Service) ApproveEnrollment(ctx context.Context, req ApproveEnrollmentRe
 	if err != nil {
 		return nil, fmt.Errorf("failed to approve runtime enrollment: %w", err)
 	}
-	return s.recordToRuntimeEnrollment(record)
+	approved, err := s.recordToRuntimeEnrollment(record)
+	if err != nil {
+		return nil, err
+	}
+	s.recordRuntimeEventBestEffort(ctx, runtimeEnrollmentEventRequest(
+		*approved,
+		RuntimeEventEnrollmentApproved,
+		RuntimeEventSeveritySuccess,
+		"Runtime 节点接入通过",
+		"",
+	))
+	return approved, nil
 }
 
 func (s *Service) RejectEnrollment(ctx context.Context, req RejectEnrollmentRequest) (*RuntimeEnrollment, error) {
@@ -204,7 +222,18 @@ func (s *Service) RejectEnrollment(ctx context.Context, req RejectEnrollmentRequ
 	if err != nil {
 		return nil, fmt.Errorf("failed to reject runtime enrollment: %w", err)
 	}
-	return s.recordToRuntimeEnrollment(record)
+	rejected, err := s.recordToRuntimeEnrollment(record)
+	if err != nil {
+		return nil, err
+	}
+	s.recordRuntimeEventBestEffort(ctx, runtimeEnrollmentEventRequest(
+		*rejected,
+		RuntimeEventEnrollmentRejected,
+		RuntimeEventSeverityWarning,
+		"Runtime 节点接入被拒绝",
+		req.Reason,
+	))
+	return rejected, nil
 }
 
 func (s *Service) RevokeEnrollment(ctx context.Context, req RevokeEnrollmentRequest) (*RuntimeEnrollment, error) {
@@ -224,7 +253,18 @@ func (s *Service) RevokeEnrollment(ctx context.Context, req RevokeEnrollmentRequ
 	if err != nil {
 		return nil, fmt.Errorf("failed to revoke runtime enrollment: %w", err)
 	}
-	return s.recordToRuntimeEnrollment(record)
+	revoked, err := s.recordToRuntimeEnrollment(record)
+	if err != nil {
+		return nil, err
+	}
+	s.recordRuntimeEventBestEffort(ctx, runtimeEnrollmentEventRequest(
+		*revoked,
+		RuntimeEventEnrollmentRevoked,
+		RuntimeEventSeverityWarning,
+		"Runtime 节点接入已撤销",
+		req.Reason,
+	))
+	return revoked, nil
 }
 
 func (s *Service) IssueRuntimeSession(ctx context.Context, enrollment RuntimeEnrollmentRecord) (*RuntimeSession, string, error) {
@@ -425,6 +465,33 @@ func (s *Service) CreateRuntimeEvent(ctx context.Context, req CreateRuntimeEvent
 		return fmt.Errorf("failed to create runtime event: %w", err)
 	}
 	return nil
+}
+
+func (s *Service) recordRuntimeEventBestEffort(ctx context.Context, req CreateRuntimeEventRequest) {
+	if err := s.CreateRuntimeEvent(ctx, req); err != nil {
+		fmt.Printf("record runtime event failed: %v\n", err)
+	}
+}
+
+func runtimeEnrollmentEventRequest(enrollment RuntimeEnrollment, eventType RuntimeEventType, severity RuntimeEventSeverity, title, reason string) CreateRuntimeEventRequest {
+	payload := map[string]interface{}{
+		"status": string(enrollment.Status),
+	}
+	if strings.TrimSpace(reason) != "" {
+		payload["reason"] = reason
+	}
+	return CreateRuntimeEventRequest{
+		TenantID:        enrollment.TenantID,
+		RuntimeNodeID:   enrollment.RuntimeNodeID,
+		NodeID:          enrollment.NodeID,
+		EventType:       eventType,
+		Severity:        severity,
+		Source:          RuntimeEventSourceEnrollment,
+		Title:           title,
+		CorrelationType: "runtime_enrollment",
+		CorrelationID:   enrollment.ID.String(),
+		Payload:         payload,
+	}
 }
 
 func (s *Service) GetOverview(ctx context.Context, filter RuntimeOverviewFilter) (*RuntimeOverview, error) {

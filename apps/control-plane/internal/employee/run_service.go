@@ -216,7 +216,7 @@ func (s *DigitalEmployeeRunService) markRunDispatched(ctx context.Context, req C
 	if err != nil {
 		return nil, fmt.Errorf("mark run dispatching: %w", err)
 	}
-	if err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
+	if _, err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
 		TenantID:       req.TenantID,
 		TaskID:         run.TaskID,
 		RunID:          run.ID,
@@ -296,7 +296,7 @@ func (s *DigitalEmployeeRunService) StopRun(ctx context.Context, req StopDigital
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
+	if _, err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
 		TenantID:       req.TenantID,
 		TaskID:         run.TaskID,
 		RunID:          run.ID,

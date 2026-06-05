@@ -18,17 +18,19 @@ const (
 )
 
 type DigitalEmployeeRunWritebackService struct {
-	repository DigitalEmployeeRunRepository
-	audit      AuditLogger
+	repository            DigitalEmployeeRunRepository
+	audit                 AuditLogger
+	runtimeEventRecorders []RuntimeEventRecorder
 }
 
-func NewDigitalEmployeeRunWritebackService(repository DigitalEmployeeRunRepository, audit AuditLogger) (*DigitalEmployeeRunWritebackService, error) {
+func NewDigitalEmployeeRunWritebackService(repository DigitalEmployeeRunRepository, audit AuditLogger, recorders ...RuntimeEventRecorder) (*DigitalEmployeeRunWritebackService, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("%w: run repository is required", ErrInvalidInput)
 	}
 	return &DigitalEmployeeRunWritebackService{
-		repository: repository,
-		audit:      audit,
+		repository:            repository,
+		audit:                 audit,
+		runtimeEventRecorders: recorders,
 	}, nil
 }
 
@@ -53,17 +55,17 @@ func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, id
 		return fmt.Errorf("%w: command is not associated with a run", ErrNotFound)
 	}
 	if run.Status.IsTerminal() {
-		exists, err := s.repository.HasRunEventSequence(ctx, identity.TenantID, run.TaskID, run.ID, event.SequenceNumber)
+		eventExists, err := s.repository.HasRunEventSequence(ctx, identity.TenantID, run.TaskID, run.ID, event.SequenceNumber)
 		if err != nil {
 			return fmt.Errorf("check existing terminal run event: %w", err)
 		}
-		if !exists {
+		if !eventExists {
 			return fmt.Errorf("%w: run is terminal", ErrConflict)
 		}
 	}
 
 	commandIDRef := commandID
-	if err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
+	insertedTaskEvent, err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
 		TenantID:       identity.TenantID,
 		TaskID:         run.TaskID,
 		RunID:          run.ID,
@@ -74,12 +76,16 @@ func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, id
 		RawEventRef:    event.RawEventRef,
 		LogRef:         event.LogRef,
 		Metadata:       redactRuntimeEventPayload(event.Metadata),
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("create task event: %w", err)
 	}
 
 	providerSessionExternalID := trimmedOptionalValue(event.ProviderSessionExternalID)
 	if providerSessionExternalID == nil {
+		if insertedTaskEvent {
+			s.recordRuntimeCommandEventBestEffort(ctx, runtimeCommandEventRecordRequest(run, commandID, "command_event", "info", "Runtime 命令事件", runtimeCommandProviderEventPayload(eventType, event, nil)))
+		}
 		return nil
 	}
 	providerSessionUUID, err := s.upsertProviderSession(ctx, run, *providerSessionExternalID, "active", true, event.SequenceNumber, &commandID, nil, event.SessionStatePatch, event.Metadata)
@@ -88,6 +94,9 @@ func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, id
 	}
 	if err := s.createProviderSessionEvent(ctx, run, providerSessionUUID, commandID, eventType, event.SequenceNumber, event.Payload, event.RawEventRef, event.LogRef, event.SessionStatePatch, event.Metadata); err != nil {
 		return err
+	}
+	if insertedTaskEvent {
+		s.recordRuntimeCommandEventBestEffort(ctx, runtimeCommandEventRecordRequest(run, commandID, "command_event", "info", "Runtime 命令事件", runtimeCommandProviderEventPayload(eventType, event, providerSessionExternalID)))
 	}
 	return nil
 }
@@ -173,33 +182,45 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminal(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	return s.repository.WithTransaction(ctx, func(repository DigitalEmployeeRunRepository) error {
+	shouldRecordRuntimeEvent := false
+	if err := s.repository.WithTransaction(ctx, func(repository DigitalEmployeeRunRepository) error {
 		txService := *s
 		txService.repository = repository
-		return txService.recordTerminalLocked(ctx, identity, commandID, terminal, spec)
-	})
-}
-
-func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
-	receipt, run, err := s.loadCommandRun(ctx, identity, commandID, true)
-	if err != nil {
+		shouldRecord, err := txService.recordTerminalLocked(ctx, identity, commandID, terminal, spec)
+		if err != nil {
+			return err
+		}
+		shouldRecordRuntimeEvent = shouldRecord
+		return nil
+	}); err != nil {
 		return err
 	}
+	if shouldRecordRuntimeEvent {
+		s.recordRuntimeTerminalEventBestEffort(ctx, identity, commandID, terminal.Status)
+	}
+	return nil
+}
+
+func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) (bool, error) {
+	receipt, run, err := s.loadCommandRun(ctx, identity, commandID, true)
+	if err != nil {
+		return false, err
+	}
 	if isTerminalReceiptStatus(receipt.Status) && receipt.Status != string(spec.status) {
-		return fmt.Errorf("%w: command receipt is already terminal with status %s", ErrConflict, receipt.Status)
+		return false, fmt.Errorf("%w: command receipt is already terminal with status %s", ErrConflict, receipt.Status)
 	}
 	if run == nil {
-		return s.recordProvisioningTerminal(ctx, identity, commandID, receipt, terminal, spec)
+		return false, s.recordProvisioningTerminal(ctx, identity, commandID, receipt, terminal, spec)
 	}
 	wasTerminal := run.Status.IsTerminal()
 	projectionTerminal := terminal
 	updatedRun := run
 	if wasTerminal {
 		if run.Status != spec.status {
-			return fmt.Errorf("%w: run is already terminal with status %s", ErrConflict, run.Status)
+			return false, fmt.Errorf("%w: run is already terminal with status %s", ErrConflict, run.Status)
 		}
 		if !terminalCompatibleWithRun(run, terminal) {
-			return fmt.Errorf("%w: terminal writeback conflicts with persisted run", ErrConflict)
+			return false, fmt.Errorf("%w: terminal writeback conflicts with persisted run", ErrConflict)
 		}
 		projectionTerminal = terminalWritebackFromRun(run)
 	} else {
@@ -226,12 +247,12 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 			TimedOut:                  spec.status == DigitalEmployeeRunStatusTimedOut || terminal.TimedOut,
 		})
 		if err != nil {
-			return fmt.Errorf("update run terminal status: %w", err)
+			return false, fmt.Errorf("update run terminal status: %w", err)
 		}
 	}
 
 	commandIDRef := commandID
-	if err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
+	if _, err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
 		TenantID:       identity.TenantID,
 		TaskID:         run.TaskID,
 		RunID:          run.ID,
@@ -246,17 +267,17 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 			"status": string(spec.status),
 		},
 	}); err != nil {
-		return fmt.Errorf("create terminal task event: %w", err)
+		return false, fmt.Errorf("create terminal task event: %w", err)
 	}
 
 	providerSessionExternalID := trimmedOptionalValue(projectionTerminal.ProviderSessionExternalID)
 	if providerSessionExternalID != nil {
 		providerSessionUUID, err := s.upsertProviderSession(ctx, updatedRun, *providerSessionExternalID, spec.providerStatus, spec.recoverable, spec.sequenceNumber, &commandID, projectionTerminal.ErrorFamily, projectionTerminal.SessionStatePatch, map[string]any{"source": "runtime", "status": string(spec.status)})
 		if err != nil {
-			return err
+			return false, err
 		}
 		if err := s.createProviderSessionEvent(ctx, updatedRun, providerSessionUUID, commandID, spec.eventType, spec.sequenceNumber, terminalEventPayload(projectionTerminal, spec.status), projectionTerminal.RawResultRef, projectionTerminal.LogRef, projectionTerminal.SessionStatePatch, map[string]any{"source": "runtime", "status": string(spec.status)}); err != nil {
-			return err
+			return false, err
 		}
 	}
 
@@ -268,12 +289,15 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 		Result:       receiptResult,
 		ErrorMessage: projectionTerminal.ErrorMessage,
 	}); err != nil {
-		return fmt.Errorf("update command receipt terminal status: %w", err)
+		return false, fmt.Errorf("update command receipt terminal status: %w", err)
 	}
 	if wasTerminal {
-		return nil
+		return false, nil
 	}
-	return s.logRuntimeAudit(ctx, spec.auditEventType, run.NodeID, "digital_employee_run", run.ID.String(), spec.auditAction)
+	if err := s.logRuntimeAudit(ctx, spec.auditEventType, run.NodeID, "digital_employee_run", run.ID.String(), spec.auditAction); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *DigitalEmployeeRunWritebackService) recordProvisioningTerminal(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
@@ -723,6 +747,156 @@ func redactWorkProducts(products []WorkProduct) []WorkProduct {
 		redacted[i].Metadata = redactRuntimeEventPayload(product.Metadata)
 	}
 	return redacted
+}
+
+func (s *DigitalEmployeeRunWritebackService) recordRuntimeTerminalEventBestEffort(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, status DigitalEmployeeRunStatus) {
+	if len(s.runtimeEventRecorders) == 0 {
+		return
+	}
+	run, err := s.repository.GetRunByCommandID(ctx, identity.TenantID, commandID)
+	if errors.Is(err, ErrNotFound) || run == nil {
+		return
+	}
+	if err != nil {
+		fmt.Printf("load run for runtime event failed: %v\n", err)
+		return
+	}
+	s.recordRuntimeCommandEventBestEffort(ctx, runtimeCommandEventRecordRequest(
+		run,
+		commandID,
+		runtimeCommandTerminalEventType(status),
+		runtimeCommandTerminalSeverity(status),
+		runtimeCommandTerminalTitle(status),
+		terminalRuntimeEventPayload(run, commandID, status),
+	))
+}
+
+func (s *DigitalEmployeeRunWritebackService) recordRuntimeCommandEventBestEffort(ctx context.Context, req RuntimeEventRecordRequest) {
+	for _, recorder := range s.runtimeEventRecorders {
+		if recorder == nil {
+			continue
+		}
+		if err := recorder.RecordRuntimeEvent(ctx, req); err != nil {
+			fmt.Printf("record runtime command event failed: %v\n", err)
+		}
+	}
+}
+
+func runtimeCommandEventRecordRequest(run *DigitalEmployeeRun, commandID, eventType, severity, title string, payload map[string]any) RuntimeEventRecordRequest {
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	payload["status"] = string(run.Status)
+	payload["command_id"] = commandID
+	payload["run_id"] = run.ID.String()
+	payload["task_id"] = run.TaskID.String()
+	payload["digital_employee_id"] = run.DigitalEmployeeID.String()
+	payload["execution_instance_id"] = run.ExecutionInstanceID.String()
+	return RuntimeEventRecordRequest{
+		TenantID:        run.TenantID,
+		RuntimeNodeID:   run.RuntimeNodeID,
+		NodeID:          run.NodeID,
+		EventType:       eventType,
+		Severity:        severity,
+		Source:          "runtime_command",
+		Title:           title,
+		ProviderType:    run.ProviderType,
+		CorrelationType: "runtime_command",
+		CorrelationID:   commandID,
+		Payload:         redactRuntimeEventPayload(payload),
+	}
+}
+
+func runtimeCommandProviderEventPayload(eventType string, event RuntimeCommandEventWriteback, providerSessionExternalID *string) map[string]any {
+	payload := map[string]any{
+		"provider_event_type": eventType,
+		"sequence_number":     event.SequenceNumber,
+	}
+	if providerSessionExternalID != nil {
+		payload["provider_session_external_id"] = *providerSessionExternalID
+	}
+	if event.RawEventRef != nil {
+		payload["raw_event_ref"] = *event.RawEventRef
+	}
+	if event.LogRef != nil {
+		payload["log_ref"] = *event.LogRef
+	}
+	return payload
+}
+
+func terminalRuntimeEventPayload(run *DigitalEmployeeRun, commandID string, status DigitalEmployeeRunStatus) map[string]any {
+	payload := map[string]any{
+		"status":     string(status),
+		"command_id": commandID,
+	}
+	if run.ProviderSessionExternalID != nil {
+		payload["provider_session_external_id"] = *run.ProviderSessionExternalID
+	}
+	if run.RawResultRef != nil {
+		payload["raw_result_ref"] = *run.RawResultRef
+	}
+	if run.LogRef != nil {
+		payload["log_ref"] = *run.LogRef
+	}
+	if run.ErrorCode != nil {
+		payload["error_code"] = *run.ErrorCode
+	}
+	if run.ErrorFamily != nil {
+		payload["error_family"] = *run.ErrorFamily
+	}
+	if run.ExitCode != nil {
+		payload["exit_code"] = *run.ExitCode
+	}
+	if run.Signal != nil {
+		payload["signal"] = *run.Signal
+	}
+	if run.TimedOut {
+		payload["timed_out"] = true
+	}
+	return payload
+}
+
+func runtimeCommandTerminalEventType(status DigitalEmployeeRunStatus) string {
+	switch status {
+	case DigitalEmployeeRunStatusCompleted:
+		return "command_completed"
+	case DigitalEmployeeRunStatusFailed:
+		return "command_failed"
+	case DigitalEmployeeRunStatusCancelled:
+		return "command_cancelled"
+	case DigitalEmployeeRunStatusTimedOut:
+		return "command_timed_out"
+	default:
+		return "command_event"
+	}
+}
+
+func runtimeCommandTerminalSeverity(status DigitalEmployeeRunStatus) string {
+	switch status {
+	case DigitalEmployeeRunStatusCompleted:
+		return "success"
+	case DigitalEmployeeRunStatusFailed, DigitalEmployeeRunStatusTimedOut:
+		return "error"
+	case DigitalEmployeeRunStatusCancelled:
+		return "warning"
+	default:
+		return "info"
+	}
+}
+
+func runtimeCommandTerminalTitle(status DigitalEmployeeRunStatus) string {
+	switch status {
+	case DigitalEmployeeRunStatusCompleted:
+		return "Runtime 命令执行完成"
+	case DigitalEmployeeRunStatusFailed:
+		return "Runtime 命令执行失败"
+	case DigitalEmployeeRunStatusCancelled:
+		return "Runtime 命令执行已取消"
+	case DigitalEmployeeRunStatusTimedOut:
+		return "Runtime 命令执行超时"
+	default:
+		return "Runtime 命令事件"
+	}
 }
 
 func (s *DigitalEmployeeRunWritebackService) logRuntimeAudit(ctx context.Context, eventType, actorID, resourceType, resourceID, action string) error {

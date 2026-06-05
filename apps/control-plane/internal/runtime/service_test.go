@@ -451,6 +451,46 @@ func TestRuntimeServiceCreatesEventBestEffortPayload(t *testing.T) {
 	assert.Equal(t, "visible", repo.events[0].Payload["safe"])
 }
 
+func TestRuntimeEnrollmentDecisionsCreateEvents(t *testing.T) {
+	repo := newRuntimeOverviewFakeRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	approvedEnrollment := repo.seedRuntimeOverviewPendingEnrollment(t, "runtime-approve")
+	rejectedEnrollment := repo.seedRuntimeOverviewPendingEnrollment(t, "runtime-reject")
+
+	_, err = service.ApproveEnrollment(context.Background(), ApproveEnrollmentRequest{
+		TenantID:     DefaultTenantID,
+		EnrollmentID: approvedEnrollment.ID,
+		ApprovedBy:   runtimeTestUUID(901),
+	})
+	require.NoError(t, err)
+
+	_, err = service.RejectEnrollment(context.Background(), RejectEnrollmentRequest{
+		TenantID:     DefaultTenantID,
+		EnrollmentID: rejectedEnrollment.ID,
+		RejectedBy:   runtimeTestUUID(902),
+		Reason:       "missing runtime owner",
+	})
+	require.NoError(t, err)
+
+	require.Len(t, repo.events, 2)
+	assert.Equal(t, RuntimeEventEnrollmentApproved, repo.events[0].EventType)
+	assert.Equal(t, RuntimeEventSourceEnrollment, repo.events[0].Source)
+	assert.Equal(t, "Runtime 节点接入通过", repo.events[0].Title)
+	assert.Equal(t, "runtime_enrollment", repo.events[0].CorrelationType)
+	assert.Equal(t, approvedEnrollment.ID.String(), repo.events[0].CorrelationID)
+	assert.Equal(t, "approved", repo.events[0].Payload["status"])
+
+	assert.Equal(t, RuntimeEventEnrollmentRejected, repo.events[1].EventType)
+	assert.Equal(t, RuntimeEventSourceEnrollment, repo.events[1].Source)
+	assert.Equal(t, "Runtime 节点接入被拒绝", repo.events[1].Title)
+	assert.Equal(t, "runtime_enrollment", repo.events[1].CorrelationType)
+	assert.Equal(t, rejectedEnrollment.ID.String(), repo.events[1].CorrelationID)
+	assert.Equal(t, "rejected", repo.events[1].Payload["status"])
+	assert.Equal(t, "missing runtime owner", repo.events[1].Payload["reason"])
+}
+
 func TestRuntimeServiceBuildsOverview(t *testing.T) {
 	repo := newRuntimeOverviewFakeRepository()
 	service, err := NewService(repo)
@@ -624,6 +664,7 @@ type runtimeOverviewFakeRepository struct {
 	events                       []CreateRuntimeEventParams
 	runtimeEvents                []RuntimeEvent
 	enrollments                  []RuntimeEnrollmentRecord
+	enrollmentsByID              map[uuid.UUID]RuntimeEnrollmentRecord
 	nodes                        []NodeRecord
 	capabilitySummaries          []RuntimeProviderCapabilitySummary
 	lastListNodesForTenantParams ListRuntimeNodesForTenantParams
@@ -635,7 +676,9 @@ type runtimeOverviewFakeRepository struct {
 }
 
 func newRuntimeOverviewFakeRepository() *runtimeOverviewFakeRepository {
-	return &runtimeOverviewFakeRepository{}
+	return &runtimeOverviewFakeRepository{
+		enrollmentsByID: map[uuid.UUID]RuntimeEnrollmentRecord{},
+	}
 }
 
 func (r *runtimeOverviewFakeRepository) CreateRuntimeEvent(ctx context.Context, params CreateRuntimeEventParams) (RuntimeEvent, error) {
@@ -703,4 +746,102 @@ func (r *runtimeOverviewFakeRepository) ListRuntimeNodesForTenant(ctx context.Co
 
 func (r *runtimeOverviewFakeRepository) CountRuntimeEnrollmentsForTenant(ctx context.Context, tenantID uuid.UUID, status *RuntimeEnrollmentStatus) (int64, error) {
 	return r.pendingEnrollmentCount, nil
+}
+
+func (r *runtimeOverviewFakeRepository) seedRuntimeOverviewPendingEnrollment(t *testing.T, nodeID string) RuntimeEnrollmentRecord {
+	t.Helper()
+	payload, err := json.Marshal(map[string]interface{}{
+		"node_id":             nodeID,
+		"name":                nodeID,
+		"supported_providers": []string{"codex"},
+		"max_slots":           int32(2),
+		"metadata":            map[string]interface{}{"source": "test"},
+	})
+	require.NoError(t, err)
+	record := RuntimeEnrollmentRecord{
+		ID:             runtimeTestUUID(len(r.enrollmentsByID) + 950),
+		TenantID:       DefaultTenantID,
+		RuntimeNodeID:  uuid.Nil,
+		NodeID:         nodeID,
+		BootstrapKeyID: runtimeTestUUID(len(r.enrollmentsByID) + 970),
+		Status:         RuntimeEnrollmentStatusPending,
+		RequestPayload: payload,
+		LastHelloAt:    timestamptzFromTime(time.Now()),
+		CreatedAt:      timestamptzFromTime(time.Now()),
+		UpdatedAt:      timestamptzFromTime(time.Now()),
+	}
+	r.enrollmentsByID[record.ID] = record
+	return record
+}
+
+func (r *runtimeOverviewFakeRepository) GetRuntimeEnrollment(ctx context.Context, tenantID, enrollmentID uuid.UUID) (RuntimeEnrollmentRecord, error) {
+	record, ok := r.enrollmentsByID[enrollmentID]
+	if !ok || record.TenantID != tenantID {
+		return RuntimeEnrollmentRecord{}, errors.New("not found")
+	}
+	return record, nil
+}
+
+func (r *runtimeOverviewFakeRepository) ListActiveRuntimeBootstrapKeys(ctx context.Context, tenantID uuid.UUID) ([]RuntimeBootstrapKeyRecord, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *runtimeOverviewFakeRepository) UpsertRuntimeEnrollmentFromHello(ctx context.Context, params UpsertRuntimeEnrollmentFromHelloParams) (RuntimeEnrollmentRecord, error) {
+	return RuntimeEnrollmentRecord{}, errors.New("not implemented")
+}
+
+func (r *runtimeOverviewFakeRepository) UpsertRuntimeNodeForTenant(ctx context.Context, params UpsertRuntimeNodeForTenantParams) (NodeRecord, error) {
+	return NodeRecord{}, errors.New("not implemented")
+}
+
+func (r *runtimeOverviewFakeRepository) ApproveRuntimeEnrollment(ctx context.Context, params ApproveRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error) {
+	return RuntimeEnrollmentRecord{}, errors.New("not implemented")
+}
+
+func (r *runtimeOverviewFakeRepository) ApproveRuntimeEnrollmentWithNode(ctx context.Context, params ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollmentRecord, error) {
+	record, ok := r.enrollmentsByID[params.EnrollmentID]
+	if !ok || record.TenantID != params.TenantID || record.Status != RuntimeEnrollmentStatusPending {
+		return RuntimeEnrollmentRecord{}, errors.New("not found")
+	}
+	record.Status = RuntimeEnrollmentStatusApproved
+	record.RuntimeNodeID = runtimeTestUUID(len(r.nodes) + 980)
+	record.ApprovedBy = uuid.NullUUID{UUID: params.ApprovedBy, Valid: params.ApprovedBy != uuid.Nil}
+	record.ApprovedAt = timestamptzFromTime(time.Now())
+	record.UpdatedAt = timestamptzFromTime(time.Now())
+	r.enrollmentsByID[record.ID] = record
+	return record, nil
+}
+
+func (r *runtimeOverviewFakeRepository) RevokeRuntimeEnrollment(ctx context.Context, params RevokeRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error) {
+	return RuntimeEnrollmentRecord{}, errors.New("not implemented")
+}
+
+func (r *runtimeOverviewFakeRepository) CreateRuntimeSession(ctx context.Context, params CreateRuntimeSessionParams) (RuntimeSessionRecord, error) {
+	return RuntimeSessionRecord{}, errors.New("not implemented")
+}
+
+func (r *runtimeOverviewFakeRepository) GetActiveRuntimeSessionByLookupHash(ctx context.Context, params GetActiveRuntimeSessionByLookupHashParams) (RuntimeSessionRecord, error) {
+	return RuntimeSessionRecord{}, errors.New("not implemented")
+}
+
+func (r *runtimeOverviewFakeRepository) RenewRuntimeSession(ctx context.Context, params RenewRuntimeSessionParams) (RuntimeSessionRecord, error) {
+	return RuntimeSessionRecord{}, errors.New("not implemented")
+}
+
+func (r *runtimeOverviewFakeRepository) TouchRuntimeSession(ctx context.Context, params TouchRuntimeSessionParams) (RuntimeSessionRecord, error) {
+	return RuntimeSessionRecord{}, errors.New("not implemented")
+}
+
+func (r *runtimeOverviewFakeRepository) RejectRuntimeEnrollment(ctx context.Context, params RejectRuntimeEnrollmentParams) (RuntimeEnrollmentRecord, error) {
+	record, ok := r.enrollmentsByID[params.EnrollmentID]
+	if !ok || record.TenantID != params.TenantID || record.Status != RuntimeEnrollmentStatusPending {
+		return RuntimeEnrollmentRecord{}, errors.New("not found")
+	}
+	record.Status = RuntimeEnrollmentStatusRejected
+	record.RejectedBy = uuid.NullUUID{UUID: params.RejectedBy, Valid: params.RejectedBy != uuid.Nil}
+	record.RejectedAt = timestamptzFromTime(time.Now())
+	record.RejectReason = textFromString(&params.Reason)
+	record.UpdatedAt = timestamptzFromTime(time.Now())
+	r.enrollmentsByID[record.ID] = record
+	return record, nil
 }

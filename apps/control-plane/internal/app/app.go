@@ -47,6 +47,30 @@ func NewHealthOnlyRouter() http.Handler {
 	return api.NewHealthOnlyRouter()
 }
 
+type runtimeEventRecorderAdapter struct {
+	runtimeService *runtimepkg.Service
+}
+
+func (a runtimeEventRecorderAdapter) RecordRuntimeEvent(ctx context.Context, req employee.RuntimeEventRecordRequest) error {
+	if a.runtimeService == nil {
+		return nil
+	}
+	return a.runtimeService.CreateRuntimeEvent(ctx, runtimepkg.CreateRuntimeEventRequest{
+		TenantID:        req.TenantID,
+		RuntimeNodeID:   req.RuntimeNodeID,
+		NodeID:          req.NodeID,
+		EventType:       runtimepkg.RuntimeEventType(req.EventType),
+		Severity:        runtimepkg.RuntimeEventSeverity(req.Severity),
+		Source:          runtimepkg.RuntimeEventSource(req.Source),
+		Title:           req.Title,
+		Description:     req.Description,
+		ProviderType:    req.ProviderType,
+		CorrelationType: req.CorrelationType,
+		CorrelationID:   req.CorrelationID,
+		Payload:         req.Payload,
+	})
+}
+
 func NewContainer(stores *storage.Clients) (*Container, error) {
 	if stores == nil || stores.Postgres == nil {
 		return nil, errors.New("postgres client is required")
@@ -103,7 +127,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	runWritebackService, err := employee.NewDigitalEmployeeRunWritebackService(runRepository, auditService)
+	runWritebackService, err := employee.NewDigitalEmployeeRunWritebackService(runRepository, auditService, runtimeEventRecorderAdapter{runtimeService: runtimeService})
 	if err != nil {
 		return nil, err
 	}

@@ -291,17 +291,17 @@ func (r *PgRunRepository) HasRunEventSequence(ctx context.Context, tenantID, tas
 	return event.RunID.Valid && event.RunID.UUID == runID, nil
 }
 
-func (r *PgRunRepository) CreateTaskEventIfAbsent(ctx context.Context, req CreateRunEventRecordRequest) error {
+func (r *PgRunRepository) CreateTaskEventIfAbsent(ctx context.Context, req CreateRunEventRecordRequest) (bool, error) {
 	payload, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Payload), "payload")
 	if err != nil {
-		return err
+		return false, err
 	}
 	metadata, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Metadata), "metadata")
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	_, err = r.q.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
+	row, err := r.q.CreateTaskEventIfAbsent(ctx, queries.CreateTaskEventIfAbsentParams{
 		TenantID:       req.TenantID,
 		TaskID:         req.TaskID,
 		RunID:          req.RunID,
@@ -313,7 +313,7 @@ func (r *PgRunRepository) CreateTaskEventIfAbsent(ctx context.Context, req Creat
 		LogRef:         textFromPtr(req.LogRef),
 		Metadata:       metadata,
 	})
-	return err
+	return row.Inserted, err
 }
 
 func (r *PgRunRepository) UpsertProviderSession(ctx context.Context, req UpsertProviderSessionRequest) (uuid.UUID, error) {
