@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -389,6 +390,173 @@ func (s *Service) UpsertCapabilities(ctx context.Context, token string, capabili
 	return results, nil
 }
 
+func (s *Service) CreateRuntimeEvent(ctx context.Context, req CreateRuntimeEventRequest) error {
+	eventRepo, ok := s.repository.(RuntimeEventRepository)
+	if !ok {
+		return nil
+	}
+	if req.EventType == "" || !req.EventType.IsValid() {
+		return errors.New("runtime event_type is required and must be valid")
+	}
+	if req.Severity == "" || !req.Severity.IsValid() {
+		return errors.New("runtime event severity is required and must be valid")
+	}
+	if req.Source == "" || !req.Source.IsValid() {
+		return errors.New("runtime event source is required and must be valid")
+	}
+	if strings.TrimSpace(req.Title) == "" {
+		return errors.New("runtime event title is required")
+	}
+	_, err := eventRepo.CreateRuntimeEvent(ctx, CreateRuntimeEventParams{
+		TenantID:        tenantOrDefault(req.TenantID),
+		RuntimeNodeID:   req.RuntimeNodeID,
+		NodeID:          req.NodeID,
+		EventType:       req.EventType,
+		Severity:        req.Severity,
+		Source:          req.Source,
+		Title:           req.Title,
+		Description:     req.Description,
+		ProviderType:    req.ProviderType,
+		CorrelationType: req.CorrelationType,
+		CorrelationID:   req.CorrelationID,
+		Payload:         redactRuntimeEventPayload(req.Payload),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create runtime event: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) GetOverview(ctx context.Context, filter RuntimeOverviewFilter) (*RuntimeOverview, error) {
+	overviewRepo, ok := s.repository.(RuntimeOverviewRepository)
+	if !ok {
+		return nil, errors.New("runtime overview repository is required")
+	}
+	eventRepo, ok := s.repository.(RuntimeEventRepository)
+	if !ok {
+		return nil, errors.New("runtime event repository is required")
+	}
+	tenantID := tenantOrDefault(filter.TenantID)
+
+	totalNodes, err := overviewRepo.CountRuntimeNodesForTenant(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count runtime nodes: %w", err)
+	}
+	onlineNodes, err := overviewRepo.CountOnlineRuntimeNodesForTenant(ctx, tenantID, time.Now().Add(-HeartbeatTimeout))
+	if err != nil {
+		return nil, fmt.Errorf("failed to count online runtime nodes: %w", err)
+	}
+	activeProviderSessions, err := overviewRepo.CountActiveProviderSessionsForTenant(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count active provider sessions: %w", err)
+	}
+	blockedEvents, err := eventRepo.CountBlockedRuntimeEventsSince(ctx, tenantID, time.Now().Add(-24*time.Hour))
+	if err != nil {
+		return nil, fmt.Errorf("failed to count blocked runtime events: %w", err)
+	}
+
+	enrollmentLister, ok := s.repository.(interface {
+		ListRuntimeEnrollments(context.Context, ListRuntimeEnrollmentsParams) ([]RuntimeEnrollmentRecord, error)
+	})
+	if !ok {
+		return nil, errors.New("runtime enrollment list repository is required")
+	}
+	pendingStatus := RuntimeEnrollmentStatusPending
+	pendingEnrollmentCount, err := overviewRepo.CountRuntimeEnrollmentsForTenant(ctx, tenantID, &pendingStatus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count pending runtime enrollments: %w", err)
+	}
+	pendingRecords, err := enrollmentLister.ListRuntimeEnrollments(ctx, ListRuntimeEnrollmentsParams{
+		TenantID: tenantID,
+		Status:   enrollmentStatusToText(&pendingStatus),
+		Limit:    5,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pending runtime enrollments: %w", err)
+	}
+	pendingEnrollments := make([]*RuntimeEnrollment, 0, len(pendingRecords))
+	for _, record := range pendingRecords {
+		enrollment, err := s.recordToRuntimeEnrollment(record)
+		if err != nil {
+			return nil, err
+		}
+		pendingEnrollments = append(pendingEnrollments, enrollment)
+	}
+	nodeRecords, err := overviewRepo.ListRuntimeNodesForTenant(ctx, ListRuntimeNodesForTenantParams{
+		TenantID: tenantID,
+		Limit:    50,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list runtime nodes: %w", err)
+	}
+	nodes := make([]*Node, 0, len(nodeRecords))
+	for _, record := range nodeRecords {
+		node, err := s.recordToNode(record)
+		if err != nil {
+			continue
+		}
+		nodes = append(nodes, node)
+	}
+	providerCapabilities, err := overviewRepo.ListRuntimeProviderCapabilitiesForTenant(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list runtime provider capabilities: %w", err)
+	}
+	recentEvents, err := eventRepo.ListRuntimeEvents(ctx, ListRuntimeEventsParams{
+		TenantID: tenantID,
+		Limit:    10,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list recent runtime events: %w", err)
+	}
+
+	return &RuntimeOverview{
+		Summary: RuntimeOverviewSummary{
+			OnlineNodes:            onlineNodes,
+			TotalNodes:             totalNodes,
+			PendingEnrollments:     pendingEnrollmentCount,
+			ActiveProviderSessions: activeProviderSessions,
+			BlockedEvents:          blockedEvents,
+		},
+		PendingEnrollments:   pendingEnrollments,
+		Nodes:                nodes,
+		ProviderCapabilities: providerCapabilities,
+		RecentEvents:         recentEvents,
+	}, nil
+}
+
+func (s *Service) ListRuntimeEvents(ctx context.Context, filter ListRuntimeEventsFilter) ([]RuntimeEvent, error) {
+	eventRepo, ok := s.repository.(RuntimeEventRepository)
+	if !ok {
+		return nil, errors.New("runtime event repository is required")
+	}
+	if filter.Limit <= 0 {
+		filter.Limit = 50
+	}
+	if filter.Limit > 100 {
+		filter.Limit = 100
+	}
+	return eventRepo.ListRuntimeEvents(ctx, ListRuntimeEventsParams{
+		TenantID:     tenantOrDefault(filter.TenantID),
+		EventType:    filter.EventType,
+		Severity:     filter.Severity,
+		NodeID:       filter.NodeID,
+		ProviderType: filter.ProviderType,
+		Limit:        filter.Limit,
+		Offset:       filter.Offset,
+	})
+}
+
+func (s *Service) ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]RuntimeCapability, error) {
+	capabilityRepo, ok := s.repository.(RuntimeCapabilityReadRepository)
+	if !ok {
+		return nil, errors.New("runtime capability read repository is required")
+	}
+	if strings.TrimSpace(nodeID) == "" {
+		return nil, errors.New("node_id is required")
+	}
+	return capabilityRepo.ListRuntimeCapabilitiesForNode(ctx, tenantOrDefault(tenantID), nodeID)
+}
+
 // RegisterNode registers a new runtime node or updates an existing one
 func (s *Service) RegisterNode(ctx context.Context, req RegisterNodeRequest) (*Node, error) {
 	// Validate request
@@ -717,6 +885,56 @@ func defaultMap(in map[string]interface{}) map[string]interface{} {
 		return map[string]interface{}{}
 	}
 	return in
+}
+
+func redactRuntimeEventPayload(payload map[string]interface{}) map[string]interface{} {
+	if payload == nil {
+		return map[string]interface{}{}
+	}
+	redacted := make(map[string]interface{}, len(payload))
+	for key, value := range payload {
+		if isSensitiveRuntimeEventPayloadKey(key) {
+			redacted[key] = "[redacted]"
+			continue
+		}
+		redacted[key] = redactRuntimeEventPayloadValue(value)
+	}
+	return redacted
+}
+
+func redactRuntimeEventPayloadValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return redactRuntimeEventPayload(typed)
+	case []interface{}:
+		redacted := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			redacted = append(redacted, redactRuntimeEventPayloadValue(item))
+		}
+		return redacted
+	default:
+		return value
+	}
+}
+
+func isSensitiveRuntimeEventPayloadKey(key string) bool {
+	switch strings.ToLower(key) {
+	case "authorization",
+		"password",
+		"secret",
+		"token",
+		"access_token",
+		"refresh_token",
+		"api_key",
+		"apikey",
+		"private_key",
+		"bootstrap_key",
+		"credential",
+		"credentials":
+		return true
+	default:
+		return false
+	}
 }
 
 type runtimeNodeApprovalPayload struct {

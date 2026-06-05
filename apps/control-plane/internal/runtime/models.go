@@ -130,18 +130,25 @@ type RuntimeCapabilityInput struct {
 }
 
 type RuntimeCapability struct {
-	ID             uuid.UUID
-	TenantID       uuid.UUID
-	RuntimeNodeID  uuid.UUID
-	CapabilityType string
-	CapabilityKey  string
-	ProviderType   string
-	Available      bool
-	Status         string
-	HealthStatus   string
-	LastSeenAt     time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID               uuid.UUID
+	TenantID         uuid.UUID
+	RuntimeNodeID    uuid.UUID
+	CapabilityType   string
+	CapabilityKey    string
+	ProviderType     string
+	ProviderVersion  *string
+	BinaryPath       *string
+	Available        bool
+	WorkspaceBaseDir *string
+	Capacity         map[string]interface{}
+	Labels           map[string]interface{}
+	Status           string
+	Details          map[string]interface{}
+	HealthStatus     string
+	Metadata         map[string]interface{}
+	LastSeenAt       time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type EnrollHelloRequest struct {
@@ -196,6 +203,155 @@ type ListRuntimeEnrollmentsFilter struct {
 	Status   *RuntimeEnrollmentStatus
 	Limit    int32
 	Offset   int32
+}
+
+type RuntimeEventType string
+type RuntimeEventSeverity string
+type RuntimeEventSource string
+
+const (
+	RuntimeEventEnrollmentRequested RuntimeEventType = "enrollment_requested"
+	RuntimeEventEnrollmentApproved  RuntimeEventType = "enrollment_approved"
+	RuntimeEventEnrollmentRejected  RuntimeEventType = "enrollment_rejected"
+	RuntimeEventEnrollmentRevoked   RuntimeEventType = "enrollment_revoked"
+	RuntimeEventNodeOnline          RuntimeEventType = "node_online"
+	RuntimeEventNodeOffline         RuntimeEventType = "node_offline"
+	RuntimeEventCapabilityReported  RuntimeEventType = "capability_reported"
+	RuntimeEventCapabilityDegraded  RuntimeEventType = "capability_degraded"
+	RuntimeEventCommandEvent        RuntimeEventType = "command_event"
+	RuntimeEventCommandCompleted    RuntimeEventType = "command_completed"
+	RuntimeEventCommandFailed       RuntimeEventType = "command_failed"
+	RuntimeEventCommandCancelled    RuntimeEventType = "command_cancelled"
+	RuntimeEventCommandTimedOut     RuntimeEventType = "command_timed_out"
+)
+
+const (
+	RuntimeEventSeverityInfo    RuntimeEventSeverity = "info"
+	RuntimeEventSeveritySuccess RuntimeEventSeverity = "success"
+	RuntimeEventSeverityWarning RuntimeEventSeverity = "warning"
+	RuntimeEventSeverityError   RuntimeEventSeverity = "error"
+)
+
+const (
+	RuntimeEventSourceEnrollment     RuntimeEventSource = "runtime_enrollment"
+	RuntimeEventSourceRuntimeNode    RuntimeEventSource = "runtime_node"
+	RuntimeEventSourceCapability     RuntimeEventSource = "runtime_capability"
+	RuntimeEventSourceRuntimeCommand RuntimeEventSource = "runtime_command"
+	RuntimeEventSourceProvider       RuntimeEventSource = "provider_session"
+)
+
+func (t RuntimeEventType) IsValid() bool {
+	switch t {
+	case RuntimeEventEnrollmentRequested,
+		RuntimeEventEnrollmentApproved,
+		RuntimeEventEnrollmentRejected,
+		RuntimeEventEnrollmentRevoked,
+		RuntimeEventNodeOnline,
+		RuntimeEventNodeOffline,
+		RuntimeEventCapabilityReported,
+		RuntimeEventCapabilityDegraded,
+		RuntimeEventCommandEvent,
+		RuntimeEventCommandCompleted,
+		RuntimeEventCommandFailed,
+		RuntimeEventCommandCancelled,
+		RuntimeEventCommandTimedOut:
+		return true
+	}
+	return false
+}
+
+func (s RuntimeEventSeverity) IsValid() bool {
+	switch s {
+	case RuntimeEventSeverityInfo,
+		RuntimeEventSeveritySuccess,
+		RuntimeEventSeverityWarning,
+		RuntimeEventSeverityError:
+		return true
+	}
+	return false
+}
+
+func (s RuntimeEventSource) IsValid() bool {
+	switch s {
+	case RuntimeEventSourceEnrollment,
+		RuntimeEventSourceRuntimeNode,
+		RuntimeEventSourceCapability,
+		RuntimeEventSourceRuntimeCommand,
+		RuntimeEventSourceProvider:
+		return true
+	}
+	return false
+}
+
+type RuntimeEvent struct {
+	ID              uuid.UUID
+	TenantID        uuid.UUID
+	RuntimeNodeID   uuid.UUID
+	NodeID          string
+	EventType       RuntimeEventType
+	Severity        RuntimeEventSeverity
+	Source          RuntimeEventSource
+	Title           string
+	Description     string
+	ProviderType    string
+	CorrelationType string
+	CorrelationID   string
+	Payload         map[string]interface{}
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+type CreateRuntimeEventRequest struct {
+	TenantID        uuid.UUID
+	RuntimeNodeID   uuid.UUID
+	NodeID          string
+	EventType       RuntimeEventType
+	Severity        RuntimeEventSeverity
+	Source          RuntimeEventSource
+	Title           string
+	Description     string
+	ProviderType    string
+	CorrelationType string
+	CorrelationID   string
+	Payload         map[string]interface{}
+}
+
+type ListRuntimeEventsFilter struct {
+	TenantID     uuid.UUID
+	EventType    *RuntimeEventType
+	Severity     *RuntimeEventSeverity
+	NodeID       *string
+	ProviderType *string
+	Limit        int32
+	Offset       int32
+}
+
+type RuntimeOverviewFilter struct {
+	TenantID uuid.UUID
+}
+
+type RuntimeOverview struct {
+	Summary              RuntimeOverviewSummary
+	PendingEnrollments   []*RuntimeEnrollment
+	Nodes                []*Node
+	ProviderCapabilities []RuntimeProviderCapabilitySummary
+	RecentEvents         []RuntimeEvent
+}
+
+type RuntimeOverviewSummary struct {
+	OnlineNodes            int64
+	TotalNodes             int64
+	PendingEnrollments     int64
+	ActiveProviderSessions int64
+	BlockedEvents          int64
+}
+
+type RuntimeProviderCapabilitySummary struct {
+	ProviderType   string
+	NodeCount      int64
+	AvailableCount int64
+	HealthyCount   int64
+	LastSeenAt     time.Time
 }
 
 // IsValid checks if the status is valid
