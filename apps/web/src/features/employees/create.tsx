@@ -45,6 +45,7 @@ type WizardDraft = {
   name: string;
   risk_level: string;
   role: string;
+  runtime_binding: string;
   runtime_node_id: string;
   provider_type: string;
   team_id: string;
@@ -71,6 +72,7 @@ const emptyDraft: WizardDraft = {
   provider_type: "",
   risk_level: "medium",
   role: "",
+  runtime_binding: "",
   runtime_node_id: "",
   team_id: "",
 };
@@ -126,12 +128,13 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
       if (availableOptions.length === 1) {
         return {
           ...current,
+          runtime_binding: runtimeBinding(availableOptions[0]),
           provider_type: availableOptions[0].provider_type,
           runtime_node_id: availableOptions[0].runtime_node_id,
         };
       }
-      if (current.runtime_node_id && !availableOptions.some((option) => option.runtime_node_id === current.runtime_node_id)) {
-        return { ...current, provider_type: "", runtime_node_id: "" };
+      if (current.runtime_binding && !availableOptions.some((option) => runtimeBinding(option) === current.runtime_binding)) {
+        return { ...current, provider_type: "", runtime_binding: "", runtime_node_id: "" };
       }
       return current;
     });
@@ -139,7 +142,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
   const createEmployee = useMutation({
     mutationFn: () => {
-      const runtimeOption = findRuntimeOption(createOptions.data, draft.runtime_node_id);
+      const runtimeOption = findRuntimeOption(createOptions.data, draft.runtime_binding);
       if (!runtimeOption) {
         throw new Error("请选择 Runtime");
       }
@@ -193,11 +196,12 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     setDraft((current) => applyTypeDefaults(current, nextType));
   }
 
-  function selectRuntime(runtimeNodeId: string) {
-    const runtimeOption = findRuntimeOption(createOptions.data, runtimeNodeId);
+  function selectRuntime(runtimeBindingValue: string) {
+    const runtimeOption = findRuntimeOption(createOptions.data, runtimeBindingValue);
     updateDraft({
       provider_type: runtimeOption?.provider_type ?? "",
-      runtime_node_id: runtimeNodeId,
+      runtime_binding: runtimeBindingValue,
+      runtime_node_id: runtimeOption?.runtime_node_id ?? "",
     });
     setErrors((current) => ({ ...current, runtime: undefined }));
   }
@@ -334,7 +338,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                     teamOptions.length === 0 ||
                     createOptions.isLoading ||
                     createOptions.isError ||
-                    !draft.runtime_node_id
+                    !draft.runtime_binding
                   }
                   onClick={submit}
                   type="button"
@@ -421,6 +425,7 @@ function IdentityStep({
               onUpdate({
                 employee_type: "",
                 provider_type: "",
+                runtime_binding: "",
                 runtime_node_id: "",
                 team_id: event.target.value,
               })
@@ -633,7 +638,7 @@ function RuntimeStep({
   draft: WizardDraft;
   error?: string;
   options?: DigitalEmployeeCreateOptions;
-  onSelectRuntime: (runtimeNodeId: string) => void;
+  onSelectRuntime: (runtimeBindingValue: string) => void;
 }) {
   const runtimeOptions = options?.runtime_provider_options ?? [];
 
@@ -643,11 +648,11 @@ function RuntimeStep({
         <h2 className="text-lg font-semibold">运行</h2>
         <p className="text-sm text-muted-foreground">绑定 Runtime 和 Provider。多个可用 Runtime 时必须显式选择。</p>
       </div>
-      <RadioGroup onValueChange={onSelectRuntime} value={draft.runtime_node_id}>
+      <RadioGroup onValueChange={onSelectRuntime} value={draft.runtime_binding}>
         <div className="grid gap-3">
           {runtimeOptions.map((option) => (
             <RuntimeOption
-              key={`${option.runtime_node_id}:${option.provider_type}`}
+              key={runtimeBinding(option)}
               onSelectRuntime={onSelectRuntime}
               option={option}
             />
@@ -664,10 +669,11 @@ function RuntimeOption({
   onSelectRuntime,
   option,
 }: {
-  onSelectRuntime: (runtimeNodeId: string) => void;
+  onSelectRuntime: (runtimeBindingValue: string) => void;
   option: DigitalEmployeeRuntimeProviderOption;
 }) {
   const label = `${option.runtime_name} / ${option.provider_type}`;
+  const binding = runtimeBinding(option);
 
   return (
     <label
@@ -677,10 +683,10 @@ function RuntimeOption({
       )}
       onClick={(event) => {
         event.preventDefault();
-        if (option.available) onSelectRuntime(option.runtime_node_id);
+        if (option.available) onSelectRuntime(binding);
       }}
     >
-      <RadioGroupItem disabled={!option.available} value={option.runtime_node_id} />
+      <RadioGroupItem disabled={!option.available} value={binding} />
       <span className="min-w-0 flex-1">
         <span className="block font-medium">{label}</span>
         <span className="mt-1 block text-muted-foreground">
@@ -759,14 +765,18 @@ function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
     if (!draft.role.trim()) errors.role = "角色不能为空";
     return errors;
   }
-  if (step === "运行" && !draft.runtime_node_id) {
+  if (step === "运行" && !draft.runtime_binding) {
     return { runtime: "请选择 Runtime" };
   }
   return {};
 }
 
-function findRuntimeOption(options: DigitalEmployeeCreateOptions | undefined, runtimeNodeId: string) {
-  return options?.runtime_provider_options.find((option) => option.runtime_node_id === runtimeNodeId);
+function findRuntimeOption(options: DigitalEmployeeCreateOptions | undefined, runtimeBindingValue: string) {
+  return options?.runtime_provider_options.find((option) => runtimeBinding(option) === runtimeBindingValue);
+}
+
+function runtimeBinding(option: DigitalEmployeeRuntimeProviderOption) {
+  return `${option.runtime_node_id}:${option.provider_type}`;
 }
 
 function stringList(value: unknown) {

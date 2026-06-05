@@ -51,9 +51,64 @@ const team = {
 
 function createOptionsFixture({
   runtimeCount = 1,
+  sameRuntimeNodeProviders = false,
 }: {
   runtimeCount?: 1 | 2;
+  sameRuntimeNodeProviders?: boolean;
 } = {}) {
+  const runtimeProviderOptions = [
+    {
+      runtime_node_id: "33333333-3333-4333-8333-333333333333",
+      node_id: "runtime-a",
+      runtime_name: "客户侧执行机 A",
+      provider_type: "codex",
+      runtime_status: "online",
+      provider_status: "healthy",
+      health_status: "healthy",
+      current_load: 0,
+      max_slots: 2,
+      agent_home_dir: "/Users/wangpei/.codex",
+      agent_home_dir_available: true,
+      available: true,
+    },
+    ...(sameRuntimeNodeProviders
+      ? [
+          {
+            runtime_node_id: "33333333-3333-4333-8333-333333333333",
+            node_id: "runtime-a",
+            runtime_name: "客户侧执行机 A",
+            provider_type: "claude_code",
+            runtime_status: "online",
+            provider_status: "healthy",
+            health_status: "healthy",
+            current_load: 0,
+            max_slots: 2,
+            agent_home_dir: "/Users/wangpei/.claude",
+            agent_home_dir_available: true,
+            available: true,
+          },
+        ]
+      : []),
+    ...(!sameRuntimeNodeProviders && runtimeCount === 2
+      ? [
+          {
+            runtime_node_id: "44444444-4444-4444-8444-444444444444",
+            node_id: "runtime-b",
+            runtime_name: "客户侧执行机 B",
+            provider_type: "codex",
+            runtime_status: "online",
+            provider_status: "healthy",
+            health_status: "healthy",
+            current_load: 1,
+            max_slots: 2,
+            agent_home_dir: "/Users/wangpei/.codex",
+            agent_home_dir_available: true,
+            available: true,
+          },
+        ]
+      : []),
+  ];
+
   return {
     team_config: {
       id: "55555555-5555-4555-8555-555555555555",
@@ -62,7 +117,7 @@ function createOptionsFixture({
       revision_number: 3,
       status: "approved",
       allowed_employee_types: ["database_admin"],
-      allowed_provider_types: ["codex"],
+      allowed_provider_types: sameRuntimeNodeProviders ? ["codex", "claude_code"] : ["codex"],
       allowed_skills: ["incident-diagnosis", "sql-review"],
       allowed_mcp_servers: ["postgres"],
       allowed_external_capabilities: ["jira.search"],
@@ -93,45 +148,12 @@ function createOptionsFixture({
       },
     ],
     capability_options: {
-      provider_types: ["codex"],
+      provider_types: sameRuntimeNodeProviders ? ["codex", "claude_code"] : ["codex"],
       skills: ["incident-diagnosis", "sql-review"],
       mcp_servers: ["postgres"],
       external_capabilities: ["jira.search"],
     },
-    runtime_provider_options: [
-      {
-        runtime_node_id: "33333333-3333-4333-8333-333333333333",
-        node_id: "runtime-a",
-        runtime_name: "客户侧执行机 A",
-        provider_type: "codex",
-        runtime_status: "online",
-        provider_status: "healthy",
-        health_status: "healthy",
-        current_load: 0,
-        max_slots: 2,
-        agent_home_dir: "/Users/wangpei/.codex",
-        agent_home_dir_available: true,
-        available: true,
-      },
-      ...(runtimeCount === 2
-        ? [
-            {
-              runtime_node_id: "44444444-4444-4444-8444-444444444444",
-              node_id: "runtime-b",
-              runtime_name: "客户侧执行机 B",
-              provider_type: "codex",
-              runtime_status: "online",
-              provider_status: "healthy",
-              health_status: "healthy",
-              current_load: 1,
-              max_slots: 2,
-              agent_home_dir: "/Users/wangpei/.codex",
-              agent_home_dir_available: true,
-              available: true,
-            },
-          ]
-        : []),
-    ],
+    runtime_provider_options: runtimeProviderOptions,
     policy_defaults: {
       permission_policy: { mode: "least_privilege" },
       context_policy_override: { max_refs: 6 },
@@ -146,9 +168,15 @@ function createOptionsFixture({
 }
 
 function createWizardFetcher({
+  expectedProviderType = "codex",
+  expectedRuntimeNodeId = "33333333-3333-4333-8333-333333333333",
   runtimeCount = 1,
+  sameRuntimeNodeProviders = false,
 }: {
+  expectedProviderType?: string;
+  expectedRuntimeNodeId?: string;
   runtimeCount?: 1 | 2;
+  sameRuntimeNodeProviders?: boolean;
 } = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -160,7 +188,7 @@ function createWizardFetcher({
 
     if (url.pathname === "/api/v1/digital-employees/create-options" && method === "GET") {
       expect(url.searchParams.get("team_id")).toBe(team.id);
-      return jsonResponse(createOptionsFixture({ runtimeCount }));
+      return jsonResponse(createOptionsFixture({ runtimeCount, sameRuntimeNodeProviders }));
     }
 
     if (url.pathname === "/api/v1/digital-employees" && method === "POST") {
@@ -184,8 +212,8 @@ function createWizardFetcher({
         context_policy_override: { max_refs: 8 },
         approval_policy_override: { min_risk_for_human: "high" },
         output_contract_addendum: {},
-        runtime_node_id: "33333333-3333-4333-8333-333333333333",
-        provider_type: "codex",
+        runtime_node_id: expectedRuntimeNodeId,
+        provider_type: expectedProviderType,
         session_policy: { mode: "reuse_latest" },
         workspace_policy: {},
       });
@@ -282,5 +310,32 @@ describe("CreateEmployeeView", () => {
 
     await userEvent.click(screen.getByLabelText("客户侧执行机 A / codex"));
     await expect.element(screen.getByRole("button", { name: "创建数字员工" })).toBeEnabled();
+  });
+
+  it("submits the selected provider when one runtime exposes multiple providers", async () => {
+    const fetcher = createWizardFetcher({
+      expectedProviderType: "claude_code",
+      sameRuntimeNodeProviders: true,
+    });
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByRole("button", { name: "创建数字员工" })).toBeDisabled();
+    await expect.element(screen.getByLabelText("客户侧执行机 A / codex")).not.toBeChecked();
+    await expect.element(screen.getByLabelText("客户侧执行机 A / claude_code")).not.toBeChecked();
+
+    await userEvent.click(screen.getByLabelText("客户侧执行机 A / claude_code"));
+    await expect.element(screen.getByRole("button", { name: "创建数字员工" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "创建数字员工" }));
+
+    expect(navigate).toHaveBeenCalledWith({
+      params: { employeeId: "11111111-1111-4111-8111-111111111111" },
+      to: "/employees/$employeeId",
+    });
   });
 });
