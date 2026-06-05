@@ -1,6 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
-import type { RuntimeNodeResponse, RuntimeNodeStatus } from "./runtime";
-import { approveRuntimeEnrollment, getRuntimeNode, listRuntimeEnrollments, listRuntimeNodes } from "./runtime";
+import type {
+  RuntimeEventList,
+  RuntimeEventSeverity,
+  RuntimeNodeResponse,
+  RuntimeNodeStatus,
+  RuntimeOverview,
+} from "./runtime";
+import {
+  approveRuntimeEnrollment,
+  getRuntimeNode,
+  getRuntimeOverview,
+  listRuntimeEnrollments,
+  listRuntimeEvents,
+  listRuntimeNodes,
+  rejectRuntimeEnrollment,
+} from "./runtime";
 
 describe("listRuntimeNodes", () => {
   it("calls the runtime nodes endpoint and parses JSON", async () => {
@@ -92,6 +106,158 @@ describe("listRuntimeNodes", () => {
   });
 });
 
+describe("getRuntimeOverview", () => {
+  it("calls the runtime overview endpoint and parses summary JSON", async () => {
+    const overview: RuntimeOverview = {
+      summary: {
+        online_nodes: 2,
+        total_nodes: 3,
+        pending_enrollments: 1,
+        active_provider_sessions: 4,
+        blocked_events: 0,
+      },
+      pending_enrollments: [],
+      nodes: [],
+      provider_capabilities: [
+        {
+          provider_type: "codex",
+          node_count: 2,
+          available_count: 2,
+          healthy_count: 1,
+          last_seen_at: "2026-06-05T08:00:00Z",
+        },
+      ],
+      recent_events: [],
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(overview), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+
+    await expect(
+      getRuntimeOverview({
+        baseUrl: "http://control-plane.local/",
+        fetcher,
+      }),
+    ).resolves.toEqual(overview);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/runtime/overview",
+      {
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+        },
+        method: "GET",
+      },
+    );
+  });
+});
+
+describe("listRuntimeEvents", () => {
+  it("calls the runtime events endpoint with filters in deterministic order and parses JSON", async () => {
+    const events: RuntimeEventList = {
+      items: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          tenant_id: "33333333-3333-4333-8333-333333333333",
+          event_type: "command_failed",
+          severity: "error",
+          source: "runtime_command",
+          title: "Command failed",
+          description: "Provider returned an error",
+          node_id: "node-1",
+          provider_type: "codex",
+          correlation_type: "runtime_command",
+          correlation_id: "command-1",
+          payload: {
+            exit_code: 1,
+          },
+          created_at: "2026-06-05T08:00:00Z",
+        },
+      ],
+      limit: 25,
+      offset: 50,
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(events), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+
+    await expect(
+      listRuntimeEvents({
+        baseUrl: "http://control-plane.local/root/",
+        fetcher,
+        limit: 25,
+        offset: 50,
+        event_type: "command_failed",
+        severity: "error",
+        node_id: "node-1",
+        provider_type: "codex",
+      }),
+    ).resolves.toEqual(events);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/root/api/v1/runtime/events?limit=25&offset=50&event_type=command_failed&severity=error&node_id=node-1&provider_type=codex",
+      {
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+        },
+        method: "GET",
+      },
+    );
+  });
+
+  it("skips empty string filters while preserving zero pagination values", async () => {
+    const events: RuntimeEventList = {
+      items: [],
+      limit: 0,
+      offset: 0,
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(events), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+
+    await expect(
+      listRuntimeEvents({
+        baseUrl: "http://control-plane.local",
+        fetcher,
+        limit: 0,
+        offset: 0,
+        event_type: "",
+        severity: "" as RuntimeEventSeverity,
+        node_id: "",
+        provider_type: "",
+      }),
+    ).resolves.toEqual(events);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/runtime/events?limit=0&offset=0",
+      {
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+        },
+        method: "GET",
+      },
+    );
+  });
+});
+
 describe("runtime enrollments", () => {
   it("lists runtime enrollments with cookie credentials", async () => {
     const enrollments = [
@@ -144,6 +310,41 @@ describe("runtime enrollments", () => {
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/runtime/enrollments/11111111-1111-4111-8111-111111111111/approve",
       expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+  });
+
+  it("rejects runtime enrollment with a reason body and cookie credentials", async () => {
+    const enrollment = {
+      id: "11111111-1111-4111-8111-111111111111",
+      node_id: "node-1",
+      status: "rejected",
+    };
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(enrollment), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(
+      rejectRuntimeEnrollment(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "11111111-1111-4111-8111-111111111111",
+        "节点身份无法核验",
+      ),
+    ).resolves.toEqual(enrollment);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/runtime/enrollments/11111111-1111-4111-8111-111111111111/reject",
+      {
+        body: JSON.stringify({ reason: "节点身份无法核验" }),
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        method: "POST",
+      },
     );
   });
 });
