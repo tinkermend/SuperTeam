@@ -56,28 +56,36 @@ func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest
 		}
 		return nil, fmt.Errorf("get current team config revision: %w", err)
 	}
+	teamConfigOption, err := teamConfigCreateOption(teamConfig)
+	if err != nil {
+		return nil, err
+	}
+	employeeTypes, err := employeeTypesForTeamConfig(teamConfig)
+	if err != nil {
+		return nil, err
+	}
 	runtimeOptions, err := s.repository.ListRuntimeProviderOptionsForCreate(ctx, req.TenantID, req.TeamID)
 	if err != nil {
 		return nil, fmt.Errorf("list runtime provider options: %w", err)
 	}
 
 	return &CreateOptions{
-		TeamConfig:             teamConfigCreateOption(teamConfig),
-		EmployeeTypes:          employeeTypesForTeamConfig(teamConfig),
+		TeamConfig:             teamConfigOption,
+		EmployeeTypes:          employeeTypes,
 		CapabilityOptions:      capabilityOptionsFromTeamConfig(teamConfig),
 		RuntimeProviderOptions: append([]RuntimeProviderOption(nil), runtimeOptions...),
 		PolicyDefaults:         emptyPolicyDefaults(),
 	}, nil
 }
 
-func teamConfigCreateOption(teamConfig TeamConfigInput) TeamConfigCreateOption {
-	allowedEmployeeTypes := firstNonEmptyStringList(
-		stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_employee_types"),
-		stringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_employee_types", "employee_types"),
-	)
+func teamConfigCreateOption(teamConfig TeamConfigInput) (TeamConfigCreateOption, error) {
+	allowedEmployeeTypes, err := allowedEmployeeTypesFromTeamConfig(teamConfig)
+	if err != nil {
+		return TeamConfigCreateOption{}, err
+	}
 	allowedProviderTypes := firstNonEmptyStringList(
-		stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_provider_types"),
-		stringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_provider_types", "provider_types"),
+		optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_provider_types"),
+		optionalStringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_provider_types", "provider_types"),
 	)
 	return TeamConfigCreateOption{
 		ID:                          teamConfig.ID,
@@ -87,38 +95,38 @@ func teamConfigCreateOption(teamConfig TeamConfigInput) TeamConfigCreateOption {
 		Status:                      teamConfig.Status,
 		AllowedEmployeeTypes:        cloneStringSlice(allowedEmployeeTypes),
 		AllowedProviderTypes:        cloneStringSlice(allowedProviderTypes),
-		AllowedSkills:               stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_skills"),
-		AllowedMCPServers:           stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_mcp_servers"),
-		AllowedExternalCaps:         stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_external_capabilities"),
+		AllowedSkills:               optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_skills"),
+		AllowedMCPServers:           optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_mcp_servers"),
+		AllowedExternalCaps:         optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_external_capabilities"),
 		CapabilityPolicy:            cloneMap(teamConfig.CapabilityPolicy),
 		ContextPolicy:               cloneMap(teamConfig.ContextPolicy),
 		ApprovalPolicy:              cloneMap(teamConfig.ApprovalPolicy),
 		ArtifactContract:            cloneMap(teamConfig.ArtifactContract),
 		InternalCollaborationPolicy: cloneMap(teamConfig.InternalCollaborationPolicy),
 		RuntimeScopePolicy:          cloneMap(teamConfig.RuntimeScopePolicy),
-	}
+	}, nil
 }
 
 func capabilityOptionsFromTeamConfig(teamConfig TeamConfigInput) CapabilityOptions {
 	return CapabilityOptions{
 		ProviderTypes: firstNonEmptyStringList(
-			stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_provider_types"),
-			stringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_provider_types", "provider_types"),
+			optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_provider_types"),
+			optionalStringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_provider_types", "provider_types"),
 		),
-		Skills:               stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_skills"),
-		MCPServers:           stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_mcp_servers"),
-		ExternalCapabilities: stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_external_capabilities"),
+		Skills:               optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_skills"),
+		MCPServers:           optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_mcp_servers"),
+		ExternalCapabilities: optionalStringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_external_capabilities"),
 	}
 }
 
-func employeeTypesForTeamConfig(teamConfig TeamConfigInput) []EmployeeTypeDefinition {
-	allowedTypes := stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_employee_types")
-	if len(allowedTypes) == 0 {
-		allowedTypes = stringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_employee_types", "employee_types")
+func employeeTypesForTeamConfig(teamConfig TeamConfigInput) ([]EmployeeTypeDefinition, error) {
+	allowedTypes, err := allowedEmployeeTypesFromTeamConfig(teamConfig)
+	if err != nil {
+		return nil, err
 	}
 	defaultTypes := DefaultEmployeeTypeDefinitions()
 	if len(allowedTypes) == 0 {
-		return defaultTypes
+		return defaultTypes, nil
 	}
 	allowedSet := stringSet(allowedTypes)
 	filtered := make([]EmployeeTypeDefinition, 0, len(defaultTypes))
@@ -127,27 +135,57 @@ func employeeTypesForTeamConfig(teamConfig TeamConfigInput) []EmployeeTypeDefini
 			filtered = append(filtered, definition)
 		}
 	}
-	return filtered
+	return filtered, nil
+}
+
+func allowedEmployeeTypesFromTeamConfig(teamConfig TeamConfigInput) ([]string, error) {
+	values, present, issues := stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_employee_types")
+	if len(issues) != 0 {
+		return nil, fmt.Errorf("%w: invalid capability_policy.allowed_employee_types", ErrInvalidInput)
+	}
+	if present {
+		if len(values) == 0 {
+			return nil, fmt.Errorf("%w: capability_policy.allowed_employee_types must not be empty", ErrInvalidInput)
+		}
+		return values, nil
+	}
+	values, present, issues = stringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_employee_types", "employee_types")
+	if len(issues) != 0 {
+		return nil, fmt.Errorf("%w: invalid runtime_scope_policy employee type allowlist", ErrInvalidInput)
+	}
+	if present {
+		if len(values) == 0 {
+			return nil, fmt.Errorf("%w: runtime_scope_policy employee type allowlist must not be empty", ErrInvalidInput)
+		}
+		return values, nil
+	}
+	return nil, nil
 }
 
 func stringListFromAnyPolicy(value any) []string {
 	return stringList(value)
 }
 
-func stringListFromPolicy(policy map[string]any, keys ...string) []string {
+func stringListFromPolicy(policy map[string]any, keys ...string) ([]string, bool, []ValidationIssue) {
 	for _, key := range keys {
 		if _, ok := policy[key]; !ok {
 			continue
 		}
 		values, issues := stringListPolicyValue(policy, key, key)
 		if len(issues) != 0 {
-			return nil
+			return nil, true, issues
 		}
-		if len(values) != 0 {
-			return stringListFromAnyPolicy(values)
-		}
+		return stringListFromAnyPolicy(values), true, nil
 	}
-	return nil
+	return nil, false, nil
+}
+
+func optionalStringListFromPolicy(policy map[string]any, keys ...string) []string {
+	values, _, issues := stringListFromPolicy(policy, keys...)
+	if len(issues) != 0 {
+		return nil
+	}
+	return values
 }
 
 func firstNonEmptyStringList(candidates ...[]string) []string {
@@ -187,6 +225,9 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dig
 	if role == "" {
 		return nil, fmt.Errorf("%w: role is required", ErrInvalidInput)
 	}
+	if req.OwnerUserID == uuid.Nil {
+		return nil, fmt.Errorf("%w: owner_user_id is required", ErrInvalidInput)
+	}
 	description := trimOptionalString(req.Description)
 	riskLevel := strings.TrimSpace(req.RiskLevel)
 	if riskLevel == "" {
@@ -222,6 +263,7 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dig
 	record, err := s.repository.CreateDigitalEmployee(ctx, CreateDigitalEmployeeParams{
 		TenantID:         req.TenantID,
 		TeamID:           validUUIDPtr(req.TeamID),
+		OwnerUserID:      req.OwnerUserID,
 		EmployeeType:     "general_engineer",
 		Name:             name,
 		Role:             role,

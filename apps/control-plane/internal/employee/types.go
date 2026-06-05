@@ -300,6 +300,7 @@ type CreateOptions struct {
 type CreateDraftRequest struct {
 	TenantID         uuid.UUID
 	TeamID           *uuid.UUID
+	OwnerUserID      uuid.UUID
 	Name             string
 	Role             string
 	Description      *string

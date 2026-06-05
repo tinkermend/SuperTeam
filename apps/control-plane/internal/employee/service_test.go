@@ -30,6 +30,32 @@ func TestEmployeeTypeRegistryExcludesProjectCoordinator(t *testing.T) {
 	}
 }
 
+func TestEmployeeTypeRegistryReturnsClonedDefinitions(t *testing.T) {
+	types := DefaultEmployeeTypeDefinitions()
+	if len(types) == 0 {
+		t.Fatalf("expected employee type definitions")
+	}
+	originalSkill := types[0].RecommendedSkills[0]
+	types[0].RecommendedSkills[0] = "mutated-skill"
+	enabledSkills, ok := types[0].DefaultCapabilitySelection["enabled_skills"].([]string)
+	if !ok || len(enabledSkills) == 0 {
+		t.Fatalf("expected enabled_skills default selection, got %#v", types[0].DefaultCapabilitySelection)
+	}
+	enabledSkills[0] = "mutated-enabled-skill"
+
+	fresh := DefaultEmployeeTypeDefinitions()
+	if fresh[0].RecommendedSkills[0] != originalSkill {
+		t.Fatalf("expected recommended skills to be cloned, got %#v", fresh[0].RecommendedSkills)
+	}
+	freshEnabledSkills, ok := fresh[0].DefaultCapabilitySelection["enabled_skills"].([]string)
+	if !ok || len(freshEnabledSkills) == 0 {
+		t.Fatalf("expected fresh enabled_skills default selection, got %#v", fresh[0].DefaultCapabilitySelection)
+	}
+	if freshEnabledSkills[0] == "mutated-enabled-skill" {
+		t.Fatalf("expected default capability selection to be cloned, got %#v", fresh[0].DefaultCapabilitySelection)
+	}
+}
+
 func TestGetCreateOptionsReturnsTeamPolicyAndRuntimeCandidates(t *testing.T) {
 	repo := newMemoryRepository()
 	svc, err := NewService(repo)
@@ -98,6 +124,36 @@ func TestGetCreateOptionsReturnsTeamPolicyAndRuntimeCandidates(t *testing.T) {
 	}
 }
 
+func TestGetCreateOptionsRejectsEmptyAllowedEmployeeTypes(t *testing.T) {
+	svc, _, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
+		"allowed_employee_types": []any{},
+	}, nil)
+
+	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for empty allowed_employee_types, got options=%#v err=%v", options, err)
+	}
+}
+
+func TestGetCreateOptionsRejectsMalformedAllowedEmployeeTypes(t *testing.T) {
+	svc, _, tenantID, teamID := newCreateOptionsTestService(t, map[string]any{
+		"allowed_employee_types": []any{"database_admin", 42},
+	}, nil)
+
+	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for malformed allowed_employee_types, got options=%#v err=%v", options, err)
+	}
+}
+
 func TestCreateDigitalEmployeeParamsAndDomainMappingKeepOwnerAndType(t *testing.T) {
 	repo := newMemoryRepository()
 	tenantID := uuid.New()
@@ -139,6 +195,7 @@ func TestCreateDraftProvisioningDispatchesRuntimeCommandAndReturnsReadyEmployee(
 	}
 	tenantID := uuid.New()
 	teamID := uuid.New()
+	ownerUserID := uuid.New()
 	runtimeNodeID := uuid.New()
 	repo.teams[teamID] = tenantID
 	repo.preflight = RuntimeProvisioningPreflight{
@@ -169,6 +226,7 @@ func TestCreateDraftProvisioningDispatchesRuntimeCommandAndReturnsReadyEmployee(
 	created, err := svc.CreateDraft(context.Background(), CreateDraftRequest{
 		TenantID:        tenantID,
 		TeamID:          &teamID,
+		OwnerUserID:     ownerUserID,
 		Name:            "  Finance reviewer  ",
 		Role:            "  finance_reviewer  ",
 		RuntimeNodeID:   runtimeNodeID,
@@ -289,6 +347,7 @@ func TestCreateDraftRequiresRuntimeConnectionBeforeCreatingEmployee(t *testing.T
 	}
 	tenantID := uuid.New()
 	teamID := uuid.New()
+	ownerUserID := uuid.New()
 	runtimeNodeID := uuid.New()
 	repo.teams[teamID] = tenantID
 	repo.preflight = RuntimeProvisioningPreflight{
@@ -310,6 +369,7 @@ func TestCreateDraftRequiresRuntimeConnectionBeforeCreatingEmployee(t *testing.T
 	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
 		TenantID:      tenantID,
 		TeamID:        &teamID,
+		OwnerUserID:   ownerUserID,
 		Name:          "Incident analyst",
 		Role:          "incident_analyst",
 		RuntimeNodeID: runtimeNodeID,
@@ -336,6 +396,7 @@ func TestCreateDraftProvisioningFailureCleansUpEmployeeAndInstance(t *testing.T)
 	}
 	tenantID := uuid.New()
 	teamID := uuid.New()
+	ownerUserID := uuid.New()
 	runtimeNodeID := uuid.New()
 	repo.teams[teamID] = tenantID
 	repo.preflight = RuntimeProvisioningPreflight{
@@ -359,6 +420,7 @@ func TestCreateDraftProvisioningFailureCleansUpEmployeeAndInstance(t *testing.T)
 	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
 		TenantID:      tenantID,
 		TeamID:        &teamID,
+		OwnerUserID:   ownerUserID,
 		Name:          "Incident analyst",
 		Role:          "incident_analyst",
 		RuntimeNodeID: runtimeNodeID,
@@ -392,6 +454,7 @@ func TestCreateDraftRejectsProviderOutsideTeamPolicyBeforeCreatingEmployee(t *te
 	}
 	tenantID := uuid.New()
 	teamID := uuid.New()
+	ownerUserID := uuid.New()
 	runtimeNodeID := uuid.New()
 	repo.teams[teamID] = tenantID
 	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
@@ -401,6 +464,7 @@ func TestCreateDraftRejectsProviderOutsideTeamPolicyBeforeCreatingEmployee(t *te
 	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
 		TenantID:      tenantID,
 		TeamID:        &teamID,
+		OwnerUserID:   ownerUserID,
 		Name:          "Incident analyst",
 		Role:          "incident_analyst",
 		RuntimeNodeID: runtimeNodeID,
@@ -427,6 +491,7 @@ func TestCreateDraftRejectsRuntimeOutsideTeamPolicyBeforeCreatingEmployee(t *tes
 	}
 	tenantID := uuid.New()
 	teamID := uuid.New()
+	ownerUserID := uuid.New()
 	runtimeNodeID := uuid.New()
 	repo.teams[teamID] = tenantID
 	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
@@ -436,6 +501,7 @@ func TestCreateDraftRejectsRuntimeOutsideTeamPolicyBeforeCreatingEmployee(t *tes
 	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
 		TenantID:      tenantID,
 		TeamID:        &teamID,
+		OwnerUserID:   ownerUserID,
 		Name:          "Incident analyst",
 		Role:          "incident_analyst",
 		RuntimeNodeID: runtimeNodeID,
@@ -462,6 +528,7 @@ func TestCreateDraftProvisioningWaitCancellationUsesIndependentCleanupContext(t 
 	}
 	tenantID := uuid.New()
 	teamID := uuid.New()
+	ownerUserID := uuid.New()
 	runtimeNodeID := uuid.New()
 	repo.teams[teamID] = tenantID
 	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
@@ -472,6 +539,7 @@ func TestCreateDraftProvisioningWaitCancellationUsesIndependentCleanupContext(t 
 	_, err = svc.CreateDraft(ctx, CreateDraftRequest{
 		TenantID:      tenantID,
 		TeamID:        &teamID,
+		OwnerUserID:   ownerUserID,
 		Name:          "Incident analyst",
 		Role:          "incident_analyst",
 		RuntimeNodeID: runtimeNodeID,
@@ -499,6 +567,41 @@ func TestCreateDraftProvisioningWaitCancellationUsesIndependentCleanupContext(t 
 	}
 }
 
+func TestCreateDraftRequiresOwnerBeforeCreatingEmployee(t *testing.T) {
+	repo := newMemoryRepository()
+	dispatcher := newFakeRuntimeCommandDispatcher()
+	svc, err := NewServiceWithProvisioning(repo, dispatcher)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.teams[teamID] = tenantID
+	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
+	repo.waitStatus = string(DigitalEmployeeRunStatusCompleted)
+	dispatcher.connected["runtime-node-1"] = true
+
+	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
+		TenantID:      tenantID,
+		TeamID:        &teamID,
+		Name:          "Incident analyst",
+		Role:          "incident_analyst",
+		RuntimeNodeID: runtimeNodeID,
+		ProviderType:  "codex",
+	})
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for missing owner_user_id, got %v", err)
+	}
+	if repo.createdEmployeeCount != 0 {
+		t.Fatalf("expected missing owner not to create employee, got %d", repo.createdEmployeeCount)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected missing owner not to dispatch command, got %#v", dispatcher.commands)
+	}
+}
+
 func TestCreateDraftRequiresExistingTenantTeam(t *testing.T) {
 	repo := newMemoryRepository()
 	svc, err := NewServiceWithProvisioning(repo, newFakeRuntimeCommandDispatcher())
@@ -507,10 +610,12 @@ func TestCreateDraftRequiresExistingTenantTeam(t *testing.T) {
 	}
 	tenantID := uuid.New()
 	teamID := uuid.New()
+	ownerUserID := uuid.New()
 
 	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
 		TenantID:      tenantID,
 		TeamID:        &teamID,
+		OwnerUserID:   ownerUserID,
 		Name:          "Incident analyst",
 		Role:          "incident_analyst",
 		RuntimeNodeID: uuid.New(),
@@ -1238,6 +1343,30 @@ func newTestService(t *testing.T) *Service {
 		t.Fatalf("new service: %v", err)
 	}
 	return svc
+}
+
+func newCreateOptionsTestService(t *testing.T, capabilityPolicy, runtimeScopePolicy map[string]any) (*Service, *memoryRepository, uuid.UUID, uuid.UUID) {
+	t.Helper()
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	teamConfigID := uuid.New()
+	repo.teams[teamID] = tenantID
+	repo.teamConfigs[teamConfigID] = TeamConfigInput{
+		ID:                 teamConfigID,
+		TenantID:           tenantID,
+		TeamID:             teamID,
+		RevisionNumber:     1,
+		Status:             TeamConfigRevisionStatusActive,
+		CapabilityPolicy:   cloneMap(capabilityPolicy),
+		RuntimeScopePolicy: cloneMap(runtimeScopePolicy),
+	}
+	repo.currentTeamConfigByTeam[teamID] = teamConfigID
+	return svc, repo, tenantID, teamID
 }
 
 func assertBlockingIssue(t *testing.T, validation EffectiveConfigValidation, code string) {
