@@ -484,6 +484,7 @@ func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, pr
 		"agent_home_dir":        preflight.AgentHomeDir,
 		"objective":             objective,
 		"prompt":                prompt,
+		"input":                 prompt,
 		"context_refs":          req.ContextRefs,
 		"artifact_refs":         req.ArtifactRefs,
 		"output_schema":         req.OutputSchema,

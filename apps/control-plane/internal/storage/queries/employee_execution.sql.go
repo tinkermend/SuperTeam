@@ -428,6 +428,19 @@ provider_capability AS (
       AND archived_at IS NULL
     ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
     LIMIT 1
+),
+workspace_capability AS (
+    SELECT id, tenant_id, runtime_node_id, capability_type, capability_key, provider_type, provider_version, binary_path, available, workspace_base_dir, capacity, labels, status, details, health_status, metadata, last_seen_at, disabled_at, archived_at, created_at, updated_at
+    FROM runtime_capabilities
+    WHERE tenant_id = $3::uuid
+      AND runtime_node_id = $2::uuid
+      AND capability_type = 'workspace'
+      AND capability_key = 'base-dir'
+      AND available = true
+      AND disabled_at IS NULL
+      AND archived_at IS NULL
+    ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC
+    LIMIT 1
 )
 SELECT
     tt.tenant_id,
@@ -438,6 +451,9 @@ SELECT
         provider_capability.details ->> 'agent_home_dir',
         provider_capability.metadata ->> 'agent_home_dir',
         provider_capability.workspace_base_dir,
+        workspace_capability.details ->> 'agent_home_dir',
+        workspace_capability.metadata ->> 'agent_home_dir',
+        workspace_capability.workspace_base_dir,
         rn.metadata ->> 'agent_home_dir',
         ''
     )::text AS agent_home_dir,
@@ -488,12 +504,24 @@ SELECT
           AND rs.revoked_at IS NULL
     )::boolean AS runtime_session_active,
     (provider_capability.id IS NOT NULL)::boolean AS provider_available,
-    (
+    COALESCE((
         active_team_config.id IS NOT NULL
-        AND jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array'
-        AND (active_team_config.capability_policy -> 'allowed_provider_types') ? $1::varchar
-    )::boolean AS provider_policy_allowed,
-    (
+        AND (
+            (
+                jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.capability_policy -> 'allowed_provider_types') ? $1::varchar
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'allowed_provider_types') ? $1::varchar
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'provider_types') ? $1::varchar
+            )
+        )
+    ), false)::boolean AS provider_policy_allowed,
+    COALESCE((
         active_team_config.id IS NOT NULL
         AND (
             (
@@ -505,6 +533,14 @@ SELECT
                 active_team_config.runtime_scope_policy ? 'allowed_node_ids'
                 AND jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_node_ids') = 'array'
                 AND (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'allowed_provider_types') ? $1::varchar
+            )
+            OR (
+                jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
+                AND (active_team_config.runtime_scope_policy -> 'provider_types') ? $1::varchar
             )
         )
         AND CASE
@@ -519,13 +555,14 @@ SELECT
                 (active_team_config.runtime_scope_policy -> 'allowed_node_ids') ? rn.node_id
             ELSE false
         END
-    )::boolean AS runtime_policy_allowed
+    ), false)::boolean AS runtime_policy_allowed
 FROM tenant_teams tt
 JOIN runtime_nodes rn
   ON rn.id = $2::uuid
  AND rn.tenant_id = tt.tenant_id
 LEFT JOIN active_team_config ON TRUE
 LEFT JOIN provider_capability ON TRUE
+LEFT JOIN workspace_capability ON TRUE
 WHERE tt.tenant_id = $3::uuid
   AND tt.id = $4::uuid
   AND tt.status = 'active'

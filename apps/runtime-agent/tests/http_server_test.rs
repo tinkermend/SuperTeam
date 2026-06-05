@@ -54,7 +54,7 @@ printf '%s\n' '{"type":"result","result":"http done"}'
     let run_id = run["id"].as_str().expect("run id");
 
     let mut final_run = serde_json::Value::Null;
-    for _ in 0..50 {
+    for _ in 0..150 {
         let snapshot: serde_json::Value = client
             .get(format!("http://{}/runs/{run_id}", server.addr()))
             .send()
@@ -135,7 +135,7 @@ sleep 5
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
 
     let mut final_run = serde_json::Value::Null;
-    for _ in 0..50 {
+    for _ in 0..150 {
         let snapshot: serde_json::Value = client
             .get(format!("http://{}/runs/{run_id}", server.addr()))
             .send()

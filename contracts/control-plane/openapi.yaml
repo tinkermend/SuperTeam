@@ -2340,6 +2340,8 @@ components:
         - team_id
         - name
         - role
+        - runtime_node_id
+        - provider_type
       properties:
         team_id:
           type: string
@@ -2361,6 +2363,17 @@ components:
           additionalProperties: true
         risk_level:
           type: string
+        runtime_node_id:
+          type: string
+          format: uuid
+        provider_type:
+          type: string
+        session_policy:
+          type: object
+          additionalProperties: true
+        workspace_policy:
+          type: object
+          additionalProperties: true
         metadata:
           type: object
           additionalProperties: true

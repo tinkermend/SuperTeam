@@ -153,6 +153,7 @@ pub struct RuntimeCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeCommandType {
     EnsureInstance,
+    ProvisionInstance,
     StartSession,
     ResumeSession,
     SendInput,
@@ -165,6 +166,44 @@ pub struct EnsureInstanceCommand {
     pub execution_instance_id: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct RuntimeCommandTerminalWriteback {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub result: Option<HashMap<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub diagnostic: Option<HashMap<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub provider_session_external_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub session_state_patch: Option<HashMap<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub log_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub raw_result_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub error_message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub error_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub error_family: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RuntimeCommandEventWriteback {
+    pub event_type: String,
+    pub sequence_number: i32,
+    pub payload: HashMap<String, serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub provider_session_external_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub session_state_patch: Option<HashMap<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub metadata: Option<HashMap<String, serde_json::Value>>,
+}
+
 impl<'de> Deserialize<'de> for RuntimeCommandType {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -173,6 +212,7 @@ impl<'de> Deserialize<'de> for RuntimeCommandType {
         let value = String::deserialize(deserializer)?;
         Ok(match value.as_str() {
             "ensure_instance" => Self::EnsureInstance,
+            "provision_instance" => Self::ProvisionInstance,
             "start_session" => Self::StartSession,
             "resume_session" => Self::ResumeSession,
             "send_input" => Self::SendInput,

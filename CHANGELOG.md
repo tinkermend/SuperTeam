@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-05 10:52：合并后真实验证数字员工执行闭环，补齐 Runtime `provision_instance`、Provider 事件与终态 command writeback、`start_session` 输入 payload、Provider 能力真实探测和 `provider-run/v1` 任务隔离，避免 legacy polling 抢占数字员工 run。
 - 2026-06-05 02:15：数字员工详情页接入执行闭环，支持开始任务、活跃运行轮询、事件流、结果、失败原因、历史运行切换和停止操作；Control Plane run events 改为读取真实 `task_events` 时间线，并补齐 run OpenAPI 契约。
 - 2026-06-05 01:44：数字员工 Runtime provisioning preflight 改为严格执行团队 Provider 与 Runtime allowlist，空或缺失 allowlist 不再默认放行，并补齐真实 SQL 查询测试覆盖策略拒绝与 enrollment 撤销。
 - 2026-06-05 01:37：数字员工 Runtime provisioning 创建链路补齐独立清理上下文、团队 Provider/Runtime 策略准入、Runtime session/enrollment 一致校验和 provisioning command payload 脱敏。

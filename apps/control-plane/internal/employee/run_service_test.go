@@ -93,6 +93,7 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 		"agent_home_dir",
 		"objective",
 		"prompt",
+		"input",
 		"context_refs",
 		"artifact_refs",
 		"output_schema",
@@ -115,6 +116,9 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 	}
 	if payload["objective"] != "修复失败测试" || payload["prompt"] != "请先复现再修复" {
 		t.Fatalf("expected trimmed objective and prompt, got objective=%#v prompt=%#v", payload["objective"], payload["prompt"])
+	}
+	if payload["input"] != "请先复现再修复" {
+		t.Fatalf("expected start payload input to mirror prompt, got %#v", payload["input"])
 	}
 	if len(repo.events) != 1 || repo.events[0].EventType != "run_dispatched" {
 		t.Fatalf("expected run_dispatched event, got %#v", repo.events)

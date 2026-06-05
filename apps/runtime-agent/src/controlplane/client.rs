@@ -5,7 +5,8 @@ use std::time::Duration;
 use super::models::{
     EnrollHelloRequest, EnrollHelloResponse, HeartbeatRequest, HeartbeatResponse,
     RegisterNodeRequest, RegisterNodeResponse, RuntimeCapabilitiesRequest, RuntimeCapabilityInput,
-    RuntimeCapabilityResponse, RuntimeSessionResponse, Task,
+    RuntimeCapabilityResponse, RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback,
+    RuntimeSessionResponse, Task,
 };
 
 /// Control Plane HTTP client
@@ -330,6 +331,88 @@ impl ControlPlaneClient {
         Ok(())
     }
 
+    pub async fn complete_runtime_command(
+        &self,
+        command_id: &str,
+        terminal: &RuntimeCommandTerminalWriteback,
+    ) -> Result<()> {
+        let url = self.runtime_command_complete_url(command_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
+            .json(terminal)
+            .send()
+            .await
+            .context("Failed to complete runtime command")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Complete runtime command failed with {}: {}", status, body);
+        }
+
+        Ok(())
+    }
+
+    pub async fn record_runtime_command_event(
+        &self,
+        command_id: &str,
+        event: &RuntimeCommandEventWriteback,
+    ) -> Result<()> {
+        let url = self.runtime_command_events_url(command_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
+            .json(event)
+            .send()
+            .await
+            .context("Failed to record runtime command event")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Record runtime command event failed with {}: {}",
+                status,
+                body
+            );
+        }
+
+        Ok(())
+    }
+
+    pub async fn fail_runtime_command(
+        &self,
+        command_id: &str,
+        terminal: &RuntimeCommandTerminalWriteback,
+    ) -> Result<()> {
+        let url = self.runtime_command_fail_url(command_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
+            .json(terminal)
+            .send()
+            .await
+            .context("Failed to fail runtime command")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Fail runtime command failed with {}: {}", status, body);
+        }
+
+        Ok(())
+    }
+
     /// Renew task lease
     pub async fn renew_lease(&self, task_id: i64) -> Result<()> {
         let url = self.task_lease_url(task_id);
@@ -411,6 +494,27 @@ impl ControlPlaneClient {
         format!("{}/api/v1/runtime/tasks/{}/fail", self.base_url, task_id)
     }
 
+    fn runtime_command_complete_url(&self, command_id: &str) -> String {
+        format!(
+            "{}/api/v1/runtime/commands/{}/complete",
+            self.base_url, command_id
+        )
+    }
+
+    fn runtime_command_events_url(&self, command_id: &str) -> String {
+        format!(
+            "{}/api/v1/runtime/commands/{}/events",
+            self.base_url, command_id
+        )
+    }
+
+    fn runtime_command_fail_url(&self, command_id: &str) -> String {
+        format!(
+            "{}/api/v1/runtime/commands/{}/fail",
+            self.base_url, command_id
+        )
+    }
+
     fn task_lease_url(&self, task_id: i64) -> String {
         format!("{}/api/v1/runtime/tasks/{}/lease", self.base_url, task_id)
     }
@@ -463,6 +567,18 @@ mod tests {
         assert_eq!(
             client.task_fail_url(1),
             "http://localhost:8080/api/v1/runtime/tasks/1/fail"
+        );
+        assert_eq!(
+            client.runtime_command_complete_url("cmd-1"),
+            "http://localhost:8080/api/v1/runtime/commands/cmd-1/complete"
+        );
+        assert_eq!(
+            client.runtime_command_events_url("cmd-1"),
+            "http://localhost:8080/api/v1/runtime/commands/cmd-1/events"
+        );
+        assert_eq!(
+            client.runtime_command_fail_url("cmd-1"),
+            "http://localhost:8080/api/v1/runtime/commands/cmd-1/fail"
         );
         assert_eq!(
             client.task_lease_url(1),

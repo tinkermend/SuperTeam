@@ -12,6 +12,7 @@ use crate::controlplane::models::{
 };
 use crate::controlplane::ws::run_command_loop;
 use crate::executor::TaskExecutor;
+use crate::health::{ProviderHealth, ProviderHealthProbe, probe_provider_health};
 use crate::session::RuntimeSession;
 
 const SESSION_RENEWAL_MARGIN: Duration = Duration::from_secs(5 * 60);
@@ -47,7 +48,7 @@ impl RuntimeDaemon {
     }
 
     pub async fn run(self) -> Result<()> {
-        let capabilities = build_capabilities(&self.config);
+        let capabilities = build_capabilities(&self.config).await;
         let Some(session_context) = establish_runtime_session(&self.config, capabilities).await?
         else {
             return Ok(());
@@ -207,8 +208,32 @@ fn build_supported_providers(config: &RuntimeConfig) -> Vec<String> {
     providers
 }
 
-fn build_capabilities(config: &RuntimeConfig) -> Vec<RuntimeCapabilityInput> {
+async fn build_capabilities(config: &RuntimeConfig) -> Vec<RuntimeCapabilityInput> {
     let mut capabilities = Vec::new();
+
+    let claude_health = if config.providers.claude_code.enabled {
+        Some(
+            probe_provider_health(ProviderHealthProbe {
+                kind: "claude".to_string(),
+                bin_path: config.providers.claude_code.binary_path.clone(),
+            })
+            .await,
+        )
+    } else {
+        None
+    };
+    let opencode_health = if config.providers.opencode.enabled {
+        Some(
+            probe_provider_health(ProviderHealthProbe {
+                kind: "opencode".to_string(),
+                bin_path: config.providers.opencode.binary_path.clone(),
+            })
+            .await,
+        )
+    } else {
+        None
+    };
+
     capabilities.push(provider_capability(
         "claude-code",
         config.providers.claude_code.enabled,
@@ -218,11 +243,13 @@ fn build_capabilities(config: &RuntimeConfig) -> Vec<RuntimeCapabilityInput> {
             .binary_path
             .display()
             .to_string(),
+        claude_health,
     ));
     capabilities.push(provider_capability(
         "opencode",
         config.providers.opencode.enabled,
         config.providers.opencode.binary_path.display().to_string(),
+        opencode_health,
     ));
 
     let mut workspace_labels = std::collections::HashMap::new();
@@ -278,20 +305,46 @@ fn provider_capability(
     provider_type: &str,
     enabled: bool,
     binary_path: String,
+    health: Option<ProviderHealth>,
 ) -> RuntimeCapabilityInput {
+    let available = enabled && health.as_ref().is_some_and(|probe| probe.available);
+    let provider_version = health.as_ref().and_then(|probe| probe.version.clone());
+    let mut details = std::collections::HashMap::new();
+    if let Some(error) = health.as_ref().and_then(|probe| probe.error.clone()) {
+        details.insert("error".to_string(), json!(error));
+    }
+
     RuntimeCapabilityInput {
         capability_type: "provider".to_string(),
         capability_key: provider_type.to_string(),
         provider_type: provider_type.to_string(),
-        provider_version: None,
+        provider_version,
         binary_path: Some(binary_path),
-        available: enabled,
+        available,
         workspace_base_dir: None,
         capacity: None,
         labels: None,
-        status: if enabled { "available" } else { "disabled" }.to_string(),
-        details: None,
-        health_status: if enabled { "configured" } else { "disabled" }.to_string(),
+        status: if !enabled {
+            "disabled"
+        } else if available {
+            "healthy"
+        } else {
+            "unavailable"
+        }
+        .to_string(),
+        details: if details.is_empty() {
+            None
+        } else {
+            Some(details)
+        },
+        health_status: if !enabled {
+            "disabled"
+        } else if available {
+            "healthy"
+        } else {
+            "unhealthy"
+        }
+        .to_string(),
         metadata: None,
     }
 }

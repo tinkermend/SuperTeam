@@ -3264,6 +3264,25 @@ func TestRuntimeProvisioningPreflightEnforcesTeamPolicies(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
+	_, err = testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+		TenantID:         tenantID,
+		RuntimeNodeID:    node.ID,
+		CapabilityType:   "workspace",
+		CapabilityKey:    "base-dir",
+		ProviderType:     "workspace",
+		ProviderVersion:  pgtype.Text{},
+		BinaryPath:       pgtype.Text{},
+		Available:        true,
+		WorkspaceBaseDir: pgtype.Text{String: "/data/superteam/workspaces", Valid: true},
+		Capacity:         []byte(`{}`),
+		Labels:           []byte(`{}`),
+		Status:           "available",
+		Details:          []byte(`{}`),
+		HealthStatus:     "configured",
+		Metadata:         []byte(`{}`),
+		LastSeenAt:       now,
+	})
+	require.NoError(t, err)
 
 	runtimeScopePolicy := []byte(fmt.Sprintf(`{"allowed_runtime_node_ids":["%s"],"allowed_node_ids":["%s"]}`, node.ID.String(), node.NodeID))
 	teamConfig, err := testQueries.CreateTenantTeamConfigRevision(ctx, queries.CreateTenantTeamConfigRevisionParams{
@@ -3299,6 +3318,26 @@ func TestRuntimeProvisioningPreflightEnforcesTeamPolicies(t *testing.T) {
 	assert.True(t, preflight.RuntimePolicyAllowed)
 	assert.Equal(t, "/provider/preflight-policy", preflight.AgentHomeDir)
 
+	_, err = testDB.Exec(ctx, `
+		UPDATE runtime_capabilities
+		SET details = '{}'::jsonb,
+		    workspace_base_dir = NULL,
+		    updated_at = NOW()
+		WHERE tenant_id = $1
+		  AND runtime_node_id = $2
+		  AND capability_type = 'provider'
+		  AND provider_type = 'codex'
+	`, tenantID, node.ID)
+	require.NoError(t, err)
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "/data/superteam/workspaces", preflight.AgentHomeDir)
+
 	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
 		TenantID:      tenantID,
 		TeamID:        teamID,
@@ -3312,10 +3351,50 @@ func TestRuntimeProvisioningPreflightEnforcesTeamPolicies(t *testing.T) {
 
 	_, err = testDB.Exec(ctx, `
 		UPDATE tenant_team_config_revisions
-		SET capability_policy = '{"allowed_provider_types":[]}'::jsonb,
+		SET capability_policy = '{}'::jsonb,
+		    runtime_scope_policy = $2::jsonb,
 		    updated_at = NOW()
 		WHERE id = $1
-	`, teamConfig.ID)
+	`, teamConfig.ID, runtimeScopePolicy)
+	require.NoError(t, err)
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.True(t, preflight.ProviderAvailable)
+	assert.False(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.RuntimePolicyAllowed)
+
+	runtimeScopeProviderTypes := []byte(`{"provider_types":["codex"]}`)
+	_, err = testDB.Exec(ctx, `
+		UPDATE tenant_team_config_revisions
+		SET capability_policy = '{}'::jsonb,
+		    runtime_scope_policy = $2::jsonb,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, teamConfig.ID, runtimeScopeProviderTypes)
+	require.NoError(t, err)
+	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
+		TenantID:      tenantID,
+		TeamID:        teamID,
+		RuntimeNodeID: node.ID,
+		ProviderType:  "codex",
+	})
+	require.NoError(t, err)
+	assert.True(t, preflight.ProviderAvailable)
+	assert.True(t, preflight.ProviderPolicyAllowed)
+	assert.True(t, preflight.RuntimePolicyAllowed)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE tenant_team_config_revisions
+		SET capability_policy = '{"allowed_provider_types":[]}'::jsonb,
+		    runtime_scope_policy = $2::jsonb,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, teamConfig.ID, runtimeScopePolicy)
 	require.NoError(t, err)
 	preflight, err = testQueries.GetRuntimeProvisioningPreflight(ctx, queries.GetRuntimeProvisioningPreflightParams{
 		TenantID:      tenantID,
