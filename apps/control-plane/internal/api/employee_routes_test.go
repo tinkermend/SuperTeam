@@ -72,10 +72,10 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if err := json.NewDecoder(optionsResp.Body).Decode(&optionsBody); err != nil {
 		t.Fatalf("decode create options: %v", err)
 	}
-	if len(optionsBody.TeamConfig.AllowedEmployeeTypes) != 1 || optionsBody.TeamConfig.AllowedEmployeeTypes[0] != "project_coordinator" {
+	if len(optionsBody.TeamConfig.AllowedEmployeeTypes) != 1 || optionsBody.TeamConfig.AllowedEmployeeTypes[0] != "database_admin" {
 		t.Fatalf("expected team config allowed employee types, got %#v", optionsBody.TeamConfig)
 	}
-	if len(optionsBody.EmployeeTypes) != 1 || optionsBody.EmployeeTypes[0].Type != "project_coordinator" {
+	if len(optionsBody.EmployeeTypes) != 1 || optionsBody.EmployeeTypes[0].Type != "database_admin" {
 		t.Fatalf("expected employee type options, got %#v", optionsBody.EmployeeTypes)
 	}
 	if len(optionsBody.CapabilityOptions.ProviderTypes) != 1 || optionsBody.CapabilityOptions.ProviderTypes[0] != "codex" {
@@ -91,16 +91,16 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	createBody := `{
 		"team_id":"` + teamID.String() + `",
 		"owner_user_id":"` + spoofedOwnerID.String() + `",
-		"employee_type":"project_coordinator",
-		"name":"Requirements analyst",
-		"role":"requirements_analyst",
-		"description":"Coordinates requirements closure",
+		"employee_type":"database_admin",
+		"name":"Database administrator",
+		"role":"database_admin",
+		"description":"Manages database operations",
 		"permission_policy":{"allowed_actions":["read_context"]},
 		"context_policy":{"scope":"task"},
 		"approval_policy":{"required_for":["deploy"]},
 		"risk_level":"medium",
 		"metadata":{"source":"route-test"},
-		"role_profile":{"title":"requirements analyst"},
+		"role_profile":{"title":"database administrator"},
 		"constitution_addendum":{"tone":"concise"},
 		"capability_selection":{"enabled_skills":["incident-diagnosis"]},
 		"context_policy_override":{"redaction":"strict"},
@@ -128,13 +128,13 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if service.createReq.OwnerUserID != user.ID || service.createReq.OwnerUserID == spoofedOwnerID {
 		t.Fatalf("expected create owner from console user %s, got %s", user.ID, service.createReq.OwnerUserID)
 	}
-	if service.createReq.EmployeeType != "project_coordinator" {
+	if service.createReq.EmployeeType != "database_admin" {
 		t.Fatalf("expected employee type from create body, got %q", service.createReq.EmployeeType)
 	}
 	if service.createReq.RuntimeNodeID != runtimeNodeID || service.createReq.ProviderType != "codex" {
 		t.Fatalf("expected create runtime/provider %s/codex, got %s/%q", runtimeNodeID, service.createReq.RuntimeNodeID, service.createReq.ProviderType)
 	}
-	if service.createReq.PermissionPolicy["allowed_actions"] == nil || service.createReq.RoleProfile["title"] != "requirements analyst" || service.createReq.CapabilitySelection["enabled_skills"] == nil {
+	if service.createReq.PermissionPolicy["allowed_actions"] == nil || service.createReq.RoleProfile["title"] != "database administrator" || service.createReq.CapabilitySelection["enabled_skills"] == nil {
 		t.Fatalf("expected policy/config fields from create body, got %#v", service.createReq)
 	}
 	if service.createReq.ContextPolicyOverride["redaction"] != "strict" || service.createReq.ApprovalPolicyOverride["require_owner"] != true || service.createReq.OutputContractAddendum["format"] != "markdown" {
@@ -166,8 +166,8 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if created.TeamID != teamID.String() {
 		t.Fatalf("expected response team %s, got %s", teamID, created.TeamID)
 	}
-	if created.OwnerUserID != user.ID.String() || created.EmployeeType != "project_coordinator" {
-		t.Fatalf("expected response owner/type %s/project_coordinator, got %#v", user.ID, created)
+	if created.OwnerUserID != user.ID.String() || created.EmployeeType != "database_admin" {
+		t.Fatalf("expected response owner/type %s/database_admin, got %#v", user.ID, created)
 	}
 	if created.PermissionPolicy == nil || created.ContextPolicy == nil || created.ApprovalPolicy == nil {
 		t.Fatalf("expected policy objects in response, got %#v", created)
@@ -190,7 +190,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
 		t.Fatalf("decode listed employees: %v", err)
 	}
-	if len(listed) != 1 || listed[0].OwnerUserID != user.ID.String() || listed[0].EmployeeType != "project_coordinator" {
+	if len(listed) != 1 || listed[0].OwnerUserID != user.ID.String() || listed[0].EmployeeType != "database_admin" {
 		t.Fatalf("expected list response owner/type, got %#v", listed)
 	}
 
@@ -211,7 +211,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if err := json.NewDecoder(getResp.Body).Decode(&got); err != nil {
 		t.Fatalf("decode get employee: %v", err)
 	}
-	if got.OwnerUserID != user.ID.String() || got.EmployeeType != "project_coordinator" {
+	if got.OwnerUserID != user.ID.String() || got.EmployeeType != "database_admin" {
 		t.Fatalf("expected get response owner/type, got %#v", got)
 	}
 
@@ -295,10 +295,10 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 				Status:         employee.TeamConfigRevisionStatusActive,
 			},
 			EmployeeTypes: []employee.EmployeeTypeDefinition{{
-				Type:        "project_coordinator",
-				Label:       "Project coordinator",
-				Description: "Coordinates work",
-				DefaultRole: "project_coordinator",
+				Type:        "database_admin",
+				Label:       "数据库管理",
+				Description: "Manages database operations",
+				DefaultRole: "database_admin",
 			}},
 		},
 	}
@@ -912,14 +912,14 @@ func (s *routeEmployeeService) GetCreateOptions(ctx context.Context, req employe
 			TeamID:               req.TeamID,
 			RevisionNumber:       2,
 			Status:               employee.TeamConfigRevisionStatusActive,
-			AllowedEmployeeTypes: []string{"project_coordinator"},
+			AllowedEmployeeTypes: []string{"database_admin"},
 			AllowedProviderTypes: []string{"codex"},
 		},
 		EmployeeTypes: []employee.EmployeeTypeDefinition{{
-			Type:                     "project_coordinator",
-			Label:                    "Project coordinator",
-			Description:              "Coordinates work",
-			DefaultRole:              "requirements_analyst",
+			Type:                     "database_admin",
+			Label:                    "数据库管理",
+			Description:              "Manages database operations",
+			DefaultRole:              "database_admin",
 			RecommendedProviderTypes: []string{"codex"},
 		}},
 		CapabilityOptions: employee.CapabilityOptions{
@@ -935,7 +935,7 @@ func (s *routeEmployeeService) GetCreateOptions(ctx context.Context, req employe
 			HealthStatus:          "healthy",
 			CurrentLoad:           1,
 			MaxSlots:              4,
-			AgentHomeDir:          "/srv/agents/requirements",
+			AgentHomeDir:          "/srv/agents/database",
 			AgentHomeDirAvailable: true,
 			Available:             true,
 		}},
@@ -992,9 +992,9 @@ func (s *routeEmployeeService) ListDigitalEmployees(ctx context.Context, req emp
 		TenantID:         req.TenantID,
 		TeamID:           req.TeamID,
 		OwnerUserID:      ownerUserID,
-		EmployeeType:     "project_coordinator",
-		Name:             "Requirements analyst",
-		Role:             "requirements_analyst",
+		EmployeeType:     "database_admin",
+		Name:             "Database administrator",
+		Role:             "database_admin",
 		Status:           employee.DigitalEmployeeStatusReady,
 		PermissionPolicy: map[string]any{},
 		ContextPolicy:    map[string]any{},
@@ -1018,9 +1018,9 @@ func (s *routeEmployeeService) GetDigitalEmployee(ctx context.Context, tenantID,
 		ID:               employeeID,
 		TenantID:         tenantID,
 		OwnerUserID:      ownerUserID,
-		EmployeeType:     "project_coordinator",
-		Name:             "Requirements analyst",
-		Role:             "requirements_analyst",
+		EmployeeType:     "database_admin",
+		Name:             "Database administrator",
+		Role:             "database_admin",
 		Status:           employee.DigitalEmployeeStatusReady,
 		PermissionPolicy: map[string]any{},
 		ContextPolicy:    map[string]any{},
@@ -1040,9 +1040,9 @@ func (s *routeEmployeeService) UpdateStatus(ctx context.Context, req employee.Up
 		ID:               req.DigitalEmployeeID,
 		TenantID:         req.TenantID,
 		OwnerUserID:      uuid.MustParse("22222222-2222-2222-2222-222222222222"),
-		EmployeeType:     "project_coordinator",
-		Name:             "Requirements analyst",
-		Role:             "requirements_analyst",
+		EmployeeType:     "database_admin",
+		Name:             "Database administrator",
+		Role:             "database_admin",
 		Status:           req.Status,
 		PermissionPolicy: map[string]any{},
 		ContextPolicy:    map[string]any{},
