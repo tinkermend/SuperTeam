@@ -15,11 +15,39 @@ import (
 )
 
 type PgRepository struct {
-	q *queries.Queries
+	q  *queries.Queries
+	db employeeTransactionBeginner
 }
 
-func NewPgRepository(q *queries.Queries) Repository {
-	return &PgRepository{q: q}
+type employeeTransactionBeginner interface {
+	Begin(context.Context) (pgx.Tx, error)
+}
+
+func NewPgRepository(q *queries.Queries, db ...employeeTransactionBeginner) Repository {
+	var beginner employeeTransactionBeginner
+	if len(db) > 0 {
+		beginner = db[0]
+	}
+	return &PgRepository{q: q, db: beginner}
+}
+
+func (r *PgRepository) WithTransaction(ctx context.Context, fn func(Repository) error) error {
+	if r.db == nil {
+		return fn(r)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin employee transaction: %w", err)
+	}
+	txRepo := &PgRepository{q: r.q.WithTx(tx)}
+	if err := fn(txRepo); err != nil {
+		_ = tx.Rollback(ctx)
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit employee transaction: %w", err)
+	}
+	return nil
 }
 
 func (r *PgRepository) CreateDigitalEmployee(ctx context.Context, params CreateDigitalEmployeeParams) (DigitalEmployeeRecord, error) {

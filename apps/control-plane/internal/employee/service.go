@@ -211,39 +211,33 @@ func emptyPolicyDefaults() PolicyDefaults {
 }
 
 func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*DigitalEmployee, error) {
-	if req.TenantID == uuid.Nil {
-		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	return nil, fmt.Errorf("%w: CreateDraft is retired; use CreateDigitalEmployee", ErrInvalidInput)
+}
+
+func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEmployeeRequest) (*DigitalEmployee, error) {
+	normalized, definition, err := normalizeCreateDigitalEmployeeRequest(req)
+	if err != nil {
+		return nil, err
 	}
-	if req.TeamID == nil || *req.TeamID == uuid.Nil {
-		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
-	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		return nil, fmt.Errorf("%w: name is required", ErrInvalidInput)
-	}
-	role := strings.TrimSpace(req.Role)
-	if role == "" {
-		return nil, fmt.Errorf("%w: role is required", ErrInvalidInput)
-	}
-	if req.OwnerUserID == uuid.Nil {
-		return nil, fmt.Errorf("%w: owner_user_id is required", ErrInvalidInput)
-	}
-	description := trimOptionalString(req.Description)
-	riskLevel := strings.TrimSpace(req.RiskLevel)
-	if riskLevel == "" {
-		riskLevel = "medium"
-	}
-	if req.RuntimeNodeID == uuid.Nil {
-		return nil, fmt.Errorf("%w: runtime_node_id is required", ErrInvalidInput)
-	}
-	providerType := strings.TrimSpace(req.ProviderType)
-	if providerType == "" {
-		return nil, fmt.Errorf("%w: provider_type is required", ErrInvalidInput)
-	}
-	if err := s.repository.EnsureTeamExists(ctx, req.TenantID, *req.TeamID); err != nil {
+	teamID := *normalized.TeamID
+	if err := s.repository.EnsureTeamExists(ctx, normalized.TenantID, teamID); err != nil {
 		return nil, fmt.Errorf("get team: %w", err)
 	}
-	preflight, err := s.repository.GetRuntimeProvisioningPreflight(ctx, req.TenantID, *req.TeamID, req.RuntimeNodeID, providerType)
+	teamConfig, err := s.repository.GetCurrentTeamConfigRevision(ctx, normalized.TenantID, teamID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, fmt.Errorf("%w: active team governance config is required", ErrEffectiveConfigRequired)
+		}
+		return nil, fmt.Errorf("get current team config revision: %w", err)
+	}
+	if err := validateEmployeeTypeAllowedByTeamConfig(normalized.EmployeeType, teamConfig); err != nil {
+		return nil, err
+	}
+	if err := s.validateInitialEffectiveConfig(ctx, s.repository, normalized, definition, teamConfig, uuid.New()); err != nil {
+		return nil, err
+	}
+
+	preflight, err := s.repository.GetRuntimeProvisioningPreflight(ctx, normalized.TenantID, teamID, normalized.RuntimeNodeID, normalized.ProviderType)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return nil, fmt.Errorf("%w: runtime provisioning preflight unavailable", ErrRuntimeUnavailable)
@@ -260,30 +254,268 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dig
 		return nil, fmt.Errorf("%w: runtime node is not connected", ErrRuntimeUnavailable)
 	}
 
-	record, err := s.repository.CreateDigitalEmployee(ctx, CreateDigitalEmployeeParams{
+	var record DigitalEmployeeRecord
+	var instance DigitalEmployeeExecutionInstanceRecord
+	var commandID string
+	var payload map[string]any
+	if err := s.repository.WithTransaction(ctx, func(txRepo Repository) error {
+		createdRecord, createdInstance, createdCommandID, createdPayload, err := s.createLocalReadyEmployeeFacts(ctx, txRepo, normalized, definition, teamConfig, preflight)
+		if err != nil {
+			return err
+		}
+		record = createdRecord
+		instance = createdInstance
+		commandID = createdCommandID
+		payload = createdPayload
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := dispatchRuntimeProvisioningCommand(ctx, s.dispatcher, preflight.NodeID, commandID, payload); err != nil {
+		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "dispatch provisioning command failed: "+err.Error())
+		return nil, provisioningErrorWithAbort(err, abortErr)
+	}
+
+	receipt, err := s.waitForProvisioningCompletion(ctx, normalized.TenantID, commandID)
+	if err != nil {
+		abortErr := s.abortProvisioning(normalized.TenantID, record.ID, instance.ID, "wait for provisioning command completion failed: "+err.Error())
+		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: wait for provisioning command completion: %w", ErrRuntimeUnavailable, err), abortErr)
+	}
+	if receipt == nil {
+		abortErr := s.abortProvisioning(normalized.TenantID, record.ID, instance.ID, "provisioning command receipt missing")
+		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command receipt missing", ErrRuntimeUnavailable), abortErr)
+	}
+	switch receipt.Status {
+	case string(DigitalEmployeeRunStatusCompleted):
+		readyRecord, err := s.repository.GetDigitalEmployee(ctx, normalized.TenantID, record.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get provisioned digital employee: %w", err)
+		}
+		return employeeFromRecord(readyRecord), nil
+	case string(DigitalEmployeeRunStatusFailed), string(DigitalEmployeeRunStatusTimedOut), string(DigitalEmployeeRunStatusCancelled):
+		abortErr := s.abortProvisioning(normalized.TenantID, record.ID, instance.ID, "provisioning command "+receipt.Status)
+		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command %s", ErrRuntimeUnavailable, receipt.Status), abortErr)
+	default:
+		abortErr := s.abortProvisioning(normalized.TenantID, record.ID, instance.ID, "provisioning command did not reach terminal status")
+		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command did not reach terminal status %q", ErrRuntimeUnavailable, receipt.Status), abortErr)
+	}
+}
+
+func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (CreateDigitalEmployeeRequest, EmployeeTypeDefinition, error) {
+	if req.TenantID == uuid.Nil {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == nil || *req.TeamID == uuid.Nil {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if req.OwnerUserID == uuid.Nil {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: owner_user_id is required", ErrInvalidInput)
+	}
+	employeeType := strings.ToLower(strings.TrimSpace(req.EmployeeType))
+	if employeeType == "" {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: employee_type is required", ErrInvalidInput)
+	}
+	definition, ok := EmployeeTypeDefinitionByType(employeeType)
+	if !ok {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: unknown employee_type %q", ErrInvalidInput, employeeType)
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: name is required", ErrInvalidInput)
+	}
+	role := strings.TrimSpace(req.Role)
+	if role == "" {
+		role = strings.TrimSpace(definition.DefaultRole)
+	}
+	if role == "" {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: role is required", ErrInvalidInput)
+	}
+	if req.RuntimeNodeID == uuid.Nil {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: runtime_node_id is required", ErrInvalidInput)
+	}
+	providerType := strings.TrimSpace(req.ProviderType)
+	if providerType == "" {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: provider_type is required", ErrInvalidInput)
+	}
+	riskLevel := strings.TrimSpace(req.RiskLevel)
+	if riskLevel == "" {
+		riskLevel = defaultRiskLevelForEmployeeType(definition)
+	}
+	req.EmployeeType = employeeType
+	req.Name = name
+	req.Role = role
+	req.Description = trimOptionalString(req.Description)
+	req.RiskLevel = riskLevel
+	req.ProviderType = providerType
+	return req, definition, nil
+}
+
+func defaultRiskLevelForEmployeeType(definition EmployeeTypeDefinition) string {
+	if value, ok := definition.DefaultApprovalPolicy["min_risk_for_human"].(string); ok && riskRank(value) > 0 {
+		return strings.ToLower(strings.TrimSpace(value))
+	}
+	return "medium"
+}
+
+func validateEmployeeTypeAllowedByTeamConfig(employeeType string, teamConfig TeamConfigInput) error {
+	allowedTypes, err := allowedEmployeeTypesFromTeamConfig(teamConfig)
+	if err != nil {
+		return err
+	}
+	if len(allowedTypes) == 0 {
+		return nil
+	}
+	if !stringSet(allowedTypes)[employeeType] {
+		return fmt.Errorf("%w: employee_type %q is outside team policy", ErrInvalidInput, employeeType)
+	}
+	return nil
+}
+
+func (s *Service) validateInitialEffectiveConfig(ctx context.Context, repository Repository, req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput, employeeID uuid.UUID) error {
+	configInput := initialEmployeeConfigInput(req, definition, employeeID, uuid.New(), 1)
+	preview, err := s.previewEffectiveConfigWithRepository(ctx, repository, teamConfig, configInput)
+	if err != nil {
+		return err
+	}
+	if len(preview.Validation.BlockingErrors) > 0 {
+		return fmt.Errorf("%w: effective config has blocking validation errors", ErrInvalidInput)
+	}
+	return nil
+}
+
+func (s *Service) previewEffectiveConfigWithRepository(ctx context.Context, repository Repository, teamConfig TeamConfigInput, employeeConfig EmployeeConfigInput) (*EffectiveConfigPreview, error) {
+	txService := *s
+	txService.repository = repository
+	return txService.PreviewEffectiveConfig(ctx, PreviewEffectiveConfigRequest{
+		TenantID:          employeeConfig.TenantID,
+		DigitalEmployeeID: employeeConfig.DigitalEmployeeID,
+		TeamConfig:        teamConfig,
+		EmployeeConfig:    employeeConfig,
+	})
+}
+
+func (s *Service) createLocalReadyEmployeeFacts(ctx context.Context, repository Repository, req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput, preflight RuntimeProvisioningPreflight) (DigitalEmployeeRecord, DigitalEmployeeExecutionInstanceRecord, string, map[string]any, error) {
+	record, err := repository.CreateDigitalEmployee(ctx, createDigitalEmployeeParams(req))
+	if err != nil {
+		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("create digital employee: %w", err)
+	}
+	configRevision, err := s.createInitialActiveConfigRevision(ctx, repository, record, req, definition)
+	if err != nil {
+		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
+	}
+	configInput := employeeConfigInputFromRecord(configRevision)
+	preview, err := s.previewEffectiveConfigWithRepository(ctx, repository, teamConfig, configInput)
+	if err != nil {
+		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
+	}
+	if len(preview.Validation.BlockingErrors) > 0 {
+		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("%w: effective config has blocking validation errors", ErrInvalidInput)
+	}
+	if _, err := createApprovedEffectiveConfig(ctx, repository, record, teamConfig.ID, configRevision.ID, preview, req.OwnerUserID); err != nil {
+		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
+	}
+	instance, commandID, payload, err := createProvisioningInstanceAndReceipt(ctx, repository, record, req, preflight, configInput, preview)
+	if err != nil {
+		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
+	}
+	return record, instance, commandID, payload, nil
+}
+
+func createDigitalEmployeeParams(req CreateDigitalEmployeeRequest) CreateDigitalEmployeeParams {
+	return CreateDigitalEmployeeParams{
 		TenantID:         req.TenantID,
 		TeamID:           validUUIDPtr(req.TeamID),
 		OwnerUserID:      req.OwnerUserID,
-		EmployeeType:     "general_engineer",
-		Name:             name,
-		Role:             role,
-		Description:      description,
+		EmployeeType:     req.EmployeeType,
+		Name:             req.Name,
+		Role:             req.Role,
+		Description:      req.Description,
 		Status:           DigitalEmployeeStatusDraft,
 		PermissionPolicy: cloneMap(req.PermissionPolicy),
 		ContextPolicy:    cloneMap(req.ContextPolicy),
 		ApprovalPolicy:   cloneMap(req.ApprovalPolicy),
-		RiskLevel:        riskLevel,
+		RiskLevel:        req.RiskLevel,
 		Metadata:         cloneMap(req.Metadata),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create digital employee: %w", err)
 	}
+}
 
-	instance, err := s.repository.UpsertDigitalEmployeeExecutionInstance(ctx, UpsertExecutionInstanceParams{
+func (s *Service) createInitialActiveConfigRevision(ctx context.Context, repository Repository, record DigitalEmployeeRecord, req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition) (DigitalEmployeeConfigRevisionRecord, error) {
+	nextRevision, err := repository.GetNextDigitalEmployeeConfigRevisionNumber(ctx, req.TenantID, record.ID)
+	if err != nil {
+		return DigitalEmployeeConfigRevisionRecord{}, fmt.Errorf("get next digital employee config revision number: %w", err)
+	}
+	if nextRevision <= 0 {
+		nextRevision = 1
+	}
+	approvedBy := req.OwnerUserID
+	now := time.Now().UTC()
+	params := initialEmployeeConfigParams(req, definition, record.ID, nextRevision, approvedBy, now)
+	revision, err := repository.CreateDigitalEmployeeConfigRevision(ctx, params)
+	if err != nil {
+		return DigitalEmployeeConfigRevisionRecord{}, fmt.Errorf("create initial digital employee config revision: %w", err)
+	}
+	return revision, nil
+}
+
+func initialEmployeeConfigParams(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, employeeID uuid.UUID, revisionNumber int32, approvedBy uuid.UUID, approvedAt time.Time) CreateConfigRevisionParams {
+	return CreateConfigRevisionParams{
+		TenantID:               req.TenantID,
+		DigitalEmployeeID:      employeeID,
+		RevisionNumber:         revisionNumber,
+		RoleProfile:            initialRoleProfile(req),
+		ConstitutionAddendum:   cloneMap(req.ConstitutionAddendum),
+		CapabilitySelection:    mergePolicyMaps(definition.DefaultCapabilitySelection, req.CapabilitySelection),
+		ContextPolicyOverride:  mergePolicyMaps(definition.DefaultContextPolicyOverride, req.ContextPolicyOverride),
+		ApprovalPolicyOverride: mergePolicyMaps(definition.DefaultApprovalPolicy, req.ApprovalPolicyOverride),
+		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
+		Status:                 ConfigRevisionStatusActive,
+		ApprovedBy:             &approvedBy,
+		ApprovedAt:             &approvedAt,
+	}
+}
+
+func initialEmployeeConfigInput(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, employeeID, configID uuid.UUID, revisionNumber int32) EmployeeConfigInput {
+	return EmployeeConfigInput{
+		ID:                     configID,
+		TenantID:               req.TenantID,
+		DigitalEmployeeID:      employeeID,
+		RevisionNumber:         revisionNumber,
+		RoleProfile:            initialRoleProfile(req),
+		ConstitutionAddendum:   cloneMap(req.ConstitutionAddendum),
+		CapabilitySelection:    mergePolicyMaps(definition.DefaultCapabilitySelection, req.CapabilitySelection),
+		ContextPolicyOverride:  mergePolicyMaps(definition.DefaultContextPolicyOverride, req.ContextPolicyOverride),
+		ApprovalPolicyOverride: mergePolicyMaps(definition.DefaultApprovalPolicy, req.ApprovalPolicyOverride),
+		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
+	}
+}
+
+func createApprovedEffectiveConfig(ctx context.Context, repository Repository, record DigitalEmployeeRecord, teamConfigRevisionID, employeeConfigRevisionID uuid.UUID, preview *EffectiveConfigPreview, approvedBy uuid.UUID) (DigitalEmployeeEffectiveConfigRecord, error) {
+	now := time.Now().UTC()
+	params := CreateEffectiveConfigParams{
+		TenantID:                 record.TenantID,
+		DigitalEmployeeID:        record.ID,
+		TeamConfigRevisionID:     teamConfigRevisionID,
+		EmployeeConfigRevisionID: employeeConfigRevisionID,
+		EffectiveConfig:          cloneMap(preview.EffectiveConfig),
+		ValidationResult:         validationResultMap(preview.Validation),
+		Status:                   EffectiveConfigStatusApproved,
+		ApprovedBy:               &approvedBy,
+		ApprovedAt:               &now,
+	}
+	effectiveConfig, err := repository.CreateDigitalEmployeeEffectiveConfig(ctx, params)
+	if err != nil {
+		return DigitalEmployeeEffectiveConfigRecord{}, fmt.Errorf("create approved digital employee effective config: %w", err)
+	}
+	return effectiveConfig, nil
+}
+
+func createProvisioningInstanceAndReceipt(ctx context.Context, repository Repository, record DigitalEmployeeRecord, req CreateDigitalEmployeeRequest, preflight RuntimeProvisioningPreflight, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) (DigitalEmployeeExecutionInstanceRecord, string, map[string]any, error) {
+	instance, err := repository.UpsertDigitalEmployeeExecutionInstance(ctx, UpsertExecutionInstanceParams{
 		TenantID:          req.TenantID,
 		DigitalEmployeeID: record.ID,
 		RuntimeNodeID:     req.RuntimeNodeID,
-		ProviderType:      providerType,
+		ProviderType:      req.ProviderType,
 		AgentHomeDir:      preflight.AgentHomeDir,
 		WorkspacePolicy:   cloneMap(req.WorkspacePolicy),
 		SessionPolicy:     cloneMap(req.SessionPolicy),
@@ -297,13 +529,12 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dig
 		},
 	})
 	if err != nil {
-		abortErr := s.abortProvisioning(req.TenantID, record.ID, uuid.Nil, "create provisioning execution instance failed: "+err.Error())
-		return nil, provisioningErrorWithAbort(fmt.Errorf("create digital employee execution instance: %w", err), abortErr)
+		return DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("create digital employee execution instance: %w", err)
 	}
 
 	commandID := newRuntimeCommandID()
-	payload := buildProvisionInstancePayload(commandID, record, instance, providerType, preflight, req)
-	if err := s.repository.CreateRuntimeCommandReceipt(ctx, CreateRuntimeCommandReceiptRequest{
+	payload := buildProvisionInstancePayload(commandID, record, instance, req.ProviderType, preflight, req, configInput, preview)
+	if err := repository.CreateRuntimeCommandReceipt(ctx, CreateRuntimeCommandReceiptRequest{
 		TenantID:      req.TenantID,
 		CommandID:     commandID,
 		CommandType:   "provision_instance",
@@ -314,45 +545,41 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dig
 		Status:        "pending",
 		Payload:       payload,
 	}); err != nil {
-		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "create provisioning command receipt failed: "+err.Error())
-		return nil, provisioningErrorWithAbort(fmt.Errorf("create provisioning command receipt: %w", err), abortErr)
+		return DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("create provisioning command receipt: %w", err)
 	}
+	return instance, commandID, payload, nil
+}
 
+func dispatchRuntimeProvisioningCommand(ctx context.Context, dispatcher RuntimeCommandDispatcher, nodeID, commandID string, payload map[string]any) error {
 	command, err := runtimeCommand(commandID, "provision_instance", payload)
 	if err != nil {
-		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "encode provisioning command failed: "+err.Error())
-		return nil, provisioningErrorWithAbort(err, abortErr)
+		return err
 	}
-	if err := s.dispatcher.Dispatch(ctx, preflight.NodeID, command); err != nil {
-		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "dispatch provisioning command failed: "+err.Error())
-		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: dispatch provision instance: %w", ErrRuntimeUnavailable, err), abortErr)
+	if err := dispatcher.Dispatch(ctx, nodeID, command); err != nil {
+		return fmt.Errorf("%w: dispatch provision instance: %w", ErrRuntimeUnavailable, err)
 	}
+	return nil
+}
 
+func (s *Service) waitForProvisioningCompletion(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error) {
 	waitCtx, cancel := context.WithTimeout(ctx, s.provisioningTimeout)
 	defer cancel()
-	receipt, err := s.repository.WaitForRuntimeCommandCompletion(waitCtx, req.TenantID, commandID, s.provisioningPollInterval)
-	if err != nil {
-		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "wait for provisioning command completion failed: "+err.Error())
-		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: wait for provisioning command completion: %w", ErrRuntimeUnavailable, err), abortErr)
+	return s.repository.WaitForRuntimeCommandCompletion(waitCtx, tenantID, commandID, s.provisioningPollInterval)
+}
+
+func mergePolicyMaps(base, override map[string]any) map[string]any {
+	merged := cloneMap(base)
+	for key, value := range override {
+		merged[key] = value
 	}
-	if receipt == nil {
-		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "provisioning command receipt missing")
-		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command receipt missing", ErrRuntimeUnavailable), abortErr)
-	}
-	switch receipt.Status {
-	case string(DigitalEmployeeRunStatusCompleted):
-		readyRecord, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, record.ID)
-		if err != nil {
-			return nil, fmt.Errorf("get provisioned digital employee: %w", err)
-		}
-		return employeeFromRecord(readyRecord), nil
-	case string(DigitalEmployeeRunStatusFailed), string(DigitalEmployeeRunStatusTimedOut), string(DigitalEmployeeRunStatusCancelled):
-		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "provisioning command "+receipt.Status)
-		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command %s", ErrRuntimeUnavailable, receipt.Status), abortErr)
-	default:
-		abortErr := s.abortProvisioning(req.TenantID, record.ID, instance.ID, "provisioning command did not reach terminal status")
-		return nil, provisioningErrorWithAbort(fmt.Errorf("%w: provisioning command did not reach terminal status %q", ErrRuntimeUnavailable, receipt.Status), abortErr)
-	}
+	return merged
+}
+
+func initialRoleProfile(req CreateDigitalEmployeeRequest) map[string]any {
+	profile := cloneMap(req.RoleProfile)
+	profile["employee_type"] = req.EmployeeType
+	profile["role"] = req.Role
+	return profile
 }
 
 func (s *Service) abortProvisioning(tenantID, employeeID, executionInstanceID uuid.UUID, reason string) error {
@@ -398,24 +625,36 @@ func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight
 	return nil
 }
 
-func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRecord, instance DigitalEmployeeExecutionInstanceRecord, providerType string, preflight RuntimeProvisioningPreflight, req CreateDraftRequest) map[string]any {
+func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRecord, instance DigitalEmployeeExecutionInstanceRecord, providerType string, preflight RuntimeProvisioningPreflight, req CreateDigitalEmployeeRequest, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) map[string]any {
 	return redactRuntimeEventPayload(map[string]any{
-		"command_id":             commandID,
-		"digital_employee_id":    employee.ID.String(),
-		"execution_instance_id":  instance.ID.String(),
-		"team_id":                preflight.TeamID.String(),
-		"runtime_node_id":        preflight.RuntimeNodeID.String(),
-		"node_id":                preflight.NodeID,
-		"provider_type":          providerType,
-		"provider_run_protocol":  providerRunProtocol,
-		"governance_snapshot":    cloneMap(preflight.GovernanceSnapshot),
-		"session_policy":         cloneMap(req.SessionPolicy),
-		"workspace_policy":       cloneMap(req.WorkspacePolicy),
-		"permission_policy":      cloneMap(employee.PermissionPolicy),
-		"context_policy":         cloneMap(employee.ContextPolicy),
-		"approval_policy":        cloneMap(employee.ApprovalPolicy),
-		"employee_metadata":      cloneMap(employee.Metadata),
-		"execution_instance_ref": instance.ID.String(),
+		"command_id":                  commandID,
+		"digital_employee_id":         employee.ID.String(),
+		"execution_instance_id":       instance.ID.String(),
+		"tenant_id":                   employee.TenantID.String(),
+		"team_id":                     preflight.TeamID.String(),
+		"owner_user_id":               employee.OwnerUserID.String(),
+		"employee_type":               employee.EmployeeType,
+		"role":                        employee.Role,
+		"risk_level":                  employee.RiskLevel,
+		"runtime_node_id":             preflight.RuntimeNodeID.String(),
+		"node_id":                     preflight.NodeID,
+		"provider_type":               providerType,
+		"provider_run_protocol":       providerRunProtocol,
+		"team_config_revision_id":     preview.TeamConfigRevisionID.String(),
+		"employee_config_revision_id": preview.EmployeeConfigRevisionID.String(),
+		"governance_snapshot":         cloneMap(preflight.GovernanceSnapshot),
+		"session_policy":              cloneMap(req.SessionPolicy),
+		"workspace_policy":            cloneMap(req.WorkspacePolicy),
+		"permission_policy":           cloneMap(employee.PermissionPolicy),
+		"context_policy":              cloneMap(employee.ContextPolicy),
+		"approval_policy":             cloneMap(employee.ApprovalPolicy),
+		"role_profile":                cloneMap(configInput.RoleProfile),
+		"context_policy_override":     cloneMap(configInput.ContextPolicyOverride),
+		"approval_policy_override":    cloneMap(configInput.ApprovalPolicyOverride),
+		"capability_selection":        cloneMap(configInput.CapabilitySelection),
+		"output_contract_addendum":    cloneMap(configInput.OutputContractAddendum),
+		"employee_metadata":           cloneMap(employee.Metadata),
+		"execution_instance_ref":      instance.ID.String(),
 	})
 }
 
@@ -760,6 +999,21 @@ func configRevisionFromRecord(record DigitalEmployeeConfigRevisionRecord) *Digit
 		ArchivedAt:             cloneTimePtr(record.ArchivedAt),
 		CreatedAt:              record.CreatedAt,
 		UpdatedAt:              record.UpdatedAt,
+	}
+}
+
+func employeeConfigInputFromRecord(record DigitalEmployeeConfigRevisionRecord) EmployeeConfigInput {
+	return EmployeeConfigInput{
+		ID:                     record.ID,
+		TenantID:               record.TenantID,
+		DigitalEmployeeID:      record.DigitalEmployeeID,
+		RevisionNumber:         record.RevisionNumber,
+		RoleProfile:            cloneMap(record.RoleProfile),
+		ConstitutionAddendum:   cloneMap(record.ConstitutionAddendum),
+		CapabilitySelection:    cloneMap(record.CapabilitySelection),
+		ContextPolicyOverride:  cloneMap(record.ContextPolicyOverride),
+		ApprovalPolicyOverride: cloneMap(record.ApprovalPolicyOverride),
+		OutputContractAddendum: cloneMap(record.OutputContractAddendum),
 	}
 }
 

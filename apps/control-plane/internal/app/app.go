@@ -91,7 +91,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	}
 	runtimeCommands := runtimepkg.NewConnectionRegistry()
 
-	employeeRepository := employee.NewPgRepository(q)
+	employeeRepository := employee.NewPgRepository(q, stores.Postgres)
 	employeeService, err := employee.NewServiceWithProvisioning(employeeRepository, runtimeCommands)
 	if err != nil {
 		return nil, err

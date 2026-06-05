@@ -186,95 +186,78 @@ func TestCreateDigitalEmployeeParamsAndDomainMappingKeepOwnerAndType(t *testing.
 	}
 }
 
-func TestCreateDraftProvisioningDispatchesRuntimeCommandAndReturnsReadyEmployee(t *testing.T) {
-	repo := newMemoryRepository()
-	dispatcher := newFakeRuntimeCommandDispatcher()
-	svc, err := NewServiceWithProvisioning(repo, dispatcher)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	teamID := uuid.New()
-	ownerUserID := uuid.New()
-	runtimeNodeID := uuid.New()
-	repo.teams[teamID] = tenantID
-	repo.preflight = RuntimeProvisioningPreflight{
-		TenantID:      tenantID,
-		TeamID:        teamID,
-		RuntimeNodeID: runtimeNodeID,
-		NodeID:        "runtime-node-1",
-		AgentHomeDir:  "/runtime/reported/agent-home",
-		GovernanceSnapshot: map[string]any{
-			"team_config_revision_id": uuid.NewString(),
-			"authorization":           "Bearer raw-token",
-			"capability_policy":       map[string]any{"api_key": "raw-key"},
-			"approval_policy":         map[string]any{"min_risk_for_human": "high"},
-		},
-		HasActiveTeamConfig:   true,
-		RuntimeOnline:         true,
-		EnrollmentApproved:    true,
-		RuntimeSessionActive:  true,
-		ProviderAvailable:     true,
-		ProviderPolicyAllowed: true,
-		RuntimePolicyAllowed:  true,
-	}
-	repo.waitStatus = string(DigitalEmployeeRunStatusCompleted)
-	dispatcher.connected["runtime-node-1"] = true
-	sessionPolicy := map[string]any{"mode": "reuse_latest", "token": "raw-session-token"}
-	workspacePolicy := map[string]any{"labels": map[string]any{"tier": "standard"}, "secret": "raw-workspace-secret"}
-
-	created, err := svc.CreateDraft(context.Background(), CreateDraftRequest{
-		TenantID:        tenantID,
-		TeamID:          &teamID,
-		OwnerUserID:     ownerUserID,
-		Name:            "  Finance reviewer  ",
-		Role:            "  finance_reviewer  ",
-		RuntimeNodeID:   runtimeNodeID,
-		ProviderType:    "  codex  ",
-		SessionPolicy:   sessionPolicy,
-		WorkspacePolicy: workspacePolicy,
-	})
-	if err != nil {
-		t.Fatalf("create draft: %v", err)
+func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigAndProvisioning(t *testing.T) {
+	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	dispatchDuringTransaction := false
+	dispatchAfterCommit := false
+	dispatcher.onDispatch = func(_ string, _ cpruntime.RuntimeCommand) {
+		dispatchDuringTransaction = repo.inTransaction
+		dispatchAfterCommit = repo.transactionCommitCount == 1
 	}
 
-	if created.TenantID != tenantID {
-		t.Fatalf("expected tenant id %s, got %s", tenantID, created.TenantID)
+	created, err := svc.CreateDigitalEmployee(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create digital employee: %v", err)
 	}
-	if created.TeamID == nil || *created.TeamID != teamID {
-		t.Fatalf("expected team id %s, got %#v", teamID, created.TeamID)
+
+	if created.TenantID != req.TenantID {
+		t.Fatalf("expected tenant id %s, got %s", req.TenantID, created.TenantID)
 	}
-	if created.Name != "Finance reviewer" {
+	if created.TeamID == nil || *created.TeamID != *req.TeamID {
+		t.Fatalf("expected team id %s, got %#v", *req.TeamID, created.TeamID)
+	}
+	if created.OwnerUserID != req.OwnerUserID {
+		t.Fatalf("expected owner_user_id %s, got %s", req.OwnerUserID, created.OwnerUserID)
+	}
+	if created.EmployeeType != "database_admin" {
+		t.Fatalf("expected employee_type database_admin, got %q", created.EmployeeType)
+	}
+	if created.Name != "Main database admin" {
 		t.Fatalf("expected trimmed name, got %q", created.Name)
 	}
-	if created.Role != "finance_reviewer" {
-		t.Fatalf("expected trimmed role, got %q", created.Role)
+	if created.Role != "database_admin" {
+		t.Fatalf("expected default database admin role, got %q", created.Role)
 	}
 	if created.Status != DigitalEmployeeStatusReady {
 		t.Fatalf("expected ready status after provisioning completion, got %q", created.Status)
 	}
-	if created.RiskLevel != "medium" {
-		t.Fatalf("expected default risk level medium, got %q", created.RiskLevel)
-	}
-	assertEmptyMap(t, created.PermissionPolicy, "permission policy")
-	assertEmptyMap(t, created.ContextPolicy, "context policy")
-	assertEmptyMap(t, created.ApprovalPolicy, "approval policy")
-	assertEmptyMap(t, created.Metadata, "metadata")
 	if repo.createdEmployeeCount != 1 {
 		t.Fatalf("expected one employee to be created, got %d", repo.createdEmployeeCount)
 	}
-	if len(repo.instances) != 1 {
-		t.Fatalf("expected one execution instance, got %#v", repo.instances)
+	if repo.transactionCount != 1 || repo.transactionCommitCount != 1 || repo.transactionRollbackCount != 0 {
+		t.Fatalf("expected exactly one committed transaction, got tx=%d commit=%d rollback=%d", repo.transactionCount, repo.transactionCommitCount, repo.transactionRollbackCount)
 	}
-	var instance DigitalEmployeeExecutionInstanceRecord
-	for _, record := range repo.instances {
-		instance = record
+	if dispatchDuringTransaction || !dispatchAfterCommit {
+		t.Fatalf("expected runtime dispatch after local transaction commit, during_tx=%v after_commit=%v", dispatchDuringTransaction, dispatchAfterCommit)
 	}
-	if instance.Status != ExecutionInstanceStatusReady {
-		t.Fatalf("expected ready execution instance after completion, got %q", instance.Status)
+
+	if repo.createdConfigRevision.Status != ConfigRevisionStatusActive {
+		t.Fatalf("expected initial config revision active, got %q", repo.createdConfigRevision.Status)
 	}
-	if instance.AgentHomeDir != "/runtime/reported/agent-home" {
-		t.Fatalf("expected agent home dir from runtime preflight, got %q", instance.AgentHomeDir)
+	if repo.createdConfigRevision.ApprovedBy == nil || *repo.createdConfigRevision.ApprovedBy != req.OwnerUserID || repo.createdConfigRevision.ApprovedAt == nil {
+		t.Fatalf("expected config revision approved by owner, got approved_by=%#v approved_at=%#v", repo.createdConfigRevision.ApprovedBy, repo.createdConfigRevision.ApprovedAt)
+	}
+	if repo.createdConfigRevision.RoleProfile["employee_type"] != "database_admin" || repo.createdConfigRevision.RoleProfile["role"] != "database_admin" {
+		t.Fatalf("expected role profile to include owner type and role, got %#v", repo.createdConfigRevision.RoleProfile)
+	}
+	if repo.createdConfigRevision.RoleProfile["focus"] != "postgres" {
+		t.Fatalf("expected request role profile override to be merged, got %#v", repo.createdConfigRevision.RoleProfile)
+	}
+	if !stringListContains(repo.createdConfigRevision.CapabilitySelection["enabled_external_capabilities"], "change-ticket") {
+		t.Fatalf("expected request capability selection to be merged, got %#v", repo.createdConfigRevision.CapabilitySelection)
+	}
+
+	if repo.createdEffectiveConfig.Status != EffectiveConfigStatusApproved {
+		t.Fatalf("expected approved effective config, got %q", repo.createdEffectiveConfig.Status)
+	}
+	if repo.createdEffectiveConfig.ApprovedBy == nil || *repo.createdEffectiveConfig.ApprovedBy != req.OwnerUserID || repo.createdEffectiveConfig.ApprovedAt == nil {
+		t.Fatalf("expected effective config approved by owner, got approved_by=%#v approved_at=%#v", repo.createdEffectiveConfig.ApprovedBy, repo.createdEffectiveConfig.ApprovedAt)
+	}
+	if repo.createdEffectiveConfig.TeamConfigRevisionID == uuid.Nil || repo.createdEffectiveConfig.EmployeeConfigRevisionID == uuid.Nil {
+		t.Fatalf("expected effective config revision ids to be set, got %#v", repo.createdEffectiveConfig)
+	}
+	if len(repo.effectiveConfigs) != 1 {
+		t.Fatalf("expected one effective config, got %#v", repo.effectiveConfigs)
 	}
 	if len(dispatcher.commands) != 1 {
 		t.Fatalf("expected one runtime command, got %#v", dispatcher.commands)
@@ -290,343 +273,139 @@ func TestCreateDraftProvisioningDispatchesRuntimeCommandAndReturnsReadyEmployee(
 	if payload["command_id"] != command.ID {
 		t.Fatalf("expected payload command_id %q, got %#v", command.ID, payload["command_id"])
 	}
-	if payload["digital_employee_id"] != created.ID.String() || payload["execution_instance_id"] != instance.ID.String() {
-		t.Fatalf("unexpected provisioning ids in payload: %#v", payload)
+	if payload["digital_employee_id"] != created.ID.String() {
+		t.Fatalf("expected digital employee id %s in payload, got %#v", created.ID, payload["digital_employee_id"])
 	}
-	if payload["provider_type"] != "codex" || payload["provider_run_protocol"] != providerRunProtocol {
-		t.Fatalf("unexpected provider payload fields: %#v", payload)
+	if payload["employee_type"] != "database_admin" || payload["owner_user_id"] != req.OwnerUserID.String() {
+		t.Fatalf("expected owner/type payload fields, got %#v", payload)
 	}
-	gotSessionPolicy, ok := payload["session_policy"].(map[string]any)
-	if !ok || gotSessionPolicy["mode"] != "reuse_latest" {
-		t.Fatalf("expected session policy in payload, got %#v", payload["session_policy"])
+	if payload["team_config_revision_id"] != repo.createdEffectiveConfig.TeamConfigRevisionID.String() || payload["employee_config_revision_id"] != repo.createdEffectiveConfig.EmployeeConfigRevisionID.String() {
+		t.Fatalf("expected config revision ids in payload, got %#v", payload)
 	}
-	if gotSessionPolicy["token"] != "[redacted]" {
-		t.Fatalf("expected session policy token redacted in payload, got %#v", gotSessionPolicy)
+	roleProfile, ok := payload["role_profile"].(map[string]any)
+	if !ok || roleProfile["employee_type"] != "database_admin" || roleProfile["focus"] != "postgres" {
+		t.Fatalf("expected role profile in payload, got %#v", payload["role_profile"])
 	}
-	gotWorkspacePolicy, ok := payload["workspace_policy"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected workspace policy in payload, got %#v", payload["workspace_policy"])
+	capabilitySelection, ok := payload["capability_selection"].(map[string]any)
+	if !ok || !stringListContains(capabilitySelection["enabled_external_capabilities"], "change-ticket") {
+		t.Fatalf("expected capability selection in payload, got %#v", payload["capability_selection"])
 	}
-	if gotWorkspacePolicy["secret"] != "[redacted]" {
-		t.Fatalf("expected workspace policy secret redacted in payload, got %#v", gotWorkspacePolicy)
+	if _, ok := payload["context_policy_override"].(map[string]any); !ok {
+		t.Fatalf("expected context policy override in payload, got %#v", payload["context_policy_override"])
 	}
-	governanceSnapshot, ok := payload["governance_snapshot"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected governance snapshot object in payload, got %#v", payload["governance_snapshot"])
+	if _, ok := payload["approval_policy_override"].(map[string]any); !ok {
+		t.Fatalf("expected approval policy override in payload, got %#v", payload["approval_policy_override"])
 	}
-	if governanceSnapshot["authorization"] != "[redacted]" {
-		t.Fatalf("expected governance authorization redacted in payload, got %#v", governanceSnapshot)
-	}
-	if gotCapabilityPolicy, ok := governanceSnapshot["capability_policy"].(map[string]any); !ok || gotCapabilityPolicy["api_key"] != "[redacted]" {
-		t.Fatalf("expected governance capability policy api_key redacted in payload, got %#v", governanceSnapshot["capability_policy"])
-	}
-	if gotApprovalPolicy, ok := governanceSnapshot["approval_policy"].(map[string]any); !ok || gotApprovalPolicy["min_risk_for_human"] != "high" {
-		t.Fatalf("expected governance approval policy in payload, got %#v", governanceSnapshot["approval_policy"])
+	if _, ok := payload["output_contract_addendum"].(map[string]any); !ok {
+		t.Fatalf("expected output contract addendum in payload, got %#v", payload["output_contract_addendum"])
 	}
 	if len(repo.commandReceipts) != 1 {
 		t.Fatalf("expected one command receipt, got %#v", repo.commandReceipts)
 	}
-	for _, receipt := range repo.commandReceipts {
-		gotSessionPolicy, ok := receipt.Payload["session_policy"].(map[string]any)
-		if !ok || gotSessionPolicy["token"] != "[redacted]" {
-			t.Fatalf("expected command receipt session policy token redacted, got %#v", receipt.Payload["session_policy"])
-		}
-		gotGovernanceSnapshot, ok := receipt.Payload["governance_snapshot"].(map[string]any)
-		if !ok || gotGovernanceSnapshot["authorization"] != "[redacted]" {
-			t.Fatalf("expected command receipt governance authorization redacted, got %#v", receipt.Payload["governance_snapshot"])
-		}
-	}
 }
 
-func TestCreateDraftRequiresRuntimeConnectionBeforeCreatingEmployee(t *testing.T) {
+func TestCreateDigitalEmployeeRejectsUnknownEmployeeType(t *testing.T) {
 	repo := newMemoryRepository()
 	dispatcher := newFakeRuntimeCommandDispatcher()
 	svc, err := NewServiceWithProvisioning(repo, dispatcher)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
-	tenantID := uuid.New()
 	teamID := uuid.New()
-	ownerUserID := uuid.New()
-	runtimeNodeID := uuid.New()
-	repo.teams[teamID] = tenantID
-	repo.preflight = RuntimeProvisioningPreflight{
-		TenantID:              tenantID,
-		TeamID:                teamID,
-		RuntimeNodeID:         runtimeNodeID,
-		NodeID:                "runtime-node-offline",
-		AgentHomeDir:          "/runtime/reported/agent-home",
-		GovernanceSnapshot:    map[string]any{"team_config_revision_id": uuid.NewString()},
-		HasActiveTeamConfig:   true,
-		RuntimeOnline:         true,
-		EnrollmentApproved:    true,
-		RuntimeSessionActive:  true,
-		ProviderAvailable:     true,
-		ProviderPolicyAllowed: true,
-		RuntimePolicyAllowed:  true,
-	}
 
-	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
-		TenantID:      tenantID,
+	_, err = svc.CreateDigitalEmployee(context.Background(), CreateDigitalEmployeeRequest{
+		TenantID:      uuid.New(),
 		TeamID:        &teamID,
-		OwnerUserID:   ownerUserID,
-		Name:          "Incident analyst",
-		Role:          "incident_analyst",
-		RuntimeNodeID: runtimeNodeID,
-		ProviderType:  "codex",
-	})
-
-	if !errors.Is(err, ErrRuntimeUnavailable) {
-		t.Fatalf("expected runtime unavailable for disconnected runtime, got %v", err)
-	}
-	if repo.createdEmployeeCount != 0 {
-		t.Fatalf("expected disconnected runtime not to create employee, got %d", repo.createdEmployeeCount)
-	}
-	if len(dispatcher.commands) != 0 {
-		t.Fatalf("expected disconnected runtime not to dispatch command, got %#v", dispatcher.commands)
-	}
-}
-
-func TestCreateDraftProvisioningFailureCleansUpEmployeeAndInstance(t *testing.T) {
-	repo := newMemoryRepository()
-	dispatcher := newFakeRuntimeCommandDispatcher()
-	svc, err := NewServiceWithProvisioning(repo, dispatcher)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	teamID := uuid.New()
-	ownerUserID := uuid.New()
-	runtimeNodeID := uuid.New()
-	repo.teams[teamID] = tenantID
-	repo.preflight = RuntimeProvisioningPreflight{
-		TenantID:              tenantID,
-		TeamID:                teamID,
-		RuntimeNodeID:         runtimeNodeID,
-		NodeID:                "runtime-node-1",
-		AgentHomeDir:          "/runtime/reported/agent-home",
-		GovernanceSnapshot:    map[string]any{"team_config_revision_id": uuid.NewString()},
-		HasActiveTeamConfig:   true,
-		RuntimeOnline:         true,
-		EnrollmentApproved:    true,
-		RuntimeSessionActive:  true,
-		ProviderAvailable:     true,
-		ProviderPolicyAllowed: true,
-		RuntimePolicyAllowed:  true,
-	}
-	repo.waitStatus = string(DigitalEmployeeRunStatusFailed)
-	dispatcher.connected["runtime-node-1"] = true
-
-	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
-		TenantID:      tenantID,
-		TeamID:        &teamID,
-		OwnerUserID:   ownerUserID,
-		Name:          "Incident analyst",
-		Role:          "incident_analyst",
-		RuntimeNodeID: runtimeNodeID,
-		ProviderType:  "codex",
-	})
-
-	if !errors.Is(err, ErrRuntimeUnavailable) {
-		t.Fatalf("expected runtime unavailable for failed provisioning, got %v", err)
-	}
-	if len(repo.abortReasons) != 1 {
-		t.Fatalf("expected provisioning abort, got %#v", repo.abortReasons)
-	}
-	for _, record := range repo.employees {
-		if record.DeletedAt == nil || record.Status != DigitalEmployeeStatusError {
-			t.Fatalf("expected failed employee to be error and deleted, got %#v", record)
-		}
-	}
-	for _, record := range repo.instances {
-		if record.DeletedAt == nil || record.Status != ExecutionInstanceStatusError {
-			t.Fatalf("expected failed instance to be error and deleted, got %#v", record)
-		}
-	}
-}
-
-func TestCreateDraftRejectsProviderOutsideTeamPolicyBeforeCreatingEmployee(t *testing.T) {
-	repo := newMemoryRepository()
-	dispatcher := newFakeRuntimeCommandDispatcher()
-	svc, err := NewServiceWithProvisioning(repo, dispatcher)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	teamID := uuid.New()
-	ownerUserID := uuid.New()
-	runtimeNodeID := uuid.New()
-	repo.teams[teamID] = tenantID
-	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
-	repo.preflight.ProviderPolicyAllowed = false
-	dispatcher.connected["runtime-node-1"] = true
-
-	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
-		TenantID:      tenantID,
-		TeamID:        &teamID,
-		OwnerUserID:   ownerUserID,
-		Name:          "Incident analyst",
-		Role:          "incident_analyst",
-		RuntimeNodeID: runtimeNodeID,
-		ProviderType:  "opencode",
-	})
-
-	if !errors.Is(err, ErrProviderUnavailable) {
-		t.Fatalf("expected provider unavailable for provider outside team policy, got %v", err)
-	}
-	if repo.createdEmployeeCount != 0 {
-		t.Fatalf("expected policy rejection not to create employee, got %d", repo.createdEmployeeCount)
-	}
-	if len(dispatcher.commands) != 0 {
-		t.Fatalf("expected policy rejection not to dispatch command, got %#v", dispatcher.commands)
-	}
-}
-
-func TestCreateDraftRejectsRuntimeOutsideTeamPolicyBeforeCreatingEmployee(t *testing.T) {
-	repo := newMemoryRepository()
-	dispatcher := newFakeRuntimeCommandDispatcher()
-	svc, err := NewServiceWithProvisioning(repo, dispatcher)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	teamID := uuid.New()
-	ownerUserID := uuid.New()
-	runtimeNodeID := uuid.New()
-	repo.teams[teamID] = tenantID
-	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
-	repo.preflight.RuntimePolicyAllowed = false
-	dispatcher.connected["runtime-node-1"] = true
-
-	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
-		TenantID:      tenantID,
-		TeamID:        &teamID,
-		OwnerUserID:   ownerUserID,
-		Name:          "Incident analyst",
-		Role:          "incident_analyst",
-		RuntimeNodeID: runtimeNodeID,
-		ProviderType:  "codex",
-	})
-
-	if !errors.Is(err, ErrRuntimeUnavailable) {
-		t.Fatalf("expected runtime unavailable for runtime outside team policy, got %v", err)
-	}
-	if repo.createdEmployeeCount != 0 {
-		t.Fatalf("expected policy rejection not to create employee, got %d", repo.createdEmployeeCount)
-	}
-	if len(dispatcher.commands) != 0 {
-		t.Fatalf("expected policy rejection not to dispatch command, got %#v", dispatcher.commands)
-	}
-}
-
-func TestCreateDraftProvisioningWaitCancellationUsesIndependentCleanupContext(t *testing.T) {
-	repo := newMemoryRepository()
-	dispatcher := newFakeRuntimeCommandDispatcher()
-	svc, err := NewServiceWithProvisioning(repo, dispatcher)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	teamID := uuid.New()
-	ownerUserID := uuid.New()
-	runtimeNodeID := uuid.New()
-	repo.teams[teamID] = tenantID
-	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
-	dispatcher.connected["runtime-node-1"] = true
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	_, err = svc.CreateDraft(ctx, CreateDraftRequest{
-		TenantID:      tenantID,
-		TeamID:        &teamID,
-		OwnerUserID:   ownerUserID,
-		Name:          "Incident analyst",
-		Role:          "incident_analyst",
-		RuntimeNodeID: runtimeNodeID,
-		ProviderType:  "codex",
-	})
-
-	if !errors.Is(err, ErrRuntimeUnavailable) || !strings.Contains(err.Error(), context.Canceled.Error()) {
-		t.Fatalf("expected runtime unavailable wrapping context cancellation, got %v", err)
-	}
-	if len(repo.abortReasons) != 1 {
-		t.Fatalf("expected provisioning abort after wait cancellation, got %#v", repo.abortReasons)
-	}
-	if len(repo.abortContextErrors) != 1 || repo.abortContextErrors[0] != nil {
-		t.Fatalf("expected abort cleanup to use independent live context, got %#v", repo.abortContextErrors)
-	}
-	for _, record := range repo.employees {
-		if record.DeletedAt == nil || record.Status != DigitalEmployeeStatusError {
-			t.Fatalf("expected cancelled provisioning employee to be error and deleted, got %#v", record)
-		}
-	}
-	for _, record := range repo.instances {
-		if record.DeletedAt == nil || record.Status != ExecutionInstanceStatusError {
-			t.Fatalf("expected cancelled provisioning instance to be error and deleted, got %#v", record)
-		}
-	}
-}
-
-func TestCreateDraftRequiresOwnerBeforeCreatingEmployee(t *testing.T) {
-	repo := newMemoryRepository()
-	dispatcher := newFakeRuntimeCommandDispatcher()
-	svc, err := NewServiceWithProvisioning(repo, dispatcher)
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	teamID := uuid.New()
-	runtimeNodeID := uuid.New()
-	repo.teams[teamID] = tenantID
-	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
-	repo.waitStatus = string(DigitalEmployeeRunStatusCompleted)
-	dispatcher.connected["runtime-node-1"] = true
-
-	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
-		TenantID:      tenantID,
-		TeamID:        &teamID,
-		Name:          "Incident analyst",
-		Role:          "incident_analyst",
-		RuntimeNodeID: runtimeNodeID,
-		ProviderType:  "codex",
-	})
-
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("expected invalid input for missing owner_user_id, got %v", err)
-	}
-	if repo.createdEmployeeCount != 0 {
-		t.Fatalf("expected missing owner not to create employee, got %d", repo.createdEmployeeCount)
-	}
-	if len(dispatcher.commands) != 0 {
-		t.Fatalf("expected missing owner not to dispatch command, got %#v", dispatcher.commands)
-	}
-}
-
-func TestCreateDraftRequiresExistingTenantTeam(t *testing.T) {
-	repo := newMemoryRepository()
-	svc, err := NewServiceWithProvisioning(repo, newFakeRuntimeCommandDispatcher())
-	if err != nil {
-		t.Fatalf("new service: %v", err)
-	}
-	tenantID := uuid.New()
-	teamID := uuid.New()
-	ownerUserID := uuid.New()
-
-	_, err = svc.CreateDraft(context.Background(), CreateDraftRequest{
-		TenantID:      tenantID,
-		TeamID:        &teamID,
-		OwnerUserID:   ownerUserID,
-		Name:          "Incident analyst",
-		Role:          "incident_analyst",
+		OwnerUserID:   uuid.New(),
+		EmployeeType:  "project_coordinator",
+		Name:          "Coordinator",
 		RuntimeNodeID: uuid.New(),
 		ProviderType:  "codex",
 	})
 
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected not found for missing tenant team, got %v", err)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for unknown employee type, got %v", err)
 	}
-	if len(repo.employees) != 0 {
-		t.Fatalf("expected missing tenant team not to create employee, got %#v", repo.employees)
+	if repo.createdEmployeeCount != 0 || repo.transactionCount != 0 {
+		t.Fatalf("expected type rejection before creation, employees=%d transactions=%d", repo.createdEmployeeCount, repo.transactionCount)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected type rejection not to dispatch command, got %#v", dispatcher.commands)
+	}
+}
+
+func TestCreateDigitalEmployeeBlocksCapabilityOutsideTeamPolicyBeforeProvisioning(t *testing.T) {
+	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	teamConfigID := repo.currentTeamConfigByTeam[*req.TeamID]
+	teamConfig := repo.teamConfigs[teamConfigID]
+	teamConfig.CapabilityPolicy = map[string]any{
+		"allowed_skills":         []any{"incident-diagnosis"},
+		"allowed_provider_types": []any{"codex"},
+		"allowed_employee_types": []any{"database_admin"},
+	}
+	repo.teamConfigs[teamConfigID] = teamConfig
+
+	_, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input for capability outside team policy, got %v", err)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected capability validation not to dispatch command, got %#v", dispatcher.commands)
+	}
+	if len(repo.employees) != 0 || len(repo.commandReceipts) != 0 {
+		t.Fatalf("expected capability validation rollback before provisioning, employees=%#v receipts=%#v", repo.employees, repo.commandReceipts)
+	}
+}
+
+func TestCreateDigitalEmployeeRollsBackLocalFactsWhenEffectiveConfigFails(t *testing.T) {
+	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	repo.createEffectiveConfigErr = errors.New("effective config insert failed")
+
+	_, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+	if err == nil || !strings.Contains(err.Error(), "effective config") {
+		t.Fatalf("expected effective config creation failure, got %v", err)
+	}
+	if repo.transactionCount != 1 || repo.transactionCommitCount != 0 || repo.transactionRollbackCount != 1 {
+		t.Fatalf("expected one rolled-back transaction, got tx=%d commit=%d rollback=%d", repo.transactionCount, repo.transactionCommitCount, repo.transactionRollbackCount)
+	}
+	if len(repo.employees) != 0 || len(repo.instances) != 0 || len(repo.commandReceipts) != 0 {
+		t.Fatalf("expected local facts rollback, employees=%#v instances=%#v receipts=%#v", repo.employees, repo.instances, repo.commandReceipts)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected no runtime dispatch after local failure, got %#v", dispatcher.commands)
+	}
+}
+
+func TestCreateDigitalEmployeeProvisioningTimeoutCleansUpCreationFacts(t *testing.T) {
+	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	svc.provisioningTimeout = time.Nanosecond
+	repo.waitHook = func(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeCommandReceipt, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+
+	_, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+	if !errors.Is(err, ErrRuntimeUnavailable) || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
+		t.Fatalf("expected runtime unavailable wrapping provisioning timeout, got %v", err)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected provisioning command to be dispatched before timeout, got %#v", dispatcher.commands)
+	}
+	if len(repo.abortReasons) != 1 {
+		t.Fatalf("expected one provisioning abort, got %#v", repo.abortReasons)
+	}
+	if _, err := repo.GetCurrentDigitalEmployeeEffectiveConfig(context.Background(), req.TenantID, firstEmployeeID(repo)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected approved effective config to be revoked by abort, got %v", err)
+	}
+	visible, err := repo.ListDigitalEmployees(context.Background(), ListDigitalEmployeesParams{TenantID: req.TenantID})
+	if err != nil {
+		t.Fatalf("list employees: %v", err)
+	}
+	if len(visible) != 0 {
+		t.Fatalf("expected no visible provisioning employee after abort, got %#v", visible)
 	}
 }
 
@@ -1369,6 +1148,69 @@ func newCreateOptionsTestService(t *testing.T, capabilityPolicy, runtimeScopePol
 	return svc, repo, tenantID, teamID
 }
 
+func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryRepository, *fakeRuntimeCommandDispatcher, CreateDigitalEmployeeRequest) {
+	t.Helper()
+	repo := newMemoryRepository()
+	dispatcher := newFakeRuntimeCommandDispatcher()
+	svc, err := NewServiceWithProvisioning(repo, dispatcher)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	ownerUserID := uuid.New()
+	runtimeNodeID := uuid.New()
+	teamConfigID := uuid.New()
+	repo.teams[teamID] = tenantID
+	repo.teamConfigs[teamConfigID] = TeamConfigInput{
+		ID:             teamConfigID,
+		TenantID:       tenantID,
+		TeamID:         teamID,
+		RevisionNumber: 7,
+		Status:         TeamConfigRevisionStatusActive,
+		CapabilityPolicy: map[string]any{
+			"allowed_employee_types":        []any{"database_admin"},
+			"allowed_provider_types":        []any{"codex"},
+			"allowed_skills":                []any{"database-troubleshooting", "sql-review", "backup-restore", "performance-tuning"},
+			"allowed_mcp_servers":           []any{"postgres-readonly", "mysql-readonly"},
+			"allowed_external_capabilities": []any{"change-ticket"},
+		},
+		ContextPolicy: map[string]any{
+			"sources": []any{"runbook", "monitoring", "database_schema"},
+		},
+		ApprovalPolicy: map[string]any{
+			"min_risk_for_human":          "high",
+			"write_actions_require_human": true,
+		},
+		RuntimeScopePolicy: map[string]any{
+			"allowed_provider_types": []any{"codex"},
+		},
+	}
+	repo.currentTeamConfigByTeam[teamID] = teamConfigID
+	repo.preflight = validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID)
+	repo.preflight.GovernanceSnapshot = map[string]any{
+		"team_config_revision_id": teamConfigID.String(),
+		"authorization":           "Bearer raw-token",
+		"capability_policy":       map[string]any{"api_key": "raw-key"},
+	}
+	repo.waitStatus = string(DigitalEmployeeRunStatusCompleted)
+	dispatcher.connected["runtime-node-1"] = true
+	return svc, repo, dispatcher, CreateDigitalEmployeeRequest{
+		TenantID:               tenantID,
+		TeamID:                 &teamID,
+		OwnerUserID:            ownerUserID,
+		EmployeeType:           "database_admin",
+		Name:                   "  Main database admin  ",
+		RoleProfile:            map[string]any{"focus": "postgres"},
+		CapabilitySelection:    map[string]any{"enabled_external_capabilities": []string{"change-ticket"}},
+		RuntimeNodeID:          runtimeNodeID,
+		ProviderType:           "  codex  ",
+		SessionPolicy:          map[string]any{"mode": "reuse_latest", "token": "raw-session-token"},
+		WorkspacePolicy:        map[string]any{"labels": map[string]any{"tier": "standard"}, "secret": "raw-workspace-secret"},
+		OutputContractAddendum: map[string]any{"format": "markdown"},
+	}
+}
+
 func assertBlockingIssue(t *testing.T, validation EffectiveConfigValidation, code string) {
 	t.Helper()
 	for _, issue := range validation.BlockingErrors {
@@ -1387,6 +1229,22 @@ func assertBlockingIssuePath(t *testing.T, validation EffectiveConfigValidation,
 		}
 	}
 	t.Fatalf("expected blocking issue %q at %q, got %#v", code, path, validation.BlockingErrors)
+}
+
+func stringListContains(value any, expected string) bool {
+	for _, item := range stringList(value) {
+		if item == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func firstEmployeeID(repo *memoryRepository) uuid.UUID {
+	for id := range repo.employees {
+		return id
+	}
+	return uuid.Nil
 }
 
 func validRuntimeProvisioningPreflight(tenantID, teamID, runtimeNodeID uuid.UUID) RuntimeProvisioningPreflight {
@@ -1429,6 +1287,12 @@ type memoryRepository struct {
 	nextConfigRevisionNumber int32
 	createdConfigRevision    CreateConfigRevisionParams
 	createdEffectiveConfig   CreateEffectiveConfigParams
+	createEffectiveConfigErr error
+	waitHook                 func(context.Context, uuid.UUID, string, time.Duration) (*RuntimeCommandReceipt, error)
+	transactionCount         int
+	transactionCommitCount   int
+	transactionRollbackCount int
+	inTransaction            bool
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -1443,6 +1307,29 @@ func newMemoryRepository() *memoryRepository {
 		effectiveConfigs:         make(map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord),
 		nextConfigRevisionNumber: 1,
 	}
+}
+
+func (r *memoryRepository) WithTransaction(ctx context.Context, fn func(Repository) error) error {
+	if r.inTransaction {
+		return errors.New("nested transaction")
+	}
+	snapshot := r.snapshot()
+	r.transactionCount++
+	r.inTransaction = true
+	err := fn(r)
+	r.inTransaction = false
+	if err != nil {
+		r.restore(snapshot)
+		r.transactionRollbackCount++
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		r.restore(snapshot)
+		r.transactionRollbackCount++
+		return err
+	}
+	r.transactionCommitCount++
+	return nil
 }
 
 func (r *memoryRepository) CreateDigitalEmployee(_ context.Context, params CreateDigitalEmployeeParams) (DigitalEmployeeRecord, error) {
@@ -1476,6 +1363,9 @@ func (r *memoryRepository) ListDigitalEmployees(_ context.Context, params ListDi
 		if record.TenantID != params.TenantID {
 			continue
 		}
+		if record.DeletedAt != nil {
+			continue
+		}
 		if params.Status != "" && record.Status != params.Status {
 			continue
 		}
@@ -1486,7 +1376,7 @@ func (r *memoryRepository) ListDigitalEmployees(_ context.Context, params ListDi
 
 func (r *memoryRepository) GetDigitalEmployee(_ context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeRecord, error) {
 	record, ok := r.employees[employeeID]
-	if !ok || record.TenantID != tenantID {
+	if !ok || record.TenantID != tenantID || record.DeletedAt != nil {
 		return DigitalEmployeeRecord{}, ErrNotFound
 	}
 	return record, nil
@@ -1639,6 +1529,9 @@ func (r *memoryRepository) GetCurrentDigitalEmployeeEffectiveConfig(_ context.Co
 
 func (r *memoryRepository) CreateDigitalEmployeeEffectiveConfig(_ context.Context, params CreateEffectiveConfigParams) (DigitalEmployeeEffectiveConfigRecord, error) {
 	r.createdEffectiveConfig = params
+	if r.createEffectiveConfigErr != nil {
+		return DigitalEmployeeEffectiveConfigRecord{}, r.createEffectiveConfigErr
+	}
 	now := time.Now().UTC()
 	record := DigitalEmployeeEffectiveConfigRecord{
 		ID:                       uuid.New(),
@@ -1688,6 +1581,9 @@ func (r *memoryRepository) CreateRuntimeCommandReceipt(_ context.Context, req Cr
 }
 
 func (r *memoryRepository) WaitForRuntimeCommandCompletion(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeCommandReceipt, error) {
+	if r.waitHook != nil {
+		return r.waitHook(ctx, tenantID, commandID, interval)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -1756,13 +1652,168 @@ func (r *memoryRepository) AbortProvisionedDigitalEmployee(ctx context.Context, 
 			receipt.UpdatedAt = now
 		}
 	}
+	for id, record := range r.effectiveConfigs {
+		if record.TenantID == tenantID && record.DigitalEmployeeID == employeeID && record.Status == EffectiveConfigStatusApproved && record.RevokedAt == nil {
+			record.RevokedAt = &now
+			record.UpdatedAt = now
+			r.effectiveConfigs[id] = record
+		}
+	}
 	return nil
 }
 
+type memoryRepositorySnapshot struct {
+	employees                map[uuid.UUID]DigitalEmployeeRecord
+	instances                map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord
+	commandReceipts          map[string]*RuntimeCommandReceipt
+	employeeConfigs          map[uuid.UUID]EmployeeConfigInput
+	effectiveConfigs         map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord
+	nextConfigRevisionNumber int32
+	createdEmployeeCount     int
+	createdConfigRevision    CreateConfigRevisionParams
+	createdEffectiveConfig   CreateEffectiveConfigParams
+}
+
+func (r *memoryRepository) snapshot() memoryRepositorySnapshot {
+	return memoryRepositorySnapshot{
+		employees:                cloneEmployeeRecordMap(r.employees),
+		instances:                cloneExecutionInstanceRecordMap(r.instances),
+		commandReceipts:          cloneCommandReceiptMap(r.commandReceipts),
+		employeeConfigs:          cloneEmployeeConfigInputMap(r.employeeConfigs),
+		effectiveConfigs:         cloneEffectiveConfigRecordMap(r.effectiveConfigs),
+		nextConfigRevisionNumber: r.nextConfigRevisionNumber,
+		createdEmployeeCount:     r.createdEmployeeCount,
+		createdConfigRevision:    cloneCreateConfigRevisionParams(r.createdConfigRevision),
+		createdEffectiveConfig:   cloneCreateEffectiveConfigParams(r.createdEffectiveConfig),
+	}
+}
+
+func (r *memoryRepository) restore(snapshot memoryRepositorySnapshot) {
+	r.employees = snapshot.employees
+	r.instances = snapshot.instances
+	r.commandReceipts = snapshot.commandReceipts
+	r.employeeConfigs = snapshot.employeeConfigs
+	r.effectiveConfigs = snapshot.effectiveConfigs
+	r.nextConfigRevisionNumber = snapshot.nextConfigRevisionNumber
+	r.createdEmployeeCount = snapshot.createdEmployeeCount
+	r.createdConfigRevision = snapshot.createdConfigRevision
+	r.createdEffectiveConfig = snapshot.createdEffectiveConfig
+}
+
+func cloneEmployeeRecordMap(values map[uuid.UUID]DigitalEmployeeRecord) map[uuid.UUID]DigitalEmployeeRecord {
+	cloned := make(map[uuid.UUID]DigitalEmployeeRecord, len(values))
+	for id, record := range values {
+		record.TeamID = validUUIDPtr(record.TeamID)
+		record.Description = cloneStringPtrForTest(record.Description)
+		record.PermissionPolicy = cloneMap(record.PermissionPolicy)
+		record.ContextPolicy = cloneMap(record.ContextPolicy)
+		record.ApprovalPolicy = cloneMap(record.ApprovalPolicy)
+		record.Metadata = cloneMap(record.Metadata)
+		record.DisabledAt = cloneTimePtr(record.DisabledAt)
+		record.ArchivedAt = cloneTimePtr(record.ArchivedAt)
+		record.DeletedAt = cloneTimePtr(record.DeletedAt)
+		cloned[id] = record
+	}
+	return cloned
+}
+
+func cloneExecutionInstanceRecordMap(values map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord) map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord {
+	cloned := make(map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord, len(values))
+	for id, record := range values {
+		record.WorkspacePolicy = cloneMap(record.WorkspacePolicy)
+		record.SessionPolicy = cloneMap(record.SessionPolicy)
+		record.RuntimeSelector = cloneMap(record.RuntimeSelector)
+		record.CapacityRequirements = cloneMap(record.CapacityRequirements)
+		record.FallbackPolicy = cloneMap(record.FallbackPolicy)
+		record.ReadyAt = cloneTimePtr(record.ReadyAt)
+		record.DisabledAt = cloneTimePtr(record.DisabledAt)
+		record.ErrorAt = cloneTimePtr(record.ErrorAt)
+		record.ErrorMessage = cloneStringPtrForTest(record.ErrorMessage)
+		record.DeletedAt = cloneTimePtr(record.DeletedAt)
+		record.Metadata = cloneMap(record.Metadata)
+		cloned[id] = record
+	}
+	return cloned
+}
+
+func cloneCommandReceiptMap(values map[string]*RuntimeCommandReceipt) map[string]*RuntimeCommandReceipt {
+	cloned := make(map[string]*RuntimeCommandReceipt, len(values))
+	for id, receipt := range values {
+		if receipt == nil {
+			cloned[id] = nil
+			continue
+		}
+		copied := *receipt
+		copied.Payload = cloneMap(receipt.Payload)
+		copied.Result = cloneMap(receipt.Result)
+		copied.ErrorMessage = cloneStringPtrForTest(receipt.ErrorMessage)
+		copied.DispatchedAt = cloneTimePtr(receipt.DispatchedAt)
+		copied.CompletedAt = cloneTimePtr(receipt.CompletedAt)
+		cloned[id] = &copied
+	}
+	return cloned
+}
+
+func cloneEmployeeConfigInputMap(values map[uuid.UUID]EmployeeConfigInput) map[uuid.UUID]EmployeeConfigInput {
+	cloned := make(map[uuid.UUID]EmployeeConfigInput, len(values))
+	for id, record := range values {
+		record.RoleProfile = cloneMap(record.RoleProfile)
+		record.ConstitutionAddendum = cloneMap(record.ConstitutionAddendum)
+		record.CapabilitySelection = cloneMap(record.CapabilitySelection)
+		record.ContextPolicyOverride = cloneMap(record.ContextPolicyOverride)
+		record.ApprovalPolicyOverride = cloneMap(record.ApprovalPolicyOverride)
+		record.OutputContractAddendum = cloneMap(record.OutputContractAddendum)
+		cloned[id] = record
+	}
+	return cloned
+}
+
+func cloneEffectiveConfigRecordMap(values map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord) map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord {
+	cloned := make(map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord, len(values))
+	for id, record := range values {
+		record.EffectiveConfig = cloneMap(record.EffectiveConfig)
+		record.ValidationResult = cloneMap(record.ValidationResult)
+		record.ApprovedBy = validUUIDPtr(record.ApprovedBy)
+		record.ApprovedAt = cloneTimePtr(record.ApprovedAt)
+		record.RevokedAt = cloneTimePtr(record.RevokedAt)
+		cloned[id] = record
+	}
+	return cloned
+}
+
+func cloneCreateConfigRevisionParams(params CreateConfigRevisionParams) CreateConfigRevisionParams {
+	params.RoleProfile = cloneMap(params.RoleProfile)
+	params.ConstitutionAddendum = cloneMap(params.ConstitutionAddendum)
+	params.CapabilitySelection = cloneMap(params.CapabilitySelection)
+	params.ContextPolicyOverride = cloneMap(params.ContextPolicyOverride)
+	params.ApprovalPolicyOverride = cloneMap(params.ApprovalPolicyOverride)
+	params.OutputContractAddendum = cloneMap(params.OutputContractAddendum)
+	params.ApprovedBy = validUUIDPtr(params.ApprovedBy)
+	params.ApprovedAt = cloneTimePtr(params.ApprovedAt)
+	return params
+}
+
+func cloneCreateEffectiveConfigParams(params CreateEffectiveConfigParams) CreateEffectiveConfigParams {
+	params.EffectiveConfig = cloneMap(params.EffectiveConfig)
+	params.ValidationResult = cloneMap(params.ValidationResult)
+	params.ApprovedBy = validUUIDPtr(params.ApprovedBy)
+	params.ApprovedAt = cloneTimePtr(params.ApprovedAt)
+	return params
+}
+
+func cloneStringPtrForTest(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
+}
+
 type fakeRuntimeCommandDispatcher struct {
-	connected map[string]bool
-	commands  []cpruntime.RuntimeCommand
-	err       error
+	connected  map[string]bool
+	commands   []cpruntime.RuntimeCommand
+	err        error
+	onDispatch func(string, cpruntime.RuntimeCommand)
 }
 
 func newFakeRuntimeCommandDispatcher() *fakeRuntimeCommandDispatcher {
@@ -1779,6 +1830,9 @@ func (f *fakeRuntimeCommandDispatcher) Dispatch(_ context.Context, nodeID string
 	}
 	if !f.IsConnected(nodeID) {
 		return cpruntime.ErrRuntimeNotConnected
+	}
+	if f.onDispatch != nil {
+		f.onDispatch(nodeID, command)
 	}
 	f.commands = append(f.commands, command)
 	return nil

@@ -315,6 +315,31 @@ type CreateDraftRequest struct {
 	WorkspacePolicy  map[string]any
 }
 
+type CreateDigitalEmployeeRequest struct {
+	TenantID               uuid.UUID
+	TeamID                 *uuid.UUID
+	OwnerUserID            uuid.UUID
+	EmployeeType           string
+	Name                   string
+	Role                   string
+	Description            *string
+	PermissionPolicy       map[string]any
+	ContextPolicy          map[string]any
+	ApprovalPolicy         map[string]any
+	RiskLevel              string
+	Metadata               map[string]any
+	RoleProfile            map[string]any
+	ConstitutionAddendum   map[string]any
+	CapabilitySelection    map[string]any
+	ContextPolicyOverride  map[string]any
+	ApprovalPolicyOverride map[string]any
+	OutputContractAddendum map[string]any
+	RuntimeNodeID          uuid.UUID
+	ProviderType           string
+	SessionPolicy          map[string]any
+	WorkspacePolicy        map[string]any
+}
+
 type CreateDigitalEmployeeConfigRevisionRequest struct {
 	TenantID               uuid.UUID
 	DigitalEmployeeID      uuid.UUID
