@@ -12,6 +12,124 @@ import (
 	cpruntime "github.com/superteam/control-plane/internal/runtime"
 )
 
+func TestEmployeeTypeRegistryExcludesProjectCoordinator(t *testing.T) {
+	types := DefaultEmployeeTypeDefinitions()
+	if len(types) < 6 {
+		t.Fatalf("expected professional engineer types, got %#v", types)
+	}
+	for _, item := range types {
+		if strings.Contains(item.Type, "coordinator") || strings.Contains(item.Label, "协调") {
+			t.Fatalf("project coordinator must not be a reusable employee type: %#v", item)
+		}
+	}
+	if _, ok := EmployeeTypeDefinitionByType("database_admin"); !ok {
+		t.Fatalf("expected database_admin type")
+	}
+	if _, ok := EmployeeTypeDefinitionByType("devops_engineer"); !ok {
+		t.Fatalf("expected devops_engineer type")
+	}
+}
+
+func TestGetCreateOptionsReturnsTeamPolicyAndRuntimeCandidates(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	teamConfigID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.teams[teamID] = tenantID
+	repo.teamConfigs[teamConfigID] = TeamConfigInput{
+		ID:             teamConfigID,
+		TenantID:       tenantID,
+		TeamID:         teamID,
+		RevisionNumber: 4,
+		Status:         TeamConfigRevisionStatusActive,
+		CapabilityPolicy: map[string]any{
+			"allowed_skills":         []any{"database-troubleshooting", "incident-diagnosis"},
+			"allowed_mcp_servers":    []any{"postgres-readonly"},
+			"allowed_provider_types": []any{"codex"},
+			"allowed_employee_types": []any{"database_admin"},
+		},
+		ContextPolicy:  map[string]any{"sources": []any{"runbook", "monitoring"}},
+		ApprovalPolicy: map[string]any{"min_risk_for_human": "high"},
+	}
+	repo.currentTeamConfigByTeam[teamID] = teamConfigID
+	repo.runtimeProviderOptions = []RuntimeProviderOption{{
+		RuntimeNodeID:         runtimeNodeID,
+		NodeID:                "node-ops-01",
+		RuntimeName:           "运维节点 01",
+		ProviderType:          "codex",
+		RuntimeStatus:         "online",
+		ProviderStatus:        "healthy",
+		HealthStatus:          "healthy",
+		CurrentLoad:           1,
+		MaxSlots:              4,
+		AgentHomeDir:          "/srv/superteam/agents",
+		AgentHomeDirAvailable: true,
+		Available:             true,
+		DisabledReason:        "",
+	}}
+
+	options, err := svc.GetCreateOptions(context.Background(), CreateOptionsRequest{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	if err != nil {
+		t.Fatalf("get create options: %v", err)
+	}
+
+	if options.TeamConfig.ID != teamConfigID || options.TeamConfig.RevisionNumber != 4 {
+		t.Fatalf("unexpected team config option: %#v", options.TeamConfig)
+	}
+	if got := options.TeamConfig.AllowedEmployeeTypes; len(got) != 1 || got[0] != "database_admin" {
+		t.Fatalf("expected allowed employee types from policy, got %#v", got)
+	}
+	if len(options.EmployeeTypes) != 1 || options.EmployeeTypes[0].Type != "database_admin" {
+		t.Fatalf("expected filtered employee type database_admin, got %#v", options.EmployeeTypes)
+	}
+	if len(options.RuntimeProviderOptions) != 1 || !options.RuntimeProviderOptions[0].Available {
+		t.Fatalf("expected available runtime provider option, got %#v", options.RuntimeProviderOptions)
+	}
+	if got := options.CapabilityOptions.ProviderTypes; len(got) != 1 || got[0] != "codex" {
+		t.Fatalf("expected provider type from team policy, got %#v", got)
+	}
+}
+
+func TestCreateDigitalEmployeeParamsAndDomainMappingKeepOwnerAndType(t *testing.T) {
+	repo := newMemoryRepository()
+	tenantID := uuid.New()
+	ownerUserID := uuid.New()
+
+	record, err := repo.CreateDigitalEmployee(context.Background(), CreateDigitalEmployeeParams{
+		TenantID:     tenantID,
+		OwnerUserID:  ownerUserID,
+		EmployeeType: "database_admin",
+		Name:         "Database maintainer",
+		Role:         "database_admin",
+		Status:       DigitalEmployeeStatusDraft,
+	})
+	if err != nil {
+		t.Fatalf("create digital employee: %v", err)
+	}
+
+	if record.OwnerUserID != ownerUserID {
+		t.Fatalf("expected owner_user_id %s, got %s", ownerUserID, record.OwnerUserID)
+	}
+	if record.EmployeeType != "database_admin" {
+		t.Fatalf("expected employee_type database_admin, got %q", record.EmployeeType)
+	}
+	employee := employeeFromRecord(record)
+	if employee.OwnerUserID != ownerUserID {
+		t.Fatalf("expected domain owner_user_id %s, got %s", ownerUserID, employee.OwnerUserID)
+	}
+	if employee.EmployeeType != "database_admin" {
+		t.Fatalf("expected domain employee_type database_admin, got %q", employee.EmployeeType)
+	}
+}
+
 func TestCreateDraftProvisioningDispatchesRuntimeCommandAndReturnsReadyEmployee(t *testing.T) {
 	repo := newMemoryRepository()
 	dispatcher := newFakeRuntimeCommandDispatcher()
@@ -1175,6 +1293,8 @@ type memoryRepository struct {
 	abortContextErrors       []error
 	createdEmployeeCount     int
 	teamConfigs              map[uuid.UUID]TeamConfigInput
+	currentTeamConfigByTeam  map[uuid.UUID]uuid.UUID
+	runtimeProviderOptions   []RuntimeProviderOption
 	employeeConfigs          map[uuid.UUID]EmployeeConfigInput
 	effectiveConfigs         map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord
 	nextConfigRevisionNumber int32
@@ -1189,6 +1309,7 @@ func newMemoryRepository() *memoryRepository {
 		instances:                make(map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord),
 		commandReceipts:          make(map[string]*RuntimeCommandReceipt),
 		teamConfigs:              make(map[uuid.UUID]TeamConfigInput),
+		currentTeamConfigByTeam:  make(map[uuid.UUID]uuid.UUID),
 		employeeConfigs:          make(map[uuid.UUID]EmployeeConfigInput),
 		effectiveConfigs:         make(map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord),
 		nextConfigRevisionNumber: 1,
@@ -1201,6 +1322,8 @@ func (r *memoryRepository) CreateDigitalEmployee(_ context.Context, params Creat
 		ID:               uuid.New(),
 		TenantID:         params.TenantID,
 		TeamID:           params.TeamID,
+		OwnerUserID:      params.OwnerUserID,
+		EmployeeType:     params.EmployeeType,
 		Name:             params.Name,
 		Role:             params.Role,
 		Description:      params.Description,
@@ -1246,6 +1369,25 @@ func (r *memoryRepository) EnsureTeamExists(_ context.Context, tenantID, teamID 
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *memoryRepository) GetCurrentTeamConfigRevision(_ context.Context, tenantID, teamID uuid.UUID) (TeamConfigInput, error) {
+	teamConfigID, ok := r.currentTeamConfigByTeam[teamID]
+	if !ok {
+		return TeamConfigInput{}, ErrNotFound
+	}
+	record, ok := r.teamConfigs[teamConfigID]
+	if !ok || record.TenantID != tenantID || record.TeamID != teamID || record.Status != TeamConfigRevisionStatusActive {
+		return TeamConfigInput{}, ErrNotFound
+	}
+	return record, nil
+}
+
+func (r *memoryRepository) ListRuntimeProviderOptionsForCreate(_ context.Context, tenantID, teamID uuid.UUID) ([]RuntimeProviderOption, error) {
+	if err := r.EnsureTeamExists(context.Background(), tenantID, teamID); err != nil {
+		return nil, err
+	}
+	return append([]RuntimeProviderOption(nil), r.runtimeProviderOptions...), nil
 }
 
 func (r *memoryRepository) UpdateDigitalEmployeeStatus(_ context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {

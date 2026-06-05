@@ -58,7 +58,8 @@ func (s ExecutionInstanceStatus) IsValid() bool {
 type ConfigRevisionStatus string
 
 const (
-	ConfigRevisionStatusDraft ConfigRevisionStatus = "draft"
+	ConfigRevisionStatusDraft  ConfigRevisionStatus = "draft"
+	ConfigRevisionStatusActive ConfigRevisionStatus = "active"
 )
 
 type TeamConfigRevisionStatus string
@@ -91,6 +92,8 @@ type DigitalEmployee struct {
 	ID               uuid.UUID
 	TenantID         uuid.UUID
 	TeamID           *uuid.UUID
+	OwnerUserID      uuid.UUID
+	EmployeeType     string
 	Name             string
 	Role             string
 	Description      *string
@@ -106,6 +109,20 @@ type DigitalEmployee struct {
 	UpdatedAt        time.Time
 }
 
+type EmployeeTypeDefinition struct {
+	Type                         string
+	Label                        string
+	Description                  string
+	DefaultRole                  string
+	RecommendedSkills            []string
+	RecommendedMCPServers        []string
+	RecommendedProviderTypes     []string
+	DefaultCapabilitySelection   map[string]any
+	DefaultContextPolicyOverride map[string]any
+	DefaultApprovalPolicy        map[string]any
+	Metadata                     map[string]any
+}
+
 type TeamConfigInput struct {
 	ID                          uuid.UUID
 	TenantID                    uuid.UUID
@@ -119,6 +136,59 @@ type TeamConfigInput struct {
 	ArtifactContract            map[string]any
 	InternalCollaborationPolicy map[string]any
 	RuntimeScopePolicy          map[string]any
+}
+
+type TeamConfigCreateOption struct {
+	ID                          uuid.UUID
+	TenantID                    uuid.UUID
+	TeamID                      uuid.UUID
+	RevisionNumber              int32
+	Status                      TeamConfigRevisionStatus
+	AllowedEmployeeTypes        []string
+	AllowedProviderTypes        []string
+	AllowedSkills               []string
+	AllowedMCPServers           []string
+	AllowedExternalCaps         []string
+	CapabilityPolicy            map[string]any
+	ContextPolicy               map[string]any
+	ApprovalPolicy              map[string]any
+	ArtifactContract            map[string]any
+	InternalCollaborationPolicy map[string]any
+	RuntimeScopePolicy          map[string]any
+}
+
+type CapabilityOptions struct {
+	ProviderTypes        []string
+	Skills               []string
+	MCPServers           []string
+	ExternalCapabilities []string
+}
+
+type RuntimeProviderOption struct {
+	RuntimeNodeID         uuid.UUID
+	NodeID                string
+	RuntimeName           string
+	ProviderType          string
+	RuntimeStatus         string
+	ProviderStatus        string
+	HealthStatus          string
+	CurrentLoad           int32
+	MaxSlots              int32
+	AgentHomeDir          string
+	AgentHomeDirAvailable bool
+	Available             bool
+	DisabledReason        string
+}
+
+type PolicyDefaults struct {
+	PermissionPolicy      map[string]any
+	ContextPolicyOverride map[string]any
+	ApprovalPolicy        map[string]any
+	CapabilitySelection   map[string]any
+	RuntimeSelector       map[string]any
+	WorkspacePolicy       map[string]any
+	SessionPolicy         map[string]any
+	Metadata              map[string]any
 }
 
 type EmployeeConfigInput struct {
@@ -212,6 +282,19 @@ type RuntimeProvisioningPreflight struct {
 	ProviderAvailable     bool
 	ProviderPolicyAllowed bool
 	RuntimePolicyAllowed  bool
+}
+
+type CreateOptionsRequest struct {
+	TenantID uuid.UUID
+	TeamID   uuid.UUID
+}
+
+type CreateOptions struct {
+	TeamConfig             TeamConfigCreateOption
+	EmployeeTypes          []EmployeeTypeDefinition
+	CapabilityOptions      CapabilityOptions
+	RuntimeProviderOptions []RuntimeProviderOption
+	PolicyDefaults         PolicyDefaults
 }
 
 type CreateDraftRequest struct {

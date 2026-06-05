@@ -12,6 +12,8 @@ type Repository interface {
 	ListDigitalEmployees(ctx context.Context, params ListDigitalEmployeesParams) ([]DigitalEmployeeRecord, error)
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeRecord, error)
 	EnsureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error
+	GetCurrentTeamConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (TeamConfigInput, error)
+	ListRuntimeProviderOptionsForCreate(ctx context.Context, tenantID, teamID uuid.UUID) ([]RuntimeProviderOption, error)
 	GetRuntimeProvisioningPreflight(ctx context.Context, tenantID, teamID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error)
 	UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error)
 	UpsertDigitalEmployeeExecutionInstance(ctx context.Context, params UpsertExecutionInstanceParams) (DigitalEmployeeExecutionInstanceRecord, error)
@@ -30,6 +32,8 @@ type Repository interface {
 type CreateDigitalEmployeeParams struct {
 	TenantID         uuid.UUID
 	TeamID           *uuid.UUID
+	OwnerUserID      uuid.UUID
+	EmployeeType     string
 	Name             string
 	Role             string
 	Description      *string
@@ -95,6 +99,8 @@ type DigitalEmployeeRecord struct {
 	ID               uuid.UUID
 	TenantID         uuid.UUID
 	TeamID           *uuid.UUID
+	OwnerUserID      uuid.UUID
+	EmployeeType     string
 	Name             string
 	Role             string
 	Description      *string

@@ -39,6 +39,139 @@ func NewServiceWithProvisioning(repository Repository, dispatcher RuntimeCommand
 	}, nil
 }
 
+func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest) (*CreateOptions, error) {
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if err := s.repository.EnsureTeamExists(ctx, req.TenantID, req.TeamID); err != nil {
+		return nil, fmt.Errorf("get team: %w", err)
+	}
+	teamConfig, err := s.repository.GetCurrentTeamConfigRevision(ctx, req.TenantID, req.TeamID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, fmt.Errorf("%w: active team governance config is required", ErrEffectiveConfigRequired)
+		}
+		return nil, fmt.Errorf("get current team config revision: %w", err)
+	}
+	runtimeOptions, err := s.repository.ListRuntimeProviderOptionsForCreate(ctx, req.TenantID, req.TeamID)
+	if err != nil {
+		return nil, fmt.Errorf("list runtime provider options: %w", err)
+	}
+
+	return &CreateOptions{
+		TeamConfig:             teamConfigCreateOption(teamConfig),
+		EmployeeTypes:          employeeTypesForTeamConfig(teamConfig),
+		CapabilityOptions:      capabilityOptionsFromTeamConfig(teamConfig),
+		RuntimeProviderOptions: append([]RuntimeProviderOption(nil), runtimeOptions...),
+		PolicyDefaults:         emptyPolicyDefaults(),
+	}, nil
+}
+
+func teamConfigCreateOption(teamConfig TeamConfigInput) TeamConfigCreateOption {
+	allowedEmployeeTypes := firstNonEmptyStringList(
+		stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_employee_types"),
+		stringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_employee_types", "employee_types"),
+	)
+	allowedProviderTypes := firstNonEmptyStringList(
+		stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_provider_types"),
+		stringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_provider_types", "provider_types"),
+	)
+	return TeamConfigCreateOption{
+		ID:                          teamConfig.ID,
+		TenantID:                    teamConfig.TenantID,
+		TeamID:                      teamConfig.TeamID,
+		RevisionNumber:              teamConfig.RevisionNumber,
+		Status:                      teamConfig.Status,
+		AllowedEmployeeTypes:        cloneStringSlice(allowedEmployeeTypes),
+		AllowedProviderTypes:        cloneStringSlice(allowedProviderTypes),
+		AllowedSkills:               stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_skills"),
+		AllowedMCPServers:           stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_mcp_servers"),
+		AllowedExternalCaps:         stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_external_capabilities"),
+		CapabilityPolicy:            cloneMap(teamConfig.CapabilityPolicy),
+		ContextPolicy:               cloneMap(teamConfig.ContextPolicy),
+		ApprovalPolicy:              cloneMap(teamConfig.ApprovalPolicy),
+		ArtifactContract:            cloneMap(teamConfig.ArtifactContract),
+		InternalCollaborationPolicy: cloneMap(teamConfig.InternalCollaborationPolicy),
+		RuntimeScopePolicy:          cloneMap(teamConfig.RuntimeScopePolicy),
+	}
+}
+
+func capabilityOptionsFromTeamConfig(teamConfig TeamConfigInput) CapabilityOptions {
+	return CapabilityOptions{
+		ProviderTypes: firstNonEmptyStringList(
+			stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_provider_types"),
+			stringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_provider_types", "provider_types"),
+		),
+		Skills:               stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_skills"),
+		MCPServers:           stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_mcp_servers"),
+		ExternalCapabilities: stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_external_capabilities"),
+	}
+}
+
+func employeeTypesForTeamConfig(teamConfig TeamConfigInput) []EmployeeTypeDefinition {
+	allowedTypes := stringListFromPolicy(teamConfig.CapabilityPolicy, "allowed_employee_types")
+	if len(allowedTypes) == 0 {
+		allowedTypes = stringListFromPolicy(teamConfig.RuntimeScopePolicy, "allowed_employee_types", "employee_types")
+	}
+	defaultTypes := DefaultEmployeeTypeDefinitions()
+	if len(allowedTypes) == 0 {
+		return defaultTypes
+	}
+	allowedSet := stringSet(allowedTypes)
+	filtered := make([]EmployeeTypeDefinition, 0, len(defaultTypes))
+	for _, definition := range defaultTypes {
+		if allowedSet[definition.Type] {
+			filtered = append(filtered, definition)
+		}
+	}
+	return filtered
+}
+
+func stringListFromAnyPolicy(value any) []string {
+	return stringList(value)
+}
+
+func stringListFromPolicy(policy map[string]any, keys ...string) []string {
+	for _, key := range keys {
+		if _, ok := policy[key]; !ok {
+			continue
+		}
+		values, issues := stringListPolicyValue(policy, key, key)
+		if len(issues) != 0 {
+			return nil
+		}
+		if len(values) != 0 {
+			return stringListFromAnyPolicy(values)
+		}
+	}
+	return nil
+}
+
+func firstNonEmptyStringList(candidates ...[]string) []string {
+	for _, candidate := range candidates {
+		if len(candidate) != 0 {
+			return cloneStringSlice(candidate)
+		}
+	}
+	return nil
+}
+
+func emptyPolicyDefaults() PolicyDefaults {
+	return PolicyDefaults{
+		PermissionPolicy:      map[string]any{},
+		ContextPolicyOverride: map[string]any{},
+		ApprovalPolicy:        map[string]any{},
+		CapabilitySelection:   map[string]any{},
+		RuntimeSelector:       map[string]any{},
+		WorkspacePolicy:       map[string]any{},
+		SessionPolicy:         map[string]any{},
+		Metadata:              map[string]any{},
+	}
+}
+
 func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*DigitalEmployee, error) {
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
@@ -89,6 +222,7 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dig
 	record, err := s.repository.CreateDigitalEmployee(ctx, CreateDigitalEmployeeParams{
 		TenantID:         req.TenantID,
 		TeamID:           validUUIDPtr(req.TeamID),
+		EmployeeType:     "general_engineer",
 		Name:             name,
 		Role:             role,
 		Description:      description,
@@ -548,6 +682,8 @@ func employeeFromRecord(record DigitalEmployeeRecord) *DigitalEmployee {
 		ID:               record.ID,
 		TenantID:         record.TenantID,
 		TeamID:           validUUIDPtr(record.TeamID),
+		OwnerUserID:      record.OwnerUserID,
+		EmployeeType:     record.EmployeeType,
 		Name:             record.Name,
 		Role:             record.Role,
 		Description:      trimOptionalString(record.Description),

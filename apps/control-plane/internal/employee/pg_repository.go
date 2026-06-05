@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,6 +43,8 @@ func (r *PgRepository) CreateDigitalEmployee(ctx context.Context, params CreateD
 	employee, err := r.q.CreateDigitalEmployee(ctx, queries.CreateDigitalEmployeeParams{
 		TenantID:         params.TenantID,
 		TeamID:           nullUUIDFromPtr(params.TeamID),
+		OwnerUserID:      params.OwnerUserID,
+		EmployeeType:     params.EmployeeType,
 		Name:             params.Name,
 		Role:             params.Role,
 		Description:      textFromPtr(params.Description),
@@ -99,6 +102,46 @@ func (r *PgRepository) EnsureTeamExists(ctx context.Context, tenantID, teamID uu
 		return mapNoRows(err)
 	}
 	return nil
+}
+
+func (r *PgRepository) GetCurrentTeamConfigRevision(ctx context.Context, tenantID, teamID uuid.UUID) (TeamConfigInput, error) {
+	revision, err := r.q.GetCurrentTenantTeamConfigRevision(ctx, queries.GetCurrentTenantTeamConfigRevisionParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	if err != nil {
+		return TeamConfigInput{}, mapNoRows(err)
+	}
+	return teamConfigInputFromQuery(revision)
+}
+
+func (r *PgRepository) ListRuntimeProviderOptionsForCreate(ctx context.Context, tenantID, teamID uuid.UUID) ([]RuntimeProviderOption, error) {
+	rows, err := r.q.ListRuntimeProviderOptionsForDigitalEmployeeCreate(ctx, queries.ListRuntimeProviderOptionsForDigitalEmployeeCreateParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	options := make([]RuntimeProviderOption, 0, len(rows))
+	for _, row := range rows {
+		options = append(options, RuntimeProviderOption{
+			RuntimeNodeID:         row.RuntimeNodeID,
+			NodeID:                row.NodeID,
+			RuntimeName:           row.RuntimeName,
+			ProviderType:          stringFromText(row.ProviderType),
+			RuntimeStatus:         row.RuntimeStatus,
+			ProviderStatus:        stringFromText(row.ProviderStatus),
+			HealthStatus:          stringFromText(row.HealthStatus),
+			CurrentLoad:           row.CurrentLoad,
+			MaxSlots:              row.MaxSlots,
+			AgentHomeDir:          row.AgentHomeDir,
+			AgentHomeDirAvailable: strings.TrimSpace(row.AgentHomeDir) != "",
+			Available:             row.Available,
+			DisabledReason:        row.DisabledReason,
+		})
+	}
+	return options, nil
 }
 
 func (r *PgRepository) GetRuntimeProvisioningPreflight(ctx context.Context, tenantID, teamID, runtimeNodeID uuid.UUID, providerType string) (RuntimeProvisioningPreflight, error) {
@@ -394,6 +437,8 @@ func digitalEmployeeRecordFromQuery(employee queries.DigitalEmployee) (DigitalEm
 		ID:               employee.ID,
 		TenantID:         employee.TenantID,
 		TeamID:           uuidPtrFromNull(employee.TeamID),
+		OwnerUserID:      employee.OwnerUserID,
+		EmployeeType:     employee.EmployeeType,
 		Name:             employee.Name,
 		Role:             employee.Role,
 		Description:      stringPtrFromText(employee.Description),
