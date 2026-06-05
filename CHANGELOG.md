@@ -66,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-05 16:12：Runtime 节点页升级为总览工作台，新增 Runtime overview/events Console API、`runtime_events` 统一事件流、Provider 能力聚合、接入批准/拒绝操作和事件审计 Tab；本期不包含 Runtime 详情页、接入密钥和诊断包功能。
 - 2026-06-05 01:00：Web 控制台新增“技能管理”“项目管理”和“协作集成”一级菜单及占位页，其中“协作集成”用于后续接入钉钉、飞书等企业通讯软件的消息交互、审批触达和结果通知。
 - 2026-06-05 00:24：Control Plane 新增 Runtime command HTTP writeback API，Runtime session auth 可回写 provider 事件、完成、失败、取消和超时终态，并将事实持久化到 command receipt、task run/event 与 Provider session/event 双投影。
 - 2026-06-04 23:48：Control Plane 暴露数字员工 run Console API 路由，支持创建、列表、详情、事件查询和停止，并接入独立 `employee.run.*` 授权 action 与真实 app wiring。
