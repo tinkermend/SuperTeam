@@ -13,69 +13,90 @@ import (
 )
 
 const AbortProvisionedDigitalEmployee = `-- name: AbortProvisionedDigitalEmployee :exec
-WITH aborted_instance AS (
-    UPDATE digital_employee_execution_instances
+WITH abort_args AS (
+    SELECT
+        $1::text AS reason,
+        $2::uuid AS execution_instance_id,
+        $3::uuid AS tenant_id,
+        $4::uuid AS digital_employee_id,
+        $2::uuid = '00000000-0000-0000-0000-000000000000'::uuid AS abort_by_employee
+),
+aborted_instance AS (
+    UPDATE digital_employee_execution_instances dei
     SET status = 'error',
-        error_at = COALESCE(error_at, NOW()),
-        error_message = $1::text,
-        deleted_at = COALESCE(deleted_at, NOW()),
+        error_at = COALESCE(dei.error_at, NOW()),
+        error_message = abort_args.reason,
+        deleted_at = COALESCE(dei.deleted_at, NOW()),
         updated_at = NOW()
-    WHERE id = $2::uuid
-      AND tenant_id = $3::uuid
-      AND digital_employee_id = $4::uuid
-    RETURNING id
+    FROM abort_args
+    WHERE dei.id = abort_args.execution_instance_id
+      AND dei.tenant_id = abort_args.tenant_id
+      AND dei.digital_employee_id = abort_args.digital_employee_id
+      AND NOT abort_args.abort_by_employee
+    RETURNING dei.id
+),
+abort_scope AS (
+    SELECT abort_args.abort_by_employee OR EXISTS (SELECT 1 FROM aborted_instance) AS matched
+    FROM abort_args
 ),
 aborted_employee AS (
-    UPDATE digital_employees
+    UPDATE digital_employees de
     SET status = 'error',
-        deleted_at = COALESCE(deleted_at, NOW()),
+        deleted_at = COALESCE(de.deleted_at, NOW()),
         updated_at = NOW()
-    WHERE id = $4::uuid
-      AND tenant_id = $3::uuid
-    RETURNING id
+    FROM abort_args
+    WHERE de.id = abort_args.digital_employee_id
+      AND de.tenant_id = abort_args.tenant_id
+      AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)
+    RETURNING de.id
 ),
 aborted_configs AS (
-    UPDATE digital_employee_config_revisions
-    SET archived_at = COALESCE(archived_at, NOW()),
+    UPDATE digital_employee_config_revisions decr
+    SET archived_at = COALESCE(decr.archived_at, NOW()),
         updated_at = NOW()
-    WHERE tenant_id = $3::uuid
-      AND digital_employee_id = $4::uuid
-      AND archived_at IS NULL
+    FROM abort_args
+    WHERE decr.tenant_id = abort_args.tenant_id
+      AND decr.digital_employee_id = abort_args.digital_employee_id
+      AND decr.archived_at IS NULL
       AND EXISTS (SELECT 1 FROM aborted_employee)
-      AND EXISTS (SELECT 1 FROM aborted_instance)
-    RETURNING id
+      AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)
+    RETURNING decr.id
 ),
 aborted_effective_configs AS (
-    UPDATE digital_employee_effective_configs
+    UPDATE digital_employee_effective_configs deec
     SET status = CASE
-            WHEN status = 'revoked' THEN status
+            WHEN deec.status = 'revoked' THEN deec.status
             ELSE 'revoked'
         END,
-        revoked_at = COALESCE(revoked_at, NOW()),
+        revoked_at = COALESCE(deec.revoked_at, NOW()),
         updated_at = NOW()
-    WHERE tenant_id = $3::uuid
-      AND digital_employee_id = $4::uuid
-      AND revoked_at IS NULL
+    FROM abort_args
+    WHERE deec.tenant_id = abort_args.tenant_id
+      AND deec.digital_employee_id = abort_args.digital_employee_id
+      AND deec.revoked_at IS NULL
       AND EXISTS (SELECT 1 FROM aborted_employee)
-      AND EXISTS (SELECT 1 FROM aborted_instance)
-    RETURNING id
+      AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)
+    RETURNING deec.id
 ),
 aborted_receipts AS (
-    UPDATE runtime_command_receipts
+    UPDATE runtime_command_receipts rcr
     SET status = CASE
-            WHEN status IN ('completed', 'failed', 'cancelled', 'timed_out') THEN status
+            WHEN rcr.status IN ('completed', 'failed', 'cancelled', 'timed_out') THEN rcr.status
             ELSE 'failed'
         END,
-        error_message = COALESCE(error_message, $1::text),
+        error_message = COALESCE(rcr.error_message, abort_args.reason),
         completed_at = CASE
-            WHEN status IN ('completed', 'failed', 'cancelled', 'timed_out') THEN completed_at
-            ELSE COALESCE(completed_at, NOW())
+            WHEN rcr.status IN ('completed', 'failed', 'cancelled', 'timed_out') THEN rcr.completed_at
+            ELSE COALESCE(rcr.completed_at, NOW())
         END,
         updated_at = NOW()
-    WHERE tenant_id = $3::uuid
-      AND resource_type = 'digital_employee_execution_instance'
-      AND resource_id = $2::uuid
-    RETURNING id
+    FROM abort_args
+    JOIN aborted_instance ai ON TRUE
+    JOIN aborted_employee ae ON TRUE
+    WHERE rcr.tenant_id = abort_args.tenant_id
+      AND rcr.resource_type = 'digital_employee_execution_instance'
+      AND rcr.resource_id = ai.id
+    RETURNING rcr.id
 )
 SELECT 1
 `
@@ -853,7 +874,7 @@ SELECT
         AND pc.status = 'healthy'
         AND pc.health_status = 'healthy'
         AND runtime_sessions_active.runtime_node_id IS NOT NULL
-        AND (
+        AND COALESCE((
             (
                 jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array'
                 AND (active_team_config.capability_policy -> 'allowed_provider_types') ? pc.provider_type
@@ -866,7 +887,7 @@ SELECT
                 jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
                 AND (active_team_config.runtime_scope_policy -> 'provider_types') ? pc.provider_type
             )
-        )
+        ), false)
         AND CASE
             WHEN NOT (active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids') THEN true
             WHEN jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') = 'array' THEN
@@ -886,7 +907,7 @@ SELECT
         WHEN runtime_sessions_active.runtime_node_id IS NULL THEN 'runtime_session_inactive'
         WHEN pc.available = false OR pc.status <> 'healthy' OR pc.health_status <> 'healthy' THEN 'provider_unhealthy'
         WHEN COALESCE(pc.provider_type, '') = '' THEN 'provider_type_missing'
-        WHEN NOT (
+        WHEN NOT COALESCE((
             (
                 jsonb_typeof(active_team_config.capability_policy -> 'allowed_provider_types') = 'array'
                 AND (active_team_config.capability_policy -> 'allowed_provider_types') ? pc.provider_type
@@ -899,7 +920,7 @@ SELECT
                 jsonb_typeof(active_team_config.runtime_scope_policy -> 'provider_types') = 'array'
                 AND (active_team_config.runtime_scope_policy -> 'provider_types') ? pc.provider_type
             )
-        ) THEN 'provider_outside_team_policy'
+        ), false) THEN 'provider_outside_team_policy'
         WHEN active_team_config.runtime_scope_policy ? 'allowed_runtime_node_ids'
             AND (
                 jsonb_typeof(active_team_config.runtime_scope_policy -> 'allowed_runtime_node_ids') <> 'array'

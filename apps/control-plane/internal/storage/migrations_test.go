@@ -232,18 +232,28 @@ func TestDigitalEmployeeCreationQueriesHandlePolicyReasonsAndAbortAnchoring(t *t
 	sql := string(body)
 
 	for _, expected := range []string{
+		"COALESCE((",
 		"THEN 'runtime_node_outside_team_policy'",
 		"THEN 'runtime_node_slug_outside_team_policy'",
+		"sqlc.arg('execution_instance_id')::uuid = '00000000-0000-0000-0000-000000000000'::uuid AS abort_by_employee",
+		"AND NOT abort_args.abort_by_employee",
+		"abort_args.abort_by_employee OR EXISTS (SELECT 1 FROM aborted_instance)",
+		"rcr.resource_id = ai.id",
 		"AND EXISTS (SELECT 1 FROM aborted_employee)",
-		"AND EXISTS (SELECT 1 FROM aborted_instance)",
+		"AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)",
 	} {
 		if !strings.Contains(sql, expected) {
 			t.Fatalf("expected employee execution queries to contain %q", expected)
 		}
 	}
 
+	if got := strings.Count(sql, "COALESCE(("); got < 2 {
+		t.Fatalf("expected provider policy predicate to be COALESCE-normalized in availability and disabled reason, got %d occurrences", got)
+	}
+
 	for _, forbidden := range []string{
 		"WHEN pc.id IS NULL THEN 'provider_missing'",
+		"resource_id = sqlc.arg('execution_instance_id')::uuid",
 	} {
 		if strings.Contains(sql, forbidden) {
 			t.Fatalf("employee execution query must not contain unreachable branch %q", forbidden)
