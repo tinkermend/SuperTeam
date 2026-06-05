@@ -219,6 +219,106 @@ paths:
       responses:
         "204":
           description: Lease heartbeat acknowledged
+  /api/v1/runtime/commands/{commandId}/events:
+    post:
+      operationId: recordRuntimeCommandEvent
+      summary: Record a Runtime command event reported by Runtime Agent
+      parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
+        - $ref: "#/components/parameters/CommandId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeCommandEventWritebackRequest"
+      responses:
+        "202":
+          description: Runtime command event accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeCommandWritebackAccepted"
+  /api/v1/runtime/commands/{commandId}/complete:
+    post:
+      operationId: completeRuntimeCommand
+      summary: Complete a Runtime command reported by Runtime Agent
+      parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
+        - $ref: "#/components/parameters/CommandId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeCommandTerminalWritebackRequest"
+      responses:
+        "202":
+          description: Runtime command completion accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeCommandWritebackAccepted"
+  /api/v1/runtime/commands/{commandId}/fail:
+    post:
+      operationId: failRuntimeCommand
+      summary: Fail a Runtime command reported by Runtime Agent
+      parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
+        - $ref: "#/components/parameters/CommandId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeCommandTerminalWritebackRequest"
+      responses:
+        "202":
+          description: Runtime command failure accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeCommandWritebackAccepted"
+  /api/v1/runtime/commands/{commandId}/cancelled:
+    post:
+      operationId: cancelRuntimeCommand
+      summary: Cancel a Runtime command reported by Runtime Agent
+      parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
+        - $ref: "#/components/parameters/CommandId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeCommandTerminalWritebackRequest"
+      responses:
+        "202":
+          description: Runtime command cancellation accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeCommandWritebackAccepted"
+  /api/v1/runtime/commands/{commandId}/timed-out:
+    post:
+      operationId: timeOutRuntimeCommand
+      summary: Time out a Runtime command reported by Runtime Agent
+      parameters:
+        - $ref: "#/components/parameters/RuntimeNodeIdHeader"
+        - $ref: "#/components/parameters/CommandId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeCommandTerminalWritebackRequest"
+      responses:
+        "202":
+          description: Runtime command timeout accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeCommandWritebackAccepted"
   /api/v1/runtime/nodes:
     get:
       operationId: listRuntimeNodes
@@ -1195,6 +1295,13 @@ components:
       schema:
         type: string
         format: uuid
+    CommandId:
+      name: commandId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
     EnrollmentId:
       name: enrollmentId
       in: path
@@ -3098,3 +3205,83 @@ components:
       properties:
         error:
           type: string
+    RuntimeCommandEventWritebackRequest:
+      type: object
+      required:
+        - event_type
+        - sequence_number
+        - payload
+      properties:
+        event_type:
+          type: string
+          minLength: 1
+        sequence_number:
+          type: integer
+          format: int32
+          minimum: 1
+        payload:
+          type: object
+          additionalProperties: true
+        provider_session_external_id:
+          type: string
+        session_state_patch:
+          type: object
+          additionalProperties: true
+        log_ref:
+          type: string
+        raw_event_ref:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    RuntimeCommandTerminalWritebackRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: "#/components/schemas/DigitalEmployeeRunStatus"
+        summary:
+          type: string
+        result:
+          type: object
+          additionalProperties: true
+        diagnostic:
+          type: object
+          additionalProperties: true
+        work_products:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        provider_session_external_id:
+          type: string
+        session_state_patch:
+          type: object
+          additionalProperties: true
+        log_ref:
+          type: string
+        raw_result_ref:
+          type: string
+        error_message:
+          type: string
+        error_code:
+          type: string
+        error_family:
+          type: string
+        exit_code:
+          type: integer
+          format: int32
+        signal:
+          type: string
+        timed_out:
+          type: boolean
+    RuntimeCommandWritebackAccepted:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - accepted

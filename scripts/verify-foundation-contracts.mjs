@@ -17,6 +17,11 @@ const requiredOpenApiOperations = new Set([
   "POST /api/v1/runtime/tasks/{taskId}/complete",
   "POST /api/v1/runtime/tasks/{taskId}/fail",
   "POST /api/v1/runtime/tasks/{taskId}/lease",
+  "POST /api/v1/runtime/commands/{commandId}/events",
+  "POST /api/v1/runtime/commands/{commandId}/complete",
+  "POST /api/v1/runtime/commands/{commandId}/fail",
+  "POST /api/v1/runtime/commands/{commandId}/cancelled",
+  "POST /api/v1/runtime/commands/{commandId}/timed-out",
   "GET /api/v1/runtime/nodes",
   "GET /api/v1/runtime/nodes/{nodeId}",
   "GET /api/v1/teams",
@@ -27,6 +32,11 @@ const requiredOpenApiOperations = new Set([
   "POST /api/v1/digital-employees/{employeeId}/config-revisions",
   "POST /api/v1/digital-employees/{employeeId}/effective-configs/preview",
   "POST /api/v1/digital-employees/{employeeId}/effective-configs/approve",
+  "GET /api/v1/digital-employees/{employeeId}/runs",
+  "POST /api/v1/digital-employees/{employeeId}/runs",
+  "GET /api/v1/digital-employees/{employeeId}/runs/{runId}",
+  "GET /api/v1/digital-employees/{employeeId}/runs/{runId}/events",
+  "POST /api/v1/digital-employees/{employeeId}/runs/{runId}/stop",
 ]);
 
 const requiredRustClientPaths = new Set([
@@ -39,6 +49,9 @@ const requiredRustClientPaths = new Set([
   "/api/v1/runtime/tasks/{taskId}/complete",
   "/api/v1/runtime/tasks/{taskId}/fail",
   "/api/v1/runtime/tasks/{taskId}/lease",
+  "/api/v1/runtime/commands/{commandId}/events",
+  "/api/v1/runtime/commands/{commandId}/complete",
+  "/api/v1/runtime/commands/{commandId}/fail",
   "/api/v1/runtime/sessions/{sessionId}/renew",
   "/api/v1/runtime/nodes/{nodeId}/capabilities",
 ]);
@@ -61,6 +74,10 @@ const requiredTypeScriptClientPaths = new Set([
   "/api/v1/digital-employees/{employeeId}/config-revisions",
   "/api/v1/digital-employees/{employeeId}/effective-configs/preview",
   "/api/v1/digital-employees/{employeeId}/effective-configs/approve",
+  "/api/v1/digital-employees/{employeeId}/runs",
+  "/api/v1/digital-employees/{employeeId}/runs/{runId}",
+  "/api/v1/digital-employees/{employeeId}/runs/{runId}/events",
+  "/api/v1/digital-employees/{employeeId}/runs/{runId}/stop",
 ]);
 
 function readText(path) {
@@ -73,6 +90,9 @@ function normalizePath(path) {
     .replace(/\/+$/, "")
     .replace(/^$/, "/")
     .replace(/\{\}/g, "{taskId}")
+    .replace(/\{command_id\}/g, "{commandId}")
+    .replace(/\/api\/v1\/runtime\/commands\/\{taskId\}/g, "/api/v1/runtime/commands/{commandId}")
+    .replace(/\/api\/v1\/runtime\/commands\/\{id\}/g, "/api/v1/runtime/commands/{commandId}")
     .replace(/\/api\/v1\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/tasks/{taskId}")
     .replace(/\/api\/v1\/runtime\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/runtime/tasks/{taskId}")
     .replace(/\/api\/v1\/tasks\/\{id\}/g, "/api/v1/tasks/{taskId}")
@@ -200,7 +220,9 @@ function readTypeScriptClientPaths() {
             .replaceAll("${teamId}", "{teamId}")
             .replaceAll("${encodedTeamId}", "{teamId}")
             .replaceAll("${employeeId}", "{employeeId}")
-            .replaceAll("${encodedEmployeeId}", "{employeeId}"),
+            .replaceAll("${encodedEmployeeId}", "{employeeId}")
+            .replaceAll("${runId}", "{runId}")
+            .replaceAll("${encodedRunId}", "{runId}"),
         ),
       );
     }
