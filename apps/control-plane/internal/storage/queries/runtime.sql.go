@@ -12,6 +12,42 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const CountOnlineRuntimeNodesForTenant = `-- name: CountOnlineRuntimeNodesForTenant :one
+SELECT COUNT(*)::bigint
+FROM runtime_nodes
+WHERE tenant_id = $1::uuid
+  AND status = 'online'
+  AND last_heartbeat_at > $2::timestamptz
+  AND disabled_at IS NULL
+  AND archived_at IS NULL
+`
+
+type CountOnlineRuntimeNodesForTenantParams struct {
+	TenantID        uuid.UUID          `json:"tenant_id"`
+	LastHeartbeatAt pgtype.Timestamptz `json:"last_heartbeat_at"`
+}
+
+func (q *Queries) CountOnlineRuntimeNodesForTenant(ctx context.Context, arg CountOnlineRuntimeNodesForTenantParams) (int64, error) {
+	row := q.db.QueryRow(ctx, CountOnlineRuntimeNodesForTenant, arg.TenantID, arg.LastHeartbeatAt)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const CountRuntimeNodesForTenant = `-- name: CountRuntimeNodesForTenant :one
+SELECT COUNT(*)::bigint
+FROM runtime_nodes
+WHERE tenant_id = $1::uuid
+  AND archived_at IS NULL
+`
+
+func (q *Queries) CountRuntimeNodesForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, CountRuntimeNodesForTenant, tenantID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const CreateRuntimeNode = `-- name: CreateRuntimeNode :one
 INSERT INTO runtime_nodes (
     node_id,
