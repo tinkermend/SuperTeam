@@ -5,22 +5,99 @@ export type DigitalEmployeeStatus = "draft" | "ready" | "active" | "disabled" | 
 
 export type DigitalEmployee = {
   id: string;
-  tenant_id?: string;
-  team_id?: string;
+  tenant_id: string;
+  team_id: string;
+  owner_user_id: string;
+  employee_type: string;
   name: string;
   role: string;
   description?: string;
   status: DigitalEmployeeStatus;
-  permission_policy?: Record<string, unknown>;
-  context_policy?: Record<string, unknown>;
-  approval_policy?: Record<string, unknown>;
-  risk_level?: string;
+  permission_policy: Record<string, unknown>;
+  context_policy: Record<string, unknown>;
+  approval_policy: Record<string, unknown>;
+  risk_level: string;
   metadata?: Record<string, unknown> & {
     effective_config_label?: string;
     effective_config_status?: "approved" | "draft" | "stale" | "missing" | string;
   };
+  disabled_at?: string;
+  archived_at?: string;
   created_at?: string;
   updated_at?: string;
+};
+
+export type DigitalEmployeeTypeOption = {
+  type: string;
+  label: string;
+  description: string;
+  default_role: string;
+  recommended_skills?: string[];
+  recommended_mcp_servers?: string[];
+  recommended_provider_types?: string[];
+  default_capability_selection?: Record<string, unknown>;
+  default_context_policy_override?: Record<string, unknown>;
+  default_approval_policy?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+};
+
+export type DigitalEmployeeCapabilityOptions = {
+  provider_types: string[];
+  skills: string[];
+  mcp_servers: string[];
+  external_capabilities: string[];
+};
+
+export type DigitalEmployeeRuntimeProviderOption = {
+  runtime_node_id: string;
+  node_id: string;
+  runtime_name: string;
+  provider_type: string;
+  runtime_status: string;
+  provider_status: string;
+  health_status: string;
+  current_load: number;
+  max_slots: number;
+  agent_home_dir: string;
+  agent_home_dir_available: boolean;
+  available: boolean;
+  disabled_reason?: string;
+};
+
+export type DigitalEmployeePolicyDefaults = {
+  permission_policy: Record<string, unknown>;
+  context_policy_override: Record<string, unknown>;
+  approval_policy: Record<string, unknown>;
+  capability_selection: Record<string, unknown>;
+  runtime_selector: Record<string, unknown>;
+  workspace_policy: Record<string, unknown>;
+  session_policy: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+};
+
+export type DigitalEmployeeCreateOptions = {
+  team_config: {
+    id: string;
+    tenant_id: string;
+    team_id: string;
+    revision_number: number;
+    status: string;
+    allowed_employee_types: string[];
+    allowed_provider_types: string[];
+    allowed_skills: string[];
+    allowed_mcp_servers: string[];
+    allowed_external_capabilities: string[];
+    capability_policy: Record<string, unknown>;
+    context_policy: Record<string, unknown>;
+    approval_policy: Record<string, unknown>;
+    artifact_contract: Record<string, unknown>;
+    internal_collaboration_policy: Record<string, unknown>;
+    runtime_scope_policy: Record<string, unknown>;
+  };
+  employee_types: DigitalEmployeeTypeOption[];
+  capability_options: DigitalEmployeeCapabilityOptions;
+  runtime_provider_options: DigitalEmployeeRuntimeProviderOption[];
+  policy_defaults: DigitalEmployeePolicyDefaults;
 };
 
 export type DigitalEmployeeExecutionInstance = {
@@ -120,6 +197,29 @@ export type StopDigitalEmployeeRunInput = {
 };
 
 export type CreateDigitalEmployeeInput = {
+  team_id: string;
+  employee_type: string;
+  name: string;
+  role?: string;
+  description?: string;
+  permission_policy?: Record<string, unknown>;
+  context_policy?: Record<string, unknown>;
+  approval_policy?: Record<string, unknown>;
+  risk_level?: string;
+  metadata?: Record<string, unknown>;
+  role_profile?: Record<string, unknown>;
+  constitution_addendum?: Record<string, unknown>;
+  capability_selection?: Record<string, unknown>;
+  context_policy_override?: Record<string, unknown>;
+  approval_policy_override?: Record<string, unknown>;
+  output_contract_addendum?: Record<string, unknown>;
+  runtime_node_id: string;
+  provider_type: string;
+  session_policy?: Record<string, unknown>;
+  workspace_policy?: Record<string, unknown>;
+};
+
+type LegacyDraftDigitalEmployeeInput = {
   team_id: string;
   name: string;
   role: string;
@@ -266,6 +366,20 @@ export async function listDigitalEmployees(
   return parseJson<DigitalEmployee[]>(response, "digital employees");
 }
 
+export function getDigitalEmployeeCreateOptions(
+  options: ApiClientOptions,
+  teamId: string,
+): Promise<DigitalEmployeeCreateOptions> {
+  const searchParams = new URLSearchParams();
+  searchParams.set("team_id", teamId);
+
+  return getJson<DigitalEmployeeCreateOptions>(
+    options,
+    `/api/v1/digital-employees/create-options?${searchParams.toString()}`,
+    "digital employee create options",
+  );
+}
+
 export function getDigitalEmployee(options: ApiClientOptions, employeeId: string): Promise<DigitalEmployee> {
   return getJson<DigitalEmployee>(
     options,
@@ -276,7 +390,7 @@ export function getDigitalEmployee(options: ApiClientOptions, employeeId: string
 
 export async function createDigitalEmployee(
   options: ApiClientOptions,
-  input: CreateDigitalEmployeeInput,
+  input: CreateDigitalEmployeeInput | LegacyDraftDigitalEmployeeInput,
 ): Promise<DigitalEmployee> {
   return postJson<DigitalEmployee>(options, "/api/v1/digital-employees", input, "create digital employee");
 }

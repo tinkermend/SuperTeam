@@ -3,6 +3,7 @@ import {
   approveDigitalEmployeeEffectiveConfig,
   createDigitalEmployee,
   createDigitalEmployeeConfigRevision,
+  getDigitalEmployeeCreateOptions,
   createDigitalEmployeeRun,
   getDigitalEmployee,
   getDigitalEmployeeExecutionInstance,
@@ -19,6 +20,8 @@ describe("digital employee API", () => {
     const employees = [
       {
         id: "11111111-1111-4111-8111-111111111111",
+        owner_user_id: "22222222-2222-4222-8222-222222222222",
+        employee_type: "coordinator",
         name: "需求分析员工",
         role: "requirements_analyst",
         status: "draft",
@@ -54,6 +57,8 @@ describe("digital employee API", () => {
       {
         id: "11111111-1111-4111-8111-111111111111",
         team_id: teamId,
+        owner_user_id: "22222222-2222-4222-8222-222222222222",
+        employee_type: "coordinator",
         name: "需求分析员工",
         role: "requirements_analyst",
         status: "draft",
@@ -86,15 +91,117 @@ describe("digital employee API", () => {
     );
   });
 
-  it("creates digital employee with team id and cookie credentials", async () => {
-    const employee = {
-      id: "11111111-1111-4111-8111-111111111111",
-      team_id: "99999999-9999-4999-8999-999999999999",
-      name: "需求分析员工",
-      role: "requirements_analyst",
-      status: "draft",
+  it("gets digital employee create options with encoded team id", async () => {
+    const createOptions = {
+      team_config: {
+        id: "55555555-5555-4555-8555-555555555555",
+        tenant_id: "22222222-2222-4222-8222-222222222222",
+        team_id: "team 1/ops",
+        revision_number: 3,
+        status: "approved",
+        allowed_employee_types: ["coordinator"],
+        allowed_provider_types: ["codex"],
+        allowed_skills: ["incident-diagnosis"],
+        allowed_mcp_servers: ["github"],
+        allowed_external_capabilities: ["jira.search"],
+        capability_policy: { mode: "allow_list" },
+        context_policy: { max_refs: 8 },
+        approval_policy: { high_risk: "required" },
+        artifact_contract: { required: ["summary"] },
+        internal_collaboration_policy: { handoff: "structured" },
+        runtime_scope_policy: { allowed_nodes: ["runtime-1"] },
+      },
+      employee_types: [
+        {
+          type: "coordinator",
+          label: "项目协调员",
+          description: "分派、跟踪、汇总和证据检查",
+          default_role: "project_coordinator",
+          recommended_skills: ["incident-diagnosis"],
+          recommended_mcp_servers: ["github"],
+          recommended_provider_types: ["codex"],
+          default_capability_selection: { skills: ["incident-diagnosis"] },
+          default_context_policy_override: { max_refs: 8 },
+          default_approval_policy: { high_risk: "required" },
+          metadata: { pinned: true },
+        },
+      ],
+      capability_options: {
+        provider_types: ["codex"],
+        skills: ["incident-diagnosis"],
+        mcp_servers: ["github"],
+        external_capabilities: ["jira.search"],
+      },
+      runtime_provider_options: [
+        {
+          runtime_node_id: "33333333-3333-4333-8333-333333333333",
+          node_id: "runtime-a",
+          runtime_name: "客户侧执行机",
+          provider_type: "codex",
+          runtime_status: "online",
+          provider_status: "healthy",
+          health_status: "healthy",
+          current_load: 0,
+          max_slots: 2,
+          agent_home_dir: "/Users/wangpei/.codex",
+          agent_home_dir_available: true,
+          available: true,
+        },
+      ],
+      policy_defaults: {
+        permission_policy: { mode: "least_privilege" },
+        context_policy_override: { max_refs: 8 },
+        approval_policy: { high_risk: "required" },
+        capability_selection: { provider_types: ["codex"] },
+        runtime_selector: { strategy: "pinned" },
+        workspace_policy: { mode: "ephemeral" },
+        session_policy: { reuse: false },
+        metadata: { source: "team_config" },
+      },
     };
     const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(createOptions), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      getDigitalEmployeeCreateOptions(
+        {
+          baseUrl: "http://control-plane.local",
+          fetcher,
+        },
+        "team 1/ops",
+      ),
+    ).resolves.toEqual(createOptions);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/create-options?team_id=team+1%2Fops",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
+  it("creates digital employee with ready creation body and cookie credentials", async () => {
+    const employee = {
+      id: "11111111-1111-4111-8111-111111111111",
+      tenant_id: "22222222-2222-4222-8222-222222222222",
+      team_id: "99999999-9999-4999-8999-999999999999",
+      owner_user_id: "33333333-3333-4333-8333-333333333333",
+      employee_type: "coordinator",
+      name: "需求分析员工",
+      role: "requirements_analyst",
+      status: "ready",
+      permission_policy: { mode: "least_privilege" },
+      context_policy: { mode: "task_slice" },
+      approval_policy: { high_risk: "required" },
+      risk_level: "medium",
+    };
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       new Response(JSON.stringify(employee), {
         headers: { "content-type": "application/json" },
         status: 201,
@@ -109,8 +216,25 @@ describe("digital employee API", () => {
         },
         {
           team_id: "99999999-9999-4999-8999-999999999999",
+          employee_type: "coordinator",
           name: "需求分析员工",
           role: "requirements_analyst",
+          description: "负责需求分析和证据汇总",
+          permission_policy: { mode: "least_privilege" },
+          context_policy: { mode: "task_slice" },
+          approval_policy: { high_risk: "required" },
+          risk_level: "medium",
+          metadata: { source: "web" },
+          role_profile: { title: "requirements analyst" },
+          constitution_addendum: { principles: ["evidence_first"] },
+          capability_selection: { skills: ["incident-diagnosis"] },
+          context_policy_override: { max_refs: 8 },
+          approval_policy_override: { high_risk: "required" },
+          output_contract_addendum: { required: ["summary"] },
+          runtime_node_id: "33333333-3333-4333-8333-333333333333",
+          provider_type: "codex",
+          session_policy: { reuse: false },
+          workspace_policy: { mode: "ephemeral" },
         },
       ),
     ).resolves.toEqual(employee);
@@ -118,18 +242,40 @@ describe("digital employee API", () => {
     expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/v1/digital-employees", {
       body: JSON.stringify({
         team_id: "99999999-9999-4999-8999-999999999999",
+        employee_type: "coordinator",
         name: "需求分析员工",
         role: "requirements_analyst",
+        description: "负责需求分析和证据汇总",
+        permission_policy: { mode: "least_privilege" },
+        context_policy: { mode: "task_slice" },
+        approval_policy: { high_risk: "required" },
+        risk_level: "medium",
+        metadata: { source: "web" },
+        role_profile: { title: "requirements analyst" },
+        constitution_addendum: { principles: ["evidence_first"] },
+        capability_selection: { skills: ["incident-diagnosis"] },
+        context_policy_override: { max_refs: 8 },
+        approval_policy_override: { high_risk: "required" },
+        output_contract_addendum: { required: ["summary"] },
+        runtime_node_id: "33333333-3333-4333-8333-333333333333",
+        provider_type: "codex",
+        session_policy: { reuse: false },
+        workspace_policy: { mode: "ephemeral" },
       }),
       credentials: "include",
       headers: { accept: "application/json", "content-type": "application/json" },
       method: "POST",
     });
+    const [, requestInit] = fetcher.mock.calls[0] as [RequestInfo | URL, RequestInit];
+    const requestBody = JSON.parse(String(requestInit.body));
+    expect(requestBody).not.toHaveProperty("owner_user_id");
   });
 
   it("gets one digital employee with encoded employee id", async () => {
     const employee = {
       id: "employee 1/primary",
+      owner_user_id: "22222222-2222-4222-8222-222222222222",
+      employee_type: "coordinator",
       name: "需求分析员工",
       role: "requirements_analyst",
       status: "active",
