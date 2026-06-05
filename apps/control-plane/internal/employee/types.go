@@ -297,24 +297,6 @@ type CreateOptions struct {
 	PolicyDefaults         PolicyDefaults
 }
 
-type CreateDraftRequest struct {
-	TenantID         uuid.UUID
-	TeamID           *uuid.UUID
-	OwnerUserID      uuid.UUID
-	Name             string
-	Role             string
-	Description      *string
-	PermissionPolicy map[string]any
-	ContextPolicy    map[string]any
-	ApprovalPolicy   map[string]any
-	RiskLevel        string
-	Metadata         map[string]any
-	RuntimeNodeID    uuid.UUID
-	ProviderType     string
-	SessionPolicy    map[string]any
-	WorkspacePolicy  map[string]any
-}
-
 type CreateDigitalEmployeeRequest struct {
 	TenantID               uuid.UUID
 	TeamID                 *uuid.UUID

@@ -210,10 +210,6 @@ func emptyPolicyDefaults() PolicyDefaults {
 	}
 }
 
-func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*DigitalEmployee, error) {
-	return nil, fmt.Errorf("%w: CreateDraft is retired; use CreateDigitalEmployee", ErrInvalidInput)
-}
-
 func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEmployeeRequest) (*DigitalEmployee, error) {
 	normalized, definition, err := normalizeCreateDigitalEmployeeRequest(req)
 	if err != nil {

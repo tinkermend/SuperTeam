@@ -1031,7 +1031,7 @@ paths:
                   $ref: "#/components/schemas/DigitalEmployee"
     post:
       operationId: createDigitalEmployee
-      summary: Create a digital employee draft
+      summary: Create a ready digital employee
       requestBody:
         required: true
         content:
@@ -1045,6 +1045,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DigitalEmployee"
+  /api/v1/digital-employees/create-options:
+    get:
+      operationId: getDigitalEmployeeCreateOptions
+      summary: Get digital employee create options
+      parameters:
+        - name: team_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Digital employee create options
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeCreateOptions"
   /api/v1/digital-employees/{employeeId}:
     get:
       operationId: getDigitalEmployee
@@ -2609,6 +2627,8 @@ components:
         - id
         - tenant_id
         - team_id
+        - owner_user_id
+        - employee_type
         - name
         - role
         - status
@@ -2626,6 +2646,11 @@ components:
         team_id:
           type: string
           format: uuid
+        owner_user_id:
+          type: string
+          format: uuid
+        employee_type:
+          type: string
         name:
           type: string
         role:
@@ -2664,14 +2689,16 @@ components:
       type: object
       required:
         - team_id
+        - employee_type
         - name
-        - role
         - runtime_node_id
         - provider_type
       properties:
         team_id:
           type: string
           format: uuid
+        employee_type:
+          type: string
         name:
           type: string
         role:
@@ -2689,6 +2716,24 @@ components:
           additionalProperties: true
         risk_level:
           type: string
+        role_profile:
+          type: object
+          additionalProperties: true
+        constitution_addendum:
+          type: object
+          additionalProperties: true
+        capability_selection:
+          type: object
+          additionalProperties: true
+        context_policy_override:
+          type: object
+          additionalProperties: true
+        approval_policy_override:
+          type: object
+          additionalProperties: true
+        output_contract_addendum:
+          type: object
+          additionalProperties: true
         runtime_node_id:
           type: string
           format: uuid
@@ -2698,6 +2743,236 @@ components:
           type: object
           additionalProperties: true
         workspace_policy:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+    DigitalEmployeeCreateOptions:
+      type: object
+      required:
+        - team_config
+        - employee_types
+        - capability_options
+        - runtime_provider_options
+        - policy_defaults
+      properties:
+        team_config:
+          $ref: "#/components/schemas/DigitalEmployeeCreateTeamConfig"
+        employee_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/DigitalEmployeeTypeOption"
+        capability_options:
+          $ref: "#/components/schemas/DigitalEmployeeCapabilityOptions"
+        runtime_provider_options:
+          type: array
+          items:
+            $ref: "#/components/schemas/DigitalEmployeeRuntimeProviderOption"
+        policy_defaults:
+          $ref: "#/components/schemas/DigitalEmployeePolicyDefaults"
+    DigitalEmployeeCreateTeamConfig:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - team_id
+        - revision_number
+        - status
+        - allowed_employee_types
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        revision_number:
+          type: integer
+          format: int32
+        status:
+          type: string
+        allowed_employee_types:
+          type: array
+          items:
+            type: string
+        allowed_provider_types:
+          type: array
+          items:
+            type: string
+        allowed_skills:
+          type: array
+          items:
+            type: string
+        allowed_mcp_servers:
+          type: array
+          items:
+            type: string
+        allowed_external_capabilities:
+          type: array
+          items:
+            type: string
+        capability_policy:
+          type: object
+          additionalProperties: true
+        context_policy:
+          type: object
+          additionalProperties: true
+        approval_policy:
+          type: object
+          additionalProperties: true
+        artifact_contract:
+          type: object
+          additionalProperties: true
+        internal_collaboration_policy:
+          type: object
+          additionalProperties: true
+        runtime_scope_policy:
+          type: object
+          additionalProperties: true
+    DigitalEmployeeTypeOption:
+      type: object
+      required:
+        - type
+        - label
+        - description
+        - default_role
+      properties:
+        type:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        default_role:
+          type: string
+        recommended_skills:
+          type: array
+          items:
+            type: string
+        recommended_mcp_servers:
+          type: array
+          items:
+            type: string
+        recommended_provider_types:
+          type: array
+          items:
+            type: string
+        default_capability_selection:
+          type: object
+          additionalProperties: true
+        default_context_policy_override:
+          type: object
+          additionalProperties: true
+        default_approval_policy:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+    DigitalEmployeeCapabilityOptions:
+      type: object
+      required:
+        - provider_types
+        - skills
+        - mcp_servers
+        - external_capabilities
+      properties:
+        provider_types:
+          type: array
+          items:
+            type: string
+        skills:
+          type: array
+          items:
+            type: string
+        mcp_servers:
+          type: array
+          items:
+            type: string
+        external_capabilities:
+          type: array
+          items:
+            type: string
+    DigitalEmployeeRuntimeProviderOption:
+      type: object
+      required:
+        - runtime_node_id
+        - node_id
+        - runtime_name
+        - provider_type
+        - runtime_status
+        - provider_status
+        - health_status
+        - current_load
+        - max_slots
+        - agent_home_dir
+        - agent_home_dir_available
+        - available
+      properties:
+        runtime_node_id:
+          type: string
+          format: uuid
+        node_id:
+          type: string
+        runtime_name:
+          type: string
+        provider_type:
+          type: string
+        runtime_status:
+          type: string
+        provider_status:
+          type: string
+        health_status:
+          type: string
+        current_load:
+          type: integer
+          format: int32
+        max_slots:
+          type: integer
+          format: int32
+        agent_home_dir:
+          type: string
+        agent_home_dir_available:
+          type: boolean
+        available:
+          type: boolean
+        disabled_reason:
+          type: string
+    DigitalEmployeePolicyDefaults:
+      type: object
+      required:
+        - permission_policy
+        - context_policy_override
+        - approval_policy
+        - capability_selection
+        - runtime_selector
+        - workspace_policy
+        - session_policy
+        - metadata
+      properties:
+        permission_policy:
+          type: object
+          additionalProperties: true
+        context_policy_override:
+          type: object
+          additionalProperties: true
+        approval_policy:
+          type: object
+          additionalProperties: true
+        capability_selection:
+          type: object
+          additionalProperties: true
+        runtime_selector:
+          type: object
+          additionalProperties: true
+        workspace_policy:
+          type: object
+          additionalProperties: true
+        session_policy:
           type: object
           additionalProperties: true
         metadata:

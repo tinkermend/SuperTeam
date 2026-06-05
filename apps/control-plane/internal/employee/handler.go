@@ -15,7 +15,8 @@ import (
 )
 
 type HandlerService interface {
-	CreateDraft(ctx context.Context, req CreateDraftRequest) (*DigitalEmployee, error)
+	GetCreateOptions(ctx context.Context, req CreateOptionsRequest) (*CreateOptions, error)
+	CreateDigitalEmployee(ctx context.Context, req CreateDigitalEmployeeRequest) (*DigitalEmployee, error)
 	ListDigitalEmployees(ctx context.Context, req ListDigitalEmployeesRequest) ([]*DigitalEmployee, error)
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployee, error)
 	UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*DigitalEmployee, error)
@@ -84,6 +85,32 @@ func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, employeeResponses(employees))
 }
 
+func (h *HTTPHandler) GetCreateOptions(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeCreate, nil, "digital employee create options")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	rawTeamID := r.URL.Query().Get("team_id")
+	teamID, err := uuid.Parse(rawTeamID)
+	if err != nil || teamID == uuid.Nil {
+		http.Error(w, "invalid team_id", http.StatusBadRequest)
+		return
+	}
+	options, err := service.GetCreateOptions(r.Context(), CreateOptionsRequest{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, createOptionsResponseFromDomain(options))
+}
+
 func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeCreate, nil, "digital employee create")
 	if !ok {
@@ -94,39 +121,54 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var req struct {
-		TeamID           *uuid.UUID     `json:"team_id"`
-		Name             string         `json:"name"`
-		Role             string         `json:"role"`
-		Description      *string        `json:"description"`
-		PermissionPolicy map[string]any `json:"permission_policy"`
-		ContextPolicy    map[string]any `json:"context_policy"`
-		ApprovalPolicy   map[string]any `json:"approval_policy"`
-		RiskLevel        string         `json:"risk_level"`
-		Metadata         map[string]any `json:"metadata"`
-		RuntimeNodeID    uuid.UUID      `json:"runtime_node_id"`
-		ProviderType     string         `json:"provider_type"`
-		SessionPolicy    map[string]any `json:"session_policy"`
-		WorkspacePolicy  map[string]any `json:"workspace_policy"`
+		TeamID                 *uuid.UUID     `json:"team_id"`
+		EmployeeType           string         `json:"employee_type"`
+		Name                   string         `json:"name"`
+		Role                   string         `json:"role"`
+		Description            *string        `json:"description"`
+		PermissionPolicy       map[string]any `json:"permission_policy"`
+		ContextPolicy          map[string]any `json:"context_policy"`
+		ApprovalPolicy         map[string]any `json:"approval_policy"`
+		RiskLevel              string         `json:"risk_level"`
+		Metadata               map[string]any `json:"metadata"`
+		RoleProfile            map[string]any `json:"role_profile"`
+		ConstitutionAddendum   map[string]any `json:"constitution_addendum"`
+		CapabilitySelection    map[string]any `json:"capability_selection"`
+		ContextPolicyOverride  map[string]any `json:"context_policy_override"`
+		ApprovalPolicyOverride map[string]any `json:"approval_policy_override"`
+		OutputContractAddendum map[string]any `json:"output_contract_addendum"`
+		RuntimeNodeID          uuid.UUID      `json:"runtime_node_id"`
+		ProviderType           string         `json:"provider_type"`
+		SessionPolicy          map[string]any `json:"session_policy"`
+		WorkspacePolicy        map[string]any `json:"workspace_policy"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	employee, err := service.CreateDraft(r.Context(), CreateDraftRequest{
-		TenantID:         tenantID,
-		TeamID:           req.TeamID,
-		Name:             req.Name,
-		Role:             req.Role,
-		Description:      req.Description,
-		PermissionPolicy: req.PermissionPolicy,
-		ContextPolicy:    req.ContextPolicy,
-		ApprovalPolicy:   req.ApprovalPolicy,
-		RiskLevel:        req.RiskLevel,
-		Metadata:         req.Metadata,
-		RuntimeNodeID:    req.RuntimeNodeID,
-		ProviderType:     req.ProviderType,
-		SessionPolicy:    req.SessionPolicy,
-		WorkspacePolicy:  req.WorkspacePolicy,
+	employee, err := service.CreateDigitalEmployee(r.Context(), CreateDigitalEmployeeRequest{
+		TenantID:               tenantID,
+		TeamID:                 req.TeamID,
+		OwnerUserID:            middleware.GetUserID(r.Context()),
+		EmployeeType:           req.EmployeeType,
+		Name:                   req.Name,
+		Role:                   req.Role,
+		Description:            req.Description,
+		PermissionPolicy:       req.PermissionPolicy,
+		ContextPolicy:          req.ContextPolicy,
+		ApprovalPolicy:         req.ApprovalPolicy,
+		RiskLevel:              req.RiskLevel,
+		Metadata:               req.Metadata,
+		RoleProfile:            req.RoleProfile,
+		ConstitutionAddendum:   req.ConstitutionAddendum,
+		CapabilitySelection:    req.CapabilitySelection,
+		ContextPolicyOverride:  req.ContextPolicyOverride,
+		ApprovalPolicyOverride: req.ApprovalPolicyOverride,
+		OutputContractAddendum: req.OutputContractAddendum,
+		RuntimeNodeID:          req.RuntimeNodeID,
+		ProviderType:           req.ProviderType,
+		SessionPolicy:          req.SessionPolicy,
+		WorkspacePolicy:        req.WorkspacePolicy,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -435,6 +477,8 @@ type digitalEmployeeResponse struct {
 	ID               string                `json:"id"`
 	TenantID         string                `json:"tenant_id"`
 	TeamID           *string               `json:"team_id,omitempty"`
+	OwnerUserID      string                `json:"owner_user_id"`
+	EmployeeType     string                `json:"employee_type"`
 	Name             string                `json:"name"`
 	Role             string                `json:"role"`
 	Description      *string               `json:"description,omitempty"`
@@ -448,6 +492,81 @@ type digitalEmployeeResponse struct {
 	ArchivedAt       *string               `json:"archived_at,omitempty"`
 	CreatedAt        string                `json:"created_at,omitempty"`
 	UpdatedAt        string                `json:"updated_at,omitempty"`
+}
+
+type createOptionsResponse struct {
+	TeamConfig             teamConfigCreateOptionResponse  `json:"team_config"`
+	EmployeeTypes          []employeeTypeOptionResponse    `json:"employee_types"`
+	CapabilityOptions      capabilityOptionsResponse       `json:"capability_options"`
+	RuntimeProviderOptions []runtimeProviderOptionResponse `json:"runtime_provider_options"`
+	PolicyDefaults         policyDefaultsResponse          `json:"policy_defaults"`
+}
+
+type teamConfigCreateOptionResponse struct {
+	ID                          string         `json:"id"`
+	TenantID                    string         `json:"tenant_id"`
+	TeamID                      string         `json:"team_id"`
+	RevisionNumber              int32          `json:"revision_number"`
+	Status                      string         `json:"status"`
+	AllowedEmployeeTypes        []string       `json:"allowed_employee_types"`
+	AllowedProviderTypes        []string       `json:"allowed_provider_types"`
+	AllowedSkills               []string       `json:"allowed_skills"`
+	AllowedMCPServers           []string       `json:"allowed_mcp_servers"`
+	AllowedExternalCapabilities []string       `json:"allowed_external_capabilities"`
+	CapabilityPolicy            map[string]any `json:"capability_policy"`
+	ContextPolicy               map[string]any `json:"context_policy"`
+	ApprovalPolicy              map[string]any `json:"approval_policy"`
+	ArtifactContract            map[string]any `json:"artifact_contract"`
+	InternalCollaborationPolicy map[string]any `json:"internal_collaboration_policy"`
+	RuntimeScopePolicy          map[string]any `json:"runtime_scope_policy"`
+}
+
+type employeeTypeOptionResponse struct {
+	Type                         string         `json:"type"`
+	Label                        string         `json:"label"`
+	Description                  string         `json:"description"`
+	DefaultRole                  string         `json:"default_role"`
+	RecommendedSkills            []string       `json:"recommended_skills"`
+	RecommendedMCPServers        []string       `json:"recommended_mcp_servers"`
+	RecommendedProviderTypes     []string       `json:"recommended_provider_types"`
+	DefaultCapabilitySelection   map[string]any `json:"default_capability_selection"`
+	DefaultContextPolicyOverride map[string]any `json:"default_context_policy_override"`
+	DefaultApprovalPolicy        map[string]any `json:"default_approval_policy"`
+	Metadata                     map[string]any `json:"metadata"`
+}
+
+type capabilityOptionsResponse struct {
+	ProviderTypes        []string `json:"provider_types"`
+	Skills               []string `json:"skills"`
+	MCPServers           []string `json:"mcp_servers"`
+	ExternalCapabilities []string `json:"external_capabilities"`
+}
+
+type runtimeProviderOptionResponse struct {
+	RuntimeNodeID         string `json:"runtime_node_id"`
+	NodeID                string `json:"node_id"`
+	RuntimeName           string `json:"runtime_name"`
+	ProviderType          string `json:"provider_type"`
+	RuntimeStatus         string `json:"runtime_status"`
+	ProviderStatus        string `json:"provider_status"`
+	HealthStatus          string `json:"health_status"`
+	CurrentLoad           int32  `json:"current_load"`
+	MaxSlots              int32  `json:"max_slots"`
+	AgentHomeDir          string `json:"agent_home_dir"`
+	AgentHomeDirAvailable bool   `json:"agent_home_dir_available"`
+	Available             bool   `json:"available"`
+	DisabledReason        string `json:"disabled_reason,omitempty"`
+}
+
+type policyDefaultsResponse struct {
+	PermissionPolicy      map[string]any `json:"permission_policy"`
+	ContextPolicyOverride map[string]any `json:"context_policy_override"`
+	ApprovalPolicy        map[string]any `json:"approval_policy"`
+	CapabilitySelection   map[string]any `json:"capability_selection"`
+	RuntimeSelector       map[string]any `json:"runtime_selector"`
+	WorkspacePolicy       map[string]any `json:"workspace_policy"`
+	SessionPolicy         map[string]any `json:"session_policy"`
+	Metadata              map[string]any `json:"metadata"`
 }
 
 type executionInstanceResponse struct {
@@ -559,6 +678,8 @@ func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeRespon
 		ID:               employee.ID.String(),
 		TenantID:         employee.TenantID.String(),
 		TeamID:           uuidStringPtr(employee.TeamID),
+		OwnerUserID:      employee.OwnerUserID.String(),
+		EmployeeType:     employee.EmployeeType,
 		Name:             employee.Name,
 		Role:             employee.Role,
 		Description:      employee.Description,
@@ -572,6 +693,81 @@ func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeRespon
 		ArchivedAt:       timeStringPtr(employee.ArchivedAt),
 		CreatedAt:        timeString(employee.CreatedAt),
 		UpdatedAt:        timeString(employee.UpdatedAt),
+	}
+}
+
+func createOptionsResponseFromDomain(options *CreateOptions) createOptionsResponse {
+	runtimeOptions := make([]runtimeProviderOptionResponse, 0, len(options.RuntimeProviderOptions))
+	for _, option := range options.RuntimeProviderOptions {
+		runtimeOptions = append(runtimeOptions, runtimeProviderOptionResponse{
+			RuntimeNodeID:         option.RuntimeNodeID.String(),
+			NodeID:                option.NodeID,
+			RuntimeName:           option.RuntimeName,
+			ProviderType:          option.ProviderType,
+			RuntimeStatus:         option.RuntimeStatus,
+			ProviderStatus:        option.ProviderStatus,
+			HealthStatus:          option.HealthStatus,
+			CurrentLoad:           option.CurrentLoad,
+			MaxSlots:              option.MaxSlots,
+			AgentHomeDir:          option.AgentHomeDir,
+			AgentHomeDirAvailable: option.AgentHomeDirAvailable,
+			Available:             option.Available,
+			DisabledReason:        option.DisabledReason,
+		})
+	}
+	employeeTypes := make([]employeeTypeOptionResponse, 0, len(options.EmployeeTypes))
+	for _, definition := range options.EmployeeTypes {
+		employeeTypes = append(employeeTypes, employeeTypeOptionResponse{
+			Type:                         definition.Type,
+			Label:                        definition.Label,
+			Description:                  definition.Description,
+			DefaultRole:                  definition.DefaultRole,
+			RecommendedSkills:            cloneStringSlice(definition.RecommendedSkills),
+			RecommendedMCPServers:        cloneStringSlice(definition.RecommendedMCPServers),
+			RecommendedProviderTypes:     cloneStringSlice(definition.RecommendedProviderTypes),
+			DefaultCapabilitySelection:   cloneMap(definition.DefaultCapabilitySelection),
+			DefaultContextPolicyOverride: cloneMap(definition.DefaultContextPolicyOverride),
+			DefaultApprovalPolicy:        cloneMap(definition.DefaultApprovalPolicy),
+			Metadata:                     cloneMap(definition.Metadata),
+		})
+	}
+	return createOptionsResponse{
+		TeamConfig: teamConfigCreateOptionResponse{
+			ID:                          options.TeamConfig.ID.String(),
+			TenantID:                    options.TeamConfig.TenantID.String(),
+			TeamID:                      options.TeamConfig.TeamID.String(),
+			RevisionNumber:              options.TeamConfig.RevisionNumber,
+			Status:                      string(options.TeamConfig.Status),
+			AllowedEmployeeTypes:        cloneStringSlice(options.TeamConfig.AllowedEmployeeTypes),
+			AllowedProviderTypes:        cloneStringSlice(options.TeamConfig.AllowedProviderTypes),
+			AllowedSkills:               cloneStringSlice(options.TeamConfig.AllowedSkills),
+			AllowedMCPServers:           cloneStringSlice(options.TeamConfig.AllowedMCPServers),
+			AllowedExternalCapabilities: cloneStringSlice(options.TeamConfig.AllowedExternalCaps),
+			CapabilityPolicy:            cloneMap(options.TeamConfig.CapabilityPolicy),
+			ContextPolicy:               cloneMap(options.TeamConfig.ContextPolicy),
+			ApprovalPolicy:              cloneMap(options.TeamConfig.ApprovalPolicy),
+			ArtifactContract:            cloneMap(options.TeamConfig.ArtifactContract),
+			InternalCollaborationPolicy: cloneMap(options.TeamConfig.InternalCollaborationPolicy),
+			RuntimeScopePolicy:          cloneMap(options.TeamConfig.RuntimeScopePolicy),
+		},
+		EmployeeTypes: employeeTypes,
+		CapabilityOptions: capabilityOptionsResponse{
+			ProviderTypes:        cloneStringSlice(options.CapabilityOptions.ProviderTypes),
+			Skills:               cloneStringSlice(options.CapabilityOptions.Skills),
+			MCPServers:           cloneStringSlice(options.CapabilityOptions.MCPServers),
+			ExternalCapabilities: cloneStringSlice(options.CapabilityOptions.ExternalCapabilities),
+		},
+		RuntimeProviderOptions: runtimeOptions,
+		PolicyDefaults: policyDefaultsResponse{
+			PermissionPolicy:      cloneMap(options.PolicyDefaults.PermissionPolicy),
+			ContextPolicyOverride: cloneMap(options.PolicyDefaults.ContextPolicyOverride),
+			ApprovalPolicy:        cloneMap(options.PolicyDefaults.ApprovalPolicy),
+			CapabilitySelection:   cloneMap(options.PolicyDefaults.CapabilitySelection),
+			RuntimeSelector:       cloneMap(options.PolicyDefaults.RuntimeSelector),
+			WorkspacePolicy:       cloneMap(options.PolicyDefaults.WorkspacePolicy),
+			SessionPolicy:         cloneMap(options.PolicyDefaults.SessionPolicy),
+			Metadata:              cloneMap(options.PolicyDefaults.Metadata),
+		},
 	}
 }
 

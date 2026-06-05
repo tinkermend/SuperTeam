@@ -38,8 +38,80 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	cookie := routeLogin(t, server, "admin", "admin")
 	teamID := uuid.New()
 	runtimeNodeID := uuid.New()
+	spoofedOwnerID := uuid.New()
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees", strings.NewReader(`{"team_id":"`+teamID.String()+`","name":"Requirements analyst","role":"requirements_analyst","runtime_node_id":"`+runtimeNodeID.String()+`","provider_type":"codex","session_policy":{"mode":"reuse_latest"},"workspace_policy":{"labels":{"tier":"standard"}}}`))
+	optionsReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/create-options?team_id="+teamID.String(), nil)
+	optionsReq.AddCookie(cookie)
+	optionsResp := httptest.NewRecorder()
+	server.ServeHTTP(optionsResp, optionsReq)
+	if optionsResp.Code != http.StatusOK {
+		t.Fatalf("expected create options to succeed, got %d: %s", optionsResp.Code, optionsResp.Body.String())
+	}
+	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	if service.createOptionsReq.TenantID != expectedTenantID || service.createOptionsReq.TeamID != teamID {
+		t.Fatalf("expected create options tenant/team %s/%s, got %#v", expectedTenantID, teamID, service.createOptionsReq)
+	}
+	var optionsBody struct {
+		TeamConfig struct {
+			AllowedEmployeeTypes []string `json:"allowed_employee_types"`
+		} `json:"team_config"`
+		EmployeeTypes []struct {
+			Type string `json:"type"`
+		} `json:"employee_types"`
+		CapabilityOptions struct {
+			ProviderTypes []string `json:"provider_types"`
+		} `json:"capability_options"`
+		RuntimeProviderOptions []struct {
+			RuntimeNodeID string `json:"runtime_node_id"`
+			ProviderType  string `json:"provider_type"`
+		} `json:"runtime_provider_options"`
+		PolicyDefaults struct {
+			SessionPolicy map[string]any `json:"session_policy"`
+		} `json:"policy_defaults"`
+	}
+	if err := json.NewDecoder(optionsResp.Body).Decode(&optionsBody); err != nil {
+		t.Fatalf("decode create options: %v", err)
+	}
+	if len(optionsBody.TeamConfig.AllowedEmployeeTypes) != 1 || optionsBody.TeamConfig.AllowedEmployeeTypes[0] != "project_coordinator" {
+		t.Fatalf("expected team config allowed employee types, got %#v", optionsBody.TeamConfig)
+	}
+	if len(optionsBody.EmployeeTypes) != 1 || optionsBody.EmployeeTypes[0].Type != "project_coordinator" {
+		t.Fatalf("expected employee type options, got %#v", optionsBody.EmployeeTypes)
+	}
+	if len(optionsBody.CapabilityOptions.ProviderTypes) != 1 || optionsBody.CapabilityOptions.ProviderTypes[0] != "codex" {
+		t.Fatalf("expected capability options, got %#v", optionsBody.CapabilityOptions)
+	}
+	if len(optionsBody.RuntimeProviderOptions) != 1 || optionsBody.RuntimeProviderOptions[0].RuntimeNodeID == "" || optionsBody.RuntimeProviderOptions[0].ProviderType != "codex" {
+		t.Fatalf("expected runtime provider options, got %#v", optionsBody.RuntimeProviderOptions)
+	}
+	if optionsBody.PolicyDefaults.SessionPolicy["mode"] != "reuse_latest" {
+		t.Fatalf("expected policy defaults, got %#v", optionsBody.PolicyDefaults)
+	}
+
+	createBody := `{
+		"team_id":"` + teamID.String() + `",
+		"owner_user_id":"` + spoofedOwnerID.String() + `",
+		"employee_type":"project_coordinator",
+		"name":"Requirements analyst",
+		"role":"requirements_analyst",
+		"description":"Coordinates requirements closure",
+		"permission_policy":{"allowed_actions":["read_context"]},
+		"context_policy":{"scope":"task"},
+		"approval_policy":{"required_for":["deploy"]},
+		"risk_level":"medium",
+		"metadata":{"source":"route-test"},
+		"role_profile":{"title":"requirements analyst"},
+		"constitution_addendum":{"tone":"concise"},
+		"capability_selection":{"enabled_skills":["incident-diagnosis"]},
+		"context_policy_override":{"redaction":"strict"},
+		"approval_policy_override":{"require_owner":true},
+		"output_contract_addendum":{"format":"markdown"},
+		"runtime_node_id":"` + runtimeNodeID.String() + `",
+		"provider_type":"codex",
+		"session_policy":{"mode":"reuse_latest"},
+		"workspace_policy":{"labels":{"tier":"standard"}}
+	}`
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees", strings.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.AddCookie(cookie)
 	createResp := httptest.NewRecorder()
@@ -47,15 +119,26 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if createResp.Code != http.StatusCreated {
 		t.Fatalf("expected create digital employee to succeed, got %d: %s", createResp.Code, createResp.Body.String())
 	}
-	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
 	if service.createReq.TenantID != expectedTenantID {
 		t.Fatalf("expected create tenant %s, got %s", expectedTenantID, service.createReq.TenantID)
 	}
 	if service.createReq.TeamID == nil || *service.createReq.TeamID != teamID {
 		t.Fatalf("expected create team %s, got %#v", teamID, service.createReq.TeamID)
 	}
+	if service.createReq.OwnerUserID != user.ID || service.createReq.OwnerUserID == spoofedOwnerID {
+		t.Fatalf("expected create owner from console user %s, got %s", user.ID, service.createReq.OwnerUserID)
+	}
+	if service.createReq.EmployeeType != "project_coordinator" {
+		t.Fatalf("expected employee type from create body, got %q", service.createReq.EmployeeType)
+	}
 	if service.createReq.RuntimeNodeID != runtimeNodeID || service.createReq.ProviderType != "codex" {
 		t.Fatalf("expected create runtime/provider %s/codex, got %s/%q", runtimeNodeID, service.createReq.RuntimeNodeID, service.createReq.ProviderType)
+	}
+	if service.createReq.PermissionPolicy["allowed_actions"] == nil || service.createReq.RoleProfile["title"] != "requirements analyst" || service.createReq.CapabilitySelection["enabled_skills"] == nil {
+		t.Fatalf("expected policy/config fields from create body, got %#v", service.createReq)
+	}
+	if service.createReq.ContextPolicyOverride["redaction"] != "strict" || service.createReq.ApprovalPolicyOverride["require_owner"] != true || service.createReq.OutputContractAddendum["format"] != "markdown" {
+		t.Fatalf("expected override/addendum fields from create body, got %#v", service.createReq)
 	}
 	if service.createReq.SessionPolicy["mode"] != "reuse_latest" {
 		t.Fatalf("expected session policy from create body, got %#v", service.createReq.SessionPolicy)
@@ -68,6 +151,8 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 		ID               string         `json:"id"`
 		TenantID         string         `json:"tenant_id"`
 		TeamID           string         `json:"team_id"`
+		OwnerUserID      string         `json:"owner_user_id"`
+		EmployeeType     string         `json:"employee_type"`
 		PermissionPolicy map[string]any `json:"permission_policy"`
 		ContextPolicy    map[string]any `json:"context_policy"`
 		ApprovalPolicy   map[string]any `json:"approval_policy"`
@@ -80,6 +165,9 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if created.TeamID != teamID.String() {
 		t.Fatalf("expected response team %s, got %s", teamID, created.TeamID)
+	}
+	if created.OwnerUserID != user.ID.String() || created.EmployeeType != "project_coordinator" {
+		t.Fatalf("expected response owner/type %s/project_coordinator, got %#v", user.ID, created)
 	}
 	if created.PermissionPolicy == nil || created.ContextPolicy == nil || created.ApprovalPolicy == nil {
 		t.Fatalf("expected policy objects in response, got %#v", created)
@@ -95,6 +183,16 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if service.listReq.TenantID != expectedTenantID {
 		t.Fatalf("expected list tenant %s, got %s", expectedTenantID, service.listReq.TenantID)
 	}
+	var listed []struct {
+		OwnerUserID  string `json:"owner_user_id"`
+		EmployeeType string `json:"employee_type"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode listed employees: %v", err)
+	}
+	if len(listed) != 1 || listed[0].OwnerUserID != user.ID.String() || listed[0].EmployeeType != "project_coordinator" {
+		t.Fatalf("expected list response owner/type, got %#v", listed)
+	}
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+created.ID, nil)
 	getReq.AddCookie(cookie)
@@ -105,6 +203,16 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if service.getTenantID != expectedTenantID {
 		t.Fatalf("expected get tenant %s, got %s", expectedTenantID, service.getTenantID)
+	}
+	var got struct {
+		OwnerUserID  string `json:"owner_user_id"`
+		EmployeeType string `json:"employee_type"`
+	}
+	if err := json.NewDecoder(getResp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode get employee: %v", err)
+	}
+	if got.OwnerUserID != user.ID.String() || got.EmployeeType != "project_coordinator" {
+		t.Fatalf("expected get response owner/type, got %#v", got)
 	}
 
 	bindRuntimeNodeID := uuid.New()
@@ -478,7 +586,7 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 	}
 }
 
-func TestDigitalEmployeeRoutesRequireManagementAuthorization(t *testing.T) {
+func TestDigitalEmployeeRouteAuthorizationDenial(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
@@ -511,6 +619,7 @@ func TestDigitalEmployeeRoutesRequireManagementAuthorization(t *testing.T) {
 	}{
 		{name: "list", method: http.MethodGet, path: "/api/v1/digital-employees", action: authz.ActionEmployeeRead, resourceType: authz.ResourceTenant},
 		{name: "create", method: http.MethodPost, path: "/api/v1/digital-employees", body: `{"team_id":"` + uuid.New().String() + `","name":"Requirements analyst","role":"requirements_analyst"}`, action: authz.ActionEmployeeCreate, resourceType: authz.ResourceTenant},
+		{name: "create options", method: http.MethodGet, path: "/api/v1/digital-employees/create-options?team_id=" + uuid.New().String(), action: authz.ActionEmployeeCreate, resourceType: authz.ResourceTenant},
 		{name: "get", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID, action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "status", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/status", body: `{"status":"active"}`, action: authz.ActionEmployeeStatusUpdate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "get execution instance", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
@@ -653,7 +762,8 @@ func TestDigitalEmployeeRouteSanitizesAuthorizationBackendError(t *testing.T) {
 }
 
 type routeEmployeeService struct {
-	createReq           employee.CreateDraftRequest
+	createOptionsReq    employee.CreateOptionsRequest
+	createReq           employee.CreateDigitalEmployeeRequest
 	listReq             employee.ListDigitalEmployeesRequest
 	bindReq             employee.BindExecutionInstanceRequest
 	updateReq           employee.UpdateStatusRequest
@@ -675,7 +785,56 @@ type routeEmployeeService struct {
 	listErr             error
 }
 
-func (s *routeEmployeeService) CreateDraft(ctx context.Context, req employee.CreateDraftRequest) (*employee.DigitalEmployee, error) {
+func (s *routeEmployeeService) GetCreateOptions(ctx context.Context, req employee.CreateOptionsRequest) (*employee.CreateOptions, error) {
+	s.createOptionsReq = req
+	return &employee.CreateOptions{
+		TeamConfig: employee.TeamConfigCreateOption{
+			ID:                   uuid.New(),
+			TenantID:             req.TenantID,
+			TeamID:               req.TeamID,
+			RevisionNumber:       2,
+			Status:               employee.TeamConfigRevisionStatusActive,
+			AllowedEmployeeTypes: []string{"project_coordinator"},
+			AllowedProviderTypes: []string{"codex"},
+		},
+		EmployeeTypes: []employee.EmployeeTypeDefinition{{
+			Type:                     "project_coordinator",
+			Label:                    "Project coordinator",
+			Description:              "Coordinates work",
+			DefaultRole:              "requirements_analyst",
+			RecommendedProviderTypes: []string{"codex"},
+		}},
+		CapabilityOptions: employee.CapabilityOptions{
+			ProviderTypes: []string{"codex"},
+		},
+		RuntimeProviderOptions: []employee.RuntimeProviderOption{{
+			RuntimeNodeID:         uuid.MustParse("11111111-1111-1111-1111-111111111111"),
+			NodeID:                "local-dev-node",
+			RuntimeName:           "Local Dev",
+			ProviderType:          "codex",
+			RuntimeStatus:         "online",
+			ProviderStatus:        "healthy",
+			HealthStatus:          "healthy",
+			CurrentLoad:           1,
+			MaxSlots:              4,
+			AgentHomeDir:          "/srv/agents/requirements",
+			AgentHomeDirAvailable: true,
+			Available:             true,
+		}},
+		PolicyDefaults: employee.PolicyDefaults{
+			PermissionPolicy:      map[string]any{},
+			ContextPolicyOverride: map[string]any{},
+			ApprovalPolicy:        map[string]any{},
+			CapabilitySelection:   map[string]any{},
+			RuntimeSelector:       map[string]any{},
+			WorkspacePolicy:       map[string]any{},
+			SessionPolicy:         map[string]any{"mode": "reuse_latest"},
+			Metadata:              map[string]any{},
+		},
+	}, nil
+}
+
+func (s *routeEmployeeService) CreateDigitalEmployee(ctx context.Context, req employee.CreateDigitalEmployeeRequest) (*employee.DigitalEmployee, error) {
 	s.createCalled = true
 	s.createReq = req
 	s.createdID = uuid.New()
@@ -684,14 +843,16 @@ func (s *routeEmployeeService) CreateDraft(ctx context.Context, req employee.Cre
 		ID:               s.createdID,
 		TenantID:         req.TenantID,
 		TeamID:           req.TeamID,
+		OwnerUserID:      req.OwnerUserID,
+		EmployeeType:     req.EmployeeType,
 		Name:             req.Name,
 		Role:             req.Role,
-		Status:           employee.DigitalEmployeeStatusDraft,
-		PermissionPolicy: map[string]any{},
-		ContextPolicy:    map[string]any{},
-		ApprovalPolicy:   map[string]any{},
-		RiskLevel:        "medium",
-		Metadata:         map[string]any{},
+		Status:           employee.DigitalEmployeeStatusReady,
+		PermissionPolicy: req.PermissionPolicy,
+		ContextPolicy:    req.ContextPolicy,
+		ApprovalPolicy:   req.ApprovalPolicy,
+		RiskLevel:        req.RiskLevel,
+		Metadata:         req.Metadata,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}, nil
@@ -703,19 +864,46 @@ func (s *routeEmployeeService) ListDigitalEmployees(ctx context.Context, req emp
 	if s.listErr != nil {
 		return nil, s.listErr
 	}
-	return []*employee.DigitalEmployee{}, nil
+	now := time.Now().UTC()
+	ownerUserID := s.createReq.OwnerUserID
+	if ownerUserID == uuid.Nil {
+		ownerUserID = uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	}
+	return []*employee.DigitalEmployee{{
+		ID:               s.createdID,
+		TenantID:         req.TenantID,
+		TeamID:           req.TeamID,
+		OwnerUserID:      ownerUserID,
+		EmployeeType:     "project_coordinator",
+		Name:             "Requirements analyst",
+		Role:             "requirements_analyst",
+		Status:           employee.DigitalEmployeeStatusReady,
+		PermissionPolicy: map[string]any{},
+		ContextPolicy:    map[string]any{},
+		ApprovalPolicy:   map[string]any{},
+		RiskLevel:        "medium",
+		Metadata:         map[string]any{},
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}}, nil
 }
 
 func (s *routeEmployeeService) GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (*employee.DigitalEmployee, error) {
 	s.getCalled = true
 	s.getTenantID = tenantID
 	now := time.Now().UTC()
+	ownerUserID := s.createReq.OwnerUserID
+	if ownerUserID == uuid.Nil {
+		ownerUserID = uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	}
 	return &employee.DigitalEmployee{
 		ID:               employeeID,
 		TenantID:         tenantID,
+		OwnerUserID:      ownerUserID,
+		EmployeeType:     "project_coordinator",
 		Name:             "Requirements analyst",
 		Role:             "requirements_analyst",
-		Status:           employee.DigitalEmployeeStatusDraft,
+		Status:           employee.DigitalEmployeeStatusReady,
 		PermissionPolicy: map[string]any{},
 		ContextPolicy:    map[string]any{},
 		ApprovalPolicy:   map[string]any{},
@@ -733,6 +921,8 @@ func (s *routeEmployeeService) UpdateStatus(ctx context.Context, req employee.Up
 	return &employee.DigitalEmployee{
 		ID:               req.DigitalEmployeeID,
 		TenantID:         req.TenantID,
+		OwnerUserID:      uuid.MustParse("22222222-2222-2222-2222-222222222222"),
+		EmployeeType:     "project_coordinator",
 		Name:             "Requirements analyst",
 		Role:             "requirements_analyst",
 		Status:           req.Status,

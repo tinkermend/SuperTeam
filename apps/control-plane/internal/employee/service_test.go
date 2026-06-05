@@ -472,7 +472,19 @@ func TestServiceValidation(t *testing.T) {
 	tenantID := uuid.New()
 	teamID := uuid.New()
 	employeeID := uuid.New()
+	ownerUserID := uuid.New()
 	runtimeNodeID := uuid.New()
+	validCreateReq := func() CreateDigitalEmployeeRequest {
+		return CreateDigitalEmployeeRequest{
+			TenantID:      tenantID,
+			TeamID:        &teamID,
+			OwnerUserID:   ownerUserID,
+			EmployeeType:  "backend_engineer",
+			Name:          "employee",
+			RuntimeNodeID: runtimeNodeID,
+			ProviderType:  "codex",
+		}
+	}
 
 	tests := []struct {
 		name string
@@ -481,28 +493,63 @@ func TestServiceValidation(t *testing.T) {
 		{
 			name: "create requires tenant",
 			run: func() error {
-				_, err := svc.CreateDraft(context.Background(), CreateDraftRequest{TeamID: &teamID, Name: "employee", Role: "reviewer"})
+				req := validCreateReq()
+				req.TenantID = uuid.Nil
+				_, err := svc.CreateDigitalEmployee(context.Background(), req)
 				return err
 			},
 		},
 		{
 			name: "create requires team",
 			run: func() error {
-				_, err := svc.CreateDraft(context.Background(), CreateDraftRequest{TenantID: tenantID, Name: "employee", Role: "reviewer"})
+				req := validCreateReq()
+				req.TeamID = nil
+				_, err := svc.CreateDigitalEmployee(context.Background(), req)
+				return err
+			},
+		},
+		{
+			name: "create requires owner",
+			run: func() error {
+				req := validCreateReq()
+				req.OwnerUserID = uuid.Nil
+				_, err := svc.CreateDigitalEmployee(context.Background(), req)
+				return err
+			},
+		},
+		{
+			name: "create requires employee type",
+			run: func() error {
+				req := validCreateReq()
+				req.EmployeeType = " "
+				_, err := svc.CreateDigitalEmployee(context.Background(), req)
 				return err
 			},
 		},
 		{
 			name: "create requires name",
 			run: func() error {
-				_, err := svc.CreateDraft(context.Background(), CreateDraftRequest{TenantID: tenantID, TeamID: &teamID, Name: " ", Role: "reviewer"})
+				req := validCreateReq()
+				req.Name = " "
+				_, err := svc.CreateDigitalEmployee(context.Background(), req)
 				return err
 			},
 		},
 		{
-			name: "create requires role",
+			name: "create requires runtime node",
 			run: func() error {
-				_, err := svc.CreateDraft(context.Background(), CreateDraftRequest{TenantID: tenantID, TeamID: &teamID, Name: "employee", Role: " "})
+				req := validCreateReq()
+				req.RuntimeNodeID = uuid.Nil
+				_, err := svc.CreateDigitalEmployee(context.Background(), req)
+				return err
+			},
+		},
+		{
+			name: "create requires provider",
+			run: func() error {
+				req := validCreateReq()
+				req.ProviderType = " "
+				_, err := svc.CreateDigitalEmployee(context.Background(), req)
 				return err
 			},
 		},
