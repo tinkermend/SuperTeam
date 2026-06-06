@@ -39,6 +39,41 @@ func NewServiceWithProvisioning(repository Repository, dispatcher RuntimeCommand
 	}, nil
 }
 
+func (s *Service) GetOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error) {
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	req.Query = strings.TrimSpace(req.Query)
+	if req.Status != "" && !req.Status.IsValid() {
+		return nil, fmt.Errorf("%w: invalid status", ErrInvalidInput)
+	}
+	if !req.ExecutionStatus.IsValid() {
+		return nil, fmt.Errorf("%w: invalid execution_status", ErrInvalidInput)
+	}
+	if !req.RunStatus.IsValid() {
+		return nil, fmt.Errorf("%w: invalid run_status", ErrInvalidInput)
+	}
+	if req.Offset < 0 {
+		return nil, fmt.Errorf("%w: offset must be non-negative", ErrInvalidInput)
+	}
+	if req.Limit <= 0 {
+		req.Limit = 50
+	}
+	if req.Limit > 100 {
+		req.Limit = 100
+	}
+	overview, err := s.repository.GetDigitalEmployeeOverview(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("get digital employee overview: %w", err)
+	}
+	if overview.Items == nil {
+		overview.Items = []DigitalEmployeeOverviewItem{}
+	}
+	overview.Pagination.Limit = req.Limit
+	overview.Pagination.Offset = req.Offset
+	return overview, nil
+}
+
 func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest) (*CreateOptions, error) {
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)

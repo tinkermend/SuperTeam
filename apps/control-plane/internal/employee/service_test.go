@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 	cpruntime "github.com/superteam/control-plane/internal/runtime"
 )
 
@@ -158,6 +159,69 @@ func TestGetCreateOptionsRejectsMalformedAllowedEmployeeTypes(t *testing.T) {
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected invalid input for malformed allowed_employee_types, got options=%#v err=%v", options, err)
 	}
+}
+
+func TestEmployeeServiceGetOverviewAppliesDefaultsAndFilters(t *testing.T) {
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo := &overviewRepositoryStub{
+		overview: &DigitalEmployeeOverview{
+			Summary:    DigitalEmployeeOverviewSummary{TotalCount: 1, RunnableCount: 1},
+			Items:      []DigitalEmployeeOverviewItem{},
+			Filters:    DigitalEmployeeOverviewFilters{},
+			Pagination: OverviewPagination{Limit: 50, Offset: 0, TotalCount: 1},
+		},
+	}
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	overview, err := service.GetOverview(context.Background(), GetDigitalEmployeeOverviewRequest{
+		TenantID:        tenantID,
+		Query:           "  需求  ",
+		TeamID:          &teamID,
+		Status:          DigitalEmployeeStatusActive,
+		EmployeeType:    "requirements_analyst",
+		ProviderType:    "codex",
+		RuntimeNodeID:   &runtimeNodeID,
+		RiskLevel:       "medium",
+		ExecutionStatus: OverviewExecutionStatusMissing,
+		RunStatus:       OverviewRunStatusNone,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, int32(50), repo.req.Limit)
+	require.Equal(t, int32(0), repo.req.Offset)
+	require.Equal(t, "需求", repo.req.Query)
+	require.Equal(t, teamID, *repo.req.TeamID)
+	require.Equal(t, runtimeNodeID, *repo.req.RuntimeNodeID)
+	require.Equal(t, int32(50), overview.Pagination.Limit)
+}
+
+func TestEmployeeServiceGetOverviewRejectsInvalidFilters(t *testing.T) {
+	service, err := NewService(&overviewRepositoryStub{})
+	require.NoError(t, err)
+	_, err = service.GetOverview(context.Background(), GetDigitalEmployeeOverviewRequest{
+		TenantID:        uuid.New(),
+		Status:          DigitalEmployeeStatus("retired"),
+		ExecutionStatus: OverviewExecutionStatusReady,
+		RunStatus:       OverviewRunStatusNone,
+	})
+	require.ErrorIs(t, err, ErrInvalidInput)
+
+	_, err = service.GetOverview(context.Background(), GetDigitalEmployeeOverviewRequest{
+		TenantID:        uuid.New(),
+		ExecutionStatus: OverviewExecutionStatus("lost"),
+		RunStatus:       OverviewRunStatusNone,
+	})
+	require.ErrorIs(t, err, ErrInvalidInput)
+
+	_, err = service.GetOverview(context.Background(), GetDigitalEmployeeOverviewRequest{
+		TenantID:        uuid.New(),
+		ExecutionStatus: OverviewExecutionStatusMissing,
+		RunStatus:       OverviewRunStatus("paused"),
+	})
+	require.ErrorIs(t, err, ErrInvalidInput)
 }
 
 func TestCreateDigitalEmployeeParamsAndDomainMappingKeepOwnerAndType(t *testing.T) {
@@ -1425,6 +1489,29 @@ func newMemoryRepository() *memoryRepository {
 	}
 }
 
+type overviewRepositoryStub struct {
+	Repository
+	req      GetDigitalEmployeeOverviewRequest
+	overview *DigitalEmployeeOverview
+	err      error
+}
+
+func (r *overviewRepositoryStub) GetDigitalEmployeeOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error) {
+	r.req = req
+	if r.err != nil {
+		return nil, r.err
+	}
+	if r.overview != nil {
+		return r.overview, nil
+	}
+	return &DigitalEmployeeOverview{
+		Summary:    DigitalEmployeeOverviewSummary{},
+		Items:      []DigitalEmployeeOverviewItem{},
+		Filters:    DigitalEmployeeOverviewFilters{},
+		Pagination: OverviewPagination{Limit: req.Limit, Offset: req.Offset, TotalCount: 0},
+	}, nil
+}
+
 func (r *memoryRepository) WithTransaction(ctx context.Context, fn func(Repository) error) error {
 	if r.inTransaction {
 		return errors.New("nested transaction")
@@ -1496,6 +1583,15 @@ func (r *memoryRepository) GetDigitalEmployee(_ context.Context, tenantID, emplo
 		return DigitalEmployeeRecord{}, ErrNotFound
 	}
 	return record, nil
+}
+
+func (r *memoryRepository) GetDigitalEmployeeOverview(_ context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error) {
+	return &DigitalEmployeeOverview{
+		Summary:    DigitalEmployeeOverviewSummary{},
+		Items:      []DigitalEmployeeOverviewItem{},
+		Filters:    DigitalEmployeeOverviewFilters{},
+		Pagination: OverviewPagination{Limit: req.Limit, Offset: req.Offset, TotalCount: 0},
+	}, nil
 }
 
 func (r *memoryRepository) EnsureTeamExists(_ context.Context, tenantID, teamID uuid.UUID) error {
