@@ -365,6 +365,167 @@ type ListDigitalEmployeesRequest struct {
 	Limit    int32
 }
 
+type OverviewExecutionStatus string
+
+const (
+	OverviewExecutionStatusMissing      OverviewExecutionStatus = "missing"
+	OverviewExecutionStatusProvisioning OverviewExecutionStatus = "provisioning"
+	OverviewExecutionStatusReady        OverviewExecutionStatus = "ready"
+	OverviewExecutionStatusActive       OverviewExecutionStatus = "active"
+	OverviewExecutionStatusDisabled     OverviewExecutionStatus = "disabled"
+	OverviewExecutionStatusError        OverviewExecutionStatus = "error"
+)
+
+func (s OverviewExecutionStatus) IsValid() bool {
+	switch s {
+	case "", OverviewExecutionStatusMissing, OverviewExecutionStatusProvisioning, OverviewExecutionStatusReady, OverviewExecutionStatusActive, OverviewExecutionStatusDisabled, OverviewExecutionStatusError:
+		return true
+	default:
+		return false
+	}
+}
+
+type OverviewRunStatus string
+
+const (
+	OverviewRunStatusNone        OverviewRunStatus = "none"
+	OverviewRunStatusQueued      OverviewRunStatus = "queued"
+	OverviewRunStatusDispatching OverviewRunStatus = "dispatching"
+	OverviewRunStatusRunning     OverviewRunStatus = "running"
+	OverviewRunStatusCancelling  OverviewRunStatus = "cancelling"
+	OverviewRunStatusCompleted   OverviewRunStatus = "completed"
+	OverviewRunStatusFailed      OverviewRunStatus = "failed"
+	OverviewRunStatusCancelled   OverviewRunStatus = "cancelled"
+	OverviewRunStatusTimedOut    OverviewRunStatus = "timed_out"
+)
+
+func (s OverviewRunStatus) IsValid() bool {
+	switch s {
+	case "", OverviewRunStatusNone, OverviewRunStatusQueued, OverviewRunStatusDispatching, OverviewRunStatusRunning, OverviewRunStatusCancelling, OverviewRunStatusCompleted, OverviewRunStatusFailed, OverviewRunStatusCancelled, OverviewRunStatusTimedOut:
+		return true
+	default:
+		return false
+	}
+}
+
+type GetDigitalEmployeeOverviewRequest struct {
+	TenantID        uuid.UUID
+	Query           string
+	TeamID          *uuid.UUID
+	Status          DigitalEmployeeStatus
+	EmployeeType    string
+	ProviderType    string
+	RuntimeNodeID   *uuid.UUID
+	RiskLevel       string
+	ExecutionStatus OverviewExecutionStatus
+	RunStatus       OverviewRunStatus
+	Offset          int32
+	Limit           int32
+}
+
+type DigitalEmployeeOverview struct {
+	Summary    DigitalEmployeeOverviewSummary
+	Items      []DigitalEmployeeOverviewItem
+	Filters    DigitalEmployeeOverviewFilters
+	Pagination OverviewPagination
+}
+
+type DigitalEmployeeOverviewSummary struct {
+	TotalCount          int32
+	RunnableCount       int32
+	RunningCount        int32
+	WaitingRuntimeCount int32
+	ErrorCount          int32
+	HighRiskCount       int32
+}
+
+type DigitalEmployeeOverviewItem struct {
+	IdentitySummary   DigitalEmployeeIdentitySummary
+	ExecutionSummary  DigitalEmployeeExecutionSummary
+	LatestRunSummary  *DigitalEmployeeLatestRunSummary
+	GovernanceSummary DigitalEmployeeGovernanceSummary
+	BudgetSummary     DigitalEmployeeBudgetSummary
+}
+
+type DigitalEmployeeIdentitySummary struct {
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	TeamID            *uuid.UUID
+	TeamName          string
+	OwnerUserID       uuid.UUID
+	OwnerDisplayName  string
+	EmployeeType      string
+	EmployeeTypeLabel string
+	Name              string
+	Role              string
+	Description       *string
+	Status            DigitalEmployeeStatus
+	RiskLevel         string
+}
+
+type DigitalEmployeeExecutionSummary struct {
+	ExecutionInstanceID   *uuid.UUID
+	Status                OverviewExecutionStatus
+	RuntimeNodeID         *uuid.UUID
+	NodeID                string
+	RuntimeName           string
+	RuntimeStatus         string
+	ProviderType          string
+	ProviderStatus        string
+	HealthStatus          string
+	AgentHomeDirAvailable bool
+}
+
+type DigitalEmployeeLatestRunSummary struct {
+	RunID       uuid.UUID
+	TaskID      uuid.UUID
+	Status      OverviewRunStatus
+	Title       string
+	StartedAt   *time.Time
+	UpdatedAt   *time.Time
+	DurationSec *int32
+	TokenUsage  *int32
+}
+
+type DigitalEmployeeGovernanceSummary struct {
+	EffectiveConfigID      *uuid.UUID
+	Status                 string
+	TeamRevisionNumber     *int32
+	EmployeeRevisionNumber *int32
+	SkillsCount            int32
+	MCPServersCount        int32
+	ConstitutionRef        string
+}
+
+type DigitalEmployeeBudgetSummary struct {
+	UsageTokens30d *int32
+	RunCount30d    int32
+	Currency       string
+	Source         string
+}
+
+type DigitalEmployeeOverviewFilters struct {
+	Teams             []OverviewFilterOption
+	Statuses          []OverviewFilterOption
+	EmployeeTypes     []OverviewFilterOption
+	ProviderTypes     []OverviewFilterOption
+	RuntimeNodes      []OverviewFilterOption
+	RiskLevels        []OverviewFilterOption
+	ExecutionStatuses []OverviewFilterOption
+	RunStatuses       []OverviewFilterOption
+}
+
+type OverviewFilterOption struct {
+	Value string
+	Label string
+}
+
+type OverviewPagination struct {
+	Limit      int32
+	Offset     int32
+	TotalCount int32
+}
+
 type UpdateStatusRequest struct {
 	TenantID          uuid.UUID
 	DigitalEmployeeID uuid.UUID

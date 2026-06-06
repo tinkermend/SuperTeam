@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -14,7 +15,7 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 )
 
-type HandlerService interface {
+type handlerService interface {
 	GetCreateOptions(ctx context.Context, req CreateOptionsRequest) (*CreateOptions, error)
 	CreateDigitalEmployee(ctx context.Context, req CreateDigitalEmployeeRequest) (*DigitalEmployee, error)
 	ListDigitalEmployees(ctx context.Context, req ListDigitalEmployeesRequest) ([]*DigitalEmployee, error)
@@ -27,17 +28,22 @@ type HandlerService interface {
 	ApproveEffectiveConfig(ctx context.Context, req ApproveEffectiveConfigRequest) (*DigitalEmployeeEffectiveConfig, error)
 }
 
+type HandlerService interface {
+	handlerService
+	GetOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error)
+}
+
 type HTTPHandler struct {
-	service    HandlerService
+	service    handlerService
 	runService RunHandlerService
 	authorizer authz.Authorizer
 }
 
-func NewHandler(service HandlerService) *HTTPHandler {
+func NewHandler(service handlerService) *HTTPHandler {
 	return &HTTPHandler{service: service}
 }
 
-func NewHandlerWithRunService(service HandlerService, runService RunHandlerService) *HTTPHandler {
+func NewHandlerWithRunService(service handlerService, runService RunHandlerService) *HTTPHandler {
 	return &HTTPHandler{service: service, runService: runService}
 }
 
@@ -83,6 +89,33 @@ func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, employeeResponses(employees))
+}
+
+func (h *HTTPHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, nil, "digital employee overview read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	overviewService, ok := service.(HandlerService)
+	if !ok {
+		http.Error(w, "employee overview service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	req, parseErr := overviewRequestFromQuery(tenantID, r)
+	if parseErr != "" {
+		http.Error(w, parseErr, http.StatusBadRequest)
+		return
+	}
+	overview, err := overviewService.GetOverview(r.Context(), req)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, overviewResponseFromDomain(overview))
 }
 
 func (h *HTTPHandler) GetCreateOptions(w http.ResponseWriter, r *http.Request) {
@@ -423,7 +456,74 @@ func (h *HTTPHandler) ApproveDigitalEmployeeEffectiveConfig(w http.ResponseWrite
 	writeJSON(w, http.StatusCreated, effectiveConfigResponseFromDomain(effectiveConfig))
 }
 
-func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService, bool) {
+const (
+	defaultOverviewPageLimit = 50
+	maxOverviewPageLimit     = 100
+)
+
+func overviewRequestFromQuery(tenantID uuid.UUID, r *http.Request) (GetDigitalEmployeeOverviewRequest, string) {
+	query := r.URL.Query()
+	req := GetDigitalEmployeeOverviewRequest{
+		TenantID:        tenantID,
+		Query:           strings.TrimSpace(query.Get("q")),
+		Status:          DigitalEmployeeStatus(strings.TrimSpace(query.Get("status"))),
+		EmployeeType:    strings.TrimSpace(query.Get("employee_type")),
+		ProviderType:    strings.TrimSpace(query.Get("provider_type")),
+		RiskLevel:       strings.TrimSpace(query.Get("risk_level")),
+		ExecutionStatus: OverviewExecutionStatus(strings.TrimSpace(query.Get("execution_status"))),
+		RunStatus:       OverviewRunStatus(strings.TrimSpace(query.Get("run_status"))),
+		Limit:           defaultOverviewPageLimit,
+	}
+	if req.Status != "" && !req.Status.IsValid() {
+		return GetDigitalEmployeeOverviewRequest{}, "invalid status"
+	}
+	if !req.ExecutionStatus.IsValid() {
+		return GetDigitalEmployeeOverviewRequest{}, "invalid execution_status"
+	}
+	if !req.RunStatus.IsValid() {
+		return GetDigitalEmployeeOverviewRequest{}, "invalid run_status"
+	}
+	if rawTeamID := strings.TrimSpace(query.Get("team_id")); rawTeamID != "" {
+		teamID, err := uuid.Parse(rawTeamID)
+		if err != nil || teamID == uuid.Nil {
+			return GetDigitalEmployeeOverviewRequest{}, "invalid team_id"
+		}
+		req.TeamID = &teamID
+	}
+	if rawRuntimeNodeID := strings.TrimSpace(query.Get("runtime_node_id")); rawRuntimeNodeID != "" {
+		runtimeNodeID, err := uuid.Parse(rawRuntimeNodeID)
+		if err != nil || runtimeNodeID == uuid.Nil {
+			return GetDigitalEmployeeOverviewRequest{}, "invalid runtime_node_id"
+		}
+		req.RuntimeNodeID = &runtimeNodeID
+	}
+	if rawLimit := strings.TrimSpace(query.Get("limit")); rawLimit != "" {
+		limit, err := strconv.ParseInt(rawLimit, 10, 32)
+		if err != nil {
+			return GetDigitalEmployeeOverviewRequest{}, "limit must be an integer"
+		}
+		if limit <= 0 {
+			return GetDigitalEmployeeOverviewRequest{}, "limit must be greater than 0"
+		}
+		if limit > maxOverviewPageLimit {
+			limit = maxOverviewPageLimit
+		}
+		req.Limit = int32(limit)
+	}
+	if rawOffset := strings.TrimSpace(query.Get("offset")); rawOffset != "" {
+		offset, err := strconv.ParseInt(rawOffset, 10, 32)
+		if err != nil {
+			return GetDigitalEmployeeOverviewRequest{}, "offset must be an integer"
+		}
+		if offset < 0 {
+			return GetDigitalEmployeeOverviewRequest{}, "offset must be greater than or equal to 0"
+		}
+		req.Offset = int32(offset)
+	}
+	return req, ""
+}
+
+func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (handlerService, bool) {
 	if h == nil || h.service == nil {
 		http.Error(w, "employee service is not configured", http.StatusServiceUnavailable)
 		return nil, false
@@ -492,6 +592,109 @@ type digitalEmployeeResponse struct {
 	ArchivedAt       *string               `json:"archived_at,omitempty"`
 	CreatedAt        string                `json:"created_at,omitempty"`
 	UpdatedAt        string                `json:"updated_at,omitempty"`
+}
+
+type digitalEmployeeOverviewResponse struct {
+	Summary    digitalEmployeeOverviewSummaryResponse `json:"summary"`
+	Items      []digitalEmployeeOverviewItemResponse  `json:"items"`
+	Filters    digitalEmployeeOverviewFiltersResponse `json:"filters"`
+	Pagination overviewPaginationResponse             `json:"pagination"`
+}
+
+type digitalEmployeeOverviewSummaryResponse struct {
+	TotalCount          int32 `json:"total_count"`
+	RunnableCount       int32 `json:"runnable_count"`
+	RunningCount        int32 `json:"running_count"`
+	WaitingRuntimeCount int32 `json:"waiting_runtime_count"`
+	ErrorCount          int32 `json:"error_count"`
+	HighRiskCount       int32 `json:"high_risk_count"`
+}
+
+type digitalEmployeeOverviewItemResponse struct {
+	IdentitySummary   digitalEmployeeIdentitySummaryResponse   `json:"identity_summary"`
+	ExecutionSummary  digitalEmployeeExecutionSummaryResponse  `json:"execution_summary"`
+	LatestRunSummary  *digitalEmployeeLatestRunSummaryResponse `json:"latest_run_summary"`
+	GovernanceSummary digitalEmployeeGovernanceSummaryResponse `json:"governance_summary"`
+	BudgetSummary     digitalEmployeeBudgetSummaryResponse     `json:"budget_summary"`
+}
+
+type digitalEmployeeIdentitySummaryResponse struct {
+	ID                string                `json:"id"`
+	TenantID          string                `json:"tenant_id"`
+	TeamID            *string               `json:"team_id,omitempty"`
+	TeamName          string                `json:"team_name"`
+	OwnerUserID       string                `json:"owner_user_id"`
+	OwnerDisplayName  string                `json:"owner_display_name"`
+	EmployeeType      string                `json:"employee_type"`
+	EmployeeTypeLabel string                `json:"employee_type_label"`
+	Name              string                `json:"name"`
+	Role              string                `json:"role"`
+	Description       *string               `json:"description,omitempty"`
+	Status            DigitalEmployeeStatus `json:"status"`
+	RiskLevel         string                `json:"risk_level"`
+}
+
+type digitalEmployeeExecutionSummaryResponse struct {
+	ExecutionInstanceID   *string                 `json:"execution_instance_id,omitempty"`
+	Status                OverviewExecutionStatus `json:"status"`
+	RuntimeNodeID         *string                 `json:"runtime_node_id,omitempty"`
+	NodeID                string                  `json:"node_id"`
+	RuntimeName           string                  `json:"runtime_name"`
+	RuntimeStatus         string                  `json:"runtime_status"`
+	ProviderType          string                  `json:"provider_type"`
+	ProviderStatus        string                  `json:"provider_status"`
+	HealthStatus          string                  `json:"health_status"`
+	AgentHomeDirAvailable bool                    `json:"agent_home_dir_available"`
+}
+
+type digitalEmployeeLatestRunSummaryResponse struct {
+	RunID       string            `json:"run_id"`
+	TaskID      string            `json:"task_id"`
+	Status      OverviewRunStatus `json:"status"`
+	Title       string            `json:"title"`
+	StartedAt   *string           `json:"started_at,omitempty"`
+	UpdatedAt   *string           `json:"updated_at,omitempty"`
+	DurationSec *int32            `json:"duration_sec,omitempty"`
+	TokenUsage  *int32            `json:"token_usage,omitempty"`
+}
+
+type digitalEmployeeGovernanceSummaryResponse struct {
+	EffectiveConfigID      *string `json:"effective_config_id,omitempty"`
+	Status                 string  `json:"status"`
+	TeamRevisionNumber     *int32  `json:"team_revision_number,omitempty"`
+	EmployeeRevisionNumber *int32  `json:"employee_revision_number,omitempty"`
+	SkillsCount            int32   `json:"skills_count"`
+	MCPServersCount        int32   `json:"mcp_servers_count"`
+	ConstitutionRef        string  `json:"constitution_ref"`
+}
+
+type digitalEmployeeBudgetSummaryResponse struct {
+	UsageTokens30d *int32 `json:"usage_tokens_30d,omitempty"`
+	RunCount30d    int32  `json:"run_count_30d"`
+	Currency       string `json:"currency"`
+	Source         string `json:"source"`
+}
+
+type digitalEmployeeOverviewFiltersResponse struct {
+	Teams             []overviewFilterOptionResponse `json:"teams"`
+	Statuses          []overviewFilterOptionResponse `json:"statuses"`
+	EmployeeTypes     []overviewFilterOptionResponse `json:"employee_types"`
+	ProviderTypes     []overviewFilterOptionResponse `json:"provider_types"`
+	RuntimeNodes      []overviewFilterOptionResponse `json:"runtime_nodes"`
+	RiskLevels        []overviewFilterOptionResponse `json:"risk_levels"`
+	ExecutionStatuses []overviewFilterOptionResponse `json:"execution_statuses"`
+	RunStatuses       []overviewFilterOptionResponse `json:"run_statuses"`
+}
+
+type overviewFilterOptionResponse struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+type overviewPaginationResponse struct {
+	Limit      int32 `json:"limit"`
+	Offset     int32 `json:"offset"`
+	TotalCount int32 `json:"total_count"`
 }
 
 type createOptionsResponse struct {
@@ -693,6 +896,144 @@ func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeRespon
 		ArchivedAt:       timeStringPtr(employee.ArchivedAt),
 		CreatedAt:        timeString(employee.CreatedAt),
 		UpdatedAt:        timeString(employee.UpdatedAt),
+	}
+}
+
+func overviewResponseFromDomain(overview *DigitalEmployeeOverview) digitalEmployeeOverviewResponse {
+	if overview == nil {
+		return digitalEmployeeOverviewResponse{
+			Items:   []digitalEmployeeOverviewItemResponse{},
+			Filters: overviewFiltersResponseFromDomain(DigitalEmployeeOverviewFilters{}),
+		}
+	}
+	return digitalEmployeeOverviewResponse{
+		Summary: digitalEmployeeOverviewSummaryResponse{
+			TotalCount:          overview.Summary.TotalCount,
+			RunnableCount:       overview.Summary.RunnableCount,
+			RunningCount:        overview.Summary.RunningCount,
+			WaitingRuntimeCount: overview.Summary.WaitingRuntimeCount,
+			ErrorCount:          overview.Summary.ErrorCount,
+			HighRiskCount:       overview.Summary.HighRiskCount,
+		},
+		Items:      overviewItemResponses(overview.Items),
+		Filters:    overviewFiltersResponseFromDomain(overview.Filters),
+		Pagination: overviewPaginationResponseFromDomain(overview.Pagination),
+	}
+}
+
+func overviewItemResponses(items []DigitalEmployeeOverviewItem) []digitalEmployeeOverviewItemResponse {
+	responses := make([]digitalEmployeeOverviewItemResponse, 0, len(items))
+	for _, item := range items {
+		responses = append(responses, digitalEmployeeOverviewItemResponse{
+			IdentitySummary:   identitySummaryResponseFromDomain(item.IdentitySummary),
+			ExecutionSummary:  executionSummaryResponseFromDomain(item.ExecutionSummary),
+			LatestRunSummary:  latestRunSummaryResponseFromDomain(item.LatestRunSummary),
+			GovernanceSummary: governanceSummaryResponseFromDomain(item.GovernanceSummary),
+			BudgetSummary:     budgetSummaryResponseFromDomain(item.BudgetSummary),
+		})
+	}
+	return responses
+}
+
+func identitySummaryResponseFromDomain(summary DigitalEmployeeIdentitySummary) digitalEmployeeIdentitySummaryResponse {
+	return digitalEmployeeIdentitySummaryResponse{
+		ID:                summary.ID.String(),
+		TenantID:          summary.TenantID.String(),
+		TeamID:            uuidStringPtr(summary.TeamID),
+		TeamName:          summary.TeamName,
+		OwnerUserID:       summary.OwnerUserID.String(),
+		OwnerDisplayName:  summary.OwnerDisplayName,
+		EmployeeType:      summary.EmployeeType,
+		EmployeeTypeLabel: summary.EmployeeTypeLabel,
+		Name:              summary.Name,
+		Role:              summary.Role,
+		Description:       summary.Description,
+		Status:            summary.Status,
+		RiskLevel:         summary.RiskLevel,
+	}
+}
+
+func executionSummaryResponseFromDomain(summary DigitalEmployeeExecutionSummary) digitalEmployeeExecutionSummaryResponse {
+	return digitalEmployeeExecutionSummaryResponse{
+		ExecutionInstanceID:   uuidStringPtr(summary.ExecutionInstanceID),
+		Status:                summary.Status,
+		RuntimeNodeID:         uuidStringPtr(summary.RuntimeNodeID),
+		NodeID:                summary.NodeID,
+		RuntimeName:           summary.RuntimeName,
+		RuntimeStatus:         summary.RuntimeStatus,
+		ProviderType:          summary.ProviderType,
+		ProviderStatus:        summary.ProviderStatus,
+		HealthStatus:          summary.HealthStatus,
+		AgentHomeDirAvailable: summary.AgentHomeDirAvailable,
+	}
+}
+
+func latestRunSummaryResponseFromDomain(summary *DigitalEmployeeLatestRunSummary) *digitalEmployeeLatestRunSummaryResponse {
+	if summary == nil {
+		return nil
+	}
+	return &digitalEmployeeLatestRunSummaryResponse{
+		RunID:       summary.RunID.String(),
+		TaskID:      summary.TaskID.String(),
+		Status:      summary.Status,
+		Title:       summary.Title,
+		StartedAt:   timeStringPtr(summary.StartedAt),
+		UpdatedAt:   timeStringPtr(summary.UpdatedAt),
+		DurationSec: summary.DurationSec,
+		TokenUsage:  summary.TokenUsage,
+	}
+}
+
+func governanceSummaryResponseFromDomain(summary DigitalEmployeeGovernanceSummary) digitalEmployeeGovernanceSummaryResponse {
+	return digitalEmployeeGovernanceSummaryResponse{
+		EffectiveConfigID:      uuidStringPtr(summary.EffectiveConfigID),
+		Status:                 summary.Status,
+		TeamRevisionNumber:     summary.TeamRevisionNumber,
+		EmployeeRevisionNumber: summary.EmployeeRevisionNumber,
+		SkillsCount:            summary.SkillsCount,
+		MCPServersCount:        summary.MCPServersCount,
+		ConstitutionRef:        summary.ConstitutionRef,
+	}
+}
+
+func budgetSummaryResponseFromDomain(summary DigitalEmployeeBudgetSummary) digitalEmployeeBudgetSummaryResponse {
+	return digitalEmployeeBudgetSummaryResponse{
+		UsageTokens30d: summary.UsageTokens30d,
+		RunCount30d:    summary.RunCount30d,
+		Currency:       summary.Currency,
+		Source:         summary.Source,
+	}
+}
+
+func overviewFiltersResponseFromDomain(filters DigitalEmployeeOverviewFilters) digitalEmployeeOverviewFiltersResponse {
+	return digitalEmployeeOverviewFiltersResponse{
+		Teams:             overviewFilterOptionResponses(filters.Teams),
+		Statuses:          overviewFilterOptionResponses(filters.Statuses),
+		EmployeeTypes:     overviewFilterOptionResponses(filters.EmployeeTypes),
+		ProviderTypes:     overviewFilterOptionResponses(filters.ProviderTypes),
+		RuntimeNodes:      overviewFilterOptionResponses(filters.RuntimeNodes),
+		RiskLevels:        overviewFilterOptionResponses(filters.RiskLevels),
+		ExecutionStatuses: overviewFilterOptionResponses(filters.ExecutionStatuses),
+		RunStatuses:       overviewFilterOptionResponses(filters.RunStatuses),
+	}
+}
+
+func overviewFilterOptionResponses(options []OverviewFilterOption) []overviewFilterOptionResponse {
+	responses := make([]overviewFilterOptionResponse, 0, len(options))
+	for _, option := range options {
+		responses = append(responses, overviewFilterOptionResponse{
+			Value: option.Value,
+			Label: option.Label,
+		})
+	}
+	return responses
+}
+
+func overviewPaginationResponseFromDomain(pagination OverviewPagination) overviewPaginationResponse {
+	return overviewPaginationResponse{
+		Limit:      pagination.Limit,
+		Offset:     pagination.Offset,
+		TotalCount: pagination.TotalCount,
 	}
 }
 
