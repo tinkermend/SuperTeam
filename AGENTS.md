@@ -37,6 +37,8 @@ SuperTeam 目标是把 AI 执行能力、流程调度、人类审批、上下文
 
 ## 目录边界
 
+- html 原型设计放在 `docs/prototypes/` 目录下
+
 ```text
 apps/
   web/             # Web 控制台入口
