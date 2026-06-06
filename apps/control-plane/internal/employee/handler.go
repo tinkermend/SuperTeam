@@ -639,14 +639,16 @@ type digitalEmployeeExecutionSummaryResponse struct {
 }
 
 type digitalEmployeeLatestRunSummaryResponse struct {
-	RunID       string            `json:"run_id"`
-	TaskID      string            `json:"task_id"`
-	Status      OverviewRunStatus `json:"status"`
-	Title       string            `json:"title"`
-	StartedAt   *string           `json:"started_at,omitempty"`
-	UpdatedAt   *string           `json:"updated_at,omitempty"`
-	DurationSec *int32            `json:"duration_sec,omitempty"`
-	TokenUsage  *int32            `json:"token_usage,omitempty"`
+	RunID        string            `json:"run_id"`
+	TaskID       string            `json:"task_id"`
+	Status       OverviewRunStatus `json:"status"`
+	Title        string            `json:"title"`
+	StartedAt    *string           `json:"started_at,omitempty"`
+	UpdatedAt    *string           `json:"updated_at,omitempty"`
+	FinishedAt   *string           `json:"finished_at,omitempty"`
+	DurationSec  *int32            `json:"duration_sec,omitempty"`
+	TokenUsage   *int32            `json:"token_usage,omitempty"`
+	ErrorMessage string            `json:"error_message"`
 }
 
 type digitalEmployeeGovernanceSummaryResponse struct {
@@ -660,17 +662,18 @@ type digitalEmployeeGovernanceSummaryResponse struct {
 }
 
 type digitalEmployeeBudgetSummaryResponse struct {
-	UsageTokens30d *int32 `json:"usage_tokens_30d,omitempty"`
-	RunCount30d    int32  `json:"run_count_30d"`
-	Currency       string `json:"currency"`
-	Source         string `json:"source"`
+	UsageTokens30d *int32   `json:"usage_tokens_30d,omitempty"`
+	RunCount30d    int32    `json:"run_count_30d"`
+	CostAmount30d  *float64 `json:"cost_amount_30d,omitempty"`
+	Currency       string   `json:"currency"`
+	Source         string   `json:"source"`
 }
 
 type digitalEmployeeOverviewFiltersResponse struct {
 	Teams             []overviewFilterOptionResponse `json:"teams"`
 	Statuses          []overviewFilterOptionResponse `json:"statuses"`
 	EmployeeTypes     []overviewFilterOptionResponse `json:"employee_types"`
-	ProviderTypes     []overviewFilterOptionResponse `json:"provider_types"`
+	Providers         []overviewFilterOptionResponse `json:"providers"`
 	RuntimeNodes      []overviewFilterOptionResponse `json:"runtime_nodes"`
 	RiskLevels        []overviewFilterOptionResponse `json:"risk_levels"`
 	ExecutionStatuses []overviewFilterOptionResponse `json:"execution_statuses"`
@@ -964,14 +967,16 @@ func latestRunSummaryResponseFromDomain(summary *DigitalEmployeeLatestRunSummary
 		return nil
 	}
 	return &digitalEmployeeLatestRunSummaryResponse{
-		RunID:       summary.RunID.String(),
-		TaskID:      summary.TaskID.String(),
-		Status:      summary.Status,
-		Title:       summary.Title,
-		StartedAt:   timeStringPtr(summary.StartedAt),
-		UpdatedAt:   timeStringPtr(summary.UpdatedAt),
-		DurationSec: summary.DurationSec,
-		TokenUsage:  summary.TokenUsage,
+		RunID:        summary.RunID.String(),
+		TaskID:       summary.TaskID.String(),
+		Status:       summary.Status,
+		Title:        summary.Title,
+		StartedAt:    timeStringPtr(summary.StartedAt),
+		UpdatedAt:    timeStringPtr(summary.UpdatedAt),
+		FinishedAt:   timeStringPtr(summary.FinishedAt),
+		DurationSec:  summary.DurationSec,
+		TokenUsage:   summary.TokenUsage,
+		ErrorMessage: summary.ErrorMessage,
 	}
 }
 
@@ -991,6 +996,7 @@ func budgetSummaryResponseFromDomain(summary DigitalEmployeeBudgetSummary) digit
 	return digitalEmployeeBudgetSummaryResponse{
 		UsageTokens30d: summary.UsageTokens30d,
 		RunCount30d:    summary.RunCount30d,
+		CostAmount30d:  summary.CostAmount30d,
 		Currency:       summary.Currency,
 		Source:         summary.Source,
 	}
@@ -1001,7 +1007,7 @@ func overviewFiltersResponseFromDomain(filters DigitalEmployeeOverviewFilters) d
 		Teams:             overviewFilterOptionResponses(filters.Teams),
 		Statuses:          overviewFilterOptionResponses(filters.Statuses),
 		EmployeeTypes:     overviewFilterOptionResponses(filters.EmployeeTypes),
-		ProviderTypes:     overviewFilterOptionResponses(filters.ProviderTypes),
+		Providers:         overviewFilterOptionResponses(filters.ProviderTypes),
 		RuntimeNodes:      overviewFilterOptionResponses(filters.RuntimeNodes),
 		RiskLevels:        overviewFilterOptionResponses(filters.RiskLevels),
 		ExecutionStatuses: overviewFilterOptionResponses(filters.ExecutionStatuses),

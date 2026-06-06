@@ -344,8 +344,10 @@ func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 				ProviderType string `json:"provider_type"`
 			} `json:"execution_summary"`
 			LatestRunSummary *struct {
-				Status     string `json:"status"`
-				TokenUsage int32  `json:"token_usage"`
+				Status       string  `json:"status"`
+				FinishedAt   *string `json:"finished_at"`
+				ErrorMessage string  `json:"error_message"`
+				TokenUsage   int32   `json:"token_usage"`
 			} `json:"latest_run_summary"`
 			GovernanceSummary struct {
 				Status          string `json:"status"`
@@ -353,8 +355,9 @@ func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 				MCPServersCount int32  `json:"mcp_servers_count"`
 			} `json:"governance_summary"`
 			BudgetSummary struct {
-				RunCount30d int32  `json:"run_count_30d"`
-				Source      string `json:"source"`
+				RunCount30d   int32    `json:"run_count_30d"`
+				CostAmount30d *float64 `json:"cost_amount_30d"`
+				Source        string   `json:"source"`
 			} `json:"budget_summary"`
 		} `json:"items"`
 		Filters struct {
@@ -370,6 +373,14 @@ func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 				Value string `json:"value"`
 				Label string `json:"label"`
 			} `json:"run_statuses"`
+			Providers []struct {
+				Value string `json:"value"`
+				Label string `json:"label"`
+			} `json:"providers"`
+			ProviderTypes []struct {
+				Value string `json:"value"`
+				Label string `json:"label"`
+			} `json:"provider_types"`
 		} `json:"filters"`
 		Pagination struct {
 			Limit      int32 `json:"limit"`
@@ -389,11 +400,20 @@ func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 	if body.Items[0].LatestRunSummary == nil || body.Items[0].LatestRunSummary.TokenUsage != 1600 {
 		t.Fatalf("expected latest run token usage, got %#v", body.Items[0].LatestRunSummary)
 	}
+	if body.Items[0].LatestRunSummary.FinishedAt == nil || body.Items[0].LatestRunSummary.ErrorMessage != "执行超时" {
+		t.Fatalf("expected latest run finished/error fields, got %#v", body.Items[0].LatestRunSummary)
+	}
+	if body.Items[0].BudgetSummary.CostAmount30d == nil || *body.Items[0].BudgetSummary.CostAmount30d != 12.34 {
+		t.Fatalf("expected budget cost amount, got %#v", body.Items[0].BudgetSummary)
+	}
 	if len(body.Filters.Teams) != 1 || body.Filters.Teams[0].Label != "产品组" {
 		t.Fatalf("expected team filters, got %#v", body.Filters.Teams)
 	}
 	if len(body.Filters.ExecutionStatuses) == 0 || body.Filters.ExecutionStatuses[0].Value == "" {
 		t.Fatalf("expected execution status filters, got %#v", body.Filters.ExecutionStatuses)
+	}
+	if len(body.Filters.Providers) != 1 || body.Filters.Providers[0].Value != "codex" || len(body.Filters.ProviderTypes) != 0 {
+		t.Fatalf("expected providers filter key only, got providers=%#v provider_types=%#v", body.Filters.Providers, body.Filters.ProviderTypes)
 	}
 	if body.Pagination.Limit != 25 || body.Pagination.Offset != 5 || body.Pagination.TotalCount != 1 {
 		t.Fatalf("unexpected pagination: %#v", body.Pagination)
@@ -1410,16 +1430,18 @@ func routeEmployeeOverview(req employee.GetDigitalEmployeeOverviewRequest) *empl
 	taskID := uuid.MustParse("77777777-7777-4777-8777-777777777777")
 	effectiveConfigID := uuid.MustParse("88888888-8888-4888-8888-888888888888")
 	now := time.Date(2026, 6, 6, 10, 4, 0, 0, time.UTC)
+	finishedAt := now.Add(10 * time.Minute)
+	costAmount := 12.34
 	return &employee.DigitalEmployeeOverview{
 		Summary: employee.DigitalEmployeeOverviewSummary{TotalCount: 1, RunnableCount: 1, RunningCount: 1, WaitingRuntimeCount: 0, ErrorCount: 0, HighRiskCount: 0},
 		Items: []employee.DigitalEmployeeOverviewItem{{
 			IdentitySummary:   employee.DigitalEmployeeIdentitySummary{ID: employeeID, TenantID: req.TenantID, TeamID: &teamID, TeamName: "产品组", OwnerUserID: ownerID, OwnerDisplayName: "王佩", EmployeeType: "requirements_analyst", EmployeeTypeLabel: "需求分析", Name: "需求分析员工", Role: "requirements_analyst", Description: stringPtr("负责需求拆解和交付风险识别"), Status: employee.DigitalEmployeeStatusActive, RiskLevel: "medium"},
 			ExecutionSummary:  employee.DigitalEmployeeExecutionSummary{ExecutionInstanceID: &executionInstanceID, Status: employee.OverviewExecutionStatusReady, RuntimeNodeID: &runtimeNodeID, NodeID: "runtime-cn-01", RuntimeName: "cn-01", RuntimeStatus: "online", ProviderType: "codex", ProviderStatus: "healthy", HealthStatus: "healthy", AgentHomeDirAvailable: true},
-			LatestRunSummary:  &employee.DigitalEmployeeLatestRunSummary{RunID: runID, TaskID: taskID, Status: employee.OverviewRunStatusRunning, Title: "审查需求", StartedAt: &now, UpdatedAt: &now, DurationSec: int32Ptr(240), TokenUsage: int32Ptr(1600)},
+			LatestRunSummary:  &employee.DigitalEmployeeLatestRunSummary{RunID: runID, TaskID: taskID, Status: employee.OverviewRunStatusFailed, Title: "审查需求", StartedAt: &now, UpdatedAt: &now, FinishedAt: &finishedAt, DurationSec: int32Ptr(240), TokenUsage: int32Ptr(1600), ErrorMessage: "执行超时"},
 			GovernanceSummary: employee.DigitalEmployeeGovernanceSummary{EffectiveConfigID: &effectiveConfigID, Status: "approved", TeamRevisionNumber: int32Ptr(3), EmployeeRevisionNumber: int32Ptr(1), SkillsCount: 8, MCPServersCount: 3, ConstitutionRef: "effective-config://88888888-8888-4888-8888-888888888888/constitution"},
-			BudgetSummary:     employee.DigitalEmployeeBudgetSummary{UsageTokens30d: int32Ptr(16000), RunCount30d: 12, Currency: "USD", Source: "run_usage_projection"},
+			BudgetSummary:     employee.DigitalEmployeeBudgetSummary{UsageTokens30d: int32Ptr(16000), RunCount30d: 12, CostAmount30d: &costAmount, Currency: "USD", Source: "run_usage_projection"},
 		}},
-		Filters:    employee.DigitalEmployeeOverviewFilters{Teams: []employee.OverviewFilterOption{{Value: teamID.String(), Label: "产品组"}}, ExecutionStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewExecutionStatusMissing), Label: "未绑定 Runtime"}}, RunStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewRunStatusNone), Label: "暂无运行"}}},
+		Filters:    employee.DigitalEmployeeOverviewFilters{Teams: []employee.OverviewFilterOption{{Value: teamID.String(), Label: "产品组"}}, ProviderTypes: []employee.OverviewFilterOption{{Value: "codex", Label: "Codex"}}, ExecutionStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewExecutionStatusMissing), Label: "未绑定 Runtime"}}, RunStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewRunStatusNone), Label: "暂无运行"}}},
 		Pagination: employee.OverviewPagination{Limit: req.Limit, Offset: req.Offset, TotalCount: 1},
 	}
 }

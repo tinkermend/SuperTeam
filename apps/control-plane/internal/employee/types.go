@@ -477,14 +477,16 @@ type DigitalEmployeeExecutionSummary struct {
 }
 
 type DigitalEmployeeLatestRunSummary struct {
-	RunID       uuid.UUID
-	TaskID      uuid.UUID
-	Status      OverviewRunStatus
-	Title       string
-	StartedAt   *time.Time
-	UpdatedAt   *time.Time
-	DurationSec *int32
-	TokenUsage  *int32
+	RunID        uuid.UUID
+	TaskID       uuid.UUID
+	Status       OverviewRunStatus
+	Title        string
+	StartedAt    *time.Time
+	UpdatedAt    *time.Time
+	FinishedAt   *time.Time
+	DurationSec  *int32
+	TokenUsage   *int32
+	ErrorMessage string
 }
 
 type DigitalEmployeeGovernanceSummary struct {
@@ -500,6 +502,7 @@ type DigitalEmployeeGovernanceSummary struct {
 type DigitalEmployeeBudgetSummary struct {
 	UsageTokens30d *int32
 	RunCount30d    int32
+	CostAmount30d  *float64
 	Currency       string
 	Source         string
 }
