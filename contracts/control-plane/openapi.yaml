@@ -1063,6 +1063,67 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DigitalEmployeeCreateOptions"
+  /api/v1/digital-employees/overview:
+    get:
+      operationId: getDigitalEmployeeOverview
+      summary: Get digital employee workbench overview
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: team_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/DigitalEmployeeStatus"
+        - name: employee_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: provider_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: runtime_node_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: risk_level
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: execution_status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/DigitalEmployeeOverviewExecutionStatus"
+        - name: run_status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/DigitalEmployeeOverviewRunStatus"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Digital employee workbench overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeOverview"
   /api/v1/digital-employees/{employeeId}:
     get:
       operationId: getDigitalEmployee
@@ -2884,6 +2945,323 @@ components:
         - active
         - disabled
         - error
+    DigitalEmployeeOverviewExecutionStatus:
+      type: string
+      enum:
+        - missing
+        - provisioning
+        - ready
+        - active
+        - disabled
+        - error
+    DigitalEmployeeOverviewRunStatus:
+      type: string
+      enum:
+        - none
+        - queued
+        - dispatching
+        - running
+        - cancelling
+        - completed
+        - failed
+        - cancelled
+        - timed_out
+    DigitalEmployeeOverview:
+      type: object
+      required:
+        - summary
+        - items
+        - filters
+        - pagination
+      properties:
+        summary:
+          $ref: "#/components/schemas/DigitalEmployeeOverviewSummary"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DigitalEmployeeOverviewItem"
+        filters:
+          $ref: "#/components/schemas/DigitalEmployeeOverviewFilters"
+        pagination:
+          $ref: "#/components/schemas/OverviewPagination"
+    DigitalEmployeeOverviewSummary:
+      type: object
+      required:
+        - total_count
+        - runnable_count
+        - running_count
+        - waiting_runtime_count
+        - error_count
+        - high_risk_count
+      properties:
+        total_count:
+          type: integer
+          format: int32
+        runnable_count:
+          type: integer
+          format: int32
+        running_count:
+          type: integer
+          format: int32
+        waiting_runtime_count:
+          type: integer
+          format: int32
+        error_count:
+          type: integer
+          format: int32
+        high_risk_count:
+          type: integer
+          format: int32
+    DigitalEmployeeOverviewItem:
+      type: object
+      required:
+        - identity_summary
+        - execution_summary
+        - governance_summary
+        - budget_summary
+      properties:
+        identity_summary:
+          $ref: "#/components/schemas/DigitalEmployeeIdentitySummary"
+        execution_summary:
+          $ref: "#/components/schemas/DigitalEmployeeExecutionSummary"
+        latest_run_summary:
+          $ref: "#/components/schemas/DigitalEmployeeLatestRunSummary"
+        governance_summary:
+          $ref: "#/components/schemas/DigitalEmployeeGovernanceSummary"
+        budget_summary:
+          $ref: "#/components/schemas/DigitalEmployeeBudgetSummary"
+    DigitalEmployeeIdentitySummary:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - team_name
+        - owner_user_id
+        - owner_display_name
+        - employee_type
+        - employee_type_label
+        - name
+        - role
+        - status
+        - risk_level
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        team_name:
+          type: string
+        owner_user_id:
+          type: string
+          format: uuid
+        owner_display_name:
+          type: string
+        employee_type:
+          type: string
+        employee_type_label:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/DigitalEmployeeStatus"
+        risk_level:
+          type: string
+    DigitalEmployeeExecutionSummary:
+      type: object
+      required:
+        - status
+        - node_id
+        - runtime_name
+        - runtime_status
+        - provider_type
+        - provider_status
+        - health_status
+        - agent_home_dir_available
+      properties:
+        execution_instance_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/DigitalEmployeeOverviewExecutionStatus"
+        runtime_node_id:
+          type: string
+          format: uuid
+        node_id:
+          type: string
+        runtime_name:
+          type: string
+        runtime_status:
+          type: string
+        provider_type:
+          type: string
+        provider_status:
+          type: string
+        health_status:
+          type: string
+        agent_home_dir_available:
+          type: boolean
+    DigitalEmployeeLatestRunSummary:
+      type: object
+      required:
+        - run_id
+        - task_id
+        - status
+        - title
+        - error_message
+      properties:
+        run_id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/DigitalEmployeeOverviewRunStatus"
+        title:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        duration_sec:
+          type: integer
+          format: int32
+        token_usage:
+          type: integer
+          format: int32
+        error_message:
+          type: string
+    DigitalEmployeeGovernanceSummary:
+      type: object
+      required:
+        - status
+        - skills_count
+        - mcp_servers_count
+        - constitution_ref
+      properties:
+        effective_config_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        team_revision_number:
+          type: integer
+          format: int32
+        employee_revision_number:
+          type: integer
+          format: int32
+        skills_count:
+          type: integer
+          format: int32
+        mcp_servers_count:
+          type: integer
+          format: int32
+        constitution_ref:
+          type: string
+    DigitalEmployeeBudgetSummary:
+      type: object
+      required:
+        - run_count_30d
+        - currency
+        - source
+      properties:
+        usage_tokens_30d:
+          type: integer
+          format: int32
+        run_count_30d:
+          type: integer
+          format: int32
+        cost_amount_30d:
+          type: number
+          format: double
+        currency:
+          type: string
+        source:
+          type: string
+    DigitalEmployeeOverviewFilters:
+      type: object
+      required:
+        - teams
+        - employee_types
+        - statuses
+        - providers
+        - runtime_nodes
+        - risk_levels
+        - execution_statuses
+        - run_statuses
+      properties:
+        teams:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverviewFilterOption"
+        employee_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverviewFilterOption"
+        statuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverviewFilterOption"
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverviewFilterOption"
+        runtime_nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverviewFilterOption"
+        risk_levels:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverviewFilterOption"
+        execution_statuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverviewFilterOption"
+        run_statuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverviewFilterOption"
+    OverviewFilterOption:
+      type: object
+      required:
+        - value
+        - label
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+    OverviewPagination:
+      type: object
+      required:
+        - limit
+        - offset
+        - total_count
+      properties:
+        limit:
+          type: integer
+          format: int32
+        offset:
+          type: integer
+          format: int32
+        total_count:
+          type: integer
+          format: int32
     DigitalEmployee:
       type: object
       required:
