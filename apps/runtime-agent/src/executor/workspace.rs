@@ -84,7 +84,10 @@ pub fn cleanup_workspace(workspace: &TaskWorkspace, config: &RuntimeConfig) -> R
             println!("Workspace retained at: {:?}", workspace.path);
         }
         policy => {
-            eprintln!("Unknown cleanup policy: {}, defaulting to 'on_completion'", policy);
+            eprintln!(
+                "Unknown cleanup policy: {}, defaulting to 'on_completion'",
+                policy
+            );
             remove_workspace(workspace)?;
         }
     }
@@ -98,10 +101,16 @@ pub fn cleanup_run_workspace(workspace: &RunWorkspace, config: &RuntimeConfig) -
             remove_run_workspace(workspace)?;
         }
         "never" => {
-            println!("Run workspace retained at: {:?}", workspace.workspace_path.parent());
+            println!(
+                "Run workspace retained at: {:?}",
+                workspace.workspace_path.parent()
+            );
         }
         policy => {
-            eprintln!("Unknown cleanup policy: {}, defaulting to 'on_completion'", policy);
+            eprintln!(
+                "Unknown cleanup policy: {}, defaulting to 'on_completion'",
+                policy
+            );
             remove_run_workspace(workspace)?;
         }
     }
@@ -187,6 +196,7 @@ fn cleanup_old_instances(config: &RuntimeConfig) -> Result<()> {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use tempfile::TempDir;

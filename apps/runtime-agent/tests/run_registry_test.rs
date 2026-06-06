@@ -29,6 +29,7 @@ async fn store_records_provider_session_events_and_replays_them() {
             &run.id,
             ProviderEvent::SessionStarted {
                 session_id: "claude-session-1".to_string(),
+                session_state: None,
             },
         )
         .await
@@ -67,7 +68,8 @@ async fn store_records_provider_session_events_and_replays_them() {
     assert_eq!(
         events[0].event,
         ProviderEvent::SessionStarted {
-            session_id: "claude-session-1".to_string()
+            session_id: "claude-session-1".to_string(),
+            session_state: None,
         }
     );
     assert_eq!(events[2].sequence, 3);

@@ -9,9 +9,20 @@ pub enum ProviderEvent {
         session_state: Option<serde_json::Value>,
     },
     TurnStarted,
-    TextDelta { text: String },
-    ToolStarted { tool_id: String, name: String },
-    ToolCompleted { tool_id: String },
-    TurnCompleted { summary: Option<String> },
-    TurnError { message: String },
+    TextDelta {
+        text: String,
+    },
+    ToolStarted {
+        tool_id: String,
+        name: String,
+    },
+    ToolCompleted {
+        tool_id: String,
+    },
+    TurnCompleted {
+        summary: Option<String>,
+    },
+    TurnError {
+        message: String,
+    },
 }

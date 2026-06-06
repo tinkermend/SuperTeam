@@ -42,7 +42,10 @@ impl ArtifactCollector {
                     .and_then(|n| n.to_str())
                     .context("Invalid filename")?;
 
-                let key = format!("runtime/{}/{}/{}/{}", tenant_id, run_id, artifact_type, file_name);
+                let key = format!(
+                    "runtime/{}/{}/{}/{}",
+                    tenant_id, run_id, artifact_type, file_name
+                );
                 let artifact_ref = self.upload_file(&key, &path).await?;
                 refs.push(artifact_ref);
             }

@@ -19,7 +19,8 @@ fn parses_claude_session_and_text_and_completion_events() {
     assert_eq!(
         session,
         ProviderEvent::SessionStarted {
-            session_id: "abc".to_string()
+            session_id: "abc".to_string(),
+            session_state: None,
         }
     );
     assert_eq!(
@@ -51,7 +52,8 @@ fn parses_opencode_session_text_and_completion_events() {
     assert_eq!(
         session,
         ProviderEvent::SessionStarted {
-            session_id: "oc-1".to_string()
+            session_id: "oc-1".to_string(),
+            session_state: None,
         }
     );
     assert_eq!(

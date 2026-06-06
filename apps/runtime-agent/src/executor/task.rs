@@ -9,7 +9,7 @@ use crate::providers::{
 };
 
 use super::retry::push_event_with_retry;
-use super::workspace::{cleanup_run_workspace, cleanup_workspace, create_run_workspace, create_task_workspace};
+use super::workspace::{cleanup_run_workspace, create_run_workspace};
 
 pub async fn execute_task(
     task: crate::controlplane::models::Task,

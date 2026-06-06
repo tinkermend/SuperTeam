@@ -54,7 +54,8 @@ printf '%s\n' '{"type":"result","result":"done"}'
         events,
         vec![
             ProviderEvent::SessionStarted {
-                session_id: "claude-session".to_string()
+                session_id: "claude-session".to_string(),
+                session_state: None,
             },
             ProviderEvent::TextDelta {
                 text: "hello from claude".to_string()
@@ -92,7 +93,8 @@ printf '%s\n' '{"type":"turn.completed"}'
         events,
         vec![
             ProviderEvent::SessionStarted {
-                session_id: "opencode-session".to_string()
+                session_id: "opencode-session".to_string(),
+                session_state: None,
             },
             ProviderEvent::TextDelta {
                 text: "hello from opencode".to_string()
