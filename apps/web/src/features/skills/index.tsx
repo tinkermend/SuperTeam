@@ -159,10 +159,6 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
     },
   });
 
-  const refreshSkills = () => {
-    void queryClient.invalidateQueries({ queryKey: ["skills"] });
-  };
-
   return (
     <>
       <Header>
@@ -182,10 +178,6 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={refreshSkills} type="button" variant="outline">
-                <RefreshCw data-icon="inline-start" />
-                同步市场
-              </Button>
               <Button onClick={() => setUploadOpen(true)} type="button">
                 <UploadCloud data-icon="inline-start" />
                 上传技能
@@ -250,7 +242,7 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
             </TabsContent>
 
             <TabsContent value="market">
-              <SkillMarket skills={marketplaceSkills} onUpload={() => setUploadOpen(true)} />
+              <SkillMarket skills={marketplaceSkills} />
             </TabsContent>
           </Tabs>
         </div>
@@ -413,7 +405,7 @@ function SkillEditorPanel({
             <Editor
               height="100%"
               language={languageForFile(file.path)}
-              onChange={(value) => onChange(value ?? "")}
+              onChange={(value: string | undefined) => onChange(value ?? "")}
               options={{
                 fontSize: 13,
                 minimap: { enabled: false },
@@ -481,11 +473,11 @@ function SkillSidePanel({ skill }: { skill?: Skill }) {
   );
 }
 
-function SkillMarket({ onUpload, skills }: { onUpload: () => void; skills: Skill[] }) {
+function SkillMarket({ skills }: { skills: Skill[] }) {
   const uploadedTags = [...new Set(skills.flatMap((skill) => skill.tags))];
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)_320px]">
+    <div className="grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)]">
       <LiquidCard className="rounded-lg">
         <CardHeader className="border-b">
           <CardTitle className="text-base">上传标签</CardTitle>
@@ -499,7 +491,7 @@ function SkillMarket({ onUpload, skills }: { onUpload: () => void; skills: Skill
           {uploadedTags.length === 0 ? <p className="text-sm text-muted-foreground">暂无上传标签</p> : null}
         </CardContent>
       </LiquidCard>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {skills.map((skill) => (
           <LiquidCard className="rounded-lg" key={skill.id}>
             <CardContent className="flex min-h-48 flex-col gap-4 p-4">
@@ -525,18 +517,6 @@ function SkillMarket({ onUpload, skills }: { onUpload: () => void; skills: Skill
           </LiquidCard>
         ))}
       </div>
-      <LiquidCard className="rounded-lg">
-        <CardHeader className="border-b">
-          <CardTitle className="text-base">技能详情</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 p-4">
-          <p className="text-sm text-muted-foreground">技能市场展示上传定义的标签、文件结构和安装状态。</p>
-          <Button onClick={onUpload} type="button">
-            <UploadCloud data-icon="inline-start" />
-            上传技能
-          </Button>
-        </CardContent>
-      </LiquidCard>
     </div>
   );
 }

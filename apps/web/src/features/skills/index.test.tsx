@@ -203,6 +203,8 @@ describe("SkillsView", () => {
     await expect.element(screen.getByText("诊断与调试")).not.toBeInTheDocument();
     await expect.element(screen.getByText("4.9")).not.toBeInTheDocument();
     await expect.element(screen.getByText("评分")).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "同步市场" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "技能详情" })).not.toBeInTheDocument();
   });
 
   it("uploads a zip from a dialog with description tags and multiple teams", async () => {
