@@ -20,6 +20,11 @@ func TestOverviewExecutionStatus(t *testing.T) {
 	require.Equal(t, OverviewExecutionStatusReady, overviewExecutionStatus("ready"))
 }
 
+func TestOverviewRunStatus(t *testing.T) {
+	require.Equal(t, OverviewRunStatusNone, overviewRunStatus(""))
+	require.Equal(t, OverviewRunStatusRunning, overviewRunStatus("running"))
+}
+
 func TestOverviewBudgetSource(t *testing.T) {
 	require.Equal(t, "unavailable", overviewBudgetSource(0, 0))
 	require.Equal(t, "run_usage_projection", overviewBudgetSource(3, 1600))
