@@ -224,6 +224,48 @@ func TestDigitalEmployeeCreationMigrationAddsOwnerAndType(t *testing.T) {
 	}
 }
 
+func TestSkillManagementMigrationAddsSkillPackageTables(t *testing.T) {
+	body, err := os.ReadFile("migrations/009_skill_management.sql")
+	if err != nil {
+		t.Fatalf("read skill management migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"CREATE TABLE IF NOT EXISTS skills",
+		"CREATE TABLE IF NOT EXISTS skill_files",
+		"CREATE TABLE IF NOT EXISTS skill_team_bindings",
+		"CREATE TABLE IF NOT EXISTS skill_agent_bindings",
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"tenant_id UUID NOT NULL",
+		"tags TEXT[] NOT NULL DEFAULT '{}'::text[]",
+		"content TEXT NOT NULL DEFAULT ''",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_skills_tenant_slug_active",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_skill_files_tenant_skill_path",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_skill_team_bindings_tenant_skill_team",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_skill_agent_bindings_tenant_skill_employee",
+		"COMMENT ON TABLE skills IS '技能包主表，记录可上传、安装和绑定到数字员工的技能定义'",
+		"COMMENT ON COLUMN skills.tags IS '上传定义的技能标签数组，技能市场展示只使用此字段'",
+		"COMMENT ON TABLE skill_files IS '技能包文件表，保存 SKILL.md、脚本和附加资源的可编辑文本内容'",
+		"COMMENT ON TABLE skill_agent_bindings IS '技能安装到数字员工的绑定表'",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected skill management migration to contain %q", expected)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"rating",
+		"stars",
+		"BIGSERIAL",
+		"CREATE TYPE skill",
+	} {
+		if strings.Contains(strings.ToLower(sql), strings.ToLower(forbidden)) {
+			t.Fatalf("skill migration must not contain %q", forbidden)
+		}
+	}
+}
+
 func TestDigitalEmployeeCreationQueriesHandlePolicyReasonsAndAbortAnchoring(t *testing.T) {
 	body, err := os.ReadFile("queries/employee_execution.sql")
 	if err != nil {

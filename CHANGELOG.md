@@ -69,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-06 09:44：完成技能管理主链路，新增 Control Plane 技能包、文件、团队归属和 Agent 安装绑定 API，Web 技能页支持已安装技能树、Monaco 文件编辑、技能市场上传标签展示和彩色图标，以及 zip 弹窗上传并绑定多个团队。
 - 2026-06-05 21:55：新增数字员工创建闭环设计规格，明确专业执行型数字员工创建为 `ready` 准备态，引入 `owner_user_id`、服务端专业类型注册表、创建候选接口和分步创建向导；项目协调员不进入数字员工创建模型。
 - 2026-06-05 18:35：Web 控制台在“平台管理”下新增“成本管理”入口和 `/costs` 占位页，预留按数字员工查看 token 消耗成本以及每日、每月 token 成本统计视图，后续实现参考 `paperclip` 的 costs 模块。
 - 2026-06-05 16:22：为项目协调员控制平面设计补充 gpt-image2 生成的架构流程图和项目内数据流转图，便于对齐 Project、Coordinator、执行员工、Runtime、Provider、证据和人类决策关系。

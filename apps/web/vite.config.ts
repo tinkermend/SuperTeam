@@ -22,7 +22,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ['@tanstack/react-query', '@radix-ui/react-alert-dialog', '@radix-ui/react-select', '@radix-ui/react-tabs'],
+    include: ['@tanstack/react-query', '@radix-ui/react-alert-dialog', '@radix-ui/react-select', '@radix-ui/react-tabs', '@monaco-editor/react'],
   },
   test: {
     silent: 'passed-only',

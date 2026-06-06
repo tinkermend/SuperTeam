@@ -1341,6 +1341,97 @@ paths:
       responses:
         "202":
           description: Provider session event accepted
+  /api/v1/skills:
+    get:
+      operationId: listSkills
+      summary: List skills with files and bindings
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SkillStatus"
+      responses:
+        "200":
+          description: Skill list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Skill"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/skills/uploads:
+    post:
+      operationId: uploadSkill
+      summary: Upload a skill package zip
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UploadSkillRequest"
+      responses:
+        "201":
+          description: Skill uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Skill"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/skills/{skillId}:
+    get:
+      operationId: getSkill
+      summary: Get a skill with files and bindings
+      parameters:
+        - $ref: "#/components/parameters/SkillId"
+      responses:
+        "200":
+          description: Skill
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Skill"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/skills/{skillId}/files/{filePath}:
+    put:
+      operationId: updateSkillFile
+      summary: Update a skill file
+      parameters:
+        - $ref: "#/components/parameters/SkillId"
+        - $ref: "#/components/parameters/SkillFilePath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSkillFileRequest"
+      responses:
+        "200":
+          description: Skill file updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillFile"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
 components:
   parameters:
     Limit:
@@ -1406,6 +1497,21 @@ components:
       schema:
         type: string
         format: uuid
+    SkillId:
+      name: skillId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SkillFilePath:
+      name: filePath
+      in: path
+      required: true
+      description: Slash-separated skill package path captured by the server wildcard. Encode each path segment.
+      schema:
+        type: string
+        minLength: 1
     GovernanceDraftId:
       name: draftId
       in: path
@@ -2612,6 +2718,163 @@ components:
         message:
           type: string
         severity:
+          type: string
+    SkillStatus:
+      type: string
+      enum:
+        - installed
+        - available
+    SkillFileType:
+      type: string
+      enum:
+        - file
+    Skill:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - slug
+        - name
+        - description
+        - version
+        - source
+        - risk_level
+        - status
+        - icon_key
+        - color_token
+        - tags
+        - files
+        - team_bindings
+        - agent_bindings
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        version:
+          type: string
+        source:
+          type: string
+        risk_level:
+          type: string
+        status:
+          $ref: "#/components/schemas/SkillStatus"
+        icon_key:
+          type: string
+        color_token:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillFile"
+        team_bindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillTeamBinding"
+        agent_bindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillAgentBinding"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    SkillFile:
+      type: object
+      required:
+        - path
+        - file_type
+        - size_bytes
+      properties:
+        id:
+          type: string
+          format: uuid
+        path:
+          type: string
+        file_type:
+          $ref: "#/components/schemas/SkillFileType"
+        content:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        checksum_sha256:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+    SkillTeamBinding:
+      type: object
+      required:
+        - team_id
+        - team_name
+      properties:
+        team_id:
+          type: string
+          format: uuid
+        team_name:
+          type: string
+    SkillAgentBinding:
+      type: object
+      required:
+        - agent_id
+        - agent_name
+        - status
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        agent_name:
+          type: string
+        team_id:
+          type: string
+          format: uuid
+        team_name:
+          type: string
+        status:
+          type: string
+    UploadSkillRequest:
+      type: object
+      required:
+        - file
+        - name
+      properties:
+        file:
+          type: string
+          format: binary
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        tags:
+          type: string
+          description: Comma-separated uploaded skill labels.
+        team_ids:
+          type: string
+          description: Comma-separated team UUIDs that can use the skill.
+        risk_level:
+          type: string
+    UpdateSkillFileRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
           type: string
     DigitalEmployeeStatus:
       type: string

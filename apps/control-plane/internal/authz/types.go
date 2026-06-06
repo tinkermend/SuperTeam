@@ -19,6 +19,7 @@ const (
 	ResourceTenant   = "tenant"
 	ResourceTeam     = "team"
 	ResourceEmployee = "employee"
+	ResourceSkill    = "skill"
 	ResourceTask     = "task"
 )
 
@@ -40,6 +41,10 @@ const (
 	ActionEmployeeRunCreate     = "employee.run.create"
 	ActionEmployeeRunStop       = "employee.run.stop"
 	ActionEmployeeRunLogRead    = "employee.run.log.read"
+
+	ActionSkillRead   = "skill.read"
+	ActionSkillUpload = "skill.upload"
+	ActionSkillUpdate = "skill.update"
 
 	ActionTeamCreate                      = "team.create"
 	ActionTeamRead                        = "team.read"

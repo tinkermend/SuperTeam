@@ -1761,7 +1761,7 @@ describe("TeamDetailView", () => {
       )
       .toBeVisible();
     await expect
-      .element(screen.getByRole("button", { name: "从此团队创建数字员工" }))
+      .element(screen.getByRole("link", { name: "从此团队创建数字员工" }))
       .toBeVisible();
 
     for (const column of [
@@ -1780,25 +1780,26 @@ describe("TeamDetailView", () => {
     await expect.element(screen.getByText("v3（继承团队）")).toBeVisible();
     await expect.element(screen.getByText("ops-node-01")).toBeVisible();
 
-    await expect.element(screen.getByLabelText("名称")).toBeVisible();
-    await expect.element(screen.getByLabelText("角色")).toBeVisible();
-    await expect.element(screen.getByLabelText("描述")).toBeVisible();
-    await userEvent.fill(screen.getByLabelText("名称"), "日志分析员工");
-    await userEvent.fill(screen.getByLabelText("角色"), "log_analyst");
-    await userEvent.fill(screen.getByLabelText("描述"), "分析异常日志");
-    await userEvent.click(
-      screen.getByRole("button", { name: "从此团队创建数字员工" }),
-    );
-
     await expect
-      .element(screen.getByText("已创建草稿：日志分析员工"))
+      .element(
+        screen.getByText(
+          "新数字员工需要选择专业类型、能力、治理和 Runtime 绑定，请进入创建向导完成。",
+        ),
+      )
       .toBeVisible();
+    await expect
+      .element(screen.getByRole("link", { name: "从此团队创建数字员工" }))
+      .toHaveAttribute("href", "/employees/new");
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/digital-employees?team_id=team-1",
       expect.objectContaining({
         credentials: "include",
         method: "GET",
       }),
+    );
+    expect(fetcher).not.toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees",
+      expect.objectContaining({ method: "POST" }),
     );
     expect(fetcher).not.toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/digital-employees/employee-hidden-unbound/execution-instance",

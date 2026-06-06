@@ -12,6 +12,7 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/tenant"
 )
 
@@ -26,6 +27,7 @@ type Server struct {
 	authorizer                     authz.Authorizer
 	authzCenterHandler             *authzcenter.HTTPHandler
 	employeeHandler                *employee.HTTPHandler
+	skillHandler                   *skill.HTTPHandler
 	tenantHandler                  *tenant.HTTPHandler
 }
 
@@ -117,6 +119,14 @@ func (s *Server) SetTenantHandler(tenantHandler *tenant.HTTPHandler) {
 	s.registerRoutes()
 }
 
+func (s *Server) SetSkillHandler(skillHandler *skill.HTTPHandler) {
+	s.skillHandler = skillHandler
+	if skillHandler != nil {
+		skillHandler.SetAuthorizer(s.authorizer)
+	}
+	s.registerRoutes()
+}
+
 func (s *Server) SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler) {
 	s.runtimeCommandWritebackHandler = runtimeCommandWritebackHandler
 	s.registerRoutes()
@@ -196,6 +206,16 @@ func (s *Server) registerRoutes() {
 				r.Post("/teams/{teamId}/governance/drafts/{draftId}/approve", s.tenantHandler.ApproveGovernanceDraft)
 				r.Post("/teams/{teamId}/governance/drafts/{draftId}/reject", s.tenantHandler.RejectGovernanceDraft)
 				r.Get("/teams/{teamId}/governance/drafts/{draftId}/diff", s.tenantHandler.PreviewGovernanceDiff)
+			})
+		}
+
+		if s.skillHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/skills", s.skillHandler.ListSkills)
+				r.Post("/skills/uploads", s.skillHandler.UploadSkill)
+				r.Get("/skills/{skillId}", s.skillHandler.GetSkill)
+				r.Put("/skills/{skillId}/files/*", s.skillHandler.UpdateSkillFile)
 			})
 		}
 

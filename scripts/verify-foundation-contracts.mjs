@@ -37,6 +37,10 @@ const requiredOpenApiOperations = new Set([
   "GET /api/v1/digital-employees/{employeeId}/runs/{runId}",
   "GET /api/v1/digital-employees/{employeeId}/runs/{runId}/events",
   "POST /api/v1/digital-employees/{employeeId}/runs/{runId}/stop",
+  "GET /api/v1/skills",
+  "POST /api/v1/skills/uploads",
+  "GET /api/v1/skills/{skillId}",
+  "PUT /api/v1/skills/{skillId}/files/{filePath}",
 ]);
 
 const requiredRustClientPaths = new Set([
@@ -78,6 +82,9 @@ const requiredTypeScriptClientPaths = new Set([
   "/api/v1/digital-employees/{employeeId}/runs/{runId}",
   "/api/v1/digital-employees/{employeeId}/runs/{runId}/events",
   "/api/v1/digital-employees/{employeeId}/runs/{runId}/stop",
+  "/api/v1/skills",
+  "/api/v1/skills/uploads",
+  "/api/v1/skills/{skillId}/files/{filePath}",
 ]);
 
 function readText(path) {
@@ -101,7 +108,9 @@ function normalizePath(path) {
     .replace(/\/api\/v1\/runtime\/nodes\/\{taskId\}/g, "/api/v1/runtime/nodes/{nodeId}")
     .replace(/\/api\/v1\/runtime\/sessions\/\{id\}/g, "/api/v1/runtime/sessions/{sessionId}")
     .replace(/\/api\/v1\/runtime\/nodes\/\{id\}/g, "/api/v1/runtime/nodes/{nodeId}")
-    .replace(/\{nodeId\}/g, "{nodeId}");
+    .replace(/\{nodeId\}/g, "{nodeId}")
+    .replace(/\/api\/v1\/skills\/\{skillId\}\/files\/\*/g, "/api/v1/skills/{skillId}/files/{filePath}")
+    .replace(/\{filePath:\.\*\}/g, "{filePath}");
 }
 
 function normalizeOperation(method, path) {
@@ -203,6 +212,7 @@ function readTypeScriptClientPaths() {
     "apps/web/src/lib/api/runtime.ts",
     "apps/web/src/lib/api/teams.ts",
     "apps/web/src/lib/api/employees.ts",
+    "apps/web/src/lib/api/skills.ts",
   ];
   const paths = new Set();
 
@@ -222,7 +232,10 @@ function readTypeScriptClientPaths() {
             .replaceAll("${employeeId}", "{employeeId}")
             .replaceAll("${encodedEmployeeId}", "{employeeId}")
             .replaceAll("${runId}", "{runId}")
-            .replaceAll("${encodedRunId}", "{runId}"),
+            .replaceAll("${encodedRunId}", "{runId}")
+            .replaceAll("${skillId}", "{skillId}")
+            .replaceAll("${encodedSkillId}", "{skillId}")
+            .replaceAll("${encodedPath}", "{filePath}"),
         ),
       );
     }

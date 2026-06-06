@@ -14,6 +14,7 @@ import (
 	"github.com/superteam/control-plane/internal/config"
 	"github.com/superteam/control-plane/internal/employee"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
+	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/storage/queries"
 	"github.com/superteam/control-plane/internal/task"
@@ -27,6 +28,7 @@ type Container struct {
 	EmployeeService                *employee.Service
 	EmployeeRun                    *employee.DigitalEmployeeRunService
 	EmployeeRunWriteback           *employee.DigitalEmployeeRunWritebackService
+	SkillService                   *skill.Service
 	TenantService                  *tenant.Service
 	AuditService                   *audit.Service
 	RuntimeCommands                *runtimepkg.ConnectionRegistry
@@ -38,6 +40,7 @@ type Container struct {
 	RuntimeHandler                 *handlers.RuntimeHandler
 	RuntimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler
 	EmployeeHandler                *employee.HTTPHandler
+	SkillHandler                   *skill.HTTPHandler
 	TenantHandler                  *tenant.HTTPHandler
 	AuthzHandler                   *authzcenter.HTTPHandler
 	Server                         *api.Server
@@ -108,6 +111,8 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	if err != nil {
 		return nil, err
 	}
+	skillRepository := skill.NewPgRepository(stores.Postgres)
+	skillService := skill.NewService(skillRepository)
 
 	authRepository := auth.NewPgRepository(q)
 	authService, err := auth.NewService(authRepository)
@@ -135,12 +140,14 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
 	runtimeCommandWritebackHandler := handlers.NewRuntimeCommandWritebackHandler(runWritebackService)
 	employeeHandler := employee.NewHandlerWithRunService(employeeService, runService)
+	skillHandler := skill.NewHandler(skillService)
 	tenantHandler := tenant.NewHandler(tenantService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
 	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
 	server.SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler)
 	server.SetTenantHandler(tenantHandler)
 	server.SetEmployeeHandler(employeeHandler)
+	server.SetSkillHandler(skillHandler)
 
 	return &Container{
 		Queries:                        q,
@@ -149,6 +156,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		EmployeeService:                employeeService,
 		EmployeeRun:                    runService,
 		EmployeeRunWriteback:           runWritebackService,
+		SkillService:                   skillService,
 		TenantService:                  tenantService,
 		AuditService:                   auditService,
 		RuntimeCommands:                runtimeCommands,
@@ -160,6 +168,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		RuntimeHandler:                 runtimeHandler,
 		RuntimeCommandWritebackHandler: runtimeCommandWritebackHandler,
 		EmployeeHandler:                employeeHandler,
+		SkillHandler:                   skillHandler,
 		TenantHandler:                  tenantHandler,
 		AuthzHandler:                   authzCenterHandler,
 		Server:                         server,

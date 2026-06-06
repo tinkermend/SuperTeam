@@ -1,11 +1,9 @@
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { Bot, CheckCircle2, FileText, PlugZap, TriangleAlert, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -14,11 +12,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { ApiRequestError } from "@/lib/api/client";
 import type { DigitalEmployee, DigitalEmployeeExecutionInstance } from "@/lib/api/employees";
 import {
-  createDigitalEmployee,
   getDigitalEmployeeExecutionInstance,
   listDigitalEmployees,
 } from "@/lib/api/employees";
@@ -38,11 +34,6 @@ type InstanceState = {
 };
 
 export function TeamDigitalEmployeesTab({ apiBaseUrl, fetcher, teamId }: TeamDigitalEmployeesTabProps) {
-  const queryClient = useQueryClient();
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("");
-  const [description, setDescription] = useState("");
-  const [createdDraftName, setCreatedDraftName] = useState("");
   const [page, setPage] = useState(1);
   const options = { baseUrl: apiBaseUrl, fetcher };
   const employeesQueryKey = ["team-digital-employees", teamId];
@@ -80,25 +71,6 @@ export function TeamDigitalEmployeesTab({ apiBaseUrl, fetcher, teamId }: TeamDig
   const staleConfigCount = employeeRows.filter((employee) => employee.metadata?.effective_config_status === "stale").length;
   const activeCount = employeeRows.filter((employee) => employee.status === "active").length;
   const draftCount = employeeRows.filter((employee) => employee.status === "draft").length;
-  const trimmedName = name.trim();
-  const trimmedRole = role.trim();
-  const trimmedDescription = description.trim();
-  const createEmployee = useMutation({
-    mutationFn: () =>
-      createDigitalEmployee(options, {
-        name: trimmedName,
-        role: trimmedRole,
-        description: trimmedDescription || undefined,
-        team_id: teamId,
-      }),
-    onSuccess: (employee) => {
-      setCreatedDraftName(employee.name);
-      setName("");
-      setRole("");
-      setDescription("");
-      void queryClient.invalidateQueries({ queryKey: employeesQueryKey });
-    },
-  });
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -181,52 +153,18 @@ export function TeamDigitalEmployeesTab({ apiBaseUrl, fetcher, teamId }: TeamDig
 
       <Card>
         <CardHeader>
-          <CardTitle>快速创建</CardTitle>
+          <CardTitle>创建入口</CardTitle>
         </CardHeader>
-        <CardContent>
-          <form
-            className="flex flex-col gap-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (trimmedName && trimmedRole) {
-                createEmployee.mutate();
-              }
-            }}
-          >
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="team-employee-name">名称</Label>
-              <Input
-                id="team-employee-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="日志分析员工"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="team-employee-role">角色</Label>
-              <Input
-                id="team-employee-role"
-                value={role}
-                onChange={(event) => setRole(event.target.value)}
-                placeholder="log_analyst"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="team-employee-description">描述</Label>
-              <Textarea
-                id="team-employee-description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="分析异常日志"
-              />
-            </div>
-            <Button type="submit" disabled={createEmployee.isPending || !trimmedName || !trimmedRole}>
+        <CardContent className="flex flex-col gap-3">
+          <p className="text-sm text-muted-foreground">
+            新数字员工需要选择专业类型、能力、治理和 Runtime 绑定，请进入创建向导完成。
+          </p>
+          <Button asChild type="button">
+            <a href="/employees/new">
               <Bot data-icon="inline-start" />
               从此团队创建数字员工
-            </Button>
-            {createdDraftName ? <p className="text-sm text-muted-foreground">已创建草稿：{createdDraftName}</p> : null}
-            {createEmployee.isError ? <p className="text-sm text-destructive">数字员工创建失败</p> : null}
-          </form>
+            </a>
+          </Button>
         </CardContent>
       </Card>
     </div>
