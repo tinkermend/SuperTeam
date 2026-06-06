@@ -126,16 +126,27 @@ func employeeTypesForTeamConfig(teamConfig TeamConfigInput) ([]EmployeeTypeDefin
 	}
 	defaultTypes := DefaultEmployeeTypeDefinitions()
 	if len(allowedTypes) == 0 {
-		return defaultTypes, nil
+		filtered := make([]EmployeeTypeDefinition, 0, len(defaultTypes))
+		for _, definition := range defaultTypes {
+			filtered = append(filtered, employeeTypeDefinitionForTeamConfig(definition, teamConfig))
+		}
+		return filtered, nil
 	}
 	allowedSet := stringSet(allowedTypes)
 	filtered := make([]EmployeeTypeDefinition, 0, len(defaultTypes))
 	for _, definition := range defaultTypes {
 		if allowedSet[definition.Type] {
-			filtered = append(filtered, definition)
+			filtered = append(filtered, employeeTypeDefinitionForTeamConfig(definition, teamConfig))
 		}
 	}
 	return filtered, nil
+}
+
+func employeeTypeDefinitionForTeamConfig(definition EmployeeTypeDefinition, teamConfig TeamConfigInput) EmployeeTypeDefinition {
+	filtered := cloneEmployeeTypeDefinition(definition)
+	filtered.DefaultCapabilitySelection = constrainedDefaultCapabilitySelection(definition.DefaultCapabilitySelection, teamConfig)
+	filtered.DefaultContextPolicyOverride = constrainedDefaultContextPolicyOverride(definition.DefaultContextPolicyOverride, teamConfig)
+	return filtered
 }
 
 func allowedEmployeeTypesFromTeamConfig(teamConfig TeamConfigInput) ([]string, error) {
@@ -369,7 +380,7 @@ func validateEmployeeTypeAllowedByTeamConfig(employeeType string, teamConfig Tea
 }
 
 func (s *Service) validateInitialEffectiveConfig(ctx context.Context, repository Repository, req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput, employeeID uuid.UUID) error {
-	configInput := initialEmployeeConfigInput(req, definition, employeeID, uuid.New(), 1)
+	configInput := initialEmployeeConfigInput(req, definition, teamConfig, employeeID, uuid.New(), 1)
 	preview, err := s.previewEffectiveConfigWithRepository(ctx, repository, teamConfig, configInput)
 	if err != nil {
 		return err
@@ -396,7 +407,7 @@ func (s *Service) createLocalReadyEmployeeFacts(ctx context.Context, repository 
 	if err != nil {
 		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("create digital employee: %w", err)
 	}
-	configRevision, err := s.createInitialActiveConfigRevision(ctx, repository, record, req, definition)
+	configRevision, err := s.createInitialActiveConfigRevision(ctx, repository, record, req, definition, teamConfig)
 	if err != nil {
 		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
 	}
@@ -436,7 +447,7 @@ func createDigitalEmployeeParams(req CreateDigitalEmployeeRequest) CreateDigital
 	}
 }
 
-func (s *Service) createInitialActiveConfigRevision(ctx context.Context, repository Repository, record DigitalEmployeeRecord, req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition) (DigitalEmployeeConfigRevisionRecord, error) {
+func (s *Service) createInitialActiveConfigRevision(ctx context.Context, repository Repository, record DigitalEmployeeRecord, req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput) (DigitalEmployeeConfigRevisionRecord, error) {
 	nextRevision, err := repository.GetNextDigitalEmployeeConfigRevisionNumber(ctx, req.TenantID, record.ID)
 	if err != nil {
 		return DigitalEmployeeConfigRevisionRecord{}, fmt.Errorf("get next digital employee config revision number: %w", err)
@@ -446,7 +457,7 @@ func (s *Service) createInitialActiveConfigRevision(ctx context.Context, reposit
 	}
 	approvedBy := req.OwnerUserID
 	now := time.Now().UTC()
-	params := initialEmployeeConfigParams(req, definition, record.ID, nextRevision, approvedBy, now)
+	params := initialEmployeeConfigParams(req, definition, teamConfig, record.ID, nextRevision, approvedBy, now)
 	revision, err := repository.CreateDigitalEmployeeConfigRevision(ctx, params)
 	if err != nil {
 		return DigitalEmployeeConfigRevisionRecord{}, fmt.Errorf("create initial digital employee config revision: %w", err)
@@ -454,15 +465,15 @@ func (s *Service) createInitialActiveConfigRevision(ctx context.Context, reposit
 	return revision, nil
 }
 
-func initialEmployeeConfigParams(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, employeeID uuid.UUID, revisionNumber int32, approvedBy uuid.UUID, approvedAt time.Time) CreateConfigRevisionParams {
+func initialEmployeeConfigParams(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput, employeeID uuid.UUID, revisionNumber int32, approvedBy uuid.UUID, approvedAt time.Time) CreateConfigRevisionParams {
 	return CreateConfigRevisionParams{
 		TenantID:               req.TenantID,
 		DigitalEmployeeID:      employeeID,
 		RevisionNumber:         revisionNumber,
 		RoleProfile:            initialRoleProfile(req),
 		ConstitutionAddendum:   cloneMap(req.ConstitutionAddendum),
-		CapabilitySelection:    mergePolicyMaps(definition.DefaultCapabilitySelection, req.CapabilitySelection),
-		ContextPolicyOverride:  mergePolicyMaps(definition.DefaultContextPolicyOverride, req.ContextPolicyOverride),
+		CapabilitySelection:    initialCapabilitySelection(req, definition, teamConfig),
+		ContextPolicyOverride:  initialContextPolicyOverride(req, definition, teamConfig),
 		ApprovalPolicyOverride: mergePolicyMaps(definition.DefaultApprovalPolicy, req.ApprovalPolicyOverride),
 		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
 		Status:                 ConfigRevisionStatusActive,
@@ -471,7 +482,7 @@ func initialEmployeeConfigParams(req CreateDigitalEmployeeRequest, definition Em
 	}
 }
 
-func initialEmployeeConfigInput(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, employeeID, configID uuid.UUID, revisionNumber int32) EmployeeConfigInput {
+func initialEmployeeConfigInput(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput, employeeID, configID uuid.UUID, revisionNumber int32) EmployeeConfigInput {
 	return EmployeeConfigInput{
 		ID:                     configID,
 		TenantID:               req.TenantID,
@@ -479,8 +490,8 @@ func initialEmployeeConfigInput(req CreateDigitalEmployeeRequest, definition Emp
 		RevisionNumber:         revisionNumber,
 		RoleProfile:            initialRoleProfile(req),
 		ConstitutionAddendum:   cloneMap(req.ConstitutionAddendum),
-		CapabilitySelection:    mergePolicyMaps(definition.DefaultCapabilitySelection, req.CapabilitySelection),
-		ContextPolicyOverride:  mergePolicyMaps(definition.DefaultContextPolicyOverride, req.ContextPolicyOverride),
+		CapabilitySelection:    initialCapabilitySelection(req, definition, teamConfig),
+		ContextPolicyOverride:  initialContextPolicyOverride(req, definition, teamConfig),
 		ApprovalPolicyOverride: mergePolicyMaps(definition.DefaultApprovalPolicy, req.ApprovalPolicyOverride),
 		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
 	}
@@ -561,6 +572,61 @@ func (s *Service) waitForProvisioningCompletion(ctx context.Context, tenantID uu
 	waitCtx, cancel := context.WithTimeout(ctx, s.provisioningTimeout)
 	defer cancel()
 	return s.repository.WaitForRuntimeCommandCompletion(waitCtx, tenantID, commandID, s.provisioningPollInterval)
+}
+
+func initialCapabilitySelection(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput) map[string]any {
+	defaults := constrainedDefaultCapabilitySelection(definition.DefaultCapabilitySelection, teamConfig)
+	return mergePolicyMaps(defaults, req.CapabilitySelection)
+}
+
+func initialContextPolicyOverride(req CreateDigitalEmployeeRequest, definition EmployeeTypeDefinition, teamConfig TeamConfigInput) map[string]any {
+	defaults := constrainedDefaultContextPolicyOverride(definition.DefaultContextPolicyOverride, teamConfig)
+	return mergePolicyMaps(defaults, req.ContextPolicyOverride)
+}
+
+func constrainedDefaultCapabilitySelection(defaults map[string]any, teamConfig TeamConfigInput) map[string]any {
+	selection := cloneMap(defaults)
+	filterDefaultStringListByPolicy(selection, "enabled_skills", teamConfig.CapabilityPolicy, "allowed_skills")
+	filterDefaultStringListByPolicy(selection, "enabled_mcp_servers", teamConfig.CapabilityPolicy, "allowed_mcp_servers")
+	filterDefaultStringListByPolicy(selection, "enabled_plugins", teamConfig.CapabilityPolicy, "allowed_plugins")
+	filterDefaultStringListByPolicy(selection, "enabled_external_capabilities", teamConfig.CapabilityPolicy, "allowed_external_capabilities")
+	filterDefaultStringListByPolicy(selection, "enabled_provider_types", teamConfig.CapabilityPolicy, "allowed_provider_types")
+	return selection
+}
+
+func constrainedDefaultContextPolicyOverride(defaults map[string]any, teamConfig TeamConfigInput) map[string]any {
+	override := cloneMap(defaults)
+	filterDefaultStringListByPolicy(override, "sources", teamConfig.ContextPolicy, "sources", "allowed_sources")
+	filterDefaultStringListByPolicy(override, "knowledge_bases", teamConfig.ContextPolicy, "knowledge_bases", "allowed_knowledge_bases")
+	filterDefaultStringListByPolicy(override, "documents", teamConfig.ContextPolicy, "documents", "allowed_documents")
+	filterDefaultStringListByPolicy(override, "repositories", teamConfig.ContextPolicy, "repositories", "allowed_repositories")
+	filterDefaultStringListByPolicy(override, "log_sources", teamConfig.ContextPolicy, "log_sources", "allowed_log_sources")
+	return override
+}
+
+func filterDefaultStringListByPolicy(values map[string]any, valueKey string, policy map[string]any, policyKeys ...string) {
+	current, currentIssues := stringListPolicyValue(values, valueKey, valueKey)
+	if len(currentIssues) != 0 || len(current) == 0 {
+		delete(values, valueKey)
+		return
+	}
+	allowed, present, allowedIssues := firstStringListPolicyValue(policy, policyKeys...)
+	if !present || len(allowedIssues) != 0 || len(allowed) == 0 {
+		delete(values, valueKey)
+		return
+	}
+	allowedSet := stringSet(allowed)
+	filtered := make([]string, 0, len(current))
+	for _, item := range current {
+		if allowedSet[item] {
+			filtered = append(filtered, item)
+		}
+	}
+	if len(filtered) == 0 {
+		delete(values, valueKey)
+		return
+	}
+	values[valueKey] = filtered
 }
 
 func mergePolicyMaps(base, override map[string]any) map[string]any {
@@ -1095,11 +1161,20 @@ func validateCapabilitySubset(teamPolicy, employeeSelection map[string]any) []Va
 }
 
 func validateContextSubset(teamPolicy, employeeOverride map[string]any) []ValidationIssue {
-	keys := []string{"sources", "knowledge_bases", "documents", "repositories", "log_sources"}
+	keys := []struct {
+		overrideKey string
+		teamKeys    []string
+	}{
+		{overrideKey: "sources", teamKeys: []string{"sources", "allowed_sources"}},
+		{overrideKey: "knowledge_bases", teamKeys: []string{"knowledge_bases", "allowed_knowledge_bases"}},
+		{overrideKey: "documents", teamKeys: []string{"documents", "allowed_documents"}},
+		{overrideKey: "repositories", teamKeys: []string{"repositories", "allowed_repositories"}},
+		{overrideKey: "log_sources", teamKeys: []string{"log_sources", "allowed_log_sources"}},
+	}
 	issues := []ValidationIssue{}
 	for _, key := range keys {
-		allowed, allowedIssues := stringListPolicyValue(teamPolicy, key, fmt.Sprintf("context_policy.%s", key))
-		requested, requestedIssues := stringListPolicyValue(employeeOverride, key, fmt.Sprintf("context_policy_override.%s", key))
+		allowed, _, allowedIssues := firstStringListPolicyValue(teamPolicy, key.teamKeys...)
+		requested, requestedIssues := stringListPolicyValue(employeeOverride, key.overrideKey, fmt.Sprintf("context_policy_override.%s", key.overrideKey))
 		issues = append(issues, allowedIssues...)
 		issues = append(issues, requestedIssues...)
 		if len(requested) == 0 {
@@ -1117,7 +1192,7 @@ func validateContextSubset(teamPolicy, employeeOverride map[string]any) []Valida
 		}
 		issues = append(issues, ValidationIssue{
 			Code:    "context_outside_team_scope",
-			Path:    fmt.Sprintf("context_policy_override.%s", key),
+			Path:    fmt.Sprintf("context_policy_override.%s", key.overrideKey),
 			Message: fmt.Sprintf("context refs are outside team scope: %s", strings.Join(outside, ", ")),
 		})
 	}
@@ -1179,6 +1254,17 @@ func stringListPolicyValue(values map[string]any, key, path string) ([]string, [
 	default:
 		return nil, []ValidationIssue{invalidPolicyValueIssue(path, "policy value must be a string list")}
 	}
+}
+
+func firstStringListPolicyValue(values map[string]any, keys ...string) ([]string, bool, []ValidationIssue) {
+	for _, key := range keys {
+		if _, ok := values[key]; !ok {
+			continue
+		}
+		values, issues := stringListPolicyValue(values, key, key)
+		return values, true, issues
+	}
+	return nil, false, nil
 }
 
 func riskPolicyValue(values map[string]any, key, path string) (int, bool, []ValidationIssue) {

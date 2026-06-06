@@ -205,7 +205,7 @@ function createWizardFetcher({
           title: "数据库管理员",
         },
         capability_selection: {
-          enabled_skills: ["incident-diagnosis"],
+          enabled_skills: ["sql-review"],
           enabled_mcp_servers: ["postgres"],
           enabled_external_capabilities: ["jira.search"],
         },

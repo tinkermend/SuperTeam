@@ -181,7 +181,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   });
 
   const currentStep = steps[stepIndex];
-  const teamOptions = teams.data ?? [];
+  const teamOptions = useMemo(() => (teams.data ?? []).filter((team) => team.status === "active"), [teams.data]);
 
   function updateDraft(patch: Partial<WizardDraft>) {
     setDraft((current) => ({ ...current, ...patch }));
@@ -740,14 +740,8 @@ function applyTypeDefaults(current: WizardDraft, typeOption: DigitalEmployeeType
     approval_policy_override: typeOption.default_approval_policy ?? {},
     capability_selection: {
       enabled_external_capabilities: stringList(defaultCapabilitySelection.enabled_external_capabilities),
-      enabled_mcp_servers:
-        typeOption.recommended_mcp_servers && typeOption.recommended_mcp_servers.length > 0
-          ? typeOption.recommended_mcp_servers
-          : stringList(defaultCapabilitySelection.enabled_mcp_servers),
-      enabled_skills:
-        typeOption.recommended_skills && typeOption.recommended_skills.length > 0
-          ? typeOption.recommended_skills
-          : stringList(defaultCapabilitySelection.enabled_skills),
+      enabled_mcp_servers: stringList(defaultCapabilitySelection.enabled_mcp_servers),
+      enabled_skills: stringList(defaultCapabilitySelection.enabled_skills),
     },
     context_policy_override: typeOption.default_context_policy_override ?? {},
     employee_type: typeOption.type,

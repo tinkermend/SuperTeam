@@ -116,6 +116,12 @@ func TestGetCreateOptionsReturnsTeamPolicyAndRuntimeCandidates(t *testing.T) {
 	if len(options.EmployeeTypes) != 1 || options.EmployeeTypes[0].Type != "database_admin" {
 		t.Fatalf("expected filtered employee type database_admin, got %#v", options.EmployeeTypes)
 	}
+	if got := options.EmployeeTypes[0].DefaultCapabilitySelection["enabled_skills"]; !stringSlicesEqual(got, []string{"database-troubleshooting"}) {
+		t.Fatalf("expected employee type default skills to be constrained by team policy, got %#v", got)
+	}
+	if got := options.EmployeeTypes[0].DefaultContextPolicyOverride["sources"]; !stringSlicesEqual(got, []string{"runbook", "monitoring"}) {
+		t.Fatalf("expected employee type default context to be constrained by team policy, got %#v", got)
+	}
 	if len(options.RuntimeProviderOptions) != 1 || !options.RuntimeProviderOptions[0].Available {
 		t.Fatalf("expected available runtime provider option, got %#v", options.RuntimeProviderOptions)
 	}
@@ -355,6 +361,41 @@ func TestCreateDigitalEmployeeBlocksCapabilityOutsideTeamPolicyBeforeProvisionin
 	}
 	if len(repo.employees) != 0 || len(repo.commandReceipts) != 0 {
 		t.Fatalf("expected capability validation rollback before provisioning, employees=%#v receipts=%#v", repo.employees, repo.commandReceipts)
+	}
+}
+
+func TestCreateDigitalEmployeeConstrainsTypeDefaultsToTeamPolicy(t *testing.T) {
+	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
+	teamConfigID := repo.currentTeamConfigByTeam[*req.TeamID]
+	teamConfig := repo.teamConfigs[teamConfigID]
+	teamConfig.CapabilityPolicy = map[string]any{
+		"skill_bindings": []any{"security-capability-1"},
+	}
+	teamConfig.ContextPolicy = map[string]any{
+		"allowed_sources": []any{"team-docs", "runtime-logs"},
+	}
+	teamConfig.ApprovalPolicy = map[string]any{
+		"high_risk": "required",
+	}
+	teamConfig.RuntimeScopePolicy = map[string]any{
+		"provider_types": []any{"codex"},
+	}
+	repo.teamConfigs[teamConfigID] = teamConfig
+	req.CapabilitySelection = map[string]any{}
+
+	created, err := svc.CreateDigitalEmployee(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("create digital employee should not fail on filtered type defaults: %v", err)
+	}
+	if created.ID == uuid.Nil {
+		t.Fatalf("expected created employee id")
+	}
+	if len(repo.createdConfigRevision.CapabilitySelection) != 0 {
+		t.Fatalf("expected type default capabilities to be filtered by team policy, got %#v", repo.createdConfigRevision.CapabilitySelection)
+	}
+	if len(repo.createdConfigRevision.ContextPolicyOverride) != 0 {
+		t.Fatalf("expected type default context to be filtered by team policy, got %#v", repo.createdConfigRevision.ContextPolicyOverride)
 	}
 }
 
@@ -1266,6 +1307,34 @@ func assertBlockingIssue(t *testing.T, validation EffectiveConfigValidation, cod
 		}
 	}
 	t.Fatalf("expected blocking issue %q, got %#v", code, validation.BlockingErrors)
+}
+
+func stringSlicesEqual(got any, want []string) bool {
+	var values []string
+	switch typed := got.(type) {
+	case []string:
+		values = typed
+	case []any:
+		values = make([]string, 0, len(typed))
+		for _, item := range typed {
+			text, ok := item.(string)
+			if !ok {
+				return false
+			}
+			values = append(values, text)
+		}
+	default:
+		return false
+	}
+	if len(values) != len(want) {
+		return false
+	}
+	for index := range values {
+		if values[index] != want[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func assertBlockingIssuePath(t *testing.T, validation EffectiveConfigValidation, code, path string) {
