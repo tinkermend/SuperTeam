@@ -3025,7 +3025,9 @@ components:
         execution_summary:
           $ref: "#/components/schemas/DigitalEmployeeExecutionSummary"
         latest_run_summary:
-          $ref: "#/components/schemas/DigitalEmployeeLatestRunSummary"
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/DigitalEmployeeLatestRunSummary"
         governance_summary:
           $ref: "#/components/schemas/DigitalEmployeeGovernanceSummary"
         budget_summary:
