@@ -302,10 +302,22 @@ function FilterSelect({ label, value, options, onValueChange }: FilterSelectProp
 
 function EmployeeOverviewTable({ items }: { items: DigitalEmployeeOverviewItem[] }) {
   return (
-    <Table>
+    <Table className="min-w-[1120px] table-fixed">
+      <colgroup>
+        <col className="w-[18%]" />
+        <col className="w-[7%]" />
+        <col className="w-[9%]" />
+        <col className="w-[14%]" />
+        <col className="w-[8%]" />
+        <col className="w-[7%]" />
+        <col className="w-[12%]" />
+        <col className="w-[10%]" />
+        <col className="w-[9%]" />
+        <col className="w-[6%]" />
+      </colgroup>
       <TableHeader>
         <TableRow>
-          <TableHead className="min-w-[220px]">员工</TableHead>
+          <TableHead>员工</TableHead>
           <TableHead>团队</TableHead>
           <TableHead>类型 / 角色</TableHead>
           <TableHead>执行端点</TableHead>
@@ -346,18 +358,18 @@ function EmployeeOverviewRow({ item }: { item: DigitalEmployeeOverviewItem }) {
           </div>
         </div>
       </TableCell>
-      <TableCell>{identity.team_name || "未分组"}</TableCell>
-      <TableCell>
+      <TableCell className="whitespace-normal break-words">{identity.team_name || "未分组"}</TableCell>
+      <TableCell className="whitespace-normal break-words">
         <div className="flex flex-col gap-1">
           <span className="font-medium">{identity.employee_type_label || identity.employee_type}</span>
           <span className="text-xs text-muted-foreground">{identity.role}</span>
         </div>
       </TableCell>
-      <TableCell>
+      <TableCell className="whitespace-normal break-words">
         <div className="flex flex-col gap-1">
-          <span className="inline-flex items-center gap-2 font-medium">
+          <span className="inline-flex min-w-0 items-center gap-2 font-medium">
             <Server aria-hidden="true" className="size-4 text-muted-foreground" />
-            {runtimeDisplay(item)}
+            <span className="min-w-0 break-words">{runtimeDisplay(item)}</span>
           </span>
           <span className="text-xs text-muted-foreground">{execution.runtime_status || execution.provider_status}</span>
         </div>
@@ -384,16 +396,16 @@ function EmployeeOverviewRow({ item }: { item: DigitalEmployeeOverviewItem }) {
           <span className="text-sm text-muted-foreground">暂无任务</span>
         )}
       </TableCell>
-      <TableCell>
+      <TableCell className="whitespace-normal break-words">
         <div className="flex flex-col gap-1">
-          <span className="inline-flex items-center gap-2 font-medium">
+          <span className="inline-flex min-w-0 items-center gap-2 font-medium">
             <ShieldCheck aria-hidden="true" className="size-4 text-muted-foreground" />
-            {governanceDisplay(item)}
+            <span className="min-w-0 break-words">{governanceDisplay(item)}</span>
           </span>
           <span className="text-xs text-muted-foreground">{governanceStatusLabel(item.governance_summary.status)}</span>
         </div>
       </TableCell>
-      <TableCell>
+      <TableCell className="whitespace-normal break-words">
         <div className="flex flex-col gap-1">
           <span className="font-medium">{budgetTokenDisplay(item)}</span>
           <span className="text-xs text-muted-foreground">{formatNumber(item.budget_summary.run_count_30d)} runs</span>
