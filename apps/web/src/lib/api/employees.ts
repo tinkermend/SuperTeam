@@ -197,6 +197,108 @@ export type DigitalEmployeeRunEvent = {
   metadata?: Record<string, unknown>;
 };
 
+export type DigitalEmployeeOverviewExecutionStatus =
+  | "missing"
+  | "provisioning"
+  | "ready"
+  | "active"
+  | "disabled"
+  | "error";
+
+export type DigitalEmployeeOverviewRunStatus =
+  | "none"
+  | DigitalEmployeeRunStatus;
+
+export type OverviewFilterOption = {
+  value: string;
+  label: string;
+};
+
+export type DigitalEmployeeOverview = {
+  summary: {
+    total_count: number;
+    runnable_count: number;
+    running_count: number;
+    waiting_runtime_count: number;
+    error_count: number;
+    high_risk_count: number;
+  };
+  items: DigitalEmployeeOverviewItem[];
+  filters: {
+    teams: OverviewFilterOption[];
+    employee_types: OverviewFilterOption[];
+    statuses: OverviewFilterOption[];
+    providers: OverviewFilterOption[];
+    runtime_nodes: OverviewFilterOption[];
+    risk_levels: OverviewFilterOption[];
+    execution_statuses: OverviewFilterOption[];
+    run_statuses: OverviewFilterOption[];
+  };
+  pagination: {
+    limit: number;
+    offset: number;
+    total_count: number;
+  };
+};
+
+export type DigitalEmployeeOverviewItem = {
+  identity_summary: {
+    id: string;
+    tenant_id: string;
+    team_id?: string;
+    team_name: string;
+    owner_user_id: string;
+    owner_display_name: string;
+    employee_type: string;
+    employee_type_label: string;
+    name: string;
+    role: string;
+    description?: string;
+    status: DigitalEmployeeStatus;
+    risk_level: string;
+  };
+  execution_summary: {
+    execution_instance_id?: string;
+    status: DigitalEmployeeOverviewExecutionStatus;
+    runtime_node_id?: string;
+    node_id: string;
+    runtime_name: string;
+    runtime_status: string;
+    provider_type: string;
+    provider_status: string;
+    health_status: string;
+    agent_home_dir_available: boolean;
+  };
+  latest_run_summary?: {
+    run_id: string;
+    task_id: string;
+    status: DigitalEmployeeOverviewRunStatus;
+    title: string;
+    started_at?: string;
+    finished_at?: string;
+    updated_at?: string;
+    duration_sec?: number;
+    token_usage?: number;
+    error_message: string;
+  } | null;
+  governance_summary: {
+    effective_config_id?: string;
+    status: string;
+    team_revision_number?: number;
+    employee_revision_number?: number;
+    skills_count: number;
+    mcp_servers_count: number;
+    constitution_ref: string;
+  };
+  budget_summary: {
+    usage_tokens_30d?: number;
+    run_count_30d: number;
+    cost_amount_30d?: number;
+    currency: string;
+    source: string;
+  };
+};
+
 export type RunPagination = {
   limit?: number;
   offset?: number;
@@ -256,6 +358,20 @@ function assertReadyCreateInput(
 
 export type ListDigitalEmployeesFilters = {
   team_id?: string;
+};
+
+export type DigitalEmployeeOverviewFilters = {
+  q?: string;
+  team_id?: string;
+  status?: DigitalEmployeeStatus;
+  employee_type?: string;
+  provider_type?: string;
+  runtime_node_id?: string;
+  risk_level?: string;
+  execution_status?: DigitalEmployeeOverviewExecutionStatus;
+  run_status?: DigitalEmployeeOverviewRunStatus;
+  limit?: number;
+  offset?: number;
 };
 
 export type DigitalEmployeeConfigRevision = {
@@ -401,6 +517,24 @@ export async function listDigitalEmployees(
   });
 
   return parseJson<DigitalEmployee[]>(response, "digital employees");
+}
+
+export async function getDigitalEmployeeOverview(
+  options: ApiClientOptions,
+  filters: DigitalEmployeeOverviewFilters = {},
+): Promise<DigitalEmployeeOverview> {
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== "") {
+      searchParams.set(key, String(value));
+    }
+  }
+  const query = searchParams.toString();
+  return getJson<DigitalEmployeeOverview>(
+    options,
+    `/api/v1/digital-employees/overview${query ? `?${query}` : ""}`,
+    "digital employee overview",
+  );
 }
 
 export function getDigitalEmployeeCreateOptions(
