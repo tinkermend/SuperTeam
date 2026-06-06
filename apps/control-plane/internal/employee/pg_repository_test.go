@@ -15,6 +15,16 @@ func TestOverviewInt32FromJSONString(t *testing.T) {
 	require.Equal(t, int32(0), int32FromJSONString("not-a-number"))
 }
 
+func TestOverviewInt32PtrFromJSONString(t *testing.T) {
+	require.Nil(t, int32PtrFromJSONString(""))
+	require.Nil(t, int32PtrFromJSONString("not-a-number"))
+	require.Nil(t, int32PtrFromJSONString("2147483648"))
+
+	value := int32PtrFromJSONString("1600")
+	require.NotNil(t, value)
+	require.Equal(t, int32(1600), *value)
+}
+
 func TestOverviewExecutionStatus(t *testing.T) {
 	require.Equal(t, OverviewExecutionStatusMissing, overviewExecutionStatus(""))
 	require.Equal(t, OverviewExecutionStatusReady, overviewExecutionStatus("ready"))
@@ -28,6 +38,26 @@ func TestOverviewRunStatus(t *testing.T) {
 func TestOverviewBudgetSource(t *testing.T) {
 	require.Equal(t, "unavailable", overviewBudgetSource(0, 0))
 	require.Equal(t, "run_usage_projection", overviewBudgetSource(3, 1600))
+}
+
+func TestOverviewFiltersFromQueryMapsStableLabels(t *testing.T) {
+	filters := overviewFiltersFromQuery([]queries.ListDigitalEmployeeOverviewFilterOptionsRow{
+		{FilterType: "status", Value: "active", Label: "active"},
+		{FilterType: "risk_level", Value: "medium", Label: "medium"},
+		{FilterType: "execution_status", Value: "missing", Label: "missing"},
+		{FilterType: "run_status", Value: "none", Label: "none"},
+		{FilterType: "provider", Value: "codex", Label: "codex"},
+		{FilterType: "provider", Value: "custom-provider", Label: "custom-provider"},
+	})
+
+	require.Equal(t, []OverviewFilterOption{{Value: "active", Label: "活跃中"}}, filters.Statuses)
+	require.Equal(t, []OverviewFilterOption{{Value: "medium", Label: "中风险"}}, filters.RiskLevels)
+	require.Equal(t, []OverviewFilterOption{{Value: "missing", Label: "未绑定 Runtime"}}, filters.ExecutionStatuses)
+	require.Equal(t, []OverviewFilterOption{{Value: "none", Label: "暂无运行"}}, filters.RunStatuses)
+	require.Equal(t, []OverviewFilterOption{
+		{Value: "codex", Label: "Codex"},
+		{Value: "custom-provider", Label: "custom-provider"},
+	}, filters.Providers)
 }
 
 func TestOverviewItemFromQueryHandlesMissingExecutionInstance(t *testing.T) {

@@ -599,9 +599,7 @@ func overviewFiltersFromQuery(rows []queries.ListDigitalEmployeeOverviewFilterOp
 		if label == "" {
 			label = value
 		}
-		if row.FilterType == "employee_type" {
-			label = overviewEmployeeTypeLabel(value)
-		}
+		label = overviewFilterLabel(row.FilterType, value, label)
 		option := OverviewFilterOption{Value: value, Label: label}
 		switch row.FilterType {
 		case "team":
@@ -625,12 +623,126 @@ func overviewFiltersFromQuery(rows []queries.ListDigitalEmployeeOverviewFilterOp
 	return filters
 }
 
+func overviewFilterLabel(filterType, value, fallback string) string {
+	switch filterType {
+	case "employee_type":
+		return overviewEmployeeTypeLabel(value)
+	case "status":
+		return overviewStatusLabel(value, fallback)
+	case "risk_level":
+		return overviewRiskLevelLabel(value, fallback)
+	case "execution_status":
+		return overviewExecutionStatusLabel(value, fallback)
+	case "run_status":
+		return overviewRunStatusLabel(value, fallback)
+	case "provider", "provider_type":
+		return overviewProviderLabel(value, fallback)
+	default:
+		if fallback != "" {
+			return fallback
+		}
+		return value
+	}
+}
+
 func overviewEmployeeTypeLabel(value string) string {
 	definition, ok := EmployeeTypeDefinitionByType(value)
 	if !ok {
 		return value
 	}
 	return definition.Label
+}
+
+func overviewStatusLabel(value, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "draft":
+		return "草稿"
+	case "ready":
+		return "已就绪"
+	case "active":
+		return "活跃中"
+	case "disabled":
+		return "已禁用"
+	case "error":
+		return "异常"
+	default:
+		return fallback
+	}
+}
+
+func overviewRiskLevelLabel(value, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "low":
+		return "低风险"
+	case "normal":
+		return "普通风险"
+	case "medium":
+		return "中风险"
+	case "high":
+		return "高风险"
+	case "critical":
+		return "严重风险"
+	default:
+		return fallback
+	}
+}
+
+func overviewExecutionStatusLabel(value, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case string(OverviewExecutionStatusMissing):
+		return "未绑定 Runtime"
+	case string(OverviewExecutionStatusProvisioning):
+		return "准备中"
+	case string(OverviewExecutionStatusReady):
+		return "已就绪"
+	case string(OverviewExecutionStatusActive):
+		return "活跃中"
+	case string(OverviewExecutionStatusDisabled):
+		return "已禁用"
+	case string(OverviewExecutionStatusError):
+		return "异常"
+	default:
+		return fallback
+	}
+}
+
+func overviewRunStatusLabel(value, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case string(OverviewRunStatusNone):
+		return "暂无运行"
+	case string(OverviewRunStatusQueued):
+		return "排队中"
+	case string(OverviewRunStatusDispatching):
+		return "下发中"
+	case string(OverviewRunStatusRunning):
+		return "运行中"
+	case string(OverviewRunStatusCancelling):
+		return "取消中"
+	case string(OverviewRunStatusCompleted):
+		return "已完成"
+	case string(OverviewRunStatusFailed):
+		return "失败"
+	case string(OverviewRunStatusCancelled):
+		return "已取消"
+	case string(OverviewRunStatusTimedOut):
+		return "已超时"
+	default:
+		return fallback
+	}
+}
+
+func overviewProviderLabel(value, fallback string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch normalized {
+	case "codex":
+		return "Codex"
+	case "claude-code", "claude_code", "claude":
+		return "Claude Code"
+	case "opencode", "open-code", "open_code":
+		return "OpenCode"
+	default:
+		return fallback
+	}
 }
 
 func int32FromJSONString(value string) int32 {
@@ -707,11 +819,26 @@ func timePtrFromPgTimestamptz(value pgtype.Timestamptz) *time.Time {
 }
 
 func int32PtrFromJSONString(value string) *int32 {
-	if strings.TrimSpace(value) == "" {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
 		return nil
 	}
-	parsed := int32FromJSONString(value)
-	return &parsed
+	if strings.HasPrefix(trimmed, `"`) {
+		var decoded string
+		if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
+			return nil
+		}
+		trimmed = strings.TrimSpace(decoded)
+		if trimmed == "" {
+			return nil
+		}
+	}
+	parsed, err := strconv.ParseInt(trimmed, 10, 32)
+	if err != nil {
+		return nil
+	}
+	copied := int32(parsed)
+	return &copied
 }
 
 func digitalEmployeeRecordFromQuery(employee queries.DigitalEmployee) (DigitalEmployeeRecord, error) {

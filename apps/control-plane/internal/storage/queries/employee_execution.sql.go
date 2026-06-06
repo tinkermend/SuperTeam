@@ -379,6 +379,21 @@ WITH overview_args AS (
         NULLIF(BTRIM($9::text), '') AS execution_status,
         NULLIF(BTRIM($10::text), '') AS run_status
 ),
+provider_capabilities AS (
+    SELECT DISTINCT ON (rc.tenant_id, rc.runtime_node_id, rc.provider_type)
+        rc.tenant_id,
+        rc.runtime_node_id,
+        rc.provider_type,
+        rc.status,
+        rc.health_status,
+        rc.available
+    FROM runtime_capabilities rc
+    JOIN overview_args args ON args.tenant_id = rc.tenant_id
+    WHERE rc.capability_type = 'provider'
+      AND rc.disabled_at IS NULL
+      AND rc.archived_at IS NULL
+    ORDER BY rc.tenant_id, rc.runtime_node_id, rc.provider_type, rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
+),
 latest_runs AS (
     SELECT DISTINCT ON (tr.tenant_id, tr.digital_employee_id)
         tr.tenant_id,
@@ -415,15 +430,28 @@ overview_rows AS (
         de.risk_level,
         COALESCE(dei.status, 'missing')::text AS execution_status,
         dei.runtime_node_id,
+        rn.status AS runtime_status,
+        rn.disabled_at AS runtime_disabled_at,
+        rn.archived_at AS runtime_archived_at,
         COALESCE(dei.provider_type, '')::text AS provider_type,
+        COALESCE(pc.available, false)::boolean AS provider_available,
+        COALESCE(pc.status, '')::text AS provider_status,
+        COALESCE(pc.health_status, '')::text AS provider_health_status,
         COALESCE(lr.status, 'none')::text AS run_status,
         ec.effective_config_id
     FROM digital_employees de
     CROSS JOIN overview_args args
     LEFT JOIN digital_employee_execution_instances dei
-      ON dei.tenant_id = de.tenant_id
+     ON dei.tenant_id = de.tenant_id
      AND dei.digital_employee_id = de.id
      AND dei.deleted_at IS NULL
+    LEFT JOIN runtime_nodes rn
+      ON rn.id = dei.runtime_node_id
+     AND rn.tenant_id = dei.tenant_id
+    LEFT JOIN provider_capabilities pc
+      ON pc.tenant_id = dei.tenant_id
+     AND pc.runtime_node_id = dei.runtime_node_id
+     AND pc.provider_type = dei.provider_type
     LEFT JOIN latest_runs lr
       ON lr.tenant_id = de.tenant_id
      AND lr.digital_employee_id = de.id
@@ -434,7 +462,7 @@ overview_rows AS (
       AND de.deleted_at IS NULL
 ),
 filtered_rows AS (
-    SELECT overview_rows.id, overview_rows.name, overview_rows.role, overview_rows.description, overview_rows.team_id, overview_rows.employee_status, overview_rows.employee_type, overview_rows.risk_level, overview_rows.execution_status, overview_rows.runtime_node_id, overview_rows.provider_type, overview_rows.run_status, overview_rows.effective_config_id
+    SELECT overview_rows.id, overview_rows.name, overview_rows.role, overview_rows.description, overview_rows.team_id, overview_rows.employee_status, overview_rows.employee_type, overview_rows.risk_level, overview_rows.execution_status, overview_rows.runtime_node_id, overview_rows.runtime_status, overview_rows.runtime_disabled_at, overview_rows.runtime_archived_at, overview_rows.provider_type, overview_rows.provider_available, overview_rows.provider_status, overview_rows.provider_health_status, overview_rows.run_status, overview_rows.effective_config_id
     FROM overview_rows
     CROSS JOIN overview_args args
     WHERE (
@@ -458,6 +486,13 @@ SELECT
         WHERE employee_status IN ('ready', 'active')
           AND execution_status IN ('ready', 'active')
           AND effective_config_id IS NOT NULL
+          AND runtime_node_id IS NOT NULL
+          AND runtime_status = 'online'
+          AND runtime_disabled_at IS NULL
+          AND runtime_archived_at IS NULL
+          AND provider_available = true
+          AND provider_status = 'healthy'
+          AND provider_health_status = 'healthy'
     ))::integer AS runnable_count,
     (COUNT(*) FILTER (
         WHERE run_status IN ('queued', 'dispatching', 'running', 'cancelling')
@@ -1323,7 +1358,7 @@ SELECT
     budget_usage_tokens_30d,
     budget_run_count_30d
 FROM filtered_rows
-ORDER BY updated_at DESC, created_at DESC, id
+ORDER BY created_at DESC, id
 LIMIT (SELECT limit_value FROM overview_args)
 OFFSET (SELECT offset_value FROM overview_args)
 `
