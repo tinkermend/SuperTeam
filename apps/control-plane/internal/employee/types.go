@@ -511,7 +511,7 @@ type DigitalEmployeeOverviewFilters struct {
 	Teams             []OverviewFilterOption
 	Statuses          []OverviewFilterOption
 	EmployeeTypes     []OverviewFilterOption
-	ProviderTypes     []OverviewFilterOption
+	Providers         []OverviewFilterOption
 	RuntimeNodes      []OverviewFilterOption
 	RiskLevels        []OverviewFilterOption
 	ExecutionStatuses []OverviewFilterOption

@@ -1007,7 +1007,7 @@ func overviewFiltersResponseFromDomain(filters DigitalEmployeeOverviewFilters) d
 		Teams:             overviewFilterOptionResponses(filters.Teams),
 		Statuses:          overviewFilterOptionResponses(filters.Statuses),
 		EmployeeTypes:     overviewFilterOptionResponses(filters.EmployeeTypes),
-		Providers:         overviewFilterOptionResponses(filters.ProviderTypes),
+		Providers:         overviewFilterOptionResponses(filters.Providers),
 		RuntimeNodes:      overviewFilterOptionResponses(filters.RuntimeNodes),
 		RiskLevels:        overviewFilterOptionResponses(filters.RiskLevels),
 		ExecutionStatuses: overviewFilterOptionResponses(filters.ExecutionStatuses),

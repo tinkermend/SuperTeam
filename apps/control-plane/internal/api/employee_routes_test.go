@@ -1441,7 +1441,7 @@ func routeEmployeeOverview(req employee.GetDigitalEmployeeOverviewRequest) *empl
 			GovernanceSummary: employee.DigitalEmployeeGovernanceSummary{EffectiveConfigID: &effectiveConfigID, Status: "approved", TeamRevisionNumber: int32Ptr(3), EmployeeRevisionNumber: int32Ptr(1), SkillsCount: 8, MCPServersCount: 3, ConstitutionRef: "effective-config://88888888-8888-4888-8888-888888888888/constitution"},
 			BudgetSummary:     employee.DigitalEmployeeBudgetSummary{UsageTokens30d: int32Ptr(16000), RunCount30d: 12, CostAmount30d: &costAmount, Currency: "USD", Source: "run_usage_projection"},
 		}},
-		Filters:    employee.DigitalEmployeeOverviewFilters{Teams: []employee.OverviewFilterOption{{Value: teamID.String(), Label: "产品组"}}, ProviderTypes: []employee.OverviewFilterOption{{Value: "codex", Label: "Codex"}}, ExecutionStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewExecutionStatusMissing), Label: "未绑定 Runtime"}}, RunStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewRunStatusNone), Label: "暂无运行"}}},
+		Filters:    employee.DigitalEmployeeOverviewFilters{Teams: []employee.OverviewFilterOption{{Value: teamID.String(), Label: "产品组"}}, Providers: []employee.OverviewFilterOption{{Value: "codex", Label: "Codex"}}, ExecutionStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewExecutionStatusMissing), Label: "未绑定 Runtime"}}, RunStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewRunStatusNone), Label: "暂无运行"}}},
 		Pagination: employee.OverviewPagination{Limit: req.Limit, Offset: req.Offset, TotalCount: 1},
 	}
 }
