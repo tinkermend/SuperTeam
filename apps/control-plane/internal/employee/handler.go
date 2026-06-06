@@ -15,10 +15,11 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 )
 
-type handlerService interface {
+type HandlerService interface {
 	GetCreateOptions(ctx context.Context, req CreateOptionsRequest) (*CreateOptions, error)
 	CreateDigitalEmployee(ctx context.Context, req CreateDigitalEmployeeRequest) (*DigitalEmployee, error)
 	ListDigitalEmployees(ctx context.Context, req ListDigitalEmployeesRequest) ([]*DigitalEmployee, error)
+	GetOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error)
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployee, error)
 	UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*DigitalEmployee, error)
 	GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeExecutionInstance, error)
@@ -28,22 +29,17 @@ type handlerService interface {
 	ApproveEffectiveConfig(ctx context.Context, req ApproveEffectiveConfigRequest) (*DigitalEmployeeEffectiveConfig, error)
 }
 
-type HandlerService interface {
-	handlerService
-	GetOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error)
-}
-
 type HTTPHandler struct {
-	service    handlerService
+	service    HandlerService
 	runService RunHandlerService
 	authorizer authz.Authorizer
 }
 
-func NewHandler(service handlerService) *HTTPHandler {
+func NewHandler(service HandlerService) *HTTPHandler {
 	return &HTTPHandler{service: service}
 }
 
-func NewHandlerWithRunService(service handlerService, runService RunHandlerService) *HTTPHandler {
+func NewHandlerWithRunService(service HandlerService, runService RunHandlerService) *HTTPHandler {
 	return &HTTPHandler{service: service, runService: runService}
 }
 
@@ -100,17 +96,12 @@ func (h *HTTPHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	overviewService, ok := service.(HandlerService)
-	if !ok {
-		http.Error(w, "employee overview service is not configured", http.StatusServiceUnavailable)
-		return
-	}
 	req, parseErr := overviewRequestFromQuery(tenantID, r)
 	if parseErr != "" {
 		http.Error(w, parseErr, http.StatusBadRequest)
 		return
 	}
-	overview, err := overviewService.GetOverview(r.Context(), req)
+	overview, err := service.GetOverview(r.Context(), req)
 	if err != nil {
 		writeHandlerError(w, err)
 		return
@@ -523,7 +514,7 @@ func overviewRequestFromQuery(tenantID uuid.UUID, r *http.Request) (GetDigitalEm
 	return req, ""
 }
 
-func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (handlerService, bool) {
+func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService, bool) {
 	if h == nil || h.service == nil {
 		http.Error(w, "employee service is not configured", http.StatusServiceUnavailable)
 		return nil, false
