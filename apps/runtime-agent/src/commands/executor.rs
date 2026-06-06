@@ -631,7 +631,7 @@ fn runtime_event_writeback(
     let mut provider_session_external_id = provider_session_id.map(ToString::to_string);
     let mut session_state_patch = provider_session_state_patch(provider_session_id);
     let (event_type, payload) = match &record.event {
-        ProviderEvent::SessionStarted { session_id } => {
+        ProviderEvent::SessionStarted { session_id, .. } => {
             provider_session_external_id = Some(session_id.clone());
             session_state_patch = provider_session_state_patch(Some(session_id));
             let mut payload = HashMap::new();
@@ -723,7 +723,7 @@ async fn drain_provider_events(
     let mut latest_provider_session_id: Option<String> = None;
     while let Some(event) = events.next().await {
         let event = event?;
-        if let ProviderEvent::SessionStarted { session_id } = &event {
+        if let ProviderEvent::SessionStarted { session_id, .. } = &event {
             if latest_provider_session_id.as_deref() == Some(session_id.as_str()) {
                 continue;
             }

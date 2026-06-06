@@ -80,6 +80,7 @@ pub fn parse_opencode_event(value: &str) -> anyhow::Result<Option<ProviderEvent>
             } else {
                 Ok(Some(ProviderEvent::SessionStarted {
                     session_id: session_id.to_string(),
+                    session_state: None,
                 }))
             }
         }

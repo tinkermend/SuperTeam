@@ -237,7 +237,7 @@ impl RuntimeRunStore {
 
 fn apply_event_to_snapshot(snapshot: &mut RunSnapshot, event: &ProviderEvent) {
     match event {
-        ProviderEvent::SessionStarted { session_id } => {
+        ProviderEvent::SessionStarted { session_id, .. } => {
             snapshot.provider_session_id = Some(session_id.clone());
         }
         ProviderEvent::TurnCompleted { .. } => {

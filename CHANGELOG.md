@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- 2026-06-07 02:28：Runtime Agent 完成执行能力底座核心模块开发，新增按执行实例隔离的工作目录管理、S3 工件上传基础设施和 Provider 会话状态扩展支持。
+- 2026-06-07 02:52：Runtime Agent 执行器适配新工作目录结构，execute_task 使用 create_run_workspace 创建 workspace/logs/artifacts 隔离目录，完成端到端执行闭环基础改造。
+
 ### Changed
 
+- 2026-06-07 02:28：Runtime Agent 工作目录从按 task_id 隔离重构为按 execution_instance_id + run_id 隔离，支持 logs/workspace/artifacts 子目录结构；旧版 create_task_workspace 标记为 deprecated。
+- 2026-06-07 02:28：Runtime Agent 添加 aws-sdk-s3 依赖和 S3Section 配置支持，为工件上传到 S3 兼容存储做准备。
+- 2026-06-07 02:28：ProviderEvent::SessionStarted 扩展支持可选的 session_state 字段，为 Provider 会话状态回写 Control Plane 奠定基础。
 - 2026-06-06 20:24：修复创建数字员工时专业类型默认能力和上下文未按团队治理策略收敛导致 effective config blocking validation 的问题，并避免创建页默认选择 disabled 团队。
 - 2026-06-06 14:44：精简 Web 技能市场操作区，移除顶部“同步市场”和市场右侧“技能详情”上传卡片，技能市场卡片在桌面宽度改为三列展示。
 - 2026-06-06 01:02：修复 Web 全局搜索按钮在移动端 Header 中按长占位文案撑破视口的问题，保证数字员工创建页移动端视觉验证不出现业务 Header 溢出。

@@ -9,7 +9,7 @@ use crate::providers::{
 };
 
 use super::retry::push_event_with_retry;
-use super::workspace::{cleanup_workspace, create_task_workspace};
+use super::workspace::{cleanup_run_workspace, cleanup_workspace, create_run_workspace, create_task_workspace};
 
 pub async fn execute_task(
     task: crate::controlplane::models::Task,
@@ -17,7 +17,10 @@ pub async fn execute_task(
     config: RuntimeConfig,
     cancel_token: CancellationToken,
 ) -> Result<()> {
-    let workspace = create_task_workspace(&config, task.id)?;
+    // 使用新的工作目录结构，暂用 task_id 模拟 execution_instance_id
+    let execution_instance_id = format!("instance-{}", task.id);
+    let run_id = format!("run-{}", task.id);
+    let workspace = create_run_workspace(&config, &execution_instance_id, &run_id)?;
 
     control_plane
         .update_task_status(task.id, TaskStatus::Running)
@@ -27,7 +30,7 @@ pub async fn execute_task(
 
     let request = ProviderRequest {
         prompt: extract_prompt(&task.params)?,
-        workspace_path: workspace.path.clone(),
+        workspace_path: workspace.workspace_path.clone(),
         session_id: None,
         continue_session: false,
         model: extract_model(&task.params),
@@ -40,7 +43,7 @@ pub async fn execute_task(
             let _ = control_plane
                 .fail_task(task.id, "Task cancelled".to_string())
                 .await;
-            cleanup_workspace(&workspace, &config)?;
+            cleanup_run_workspace(&workspace, &config)?;
             return Err(anyhow::anyhow!("Task cancelled"));
         }
 
@@ -50,7 +53,7 @@ pub async fn execute_task(
                     let _ = control_plane
                         .fail_task(task.id, format!("Failed to push events: {}", e))
                         .await;
-                    cleanup_workspace(&workspace, &config)?;
+                    cleanup_run_workspace(&workspace, &config)?;
                     return Err(e);
                 }
             }
@@ -58,7 +61,7 @@ pub async fn execute_task(
                 let _ = control_plane
                     .fail_task(task.id, format!("Provider execution failed: {}", e))
                     .await;
-                cleanup_workspace(&workspace, &config)?;
+                cleanup_run_workspace(&workspace, &config)?;
                 return Err(e);
             }
         }
@@ -67,7 +70,7 @@ pub async fn execute_task(
     control_plane
         .complete_task(task.id, serde_json::json!({"status": "success"}))
         .await?;
-    cleanup_workspace(&workspace, &config)?;
+    cleanup_run_workspace(&workspace, &config)?;
 
     Ok(())
 }

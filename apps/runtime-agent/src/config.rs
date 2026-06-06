@@ -12,6 +12,17 @@ pub struct RuntimeConfig {
     pub workspace: WorkspaceSection,
     pub providers: ProvidersSection,
     pub logging: LoggingSection,
+    pub s3: Option<S3Section>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct S3Section {
+    pub endpoint: String,
+    pub region: String,
+    pub bucket: String,
+    pub access_key_id: String,
+    pub secret_access_key: String,
+    pub force_path_style: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +90,18 @@ struct FileConfig {
     workspace: Option<FileWorkspaceSection>,
     providers: Option<FileProvidersSection>,
     logging: Option<FileLoggingSection>,
+    s3: Option<FileS3Section>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FileS3Section {
+    endpoint: String,
+    region: String,
+    bucket: String,
+    access_key_id: String,
+    secret_access_key: String,
+    #[serde(default)]
+    force_path_style: bool,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -224,6 +247,17 @@ impl RuntimeConfig {
             if logging.file_path.is_some() {
                 self.logging.file_path = logging.file_path;
             }
+        }
+
+        if let Some(s3) = file.s3 {
+            self.s3 = Some(S3Section {
+                endpoint: s3.endpoint,
+                region: s3.region,
+                bucket: s3.bucket,
+                access_key_id: s3.access_key_id,
+                secret_access_key: s3.secret_access_key,
+                force_path_style: s3.force_path_style,
+            });
         }
 
         Ok(())
@@ -390,6 +424,7 @@ impl Default for RuntimeConfig {
                 output: "stdout".to_string(),
                 file_path: None,
             },
+            s3: None,
         }
     }
 }
