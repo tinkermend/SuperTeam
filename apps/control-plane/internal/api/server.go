@@ -163,6 +163,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/digital-employees", s.employeeHandler.ListDigitalEmployees)
 				r.Post("/digital-employees", s.employeeHandler.CreateDigitalEmployee)
 				r.Get("/digital-employees/create-options", s.employeeHandler.GetCreateOptions)
+				r.Get("/digital-employees/overview", s.employeeHandler.GetOverview)
 				r.Get("/digital-employees/{employeeId}", s.employeeHandler.GetDigitalEmployee)
 				r.Put("/digital-employees/{employeeId}/status", s.employeeHandler.UpdateDigitalEmployeeStatus)
 				r.Get("/digital-employees/{employeeId}/execution-instance", s.employeeHandler.GetDigitalEmployeeExecutionInstance)

@@ -4,6 +4,7 @@ import {
   createDigitalEmployee,
   createDigitalEmployeeConfigRevision,
   getDigitalEmployeeCreateOptions,
+  getDigitalEmployeeOverview,
   createDigitalEmployeeRun,
   getDigitalEmployee,
   getDigitalEmployeeExecutionInstance,
@@ -15,6 +16,7 @@ import {
   stopDigitalEmployeeRun,
   type DigitalEmployee,
   type DigitalEmployeeCreateOptions,
+  type DigitalEmployeeOverview,
 } from "./employees";
 
 describe("digital employee API", () => {
@@ -98,6 +100,69 @@ describe("digital employee API", () => {
 
     expect(fetcher).toHaveBeenCalledWith(
       `http://control-plane.local/api/v1/digital-employees?team_id=${teamId}`,
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
+  it("gets digital employee overview with all filters and cookie credentials", async () => {
+    const overview = {
+      summary: {
+        total_count: 1,
+        runnable_count: 1,
+        running_count: 1,
+        waiting_runtime_count: 0,
+        error_count: 0,
+        high_risk_count: 0,
+      },
+      items: [],
+      filters: {
+        teams: [{ value: "team-1", label: "产品组" }],
+        employee_types: [],
+        statuses: [],
+        providers: [],
+        runtime_nodes: [],
+        risk_levels: [],
+        execution_statuses: [{ value: "missing", label: "未绑定 Runtime" }],
+        run_statuses: [{ value: "none", label: "暂无运行" }],
+      },
+      pagination: { limit: 25, offset: 5, total_count: 1 },
+    } satisfies DigitalEmployeeOverview;
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(overview), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      getDigitalEmployeeOverview(
+        {
+          baseUrl: "http://control-plane.local",
+          fetcher,
+        },
+        {
+          q: "需求",
+          team_id: "team-1",
+          status: "active",
+          employee_type: "requirements_analyst",
+          provider_type: "codex",
+          runtime_node_id: "runtime-1",
+          risk_level: "medium",
+          execution_status: "missing",
+          run_status: "none",
+          limit: 25,
+          offset: 5,
+        },
+      ),
+    ).resolves.toEqual(overview);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/overview?q=%E9%9C%80%E6%B1%82&team_id=team-1&status=active&employee_type=requirements_analyst&provider_type=codex&runtime_node_id=runtime-1&risk_level=medium&execution_status=missing&run_status=none&limit=25&offset=5",
       {
         credentials: "include",
         headers: { accept: "application/json" },

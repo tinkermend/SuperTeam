@@ -1436,6 +1436,7 @@ func TestRuntimeWebSocketSendsDispatchedCommand(t *testing.T) {
 		t.Fatalf("dial runtime websocket: %v", err)
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "test done")
+	waitForRuntimeConnection(t, registry, "node-session")
 
 	command := runtime.RuntimeCommand{
 		ID:      "cmd-1",
@@ -1485,6 +1486,7 @@ func TestRuntimeWebSocketClientCloseUnregistersConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial runtime websocket: %v", err)
 	}
+	waitForRuntimeConnection(t, registry, "node-session")
 	if err := registry.Dispatch(ctx, "node-session", runtime.RuntimeCommand{ID: "cmd-before-close", Type: "noop"}); err != nil {
 		t.Fatalf("expected connected runtime to accept dispatch before close: %v", err)
 	}
@@ -1503,6 +1505,18 @@ func TestRuntimeWebSocketClientCloseUnregistersConnection(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("expected runtime websocket close to unregister connection")
+}
+
+func waitForRuntimeConnection(t *testing.T, registry *runtime.ConnectionRegistry, nodeID string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if registry.IsConnected(nodeID) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for runtime websocket connection %q", nodeID)
 }
 
 func TestRuntimeRegisterRejectsMismatchedAuthenticatedNodeIdentity(t *testing.T) {

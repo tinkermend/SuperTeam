@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
+import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { EmployeesView } from "@/features/employees";
 
@@ -39,36 +40,93 @@ function createQueryClient() {
 function createEmployeesFetcher() {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
-    if (url.pathname === "/api/v1/digital-employees" && (init?.method ?? "GET") === "GET") {
-      return new Response(
-        JSON.stringify([
-          {
-            id: "11111111-1111-4111-8111-111111111111",
-            name: "需求分析员工",
-            role: "requirements_analyst",
-            description: "负责需求拆解和交付风险识别",
-            status: "active",
-            risk_level: "medium",
-          },
-        ]),
-        {
-          headers: { "content-type": "application/json" },
-          status: 200,
-        },
-      );
-    }
-    if (
-      url.pathname ===
-        "/api/v1/digital-employees/11111111-1111-4111-8111-111111111111/execution-instance" &&
-      (init?.method ?? "GET") === "GET"
-    ) {
+    if (url.pathname === "/api/v1/digital-employees/overview" && (init?.method ?? "GET") === "GET") {
       return new Response(
         JSON.stringify({
-          id: "22222222-2222-4222-8222-222222222222",
-          digital_employee_id: "11111111-1111-4111-8111-111111111111",
-          runtime_node_id: "33333333-3333-4333-8333-333333333333",
-          provider_type: "codex",
-          status: "ready",
+          summary: {
+            total_count: 18,
+            runnable_count: 14,
+            running_count: 5,
+            waiting_runtime_count: 2,
+            error_count: 1,
+            high_risk_count: 3,
+          },
+          items: [
+            {
+              identity_summary: {
+                id: "11111111-1111-4111-8111-111111111111",
+                tenant_id: "tenant-1",
+                team_id: "team-1",
+                team_name: "产品组",
+                owner_user_id: "owner-1",
+                owner_display_name: "王产品",
+                employee_type: "requirements_analyst",
+                employee_type_label: "需求分析",
+                name: "需求分析员工",
+                role: "需求分析师",
+                description: "负责需求拆解和交付风险识别",
+                status: "active",
+                risk_level: "medium",
+              },
+              execution_summary: {
+                execution_instance_id: "22222222-2222-4222-8222-222222222222",
+                status: "active",
+                runtime_node_id: "33333333-3333-4333-8333-333333333333",
+                node_id: "runtime-cn-01",
+                runtime_name: "华东执行节点",
+                runtime_status: "online",
+                provider_type: "codex",
+                provider_status: "ready",
+                health_status: "healthy",
+                agent_home_dir_available: true,
+              },
+              latest_run_summary: {
+                run_id: "44444444-4444-4444-8444-444444444444",
+                task_id: "task-1",
+                status: "running",
+                title: "审查需求",
+                started_at: "2026-06-07T08:00:00Z",
+                updated_at: "2026-06-07T08:08:00Z",
+                duration_sec: 480,
+                token_usage: 3200,
+                error_message: "",
+              },
+              governance_summary: {
+                effective_config_id: "55555555-5555-4555-8555-555555555555",
+                status: "approved",
+                team_revision_number: 3,
+                employee_revision_number: 2,
+                skills_count: 8,
+                mcp_servers_count: 3,
+                constitution_ref: "constitution://requirements/v2",
+              },
+              budget_summary: {
+                usage_tokens_30d: 16000,
+                run_count_30d: 12,
+                cost_amount_30d: 28.5,
+                currency: "CNY",
+                source: "runtime_usage",
+              },
+            },
+          ],
+          filters: {
+            teams: [{ value: "team-1", label: "产品组" }],
+            employee_types: [{ value: "requirements_analyst", label: "需求分析" }],
+            statuses: [
+              { value: "active", label: "运行中" },
+              { value: "ready", label: "就绪" },
+            ],
+            providers: [{ value: "codex", label: "codex" }],
+            runtime_nodes: [{ value: "33333333-3333-4333-8333-333333333333", label: "runtime-cn-01" }],
+            risk_levels: [{ value: "medium", label: "中风险" }],
+            execution_statuses: [{ value: "active", label: "执行中" }],
+            run_statuses: [{ value: "running", label: "运行中" }],
+          },
+          pagination: {
+            limit: 50,
+            offset: 0,
+            total_count: 18,
+          },
         }),
         {
           headers: { "content-type": "application/json" },
@@ -86,6 +144,14 @@ function createEmployeesFetcher() {
   return fetcher;
 }
 
+function fetchCalls(fetcher: typeof fetch) {
+  return (
+    fetcher as unknown as {
+      mock: { calls: [RequestInfo | URL, RequestInit | undefined][] };
+    }
+  ).mock.calls;
+}
+
 async function renderEmployeesView(fetcher = createEmployeesFetcher()) {
   return await render(
     <QueryClientProvider client={createQueryClient()}>
@@ -95,25 +161,22 @@ async function renderEmployeesView(fetcher = createEmployeesFetcher()) {
 }
 
 describe("EmployeesView", () => {
-  it("renders digital employees and execution instance state", async () => {
+  it("renders the digital employee workbench overview", async () => {
     const fetcher = createEmployeesFetcher();
     const screen = await renderEmployeesView(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
+    await expect.element(screen.getByText("18")).toBeVisible();
+    await expect.element(screen.getByText("可执行员工")).toBeVisible();
     await expect.element(screen.getByText("需求分析员工")).toBeVisible();
-    await expect.element(screen.getByText("负责需求拆解和交付风险识别")).toBeVisible();
-    await expect.element(screen.getByText("codex · ready")).toBeVisible();
-    await expect.element(screen.getByText("33333333-3333-4333-8333-333333333333")).toBeVisible();
+    await expect.element(screen.getByText("产品组")).toBeVisible();
+    await expect.element(screen.getByText("runtime-cn-01 · codex")).toBeVisible();
+    await expect.element(screen.getByText("审查需求")).toBeVisible();
+    await expect.element(screen.getByText("skills 8 · MCP 3")).toBeVisible();
+    await expect.element(screen.getByText("16,000 tokens")).toBeVisible();
     await expect
       .element(screen.getByRole("link", { name: "详情" }))
       .toHaveAttribute("href", "/employees/11111111-1111-4111-8111-111111111111");
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/digital-employees/11111111-1111-4111-8111-111111111111/execution-instance",
-      expect.objectContaining({
-        credentials: "include",
-        method: "GET",
-      }),
-    );
   });
 
   it("links the primary create action to the creation wizard", async () => {
@@ -122,5 +185,21 @@ describe("EmployeesView", () => {
     await expect
       .element(screen.getByRole("link", { name: "创建数字员工" }))
       .toHaveAttribute("href", "/employees/new");
+  });
+
+  it("requests the overview endpoint with selected status filter", async () => {
+    const fetcher = createEmployeesFetcher();
+    const screen = await renderEmployeesView(fetcher);
+
+    await userEvent.click(screen.getByRole("combobox", { name: "状态" }));
+    await userEvent.click(screen.getByRole("option", { name: "运行中" }));
+    await expect.element(screen.getByText("需求分析员工")).toBeVisible();
+
+    expect(
+      fetchCalls(fetcher).some(([input]) => {
+        const url = new URL(String(input));
+        return url.pathname === "/api/v1/digital-employees/overview" && url.searchParams.get("status") === "active";
+      }),
+    ).toBe(true);
   });
 });

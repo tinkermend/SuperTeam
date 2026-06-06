@@ -634,3 +634,542 @@ aborted_receipts AS (
     RETURNING rcr.id
 )
 SELECT 1;
+
+-- name: GetDigitalEmployeeOverviewSummary :one
+WITH overview_args AS (
+    SELECT
+        sqlc.arg('tenant_id')::uuid AS tenant_id,
+        NULLIF(BTRIM(sqlc.narg('q')::text), '') AS q,
+        sqlc.narg('team_id')::uuid AS team_id,
+        NULLIF(BTRIM(sqlc.narg('status')::text), '') AS status,
+        NULLIF(BTRIM(sqlc.narg('employee_type')::text), '') AS employee_type,
+        NULLIF(BTRIM(sqlc.narg('provider_type')::text), '') AS provider_type,
+        sqlc.narg('runtime_node_id')::uuid AS runtime_node_id,
+        NULLIF(BTRIM(sqlc.narg('risk_level')::text), '') AS risk_level,
+        NULLIF(BTRIM(sqlc.narg('execution_status')::text), '') AS execution_status,
+        NULLIF(BTRIM(sqlc.narg('run_status')::text), '') AS run_status
+),
+provider_capabilities AS (
+    SELECT DISTINCT ON (rc.tenant_id, rc.runtime_node_id, rc.provider_type)
+        rc.tenant_id,
+        rc.runtime_node_id,
+        rc.provider_type,
+        rc.status,
+        rc.health_status,
+        rc.available
+    FROM runtime_capabilities rc
+    JOIN overview_args args ON args.tenant_id = rc.tenant_id
+    WHERE rc.capability_type = 'provider'
+      AND rc.disabled_at IS NULL
+      AND rc.archived_at IS NULL
+    ORDER BY rc.tenant_id, rc.runtime_node_id, rc.provider_type, rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
+),
+latest_runs AS (
+    SELECT DISTINCT ON (tr.tenant_id, tr.digital_employee_id)
+        tr.tenant_id,
+        tr.digital_employee_id,
+        tr.status
+    FROM task_runs tr
+    JOIN overview_args args ON args.tenant_id = tr.tenant_id
+    JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+    WHERE tr.digital_employee_id IS NOT NULL
+      AND t.deleted_at IS NULL
+    ORDER BY tr.tenant_id, tr.digital_employee_id, tr.updated_at DESC, tr.created_at DESC
+),
+effective_configs AS (
+    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
+        ec.tenant_id,
+        ec.digital_employee_id,
+        ec.id AS effective_config_id,
+        ec.status
+    FROM digital_employee_effective_configs ec
+    JOIN overview_args args ON args.tenant_id = ec.tenant_id
+    WHERE ec.status = 'approved'
+      AND ec.revoked_at IS NULL
+    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
+),
+overview_rows AS (
+    SELECT
+        de.id,
+        de.name,
+        de.role,
+        de.description,
+        de.team_id,
+        de.status AS employee_status,
+        de.employee_type,
+        de.risk_level,
+        COALESCE(dei.status, 'missing')::text AS execution_status,
+        dei.runtime_node_id,
+        rn.status AS runtime_status,
+        rn.disabled_at AS runtime_disabled_at,
+        rn.archived_at AS runtime_archived_at,
+        COALESCE(dei.provider_type, '')::text AS provider_type,
+        COALESCE(pc.available, false)::boolean AS provider_available,
+        COALESCE(pc.status, '')::text AS provider_status,
+        COALESCE(pc.health_status, '')::text AS provider_health_status,
+        COALESCE(lr.status, 'none')::text AS run_status,
+        ec.effective_config_id
+    FROM digital_employees de
+    CROSS JOIN overview_args args
+    LEFT JOIN digital_employee_execution_instances dei
+     ON dei.tenant_id = de.tenant_id
+     AND dei.digital_employee_id = de.id
+     AND dei.deleted_at IS NULL
+    LEFT JOIN runtime_nodes rn
+      ON rn.id = dei.runtime_node_id
+     AND rn.tenant_id = dei.tenant_id
+    LEFT JOIN provider_capabilities pc
+      ON pc.tenant_id = dei.tenant_id
+     AND pc.runtime_node_id = dei.runtime_node_id
+     AND pc.provider_type = dei.provider_type
+    LEFT JOIN latest_runs lr
+      ON lr.tenant_id = de.tenant_id
+     AND lr.digital_employee_id = de.id
+    LEFT JOIN effective_configs ec
+      ON ec.tenant_id = de.tenant_id
+     AND ec.digital_employee_id = de.id
+    WHERE de.tenant_id = args.tenant_id
+      AND de.deleted_at IS NULL
+),
+filtered_rows AS (
+    SELECT overview_rows.*
+    FROM overview_rows
+    CROSS JOIN overview_args args
+    WHERE (
+        args.q IS NULL
+        OR overview_rows.name ILIKE '%' || args.q || '%'
+        OR overview_rows.role ILIKE '%' || args.q || '%'
+        OR overview_rows.description ILIKE '%' || args.q || '%'
+    )
+      AND (args.team_id IS NULL OR overview_rows.team_id = args.team_id)
+      AND (args.status IS NULL OR overview_rows.employee_status = args.status)
+      AND (args.employee_type IS NULL OR overview_rows.employee_type = args.employee_type)
+      AND (args.provider_type IS NULL OR overview_rows.provider_type = args.provider_type)
+      AND (args.runtime_node_id IS NULL OR overview_rows.runtime_node_id = args.runtime_node_id)
+      AND (args.risk_level IS NULL OR overview_rows.risk_level = args.risk_level)
+      AND (args.execution_status IS NULL OR overview_rows.execution_status = args.execution_status)
+      AND (args.run_status IS NULL OR overview_rows.run_status = args.run_status)
+)
+SELECT
+    COUNT(*)::integer AS total_count,
+    (COUNT(*) FILTER (
+        WHERE employee_status IN ('ready', 'active')
+          AND execution_status IN ('ready', 'active')
+          AND effective_config_id IS NOT NULL
+          AND runtime_node_id IS NOT NULL
+          AND runtime_status = 'online'
+          AND runtime_disabled_at IS NULL
+          AND runtime_archived_at IS NULL
+          AND provider_available = true
+          AND provider_status = 'healthy'
+          AND provider_health_status = 'healthy'
+    ))::integer AS runnable_count,
+    (COUNT(*) FILTER (
+        WHERE run_status IN ('queued', 'dispatching', 'running', 'cancelling')
+    ))::integer AS running_count,
+    (COUNT(*) FILTER (
+        WHERE execution_status IN ('missing', 'provisioning')
+    ))::integer AS waiting_runtime_count,
+    (COUNT(*) FILTER (
+        WHERE employee_status = 'error'
+           OR execution_status = 'error'
+           OR run_status IN ('failed', 'timed_out')
+    ))::integer AS error_count,
+    (COUNT(*) FILTER (
+        WHERE risk_level IN ('high', 'critical')
+    ))::integer AS high_risk_count
+FROM filtered_rows;
+
+-- name: ListDigitalEmployeeOverviewItems :many
+WITH overview_args AS (
+    SELECT
+        sqlc.arg('tenant_id')::uuid AS tenant_id,
+        NULLIF(BTRIM(sqlc.narg('q')::text), '') AS q,
+        sqlc.narg('team_id')::uuid AS team_id,
+        NULLIF(BTRIM(sqlc.narg('status')::text), '') AS status,
+        NULLIF(BTRIM(sqlc.narg('employee_type')::text), '') AS employee_type,
+        NULLIF(BTRIM(sqlc.narg('provider_type')::text), '') AS provider_type,
+        sqlc.narg('runtime_node_id')::uuid AS runtime_node_id,
+        NULLIF(BTRIM(sqlc.narg('risk_level')::text), '') AS risk_level,
+        NULLIF(BTRIM(sqlc.narg('execution_status')::text), '') AS execution_status,
+        NULLIF(BTRIM(sqlc.narg('run_status')::text), '') AS run_status,
+        sqlc.arg('limit')::integer AS limit_value,
+        sqlc.arg('offset')::integer AS offset_value
+),
+provider_capabilities AS (
+    SELECT DISTINCT ON (rc.tenant_id, rc.runtime_node_id, rc.provider_type)
+        rc.tenant_id,
+        rc.runtime_node_id,
+        rc.provider_type,
+        rc.status,
+        rc.health_status,
+        rc.available
+    FROM runtime_capabilities rc
+    JOIN overview_args args ON args.tenant_id = rc.tenant_id
+    WHERE rc.capability_type = 'provider'
+      AND rc.disabled_at IS NULL
+      AND rc.archived_at IS NULL
+    ORDER BY rc.tenant_id, rc.runtime_node_id, rc.provider_type, rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
+),
+latest_runs AS (
+    SELECT DISTINCT ON (tr.tenant_id, tr.digital_employee_id)
+        tr.tenant_id,
+        tr.digital_employee_id,
+        tr.id,
+        tr.task_id,
+        t.title,
+        tr.status,
+        tr.started_at,
+        tr.finished_at,
+        tr.updated_at,
+        tr.result,
+        tr.error_message,
+        tr.created_at
+    FROM task_runs tr
+    JOIN overview_args args ON args.tenant_id = tr.tenant_id
+    JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+    WHERE tr.digital_employee_id IS NOT NULL
+      AND t.deleted_at IS NULL
+    ORDER BY tr.tenant_id, tr.digital_employee_id, tr.updated_at DESC, tr.created_at DESC
+),
+budget_run_tokens AS (
+    SELECT
+        tr.tenant_id,
+        tr.digital_employee_id,
+        COALESCE(tr.result #>> '{usage,total_tokens}', tr.result ->> 'total_tokens', '') AS token_text
+    FROM task_runs tr
+    JOIN overview_args args ON args.tenant_id = tr.tenant_id
+    WHERE tr.digital_employee_id IS NOT NULL
+      AND tr.created_at >= NOW() - INTERVAL '30 days'
+),
+budget_runs AS (
+    SELECT
+        tenant_id,
+        digital_employee_id,
+        CASE
+            WHEN COUNT(*) FILTER (WHERE token_text ~ '^[0-9]+$') = 0 THEN NULL
+            ELSE LEAST(
+                SUM(CASE WHEN token_text ~ '^[0-9]+$' THEN token_text::bigint ELSE 0 END),
+                2147483647
+            )::integer
+        END AS budget_usage_tokens_30d,
+        COUNT(*)::integer AS budget_run_count_30d
+    FROM budget_run_tokens
+    GROUP BY tenant_id, digital_employee_id
+),
+effective_configs AS (
+    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
+        ec.tenant_id,
+        ec.digital_employee_id,
+        ec.id AS effective_config_id,
+        ec.status,
+        ttcr.revision_number AS team_revision_number,
+        decr.revision_number AS employee_revision_number,
+        CASE
+            WHEN jsonb_typeof(ec.effective_config_snapshot #> '{capability_selection,enabled_mcp_servers}') = 'array'
+            THEN jsonb_array_length(ec.effective_config_snapshot #> '{capability_selection,enabled_mcp_servers}')
+            ELSE 0
+        END::integer AS mcp_servers_count,
+        COALESCE(
+            ec.effective_config_snapshot #>> '{constitution,ref}',
+            ec.effective_config_snapshot #>> '{constitution,team,ref}',
+            ec.effective_config_snapshot #>> '{constitution,team,document_ref}',
+            ''
+        )::text AS constitution_ref
+    FROM digital_employee_effective_configs ec
+    JOIN overview_args args ON args.tenant_id = ec.tenant_id
+    LEFT JOIN tenant_team_config_revisions ttcr
+      ON ttcr.id = ec.tenant_team_config_revision_id
+     AND ttcr.tenant_id = ec.tenant_id
+    LEFT JOIN digital_employee_config_revisions decr
+      ON decr.id = ec.employee_config_revision_id
+     AND decr.tenant_id = ec.tenant_id
+     AND decr.digital_employee_id = ec.digital_employee_id
+    WHERE ec.status = 'approved'
+      AND ec.revoked_at IS NULL
+    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
+),
+skill_counts AS (
+    SELECT
+        sab.tenant_id,
+        sab.digital_employee_id,
+        COUNT(*)::integer AS skills_count
+    FROM skill_agent_bindings sab
+    JOIN overview_args args ON args.tenant_id = sab.tenant_id
+    JOIN skills s
+      ON s.id = sab.skill_id
+     AND s.tenant_id = sab.tenant_id
+     AND s.deleted_at IS NULL
+    WHERE sab.status = 'enabled'
+    GROUP BY sab.tenant_id, sab.digital_employee_id
+),
+overview_rows AS (
+    SELECT
+        de.id,
+        de.tenant_id,
+        de.team_id,
+        COALESCE(tt.name, '')::text AS team_name,
+        de.owner_user_id,
+        COALESCE(au.display_name, au.username, '')::text AS owner_display_name,
+        de.employee_type,
+        de.name,
+        de.role,
+        de.description,
+        de.status,
+        de.risk_level,
+        dei.id AS execution_instance_id,
+        COALESCE(dei.status, 'missing')::text AS execution_status,
+        dei.runtime_node_id,
+        COALESCE(rn.node_id, '')::text AS node_id,
+        COALESCE(rn.name, '')::text AS runtime_name,
+        COALESCE(rn.status, '')::text AS runtime_status,
+        COALESCE(dei.provider_type, '')::text AS provider_type,
+        COALESCE(pc.status, 'unknown')::text AS provider_status,
+        COALESCE(pc.health_status, 'unknown')::text AS health_status,
+        (NULLIF(BTRIM(COALESCE(dei.agent_home_dir, '')), '') IS NOT NULL)::boolean AS agent_home_dir_available,
+        lr.id AS latest_run_id,
+        lr.task_id AS latest_run_task_id,
+        COALESCE(lr.status, 'none')::text AS latest_run_status,
+        COALESCE(lr.title, '')::text AS latest_run_title,
+        lr.started_at AS latest_run_started_at,
+        lr.finished_at AS latest_run_finished_at,
+        lr.updated_at AS latest_run_updated_at,
+        COALESCE((CASE
+            WHEN lr.id IS NOT NULL AND lr.finished_at IS NOT NULL THEN
+                GREATEST(EXTRACT(EPOCH FROM (lr.finished_at - lr.started_at))::integer, 0)
+            ELSE NULL
+        END)::text, '')::text AS latest_run_duration_sec,
+        COALESCE(lr.result #>> '{usage,total_tokens}', lr.result ->> 'total_tokens', '')::text AS latest_run_token_usage,
+        lr.error_message AS latest_run_error_message,
+        ec.effective_config_id,
+        COALESCE(ec.status, 'missing')::text AS governance_status,
+        ec.team_revision_number,
+        ec.employee_revision_number,
+        COALESCE(sc.skills_count, 0)::integer AS skills_count,
+        COALESCE(ec.mcp_servers_count, 0)::integer AS mcp_servers_count,
+        COALESCE(ec.constitution_ref, '')::text AS constitution_ref,
+        br.budget_usage_tokens_30d,
+        COALESCE(br.budget_run_count_30d, 0)::integer AS budget_run_count_30d,
+        de.created_at,
+        de.updated_at
+    FROM digital_employees de
+    CROSS JOIN overview_args args
+    LEFT JOIN tenant_teams tt
+      ON tt.id = de.team_id
+     AND tt.tenant_id = de.tenant_id
+     AND tt.deleted_at IS NULL
+    LEFT JOIN auth_users au
+      ON au.id = de.owner_user_id
+     AND au.deleted_at IS NULL
+    LEFT JOIN digital_employee_execution_instances dei
+      ON dei.tenant_id = de.tenant_id
+     AND dei.digital_employee_id = de.id
+     AND dei.deleted_at IS NULL
+    LEFT JOIN runtime_nodes rn
+      ON rn.id = dei.runtime_node_id
+     AND rn.tenant_id = dei.tenant_id
+    LEFT JOIN provider_capabilities pc
+      ON pc.tenant_id = dei.tenant_id
+     AND pc.runtime_node_id = dei.runtime_node_id
+     AND pc.provider_type = dei.provider_type
+    LEFT JOIN latest_runs lr
+      ON lr.tenant_id = de.tenant_id
+     AND lr.digital_employee_id = de.id
+    LEFT JOIN budget_runs br
+      ON br.tenant_id = de.tenant_id
+     AND br.digital_employee_id = de.id
+    LEFT JOIN effective_configs ec
+      ON ec.tenant_id = de.tenant_id
+     AND ec.digital_employee_id = de.id
+    LEFT JOIN skill_counts sc
+      ON sc.tenant_id = de.tenant_id
+     AND sc.digital_employee_id = de.id
+    WHERE de.tenant_id = args.tenant_id
+      AND de.deleted_at IS NULL
+),
+filtered_rows AS (
+    SELECT overview_rows.*
+    FROM overview_rows
+    CROSS JOIN overview_args args
+    WHERE (
+        args.q IS NULL
+        OR overview_rows.name ILIKE '%' || args.q || '%'
+        OR overview_rows.role ILIKE '%' || args.q || '%'
+        OR overview_rows.description ILIKE '%' || args.q || '%'
+    )
+      AND (args.team_id IS NULL OR overview_rows.team_id = args.team_id)
+      AND (args.status IS NULL OR overview_rows.status = args.status)
+      AND (args.employee_type IS NULL OR overview_rows.employee_type = args.employee_type)
+      AND (args.provider_type IS NULL OR overview_rows.provider_type = args.provider_type)
+      AND (args.runtime_node_id IS NULL OR overview_rows.runtime_node_id = args.runtime_node_id)
+      AND (args.risk_level IS NULL OR overview_rows.risk_level = args.risk_level)
+      AND (args.execution_status IS NULL OR overview_rows.execution_status = args.execution_status)
+      AND (args.run_status IS NULL OR overview_rows.latest_run_status = args.run_status)
+)
+SELECT
+    id,
+    tenant_id,
+    team_id,
+    team_name,
+    owner_user_id,
+    owner_display_name,
+    employee_type,
+    name,
+    role,
+    description,
+    status,
+    risk_level,
+    execution_instance_id,
+    execution_status,
+    runtime_node_id,
+    node_id,
+    runtime_name,
+    runtime_status,
+    provider_type,
+    provider_status,
+    health_status,
+    agent_home_dir_available,
+    latest_run_id,
+    latest_run_task_id,
+    latest_run_status,
+    latest_run_title,
+    latest_run_started_at,
+    latest_run_finished_at,
+    latest_run_updated_at,
+    latest_run_duration_sec,
+    latest_run_token_usage,
+    latest_run_error_message,
+    effective_config_id,
+    governance_status,
+    team_revision_number,
+    employee_revision_number,
+    skills_count,
+    mcp_servers_count,
+    constitution_ref,
+    budget_usage_tokens_30d,
+    budget_run_count_30d
+FROM filtered_rows
+ORDER BY created_at DESC, id
+LIMIT (SELECT limit_value FROM overview_args)
+OFFSET (SELECT offset_value FROM overview_args);
+
+-- name: ListDigitalEmployeeOverviewFilterOptions :many
+WITH overview_args AS (
+    SELECT sqlc.arg('tenant_id')::uuid AS tenant_id
+),
+latest_runs AS (
+    SELECT DISTINCT ON (tr.tenant_id, tr.digital_employee_id)
+        tr.tenant_id,
+        tr.digital_employee_id,
+        tr.status
+    FROM task_runs tr
+    JOIN overview_args args ON args.tenant_id = tr.tenant_id
+    JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+    WHERE tr.digital_employee_id IS NOT NULL
+      AND t.deleted_at IS NULL
+    ORDER BY tr.tenant_id, tr.digital_employee_id, tr.updated_at DESC, tr.created_at DESC
+),
+employee_rows AS (
+    SELECT
+        de.team_id,
+        COALESCE(tt.name, '')::text AS team_name,
+        de.employee_type,
+        de.status,
+        de.risk_level,
+        COALESCE(dei.provider_type, '')::text AS provider_type,
+        dei.runtime_node_id,
+        COALESCE(rn.name, rn.node_id, '')::text AS runtime_name,
+        COALESCE(dei.status, 'missing')::text AS execution_status,
+        COALESCE(lr.status, 'none')::text AS run_status
+    FROM digital_employees de
+    CROSS JOIN overview_args args
+    LEFT JOIN tenant_teams tt
+      ON tt.id = de.team_id
+     AND tt.tenant_id = de.tenant_id
+     AND tt.deleted_at IS NULL
+    LEFT JOIN digital_employee_execution_instances dei
+      ON dei.tenant_id = de.tenant_id
+     AND dei.digital_employee_id = de.id
+     AND dei.deleted_at IS NULL
+    LEFT JOIN runtime_nodes rn
+      ON rn.id = dei.runtime_node_id
+     AND rn.tenant_id = dei.tenant_id
+    LEFT JOIN latest_runs lr
+      ON lr.tenant_id = de.tenant_id
+     AND lr.digital_employee_id = de.id
+    WHERE de.tenant_id = args.tenant_id
+      AND de.deleted_at IS NULL
+)
+SELECT filter_type, value, label
+FROM (
+    SELECT DISTINCT
+        'team'::text AS filter_type,
+        COALESCE(team_id::text, '')::text AS value,
+        team_name AS label
+    FROM employee_rows
+    WHERE team_id IS NOT NULL
+
+    UNION ALL
+
+    SELECT DISTINCT
+        'employee_type'::text AS filter_type,
+        employee_type::text AS value,
+        employee_type::text AS label
+    FROM employee_rows
+    WHERE NULLIF(employee_type, '') IS NOT NULL
+
+    UNION ALL
+
+    SELECT DISTINCT
+        'status'::text AS filter_type,
+        status::text AS value,
+        status::text AS label
+    FROM employee_rows
+    WHERE NULLIF(status, '') IS NOT NULL
+
+    UNION ALL
+
+    SELECT DISTINCT
+        'provider'::text AS filter_type,
+        provider_type AS value,
+        provider_type AS label
+    FROM employee_rows
+    WHERE NULLIF(provider_type, '') IS NOT NULL
+
+    UNION ALL
+
+    SELECT DISTINCT
+        'runtime_node'::text AS filter_type,
+        COALESCE(runtime_node_id::text, '')::text AS value,
+        runtime_name AS label
+    FROM employee_rows
+    WHERE runtime_node_id IS NOT NULL
+
+    UNION ALL
+
+    SELECT DISTINCT
+        'risk_level'::text AS filter_type,
+        risk_level::text AS value,
+        risk_level::text AS label
+    FROM employee_rows
+    WHERE NULLIF(risk_level, '') IS NOT NULL
+
+    UNION ALL
+
+    SELECT DISTINCT
+        'execution_status'::text AS filter_type,
+        execution_status AS value,
+        execution_status AS label
+    FROM employee_rows
+    WHERE NULLIF(execution_status, '') IS NOT NULL
+
+    UNION ALL
+
+    SELECT DISTINCT
+        'run_status'::text AS filter_type,
+        run_status AS value,
+        run_status AS label
+    FROM employee_rows
+    WHERE NULLIF(run_status, '') IS NOT NULL
+) options
+ORDER BY filter_type, label, value;

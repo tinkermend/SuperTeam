@@ -657,6 +657,104 @@ type RuntimeSession struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 技能包主表，记录可上传、安装和绑定到数字员工的技能定义
+type Skill struct {
+	// 技能主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 技能所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 租户内技能稳定标识，由上传名称规范化生成
+	Slug string `json:"slug"`
+	// 技能显示名称
+	Name string `json:"name"`
+	// 技能描述，由上传表单或 SKILL.md 摘要提供
+	Description string `json:"description"`
+	// 技能版本，来自上传包元数据或默认版本
+	Version string `json:"version"`
+	// 技能来源，例如 upload、internal_market 或 marketplace
+	Source string `json:"source"`
+	// 技能风险等级，由服务端和上传表单校验
+	RiskLevel string `json:"risk_level"`
+	// 技能状态，例如 installed 或 available
+	Status string `json:"status"`
+	// 技能市场彩色图标键，前端映射到图标库
+	IconKey string `json:"icon_key"`
+	// 技能图标语义色标识
+	ColorToken string `json:"color_token"`
+	// 上传定义的技能标签数组，技能市场展示只使用此字段
+	Tags []string `json:"tags"`
+	// 技能扩展元数据 JSON
+	Metadata []byte `json:"metadata"`
+	// 上传或创建技能的用户 ID
+	CreatedBy uuid.NullUUID `json:"created_by"`
+	// 技能软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 技能创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 技能更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 技能安装到数字员工的绑定表
+type SkillAgentBinding struct {
+	// 技能数字员工绑定主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 绑定所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 绑定的技能 ID
+	SkillID uuid.UUID `json:"skill_id"`
+	// 安装该技能的数字员工 ID
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 安装状态，例如 enabled 或 disabled
+	Status string `json:"status"`
+	// 安装关系扩展元数据 JSON
+	Metadata []byte `json:"metadata"`
+	// 安装关系创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 安装关系更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 技能包文件表，保存 SKILL.md、脚本和附加资源的可编辑文本内容
+type SkillFile struct {
+	// 技能文件主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 技能文件所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属技能 ID
+	SkillID uuid.UUID `json:"skill_id"`
+	// 技能包内规范化相对路径
+	Path string `json:"path"`
+	// 文件节点类型，当前为 file
+	FileType string `json:"file_type"`
+	// 文本文件内容，支持在线编辑
+	Content string `json:"content"`
+	// 文件内容字节数
+	SizeBytes int64 `json:"size_bytes"`
+	// 文件内容 SHA256 校验值
+	ChecksumSha256 string `json:"checksum_sha256"`
+	// 技能文件扩展元数据 JSON
+	Metadata []byte `json:"metadata"`
+	// 技能文件创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 技能文件更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 技能与团队归属绑定表
+type SkillTeamBinding struct {
+	// 技能团队绑定主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 绑定所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 绑定的技能 ID
+	SkillID uuid.UUID `json:"skill_id"`
+	// 归属团队 ID
+	TeamID uuid.UUID `json:"team_id"`
+	// 绑定创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 // 任务主表
 type Task struct {
 	// 任务主键 UUID

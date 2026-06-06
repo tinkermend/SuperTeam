@@ -275,6 +275,155 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("create auth service: %v", err)
+	}
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	user := routeConsoleUser(t, authService, tenantID)
+	authorizer := newRecordingAuthorizer()
+	service := &routeEmployeeService{}
+	server := NewServerWithAuthz(nil, nil, authService, nil, authorizer)
+	server.SetEmployeeHandler(employee.NewHandler(service))
+
+	teamID := uuid.New()
+	runtimeNodeID := uuid.New()
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/digital-employees/overview?q=%E9%9C%80%E6%B1%82&team_id="+teamID.String()+"&status=active&employee_type=requirements_analyst&provider_type=codex&runtime_node_id="+runtimeNodeID.String()+"&risk_level=medium&execution_status=missing&run_status=none&limit=25&offset=5",
+		nil,
+	)
+	withConsoleSessionCookie(req, user.SessionToken)
+	resp := httptest.NewRecorder()
+
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected overview route to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.overviewReq.TenantID != tenantID || service.overviewReq.Query != "需求" {
+		t.Fatalf("unexpected overview tenant/query: %#v", service.overviewReq)
+	}
+	if service.overviewReq.TeamID == nil || *service.overviewReq.TeamID != teamID {
+		t.Fatalf("expected team filter %s, got %#v", teamID, service.overviewReq.TeamID)
+	}
+	if service.overviewReq.Status != employee.DigitalEmployeeStatusActive ||
+		service.overviewReq.EmployeeType != "requirements_analyst" ||
+		service.overviewReq.ProviderType != "codex" ||
+		service.overviewReq.RuntimeNodeID == nil ||
+		*service.overviewReq.RuntimeNodeID != runtimeNodeID ||
+		service.overviewReq.RiskLevel != "medium" ||
+		service.overviewReq.ExecutionStatus != employee.OverviewExecutionStatusMissing ||
+		service.overviewReq.RunStatus != employee.OverviewRunStatusNone ||
+		service.overviewReq.Limit != 25 ||
+		service.overviewReq.Offset != 5 {
+		t.Fatalf("unexpected overview filters: %#v", service.overviewReq)
+	}
+
+	var body struct {
+		Summary struct {
+			TotalCount          int32 `json:"total_count"`
+			RunnableCount       int32 `json:"runnable_count"`
+			RunningCount        int32 `json:"running_count"`
+			WaitingRuntimeCount int32 `json:"waiting_runtime_count"`
+			ErrorCount          int32 `json:"error_count"`
+			HighRiskCount       int32 `json:"high_risk_count"`
+		} `json:"summary"`
+		Items []struct {
+			IdentitySummary struct {
+				ID                string `json:"id"`
+				Name              string `json:"name"`
+				TeamName          string `json:"team_name"`
+				EmployeeTypeLabel string `json:"employee_type_label"`
+				Status            string `json:"status"`
+			} `json:"identity_summary"`
+			ExecutionSummary struct {
+				Status       string `json:"status"`
+				NodeID       string `json:"node_id"`
+				ProviderType string `json:"provider_type"`
+			} `json:"execution_summary"`
+			LatestRunSummary *struct {
+				Status       string  `json:"status"`
+				FinishedAt   *string `json:"finished_at"`
+				ErrorMessage string  `json:"error_message"`
+				TokenUsage   int32   `json:"token_usage"`
+			} `json:"latest_run_summary"`
+			GovernanceSummary struct {
+				Status          string `json:"status"`
+				SkillsCount     int32  `json:"skills_count"`
+				MCPServersCount int32  `json:"mcp_servers_count"`
+			} `json:"governance_summary"`
+			BudgetSummary struct {
+				RunCount30d   int32    `json:"run_count_30d"`
+				CostAmount30d *float64 `json:"cost_amount_30d"`
+				Source        string   `json:"source"`
+			} `json:"budget_summary"`
+		} `json:"items"`
+		Filters struct {
+			Teams []struct {
+				Value string `json:"value"`
+				Label string `json:"label"`
+			} `json:"teams"`
+			ExecutionStatuses []struct {
+				Value string `json:"value"`
+				Label string `json:"label"`
+			} `json:"execution_statuses"`
+			RunStatuses []struct {
+				Value string `json:"value"`
+				Label string `json:"label"`
+			} `json:"run_statuses"`
+			Providers []struct {
+				Value string `json:"value"`
+				Label string `json:"label"`
+			} `json:"providers"`
+			ProviderTypes []struct {
+				Value string `json:"value"`
+				Label string `json:"label"`
+			} `json:"provider_types"`
+		} `json:"filters"`
+		Pagination struct {
+			Limit      int32 `json:"limit"`
+			Offset     int32 `json:"offset"`
+			TotalCount int32 `json:"total_count"`
+		} `json:"pagination"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode overview response: %v", err)
+	}
+	if body.Summary.TotalCount != 1 || body.Summary.RunnableCount != 1 || body.Summary.RunningCount != 1 {
+		t.Fatalf("unexpected overview summary: %#v", body.Summary)
+	}
+	if len(body.Items) != 1 || body.Items[0].IdentitySummary.Name != "需求分析员工" || body.Items[0].ExecutionSummary.ProviderType != "codex" {
+		t.Fatalf("unexpected overview items: %#v", body.Items)
+	}
+	if body.Items[0].LatestRunSummary == nil || body.Items[0].LatestRunSummary.TokenUsage != 1600 {
+		t.Fatalf("expected latest run token usage, got %#v", body.Items[0].LatestRunSummary)
+	}
+	if body.Items[0].LatestRunSummary.FinishedAt == nil || body.Items[0].LatestRunSummary.ErrorMessage != "执行超时" {
+		t.Fatalf("expected latest run finished/error fields, got %#v", body.Items[0].LatestRunSummary)
+	}
+	if body.Items[0].BudgetSummary.CostAmount30d == nil || *body.Items[0].BudgetSummary.CostAmount30d != 12.34 {
+		t.Fatalf("expected budget cost amount, got %#v", body.Items[0].BudgetSummary)
+	}
+	if len(body.Filters.Teams) != 1 || body.Filters.Teams[0].Label != "产品组" {
+		t.Fatalf("expected team filters, got %#v", body.Filters.Teams)
+	}
+	if len(body.Filters.ExecutionStatuses) == 0 || body.Filters.ExecutionStatuses[0].Value == "" {
+		t.Fatalf("expected execution status filters, got %#v", body.Filters.ExecutionStatuses)
+	}
+	if len(body.Filters.Providers) != 1 || body.Filters.Providers[0].Value != "codex" || len(body.Filters.ProviderTypes) != 0 {
+		t.Fatalf("expected providers filter key only, got providers=%#v provider_types=%#v", body.Filters.Providers, body.Filters.ProviderTypes)
+	}
+	if body.Pagination.Limit != 25 || body.Pagination.Offset != 5 || body.Pagination.TotalCount != 1 {
+		t.Fatalf("unexpected pagination: %#v", body.Pagination)
+	}
+	lastCheck := authorizer.checks[len(authorizer.checks)-1]
+	if lastCheck.Action != authz.ActionEmployeeRead || lastCheck.Resource.Type != authz.ResourceTenant || lastCheck.TenantID != tenantID {
+		t.Fatalf("unexpected overview authz check: %#v", lastCheck)
+	}
+}
+
 func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -387,6 +536,35 @@ func assertNonNilEmptyStringSlice(t *testing.T, field string, values []string) {
 	if values == nil || len(values) != 0 {
 		t.Fatalf("expected %s to decode as empty array, got %#v", field, values)
 	}
+}
+
+type routeConsoleSessionUser struct {
+	*auth.User
+	SessionToken string
+}
+
+func routeConsoleUser(t *testing.T, authService *auth.Service, tenantID uuid.UUID) routeConsoleSessionUser {
+	t.Helper()
+	if tenantID != uuid.MustParse(auth.DefaultTenantID) {
+		t.Fatalf("route auth service only supports default tenant %s, got %s", auth.DefaultTenantID, tenantID)
+	}
+	user, err := authService.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create console user: %v", err)
+	}
+	_, token, err := authService.CreateSession(context.Background(), user.ID, "127.0.0.1", "route-test")
+	if err != nil {
+		t.Fatalf("create console session: %v", err)
+	}
+	return routeConsoleSessionUser{User: user, SessionToken: token}
+}
+
+func withConsoleSessionCookie(req *http.Request, token string) {
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
+}
+
+func newRecordingAuthorizer() *routeAuthorizer {
+	return &routeAuthorizer{allowed: true}
 }
 
 func TestDigitalEmployeeRoutesRequireConsoleAuth(t *testing.T) {
@@ -880,6 +1058,7 @@ type routeEmployeeService struct {
 	createOptions       *employee.CreateOptions
 	createReq           employee.CreateDigitalEmployeeRequest
 	listReq             employee.ListDigitalEmployeesRequest
+	overviewReq         employee.GetDigitalEmployeeOverviewRequest
 	bindReq             employee.BindExecutionInstanceRequest
 	updateReq           employee.UpdateStatusRequest
 	getTenantID         uuid.UUID
@@ -898,6 +1077,7 @@ type routeEmployeeService struct {
 	approveCalled       bool
 	createdID           uuid.UUID
 	listErr             error
+	overviewErr         error
 }
 
 func (s *routeEmployeeService) GetCreateOptions(ctx context.Context, req employee.CreateOptionsRequest) (*employee.CreateOptions, error) {
@@ -1004,6 +1184,14 @@ func (s *routeEmployeeService) ListDigitalEmployees(ctx context.Context, req emp
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}}, nil
+}
+
+func (s *routeEmployeeService) GetOverview(ctx context.Context, req employee.GetDigitalEmployeeOverviewRequest) (*employee.DigitalEmployeeOverview, error) {
+	s.overviewReq = req
+	if s.overviewErr != nil {
+		return nil, s.overviewErr
+	}
+	return routeEmployeeOverview(req), nil
 }
 
 func (s *routeEmployeeService) GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (*employee.DigitalEmployee, error) {
@@ -1232,6 +1420,32 @@ func (s *routeEmployeeRunService) StopRun(ctx context.Context, req employee.Stop
 	return run, nil
 }
 
+func routeEmployeeOverview(req employee.GetDigitalEmployeeOverviewRequest) *employee.DigitalEmployeeOverview {
+	employeeID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	teamID := uuid.MustParse("22222222-2222-4222-8222-222222222222")
+	ownerID := uuid.MustParse("33333333-3333-4333-8333-333333333333")
+	executionInstanceID := uuid.MustParse("44444444-4444-4444-8444-444444444444")
+	runtimeNodeID := uuid.MustParse("55555555-5555-4555-8555-555555555555")
+	runID := uuid.MustParse("66666666-6666-4666-8666-666666666666")
+	taskID := uuid.MustParse("77777777-7777-4777-8777-777777777777")
+	effectiveConfigID := uuid.MustParse("88888888-8888-4888-8888-888888888888")
+	now := time.Date(2026, 6, 6, 10, 4, 0, 0, time.UTC)
+	finishedAt := now.Add(10 * time.Minute)
+	costAmount := 12.34
+	return &employee.DigitalEmployeeOverview{
+		Summary: employee.DigitalEmployeeOverviewSummary{TotalCount: 1, RunnableCount: 1, RunningCount: 1, WaitingRuntimeCount: 0, ErrorCount: 0, HighRiskCount: 0},
+		Items: []employee.DigitalEmployeeOverviewItem{{
+			IdentitySummary:   employee.DigitalEmployeeIdentitySummary{ID: employeeID, TenantID: req.TenantID, TeamID: &teamID, TeamName: "产品组", OwnerUserID: ownerID, OwnerDisplayName: "王佩", EmployeeType: "requirements_analyst", EmployeeTypeLabel: "需求分析", Name: "需求分析员工", Role: "requirements_analyst", Description: stringPtr("负责需求拆解和交付风险识别"), Status: employee.DigitalEmployeeStatusActive, RiskLevel: "medium"},
+			ExecutionSummary:  employee.DigitalEmployeeExecutionSummary{ExecutionInstanceID: &executionInstanceID, Status: employee.OverviewExecutionStatusReady, RuntimeNodeID: &runtimeNodeID, NodeID: "runtime-cn-01", RuntimeName: "cn-01", RuntimeStatus: "online", ProviderType: "codex", ProviderStatus: "healthy", HealthStatus: "healthy", AgentHomeDirAvailable: true},
+			LatestRunSummary:  &employee.DigitalEmployeeLatestRunSummary{RunID: runID, TaskID: taskID, Status: employee.OverviewRunStatusFailed, Title: "审查需求", StartedAt: &now, UpdatedAt: &now, FinishedAt: &finishedAt, DurationSec: int32Ptr(240), TokenUsage: int32Ptr(1600), ErrorMessage: "执行超时"},
+			GovernanceSummary: employee.DigitalEmployeeGovernanceSummary{EffectiveConfigID: &effectiveConfigID, Status: "approved", TeamRevisionNumber: int32Ptr(3), EmployeeRevisionNumber: int32Ptr(1), SkillsCount: 8, MCPServersCount: 3, ConstitutionRef: "effective-config://88888888-8888-4888-8888-888888888888/constitution"},
+			BudgetSummary:     employee.DigitalEmployeeBudgetSummary{UsageTokens30d: int32Ptr(16000), RunCount30d: 12, CostAmount30d: &costAmount, Currency: "USD", Source: "run_usage_projection"},
+		}},
+		Filters:    employee.DigitalEmployeeOverviewFilters{Teams: []employee.OverviewFilterOption{{Value: teamID.String(), Label: "产品组"}}, Providers: []employee.OverviewFilterOption{{Value: "codex", Label: "Codex"}}, ExecutionStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewExecutionStatusMissing), Label: "未绑定 Runtime"}}, RunStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewRunStatusNone), Label: "暂无运行"}}},
+		Pagination: employee.OverviewPagination{Limit: req.Limit, Offset: req.Offset, TotalCount: 1},
+	}
+}
+
 func routeEmployeeRun(tenantID, employeeID uuid.UUID, status employee.DigitalEmployeeRunStatus) *employee.DigitalEmployeeRun {
 	now := time.Now().UTC()
 	logRef := "s3://logs/run.log"
@@ -1266,6 +1480,10 @@ func routeEmployeeRun(tenantID, employeeID uuid.UUID, status employee.DigitalEmp
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
 
 func int32Ptr(value int32) *int32 {
