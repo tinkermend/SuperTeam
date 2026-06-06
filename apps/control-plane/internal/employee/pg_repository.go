@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -442,6 +443,275 @@ func (r *PgRepository) CreateDigitalEmployeeEffectiveConfig(ctx context.Context,
 		return DigitalEmployeeEffectiveConfigRecord{}, err
 	}
 	return effectiveConfigRecordFromQuery(effectiveConfig)
+}
+
+func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error) {
+	summaryParams := queries.GetDigitalEmployeeOverviewSummaryParams{
+		TenantID:        req.TenantID,
+		Q:               textFromOptionalString(req.Query),
+		TeamID:          nullUUIDFromPtr(req.TeamID),
+		Status:          textFromOptionalString(string(req.Status)),
+		EmployeeType:    textFromOptionalString(req.EmployeeType),
+		ProviderType:    textFromOptionalString(req.ProviderType),
+		RuntimeNodeID:   nullUUIDFromPtr(req.RuntimeNodeID),
+		RiskLevel:       textFromOptionalString(req.RiskLevel),
+		ExecutionStatus: textFromOptionalString(string(req.ExecutionStatus)),
+		RunStatus:       textFromOptionalString(string(req.RunStatus)),
+	}
+	summary, err := r.q.GetDigitalEmployeeOverviewSummary(ctx, summaryParams)
+	if err != nil {
+		return nil, err
+	}
+
+	itemRows, err := r.q.ListDigitalEmployeeOverviewItems(ctx, queries.ListDigitalEmployeeOverviewItemsParams{
+		TenantID:        req.TenantID,
+		Q:               summaryParams.Q,
+		TeamID:          summaryParams.TeamID,
+		Status:          summaryParams.Status,
+		EmployeeType:    summaryParams.EmployeeType,
+		ProviderType:    summaryParams.ProviderType,
+		RuntimeNodeID:   summaryParams.RuntimeNodeID,
+		RiskLevel:       summaryParams.RiskLevel,
+		ExecutionStatus: summaryParams.ExecutionStatus,
+		RunStatus:       summaryParams.RunStatus,
+		Limit:           req.Limit,
+		Offset:          req.Offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]DigitalEmployeeOverviewItem, 0, len(itemRows))
+	for _, row := range itemRows {
+		items = append(items, overviewItemFromQuery(row))
+	}
+
+	filterRows, err := r.q.ListDigitalEmployeeOverviewFilterOptions(ctx, req.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DigitalEmployeeOverview{
+		Summary: DigitalEmployeeOverviewSummary{
+			TotalCount:          summary.TotalCount,
+			RunnableCount:       summary.RunnableCount,
+			RunningCount:        summary.RunningCount,
+			WaitingRuntimeCount: summary.WaitingRuntimeCount,
+			ErrorCount:          summary.ErrorCount,
+			HighRiskCount:       summary.HighRiskCount,
+		},
+		Items:   items,
+		Filters: overviewFiltersFromQuery(filterRows),
+		Pagination: OverviewPagination{
+			Limit:      req.Limit,
+			Offset:     req.Offset,
+			TotalCount: summary.TotalCount,
+		},
+	}, nil
+}
+
+func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) DigitalEmployeeOverviewItem {
+	var latestRun *DigitalEmployeeLatestRunSummary
+	if row.LatestRunID.Valid && row.LatestRunID.UUID != uuid.Nil {
+		latestRun = &DigitalEmployeeLatestRunSummary{
+			RunID:        row.LatestRunID.UUID,
+			TaskID:       row.LatestRunTaskID.UUID,
+			Status:       overviewRunStatus(row.LatestRunStatus),
+			Title:        row.LatestRunTitle,
+			StartedAt:    timePtrFromPgTimestamptz(row.LatestRunStartedAt),
+			UpdatedAt:    timePtrFromPgTimestamptz(row.LatestRunUpdatedAt),
+			FinishedAt:   timePtrFromPgTimestamptz(row.LatestRunFinishedAt),
+			DurationSec:  int32PtrFromJSONString(row.LatestRunDurationSec),
+			TokenUsage:   int32PtrFromJSONString(row.LatestRunTokenUsage),
+			ErrorMessage: stringFromText(row.LatestRunErrorMessage),
+		}
+	}
+
+	budgetUsage := int32PtrFromPgInt4(row.BudgetUsageTokens30d)
+	var budgetUsageValue int32
+	if budgetUsage != nil {
+		budgetUsageValue = *budgetUsage
+	}
+
+	return DigitalEmployeeOverviewItem{
+		IdentitySummary: DigitalEmployeeIdentitySummary{
+			ID:                row.ID,
+			TenantID:          row.TenantID,
+			TeamID:            uuidPtrFromNullUUID(row.TeamID),
+			TeamName:          row.TeamName,
+			OwnerUserID:       row.OwnerUserID,
+			OwnerDisplayName:  row.OwnerDisplayName,
+			EmployeeType:      row.EmployeeType,
+			EmployeeTypeLabel: overviewEmployeeTypeLabel(row.EmployeeType),
+			Name:              row.Name,
+			Role:              row.Role,
+			Description:       stringPtrFromPgText(row.Description),
+			Status:            DigitalEmployeeStatus(row.Status),
+			RiskLevel:         row.RiskLevel,
+		},
+		ExecutionSummary: DigitalEmployeeExecutionSummary{
+			ExecutionInstanceID:   uuidPtrFromNullUUID(row.ExecutionInstanceID),
+			Status:                overviewExecutionStatus(row.ExecutionStatus),
+			RuntimeNodeID:         uuidPtrFromNullUUID(row.RuntimeNodeID),
+			NodeID:                row.NodeID,
+			RuntimeName:           row.RuntimeName,
+			RuntimeStatus:         row.RuntimeStatus,
+			ProviderType:          row.ProviderType,
+			ProviderStatus:        row.ProviderStatus,
+			HealthStatus:          row.HealthStatus,
+			AgentHomeDirAvailable: row.AgentHomeDirAvailable,
+		},
+		LatestRunSummary: latestRun,
+		GovernanceSummary: DigitalEmployeeGovernanceSummary{
+			EffectiveConfigID:      uuidPtrFromNullUUID(row.EffectiveConfigID),
+			Status:                 row.GovernanceStatus,
+			TeamRevisionNumber:     int32PtrFromPgInt4(row.TeamRevisionNumber),
+			EmployeeRevisionNumber: int32PtrFromPgInt4(row.EmployeeRevisionNumber),
+			SkillsCount:            row.SkillsCount,
+			MCPServersCount:        row.McpServersCount,
+			ConstitutionRef:        row.ConstitutionRef,
+		},
+		BudgetSummary: DigitalEmployeeBudgetSummary{
+			UsageTokens30d: budgetUsage,
+			RunCount30d:    row.BudgetRunCount30d,
+			Currency:       "USD",
+			Source:         overviewBudgetSource(row.BudgetRunCount30d, budgetUsageValue),
+		},
+	}
+}
+
+func overviewFiltersFromQuery(rows []queries.ListDigitalEmployeeOverviewFilterOptionsRow) DigitalEmployeeOverviewFilters {
+	filters := DigitalEmployeeOverviewFilters{
+		Teams:             []OverviewFilterOption{},
+		Statuses:          []OverviewFilterOption{},
+		EmployeeTypes:     []OverviewFilterOption{},
+		Providers:         []OverviewFilterOption{},
+		RuntimeNodes:      []OverviewFilterOption{},
+		RiskLevels:        []OverviewFilterOption{},
+		ExecutionStatuses: []OverviewFilterOption{},
+		RunStatuses:       []OverviewFilterOption{},
+	}
+	for _, row := range rows {
+		value := strings.TrimSpace(row.Value)
+		if value == "" {
+			continue
+		}
+		label := strings.TrimSpace(row.Label)
+		if label == "" {
+			label = value
+		}
+		if row.FilterType == "employee_type" {
+			label = overviewEmployeeTypeLabel(value)
+		}
+		option := OverviewFilterOption{Value: value, Label: label}
+		switch row.FilterType {
+		case "team":
+			filters.Teams = append(filters.Teams, option)
+		case "employee_type":
+			filters.EmployeeTypes = append(filters.EmployeeTypes, option)
+		case "status":
+			filters.Statuses = append(filters.Statuses, option)
+		case "provider":
+			filters.Providers = append(filters.Providers, option)
+		case "runtime_node":
+			filters.RuntimeNodes = append(filters.RuntimeNodes, option)
+		case "risk_level":
+			filters.RiskLevels = append(filters.RiskLevels, option)
+		case "execution_status":
+			filters.ExecutionStatuses = append(filters.ExecutionStatuses, option)
+		case "run_status":
+			filters.RunStatuses = append(filters.RunStatuses, option)
+		}
+	}
+	return filters
+}
+
+func overviewEmployeeTypeLabel(value string) string {
+	definition, ok := EmployeeTypeDefinitionByType(value)
+	if !ok {
+		return value
+	}
+	return definition.Label
+}
+
+func int32FromJSONString(value string) int32 {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0
+	}
+	if strings.HasPrefix(trimmed, `"`) {
+		var decoded string
+		if err := json.Unmarshal([]byte(trimmed), &decoded); err == nil {
+			trimmed = strings.TrimSpace(decoded)
+		}
+	}
+	parsed, err := strconv.ParseInt(trimmed, 10, 32)
+	if err != nil {
+		return 0
+	}
+	return int32(parsed)
+}
+
+func overviewExecutionStatus(value string) OverviewExecutionStatus {
+	status := OverviewExecutionStatus(strings.TrimSpace(value))
+	switch status {
+	case OverviewExecutionStatusProvisioning, OverviewExecutionStatusReady, OverviewExecutionStatusActive, OverviewExecutionStatusDisabled, OverviewExecutionStatusError:
+		return status
+	default:
+		return OverviewExecutionStatusMissing
+	}
+}
+
+func overviewRunStatus(value string) OverviewRunStatus {
+	status := OverviewRunStatus(strings.TrimSpace(value))
+	switch status {
+	case OverviewRunStatusQueued, OverviewRunStatusDispatching, OverviewRunStatusRunning, OverviewRunStatusCancelling, OverviewRunStatusCompleted, OverviewRunStatusFailed, OverviewRunStatusCancelled, OverviewRunStatusTimedOut:
+		return status
+	default:
+		return OverviewRunStatusNone
+	}
+}
+
+func overviewBudgetSource(runCount, usageTokens int32) string {
+	if runCount <= 0 || usageTokens <= 0 {
+		return "unavailable"
+	}
+	return "run_usage_projection"
+}
+
+func textFromOptionalString(value string) pgtype.Text {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: trimmed, Valid: true}
+}
+
+func uuidPtrFromNullUUID(value uuid.NullUUID) *uuid.UUID {
+	return uuidPtrFromNull(value)
+}
+
+func stringPtrFromPgText(value pgtype.Text) *string {
+	return stringPtrFromText(value)
+}
+
+func int32PtrFromPgInt4(value pgtype.Int4) *int32 {
+	if !value.Valid {
+		return nil
+	}
+	copied := value.Int32
+	return &copied
+}
+
+func timePtrFromPgTimestamptz(value pgtype.Timestamptz) *time.Time {
+	return timePtrFromTimestamptz(value)
+}
+
+func int32PtrFromJSONString(value string) *int32 {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parsed := int32FromJSONString(value)
+	return &parsed
 }
 
 func digitalEmployeeRecordFromQuery(employee queries.DigitalEmployee) (DigitalEmployeeRecord, error) {
