@@ -1290,20 +1290,12 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByRole("heading", { name: "运维团队" }))
       .toBeVisible();
-    for (const tab of [
-      "概览",
-      "成员",
-      "数字员工",
-      "能力与知识",
-      "治理策略",
-      "审计记录",
-    ]) {
+    for (const tab of ["概览", "能力与知识", "治理策略", "审计记录"]) {
       await expect
         .element(screen.getByRole("tab", { name: tab }))
         .toBeVisible();
     }
-    await screen.getByRole("tab", { name: "成员" }).click();
-    await expect.element(screen.getByText("成员名册")).toBeVisible();
+    await expect.element(screen.getByText("团队成员与代理")).toBeVisible();
     await expect
       .element(screen.getByRole("button", { name: "添加成员" }).first())
       .toBeVisible();
@@ -1456,7 +1448,7 @@ describe("TeamDetailView", () => {
     );
   });
 
-  it("renders members tab roster, safe direct roles, pending requests, and owner protection", async () => {
+  it("renders overview roster and safe direct roles", async () => {
     const screen = await renderWithQueryClient(
       <TeamDetailView
         apiBaseUrl="http://control-plane.local"
@@ -1465,11 +1457,9 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await screen.getByRole("tab", { name: "成员" }).click();
-
     await expect.element(screen.getByText("负责人甲", { exact: true })).toBeVisible();
     for (const label of [
-      "人类成员",
+      "人类",
       "负责人",
       "管理员",
       "审批人",
@@ -1482,30 +1472,13 @@ describe("TeamDetailView", () => {
     await expect.element(screen.getByText("审批人丙")).toBeVisible();
     await expect.element(screen.getByText("普通成员丁")).toBeVisible();
     await expect.element(screen.getByText("观察者戊")).toBeVisible();
-    await expect
-      .element(
-        screen.getByText(
-          "删除或禁用最后一位负责人会被控制平面拒绝；请先完成负责人交接，再移除原负责人。",
-        ),
-      )
-      .toBeVisible();
 
-    await expect.element(screen.getByText("candidate-admin")).toBeVisible();
     await expect
       .element(screen.getByRole("combobox", { name: "直接生效角色" }))
       .toBeVisible();
-    await expect
-      .element(screen.getByRole("combobox", { name: "申请角色" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("button", { name: "拒绝" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("button", { name: "审批" }))
-      .toBeVisible();
   });
 
-  it("uses user search for direct member add and privileged role requests", async () => {
+  it("uses user search for direct member add", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
       <TeamDetailView
@@ -1515,13 +1488,8 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "成员" }));
-
     await expect
       .element(screen.getByRole("searchbox", { name: "搜索直接添加用户" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("searchbox", { name: "搜索高权限申请目标用户" }))
       .toBeVisible();
     await userEvent.type(
       screen.getByRole("searchbox", { name: "搜索直接添加用户" }),
@@ -1555,55 +1523,9 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByRole("button", { name: "添加成员" }).last())
       .toBeDisabled();
-
-    await userEvent.type(
-      screen.getByRole("searchbox", { name: "搜索高权限申请目标用户" }),
-      "viewer",
-    );
-    await userEvent.click(screen.getByRole("button", { name: /viewer/ }));
-    await userEvent.type(
-      screen.getByLabelText("申请原因"),
-      "需要维护团队治理",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "提交申请" }));
-
-    await expect
-      .poll(() =>
-        fetchCalls(fetcher).find(
-          ([url, init]) =>
-            String(url).endsWith(
-              "/api/v1/teams/team-1/member-role-requests",
-            ) && init?.method === "POST",
-        ),
-      )
-      .toBeTruthy();
-    const requestCall = fetchCalls(fetcher).find(
-      ([url, init]) =>
-        String(url).endsWith("/api/v1/teams/team-1/member-role-requests") &&
-        init?.method === "POST",
-    );
-    expect(JSON.parse(String(requestCall?.[1]?.body))).toMatchObject({
-      reason: "需要维护团队治理",
-      requested_role: "admin",
-      target_user_id: "viewer-user",
-    });
-    await expect.element(screen.getByLabelText("申请原因")).toHaveValue("");
-    await expect
-      .element(screen.getByRole("button", { name: "提交申请" }))
-      .toBeDisabled();
-    await expect
-      .element(screen.getByRole("button", { name: "添加成员" }).last())
-      .toBeDisabled();
-    expect(
-      fetchCalls(fetcher).filter(
-        ([url, init]) =>
-          String(url).endsWith("/api/v1/teams/team-1/members") &&
-          init?.method === "POST",
-      ),
-    ).toHaveLength(1);
   });
 
-  it("renders the team digital employees tab with metrics, table, and team-scoped quick create", async () => {
+  it("renders digital employees in the overview tab list", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
       <TeamDetailView
@@ -1613,60 +1535,17 @@ describe("TeamDetailView", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("tab", { name: "数字员工" }));
-
     await expect
-      .element(screen.getByText("Plan 4 会接入团队数字员工列表和快速创建。"))
-      .not.toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("group", { name: "数字员工 11 总数" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("group", { name: "active 10 正常运行" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("group", { name: "draft 1 未发布" }))
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("group", { name: "继承配置过期 1 需更新" }))
-      .toBeVisible();
-    await expect
-      .element(
-        screen.getByRole("group", { name: "未绑定 Runtime 1 当前页需绑定" }),
-      )
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("link", { name: "从此团队创建数字员工" }))
+      .element(screen.getByRole("link", { name: "新建数字员工" }))
       .toBeVisible();
 
-    for (const column of [
-      "数字员工",
-      "角色",
-      "状态",
-      "风险",
-      "生效配置",
-      "执行实例",
-    ]) {
-      await expect
-        .element(screen.getByRole("cell", { name: column }))
-        .toBeVisible();
-    }
     await expect.element(screen.getByText("数据库运维员工")).toBeVisible();
-    await expect.element(screen.getByText("v3（继承团队）")).toBeVisible();
-    await expect.element(screen.getByText("ops-node-01")).toBeVisible();
 
     await expect
-      .element(
-        screen.getByText(
-          "新数字员工需要选择专业类型、能力、治理和 Runtime 绑定，请进入创建向导完成。",
-        ),
-      )
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("link", { name: "从此团队创建数字员工" }))
+      .element(screen.getByRole("link", { name: "新建数字员工" }))
       .toHaveAttribute("href", "/employees/new");
     await expect
-      .element(screen.getByRole("link", { name: "从此团队创建数字员工" }))
+      .element(screen.getByRole("link", { name: "新建数字员工" }))
       .toHaveAttribute("data-router-link", "true");
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/digital-employees?team_id=team-1",
@@ -1674,14 +1553,6 @@ describe("TeamDetailView", () => {
         credentials: "include",
         method: "GET",
       }),
-    );
-    expect(fetcher).not.toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/digital-employees",
-      expect.objectContaining({ method: "POST" }),
-    );
-    expect(fetcher).not.toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/digital-employees/employee-hidden-unbound/execution-instance",
-      expect.anything(),
     );
   });
 

@@ -236,17 +236,19 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, overview,
         </div>
 
         {/* 右侧：添加成员面板 */}
-        <aside className="flex min-w-0 flex-col gap-4">
-          <DirectAddPanel
-            apiBaseUrl={apiBaseUrl}
-            canAdd={canAddMember}
-            existingUserIds={existingUserIds}
-            fetcher={fetcher}
-            isPending={addMutation.isPending}
-            onSubmit={(input) => addMutation.mutate(input)}
-            resetToken={directAddResetToken}
-          />
-        </aside>
+        {canAddMember && (
+          <aside className="flex min-w-0 flex-col gap-4">
+            <DirectAddPanel
+              apiBaseUrl={apiBaseUrl}
+              canAdd={canAddMember}
+              existingUserIds={existingUserIds}
+              fetcher={fetcher}
+              isPending={addMutation.isPending}
+              onSubmit={(input) => addMutation.mutate(input)}
+              resetToken={directAddResetToken}
+            />
+          </aside>
+        )}
       </div>
     </div>
   );
@@ -302,7 +304,7 @@ function DirectAddPanel({
               disabled={!canAdd || isPending}
               excludedUserIds={existingUserIds}
               fetcher={fetcher}
-              inputLabel="搜索用户"
+              inputLabel="搜索直接添加用户"
               onSelect={setSelectedUser}
               value={selectedUser}
             />
