@@ -189,6 +189,8 @@ type DigitalEmployeeConfigRevision struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 数字员工预算策略，包含每日 token 上限；空对象表示无预算上限
+	BudgetPolicy []byte `json:"budget_policy"`
 }
 
 // 数字员工生效治理配置快照表

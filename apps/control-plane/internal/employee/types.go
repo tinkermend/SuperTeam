@@ -191,6 +191,10 @@ type PolicyDefaults struct {
 	Metadata              map[string]any
 }
 
+type BudgetPolicy struct {
+	DailyTokenLimit *int32
+}
+
 type EmployeeConfigInput struct {
 	ID                     uuid.UUID
 	TenantID               uuid.UUID
@@ -201,6 +205,7 @@ type EmployeeConfigInput struct {
 	CapabilitySelection    map[string]any
 	ContextPolicyOverride  map[string]any
 	ApprovalPolicyOverride map[string]any
+	BudgetPolicy           map[string]any
 	OutputContractAddendum map[string]any
 }
 
@@ -214,6 +219,7 @@ type DigitalEmployeeConfigRevision struct {
 	CapabilitySelection    map[string]any
 	ContextPolicyOverride  map[string]any
 	ApprovalPolicyOverride map[string]any
+	BudgetPolicy           map[string]any
 	OutputContractAddendum map[string]any
 	Status                 ConfigRevisionStatus
 	ApprovedBy             *uuid.UUID
@@ -316,6 +322,7 @@ type CreateDigitalEmployeeRequest struct {
 	CapabilitySelection    map[string]any
 	ContextPolicyOverride  map[string]any
 	ApprovalPolicyOverride map[string]any
+	BudgetPolicy           map[string]any
 	OutputContractAddendum map[string]any
 	RuntimeNodeID          uuid.UUID
 	ProviderType           string
@@ -331,6 +338,7 @@ type CreateDigitalEmployeeConfigRevisionRequest struct {
 	CapabilitySelection    map[string]any
 	ContextPolicyOverride  map[string]any
 	ApprovalPolicyOverride map[string]any
+	BudgetPolicy           map[string]any
 	OutputContractAddendum map[string]any
 	Status                 ConfigRevisionStatus
 	ApprovedBy             *uuid.UUID

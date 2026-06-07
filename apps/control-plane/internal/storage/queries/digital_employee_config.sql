@@ -8,6 +8,7 @@ INSERT INTO digital_employee_config_revisions (
     capability_selection,
     context_policy_override,
     approval_policy_override,
+    budget_policy,
     output_contract_addendum,
     status,
     approved_by,
@@ -22,15 +23,48 @@ VALUES (
     COALESCE(sqlc.arg('capability_selection')::jsonb, '{}'::jsonb),
     COALESCE(sqlc.arg('context_policy_override')::jsonb, '{}'::jsonb),
     COALESCE(sqlc.arg('approval_policy_override')::jsonb, '{}'::jsonb),
+    COALESCE(sqlc.arg('budget_policy')::jsonb, '{}'::jsonb),
     COALESCE(sqlc.arg('output_contract_addendum')::jsonb, '{}'::jsonb),
     sqlc.arg('status')::varchar,
     sqlc.narg('approved_by')::uuid,
     sqlc.narg('approved_at')::timestamptz
 )
-RETURNING *;
+RETURNING id,
+    tenant_id,
+    digital_employee_id,
+    revision_number,
+    role_profile,
+    constitution_addendum,
+    capability_selection,
+    context_policy_override,
+    approval_policy_override,
+    output_contract_addendum,
+    status,
+    approved_by,
+    approved_at,
+    archived_at,
+    created_at,
+    updated_at,
+    budget_policy;
 
 -- name: GetLatestDigitalEmployeeConfigRevision :one
-SELECT *
+SELECT id,
+    tenant_id,
+    digital_employee_id,
+    revision_number,
+    role_profile,
+    constitution_addendum,
+    capability_selection,
+    context_policy_override,
+    approval_policy_override,
+    output_contract_addendum,
+    status,
+    approved_by,
+    approved_at,
+    archived_at,
+    created_at,
+    updated_at,
+    budget_policy
 FROM digital_employee_config_revisions
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
@@ -38,7 +72,23 @@ ORDER BY revision_number DESC
 LIMIT 1;
 
 -- name: GetCurrentDigitalEmployeeConfigRevision :one
-SELECT *
+SELECT id,
+    tenant_id,
+    digital_employee_id,
+    revision_number,
+    role_profile,
+    constitution_addendum,
+    capability_selection,
+    context_policy_override,
+    approval_policy_override,
+    output_contract_addendum,
+    status,
+    approved_by,
+    approved_at,
+    archived_at,
+    created_at,
+    updated_at,
+    budget_policy
 FROM digital_employee_config_revisions
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
@@ -48,7 +98,23 @@ ORDER BY revision_number DESC
 LIMIT 1;
 
 -- name: GetDigitalEmployeeConfigRevision :one
-SELECT *
+SELECT id,
+    tenant_id,
+    digital_employee_id,
+    revision_number,
+    role_profile,
+    constitution_addendum,
+    capability_selection,
+    context_policy_override,
+    approval_policy_override,
+    output_contract_addendum,
+    status,
+    approved_by,
+    approved_at,
+    archived_at,
+    created_at,
+    updated_at,
+    budget_policy
 FROM digital_employee_config_revisions
 WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid

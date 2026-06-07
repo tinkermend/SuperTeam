@@ -224,6 +224,34 @@ func TestDigitalEmployeeCreationMigrationAddsOwnerAndType(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeBudgetPolicyMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/012_digital_employee_budget_policy.sql")
+	if err != nil {
+		t.Fatalf("read budget policy migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"ALTER TABLE digital_employee_config_revisions",
+		"ADD COLUMN IF NOT EXISTS budget_policy JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"COMMENT ON COLUMN digital_employee_config_revisions.budget_policy IS '数字员工预算策略，包含每日 token 上限；空对象表示无预算上限'",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected migration to contain %q", expected)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"ALTER TABLE digital_employees",
+		"metadata",
+		"approval_policy_override",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("budget policy migration must not use %q", forbidden)
+		}
+	}
+}
+
 func TestSkillManagementMigrationAddsSkillPackageTables(t *testing.T) {
 	body, err := os.ReadFile("migrations/009_skill_management.sql")
 	if err != nil {

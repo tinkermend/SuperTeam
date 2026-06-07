@@ -22,6 +22,7 @@ INSERT INTO digital_employee_config_revisions (
     capability_selection,
     context_policy_override,
     approval_policy_override,
+    budget_policy,
     output_contract_addendum,
     status,
     approved_by,
@@ -37,11 +38,28 @@ VALUES (
     COALESCE($7::jsonb, '{}'::jsonb),
     COALESCE($8::jsonb, '{}'::jsonb),
     COALESCE($9::jsonb, '{}'::jsonb),
-    $10::varchar,
-    $11::uuid,
-    $12::timestamptz
+    COALESCE($10::jsonb, '{}'::jsonb),
+    $11::varchar,
+    $12::uuid,
+    $13::timestamptz
 )
-RETURNING id, tenant_id, digital_employee_id, revision_number, role_profile, constitution_addendum, capability_selection, context_policy_override, approval_policy_override, output_contract_addendum, status, approved_by, approved_at, archived_at, created_at, updated_at
+RETURNING id,
+    tenant_id,
+    digital_employee_id,
+    revision_number,
+    role_profile,
+    constitution_addendum,
+    capability_selection,
+    context_policy_override,
+    approval_policy_override,
+    output_contract_addendum,
+    status,
+    approved_by,
+    approved_at,
+    archived_at,
+    created_at,
+    updated_at,
+    budget_policy
 `
 
 type CreateDigitalEmployeeConfigRevisionParams struct {
@@ -53,6 +71,7 @@ type CreateDigitalEmployeeConfigRevisionParams struct {
 	CapabilitySelection    []byte             `json:"capability_selection"`
 	ContextPolicyOverride  []byte             `json:"context_policy_override"`
 	ApprovalPolicyOverride []byte             `json:"approval_policy_override"`
+	BudgetPolicy           []byte             `json:"budget_policy"`
 	OutputContractAddendum []byte             `json:"output_contract_addendum"`
 	Status                 string             `json:"status"`
 	ApprovedBy             uuid.NullUUID      `json:"approved_by"`
@@ -69,6 +88,7 @@ func (q *Queries) CreateDigitalEmployeeConfigRevision(ctx context.Context, arg C
 		arg.CapabilitySelection,
 		arg.ContextPolicyOverride,
 		arg.ApprovalPolicyOverride,
+		arg.BudgetPolicy,
 		arg.OutputContractAddendum,
 		arg.Status,
 		arg.ApprovedBy,
@@ -92,6 +112,7 @@ func (q *Queries) CreateDigitalEmployeeConfigRevision(ctx context.Context, arg C
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BudgetPolicy,
 	)
 	return i, err
 }
@@ -166,7 +187,23 @@ func (q *Queries) CreateDigitalEmployeeEffectiveConfig(ctx context.Context, arg 
 }
 
 const GetCurrentDigitalEmployeeConfigRevision = `-- name: GetCurrentDigitalEmployeeConfigRevision :one
-SELECT id, tenant_id, digital_employee_id, revision_number, role_profile, constitution_addendum, capability_selection, context_policy_override, approval_policy_override, output_contract_addendum, status, approved_by, approved_at, archived_at, created_at, updated_at
+SELECT id,
+    tenant_id,
+    digital_employee_id,
+    revision_number,
+    role_profile,
+    constitution_addendum,
+    capability_selection,
+    context_policy_override,
+    approval_policy_override,
+    output_contract_addendum,
+    status,
+    approved_by,
+    approved_at,
+    archived_at,
+    created_at,
+    updated_at,
+    budget_policy
 FROM digital_employee_config_revisions
 WHERE tenant_id = $1::uuid
   AND digital_employee_id = $2::uuid
@@ -201,6 +238,7 @@ func (q *Queries) GetCurrentDigitalEmployeeConfigRevision(ctx context.Context, a
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BudgetPolicy,
 	)
 	return i, err
 }
@@ -243,7 +281,23 @@ func (q *Queries) GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, 
 }
 
 const GetDigitalEmployeeConfigRevision = `-- name: GetDigitalEmployeeConfigRevision :one
-SELECT id, tenant_id, digital_employee_id, revision_number, role_profile, constitution_addendum, capability_selection, context_policy_override, approval_policy_override, output_contract_addendum, status, approved_by, approved_at, archived_at, created_at, updated_at
+SELECT id,
+    tenant_id,
+    digital_employee_id,
+    revision_number,
+    role_profile,
+    constitution_addendum,
+    capability_selection,
+    context_policy_override,
+    approval_policy_override,
+    output_contract_addendum,
+    status,
+    approved_by,
+    approved_at,
+    archived_at,
+    created_at,
+    updated_at,
+    budget_policy
 FROM digital_employee_config_revisions
 WHERE id = $1::uuid
   AND tenant_id = $2::uuid
@@ -277,12 +331,29 @@ func (q *Queries) GetDigitalEmployeeConfigRevision(ctx context.Context, arg GetD
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BudgetPolicy,
 	)
 	return i, err
 }
 
 const GetLatestDigitalEmployeeConfigRevision = `-- name: GetLatestDigitalEmployeeConfigRevision :one
-SELECT id, tenant_id, digital_employee_id, revision_number, role_profile, constitution_addendum, capability_selection, context_policy_override, approval_policy_override, output_contract_addendum, status, approved_by, approved_at, archived_at, created_at, updated_at
+SELECT id,
+    tenant_id,
+    digital_employee_id,
+    revision_number,
+    role_profile,
+    constitution_addendum,
+    capability_selection,
+    context_policy_override,
+    approval_policy_override,
+    output_contract_addendum,
+    status,
+    approved_by,
+    approved_at,
+    archived_at,
+    created_at,
+    updated_at,
+    budget_policy
 FROM digital_employee_config_revisions
 WHERE tenant_id = $1::uuid
   AND digital_employee_id = $2::uuid
@@ -315,6 +386,7 @@ func (q *Queries) GetLatestDigitalEmployeeConfigRevision(ctx context.Context, ar
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BudgetPolicy,
 	)
 	return i, err
 }
