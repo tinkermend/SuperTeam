@@ -38,14 +38,132 @@ function createQueryClient() {
 }
 
 type EmployeesFetcherOptions = {
+  includeUnboundEmployee?: boolean;
   latestRunStatus?: string;
 };
 
-function createEmployeesFetcher({ latestRunStatus = "completed" }: EmployeesFetcherOptions = {}) {
+function createEmployeesFetcher({
+  includeUnboundEmployee = false,
+  latestRunStatus = "completed",
+}: EmployeesFetcherOptions = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     if (url.pathname === "/api/v1/digital-employees/overview" && (init?.method ?? "GET") === "GET") {
       const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+      const readyItem = {
+        workbench_status: "ready",
+        recent_events: [
+          {
+            label: "命令已下发",
+            status: "dispatching",
+            occurred_at: twoMinutesAgo,
+          },
+        ],
+        identity_summary: {
+          id: "11111111-1111-4111-8111-111111111111",
+          tenant_id: "tenant-1",
+          team_id: "team-1",
+          team_name: "产品组",
+          owner_user_id: "owner-1",
+          owner_display_name: "王产品",
+          employee_type: "requirements_analyst",
+          employee_type_label: "需求分析",
+          name: "需求分析员工",
+          role: "需求分析师",
+          description: "负责需求拆解和交付风险识别",
+          status: "active",
+          risk_level: "medium",
+          avatar_asset: {
+            id: "engineer-f-01",
+            label: "工程师头像 F01",
+            gender: "female",
+            age_range: "24-30",
+            style: "photorealistic_2d",
+            image_url: "/images/digital-employee-avatars/engineer-f-01.webp",
+            thumbnail_url: "/images/digital-employee-avatars/engineer-f-01-256.webp",
+            source: "ai_generated_internal_pack",
+            license: "internal_product_asset",
+            status: "active",
+          },
+        },
+        execution_summary: {
+          execution_instance_id: "22222222-2222-4222-8222-222222222222",
+          status: "active",
+          runtime_node_id: "33333333-3333-4333-8333-333333333333",
+          node_id: "local-dev-node",
+          runtime_name: "华东执行节点",
+          runtime_status: "online",
+          provider_type: "claude_code",
+          provider_status: "ready",
+          health_status: "healthy",
+          agent_home_dir_available: true,
+        },
+        latest_run_summary: {
+          run_id: "44444444-4444-4444-8444-444444444444",
+          task_id: "task-1",
+          status: latestRunStatus,
+          title: "审查需求",
+          started_at: "2026-06-07T08:00:00Z",
+          finished_at: twoMinutesAgo,
+          updated_at: twoMinutesAgo,
+          duration_sec: 480,
+          token_usage: 3200,
+          error_message: "",
+        },
+        governance_summary: {
+          effective_config_id: "55555555-5555-4555-8555-555555555555",
+          status: "approved",
+          team_revision_number: 3,
+          employee_revision_number: 2,
+          skills_count: 8,
+          mcp_servers_count: 3,
+          constitution_ref: "constitution://requirements/v2",
+        },
+        budget_summary: {
+          usage_tokens_30d: 16000,
+          run_count_30d: 12,
+          cost_amount_30d: 28.5,
+          currency: "CNY",
+          source: "runtime_usage",
+          daily_token_limit: null,
+          usage_tokens_today: 0,
+          usage_percent_today: null,
+          limit_exceeded: false,
+        },
+      };
+      const unboundItem = {
+        ...readyItem,
+        workbench_status: "pending_binding",
+        recent_events: [],
+        identity_summary: {
+          ...readyItem.identity_summary,
+          id: "66666666-6666-4666-8666-666666666666",
+          team_name: "平台组",
+          employee_type: "platform_operator",
+          employee_type_label: "平台运维",
+          name: "待绑定员工",
+          role: "平台运维",
+        },
+        execution_summary: {
+          ...readyItem.execution_summary,
+          execution_instance_id: undefined,
+          status: "missing",
+          runtime_node_id: undefined,
+          node_id: "",
+          runtime_name: "",
+          runtime_status: "",
+          provider_type: "codex",
+          provider_status: "",
+          health_status: "missing",
+          agent_home_dir_available: false,
+        },
+        latest_run_summary: {
+          ...readyItem.latest_run_summary,
+          run_id: "77777777-7777-4777-8777-777777777777",
+          task_id: "task-2",
+          status: "none",
+        },
+      };
       return new Response(
         JSON.stringify({
           queue_summary: {
@@ -65,89 +183,7 @@ function createEmployeesFetcher({ latestRunStatus = "completed" }: EmployeesFetc
             pending_config_approval_count: 4,
             failed_recent_run_count: 1,
           },
-          items: [
-            {
-              workbench_status: "ready",
-              recent_events: [
-                {
-                  label: "命令已下发",
-                  status: "dispatching",
-                  occurred_at: twoMinutesAgo,
-                },
-              ],
-              identity_summary: {
-                id: "11111111-1111-4111-8111-111111111111",
-                tenant_id: "tenant-1",
-                team_id: "team-1",
-                team_name: "产品组",
-                owner_user_id: "owner-1",
-                owner_display_name: "王产品",
-                employee_type: "requirements_analyst",
-                employee_type_label: "需求分析",
-                name: "需求分析员工",
-                role: "需求分析师",
-                description: "负责需求拆解和交付风险识别",
-                status: "active",
-                risk_level: "medium",
-                avatar_asset: {
-                  id: "engineer-f-01",
-                  label: "工程师头像 F01",
-                  gender: "female",
-                  age_range: "24-30",
-                  style: "photorealistic_2d",
-                  image_url: "/images/digital-employee-avatars/engineer-f-01.webp",
-                  thumbnail_url: "/images/digital-employee-avatars/engineer-f-01-256.webp",
-                  source: "ai_generated_internal_pack",
-                  license: "internal_product_asset",
-                  status: "active",
-                },
-              },
-              execution_summary: {
-                execution_instance_id: "22222222-2222-4222-8222-222222222222",
-                status: "active",
-                runtime_node_id: "33333333-3333-4333-8333-333333333333",
-                node_id: "local-dev-node",
-                runtime_name: "华东执行节点",
-                runtime_status: "online",
-                provider_type: "claude_code",
-                provider_status: "ready",
-                health_status: "healthy",
-                agent_home_dir_available: true,
-              },
-              latest_run_summary: {
-                run_id: "44444444-4444-4444-8444-444444444444",
-                task_id: "task-1",
-                status: latestRunStatus,
-                title: "审查需求",
-                started_at: "2026-06-07T08:00:00Z",
-                finished_at: twoMinutesAgo,
-                updated_at: twoMinutesAgo,
-                duration_sec: 480,
-                token_usage: 3200,
-                error_message: "",
-              },
-              governance_summary: {
-                effective_config_id: "55555555-5555-4555-8555-555555555555",
-                status: "approved",
-                team_revision_number: 3,
-                employee_revision_number: 2,
-                skills_count: 8,
-                mcp_servers_count: 3,
-                constitution_ref: "constitution://requirements/v2",
-              },
-              budget_summary: {
-                usage_tokens_30d: 16000,
-                run_count_30d: 12,
-                cost_amount_30d: 28.5,
-                currency: "CNY",
-                source: "runtime_usage",
-                daily_token_limit: null,
-                usage_tokens_today: 0,
-                usage_percent_today: null,
-                limit_exceeded: false,
-              },
-            },
-          ],
+          items: includeUnboundEmployee ? [readyItem, unboundItem] : [readyItem],
           filters: {
             teams: [{ value: "team-1", label: "产品组" }],
             employee_types: [{ value: "requirements_analyst", label: "需求分析" }],
@@ -239,12 +275,44 @@ describe("EmployeesView", () => {
       .toHaveAttribute("href", "/employees/new");
   });
 
-  it("does not label active latest runs as failed", async () => {
-    const screen = await renderEmployeesView(createEmployeesFetcher({ latestRunStatus: "running" }));
+  it("renders unbound employees as waiting for runtime binding", async () => {
+    const screen = await renderEmployeesView(createEmployeesFetcher({ includeUnboundEmployee: true }));
 
-    await expect.element(screen.getByText("需求分析员工").first()).toBeVisible();
-    await expect.element(screen.getByText("失败 · 2 分钟前")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("待绑定员工")).toBeVisible();
+    await expect.element(screen.getByText("等待绑定 Runtime Agent")).toBeVisible();
   });
+
+  it("uses a separate selection control and selected-state semantics", async () => {
+    const screen = await renderEmployeesView(createEmployeesFetcher({ includeUnboundEmployee: true }));
+    const readyArticle = screen.getByRole("article", { name: "员工 需求分析员工" });
+    const unboundArticle = screen.getByRole("article", { name: "员工 待绑定员工" });
+    const readySelectButton = screen.getByRole("button", { name: "选中 需求分析员工" });
+    const unboundSelectButton = screen.getByRole("button", { name: "选中 待绑定员工" });
+
+    await expect.element(readyArticle).toHaveAttribute("aria-selected", "true");
+    await expect.element(readySelectButton).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(unboundSelectButton);
+    await expect.element(readyArticle).toHaveAttribute("aria-selected", "false");
+    await expect.element(unboundArticle).toHaveAttribute("aria-selected", "true");
+    await expect.element(unboundSelectButton).toHaveAttribute("aria-pressed", "true");
+
+    const firstDetailLink = screen.getByRole("link", { name: "详情" }).first().element() as HTMLElement;
+    firstDetailLink.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Enter" }));
+    firstDetailLink.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: " " }));
+
+    await expect.element(readyArticle).toHaveAttribute("aria-selected", "false");
+    await expect.element(unboundArticle).toHaveAttribute("aria-selected", "true");
+  });
+
+  it.each(["queued", "dispatching", "running", "cancelling", "cancelled", "unknown_status"])(
+    "does not label %s latest runs as failed",
+    async (latestRunStatus) => {
+      const screen = await renderEmployeesView(createEmployeesFetcher({ latestRunStatus }));
+
+      await expect.element(screen.getByText("需求分析员工").first()).toBeVisible();
+      await expect.element(screen.getByText(/失败\s*·\s*2\s*分钟前/)).not.toBeInTheDocument();
+    },
+  );
 
   it("requests the overview endpoint with selected status filter", async () => {
     const fetcher = createEmployeesFetcher();

@@ -293,19 +293,12 @@ function EmployeeWorkbenchCard({
 
   return (
     <article
-      role="button"
-      tabIndex={0}
+      aria-label={`员工 ${identity.name}`}
+      aria-selected={selected}
       className={cn(
-        "group relative flex min-h-[260px] cursor-pointer flex-col overflow-hidden rounded-lg border bg-card/90 p-4 text-left shadow-sm transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group relative flex min-h-[260px] flex-col overflow-hidden rounded-lg border bg-card/90 p-4 text-left shadow-sm transition hover:shadow-md",
         selected && "ring-2 ring-[var(--superteam-menu-accent)]",
       )}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
     >
       <span className={cn("absolute inset-y-0 left-0 w-1", workbenchRailClass(item.workbench_status))} />
       <div className="flex items-start gap-3 pl-1">
@@ -316,7 +309,21 @@ function EmployeeWorkbenchCard({
               <p className="truncate font-semibold text-foreground">{identity.name}</p>
               <p className="truncate text-xs text-muted-foreground">{identity.employee_type_label || identity.role}</p>
             </div>
-            <StatusBadge tone={workbenchTone(item.workbench_status)}>{workbenchStatusLabel(item.workbench_status)}</StatusBadge>
+            <div className="flex shrink-0 flex-col items-end gap-2">
+              <StatusBadge tone={workbenchTone(item.workbench_status)}>
+                {workbenchStatusLabel(item.workbench_status)}
+              </StatusBadge>
+              <Button
+                aria-label={`选中 ${identity.name}`}
+                aria-pressed={selected}
+                size="sm"
+                type="button"
+                variant={selected ? "secondary" : "outline"}
+                onClick={onSelect}
+              >
+                {selected ? "已选中" : "选中"}
+              </Button>
+            </div>
           </div>
           <span className="mt-2 inline-flex max-w-full rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
             {identity.team_name || "未分组"}
