@@ -7,9 +7,7 @@ import type { ApiClientOptions } from "@/lib/api/client";
 import type { TeamOverview, TeamStatus } from "@/lib/api/teams";
 import { TeamAuditTab } from "./team-audit-tab";
 import { TeamCapabilitiesTab } from "./team-capabilities-tab";
-import { TeamDigitalEmployeesTab } from "./team-digital-employees-tab";
 import { TeamGovernanceTab } from "./team-governance-tab";
-import { TeamMembersTab } from "./team-members-tab";
 import { TeamOverviewTab } from "./team-overview-tab";
 
 function TeamStatusBadge({ status }: { status: TeamStatus }) {
@@ -106,25 +104,18 @@ export function TeamDetailLayout({
       <Tabs defaultValue="overview">
         <LiquidTabsList>
           <LiquidTabsTrigger value="overview">概览</LiquidTabsTrigger>
-          <LiquidTabsTrigger value="members">成员</LiquidTabsTrigger>
-          <LiquidTabsTrigger value="employees">数字员工</LiquidTabsTrigger>
           <LiquidTabsTrigger value="capabilities">能力与知识</LiquidTabsTrigger>
           <LiquidTabsTrigger value="governance">治理策略</LiquidTabsTrigger>
           <LiquidTabsTrigger value="audit">审计记录</LiquidTabsTrigger>
         </LiquidTabsList>
         <TabsContent value="overview">
-          <TeamOverviewTab overview={overview} />
-        </TabsContent>
-        <TabsContent value="members">
-          <TeamMembersTab
+          <TeamOverviewTab
             allowedActions={overview.allowed_actions}
             apiBaseUrl={apiOptions.baseUrl}
             fetcher={apiOptions.fetcher}
+            overview={overview}
             teamId={team.id}
           />
-        </TabsContent>
-        <TabsContent value="employees">
-          <TeamDigitalEmployeesTab apiBaseUrl={apiOptions.baseUrl} fetcher={apiOptions.fetcher} teamId={team.id} />
         </TabsContent>
         <TabsContent value="capabilities">
           <TeamCapabilitiesTab
