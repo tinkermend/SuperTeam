@@ -15,6 +15,7 @@ import {
   previewDigitalEmployeeEffectiveConfig,
   stopDigitalEmployeeRun,
   type DigitalEmployee,
+  type DigitalEmployeeConfigRevision,
   type DigitalEmployeeCreateOptions,
   type DigitalEmployeeOverview,
 } from "./employees";
@@ -524,8 +525,9 @@ describe("digital employee API", () => {
       context_policy_override: {},
       approval_policy_override: {},
       output_contract_addendum: {},
+      budget_policy: { daily_token_limit: 12000 },
       status: "draft",
-    };
+    } satisfies DigitalEmployeeConfigRevision;
     const fetcher = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
         new Response(JSON.stringify(revision), {
@@ -534,21 +536,22 @@ describe("digital employee API", () => {
         }),
     );
 
-    await expect(
-      createDigitalEmployeeConfigRevision(
-        {
-          baseUrl: "http://control-plane.local",
-          fetcher,
-        },
-        "employee 1/primary",
-        {
-          role_profile: { title: "requirements analyst" },
-          capability_selection: { enabled_skills: ["incident-diagnosis"] },
-          budget_policy: { daily_token_limit: 12000 },
-          status: "draft",
-        },
-      ),
-    ).resolves.toEqual(revision);
+    const returnedRevision = await createDigitalEmployeeConfigRevision(
+      {
+        baseUrl: "http://control-plane.local",
+        fetcher,
+      },
+      "employee 1/primary",
+      {
+        role_profile: { title: "requirements analyst" },
+        capability_selection: { enabled_skills: ["incident-diagnosis"] },
+        budget_policy: { daily_token_limit: 12000 },
+        status: "draft",
+      },
+    );
+
+    expect(returnedRevision).toEqual(revision);
+    expect(returnedRevision.budget_policy.daily_token_limit).toBe(12000);
 
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/config-revisions",

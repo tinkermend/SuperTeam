@@ -435,6 +435,7 @@ export type DigitalEmployeeConfigRevision = {
   context_policy_override: Record<string, unknown>;
   approval_policy_override: Record<string, unknown>;
   output_contract_addendum: Record<string, unknown>;
+  budget_policy: BudgetPolicy;
   status: "draft";
   approved_by?: string;
   approved_at?: string;
