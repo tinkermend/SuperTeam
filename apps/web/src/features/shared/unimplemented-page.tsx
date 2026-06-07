@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import { SemanticIconTile, type Tone } from "@/components/superteam/liquid-components";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
@@ -9,9 +10,10 @@ type UnimplementedPageProps = {
   description: string;
   icon: LucideIcon;
   title: string;
+  tone?: Tone;
 };
 
-export function UnimplementedPage({ description, icon: Icon, title }: UnimplementedPageProps) {
+export function UnimplementedPage({ description, icon: Icon, title, tone = "neutral" }: UnimplementedPageProps) {
   return (
     <>
       <Header>
@@ -20,9 +22,9 @@ export function UnimplementedPage({ description, icon: Icon, title }: Unimplemen
       </Header>
       <Main>
         <div className="mb-4 flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-md border bg-muted">
+          <SemanticIconTile tone={tone} size="lg">
             <Icon />
-          </div>
+          </SemanticIconTile>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
             <p className="text-sm text-muted-foreground">{description}</p>
