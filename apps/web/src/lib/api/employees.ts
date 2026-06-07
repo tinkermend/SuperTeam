@@ -224,6 +224,21 @@ export type DigitalEmployeeOverviewRunStatus =
   | "none"
   | DigitalEmployeeRunStatus;
 
+export type BudgetPolicy = {
+  daily_token_limit?: number | null;
+};
+
+export type DigitalEmployeeWorkbenchStatus =
+  | "ready"
+  | "pending_binding"
+  | "error";
+
+export type DigitalEmployeeRecentEventSummary = {
+  label: string;
+  status: string;
+  occurred_at?: string;
+};
+
 export type OverviewFilterOption = {
   value: string;
   label: string;
@@ -237,6 +252,15 @@ export type DigitalEmployeeOverview = {
     waiting_runtime_count: number;
     error_count: number;
     high_risk_count: number;
+    ready_count: number;
+    pending_runtime_binding_count: number;
+    pending_config_approval_count: number;
+    failed_recent_run_count: number;
+  };
+  queue_summary: {
+    pending_runtime_binding_count: number;
+    stale_config_count: number;
+    failed_recent_run_count: number;
   };
   items: DigitalEmployeeOverviewItem[];
   filters: {
@@ -257,6 +281,8 @@ export type DigitalEmployeeOverview = {
 };
 
 export type DigitalEmployeeOverviewItem = {
+  workbench_status: DigitalEmployeeWorkbenchStatus;
+  recent_events: DigitalEmployeeRecentEventSummary[];
   identity_summary: {
     id: string;
     tenant_id: string;
@@ -312,6 +338,10 @@ export type DigitalEmployeeOverviewItem = {
     cost_amount_30d?: number;
     currency: string;
     source: string;
+    daily_token_limit?: number | null;
+    usage_tokens_today: number;
+    usage_percent_today?: number | null;
+    limit_exceeded: boolean;
   };
 };
 
@@ -346,6 +376,7 @@ export type CreateDigitalEmployeeInput = {
   provider_type: string;
   session_policy?: Record<string, unknown>;
   workspace_policy?: Record<string, unknown>;
+  budget_policy?: BudgetPolicy;
 };
 
 type LegacyDraftDigitalEmployeeInput = {
@@ -419,6 +450,7 @@ export type CreateDigitalEmployeeConfigRevisionInput = {
   context_policy_override?: Record<string, unknown>;
   approval_policy_override?: Record<string, unknown>;
   output_contract_addendum?: Record<string, unknown>;
+  budget_policy?: BudgetPolicy;
   status?: "draft";
 };
 

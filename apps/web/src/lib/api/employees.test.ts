@@ -117,8 +117,85 @@ describe("digital employee API", () => {
         waiting_runtime_count: 0,
         error_count: 0,
         high_risk_count: 0,
+        ready_count: 1,
+        pending_runtime_binding_count: 2,
+        pending_config_approval_count: 0,
+        failed_recent_run_count: 0,
       },
-      items: [],
+      queue_summary: {
+        pending_runtime_binding_count: 2,
+        stale_config_count: 0,
+        failed_recent_run_count: 0,
+      },
+      items: [
+        {
+          identity_summary: {
+            id: "employee-1",
+            tenant_id: "tenant-1",
+            team_id: "team-1",
+            team_name: "产品组",
+            owner_user_id: "owner-1",
+            owner_display_name: "王工",
+            employee_type: "requirements_analyst",
+            employee_type_label: "需求分析",
+            name: "需求分析员工",
+            role: "requirements_analyst",
+            status: "active",
+            risk_level: "medium",
+          },
+          execution_summary: {
+            execution_instance_id: "instance-1",
+            status: "ready",
+            runtime_node_id: "runtime-1",
+            node_id: "node-a",
+            runtime_name: "客户侧执行机",
+            runtime_status: "online",
+            provider_type: "codex",
+            provider_status: "healthy",
+            health_status: "healthy",
+            agent_home_dir_available: true,
+          },
+          latest_run_summary: {
+            run_id: "run-1",
+            task_id: "task-1",
+            status: "dispatching",
+            title: "梳理需求",
+            started_at: "2026-06-07T10:00:00Z",
+            updated_at: "2026-06-07T10:01:00Z",
+            duration_sec: 60,
+            token_usage: 1200,
+            error_message: "",
+          },
+          governance_summary: {
+            effective_config_id: "config-1",
+            status: "approved",
+            team_revision_number: 3,
+            employee_revision_number: 1,
+            skills_count: 2,
+            mcp_servers_count: 1,
+            constitution_ref: "constitution-1",
+          },
+          budget_summary: {
+            usage_tokens_30d: 3200,
+            run_count_30d: 4,
+            cost_amount_30d: 12.5,
+            currency: "USD",
+            source: "runtime",
+            daily_token_limit: 10000,
+            usage_tokens_today: 1200,
+            usage_percent_today: 12,
+            limit_exceeded: false,
+          },
+          workbench_status: "ready",
+          recent_events: [
+            {
+              label: "命令已下发",
+              status: "dispatching",
+              occurred_at: "2026-06-07T10:01:00Z",
+            },
+          ],
+        },
+      ],
       filters: {
         teams: [{ value: "team-1", label: "产品组" }],
         employee_types: [],
@@ -163,12 +240,12 @@ describe("digital employee API", () => {
 
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/digital-employees/overview?q=%E9%9C%80%E6%B1%82&team_id=team-1&status=active&employee_type=requirements_analyst&provider_type=codex&runtime_node_id=runtime-1&risk_level=medium&execution_status=missing&run_status=none&limit=25&offset=5",
-      {
-        credentials: "include",
-        headers: { accept: "application/json" },
-        method: "GET",
-      },
+      expect.objectContaining({ credentials: "include", method: "GET" }),
     );
+    expect(overview.queue_summary.pending_runtime_binding_count).toBe(2);
+    expect(overview.items[0].workbench_status).toBe("ready");
+    expect(overview.items[0].recent_events[0].label).toBe("命令已下发");
+    expect(overview.items[0].budget_summary.daily_token_limit).toBe(10000);
   });
 
   it("gets digital employee create options with encoded team id", async () => {
@@ -318,6 +395,7 @@ describe("digital employee API", () => {
           provider_type: "codex",
           session_policy: { reuse: false },
           workspace_policy: { mode: "ephemeral" },
+          budget_policy: { daily_token_limit: 12000 },
         },
       ),
     ).resolves.toEqual(employee);
@@ -347,6 +425,7 @@ describe("digital employee API", () => {
           provider_type: "codex",
           session_policy: { reuse: false },
           workspace_policy: { mode: "ephemeral" },
+          budget_policy: { daily_token_limit: 12000 },
         }),
         credentials: "include",
         headers: {
@@ -362,6 +441,9 @@ describe("digital employee API", () => {
     ];
     const requestBody = JSON.parse(String(requestInit.body));
     expect(requestBody).not.toHaveProperty("owner_user_id");
+    expect(requestBody).toMatchObject({
+      budget_policy: { daily_token_limit: 12000 },
+    });
   });
 
   it("rejects legacy draft creation input before posting to the backend", async () => {
@@ -445,7 +527,7 @@ describe("digital employee API", () => {
       status: "draft",
     };
     const fetcher = vi.fn(
-      async () =>
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
         new Response(JSON.stringify(revision), {
           headers: { "content-type": "application/json" },
           status: 201,
@@ -462,6 +544,7 @@ describe("digital employee API", () => {
         {
           role_profile: { title: "requirements analyst" },
           capability_selection: { enabled_skills: ["incident-diagnosis"] },
+          budget_policy: { daily_token_limit: 12000 },
           status: "draft",
         },
       ),
@@ -473,6 +556,7 @@ describe("digital employee API", () => {
         body: JSON.stringify({
           role_profile: { title: "requirements analyst" },
           capability_selection: { enabled_skills: ["incident-diagnosis"] },
+          budget_policy: { daily_token_limit: 12000 },
           status: "draft",
         }),
         credentials: "include",
@@ -483,6 +567,13 @@ describe("digital employee API", () => {
         method: "POST",
       },
     );
+    const [, requestInit] = fetcher.mock.calls[0] as [
+      RequestInfo | URL,
+      RequestInit,
+    ];
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      budget_policy: { daily_token_limit: 12000 },
+    });
   });
 
   it("previews effective config with encoded employee id and revision refs", async () => {
