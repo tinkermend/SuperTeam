@@ -93,6 +93,24 @@ func TestOverviewItemFromQueryHandlesMissingEffectiveConfig(t *testing.T) {
 	require.Equal(t, "missing", item.GovernanceSummary.Status)
 }
 
+func TestOverviewItemFromQueryMapsWorkbenchBudgetAndEvents(t *testing.T) {
+	row := baseOverviewItemRow()
+
+	item := overviewItemFromQuery(row)
+
+	require.Equal(t, WorkbenchStatusReady, item.WorkbenchStatus)
+	require.NotNil(t, item.BudgetSummary.DailyTokenLimit)
+	require.Equal(t, int32(10000), *item.BudgetSummary.DailyTokenLimit)
+	require.Equal(t, int32(2500), item.BudgetSummary.UsageTokensToday)
+	require.NotNil(t, item.BudgetSummary.UsagePercentToday)
+	require.Equal(t, int32(25), *item.BudgetSummary.UsagePercentToday)
+	require.False(t, item.BudgetSummary.LimitExceeded)
+	require.Len(t, item.RecentEvents, 2)
+	require.Equal(t, "命令已下发", item.RecentEvents[0].Label)
+	require.Equal(t, "running", item.RecentEvents[0].Status)
+	require.NotNil(t, item.RecentEvents[0].OccurredAt)
+}
+
 func baseOverviewItemRow() queries.ListDigitalEmployeeOverviewItemsRow {
 	tenantID := uuid.New()
 	teamID := uuid.New()
@@ -138,12 +156,15 @@ func baseOverviewItemRow() queries.ListDigitalEmployeeOverviewItemsRow {
 		LatestRunTokenUsage:    "1600",
 		EffectiveConfigID:      uuid.NullUUID{UUID: effectiveConfigID, Valid: true},
 		GovernanceStatus:       "approved",
+		DailyTokenLimitText:    "10000",
 		TeamRevisionNumber:     pgtype.Int4{Int32: 2, Valid: true},
 		EmployeeRevisionNumber: pgtype.Int4{Int32: 3, Valid: true},
 		SkillsCount:            4,
 		McpServersCount:        2,
 		ConstitutionRef:        "constitution://team/backend",
+		TodayBudgetUsageTokens: 2500,
 		BudgetUsageTokens30d:   pgtype.Int4{Int32: 1600, Valid: true},
 		BudgetRunCount30d:      3,
+		RecentEventsJson:       []byte(`[{"label":"命令已下发","status":"running","occurred_at":"2026-06-08T01:00:00Z"},{"label":"Provider 输出中","status":"running","occurred_at":"2026-06-08T00:59:00Z"}]`),
 	}
 }

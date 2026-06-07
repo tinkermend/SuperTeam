@@ -345,6 +345,27 @@ func (e DigitalEmployeeStatus) Valid() bool {
 	}
 }
 
+// Defines values for DigitalEmployeeWorkbenchStatus.
+const (
+	DigitalEmployeeWorkbenchStatusError          DigitalEmployeeWorkbenchStatus = "error"
+	DigitalEmployeeWorkbenchStatusPendingBinding DigitalEmployeeWorkbenchStatus = "pending_binding"
+	DigitalEmployeeWorkbenchStatusReady          DigitalEmployeeWorkbenchStatus = "ready"
+)
+
+// Valid indicates whether the value is a known member of the DigitalEmployeeWorkbenchStatus enum.
+func (e DigitalEmployeeWorkbenchStatus) Valid() bool {
+	switch e {
+	case DigitalEmployeeWorkbenchStatusError:
+		return true
+	case DigitalEmployeeWorkbenchStatusPendingBinding:
+		return true
+	case DigitalEmployeeWorkbenchStatusReady:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GovernanceSummaryStatus.
 const (
 	GovernanceSummaryStatusActive        GovernanceSummaryStatus = "active"
@@ -440,22 +461,22 @@ func (e RuntimeEnrollmentStatus) Valid() bool {
 
 // Defines values for RuntimeEventSeverity.
 const (
-	Error   RuntimeEventSeverity = "error"
-	Info    RuntimeEventSeverity = "info"
-	Success RuntimeEventSeverity = "success"
-	Warning RuntimeEventSeverity = "warning"
+	RuntimeEventSeverityError   RuntimeEventSeverity = "error"
+	RuntimeEventSeverityInfo    RuntimeEventSeverity = "info"
+	RuntimeEventSeveritySuccess RuntimeEventSeverity = "success"
+	RuntimeEventSeverityWarning RuntimeEventSeverity = "warning"
 )
 
 // Valid indicates whether the value is a known member of the RuntimeEventSeverity enum.
 func (e RuntimeEventSeverity) Valid() bool {
 	switch e {
-	case Error:
+	case RuntimeEventSeverityError:
 		return true
-	case Info:
+	case RuntimeEventSeverityInfo:
 		return true
-	case Success:
+	case RuntimeEventSeveritySuccess:
 		return true
-	case Warning:
+	case RuntimeEventSeverityWarning:
 		return true
 	default:
 		return false
@@ -997,11 +1018,15 @@ type DigitalEmployeeAvatarAsset struct {
 
 // DigitalEmployeeBudgetSummary defines model for DigitalEmployeeBudgetSummary.
 type DigitalEmployeeBudgetSummary struct {
-	CostAmount30d  *float64 `json:"cost_amount_30d,omitempty"`
-	Currency       string   `json:"currency"`
-	RunCount30d    int32    `json:"run_count_30d"`
-	Source         string   `json:"source"`
-	UsageTokens30d *int32   `json:"usage_tokens_30d,omitempty"`
+	CostAmount30d     *float64 `json:"cost_amount_30d,omitempty"`
+	Currency          string   `json:"currency"`
+	DailyTokenLimit   *int32   `json:"daily_token_limit,omitempty"`
+	LimitExceeded     bool     `json:"limit_exceeded"`
+	RunCount30d       int32    `json:"run_count_30d"`
+	Source            string   `json:"source"`
+	UsagePercentToday *int32   `json:"usage_percent_today,omitempty"`
+	UsageTokens30d    *int32   `json:"usage_tokens_30d,omitempty"`
+	UsageTokensToday  int32    `json:"usage_tokens_today"`
 }
 
 // DigitalEmployeeCapabilityOptions defines model for DigitalEmployeeCapabilityOptions.
@@ -1170,10 +1195,11 @@ type DigitalEmployeeLatestRunSummary struct {
 
 // DigitalEmployeeOverview defines model for DigitalEmployeeOverview.
 type DigitalEmployeeOverview struct {
-	Filters    DigitalEmployeeOverviewFilters `json:"filters"`
-	Items      []DigitalEmployeeOverviewItem  `json:"items"`
-	Pagination OverviewPagination             `json:"pagination"`
-	Summary    DigitalEmployeeOverviewSummary `json:"summary"`
+	Filters      DigitalEmployeeOverviewFilters      `json:"filters"`
+	Items        []DigitalEmployeeOverviewItem       `json:"items"`
+	Pagination   OverviewPagination                  `json:"pagination"`
+	QueueSummary DigitalEmployeeOverviewQueueSummary `json:"queue_summary"`
+	Summary      DigitalEmployeeOverviewSummary      `json:"summary"`
 }
 
 // DigitalEmployeeOverviewExecutionStatus defines model for DigitalEmployeeOverviewExecutionStatus.
@@ -1193,11 +1219,20 @@ type DigitalEmployeeOverviewFilters struct {
 
 // DigitalEmployeeOverviewItem defines model for DigitalEmployeeOverviewItem.
 type DigitalEmployeeOverviewItem struct {
-	BudgetSummary     DigitalEmployeeBudgetSummary     `json:"budget_summary"`
-	ExecutionSummary  DigitalEmployeeExecutionSummary  `json:"execution_summary"`
-	GovernanceSummary DigitalEmployeeGovernanceSummary `json:"governance_summary"`
-	IdentitySummary   DigitalEmployeeIdentitySummary   `json:"identity_summary"`
-	LatestRunSummary  *DigitalEmployeeLatestRunSummary `json:"latest_run_summary,omitempty"`
+	BudgetSummary     DigitalEmployeeBudgetSummary        `json:"budget_summary"`
+	ExecutionSummary  DigitalEmployeeExecutionSummary     `json:"execution_summary"`
+	GovernanceSummary DigitalEmployeeGovernanceSummary    `json:"governance_summary"`
+	IdentitySummary   DigitalEmployeeIdentitySummary      `json:"identity_summary"`
+	LatestRunSummary  *DigitalEmployeeLatestRunSummary    `json:"latest_run_summary,omitempty"`
+	RecentEvents      []DigitalEmployeeRecentEventSummary `json:"recent_events"`
+	WorkbenchStatus   DigitalEmployeeWorkbenchStatus      `json:"workbench_status"`
+}
+
+// DigitalEmployeeOverviewQueueSummary defines model for DigitalEmployeeOverviewQueueSummary.
+type DigitalEmployeeOverviewQueueSummary struct {
+	FailedRecentRunCount       int32 `json:"failed_recent_run_count"`
+	PendingRuntimeBindingCount int32 `json:"pending_runtime_binding_count"`
+	StaleConfigCount           int32 `json:"stale_config_count"`
 }
 
 // DigitalEmployeeOverviewRunStatus defines model for DigitalEmployeeOverviewRunStatus.
@@ -1205,12 +1240,16 @@ type DigitalEmployeeOverviewRunStatus string
 
 // DigitalEmployeeOverviewSummary defines model for DigitalEmployeeOverviewSummary.
 type DigitalEmployeeOverviewSummary struct {
-	ErrorCount          int32 `json:"error_count"`
-	HighRiskCount       int32 `json:"high_risk_count"`
-	RunnableCount       int32 `json:"runnable_count"`
-	RunningCount        int32 `json:"running_count"`
-	TotalCount          int32 `json:"total_count"`
-	WaitingRuntimeCount int32 `json:"waiting_runtime_count"`
+	ErrorCount                 int32 `json:"error_count"`
+	FailedRecentRunCount       int32 `json:"failed_recent_run_count"`
+	HighRiskCount              int32 `json:"high_risk_count"`
+	PendingConfigApprovalCount int32 `json:"pending_config_approval_count"`
+	PendingRuntimeBindingCount int32 `json:"pending_runtime_binding_count"`
+	ReadyCount                 int32 `json:"ready_count"`
+	RunnableCount              int32 `json:"runnable_count"`
+	RunningCount               int32 `json:"running_count"`
+	TotalCount                 int32 `json:"total_count"`
+	WaitingRuntimeCount        int32 `json:"waiting_runtime_count"`
 }
 
 // DigitalEmployeePolicyDefaults defines model for DigitalEmployeePolicyDefaults.
@@ -1223,6 +1262,13 @@ type DigitalEmployeePolicyDefaults struct {
 	RuntimeSelector       map[string]interface{} `json:"runtime_selector"`
 	SessionPolicy         map[string]interface{} `json:"session_policy"`
 	WorkspacePolicy       map[string]interface{} `json:"workspace_policy"`
+}
+
+// DigitalEmployeeRecentEventSummary defines model for DigitalEmployeeRecentEventSummary.
+type DigitalEmployeeRecentEventSummary struct {
+	Label      string     `json:"label"`
+	OccurredAt *time.Time `json:"occurred_at,omitempty"`
+	Status     string     `json:"status"`
 }
 
 // DigitalEmployeeRun defines model for DigitalEmployeeRun.
@@ -1310,6 +1356,9 @@ type DigitalEmployeeTypeOption struct {
 	RecommendedSkills            *[]string               `json:"recommended_skills,omitempty"`
 	Type                         string                  `json:"type"`
 }
+
+// DigitalEmployeeWorkbenchStatus defines model for DigitalEmployeeWorkbenchStatus.
+type DigitalEmployeeWorkbenchStatus string
 
 // EffectiveConfigPreview defines model for EffectiveConfigPreview.
 type EffectiveConfigPreview struct {

@@ -417,6 +417,14 @@ func (s OverviewRunStatus) IsValid() bool {
 	}
 }
 
+type WorkbenchStatus string
+
+const (
+	WorkbenchStatusReady          WorkbenchStatus = "ready"
+	WorkbenchStatusPendingBinding WorkbenchStatus = "pending_binding"
+	WorkbenchStatusError          WorkbenchStatus = "error"
+)
+
 type GetDigitalEmployeeOverviewRequest struct {
 	TenantID        uuid.UUID
 	Query           string
@@ -433,19 +441,30 @@ type GetDigitalEmployeeOverviewRequest struct {
 }
 
 type DigitalEmployeeOverview struct {
-	Summary    DigitalEmployeeOverviewSummary
-	Items      []DigitalEmployeeOverviewItem
-	Filters    DigitalEmployeeOverviewFilters
-	Pagination OverviewPagination
+	Summary      DigitalEmployeeOverviewSummary
+	QueueSummary DigitalEmployeeOverviewQueueSummary
+	Items        []DigitalEmployeeOverviewItem
+	Filters      DigitalEmployeeOverviewFilters
+	Pagination   OverviewPagination
 }
 
 type DigitalEmployeeOverviewSummary struct {
-	TotalCount          int32
-	RunnableCount       int32
-	RunningCount        int32
-	WaitingRuntimeCount int32
-	ErrorCount          int32
-	HighRiskCount       int32
+	TotalCount                 int32
+	RunnableCount              int32
+	RunningCount               int32
+	WaitingRuntimeCount        int32
+	ErrorCount                 int32
+	HighRiskCount              int32
+	ReadyCount                 int32
+	PendingRuntimeBindingCount int32
+	PendingConfigApprovalCount int32
+	FailedRecentRunCount       int32
+}
+
+type DigitalEmployeeOverviewQueueSummary struct {
+	PendingRuntimeBindingCount int32
+	StaleConfigCount           int32
+	FailedRecentRunCount       int32
 }
 
 type DigitalEmployeeOverviewItem struct {
@@ -454,6 +473,8 @@ type DigitalEmployeeOverviewItem struct {
 	LatestRunSummary  *DigitalEmployeeLatestRunSummary
 	GovernanceSummary DigitalEmployeeGovernanceSummary
 	BudgetSummary     DigitalEmployeeBudgetSummary
+	WorkbenchStatus   WorkbenchStatus
+	RecentEvents      []DigitalEmployeeRecentEventSummary
 }
 
 type DigitalEmployeeIdentitySummary struct {
@@ -510,11 +531,21 @@ type DigitalEmployeeGovernanceSummary struct {
 }
 
 type DigitalEmployeeBudgetSummary struct {
-	UsageTokens30d *int32
-	RunCount30d    int32
-	CostAmount30d  *float64
-	Currency       string
-	Source         string
+	DailyTokenLimit   *int32
+	UsageTokensToday  int32
+	UsagePercentToday *int32
+	LimitExceeded     bool
+	UsageTokens30d    *int32
+	RunCount30d       int32
+	CostAmount30d     *float64
+	Currency          string
+	Source            string
+}
+
+type DigitalEmployeeRecentEventSummary struct {
+	Label      string
+	Status     string
+	OccurredAt *time.Time
 }
 
 type DigitalEmployeeOverviewFilters struct {

@@ -362,13 +362,22 @@ func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 
 	var body struct {
 		Summary struct {
-			TotalCount          int32 `json:"total_count"`
-			RunnableCount       int32 `json:"runnable_count"`
-			RunningCount        int32 `json:"running_count"`
-			WaitingRuntimeCount int32 `json:"waiting_runtime_count"`
-			ErrorCount          int32 `json:"error_count"`
-			HighRiskCount       int32 `json:"high_risk_count"`
+			TotalCount                 int32 `json:"total_count"`
+			RunnableCount              int32 `json:"runnable_count"`
+			RunningCount               int32 `json:"running_count"`
+			WaitingRuntimeCount        int32 `json:"waiting_runtime_count"`
+			ErrorCount                 int32 `json:"error_count"`
+			HighRiskCount              int32 `json:"high_risk_count"`
+			ReadyCount                 int32 `json:"ready_count"`
+			PendingRuntimeBindingCount int32 `json:"pending_runtime_binding_count"`
+			PendingConfigApprovalCount int32 `json:"pending_config_approval_count"`
+			FailedRecentRunCount       int32 `json:"failed_recent_run_count"`
 		} `json:"summary"`
+		QueueSummary struct {
+			PendingRuntimeBindingCount int32 `json:"pending_runtime_binding_count"`
+			StaleConfigCount           int32 `json:"stale_config_count"`
+			FailedRecentRunCount       int32 `json:"failed_recent_run_count"`
+		} `json:"queue_summary"`
 		Items []struct {
 			IdentitySummary struct {
 				ID                string `json:"id"`
@@ -394,10 +403,20 @@ func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 				MCPServersCount int32  `json:"mcp_servers_count"`
 			} `json:"governance_summary"`
 			BudgetSummary struct {
-				RunCount30d   int32    `json:"run_count_30d"`
-				CostAmount30d *float64 `json:"cost_amount_30d"`
-				Source        string   `json:"source"`
+				DailyTokenLimit   *int32   `json:"daily_token_limit"`
+				UsageTokensToday  int32    `json:"usage_tokens_today"`
+				UsagePercentToday *int32   `json:"usage_percent_today"`
+				LimitExceeded     bool     `json:"limit_exceeded"`
+				RunCount30d       int32    `json:"run_count_30d"`
+				CostAmount30d     *float64 `json:"cost_amount_30d"`
+				Source            string   `json:"source"`
 			} `json:"budget_summary"`
+			WorkbenchStatus string `json:"workbench_status"`
+			RecentEvents    []struct {
+				Label      string  `json:"label"`
+				Status     string  `json:"status"`
+				OccurredAt *string `json:"occurred_at"`
+			} `json:"recent_events"`
 		} `json:"items"`
 		Filters struct {
 			Teams []struct {
@@ -433,8 +452,26 @@ func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 	if body.Summary.TotalCount != 1 || body.Summary.RunnableCount != 1 || body.Summary.RunningCount != 1 {
 		t.Fatalf("unexpected overview summary: %#v", body.Summary)
 	}
+	if body.Summary.ReadyCount != 1 ||
+		body.Summary.PendingRuntimeBindingCount != 0 ||
+		body.Summary.PendingConfigApprovalCount != 0 ||
+		body.Summary.FailedRecentRunCount != 0 {
+		t.Fatalf("unexpected workbench summary: %#v", body.Summary)
+	}
+	if body.QueueSummary.PendingRuntimeBindingCount != 0 || body.QueueSummary.StaleConfigCount != 0 || body.QueueSummary.FailedRecentRunCount != 0 {
+		t.Fatalf("unexpected queue summary: %#v", body.QueueSummary)
+	}
 	if len(body.Items) != 1 || body.Items[0].IdentitySummary.Name != "需求分析员工" || body.Items[0].ExecutionSummary.ProviderType != "codex" {
 		t.Fatalf("unexpected overview items: %#v", body.Items)
+	}
+	if body.Items[0].WorkbenchStatus != "ready" {
+		t.Fatalf("expected ready workbench status, got %#v", body.Items[0].WorkbenchStatus)
+	}
+	if len(body.Items[0].RecentEvents) != 3 || body.Items[0].RecentEvents[0].Label != "命令已下发" {
+		t.Fatalf("expected recent events, got %#v", body.Items[0].RecentEvents)
+	}
+	if body.Items[0].BudgetSummary.DailyTokenLimit == nil || *body.Items[0].BudgetSummary.DailyTokenLimit != 10000 {
+		t.Fatalf("expected daily token limit, got %#v", body.Items[0].BudgetSummary)
 	}
 	if body.Items[0].LatestRunSummary == nil || body.Items[0].LatestRunSummary.TokenUsage != 1600 {
 		t.Fatalf("expected latest run token usage, got %#v", body.Items[0].LatestRunSummary)
@@ -1474,13 +1511,20 @@ func routeEmployeeOverview(req employee.GetDigitalEmployeeOverviewRequest) *empl
 	finishedAt := now.Add(10 * time.Minute)
 	costAmount := 12.34
 	return &employee.DigitalEmployeeOverview{
-		Summary: employee.DigitalEmployeeOverviewSummary{TotalCount: 1, RunnableCount: 1, RunningCount: 1, WaitingRuntimeCount: 0, ErrorCount: 0, HighRiskCount: 0},
+		Summary:      employee.DigitalEmployeeOverviewSummary{TotalCount: 1, RunnableCount: 1, RunningCount: 1, WaitingRuntimeCount: 0, ErrorCount: 0, HighRiskCount: 0, ReadyCount: 1, PendingRuntimeBindingCount: 0, PendingConfigApprovalCount: 0, FailedRecentRunCount: 0},
+		QueueSummary: employee.DigitalEmployeeOverviewQueueSummary{PendingRuntimeBindingCount: 0, StaleConfigCount: 0, FailedRecentRunCount: 0},
 		Items: []employee.DigitalEmployeeOverviewItem{{
 			IdentitySummary:   employee.DigitalEmployeeIdentitySummary{ID: employeeID, TenantID: req.TenantID, TeamID: &teamID, TeamName: "产品组", OwnerUserID: ownerID, OwnerDisplayName: "王佩", EmployeeType: "requirements_analyst", EmployeeTypeLabel: "需求分析", Name: "需求分析员工", Role: "requirements_analyst", Description: stringPtr("负责需求拆解和交付风险识别"), Status: employee.DigitalEmployeeStatusActive, RiskLevel: "medium"},
 			ExecutionSummary:  employee.DigitalEmployeeExecutionSummary{ExecutionInstanceID: &executionInstanceID, Status: employee.OverviewExecutionStatusReady, RuntimeNodeID: &runtimeNodeID, NodeID: "runtime-cn-01", RuntimeName: "cn-01", RuntimeStatus: "online", ProviderType: "codex", ProviderStatus: "healthy", HealthStatus: "healthy", AgentHomeDirAvailable: true},
 			LatestRunSummary:  &employee.DigitalEmployeeLatestRunSummary{RunID: runID, TaskID: taskID, Status: employee.OverviewRunStatusFailed, Title: "审查需求", StartedAt: &now, UpdatedAt: &now, FinishedAt: &finishedAt, DurationSec: int32Ptr(240), TokenUsage: int32Ptr(1600), ErrorMessage: "执行超时"},
 			GovernanceSummary: employee.DigitalEmployeeGovernanceSummary{EffectiveConfigID: &effectiveConfigID, Status: "approved", TeamRevisionNumber: int32Ptr(3), EmployeeRevisionNumber: int32Ptr(1), SkillsCount: 8, MCPServersCount: 3, ConstitutionRef: "effective-config://88888888-8888-4888-8888-888888888888/constitution"},
-			BudgetSummary:     employee.DigitalEmployeeBudgetSummary{UsageTokens30d: int32Ptr(16000), RunCount30d: 12, CostAmount30d: &costAmount, Currency: "USD", Source: "run_usage_projection"},
+			BudgetSummary:     employee.DigitalEmployeeBudgetSummary{DailyTokenLimit: int32Ptr(10000), UsageTokensToday: 2500, UsagePercentToday: int32Ptr(25), LimitExceeded: false, UsageTokens30d: int32Ptr(16000), RunCount30d: 12, CostAmount30d: &costAmount, Currency: "USD", Source: "run_usage_projection"},
+			WorkbenchStatus:   employee.WorkbenchStatusReady,
+			RecentEvents: []employee.DigitalEmployeeRecentEventSummary{
+				{Label: "命令已下发", Status: "running", OccurredAt: &now},
+				{Label: "Provider 输出中", Status: "running", OccurredAt: &now},
+				{Label: "等待结果回写", Status: "completed", OccurredAt: &finishedAt},
+			},
 		}},
 		Filters:    employee.DigitalEmployeeOverviewFilters{Teams: []employee.OverviewFilterOption{{Value: teamID.String(), Label: "产品组"}}, Providers: []employee.OverviewFilterOption{{Value: "codex", Label: "Codex"}}, ExecutionStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewExecutionStatusMissing), Label: "未绑定 Runtime"}}, RunStatuses: []employee.OverviewFilterOption{{Value: string(employee.OverviewRunStatusNone), Label: "暂无运行"}}},
 		Pagination: employee.OverviewPagination{Limit: req.Limit, Offset: req.Offset, TotalCount: 1},

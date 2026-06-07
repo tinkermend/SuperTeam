@@ -497,12 +497,21 @@ func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDi
 
 	return &DigitalEmployeeOverview{
 		Summary: DigitalEmployeeOverviewSummary{
-			TotalCount:          summary.TotalCount,
-			RunnableCount:       summary.RunnableCount,
-			RunningCount:        summary.RunningCount,
-			WaitingRuntimeCount: summary.WaitingRuntimeCount,
-			ErrorCount:          summary.ErrorCount,
-			HighRiskCount:       summary.HighRiskCount,
+			TotalCount:                 summary.TotalCount,
+			RunnableCount:              summary.RunnableCount,
+			RunningCount:               summary.RunningCount,
+			WaitingRuntimeCount:        summary.WaitingRuntimeCount,
+			ErrorCount:                 summary.ErrorCount,
+			HighRiskCount:              summary.HighRiskCount,
+			ReadyCount:                 summary.ReadyCount,
+			PendingRuntimeBindingCount: summary.PendingRuntimeBindingCount,
+			PendingConfigApprovalCount: summary.PendingConfigApprovalCount,
+			FailedRecentRunCount:       summary.FailedRecentRunCount,
+		},
+		QueueSummary: DigitalEmployeeOverviewQueueSummary{
+			PendingRuntimeBindingCount: summary.PendingRuntimeBindingCount,
+			StaleConfigCount:           summary.StaleConfigCount,
+			FailedRecentRunCount:       summary.FailedRecentRunCount,
 		},
 		Items:   items,
 		Filters: overviewFiltersFromQuery(filterRows),
@@ -515,12 +524,27 @@ func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDi
 }
 
 func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) DigitalEmployeeOverviewItem {
+	executionStatus := overviewExecutionStatus(row.ExecutionStatus)
+	latestRunStatus := overviewRunStatus(row.LatestRunStatus)
+	dailyTokenLimit := int32PtrFromJSONString(row.DailyTokenLimitText)
+	usagePercent := overviewUsagePercent(row.TodayBudgetUsageTokens, dailyTokenLimit)
+	recentEvents := recentEventsFromJSON(row.RecentEventsJson)
+	workbenchStatus := overviewWorkbenchStatus(
+		DigitalEmployeeStatus(row.Status),
+		executionStatus,
+		row.RuntimeStatus,
+		row.ProviderStatus,
+		row.HealthStatus,
+		row.GovernanceStatus,
+		latestRunStatus,
+	)
+
 	var latestRun *DigitalEmployeeLatestRunSummary
 	if row.LatestRunID.Valid && row.LatestRunID.UUID != uuid.Nil {
 		latestRun = &DigitalEmployeeLatestRunSummary{
 			RunID:        row.LatestRunID.UUID,
 			TaskID:       row.LatestRunTaskID.UUID,
-			Status:       overviewRunStatus(row.LatestRunStatus),
+			Status:       latestRunStatus,
 			Title:        row.LatestRunTitle,
 			StartedAt:    timePtrFromPgTimestamptz(row.LatestRunStartedAt),
 			UpdatedAt:    timePtrFromPgTimestamptz(row.LatestRunUpdatedAt),
@@ -556,7 +580,7 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) Digi
 		},
 		ExecutionSummary: DigitalEmployeeExecutionSummary{
 			ExecutionInstanceID:   uuidPtrFromNullUUID(row.ExecutionInstanceID),
-			Status:                overviewExecutionStatus(row.ExecutionStatus),
+			Status:                executionStatus,
 			RuntimeNodeID:         uuidPtrFromNullUUID(row.RuntimeNodeID),
 			NodeID:                row.NodeID,
 			RuntimeName:           row.RuntimeName,
@@ -577,11 +601,17 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) Digi
 			ConstitutionRef:        row.ConstitutionRef,
 		},
 		BudgetSummary: DigitalEmployeeBudgetSummary{
-			UsageTokens30d: budgetUsage,
-			RunCount30d:    row.BudgetRunCount30d,
-			Currency:       "USD",
-			Source:         overviewBudgetSource(row.BudgetRunCount30d, budgetUsageValue),
+			DailyTokenLimit:   dailyTokenLimit,
+			UsageTokensToday:  row.TodayBudgetUsageTokens,
+			UsagePercentToday: usagePercent,
+			LimitExceeded:     dailyTokenLimit != nil && row.TodayBudgetUsageTokens >= *dailyTokenLimit,
+			UsageTokens30d:    budgetUsage,
+			RunCount30d:       row.BudgetRunCount30d,
+			Currency:          "USD",
+			Source:            overviewBudgetSource(row.BudgetRunCount30d, budgetUsageValue),
 		},
+		WorkbenchStatus: workbenchStatus,
+		RecentEvents:    recentEvents,
 	}
 }
 
@@ -793,11 +823,67 @@ func overviewRunStatus(value string) OverviewRunStatus {
 	}
 }
 
+func overviewWorkbenchStatus(identityStatus DigitalEmployeeStatus, executionStatus OverviewExecutionStatus, runtimeStatus, providerStatus, healthStatus string, governanceStatus string, runStatus OverviewRunStatus) WorkbenchStatus {
+	if identityStatus == DigitalEmployeeStatusError ||
+		executionStatus == OverviewExecutionStatusError ||
+		runStatus == OverviewRunStatusFailed ||
+		runStatus == OverviewRunStatusTimedOut {
+		return WorkbenchStatusError
+	}
+	if executionStatus == OverviewExecutionStatusMissing ||
+		executionStatus == OverviewExecutionStatusProvisioning ||
+		runtimeStatus == "" ||
+		providerStatus == "" {
+		return WorkbenchStatusPendingBinding
+	}
+	if governanceStatus == "missing" || governanceStatus == "pending_approval" || governanceStatus == "stale" {
+		return WorkbenchStatusPendingBinding
+	}
+	if runtimeStatus != "online" || providerStatus != "healthy" || healthStatus != "healthy" {
+		return WorkbenchStatusError
+	}
+	return WorkbenchStatusReady
+}
+
+func overviewUsagePercent(today int32, limit *int32) *int32 {
+	if limit == nil || *limit <= 0 {
+		return nil
+	}
+	percent := int32((int64(today) * 100) / int64(*limit))
+	if percent > 100 {
+		percent = 100
+	}
+	return &percent
+}
+
 func overviewBudgetSource(runCount, usageTokens int32) string {
 	if runCount <= 0 || usageTokens <= 0 {
 		return "unavailable"
 	}
 	return "run_usage_projection"
+}
+
+func recentEventsFromJSON(raw []byte) []DigitalEmployeeRecentEventSummary {
+	if len(raw) == 0 {
+		return []DigitalEmployeeRecentEventSummary{}
+	}
+	var payload []struct {
+		Label      string     `json:"label"`
+		Status     string     `json:"status"`
+		OccurredAt *time.Time `json:"occurred_at"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return []DigitalEmployeeRecentEventSummary{}
+	}
+	events := make([]DigitalEmployeeRecentEventSummary, 0, len(payload))
+	for _, item := range payload {
+		events = append(events, DigitalEmployeeRecentEventSummary{
+			Label:      item.Label,
+			Status:     item.Status,
+			OccurredAt: item.OccurredAt,
+		})
+	}
+	return events
 }
 
 func textFromOptionalString(value string) pgtype.Text {

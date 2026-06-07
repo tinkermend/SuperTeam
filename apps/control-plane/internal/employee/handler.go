@@ -599,27 +599,40 @@ type digitalEmployeeResponse struct {
 }
 
 type digitalEmployeeOverviewResponse struct {
-	Summary    digitalEmployeeOverviewSummaryResponse `json:"summary"`
-	Items      []digitalEmployeeOverviewItemResponse  `json:"items"`
-	Filters    digitalEmployeeOverviewFiltersResponse `json:"filters"`
-	Pagination overviewPaginationResponse             `json:"pagination"`
+	Summary      digitalEmployeeOverviewSummaryResponse      `json:"summary"`
+	QueueSummary digitalEmployeeOverviewQueueSummaryResponse `json:"queue_summary"`
+	Items        []digitalEmployeeOverviewItemResponse       `json:"items"`
+	Filters      digitalEmployeeOverviewFiltersResponse      `json:"filters"`
+	Pagination   overviewPaginationResponse                  `json:"pagination"`
 }
 
 type digitalEmployeeOverviewSummaryResponse struct {
-	TotalCount          int32 `json:"total_count"`
-	RunnableCount       int32 `json:"runnable_count"`
-	RunningCount        int32 `json:"running_count"`
-	WaitingRuntimeCount int32 `json:"waiting_runtime_count"`
-	ErrorCount          int32 `json:"error_count"`
-	HighRiskCount       int32 `json:"high_risk_count"`
+	TotalCount                 int32 `json:"total_count"`
+	RunnableCount              int32 `json:"runnable_count"`
+	RunningCount               int32 `json:"running_count"`
+	WaitingRuntimeCount        int32 `json:"waiting_runtime_count"`
+	ErrorCount                 int32 `json:"error_count"`
+	HighRiskCount              int32 `json:"high_risk_count"`
+	ReadyCount                 int32 `json:"ready_count"`
+	PendingRuntimeBindingCount int32 `json:"pending_runtime_binding_count"`
+	PendingConfigApprovalCount int32 `json:"pending_config_approval_count"`
+	FailedRecentRunCount       int32 `json:"failed_recent_run_count"`
+}
+
+type digitalEmployeeOverviewQueueSummaryResponse struct {
+	PendingRuntimeBindingCount int32 `json:"pending_runtime_binding_count"`
+	StaleConfigCount           int32 `json:"stale_config_count"`
+	FailedRecentRunCount       int32 `json:"failed_recent_run_count"`
 }
 
 type digitalEmployeeOverviewItemResponse struct {
-	IdentitySummary   digitalEmployeeIdentitySummaryResponse   `json:"identity_summary"`
-	ExecutionSummary  digitalEmployeeExecutionSummaryResponse  `json:"execution_summary"`
-	LatestRunSummary  *digitalEmployeeLatestRunSummaryResponse `json:"latest_run_summary"`
-	GovernanceSummary digitalEmployeeGovernanceSummaryResponse `json:"governance_summary"`
-	BudgetSummary     digitalEmployeeBudgetSummaryResponse     `json:"budget_summary"`
+	IdentitySummary   digitalEmployeeIdentitySummaryResponse      `json:"identity_summary"`
+	ExecutionSummary  digitalEmployeeExecutionSummaryResponse     `json:"execution_summary"`
+	LatestRunSummary  *digitalEmployeeLatestRunSummaryResponse    `json:"latest_run_summary"`
+	GovernanceSummary digitalEmployeeGovernanceSummaryResponse    `json:"governance_summary"`
+	BudgetSummary     digitalEmployeeBudgetSummaryResponse        `json:"budget_summary"`
+	WorkbenchStatus   WorkbenchStatus                             `json:"workbench_status"`
+	RecentEvents      []digitalEmployeeRecentEventSummaryResponse `json:"recent_events"`
 }
 
 type digitalEmployeeIdentitySummaryResponse struct {
@@ -676,11 +689,21 @@ type digitalEmployeeGovernanceSummaryResponse struct {
 }
 
 type digitalEmployeeBudgetSummaryResponse struct {
-	UsageTokens30d *int32   `json:"usage_tokens_30d,omitempty"`
-	RunCount30d    int32    `json:"run_count_30d"`
-	CostAmount30d  *float64 `json:"cost_amount_30d,omitempty"`
-	Currency       string   `json:"currency"`
-	Source         string   `json:"source"`
+	DailyTokenLimit   *int32   `json:"daily_token_limit,omitempty"`
+	UsageTokensToday  int32    `json:"usage_tokens_today"`
+	UsagePercentToday *int32   `json:"usage_percent_today,omitempty"`
+	LimitExceeded     bool     `json:"limit_exceeded"`
+	UsageTokens30d    *int32   `json:"usage_tokens_30d,omitempty"`
+	RunCount30d       int32    `json:"run_count_30d"`
+	CostAmount30d     *float64 `json:"cost_amount_30d,omitempty"`
+	Currency          string   `json:"currency"`
+	Source            string   `json:"source"`
+}
+
+type digitalEmployeeRecentEventSummaryResponse struct {
+	Label      string  `json:"label"`
+	Status     string  `json:"status"`
+	OccurredAt *string `json:"occurred_at,omitempty"`
 }
 
 type digitalEmployeeOverviewFiltersResponse struct {
@@ -917,12 +940,21 @@ func overviewResponseFromDomain(overview *DigitalEmployeeOverview) digitalEmploy
 	}
 	return digitalEmployeeOverviewResponse{
 		Summary: digitalEmployeeOverviewSummaryResponse{
-			TotalCount:          overview.Summary.TotalCount,
-			RunnableCount:       overview.Summary.RunnableCount,
-			RunningCount:        overview.Summary.RunningCount,
-			WaitingRuntimeCount: overview.Summary.WaitingRuntimeCount,
-			ErrorCount:          overview.Summary.ErrorCount,
-			HighRiskCount:       overview.Summary.HighRiskCount,
+			TotalCount:                 overview.Summary.TotalCount,
+			RunnableCount:              overview.Summary.RunnableCount,
+			RunningCount:               overview.Summary.RunningCount,
+			WaitingRuntimeCount:        overview.Summary.WaitingRuntimeCount,
+			ErrorCount:                 overview.Summary.ErrorCount,
+			HighRiskCount:              overview.Summary.HighRiskCount,
+			ReadyCount:                 overview.Summary.ReadyCount,
+			PendingRuntimeBindingCount: overview.Summary.PendingRuntimeBindingCount,
+			PendingConfigApprovalCount: overview.Summary.PendingConfigApprovalCount,
+			FailedRecentRunCount:       overview.Summary.FailedRecentRunCount,
+		},
+		QueueSummary: digitalEmployeeOverviewQueueSummaryResponse{
+			PendingRuntimeBindingCount: overview.QueueSummary.PendingRuntimeBindingCount,
+			StaleConfigCount:           overview.QueueSummary.StaleConfigCount,
+			FailedRecentRunCount:       overview.QueueSummary.FailedRecentRunCount,
 		},
 		Items:      overviewItemResponses(overview.Items),
 		Filters:    overviewFiltersResponseFromDomain(overview.Filters),
@@ -939,6 +971,8 @@ func overviewItemResponses(items []DigitalEmployeeOverviewItem) []digitalEmploye
 			LatestRunSummary:  latestRunSummaryResponseFromDomain(item.LatestRunSummary),
 			GovernanceSummary: governanceSummaryResponseFromDomain(item.GovernanceSummary),
 			BudgetSummary:     budgetSummaryResponseFromDomain(item.BudgetSummary),
+			WorkbenchStatus:   item.WorkbenchStatus,
+			RecentEvents:      recentEventSummaryResponses(item.RecentEvents),
 		})
 	}
 	return responses
@@ -1010,12 +1044,28 @@ func governanceSummaryResponseFromDomain(summary DigitalEmployeeGovernanceSummar
 
 func budgetSummaryResponseFromDomain(summary DigitalEmployeeBudgetSummary) digitalEmployeeBudgetSummaryResponse {
 	return digitalEmployeeBudgetSummaryResponse{
-		UsageTokens30d: summary.UsageTokens30d,
-		RunCount30d:    summary.RunCount30d,
-		CostAmount30d:  summary.CostAmount30d,
-		Currency:       summary.Currency,
-		Source:         summary.Source,
+		DailyTokenLimit:   summary.DailyTokenLimit,
+		UsageTokensToday:  summary.UsageTokensToday,
+		UsagePercentToday: summary.UsagePercentToday,
+		LimitExceeded:     summary.LimitExceeded,
+		UsageTokens30d:    summary.UsageTokens30d,
+		RunCount30d:       summary.RunCount30d,
+		CostAmount30d:     summary.CostAmount30d,
+		Currency:          summary.Currency,
+		Source:            summary.Source,
 	}
+}
+
+func recentEventSummaryResponses(events []DigitalEmployeeRecentEventSummary) []digitalEmployeeRecentEventSummaryResponse {
+	responses := make([]digitalEmployeeRecentEventSummaryResponse, 0, len(events))
+	for _, event := range events {
+		responses = append(responses, digitalEmployeeRecentEventSummaryResponse{
+			Label:      event.Label,
+			Status:     event.Status,
+			OccurredAt: timeStringPtr(event.OccurredAt),
+		})
+	}
+	return responses
 }
 
 func overviewFiltersResponseFromDomain(filters DigitalEmployeeOverviewFilters) digitalEmployeeOverviewFiltersResponse {

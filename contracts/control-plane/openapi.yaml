@@ -2997,12 +2997,15 @@ components:
       type: object
       required:
         - summary
+        - queue_summary
         - items
         - filters
         - pagination
       properties:
         summary:
           $ref: "#/components/schemas/DigitalEmployeeOverviewSummary"
+        queue_summary:
+          $ref: "#/components/schemas/DigitalEmployeeOverviewQueueSummary"
         items:
           type: array
           items:
@@ -3020,6 +3023,10 @@ components:
         - waiting_runtime_count
         - error_count
         - high_risk_count
+        - ready_count
+        - pending_runtime_binding_count
+        - pending_config_approval_count
+        - failed_recent_run_count
       properties:
         total_count:
           type: integer
@@ -3039,6 +3046,34 @@ components:
         high_risk_count:
           type: integer
           format: int32
+        ready_count:
+          type: integer
+          format: int32
+        pending_runtime_binding_count:
+          type: integer
+          format: int32
+        pending_config_approval_count:
+          type: integer
+          format: int32
+        failed_recent_run_count:
+          type: integer
+          format: int32
+    DigitalEmployeeOverviewQueueSummary:
+      type: object
+      required:
+        - pending_runtime_binding_count
+        - stale_config_count
+        - failed_recent_run_count
+      properties:
+        pending_runtime_binding_count:
+          type: integer
+          format: int32
+        stale_config_count:
+          type: integer
+          format: int32
+        failed_recent_run_count:
+          type: integer
+          format: int32
     DigitalEmployeeOverviewItem:
       type: object
       required:
@@ -3046,6 +3081,8 @@ components:
         - execution_summary
         - governance_summary
         - budget_summary
+        - workbench_status
+        - recent_events
       properties:
         identity_summary:
           $ref: "#/components/schemas/DigitalEmployeeIdentitySummary"
@@ -3059,6 +3096,31 @@ components:
           $ref: "#/components/schemas/DigitalEmployeeGovernanceSummary"
         budget_summary:
           $ref: "#/components/schemas/DigitalEmployeeBudgetSummary"
+        workbench_status:
+          $ref: "#/components/schemas/DigitalEmployeeWorkbenchStatus"
+        recent_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/DigitalEmployeeRecentEventSummary"
+    DigitalEmployeeWorkbenchStatus:
+      type: string
+      enum:
+        - ready
+        - pending_binding
+        - error
+    DigitalEmployeeRecentEventSummary:
+      type: object
+      required:
+        - label
+        - status
+      properties:
+        label:
+          type: string
+        status:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
     DigitalEmployeeIdentitySummary:
       type: object
       required:
@@ -3206,10 +3268,23 @@ components:
     DigitalEmployeeBudgetSummary:
       type: object
       required:
+        - usage_tokens_today
+        - limit_exceeded
         - run_count_30d
         - currency
         - source
       properties:
+        daily_token_limit:
+          type: integer
+          format: int32
+        usage_tokens_today:
+          type: integer
+          format: int32
+        usage_percent_today:
+          type: integer
+          format: int32
+        limit_exceeded:
+          type: boolean
         usage_tokens_30d:
           type: integer
           format: int32
