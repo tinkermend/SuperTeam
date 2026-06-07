@@ -37,7 +37,11 @@ function createQueryClient() {
   });
 }
 
-function createEmployeesFetcher() {
+type EmployeesFetcherOptions = {
+  latestRunStatus?: string;
+};
+
+function createEmployeesFetcher({ latestRunStatus = "completed" }: EmployeesFetcherOptions = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     if (url.pathname === "/api/v1/digital-employees/overview" && (init?.method ?? "GET") === "GET") {
@@ -113,7 +117,7 @@ function createEmployeesFetcher() {
               latest_run_summary: {
                 run_id: "44444444-4444-4444-8444-444444444444",
                 task_id: "task-1",
-                status: "completed",
+                status: latestRunStatus,
                 title: "审查需求",
                 started_at: "2026-06-07T08:00:00Z",
                 finished_at: twoMinutesAgo,
@@ -233,6 +237,13 @@ describe("EmployeesView", () => {
     await expect
       .element(screen.getByRole("link", { name: "创建数字员工" }))
       .toHaveAttribute("href", "/employees/new");
+  });
+
+  it("does not label active latest runs as failed", async () => {
+    const screen = await renderEmployeesView(createEmployeesFetcher({ latestRunStatus: "running" }));
+
+    await expect.element(screen.getByText("需求分析员工").first()).toBeVisible();
+    await expect.element(screen.getByText("失败 · 2 分钟前")).not.toBeInTheDocument();
   });
 
   it("requests the overview endpoint with selected status filter", async () => {

@@ -606,8 +606,13 @@ function latestRunCompact(item: DigitalEmployeeOverviewItem) {
     return "-";
   }
 
-  const label = run.status === "completed" ? "成功" : "失败";
-  return `${label} · ${runTimeLabel(run)}`;
+  if (run.status === "completed") {
+    return `成功 · ${runTimeLabel(run)}`;
+  }
+  if (run.status === "failed" || run.status === "timed_out") {
+    return `失败 · ${runTimeLabel(run)}`;
+  }
+  return "-";
 }
 
 function latestRunToneClass(status?: string) {
