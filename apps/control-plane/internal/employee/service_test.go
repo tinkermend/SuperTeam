@@ -778,6 +778,144 @@ func TestCreateConfigRevisionDefaultsDraftAndRevisionNumber(t *testing.T) {
 	}
 }
 
+func TestNormalizeBudgetPolicyHandlesEmptyAndRemoval(t *testing.T) {
+	t.Run("nil input returns empty policy", func(t *testing.T) {
+		policy, err := normalizeBudgetPolicy(nil)
+		if err != nil {
+			t.Fatalf("normalize budget policy: %v", err)
+		}
+		if policy == nil || len(policy) != 0 {
+			t.Fatalf("expected empty policy, got %#v", policy)
+		}
+	})
+
+	t.Run("missing daily token limit preserves other keys", func(t *testing.T) {
+		input := map[string]any{"mode": "capped"}
+		policy, err := normalizeBudgetPolicy(input)
+		if err != nil {
+			t.Fatalf("normalize budget policy: %v", err)
+		}
+		if policy["mode"] != "capped" {
+			t.Fatalf("expected other policy keys to be preserved, got %#v", policy)
+		}
+		if _, ok := policy["daily_token_limit"]; ok {
+			t.Fatalf("expected missing daily_token_limit to stay absent, got %#v", policy)
+		}
+	})
+
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{name: "nil removes key", value: nil},
+		{name: "empty string removes key", value: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := map[string]any{
+				"daily_token_limit": tt.value,
+				"mode":              "capped",
+			}
+			policy, err := normalizeBudgetPolicy(input)
+			if err != nil {
+				t.Fatalf("normalize budget policy: %v", err)
+			}
+			if _, ok := policy["daily_token_limit"]; ok {
+				t.Fatalf("expected daily_token_limit to be removed, got %#v", policy)
+			}
+			if policy["mode"] != "capped" {
+				t.Fatalf("expected other policy keys to be preserved, got %#v", policy)
+			}
+		})
+	}
+}
+
+func TestNormalizeBudgetPolicyNormalizesNumericLimits(t *testing.T) {
+	tests := []struct {
+		name  string
+		value any
+		want  float64
+	}{
+		{name: "int", value: int(12000), want: float64(12000)},
+		{name: "int32", value: int32(12000), want: float64(12000)},
+		{name: "int64", value: int64(12000), want: float64(12000)},
+		{name: "float64 integer", value: float64(12000), want: float64(12000)},
+		{name: "json number integer", value: json.Number("12000"), want: float64(12000)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy, err := normalizeBudgetPolicy(map[string]any{"daily_token_limit": tt.value})
+			if err != nil {
+				t.Fatalf("normalize budget policy: %v", err)
+			}
+			if policy["daily_token_limit"] != tt.want {
+				t.Fatalf("expected daily_token_limit %v, got %#v", tt.want, policy["daily_token_limit"])
+			}
+			if _, ok := policy["daily_token_limit"].(float64); !ok {
+				t.Fatalf("expected daily_token_limit to normalize to float64, got %T", policy["daily_token_limit"])
+			}
+		})
+	}
+}
+
+func TestNormalizeBudgetPolicyRejectsInvalidLimits(t *testing.T) {
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{name: "fractional float64", value: float64(12.5)},
+		{name: "zero", value: float64(0)},
+		{name: "negative", value: int64(-1)},
+		{name: "non-number string", value: "12000"},
+		{name: "json number fractional", value: json.Number("12.5")},
+		{name: "json number invalid", value: json.Number("not-a-number")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := normalizeBudgetPolicy(map[string]any{"daily_token_limit": tt.value})
+			if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), "budget_policy.daily_token_limit") {
+				t.Fatalf("expected budget policy validation error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestNormalizeBudgetPolicyDoesNotMutateCallerMap(t *testing.T) {
+	t.Run("normalization does not replace caller value", func(t *testing.T) {
+		input := map[string]any{
+			"daily_token_limit": int64(12000),
+			"mode":              "capped",
+		}
+		policy, err := normalizeBudgetPolicy(input)
+		if err != nil {
+			t.Fatalf("normalize budget policy: %v", err)
+		}
+		if policy["daily_token_limit"] != float64(12000) {
+			t.Fatalf("expected normalized policy, got %#v", policy)
+		}
+		if input["daily_token_limit"] != int64(12000) {
+			t.Fatalf("expected caller daily_token_limit to remain int64, got %#v", input["daily_token_limit"])
+		}
+	})
+
+	t.Run("removal does not delete caller key", func(t *testing.T) {
+		input := map[string]any{
+			"daily_token_limit": "",
+			"mode":              "capped",
+		}
+		policy, err := normalizeBudgetPolicy(input)
+		if err != nil {
+			t.Fatalf("normalize budget policy: %v", err)
+		}
+		if _, ok := policy["daily_token_limit"]; ok {
+			t.Fatalf("expected normalized policy to remove daily_token_limit, got %#v", policy)
+		}
+		if input["daily_token_limit"] != "" {
+			t.Fatalf("expected caller daily_token_limit to remain empty string, got %#v", input["daily_token_limit"])
+		}
+	})
+}
+
 func TestCreateConfigRevisionStoresBudgetPolicy(t *testing.T) {
 	svc, repo := newEmployeeServiceForTest(t)
 	tenantID := uuid.New()
