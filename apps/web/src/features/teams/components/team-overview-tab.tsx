@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import type { UserSummary } from "@/lib/api";
-import type { AllowedTeamAction, TeamMember } from "@/lib/api/teams";
+import type { AllowedTeamAction, TeamMember, TeamOverview } from "@/lib/api/teams";
 import {
   addTeamMember,
   listTeamMembers,
