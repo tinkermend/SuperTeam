@@ -1,6 +1,7 @@
 package employee
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -38,6 +39,13 @@ func TestOverviewRunStatus(t *testing.T) {
 func TestOverviewBudgetSource(t *testing.T) {
 	require.Equal(t, "unavailable", overviewBudgetSource(0, 0))
 	require.Equal(t, "run_usage_projection", overviewBudgetSource(3, 1600))
+}
+
+func TestOverviewSummarySQLCountsStaleConfigQueue(t *testing.T) {
+	normalizedSQL := strings.Join(strings.Fields(queries.GetDigitalEmployeeOverviewSummary), " ")
+
+	require.NotContains(t, normalizedSQL, "0::integer AS stale_config_count")
+	require.Contains(t, normalizedSQL, "governance_status IN ('missing', 'pending_approval', 'stale') ))::integer AS stale_config_count")
 }
 
 func TestOverviewFiltersFromQueryMapsStableLabels(t *testing.T) {

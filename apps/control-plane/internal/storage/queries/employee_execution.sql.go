@@ -418,6 +418,16 @@ effective_configs AS (
       AND ec.revoked_at IS NULL
     ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
 ),
+governance_configs AS (
+    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
+        ec.tenant_id,
+        ec.digital_employee_id,
+        ec.status
+    FROM digital_employee_effective_configs ec
+    JOIN overview_args args ON args.tenant_id = ec.tenant_id
+    WHERE ec.revoked_at IS NULL
+    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
+),
 overview_rows AS (
     SELECT
         de.id,
@@ -438,7 +448,8 @@ overview_rows AS (
         COALESCE(pc.status, '')::text AS provider_status,
         COALESCE(pc.health_status, '')::text AS provider_health_status,
         COALESCE(lr.status, 'none')::text AS run_status,
-        ec.effective_config_id
+        ec.effective_config_id,
+        COALESCE(gc.status, 'missing')::text AS governance_status
     FROM digital_employees de
     CROSS JOIN overview_args args
     LEFT JOIN digital_employee_execution_instances dei
@@ -458,11 +469,14 @@ overview_rows AS (
     LEFT JOIN effective_configs ec
       ON ec.tenant_id = de.tenant_id
      AND ec.digital_employee_id = de.id
+    LEFT JOIN governance_configs gc
+      ON gc.tenant_id = de.tenant_id
+     AND gc.digital_employee_id = de.id
     WHERE de.tenant_id = args.tenant_id
       AND de.deleted_at IS NULL
 ),
 filtered_rows AS (
-    SELECT overview_rows.id, overview_rows.name, overview_rows.role, overview_rows.description, overview_rows.team_id, overview_rows.employee_status, overview_rows.employee_type, overview_rows.risk_level, overview_rows.execution_status, overview_rows.runtime_node_id, overview_rows.runtime_status, overview_rows.runtime_disabled_at, overview_rows.runtime_archived_at, overview_rows.provider_type, overview_rows.provider_available, overview_rows.provider_status, overview_rows.provider_health_status, overview_rows.run_status, overview_rows.effective_config_id
+    SELECT overview_rows.id, overview_rows.name, overview_rows.role, overview_rows.description, overview_rows.team_id, overview_rows.employee_status, overview_rows.employee_type, overview_rows.risk_level, overview_rows.execution_status, overview_rows.runtime_node_id, overview_rows.runtime_status, overview_rows.runtime_disabled_at, overview_rows.runtime_archived_at, overview_rows.provider_type, overview_rows.provider_available, overview_rows.provider_status, overview_rows.provider_health_status, overview_rows.run_status, overview_rows.effective_config_id, overview_rows.governance_status
     FROM overview_rows
     CROSS JOIN overview_args args
     WHERE (
@@ -532,7 +546,9 @@ SELECT
     (COUNT(*) FILTER (
         WHERE run_status IN ('failed', 'timed_out')
     ))::integer AS failed_recent_run_count,
-    0::integer AS stale_config_count
+    (COUNT(*) FILTER (
+        WHERE governance_status IN ('missing', 'pending_approval', 'stale')
+    ))::integer AS stale_config_count
 FROM filtered_rows
 `
 

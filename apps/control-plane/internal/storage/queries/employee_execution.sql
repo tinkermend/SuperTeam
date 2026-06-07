@@ -717,6 +717,16 @@ effective_configs AS (
       AND ec.revoked_at IS NULL
     ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
 ),
+governance_configs AS (
+    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
+        ec.tenant_id,
+        ec.digital_employee_id,
+        ec.status
+    FROM digital_employee_effective_configs ec
+    JOIN overview_args args ON args.tenant_id = ec.tenant_id
+    WHERE ec.revoked_at IS NULL
+    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
+),
 overview_rows AS (
     SELECT
         de.id,
@@ -737,7 +747,8 @@ overview_rows AS (
         COALESCE(pc.status, '')::text AS provider_status,
         COALESCE(pc.health_status, '')::text AS provider_health_status,
         COALESCE(lr.status, 'none')::text AS run_status,
-        ec.effective_config_id
+        ec.effective_config_id,
+        COALESCE(gc.status, 'missing')::text AS governance_status
     FROM digital_employees de
     CROSS JOIN overview_args args
     LEFT JOIN digital_employee_execution_instances dei
@@ -757,6 +768,9 @@ overview_rows AS (
     LEFT JOIN effective_configs ec
       ON ec.tenant_id = de.tenant_id
      AND ec.digital_employee_id = de.id
+    LEFT JOIN governance_configs gc
+      ON gc.tenant_id = de.tenant_id
+     AND gc.digital_employee_id = de.id
     WHERE de.tenant_id = args.tenant_id
       AND de.deleted_at IS NULL
 ),
@@ -831,7 +845,9 @@ SELECT
     (COUNT(*) FILTER (
         WHERE run_status IN ('failed', 'timed_out')
     ))::integer AS failed_recent_run_count,
-    0::integer AS stale_config_count
+    (COUNT(*) FILTER (
+        WHERE governance_status IN ('missing', 'pending_approval', 'stale')
+    ))::integer AS stale_config_count
 FROM filtered_rows;
 
 -- name: ListDigitalEmployeeOverviewItems :many
