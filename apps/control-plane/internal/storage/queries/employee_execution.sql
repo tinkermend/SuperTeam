@@ -507,12 +507,15 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
     SELECT
         LEAST(
-            SUM(
-                CASE
-                    WHEN COALESCE(tr.result #>> '{usage,total_tokens}', tr.result ->> 'total_tokens', '') ~ '^[0-9]+$'
-                    THEN COALESCE(tr.result #>> '{usage,total_tokens}', tr.result ->> 'total_tokens', '')::bigint
-                    ELSE 0
-                END
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN COALESCE(tr.result #>> '{usage,total_tokens}', tr.result ->> 'total_tokens', '') ~ '^[0-9]+$'
+                        THEN COALESCE(tr.result #>> '{usage,total_tokens}', tr.result ->> 'total_tokens', '')::bigint
+                        ELSE 0
+                    END
+                ),
+                0
             ),
             2147483647
         )::integer AS usage_tokens_today

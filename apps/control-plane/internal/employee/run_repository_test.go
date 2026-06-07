@@ -130,6 +130,13 @@ func TestRunPreflightFromQueryRejectsMissingTeam(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidInput)
 }
 
+func TestRunPreflightDailyTokenUsageDefaultsEmptySumToZero(t *testing.T) {
+	normalized := strings.Join(strings.Fields(queries.GetDigitalEmployeeRunPreflight), " ")
+
+	require.Contains(t, normalized, "LEAST( COALESCE( SUM(")
+	require.Contains(t, normalized, "), 0 ), 2147483647 )::integer AS usage_tokens_today")
+}
+
 func TestMapCreateRunErrorMapsIdempotencyFingerprintMismatch(t *testing.T) {
 	idempotencyKey := "idem-1"
 
