@@ -3440,6 +3440,9 @@ components:
         approval_policy_override:
           type: object
           additionalProperties: true
+        budget_policy:
+          type: object
+          additionalProperties: true
         output_contract_addendum:
           type: object
           additionalProperties: true
@@ -3699,6 +3702,7 @@ components:
         - capability_selection
         - context_policy_override
         - approval_policy_override
+        - budget_policy
         - output_contract_addendum
         - status
       properties:
@@ -3727,6 +3731,9 @@ components:
           type: object
           additionalProperties: true
         approval_policy_override:
+          type: object
+          additionalProperties: true
+        budget_policy:
           type: object
           additionalProperties: true
         output_contract_addendum:
@@ -3767,6 +3774,9 @@ components:
           type: object
           additionalProperties: true
         approval_policy_override:
+          type: object
+          additionalProperties: true
+        budget_policy:
           type: object
           additionalProperties: true
         output_contract_addendum:

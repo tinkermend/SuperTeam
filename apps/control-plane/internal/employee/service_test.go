@@ -816,7 +816,7 @@ func TestCreateConfigRevisionRejectsInvalidBudgetPolicy(t *testing.T) {
 		Status:            ConfigRevisionStatusDraft,
 	})
 
-	if err == nil || !strings.Contains(err.Error(), "budget_policy.daily_token_limit") {
+	if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), "budget_policy.daily_token_limit") {
 		t.Fatalf("expected budget policy validation error, got %v", err)
 	}
 }

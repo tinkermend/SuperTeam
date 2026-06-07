@@ -837,6 +837,7 @@ type ConfigRevisionRef struct {
 // CreateDigitalEmployeeConfigRevisionRequest defines model for CreateDigitalEmployeeConfigRevisionRequest.
 type CreateDigitalEmployeeConfigRevisionRequest struct {
 	ApprovalPolicyOverride *map[string]interface{}                           `json:"approval_policy_override,omitempty"`
+	BudgetPolicy           *map[string]interface{}                           `json:"budget_policy,omitempty"`
 	CapabilitySelection    *map[string]interface{}                           `json:"capability_selection,omitempty"`
 	ConstitutionAddendum   *map[string]interface{}                           `json:"constitution_addendum,omitempty"`
 	ContextPolicyOverride  *map[string]interface{}                           `json:"context_policy_override,omitempty"`
@@ -853,6 +854,7 @@ type CreateDigitalEmployeeRequest struct {
 	ApprovalPolicy         *map[string]interface{} `json:"approval_policy,omitempty"`
 	ApprovalPolicyOverride *map[string]interface{} `json:"approval_policy_override,omitempty"`
 	AvatarAssetId          string                  `json:"avatar_asset_id"`
+	BudgetPolicy           *map[string]interface{} `json:"budget_policy,omitempty"`
 	CapabilitySelection    *map[string]interface{} `json:"capability_selection,omitempty"`
 	ConstitutionAddendum   *map[string]interface{} `json:"constitution_addendum,omitempty"`
 	ContextPolicy          *map[string]interface{} `json:"context_policy,omitempty"`
@@ -1016,6 +1018,7 @@ type DigitalEmployeeConfigRevision struct {
 	ApprovedAt             *time.Time                          `json:"approved_at,omitempty"`
 	ApprovedBy             *openapi_types.UUID                 `json:"approved_by,omitempty"`
 	ArchivedAt             *time.Time                          `json:"archived_at,omitempty"`
+	BudgetPolicy           map[string]interface{}              `json:"budget_policy"`
 	CapabilitySelection    map[string]interface{}              `json:"capability_selection"`
 	ConstitutionAddendum   map[string]interface{}              `json:"constitution_addendum"`
 	ContextPolicyOverride  map[string]interface{}              `json:"context_policy_override"`
