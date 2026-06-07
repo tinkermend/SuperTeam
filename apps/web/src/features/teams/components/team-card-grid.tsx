@@ -18,6 +18,7 @@ import {
   type UserIdentityData,
 } from "@/components/superteam/user-identity";
 import { EmployeeAvatar } from "@/features/employees/avatar";
+import { employeeAvatarAsset } from "@/features/employees/avatar-library";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { listDigitalEmployees } from "@/lib/api/employees";
@@ -84,7 +85,7 @@ function DigitalEmployeeAvatar({
   className?: string;
   employee: DigitalEmployee;
 }) {
-  const asset = employee.metadata?.avatar_asset;
+  const asset = employeeAvatarAsset(employee);
 
   return (
     <div
@@ -348,8 +349,8 @@ function TeamCard({
   return (
     <div
       className={cn(
-        "group flex flex-col rounded-xl border bg-card/90 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md",
-        isHighlighted && "ring-2 ring-[var(--superteam-menu-accent)]",
+        "group flex flex-col rounded-2xl border border-superteam-primary-soft/80 bg-gradient-to-br from-background via-background/95 to-superteam-primary-soft/40 shadow-sm shadow-superteam-menu-accent/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[var(--superteam-shadow-mid)] hover:border-superteam-menu-accent/40 hover:to-superteam-primary-soft/60 overflow-hidden ring-1 ring-white/60",
+        isHighlighted && "ring-2 ring-superteam-menu-accent",
       )}
     >
       {/* ── Header ─────────────────────────────────────────────── */}
@@ -400,12 +401,12 @@ function TeamCard({
 
       {/* ── Footer ─────────────────────────────────────────────── */}
       <Link
-        className="flex items-center justify-between border-t px-5 py-3 text-sm font-medium text-[var(--superteam-menu-accent,hsl(var(--primary)))] transition-colors hover:bg-muted/40"
+        className="flex items-center justify-between border-t border-border/40 bg-gradient-to-b from-transparent to-superteam-primary-soft/30 px-5 py-3.5 text-sm font-medium text-superteam-primary-deep transition-all duration-300 hover:bg-superteam-primary-soft/80"
         params={{ teamId: team.id }}
         to="/teams/$teamId"
       >
         查看完整部门
-        <ChevronRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+        <ChevronRight className="size-4 transition-transform duration-300 group-hover:translate-x-1" />
       </Link>
     </div>
   );
