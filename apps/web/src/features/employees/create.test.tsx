@@ -346,6 +346,25 @@ describe("CreateEmployeeView", () => {
     expect(body.budget_policy).toEqual({});
   });
 
+  it.each(["0", "12.5"])("blocks invalid daily token budget %s on the governance step", async (invalidValue) => {
+    const fetcher = createWizardFetcher();
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.type(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" }), invalidValue);
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await expect.element(screen.getByText("每日 Token 预算上限必须是正整数")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "治理" })).toBeVisible();
+    const createCall = fetcher.mock.calls.find(
+      ([input, init]) => String(input).endsWith("/api/v1/digital-employees") && init?.method === "POST",
+    );
+    expect(createCall).toBeUndefined();
+  });
+
   it("blocks the next step until identity fields are valid", async () => {
     const screen = await renderCreateEmployeeView();
 

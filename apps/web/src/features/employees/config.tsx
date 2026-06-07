@@ -41,6 +41,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
   const [approvalPolicyOverride, setApprovalPolicyOverride] = useState("{}");
   const [outputContractAddendum, setOutputContractAddendum] = useState("{}");
   const [dailyTokenLimit, setDailyTokenLimit] = useState("");
+  const [budgetError, setBudgetError] = useState("");
 
   const employee = useQuery({
     queryKey: ["digital-employee", employeeId],
@@ -64,6 +65,12 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
         return {};
       }
     };
+    const budgetPolicy = budgetPolicyFromDailyTokenLimit(dailyTokenLimit);
+    if (!budgetPolicy) {
+      setBudgetError("每日 Token 预算上限必须是正整数");
+      return;
+    }
+    setBudgetError("");
 
     createRevision.mutate({
       role_profile: parseJson(roleProfile),
@@ -71,9 +78,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
       capability_selection: parseJson(capabilitySelection),
       context_policy_override: parseJson(contextPolicyOverride),
       approval_policy_override: parseJson(approvalPolicyOverride),
-      budget_policy: dailyTokenLimit.trim()
-        ? { daily_token_limit: Number(dailyTokenLimit.trim()) }
-        : {},
+      budget_policy: budgetPolicy,
       output_contract_addendum: parseJson(outputContractAddendum),
       status: "draft",
     });
@@ -108,7 +113,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
         {employee.isError ? <p className="text-sm text-destructive">加载失败</p> : null}
 
         {employee.data ? (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form className="space-y-4" noValidate onSubmit={handleSubmit}>
             <Card>
               <CardHeader>
                 <CardTitle>角色配置</CardTitle>
@@ -195,11 +200,16 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
                   id="config-daily-token-limit"
                   inputMode="numeric"
                   min={1}
-                  onChange={(event) => setDailyTokenLimit(event.target.value)}
+                  onChange={(event) => {
+                    setDailyTokenLimit(event.target.value);
+                    setBudgetError("");
+                  }}
                   placeholder="不填写表示无预算上限"
                   type="number"
+                  aria-invalid={Boolean(budgetError)}
                   value={dailyTokenLimit}
                 />
+                {budgetError ? <p className="text-sm text-destructive">{budgetError}</p> : null}
                 <p className="text-xs text-muted-foreground">预算会进入新的配置版本，批准后生效。</p>
               </CardContent>
             </Card>
@@ -221,4 +231,16 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
       </Main>
     </>
   );
+}
+
+function budgetPolicyFromDailyTokenLimit(dailyTokenLimit: string) {
+  const trimmed = dailyTokenLimit.trim();
+  if (!trimmed) return {};
+
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return undefined;
+  }
+
+  return { daily_token_limit: parsed };
 }

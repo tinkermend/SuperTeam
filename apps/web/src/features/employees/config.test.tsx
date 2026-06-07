@@ -169,4 +169,87 @@ describe("EmployeeConfigView", () => {
     const body = JSON.parse(String(postCall?.[1]?.body));
     expect(body.budget_policy).toEqual({ daily_token_limit: 15000 });
   });
+
+  it("submits empty budget policy when the daily token budget is empty", async () => {
+    const queryClient = createQueryClient();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = requestUrl(input);
+      const method = requestMethod(input, options);
+      if (url.includes("/digital-employees/") && method === "POST") {
+        return new Response(JSON.stringify({ id: "revision-1", status: "draft" }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.includes("/digital-employees/")) {
+        return new Response(JSON.stringify(employee), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+
+    const screen = await render(
+      <QueryClientProvider client={queryClient}>
+        <EmployeeConfigView
+          apiBaseUrl="http://localhost:8080"
+          employeeId={employee.id}
+          fetcher={fetcher}
+        />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeVisible();
+    await expect.element(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" })).toHaveValue(null);
+    await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
+
+    const postCall = fetcher.mock.calls.find(
+      ([input, init]) => requestUrl(input).includes("/config-revisions") && init?.method === "POST",
+    );
+    expect(postCall).toBeTruthy();
+    const body = JSON.parse(String(postCall?.[1]?.body));
+    expect(body.budget_policy).toEqual({});
+  });
+
+  it.each(["0", "12.5"])("blocks invalid daily token budget %s when saving config", async (invalidValue) => {
+    const queryClient = createQueryClient();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = requestUrl(input);
+      const method = requestMethod(input, options);
+      if (url.includes("/digital-employees/") && method === "POST") {
+        return new Response(JSON.stringify({ id: "revision-1", status: "draft" }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.includes("/digital-employees/")) {
+        return new Response(JSON.stringify(employee), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+
+    const screen = await render(
+      <QueryClientProvider client={queryClient}>
+        <EmployeeConfigView
+          apiBaseUrl="http://localhost:8080"
+          employeeId={employee.id}
+          fetcher={fetcher}
+        />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeVisible();
+    await userEvent.type(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" }), invalidValue);
+    await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
+
+    await expect.element(screen.getByText("每日 Token 预算上限必须是正整数")).toBeVisible();
+    const postCall = fetcher.mock.calls.find(
+      ([input, init]) => requestUrl(input).includes("/config-revisions") && init?.method === "POST",
+    );
+    expect(postCall).toBeUndefined();
+  });
 });
