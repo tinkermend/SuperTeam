@@ -5,8 +5,8 @@ import { Trash2, UserPlus, Bot, Users, Puzzle, TriangleAlert } from "lucide-reac
 import { MetricCard } from "@/components/superteam/liquid-components";
 import {
   TeamRoleBadge,
+  TeamRoleSelect,
   type DirectTeamRole,
-  type PrivilegedTeamRole,
 } from "@/components/superteam/team-role";
 import { UserIdentity } from "@/components/superteam/user-identity";
 import { UserSearchSelect } from "@/components/superteam/user-search-select";
@@ -203,7 +203,7 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, overview,
                         <Badge variant="outline" className={item.type === "human" ? "text-blue-600" : "text-emerald-600"}>
                           {item.type === "human" ? "人类" : "数字员工"}
                         </Badge>
-                        <TeamRoleBadge role={item.role as PrivilegedTeamRole | DirectTeamRole} />
+                        <TeamRoleBadge role={item.role as DirectTeamRole} />
                         {item.type === "human" && (
                           <Button 
                             onClick={() => removeMutation.mutate(item.id)} 
