@@ -53,8 +53,13 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamO
 	if name == "" {
 		return nil, fmt.Errorf("%w: name is required", ErrInvalidInput)
 	}
-	if req.HumanOwnerUserID == nil || *req.HumanOwnerUserID == uuid.Nil {
-		return nil, fmt.Errorf("%w: human_owner_user_id is required", ErrInvalidInput)
+	if len(req.HumanOwnerUserIDs) == 0 {
+		return nil, fmt.Errorf("%w: human_owner_user_ids is required", ErrInvalidInput)
+	}
+	for _, ownerID := range req.HumanOwnerUserIDs {
+		if ownerID == uuid.Nil {
+			return nil, fmt.Errorf("%w: owner_user_id cannot be nil", ErrInvalidInput)
+		}
 	}
 	status := req.Status
 	if status == "" {
@@ -63,7 +68,7 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamO
 	if !status.IsValid() {
 		return nil, fmt.Errorf("%w: invalid team status", ErrInvalidInput)
 	}
-	initialMembers, err := normalizeInitialMembers(*req.HumanOwnerUserID, req.InitialMembers)
+	initialMembers, err := normalizeInitialMembers(req.HumanOwnerUserIDs, req.InitialMembers)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +83,7 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamO
 		Slug:           slug,
 		Name:           name,
 		Status:         status,
-		OwnerUserID:    *req.HumanOwnerUserID,
+		OwnerUserIDs:   req.HumanOwnerUserIDs,
 		InitialMembers: initialMembers,
 		Metadata:       metadata,
 	})
@@ -88,8 +93,11 @@ func (s *Service) CreateTeam(ctx context.Context, req CreateTeamRequest) (*TeamO
 	return s.GetOverview(ctx, team.TenantID, team.ID)
 }
 
-func normalizeInitialMembers(ownerUserID uuid.UUID, members []InitialTeamMemberInput) ([]InitialTeamMemberInput, error) {
-	seen := map[uuid.UUID]struct{}{ownerUserID: {}}
+func normalizeInitialMembers(ownerUserIDs []uuid.UUID, members []InitialTeamMemberInput) ([]InitialTeamMemberInput, error) {
+	seen := map[uuid.UUID]struct{}{}
+	for _, id := range ownerUserIDs {
+		seen[id] = struct{}{}
+	}
 	normalized := make([]InitialTeamMemberInput, 0, len(members))
 	for _, member := range members {
 		if member.UserID == uuid.Nil {
@@ -182,7 +190,7 @@ func (s *Service) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team,
 	if name == "" {
 		return nil, fmt.Errorf("%w: name is required", ErrInvalidInput)
 	}
-	humanOwnerUserID := validUUIDPtr(req.HumanOwnerUserID)
+	humanOwnerUserIDs := req.HumanOwnerUserIDs
 	var metadata map[string]any
 	if req.Metadata != nil {
 		var err error
@@ -191,13 +199,13 @@ func (s *Service) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team,
 			return nil, err
 		}
 	}
-	if req.HumanOwnerUserID == nil || req.Metadata == nil {
+	if req.HumanOwnerUserIDs == nil || req.Metadata == nil {
 		existing, err := s.repository.GetTeam(ctx, req.TenantID, req.TeamID)
 		if err != nil {
 			return nil, fmt.Errorf("get team: %w", err)
 		}
-		if req.HumanOwnerUserID == nil {
-			humanOwnerUserID = validUUIDPtr(existing.HumanOwnerUserID)
+		if req.HumanOwnerUserIDs == nil {
+			humanOwnerUserIDs = existing.HumanOwnerUserIDs
 		}
 		if req.Metadata == nil {
 			metadata = cloneMap(existing.Metadata)
@@ -208,7 +216,7 @@ func (s *Service) UpdateTeam(ctx context.Context, req UpdateTeamRequest) (*Team,
 		TeamID:           req.TeamID,
 		Slug:             slug,
 		Name:             name,
-		HumanOwnerUserID: humanOwnerUserID,
+		HumanOwnerUserIDs: humanOwnerUserIDs,
 		Metadata:         metadata,
 	})
 	if err != nil {
@@ -273,8 +281,13 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateTeamConfig
 	if req.TeamID == uuid.Nil {
 		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
 	}
-	if req.HumanOwnerUserID == nil || *req.HumanOwnerUserID == uuid.Nil {
-		return nil, fmt.Errorf("%w: human_owner_user_id is required", ErrInvalidInput)
+	if len(req.HumanOwnerUserIDs) == 0 {
+		return nil, fmt.Errorf("%w: human_owner_user_ids is required", ErrInvalidInput)
+	}
+	for _, id := range req.HumanOwnerUserIDs {
+		if id == uuid.Nil {
+			return nil, fmt.Errorf("%w: human_owner_user_id cannot be nil", ErrInvalidInput)
+		}
 	}
 	status := req.Status
 	if status == "" {
@@ -318,7 +331,7 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateTeamConfig
 		ArtifactContract:            cloneMap(req.ArtifactContract),
 		InternalCollaborationPolicy: cloneMap(req.InternalCollaborationPolicy),
 		RuntimeScopePolicy:          cloneMap(req.RuntimeScopePolicy),
-		HumanOwnerUserID:            validUUIDPtr(req.HumanOwnerUserID),
+		HumanOwnerUserIDs:           req.HumanOwnerUserIDs,
 		Status:                      status,
 		ApprovedBy:                  approvedBy,
 		ApprovedAt:                  approvedAt,
@@ -397,7 +410,7 @@ func (s *Service) UpdateGovernanceDraft(ctx context.Context, tenantID, teamID, d
 		ArtifactContract:            cloneOptionalMap(input.ArtifactContract),
 		InternalCollaborationPolicy: cloneOptionalMap(input.InternalCollaborationPolicy),
 		RuntimeScopePolicy:          cloneOptionalMap(input.RuntimeScopePolicy),
-		HumanOwnerUserID:            validUUIDPtr(input.HumanOwnerUserID),
+		HumanOwnerUserIDs:           input.HumanOwnerUserIDs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("update governance draft: %w", err)
@@ -949,30 +962,16 @@ func isValidRoleRequestStatus(status TeamMemberRoleRequestStatus) bool {
 
 func teamFromRecord(record TeamRecord) *Team {
 	return &Team{
-		ID:               record.ID,
-		TenantID:         record.TenantID,
-		Slug:             record.Slug,
-		Name:             record.Name,
-		Status:           record.Status,
-		HumanOwnerUserID: validUUIDPtr(record.HumanOwnerUserID),
-		HumanOwner:       cloneTeamHumanOwner(record.HumanOwner),
-		Metadata:         cloneMap(record.Metadata),
-		CreatedAt:        record.CreatedAt,
-		UpdatedAt:        record.UpdatedAt,
-	}
-}
-
-func cloneTeamHumanOwner(owner *TeamHumanOwner) *TeamHumanOwner {
-	if owner == nil {
-		return nil
-	}
-	return &TeamHumanOwner{
-		UserID:      owner.UserID,
-		Username:    owner.Username,
-		DisplayName: owner.DisplayName,
-		Email:       owner.Email,
-		Status:      owner.Status,
-		Avatar:      cloneUserAvatarConfig(owner.Avatar),
+		ID:                record.ID,
+		TenantID:          record.TenantID,
+		Slug:              record.Slug,
+		Name:              record.Name,
+		Status:            record.Status,
+		HumanOwnerUserIDs: record.HumanOwnerUserIDs,
+		HumanOwners:       record.HumanOwners,
+		Metadata:          cloneMap(record.Metadata),
+		CreatedAt:         record.CreatedAt,
+		UpdatedAt:         record.UpdatedAt,
 	}
 }
 
@@ -1039,7 +1038,7 @@ func configRevisionFromRecord(record TeamConfigRevisionRecord) *TeamConfigRevisi
 		ArtifactContract:            cloneMap(record.ArtifactContract),
 		InternalCollaborationPolicy: cloneMap(record.InternalCollaborationPolicy),
 		RuntimeScopePolicy:          cloneMap(record.RuntimeScopePolicy),
-		HumanOwnerUserID:            validUUIDPtr(record.HumanOwnerUserID),
+		HumanOwnerUserIDs:           record.HumanOwnerUserIDs,
 		Status:                      record.Status,
 		ApprovedBy:                  validUUIDPtr(record.ApprovedBy),
 		ApprovedAt:                  cloneTimePtr(record.ApprovedAt),

@@ -36,6 +36,7 @@ import { Route as AuthenticatedTeamsTeamIdRouteImport } from './routes/_authenti
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedEmployeesNewRouteImport } from './routes/_authenticated/employees/new'
 import { Route as AuthenticatedEmployeesEmployeeIdRouteImport } from './routes/_authenticated/employees/$employeeId'
+import { Route as AuthenticatedEmployeesEmployeeIdConfigRouteImport } from './routes/_authenticated/employees/$employeeId/config'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
@@ -184,6 +185,12 @@ const AuthenticatedEmployeesEmployeeIdRoute =
     path: '/employees/$employeeId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedEmployeesEmployeeIdConfigRoute =
+  AuthenticatedEmployeesEmployeeIdConfigRouteImport.update({
+    id: '/config',
+    path: '/config',
+    getParentRoute: () => AuthenticatedEmployeesEmployeeIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -194,7 +201,7 @@ export interface FileRoutesByFullPath {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
-  '/employees/$employeeId': typeof AuthenticatedEmployeesEmployeeIdRoute
+  '/employees/$employeeId': typeof AuthenticatedEmployeesEmployeeIdRouteWithChildren
   '/employees/new': typeof AuthenticatedEmployeesNewRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
@@ -212,6 +219,7 @@ export interface FileRoutesByFullPath {
   '/teams/': typeof AuthenticatedTeamsIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
   '/workflows/': typeof AuthenticatedWorkflowsIndexRoute
+  '/employees/$employeeId/config': typeof AuthenticatedEmployeesEmployeeIdConfigRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof authLoginRoute
@@ -222,7 +230,7 @@ export interface FileRoutesByTo {
   '/500': typeof errors500Route
   '/503': typeof errors503Route
   '/': typeof AuthenticatedIndexRoute
-  '/employees/$employeeId': typeof AuthenticatedEmployeesEmployeeIdRoute
+  '/employees/$employeeId': typeof AuthenticatedEmployeesEmployeeIdRouteWithChildren
   '/employees/new': typeof AuthenticatedEmployeesNewRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
@@ -240,6 +248,7 @@ export interface FileRoutesByTo {
   '/teams': typeof AuthenticatedTeamsIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
   '/workflows': typeof AuthenticatedWorkflowsIndexRoute
+  '/employees/$employeeId/config': typeof AuthenticatedEmployeesEmployeeIdConfigRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -252,7 +261,7 @@ export interface FileRoutesById {
   '/(errors)/500': typeof errors500Route
   '/(errors)/503': typeof errors503Route
   '/_authenticated/': typeof AuthenticatedIndexRoute
-  '/_authenticated/employees/$employeeId': typeof AuthenticatedEmployeesEmployeeIdRoute
+  '/_authenticated/employees/$employeeId': typeof AuthenticatedEmployeesEmployeeIdRouteWithChildren
   '/_authenticated/employees/new': typeof AuthenticatedEmployeesNewRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
@@ -270,6 +279,7 @@ export interface FileRoutesById {
   '/_authenticated/teams/': typeof AuthenticatedTeamsIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
   '/_authenticated/workflows/': typeof AuthenticatedWorkflowsIndexRoute
+  '/_authenticated/employees/$employeeId/config': typeof AuthenticatedEmployeesEmployeeIdConfigRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -300,6 +310,7 @@ export interface FileRouteTypes {
     | '/teams/'
     | '/users/'
     | '/workflows/'
+    | '/employees/$employeeId/config'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -328,6 +339,7 @@ export interface FileRouteTypes {
     | '/teams'
     | '/users'
     | '/workflows'
+    | '/employees/$employeeId/config'
   id:
     | '__root__'
     | '/_authenticated'
@@ -357,6 +369,7 @@ export interface FileRouteTypes {
     | '/_authenticated/teams/'
     | '/_authenticated/users/'
     | '/_authenticated/workflows/'
+    | '/_authenticated/employees/$employeeId/config'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -561,12 +574,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEmployeesEmployeeIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/employees/$employeeId/config': {
+      id: '/_authenticated/employees/$employeeId/config'
+      path: '/config'
+      fullPath: '/employees/$employeeId/config'
+      preLoaderRoute: typeof AuthenticatedEmployeesEmployeeIdConfigRouteImport
+      parentRoute: typeof AuthenticatedEmployeesEmployeeIdRoute
+    }
   }
 }
 
+interface AuthenticatedEmployeesEmployeeIdRouteChildren {
+  AuthenticatedEmployeesEmployeeIdConfigRoute: typeof AuthenticatedEmployeesEmployeeIdConfigRoute
+}
+
+const AuthenticatedEmployeesEmployeeIdRouteChildren: AuthenticatedEmployeesEmployeeIdRouteChildren =
+  {
+    AuthenticatedEmployeesEmployeeIdConfigRoute:
+      AuthenticatedEmployeesEmployeeIdConfigRoute,
+  }
+
+const AuthenticatedEmployeesEmployeeIdRouteWithChildren =
+  AuthenticatedEmployeesEmployeeIdRoute._addFileChildren(
+    AuthenticatedEmployeesEmployeeIdRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
-  AuthenticatedEmployeesEmployeeIdRoute: typeof AuthenticatedEmployeesEmployeeIdRoute
+  AuthenticatedEmployeesEmployeeIdRoute: typeof AuthenticatedEmployeesEmployeeIdRouteWithChildren
   AuthenticatedEmployeesNewRoute: typeof AuthenticatedEmployeesNewRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedTeamsTeamIdRoute: typeof AuthenticatedTeamsTeamIdRoute
@@ -588,7 +623,8 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
-  AuthenticatedEmployeesEmployeeIdRoute: AuthenticatedEmployeesEmployeeIdRoute,
+  AuthenticatedEmployeesEmployeeIdRoute:
+    AuthenticatedEmployeesEmployeeIdRouteWithChildren,
   AuthenticatedEmployeesNewRoute: AuthenticatedEmployeesNewRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedTeamsTeamIdRoute: AuthenticatedTeamsTeamIdRoute,

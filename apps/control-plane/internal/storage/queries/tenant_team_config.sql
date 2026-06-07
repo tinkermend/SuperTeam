@@ -1,11 +1,11 @@
 -- name: CreateTenantTeam :one
-INSERT INTO tenant_teams (tenant_id, slug, name, status, human_owner_user_id, metadata)
+INSERT INTO tenant_teams (tenant_id, slug, name, status, human_owner_user_ids, metadata)
 VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('slug')::varchar,
     sqlc.arg('name')::varchar,
     sqlc.arg('status')::varchar,
-    sqlc.narg('human_owner_user_id')::uuid,
+    sqlc.arg('human_owner_user_ids')::uuid[],
     COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb)
 )
 RETURNING *;
@@ -39,7 +39,7 @@ INSERT INTO tenant_team_config_revisions (
     artifact_contract,
     internal_collaboration_policy,
     runtime_scope_policy,
-    human_owner_user_id,
+    human_owner_user_ids,
     status,
     approved_by,
     approved_at
@@ -55,7 +55,7 @@ VALUES (
     COALESCE(sqlc.arg('artifact_contract')::jsonb, '{}'::jsonb),
     COALESCE(sqlc.arg('internal_collaboration_policy')::jsonb, '{}'::jsonb),
     COALESCE(sqlc.arg('runtime_scope_policy')::jsonb, '{}'::jsonb),
-    sqlc.narg('human_owner_user_id')::uuid,
+    sqlc.arg('human_owner_user_ids')::uuid[],
     sqlc.arg('status')::varchar,
     sqlc.narg('approved_by')::uuid,
     sqlc.narg('approved_at')::timestamptz
@@ -98,7 +98,7 @@ SET
   artifact_contract = COALESCE(sqlc.arg('artifact_contract')::jsonb, artifact_contract),
   internal_collaboration_policy = COALESCE(sqlc.arg('internal_collaboration_policy')::jsonb, internal_collaboration_policy),
   runtime_scope_policy = COALESCE(sqlc.arg('runtime_scope_policy')::jsonb, runtime_scope_policy),
-  human_owner_user_id = COALESCE(sqlc.narg('human_owner_user_id')::uuid, human_owner_user_id)
+  human_owner_user_ids = COALESCE(sqlc.arg('human_owner_user_ids')::uuid[], human_owner_user_ids)
 WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid
   AND team_id = sqlc.arg('team_id')::uuid
@@ -184,15 +184,7 @@ employee_counts AS (
 )
 SELECT
   tt.*,
-  owner.id AS owner_user_id,
-  owner.username AS owner_username,
-  owner.display_name AS owner_display_name,
-  owner.email AS owner_email,
-  owner.status AS owner_status,
-  owner.avatar_provider AS owner_avatar_provider,
-  owner.avatar_style AS owner_avatar_style,
-  owner.avatar_seed AS owner_avatar_seed,
-  owner.avatar_options AS owner_avatar_options,
+  COALESCE(owner_agg.owners, '[]'::json) AS human_owners,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
   (
@@ -218,7 +210,22 @@ LEFT JOIN current_config cc ON cc.tenant_id = tt.tenant_id AND cc.team_id = tt.i
 LEFT JOIN draft_counts dc ON dc.tenant_id = tt.tenant_id AND dc.team_id = tt.id
 LEFT JOIN member_counts mc ON mc.tenant_id = tt.tenant_id AND mc.team_id = tt.id
 LEFT JOIN employee_counts ec ON ec.tenant_id = tt.tenant_id AND ec.team_id = tt.id
-LEFT JOIN auth_users owner ON owner.id = tt.human_owner_user_id AND owner.deleted_at IS NULL
+LEFT JOIN LATERAL (
+  SELECT json_agg(json_build_object(
+    'id', o.id,
+    'username', o.username,
+    'display_name', o.display_name,
+    'email', o.email,
+    'status', o.status,
+    'avatar_provider', o.avatar_provider,
+    'avatar_style', o.avatar_style,
+    'avatar_seed', o.avatar_seed,
+    'avatar_options', o.avatar_options
+  )) AS owners
+  FROM auth_users o
+  WHERE o.id = ANY(tt.human_owner_user_ids)
+    AND o.deleted_at IS NULL
+) owner_agg ON true
 WHERE tt.tenant_id = sqlc.arg('tenant_id')::uuid
   AND tt.deleted_at IS NULL
   AND (sqlc.narg('status')::varchar IS NULL OR tt.status = sqlc.narg('status')::varchar)
@@ -235,9 +242,16 @@ WHERE tt.tenant_id = sqlc.arg('tenant_id')::uuid
     sqlc.narg('q')::varchar IS NULL
     OR tt.name ILIKE '%' || sqlc.narg('q')::varchar || '%'
     OR tt.slug ILIKE '%' || sqlc.narg('q')::varchar || '%'
-    OR owner.username ILIKE '%' || sqlc.narg('q')::varchar || '%'
-    OR owner.display_name ILIKE '%' || sqlc.narg('q')::varchar || '%'
-    OR owner.email ILIKE '%' || sqlc.narg('q')::varchar || '%'
+    OR EXISTS (
+      SELECT 1 FROM auth_users o
+      WHERE o.id = ANY(tt.human_owner_user_ids)
+        AND o.deleted_at IS NULL
+        AND (
+          o.username ILIKE '%' || sqlc.narg('q')::varchar || '%'
+          OR o.display_name ILIKE '%' || sqlc.narg('q')::varchar || '%'
+          OR o.email ILIKE '%' || sqlc.narg('q')::varchar || '%'
+        )
+    )
   )
 ORDER BY tt.updated_at DESC, tt.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
@@ -281,15 +295,7 @@ employee_counts AS (
 )
 SELECT
   tt.*,
-  owner.id AS owner_user_id,
-  owner.username AS owner_username,
-  owner.display_name AS owner_display_name,
-  owner.email AS owner_email,
-  owner.status AS owner_status,
-  owner.avatar_provider AS owner_avatar_provider,
-  owner.avatar_style AS owner_avatar_style,
-  owner.avatar_seed AS owner_avatar_seed,
-  owner.avatar_options AS owner_avatar_options,
+  COALESCE(owner_agg.owners, '[]'::json) AS human_owners,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
   (
@@ -315,7 +321,22 @@ LEFT JOIN current_config cc ON cc.tenant_id = tt.tenant_id AND cc.team_id = tt.i
 LEFT JOIN draft_counts dc ON dc.tenant_id = tt.tenant_id AND dc.team_id = tt.id
 LEFT JOIN member_counts mc ON mc.tenant_id = tt.tenant_id AND mc.team_id = tt.id
 LEFT JOIN employee_counts ec ON ec.tenant_id = tt.tenant_id AND ec.team_id = tt.id
-LEFT JOIN auth_users owner ON owner.id = tt.human_owner_user_id AND owner.deleted_at IS NULL
+LEFT JOIN LATERAL (
+  SELECT json_agg(json_build_object(
+    'id', o.id,
+    'username', o.username,
+    'display_name', o.display_name,
+    'email', o.email,
+    'status', o.status,
+    'avatar_provider', o.avatar_provider,
+    'avatar_style', o.avatar_style,
+    'avatar_seed', o.avatar_seed,
+    'avatar_options', o.avatar_options
+  )) AS owners
+  FROM auth_users o
+  WHERE o.id = ANY(tt.human_owner_user_ids)
+    AND o.deleted_at IS NULL
+) owner_agg ON true
 WHERE tt.id = sqlc.arg('id')::uuid
   AND tt.tenant_id = sqlc.arg('tenant_id')::uuid
   AND tt.deleted_at IS NULL;
@@ -325,7 +346,7 @@ UPDATE tenant_teams
 SET
   slug = sqlc.arg('slug')::varchar,
   name = sqlc.arg('name')::varchar,
-  human_owner_user_id = sqlc.narg('human_owner_user_id')::uuid,
+  human_owner_user_ids = COALESCE(sqlc.arg('human_owner_user_ids')::uuid[], human_owner_user_ids),
   metadata = COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb),
   updated_at = NOW()
 WHERE id = sqlc.arg('id')::uuid

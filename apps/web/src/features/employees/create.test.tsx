@@ -49,6 +49,19 @@ const team = {
   status: "active",
 };
 
+const avatarAsset = {
+  id: "engineer-m-01",
+  label: "工程师头像 M01",
+  gender: "male",
+  age_range: "26-32",
+  style: "photorealistic_2d",
+  image_url: "/images/digital-employee-avatars/engineer-m-01.webp",
+  thumbnail_url: "/images/digital-employee-avatars/engineer-m-01-256.webp",
+  source: "ai_generated_internal_pack",
+  license: "internal_product_asset",
+  status: "active",
+};
+
 function createOptionsFixture({
   runtimeCount = 1,
   sameRuntimeNodeProviders = false,
@@ -191,6 +204,10 @@ function createWizardFetcher({
       return jsonResponse(createOptionsFixture({ runtimeCount, sameRuntimeNodeProviders }));
     }
 
+    if (url.pathname === "/api/v1/digital-employee-avatar-assets" && method === "GET") {
+      return jsonResponse([avatarAsset]);
+    }
+
     if (url.pathname === "/api/v1/digital-employees" && method === "POST") {
       expect(JSON.parse(String(init?.body))).toEqual({
         team_id: team.id,
@@ -199,6 +216,7 @@ function createWizardFetcher({
         role: "database_admin",
         description: "负责生产数据库变更和恢复验证",
         risk_level: "high",
+        avatar_asset_id: avatarAsset.id,
         role_profile: {
           employee_type: "database_admin",
           role: "database_admin",
@@ -269,6 +287,7 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByLabelText("员工类型")).toHaveValue("database_admin");
     await expect.element(screen.getByLabelText("角色")).toHaveValue("database_admin");
     await expect.element(screen.getByLabelText("风险等级")).toHaveValue("high");
+    await expect.element(screen.getByAltText("工程师头像 M01")).toBeVisible();
 
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");

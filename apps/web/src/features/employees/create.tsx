@@ -17,6 +17,7 @@ import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
 import type {
+  DigitalEmployeeAvatarAsset,
   DigitalEmployeeCreateOptions,
   DigitalEmployeeRuntimeProviderOption,
   DigitalEmployeeTypeOption,
@@ -24,6 +25,7 @@ import type {
 import {
   createDigitalEmployee,
   getDigitalEmployeeCreateOptions,
+  listDigitalEmployeeAvatarAssets,
 } from "@/lib/api/employees";
 import { listTeams } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
@@ -42,6 +44,7 @@ type WizardDraft = {
   approval_policy_override: Record<string, unknown>;
   description: string;
   employee_type: string;
+  avatar_asset_id: string;
   name: string;
   risk_level: string;
   role: string;
@@ -51,7 +54,7 @@ type WizardDraft = {
   team_id: string;
 };
 
-type ValidationErrors = Partial<Record<"employee_type" | "name" | "role" | "runtime" | "team_id", string>>;
+type ValidationErrors = Partial<Record<"avatar_asset_id" | "employee_type" | "name" | "role" | "runtime" | "team_id", string>>;
 
 type CreateEmployeeViewProps = {
   apiBaseUrl: string;
@@ -68,6 +71,7 @@ const emptyDraft: WizardDraft = {
   context_policy_override: {},
   description: "",
   employee_type: "",
+  avatar_asset_id: "",
   name: "",
   provider_type: "",
   risk_level: "medium",
@@ -107,6 +111,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     queryFn: () => getDigitalEmployeeCreateOptions({ baseUrl: apiBaseUrl, fetcher }, draft.team_id),
   });
 
+  const avatarAssets = useQuery({
+    queryKey: ["digital-employee-avatar-assets"],
+    queryFn: () => listDigitalEmployeeAvatarAssets({ baseUrl: apiBaseUrl, fetcher }),
+  });
+
   const selectedType = useMemo(
     () => createOptions.data?.employee_types.find((item) => item.type === draft.employee_type),
     [createOptions.data?.employee_types, draft.employee_type],
@@ -120,6 +129,13 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
       setDraft((current) => applyTypeDefaults(current, firstType));
     }
   }, [createOptions.data, draft.employee_type]);
+
+  useEffect(() => {
+    const firstAvatar = avatarAssets.data?.find((asset) => asset.status === "active");
+    if (!draft.avatar_asset_id && firstAvatar) {
+      setDraft((current) => ({ ...current, avatar_asset_id: firstAvatar.id }));
+    }
+  }, [avatarAssets.data, draft.avatar_asset_id]);
 
   useEffect(() => {
     const runtimeOptions = createOptions.data?.runtime_provider_options ?? [];
@@ -153,6 +169,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           team_id: draft.team_id,
           employee_type: draft.employee_type,
           name: draft.name.trim(),
+          avatar_asset_id: draft.avatar_asset_id,
           role: draft.role.trim(),
           description: draft.description.trim() || undefined,
           risk_level: draft.risk_level,
@@ -265,6 +282,12 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             <AlertDescription>{getErrorMessage(createOptions.error)}</AlertDescription>
           </Alert>
         ) : null}
+        {avatarAssets.isError ? (
+          <Alert className="mb-4" variant="destructive">
+            <AlertTitle>头像库加载失败</AlertTitle>
+            <AlertDescription>{getErrorMessage(avatarAssets.error)}</AlertDescription>
+          </Alert>
+        ) : null}
 
         <Card>
           <CardHeader>
@@ -275,19 +298,21 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             <div className="grid gap-3 md:grid-cols-[220px_1fr]">
               <StepRail currentStep={currentStep} />
               <div className="min-h-[420px] rounded-md border bg-background p-4">
-                {teams.isLoading || (draft.team_id && createOptions.isLoading) ? (
+                {teams.isLoading || avatarAssets.isLoading || (draft.team_id && createOptions.isLoading) ? (
                   <div className="flex min-h-[360px] items-center justify-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="animate-spin" />
                     加载创建选项
                   </div>
                 ) : null}
-                {!teams.isLoading && !createOptions.isLoading && currentStep === "身份" ? (
+                {!teams.isLoading && !avatarAssets.isLoading && !createOptions.isLoading && currentStep === "身份" ? (
                   <IdentityStep
+                    avatarAssets={avatarAssets.data ?? []}
                     draft={draft}
                     errors={errors}
                     options={createOptions.data}
                     selectedType={selectedType}
                     teamOptions={teamOptions}
+                    onSelectAvatar={(avatarAssetId) => updateDraft({ avatar_asset_id: avatarAssetId })}
                     onSelectType={selectType}
                     onUpdate={updateDraft}
                   />
@@ -324,7 +349,13 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
               </Button>
               {stepIndex < steps.length - 1 ? (
                 <Button
-                  disabled={teamOptions.length === 0 || createOptions.isLoading || createOptions.isError}
+                  disabled={
+                    teamOptions.length === 0 ||
+                    createOptions.isLoading ||
+                    createOptions.isError ||
+                    avatarAssets.isLoading ||
+                    avatarAssets.isError
+                  }
                   onClick={nextStep}
                   type="button"
                 >
@@ -338,6 +369,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                     teamOptions.length === 0 ||
                     createOptions.isLoading ||
                     createOptions.isError ||
+                    avatarAssets.isLoading ||
+                    avatarAssets.isError ||
+                    !draft.avatar_asset_id ||
                     !draft.runtime_binding
                   }
                   onClick={submit}
@@ -393,20 +427,24 @@ function StepRail({ currentStep }: { currentStep: StepName }) {
 }
 
 function IdentityStep({
+  avatarAssets,
   draft,
   errors,
   options,
   selectedType,
   teamOptions,
   onSelectType,
+  onSelectAvatar,
   onUpdate,
 }: {
+  avatarAssets: DigitalEmployeeAvatarAsset[];
   draft: WizardDraft;
   errors: ValidationErrors;
   options?: DigitalEmployeeCreateOptions;
   selectedType?: DigitalEmployeeTypeOption;
   teamOptions: Array<{ id: string; name: string }>;
   onSelectType: (value: string) => void;
+  onSelectAvatar: (value: string) => void;
   onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
   return (
@@ -491,6 +529,12 @@ function IdentityStep({
           />
         </Field>
       </div>
+      <AvatarSelection
+        assets={avatarAssets}
+        error={errors.avatar_asset_id}
+        selectedAssetId={draft.avatar_asset_id}
+        onSelect={onSelectAvatar}
+      />
       {selectedType ? (
         <div className="rounded-md border bg-muted/30 p-3 text-sm">
           <div className="font-medium">{selectedType.label}</div>
@@ -499,6 +543,45 @@ function IdentityStep({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function AvatarSelection({
+  assets,
+  error,
+  onSelect,
+  selectedAssetId,
+}: {
+  assets: DigitalEmployeeAvatarAsset[];
+  error?: string;
+  onSelect: (value: string) => void;
+  selectedAssetId: string;
+}) {
+  return (
+    <fieldset className="rounded-md border p-3">
+      <legend className="px-1 text-sm font-medium">头像</legend>
+      <div className="mt-3 grid grid-cols-5 gap-3 sm:grid-cols-8 lg:grid-cols-10">
+        {assets.map((asset) => {
+          const selected = asset.id === selectedAssetId;
+          return (
+            <button
+              aria-pressed={selected}
+              className={cn(
+                "flex aspect-square items-center justify-center rounded-full border bg-muted p-0.5 transition",
+                selected ? "border-primary ring-2 ring-primary/30" : "hover:border-primary/60",
+              )}
+              key={asset.id}
+              onClick={() => onSelect(asset.id)}
+              type="button"
+            >
+              <img alt={asset.label} className="size-full rounded-full object-cover" src={asset.thumbnail_url} />
+            </button>
+          );
+        })}
+      </div>
+      {assets.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">暂无可选头像</p> : null}
+      {error ? <span className="mt-2 block text-sm text-destructive">{error}</span> : null}
+    </fieldset>
   );
 }
 
@@ -754,6 +837,7 @@ function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
   if (step === "身份") {
     const errors: ValidationErrors = {};
     if (!draft.team_id.trim()) errors.team_id = "团队不能为空";
+    if (!draft.avatar_asset_id.trim()) errors.avatar_asset_id = "头像不能为空";
     if (!draft.employee_type.trim()) errors.employee_type = "员工类型不能为空";
     if (!draft.name.trim()) errors.name = "名称不能为空";
     if (!draft.role.trim()) errors.role = "角色不能为空";

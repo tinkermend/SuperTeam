@@ -351,7 +351,7 @@ func seedTestTeamConfigRevision(t *testing.T, db *pgxpool.Pool, tenantID, teamID
 		ArtifactContract:            []byte(`{}`),
 		InternalCollaborationPolicy: []byte(`{}`),
 		RuntimeScopePolicy:          []byte(`{}`),
-		HumanOwnerUserID:            ownerID,
+		HumanOwnerUserIds: []uuid.UUID{ownerID.UUID},
 		Status:                      status,
 	})
 	require.NoError(t, err)
@@ -376,7 +376,7 @@ func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
 		TenantID:         tenantID,
 		Slug:             "ops",
 		Name:             "运维团队",
-		HumanOwnerUserID: uuid.NullUUID{UUID: owner.ID, Valid: true},
+		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
 		Metadata:         []byte(`{"domain":"operations"}`),
 	})
 	require.NoError(t, err)
@@ -392,7 +392,7 @@ func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
 		ArtifactContract:            []byte(`{"required":["Finding","Risk","DecisionRequest"]}`),
 		InternalCollaborationPolicy: []byte(`{"allowed_request_types":["info_request","review_request","artifact_request"],"max_auto_rounds":2,"max_auto_participants":3}`),
 		RuntimeScopePolicy:          []byte(`{"allowed_provider_types":["codex"]}`),
-		HumanOwnerUserID:            uuid.NullUUID{UUID: owner.ID, Valid: true},
+		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
 		Status:                      "active",
 		ApprovedBy:                  uuid.NullUUID{UUID: owner.ID, Valid: true},
 		ApprovedAt:                  pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
@@ -507,7 +507,7 @@ func TestTeamGovernanceDraftLifecycleQueries(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, int32(2), updated.RevisionNumber)
-	require.Equal(t, uuid.NullUUID{UUID: draftOwnerID, Valid: true}, updated.HumanOwnerUserID)
+	require.Equal(t, uuid.NullUUID{UUID: draftOwnerID, Valid: true}, updated.HumanOwnerUserIds)
 	require.JSONEq(t, `{"hard_rules":["禁止未审批生产写操作"]}`, string(updated.Constitution))
 	require.JSONEq(t, `{"skill_bindings":["incident-diagnosis"]}`, string(updated.CapabilityPolicy))
 	require.JSONEq(t, string(draft.ContextPolicy), string(updated.ContextPolicy))
@@ -884,7 +884,7 @@ func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
 		TenantID:         tenantID,
 		Slug:             "ops-summary",
 		Name:             "运维团队",
-		HumanOwnerUserID: uuid.NullUUID{UUID: owner.ID, Valid: true},
+		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
 		Metadata:         []byte(`{"domain":"operations"}`),
 	})
 	require.NoError(t, err)
@@ -916,7 +916,7 @@ func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
 		ArtifactContract:            []byte(`{"required":["Finding","Risk","DecisionRequest"]}`),
 		InternalCollaborationPolicy: []byte(`{"allowed_request_types":["info_request","review_request"]}`),
 		RuntimeScopePolicy:          []byte(`{"allowed_provider_types":["codex"]}`),
-		HumanOwnerUserID:            uuid.NullUUID{UUID: owner.ID, Valid: true},
+		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
 		Status:                      "active",
 		ApprovedBy:                  uuid.NullUUID{UUID: owner.ID, Valid: true},
 		ApprovedAt:                  pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
@@ -955,7 +955,7 @@ func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
 		Slug:             "archive-summary",
 		Name:             "归档团队",
 		Status:           "archived",
-		HumanOwnerUserID: uuid.NullUUID{UUID: owner.ID, Valid: true},
+		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
 		Metadata:         []byte(`{}`),
 	})
 	require.NoError(t, err)
@@ -1015,7 +1015,7 @@ func TestTeamMemberRoleRequestQueries(t *testing.T) {
 		Slug:             "role-requests",
 		Name:             "角色申请团队",
 		Status:           "active",
-		HumanOwnerUserID: uuid.NullUUID{UUID: requester.ID, Valid: true},
+		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
 		Metadata:         []byte(`{"domain":"team-management"}`),
 	})
 	require.NoError(t, err)

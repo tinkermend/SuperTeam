@@ -65,7 +65,7 @@ export function TeamGovernanceTab({
         principles: lineList(principlesText),
       },
       context_policy: sourceRevision?.context_policy ?? {},
-      human_owner_user_id: sourceRevision?.human_owner_user_id,
+      human_owner_user_ids: sourceRevision?.human_owner_user_ids,
       internal_collaboration_policy: sourceRevision?.internal_collaboration_policy ?? {},
       runtime_scope_policy: parseObjectText(runtimeText),
     }),

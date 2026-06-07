@@ -55,7 +55,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, currentRevision, team
     mutationFn: () => saveCapabilityDraft(apiOptions, teamId, draft, {
       capability_policy: effectivePolicy,
       constitution: draft?.constitution ?? currentRevision?.constitution ?? { hard_rules: ["能力绑定必须经过负责人批准"] },
-      human_owner_user_id: draft?.human_owner_user_id ?? currentRevision?.human_owner_user_id,
+      human_owner_user_ids: draft?.human_owner_user_ids ?? currentRevision?.human_owner_user_ids ?? [],
     }),
     onSuccess: () => {
       void drafts.refetch();

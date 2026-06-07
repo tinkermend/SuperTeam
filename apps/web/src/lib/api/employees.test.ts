@@ -300,6 +300,7 @@ describe("digital employee API", () => {
           team_id: "99999999-9999-4999-8999-999999999999",
           employee_type: "database_admin",
           name: "数据库管理员工",
+          avatar_asset_id: "engineer-m-01",
           role: "database_admin",
           description: "负责数据库变更和恢复验证",
           permission_policy: { mode: "least_privilege" },
@@ -328,6 +329,7 @@ describe("digital employee API", () => {
           team_id: "99999999-9999-4999-8999-999999999999",
           employee_type: "database_admin",
           name: "数据库管理员工",
+          avatar_asset_id: "engineer-m-01",
           role: "database_admin",
           description: "负责数据库变更和恢复验证",
           permission_policy: { mode: "least_privilege" },
@@ -379,7 +381,7 @@ describe("digital employee API", () => {
         } as Parameters<typeof createDigitalEmployee>[1],
       ),
     ).rejects.toThrow(
-      "digital employee ready creation requires employee_type, runtime_node_id, and provider_type",
+      "digital employee ready creation requires employee_type, avatar_asset_id, runtime_node_id, and provider_type",
     );
 
     expect(fetcher).not.toHaveBeenCalled();

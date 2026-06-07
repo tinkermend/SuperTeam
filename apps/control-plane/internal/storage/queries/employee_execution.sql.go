@@ -657,7 +657,7 @@ func (q *Queries) GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDig
 
 const GetRuntimeProvisioningPreflight = `-- name: GetRuntimeProvisioningPreflight :one
 WITH active_team_config AS (
-    SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+    SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, status, approved_by, approved_at, archived_at, created_at, updated_at, human_owner_user_ids
     FROM tenant_team_config_revisions
     WHERE tenant_id = $3::uuid
       AND team_id = $4::uuid
@@ -1226,6 +1226,7 @@ overview_rows AS (
         de.description,
         de.status,
         de.risk_level,
+        de.metadata,
         dei.id AS execution_instance_id,
         COALESCE(dei.status, 'missing')::text AS execution_status,
         dei.runtime_node_id,
@@ -1297,7 +1298,7 @@ overview_rows AS (
       AND de.deleted_at IS NULL
 ),
 filtered_rows AS (
-    SELECT overview_rows.id, overview_rows.tenant_id, overview_rows.team_id, overview_rows.team_name, overview_rows.owner_user_id, overview_rows.owner_display_name, overview_rows.employee_type, overview_rows.name, overview_rows.role, overview_rows.description, overview_rows.status, overview_rows.risk_level, overview_rows.execution_instance_id, overview_rows.execution_status, overview_rows.runtime_node_id, overview_rows.node_id, overview_rows.runtime_name, overview_rows.runtime_status, overview_rows.provider_type, overview_rows.provider_status, overview_rows.health_status, overview_rows.agent_home_dir_available, overview_rows.latest_run_id, overview_rows.latest_run_task_id, overview_rows.latest_run_status, overview_rows.latest_run_title, overview_rows.latest_run_started_at, overview_rows.latest_run_finished_at, overview_rows.latest_run_updated_at, overview_rows.latest_run_duration_sec, overview_rows.latest_run_token_usage, overview_rows.latest_run_error_message, overview_rows.effective_config_id, overview_rows.governance_status, overview_rows.team_revision_number, overview_rows.employee_revision_number, overview_rows.skills_count, overview_rows.mcp_servers_count, overview_rows.constitution_ref, overview_rows.budget_usage_tokens_30d, overview_rows.budget_run_count_30d, overview_rows.created_at, overview_rows.updated_at
+    SELECT overview_rows.id, overview_rows.tenant_id, overview_rows.team_id, overview_rows.team_name, overview_rows.owner_user_id, overview_rows.owner_display_name, overview_rows.employee_type, overview_rows.name, overview_rows.role, overview_rows.description, overview_rows.status, overview_rows.risk_level, overview_rows.metadata, overview_rows.execution_instance_id, overview_rows.execution_status, overview_rows.runtime_node_id, overview_rows.node_id, overview_rows.runtime_name, overview_rows.runtime_status, overview_rows.provider_type, overview_rows.provider_status, overview_rows.health_status, overview_rows.agent_home_dir_available, overview_rows.latest_run_id, overview_rows.latest_run_task_id, overview_rows.latest_run_status, overview_rows.latest_run_title, overview_rows.latest_run_started_at, overview_rows.latest_run_finished_at, overview_rows.latest_run_updated_at, overview_rows.latest_run_duration_sec, overview_rows.latest_run_token_usage, overview_rows.latest_run_error_message, overview_rows.effective_config_id, overview_rows.governance_status, overview_rows.team_revision_number, overview_rows.employee_revision_number, overview_rows.skills_count, overview_rows.mcp_servers_count, overview_rows.constitution_ref, overview_rows.budget_usage_tokens_30d, overview_rows.budget_run_count_30d, overview_rows.created_at, overview_rows.updated_at
     FROM overview_rows
     CROSS JOIN overview_args args
     WHERE (
@@ -1328,6 +1329,7 @@ SELECT
     description,
     status,
     risk_level,
+    metadata,
     execution_instance_id,
     execution_status,
     runtime_node_id,
@@ -1391,6 +1393,7 @@ type ListDigitalEmployeeOverviewItemsRow struct {
 	Description            pgtype.Text        `json:"description"`
 	Status                 string             `json:"status"`
 	RiskLevel              string             `json:"risk_level"`
+	Metadata               []byte             `json:"metadata"`
 	ExecutionInstanceID    uuid.NullUUID      `json:"execution_instance_id"`
 	ExecutionStatus        string             `json:"execution_status"`
 	RuntimeNodeID          uuid.NullUUID      `json:"runtime_node_id"`
@@ -1457,6 +1460,7 @@ func (q *Queries) ListDigitalEmployeeOverviewItems(ctx context.Context, arg List
 			&i.Description,
 			&i.Status,
 			&i.RiskLevel,
+			&i.Metadata,
 			&i.ExecutionInstanceID,
 			&i.ExecutionStatus,
 			&i.RuntimeNodeID,
@@ -1564,7 +1568,7 @@ func (q *Queries) ListDigitalEmployees(ctx context.Context, arg ListDigitalEmplo
 
 const ListRuntimeProviderOptionsForDigitalEmployeeCreate = `-- name: ListRuntimeProviderOptionsForDigitalEmployeeCreate :many
 WITH active_team_config AS (
-    SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+    SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, status, approved_by, approved_at, archived_at, created_at, updated_at, human_owner_user_ids
     FROM tenant_team_config_revisions
     WHERE tenant_id = $1::uuid
       AND team_id = $2::uuid

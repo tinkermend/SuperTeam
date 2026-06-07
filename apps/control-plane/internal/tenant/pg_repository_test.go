@@ -16,8 +16,8 @@ func TestTeamSummaryAvatarFallsBackToUsernameWhenSeedMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list team item record: %v", err)
 	}
-	if listRecord.HumanOwner == nil || listRecord.HumanOwner.Avatar == nil || listRecord.HumanOwner.Avatar.Seed != "user:owner" {
-		t.Fatalf("expected list owner avatar seed fallback, got %#v", listRecord.HumanOwner)
+	if listRecord.HumanOwners == nil || listRecord.HumanOwners[0].Avatar == nil || listRecord.HumanOwners[0].Avatar.Seed != "user:owner" {
+		t.Fatalf("expected list owner avatar seed fallback, got %#v", listRecord.HumanOwners)
 	}
 
 	getRow := getTenantTeamSummaryRowFromListRow(row)
@@ -25,8 +25,8 @@ func TestTeamSummaryAvatarFallsBackToUsernameWhenSeedMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get team item record: %v", err)
 	}
-	if getRecord.HumanOwner == nil || getRecord.HumanOwner.Avatar == nil || getRecord.HumanOwner.Avatar.Seed != "user:owner" {
-		t.Fatalf("expected get owner avatar seed fallback, got %#v", getRecord.HumanOwner)
+	if getRecord.HumanOwners == nil || getRecord.HumanOwners[0].Avatar == nil || getRecord.HumanOwners[0].Avatar.Seed != "user:owner" {
+		t.Fatalf("expected get owner avatar seed fallback, got %#v", getRecord.HumanOwners)
 	}
 }
 
@@ -62,15 +62,8 @@ func tenantTeamSummaryRowWithLegacyOwnerAvatar(username string) queries.ListTena
 		Metadata:            []byte(`{}`),
 		CreatedAt:           now,
 		UpdatedAt:           now,
-		OwnerUserID:         uuid.NullUUID{UUID: uuid.New(), Valid: true},
-		OwnerUsername:       pgtype.Text{String: username, Valid: true},
-		OwnerDisplayName:    pgtype.Text{String: "Owner", Valid: true},
-		OwnerEmail:          pgtype.Text{String: "owner@example.com", Valid: true},
-		OwnerStatus:         pgtype.Text{String: "active", Valid: true},
-		OwnerAvatarProvider: pgtype.Text{String: "dicebear", Valid: true},
-		OwnerAvatarStyle:    pgtype.Text{String: "adventurer", Valid: true},
-		OwnerAvatarOptions:  []byte(`{"backgroundColor":["e6fbf5"]}`),
-		GovernanceStatus:    string(GovernanceSummaryActive),
+		HumanOwners: []byte(`[{"id": "00000000-0000-0000-0000-000000000000", "username": "owner", "status": "active", "avatar_provider": "dicebear", "avatar_style": "adventurer"}]`),
+																GovernanceStatus:    string(GovernanceSummaryActive),
 	}
 }
 
@@ -81,23 +74,15 @@ func getTenantTeamSummaryRowFromListRow(row queries.ListTenantTeamSummariesRow) 
 		Slug:                 row.Slug,
 		Name:                 row.Name,
 		Status:               row.Status,
-		HumanOwnerUserID:     row.HumanOwnerUserID,
+		HumanOwnerUserIds:     row.HumanOwnerUserIds,
 		Metadata:             row.Metadata,
 		ArchivedAt:           row.ArchivedAt,
 		DisabledAt:           row.DisabledAt,
 		DeletedAt:            row.DeletedAt,
 		CreatedAt:            row.CreatedAt,
 		UpdatedAt:            row.UpdatedAt,
-		OwnerUserID:          row.OwnerUserID,
-		OwnerUsername:        row.OwnerUsername,
-		OwnerDisplayName:     row.OwnerDisplayName,
-		OwnerEmail:           row.OwnerEmail,
-		OwnerStatus:          row.OwnerStatus,
-		OwnerAvatarProvider:  row.OwnerAvatarProvider,
-		OwnerAvatarStyle:     row.OwnerAvatarStyle,
-		OwnerAvatarSeed:      row.OwnerAvatarSeed,
-		OwnerAvatarOptions:   row.OwnerAvatarOptions,
-		MemberCount:          row.MemberCount,
+		HumanOwners:          row.HumanOwners,
+																		MemberCount:          row.MemberCount,
 		DigitalEmployeeCount: row.DigitalEmployeeCount,
 		CapabilityCount:      row.CapabilityCount,
 		CurrentRevision:      row.CurrentRevision,

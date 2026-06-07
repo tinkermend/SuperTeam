@@ -160,6 +160,7 @@ func (s *Server) registerRoutes() {
 		if s.employeeHandler != nil {
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/digital-employee-avatar-assets", s.employeeHandler.ListDigitalEmployeeAvatarAssets)
 				r.Get("/digital-employees", s.employeeHandler.ListDigitalEmployees)
 				r.Post("/digital-employees", s.employeeHandler.CreateDigitalEmployee)
 				r.Get("/digital-employees/create-options", s.employeeHandler.GetCreateOptions)

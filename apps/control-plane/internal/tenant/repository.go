@@ -41,7 +41,7 @@ type CreateTeamParams struct {
 	Slug             string
 	Name             string
 	Status           TeamStatus
-	HumanOwnerUserID *uuid.UUID
+	HumanOwnerUserIDs []uuid.UUID
 	Metadata         map[string]any
 }
 
@@ -51,7 +51,7 @@ type CreateTeamWithInitialMembersParams struct {
 	Slug           string
 	Name           string
 	Status         TeamStatus
-	OwnerUserID    uuid.UUID
+	OwnerUserIDs   []uuid.UUID
 	InitialMembers []InitialTeamMemberInput
 	Metadata       map[string]any
 }
@@ -72,7 +72,7 @@ type UpdateTeamParams struct {
 	TeamID           uuid.UUID
 	Slug             string
 	Name             string
-	HumanOwnerUserID *uuid.UUID
+	HumanOwnerUserIDs []uuid.UUID
 	Metadata         map[string]any
 }
 
@@ -93,7 +93,7 @@ type CreateTeamConfigRevisionParams struct {
 	ArtifactContract            map[string]any
 	InternalCollaborationPolicy map[string]any
 	RuntimeScopePolicy          map[string]any
-	HumanOwnerUserID            *uuid.UUID
+	HumanOwnerUserIDs           []uuid.UUID
 	Status                      TeamConfigRevisionStatus
 	ApprovedBy                  *uuid.UUID
 	ApprovedAt                  *time.Time
@@ -117,7 +117,7 @@ type UpdateTeamConfigRevisionDraftParams struct {
 	ArtifactContract            map[string]any
 	InternalCollaborationPolicy map[string]any
 	RuntimeScopePolicy          map[string]any
-	HumanOwnerUserID            *uuid.UUID
+	HumanOwnerUserIDs           []uuid.UUID
 }
 
 type ActivateTeamConfigRevisionParams struct {

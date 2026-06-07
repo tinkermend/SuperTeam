@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Bot, Play, Square } from "lucide-react";
+import { ArrowLeft, Play, Square } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Header } from "@/components/layout/header";
@@ -24,6 +24,8 @@ import {
 } from "@/lib/api/employees";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
+import { EmployeeAvatar } from "./avatar";
+import { employeeAvatarAsset } from "./avatar-library";
 
 const activeRunStatuses = new Set<DigitalEmployeeRunStatus>(["queued", "dispatching", "running", "cancelling"]);
 const failedRunStatuses = new Set<DigitalEmployeeRunStatus>(["failed", "cancelled", "timed_out"]);
@@ -123,6 +125,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   const canStartTask =
     employeeCanRun && executionInstanceCanRun && runs.isSuccess && !hasActiveRun;
   const trimmedObjective = objective.trim();
+  const avatarAsset = employee.data ? employeeAvatarAsset(employee.data) : null;
 
   return (
     <>
@@ -133,9 +136,7 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
       <Main className="min-w-0 overflow-x-hidden">
         <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-md border bg-muted">
-              <Bot />
-            </div>
+            <EmployeeAvatar asset={avatarAsset} name={employee.data?.name ?? "数字员工详情"} size="md" />
             <div className="min-w-0">
               <h1 className="truncate text-2xl font-bold tracking-tight">{employee.data?.name ?? "数字员工详情"}</h1>
               <p className="text-sm text-muted-foreground">执行实例、运行事件、结果和人工停止。</p>

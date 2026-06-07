@@ -288,6 +288,13 @@ func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigAndProvisioni
 	if created.Role != "database_admin" {
 		t.Fatalf("expected default database admin role, got %q", created.Role)
 	}
+	if created.Metadata["avatar_asset_id"] != "engineer-m-01" {
+		t.Fatalf("expected avatar asset id metadata, got %#v", created.Metadata)
+	}
+	avatar, ok := created.Metadata["avatar"].(map[string]any)
+	if !ok || avatar["id"] != "engineer-m-01" || avatar["thumbnail_url"] == "" {
+		t.Fatalf("expected avatar metadata snapshot, got %#v", created.Metadata)
+	}
 	if created.Status != DigitalEmployeeStatusReady {
 		t.Fatalf("expected ready status after provisioning completion, got %q", created.Status)
 	}
@@ -401,6 +408,19 @@ func TestCreateDigitalEmployeeRejectsUnknownEmployeeType(t *testing.T) {
 	}
 	if len(dispatcher.commands) != 0 {
 		t.Fatalf("expected type rejection not to dispatch command, got %#v", dispatcher.commands)
+	}
+}
+
+func TestCreateDigitalEmployeeRejectsUnknownAvatarAsset(t *testing.T) {
+	svc, _, _, req := newCreateDigitalEmployeeReadyFixture(t)
+	req.AvatarAssetID = "missing-avatar"
+
+	_, err := svc.CreateDigitalEmployee(context.Background(), req)
+	if err == nil {
+		t.Fatalf("expected unknown avatar asset to fail")
+	}
+	if !strings.Contains(err.Error(), "unknown avatar_asset_id") {
+		t.Fatalf("expected unknown avatar asset error, got %v", err)
 	}
 }
 
@@ -586,6 +606,7 @@ func TestServiceValidation(t *testing.T) {
 			OwnerUserID:   ownerUserID,
 			EmployeeType:  "backend_engineer",
 			Name:          "employee",
+			AvatarAssetID: "engineer-m-01",
 			RuntimeNodeID: runtimeNodeID,
 			ProviderType:  "codex",
 		}
@@ -1353,6 +1374,7 @@ func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryReposi
 		OwnerUserID:            ownerUserID,
 		EmployeeType:           "database_admin",
 		Name:                   "  Main database admin  ",
+		AvatarAssetID:          "engineer-m-01",
 		RoleProfile:            map[string]any{"focus": "postgres"},
 		CapabilitySelection:    map[string]any{"enabled_external_capabilities": []string{"change-ticket"}},
 		RuntimeNodeID:          runtimeNodeID,

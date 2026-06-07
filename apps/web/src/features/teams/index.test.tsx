@@ -92,8 +92,8 @@ function makeTeamSummary(index: number) {
     slug: isPrimary ? "ops" : `team-${index}`,
     name: isPrimary ? "运维团队" : `团队 ${index}`,
     status: "active",
-    human_owner_user_id: isPrimary ? "human-owner-1" : `human-owner-${index}`,
-    human_owner: {
+    human_owner_user_ids: [isPrimary ? "human-owner-1" : `human-owner-${index}`],
+    human_owners: [{
       user_id: isPrimary ? "human-owner-1" : `human-owner-${index}`,
       username: isPrimary ? "owner" : `owner-${index}`,
       display_name: isPrimary ? "负责人甲" : `负责人 ${index}`,
@@ -104,7 +104,7 @@ function makeTeamSummary(index: number) {
         seed: isPrimary ? "owner" : `owner-${index}`,
         style: "adventurer",
       },
-    },
+    }],
     member_count: isPrimary ? 18 : index,
     digital_employee_count: isPrimary ? 6 : 1,
     capability_count: isPrimary ? 12 : 2,
@@ -152,7 +152,7 @@ function createTeamsFetcher(
         artifact_contract: {},
         internal_collaboration_policy: {},
         runtime_scope_policy: { provider_types: ["codex"] },
-        human_owner_user_id: "human-owner-1",
+        human_owner_user_ids: ["human-owner-1"],
         status: "active",
       };
       const governanceDraft = {
@@ -259,14 +259,12 @@ function createTeamsFetcher(
             slug: "ops",
             name: "运维团队",
             status: options.disabledOverview ? "disabled" : "active",
-            human_owner_user_id: "human-owner-1",
-            human_owner: {
-              user_id: "human-owner-1",
+            human_owner_user_ids: ["human-owner-1"],
+            human_owners: [{user_id: "human-owner-1",
               username: "owner",
               display_name: "负责人甲",
               email: "owner@example.com",
-              status: "active",
-            },
+              status: "active",}],
           },
           member_count: 18,
           digital_employee_count: 6,
@@ -961,7 +959,7 @@ describe("TeamsView", () => {
 
     await expect.poll(() => createTeamPostIndex(fetcher)).not.toBe(-1);
     expect(createTeamPostBody(fetcher)).toEqual({
-      human_owner_user_id: "owner-user",
+      human_owner_user_ids: ["owner-user"],
       initial_members: [{ role: "member", user_id: "member-user" }],
       metadata: { display: { color_tone: "teal", icon_key: "security" } },
       name: "安全团队",
@@ -989,7 +987,7 @@ describe("TeamsView", () => {
     await expect.poll(() => createTeamPostIndex(fetcher)).not.toBe(-1);
     const postBody = createTeamPostBody(fetcher);
     expect(postBody).toEqual({
-      human_owner_user_id: "member-user",
+      human_owner_user_ids: ["member-user"],
       initial_members: [],
       metadata: { display: { color_tone: "teal", icon_key: "security" } },
       name: "安全团队",
@@ -1081,7 +1079,7 @@ describe("TeamsView", () => {
 
     await expect.poll(() => createTeamPostIndex(fetcher)).not.toBe(-1);
     expect(createTeamPostBody(fetcher)).toEqual({
-      human_owner_user_id: "owner-user",
+      human_owner_user_ids: ["owner-user"],
       initial_members: [],
       metadata: { display: { color_tone: "teal", icon_key: "security" } },
       name: "安全团队",
@@ -1247,7 +1245,7 @@ describe("TeamsView", () => {
     expect(createTeamPostBody(fetcher)).toEqual({
       name: "安全团队",
       slug: "security",
-      human_owner_user_id: "owner-user",
+      human_owner_user_ids: ["owner-user"],
       initial_members: [
         { user_id: "member-user", role: "member" },
         { user_id: "viewer-user", role: "viewer" },

@@ -88,11 +88,31 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 		t.Fatalf("expected policy defaults, got %#v", optionsBody.PolicyDefaults)
 	}
 
+	avatarReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employee-avatar-assets", nil)
+	avatarReq.AddCookie(cookie)
+	avatarResp := httptest.NewRecorder()
+	server.ServeHTTP(avatarResp, avatarReq)
+	if avatarResp.Code != http.StatusOK {
+		t.Fatalf("expected avatar assets to succeed, got %d: %s", avatarResp.Code, avatarResp.Body.String())
+	}
+	var avatarBody []struct {
+		ID           string `json:"id"`
+		ThumbnailURL string `json:"thumbnail_url"`
+		Status       string `json:"status"`
+	}
+	if err := json.NewDecoder(avatarResp.Body).Decode(&avatarBody); err != nil {
+		t.Fatalf("decode avatar assets: %v", err)
+	}
+	if len(avatarBody) == 0 || avatarBody[0].ID == "" || avatarBody[0].ThumbnailURL == "" || avatarBody[0].Status != "active" {
+		t.Fatalf("expected active avatar assets, got %#v", avatarBody)
+	}
+
 	createBody := `{
 		"team_id":"` + teamID.String() + `",
 		"owner_user_id":"` + spoofedOwnerID.String() + `",
 		"employee_type":"database_admin",
 		"name":"Database administrator",
+		"avatar_asset_id":"engineer-m-01",
 		"role":"database_admin",
 		"description":"Manages database operations",
 		"permission_policy":{"allowed_actions":["read_context"]},
@@ -130,6 +150,9 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if service.createReq.EmployeeType != "database_admin" {
 		t.Fatalf("expected employee type from create body, got %q", service.createReq.EmployeeType)
+	}
+	if service.createReq.AvatarAssetID != "engineer-m-01" {
+		t.Fatalf("expected avatar asset id from create body, got %q", service.createReq.AvatarAssetID)
 	}
 	if service.createReq.RuntimeNodeID != runtimeNodeID || service.createReq.ProviderType != "codex" {
 		t.Fatalf("expected create runtime/provider %s/codex, got %s/%q", runtimeNodeID, service.createReq.RuntimeNodeID, service.createReq.ProviderType)
@@ -910,6 +933,7 @@ func TestDigitalEmployeeRouteAuthorizationDenial(t *testing.T) {
 		resourceID   string
 	}{
 		{name: "list", method: http.MethodGet, path: "/api/v1/digital-employees", action: authz.ActionEmployeeRead, resourceType: authz.ResourceTenant},
+		{name: "avatar assets", method: http.MethodGet, path: "/api/v1/digital-employee-avatar-assets", action: authz.ActionEmployeeRead, resourceType: authz.ResourceTenant},
 		{name: "create", method: http.MethodPost, path: "/api/v1/digital-employees", body: `{"team_id":"` + uuid.New().String() + `","name":"Requirements analyst","role":"requirements_analyst"}`, action: authz.ActionEmployeeCreate, resourceType: authz.ResourceTenant},
 		{name: "create options", method: http.MethodGet, path: "/api/v1/digital-employees/create-options?team_id=" + uuid.New().String(), action: authz.ActionEmployeeCreate, resourceType: authz.ResourceTenant},
 		{name: "get", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID, action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},

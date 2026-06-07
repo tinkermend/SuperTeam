@@ -303,6 +303,7 @@ type CreateDigitalEmployeeRequest struct {
 	OwnerUserID            uuid.UUID
 	EmployeeType           string
 	Name                   string
+	AvatarAssetID          string
 	Role                   string
 	Description            *string
 	PermissionPolicy       map[string]any
@@ -461,6 +462,7 @@ type DigitalEmployeeIdentitySummary struct {
 	Description       *string
 	Status            DigitalEmployeeStatus
 	RiskLevel         string
+	AvatarAsset       *DigitalEmployeeAvatarAsset
 }
 
 type DigitalEmployeeExecutionSummary struct {

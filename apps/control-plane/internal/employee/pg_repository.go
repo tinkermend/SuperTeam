@@ -547,6 +547,7 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) Digi
 			Description:       stringPtrFromPgText(row.Description),
 			Status:            DigitalEmployeeStatus(row.Status),
 			RiskLevel:         row.RiskLevel,
+			AvatarAsset:       avatarAssetFromOverviewMetadata(row.Metadata),
 		},
 		ExecutionSummary: DigitalEmployeeExecutionSummary{
 			ExecutionInstanceID:   uuidPtrFromNullUUID(row.ExecutionInstanceID),
@@ -577,6 +578,10 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) Digi
 			Source:         overviewBudgetSource(row.BudgetRunCount30d, budgetUsageValue),
 		},
 	}
+}
+
+func avatarAssetFromOverviewMetadata(metadata []byte) *DigitalEmployeeAvatarAsset {
+	return avatarAssetFromEmployeeMetadata(jsonMapFromBytes(metadata))
 }
 
 func overviewFiltersFromQuery(rows []queries.ListDigitalEmployeeOverviewFilterOptionsRow) DigitalEmployeeOverviewFilters {

@@ -1063,6 +1063,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DigitalEmployeeCreateOptions"
+  /api/v1/digital-employee-avatar-assets:
+    get:
+      operationId: listDigitalEmployeeAvatarAssets
+      summary: List digital employee avatar assets
+      responses:
+        "200":
+          description: Digital employee avatar asset list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DigitalEmployeeAvatarAsset"
   /api/v1/digital-employees/overview:
     get:
       operationId: getDigitalEmployeeOverview
@@ -2228,11 +2241,15 @@ components:
           type: string
         status:
           $ref: "#/components/schemas/TeamStatus"
-        human_owner_user_id:
-          type: string
-          format: uuid
-        human_owner:
-          $ref: "#/components/schemas/TeamHumanOwner"
+        human_owner_user_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        human_owners:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamHumanOwner"
         metadata:
           type: object
           additionalProperties: true
@@ -2607,9 +2624,11 @@ components:
         runtime_scope_policy:
           type: object
           additionalProperties: true
-        human_owner_user_id:
-          type: string
-          format: uuid
+        human_owner_user_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
         status:
           type: string
           enum:
@@ -2634,7 +2653,7 @@ components:
       required:
         - slug
         - name
-        - human_owner_user_id
+        - human_owner_user_ids
       properties:
         slug:
           type: string
@@ -2642,9 +2661,11 @@ components:
           type: string
         status:
           $ref: "#/components/schemas/TeamStatus"
-        human_owner_user_id:
-          type: string
-          format: uuid
+        human_owner_user_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
         initial_members:
           type: array
           items:
@@ -2674,16 +2695,18 @@ components:
           type: string
         name:
           type: string
-        human_owner_user_id:
-          type: string
-          format: uuid
+        human_owner_user_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
         metadata:
           type: object
           additionalProperties: true
     CreateTeamConfigRevisionRequest:
       type: object
       required:
-        - human_owner_user_id
+        - human_owner_user_ids
       properties:
         constitution:
           type: object
@@ -2706,9 +2729,11 @@ components:
         runtime_scope_policy:
           type: object
           additionalProperties: true
-        human_owner_user_id:
-          type: string
-          format: uuid
+        human_owner_user_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
         status:
           type: string
           enum:
@@ -2738,9 +2763,11 @@ components:
         runtime_scope_policy:
           type: object
           additionalProperties: true
-        human_owner_user_id:
-          type: string
-          format: uuid
+        human_owner_user_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
     GovernanceDiffSummary:
       type: object
       required:
@@ -3077,6 +3104,8 @@ components:
           $ref: "#/components/schemas/DigitalEmployeeStatus"
         risk_level:
           type: string
+        avatar_asset:
+          $ref: "#/components/schemas/DigitalEmployeeAvatarAsset"
     DigitalEmployeeExecutionSummary:
       type: object
       required:
@@ -3328,12 +3357,47 @@ components:
         updated_at:
           type: string
           format: date-time
+    DigitalEmployeeAvatarAsset:
+      type: object
+      required:
+        - id
+        - label
+        - gender
+        - age_range
+        - style
+        - image_url
+        - thumbnail_url
+        - source
+        - license
+        - status
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        gender:
+          type: string
+        age_range:
+          type: string
+        style:
+          type: string
+        image_url:
+          type: string
+        thumbnail_url:
+          type: string
+        source:
+          type: string
+        license:
+          type: string
+        status:
+          type: string
     CreateDigitalEmployeeRequest:
       type: object
       required:
         - team_id
         - employee_type
         - name
+        - avatar_asset_id
         - runtime_node_id
         - provider_type
       properties:
@@ -3343,6 +3407,8 @@ components:
         employee_type:
           type: string
         name:
+          type: string
+        avatar_asset_id:
           type: string
         role:
           type: string

@@ -97,7 +97,7 @@ type GovernanceDraftInput struct {
 	ArtifactContract            map[string]any
 	InternalCollaborationPolicy map[string]any
 	RuntimeScopePolicy          map[string]any
-	HumanOwnerUserID            *uuid.UUID
+	HumanOwnerUserIDs           []uuid.UUID
 }
 
 type GovernanceDiffSummary struct {
@@ -114,8 +114,8 @@ type Team struct {
 	Slug             string
 	Name             string
 	Status           TeamStatus
-	HumanOwnerUserID *uuid.UUID
-	HumanOwner       *TeamHumanOwner
+	HumanOwnerUserIDs []uuid.UUID
+	HumanOwners      []TeamHumanOwner
 	Metadata         map[string]any
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
@@ -171,7 +171,7 @@ type TeamConfigRevision struct {
 	ArtifactContract            map[string]any
 	InternalCollaborationPolicy map[string]any
 	RuntimeScopePolicy          map[string]any
-	HumanOwnerUserID            *uuid.UUID
+	HumanOwnerUserIDs           []uuid.UUID
 	Status                      TeamConfigRevisionStatus
 	ApprovedBy                  *uuid.UUID
 	ApprovedAt                  *time.Time
@@ -217,7 +217,7 @@ type CreateTeamRequest struct {
 	Slug             string
 	Name             string
 	Status           TeamStatus
-	HumanOwnerUserID *uuid.UUID
+	HumanOwnerUserIDs []uuid.UUID
 	InitialMembers   []InitialTeamMemberInput
 	Metadata         map[string]any
 }
@@ -241,7 +241,7 @@ type UpdateTeamRequest struct {
 	TeamID           uuid.UUID
 	Name             string
 	Slug             string
-	HumanOwnerUserID *uuid.UUID
+	HumanOwnerUserIDs []uuid.UUID
 	Metadata         map[string]any
 }
 
@@ -261,7 +261,7 @@ type CreateTeamConfigRevisionRequest struct {
 	ArtifactContract            map[string]any
 	InternalCollaborationPolicy map[string]any
 	RuntimeScopePolicy          map[string]any
-	HumanOwnerUserID            *uuid.UUID
+	HumanOwnerUserIDs           []uuid.UUID
 	Status                      TeamConfigRevisionStatus
 	ApprovedBy                  *uuid.UUID
 }

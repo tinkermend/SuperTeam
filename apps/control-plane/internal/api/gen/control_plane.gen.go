@@ -852,6 +852,7 @@ type CreateDigitalEmployeeConfigRevisionRequestStatus string
 type CreateDigitalEmployeeRequest struct {
 	ApprovalPolicy         *map[string]interface{} `json:"approval_policy,omitempty"`
 	ApprovalPolicyOverride *map[string]interface{} `json:"approval_policy_override,omitempty"`
+	AvatarAssetId          string                  `json:"avatar_asset_id"`
 	CapabilitySelection    *map[string]interface{} `json:"capability_selection,omitempty"`
 	ConstitutionAddendum   *map[string]interface{} `json:"constitution_addendum,omitempty"`
 	ContextPolicy          *map[string]interface{} `json:"context_policy,omitempty"`
@@ -916,7 +917,7 @@ type CreateTeamConfigRevisionRequest struct {
 	CapabilityPolicy            *map[string]interface{}                `json:"capability_policy,omitempty"`
 	Constitution                *map[string]interface{}                `json:"constitution,omitempty"`
 	ContextPolicy               *map[string]interface{}                `json:"context_policy,omitempty"`
-	HumanOwnerUserId            openapi_types.UUID                     `json:"human_owner_user_id"`
+	HumanOwnerUserIds           []openapi_types.UUID                   `json:"human_owner_user_ids"`
 	InternalCollaborationPolicy *map[string]interface{}                `json:"internal_collaboration_policy,omitempty"`
 	RuntimeScopePolicy          *map[string]interface{}                `json:"runtime_scope_policy,omitempty"`
 	Status                      *CreateTeamConfigRevisionRequestStatus `json:"status,omitempty"`
@@ -937,8 +938,8 @@ type CreateTeamMemberRoleRequestRequestedRole string
 
 // CreateTeamRequest defines model for CreateTeamRequest.
 type CreateTeamRequest struct {
-	HumanOwnerUserId openapi_types.UUID `json:"human_owner_user_id"`
-	InitialMembers   *[]struct {
+	HumanOwnerUserIds []openapi_types.UUID `json:"human_owner_user_ids"`
+	InitialMembers    *[]struct {
 		Role   CreateTeamRequestInitialMembersRole `json:"role"`
 		UserId openapi_types.UUID                  `json:"user_id"`
 	} `json:"initial_members,omitempty"`
@@ -976,6 +977,20 @@ type DigitalEmployee struct {
 	TeamId           openapi_types.UUID      `json:"team_id"`
 	TenantId         openapi_types.UUID      `json:"tenant_id"`
 	UpdatedAt        *time.Time              `json:"updated_at,omitempty"`
+}
+
+// DigitalEmployeeAvatarAsset defines model for DigitalEmployeeAvatarAsset.
+type DigitalEmployeeAvatarAsset struct {
+	AgeRange     string `json:"age_range"`
+	Gender       string `json:"gender"`
+	Id           string `json:"id"`
+	ImageUrl     string `json:"image_url"`
+	Label        string `json:"label"`
+	License      string `json:"license"`
+	Source       string `json:"source"`
+	Status       string `json:"status"`
+	Style        string `json:"style"`
+	ThumbnailUrl string `json:"thumbnail_url"`
 }
 
 // DigitalEmployeeBudgetSummary defines model for DigitalEmployeeBudgetSummary.
@@ -1120,19 +1135,20 @@ type DigitalEmployeeGovernanceSummary struct {
 
 // DigitalEmployeeIdentitySummary defines model for DigitalEmployeeIdentitySummary.
 type DigitalEmployeeIdentitySummary struct {
-	Description       *string               `json:"description,omitempty"`
-	EmployeeType      string                `json:"employee_type"`
-	EmployeeTypeLabel string                `json:"employee_type_label"`
-	Id                openapi_types.UUID    `json:"id"`
-	Name              string                `json:"name"`
-	OwnerDisplayName  string                `json:"owner_display_name"`
-	OwnerUserId       openapi_types.UUID    `json:"owner_user_id"`
-	RiskLevel         string                `json:"risk_level"`
-	Role              string                `json:"role"`
-	Status            DigitalEmployeeStatus `json:"status"`
-	TeamId            *openapi_types.UUID   `json:"team_id,omitempty"`
-	TeamName          string                `json:"team_name"`
-	TenantId          openapi_types.UUID    `json:"tenant_id"`
+	AvatarAsset       *DigitalEmployeeAvatarAsset `json:"avatar_asset,omitempty"`
+	Description       *string                     `json:"description,omitempty"`
+	EmployeeType      string                      `json:"employee_type"`
+	EmployeeTypeLabel string                      `json:"employee_type_label"`
+	Id                openapi_types.UUID          `json:"id"`
+	Name              string                      `json:"name"`
+	OwnerDisplayName  string                      `json:"owner_display_name"`
+	OwnerUserId       openapi_types.UUID          `json:"owner_user_id"`
+	RiskLevel         string                      `json:"risk_level"`
+	Role              string                      `json:"role"`
+	Status            DigitalEmployeeStatus       `json:"status"`
+	TeamId            *openapi_types.UUID         `json:"team_id,omitempty"`
+	TeamName          string                      `json:"team_name"`
+	TenantId          openapi_types.UUID          `json:"tenant_id"`
 }
 
 // DigitalEmployeeLatestRunSummary defines model for DigitalEmployeeLatestRunSummary.
@@ -1340,7 +1356,7 @@ type GovernanceDraftInput struct {
 	CapabilityPolicy            *map[string]interface{} `json:"capability_policy,omitempty"`
 	Constitution                *map[string]interface{} `json:"constitution,omitempty"`
 	ContextPolicy               *map[string]interface{} `json:"context_policy,omitempty"`
-	HumanOwnerUserId            *openapi_types.UUID     `json:"human_owner_user_id,omitempty"`
+	HumanOwnerUserIds           *[]openapi_types.UUID   `json:"human_owner_user_ids,omitempty"`
 	InternalCollaborationPolicy *map[string]interface{} `json:"internal_collaboration_policy,omitempty"`
 	RuntimeScopePolicy          *map[string]interface{} `json:"runtime_scope_policy,omitempty"`
 }
@@ -1760,16 +1776,16 @@ type TaskStatus string
 
 // Team defines model for Team.
 type Team struct {
-	CreatedAt        *time.Time             `json:"created_at,omitempty"`
-	HumanOwner       *TeamHumanOwner        `json:"human_owner,omitempty"`
-	HumanOwnerUserId *openapi_types.UUID    `json:"human_owner_user_id,omitempty"`
-	Id               openapi_types.UUID     `json:"id"`
-	Metadata         map[string]interface{} `json:"metadata"`
-	Name             string                 `json:"name"`
-	Slug             string                 `json:"slug"`
-	Status           TeamStatus             `json:"status"`
-	TenantId         openapi_types.UUID     `json:"tenant_id"`
-	UpdatedAt        *time.Time             `json:"updated_at,omitempty"`
+	CreatedAt         *time.Time             `json:"created_at,omitempty"`
+	HumanOwnerUserIds *[]openapi_types.UUID  `json:"human_owner_user_ids,omitempty"`
+	HumanOwners       *[]TeamHumanOwner      `json:"human_owners,omitempty"`
+	Id                openapi_types.UUID     `json:"id"`
+	Metadata          map[string]interface{} `json:"metadata"`
+	Name              string                 `json:"name"`
+	Slug              string                 `json:"slug"`
+	Status            TeamStatus             `json:"status"`
+	TenantId          openapi_types.UUID     `json:"tenant_id"`
+	UpdatedAt         *time.Time             `json:"updated_at,omitempty"`
 }
 
 // TeamAuditEvent defines model for TeamAuditEvent.
@@ -1797,7 +1813,7 @@ type TeamConfigRevision struct {
 	Constitution                map[string]interface{}   `json:"constitution"`
 	ContextPolicy               map[string]interface{}   `json:"context_policy"`
 	CreatedAt                   *time.Time               `json:"created_at,omitempty"`
-	HumanOwnerUserId            *openapi_types.UUID      `json:"human_owner_user_id,omitempty"`
+	HumanOwnerUserIds           *[]openapi_types.UUID    `json:"human_owner_user_ids,omitempty"`
 	Id                          openapi_types.UUID       `json:"id"`
 	InternalCollaborationPolicy map[string]interface{}   `json:"internal_collaboration_policy"`
 	RevisionNumber              int32                    `json:"revision_number"`
@@ -1828,8 +1844,8 @@ type TeamListItem struct {
 	CurrentRevision      *int32                  `json:"current_revision,omitempty"`
 	DigitalEmployeeCount int32                   `json:"digital_employee_count"`
 	GovernanceStatus     GovernanceSummaryStatus `json:"governance_status"`
-	HumanOwner           *TeamHumanOwner         `json:"human_owner,omitempty"`
-	HumanOwnerUserId     *openapi_types.UUID     `json:"human_owner_user_id,omitempty"`
+	HumanOwnerUserIds    *[]openapi_types.UUID   `json:"human_owner_user_ids,omitempty"`
+	HumanOwners          *[]TeamHumanOwner       `json:"human_owners,omitempty"`
 	Id                   openapi_types.UUID      `json:"id"`
 	MemberCount          int32                   `json:"member_count"`
 	Metadata             map[string]interface{}  `json:"metadata"`
@@ -1931,10 +1947,10 @@ type UpdateTaskStatusRequest struct {
 
 // UpdateTeamRequest defines model for UpdateTeamRequest.
 type UpdateTeamRequest struct {
-	HumanOwnerUserId *openapi_types.UUID     `json:"human_owner_user_id,omitempty"`
-	Metadata         *map[string]interface{} `json:"metadata,omitempty"`
-	Name             string                  `json:"name"`
-	Slug             string                  `json:"slug"`
+	HumanOwnerUserIds *[]openapi_types.UUID   `json:"human_owner_user_ids,omitempty"`
+	Metadata          *map[string]interface{} `json:"metadata,omitempty"`
+	Name              string                  `json:"name"`
+	Slug              string                  `json:"slug"`
 }
 
 // UploadSkillRequest defines model for UploadSkillRequest.
@@ -2769,6 +2785,9 @@ func (t *ProviderSessionEvent) UnmarshalJSON(b []byte) error {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// List digital employee avatar assets
+	// (GET /api/v1/digital-employee-avatar-assets)
+	ListDigitalEmployeeAvatarAssets(w http.ResponseWriter, r *http.Request)
 	// List digital employees
 	// (GET /api/v1/digital-employees)
 	ListDigitalEmployees(w http.ResponseWriter, r *http.Request, params ListDigitalEmployeesParams)
@@ -3014,6 +3033,12 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// List digital employee avatar assets
+// (GET /api/v1/digital-employee-avatar-assets)
+func (_ Unimplemented) ListDigitalEmployeeAvatarAssets(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // List digital employees
 // (GET /api/v1/digital-employees)
@@ -3503,6 +3528,20 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListDigitalEmployeeAvatarAssets operation middleware
+func (siw *ServerInterfaceWrapper) ListDigitalEmployeeAvatarAssets(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDigitalEmployeeAvatarAssets(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListDigitalEmployees operation middleware
 func (siw *ServerInterfaceWrapper) ListDigitalEmployees(w http.ResponseWriter, r *http.Request) {
@@ -6707,6 +6746,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employee-avatar-assets", wrapper.ListDigitalEmployeeAvatarAssets)
+	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees", wrapper.ListDigitalEmployees)
 	})

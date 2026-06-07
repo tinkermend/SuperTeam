@@ -41,9 +41,9 @@ func (r *PgRepository) CreateTeam(ctx context.Context, params CreateTeamParams) 
 		TenantID:         params.TenantID,
 		Slug:             params.Slug,
 		Name:             params.Name,
-		Status:           string(params.Status),
-		HumanOwnerUserID: nullUUIDFromPtr(params.HumanOwnerUserID),
-		Metadata:         metadata,
+		Status:            string(params.Status),
+		HumanOwnerUserIds: params.HumanOwnerUserIDs,
+		Metadata:          metadata,
 	})
 	if err != nil {
 		return TeamRecord{}, mapConstraintError(err)
@@ -70,11 +70,13 @@ func (r *PgRepository) CreateTeamWithInitialMembers(ctx context.Context, params 
 		}
 	}()
 	qtx := r.q.WithTx(tx)
-	if _, err := qtx.GetActiveTenantUserForTeamCreate(ctx, queries.GetActiveTenantUserForTeamCreateParams{
-		ID:       params.OwnerUserID,
-		TenantID: params.TenantID,
-	}); err != nil {
-		return TeamRecord{}, mapNoRows(err)
+	for _, ownerID := range params.OwnerUserIDs {
+		if _, err := qtx.GetActiveTenantUserForTeamCreate(ctx, queries.GetActiveTenantUserForTeamCreateParams{
+			ID:       ownerID,
+			TenantID: params.TenantID,
+		}); err != nil {
+			return TeamRecord{}, mapNoRows(err)
+		}
 	}
 	for _, member := range params.InitialMembers {
 		if _, err := qtx.GetActiveTenantUserForTeamCreate(ctx, queries.GetActiveTenantUserForTeamCreateParams{
@@ -88,17 +90,9 @@ func (r *PgRepository) CreateTeamWithInitialMembers(ctx context.Context, params 
 		TenantID:         params.TenantID,
 		Slug:             params.Slug,
 		Name:             params.Name,
-		Status:           string(params.Status),
-		HumanOwnerUserID: nullUUIDFromPtr(&params.OwnerUserID),
-		Metadata:         metadata,
-	})
-	if err != nil {
-		return TeamRecord{}, mapConstraintError(err)
-	}
-	ownerMembership, err := qtx.AddTeamOwnerMembership(ctx, queries.AddTeamOwnerMembershipParams{
-		TenantID: params.TenantID,
-		TeamID:   team.ID,
-		UserID:   params.OwnerUserID,
+		Status:            string(params.Status),
+		HumanOwnerUserIds: params.OwnerUserIDs,
+		Metadata:          metadata,
 	})
 	if err != nil {
 		return TeamRecord{}, mapConstraintError(err)
@@ -106,8 +100,18 @@ func (r *PgRepository) CreateTeamWithInitialMembers(ctx context.Context, params 
 	if err := createTeamAuditEvent(ctx, qtx, params, team.ID); err != nil {
 		return TeamRecord{}, err
 	}
-	if err := createTeamMemberAuditEvent(ctx, qtx, params, team.ID, ownerMembership.ID, params.OwnerUserID, TeamRoleOwner); err != nil {
-		return TeamRecord{}, err
+	for _, ownerID := range params.OwnerUserIDs {
+		ownerMembership, err := qtx.AddTeamOwnerMembership(ctx, queries.AddTeamOwnerMembershipParams{
+			TenantID: params.TenantID,
+			TeamID:   team.ID,
+			UserID:   ownerID,
+		})
+		if err != nil {
+			return TeamRecord{}, mapConstraintError(err)
+		}
+		if err := createTeamMemberAuditEvent(ctx, qtx, params, team.ID, ownerMembership.ID, ownerID, TeamRoleOwner); err != nil {
+			return TeamRecord{}, err
+		}
 	}
 	for _, member := range params.InitialMembers {
 		membership, err := qtx.AddTeamMember(ctx, queries.AddTeamMemberParams{
@@ -135,11 +139,15 @@ func (r *PgRepository) CreateTeamWithInitialMembers(ctx context.Context, params 
 }
 
 func createTeamAuditEvent(ctx context.Context, q *queries.Queries, params CreateTeamWithInitialMembersParams, teamID uuid.UUID) error {
+	var ownerIDStrs []string
+	for _, id := range params.OwnerUserIDs {
+		ownerIDStrs = append(ownerIDStrs, id.String())
+	}
 	details, err := json.Marshal(map[string]any{
-		"team_id":             teamID.String(),
-		"slug":                params.Slug,
-		"human_owner_user_id": params.OwnerUserID.String(),
-		"initial_members":     len(params.InitialMembers),
+		"team_id":              teamID.String(),
+		"slug":                 params.Slug,
+		"human_owner_user_ids": ownerIDStrs,
+		"initial_members":      len(params.InitialMembers),
 	})
 	if err != nil {
 		return err
@@ -255,9 +263,9 @@ func (r *PgRepository) UpdateTeam(ctx context.Context, params UpdateTeamParams) 
 		ID:               params.TeamID,
 		TenantID:         params.TenantID,
 		Slug:             params.Slug,
-		Name:             params.Name,
-		HumanOwnerUserID: nullUUIDFromPtr(params.HumanOwnerUserID),
-		Metadata:         metadata,
+		Name:              params.Name,
+		HumanOwnerUserIds: params.HumanOwnerUserIDs,
+		Metadata:          metadata,
 	})
 	if err != nil {
 		return TeamRecord{}, mapNoRows(err)
@@ -318,7 +326,7 @@ func (r *PgRepository) CreateTeamConfigRevision(ctx context.Context, params Crea
 		ArtifactContract:            artifactContract,
 		InternalCollaborationPolicy: internalCollaborationPolicy,
 		RuntimeScopePolicy:          runtimeScopePolicy,
-		HumanOwnerUserID:            nullUUIDFromPtr(params.HumanOwnerUserID),
+		HumanOwnerUserIds:           params.HumanOwnerUserIDs,
 		Status:                      string(params.Status),
 		ApprovedBy:                  nullUUIDFromPtr(params.ApprovedBy),
 		ApprovedAt:                  timestamptzFromPtr(params.ApprovedAt),
@@ -423,7 +431,7 @@ func (r *PgRepository) UpdateTeamConfigRevisionDraft(ctx context.Context, params
 		ArtifactContract:            artifactContract,
 		InternalCollaborationPolicy: internalCollaborationPolicy,
 		RuntimeScopePolicy:          runtimeScopePolicy,
-		HumanOwnerUserID:            nullUUIDFromPtr(params.HumanOwnerUserID),
+		HumanOwnerUserIds:           params.HumanOwnerUserIDs,
 	})
 	if err != nil {
 		return TeamConfigRevisionRecord{}, mapNoRows(err)
@@ -675,9 +683,9 @@ func teamRecordFromQuery(team queries.TenantTeam) (TeamRecord, error) {
 		TenantID:         team.TenantID,
 		Slug:             team.Slug,
 		Name:             team.Name,
-		Status:           TeamStatus(team.Status),
-		HumanOwnerUserID: uuidPtrFromNull(team.HumanOwnerUserID),
-		Metadata:         metadata,
+		Status:            TeamStatus(team.Status),
+		HumanOwnerUserIDs: team.HumanOwnerUserIds,
+		Metadata:          metadata,
 		CreatedAt:        timeFromTimestamptz(team.CreatedAt),
 		UpdatedAt:        timeFromTimestamptz(team.UpdatedAt),
 	}, nil
@@ -690,9 +698,9 @@ func teamListItemRecordFromQuery(row queries.ListTenantTeamSummariesRow) (TeamLi
 			TenantID:         row.TenantID,
 			Slug:             row.Slug,
 			Name:             row.Name,
-			Status:           row.Status,
-			HumanOwnerUserID: row.HumanOwnerUserID,
-			Metadata:         row.Metadata,
+			Status:            row.Status,
+			HumanOwnerUserIds: row.HumanOwnerUserIds,
+			Metadata:          row.Metadata,
 			ArchivedAt:       row.ArchivedAt,
 			DisabledAt:       row.DisabledAt,
 			DeletedAt:        row.DeletedAt,
@@ -706,17 +714,7 @@ func teamListItemRecordFromQuery(row queries.ListTenantTeamSummariesRow) (TeamLi
 		row.PendingDraftCount,
 		row.GovernanceStatus,
 		row.RiskSummary,
-		teamHumanOwnerFromQuery(
-			row.OwnerUserID,
-			row.OwnerUsername,
-			row.OwnerDisplayName,
-			row.OwnerEmail,
-			row.OwnerStatus,
-			row.OwnerAvatarProvider,
-			row.OwnerAvatarStyle,
-			row.OwnerAvatarSeed,
-			row.OwnerAvatarOptions,
-		),
+		parseTeamHumanOwners(row.HumanOwners),
 	)
 }
 
@@ -728,7 +726,7 @@ func teamListItemRecordFromGetSummaryQuery(row queries.GetTenantTeamSummaryRow) 
 			Slug:             row.Slug,
 			Name:             row.Name,
 			Status:           row.Status,
-			HumanOwnerUserID: row.HumanOwnerUserID,
+			HumanOwnerUserIds: row.HumanOwnerUserIds,
 			Metadata:         row.Metadata,
 			ArchivedAt:       row.ArchivedAt,
 			DisabledAt:       row.DisabledAt,
@@ -743,17 +741,7 @@ func teamListItemRecordFromGetSummaryQuery(row queries.GetTenantTeamSummaryRow) 
 		row.PendingDraftCount,
 		row.GovernanceStatus,
 		row.RiskSummary,
-		teamHumanOwnerFromQuery(
-			row.OwnerUserID,
-			row.OwnerUsername,
-			row.OwnerDisplayName,
-			row.OwnerEmail,
-			row.OwnerStatus,
-			row.OwnerAvatarProvider,
-			row.OwnerAvatarStyle,
-			row.OwnerAvatarSeed,
-			row.OwnerAvatarOptions,
-		),
+		parseTeamHumanOwners(row.HumanOwners),
 	)
 }
 
@@ -766,13 +754,13 @@ func teamListItemRecordFromSummaryParts(
 	pendingDraftCount int32,
 	governanceStatus string,
 	riskSummary string,
-	humanOwner *TeamHumanOwner,
+	humanOwners []TeamHumanOwner,
 ) (TeamListItemRecord, error) {
 	team, err := teamRecordFromQuery(tenantTeam)
 	if err != nil {
 		return TeamListItemRecord{}, err
 	}
-	team.HumanOwner = humanOwner
+	team.HumanOwners = humanOwners
 	return TeamListItemRecord{
 		Team:                 team,
 		MemberCount:          memberCount,
@@ -785,28 +773,55 @@ func teamListItemRecordFromSummaryParts(
 	}, nil
 }
 
-func teamHumanOwnerFromQuery(
-	userID uuid.NullUUID,
-	username pgtype.Text,
-	displayName pgtype.Text,
-	email pgtype.Text,
-	status pgtype.Text,
-	avatarProvider pgtype.Text,
-	avatarStyle pgtype.Text,
-	avatarSeed pgtype.Text,
-	avatarOptions []byte,
-) *TeamHumanOwner {
-	if !userID.Valid {
+func parseTeamHumanOwners(b []byte) []TeamHumanOwner {
+	if len(b) == 0 {
 		return nil
 	}
-	return &TeamHumanOwner{
-		UserID:      userID.UUID,
-		Username:    stringFromText(username),
-		DisplayName: stringFromText(displayName),
-		Email:       stringFromText(email),
-		Status:      stringFromText(status),
-		Avatar:      avatarFromFields(stringFromText(username), avatarProvider, avatarStyle, avatarSeed, avatarOptions),
+	var rawOwners []struct {
+		ID             uuid.UUID      `json:"id"`
+		Username       string         `json:"username"`
+		DisplayName    *string        `json:"display_name"`
+		Email          *string        `json:"email"`
+		Status         string         `json:"status"`
+		AvatarProvider *string        `json:"avatar_provider"`
+		AvatarStyle    *string        `json:"avatar_style"`
+		AvatarSeed     *string        `json:"avatar_seed"`
+		AvatarOptions  map[string]any `json:"avatar_options"`
 	}
+	if err := json.Unmarshal(b, &rawOwners); err != nil {
+		return nil
+	}
+	var owners []TeamHumanOwner
+	for _, ro := range rawOwners {
+		o := TeamHumanOwner{
+			UserID:   ro.ID,
+			Username: ro.Username,
+			Status:   ro.Status,
+		}
+		if ro.DisplayName != nil {
+			o.DisplayName = *ro.DisplayName
+		}
+		if ro.Email != nil {
+			o.Email = *ro.Email
+		}
+		var provider, style, seed pgtype.Text
+		if ro.AvatarProvider != nil {
+			provider = pgtype.Text{String: *ro.AvatarProvider, Valid: true}
+		}
+		if ro.AvatarStyle != nil {
+			style = pgtype.Text{String: *ro.AvatarStyle, Valid: true}
+		}
+		if ro.AvatarSeed != nil {
+			seed = pgtype.Text{String: *ro.AvatarSeed, Valid: true}
+		}
+		var opts []byte
+		if ro.AvatarOptions != nil {
+			opts, _ = json.Marshal(ro.AvatarOptions)
+		}
+		o.Avatar = avatarFromFields(ro.Username, provider, style, seed, opts)
+		owners = append(owners, o)
+	}
+	return owners
 }
 
 func configRevisionRecordFromQuery(revision queries.TenantTeamConfigRevision) (TeamConfigRevisionRecord, error) {
@@ -850,7 +865,7 @@ func configRevisionRecordFromQuery(revision queries.TenantTeamConfigRevision) (T
 		ArtifactContract:            artifactContract,
 		InternalCollaborationPolicy: internalCollaborationPolicy,
 		RuntimeScopePolicy:          runtimeScopePolicy,
-		HumanOwnerUserID:            uuidPtrFromNull(revision.HumanOwnerUserID),
+		HumanOwnerUserIDs:           revision.HumanOwnerUserIds,
 		Status:                      TeamConfigRevisionStatus(revision.Status),
 		ApprovedBy:                  uuidPtrFromNull(revision.ApprovedBy),
 		ApprovedAt:                  timePtrFromTimestamptz(revision.ApprovedAt),

@@ -22,7 +22,7 @@ WHERE id = $2::uuid
   AND team_id = $4::uuid
   AND status = 'draft'
   AND archived_at IS NULL
-RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, status, approved_by, approved_at, archived_at, created_at, updated_at, human_owner_user_ids
 `
 
 type ActivateTenantTeamConfigRevisionParams struct {
@@ -52,13 +52,13 @@ func (q *Queries) ActivateTenantTeamConfigRevision(ctx context.Context, arg Acti
 		&i.ArtifactContract,
 		&i.InternalCollaborationPolicy,
 		&i.RuntimeScopePolicy,
-		&i.HumanOwnerUserID,
 		&i.Status,
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.HumanOwnerUserIds,
 	)
 	return i, err
 }
@@ -174,7 +174,7 @@ WHERE tenant_id = $1::uuid
   AND team_id = $2::uuid
   AND status = 'active'
   AND archived_at IS NULL
-RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, status, approved_by, approved_at, archived_at, created_at, updated_at, human_owner_user_ids
 `
 
 type ArchiveActiveTenantTeamConfigRevisionParams struct {
@@ -203,13 +203,13 @@ func (q *Queries) ArchiveActiveTenantTeamConfigRevision(ctx context.Context, arg
 			&i.ArtifactContract,
 			&i.InternalCollaborationPolicy,
 			&i.RuntimeScopePolicy,
-			&i.HumanOwnerUserID,
 			&i.Status,
 			&i.ApprovedBy,
 			&i.ApprovedAt,
 			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.HumanOwnerUserIds,
 		); err != nil {
 			return nil, err
 		}
@@ -302,25 +302,25 @@ func (q *Queries) CreateTeamMemberRoleRequest(ctx context.Context, arg CreateTea
 }
 
 const CreateTenantTeam = `-- name: CreateTenantTeam :one
-INSERT INTO tenant_teams (tenant_id, slug, name, status, human_owner_user_id, metadata)
+INSERT INTO tenant_teams (tenant_id, slug, name, status, human_owner_user_ids, metadata)
 VALUES (
     $1::uuid,
     $2::varchar,
     $3::varchar,
     $4::varchar,
-    $5::uuid,
+    $5::uuid[],
     COALESCE($6::jsonb, '{}'::jsonb)
 )
-RETURNING id, tenant_id, slug, name, status, human_owner_user_id, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids
 `
 
 type CreateTenantTeamParams struct {
-	TenantID         uuid.UUID     `json:"tenant_id"`
-	Slug             string        `json:"slug"`
-	Name             string        `json:"name"`
-	Status           string        `json:"status"`
-	HumanOwnerUserID uuid.NullUUID `json:"human_owner_user_id"`
-	Metadata         []byte        `json:"metadata"`
+	TenantID          uuid.UUID   `json:"tenant_id"`
+	Slug              string      `json:"slug"`
+	Name              string      `json:"name"`
+	Status            string      `json:"status"`
+	HumanOwnerUserIds []uuid.UUID `json:"human_owner_user_ids"`
+	Metadata          []byte      `json:"metadata"`
 }
 
 func (q *Queries) CreateTenantTeam(ctx context.Context, arg CreateTenantTeamParams) (TenantTeam, error) {
@@ -329,7 +329,7 @@ func (q *Queries) CreateTenantTeam(ctx context.Context, arg CreateTenantTeamPara
 		arg.Slug,
 		arg.Name,
 		arg.Status,
-		arg.HumanOwnerUserID,
+		arg.HumanOwnerUserIds,
 		arg.Metadata,
 	)
 	var i TenantTeam
@@ -339,13 +339,13 @@ func (q *Queries) CreateTenantTeam(ctx context.Context, arg CreateTenantTeamPara
 		&i.Slug,
 		&i.Name,
 		&i.Status,
-		&i.HumanOwnerUserID,
 		&i.Metadata,
 		&i.ArchivedAt,
 		&i.DisabledAt,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.HumanOwnerUserIds,
 	)
 	return i, err
 }
@@ -362,7 +362,7 @@ INSERT INTO tenant_team_config_revisions (
     artifact_contract,
     internal_collaboration_policy,
     runtime_scope_policy,
-    human_owner_user_id,
+    human_owner_user_ids,
     status,
     approved_by,
     approved_at
@@ -378,12 +378,12 @@ VALUES (
     COALESCE($8::jsonb, '{}'::jsonb),
     COALESCE($9::jsonb, '{}'::jsonb),
     COALESCE($10::jsonb, '{}'::jsonb),
-    $11::uuid,
+    $11::uuid[],
     $12::varchar,
     $13::uuid,
     $14::timestamptz
 )
-RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, status, approved_by, approved_at, archived_at, created_at, updated_at, human_owner_user_ids
 `
 
 type CreateTenantTeamConfigRevisionParams struct {
@@ -397,7 +397,7 @@ type CreateTenantTeamConfigRevisionParams struct {
 	ArtifactContract            []byte             `json:"artifact_contract"`
 	InternalCollaborationPolicy []byte             `json:"internal_collaboration_policy"`
 	RuntimeScopePolicy          []byte             `json:"runtime_scope_policy"`
-	HumanOwnerUserID            uuid.NullUUID      `json:"human_owner_user_id"`
+	HumanOwnerUserIds           []uuid.UUID        `json:"human_owner_user_ids"`
 	Status                      string             `json:"status"`
 	ApprovedBy                  uuid.NullUUID      `json:"approved_by"`
 	ApprovedAt                  pgtype.Timestamptz `json:"approved_at"`
@@ -415,7 +415,7 @@ func (q *Queries) CreateTenantTeamConfigRevision(ctx context.Context, arg Create
 		arg.ArtifactContract,
 		arg.InternalCollaborationPolicy,
 		arg.RuntimeScopePolicy,
-		arg.HumanOwnerUserID,
+		arg.HumanOwnerUserIds,
 		arg.Status,
 		arg.ApprovedBy,
 		arg.ApprovedAt,
@@ -433,13 +433,13 @@ func (q *Queries) CreateTenantTeamConfigRevision(ctx context.Context, arg Create
 		&i.ArtifactContract,
 		&i.InternalCollaborationPolicy,
 		&i.RuntimeScopePolicy,
-		&i.HumanOwnerUserID,
 		&i.Status,
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.HumanOwnerUserIds,
 	)
 	return i, err
 }
@@ -576,7 +576,7 @@ func (q *Queries) GetActiveTenantUserForTeamCreate(ctx context.Context, arg GetA
 }
 
 const GetCurrentTenantTeamConfigRevision = `-- name: GetCurrentTenantTeamConfigRevision :one
-SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, status, approved_by, approved_at, archived_at, created_at, updated_at, human_owner_user_ids
 FROM tenant_team_config_revisions
 WHERE tenant_id = $1::uuid
   AND team_id = $2::uuid
@@ -606,13 +606,13 @@ func (q *Queries) GetCurrentTenantTeamConfigRevision(ctx context.Context, arg Ge
 		&i.ArtifactContract,
 		&i.InternalCollaborationPolicy,
 		&i.RuntimeScopePolicy,
-		&i.HumanOwnerUserID,
 		&i.Status,
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.HumanOwnerUserIds,
 	)
 	return i, err
 }
@@ -754,7 +754,7 @@ func (q *Queries) GetTeamMemberRoleRequest(ctx context.Context, arg GetTeamMembe
 }
 
 const GetTenantTeam = `-- name: GetTenantTeam :one
-SELECT id, tenant_id, slug, name, status, human_owner_user_id, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at
+SELECT id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids
 FROM tenant_teams
 WHERE id = $1::uuid
   AND tenant_id = $2::uuid
@@ -775,19 +775,19 @@ func (q *Queries) GetTenantTeam(ctx context.Context, arg GetTenantTeamParams) (T
 		&i.Slug,
 		&i.Name,
 		&i.Status,
-		&i.HumanOwnerUserID,
 		&i.Metadata,
 		&i.ArchivedAt,
 		&i.DisabledAt,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.HumanOwnerUserIds,
 	)
 	return i, err
 }
 
 const GetTenantTeamConfigRevision = `-- name: GetTenantTeamConfigRevision :one
-SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, status, approved_by, approved_at, archived_at, created_at, updated_at, human_owner_user_ids
 FROM tenant_team_config_revisions
 WHERE id = $1::uuid
   AND tenant_id = $2::uuid
@@ -813,13 +813,13 @@ func (q *Queries) GetTenantTeamConfigRevision(ctx context.Context, arg GetTenant
 		&i.ArtifactContract,
 		&i.InternalCollaborationPolicy,
 		&i.RuntimeScopePolicy,
-		&i.HumanOwnerUserID,
 		&i.Status,
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.HumanOwnerUserIds,
 	)
 	return i, err
 }
@@ -862,16 +862,8 @@ employee_counts AS (
   GROUP BY tenant_id, team_id
 )
 SELECT
-  tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.human_owner_user_id, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at,
-  owner.id AS owner_user_id,
-  owner.username AS owner_username,
-  owner.display_name AS owner_display_name,
-  owner.email AS owner_email,
-  owner.status AS owner_status,
-  owner.avatar_provider AS owner_avatar_provider,
-  owner.avatar_style AS owner_avatar_style,
-  owner.avatar_seed AS owner_avatar_seed,
-  owner.avatar_options AS owner_avatar_options,
+  tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at, tt.human_owner_user_ids,
+  COALESCE(owner_agg.owners, '[]'::json) AS human_owners,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
   (
@@ -897,7 +889,22 @@ LEFT JOIN current_config cc ON cc.tenant_id = tt.tenant_id AND cc.team_id = tt.i
 LEFT JOIN draft_counts dc ON dc.tenant_id = tt.tenant_id AND dc.team_id = tt.id
 LEFT JOIN member_counts mc ON mc.tenant_id = tt.tenant_id AND mc.team_id = tt.id
 LEFT JOIN employee_counts ec ON ec.tenant_id = tt.tenant_id AND ec.team_id = tt.id
-LEFT JOIN auth_users owner ON owner.id = tt.human_owner_user_id AND owner.deleted_at IS NULL
+LEFT JOIN LATERAL (
+  SELECT json_agg(json_build_object(
+    'id', o.id,
+    'username', o.username,
+    'display_name', o.display_name,
+    'email', o.email,
+    'status', o.status,
+    'avatar_provider', o.avatar_provider,
+    'avatar_style', o.avatar_style,
+    'avatar_seed', o.avatar_seed,
+    'avatar_options', o.avatar_options
+  )) AS owners
+  FROM auth_users o
+  WHERE o.id = ANY(tt.human_owner_user_ids)
+    AND o.deleted_at IS NULL
+) owner_agg ON true
 WHERE tt.id = $1::uuid
   AND tt.tenant_id = $2::uuid
   AND tt.deleted_at IS NULL
@@ -914,22 +921,14 @@ type GetTenantTeamSummaryRow struct {
 	Slug                 string             `json:"slug"`
 	Name                 string             `json:"name"`
 	Status               string             `json:"status"`
-	HumanOwnerUserID     uuid.NullUUID      `json:"human_owner_user_id"`
 	Metadata             []byte             `json:"metadata"`
 	ArchivedAt           pgtype.Timestamptz `json:"archived_at"`
 	DisabledAt           pgtype.Timestamptz `json:"disabled_at"`
 	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	OwnerUserID          uuid.NullUUID      `json:"owner_user_id"`
-	OwnerUsername        pgtype.Text        `json:"owner_username"`
-	OwnerDisplayName     pgtype.Text        `json:"owner_display_name"`
-	OwnerEmail           pgtype.Text        `json:"owner_email"`
-	OwnerStatus          pgtype.Text        `json:"owner_status"`
-	OwnerAvatarProvider  pgtype.Text        `json:"owner_avatar_provider"`
-	OwnerAvatarStyle     pgtype.Text        `json:"owner_avatar_style"`
-	OwnerAvatarSeed      pgtype.Text        `json:"owner_avatar_seed"`
-	OwnerAvatarOptions   []byte             `json:"owner_avatar_options"`
+	HumanOwnerUserIds    []uuid.UUID        `json:"human_owner_user_ids"`
+	HumanOwners          []byte             `json:"human_owners"`
 	MemberCount          int32              `json:"member_count"`
 	DigitalEmployeeCount int32              `json:"digital_employee_count"`
 	CapabilityCount      int32              `json:"capability_count"`
@@ -948,22 +947,14 @@ func (q *Queries) GetTenantTeamSummary(ctx context.Context, arg GetTenantTeamSum
 		&i.Slug,
 		&i.Name,
 		&i.Status,
-		&i.HumanOwnerUserID,
 		&i.Metadata,
 		&i.ArchivedAt,
 		&i.DisabledAt,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.OwnerUserID,
-		&i.OwnerUsername,
-		&i.OwnerDisplayName,
-		&i.OwnerEmail,
-		&i.OwnerStatus,
-		&i.OwnerAvatarProvider,
-		&i.OwnerAvatarStyle,
-		&i.OwnerAvatarSeed,
-		&i.OwnerAvatarOptions,
+		&i.HumanOwnerUserIds,
+		&i.HumanOwners,
 		&i.MemberCount,
 		&i.DigitalEmployeeCount,
 		&i.CapabilityCount,
@@ -1138,7 +1129,7 @@ func (q *Queries) ListTeamMembers(ctx context.Context, arg ListTeamMembersParams
 }
 
 const ListTenantTeamConfigDrafts = `-- name: ListTenantTeamConfigDrafts :many
-SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+SELECT id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, status, approved_by, approved_at, archived_at, created_at, updated_at, human_owner_user_ids
 FROM tenant_team_config_revisions
 WHERE tenant_id = $1::uuid
   AND team_id = $2::uuid
@@ -1181,13 +1172,13 @@ func (q *Queries) ListTenantTeamConfigDrafts(ctx context.Context, arg ListTenant
 			&i.ArtifactContract,
 			&i.InternalCollaborationPolicy,
 			&i.RuntimeScopePolicy,
-			&i.HumanOwnerUserID,
 			&i.Status,
 			&i.ApprovedBy,
 			&i.ApprovedAt,
 			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.HumanOwnerUserIds,
 		); err != nil {
 			return nil, err
 		}
@@ -1237,16 +1228,8 @@ employee_counts AS (
   GROUP BY tenant_id, team_id
 )
 SELECT
-  tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.human_owner_user_id, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at,
-  owner.id AS owner_user_id,
-  owner.username AS owner_username,
-  owner.display_name AS owner_display_name,
-  owner.email AS owner_email,
-  owner.status AS owner_status,
-  owner.avatar_provider AS owner_avatar_provider,
-  owner.avatar_style AS owner_avatar_style,
-  owner.avatar_seed AS owner_avatar_seed,
-  owner.avatar_options AS owner_avatar_options,
+  tt.id, tt.tenant_id, tt.slug, tt.name, tt.status, tt.metadata, tt.archived_at, tt.disabled_at, tt.deleted_at, tt.created_at, tt.updated_at, tt.human_owner_user_ids,
+  COALESCE(owner_agg.owners, '[]'::json) AS human_owners,
   COALESCE(mc.member_count, 0)::integer AS member_count,
   COALESCE(ec.digital_employee_count, 0)::integer AS digital_employee_count,
   (
@@ -1272,7 +1255,22 @@ LEFT JOIN current_config cc ON cc.tenant_id = tt.tenant_id AND cc.team_id = tt.i
 LEFT JOIN draft_counts dc ON dc.tenant_id = tt.tenant_id AND dc.team_id = tt.id
 LEFT JOIN member_counts mc ON mc.tenant_id = tt.tenant_id AND mc.team_id = tt.id
 LEFT JOIN employee_counts ec ON ec.tenant_id = tt.tenant_id AND ec.team_id = tt.id
-LEFT JOIN auth_users owner ON owner.id = tt.human_owner_user_id AND owner.deleted_at IS NULL
+LEFT JOIN LATERAL (
+  SELECT json_agg(json_build_object(
+    'id', o.id,
+    'username', o.username,
+    'display_name', o.display_name,
+    'email', o.email,
+    'status', o.status,
+    'avatar_provider', o.avatar_provider,
+    'avatar_style', o.avatar_style,
+    'avatar_seed', o.avatar_seed,
+    'avatar_options', o.avatar_options
+  )) AS owners
+  FROM auth_users o
+  WHERE o.id = ANY(tt.human_owner_user_ids)
+    AND o.deleted_at IS NULL
+) owner_agg ON true
 WHERE tt.tenant_id = $1::uuid
   AND tt.deleted_at IS NULL
   AND ($2::varchar IS NULL OR tt.status = $2::varchar)
@@ -1289,9 +1287,16 @@ WHERE tt.tenant_id = $1::uuid
     $4::varchar IS NULL
     OR tt.name ILIKE '%' || $4::varchar || '%'
     OR tt.slug ILIKE '%' || $4::varchar || '%'
-    OR owner.username ILIKE '%' || $4::varchar || '%'
-    OR owner.display_name ILIKE '%' || $4::varchar || '%'
-    OR owner.email ILIKE '%' || $4::varchar || '%'
+    OR EXISTS (
+      SELECT 1 FROM auth_users o
+      WHERE o.id = ANY(tt.human_owner_user_ids)
+        AND o.deleted_at IS NULL
+        AND (
+          o.username ILIKE '%' || $4::varchar || '%'
+          OR o.display_name ILIKE '%' || $4::varchar || '%'
+          OR o.email ILIKE '%' || $4::varchar || '%'
+        )
+    )
   )
 ORDER BY tt.updated_at DESC, tt.created_at DESC
 LIMIT $6 OFFSET $5
@@ -1312,22 +1317,14 @@ type ListTenantTeamSummariesRow struct {
 	Slug                 string             `json:"slug"`
 	Name                 string             `json:"name"`
 	Status               string             `json:"status"`
-	HumanOwnerUserID     uuid.NullUUID      `json:"human_owner_user_id"`
 	Metadata             []byte             `json:"metadata"`
 	ArchivedAt           pgtype.Timestamptz `json:"archived_at"`
 	DisabledAt           pgtype.Timestamptz `json:"disabled_at"`
 	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	OwnerUserID          uuid.NullUUID      `json:"owner_user_id"`
-	OwnerUsername        pgtype.Text        `json:"owner_username"`
-	OwnerDisplayName     pgtype.Text        `json:"owner_display_name"`
-	OwnerEmail           pgtype.Text        `json:"owner_email"`
-	OwnerStatus          pgtype.Text        `json:"owner_status"`
-	OwnerAvatarProvider  pgtype.Text        `json:"owner_avatar_provider"`
-	OwnerAvatarStyle     pgtype.Text        `json:"owner_avatar_style"`
-	OwnerAvatarSeed      pgtype.Text        `json:"owner_avatar_seed"`
-	OwnerAvatarOptions   []byte             `json:"owner_avatar_options"`
+	HumanOwnerUserIds    []uuid.UUID        `json:"human_owner_user_ids"`
+	HumanOwners          []byte             `json:"human_owners"`
 	MemberCount          int32              `json:"member_count"`
 	DigitalEmployeeCount int32              `json:"digital_employee_count"`
 	CapabilityCount      int32              `json:"capability_count"`
@@ -1359,22 +1356,14 @@ func (q *Queries) ListTenantTeamSummaries(ctx context.Context, arg ListTenantTea
 			&i.Slug,
 			&i.Name,
 			&i.Status,
-			&i.HumanOwnerUserID,
 			&i.Metadata,
 			&i.ArchivedAt,
 			&i.DisabledAt,
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.OwnerUserID,
-			&i.OwnerUsername,
-			&i.OwnerDisplayName,
-			&i.OwnerEmail,
-			&i.OwnerStatus,
-			&i.OwnerAvatarProvider,
-			&i.OwnerAvatarStyle,
-			&i.OwnerAvatarSeed,
-			&i.OwnerAvatarOptions,
+			&i.HumanOwnerUserIds,
+			&i.HumanOwners,
 			&i.MemberCount,
 			&i.DigitalEmployeeCount,
 			&i.CapabilityCount,
@@ -1394,7 +1383,7 @@ func (q *Queries) ListTenantTeamSummaries(ctx context.Context, arg ListTenantTea
 }
 
 const ListTenantTeams = `-- name: ListTenantTeams :many
-SELECT id, tenant_id, slug, name, status, human_owner_user_id, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at
+SELECT id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids
 FROM tenant_teams
 WHERE tenant_id = $1::uuid
   AND deleted_at IS NULL
@@ -1431,13 +1420,13 @@ func (q *Queries) ListTenantTeams(ctx context.Context, arg ListTenantTeamsParams
 			&i.Slug,
 			&i.Name,
 			&i.Status,
-			&i.HumanOwnerUserID,
 			&i.Metadata,
 			&i.ArchivedAt,
 			&i.DisabledAt,
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.HumanOwnerUserIds,
 		); err != nil {
 			return nil, err
 		}
@@ -1458,7 +1447,7 @@ WHERE id = $1::uuid
   AND team_id = $3::uuid
   AND status = 'draft'
   AND archived_at IS NULL
-RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, status, approved_by, approved_at, archived_at, created_at, updated_at, human_owner_user_ids
 `
 
 type RejectTenantTeamConfigRevisionParams struct {
@@ -1482,13 +1471,13 @@ func (q *Queries) RejectTenantTeamConfigRevision(ctx context.Context, arg Reject
 		&i.ArtifactContract,
 		&i.InternalCollaborationPolicy,
 		&i.RuntimeScopePolicy,
-		&i.HumanOwnerUserID,
 		&i.Status,
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.HumanOwnerUserIds,
 	)
 	return i, err
 }
@@ -1511,7 +1500,7 @@ SET
 WHERE id = $2::uuid
   AND tenant_id = $3::uuid
   AND deleted_at IS NULL
-RETURNING id, tenant_id, slug, name, status, human_owner_user_id, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids
 `
 
 type SetTenantTeamStatusParams struct {
@@ -1529,13 +1518,13 @@ func (q *Queries) SetTenantTeamStatus(ctx context.Context, arg SetTenantTeamStat
 		&i.Slug,
 		&i.Name,
 		&i.Status,
-		&i.HumanOwnerUserID,
 		&i.Metadata,
 		&i.ArchivedAt,
 		&i.DisabledAt,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.HumanOwnerUserIds,
 	)
 	return i, err
 }
@@ -1545,29 +1534,29 @@ UPDATE tenant_teams
 SET
   slug = $1::varchar,
   name = $2::varchar,
-  human_owner_user_id = $3::uuid,
+  human_owner_user_ids = COALESCE($3::uuid[], human_owner_user_ids),
   metadata = COALESCE($4::jsonb, '{}'::jsonb),
   updated_at = NOW()
 WHERE id = $5::uuid
   AND tenant_id = $6::uuid
   AND deleted_at IS NULL
-RETURNING id, tenant_id, slug, name, status, human_owner_user_id, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, slug, name, status, metadata, archived_at, disabled_at, deleted_at, created_at, updated_at, human_owner_user_ids
 `
 
 type UpdateTenantTeamParams struct {
-	Slug             string        `json:"slug"`
-	Name             string        `json:"name"`
-	HumanOwnerUserID uuid.NullUUID `json:"human_owner_user_id"`
-	Metadata         []byte        `json:"metadata"`
-	ID               uuid.UUID     `json:"id"`
-	TenantID         uuid.UUID     `json:"tenant_id"`
+	Slug              string      `json:"slug"`
+	Name              string      `json:"name"`
+	HumanOwnerUserIds []uuid.UUID `json:"human_owner_user_ids"`
+	Metadata          []byte      `json:"metadata"`
+	ID                uuid.UUID   `json:"id"`
+	TenantID          uuid.UUID   `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateTenantTeam(ctx context.Context, arg UpdateTenantTeamParams) (TenantTeam, error) {
 	row := q.db.QueryRow(ctx, UpdateTenantTeam,
 		arg.Slug,
 		arg.Name,
-		arg.HumanOwnerUserID,
+		arg.HumanOwnerUserIds,
 		arg.Metadata,
 		arg.ID,
 		arg.TenantID,
@@ -1579,13 +1568,13 @@ func (q *Queries) UpdateTenantTeam(ctx context.Context, arg UpdateTenantTeamPara
 		&i.Slug,
 		&i.Name,
 		&i.Status,
-		&i.HumanOwnerUserID,
 		&i.Metadata,
 		&i.ArchivedAt,
 		&i.DisabledAt,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.HumanOwnerUserIds,
 	)
 	return i, err
 }
@@ -1600,27 +1589,27 @@ SET
   artifact_contract = COALESCE($5::jsonb, artifact_contract),
   internal_collaboration_policy = COALESCE($6::jsonb, internal_collaboration_policy),
   runtime_scope_policy = COALESCE($7::jsonb, runtime_scope_policy),
-  human_owner_user_id = COALESCE($8::uuid, human_owner_user_id)
+  human_owner_user_ids = COALESCE($8::uuid[], human_owner_user_ids)
 WHERE id = $9::uuid
   AND tenant_id = $10::uuid
   AND team_id = $11::uuid
   AND status = 'draft'
   AND archived_at IS NULL
-RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, human_owner_user_id, status, approved_by, approved_at, archived_at, created_at, updated_at
+RETURNING id, tenant_id, team_id, revision_number, constitution, capability_policy, context_policy, approval_policy, artifact_contract, internal_collaboration_policy, runtime_scope_policy, status, approved_by, approved_at, archived_at, created_at, updated_at, human_owner_user_ids
 `
 
 type UpdateTenantTeamConfigRevisionDraftParams struct {
-	Constitution                []byte        `json:"constitution"`
-	CapabilityPolicy            []byte        `json:"capability_policy"`
-	ContextPolicy               []byte        `json:"context_policy"`
-	ApprovalPolicy              []byte        `json:"approval_policy"`
-	ArtifactContract            []byte        `json:"artifact_contract"`
-	InternalCollaborationPolicy []byte        `json:"internal_collaboration_policy"`
-	RuntimeScopePolicy          []byte        `json:"runtime_scope_policy"`
-	HumanOwnerUserID            uuid.NullUUID `json:"human_owner_user_id"`
-	ID                          uuid.UUID     `json:"id"`
-	TenantID                    uuid.UUID     `json:"tenant_id"`
-	TeamID                      uuid.UUID     `json:"team_id"`
+	Constitution                []byte      `json:"constitution"`
+	CapabilityPolicy            []byte      `json:"capability_policy"`
+	ContextPolicy               []byte      `json:"context_policy"`
+	ApprovalPolicy              []byte      `json:"approval_policy"`
+	ArtifactContract            []byte      `json:"artifact_contract"`
+	InternalCollaborationPolicy []byte      `json:"internal_collaboration_policy"`
+	RuntimeScopePolicy          []byte      `json:"runtime_scope_policy"`
+	HumanOwnerUserIds           []uuid.UUID `json:"human_owner_user_ids"`
+	ID                          uuid.UUID   `json:"id"`
+	TenantID                    uuid.UUID   `json:"tenant_id"`
+	TeamID                      uuid.UUID   `json:"team_id"`
 }
 
 func (q *Queries) UpdateTenantTeamConfigRevisionDraft(ctx context.Context, arg UpdateTenantTeamConfigRevisionDraftParams) (TenantTeamConfigRevision, error) {
@@ -1632,7 +1621,7 @@ func (q *Queries) UpdateTenantTeamConfigRevisionDraft(ctx context.Context, arg U
 		arg.ArtifactContract,
 		arg.InternalCollaborationPolicy,
 		arg.RuntimeScopePolicy,
-		arg.HumanOwnerUserID,
+		arg.HumanOwnerUserIds,
 		arg.ID,
 		arg.TenantID,
 		arg.TeamID,
@@ -1650,13 +1639,13 @@ func (q *Queries) UpdateTenantTeamConfigRevisionDraft(ctx context.Context, arg U
 		&i.ArtifactContract,
 		&i.InternalCollaborationPolicy,
 		&i.RuntimeScopePolicy,
-		&i.HumanOwnerUserID,
 		&i.Status,
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.HumanOwnerUserIds,
 	)
 	return i, err
 }

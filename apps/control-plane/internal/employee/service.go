@@ -366,6 +366,14 @@ func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (Cr
 	if name == "" {
 		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: name is required", ErrInvalidInput)
 	}
+	avatarAssetID := normalizeAvatarAssetID(req.AvatarAssetID)
+	if avatarAssetID == "" {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: avatar_asset_id is required", ErrInvalidInput)
+	}
+	avatarAsset, ok := DigitalEmployeeAvatarAssetByID(avatarAssetID)
+	if !ok {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, fmt.Errorf("%w: unknown avatar_asset_id %q", ErrInvalidInput, avatarAssetID)
+	}
 	role := strings.TrimSpace(req.Role)
 	if role == "" {
 		role = strings.TrimSpace(definition.DefaultRole)
@@ -386,10 +394,12 @@ func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (Cr
 	}
 	req.EmployeeType = employeeType
 	req.Name = name
+	req.AvatarAssetID = avatarAsset.ID
 	req.Role = role
 	req.Description = trimOptionalString(req.Description)
 	req.RiskLevel = riskLevel
 	req.ProviderType = providerType
+	req.Metadata = metadataWithAvatarAsset(req.Metadata, avatarAsset)
 	return req, definition, nil
 }
 

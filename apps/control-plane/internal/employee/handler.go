@@ -87,6 +87,13 @@ func (h *HTTPHandler) ListDigitalEmployees(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, employeeResponses(employees))
 }
 
+func (h *HTTPHandler) ListDigitalEmployeeAvatarAssets(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, nil, "digital employee avatar assets read"); !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, ListDigitalEmployeeAvatarAssets())
+}
+
 func (h *HTTPHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, nil, "digital employee overview read")
 	if !ok {
@@ -148,6 +155,7 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		TeamID                 *uuid.UUID     `json:"team_id"`
 		EmployeeType           string         `json:"employee_type"`
 		Name                   string         `json:"name"`
+		AvatarAssetID          string         `json:"avatar_asset_id"`
 		Role                   string         `json:"role"`
 		Description            *string        `json:"description"`
 		PermissionPolicy       map[string]any `json:"permission_policy"`
@@ -176,6 +184,7 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		OwnerUserID:            middleware.GetUserID(r.Context()),
 		EmployeeType:           req.EmployeeType,
 		Name:                   req.Name,
+		AvatarAssetID:          req.AvatarAssetID,
 		Role:                   req.Role,
 		Description:            req.Description,
 		PermissionPolicy:       req.PermissionPolicy,
@@ -610,19 +619,20 @@ type digitalEmployeeOverviewItemResponse struct {
 }
 
 type digitalEmployeeIdentitySummaryResponse struct {
-	ID                string                `json:"id"`
-	TenantID          string                `json:"tenant_id"`
-	TeamID            *string               `json:"team_id,omitempty"`
-	TeamName          string                `json:"team_name"`
-	OwnerUserID       string                `json:"owner_user_id"`
-	OwnerDisplayName  string                `json:"owner_display_name"`
-	EmployeeType      string                `json:"employee_type"`
-	EmployeeTypeLabel string                `json:"employee_type_label"`
-	Name              string                `json:"name"`
-	Role              string                `json:"role"`
-	Description       *string               `json:"description,omitempty"`
-	Status            DigitalEmployeeStatus `json:"status"`
-	RiskLevel         string                `json:"risk_level"`
+	ID                string                      `json:"id"`
+	TenantID          string                      `json:"tenant_id"`
+	TeamID            *string                     `json:"team_id,omitempty"`
+	TeamName          string                      `json:"team_name"`
+	OwnerUserID       string                      `json:"owner_user_id"`
+	OwnerDisplayName  string                      `json:"owner_display_name"`
+	EmployeeType      string                      `json:"employee_type"`
+	EmployeeTypeLabel string                      `json:"employee_type_label"`
+	Name              string                      `json:"name"`
+	Role              string                      `json:"role"`
+	Description       *string                     `json:"description,omitempty"`
+	Status            DigitalEmployeeStatus       `json:"status"`
+	RiskLevel         string                      `json:"risk_level"`
+	AvatarAsset       *DigitalEmployeeAvatarAsset `json:"avatar_asset,omitempty"`
 }
 
 type digitalEmployeeExecutionSummaryResponse struct {
@@ -944,6 +954,7 @@ func identitySummaryResponseFromDomain(summary DigitalEmployeeIdentitySummary) d
 		Description:       summary.Description,
 		Status:            summary.Status,
 		RiskLevel:         summary.RiskLevel,
+		AvatarAsset:       summary.AvatarAsset,
 	}
 }
 

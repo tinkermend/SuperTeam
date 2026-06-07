@@ -68,7 +68,7 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
         {
           name: draft.name.trim(),
           slug: draft.slug.trim(),
-          human_owner_user_id: draft.owner?.id ?? "",
+          human_owner_user_ids: draft.owner?.id ? [draft.owner.id] : [],
           initial_members: draft.initial_members,
           metadata: {
             display: {

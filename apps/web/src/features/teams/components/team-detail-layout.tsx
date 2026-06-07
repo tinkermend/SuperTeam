@@ -152,8 +152,9 @@ export function TeamDetailLayout({
 }
 
 function teamOwnerLabel(team: TeamOverview["team"]) {
-  if (team.human_owner) {
-    return team.human_owner.display_name || team.human_owner.username || team.human_owner.email || team.human_owner.user_id;
+  if (team.human_owners && team.human_owners.length > 0) {
+    const owner = team.human_owners[0];
+    return owner.display_name || owner.username || owner.email || owner.user_id;
   }
-  return team.human_owner_user_id ?? "未设置";
+  return team.human_owner_user_ids?.join(", ") || "未设置";
 }

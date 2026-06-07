@@ -38,8 +38,8 @@ export type Team = {
   slug: string;
   name: string;
   status: TeamStatus;
-  human_owner_user_id?: string;
-  human_owner?: TeamHumanOwner;
+  human_owner_user_ids?: string[];
+  human_owners?: TeamHumanOwner[];
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -73,7 +73,7 @@ export type TeamConfigRevision = {
   artifact_contract: Record<string, unknown>;
   internal_collaboration_policy: Record<string, unknown>;
   runtime_scope_policy: Record<string, unknown>;
-  human_owner_user_id?: string;
+  human_owner_user_ids?: string[];
   status: TeamConfigRevisionStatus;
   approved_by?: string;
   approved_at?: string;
@@ -89,6 +89,7 @@ export type TeamListItem = Team & {
   current_revision?: number;
   pending_draft_count: number;
   risk_summary: string;
+  human_owners?: TeamHumanOwner[];
 };
 
 export type TeamOverview = {
@@ -151,7 +152,7 @@ export type TeamAuditEvent = {
 export type CreateTeamInput = {
   slug: string;
   name: string;
-  human_owner_user_id: string;
+  human_owner_user_ids: string[];
   initial_members?: InitialTeamMemberInput[];
   status?: TeamStatus;
   metadata?: Record<string, unknown>;
@@ -178,12 +179,12 @@ export type ListTeamAuditEventsFilters = {
 export type UpdateTeamInput = {
   slug: string;
   name: string;
-  human_owner_user_id?: string;
+  human_owner_user_ids?: string[];
   metadata?: Record<string, unknown>;
 };
 
 export type CreateTeamConfigRevisionInput = {
-  human_owner_user_id: string;
+  human_owner_user_ids: string[];
   constitution?: Record<string, unknown>;
   capability_policy?: Record<string, unknown>;
   context_policy?: Record<string, unknown>;
@@ -195,7 +196,7 @@ export type CreateTeamConfigRevisionInput = {
 };
 
 export type GovernanceDraftInput = {
-  human_owner_user_id?: string;
+  human_owner_user_ids?: string[];
   constitution?: Record<string, unknown>;
   capability_policy?: Record<string, unknown>;
   context_policy?: Record<string, unknown>;
@@ -341,7 +342,7 @@ function teamAuditPath(
   return `${teamPath(teamId, "/audit")}${query ? `?${query}` : ""}`;
 }
 
-export function listTeamSummaries(
+export async function listTeamSummaries(
   options: ApiClientOptions,
   filters: ListTeamSummariesFilters = {},
 ): Promise<TeamListItem[]> {

@@ -42,6 +42,20 @@ const employee = {
   description: "负责需求拆解和交付风险识别",
   status: "active",
   risk_level: "medium",
+  metadata: {
+    avatar: {
+      id: "engineer-f-01",
+      label: "工程师头像 F01",
+      gender: "female",
+      age_range: "24-30",
+      style: "photorealistic_2d",
+      image_url: "/images/digital-employee-avatars/engineer-f-01.webp",
+      thumbnail_url: "/images/digital-employee-avatars/engineer-f-01-256.webp",
+      source: "ai_generated_internal_pack",
+      license: "internal_product_asset",
+      status: "active",
+    },
+  },
 };
 
 const executionInstance = {
@@ -193,6 +207,10 @@ describe("EmployeeDetailView", () => {
     const screen = await renderEmployeeDetail(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "需求分析员工" })).toBeVisible();
+    await expect.element(screen.getByAltText("需求分析员工 的头像")).toHaveAttribute(
+      "src",
+      "/images/digital-employee-avatars/engineer-f-01-256.webp",
+    );
     await expect.element(screen.getByText("执行中")).toBeVisible();
     await expect.element(screen.getByText("provider.stdout")).toBeVisible();
     await expect.element(screen.getByText(/正在分析需求/)).toBeVisible();

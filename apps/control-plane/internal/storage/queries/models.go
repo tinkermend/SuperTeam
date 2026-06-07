@@ -1021,8 +1021,6 @@ type TenantTeam struct {
 	Name string `json:"name"`
 	// 团队状态
 	Status string `json:"status"`
-	// 团队负责人用户ID，第一版用于团队级审批、升级和跨团队交接决策
-	HumanOwnerUserID uuid.NullUUID `json:"human_owner_user_id"`
 	// 团队扩展元数据
 	Metadata []byte `json:"metadata"`
 	// 团队归档时间
@@ -1034,7 +1032,8 @@ type TenantTeam struct {
 	// 团队创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 团队最后更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	HumanOwnerUserIds []uuid.UUID        `json:"human_owner_user_ids"`
 }
 
 // 团队治理配置版本表
@@ -1061,8 +1060,6 @@ type TenantTeamConfigRevision struct {
 	InternalCollaborationPolicy []byte `json:"internal_collaboration_policy"`
 	// 团队Runtime范围策略，定义可使用的执行节点、Provider和环境边界
 	RuntimeScopePolicy []byte `json:"runtime_scope_policy"`
-	// 该版本配置的团队负责人用户ID
-	HumanOwnerUserID uuid.NullUUID `json:"human_owner_user_id"`
 	// 配置状态：draft、active、archived
 	Status string `json:"status"`
 	// 批准该配置版本的用户ID
@@ -1074,7 +1071,8 @@ type TenantTeamConfigRevision struct {
 	// 创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	HumanOwnerUserIds []uuid.UUID        `json:"human_owner_user_ids"`
 }
 
 // 团队高权限角色变更申请表

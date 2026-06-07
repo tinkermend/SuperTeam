@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-07 19:50：新增数字员工内置头像库，提供 20 个工程师头像资产、Control Plane 头像资产列表 API、创建时 `avatar_asset_id` 校验与 metadata 快照，并在 Web 创建、列表和详情页展示员工头像。
 - 2026-06-07 15:35：数字员工页面新增"配置"功能，支持创建配置修订版本（Config Revision），包括 Role Profile、Constitution Addendum、Capability Selection、Context Policy Override、Approval Policy Override 和 Output Contract Addendum 的 JSON 配置编辑。
 - 2026-06-07 02:28：Runtime Agent 完成执行能力底座核心模块开发，新增按执行实例隔离的工作目录管理、S3 工件上传基础设施和 Provider 会话状态扩展支持。
 - 2026-06-07 02:52：Runtime Agent 执行器适配新工作目录结构，execute_task 使用 create_run_workspace 创建 workspace/logs/artifacts 隔离目录，完成端到端执行闭环基础改造。

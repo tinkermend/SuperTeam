@@ -8,6 +8,19 @@ export type DigitalEmployeeStatus =
   | "disabled"
   | "error";
 
+export type DigitalEmployeeAvatarAsset = {
+  id: string;
+  label: string;
+  gender: string;
+  age_range: string;
+  style: string;
+  image_url: string;
+  thumbnail_url: string;
+  source: string;
+  license: string;
+  status: string;
+};
+
 export type DigitalEmployee = {
   id: string;
   tenant_id: string;
@@ -23,6 +36,8 @@ export type DigitalEmployee = {
   approval_policy: Record<string, unknown>;
   risk_level: string;
   metadata?: Record<string, unknown> & {
+    avatar?: Record<string, unknown>;
+    avatar_asset_id?: string;
     effective_config_label?: string;
     effective_config_status?:
       | "approved"
@@ -256,6 +271,7 @@ export type DigitalEmployeeOverviewItem = {
     description?: string;
     status: DigitalEmployeeStatus;
     risk_level: string;
+    avatar_asset?: DigitalEmployeeAvatarAsset;
   };
   execution_summary: {
     execution_instance_id?: string;
@@ -312,6 +328,7 @@ export type CreateDigitalEmployeeInput = {
   team_id: string;
   employee_type: string;
   name: string;
+  avatar_asset_id: string;
   role?: string;
   description?: string;
   permission_policy?: Record<string, unknown>;
@@ -345,13 +362,15 @@ function assertReadyCreateInput(
   if (
     !("employee_type" in input) ||
     !input.employee_type ||
+    !("avatar_asset_id" in input) ||
+    !input.avatar_asset_id ||
     !("runtime_node_id" in input) ||
     !input.runtime_node_id ||
     !("provider_type" in input) ||
     !input.provider_type
   ) {
     throw new Error(
-      "digital employee ready creation requires employee_type, runtime_node_id, and provider_type",
+      "digital employee ready creation requires employee_type, avatar_asset_id, runtime_node_id, and provider_type",
     );
   }
 }
@@ -548,6 +567,16 @@ export function getDigitalEmployeeCreateOptions(
     options,
     `/api/v1/digital-employees/create-options?${searchParams.toString()}`,
     "digital employee create options",
+  );
+}
+
+export function listDigitalEmployeeAvatarAssets(
+  options: ApiClientOptions,
+): Promise<DigitalEmployeeAvatarAsset[]> {
+  return getJson<DigitalEmployeeAvatarAsset[]>(
+    options,
+    "/api/v1/digital-employee-avatar-assets",
+    "digital employee avatar assets",
   );
 }
 

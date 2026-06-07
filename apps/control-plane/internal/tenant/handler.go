@@ -103,7 +103,7 @@ func (h *HTTPHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		Slug             string                   `json:"slug"`
 		Name             string                   `json:"name"`
 		Status           TeamStatus               `json:"status"`
-		HumanOwnerUserID *uuid.UUID               `json:"human_owner_user_id"`
+		HumanOwnerUserIDs []uuid.UUID `json:"human_owner_user_ids,omitempty"`
 		InitialMembers   []InitialTeamMemberInput `json:"initial_members"`
 		Metadata         map[string]any           `json:"metadata"`
 	}
@@ -117,7 +117,7 @@ func (h *HTTPHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		Slug:             req.Slug,
 		Name:             req.Name,
 		Status:           req.Status,
-		HumanOwnerUserID: req.HumanOwnerUserID,
+		HumanOwnerUserIDs: req.HumanOwnerUserIDs,
 		InitialMembers:   req.InitialMembers,
 		Metadata:         req.Metadata,
 	})
@@ -188,7 +188,7 @@ func (h *HTTPHandler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Slug             string         `json:"slug"`
 		Name             string         `json:"name"`
-		HumanOwnerUserID *uuid.UUID     `json:"human_owner_user_id"`
+		HumanOwnerUserIDs []uuid.UUID `json:"human_owner_user_ids,omitempty"`
 		Metadata         map[string]any `json:"metadata"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -200,7 +200,7 @@ func (h *HTTPHandler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 		TeamID:           teamID,
 		Slug:             req.Slug,
 		Name:             req.Name,
-		HumanOwnerUserID: req.HumanOwnerUserID,
+		HumanOwnerUserIDs: req.HumanOwnerUserIDs,
 		Metadata:         req.Metadata,
 	})
 	if err != nil {
@@ -235,7 +235,7 @@ func (h *HTTPHandler) CreateTeamConfigRevision(w http.ResponseWriter, r *http.Re
 		ArtifactContract            map[string]any           `json:"artifact_contract"`
 		InternalCollaborationPolicy map[string]any           `json:"internal_collaboration_policy"`
 		RuntimeScopePolicy          map[string]any           `json:"runtime_scope_policy"`
-		HumanOwnerUserID            *uuid.UUID               `json:"human_owner_user_id"`
+		HumanOwnerUserIDs []uuid.UUID `json:"human_owner_user_ids,omitempty"`
 		Status                      TeamConfigRevisionStatus `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -265,7 +265,7 @@ func (h *HTTPHandler) CreateTeamConfigRevision(w http.ResponseWriter, r *http.Re
 		ArtifactContract:            req.ArtifactContract,
 		InternalCollaborationPolicy: req.InternalCollaborationPolicy,
 		RuntimeScopePolicy:          req.RuntimeScopePolicy,
-		HumanOwnerUserID:            req.HumanOwnerUserID,
+		HumanOwnerUserIDs: req.HumanOwnerUserIDs,
 		Status:                      req.Status,
 		ApprovedBy:                  &approvedBy,
 	})
@@ -353,7 +353,7 @@ func (h *HTTPHandler) CreateGovernanceDraft(w http.ResponseWriter, r *http.Reque
 		ArtifactContract:            input.ArtifactContract,
 		InternalCollaborationPolicy: input.InternalCollaborationPolicy,
 		RuntimeScopePolicy:          input.RuntimeScopePolicy,
-		HumanOwnerUserID:            input.HumanOwnerUserID,
+		HumanOwnerUserIDs: input.HumanOwnerUserIDs,
 		Status:                      TeamConfigRevisionStatusDraft,
 	})
 	if err != nil {
@@ -832,8 +832,8 @@ type teamResponse struct {
 	Slug             string                  `json:"slug"`
 	Name             string                  `json:"name"`
 	Status           TeamStatus              `json:"status"`
-	HumanOwnerUserID *string                 `json:"human_owner_user_id,omitempty"`
-	HumanOwner       *teamHumanOwnerResponse `json:"human_owner,omitempty"`
+	HumanOwnerUserIDs []string `json:"human_owner_user_ids,omitempty"`
+	HumanOwners []teamHumanOwnerResponse `json:"human_owners,omitempty"`
 	Metadata         map[string]any          `json:"metadata"`
 	CreatedAt        string                  `json:"created_at,omitempty"`
 	UpdatedAt        string                  `json:"updated_at,omitempty"`
@@ -845,8 +845,8 @@ type teamListItemResponse struct {
 	Slug                 string                  `json:"slug"`
 	Name                 string                  `json:"name"`
 	Status               TeamStatus              `json:"status"`
-	HumanOwnerUserID     *string                 `json:"human_owner_user_id,omitempty"`
-	HumanOwner           *teamHumanOwnerResponse `json:"human_owner,omitempty"`
+	HumanOwnerUserIDs []string `json:"human_owner_user_ids,omitempty"`
+	HumanOwners []teamHumanOwnerResponse `json:"human_owners,omitempty"`
 	Metadata             map[string]any          `json:"metadata"`
 	CreatedAt            string                  `json:"created_at,omitempty"`
 	UpdatedAt            string                  `json:"updated_at,omitempty"`
@@ -891,7 +891,7 @@ type configRevisionResponse struct {
 	ArtifactContract            map[string]any           `json:"artifact_contract"`
 	InternalCollaborationPolicy map[string]any           `json:"internal_collaboration_policy"`
 	RuntimeScopePolicy          map[string]any           `json:"runtime_scope_policy"`
-	HumanOwnerUserID            *string                  `json:"human_owner_user_id,omitempty"`
+	HumanOwnerUserIDs []string `json:"human_owner_user_ids,omitempty"`
 	Status                      TeamConfigRevisionStatus `json:"status"`
 	ApprovedBy                  *string                  `json:"approved_by,omitempty"`
 	ApprovedAt                  *string                  `json:"approved_at,omitempty"`
@@ -1015,7 +1015,7 @@ func governanceDraftInputFromRequest(w http.ResponseWriter, r *http.Request) (Go
 		ArtifactContract            map[string]any `json:"artifact_contract"`
 		InternalCollaborationPolicy map[string]any `json:"internal_collaboration_policy"`
 		RuntimeScopePolicy          map[string]any `json:"runtime_scope_policy"`
-		HumanOwnerUserID            *uuid.UUID     `json:"human_owner_user_id"`
+		HumanOwnerUserIDs []uuid.UUID `json:"human_owner_user_ids,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1029,7 +1029,7 @@ func governanceDraftInputFromRequest(w http.ResponseWriter, r *http.Request) (Go
 		ArtifactContract:            req.ArtifactContract,
 		InternalCollaborationPolicy: req.InternalCollaborationPolicy,
 		RuntimeScopePolicy:          req.RuntimeScopePolicy,
-		HumanOwnerUserID:            req.HumanOwnerUserID,
+		HumanOwnerUserIDs: req.HumanOwnerUserIDs,
 	}, true
 }
 
@@ -1078,8 +1078,8 @@ func teamResponseFromDomain(team *Team) teamResponse {
 		Slug:             team.Slug,
 		Name:             team.Name,
 		Status:           team.Status,
-		HumanOwnerUserID: uuidStringPtr(team.HumanOwnerUserID),
-		HumanOwner:       teamHumanOwnerResponseFromDomain(team.HumanOwner),
+		HumanOwnerUserIDs: uuidStringSlice(team.HumanOwnerUserIDs),
+		HumanOwners: teamHumanOwnersResponseFromDomain(team.HumanOwners),
 		Metadata:         cloneMap(team.Metadata),
 		CreatedAt:        timeString(team.CreatedAt),
 		UpdatedAt:        timeString(team.UpdatedAt),
@@ -1093,8 +1093,8 @@ func teamListItemResponseFromDomain(item *TeamListItem) teamListItemResponse {
 		Slug:                 item.Slug,
 		Name:                 item.Name,
 		Status:               item.Status,
-		HumanOwnerUserID:     uuidStringPtr(item.HumanOwnerUserID),
-		HumanOwner:           teamHumanOwnerResponseFromDomain(item.HumanOwner),
+		HumanOwnerUserIDs: uuidStringSlice(item.HumanOwnerUserIDs),
+		HumanOwners: teamHumanOwnersResponseFromDomain(item.HumanOwners),
 		Metadata:             cloneMap(item.Metadata),
 		CreatedAt:            timeString(item.CreatedAt),
 		UpdatedAt:            timeString(item.UpdatedAt),
@@ -1108,18 +1108,22 @@ func teamListItemResponseFromDomain(item *TeamListItem) teamListItemResponse {
 	}
 }
 
-func teamHumanOwnerResponseFromDomain(owner *TeamHumanOwner) *teamHumanOwnerResponse {
-	if owner == nil {
+func teamHumanOwnersResponseFromDomain(owners []TeamHumanOwner) []teamHumanOwnerResponse {
+	if owners == nil {
 		return nil
 	}
-	return &teamHumanOwnerResponse{
-		UserID:      owner.UserID.String(),
-		Username:    owner.Username,
-		DisplayName: owner.DisplayName,
-		Email:       owner.Email,
-		Status:      owner.Status,
-		Avatar:      userAvatarResponseFromDomain(owner.Avatar),
+	var res []teamHumanOwnerResponse
+	for _, owner := range owners {
+		res = append(res, teamHumanOwnerResponse{
+			UserID:      owner.UserID.String(),
+			Username:    owner.Username,
+			DisplayName: owner.DisplayName,
+			Email:       owner.Email,
+			Status:      owner.Status,
+			Avatar:      userAvatarResponseFromDomain(owner.Avatar),
+		})
 	}
+	return res
 }
 
 func userAvatarResponseFromDomain(avatar *UserAvatarConfig) *userAvatarResponse {
@@ -1166,7 +1170,7 @@ func configRevisionResponseFromDomain(revision *TeamConfigRevision) configRevisi
 		ArtifactContract:            cloneMap(revision.ArtifactContract),
 		InternalCollaborationPolicy: cloneMap(revision.InternalCollaborationPolicy),
 		RuntimeScopePolicy:          cloneMap(revision.RuntimeScopePolicy),
-		HumanOwnerUserID:            uuidStringPtr(revision.HumanOwnerUserID),
+		HumanOwnerUserIDs: uuidStringSlice(revision.HumanOwnerUserIDs),
 		Status:                      revision.Status,
 		ApprovedBy:                  uuidStringPtr(revision.ApprovedBy),
 		ApprovedAt:                  timeStringPtr(revision.ApprovedAt),
@@ -1292,6 +1296,18 @@ func teamAuditEventResponseFromDomain(event *audit.Event) teamAuditEventResponse
 		IPAddress:    event.IPAddress,
 		CreatedAt:    timeString(event.CreatedAt),
 	}
+}
+
+
+func uuidStringSlice(values []uuid.UUID) []string {
+	if values == nil {
+		return nil
+	}
+	var res []string
+	for _, v := range values {
+		res = append(res, v.String())
+	}
+	return res
 }
 
 func uuidStringPtr(value *uuid.UUID) *string {

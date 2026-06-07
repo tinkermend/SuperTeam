@@ -49,6 +49,8 @@ import {
   type OverviewFilterOption,
 } from "@/lib/api/employees";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
+import { EmployeeAvatar } from "./avatar";
+import { overviewAvatarAsset } from "./avatar-library";
 
 const DEFAULT_STATUS_OPTIONS: OverviewFilterOption[] = [
   { value: "active", label: "生效" },
@@ -342,14 +344,13 @@ function EmployeeOverviewRow({ item }: { item: DigitalEmployeeOverviewItem }) {
   const identity = item.identity_summary;
   const execution = item.execution_summary;
   const latestRun = item.latest_run_summary;
+  const avatarAsset = overviewAvatarAsset(item);
 
   return (
     <TableRow>
       <TableCell className="min-w-[240px] whitespace-normal">
         <div className="flex min-w-0 items-start gap-3">
-          <SemanticIconTile tone={statusTone(identity.status)} size="sm">
-            <Bot />
-          </SemanticIconTile>
+          <EmployeeAvatar asset={avatarAsset} name={identity.name} size="md" />
           <div className="min-w-0">
             <div className="font-medium text-foreground">{identity.name}</div>
             {identity.description ? (
@@ -412,11 +413,18 @@ function EmployeeOverviewRow({ item }: { item: DigitalEmployeeOverviewItem }) {
         </div>
       </TableCell>
       <TableCell className="text-right">
-        <Button asChild size="sm" variant="outline">
-          <Link params={{ employeeId: identity.id }} to="/employees/$employeeId">
-            详情
-          </Link>
-        </Button>
+        <div className="flex justify-end gap-2">
+          <Button asChild size="sm" variant="outline">
+            <Link params={{ employeeId: identity.id }} to="/employees/$employeeId">
+              详情
+            </Link>
+          </Button>
+          <Button asChild size="sm" variant="outline">
+            <Link params={{ employeeId: identity.id }} to="/employees/$employeeId/config">
+              配置
+            </Link>
+          </Button>
+        </div>
       </TableCell>
     </TableRow>
   );

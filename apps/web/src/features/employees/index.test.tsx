@@ -67,6 +67,18 @@ function createEmployeesFetcher() {
                 description: "负责需求拆解和交付风险识别",
                 status: "active",
                 risk_level: "medium",
+                avatar_asset: {
+                  id: "engineer-f-01",
+                  label: "工程师头像 F01",
+                  gender: "female",
+                  age_range: "24-30",
+                  style: "photorealistic_2d",
+                  image_url: "/images/digital-employee-avatars/engineer-f-01.webp",
+                  thumbnail_url: "/images/digital-employee-avatars/engineer-f-01-256.webp",
+                  source: "ai_generated_internal_pack",
+                  license: "internal_product_asset",
+                  status: "active",
+                },
               },
               execution_summary: {
                 execution_instance_id: "22222222-2222-4222-8222-222222222222",
@@ -169,6 +181,10 @@ describe("EmployeesView", () => {
     await expect.element(screen.getByText("18")).toBeVisible();
     await expect.element(screen.getByText("可执行员工")).toBeVisible();
     await expect.element(screen.getByText("需求分析员工")).toBeVisible();
+    await expect.element(screen.getByAltText("需求分析员工 的头像")).toHaveAttribute(
+      "src",
+      "/images/digital-employee-avatars/engineer-f-01-256.webp",
+    );
     await expect.element(screen.getByText("产品组")).toBeVisible();
     await expect.element(screen.getByText("runtime-cn-01 · codex")).toBeVisible();
     await expect.element(screen.getByText("审查需求")).toBeVisible();

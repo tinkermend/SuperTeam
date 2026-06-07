@@ -36,7 +36,7 @@ describe("team API", () => {
         slug: "platform",
         name: "平台团队",
         status: "active",
-        human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+        human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
       },
     ];
     const fetcher = vi.fn(
@@ -184,7 +184,7 @@ describe("team API", () => {
       slug: "ops",
       name: "运维团队",
       status: "active",
-      human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+      human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
     };
     const fetcher = vi.fn(
       async () =>
@@ -204,7 +204,7 @@ describe("team API", () => {
         {
           slug: "ops",
           name: "运维团队",
-          human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+          human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
         },
       ),
     ).resolves.toEqual(team);
@@ -215,7 +215,7 @@ describe("team API", () => {
         body: JSON.stringify({
           slug: "ops",
           name: "运维团队",
-          human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+          human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
         }),
         credentials: "include",
         headers: {
@@ -279,14 +279,12 @@ describe("team API", () => {
         slug: "security",
         name: "安全团队",
         status: "active",
-        human_owner_user_id: "33333333-3333-4333-8333-333333333333",
-        human_owner: {
-          user_id: "33333333-3333-4333-8333-333333333333",
+        human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
+        human_owners: [{user_id: "33333333-3333-4333-8333-333333333333",
           username: "owner",
           display_name: "负责人",
           email: "owner@example.com",
-          status: "active",
-        },
+          status: "active",}],
       },
       member_count: 3,
       digital_employee_count: 0,
@@ -312,7 +310,7 @@ describe("team API", () => {
         {
           slug: "security",
           name: "安全团队",
-          human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+          human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
           initial_members: [
             { user_id: "44444444-4444-4444-8444-444444444444", role: "member" },
             { user_id: "55555555-5555-4555-8555-555555555555", role: "viewer" },
@@ -327,7 +325,7 @@ describe("team API", () => {
         body: JSON.stringify({
           slug: "security",
           name: "安全团队",
-          human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+          human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
           initial_members: [
             { user_id: "44444444-4444-4444-8444-444444444444", role: "member" },
             { user_id: "55555555-5555-4555-8555-555555555555", role: "viewer" },
@@ -356,7 +354,7 @@ describe("team API", () => {
       artifact_contract: {},
       internal_collaboration_policy: {},
       runtime_scope_policy: {},
-      human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+      human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
       status: "active",
     };
     const fetcher = vi.fn(
@@ -377,7 +375,7 @@ describe("team API", () => {
         {
           constitution: { principle: "review" },
           capability_policy: { allow: ["incident-diagnosis"] },
-          human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+          human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
           status: "active",
         },
       ),
@@ -389,7 +387,7 @@ describe("team API", () => {
         body: JSON.stringify({
           constitution: { principle: "review" },
           capability_policy: { allow: ["incident-diagnosis"] },
-          human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+          human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
           status: "active",
         }),
         credentials: "include",
@@ -415,7 +413,7 @@ describe("team API", () => {
       artifact_contract: {},
       internal_collaboration_policy: {},
       runtime_scope_policy: {},
-      human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+      human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
       status: "active",
     };
     const fetcher = vi.fn(
@@ -459,7 +457,7 @@ describe("team API", () => {
       artifact_contract: {},
       internal_collaboration_policy: {},
       runtime_scope_policy: {},
-      human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+      human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
       status: "draft",
     };
     const diff = {
@@ -517,7 +515,7 @@ describe("team API", () => {
     await expect(
       createTeamGovernanceDraft(options, "team 1/primary", {
         constitution: { hard_rules: ["提交前必须审批"] },
-        human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+        human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
       }),
     ).resolves.toEqual(revision);
     await expect(
@@ -556,7 +554,7 @@ describe("team API", () => {
       expect.objectContaining({
         body: JSON.stringify({
           constitution: { hard_rules: ["提交前必须审批"] },
-          human_owner_user_id: "33333333-3333-4333-8333-333333333333",
+          human_owner_user_ids: ["33333333-3333-4333-8333-333333333333"],
         }),
         credentials: "include",
         method: "POST",

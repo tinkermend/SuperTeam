@@ -7,10 +7,17 @@ import {
   type TeamDisplayMetadata,
 } from "@/components/superteam/team-icon-tile";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   UserIdentityAvatar,
   getUserIdentityLabel,
   type UserIdentityData,
 } from "@/components/superteam/user-identity";
+import { EmployeeAvatar } from "@/features/employees/avatar";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { listDigitalEmployees } from "@/lib/api/employees";
@@ -77,19 +84,17 @@ function DigitalEmployeeAvatar({
   className?: string;
   employee: DigitalEmployee;
 }) {
+  const asset = employee.metadata?.avatar_asset;
+
   return (
     <div
       aria-label={`${employee.name} 的头像`}
-      className={cn(
-        "relative flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted",
-        className,
-      )}
+      className={cn("relative shrink-0 rounded-full", className)}
       title={`${employee.name} · ${employee.role}`}
     >
-      {/* Placeholder icon – will be replaced with real avatar */}
-      <Bot className="size-4 text-muted-foreground" />
+      <EmployeeAvatar asset={asset} name={employee.name} size="sm" />
       {/* AI badge */}
-      <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 rounded-sm bg-blue-500 px-1 py-px text-[9px] font-bold leading-none text-white">
+      <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-sm bg-blue-500 px-1 py-px text-[9px] font-bold leading-none text-white z-10 shadow-sm border border-background">
         AI
       </span>
     </div>
@@ -177,9 +182,9 @@ function PlaceholderAvatarStack({ count }: { count: number }) {
 // ---------------------------------------------------------------------------
 
 function HumanOwnerSection({ team }: { team: TeamListItem }) {
-  const owner = getOwnerIdentity(team);
+  const owners = getOwnerIdentities(team);
 
-  if (!owner) {
+  if (owners.length === 0) {
     return (
       <div className="flex items-center gap-3 py-2">
         <div className="flex size-10 items-center justify-center rounded-full border border-dashed border-border bg-muted/50">
@@ -190,15 +195,82 @@ function HumanOwnerSection({ team }: { team: TeamListItem }) {
     );
   }
 
-  const label = getUserIdentityLabel(owner);
+  if (owners.length === 1) {
+    const owner = owners[0]!;
+    const label = getUserIdentityLabel(owner);
+    return (
+      <div className="flex items-center gap-3 py-2">
+        <UserIdentityAvatar className="size-10" user={owner} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">{label.primary}</div>
+          <div className="truncate text-xs text-muted-foreground">
+            {label.secondary}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const MAX_VISIBLE = 3;
+  const visibleOwners = owners.slice(0, MAX_VISIBLE);
 
   return (
     <div className="flex items-center gap-3 py-2">
-      <UserIdentityAvatar className="size-10" user={owner} />
+      <TooltipProvider>
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <div className="flex cursor-help items-center">
+              <div className="flex -space-x-2">
+                {visibleOwners.map((owner) => (
+                  <div
+                    className="overflow-hidden rounded-full ring-2 ring-background"
+                    key={owner.id}
+                  >
+                    <UserIdentityAvatar className="size-8" user={owner} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent
+            className="p-3 bg-popover text-popover-foreground border border-border shadow-md"
+            side="bottom"
+          >
+            <div className="mb-2 text-xs font-semibold text-muted-foreground">
+              联席负责人 ({owners.length})
+            </div>
+            <div className="flex flex-col gap-2.5">
+              {owners.map((o) => {
+                const label = getUserIdentityLabel(o);
+                return (
+                  <div className="flex items-center gap-2" key={o.id}>
+                    <UserIdentityAvatar className="size-6" user={o} />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-medium leading-none text-foreground">
+                        {label.primary}
+                      </span>
+                      <span className="mt-1 text-[10px] leading-none text-muted-foreground">
+                        {label.secondary}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{label.primary}</div>
+        <div className="truncate text-sm font-medium">
+          {owners
+            .slice(0, 2)
+            .map((o) => getUserIdentityLabel(o).primary)
+            .join("、")}
+          {owners.length > 2 ? ` 等 ${owners.length} 人` : ""}
+        </div>
         <div className="truncate text-xs text-muted-foreground">
-          {label.secondary}
+          联席负责人
         </div>
       </div>
     </div>
@@ -225,6 +297,26 @@ function getOwnerIdentity(team: TeamListItem): UserIdentityData | undefined {
   }
 
   return undefined;
+}
+
+function getOwnerIdentities(team: TeamListItem): UserIdentityData[] {
+  if (team.human_owners && team.human_owners.length > 0) {
+    return team.human_owners.map((owner) => ({
+      avatar: owner.avatar,
+      display_name: owner.display_name,
+      email: owner.email,
+      id: owner.user_id,
+      status: owner.status,
+      username: owner.username,
+    }));
+  }
+
+  const singleOwner = getOwnerIdentity(team);
+  if (singleOwner) {
+    return [singleOwner];
+  }
+
+  return [];
 }
 
 // ---------------------------------------------------------------------------

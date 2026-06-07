@@ -45,7 +45,7 @@ func TestCreateTeamDefaultsActiveStatus(t *testing.T) {
 		ActorUserID:      uuid.New(),
 		Slug:             "engineering",
 		Name:             "Engineering",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 	})
 	if err != nil {
 		t.Fatalf("create team: %v", err)
@@ -98,7 +98,7 @@ func TestCreateTeamCreatesOwnerAndInitialMembers(t *testing.T) {
 		ActorUserID:      actorID,
 		Slug:             "security",
 		Name:             "安全团队",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 		InitialMembers: []InitialTeamMemberInput{
 			{UserID: memberID, Role: TeamRoleMember},
 			{UserID: viewerID, Role: TeamRoleViewer},
@@ -114,8 +114,8 @@ func TestCreateTeamCreatesOwnerAndInitialMembers(t *testing.T) {
 	if overview.MemberCount != 3 {
 		t.Fatalf("expected owner plus two members in overview, got %d", overview.MemberCount)
 	}
-	if repo.createdTeamWithMembers.OwnerUserID != ownerID {
-		t.Fatalf("expected owner %s, got %s", ownerID, repo.createdTeamWithMembers.OwnerUserID)
+	if repo.createdTeamWithMembers.OwnerUserIDs[0] != ownerID {
+		t.Fatalf("expected owner %s, got %s", ownerID, repo.createdTeamWithMembers.OwnerUserIDs[0])
 	}
 	if got := repo.createdTeamWithMembers.InitialMembers; !reflect.DeepEqual(got, []InitialTeamMemberInput{
 		{UserID: memberID, Role: TeamRoleMember},
@@ -146,7 +146,7 @@ func TestCreateTeamAcceptsMetadataDisplay(t *testing.T) {
 		ActorUserID:      actorID,
 		Slug:             "security",
 		Name:             "安全团队",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 		Metadata: map[string]any{
 			"display": map[string]any{
 				"icon_key":   "security",
@@ -181,7 +181,7 @@ func TestCreateTeamMetadataDisplayDoesNotMutateOrShareInput(t *testing.T) {
 		ActorUserID:      uuid.New(),
 		Slug:             "security",
 		Name:             "安全团队",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 		Metadata:         metadata,
 	})
 	if err != nil {
@@ -234,7 +234,7 @@ func TestCreateTeamRejectsInvalidMetadataDisplay(t *testing.T) {
 				ActorUserID:      actorID,
 				Slug:             "security",
 				Name:             "安全团队",
-				HumanOwnerUserID: &ownerID,
+				HumanOwnerUserIDs: []uuid.UUID{ownerID},
 				Metadata:         tc.metadata,
 			})
 			if !errors.Is(err, ErrInvalidInput) {
@@ -261,7 +261,7 @@ func TestCreateTeamRejectsPrivilegedInitialMemberRoles(t *testing.T) {
 		ActorUserID:      actorID,
 		Slug:             "security",
 		Name:             "安全团队",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 		InitialMembers:   []InitialTeamMemberInput{{UserID: targetID, Role: TeamRoleAdmin}},
 	})
 
@@ -288,7 +288,7 @@ func TestCreateTeamRejectsOwnerDuplicatedAsInitialMember(t *testing.T) {
 		ActorUserID:      actorID,
 		Slug:             "security",
 		Name:             "安全团队",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 		InitialMembers:   []InitialTeamMemberInput{{UserID: ownerID, Role: TeamRoleMember}},
 	})
 
@@ -311,7 +311,7 @@ func TestCreateTeamConfigRevisionDefaultsActiveStatus(t *testing.T) {
 		ActorUserID:      uuid.New(),
 		Slug:             "engineering",
 		Name:             "Engineering",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 	})
 	if err != nil {
 		t.Fatalf("create team: %v", err)
@@ -327,7 +327,7 @@ func TestCreateTeamConfigRevisionDefaultsActiveStatus(t *testing.T) {
 		ArtifactContract:            map[string]any{"required": []any{"handoff"}},
 		InternalCollaborationPolicy: map[string]any{"mode": "structured"},
 		RuntimeScopePolicy:          map[string]any{"scope": "team"},
-		HumanOwnerUserID:            &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 		ApprovedBy:                  &approvedBy,
 	})
 	if err != nil {
@@ -372,7 +372,7 @@ func TestCreateTeamConfigRevisionRequiresExistingTeam(t *testing.T) {
 		ActorUserID:      uuid.New(),
 		Slug:             "engineering",
 		Name:             "Engineering",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 	})
 	if err != nil {
 		t.Fatalf("create team: %v", err)
@@ -393,7 +393,7 @@ func TestCreateTeamConfigRevisionRequiresExistingTeam(t *testing.T) {
 			_, err := svc.CreateConfigRevision(context.Background(), CreateTeamConfigRevisionRequest{
 				TenantID:         tt.tenantID,
 				TeamID:           tt.teamID,
-				HumanOwnerUserID: &ownerID,
+				HumanOwnerUserIDs: []uuid.UUID{ownerID},
 			})
 			if !errors.Is(err, ErrNotFound) {
 				t.Fatalf("expected not found error, got %v", err)
@@ -418,7 +418,7 @@ func TestCreateTeamConfigRevisionRejectsSecondActiveBeforeInsert(t *testing.T) {
 		ActorUserID:      uuid.New(),
 		Slug:             "engineering",
 		Name:             "Engineering",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 	})
 	if err != nil {
 		t.Fatalf("create team: %v", err)
@@ -426,7 +426,7 @@ func TestCreateTeamConfigRevisionRejectsSecondActiveBeforeInsert(t *testing.T) {
 	if _, err := svc.CreateConfigRevision(context.Background(), CreateTeamConfigRevisionRequest{
 		TenantID:         tenantID,
 		TeamID:           team.Team.ID,
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 	}); err != nil {
 		t.Fatalf("create first active revision: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestCreateTeamConfigRevisionRejectsSecondActiveBeforeInsert(t *testing.T) {
 	_, err = svc.CreateConfigRevision(context.Background(), CreateTeamConfigRevisionRequest{
 		TenantID:         tenantID,
 		TeamID:           team.Team.ID,
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 	})
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected invalid input for second active revision, got %v", err)
@@ -459,7 +459,7 @@ func TestCreateTeamConfigRevisionDraftHasNoApprovalMetadata(t *testing.T) {
 		ActorUserID:      uuid.New(),
 		Slug:             "engineering",
 		Name:             "Engineering",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 	})
 	if err != nil {
 		t.Fatalf("create team: %v", err)
@@ -468,7 +468,7 @@ func TestCreateTeamConfigRevisionDraftHasNoApprovalMetadata(t *testing.T) {
 	revision, err := svc.CreateConfigRevision(context.Background(), CreateTeamConfigRevisionRequest{
 		TenantID:         tenantID,
 		TeamID:           team.Team.ID,
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 		Status:           TeamConfigRevisionStatusDraft,
 		ApprovedBy:       &approvedBy,
 	})
@@ -503,7 +503,7 @@ func TestApproveGovernanceDraftArchivesPreviousActive(t *testing.T) {
 		ActorUserID:      uuid.New(),
 		Slug:             "platform",
 		Name:             "Platform",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 	})
 	if err != nil {
 		t.Fatalf("create team: %v", err)
@@ -523,7 +523,7 @@ func TestApproveGovernanceDraftArchivesPreviousActive(t *testing.T) {
 		ArtifactContract:            map[string]any{},
 		InternalCollaborationPolicy: map[string]any{},
 		RuntimeScopePolicy:          map[string]any{},
-		HumanOwnerUserID:            &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 		Status:                      TeamConfigRevisionStatusActive,
 		ApprovedAt:                  &now,
 		CreatedAt:                   now,
@@ -541,7 +541,7 @@ func TestApproveGovernanceDraftArchivesPreviousActive(t *testing.T) {
 		ArtifactContract:            map[string]any{},
 		InternalCollaborationPolicy: map[string]any{},
 		RuntimeScopePolicy:          map[string]any{},
-		HumanOwnerUserID:            &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 		Status:                      TeamConfigRevisionStatusDraft,
 		CreatedAt:                   now,
 		UpdatedAt:                   now,
@@ -579,7 +579,7 @@ func TestUpdateGovernanceDraftStoresCapabilityBindings(t *testing.T) {
 		ActorUserID:      uuid.New(),
 		Slug:             "platform",
 		Name:             "Platform",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 	})
 	if err != nil {
 		t.Fatalf("create team: %v", err)
@@ -598,7 +598,7 @@ func TestUpdateGovernanceDraftStoresCapabilityBindings(t *testing.T) {
 		ArtifactContract:            map[string]any{},
 		InternalCollaborationPolicy: map[string]any{},
 		RuntimeScopePolicy:          map[string]any{},
-		HumanOwnerUserID:            &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 		Status:                      TeamConfigRevisionStatusDraft,
 		CreatedAt:                   now,
 		UpdatedAt:                   now,
@@ -618,7 +618,7 @@ func TestUpdateGovernanceDraftStoresCapabilityBindings(t *testing.T) {
 		ArtifactContract:            map[string]any{"required": []any{"handoff"}},
 		InternalCollaborationPolicy: map[string]any{"mode": "structured"},
 		RuntimeScopePolicy:          map[string]any{"scope": "team"},
-		HumanOwnerUserID:            &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 	})
 	if err != nil {
 		t.Fatalf("update governance draft: %v", err)
@@ -687,7 +687,7 @@ func TestUpdateTeamPreservesOwnerAndMetadataWhenOmitted(t *testing.T) {
 		ActorUserID:      uuid.New(),
 		Slug:             "ops",
 		Name:             "Ops",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 		Metadata:         map[string]any{"cost_center": "ops"},
 	})
 	if err != nil {
@@ -704,8 +704,8 @@ func TestUpdateTeamPreservesOwnerAndMetadataWhenOmitted(t *testing.T) {
 		t.Fatalf("update team: %v", err)
 	}
 
-	if updated.HumanOwnerUserID == nil || *updated.HumanOwnerUserID != ownerID {
-		t.Fatalf("expected owner to be preserved, got %#v", updated.HumanOwnerUserID)
+	if updated.HumanOwnerUserIDs == nil || updated.HumanOwnerUserIDs[0] != ownerID {
+		t.Fatalf("expected owner to be preserved, got %#v", updated.HumanOwnerUserIDs)
 	}
 	if updated.Metadata["cost_center"] != "ops" {
 		t.Fatalf("expected metadata to be preserved, got %#v", updated.Metadata)
@@ -725,7 +725,7 @@ func TestUpdateTeamMetadataDisplayDoesNotMutateOrShareInput(t *testing.T) {
 		ActorUserID:      uuid.New(),
 		Slug:             "ops",
 		Name:             "Ops",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 	})
 	if err != nil {
 		t.Fatalf("create team: %v", err)
@@ -799,7 +799,7 @@ func TestGetOverviewUsesTeamSummaryAggregate(t *testing.T) {
 		ActorUserID:      uuid.New(),
 		Slug:             "ops",
 		Name:             "Ops",
-		HumanOwnerUserID: &ownerID,
+		HumanOwnerUserIDs: []uuid.UUID{ownerID},
 	})
 	if err != nil {
 		t.Fatalf("create team: %v", err)
@@ -1030,7 +1030,7 @@ func (r *memoryRepository) CreateTeam(_ context.Context, params CreateTeamParams
 		Slug:             params.Slug,
 		Name:             params.Name,
 		Status:           params.Status,
-		HumanOwnerUserID: params.HumanOwnerUserID,
+		HumanOwnerUserIDs: params.HumanOwnerUserIDs,
 		Metadata:         cloneMap(params.Metadata),
 		CreatedAt:        now,
 		UpdatedAt:        now,
@@ -1042,8 +1042,12 @@ func (r *memoryRepository) CreateTeam(_ context.Context, params CreateTeamParams
 func (r *memoryRepository) CreateTeamWithInitialMembers(_ context.Context, params CreateTeamWithInitialMembersParams) (TeamRecord, error) {
 	r.createTeamWithMembersCalled = true
 	r.createdTeamWithMembers = params
-	if len(r.activeUsers) > 0 && !r.activeUsers[params.OwnerUserID] {
-		return TeamRecord{}, ErrNotFound
+	if len(r.activeUsers) > 0 {
+		for _, ownerID := range params.OwnerUserIDs {
+			if !r.activeUsers[ownerID] {
+				return TeamRecord{}, ErrNotFound
+			}
+		}
 	}
 	for _, member := range params.InitialMembers {
 		if len(r.activeUsers) > 0 && !r.activeUsers[member.UserID] {
@@ -1057,27 +1061,29 @@ func (r *memoryRepository) CreateTeamWithInitialMembers(_ context.Context, param
 		Slug:             params.Slug,
 		Name:             params.Name,
 		Status:           params.Status,
-		HumanOwnerUserID: &params.OwnerUserID,
+		HumanOwnerUserIDs: params.OwnerUserIDs,
 		Metadata:         cloneMap(params.Metadata),
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
 	r.teams[team.ID] = team
-	ownerMembership := TeamMemberRecord{
-		MembershipID:     uuid.New(),
-		TenantID:         params.TenantID,
-		TeamID:           team.ID,
-		UserID:           params.OwnerUserID,
-		Role:             TeamRoleOwner,
-		MembershipStatus: "active",
-		CreatedAt:        now,
-		UpdatedAt:        now,
+	r.auditEvents = append(r.auditEvents, memoryAuditEvent{Action: "team.create", ResourceType: "team", ResourceID: team.ID})
+	for _, ownerID := range params.OwnerUserIDs {
+		ownerMembership := TeamMemberRecord{
+			MembershipID:     uuid.New(),
+			TenantID:         params.TenantID,
+			TeamID:           team.ID,
+			UserID:           ownerID,
+			Role:             TeamRoleOwner,
+			MembershipStatus: "active",
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		r.teamMembers[ownerMembership.MembershipID] = ownerMembership
+		r.auditEvents = append(r.auditEvents,
+			memoryAuditEvent{Action: "team.member.add", ResourceType: "team_member", ResourceID: ownerMembership.MembershipID},
+		)
 	}
-	r.teamMembers[ownerMembership.MembershipID] = ownerMembership
-	r.auditEvents = append(r.auditEvents,
-		memoryAuditEvent{Action: "team.create", ResourceType: "team", ResourceID: team.ID},
-		memoryAuditEvent{Action: "team.member.add", ResourceType: "team_member", ResourceID: ownerMembership.MembershipID},
-	)
 	for _, member := range params.InitialMembers {
 		membership := TeamMemberRecord{
 			MembershipID:     uuid.New(),
@@ -1156,7 +1162,7 @@ func (r *memoryRepository) UpdateTeam(_ context.Context, params UpdateTeamParams
 	}
 	record.Slug = params.Slug
 	record.Name = params.Name
-	record.HumanOwnerUserID = params.HumanOwnerUserID
+	record.HumanOwnerUserIDs = params.HumanOwnerUserIDs
 	record.Metadata = cloneMap(params.Metadata)
 	record.UpdatedAt = time.Now().UTC()
 	r.teams[record.ID] = record
@@ -1191,7 +1197,7 @@ func (r *memoryRepository) CreateTeamConfigRevision(_ context.Context, params Cr
 		ArtifactContract:            cloneMap(params.ArtifactContract),
 		InternalCollaborationPolicy: cloneMap(params.InternalCollaborationPolicy),
 		RuntimeScopePolicy:          cloneMap(params.RuntimeScopePolicy),
-		HumanOwnerUserID:            params.HumanOwnerUserID,
+		HumanOwnerUserIDs:            params.HumanOwnerUserIDs,
 		Status:                      params.Status,
 		ApprovedBy:                  params.ApprovedBy,
 		ApprovedAt:                  cloneTimePtr(params.ApprovedAt),
@@ -1276,8 +1282,8 @@ func (r *memoryRepository) UpdateTeamConfigRevisionDraft(_ context.Context, para
 	if params.RuntimeScopePolicy != nil {
 		record.RuntimeScopePolicy = cloneMap(params.RuntimeScopePolicy)
 	}
-	if params.HumanOwnerUserID != nil {
-		record.HumanOwnerUserID = params.HumanOwnerUserID
+	if params.HumanOwnerUserIDs != nil {
+		record.HumanOwnerUserIDs = params.HumanOwnerUserIDs
 	}
 	record.UpdatedAt = time.Now().UTC()
 	r.revisions[record.ID] = record
@@ -1328,7 +1334,7 @@ func cloneRevisionRecord(record TeamConfigRevisionRecord) TeamConfigRevisionReco
 	record.ArtifactContract = cloneMap(record.ArtifactContract)
 	record.InternalCollaborationPolicy = cloneMap(record.InternalCollaborationPolicy)
 	record.RuntimeScopePolicy = cloneMap(record.RuntimeScopePolicy)
-	record.HumanOwnerUserID = validUUIDPtr(record.HumanOwnerUserID)
+	record.HumanOwnerUserIDs = record.HumanOwnerUserIDs
 	record.ApprovedBy = validUUIDPtr(record.ApprovedBy)
 	record.ApprovedAt = cloneTimePtr(record.ApprovedAt)
 	return record
