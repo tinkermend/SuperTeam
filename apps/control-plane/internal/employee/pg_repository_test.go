@@ -48,6 +48,21 @@ func TestOverviewSummarySQLCountsStaleConfigQueue(t *testing.T) {
 	require.Contains(t, normalizedSQL, "governance_status IN ('missing', 'pending_approval', 'stale') ))::integer AS stale_config_count")
 }
 
+func TestOverviewSummarySQLSeparatesRuntimeBindingAndConfigQueues(t *testing.T) {
+	normalizedSQL := normalizeSQL(queries.GetDigitalEmployeeOverviewSummary)
+	runtimeBindingExpr := summaryAggregateExpression(t, normalizedSQL, "pending_runtime_binding_count")
+	configExpr := summaryAggregateExpression(t, normalizedSQL, "pending_config_approval_count")
+	staleConfigExpr := summaryAggregateExpression(t, normalizedSQL, "stale_config_count")
+
+	require.Contains(t, runtimeBindingExpr, "execution_status IN ('missing', 'provisioning')")
+	require.Contains(t, runtimeBindingExpr, "runtime_node_id IS NULL")
+	require.Contains(t, runtimeBindingExpr, "provider_type = ''")
+	require.Contains(t, runtimeBindingExpr, "agent_home_dir_available = false")
+	require.NotContains(t, runtimeBindingExpr, "governance_status")
+	require.Contains(t, configExpr, "governance_status IN ('missing', 'pending_approval', 'stale')")
+	require.Contains(t, staleConfigExpr, "governance_status IN ('missing', 'pending_approval', 'stale')")
+}
+
 func TestOverviewSummarySQLRequiresDispatchReadyAgentHome(t *testing.T) {
 	normalizedSQL := normalizeSQL(queries.GetDigitalEmployeeOverviewSummary)
 
@@ -184,6 +199,16 @@ func TestOverviewItemFromQueryMapsWorkbenchBudgetAndEvents(t *testing.T) {
 
 func normalizeSQL(value string) string {
 	return strings.Join(strings.Fields(value), " ")
+}
+
+func summaryAggregateExpression(t *testing.T, normalizedSQL, alias string) string {
+	t.Helper()
+	aliasMarker := " AS " + alias
+	aliasIndex := strings.Index(normalizedSQL, aliasMarker)
+	require.NotEqual(t, -1, aliasIndex, "missing summary aggregate %s", alias)
+	startIndex := strings.LastIndex(normalizedSQL[:aliasIndex], "(COUNT(*) FILTER")
+	require.NotEqual(t, -1, startIndex, "missing count filter for %s", alias)
+	return normalizedSQL[startIndex : aliasIndex+len(aliasMarker)]
 }
 
 func baseOverviewItemRow() queries.ListDigitalEmployeeOverviewItemsRow {

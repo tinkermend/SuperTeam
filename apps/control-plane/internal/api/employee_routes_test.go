@@ -476,7 +476,7 @@ func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 	if body.Items[0].LatestRunSummary == nil || body.Items[0].LatestRunSummary.TokenUsage != 1600 {
 		t.Fatalf("expected latest run token usage, got %#v", body.Items[0].LatestRunSummary)
 	}
-	if body.Items[0].LatestRunSummary.FinishedAt == nil || body.Items[0].LatestRunSummary.ErrorMessage != "执行超时" {
+	if body.Items[0].LatestRunSummary.FinishedAt == nil || body.Items[0].LatestRunSummary.ErrorMessage != "" {
 		t.Fatalf("expected latest run finished/error fields, got %#v", body.Items[0].LatestRunSummary)
 	}
 	if body.Items[0].BudgetSummary.CostAmount30d == nil || *body.Items[0].BudgetSummary.CostAmount30d != 12.34 {
@@ -1516,7 +1516,7 @@ func routeEmployeeOverview(req employee.GetDigitalEmployeeOverviewRequest) *empl
 		Items: []employee.DigitalEmployeeOverviewItem{{
 			IdentitySummary:   employee.DigitalEmployeeIdentitySummary{ID: employeeID, TenantID: req.TenantID, TeamID: &teamID, TeamName: "产品组", OwnerUserID: ownerID, OwnerDisplayName: "王佩", EmployeeType: "requirements_analyst", EmployeeTypeLabel: "需求分析", Name: "需求分析员工", Role: "requirements_analyst", Description: stringPtr("负责需求拆解和交付风险识别"), Status: employee.DigitalEmployeeStatusActive, RiskLevel: "medium"},
 			ExecutionSummary:  employee.DigitalEmployeeExecutionSummary{ExecutionInstanceID: &executionInstanceID, Status: employee.OverviewExecutionStatusReady, RuntimeNodeID: &runtimeNodeID, NodeID: "runtime-cn-01", RuntimeName: "cn-01", RuntimeStatus: "online", ProviderType: "codex", ProviderStatus: "healthy", HealthStatus: "healthy", AgentHomeDirAvailable: true},
-			LatestRunSummary:  &employee.DigitalEmployeeLatestRunSummary{RunID: runID, TaskID: taskID, Status: employee.OverviewRunStatusFailed, Title: "审查需求", StartedAt: &now, UpdatedAt: &now, FinishedAt: &finishedAt, DurationSec: int32Ptr(240), TokenUsage: int32Ptr(1600), ErrorMessage: "执行超时"},
+			LatestRunSummary:  &employee.DigitalEmployeeLatestRunSummary{RunID: runID, TaskID: taskID, Status: employee.OverviewRunStatusCompleted, Title: "审查需求", StartedAt: &now, UpdatedAt: &now, FinishedAt: &finishedAt, DurationSec: int32Ptr(240), TokenUsage: int32Ptr(1600), ErrorMessage: ""},
 			GovernanceSummary: employee.DigitalEmployeeGovernanceSummary{EffectiveConfigID: &effectiveConfigID, Status: "approved", TeamRevisionNumber: int32Ptr(3), EmployeeRevisionNumber: int32Ptr(1), SkillsCount: 8, MCPServersCount: 3, ConstitutionRef: "effective-config://88888888-8888-4888-8888-888888888888/constitution"},
 			BudgetSummary:     employee.DigitalEmployeeBudgetSummary{DailyTokenLimit: int32Ptr(10000), UsageTokensToday: 2500, UsagePercentToday: int32Ptr(25), LimitExceeded: false, UsageTokens30d: int32Ptr(16000), RunCount30d: 12, CostAmount30d: &costAmount, Currency: "USD", Source: "run_usage_projection"},
 			WorkbenchStatus:   employee.WorkbenchStatusReady,

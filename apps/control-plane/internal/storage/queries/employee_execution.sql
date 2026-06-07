@@ -860,10 +860,9 @@ SELECT
            OR runtime_node_id IS NULL
            OR provider_type = ''
            OR agent_home_dir_available = false
-           OR governance_status IN ('missing', 'pending_approval', 'stale')
     ))::integer AS pending_runtime_binding_count,
     (COUNT(*) FILTER (
-        WHERE effective_config_id IS NULL
+        WHERE governance_status IN ('missing', 'pending_approval', 'stale')
     ))::integer AS pending_config_approval_count,
     (COUNT(*) FILTER (
         WHERE run_status IN ('failed', 'timed_out')
