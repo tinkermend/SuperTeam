@@ -42,6 +42,7 @@ type WizardDraft = {
     enabled_skills: string[];
   };
   context_policy_override: Record<string, unknown>;
+  daily_token_limit: string;
   approval_policy_override: Record<string, unknown>;
   description: string;
   employee_type: string;
@@ -55,7 +56,12 @@ type WizardDraft = {
   team_id: string;
 };
 
-type ValidationErrors = Partial<Record<"avatar_asset_id" | "employee_type" | "name" | "role" | "runtime" | "team_id", string>>;
+type ValidationErrors = Partial<
+  Record<
+    "avatar_asset_id" | "daily_token_limit" | "employee_type" | "name" | "role" | "runtime" | "team_id",
+    string
+  >
+>;
 
 type CreateEmployeeViewProps = {
   apiBaseUrl: string;
@@ -70,6 +76,7 @@ const emptyDraft: WizardDraft = {
     enabled_skills: [],
   },
   context_policy_override: {},
+  daily_token_limit: "",
   description: "",
   employee_type: "",
   avatar_asset_id: "",
@@ -182,6 +189,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           capability_selection: draft.capability_selection,
           context_policy_override: draft.context_policy_override,
           approval_policy_override: draft.approval_policy_override,
+          budget_policy: budgetPolicyFromDraft(draft),
           output_contract_addendum: {},
           runtime_node_id: runtimeOption.runtime_node_id,
           provider_type: runtimeOption.provider_type,
@@ -322,7 +330,13 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                   <CapabilityStep draft={draft} options={createOptions.data} onUpdate={updateDraft} />
                 ) : null}
                 {!teams.isLoading && !createOptions.isLoading && currentStep === "治理" ? (
-                  <GovernanceStep draft={draft} options={createOptions.data} selectedType={selectedType} />
+                  <GovernanceStep
+                    draft={draft}
+                    errors={errors}
+                    options={createOptions.data}
+                    selectedType={selectedType}
+                    onUpdate={updateDraft}
+                  />
                 ) : null}
                 {!teams.isLoading && !createOptions.isLoading && currentStep === "运行" ? (
                   <RuntimeStep
@@ -667,12 +681,16 @@ function CapabilityGroup({
 
 function GovernanceStep({
   draft,
+  errors,
   options,
   selectedType,
+  onUpdate,
 }: {
   draft: WizardDraft;
+  errors: ValidationErrors;
   options?: DigitalEmployeeCreateOptions;
   selectedType?: DigitalEmployeeTypeOption;
+  onUpdate: (patch: Partial<WizardDraft>) => void;
 }) {
   const teamConfig = options?.team_config;
 
@@ -690,6 +708,19 @@ function GovernanceStep({
         <SummaryItem label="上下文策略" value={`覆盖项 ${Object.keys(draft.context_policy_override).length} 个`} />
         <SummaryItem label="审批策略" value={String(draft.approval_policy_override.min_risk_for_human ?? "按团队默认")} />
       </div>
+      <Field label="每日 Token 预算上限" error={errors.daily_token_limit}>
+        <Input
+          aria-invalid={Boolean(errors.daily_token_limit)}
+          id="daily-token-limit"
+          inputMode="numeric"
+          min={1}
+          onChange={(event) => onUpdate({ daily_token_limit: event.target.value })}
+          placeholder="不填写表示无预算上限"
+          type="number"
+          value={draft.daily_token_limit}
+        />
+        <p className="text-xs text-muted-foreground">不填写表示无预算上限。填写后，达到当日上限会阻止发起新的运行。</p>
+      </Field>
       <div className="rounded-md border bg-muted/30 p-3">
         <div className="text-sm font-medium">创建摘要</div>
         <div className="mt-2 flex flex-wrap gap-2">
@@ -811,6 +842,7 @@ const labelId: Record<string, string> = {
   描述: "employee-description",
   角色: "employee-role",
   风险等级: "employee-risk",
+  "每日 Token 预算上限": "daily-token-limit",
 };
 
 const selectClassName =
@@ -844,10 +876,26 @@ function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
     if (!draft.role.trim()) errors.role = "角色不能为空";
     return errors;
   }
+  if (step === "治理") {
+    const errors: ValidationErrors = {};
+    if (draft.daily_token_limit.trim()) {
+      const parsed = Number(draft.daily_token_limit);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        errors.daily_token_limit = "每日 Token 预算上限必须是正整数";
+      }
+    }
+    return errors;
+  }
   if (step === "运行" && !draft.runtime_binding) {
     return { runtime: "请选择 Runtime" };
   }
   return {};
+}
+
+function budgetPolicyFromDraft(draft: WizardDraft) {
+  const trimmed = draft.daily_token_limit.trim();
+  if (!trimmed) return {};
+  return { daily_token_limit: Number(trimmed) };
 }
 
 function findRuntimeOption(options: DigitalEmployeeCreateOptions | undefined, runtimeBindingValue: string) {

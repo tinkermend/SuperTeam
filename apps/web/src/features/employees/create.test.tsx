@@ -209,7 +209,9 @@ function createWizardFetcher({
     }
 
     if (url.pathname === "/api/v1/digital-employees" && method === "POST") {
-      expect(JSON.parse(String(init?.body))).toEqual({
+      const body = JSON.parse(String(init?.body));
+      const { budget_policy: _budgetPolicy, ...bodyWithoutBudgetPolicy } = body;
+      expect(bodyWithoutBudgetPolicy).toEqual({
         team_id: team.id,
         employee_type: "database_admin",
         name: "数据库管理员工",
@@ -302,6 +304,46 @@ describe("CreateEmployeeView", () => {
       params: { employeeId: "11111111-1111-4111-8111-111111111111" },
       to: "/employees/$employeeId",
     });
+  });
+
+  it("submits an optional daily token budget when creating a digital employee", async () => {
+    const fetcher = createWizardFetcher();
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.type(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" }), "12000");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await expect.element(screen.getByLabelText("客户侧执行机 A / codex")).toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "创建数字员工" }));
+
+    const createCall = fetcher.mock.calls.find(
+      ([input, init]) => String(input).endsWith("/api/v1/digital-employees") && init?.method === "POST",
+    );
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.budget_policy).toEqual({ daily_token_limit: 12000 });
+  });
+
+  it("omits daily token budget when the field is empty", async () => {
+    const fetcher = createWizardFetcher();
+    const screen = await renderCreateEmployeeView(fetcher);
+
+    await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await expect.element(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" })).toHaveValue(null);
+    await userEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await userEvent.click(screen.getByRole("button", { name: "创建数字员工" }));
+
+    const createCall = fetcher.mock.calls.find(
+      ([input, init]) => String(input).endsWith("/api/v1/digital-employees") && init?.method === "POST",
+    );
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body.budget_policy).toEqual({});
   });
 
   it("blocks the next step until identity fields are valid", async () => {

@@ -9,6 +9,7 @@ import { ThemeSwitch } from "@/components/theme-switch";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SemanticIconTile } from "@/components/superteam/liquid-components";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -39,6 +40,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
   const [contextPolicyOverride, setContextPolicyOverride] = useState("{}");
   const [approvalPolicyOverride, setApprovalPolicyOverride] = useState("{}");
   const [outputContractAddendum, setOutputContractAddendum] = useState("{}");
+  const [dailyTokenLimit, setDailyTokenLimit] = useState("");
 
   const employee = useQuery({
     queryKey: ["digital-employee", employeeId],
@@ -69,6 +71,9 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
       capability_selection: parseJson(capabilitySelection),
       context_policy_override: parseJson(contextPolicyOverride),
       approval_policy_override: parseJson(approvalPolicyOverride),
+      budget_policy: dailyTokenLimit.trim()
+        ? { daily_token_limit: Number(dailyTokenLimit.trim()) }
+        : {},
       output_contract_addendum: parseJson(outputContractAddendum),
       status: "draft",
     });
@@ -177,6 +182,25 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
                     className="font-mono text-xs"
                   />
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>预算策略</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2">
+                <Label htmlFor="config-daily-token-limit">每日 Token 预算上限</Label>
+                <Input
+                  id="config-daily-token-limit"
+                  inputMode="numeric"
+                  min={1}
+                  onChange={(event) => setDailyTokenLimit(event.target.value)}
+                  placeholder="不填写表示无预算上限"
+                  type="number"
+                  value={dailyTokenLimit}
+                />
+                <p className="text-xs text-muted-foreground">预算会进入新的配置版本，批准后生效。</p>
               </CardContent>
             </Card>
 
