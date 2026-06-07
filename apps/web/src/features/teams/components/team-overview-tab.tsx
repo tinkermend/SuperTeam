@@ -23,6 +23,8 @@ import {
 } from "@/lib/api/teams";
 import type { DigitalEmployee } from "@/lib/api/employees";
 import { listDigitalEmployees } from "@/lib/api/employees";
+import { EmployeeAvatar } from "@/features/employees/avatar";
+import { employeeAvatarAsset } from "@/features/employees/avatar-library";
 
 type TeamOverviewTabProps = {
   allowedActions: AllowedTeamAction[];
@@ -187,9 +189,11 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, overview,
                           />
                         ) : (
                           <div className="flex items-center gap-3 min-w-0">
-                            <div className="flex size-10 shrink-0 items-center justify-center rounded-full border bg-muted">
-                              <Bot className="size-5" />
-                            </div>
+                            <EmployeeAvatar
+                              asset={employeeAvatarAsset(item.originalData as DigitalEmployee)}
+                              name={item.name}
+                              size="md"
+                            />
                             <div className="min-w-0">
                               <p className="truncate font-medium leading-none">{item.name}</p>
                               <p className="truncate text-sm text-muted-foreground mt-1.5">{item.description}</p>
