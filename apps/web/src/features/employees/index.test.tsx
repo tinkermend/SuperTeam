@@ -41,8 +41,14 @@ function createEmployeesFetcher() {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     if (url.pathname === "/api/v1/digital-employees/overview" && (init?.method ?? "GET") === "GET") {
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
       return new Response(
         JSON.stringify({
+          queue_summary: {
+            pending_runtime_binding_count: 2,
+            stale_config_count: 4,
+            failed_recent_run_count: 1,
+          },
           summary: {
             total_count: 18,
             runnable_count: 14,
@@ -50,9 +56,21 @@ function createEmployeesFetcher() {
             waiting_runtime_count: 2,
             error_count: 1,
             high_risk_count: 3,
+            ready_count: 14,
+            pending_runtime_binding_count: 2,
+            pending_config_approval_count: 4,
+            failed_recent_run_count: 1,
           },
           items: [
             {
+              workbench_status: "ready",
+              recent_events: [
+                {
+                  label: "命令已下发",
+                  status: "dispatching",
+                  occurred_at: twoMinutesAgo,
+                },
+              ],
               identity_summary: {
                 id: "11111111-1111-4111-8111-111111111111",
                 tenant_id: "tenant-1",
@@ -84,10 +102,10 @@ function createEmployeesFetcher() {
                 execution_instance_id: "22222222-2222-4222-8222-222222222222",
                 status: "active",
                 runtime_node_id: "33333333-3333-4333-8333-333333333333",
-                node_id: "runtime-cn-01",
+                node_id: "local-dev-node",
                 runtime_name: "华东执行节点",
                 runtime_status: "online",
-                provider_type: "codex",
+                provider_type: "claude_code",
                 provider_status: "ready",
                 health_status: "healthy",
                 agent_home_dir_available: true,
@@ -95,10 +113,11 @@ function createEmployeesFetcher() {
               latest_run_summary: {
                 run_id: "44444444-4444-4444-8444-444444444444",
                 task_id: "task-1",
-                status: "running",
+                status: "completed",
                 title: "审查需求",
                 started_at: "2026-06-07T08:00:00Z",
-                updated_at: "2026-06-07T08:08:00Z",
+                finished_at: twoMinutesAgo,
+                updated_at: twoMinutesAgo,
                 duration_sec: 480,
                 token_usage: 3200,
                 error_message: "",
@@ -118,6 +137,10 @@ function createEmployeesFetcher() {
                 cost_amount_30d: 28.5,
                 currency: "CNY",
                 source: "runtime_usage",
+                daily_token_limit: null,
+                usage_tokens_today: 0,
+                usage_percent_today: null,
+                limit_exceeded: false,
               },
             },
           ],
@@ -178,21 +201,30 @@ describe("EmployeesView", () => {
     const screen = await renderEmployeesView(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
-    await expect.element(screen.getByText("18")).toBeVisible();
-    await expect.element(screen.getByText("可执行员工")).toBeVisible();
-    await expect.element(screen.getByText("需求分析员工")).toBeVisible();
-    await expect.element(screen.getByAltText("需求分析员工 的头像")).toHaveAttribute(
+    await expect.element(screen.getByText("就绪").first()).toBeVisible();
+    await expect.element(screen.getByText("待绑定").first()).toBeVisible();
+    await expect.element(screen.getByText("异常").first()).toBeVisible();
+    await expect.element(screen.getByText("配置待审批")).toBeVisible();
+    await expect.element(screen.getByText("运行失败").first()).toBeVisible();
+    await expect.element(screen.getByText("需求分析员工").first()).toBeVisible();
+    await expect.element(screen.getByAltText("需求分析员工 的头像").first()).toHaveAttribute(
       "src",
       "/images/digital-employee-avatars/engineer-f-01-256.webp",
     );
-    await expect.element(screen.getByText("产品组")).toBeVisible();
-    await expect.element(screen.getByText("runtime-cn-01 · codex")).toBeVisible();
-    await expect.element(screen.getByText("审查需求")).toBeVisible();
-    await expect.element(screen.getByText("skills 8 · MCP 3")).toBeVisible();
-    await expect.element(screen.getByText("16,000 tokens")).toBeVisible();
+    await expect.element(screen.getByText("产品组").first()).toBeVisible();
+    await expect.element(screen.getByText("local-dev-node · Claude Code").first()).toBeVisible();
+    await expect.element(screen.getByText("成功 · 2 分钟前")).toBeVisible();
+    await expect.element(screen.getByText("无预算上限")).toBeVisible();
+    await expect.element(screen.getByText("待处理队列")).toBeVisible();
+    await expect.element(screen.getByText("最近运行失败")).toBeVisible();
+    await expect.element(screen.getByText("命令已下发")).toBeVisible();
+    await expect.element(screen.getByText("配置 v2 已审批 · skills 8 · MCP 3").first()).toBeVisible();
     await expect
       .element(screen.getByRole("link", { name: "详情" }))
       .toHaveAttribute("href", "/employees/11111111-1111-4111-8111-111111111111");
+    await expect.element(screen.getByText("执行实例 ready")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("Server")).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: /启动|停止/ })).not.toBeInTheDocument();
   });
 
   it("links the primary create action to the creation wizard", async () => {
@@ -209,7 +241,7 @@ describe("EmployeesView", () => {
 
     await userEvent.click(screen.getByRole("combobox", { name: "状态" }));
     await userEvent.click(screen.getByRole("option", { name: "运行中" }));
-    await expect.element(screen.getByText("需求分析员工")).toBeVisible();
+    await expect.element(screen.getByText("需求分析员工").first()).toBeVisible();
 
     expect(
       fetchCalls(fetcher).some(([input]) => {

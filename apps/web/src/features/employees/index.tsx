@@ -1,17 +1,15 @@
-import { useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
-  Activity,
   AlertTriangle,
   Bot,
   Check,
-  Clock,
-  Gauge,
+  ClipboardCheck,
+  Link as LinkIcon,
   Plus,
   Search as SearchIcon,
-  Server,
-  ShieldCheck,
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,14 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
@@ -44,11 +34,14 @@ import {
 } from "@/components/superteam";
 import {
   getDigitalEmployeeOverview,
+  type DigitalEmployeeOverview,
   type DigitalEmployeeOverviewFilters,
   type DigitalEmployeeOverviewItem,
+  type DigitalEmployeeWorkbenchStatus,
   type OverviewFilterOption,
 } from "@/lib/api/employees";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
+import { cn } from "@/lib/utils";
 import { EmployeeAvatar } from "./avatar";
 import { overviewAvatarAsset } from "./avatar-library";
 
@@ -78,6 +71,7 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
     limit: 50,
     offset: 0,
   });
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>();
 
   const overview = useQuery({
     queryKey: ["digital-employee-overview", filters],
@@ -86,6 +80,24 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
 
   const filterOptions = overview.data?.filters;
   const items = overview.data?.items ?? [];
+  const selectedItem = useMemo(() => {
+    if (items.length === 0) {
+      return undefined;
+    }
+
+    return items.find((item) => item.identity_summary.id === selectedEmployeeId) ?? items[0];
+  }, [items, selectedEmployeeId]);
+
+  useEffect(() => {
+    if (items.length === 0) {
+      setSelectedEmployeeId(undefined);
+      return;
+    }
+
+    if (!selectedEmployeeId || !items.some((item) => item.identity_summary.id === selectedEmployeeId)) {
+      setSelectedEmployeeId(items[0].identity_summary.id);
+    }
+  }, [items, selectedEmployeeId]);
 
   const handleFilterChange = (key: FilterKey) => (value: string) => {
     setFilters((current) => updateFilter(current, key, value));
@@ -121,7 +133,7 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
             </Button>
           </div>
 
-          {overview.data ? <SummaryMetrics summary={overview.data.summary} /> : null}
+          {overview.data ? <WorkbenchMetrics overview={overview.data} /> : null}
 
           <LiquidCard className="rounded-xl">
             <div className="flex flex-col gap-4 p-4">
@@ -189,78 +201,302 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
             </div>
           </LiquidCard>
 
-          <LiquidCard className="rounded-xl">
-            {overview.isLoading ? (
-              <div className="p-6 text-sm text-muted-foreground">加载中...</div>
-            ) : null}
-            {overview.isError ? (
-              <div className="flex flex-col gap-3 p-6">
-                <p className="text-sm font-medium text-destructive">加载失败</p>
-                <Button
-                  className="w-fit"
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                  onClick={() => void overview.refetch()}
-                >
-                  重试
-                </Button>
+          {overview.isLoading ? (
+            <LiquidCard className="rounded-xl p-6 text-sm text-muted-foreground">加载中...</LiquidCard>
+          ) : null}
+          {overview.isError ? (
+            <LiquidCard className="flex flex-col gap-3 rounded-xl p-6">
+              <p className="text-sm font-medium text-destructive">加载失败</p>
+              <Button
+                className="w-fit"
+                size="sm"
+                type="button"
+                variant="outline"
+                onClick={() => void overview.refetch()}
+              >
+                重试
+              </Button>
+            </LiquidCard>
+          ) : null}
+          {overview.data && items.length === 0 ? (
+            <LiquidCard className="rounded-xl p-6 text-sm text-muted-foreground">暂无数字员工</LiquidCard>
+          ) : null}
+          {overview.data && items.length > 0 ? (
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                {items.map((item) => (
+                  <EmployeeWorkbenchCard
+                    key={item.identity_summary.id}
+                    item={item}
+                    selected={selectedItem?.identity_summary.id === item.identity_summary.id}
+                    onSelect={() => setSelectedEmployeeId(item.identity_summary.id)}
+                  />
+                ))}
               </div>
-            ) : null}
-            {overview.data && items.length === 0 ? (
-              <div className="p-6 text-sm text-muted-foreground">暂无数字员工</div>
-            ) : null}
-            {items.length > 0 ? <EmployeeOverviewTable items={items} /> : null}
-          </LiquidCard>
+              <WorkbenchRail overview={overview.data} selectedItem={selectedItem} />
+            </div>
+          ) : null}
         </div>
       </Main>
     </>
   );
 }
 
-function SummaryMetrics({ summary }: { summary: NonNullable<Awaited<ReturnType<typeof getDigitalEmployeeOverview>>>["summary"] }) {
+function WorkbenchMetrics({ overview }: { overview: DigitalEmployeeOverview }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       <MetricCard
-        title="员工总数"
-        value={formatNumber(summary.total_count)}
-        icon={<Bot />}
-        iconTone="primary"
-      />
-      <MetricCard
-        title="可执行员工"
-        value={formatNumber(summary.runnable_count)}
+        title="就绪"
+        value={formatNumber(overview.summary.ready_count)}
         icon={<Check />}
         iconTone="success"
-        statusTone="success"
-        meta="可领取"
       />
       <MetricCard
-        title="执行中"
-        value={formatNumber(summary.running_count)}
-        icon={<Activity />}
-        iconTone="info"
-      />
-      <MetricCard
-        title="等待 Runtime"
-        value={formatNumber(summary.waiting_runtime_count)}
-        icon={<Clock />}
+        title="待绑定"
+        value={formatNumber(overview.summary.pending_runtime_binding_count)}
+        icon={<LinkIcon />}
         iconTone="warning"
       />
       <MetricCard
-        title="异常员工"
-        value={formatNumber(summary.error_count)}
+        title="异常"
+        value={formatNumber(overview.summary.error_count)}
         icon={<AlertTriangle />}
         iconTone="danger"
-        isError={summary.error_count > 0}
       />
       <MetricCard
-        title="高风险"
-        value={formatNumber(summary.high_risk_count)}
-        icon={<Gauge />}
+        title="配置待审批"
+        value={formatNumber(overview.summary.pending_config_approval_count)}
+        icon={<ClipboardCheck />}
+        iconTone="artifact"
+      />
+      <MetricCard
+        title="运行失败"
+        value={formatNumber(overview.summary.failed_recent_run_count)}
+        icon={<XCircle />}
         iconTone="danger"
       />
     </div>
+  );
+}
+
+function EmployeeWorkbenchCard({
+  item,
+  selected,
+  onSelect,
+}: {
+  item: DigitalEmployeeOverviewItem;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const identity = item.identity_summary;
+  const avatarAsset = overviewAvatarAsset(item);
+
+  return (
+    <article
+      role="button"
+      tabIndex={0}
+      className={cn(
+        "group relative flex min-h-[260px] cursor-pointer flex-col overflow-hidden rounded-lg border bg-card/90 p-4 text-left shadow-sm transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        selected && "ring-2 ring-[var(--superteam-menu-accent)]",
+      )}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+    >
+      <span className={cn("absolute inset-y-0 left-0 w-1", workbenchRailClass(item.workbench_status))} />
+      <div className="flex items-start gap-3 pl-1">
+        <EmployeeAvatar asset={avatarAsset} name={identity.name} size="md" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate font-semibold text-foreground">{identity.name}</p>
+              <p className="truncate text-xs text-muted-foreground">{identity.employee_type_label || identity.role}</p>
+            </div>
+            <StatusBadge tone={workbenchTone(item.workbench_status)}>{workbenchStatusLabel(item.workbench_status)}</StatusBadge>
+          </div>
+          <span className="mt-2 inline-flex max-w-full rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+            {identity.team_name || "未分组"}
+          </span>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-col gap-3 text-sm">
+        <div className="border-t pt-3 font-medium text-foreground">{runtimeProviderLine(item)}</div>
+        <div>
+          <p className="text-xs text-muted-foreground">最近运行</p>
+          <p className={cn("mt-1 font-medium", latestRunToneClass(item.latest_run_summary?.status))}>
+            {latestRunCompact(item)}
+          </p>
+        </div>
+        <p className="text-xs text-muted-foreground">{governanceLine(item)}</p>
+        <BudgetBar summary={item.budget_summary} />
+      </div>
+      <div className="mt-auto grid grid-cols-2 gap-2 border-t pt-3">
+        <Button asChild size="sm" variant="ghost" onClick={(event) => event.stopPropagation()}>
+          <Link params={{ employeeId: identity.id }} to="/employees/$employeeId">
+            详情
+          </Link>
+        </Button>
+        <Button asChild size="sm" variant="ghost" onClick={(event) => event.stopPropagation()}>
+          <Link params={{ employeeId: identity.id }} to="/employees/$employeeId/config">
+            配置
+          </Link>
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+function BudgetBar({ summary }: { summary: DigitalEmployeeOverviewItem["budget_summary"] }) {
+  if (!summary.daily_token_limit) {
+    return <p className="text-xs text-muted-foreground">Token 预算：无预算上限</p>;
+  }
+
+  const percent = Math.min(summary.usage_percent_today ?? 0, 100);
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span>Token 预算</span>
+        <span>
+          {formatNumber(summary.usage_tokens_today)} / {formatNumber(summary.daily_token_limit)}
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn(
+            "h-full rounded-full",
+            summary.limit_exceeded ? "bg-destructive" : "bg-[var(--superteam-menu-accent)]",
+          )}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function QueueRow({
+  action,
+  label,
+  tone,
+  value,
+}: {
+  action: string;
+  label: string;
+  tone: Tone;
+  value: number;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-t py-3 first:border-t-0 first:pt-0">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <StatusBadge tone={tone}>{formatNumber(value)}</StatusBadge>
+          <p className="truncate text-sm font-medium">{label}</p>
+        </div>
+        <p className="text-xs text-muted-foreground">{formatNumber(value)} 个数字员工</p>
+      </div>
+      <Button size="sm" variant="outline" type="button">
+        {action}
+      </Button>
+    </div>
+  );
+}
+
+function SelectedEmployeePanel({ item }: { item: DigitalEmployeeOverviewItem }) {
+  const identity = item.identity_summary;
+  const avatarAsset = overviewAvatarAsset(item);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h2 className="font-semibold">选中员工</h2>
+      </div>
+      <div className="flex items-start gap-3">
+        <EmployeeAvatar asset={avatarAsset} name={identity.name} size="lg" />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="truncate font-semibold">{identity.name}</p>
+            <StatusBadge tone={workbenchTone(item.workbench_status)}>{workbenchStatusLabel(item.workbench_status)}</StatusBadge>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {identity.employee_type_label || identity.role} · {identity.team_name || "未分组"}
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1 text-sm">
+        <p className="text-xs text-muted-foreground">绑定</p>
+        <p className="font-medium">{runtimeProviderLine(item)}</p>
+      </div>
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-muted-foreground">最新事件</p>
+        {item.recent_events.length === 0 ? (
+          <p className="text-sm text-muted-foreground">暂无最近事件</p>
+        ) : (
+          <ol className="flex flex-col gap-3">
+            {item.recent_events.map((event, index) => (
+              <li className="flex items-start gap-3" key={`${event.label}-${event.occurred_at ?? index}`}>
+                <span
+                  className={cn(
+                    "mt-1 size-2 rounded-full",
+                    event.status === "failed" ? "bg-destructive" : "bg-[var(--superteam-menu-accent)]",
+                  )}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm">{event.label}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {event.occurred_at ? eventTimeLabel(event.occurred_at) : "-"}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+      <Button className="w-full" type="button" variant="outline">
+        查看审计
+      </Button>
+    </div>
+  );
+}
+
+function WorkbenchRail({
+  overview,
+  selectedItem,
+}: {
+  overview: DigitalEmployeeOverview;
+  selectedItem?: DigitalEmployeeOverviewItem;
+}) {
+  return (
+    <aside className="flex min-w-0 flex-col gap-4">
+      <LiquidCard className="rounded-xl p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-semibold">待处理队列</h2>
+        </div>
+        <QueueRow
+          label="待绑定 Runtime"
+          value={overview.queue_summary.pending_runtime_binding_count}
+          action="绑定"
+          tone="warning"
+        />
+        <QueueRow label="配置过期" value={overview.queue_summary.stale_config_count} action="审批" tone="artifact" />
+        <QueueRow
+          label="最近运行失败"
+          value={overview.queue_summary.failed_recent_run_count}
+          action="查看"
+          tone="danger"
+        />
+      </LiquidCard>
+      <LiquidCard className="rounded-xl p-4">
+        {selectedItem ? (
+          <SelectedEmployeePanel item={selectedItem} />
+        ) : (
+          <p className="text-sm text-muted-foreground">暂无选中员工</p>
+        )}
+      </LiquidCard>
+    </aside>
   );
 }
 
@@ -302,134 +538,6 @@ function FilterSelect({ label, value, options, onValueChange }: FilterSelectProp
   );
 }
 
-function EmployeeOverviewTable({ items }: { items: DigitalEmployeeOverviewItem[] }) {
-  return (
-    <Table className="min-w-[1120px] table-fixed">
-      <colgroup>
-        <col className="w-[18%]" />
-        <col className="w-[7%]" />
-        <col className="w-[9%]" />
-        <col className="w-[14%]" />
-        <col className="w-[8%]" />
-        <col className="w-[7%]" />
-        <col className="w-[12%]" />
-        <col className="w-[10%]" />
-        <col className="w-[9%]" />
-        <col className="w-[6%]" />
-      </colgroup>
-      <TableHeader>
-        <TableRow>
-          <TableHead>员工</TableHead>
-          <TableHead>团队</TableHead>
-          <TableHead>类型 / 角色</TableHead>
-          <TableHead>执行端点</TableHead>
-          <TableHead>当前状态</TableHead>
-          <TableHead>风险</TableHead>
-          <TableHead>最近任务</TableHead>
-          <TableHead>治理</TableHead>
-          <TableHead>预算</TableHead>
-          <TableHead className="text-right">操作</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {items.map((item) => (
-          <EmployeeOverviewRow key={item.identity_summary.id} item={item} />
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-function EmployeeOverviewRow({ item }: { item: DigitalEmployeeOverviewItem }) {
-  const identity = item.identity_summary;
-  const execution = item.execution_summary;
-  const latestRun = item.latest_run_summary;
-  const avatarAsset = overviewAvatarAsset(item);
-
-  return (
-    <TableRow>
-      <TableCell className="min-w-[240px] whitespace-normal">
-        <div className="flex min-w-0 items-start gap-3">
-          <EmployeeAvatar asset={avatarAsset} name={identity.name} size="md" />
-          <div className="min-w-0">
-            <div className="font-medium text-foreground">{identity.name}</div>
-            {identity.description ? (
-              <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{identity.description}</div>
-            ) : null}
-          </div>
-        </div>
-      </TableCell>
-      <TableCell className="whitespace-normal break-words">{identity.team_name || "未分组"}</TableCell>
-      <TableCell className="whitespace-normal break-words">
-        <div className="flex flex-col gap-1">
-          <span className="font-medium">{identity.employee_type_label || identity.employee_type}</span>
-          <span className="text-xs text-muted-foreground">{identity.role}</span>
-        </div>
-      </TableCell>
-      <TableCell className="whitespace-normal break-words">
-        <div className="flex flex-col gap-1">
-          <span className="inline-flex min-w-0 items-center gap-2 font-medium">
-            <Server aria-hidden="true" className="size-4 text-muted-foreground" />
-            <span className="min-w-0 break-words">{runtimeDisplay(item)}</span>
-          </span>
-          <span className="text-xs text-muted-foreground">{execution.runtime_status || execution.provider_status}</span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex flex-col gap-1.5">
-          <StatusBadge tone={statusTone(identity.status)}>{employeeStatusLabel(identity.status)}</StatusBadge>
-          <span className="text-xs text-muted-foreground">{executionStatusLabel(execution.status)}</span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <StatusBadge tone={riskTone(identity.risk_level)}>{riskLabel(identity.risk_level)}</StatusBadge>
-      </TableCell>
-      <TableCell className="min-w-[180px] whitespace-normal">
-        {latestRun ? (
-          <div className="flex flex-col gap-1">
-            <span className="font-medium text-foreground">{latestRun.title}</span>
-            <span className="flex flex-wrap items-center gap-2">
-              <StatusBadge tone={statusTone(latestRun.status)}>{runStatusLabel(latestRun.status)}</StatusBadge>
-              <span className="text-xs text-muted-foreground">{runTimeLabel(latestRun)}</span>
-            </span>
-          </div>
-        ) : (
-          <span className="text-sm text-muted-foreground">暂无任务</span>
-        )}
-      </TableCell>
-      <TableCell className="whitespace-normal break-words">
-        <div className="flex flex-col gap-1">
-          <span className="inline-flex min-w-0 items-center gap-2 font-medium">
-            <ShieldCheck aria-hidden="true" className="size-4 text-muted-foreground" />
-            <span className="min-w-0 break-words">{governanceDisplay(item)}</span>
-          </span>
-          <span className="text-xs text-muted-foreground">{governanceStatusLabel(item.governance_summary.status)}</span>
-        </div>
-      </TableCell>
-      <TableCell className="whitespace-normal break-words">
-        <div className="flex flex-col gap-1">
-          <span className="font-medium">{budgetTokenDisplay(item)}</span>
-          <span className="text-xs text-muted-foreground">{formatNumber(item.budget_summary.run_count_30d)} runs</span>
-        </div>
-      </TableCell>
-      <TableCell className="text-right">
-        <div className="flex justify-end gap-2">
-          <Button asChild size="sm" variant="outline">
-            <Link params={{ employeeId: identity.id }} to="/employees/$employeeId">
-              详情
-            </Link>
-          </Button>
-          <Button asChild size="sm" variant="outline">
-            <Link params={{ employeeId: identity.id }} to="/employees/$employeeId/config">
-              配置
-            </Link>
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
-  );
-}
-
 function updateFilter(
   filters: DigitalEmployeeOverviewFilters,
   key: FilterKey,
@@ -451,6 +559,84 @@ function formatNumber(value: number | undefined | null) {
   return new Intl.NumberFormat("en-US").format(value ?? 0);
 }
 
+function workbenchStatusLabel(status: DigitalEmployeeWorkbenchStatus) {
+  return status === "ready" ? "就绪" : status === "pending_binding" ? "待绑定" : "异常";
+}
+
+function workbenchTone(status: DigitalEmployeeWorkbenchStatus): Tone {
+  return status === "ready" ? "success" : status === "pending_binding" ? "warning" : "danger";
+}
+
+function workbenchRailClass(status: DigitalEmployeeWorkbenchStatus) {
+  if (status === "ready") {
+    return "bg-emerald-500";
+  }
+  if (status === "pending_binding") {
+    return "bg-amber-500";
+  }
+  return "bg-destructive";
+}
+
+function runtimeProviderLine(item: DigitalEmployeeOverviewItem) {
+  const execution = item.execution_summary;
+  if (item.workbench_status === "pending_binding" || !execution.runtime_node_id) {
+    return "等待绑定 Runtime Agent";
+  }
+
+  const runtime = execution.node_id || execution.runtime_name || "Runtime Agent";
+  const provider = providerLabel(execution.provider_type);
+  return `${runtime} · ${provider}`;
+}
+
+function providerLabel(value: string) {
+  const labels: Record<string, string> = {
+    claude_code: "Claude Code",
+    claude: "Claude Code",
+    opencode: "OpenCode",
+    open_code: "OpenCode",
+    codex: "Codex",
+  };
+
+  return labels[value] ?? value;
+}
+
+function latestRunCompact(item: DigitalEmployeeOverviewItem) {
+  const run = item.latest_run_summary;
+  if (!run || run.status === "none") {
+    return "-";
+  }
+
+  const label = run.status === "completed" ? "成功" : "失败";
+  return `${label} · ${runTimeLabel(run)}`;
+}
+
+function latestRunToneClass(status?: string) {
+  if (status === "completed") {
+    return "text-emerald-600";
+  }
+  if (status === "failed" || status === "timed_out") {
+    return "text-destructive";
+  }
+  return "text-muted-foreground";
+}
+
+function governanceLine(item: DigitalEmployeeOverviewItem) {
+  const governance = item.governance_summary;
+  const revision = governance.employee_revision_number ?? governance.team_revision_number;
+  const revisionText = revision ? `配置 v${revision}` : "配置";
+  return `${revisionText} ${governanceStatusCompact(governance.status)} · skills ${formatNumber(governance.skills_count)} · MCP ${formatNumber(governance.mcp_servers_count)}`;
+}
+
+function governanceStatusCompact(status: string) {
+  if (status === "approved") {
+    return "已审批";
+  }
+  if (status === "pending_approval" || status === "draft" || status === "stale") {
+    return "待审批";
+  }
+  return "未配置";
+}
+
 function runTimeLabel(run: NonNullable<DigitalEmployeeOverviewItem["latest_run_summary"]>) {
   const timestamp = run.finished_at ?? run.updated_at ?? run.started_at;
   if (!timestamp) {
@@ -462,6 +648,27 @@ function runTimeLabel(run: NonNullable<DigitalEmployeeOverviewItem["latest_run_s
     return timestamp;
   }
 
+  const elapsedMs = Date.now() - date.getTime();
+  if (elapsedMs >= 0) {
+    const elapsedMinutes = Math.floor(elapsedMs / 60_000);
+    if (elapsedMinutes < 1) {
+      return "刚刚";
+    }
+    if (elapsedMinutes < 60) {
+      return `${elapsedMinutes} 分钟前`;
+    }
+
+    const elapsedHours = Math.floor(elapsedMinutes / 60);
+    if (elapsedHours < 24) {
+      return `${elapsedHours} 小时前`;
+    }
+
+    const elapsedDays = Math.floor(elapsedHours / 24);
+    if (elapsedDays < 7) {
+      return `${elapsedDays} 天前`;
+    }
+  }
+
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
     day: "2-digit",
@@ -471,128 +678,15 @@ function runTimeLabel(run: NonNullable<DigitalEmployeeOverviewItem["latest_run_s
   }).format(date);
 }
 
-function statusTone(status?: string): Tone {
-  switch (status) {
-    case "active":
-    case "running":
-    case "dispatching":
-    case "provisioning":
-      return "info";
-    case "ready":
-    case "completed":
-    case "approved":
-      return "success";
-    case "draft":
-    case "queued":
-    case "cancelling":
-    case "missing":
-      return "warning";
-    case "disabled":
-    case "error":
-    case "failed":
-    case "cancelled":
-    case "timed_out":
-      return "danger";
-    default:
-      return "neutral";
-  }
-}
-
-function riskTone(risk?: string): Tone {
-  switch (risk) {
-    case "high":
-    case "critical":
-      return "danger";
-    case "medium":
-      return "warning";
-    case "low":
-      return "success";
-    default:
-      return "neutral";
-  }
-}
-
-function runtimeDisplay(item: DigitalEmployeeOverviewItem) {
-  const execution = item.execution_summary;
-  if (execution.status === "missing" || !execution.execution_instance_id) {
-    return "未绑定 Runtime";
+function eventTimeLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
   }
 
-  const node = execution.node_id || execution.runtime_name || execution.runtime_node_id || "Runtime";
-  const provider = execution.provider_type || "Provider";
-  return `${node} · ${provider}`;
-}
-
-function governanceDisplay(item: DigitalEmployeeOverviewItem) {
-  const governance = item.governance_summary;
-  return `skills ${formatNumber(governance.skills_count)} · MCP ${formatNumber(governance.mcp_servers_count)}`;
-}
-
-function budgetTokenDisplay(item: DigitalEmployeeOverviewItem) {
-  return `${formatNumber(item.budget_summary.usage_tokens_30d)} tokens`;
-}
-
-function employeeStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    active: "生效",
-    ready: "就绪",
-    draft: "草稿",
-    disabled: "已禁用",
-    error: "异常",
-  };
-
-  return labels[status] ?? status;
-}
-
-function executionStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    missing: "未绑定执行实例",
-    provisioning: "准备执行实例",
-    ready: "执行就绪",
-    active: "执行中",
-    disabled: "执行停用",
-    error: "执行异常",
-  };
-
-  return labels[status] ?? status;
-}
-
-function runStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    none: "无任务",
-    queued: "排队中",
-    dispatching: "分派中",
-    running: "运行中",
-    cancelling: "取消中",
-    completed: "已完成",
-    failed: "失败",
-    cancelled: "已取消",
-    timed_out: "超时",
-  };
-
-  return labels[status] ?? status;
-}
-
-function riskLabel(risk: string) {
-  const labels: Record<string, string> = {
-    low: "低风险",
-    medium: "中风险",
-    high: "高风险",
-    critical: "极高风险",
-  };
-
-  return labels[risk] ?? risk;
-}
-
-function governanceStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    approved: "配置已批准",
-    draft: "配置草稿",
-    missing: "缺少配置",
-    stale: "配置待更新",
-    pending_approval: "等待批准",
-    revoked: "已撤销",
-  };
-
-  return labels[status] ?? status;
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
