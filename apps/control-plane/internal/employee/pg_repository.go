@@ -350,6 +350,10 @@ func (r *PgRepository) CreateDigitalEmployeeConfigRevision(ctx context.Context, 
 	if err != nil {
 		return DigitalEmployeeConfigRevisionRecord{}, err
 	}
+	budgetPolicy, err := jsonbFromMap(params.BudgetPolicy, "budget_policy")
+	if err != nil {
+		return DigitalEmployeeConfigRevisionRecord{}, err
+	}
 	outputContractAddendum, err := jsonbFromMap(params.OutputContractAddendum, "output_contract_addendum")
 	if err != nil {
 		return DigitalEmployeeConfigRevisionRecord{}, err
@@ -363,6 +367,7 @@ func (r *PgRepository) CreateDigitalEmployeeConfigRevision(ctx context.Context, 
 		CapabilitySelection:    capabilitySelection,
 		ContextPolicyOverride:  contextPolicyOverride,
 		ApprovalPolicyOverride: approvalPolicyOverride,
+		BudgetPolicy:           budgetPolicy,
 		OutputContractAddendum: outputContractAddendum,
 		Status:                 string(params.Status),
 		ApprovedBy:             nullUUIDFromPtr(params.ApprovedBy),
@@ -901,6 +906,7 @@ func configRevisionRecordFromQuery(revision queries.DigitalEmployeeConfigRevisio
 		CapabilitySelection:    cloneMap(input.CapabilitySelection),
 		ContextPolicyOverride:  cloneMap(input.ContextPolicyOverride),
 		ApprovalPolicyOverride: cloneMap(input.ApprovalPolicyOverride),
+		BudgetPolicy:           cloneMap(input.BudgetPolicy),
 		OutputContractAddendum: cloneMap(input.OutputContractAddendum),
 		Status:                 ConfigRevisionStatus(revision.Status),
 		ApprovedBy:             uuidPtrFromNull(revision.ApprovedBy),
@@ -977,6 +983,10 @@ func employeeConfigInputFromQuery(revision queries.DigitalEmployeeConfigRevision
 	if err != nil {
 		return EmployeeConfigInput{}, err
 	}
+	budgetPolicy, err := mapFromJSONB(revision.BudgetPolicy, "budget_policy")
+	if err != nil {
+		return EmployeeConfigInput{}, err
+	}
 	outputContractAddendum, err := mapFromJSONB(revision.OutputContractAddendum, "output_contract_addendum")
 	if err != nil {
 		return EmployeeConfigInput{}, err
@@ -991,6 +1001,7 @@ func employeeConfigInputFromQuery(revision queries.DigitalEmployeeConfigRevision
 		CapabilitySelection:    capabilitySelection,
 		ContextPolicyOverride:  contextPolicyOverride,
 		ApprovalPolicyOverride: approvalPolicyOverride,
+		BudgetPolicy:           budgetPolicy,
 		OutputContractAddendum: outputContractAddendum,
 	}, nil
 }

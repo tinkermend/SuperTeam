@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 	cpruntime "github.com/superteam/control-plane/internal/runtime"
+	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
 func TestEmployeeTypeRegistryExcludesProjectCoordinator(t *testing.T) {
@@ -258,6 +260,7 @@ func TestCreateDigitalEmployeeParamsAndDomainMappingKeepOwnerAndType(t *testing.
 
 func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigAndProvisioning(t *testing.T) {
 	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	req.BudgetPolicy = map[string]any{"daily_token_limit": 120000}
 	dispatchDuringTransaction := false
 	dispatchAfterCommit := false
 	dispatcher.onDispatch = func(_ string, _ cpruntime.RuntimeCommand) {
@@ -322,6 +325,9 @@ func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigAndProvisioni
 	}
 	if !stringListContains(repo.createdConfigRevision.CapabilitySelection["enabled_external_capabilities"], "change-ticket") {
 		t.Fatalf("expected request capability selection to be merged, got %#v", repo.createdConfigRevision.CapabilitySelection)
+	}
+	if repo.createdConfigRevision.BudgetPolicy["daily_token_limit"] != 120000 {
+		t.Fatalf("expected request budget policy to be persisted, got %#v", repo.createdConfigRevision.BudgetPolicy)
 	}
 
 	if repo.createdEffectiveConfig.Status != EffectiveConfigStatusApproved {
@@ -739,6 +745,7 @@ func TestCreateConfigRevisionDefaultsDraftAndRevisionNumber(t *testing.T) {
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
 		RoleProfile:       map[string]any{"title": "finance reviewer"},
+		BudgetPolicy:      map[string]any{"daily_token_limit": 25000},
 		ApprovedBy:        &spoofedApproverID,
 	})
 	if err != nil {
@@ -762,6 +769,12 @@ func TestCreateConfigRevisionDefaultsDraftAndRevisionNumber(t *testing.T) {
 	}
 	if repo.createdConfigRevision.ApprovedBy != nil || repo.createdConfigRevision.ApprovedAt != nil {
 		t.Fatalf("expected repository draft approval metadata to be cleared, got %#v/%#v", repo.createdConfigRevision.ApprovedBy, repo.createdConfigRevision.ApprovedAt)
+	}
+	if repo.createdConfigRevision.BudgetPolicy["daily_token_limit"] != 25000 {
+		t.Fatalf("expected repository budget policy from request, got %#v", repo.createdConfigRevision.BudgetPolicy)
+	}
+	if revision.BudgetPolicy["daily_token_limit"] != 25000 {
+		t.Fatalf("expected response budget policy from repository record, got %#v", revision.BudgetPolicy)
 	}
 }
 
@@ -1278,6 +1291,42 @@ func TestJSONBFromMapRejectsUnsupportedValues(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeConfigRevisionQueryMappingKeepsBudgetPolicy(t *testing.T) {
+	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+	revision := queries.DigitalEmployeeConfigRevision{
+		ID:                     uuid.New(),
+		TenantID:               uuid.New(),
+		DigitalEmployeeID:      uuid.New(),
+		RevisionNumber:         4,
+		RoleProfile:            []byte(`{"title":"finance reviewer"}`),
+		ConstitutionAddendum:   []byte(`{}`),
+		CapabilitySelection:    []byte(`{}`),
+		ContextPolicyOverride:  []byte(`{}`),
+		ApprovalPolicyOverride: []byte(`{}`),
+		BudgetPolicy:           []byte(`{"daily_token_limit":50000}`),
+		OutputContractAddendum: []byte(`{}`),
+		Status:                 string(ConfigRevisionStatusDraft),
+		CreatedAt:              now,
+		UpdatedAt:              now,
+	}
+
+	input, err := employeeConfigInputFromQuery(revision)
+	if err != nil {
+		t.Fatalf("map employee config input: %v", err)
+	}
+	if input.BudgetPolicy["daily_token_limit"] != float64(50000) {
+		t.Fatalf("expected input budget policy from query row, got %#v", input.BudgetPolicy)
+	}
+
+	record, err := configRevisionRecordFromQuery(revision)
+	if err != nil {
+		t.Fatalf("map config revision record: %v", err)
+	}
+	if record.BudgetPolicy["daily_token_limit"] != float64(50000) {
+		t.Fatalf("expected record budget policy from query row, got %#v", record.BudgetPolicy)
+	}
+}
+
 func assertEmptyMap(t *testing.T, value map[string]any, label string) {
 	t.Helper()
 	if value == nil {
@@ -1703,6 +1752,7 @@ func (r *memoryRepository) CreateDigitalEmployeeConfigRevision(_ context.Context
 		CapabilitySelection:    cloneMap(params.CapabilitySelection),
 		ContextPolicyOverride:  cloneMap(params.ContextPolicyOverride),
 		ApprovalPolicyOverride: cloneMap(params.ApprovalPolicyOverride),
+		BudgetPolicy:           cloneMap(params.BudgetPolicy),
 		OutputContractAddendum: cloneMap(params.OutputContractAddendum),
 		Status:                 params.Status,
 		ApprovedBy:             validUUIDPtr(params.ApprovedBy),
@@ -1720,6 +1770,7 @@ func (r *memoryRepository) CreateDigitalEmployeeConfigRevision(_ context.Context
 		CapabilitySelection:    cloneMap(record.CapabilitySelection),
 		ContextPolicyOverride:  cloneMap(record.ContextPolicyOverride),
 		ApprovalPolicyOverride: cloneMap(record.ApprovalPolicyOverride),
+		BudgetPolicy:           cloneMap(record.BudgetPolicy),
 		OutputContractAddendum: cloneMap(record.OutputContractAddendum),
 	}
 	return record, nil
@@ -1996,6 +2047,7 @@ func cloneEmployeeConfigInputMap(values map[uuid.UUID]EmployeeConfigInput) map[u
 		record.CapabilitySelection = cloneMap(record.CapabilitySelection)
 		record.ContextPolicyOverride = cloneMap(record.ContextPolicyOverride)
 		record.ApprovalPolicyOverride = cloneMap(record.ApprovalPolicyOverride)
+		record.BudgetPolicy = cloneMap(record.BudgetPolicy)
 		record.OutputContractAddendum = cloneMap(record.OutputContractAddendum)
 		cloned[id] = record
 	}
@@ -2021,6 +2073,7 @@ func cloneCreateConfigRevisionParams(params CreateConfigRevisionParams) CreateCo
 	params.CapabilitySelection = cloneMap(params.CapabilitySelection)
 	params.ContextPolicyOverride = cloneMap(params.ContextPolicyOverride)
 	params.ApprovalPolicyOverride = cloneMap(params.ApprovalPolicyOverride)
+	params.BudgetPolicy = cloneMap(params.BudgetPolicy)
 	params.OutputContractAddendum = cloneMap(params.OutputContractAddendum)
 	params.ApprovedBy = validUUIDPtr(params.ApprovedBy)
 	params.ApprovedAt = cloneTimePtr(params.ApprovedAt)

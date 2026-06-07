@@ -79,6 +79,7 @@ type CreateConfigRevisionParams struct {
 	CapabilitySelection    map[string]any
 	ContextPolicyOverride  map[string]any
 	ApprovalPolicyOverride map[string]any
+	BudgetPolicy           map[string]any
 	OutputContractAddendum map[string]any
 	Status                 ConfigRevisionStatus
 	ApprovedBy             *uuid.UUID
@@ -152,6 +153,7 @@ type DigitalEmployeeConfigRevisionRecord struct {
 	CapabilitySelection    map[string]any
 	ContextPolicyOverride  map[string]any
 	ApprovalPolicyOverride map[string]any
+	BudgetPolicy           map[string]any
 	OutputContractAddendum map[string]any
 	Status                 ConfigRevisionStatus
 	ApprovedBy             *uuid.UUID

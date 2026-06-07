@@ -520,6 +520,7 @@ func initialEmployeeConfigParams(req CreateDigitalEmployeeRequest, definition Em
 		CapabilitySelection:    initialCapabilitySelection(req, definition, teamConfig),
 		ContextPolicyOverride:  initialContextPolicyOverride(req, definition, teamConfig),
 		ApprovalPolicyOverride: mergePolicyMaps(definition.DefaultApprovalPolicy, req.ApprovalPolicyOverride),
+		BudgetPolicy:           cloneMap(req.BudgetPolicy),
 		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
 		Status:                 ConfigRevisionStatusActive,
 		ApprovedBy:             &approvedBy,
@@ -538,6 +539,7 @@ func initialEmployeeConfigInput(req CreateDigitalEmployeeRequest, definition Emp
 		CapabilitySelection:    initialCapabilitySelection(req, definition, teamConfig),
 		ContextPolicyOverride:  initialContextPolicyOverride(req, definition, teamConfig),
 		ApprovalPolicyOverride: mergePolicyMaps(definition.DefaultApprovalPolicy, req.ApprovalPolicyOverride),
+		BudgetPolicy:           cloneMap(req.BudgetPolicy),
 		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
 	}
 }
@@ -759,6 +761,7 @@ func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRec
 		"context_policy_override":     cloneMap(configInput.ContextPolicyOverride),
 		"approval_policy_override":    cloneMap(configInput.ApprovalPolicyOverride),
 		"capability_selection":        cloneMap(configInput.CapabilitySelection),
+		"budget_policy":               cloneMap(configInput.BudgetPolicy),
 		"output_contract_addendum":    cloneMap(configInput.OutputContractAddendum),
 		"employee_metadata":           cloneMap(employee.Metadata),
 		"execution_instance_ref":      instance.ID.String(),
@@ -916,6 +919,7 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 		CapabilitySelection:    cloneMap(req.CapabilitySelection),
 		ContextPolicyOverride:  cloneMap(req.ContextPolicyOverride),
 		ApprovalPolicyOverride: cloneMap(req.ApprovalPolicyOverride),
+		BudgetPolicy:           cloneMap(req.BudgetPolicy),
 		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
 		Status:                 status,
 	})
@@ -955,6 +959,7 @@ func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffecti
 		"context_policy_override":       cloneMap(req.EmployeeConfig.ContextPolicyOverride),
 		"approval_policy":               cloneMap(req.TeamConfig.ApprovalPolicy),
 		"approval_policy_override":      cloneMap(req.EmployeeConfig.ApprovalPolicyOverride),
+		"budget_policy":                 cloneMap(req.EmployeeConfig.BudgetPolicy),
 		"artifact_contract":             cloneMap(req.TeamConfig.ArtifactContract),
 		"output_contract_addendum":      cloneMap(req.EmployeeConfig.OutputContractAddendum),
 		"internal_collaboration_policy": cloneMap(req.TeamConfig.InternalCollaborationPolicy),
@@ -1099,6 +1104,7 @@ func configRevisionFromRecord(record DigitalEmployeeConfigRevisionRecord) *Digit
 		CapabilitySelection:    cloneMap(record.CapabilitySelection),
 		ContextPolicyOverride:  cloneMap(record.ContextPolicyOverride),
 		ApprovalPolicyOverride: cloneMap(record.ApprovalPolicyOverride),
+		BudgetPolicy:           cloneMap(record.BudgetPolicy),
 		OutputContractAddendum: cloneMap(record.OutputContractAddendum),
 		Status:                 record.Status,
 		ApprovedBy:             validUUIDPtr(record.ApprovedBy),
@@ -1120,6 +1126,7 @@ func employeeConfigInputFromRecord(record DigitalEmployeeConfigRevisionRecord) E
 		CapabilitySelection:    cloneMap(record.CapabilitySelection),
 		ContextPolicyOverride:  cloneMap(record.ContextPolicyOverride),
 		ApprovalPolicyOverride: cloneMap(record.ApprovalPolicyOverride),
+		BudgetPolicy:           cloneMap(record.BudgetPolicy),
 		OutputContractAddendum: cloneMap(record.OutputContractAddendum),
 	}
 }
