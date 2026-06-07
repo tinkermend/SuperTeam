@@ -131,6 +131,47 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 	}
 }
 
+func TestCreateRunRejectsWhenDailyTokenBudgetExceeded(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	repo.preflight.BudgetPolicy = map[string]any{"daily_token_limit": float64(1000)}
+	repo.preflight.TodayTokenUsage = 1000
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+
+	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+
+	if err == nil || !strings.Contains(err.Error(), "employee daily token budget exceeded") {
+		t.Fatalf("expected budget exceeded error, got %v", err)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("budget exceeded run must not dispatch command")
+	}
+	if repo.createdRun != nil {
+		t.Fatalf("budget exceeded run must not create run record")
+	}
+}
+
+func TestCreateRunAllowsWhenDailyTokenBudgetUnset(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	repo.preflight.BudgetPolicy = map[string]any{}
+	repo.preflight.TodayTokenUsage = 999999
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+
+	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+
+	if err != nil {
+		t.Fatalf("expected run allowed without budget limit, got %v", err)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected command dispatch")
+	}
+}
+
 func TestRunServiceListRunEventsReturnsPersistedEvents(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.run = validRunServiceRun(DigitalEmployeeRunStatusRunning)

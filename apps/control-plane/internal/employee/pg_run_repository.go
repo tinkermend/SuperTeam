@@ -78,6 +78,10 @@ func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) 
 	if err != nil {
 		return RunPreflight{}, err
 	}
+	budgetPolicy, err := mapFromJSONB(preflight.BudgetPolicy, "budget_policy")
+	if err != nil {
+		return RunPreflight{}, err
+	}
 
 	return RunPreflight{
 		TenantID:                   preflight.TenantID,
@@ -93,6 +97,9 @@ func runPreflightFromQuery(preflight queries.GetDigitalEmployeeRunPreflightRow) 
 		RuntimeSelector:            runtimeSelector,
 		SessionPolicy:              sessionPolicy,
 		WorkspacePolicy:            workspacePolicy,
+		BudgetPolicy:               budgetPolicy,
+		TodayTokenUsage:            preflight.TodayTokenUsage,
+		BusinessTimezone:           preflight.BusinessTimezone,
 		HasApprovedEffectiveConfig: preflight.HasApprovedEffectiveConfig,
 		ProviderHealthy:            preflight.ProviderHealthy,
 	}, nil

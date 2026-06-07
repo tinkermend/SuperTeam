@@ -573,14 +573,10 @@ SELECT
     dei.runtime_selector,
     dei.session_policy,
     dei.workspace_policy,
-    EXISTS (
-        SELECT 1
-        FROM digital_employee_effective_configs dec
-        WHERE dec.tenant_id = de.tenant_id
-          AND dec.digital_employee_id = de.id
-          AND dec.status = 'approved'
-          AND dec.revoked_at IS NULL
-    ) AS has_approved_effective_config,
+    COALESCE(ec.effective_config_snapshot -> 'budget_policy', '{}'::jsonb)::jsonb AS budget_policy,
+    COALESCE(today_usage.usage_tokens_today, 0)::integer AS today_token_usage,
+    'Asia/Shanghai'::text AS business_timezone,
+    (ec.effective_config_id IS NOT NULL)::boolean AS has_approved_effective_config,
     EXISTS (
         SELECT 1
         FROM runtime_capabilities rc
@@ -603,6 +599,36 @@ JOIN runtime_nodes rn
   ON rn.id = dei.runtime_node_id
  AND rn.tenant_id = de.tenant_id
  AND rn.archived_at IS NULL
+LEFT JOIN LATERAL (
+    SELECT
+        dec.id AS effective_config_id,
+        dec.effective_config_snapshot
+    FROM digital_employee_effective_configs dec
+    WHERE dec.tenant_id = de.tenant_id
+      AND dec.digital_employee_id = de.id
+      AND dec.status = 'approved'
+      AND dec.revoked_at IS NULL
+    ORDER BY dec.created_at DESC, dec.updated_at DESC
+    LIMIT 1
+) ec ON true
+LEFT JOIN LATERAL (
+    SELECT
+        LEAST(
+            SUM(
+                CASE
+                    WHEN COALESCE(tr.result #>> '{usage,total_tokens}', tr.result ->> 'total_tokens', '') ~ '^[0-9]+$'
+                    THEN COALESCE(tr.result #>> '{usage,total_tokens}', tr.result ->> 'total_tokens', '')::bigint
+                    ELSE 0
+                END
+            ),
+            2147483647
+        )::integer AS usage_tokens_today
+    FROM task_runs tr
+    WHERE tr.tenant_id = de.tenant_id
+      AND tr.digital_employee_id = de.id
+      AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) >= (date_trunc('day', timezone('Asia/Shanghai', now())) AT TIME ZONE 'Asia/Shanghai')
+      AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai')
+) today_usage ON true
 WHERE de.id = $1::uuid
   AND de.tenant_id = $2::uuid
   AND de.deleted_at IS NULL
@@ -628,6 +654,9 @@ type GetDigitalEmployeeRunPreflightRow struct {
 	RuntimeSelector            []byte        `json:"runtime_selector"`
 	SessionPolicy              []byte        `json:"session_policy"`
 	WorkspacePolicy            []byte        `json:"workspace_policy"`
+	BudgetPolicy               []byte        `json:"budget_policy"`
+	TodayTokenUsage            int32         `json:"today_token_usage"`
+	BusinessTimezone           string        `json:"business_timezone"`
 	HasApprovedEffectiveConfig bool          `json:"has_approved_effective_config"`
 	ProviderHealthy            bool          `json:"provider_healthy"`
 }
@@ -649,6 +678,9 @@ func (q *Queries) GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDig
 		&i.RuntimeSelector,
 		&i.SessionPolicy,
 		&i.WorkspacePolicy,
+		&i.BudgetPolicy,
+		&i.TodayTokenUsage,
+		&i.BusinessTimezone,
 		&i.HasApprovedEffectiveConfig,
 		&i.ProviderHealthy,
 	)

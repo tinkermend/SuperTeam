@@ -46,6 +46,9 @@ type RunPreflight struct {
 	RuntimeSelector            map[string]any
 	SessionPolicy              map[string]any
 	WorkspacePolicy            map[string]any
+	BudgetPolicy               map[string]any
+	TodayTokenUsage            int32
+	BusinessTimezone           string
 	HasApprovedEffectiveConfig bool
 	ProviderHealthy            bool
 }

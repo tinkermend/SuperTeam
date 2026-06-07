@@ -410,6 +410,298 @@ func TestPgRunRepositoryGetRunPreflightUsesRuntimeNodeIDFromRuntimeNodes(t *test
 	require.True(t, preflight.ProviderHealthy)
 }
 
+func TestRunPreflightUsesAsiaShanghaiDailyTokenUsage(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+	require.NoError(t, pingEmployeeRunRepositoryTestRedis(ctx, cfg.redisURL))
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "employee_run_repo_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
+	runtimeNodeID := uuid.New()
+	employeeID := uuid.New()
+	executionInstanceID := uuid.New()
+	teamConfigRevisionID := uuid.New()
+	employeeConfigRevisionID := uuid.New()
+	taskBeforeID := uuid.New()
+	taskInsideID := uuid.New()
+	runBeforeID := uuid.New()
+	runInsideID := uuid.New()
+	nodeID := "runtime-budget-boundary"
+
+	beforeBusinessDay := time.Date(2026, 6, 6, 15, 59, 0, 0, time.UTC)
+	insideBusinessDay := time.Date(2026, 6, 6, 16, 1, 0, 0, time.UTC)
+	referenceBusinessMidnight := time.Date(2026, 6, 6, 16, 0, 0, 0, time.UTC)
+	var currentBusinessMidnight time.Time
+	err = conn.QueryRow(ctx, `SELECT date_trunc('day', timezone('Asia/Shanghai', now())) AT TIME ZONE 'Asia/Shanghai'`).Scan(&currentBusinessMidnight)
+	require.NoError(t, err)
+	dayShift := int(currentBusinessMidnight.Sub(referenceBusinessMidnight) / (24 * time.Hour))
+	beforeToday := beforeBusinessDay.AddDate(0, 0, dayShift)
+	insideToday := insideBusinessDay.AddDate(0, 0, dayShift)
+
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'default', '默认租户', 'active');
+
+		INSERT INTO tenant_teams (id, tenant_id, slug, name, status)
+		VALUES ($2, $1, 'default', '默认团队', 'active');
+
+		INSERT INTO runtime_nodes (
+			id,
+			tenant_id,
+			node_id,
+			name,
+			supported_providers,
+			max_slots,
+			current_load,
+			status,
+			metadata,
+			last_heartbeat_at
+		) VALUES (
+			$3,
+			$1,
+			$4,
+			'Runtime Budget Boundary',
+			'["codex"]'::jsonb,
+			2,
+			0,
+			'online',
+			'{}'::jsonb,
+			NOW()
+		);
+
+		INSERT INTO runtime_capabilities (
+			tenant_id,
+			runtime_node_id,
+			capability_type,
+			capability_key,
+			provider_type,
+			provider_version,
+			binary_path,
+			available,
+			workspace_base_dir,
+			capacity,
+			labels,
+			status,
+			details,
+			health_status,
+			metadata,
+			last_seen_at
+		) VALUES (
+			$1,
+			$3,
+			'provider',
+			'provider:codex',
+			'codex',
+			'1.0.0',
+			'/usr/local/bin/codex',
+			true,
+			'/tmp/superteam',
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'healthy',
+			'{}'::jsonb,
+			'healthy',
+			'{}'::jsonb,
+			NOW()
+		);
+
+		INSERT INTO digital_employees (
+			id,
+			tenant_id,
+			team_id,
+			name,
+			role,
+			status,
+			permission_policy,
+			context_policy,
+			approval_policy,
+			risk_level,
+			metadata
+		) VALUES (
+			$5,
+			$1,
+			$2,
+			'预算验证员工',
+			'operator',
+			'ready',
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'normal',
+			'{}'::jsonb
+		);
+
+		INSERT INTO digital_employee_execution_instances (
+			id,
+			tenant_id,
+			digital_employee_id,
+			runtime_node_id,
+			provider_type,
+			agent_home_dir,
+			workspace_policy,
+			session_policy,
+			runtime_selector,
+			capacity_requirements,
+			fallback_policy,
+			status,
+			ready_at,
+			metadata
+		) VALUES (
+			$6,
+			$1,
+			$5,
+			$3,
+			'codex',
+			'/var/lib/superteam/agents/employee',
+			'{"workspace":"isolated"}'::jsonb,
+			'{"resume":true}'::jsonb,
+			'{"node_id":"runtime-budget-boundary"}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'ready',
+			NOW(),
+			'{}'::jsonb
+		);
+
+		INSERT INTO tenant_team_config_revisions (
+			id,
+			tenant_id,
+			team_id,
+			revision_number,
+			constitution,
+			capability_policy,
+			context_policy,
+			approval_policy,
+			artifact_contract,
+			internal_collaboration_policy,
+			runtime_scope_policy,
+			status,
+			approved_at
+		) VALUES (
+			$7,
+			$1,
+			$2,
+			1,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'active',
+			NOW()
+		);
+
+		INSERT INTO digital_employee_config_revisions (
+			id,
+			tenant_id,
+			digital_employee_id,
+			revision_number,
+			role_profile,
+			constitution_addendum,
+			capability_selection,
+			context_policy_override,
+			approval_policy_override,
+			output_contract_addendum,
+			status
+		) VALUES (
+			$8,
+			$1,
+			$5,
+			1,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'{}'::jsonb,
+			'approved'
+		);
+
+		INSERT INTO digital_employee_effective_configs (
+			tenant_id,
+			digital_employee_id,
+			tenant_team_config_revision_id,
+			employee_config_revision_id,
+			effective_config_snapshot,
+			validation_result,
+			status,
+			approved_at
+		) VALUES (
+			$1,
+			$5,
+			$7,
+			$8,
+			'{"budget_policy":{"daily_token_limit":1000}}'::jsonb,
+			'{}'::jsonb,
+			'approved',
+			NOW()
+		);
+
+		INSERT INTO tasks (
+			id,
+			tenant_id,
+			team_id,
+			title,
+			status,
+			provider_type,
+			target_node_id,
+			params,
+			created_at,
+			updated_at
+		) VALUES
+			($9, $1, $2, '午夜前运行', 'completed', 'codex', $4, '{}'::jsonb, $13, $13),
+			($10, $1, $2, '午夜后运行', 'completed', 'codex', $4, '{}'::jsonb, $14, $14);
+
+		INSERT INTO task_runs (
+			id,
+			tenant_id,
+			task_id,
+			node_id,
+			runtime_node_id,
+			status,
+			started_at,
+			completed_at,
+			finished_at,
+			result,
+			created_at,
+			updated_at,
+			command_id,
+			digital_employee_id,
+			execution_instance_id,
+			provider_type
+		) VALUES
+			($11, $1, $9, $4, $3, 'completed', $13, $13, $13, '{"usage":{"total_tokens":700}}'::jsonb, $13, $13, 'cmd-before-midnight', $5, $6, 'codex'),
+			($12, $1, $10, $4, $3, 'completed', $14, $14, $14, '{"usage":{"total_tokens":300}}'::jsonb, $14, $14, 'cmd-after-midnight', $5, $6, 'codex');
+	`, tenantID, teamID, runtimeNodeID, nodeID, employeeID, executionInstanceID, teamConfigRevisionID, employeeConfigRevisionID, taskBeforeID, taskInsideID, runBeforeID, runInsideID, beforeToday, insideToday)
+	require.NoError(t, err)
+
+	repo := NewPgRunRepository(queries.New(conn))
+	preflight, err := repo.GetRunPreflight(ctx, tenantID, employeeID)
+
+	require.NoError(t, err)
+	require.Equal(t, int32(300), preflight.TodayTokenUsage)
+	require.Equal(t, "Asia/Shanghai", preflight.BusinessTimezone)
+	require.Equal(t, float64(1000), preflight.BudgetPolicy["daily_token_limit"])
+}
+
 func validCreateRunRecordRequest(idempotencyKey string) CreateRunRecordRequest {
 	return CreateRunRecordRequest{
 		IdempotencyKey:      &idempotencyKey,

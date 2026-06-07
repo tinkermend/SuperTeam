@@ -72,6 +72,9 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 	if err := validateRunPreflight(preflight); err != nil {
 		return nil, err
 	}
+	if err := validateDailyTokenBudget(preflight); err != nil {
+		return nil, err
+	}
 	if !s.dispatcher.IsConnected(preflight.NodeID) {
 		return nil, fmt.Errorf("%w: runtime node is not connected", ErrRuntimeUnavailable)
 	}
@@ -402,6 +405,22 @@ func validateRunPreflight(preflight RunPreflight) error {
 	}
 	if !preflight.ProviderHealthy {
 		return fmt.Errorf("%w: provider capability must be healthy", ErrProviderUnavailable)
+	}
+	return nil
+}
+
+func validateDailyTokenBudget(preflight RunPreflight) error {
+	policy, err := normalizeBudgetPolicy(preflight.BudgetPolicy)
+	if err != nil {
+		return err
+	}
+	value, ok := policy["daily_token_limit"].(float64)
+	if !ok || value <= 0 {
+		return nil
+	}
+	limit := int32(value)
+	if preflight.TodayTokenUsage >= limit {
+		return fmt.Errorf("%w: employee daily token budget exceeded", ErrInvalidInput)
 	}
 	return nil
 }
