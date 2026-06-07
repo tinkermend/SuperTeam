@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-07 14:44：修复团队列表、团队详情数字员工入口和用户管理页内部跳转使用原生 `<a href>` 导致 Web Shell 与左侧菜单整页刷新的问题，统一改用 TanStack Router `Link`，并让侧栏菜单在详情/创建子路由保持父级选中态。
 - 2026-06-07 02:28：Runtime Agent 工作目录从按 task_id 隔离重构为按 execution_instance_id + run_id 隔离，支持 logs/workspace/artifacts 子目录结构；旧版 create_task_workspace 标记为 deprecated。
 - 2026-06-07 02:28：Runtime Agent 添加 aws-sdk-s3 依赖和 S3Section 配置支持，为工件上传到 S3 兼容存储做准备。
 - 2026-06-07 02:28：ProviderEvent::SessionStarted 扩展支持可选的 session_state 字段，为 Provider 会话状态回写 Control Plane 奠定基础。

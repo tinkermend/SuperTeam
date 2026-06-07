@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { forwardRef, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
@@ -22,6 +22,33 @@ vi.mock("@/components/search", () => ({
 vi.mock("@/components/theme-switch", () => ({
   ThemeSwitch: () => <button type="button">Toggle theme</button>,
 }));
+
+vi.mock("@tanstack/react-router", () => {
+  type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
+    children: ReactNode;
+    params?: Record<string, string>;
+    to: string;
+  };
+  const Link = forwardRef<HTMLAnchorElement, MockLinkProps>(
+    ({ children, params, to, ...props }, ref) => (
+      <a
+        {...props}
+        data-router-link="true"
+        href={
+          params?.teamId
+            ? to.replace("$teamId", encodeURIComponent(params.teamId))
+            : to
+        }
+        ref={ref}
+      >
+        {children}
+      </a>
+    ),
+  );
+  Link.displayName = "MockRouterLink";
+
+  return { Link };
+});
 
 function createQueryClient() {
   return new QueryClient({
@@ -838,6 +865,12 @@ describe("TeamsView", () => {
     }
     await expect.element(screen.getByText("运维团队")).toBeVisible();
     await expect
+      .element(screen.getByRole("link", { name: "运维团队" }))
+      .toHaveAttribute("data-router-link", "true");
+    await expect
+      .element(screen.getByRole("link", { name: "运维团队" }))
+      .toHaveAttribute("href", "/teams/team-1");
+    await expect
       .element(screen.getByLabelText("运维团队图标"))
       .toBeVisible();
     await expect
@@ -886,6 +919,9 @@ describe("TeamsView", () => {
     await expect
       .element(screen.getByRole("menuitem", { name: "查看详情" }))
       .toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("menuitem", { name: "查看详情" }))
+      .toHaveAttribute("data-router-link", "true");
   });
 
   it("opens row actions for teams with duplicate names by unique slug label", async () => {
@@ -1790,6 +1826,9 @@ describe("TeamDetailView", () => {
     await expect
       .element(screen.getByRole("link", { name: "从此团队创建数字员工" }))
       .toHaveAttribute("href", "/employees/new");
+    await expect
+      .element(screen.getByRole("link", { name: "从此团队创建数字员工" }))
+      .toHaveAttribute("data-router-link", "true");
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/digital-employees?team_id=team-1",
       expect.objectContaining({

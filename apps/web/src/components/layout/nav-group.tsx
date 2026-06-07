@@ -206,13 +206,32 @@ function SidebarMenuCollapsedDropdown({
   )
 }
 
-function checkIsActive(href: string, item: NavItem, mainNav = false) {
-  return (
-    href === item.url || // /endpint?search=param
-    href.split('?')[0] === item.url || // endpoint
-    !!item?.items?.filter((i) => i.url === href).length || // if child nav is active
-    (mainNav &&
-      href.split('/')[1] !== '' &&
-      href.split('/')[1] === item?.url?.split('/')[1])
+export function checkIsActive(href: string, item: NavItem, mainNav = false) {
+  const currentPath = normalizePath(href) ?? '/'
+  const itemPath = 'url' in item ? normalizePath(item.url) : undefined
+  const childIsActive = item.items?.some((child) => {
+    const childPath = normalizePath(child.url)
+    return currentPath === childPath || isDescendantPath(currentPath, childPath)
+  })
+
+  return Boolean(
+    (itemPath &&
+      (currentPath === itemPath || isDescendantPath(currentPath, itemPath))) ||
+      childIsActive ||
+      (mainNav &&
+        itemPath &&
+        currentPath.split('/')[1] !== '' &&
+        currentPath.split('/')[1] === itemPath.split('/')[1])
   )
+}
+
+function normalizePath(path: string | undefined) {
+  if (!path) return undefined
+
+  const normalized = path.split('?')[0]?.replace(/\/+$/, '')
+  return normalized || '/'
+}
+
+function isDescendantPath(currentPath: string, itemPath: string | undefined) {
+  return Boolean(itemPath && itemPath !== '/' && currentPath.startsWith(`${itemPath}/`))
 }

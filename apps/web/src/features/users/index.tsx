@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import {
   Activity,
   ArrowUpRight,
@@ -525,10 +526,10 @@ function SelectedUserWorkspace({
                 重置密码
               </Button>
               <Button asChild variant="outline">
-                <a href="/teams">
+                <Link to="/teams">
                   <UsersRound data-icon="inline-start" />
                   去团队管理分配
-                </a>
+                </Link>
               </Button>
             </div>
           </div>
@@ -878,10 +879,10 @@ function UserDiagnosticsRail({
           <Recommendation icon={<UsersRound />} text="团队角色变更优先在团队管理中走审批链路。" />
           <Recommendation icon={<Clock3 />} text="导出最近 30 天登录与拒绝记录，供审计复核。" />
           <Button asChild className="mt-2" variant="outline">
-            <a href="/permissions">
+            <Link to="/permissions">
               查看权限中心
               <ArrowUpRight data-icon="inline-end" />
-            </a>
+            </Link>
           </Button>
         </CardContent>
       </Card>

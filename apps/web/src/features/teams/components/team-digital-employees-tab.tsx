@@ -1,4 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Bot, CheckCircle2, FileText, PlugZap, TriangleAlert, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -160,10 +161,10 @@ export function TeamDigitalEmployeesTab({ apiBaseUrl, fetcher, teamId }: TeamDig
             新数字员工需要选择专业类型、能力、治理和 Runtime 绑定，请进入创建向导完成。
           </p>
           <Button asChild type="button">
-            <a href="/employees/new">
+            <Link to="/employees/new">
               <Bot data-icon="inline-start" />
               从此团队创建数字员工
-            </a>
+            </Link>
           </Button>
         </CardContent>
       </Card>

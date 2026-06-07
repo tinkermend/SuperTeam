@@ -1,4 +1,5 @@
 import { MoreHorizontal } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import {
   TeamIconTile,
   type TeamDisplayMetadata,
@@ -95,12 +96,13 @@ export function TeamListTable({
                   <div className="flex min-w-0 items-center gap-3">
                     <TeamIconTile metadata={getTeamMetadata(team)} />
                     <div className="min-w-0">
-                      <a
+                      <Link
                         className="truncate font-medium hover:underline"
-                        href={`/teams/${team.id}`}
+                        params={{ teamId: team.id }}
+                        to="/teams/$teamId"
                       >
                         {team.name}
-                      </a>
+                      </Link>
                       <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                         <span className="truncate">{team.slug}</span>
                         <TeamStatusBadge status={team.status} />
@@ -143,7 +145,9 @@ export function TeamListTable({
                     <DropdownMenuContent align="end">
                       <DropdownMenuGroup>
                         <DropdownMenuItem asChild>
-                          <a href={`/teams/${team.id}`}>查看详情</a>
+                          <Link params={{ teamId: team.id }} to="/teams/$teamId">
+                            查看详情
+                          </Link>
                         </DropdownMenuItem>
                       </DropdownMenuGroup>
                     </DropdownMenuContent>

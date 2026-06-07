@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { forwardRef, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
@@ -22,6 +22,23 @@ vi.mock("@/components/search", () => ({
 vi.mock("@/components/theme-switch", () => ({
   ThemeSwitch: () => <button type="button">Toggle theme</button>,
 }));
+
+vi.mock("@tanstack/react-router", () => {
+  type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
+    children: ReactNode;
+    to: string;
+  };
+  const Link = forwardRef<HTMLAnchorElement, MockLinkProps>(
+    ({ children, to, ...props }, ref) => (
+      <a {...props} data-router-link="true" href={to} ref={ref}>
+        {children}
+      </a>
+    ),
+  );
+  Link.displayName = "MockRouterLink";
+
+  return { Link };
+});
 
 function createQueryClient() {
   return new QueryClient({
@@ -179,6 +196,8 @@ describe("Users", () => {
     await expect.element(screen.getByText("operator@example.com").first()).toBeInTheDocument();
     await expect.element(screen.getByText("team.member.change_role", { exact: true }).first()).toBeInTheDocument();
     await expect.element(screen.getByText("Chrome 125 / macOS").first()).toBeInTheDocument();
+    await expect.element(screen.getByRole("link", { name: "去团队管理分配" })).toHaveAttribute("data-router-link", "true");
+    await expect.element(screen.getByRole("link", { name: "查看权限中心" })).toHaveAttribute("data-router-link", "true");
 
     const avatar = screen.getByAltText("平台管理员 的头像");
     await expect.element(avatar).toBeInTheDocument();
