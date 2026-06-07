@@ -529,15 +529,21 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) Digi
 	dailyTokenLimit := int32PtrFromJSONString(row.DailyTokenLimitText)
 	usagePercent := overviewUsagePercent(row.TodayBudgetUsageTokens, dailyTokenLimit)
 	recentEvents := recentEventsFromJSON(row.RecentEventsJson)
-	workbenchStatus := overviewWorkbenchStatus(
-		DigitalEmployeeStatus(row.Status),
-		executionStatus,
-		row.RuntimeStatus,
-		row.ProviderStatus,
-		row.HealthStatus,
-		row.GovernanceStatus,
-		latestRunStatus,
-	)
+	workbenchStatus := overviewWorkbenchStatus(overviewWorkbenchStatusInput{
+		IdentityStatus:        DigitalEmployeeStatus(row.Status),
+		ExecutionStatus:       executionStatus,
+		RuntimeStatus:         row.RuntimeStatus,
+		RuntimeDisabled:       row.RuntimeDisabledAt.Valid,
+		RuntimeArchived:       row.RuntimeArchivedAt.Valid,
+		NodeID:                row.NodeID,
+		ProviderType:          row.ProviderType,
+		ProviderAvailable:     row.ProviderAvailable,
+		ProviderStatus:        row.ProviderStatus,
+		HealthStatus:          row.HealthStatus,
+		AgentHomeDirAvailable: row.AgentHomeDirAvailable,
+		GovernanceStatus:      row.GovernanceStatus,
+		RunStatus:             latestRunStatus,
+	})
 
 	var latestRun *DigitalEmployeeLatestRunSummary
 	if row.LatestRunID.Valid && row.LatestRunID.UUID != uuid.Nil {
@@ -823,23 +829,63 @@ func overviewRunStatus(value string) OverviewRunStatus {
 	}
 }
 
-func overviewWorkbenchStatus(identityStatus DigitalEmployeeStatus, executionStatus OverviewExecutionStatus, runtimeStatus, providerStatus, healthStatus string, governanceStatus string, runStatus OverviewRunStatus) WorkbenchStatus {
-	if identityStatus == DigitalEmployeeStatusError ||
-		executionStatus == OverviewExecutionStatusError ||
-		runStatus == OverviewRunStatusFailed ||
-		runStatus == OverviewRunStatusTimedOut {
+type overviewWorkbenchStatusInput struct {
+	IdentityStatus        DigitalEmployeeStatus
+	ExecutionStatus       OverviewExecutionStatus
+	RuntimeStatus         string
+	RuntimeDisabled       bool
+	RuntimeArchived       bool
+	NodeID                string
+	ProviderType          string
+	ProviderAvailable     bool
+	ProviderStatus        string
+	HealthStatus          string
+	AgentHomeDirAvailable bool
+	GovernanceStatus      string
+	RunStatus             OverviewRunStatus
+}
+
+func overviewWorkbenchStatus(input overviewWorkbenchStatusInput) WorkbenchStatus {
+	if input.IdentityStatus == DigitalEmployeeStatusDisabled ||
+		input.IdentityStatus == DigitalEmployeeStatusError ||
+		input.ExecutionStatus == OverviewExecutionStatusDisabled ||
+		input.ExecutionStatus == OverviewExecutionStatusError ||
+		input.RunStatus == OverviewRunStatusFailed ||
+		input.RunStatus == OverviewRunStatusTimedOut {
 		return WorkbenchStatusError
 	}
-	if executionStatus == OverviewExecutionStatusMissing ||
-		executionStatus == OverviewExecutionStatusProvisioning ||
-		runtimeStatus == "" ||
-		providerStatus == "" {
+	if input.ExecutionStatus == OverviewExecutionStatusMissing ||
+		input.ExecutionStatus == OverviewExecutionStatusProvisioning ||
+		strings.TrimSpace(input.RuntimeStatus) == "" ||
+		strings.TrimSpace(input.NodeID) == "" ||
+		strings.TrimSpace(input.ProviderType) == "" ||
+		!input.AgentHomeDirAvailable {
 		return WorkbenchStatusPendingBinding
 	}
-	if governanceStatus == "missing" || governanceStatus == "pending_approval" || governanceStatus == "stale" {
+	if input.GovernanceStatus == "missing" ||
+		input.GovernanceStatus == "pending_approval" ||
+		input.GovernanceStatus == "stale" {
 		return WorkbenchStatusPendingBinding
 	}
-	if runtimeStatus != "online" || providerStatus != "healthy" || healthStatus != "healthy" {
+	if input.IdentityStatus != DigitalEmployeeStatusReady &&
+		input.IdentityStatus != DigitalEmployeeStatusActive {
+		return WorkbenchStatusPendingBinding
+	}
+	if input.ExecutionStatus != OverviewExecutionStatusReady &&
+		input.ExecutionStatus != OverviewExecutionStatusActive {
+		return WorkbenchStatusPendingBinding
+	}
+	if input.GovernanceStatus != "approved" {
+		return WorkbenchStatusPendingBinding
+	}
+	if input.RuntimeDisabled ||
+		input.RuntimeArchived ||
+		strings.TrimSpace(input.RuntimeStatus) != "online" {
+		return WorkbenchStatusError
+	}
+	if !input.ProviderAvailable ||
+		strings.TrimSpace(input.ProviderStatus) != "healthy" ||
+		strings.TrimSpace(input.HealthStatus) != "healthy" {
 		return WorkbenchStatusError
 	}
 	return WorkbenchStatusReady

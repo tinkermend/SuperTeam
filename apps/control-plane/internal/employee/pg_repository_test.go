@@ -42,10 +42,36 @@ func TestOverviewBudgetSource(t *testing.T) {
 }
 
 func TestOverviewSummarySQLCountsStaleConfigQueue(t *testing.T) {
-	normalizedSQL := strings.Join(strings.Fields(queries.GetDigitalEmployeeOverviewSummary), " ")
+	normalizedSQL := normalizeSQL(queries.GetDigitalEmployeeOverviewSummary)
 
 	require.NotContains(t, normalizedSQL, "0::integer AS stale_config_count")
 	require.Contains(t, normalizedSQL, "governance_status IN ('missing', 'pending_approval', 'stale') ))::integer AS stale_config_count")
+}
+
+func TestOverviewSummarySQLRequiresDispatchReadyAgentHome(t *testing.T) {
+	normalizedSQL := normalizeSQL(queries.GetDigitalEmployeeOverviewSummary)
+
+	require.Contains(t, normalizedSQL, "(NULLIF(BTRIM(COALESCE(dei.agent_home_dir, '')), '') IS NOT NULL)::boolean AS agent_home_dir_available")
+	require.Contains(t, normalizedSQL, "agent_home_dir_available = true")
+}
+
+func TestOverviewItemsSQLCarriesProviderAvailabilityForWorkbenchStatus(t *testing.T) {
+	normalizedSQL := normalizeSQL(queries.ListDigitalEmployeeOverviewItems)
+
+	require.Contains(t, normalizedSQL, "COALESCE(pc.available, false)::boolean AS provider_available")
+}
+
+func TestOverviewItemsSQLUsesLatestGovernanceStatusForCard(t *testing.T) {
+	normalizedSQL := normalizeSQL(queries.ListDigitalEmployeeOverviewItems)
+
+	require.Contains(t, normalizedSQL, "governance_configs AS")
+	require.Contains(t, normalizedSQL, "COALESCE(gc.status, 'missing')::text AS governance_status")
+}
+
+func TestOverviewItemsSQLExcludesDeletedTaskEvents(t *testing.T) {
+	normalizedSQL := normalizeSQL(queries.ListDigitalEmployeeOverviewItems)
+
+	require.Contains(t, normalizedSQL, "JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id AND t.deleted_at IS NULL")
 }
 
 func TestOverviewFiltersFromQueryMapsStableLabels(t *testing.T) {
@@ -101,6 +127,43 @@ func TestOverviewItemFromQueryHandlesMissingEffectiveConfig(t *testing.T) {
 	require.Equal(t, "missing", item.GovernanceSummary.Status)
 }
 
+func TestOverviewItemFromQueryTreatsMissingAgentHomeAsPendingBinding(t *testing.T) {
+	row := baseOverviewItemRow()
+	row.AgentHomeDirAvailable = false
+
+	item := overviewItemFromQuery(row)
+
+	require.Equal(t, WorkbenchStatusPendingBinding, item.WorkbenchStatus)
+}
+
+func TestOverviewItemFromQueryTreatsUnavailableProviderAsError(t *testing.T) {
+	row := baseOverviewItemRow()
+	row.ProviderAvailable = false
+
+	item := overviewItemFromQuery(row)
+
+	require.Equal(t, WorkbenchStatusError, item.WorkbenchStatus)
+}
+
+func TestOverviewItemFromQueryTreatsDisabledExecutionAsError(t *testing.T) {
+	row := baseOverviewItemRow()
+	row.ExecutionStatus = "disabled"
+
+	item := overviewItemFromQuery(row)
+
+	require.Equal(t, WorkbenchStatusError, item.WorkbenchStatus)
+}
+
+func TestOverviewItemFromQueryTreatsPendingGovernanceAsPendingBinding(t *testing.T) {
+	row := baseOverviewItemRow()
+	row.GovernanceStatus = "pending_approval"
+
+	item := overviewItemFromQuery(row)
+
+	require.Equal(t, "pending_approval", item.GovernanceSummary.Status)
+	require.Equal(t, WorkbenchStatusPendingBinding, item.WorkbenchStatus)
+}
+
 func TestOverviewItemFromQueryMapsWorkbenchBudgetAndEvents(t *testing.T) {
 	row := baseOverviewItemRow()
 
@@ -117,6 +180,10 @@ func TestOverviewItemFromQueryMapsWorkbenchBudgetAndEvents(t *testing.T) {
 	require.Equal(t, "命令已下发", item.RecentEvents[0].Label)
 	require.Equal(t, "running", item.RecentEvents[0].Status)
 	require.NotNil(t, item.RecentEvents[0].OccurredAt)
+}
+
+func normalizeSQL(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }
 
 func baseOverviewItemRow() queries.ListDigitalEmployeeOverviewItemsRow {
@@ -150,6 +217,7 @@ func baseOverviewItemRow() queries.ListDigitalEmployeeOverviewItemsRow {
 		RuntimeName:            "Runtime 1",
 		RuntimeStatus:          "online",
 		ProviderType:           "codex",
+		ProviderAvailable:      true,
 		ProviderStatus:         "healthy",
 		HealthStatus:           "healthy",
 		AgentHomeDirAvailable:  true,

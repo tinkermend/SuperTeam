@@ -743,6 +743,7 @@ overview_rows AS (
         rn.disabled_at AS runtime_disabled_at,
         rn.archived_at AS runtime_archived_at,
         COALESCE(dei.provider_type, '')::text AS provider_type,
+        (NULLIF(BTRIM(COALESCE(dei.agent_home_dir, '')), '') IS NOT NULL)::boolean AS agent_home_dir_available,
         COALESCE(pc.available, false)::boolean AS provider_available,
         COALESCE(pc.status, '')::text AS provider_status,
         COALESCE(pc.health_status, '')::text AS provider_health_status,
@@ -803,6 +804,8 @@ SELECT
           AND runtime_status = 'online'
           AND runtime_disabled_at IS NULL
           AND runtime_archived_at IS NULL
+          AND agent_home_dir_available = true
+          AND governance_status = 'approved'
           AND provider_available = true
           AND provider_status = 'healthy'
           AND provider_health_status = 'healthy'
@@ -814,9 +817,25 @@ SELECT
         WHERE execution_status IN ('missing', 'provisioning')
     ))::integer AS waiting_runtime_count,
     (COUNT(*) FILTER (
-        WHERE employee_status = 'error'
-           OR execution_status = 'error'
+        WHERE employee_status IN ('disabled', 'error')
+           OR execution_status IN ('disabled', 'error')
            OR run_status IN ('failed', 'timed_out')
+           OR (
+               runtime_node_id IS NOT NULL
+               AND (
+                   runtime_status <> 'online'
+                   OR runtime_disabled_at IS NOT NULL
+                   OR runtime_archived_at IS NOT NULL
+               )
+           )
+           OR (
+               provider_type <> ''
+               AND (
+                   provider_available = false
+                   OR provider_status <> 'healthy'
+                   OR provider_health_status <> 'healthy'
+               )
+           )
     ))::integer AS error_count,
     (COUNT(*) FILTER (
         WHERE risk_level IN ('high', 'critical')
@@ -829,6 +848,8 @@ SELECT
           AND runtime_status = 'online'
           AND runtime_disabled_at IS NULL
           AND runtime_archived_at IS NULL
+          AND agent_home_dir_available = true
+          AND governance_status = 'approved'
           AND provider_available = true
           AND provider_status = 'healthy'
           AND provider_health_status = 'healthy'
@@ -838,6 +859,8 @@ SELECT
         WHERE execution_status IN ('missing', 'provisioning')
            OR runtime_node_id IS NULL
            OR provider_type = ''
+           OR agent_home_dir_available = false
+           OR governance_status IN ('missing', 'pending_approval', 'stale')
     ))::integer AS pending_runtime_binding_count,
     (COUNT(*) FILTER (
         WHERE effective_config_id IS NULL
@@ -985,6 +1008,16 @@ effective_configs AS (
       AND ec.revoked_at IS NULL
     ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
 ),
+governance_configs AS (
+    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
+        ec.tenant_id,
+        ec.digital_employee_id,
+        ec.status
+    FROM digital_employee_effective_configs ec
+    JOIN overview_args args ON args.tenant_id = ec.tenant_id
+    WHERE ec.revoked_at IS NULL
+    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
+),
 skill_counts AS (
     SELECT
         sab.tenant_id,
@@ -998,49 +1031,6 @@ skill_counts AS (
      AND s.deleted_at IS NULL
     WHERE sab.status = 'enabled'
     GROUP BY sab.tenant_id, sab.digital_employee_id
-),
-recent_events AS (
-    SELECT
-        ranked.tenant_id,
-        ranked.digital_employee_id,
-        jsonb_agg(
-            jsonb_build_object(
-                'label', ranked.event_label,
-                'status', ranked.event_status,
-                'occurred_at', ranked.occurred_at
-            )
-            ORDER BY ranked.occurred_at DESC NULLS LAST, ranked.sequence_number DESC
-        ) AS recent_events_json
-    FROM (
-        SELECT
-            tr.tenant_id,
-            tr.digital_employee_id,
-            te.sequence_number,
-            CASE
-                WHEN te.event_type = 'run_dispatched' THEN '命令已下发'
-                WHEN te.event_type ILIKE '%provider%' THEN 'Provider 输出中'
-                WHEN te.event_type ILIKE '%complete%' THEN '等待结果回写'
-                ELSE te.event_type
-            END AS event_label,
-            CASE
-                WHEN te.event_type ILIKE '%fail%' THEN 'failed'
-                WHEN te.event_type ILIKE '%complete%' THEN 'completed'
-                ELSE 'running'
-            END AS event_status,
-            COALESCE(te.created_at, tr.updated_at, tr.created_at) AS occurred_at,
-            ROW_NUMBER() OVER (
-                PARTITION BY tr.tenant_id, tr.digital_employee_id
-                ORDER BY COALESCE(te.created_at, tr.updated_at, tr.created_at) DESC, te.sequence_number DESC
-            ) AS row_number
-        FROM task_runs tr
-        JOIN task_events te
-          ON te.tenant_id = tr.tenant_id
-         AND te.run_id = tr.id
-        JOIN overview_args args ON args.tenant_id = tr.tenant_id
-        WHERE tr.digital_employee_id IS NOT NULL
-    ) ranked
-    WHERE ranked.row_number <= 3
-    GROUP BY ranked.tenant_id, ranked.digital_employee_id
 ),
 overview_rows AS (
     SELECT
@@ -1063,7 +1053,10 @@ overview_rows AS (
         COALESCE(rn.node_id, '')::text AS node_id,
         COALESCE(rn.name, '')::text AS runtime_name,
         COALESCE(rn.status, '')::text AS runtime_status,
+        rn.disabled_at AS runtime_disabled_at,
+        rn.archived_at AS runtime_archived_at,
         COALESCE(dei.provider_type, '')::text AS provider_type,
+        COALESCE(pc.available, false)::boolean AS provider_available,
         COALESCE(pc.status, 'unknown')::text AS provider_status,
         COALESCE(pc.health_status, 'unknown')::text AS health_status,
         (NULLIF(BTRIM(COALESCE(dei.agent_home_dir, '')), '') IS NOT NULL)::boolean AS agent_home_dir_available,
@@ -1082,7 +1075,7 @@ overview_rows AS (
         COALESCE(lr.result #>> '{usage,total_tokens}', lr.result ->> 'total_tokens', '')::text AS latest_run_token_usage,
         lr.error_message AS latest_run_error_message,
         ec.effective_config_id,
-        COALESCE(ec.status, 'missing')::text AS governance_status,
+        COALESCE(gc.status, 'missing')::text AS governance_status,
         COALESCE(ec.daily_token_limit_text, '')::text AS daily_token_limit_text,
         ec.team_revision_number,
         ec.employee_revision_number,
@@ -1092,7 +1085,6 @@ overview_rows AS (
         COALESCE(tbu.today_budget_usage_tokens, 0)::integer AS today_budget_usage_tokens,
         br.budget_usage_tokens_30d,
         COALESCE(br.budget_run_count_30d, 0)::integer AS budget_run_count_30d,
-        COALESCE(re.recent_events_json, '[]'::jsonb) AS recent_events_json,
         de.created_at,
         de.updated_at
     FROM digital_employees de
@@ -1127,12 +1119,12 @@ overview_rows AS (
     LEFT JOIN effective_configs ec
       ON ec.tenant_id = de.tenant_id
      AND ec.digital_employee_id = de.id
+    LEFT JOIN governance_configs gc
+      ON gc.tenant_id = de.tenant_id
+     AND gc.digital_employee_id = de.id
     LEFT JOIN skill_counts sc
       ON sc.tenant_id = de.tenant_id
      AND sc.digital_employee_id = de.id
-    LEFT JOIN recent_events re
-      ON re.tenant_id = de.tenant_id
-     AND re.digital_employee_id = de.id
     WHERE de.tenant_id = args.tenant_id
       AND de.deleted_at IS NULL
 ),
@@ -1154,57 +1146,116 @@ filtered_rows AS (
       AND (args.risk_level IS NULL OR overview_rows.risk_level = args.risk_level)
       AND (args.execution_status IS NULL OR overview_rows.execution_status = args.execution_status)
       AND (args.run_status IS NULL OR overview_rows.latest_run_status = args.run_status)
+),
+paged_rows AS (
+    SELECT *
+    FROM filtered_rows
+    ORDER BY created_at DESC, id
+    LIMIT (SELECT limit_value FROM overview_args)
+    OFFSET (SELECT offset_value FROM overview_args)
+),
+recent_events AS (
+    SELECT
+        ranked.tenant_id,
+        ranked.digital_employee_id,
+        jsonb_agg(
+            jsonb_build_object(
+                'label', ranked.event_label,
+                'status', ranked.event_status,
+                'occurred_at', ranked.occurred_at
+            )
+            ORDER BY ranked.occurred_at DESC NULLS LAST, ranked.sequence_number DESC
+        ) AS recent_events_json
+    FROM (
+        SELECT
+            pr.tenant_id,
+            pr.id AS digital_employee_id,
+            te.sequence_number,
+            CASE
+                WHEN te.event_type = 'run_dispatched' THEN '命令已下发'
+                WHEN te.event_type ILIKE '%provider%' THEN 'Provider 输出中'
+                WHEN te.event_type ILIKE '%complete%' THEN '等待结果回写'
+                ELSE te.event_type
+            END AS event_label,
+            CASE
+                WHEN te.event_type ILIKE '%fail%' THEN 'failed'
+                WHEN te.event_type ILIKE '%complete%' THEN 'completed'
+                ELSE 'running'
+            END AS event_status,
+            COALESCE(te.created_at, tr.updated_at, tr.created_at) AS occurred_at,
+            ROW_NUMBER() OVER (
+                PARTITION BY pr.tenant_id, pr.id
+                ORDER BY COALESCE(te.created_at, tr.updated_at, tr.created_at) DESC, te.sequence_number DESC
+            ) AS row_number
+        FROM paged_rows pr
+        JOIN task_runs tr
+          ON tr.tenant_id = pr.tenant_id
+         AND tr.digital_employee_id = pr.id
+        JOIN tasks t
+          ON t.id = tr.task_id
+         AND t.tenant_id = tr.tenant_id
+         AND t.deleted_at IS NULL
+        JOIN task_events te
+          ON te.tenant_id = tr.tenant_id
+         AND te.run_id = tr.id
+    ) ranked
+    WHERE ranked.row_number <= 3
+    GROUP BY ranked.tenant_id, ranked.digital_employee_id
 )
 SELECT
-    id,
-    tenant_id,
-    team_id,
-    team_name,
-    owner_user_id,
-    owner_display_name,
-    employee_type,
-    name,
-    role,
-    description,
-    status,
-    risk_level,
-    metadata,
-    execution_instance_id,
-    execution_status,
-    runtime_node_id,
-    node_id,
-    runtime_name,
-    runtime_status,
-    provider_type,
-    provider_status,
-    health_status,
-    agent_home_dir_available,
-    latest_run_id,
-    latest_run_task_id,
-    latest_run_status,
-    latest_run_title,
-    latest_run_started_at,
-    latest_run_finished_at,
-    latest_run_updated_at,
-    latest_run_duration_sec,
-    latest_run_token_usage,
-    latest_run_error_message,
-    effective_config_id,
-    governance_status,
-    daily_token_limit_text,
-    team_revision_number,
-    employee_revision_number,
-    skills_count,
-    mcp_servers_count,
-    constitution_ref,
-    today_budget_usage_tokens,
-    budget_usage_tokens_30d,
-    budget_run_count_30d,
-    recent_events_json
-FROM filtered_rows
-ORDER BY created_at DESC, id
-LIMIT (SELECT limit_value FROM overview_args)
-OFFSET (SELECT offset_value FROM overview_args);
+    pr.id,
+    pr.tenant_id,
+    pr.team_id,
+    pr.team_name,
+    pr.owner_user_id,
+    pr.owner_display_name,
+    pr.employee_type,
+    pr.name,
+    pr.role,
+    pr.description,
+    pr.status,
+    pr.risk_level,
+    pr.metadata,
+    pr.execution_instance_id,
+    pr.execution_status,
+    pr.runtime_node_id,
+    pr.node_id,
+    pr.runtime_name,
+    pr.runtime_status,
+    pr.runtime_disabled_at,
+    pr.runtime_archived_at,
+    pr.provider_type,
+    pr.provider_available,
+    pr.provider_status,
+    pr.health_status,
+    pr.agent_home_dir_available,
+    pr.latest_run_id,
+    pr.latest_run_task_id,
+    pr.latest_run_status,
+    pr.latest_run_title,
+    pr.latest_run_started_at,
+    pr.latest_run_finished_at,
+    pr.latest_run_updated_at,
+    pr.latest_run_duration_sec,
+    pr.latest_run_token_usage,
+    pr.latest_run_error_message,
+    pr.effective_config_id,
+    pr.governance_status,
+    pr.daily_token_limit_text,
+    pr.team_revision_number,
+    pr.employee_revision_number,
+    pr.skills_count,
+    pr.mcp_servers_count,
+    pr.constitution_ref,
+    pr.today_budget_usage_tokens,
+    pr.budget_usage_tokens_30d,
+    pr.budget_run_count_30d,
+    COALESCE(re.recent_events_json, '[]'::jsonb) AS recent_events_json
+FROM paged_rows pr
+LEFT JOIN recent_events re
+  ON re.tenant_id = pr.tenant_id
+ AND re.digital_employee_id = pr.id
+ORDER BY pr.created_at DESC, pr.id;
 
 -- name: ListDigitalEmployeeOverviewFilterOptions :many
 WITH overview_args AS (
