@@ -142,7 +142,7 @@ func TestCreateRunRejectsWhenDailyTokenBudgetExceeded(t *testing.T) {
 
 	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
 
-	if err == nil || !strings.Contains(err.Error(), "employee daily token budget exceeded") {
+	if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), "employee daily token budget exceeded") {
 		t.Fatalf("expected budget exceeded error, got %v", err)
 	}
 	if len(dispatcher.commands) != 0 {
