@@ -279,20 +279,10 @@ function HumanOwnerSection({ team }: { team: TeamListItem }) {
 }
 
 function getOwnerIdentity(team: TeamListItem): UserIdentityData | undefined {
-  if (team.human_owner) {
+  const ownerID = team.human_owner_user_ids?.[0];
+  if (ownerID) {
     return {
-      avatar: team.human_owner.avatar,
-      display_name: team.human_owner.display_name,
-      email: team.human_owner.email,
-      id: team.human_owner.user_id,
-      status: team.human_owner.status,
-      username: team.human_owner.username,
-    };
-  }
-
-  if (team.human_owner_user_id) {
-    return {
-      id: team.human_owner_user_id,
+      id: ownerID,
       status: "active",
     };
   }

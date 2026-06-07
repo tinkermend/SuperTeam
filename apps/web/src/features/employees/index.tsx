@@ -596,6 +596,7 @@ function runtimeProviderLine(item: DigitalEmployeeOverviewItem) {
 }
 
 function providerLabel(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/-/g, "_");
   const labels: Record<string, string> = {
     claude_code: "Claude Code",
     claude: "Claude Code",
@@ -604,7 +605,7 @@ function providerLabel(value: string) {
     codex: "Codex",
   };
 
-  return labels[value] ?? value;
+  return labels[normalized] ?? value;
 }
 
 function latestRunCompact(item: DigitalEmployeeOverviewItem) {

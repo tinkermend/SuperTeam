@@ -185,6 +185,7 @@ export function TeamOverviewTab({ allowedActions, apiBaseUrl, fetcher, overview,
                               display_name: (item.originalData as TeamMember).display_name,
                               email: (item.originalData as TeamMember).email,
                               avatar: (item.originalData as TeamMember).avatar,
+                              status: (item.originalData as TeamMember).account_status || "active",
                             }}
                           />
                         ) : (

@@ -93,7 +93,7 @@ function createEmployeesFetcher({
           node_id: "local-dev-node",
           runtime_name: "华东执行节点",
           runtime_status: "online",
-          provider_type: "claude_code",
+          provider_type: "claude-code",
           provider_status: "ready",
           health_status: "healthy",
           agent_home_dir_available: true,

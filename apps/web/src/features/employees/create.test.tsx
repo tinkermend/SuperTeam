@@ -263,6 +263,15 @@ function createWizardFetcher({
   return fetcher;
 }
 
+type FetchMockCall = [RequestInfo | URL, RequestInit | undefined];
+
+function findCreateEmployeePost(fetcher: typeof fetch) {
+  const calls = (fetcher as unknown as { mock: { calls: FetchMockCall[] } }).mock.calls;
+  return calls.find(
+    ([input, init]) => String(input).endsWith("/api/v1/digital-employees") && init?.method === "POST",
+  );
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
@@ -319,9 +328,7 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByLabelText("客户侧执行机 A / codex")).toBeChecked();
     await userEvent.click(screen.getByRole("button", { name: "创建数字员工" }));
 
-    const createCall = fetcher.mock.calls.find(
-      ([input, init]) => String(input).endsWith("/api/v1/digital-employees") && init?.method === "POST",
-    );
+    const createCall = findCreateEmployeePost(fetcher);
     expect(createCall).toBeTruthy();
     const body = JSON.parse(String(createCall?.[1]?.body));
     expect(body.budget_policy).toEqual({ daily_token_limit: 12000 });
@@ -338,9 +345,7 @@ describe("CreateEmployeeView", () => {
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "创建数字员工" }));
 
-    const createCall = fetcher.mock.calls.find(
-      ([input, init]) => String(input).endsWith("/api/v1/digital-employees") && init?.method === "POST",
-    );
+    const createCall = findCreateEmployeePost(fetcher);
     expect(createCall).toBeTruthy();
     const body = JSON.parse(String(createCall?.[1]?.body));
     expect(body.budget_policy).toEqual({});
@@ -359,9 +364,7 @@ describe("CreateEmployeeView", () => {
 
     await expect.element(screen.getByText("每日 Token 预算上限必须是正整数")).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "治理" })).toBeVisible();
-    const createCall = fetcher.mock.calls.find(
-      ([input, init]) => String(input).endsWith("/api/v1/digital-employees") && init?.method === "POST",
-    );
+    const createCall = findCreateEmployeePost(fetcher);
     expect(createCall).toBeUndefined();
   });
 
