@@ -1,16 +1,30 @@
 import { Archive, Plus, RotateCcw, ShieldCheck, UserPlus } from "lucide-react";
 import { LiquidTabsList, LiquidTabsTrigger } from "@/components/superteam";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import type { ApiClientOptions } from "@/lib/api/client";
-import type { TeamOverview } from "@/lib/api/teams";
+import type { TeamOverview, TeamStatus } from "@/lib/api/teams";
 import { TeamAuditTab } from "./team-audit-tab";
 import { TeamCapabilitiesTab } from "./team-capabilities-tab";
 import { TeamDigitalEmployeesTab } from "./team-digital-employees-tab";
 import { TeamGovernanceTab } from "./team-governance-tab";
-import { TeamStatusBadge } from "./team-list-table";
 import { TeamMembersTab } from "./team-members-tab";
 import { TeamOverviewTab } from "./team-overview-tab";
+
+function TeamStatusBadge({ status }: { status: TeamStatus }) {
+  const label: Record<TeamStatus, string> = {
+    active: "活跃",
+    archived: "已归档",
+    disabled: "已禁用",
+  };
+
+  return (
+    <Badge variant={status === "active" ? "default" : "secondary"}>
+      {label[status]}
+    </Badge>
+  );
+}
 
 type TeamDetailLayoutProps = {
   apiOptions: ApiClientOptions;

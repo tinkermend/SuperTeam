@@ -75,19 +75,7 @@ function fetchCalls(fetcher: typeof fetch) {
   ).mock.calls;
 }
 
-function teamSummaryGetCalls(fetcher: typeof fetch, offset?: number) {
-  return fetchCalls(fetcher).filter(([input, init]) => {
-    const url = new URL(String(input));
 
-    if (url.pathname !== "/api/v1/teams" || init?.method !== "GET") {
-      return false;
-    }
-
-    return offset === undefined
-      ? true
-      : url.searchParams.get("offset") === String(offset);
-  });
-}
 
 function createTeamPostIndex(fetcher: typeof fetch) {
   return fetchCalls(fetcher).findIndex(([url, init]) => {
@@ -537,7 +525,10 @@ function createTeamsFetcher(
       }
 
       if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
-        expect(url.searchParams.get("team_id")).toBe("team-1");
+        const teamId = url.searchParams.get("team_id");
+        if (teamId !== "team-1") {
+          return jsonResponse([]);
+        }
 
         return jsonResponse([
           {
@@ -841,7 +832,7 @@ function createTeamPostBody(fetcher: typeof fetch) {
 }
 
 describe("TeamsView", () => {
-  it("renders a dense team summary table", async () => {
+  it("renders team card grid with summary stats", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
       <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
@@ -850,26 +841,18 @@ describe("TeamsView", () => {
     await expect
       .element(screen.getByRole("heading", { name: "团队管理" }))
       .toBeVisible();
-    for (const column of [
-      "负责人",
-      "成员",
-      "数字员工",
-      "能力",
-      "治理状态",
-      "当前版本",
-      "待批准",
-    ]) {
-      await expect
-        .element(screen.getByRole("cell", { name: column, exact: true }))
-        .toBeVisible();
-    }
+
+    // Summary stats
+    await expect.element(screen.getByText("20 个团队")).toBeVisible();
+    await expect.element(screen.getByText("25 位 agent")).toBeVisible();
+
+    // Card details
     await expect.element(screen.getByText("运维团队")).toBeVisible();
-    await expect
-      .element(screen.getByRole("link", { name: "运维团队" }))
-      .toHaveAttribute("data-router-link", "true");
-    await expect
-      .element(screen.getByRole("link", { name: "运维团队" }))
-      .toHaveAttribute("href", "/teams/team-1");
+    
+    const links = screen.getByRole("link", { name: /查看完整部门/ }).all();
+    await expect.element(links[0]).toHaveAttribute("data-router-link", "true");
+    await expect.element(links[0]).toHaveAttribute("href", "/teams/team-1");
+    
     await expect
       .element(screen.getByLabelText("运维团队图标"))
       .toBeVisible();
@@ -879,127 +862,15 @@ describe("TeamsView", () => {
     await expect
       .element(screen.getByText("owner@example.com", { exact: true }))
       .toBeVisible();
-    await expect
-      .element(screen.getByRole("cell", { name: "18" }).first())
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("cell", { name: "v7" }).first())
-      .toBeVisible();
-    await expect
-      .element(screen.getByRole("cell", { name: "3" }).first())
-      .toBeVisible();
+      
+    const employeeCounts = screen.getByText("6 位数字员工").all();
+    await expect.element(employeeCounts[0]).toBeVisible();
+    
+    const levelLabels = screen.getByText("L1").all();
+    await expect.element(levelLabels[0]).toBeVisible();
   });
 
-  it("paginates team summaries and opens row actions", async () => {
-    const fetcher = createTeamsFetcher();
-    const screen = await renderWithQueryClient(
-      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
-    );
 
-    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("button", { name: "上一页" }))
-      .toBeDisabled();
-    await expect
-      .element(screen.getByRole("button", { name: "下一页" }))
-      .toBeEnabled();
-    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
-    expect(
-      fetchCalls(fetcher).some(([input]) =>
-        String(input).includes("limit=20&offset=20"),
-      ),
-    ).toBe(true);
-    await expect.element(screen.getByText("第 2 页")).toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("button", { name: "下一页" }))
-      .toBeDisabled();
-    await userEvent.click(
-      screen.getByRole("button", { name: "团队 21 (team-21) 行操作" }),
-    );
-    await expect
-      .element(screen.getByRole("menuitem", { name: "查看详情" }))
-      .toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("menuitem", { name: "查看详情" }))
-      .toHaveAttribute("data-router-link", "true");
-  });
-
-  it("opens row actions for teams with duplicate names by unique slug label", async () => {
-    const teams = [
-      {
-        ...makeTeamSummary(1),
-        id: "team-platform-a",
-        name: "平台团队",
-        slug: "platform-a",
-      },
-      {
-        ...makeTeamSummary(2),
-        id: "team-platform-b",
-        name: "平台团队",
-        slug: "platform-b",
-      },
-    ];
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = new URL(String(input));
-      if (url.pathname === "/api/v1/teams") {
-        return jsonResponse(teams);
-      }
-      return jsonResponse({});
-    }) as unknown as typeof fetch;
-    const screen = await renderWithQueryClient(
-      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
-    );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "平台团队 (platform-a) 行操作" }),
-    );
-    await expect
-      .element(screen.getByRole("menuitem", { name: "查看详情" }))
-      .toBeInTheDocument();
-    await userEvent.keyboard("{Escape}");
-    await userEvent.click(
-      screen.getByRole("button", { name: "平台团队 (platform-b) 行操作" }),
-    );
-    await expect
-      .element(screen.getByRole("menuitem", { name: "查看详情" }))
-      .toBeInTheDocument();
-  });
-
-  it("keeps pagination recoverable on an empty page", async () => {
-    const fetcher = createTeamsFetcher({ secondPageMode: "empty" });
-    const screen = await renderWithQueryClient(
-      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
-
-    await expect.element(screen.getByText("第 2 页")).toBeInTheDocument();
-    await expect.element(screen.getByText("暂无团队")).toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("button", { name: "上一页" }))
-      .toBeEnabled();
-    await userEvent.click(screen.getByRole("button", { name: "上一页" }));
-    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
-  });
-
-  it("keeps pagination recoverable on an error page", async () => {
-    const fetcher = createTeamsFetcher({ secondPageMode: "error" });
-    const screen = await renderWithQueryClient(
-      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
-
-    await expect.element(screen.getByText("第 2 页")).toBeInTheDocument();
-    await expect
-      .element(screen.getByText("团队列表加载失败"))
-      .toBeInTheDocument();
-    await expect
-      .element(screen.getByRole("button", { name: "上一页" }))
-      .toBeEnabled();
-    await userEvent.click(screen.getByRole("button", { name: "上一页" }));
-    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
-  });
 
   it("filters team summaries through the real list endpoint", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
@@ -1016,54 +887,23 @@ describe("TeamsView", () => {
 
     await expect.element(screen.getByText("团队管理")).toBeInTheDocument();
     await userEvent.type(
-      screen.getByPlaceholder("搜索团队名称、slug、负责人"),
+      screen.getByPlaceholder("搜索团队名称、slug、负责人..."),
       "安全",
     );
-    await userEvent.selectOptions(screen.getByLabelText("团队状态"), "active");
-    await userEvent.selectOptions(
-      screen.getByLabelText("治理状态"),
-      "draft_pending",
-    );
+    await userEvent.click(screen.getByRole("combobox", { name: "团队状态" }));
+    await userEvent.click(screen.getByRole("option", { name: "活跃" }));
+
+    await userEvent.click(screen.getByRole("combobox", { name: "治理状态" }));
+    await userEvent.click(screen.getByRole("option", { name: "草案待批准" }));
 
     await expect
       .poll(() => fetchCalls(fetcher).map(([url]) => String(url)))
       .toContain(
-        "http://control-plane.local/api/v1/teams?status=active&governance_status=draft_pending&q=%E5%AE%89%E5%85%A8&limit=20&offset=0",
+        "http://control-plane.local/api/v1/teams?status=active&governance_status=draft_pending&q=%E5%AE%89%E5%85%A8",
       );
   });
 
-  it("resets pagination when filters or page size change", async () => {
-    const fetcher = createTeamsFetcher();
-    const screen = await renderWithQueryClient(
-      <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
-    );
 
-    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
-    await expect.element(screen.getByText("第 2 页")).toBeInTheDocument();
-
-    await userEvent.selectOptions(screen.getByLabelText("团队状态"), "active");
-
-    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
-    expect(
-      fetchCalls(fetcher).some(([input]) =>
-        String(input).includes("status=active&limit=20&offset=0"),
-      ),
-    ).toBe(true);
-
-    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
-    await expect.element(screen.getByText("第 2 页")).toBeInTheDocument();
-    await userEvent.selectOptions(
-      screen.getByRole("combobox", { name: "每页数量" }),
-      "50",
-    );
-
-    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
-    expect(
-      fetchCalls(fetcher).some(([input]) =>
-        String(input).includes("limit=50&offset=0"),
-      ),
-    ).toBe(true);
-  });
 
   it("opens create team drawer and requires name slug and owner before next step", async () => {
     const fetcher = createTeamsFetcher();
@@ -1309,14 +1149,20 @@ describe("TeamsView", () => {
       .not.toBeInTheDocument();
   });
 
-  it("refetches the first team page after creating while already on the first page", async () => {
+  it("refetches team list after creating a team", async () => {
     const fetcher = createTeamsFetcher();
     const screen = await renderWithQueryClient(
       <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
-    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
-    expect(teamSummaryGetCalls(fetcher, 0)).toHaveLength(1);
+    // Initial fetch
+    expect(
+      fetchCalls(fetcher).filter(
+        ([input, init]) =>
+          new URL(String(input)).pathname === "/api/v1/teams" &&
+          init?.method === "GET",
+      ),
+    ).toHaveLength(1);
 
     await userEvent.click(screen.getByRole("button", { name: "新建团队" }));
     await userEvent.type(
@@ -1352,8 +1198,6 @@ describe("TeamsView", () => {
 
               return (
                 requestUrl.pathname === "/api/v1/teams" &&
-                requestUrl.searchParams.get("limit") === "20" &&
-                requestUrl.searchParams.get("offset") === "0" &&
                 init?.method === "GET"
               );
             }).length,
@@ -1367,8 +1211,6 @@ describe("TeamsView", () => {
       <TeamsView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
-    await expect.element(screen.getByText("第 2 页")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "新建团队" }));
     await userEvent.type(
       screen.getByRole("textbox", { name: "团队名称", exact: true }),
@@ -1412,7 +1254,6 @@ describe("TeamsView", () => {
       ],
       metadata: { display: { color_tone: "teal", icon_key: "security" } },
     });
-    await expect.element(screen.getByText("第 1 页")).toBeInTheDocument();
     const postIndex = fetchCalls(fetcher).findIndex(
       ([url, init]) =>
         String(url).endsWith("/api/v1/teams") && init?.method === "POST",
@@ -1422,7 +1263,7 @@ describe("TeamsView", () => {
         .slice(postIndex + 1)
         .filter(
           ([url, init]) =>
-            String(url).includes("limit=20&offset=0") &&
+            String(url).includes("/api/v1/teams") &&
             init?.method === "GET",
         ),
     ).toHaveLength(1);

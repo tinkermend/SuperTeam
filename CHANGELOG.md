@@ -9,11 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-07 15:35：数字员工页面新增"配置"功能，支持创建配置修订版本（Config Revision），包括 Role Profile、Constitution Addendum、Capability Selection、Context Policy Override、Approval Policy Override 和 Output Contract Addendum 的 JSON 配置编辑。
 - 2026-06-07 02:28：Runtime Agent 完成执行能力底座核心模块开发，新增按执行实例隔离的工作目录管理、S3 工件上传基础设施和 Provider 会话状态扩展支持。
 - 2026-06-07 02:52：Runtime Agent 执行器适配新工作目录结构，execute_task 使用 create_run_workspace 创建 workspace/logs/artifacts 隔离目录，完成端到端执行闭环基础改造。
 
 ### Changed
 
+- 2026-06-07 18:07：优化团队管理列表界面视觉：卡片在大屏设备上由 3 列变更为 4 列布局，提升宽屏空间利用率；顶部搜索及筛选工具栏重构，采用 Flex 悬浮条样式和项目的原生 `Select` 下拉组件替代原生 `<select>` 标签，使整体界面风格更现代、统一。
+- 2026-06-07 16:15：重构团队管理列表页面为响应式卡片网格布局，替代原有的表格视图。新版卡片顶部高亮人类负责人，底部引入数字员工头像堆叠展示设计，并提供全局团队/Agent 规模统计。
 - 2026-06-07 14:44：修复团队列表、团队详情数字员工入口和用户管理页内部跳转使用原生 `<a href>` 导致 Web Shell 与左侧菜单整页刷新的问题，统一改用 TanStack Router `Link`，并让侧栏菜单在详情/创建子路由保持父级选中态。
 - 2026-06-07 02:28：Runtime Agent 工作目录从按 task_id 隔离重构为按 execution_instance_id + run_id 隔离，支持 logs/workspace/artifacts 子目录结构；旧版 create_task_workspace 标记为 deprecated。
 - 2026-06-07 02:28：Runtime Agent 添加 aws-sdk-s3 依赖和 S3Section 配置支持，为工件上传到 S3 兼容存储做准备。

@@ -25,7 +25,7 @@ import {
   type TeamListFilters,
 } from "./components/team-management-toolbar";
 import { TeamDetailLayout } from "./components/team-detail-layout";
-import { TeamListTable } from "./components/team-list-table";
+import { TeamCardGrid } from "./components/team-card-grid";
 
 export function TeamsPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
@@ -47,19 +47,15 @@ type TeamsViewProps = {
 export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<TeamListFilters>({ q: "" });
-  const [pageIndex, setPageIndex] = useState(0);
-  const [pageSize, setPageSize] = useState(20);
   const [createOpen, setCreateOpen] = useState(false);
   const [highlightedTeamId, setHighlightedTeamId] = useState<string>();
   const teams = useQuery({
-    queryKey: ["team-summaries", filters, pageIndex, pageSize],
+    queryKey: ["team-summaries", filters],
     queryFn: () =>
       listTeamSummaries(
         { baseUrl: apiBaseUrl, fetcher },
         {
           governance_status: filters.governance_status,
-          limit: pageSize,
-          offset: pageIndex * pageSize,
           q: filters.q,
           status: filters.status,
         },
@@ -87,17 +83,7 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
       setHighlightedTeamId(overview.team.id);
       void queryClient.invalidateQueries({
         queryKey: ["team-summaries"],
-        refetchType: "none",
       });
-      if (pageIndex === 0) {
-        void queryClient.refetchQueries({
-          exact: true,
-          queryKey: ["team-summaries", filters, 0, pageSize],
-          type: "active",
-        });
-      } else {
-        setPageIndex(0);
-      }
     },
   });
 
@@ -128,27 +114,15 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
 
         <TeamManagementToolbar
           filters={filters}
-          onChange={(nextFilters) => {
-            setPageIndex(0);
-            setFilters(nextFilters);
-          }}
-          onReset={() => {
-            setPageIndex(0);
-            setFilters({ q: "" });
-          }}
+          onChange={setFilters}
+          onReset={() => setFilters({ q: "" })}
         />
-        <TeamListTable
-          canGoNext={teams.data?.length === pageSize}
+        <TeamCardGrid
+          apiBaseUrl={apiBaseUrl}
+          fetcher={fetcher}
           highlightedTeamId={highlightedTeamId}
           isError={teams.isError}
           isLoading={teams.isLoading}
-          onPageChange={setPageIndex}
-          onPageSizeChange={(nextPageSize) => {
-            setPageIndex(0);
-            setPageSize(nextPageSize);
-          }}
-          pageIndex={pageIndex}
-          pageSize={pageSize}
           teams={teams.data ?? []}
         />
         <CreateTeamDrawer
