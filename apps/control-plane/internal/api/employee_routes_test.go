@@ -125,6 +125,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 		"capability_selection":{"enabled_skills":["incident-diagnosis"]},
 		"context_policy_override":{"redaction":"strict"},
 		"approval_policy_override":{"require_owner":true},
+		"budget_policy":{"daily_token_limit":12000},
 		"output_contract_addendum":{"format":"markdown"},
 		"runtime_node_id":"` + runtimeNodeID.String() + `",
 		"provider_type":"codex",
@@ -162,6 +163,9 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if service.createReq.ContextPolicyOverride["redaction"] != "strict" || service.createReq.ApprovalPolicyOverride["require_owner"] != true || service.createReq.OutputContractAddendum["format"] != "markdown" {
 		t.Fatalf("expected override/addendum fields from create body, got %#v", service.createReq)
+	}
+	if service.createReq.BudgetPolicy["daily_token_limit"] != float64(12000) {
+		t.Fatalf("expected budget policy from create body, got %#v", service.createReq.BudgetPolicy)
 	}
 	if service.createReq.SessionPolicy["mode"] != "reuse_latest" {
 		t.Fatalf("expected session policy from create body, got %#v", service.createReq.SessionPolicy)
@@ -252,7 +256,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 
 	spoofedConfigApproverID := uuid.New()
-	configReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees/"+created.ID+"/config-revisions", strings.NewReader(`{"role_profile":{"title":"requirements analyst"},"capability_selection":{"enabled_skills":["incident-diagnosis"]},"approved_by":"`+spoofedConfigApproverID.String()+`"}`))
+	configReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees/"+created.ID+"/config-revisions", strings.NewReader(`{"role_profile":{"title":"requirements analyst"},"capability_selection":{"enabled_skills":["incident-diagnosis"]},"budget_policy":{"daily_token_limit":9000},"approved_by":"`+spoofedConfigApproverID.String()+`"}`))
 	configReq.Header.Set("Content-Type", "application/json")
 	configReq.AddCookie(cookie)
 	configResp := httptest.NewRecorder()
@@ -267,8 +271,20 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if service.configRevisionReq.RoleProfile["title"] != "requirements analyst" {
 		t.Fatalf("expected role profile from request, got %#v", service.configRevisionReq.RoleProfile)
 	}
+	if service.configRevisionReq.BudgetPolicy["daily_token_limit"] != float64(9000) {
+		t.Fatalf("expected budget policy from config request, got %#v", service.configRevisionReq.BudgetPolicy)
+	}
 	if service.configRevisionReq.ApprovedBy != nil {
 		t.Fatalf("expected handler not to forward client approved_by %s for draft config revision, got %#v", spoofedConfigApproverID, service.configRevisionReq.ApprovedBy)
+	}
+	var configCreated struct {
+		BudgetPolicy map[string]any `json:"budget_policy"`
+	}
+	if err := json.NewDecoder(configResp.Body).Decode(&configCreated); err != nil {
+		t.Fatalf("decode created config revision: %v", err)
+	}
+	if configCreated.BudgetPolicy["daily_token_limit"] != float64(9000) {
+		t.Fatalf("expected budget policy in config response, got %#v", configCreated.BudgetPolicy)
 	}
 
 	teamConfigRevisionID := uuid.New()
@@ -1326,6 +1342,7 @@ func (s *routeEmployeeService) CreateConfigRevision(ctx context.Context, req emp
 		CapabilitySelection:    req.CapabilitySelection,
 		ContextPolicyOverride:  req.ContextPolicyOverride,
 		ApprovalPolicyOverride: req.ApprovalPolicyOverride,
+		BudgetPolicy:           req.BudgetPolicy,
 		OutputContractAddendum: req.OutputContractAddendum,
 		Status:                 employee.ConfigRevisionStatusDraft,
 		CreatedAt:              now,

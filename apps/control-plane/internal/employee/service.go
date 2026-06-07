@@ -2,6 +2,7 @@ package employee
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -392,6 +393,10 @@ func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (Cr
 	if riskLevel == "" {
 		riskLevel = defaultRiskLevelForEmployeeType(definition)
 	}
+	budgetPolicy, err := normalizeBudgetPolicy(req.BudgetPolicy)
+	if err != nil {
+		return CreateDigitalEmployeeRequest{}, EmployeeTypeDefinition{}, err
+	}
 	req.EmployeeType = employeeType
 	req.Name = name
 	req.AvatarAssetID = avatarAsset.ID
@@ -399,6 +404,7 @@ func normalizeCreateDigitalEmployeeRequest(req CreateDigitalEmployeeRequest) (Cr
 	req.Description = trimOptionalString(req.Description)
 	req.RiskLevel = riskLevel
 	req.ProviderType = providerType
+	req.BudgetPolicy = budgetPolicy
 	req.Metadata = metadataWithAvatarAsset(req.Metadata, avatarAsset)
 	return req, definition, nil
 }
@@ -903,6 +909,10 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 	if status != ConfigRevisionStatusDraft {
 		return nil, fmt.Errorf("%w: invalid config revision status", ErrInvalidInput)
 	}
+	budgetPolicy, err := normalizeBudgetPolicy(req.BudgetPolicy)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID); err != nil {
 		return nil, fmt.Errorf("get digital employee: %w", err)
 	}
@@ -919,7 +929,7 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 		CapabilitySelection:    cloneMap(req.CapabilitySelection),
 		ContextPolicyOverride:  cloneMap(req.ContextPolicyOverride),
 		ApprovalPolicyOverride: cloneMap(req.ApprovalPolicyOverride),
-		BudgetPolicy:           cloneMap(req.BudgetPolicy),
+		BudgetPolicy:           budgetPolicy,
 		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
 		Status:                 status,
 	})
@@ -1448,6 +1458,46 @@ func cloneMap(value map[string]any) map[string]any {
 		cloned[key] = item
 	}
 	return cloned
+}
+
+func normalizeBudgetPolicy(input map[string]any) (map[string]any, error) {
+	policy := cloneMap(input)
+	if policy == nil {
+		return map[string]any{}, nil
+	}
+	value, exists := policy["daily_token_limit"]
+	if !exists || value == nil || value == "" {
+		delete(policy, "daily_token_limit")
+		return policy, nil
+	}
+
+	var limit int64
+	switch typed := value.(type) {
+	case int:
+		limit = int64(typed)
+	case int32:
+		limit = int64(typed)
+	case int64:
+		limit = typed
+	case float64:
+		if typed != float64(int64(typed)) {
+			return nil, fmt.Errorf("%w: budget_policy.daily_token_limit must be a positive integer", ErrInvalidInput)
+		}
+		limit = int64(typed)
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return nil, fmt.Errorf("%w: budget_policy.daily_token_limit must be a positive integer", ErrInvalidInput)
+		}
+		limit = parsed
+	default:
+		return nil, fmt.Errorf("%w: budget_policy.daily_token_limit must be a positive integer", ErrInvalidInput)
+	}
+	if limit <= 0 || limit > int64(^uint32(0)>>1) {
+		return nil, fmt.Errorf("%w: budget_policy.daily_token_limit must be a positive integer", ErrInvalidInput)
+	}
+	policy["daily_token_limit"] = float64(limit)
+	return policy, nil
 }
 
 func cloneTimePtr(value *time.Time) *time.Time {

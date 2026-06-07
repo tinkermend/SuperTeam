@@ -168,6 +168,7 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		CapabilitySelection    map[string]any `json:"capability_selection"`
 		ContextPolicyOverride  map[string]any `json:"context_policy_override"`
 		ApprovalPolicyOverride map[string]any `json:"approval_policy_override"`
+		BudgetPolicy           map[string]any `json:"budget_policy"`
 		OutputContractAddendum map[string]any `json:"output_contract_addendum"`
 		RuntimeNodeID          uuid.UUID      `json:"runtime_node_id"`
 		ProviderType           string         `json:"provider_type"`
@@ -197,6 +198,7 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		CapabilitySelection:    req.CapabilitySelection,
 		ContextPolicyOverride:  req.ContextPolicyOverride,
 		ApprovalPolicyOverride: req.ApprovalPolicyOverride,
+		BudgetPolicy:           req.BudgetPolicy,
 		OutputContractAddendum: req.OutputContractAddendum,
 		RuntimeNodeID:          req.RuntimeNodeID,
 		ProviderType:           req.ProviderType,
@@ -351,6 +353,7 @@ func (h *HTTPHandler) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter,
 		CapabilitySelection    map[string]any       `json:"capability_selection"`
 		ContextPolicyOverride  map[string]any       `json:"context_policy_override"`
 		ApprovalPolicyOverride map[string]any       `json:"approval_policy_override"`
+		BudgetPolicy           map[string]any       `json:"budget_policy"`
 		OutputContractAddendum map[string]any       `json:"output_contract_addendum"`
 		Status                 ConfigRevisionStatus `json:"status"`
 	}
@@ -366,6 +369,7 @@ func (h *HTTPHandler) CreateDigitalEmployeeConfigRevision(w http.ResponseWriter,
 		CapabilitySelection:    req.CapabilitySelection,
 		ContextPolicyOverride:  req.ContextPolicyOverride,
 		ApprovalPolicyOverride: req.ApprovalPolicyOverride,
+		BudgetPolicy:           req.BudgetPolicy,
 		OutputContractAddendum: req.OutputContractAddendum,
 		Status:                 req.Status,
 	})
@@ -808,6 +812,7 @@ type configRevisionResponse struct {
 	CapabilitySelection    map[string]any       `json:"capability_selection"`
 	ContextPolicyOverride  map[string]any       `json:"context_policy_override"`
 	ApprovalPolicyOverride map[string]any       `json:"approval_policy_override"`
+	BudgetPolicy           map[string]any       `json:"budget_policy"`
 	OutputContractAddendum map[string]any       `json:"output_contract_addendum"`
 	Status                 ConfigRevisionStatus `json:"status"`
 	ApprovedBy             *string              `json:"approved_by,omitempty"`
@@ -1162,6 +1167,7 @@ func configRevisionResponseFromDomain(revision *DigitalEmployeeConfigRevision) c
 		CapabilitySelection:    cloneMap(revision.CapabilitySelection),
 		ContextPolicyOverride:  cloneMap(revision.ContextPolicyOverride),
 		ApprovalPolicyOverride: cloneMap(revision.ApprovalPolicyOverride),
+		BudgetPolicy:           cloneMap(revision.BudgetPolicy),
 		OutputContractAddendum: cloneMap(revision.OutputContractAddendum),
 		Status:                 revision.Status,
 		ApprovedBy:             uuidStringPtr(revision.ApprovedBy),

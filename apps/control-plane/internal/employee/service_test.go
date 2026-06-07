@@ -326,7 +326,7 @@ func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigAndProvisioni
 	if !stringListContains(repo.createdConfigRevision.CapabilitySelection["enabled_external_capabilities"], "change-ticket") {
 		t.Fatalf("expected request capability selection to be merged, got %#v", repo.createdConfigRevision.CapabilitySelection)
 	}
-	if repo.createdConfigRevision.BudgetPolicy["daily_token_limit"] != 120000 {
+	if repo.createdConfigRevision.BudgetPolicy["daily_token_limit"] != float64(120000) {
 		t.Fatalf("expected request budget policy to be persisted, got %#v", repo.createdConfigRevision.BudgetPolicy)
 	}
 
@@ -770,11 +770,54 @@ func TestCreateConfigRevisionDefaultsDraftAndRevisionNumber(t *testing.T) {
 	if repo.createdConfigRevision.ApprovedBy != nil || repo.createdConfigRevision.ApprovedAt != nil {
 		t.Fatalf("expected repository draft approval metadata to be cleared, got %#v/%#v", repo.createdConfigRevision.ApprovedBy, repo.createdConfigRevision.ApprovedAt)
 	}
-	if repo.createdConfigRevision.BudgetPolicy["daily_token_limit"] != 25000 {
+	if repo.createdConfigRevision.BudgetPolicy["daily_token_limit"] != float64(25000) {
 		t.Fatalf("expected repository budget policy from request, got %#v", repo.createdConfigRevision.BudgetPolicy)
 	}
-	if revision.BudgetPolicy["daily_token_limit"] != 25000 {
+	if revision.BudgetPolicy["daily_token_limit"] != float64(25000) {
 		t.Fatalf("expected response budget policy from repository record, got %#v", revision.BudgetPolicy)
+	}
+}
+
+func TestCreateConfigRevisionStoresBudgetPolicy(t *testing.T) {
+	svc, repo := newEmployeeServiceForTest(t)
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	seedConfigRevisionEmployee(repo, tenantID, employeeID)
+
+	revision, err := svc.CreateConfigRevision(context.Background(), CreateDigitalEmployeeConfigRevisionRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		RoleProfile:       map[string]any{"role": "analyst"},
+		BudgetPolicy:      map[string]any{"daily_token_limit": float64(12000)},
+		Status:            ConfigRevisionStatusDraft,
+	})
+
+	if err != nil {
+		t.Fatalf("create config revision: %v", err)
+	}
+	if revision.BudgetPolicy["daily_token_limit"] != float64(12000) {
+		t.Fatalf("expected budget policy on revision, got %#v", revision.BudgetPolicy)
+	}
+	if repo.createdConfigRevision.BudgetPolicy["daily_token_limit"] != float64(12000) {
+		t.Fatalf("expected budget policy persisted, got %#v", repo.createdConfigRevision.BudgetPolicy)
+	}
+}
+
+func TestCreateConfigRevisionRejectsInvalidBudgetPolicy(t *testing.T) {
+	svc, repo := newEmployeeServiceForTest(t)
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	seedConfigRevisionEmployee(repo, tenantID, employeeID)
+
+	_, err := svc.CreateConfigRevision(context.Background(), CreateDigitalEmployeeConfigRevisionRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		BudgetPolicy:      map[string]any{"daily_token_limit": float64(0)},
+		Status:            ConfigRevisionStatusDraft,
+	})
+
+	if err == nil || !strings.Contains(err.Error(), "budget_policy.daily_token_limit") {
+		t.Fatalf("expected budget policy validation error, got %v", err)
 	}
 }
 
@@ -803,6 +846,36 @@ func TestCreateConfigRevisionRequiresExistingEmployee(t *testing.T) {
 	}
 	if len(repo.employeeConfigs) != 0 {
 		t.Fatalf("expected missing employee not to insert config revision, got %#v", repo.employeeConfigs)
+	}
+}
+
+func TestPreviewEffectiveConfigIncludesBudgetPolicy(t *testing.T) {
+	svc := newTestService(t)
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	preview, err := svc.PreviewEffectiveConfig(context.Background(), PreviewEffectiveConfigRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		TeamConfig: TeamConfigInput{
+			ID:       uuid.New(),
+			TenantID: tenantID,
+			TeamID:   uuid.New(),
+			Status:   TeamConfigRevisionStatusActive,
+		},
+		EmployeeConfig: EmployeeConfigInput{
+			ID:                uuid.New(),
+			TenantID:          tenantID,
+			DigitalEmployeeID: employeeID,
+			BudgetPolicy:      map[string]any{"daily_token_limit": float64(9000)},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("preview effective config: %v", err)
+	}
+	budgetPolicy, ok := preview.EffectiveConfig["budget_policy"].(map[string]any)
+	if !ok || budgetPolicy["daily_token_limit"] != float64(9000) {
+		t.Fatalf("expected budget policy in effective config, got %#v", preview.EffectiveConfig["budget_policy"])
 	}
 }
 
@@ -1344,6 +1417,28 @@ func newTestService(t *testing.T) *Service {
 		t.Fatalf("new service: %v", err)
 	}
 	return svc
+}
+
+func newEmployeeServiceForTest(t *testing.T) (*Service, *memoryRepository) {
+	t.Helper()
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	return svc, repo
+}
+
+func seedConfigRevisionEmployee(repo *memoryRepository, tenantID, employeeID uuid.UUID) {
+	teamID := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:       employeeID,
+		TenantID: tenantID,
+		TeamID:   &teamID,
+		Name:     "Budget analyst",
+		Role:     "analyst",
+		Status:   DigitalEmployeeStatusDraft,
+	}
 }
 
 func newCreateOptionsTestService(t *testing.T, capabilityPolicy, runtimeScopePolicy map[string]any) (*Service, *memoryRepository, uuid.UUID, uuid.UUID) {
