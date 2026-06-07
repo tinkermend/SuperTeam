@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
+import { SemanticIconTile } from "@/components/superteam/liquid-components";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
@@ -248,9 +249,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
       <Main>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-md border bg-muted">
+            <SemanticIconTile tone="primary" size="lg">
               <Bot />
-            </div>
+            </SemanticIconTile>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">创建数字员工</h1>
               <p className="text-sm text-muted-foreground">创建后进入 ready 状态，再由任务运行链路调度执行。</p>

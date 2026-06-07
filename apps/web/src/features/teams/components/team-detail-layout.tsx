@@ -1,5 +1,5 @@
-import { Archive, Plus, RotateCcw, ShieldCheck, UserPlus } from "lucide-react";
-import { LiquidTabsList, LiquidTabsTrigger } from "@/components/superteam";
+import { Archive, Plus, RotateCcw, ShieldCheck, UserPlus, UsersRound } from "lucide-react";
+import { LiquidTabsList, LiquidTabsTrigger, SemanticIconTile } from "@/components/superteam";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
@@ -56,9 +56,9 @@ export function TeamDetailLayout({
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="flex size-12 shrink-0 items-center justify-center rounded-md border bg-muted">
-            <ShieldCheck />
-          </div>
+          <SemanticIconTile tone="info" size="lg">
+            <UsersRound />
+          </SemanticIconTile>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-semibold">{team.name}</h1>

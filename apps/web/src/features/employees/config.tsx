@@ -8,6 +8,7 @@ import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SemanticIconTile } from "@/components/superteam/liquid-components";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -82,9 +83,9 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
       <Main>
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-md border bg-muted">
+            <SemanticIconTile tone="primary" size="lg">
               <Bot />
-            </div>
+            </SemanticIconTile>
             <div>
               <h1 className="text-2xl font-bold">{employee.data?.name ?? "数字员工配置"}</h1>
               <p className="text-sm text-muted-foreground">配置员工技能、策略和输出契约</p>
