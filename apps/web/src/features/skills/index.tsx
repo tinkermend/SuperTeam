@@ -169,7 +169,7 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
         <div className="flex min-w-0 flex-col gap-5">
           <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex items-start gap-3">
-              <SemanticIconTile tone="primary" size="sm">
+              <SemanticIconTile tone="primary" size="lg">
                 <Blocks />
               </SemanticIconTile>
               <div className="min-w-0">

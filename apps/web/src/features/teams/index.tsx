@@ -4,6 +4,7 @@ import { Plus, UsersRound } from "lucide-react";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
+import { SemanticIconTile } from "@/components/superteam/liquid-components";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Button } from "@/components/ui/button";
 import {
@@ -96,9 +97,9 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
       <Main className="min-w-0 overflow-x-hidden">
         <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-md border bg-muted">
+            <SemanticIconTile tone="info" size="lg">
               <UsersRound />
-            </div>
+            </SemanticIconTile>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">团队管理</h1>
               <p className="text-sm text-muted-foreground">

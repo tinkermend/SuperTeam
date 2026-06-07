@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import type { ApiClientOptions } from "@/lib/api";
+import { ShieldCheck } from "lucide-react";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import { LiquidTabsList, LiquidTabsTrigger } from "@/components/superteam";
+import { LiquidTabsList, LiquidTabsTrigger, SemanticIconTile } from "@/components/superteam";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
@@ -36,9 +37,14 @@ export function PermissionsCenter({ apiBaseUrl = resolveControlPlaneUrl(), fetch
         <ThemeSwitch />
       </Header>
       <Main fluid>
-        <div className="mb-4 flex flex-col gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">权限中心</h1>
-          <p className="text-sm text-muted-foreground">集中查看授权决策、Runtime 执行范围和成员角色。</p>
+        <div className="mb-4 flex items-center gap-3">
+          <SemanticIconTile tone="artifact" size="lg">
+            <ShieldCheck />
+          </SemanticIconTile>
+          <div className="flex flex-col gap-1">
+            <h1 className="text-2xl font-bold tracking-tight">权限中心</h1>
+            <p className="text-sm text-muted-foreground">集中查看授权决策、Runtime 执行范围和成员角色。</p>
+          </div>
         </div>
         <Tabs defaultValue="overview" className="gap-4">
           <LiquidTabsList className="flex-wrap">

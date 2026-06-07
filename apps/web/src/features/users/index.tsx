@@ -237,7 +237,7 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
       <Main className="min-w-0 overflow-x-hidden" fluid>
         <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <SemanticIconTile tone="neutral" size="sm">
+            <SemanticIconTile tone="neutral" size="lg">
               <UsersRound />
             </SemanticIconTile>
             <div className="min-w-0">

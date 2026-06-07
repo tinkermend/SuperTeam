@@ -232,7 +232,7 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
         <div className="flex min-w-0 flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <SemanticIconTile tone="info">
+              <SemanticIconTile tone="info" size="lg">
                 <Server />
               </SemanticIconTile>
               <div className="min-w-0">
