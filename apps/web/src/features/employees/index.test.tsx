@@ -38,17 +38,23 @@ function createQueryClient() {
 }
 
 type EmployeesFetcherOptions = {
+  delayMs?: number;
   includeUnboundEmployee?: boolean;
   latestRunStatus?: string;
 };
 
 function createEmployeesFetcher({
+  delayMs = 0,
   includeUnboundEmployee = false,
   latestRunStatus = "completed",
 }: EmployeesFetcherOptions = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     if (url.pathname === "/api/v1/digital-employees/overview" && (init?.method ?? "GET") === "GET") {
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+
       const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
       const readyItem = {
         workbench_status: "ready",
@@ -282,26 +288,33 @@ describe("EmployeesView", () => {
     await expect.element(screen.getByText("等待绑定 Runtime Agent")).toBeVisible();
   });
 
-  it("uses a separate selection control and selected-state semantics", async () => {
+  it("selects employees from the card surface without visible selection text", async () => {
     const screen = await renderEmployeesView(createEmployeesFetcher({ includeUnboundEmployee: true }));
     const readyArticle = screen.getByRole("article", { name: "员工 需求分析员工" });
     const unboundArticle = screen.getByRole("article", { name: "员工 待绑定员工" });
-    const readySelectButton = screen.getByRole("button", { name: "选中 需求分析员工" });
-    const unboundSelectButton = screen.getByRole("button", { name: "选中 待绑定员工" });
 
     await expect.element(readyArticle).toHaveAttribute("aria-selected", "true");
-    await expect.element(readySelectButton).toHaveAttribute("aria-pressed", "true");
-    await userEvent.click(unboundSelectButton);
+    expect(readyArticle.element().querySelectorAll("span.absolute.inset-y-0.left-0.w-1")).toHaveLength(1);
+    expect(unboundArticle.element().querySelectorAll("span.absolute.inset-y-0.left-0.w-1")).toHaveLength(0);
+    await expect.element(screen.getByText("已选中")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("选中")).not.toBeInTheDocument();
+    await userEvent.click(unboundArticle);
     await expect.element(readyArticle).toHaveAttribute("aria-selected", "false");
     await expect.element(unboundArticle).toHaveAttribute("aria-selected", "true");
-    await expect.element(unboundSelectButton).toHaveAttribute("aria-pressed", "true");
+    expect(readyArticle.element().querySelectorAll("span.absolute.inset-y-0.left-0.w-1")).toHaveLength(0);
+    expect(unboundArticle.element().querySelectorAll("span.absolute.inset-y-0.left-0.w-1")).toHaveLength(1);
+    await userEvent.click(readyArticle);
+    await expect.element(readyArticle).toHaveAttribute("aria-selected", "true");
+    await expect.element(unboundArticle).toHaveAttribute("aria-selected", "false");
+    expect(readyArticle.element().querySelectorAll("span.absolute.inset-y-0.left-0.w-1")).toHaveLength(1);
+    expect(unboundArticle.element().querySelectorAll("span.absolute.inset-y-0.left-0.w-1")).toHaveLength(0);
 
     const firstDetailLink = screen.getByRole("link", { name: "详情" }).first().element() as HTMLElement;
     firstDetailLink.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Enter" }));
     firstDetailLink.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: " " }));
 
-    await expect.element(readyArticle).toHaveAttribute("aria-selected", "false");
-    await expect.element(unboundArticle).toHaveAttribute("aria-selected", "true");
+    await expect.element(readyArticle).toHaveAttribute("aria-selected", "true");
+    await expect.element(unboundArticle).toHaveAttribute("aria-selected", "false");
   });
 
   it.each(["queued", "dispatching", "running", "cancelling", "cancelled", "unknown_status"])(
@@ -328,5 +341,17 @@ describe("EmployeesView", () => {
         return url.pathname === "/api/v1/digital-employees/overview" && url.searchParams.get("status") === "active";
       }),
     ).toBe(true);
+  });
+
+  it("keeps the current workbench visible while filter results are refetching", async () => {
+    const fetcher = createEmployeesFetcher({ delayMs: 50 });
+    const screen = await renderEmployeesView(fetcher);
+
+    await expect.element(screen.getByText("需求分析员工").first()).toBeVisible();
+    await userEvent.fill(screen.getByPlaceholder("名称、角色、任务"), "平台");
+
+    await expect.element(screen.getByText("需求分析员工").first()).toBeVisible();
+    await expect.element(screen.getByText("待处理队列")).toBeVisible();
+    await expect.element(screen.getByText("加载中...")).not.toBeInTheDocument();
   });
 });

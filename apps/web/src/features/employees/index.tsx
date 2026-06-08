@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
@@ -76,6 +76,7 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
   const overview = useQuery({
     queryKey: ["digital-employee-overview", filters],
     queryFn: () => getDigitalEmployeeOverview({ baseUrl: apiBaseUrl, fetcher }, filters),
+    placeholderData: keepPreviousData,
   });
 
   const filterOptions = overview.data?.filters;
@@ -135,72 +136,37 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
 
           {overview.data ? <WorkbenchMetrics overview={overview.data} /> : null}
 
-          <LiquidCard className="rounded-xl">
-            <div className="flex flex-col gap-4 p-4">
-              <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.2fr)_repeat(4,minmax(150px,1fr))]">
-                <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground">
-                  搜索
-                  <span className="relative">
-                    <SearchIcon
-                      aria-hidden="true"
-                      className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                    />
-                    <Input
-                      className="pl-9"
-                      value={filters.q ?? ""}
-                      onChange={handleSearchChange}
-                      placeholder="名称、角色、任务"
-                    />
-                  </span>
-                </label>
-                <FilterSelect
-                  label="状态"
-                  value={filters.status ?? "all"}
-                  options={filterOptions?.statuses ?? DEFAULT_STATUS_OPTIONS}
-                  onValueChange={handleFilterChange("status")}
-                />
-                <FilterSelect
-                  label="团队"
-                  value={filters.team_id ?? "all"}
-                  options={filterOptions?.teams ?? []}
-                  onValueChange={handleFilterChange("team_id")}
-                />
-                <FilterSelect
-                  label="Provider"
-                  value={filters.provider_type ?? "all"}
-                  options={filterOptions?.providers ?? []}
-                  onValueChange={handleFilterChange("provider_type")}
-                />
-                <FilterSelect
-                  label="风险"
-                  value={filters.risk_level ?? "all"}
-                  options={filterOptions?.risk_levels ?? []}
-                  onValueChange={handleFilterChange("risk_level")}
+          {overview.data ? (
+            <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="min-w-0 xl:col-start-1 xl:row-start-1">
+                <EmployeeFilterPanel
+                  filters={filters}
+                  filterOptions={filterOptions}
+                  onFilterChange={handleFilterChange}
+                  onSearchChange={handleSearchChange}
                 />
               </div>
-              <div className="grid gap-3 md:grid-cols-3">
-                <FilterSelect
-                  label="员工类型"
-                  value={filters.employee_type ?? "all"}
-                  options={filterOptions?.employee_types ?? []}
-                  onValueChange={handleFilterChange("employee_type")}
-                />
-                <FilterSelect
-                  label="执行"
-                  value={filters.execution_status ?? "all"}
-                  options={filterOptions?.execution_statuses ?? []}
-                  onValueChange={handleFilterChange("execution_status")}
-                />
-                <FilterSelect
-                  label="最近任务"
-                  value={filters.run_status ?? "all"}
-                  options={filterOptions?.run_statuses ?? []}
-                  onValueChange={handleFilterChange("run_status")}
-                />
+              <div className="min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1">
+                <WorkbenchRail overview={overview.data} selectedItem={selectedItem} />
+              </div>
+              <div className="min-w-0 xl:col-start-1 xl:row-start-2">
+                {items.length === 0 ? (
+                  <LiquidCard className="rounded-xl p-6 text-sm text-muted-foreground">暂无数字员工</LiquidCard>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                    {items.map((item) => (
+                      <EmployeeWorkbenchCard
+                        key={item.identity_summary.id}
+                        item={item}
+                        selected={selectedItem?.identity_summary.id === item.identity_summary.id}
+                        onSelect={() => setSelectedEmployeeId(item.identity_summary.id)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-          </LiquidCard>
-
+          ) : null}
           {overview.isLoading ? (
             <LiquidCard className="rounded-xl p-6 text-sm text-muted-foreground">加载中...</LiquidCard>
           ) : null}
@@ -218,27 +184,89 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
               </Button>
             </LiquidCard>
           ) : null}
-          {overview.data && items.length === 0 ? (
-            <LiquidCard className="rounded-xl p-6 text-sm text-muted-foreground">暂无数字员工</LiquidCard>
-          ) : null}
-          {overview.data && items.length > 0 ? (
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-                {items.map((item) => (
-                  <EmployeeWorkbenchCard
-                    key={item.identity_summary.id}
-                    item={item}
-                    selected={selectedItem?.identity_summary.id === item.identity_summary.id}
-                    onSelect={() => setSelectedEmployeeId(item.identity_summary.id)}
-                  />
-                ))}
-              </div>
-              <WorkbenchRail overview={overview.data} selectedItem={selectedItem} />
-            </div>
-          ) : null}
         </div>
       </Main>
     </>
+  );
+}
+
+function EmployeeFilterPanel({
+  filters,
+  filterOptions,
+  onFilterChange,
+  onSearchChange,
+}: {
+  filters: DigitalEmployeeOverviewFilters;
+  filterOptions?: DigitalEmployeeOverview["filters"];
+  onFilterChange: (key: FilterKey) => (value: string) => void;
+  onSearchChange: (event: ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <LiquidCard className="rounded-xl">
+      <div className="flex flex-col gap-4 p-4">
+        <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(220px,1.2fr)_repeat(4,minmax(132px,1fr))]">
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground">
+            搜索
+            <span className="relative">
+              <SearchIcon
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                className="pl-9"
+                value={filters.q ?? ""}
+                onChange={onSearchChange}
+                placeholder="名称、角色、任务"
+              />
+            </span>
+          </label>
+          <FilterSelect
+            label="状态"
+            value={filters.status ?? "all"}
+            options={filterOptions?.statuses ?? DEFAULT_STATUS_OPTIONS}
+            onValueChange={onFilterChange("status")}
+          />
+          <FilterSelect
+            label="团队"
+            value={filters.team_id ?? "all"}
+            options={filterOptions?.teams ?? []}
+            onValueChange={onFilterChange("team_id")}
+          />
+          <FilterSelect
+            label="Provider"
+            value={filters.provider_type ?? "all"}
+            options={filterOptions?.providers ?? []}
+            onValueChange={onFilterChange("provider_type")}
+          />
+          <FilterSelect
+            label="风险"
+            value={filters.risk_level ?? "all"}
+            options={filterOptions?.risk_levels ?? []}
+            onValueChange={onFilterChange("risk_level")}
+          />
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <FilterSelect
+            label="员工类型"
+            value={filters.employee_type ?? "all"}
+            options={filterOptions?.employee_types ?? []}
+            onValueChange={onFilterChange("employee_type")}
+          />
+          <FilterSelect
+            label="执行"
+            value={filters.execution_status ?? "all"}
+            options={filterOptions?.execution_statuses ?? []}
+            onValueChange={onFilterChange("execution_status")}
+          />
+          <FilterSelect
+            label="最近任务"
+            value={filters.run_status ?? "all"}
+            options={filterOptions?.run_statuses ?? []}
+            onValueChange={onFilterChange("run_status")}
+          />
+        </div>
+      </div>
+    </LiquidCard>
   );
 }
 
@@ -295,39 +323,39 @@ function EmployeeWorkbenchCard({
     <article
       aria-label={`员工 ${identity.name}`}
       aria-selected={selected}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.currentTarget === event.target && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      tabIndex={0}
       className={cn(
-        "group relative flex min-h-[260px] flex-col overflow-hidden rounded-lg border bg-card/90 p-4 text-left shadow-sm transition hover:shadow-md",
-        selected && "ring-2 ring-[var(--superteam-menu-accent)]",
+        "group relative flex min-h-[240px] cursor-pointer flex-col overflow-hidden rounded-lg border border-border/70 bg-card/90 p-4 text-left shadow-sm transition hover:border-superteam-menu-accent/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        selected &&
+          "border-superteam-menu-accent bg-superteam-primary-soft/40 shadow-[0_16px_40px_rgba(44,199,170,0.14)]",
       )}
     >
-      <span className={cn("absolute inset-y-0 left-0 w-1", workbenchRailClass(item.workbench_status))} />
+      {selected ? <span className="absolute inset-y-0 left-0 w-1 bg-superteam-menu-accent" /> : null}
       <div className="flex items-start gap-3 pl-1">
         <EmployeeAvatar asset={avatarAsset} name={identity.name} size="md" />
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <p className="truncate font-semibold text-foreground">{identity.name}</p>
-              <p className="truncate text-xs text-muted-foreground">{identity.employee_type_label || identity.role}</p>
+              <p className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                <span className="truncate">{identity.employee_type_label || identity.role}</span>
+                <span className="shrink-0">·</span>
+                <span className="truncate">{identity.team_name || "未分组"}</span>
+              </p>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-2">
               <StatusBadge tone={workbenchTone(item.workbench_status)}>
                 {workbenchStatusLabel(item.workbench_status)}
               </StatusBadge>
-              <Button
-                aria-label={`选中 ${identity.name}`}
-                aria-pressed={selected}
-                size="sm"
-                type="button"
-                variant={selected ? "secondary" : "outline"}
-                onClick={onSelect}
-              >
-                {selected ? "已选中" : "选中"}
-              </Button>
             </div>
           </div>
-          <span className="mt-2 inline-flex max-w-full rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
-            {identity.team_name || "未分组"}
-          </span>
         </div>
       </div>
       <div className="mt-4 flex flex-col gap-3 text-sm">
@@ -572,16 +600,6 @@ function workbenchStatusLabel(status: DigitalEmployeeWorkbenchStatus) {
 
 function workbenchTone(status: DigitalEmployeeWorkbenchStatus): Tone {
   return status === "ready" ? "success" : status === "pending_binding" ? "warning" : "danger";
-}
-
-function workbenchRailClass(status: DigitalEmployeeWorkbenchStatus) {
-  if (status === "ready") {
-    return "bg-emerald-500";
-  }
-  if (status === "pending_binding") {
-    return "bg-amber-500";
-  }
-  return "bg-destructive";
 }
 
 function runtimeProviderLine(item: DigitalEmployeeOverviewItem) {
