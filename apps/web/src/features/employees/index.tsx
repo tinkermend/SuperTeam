@@ -332,9 +332,9 @@ function EmployeeWorkbenchCard({
       }}
       tabIndex={0}
       className={cn(
-        "group relative flex min-h-[240px] cursor-pointer flex-col overflow-hidden rounded-lg border border-border/70 bg-card/90 p-4 text-left shadow-sm transition hover:border-superteam-menu-accent/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group relative flex min-h-[240px] cursor-pointer flex-col overflow-hidden rounded-lg border border-border/70 bg-card/90 p-4 text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-superteam-menu-accent/50 hover:shadow-[var(--superteam-shadow-mid)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         selected &&
-          "border-superteam-menu-accent bg-superteam-primary-soft/40 shadow-[0_16px_40px_rgba(44,199,170,0.14)]",
+          "border-superteam-menu-accent bg-superteam-primary-soft/40 shadow-[var(--superteam-shadow-glow)]",
       )}
     >
       {selected ? <span className="absolute inset-y-0 left-0 w-1 bg-superteam-menu-accent" /> : null}

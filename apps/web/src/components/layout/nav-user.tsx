@@ -35,7 +35,7 @@ export function NavUser() {
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className="border border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-glass-strong-bg)] shadow-[0_10px_24px_rgba(37,99,235,0.06)] data-[state=open]:bg-[color:var(--superteam-sidebar-active)] data-[state=open]:text-sidebar-accent-foreground"
+                className="border border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-glass-strong-bg)] shadow-[var(--superteam-shadow-low)] data-[state=open]:bg-[color:var(--superteam-sidebar-active)] data-[state=open]:text-sidebar-accent-foreground"
               >
                 <Avatar className="size-8 rounded-lg">
                   <AvatarFallback className="rounded-lg bg-primary text-primary-foreground">
@@ -54,7 +54,7 @@ export function NavUser() {
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-glass-strong-bg)] shadow-[0_18px_48px_rgba(15,23,42,0.12)] backdrop-blur-xl"
+              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-glass-strong-bg)] shadow-[var(--superteam-shadow-mid)] backdrop-blur-xl"
               side={isMobile ? "bottom" : "right"}
               align="end"
               sideOffset={4}

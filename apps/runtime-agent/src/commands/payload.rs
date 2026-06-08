@@ -1,7 +1,14 @@
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::controlplane::models::{RuntimeCommand, RuntimeCommandType};
+
+fn null_as_empty_vec<'de, D>(d: D) -> std::result::Result<Vec<serde_json::Value>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<Vec<serde_json::Value>>::deserialize(d)?.unwrap_or_default())
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -30,7 +37,9 @@ pub struct RuntimeSessionCommandPayload {
     pub session_policy: RuntimeSessionPolicy,
     pub prompt: Option<String>,
     pub input: Option<String>,
+    #[serde(default, deserialize_with = "null_as_empty_vec")]
     pub context_refs: Vec<serde_json::Value>,
+    #[serde(default, deserialize_with = "null_as_empty_vec")]
     pub artifact_refs: Vec<serde_json::Value>,
     #[serde(default)]
     pub model: Option<String>,
@@ -185,4 +194,16 @@ fn default_recoverable() -> bool {
 
 fn default_metadata() -> serde_json::Value {
     serde_json::json!({})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_null_refs_deserialize() {
+        let raw = r#"{"command_id":"cmd-test","digital_employee_id":"35a3799b-7665-4913-9097-35ee53d30e74","execution_instance_id":"8e64dd8c-d70d-417d-b8bf-fe57a61f4205","provider_type":"claude-code","session_policy":{"mode":"new"},"prompt":"hello","input":"hello","context_refs":null,"artifact_refs":null,"metadata":{}}"#;
+        let v: serde_json::Value = serde_json::from_str(raw).unwrap();
+        let result = serde_json::from_value::<RuntimeSessionCommandPayload>(v);
+        assert!(result.is_ok(), "expected ok, got: {:?}", result.err());
+    }
 }
