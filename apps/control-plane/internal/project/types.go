@@ -202,7 +202,7 @@ type UpdateProjectConfigRequest struct {
 	HumanOwnerUserID   uuid.UUID
 	LeaderUserID       *uuid.UUID
 	AcceptanceUserID   *uuid.UUID
-	Members            []ProjectMemberInput
+	Members            *[]ProjectMemberInput
 	CoordinationPolicy map[string]any
 	ApprovalPolicy     map[string]any
 	EvidencePolicy     map[string]any

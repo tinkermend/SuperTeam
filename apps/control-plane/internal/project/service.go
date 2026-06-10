@@ -80,13 +80,14 @@ func (s *Service) ListProjects(ctx context.Context, req ListProjectsRequest) ([]
 	if req.TenantID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
-	if req.Limit <= 0 {
-		req.Limit = 50
-	}
+	req.Limit, req.Offset = normalizePagination(req.Limit, req.Offset)
 	return s.repository.ListProjects(ctx, req)
 }
 
 func (s *Service) UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (*Project, error) {
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ActorUserID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
 	project, err := s.repository.GetProject(ctx, req.TenantID, req.ProjectID)
 	if err != nil {
 		return nil, err
@@ -94,18 +95,26 @@ func (s *Service) UpdateProjectConfig(ctx context.Context, req UpdateProjectConf
 	if project.Status == ProjectStatusArchived || project.ArchivedAt != nil {
 		return nil, ErrProjectArchived
 	}
-	req.Name = strings.TrimSpace(req.Name)
-	req.Goal = strings.TrimSpace(req.Goal)
-	if err := validateMembers(req.Members); err != nil {
-		return nil, err
+	if req.Name != "" {
+		req.Name = strings.TrimSpace(req.Name)
+	}
+	if req.Goal != "" {
+		req.Goal = strings.TrimSpace(req.Goal)
+	}
+	if req.Members != nil {
+		if err := validateMembers(*req.Members); err != nil {
+			return nil, err
+		}
 	}
 
 	updated, err := s.repository.UpdateProjectConfig(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.repository.ReplaceProjectMembers(ctx, req.TenantID, req.ProjectID, req.Members); err != nil {
-		return nil, err
+	if req.Members != nil {
+		if _, err := s.repository.ReplaceProjectMembers(ctx, req.TenantID, req.ProjectID, *req.Members); err != nil {
+			return nil, err
+		}
 	}
 	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
 		TenantID:  req.TenantID,
@@ -147,14 +156,29 @@ func (s *Service) ArchiveProject(ctx context.Context, tenantID, projectID, actor
 	return &project, nil
 }
 
-func (s *Service) ReplaceProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {
-	if tenantID == uuid.Nil || projectID == uuid.Nil {
+func (s *Service) ReplaceProjectMembers(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil || actorUserID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
 	if err := validateMembers(members); err != nil {
 		return nil, err
 	}
-	return s.repository.ReplaceProjectMembers(ctx, tenantID, projectID, members)
+	replaced, err := s.repository.ReplaceProjectMembers(ctx, tenantID, projectID, members)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventType: ProjectEventConfigChanged,
+		ActorType: "human_user",
+		ActorID:   actorUserID.String(),
+		Summary:   "项目成员已更新",
+		Payload:   map[string]any{"member_count": len(replaced)},
+	}); err != nil {
+		return nil, err
+	}
+	return replaced, nil
 }
 
 func (s *Service) ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error) {
@@ -168,9 +192,7 @@ func (s *Service) ListProjectEvents(ctx context.Context, tenantID, projectID uui
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
-	if limit <= 0 {
-		limit = 50
-	}
+	limit, offset = normalizePagination(limit, offset)
 	return s.repository.ListProjectEvents(ctx, tenantID, projectID, limit, offset)
 }
 
@@ -213,13 +235,15 @@ func (s *Service) ListProjectDemands(ctx context.Context, tenantID, projectID uu
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
-	if limit <= 0 {
-		limit = 50
-	}
+	limit, offset = normalizePagination(limit, offset)
 	return s.repository.ListProjectDemands(ctx, tenantID, projectID, limit, offset)
 }
 
 func (s *Service) GetProjectOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error) {
+	return s.GetOverview(ctx, tenantID, projectID)
+}
+
+func (s *Service) GetOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
@@ -231,11 +255,12 @@ func (s *Service) GetProjectOverview(ctx context.Context, tenantID, projectID uu
 	if err != nil {
 		return nil, err
 	}
-	tasks, err := s.repository.ListProjectTasks(ctx, tenantID, projectID, nil, 20, 0)
+	limit, offset := normalizePagination(20, 0)
+	tasks, err := s.repository.ListProjectTasks(ctx, tenantID, projectID, nil, limit, offset)
 	if err != nil {
 		return nil, err
 	}
-	events, err := s.repository.ListProjectEvents(ctx, tenantID, projectID, 20, 0)
+	events, err := s.repository.ListProjectEvents(ctx, tenantID, projectID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -307,4 +332,17 @@ func ensureOwnerMember(req CreateProjectRequest) []ProjectMemberInput {
 		PrincipalID:   req.HumanOwnerUserID,
 		ProjectRole:   ProjectRoleOwner,
 	})
+}
+
+func normalizePagination(limit, offset int32) (int32, int32) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
 }

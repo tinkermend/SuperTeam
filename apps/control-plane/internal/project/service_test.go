@@ -228,14 +228,172 @@ func TestUpdateProjectConfigCreatesRevision(t *testing.T) {
 	}
 }
 
+func TestUpdateProjectConfigRejectsMissingIDs(t *testing.T) {
+	service, err := NewService(newMemoryRepository())
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		req  UpdateProjectConfigRequest
+	}{
+		{name: "tenant", req: UpdateProjectConfigRequest{ProjectID: uuid.New(), ActorUserID: uuid.New()}},
+		{name: "project", req: UpdateProjectConfigRequest{TenantID: uuid.New(), ActorUserID: uuid.New()}},
+		{name: "actor", req: UpdateProjectConfigRequest{TenantID: uuid.New(), ProjectID: uuid.New()}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := service.UpdateProjectConfig(context.Background(), tc.req)
+			if !errors.Is(err, ErrInvalidProject) {
+				t.Fatalf("expected invalid project error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestUpdateProjectConfigWithoutMembersPreservesExistingMembers(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	projectID := uuid.New()
+	tenantID := uuid.New()
+	memberID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "旧项目",
+		Goal:             "旧目标",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: memberID,
+	}
+	repo.members[projectID] = []ProjectMember{{
+		ID:            uuid.New(),
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		PrincipalType: PrincipalTypeHumanUser,
+		PrincipalID:   memberID,
+		ProjectRole:   ProjectRoleOwner,
+		Status:        "active",
+	}}
+
+	_, err = service.UpdateProjectConfig(context.Background(), UpdateProjectConfigRequest{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
+		ActorUserID: uuid.New(),
+		Name:        " 新项目 ",
+	})
+	if err != nil {
+		t.Fatalf("update config: %v", err)
+	}
+	if got := repo.projects[projectID].Name; got != "新项目" {
+		t.Fatalf("expected trimmed name, got %q", got)
+	}
+	if len(repo.members[projectID]) != 1 {
+		t.Fatalf("expected members to be preserved, got %d", len(repo.members[projectID]))
+	}
+}
+
+func TestReplaceProjectMembersRequiresActorAndRecordsEvent(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	projectID := uuid.New()
+	tenantID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "项目",
+		Goal:             "目标",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: uuid.New(),
+	}
+
+	_, err = service.ReplaceProjectMembers(context.Background(), tenantID, projectID, uuid.Nil, nil)
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected invalid project error, got %v", err)
+	}
+
+	members, err := service.ReplaceProjectMembers(context.Background(), tenantID, projectID, uuid.New(), []ProjectMemberInput{{
+		PrincipalType: PrincipalTypeDigitalEmployee,
+		PrincipalID:   uuid.New(),
+		ProjectRole:   ProjectRoleExecutor,
+	}})
+	if err != nil {
+		t.Fatalf("replace members: %v", err)
+	}
+	if len(members) != 1 {
+		t.Fatalf("expected one member, got %d", len(members))
+	}
+	if len(repo.eventTypes) != 1 || repo.eventTypes[0] != ProjectEventConfigChanged {
+		t.Fatalf("expected config changed event, got %#v", repo.eventTypes)
+	}
+	if got := repo.events[0].Payload["member_count"]; got != 1 {
+		t.Fatalf("expected member_count payload, got %#v", got)
+	}
+}
+
+func TestListPaginationIsNormalized(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	projectID := uuid.New()
+	tenantID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "项目",
+		Goal:             "目标",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: uuid.New(),
+	}
+
+	if _, err := service.ListProjects(context.Background(), ListProjectsRequest{TenantID: tenantID, Limit: 200, Offset: -5}); err != nil {
+		t.Fatalf("list projects: %v", err)
+	}
+	if repo.lastListProjects.Limit != 100 || repo.lastListProjects.Offset != 0 {
+		t.Fatalf("expected projects pagination 100/0, got %d/%d", repo.lastListProjects.Limit, repo.lastListProjects.Offset)
+	}
+	if _, err := service.ListProjectEvents(context.Background(), tenantID, projectID, 0, -1); err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if repo.lastEventsLimit != 50 || repo.lastEventsOffset != 0 {
+		t.Fatalf("expected events pagination 50/0, got %d/%d", repo.lastEventsLimit, repo.lastEventsOffset)
+	}
+	if _, err := service.ListProjectDemands(context.Background(), tenantID, projectID, 101, -2); err != nil {
+		t.Fatalf("list demands: %v", err)
+	}
+	if repo.lastDemandsLimit != 100 || repo.lastDemandsOffset != 0 {
+		t.Fatalf("expected demands pagination 100/0, got %d/%d", repo.lastDemandsLimit, repo.lastDemandsOffset)
+	}
+	if _, err := service.GetOverview(context.Background(), tenantID, projectID); err != nil {
+		t.Fatalf("get overview: %v", err)
+	}
+	if repo.lastTasksLimit != 20 || repo.lastTasksOffset != 0 || repo.lastEventsLimit != 20 || repo.lastEventsOffset != 0 {
+		t.Fatalf("expected overview pagination 20/0, got tasks %d/%d events %d/%d", repo.lastTasksLimit, repo.lastTasksOffset, repo.lastEventsLimit, repo.lastEventsOffset)
+	}
+}
+
 type memoryRepository struct {
-	projects   map[uuid.UUID]Project
-	members    map[uuid.UUID][]ProjectMember
-	tasks      []ProjectTask
-	events     []ProjectEvent
-	eventTypes []ProjectEventType
-	demands    []ProjectDemand
-	revisions  []ProjectConfigRevision
+	projects          map[uuid.UUID]Project
+	members           map[uuid.UUID][]ProjectMember
+	tasks             []ProjectTask
+	events            []ProjectEvent
+	eventTypes        []ProjectEventType
+	demands           []ProjectDemand
+	revisions         []ProjectConfigRevision
+	lastListProjects  ListProjectsRequest
+	lastTasksLimit    int32
+	lastTasksOffset   int32
+	lastEventsLimit   int32
+	lastEventsOffset  int32
+	lastDemandsLimit  int32
+	lastDemandsOffset int32
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -283,6 +441,7 @@ func (r *memoryRepository) GetProject(ctx context.Context, tenantID, projectID u
 }
 
 func (r *memoryRepository) ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error) {
+	r.lastListProjects = req
 	projects := make([]Project, 0, len(r.projects))
 	for _, project := range r.projects {
 		if project.TenantID != req.TenantID {
@@ -316,8 +475,12 @@ func (r *memoryRepository) UpdateProjectConfig(ctx context.Context, req UpdatePr
 	if req.HumanOwnerUserID != uuid.Nil {
 		project.HumanOwnerUserID = req.HumanOwnerUserID
 	}
-	project.LeaderUserID = req.LeaderUserID
-	project.AcceptanceUserID = req.AcceptanceUserID
+	if req.LeaderUserID != nil {
+		project.LeaderUserID = req.LeaderUserID
+	}
+	if req.AcceptanceUserID != nil {
+		project.AcceptanceUserID = req.AcceptanceUserID
+	}
 	if req.CoordinationPolicy != nil {
 		project.CoordinationPolicy = req.CoordinationPolicy
 	}
@@ -378,6 +541,8 @@ func (r *memoryRepository) ListProjectMembers(ctx context.Context, tenantID, pro
 }
 
 func (r *memoryRepository) ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error) {
+	r.lastTasksLimit = limit
+	r.lastTasksOffset = offset
 	filtered := make([]ProjectTask, 0, len(r.tasks))
 	for _, task := range r.tasks {
 		if task.TenantID == tenantID && task.ProjectID == projectID && (status == nil || task.Status == *status) {
@@ -407,6 +572,8 @@ func (r *memoryRepository) AppendProjectEvent(ctx context.Context, event AppendP
 }
 
 func (r *memoryRepository) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error) {
+	r.lastEventsLimit = limit
+	r.lastEventsOffset = offset
 	filtered := make([]ProjectEvent, 0, len(r.events))
 	for _, event := range r.events {
 		if event.TenantID == tenantID && event.ProjectID == projectID {
@@ -433,6 +600,8 @@ func (r *memoryRepository) CreateProjectDemand(ctx context.Context, req SubmitPr
 }
 
 func (r *memoryRepository) ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error) {
+	r.lastDemandsLimit = limit
+	r.lastDemandsOffset = offset
 	filtered := make([]ProjectDemand, 0, len(r.demands))
 	for _, demand := range r.demands {
 		if demand.TenantID == tenantID && demand.ProjectID == projectID {
