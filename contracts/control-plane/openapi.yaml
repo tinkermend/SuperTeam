@@ -570,6 +570,305 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/RuntimeCapability"
+  /api/v1/projects:
+    get:
+      operationId: listProjects
+      summary: List projects
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ProjectStatus"
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Project list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: createProject
+      summary: Create a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateProjectResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}:
+    get:
+      operationId: getProject
+      summary: Get a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: updateProject
+      summary: Update project configuration facts
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectConfigRequest"
+      responses:
+        "200":
+          description: Project updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/archive:
+    post:
+      operationId: archiveProject
+      summary: Archive a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/overview:
+    get:
+      operationId: getProjectOverview
+      summary: Get project overview
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectOverview"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/members:
+    get:
+      operationId: listProjectMembers
+      summary: List project members
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project member list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectMember"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: replaceProjectMembers
+      summary: Replace project members
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceProjectMembersRequest"
+      responses:
+        "200":
+          description: Project members replaced
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectMember"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/tasks:
+    get:
+      operationId: listProjectTasks
+      summary: List project tasks
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Project task list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectTask"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/events:
+    get:
+      operationId: listProjectEvents
+      summary: List project events
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project event list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectEvent"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/config:
+    get:
+      operationId: getProjectConfig
+      summary: Get current project configuration facts
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Current project configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectConfig"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: updateProjectConfig
+      summary: Update project configuration facts
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectConfigRequest"
+      responses:
+        "200":
+          description: Project configuration updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/demands:
+    get:
+      operationId: listProjectDemands
+      summary: List project demands
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project demand list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectDemand"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: submitProjectDemand
+      summary: Submit a project demand
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitProjectDemandRequest"
+      responses:
+        "201":
+          description: Project demand recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDemand"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /api/v1/teams:
     get:
       operationId: listTeams
@@ -1571,6 +1870,13 @@ components:
       schema:
         type: string
         format: uuid
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     SkillId:
       name: skillId
       in: path
@@ -2219,6 +2525,506 @@ components:
           type: integer
           format: int32
           minimum: 0
+    ProjectStatus:
+      type: string
+      enum:
+        - draft
+        - configuring
+        - running
+        - paused
+        - acceptance
+        - archived
+    ProjectPrincipalType:
+      type: string
+      enum:
+        - human_user
+        - digital_employee
+        - team
+    ProjectRole:
+      type: string
+      enum:
+        - owner
+        - leader
+        - acceptance
+        - executor
+        - reviewer
+        - observer
+    ProjectEventType:
+      type: string
+      enum:
+        - project.created
+        - project.config.changed
+        - project.archived
+        - demand.submitted
+    ProjectDemandSourceType:
+      type: string
+      enum:
+        - manual
+        - github
+        - ticket
+        - document
+        - log
+    ProjectDemandStatus:
+      type: string
+      enum:
+        - submitted
+        - recorded
+        - planning_pending
+        - cancelled
+    Project:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - name
+        - goal
+        - status
+        - human_owner_user_id
+        - coordination_workflow_id
+        - coordination_status
+        - coordination_policy
+        - approval_policy
+        - evidence_policy
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        goal:
+          type: string
+        status:
+          $ref: "#/components/schemas/ProjectStatus"
+        human_owner_user_id:
+          type: string
+          format: uuid
+        leader_user_id:
+          type: string
+          format: uuid
+        acceptance_user_id:
+          type: string
+          format: uuid
+        coordination_workflow_id:
+          type: string
+        coordination_status:
+          type: string
+        coordination_policy:
+          type: object
+          additionalProperties: true
+        approval_policy:
+          type: object
+          additionalProperties: true
+        evidence_policy:
+          type: object
+          additionalProperties: true
+        archived_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProjectMember:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - principal_type
+        - principal_id
+        - project_role
+        - status
+        - settings
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        principal_type:
+          $ref: "#/components/schemas/ProjectPrincipalType"
+        principal_id:
+          type: string
+          format: uuid
+        project_role:
+          $ref: "#/components/schemas/ProjectRole"
+        display_name_snapshot:
+          type: string
+        status:
+          type: string
+        settings:
+          type: object
+          additionalProperties: true
+    ProjectMemberInput:
+      type: object
+      required:
+        - principal_type
+        - principal_id
+        - project_role
+      properties:
+        principal_type:
+          $ref: "#/components/schemas/ProjectPrincipalType"
+        principal_id:
+          type: string
+          format: uuid
+        project_role:
+          $ref: "#/components/schemas/ProjectRole"
+        display_name_snapshot:
+          type: string
+        settings:
+          type: object
+          additionalProperties: true
+    ProjectTask:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - title
+        - status
+        - requires_human_approval
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        demand_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        summary:
+          type: string
+        status:
+          type: string
+        assigned_digital_employee_id:
+          type: string
+          format: uuid
+        risk_level:
+          type: string
+        requires_human_approval:
+          type: boolean
+    ProjectEvent:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - sequence_number
+        - event_type
+        - actor_type
+        - actor_id
+        - payload
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        sequence_number:
+          type: integer
+          format: int64
+        event_type:
+          $ref: "#/components/schemas/ProjectEventType"
+        actor_type:
+          type: string
+        actor_id:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        summary:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+    ProjectDemand:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - submitted_by_user_id
+        - title
+        - source_type
+        - source_refs
+        - attachments
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        submitted_by_user_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content:
+          type: string
+        source_type:
+          $ref: "#/components/schemas/ProjectDemandSourceType"
+        source_refs:
+          type: object
+          additionalProperties: true
+        attachments:
+          type: array
+          items: {}
+        status:
+          $ref: "#/components/schemas/ProjectDemandStatus"
+        created_event_id:
+          type: string
+          format: uuid
+    ProjectStatusSummary:
+      type: object
+      required:
+        - current_phase
+        - is_archived
+      properties:
+        current_phase:
+          type: string
+        is_archived:
+          type: boolean
+    ProjectTaskSummary:
+      type: object
+      required:
+        - active_tasks
+        - pending_human_tasks
+        - completed_tasks
+        - failed_tasks
+      properties:
+        active_tasks:
+          type: integer
+          format: int32
+        pending_human_tasks:
+          type: integer
+          format: int32
+        completed_tasks:
+          type: integer
+          format: int32
+        failed_tasks:
+          type: integer
+          format: int32
+    ProjectCoordinationWorkflow:
+      type: object
+      required:
+        - workflow_id
+        - status
+      properties:
+        workflow_id:
+          type: string
+        status:
+          type: string
+    ProjectOverview:
+      type: object
+      required:
+        - project
+        - human_roles
+        - digital_employee_pool
+        - status_summary
+        - task_summary
+        - active_tasks
+        - recent_events
+        - coordination_workflow
+      properties:
+        project:
+          $ref: "#/components/schemas/Project"
+        human_roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMember"
+        digital_employee_pool:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMember"
+        status_summary:
+          $ref: "#/components/schemas/ProjectStatusSummary"
+        task_summary:
+          $ref: "#/components/schemas/ProjectTaskSummary"
+        active_tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectTask"
+        recent_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectEvent"
+        coordination_workflow:
+          $ref: "#/components/schemas/ProjectCoordinationWorkflow"
+    ProjectConfig:
+      type: object
+      required:
+        - project
+        - human_roles
+        - digital_employee_pool
+        - members
+        - coordination_policy
+        - approval_policy
+        - evidence_policy
+        - coordination_workflow
+      properties:
+        project:
+          $ref: "#/components/schemas/Project"
+        human_roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMember"
+        digital_employee_pool:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMember"
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMember"
+        coordination_policy:
+          type: object
+          additionalProperties: true
+        approval_policy:
+          type: object
+          additionalProperties: true
+        evidence_policy:
+          type: object
+          additionalProperties: true
+        coordination_workflow:
+          $ref: "#/components/schemas/ProjectCoordinationWorkflow"
+    CreateProjectRequest:
+      type: object
+      required:
+        - name
+        - goal
+        - human_owner_user_id
+      properties:
+        team_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        goal:
+          type: string
+        human_owner_user_id:
+          type: string
+          format: uuid
+        leader_user_id:
+          type: string
+          format: uuid
+        acceptance_user_id:
+          type: string
+          format: uuid
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMemberInput"
+        coordination_policy:
+          type: object
+          additionalProperties: true
+        approval_policy:
+          type: object
+          additionalProperties: true
+        evidence_policy:
+          type: object
+          additionalProperties: true
+    CreateProjectResponse:
+      type: object
+      required:
+        - project
+        - members
+      properties:
+        project:
+          $ref: "#/components/schemas/Project"
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMember"
+    UpdateProjectConfigRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        goal:
+          type: string
+        human_owner_user_id:
+          type: string
+          format: uuid
+        leader_user_id:
+          type: string
+          format: uuid
+        acceptance_user_id:
+          type: string
+          format: uuid
+        members:
+          type: array
+          description: When present, replaces the project member set; when omitted, members are preserved.
+          items:
+            $ref: "#/components/schemas/ProjectMemberInput"
+        coordination_policy:
+          type: object
+          additionalProperties: true
+        approval_policy:
+          type: object
+          additionalProperties: true
+        evidence_policy:
+          type: object
+          additionalProperties: true
+    ReplaceProjectMembersRequest:
+      type: object
+      required:
+        - members
+      properties:
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMemberInput"
+    SubmitProjectDemandRequest:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+        source_type:
+          $ref: "#/components/schemas/ProjectDemandSourceType"
+        source_refs:
+          type: object
+          additionalProperties: true
+        attachments:
+          type: array
+          items: {}
     Team:
       type: object
       required:
