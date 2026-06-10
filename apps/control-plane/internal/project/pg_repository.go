@@ -8,22 +8,45 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
 const maxProjectEventAppendAttempts = 3
+const maxProjectConfigRevisionAttempts = 3
 
 type PgRepository struct {
-	q *queries.Queries
+	q  *queries.Queries
+	db projectTransactionBeginner
 }
 
-func NewPgRepository(q *queries.Queries) Repository {
-	return &PgRepository{q: q}
+type projectTransactionBeginner interface {
+	Begin(context.Context) (pgx.Tx, error)
+}
+
+func NewPgRepository(q *queries.Queries, db ...projectTransactionBeginner) Repository {
+	var beginner projectTransactionBeginner
+	if len(db) > 0 {
+		beginner = db[0]
+	}
+	return &PgRepository{q: q, db: beginner}
 }
 
 func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectRequest, projectID uuid.UUID, workflowID string) (Project, error) {
+	coordinationPolicy, err := jsonbObject(req.CoordinationPolicy, "coordination_policy")
+	if err != nil {
+		return Project{}, err
+	}
+	approvalPolicy, err := jsonbObject(req.ApprovalPolicy, "approval_policy")
+	if err != nil {
+		return Project{}, err
+	}
+	evidencePolicy, err := jsonbObject(req.EvidencePolicy, "evidence_policy")
+	if err != nil {
+		return Project{}, err
+	}
 	row, err := r.q.CreateProject(ctx, queries.CreateProjectParams{
 		ID:                     projectID,
 		TenantID:               req.TenantID,
@@ -37,9 +60,9 @@ func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectReque
 		AcceptanceUserID:       nullUUID(req.AcceptanceUserID),
 		CoordinationWorkflowID: textOrNull(workflowID),
 		CoordinationStatus:     textOrNull("registered"),
-		CoordinationPolicy:     jsonbOrDefault(req.CoordinationPolicy),
-		ApprovalPolicy:         jsonbOrDefault(req.ApprovalPolicy),
-		EvidencePolicy:         jsonbOrDefault(req.EvidencePolicy),
+		CoordinationPolicy:     coordinationPolicy,
+		ApprovalPolicy:         approvalPolicy,
+		EvidencePolicy:         evidencePolicy,
 	})
 	if err != nil {
 		return Project{}, err
@@ -70,6 +93,18 @@ func (r *PgRepository) ListProjects(ctx context.Context, req ListProjectsRequest
 }
 
 func (r *PgRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (Project, error) {
+	coordinationPolicy, err := jsonbObjectOrNull(req.CoordinationPolicy, "coordination_policy")
+	if err != nil {
+		return Project{}, err
+	}
+	approvalPolicy, err := jsonbObjectOrNull(req.ApprovalPolicy, "approval_policy")
+	if err != nil {
+		return Project{}, err
+	}
+	evidencePolicy, err := jsonbObjectOrNull(req.EvidencePolicy, "evidence_policy")
+	if err != nil {
+		return Project{}, err
+	}
 	row, err := r.q.UpdateProject(ctx, queries.UpdateProjectParams{
 		TenantID:           req.TenantID,
 		ID:                 req.ProjectID,
@@ -79,9 +114,9 @@ func (r *PgRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjec
 		HumanOwnerUserID:   nullUUIDIfNotNil(req.HumanOwnerUserID),
 		LeaderUserID:       nullUUID(req.LeaderUserID),
 		AcceptanceUserID:   nullUUID(req.AcceptanceUserID),
-		CoordinationPolicy: jsonbOrNull(req.CoordinationPolicy),
-		ApprovalPolicy:     jsonbOrNull(req.ApprovalPolicy),
-		EvidencePolicy:     jsonbOrNull(req.EvidencePolicy),
+		CoordinationPolicy: coordinationPolicy,
+		ApprovalPolicy:     approvalPolicy,
+		EvidencePolicy:     evidencePolicy,
 	})
 	if err != nil {
 		return Project{}, err
@@ -98,12 +133,35 @@ func (r *PgRepository) ArchiveProject(ctx context.Context, tenantID, projectID u
 }
 
 func (r *PgRepository) ReplaceProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {
-	if err := r.q.ReplaceProjectMembersDelete(ctx, queries.ReplaceProjectMembersDeleteParams{TenantID: tenantID, ProjectID: projectID}); err != nil {
+	if r.db == nil {
+		return r.replaceProjectMembersWithQueries(ctx, r.q, tenantID, projectID, members)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin project members transaction: %w", err)
+	}
+	created, err := r.replaceProjectMembersWithQueries(ctx, r.q.WithTx(tx), tenantID, projectID, members)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit project members transaction: %w", err)
+	}
+	return created, nil
+}
+
+func (r *PgRepository) replaceProjectMembersWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {
+	if err := q.ReplaceProjectMembersDelete(ctx, queries.ReplaceProjectMembersDeleteParams{TenantID: tenantID, ProjectID: projectID}); err != nil {
 		return nil, err
 	}
 	created := make([]ProjectMember, 0, len(members))
 	for _, member := range members {
-		row, err := r.q.CreateProjectMember(ctx, queries.CreateProjectMemberParams{
+		settings, err := jsonbObject(member.Settings, "settings")
+		if err != nil {
+			return nil, err
+		}
+		row, err := q.CreateProjectMember(ctx, queries.CreateProjectMemberParams{
 			TenantID:            tenantID,
 			ProjectID:           projectID,
 			PrincipalType:       string(member.PrincipalType),
@@ -111,7 +169,7 @@ func (r *PgRepository) ReplaceProjectMembers(ctx context.Context, tenantID, proj
 			ProjectRole:         string(member.ProjectRole),
 			DisplayNameSnapshot: textOrNull(member.DisplayNameSnapshot),
 			Status:              "active",
-			Settings:            jsonbOrDefault(member.Settings),
+			Settings:            settings,
 		})
 		if err != nil {
 			return nil, err
@@ -148,6 +206,10 @@ func (r *PgRepository) ListProjectTasks(ctx context.Context, tenantID, projectID
 }
 
 func (r *PgRepository) AppendProjectEvent(ctx context.Context, event AppendProjectEventRequest) (ProjectEvent, error) {
+	payload, err := jsonbObject(event.Payload, "payload")
+	if err != nil {
+		return ProjectEvent{}, err
+	}
 	var lastErr error
 	for attempt := 0; attempt < maxProjectEventAppendAttempts; attempt++ {
 		latest, err := r.q.GetLatestProjectEventSequence(ctx, queries.GetLatestProjectEventSequenceParams{TenantID: event.TenantID, ProjectID: event.ProjectID})
@@ -164,7 +226,7 @@ func (r *PgRepository) AppendProjectEvent(ctx context.Context, event AppendProje
 			ResourceType:   textPtr(event.ResourceType),
 			ResourceID:     textPtr(event.ResourceID),
 			Summary:        textOrNull(event.Summary),
-			Payload:        jsonbOrDefault(event.Payload),
+			Payload:        payload,
 		})
 		if err == nil {
 			return eventFromRecord(row)
@@ -186,6 +248,14 @@ func (r *PgRepository) ListProjectEvents(ctx context.Context, tenantID, projectI
 }
 
 func (r *PgRepository) CreateProjectDemand(ctx context.Context, req SubmitProjectDemandRequest, status ProjectDemandStatus, createdEventID *uuid.UUID) (ProjectDemand, error) {
+	sourceRefs, err := jsonbObject(req.SourceRefs, "source_refs")
+	if err != nil {
+		return ProjectDemand{}, err
+	}
+	attachments, err := jsonbArray(req.Attachments, "attachments")
+	if err != nil {
+		return ProjectDemand{}, err
+	}
 	row, err := r.q.CreateProjectDemand(ctx, queries.CreateProjectDemandParams{
 		TenantID:          req.TenantID,
 		ProjectID:         req.ProjectID,
@@ -193,8 +263,8 @@ func (r *PgRepository) CreateProjectDemand(ctx context.Context, req SubmitProjec
 		Title:             req.Title,
 		Content:           textOrNull(req.Content),
 		SourceType:        string(req.SourceType),
-		SourceRefs:        jsonbOrDefault(nil),
-		Attachments:       jsonbArrayOrDefault(nil),
+		SourceRefs:        sourceRefs,
+		Attachments:       attachments,
 		Status:            string(status),
 		CreatedEventID:    nullUUID(createdEventID),
 	})
@@ -213,23 +283,34 @@ func (r *PgRepository) ListProjectDemands(ctx context.Context, tenantID, project
 }
 
 func (r *PgRepository) CreateConfigRevision(ctx context.Context, req UpdateProjectConfigRequest, project Project, eventID uuid.UUID) (ProjectConfigRevision, error) {
-	latest, err := r.q.GetLatestProjectConfigRevisionNumber(ctx, queries.GetLatestProjectConfigRevisionNumberParams{TenantID: req.TenantID, ProjectID: req.ProjectID})
+	snapshot, err := jsonbObject(projectConfigSnapshot(project), "config_snapshot")
 	if err != nil {
 		return ProjectConfigRevision{}, err
 	}
-	row, err := r.q.CreateProjectConfigRevision(ctx, queries.CreateProjectConfigRevisionParams{
-		TenantID:        req.TenantID,
-		ProjectID:       req.ProjectID,
-		RevisionNumber:  latest + 1,
-		ConfigSnapshot:  jsonbOrDefault(projectConfigSnapshot(project)),
-		ChangeSummary:   textOrNull("项目配置已更新"),
-		CreatedByUserID: req.ActorUserID,
-		CreatedEventID:  nullUUID(&eventID),
-	})
-	if err != nil {
-		return ProjectConfigRevision{}, err
+	var lastErr error
+	for attempt := 0; attempt < maxProjectConfigRevisionAttempts; attempt++ {
+		latest, err := r.q.GetLatestProjectConfigRevisionNumber(ctx, queries.GetLatestProjectConfigRevisionNumberParams{TenantID: req.TenantID, ProjectID: req.ProjectID})
+		if err != nil {
+			return ProjectConfigRevision{}, err
+		}
+		row, err := r.q.CreateProjectConfigRevision(ctx, queries.CreateProjectConfigRevisionParams{
+			TenantID:        req.TenantID,
+			ProjectID:       req.ProjectID,
+			RevisionNumber:  latest + 1,
+			ConfigSnapshot:  snapshot,
+			ChangeSummary:   textOrNull("项目配置已更新"),
+			CreatedByUserID: req.ActorUserID,
+			CreatedEventID:  nullUUID(&eventID),
+		})
+		if err == nil {
+			return configRevisionFromRecord(row)
+		}
+		lastErr = err
+		if !isProjectConfigRevisionConflict(err) {
+			return ProjectConfigRevision{}, err
+		}
 	}
-	return configRevisionFromRecord(row)
+	return ProjectConfigRevision{}, lastErr
 }
 
 func projectFromRecord(row queries.Project) (Project, error) {
@@ -326,13 +407,17 @@ func eventFromRecord(row queries.ProjectEvent) (ProjectEvent, error) {
 }
 
 func demandFromRecord(row queries.ProjectDemand) (ProjectDemand, error) {
-	if _, err := mapFromJSON(row.SourceRefs); err != nil {
+	sourceRefs, err := mapFromJSON(row.SourceRefs)
+	if err != nil {
 		return ProjectDemand{}, fmt.Errorf("source_refs: %w", err)
 	}
+	attachments := []any{}
 	if len(row.Attachments) > 0 {
-		var attachments []any
 		if err := json.Unmarshal(row.Attachments, &attachments); err != nil {
 			return ProjectDemand{}, fmt.Errorf("attachments: %w", err)
+		}
+		if attachments == nil {
+			attachments = []any{}
 		}
 	}
 	return ProjectDemand{
@@ -343,6 +428,8 @@ func demandFromRecord(row queries.ProjectDemand) (ProjectDemand, error) {
 		Title:             row.Title,
 		Content:           ptrText(row.Content),
 		SourceType:        DemandSourceType(row.SourceType),
+		SourceRefs:        sourceRefs,
+		Attachments:       attachments,
 		Status:            ProjectDemandStatus(row.Status),
 		CreatedEventID:    ptrUUID(row.CreatedEventID),
 		CreatedAt:         row.CreatedAt.Time,
@@ -483,25 +570,25 @@ func ptrTime(value pgtype.Timestamptz) *time.Time {
 	return &t
 }
 
-func jsonbOrDefault(value map[string]any) []byte {
+func jsonbObject(value map[string]any, field string) ([]byte, error) {
 	if len(value) == 0 {
-		return []byte("{}")
+		return []byte("{}"), nil
 	}
-	return mustJSON(value)
+	return marshalJSON(value, field)
 }
 
-func jsonbOrNull(value map[string]any) []byte {
+func jsonbObjectOrNull(value map[string]any, field string) ([]byte, error) {
 	if value == nil {
-		return nil
+		return nil, nil
 	}
-	return jsonbOrDefault(value)
+	return jsonbObject(value, field)
 }
 
-func jsonbArrayOrDefault(value []any) []byte {
+func jsonbArray(value []any, field string) ([]byte, error) {
 	if len(value) == 0 {
-		return []byte("[]")
+		return []byte("[]"), nil
 	}
-	return mustJSON(value)
+	return marshalJSON(value, field)
 }
 
 func mapFromJSON(raw []byte) (map[string]any, error) {
@@ -518,12 +605,12 @@ func mapFromJSON(raw []byte) (map[string]any, error) {
 	return value, nil
 }
 
-func mustJSON(value any) []byte {
+func marshalJSON(value any, field string) ([]byte, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
-		return []byte("{}")
+		return nil, fmt.Errorf("%s: marshal json: %w", field, err)
 	}
-	return raw
+	return raw, nil
 }
 
 func projectStatusPtr(status *ProjectStatus) pgtype.Text {
@@ -534,14 +621,26 @@ func projectStatusPtr(status *ProjectStatus) pgtype.Text {
 }
 
 func projectConfigSnapshot(project Project) map[string]any {
-	return map[string]any{
+	snapshot := map[string]any{
 		"name":                project.Name,
 		"goal":                project.Goal,
 		"status":              string(project.Status),
+		"human_owner_user_id": project.HumanOwnerUserID.String(),
 		"coordination_policy": project.CoordinationPolicy,
 		"approval_policy":     project.ApprovalPolicy,
 		"evidence_policy":     project.EvidencePolicy,
 	}
+	if project.LeaderUserID != nil {
+		snapshot["leader_user_id"] = project.LeaderUserID.String()
+	} else {
+		snapshot["leader_user_id"] = ""
+	}
+	if project.AcceptanceUserID != nil {
+		snapshot["acceptance_user_id"] = project.AcceptanceUserID.String()
+	} else {
+		snapshot["acceptance_user_id"] = ""
+	}
+	return snapshot
 }
 
 func isProjectEventSequenceConflict(err error) bool {
@@ -549,4 +648,11 @@ func isProjectEventSequenceConflict(err error) bool {
 	return errors.As(err, &pgErr) &&
 		pgErr.Code == "23505" &&
 		pgErr.ConstraintName == "uq_project_events_project_sequence"
+}
+
+func isProjectConfigRevisionConflict(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) &&
+		pgErr.Code == "23505" &&
+		pgErr.ConstraintName == "uq_project_config_revisions_project_rev"
 }

@@ -592,6 +592,8 @@ func (r *memoryRepository) CreateProjectDemand(ctx context.Context, req SubmitPr
 		Title:             req.Title,
 		Content:           strPtrOrNil(req.Content),
 		SourceType:        req.SourceType,
+		SourceRefs:        req.SourceRefs,
+		Attachments:       req.Attachments,
 		Status:            status,
 		CreatedEventID:    createdEventID,
 	}

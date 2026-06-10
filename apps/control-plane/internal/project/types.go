@@ -145,6 +145,8 @@ type ProjectDemand struct {
 	Title             string
 	Content           *string
 	SourceType        DemandSourceType
+	SourceRefs        map[string]any
+	Attachments       []any
 	Status            ProjectDemandStatus
 	CreatedEventID    *uuid.UUID
 	CreatedAt         time.Time
@@ -215,6 +217,8 @@ type SubmitProjectDemandRequest struct {
 	Title             string
 	Content           string
 	SourceType        DemandSourceType
+	SourceRefs        map[string]any
+	Attachments       []any
 }
 
 type ListProjectsRequest struct {

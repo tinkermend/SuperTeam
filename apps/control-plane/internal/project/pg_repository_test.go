@@ -157,6 +157,12 @@ func TestProjectRelatedMappersHandleJSONAndOptionalFields(t *testing.T) {
 	if demand.SourceType != DemandSourceManual || demand.Status != ProjectDemandStatusRecorded {
 		t.Fatalf("unexpected demand: %#v", demand)
 	}
+	if demand.SourceRefs["ticket"] != "ST-42" {
+		t.Fatalf("expected source refs to be preserved, got %#v", demand.SourceRefs)
+	}
+	if len(demand.Attachments) != 1 {
+		t.Fatalf("expected attachments to be preserved, got %#v", demand.Attachments)
+	}
 	if demand.CreatedEventID == nil || *demand.CreatedEventID != createdEventID {
 		t.Fatalf("expected created event id, got %#v", demand.CreatedEventID)
 	}
@@ -180,6 +186,38 @@ func TestProjectRelatedMappersHandleJSONAndOptionalFields(t *testing.T) {
 	}
 }
 
+func TestProjectConfigSnapshotIncludesHumanOwner(t *testing.T) {
+	ownerID := uuid.New()
+	leaderID := uuid.New()
+	project := Project{
+		Name:             "项目",
+		Goal:             "目标",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+		LeaderUserID:     &leaderID,
+	}
+
+	snapshot := projectConfigSnapshot(project)
+	if snapshot["human_owner_user_id"] != ownerID.String() {
+		t.Fatalf("expected human owner in snapshot, got %#v", snapshot)
+	}
+	if snapshot["leader_user_id"] != leaderID.String() {
+		t.Fatalf("expected leader in snapshot, got %#v", snapshot)
+	}
+	if snapshot["acceptance_user_id"] != "" {
+		t.Fatalf("expected empty acceptance id, got %#v", snapshot)
+	}
+}
+
+func TestJSONMarshalErrorsAreReturned(t *testing.T) {
+	if _, err := jsonbObject(map[string]any{"bad": func() {}}, "settings"); err == nil {
+		t.Fatal("expected object marshal error")
+	}
+	if _, err := jsonbArray([]any{func() {}}, "attachments"); err == nil {
+		t.Fatal("expected array marshal error")
+	}
+}
+
 func TestProjectEventSequenceConflictDetection(t *testing.T) {
 	conflict := &pgconn.PgError{
 		Code:           "23505",
@@ -198,5 +236,26 @@ func TestProjectEventSequenceConflictDetection(t *testing.T) {
 	}
 	if maxProjectEventAppendAttempts != 3 {
 		t.Fatalf("expected 3 append attempts, got %d", maxProjectEventAppendAttempts)
+	}
+}
+
+func TestProjectConfigRevisionConflictDetection(t *testing.T) {
+	conflict := &pgconn.PgError{
+		Code:           "23505",
+		ConstraintName: "uq_project_config_revisions_project_rev",
+	}
+	if !isProjectConfigRevisionConflict(conflict) {
+		t.Fatal("expected project config revision conflict")
+	}
+
+	otherUnique := &pgconn.PgError{Code: "23505", ConstraintName: "other_constraint"}
+	if isProjectConfigRevisionConflict(otherUnique) {
+		t.Fatal("did not expect unrelated unique violation to retry")
+	}
+	if isProjectConfigRevisionConflict(errors.New("plain error")) {
+		t.Fatal("did not expect non pg error to retry")
+	}
+	if maxProjectConfigRevisionAttempts != 3 {
+		t.Fatalf("expected 3 config revision attempts, got %d", maxProjectConfigRevisionAttempts)
 	}
 }
