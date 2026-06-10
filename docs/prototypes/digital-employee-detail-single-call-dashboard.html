@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>数字员工详情 - 单次调用测试</title>
+    <style>
+      :root {
+        --bg: #f7fbff;
+        --panel: rgba(255, 255, 255, 0.82);
+        --panel-strong: rgba(255, 255, 255, 0.94);
+        --border: rgba(148, 197, 211, 0.42);
+        --text: #10201e;
+        --muted: #66788a;
+        --soft: #eef8f5;
+        --teal: #2cc7aa;
+        --teal-dark: #0a806f;
+        --cyan: #0891b2;
+        --green: #16a34a;
+        --amber: #f59e0b;
+        --red: #ef4444;
+        --purple: #8b5cf6;
+        --slate: #64748b;
+        --shadow: 0 18px 48px rgba(15, 23, 42, 0.07);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(135deg, rgba(230, 251, 245, 0.86), rgba(248, 251, 255, 0.72) 34%, #ffffff 72%),
+          radial-gradient(circle at 78% 12%, rgba(44, 199, 170, 0.12), transparent 34%);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+        font-size: 14px;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 248px minmax(0, 1fr);
+        min-height: 1024px;
+      }
+
+      .sidebar {
+        border-right: 1px solid rgba(191, 219, 254, 0.72);
+        background: rgba(255, 255, 255, 0.68);
+        backdrop-filter: blur(22px) saturate(1.16);
+        padding: 18px 14px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px 20px;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #9cf2da, #2cc7aa 58%, #0a806f);
+        color: white;
+        font-weight: 800;
+      }
+
+      .brand-title {
+        font-weight: 700;
+      }
+
+      .brand-subtitle,
+      .nav-group,
+      .muted {
+        color: var(--muted);
+      }
+
+      .brand-subtitle {
+        margin-top: 2px;
+        font-size: 12px;
+      }
+
+      .nav-group {
+        margin: 20px 10px 8px;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        height: 40px;
+        margin: 2px 0;
+        border-radius: 8px;
+        padding: 0 10px;
+        color: #425466;
+      }
+
+      .nav-item span:first-child {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .nav-item.active {
+        background: linear-gradient(135deg, rgba(230, 251, 245, 0.96), rgba(219, 234, 254, 0.84));
+        color: #063f37;
+        box-shadow: inset 0 0 0 1px rgba(44, 199, 170, 0.34);
+        font-weight: 700;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--teal);
+      }
+
+      .main {
+        min-width: 0;
+        padding: 22px 30px 32px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.72);
+        padding: 10px 14px;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+      }
+
+      .crumb {
+        color: var(--muted);
+      }
+
+      .crumb b {
+        color: var(--text);
+        font-weight: 650;
+      }
+
+      .search {
+        width: 280px;
+        border: 1px solid rgba(148, 197, 211, 0.48);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.78);
+        color: var(--muted);
+        padding: 8px 14px;
+      }
+
+      .header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        margin: 26px 0 18px;
+      }
+
+      .identity {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 15px;
+      }
+
+      .avatar {
+        display: grid;
+        width: 58px;
+        height: 58px;
+        place-items: center;
+        border: 1px solid rgba(44, 199, 170, 0.28);
+        border-radius: 14px;
+        background: linear-gradient(135deg, #ffffff, #e6fbf5);
+        box-shadow: var(--shadow);
+        color: var(--teal-dark);
+        font-size: 24px;
+        font-weight: 800;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 26px;
+        letter-spacing: 0;
+        line-height: 1.15;
+      }
+
+      .subtitle {
+        margin-top: 6px;
+        color: var(--muted);
+      }
+
+      .meta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .pill,
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+
+      .pill {
+        border: 1px solid rgba(148, 197, 211, 0.42);
+        background: rgba(255, 255, 255, 0.78);
+        color: #34505f;
+        padding: 5px 9px;
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .pill.success {
+        border-color: rgba(22, 163, 74, 0.24);
+        background: #ecfdf3;
+        color: #15803d;
+      }
+
+      .pill.info {
+        border-color: rgba(8, 145, 178, 0.2);
+        background: #ecfeff;
+        color: #0e7490;
+      }
+
+      .pill.warn {
+        border-color: rgba(245, 158, 11, 0.28);
+        background: #fffbeb;
+        color: #b45309;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 9px;
+      }
+
+      .btn {
+        min-height: 36px;
+        border: 1px solid rgba(148, 197, 211, 0.45);
+        background: rgba(255, 255, 255, 0.8);
+        color: #20303a;
+        padding: 0 13px;
+        font-weight: 700;
+      }
+
+      .btn.primary {
+        border-color: transparent;
+        background: linear-gradient(135deg, #9cf2da, #2cc7aa 58%, #0a806f);
+        color: white;
+        box-shadow: 0 12px 28px rgba(44, 199, 170, 0.26);
+      }
+
+      .tabs {
+        display: flex;
+        gap: 22px;
+        border-bottom: 1px solid rgba(148, 197, 211, 0.34);
+        margin-bottom: 18px;
+      }
+
+      .tab {
+        position: relative;
+        padding: 0 0 12px;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .tab.active {
+        color: var(--text);
+      }
+
+      .tab.active::after {
+        position: absolute;
+        right: 0;
+        bottom: -1px;
+        left: 0;
+        height: 3px;
+        border-radius: 999px;
+        background: var(--teal);
+        content: "";
+      }
+
+      .section {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 15px 16px 10px;
+      }
+
+      h2,
+      h3 {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.3;
+      }
+
+      .latest {
+        display: grid;
+        grid-template-columns: 120px 130px 150px minmax(0, 1fr) 120px 100px;
+        align-items: center;
+        margin-bottom: 16px;
+        padding: 14px 16px;
+      }
+
+      .mono {
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        margin-bottom: 16px;
+      }
+
+      .metric {
+        min-height: 158px;
+        padding: 16px;
+      }
+
+      .metric-title {
+        color: #405461;
+        font-weight: 750;
+      }
+
+      .metric-sub {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .chart {
+        display: flex;
+        height: 64px;
+        align-items: end;
+        gap: 9px;
+        margin-top: 28px;
+        border-bottom: 1px dashed rgba(100, 116, 139, 0.28);
+      }
+
+      .bar {
+        width: 18px;
+        border-radius: 5px 5px 0 0;
+        background: linear-gradient(180deg, #2cc7aa, #0a806f);
+      }
+
+      .health {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .health-score {
+        display: grid;
+        width: 68px;
+        height: 68px;
+        place-items: center;
+        border-radius: 18px;
+        background: #ecfdf3;
+        color: var(--green);
+        font-size: 22px;
+        font-weight: 850;
+      }
+
+      .metric-value {
+        margin-top: 24px;
+        font-size: 34px;
+        font-weight: 850;
+      }
+
+      .trend {
+        color: var(--green);
+        font-weight: 750;
+      }
+
+      .cost-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 20px;
+      }
+
+      .cost-cell {
+        border-top: 1px solid rgba(148, 197, 211, 0.28);
+        padding-top: 10px;
+      }
+
+      .cost-cell b {
+        display: block;
+        margin-top: 4px;
+        font-size: 18px;
+      }
+
+      .body-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        border-top: 1px solid rgba(148, 197, 211, 0.26);
+        padding: 13px 16px;
+        text-align: left;
+        vertical-align: middle;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      td {
+        font-size: 13px;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 4px 9px;
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .status.ok {
+        background: #dcfce7;
+        color: #15803d;
+      }
+
+      .status.fail {
+        background: #fee2e2;
+        color: #b91c1c;
+      }
+
+      .link {
+        color: var(--teal-dark);
+        font-weight: 750;
+      }
+
+      .test-panel {
+        padding: 16px;
+      }
+
+      .preflight {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        margin: 12px 0 14px;
+      }
+
+      label {
+        display: block;
+        margin: 13px 0 7px;
+        color: #31434d;
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      textarea,
+      select {
+        width: 100%;
+        border: 1px solid rgba(148, 197, 211, 0.48);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.88);
+        color: #12221f;
+        font: inherit;
+      }
+
+      textarea {
+        min-height: 78px;
+        resize: none;
+        padding: 10px 11px;
+      }
+
+      select {
+        height: 38px;
+        padding: 0 10px;
+      }
+
+      .hint {
+        margin-top: 12px;
+        border-left: 3px solid var(--cyan);
+        background: #ecfeff;
+        color: #155e75;
+        padding: 10px 11px;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .full-btn {
+        display: flex;
+        width: 100%;
+        height: 40px;
+        align-items: center;
+        justify-content: center;
+        margin-top: 14px;
+        border: 0;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #9cf2da, #2cc7aa 58%, #0a806f);
+        color: white;
+        font-weight: 850;
+        box-shadow: 0 12px 26px rgba(44, 199, 170, 0.24);
+      }
+
+      .inheritance {
+        padding-bottom: 14px;
+      }
+
+      .inherit-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 118px minmax(0, 1fr);
+        gap: 14px;
+        padding: 6px 16px 0;
+      }
+
+      .inherit-box {
+        border: 1px solid rgba(148, 197, 211, 0.34);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.64);
+        padding: 13px;
+      }
+
+      .merge {
+        display: grid;
+        place-items: center;
+        color: var(--teal-dark);
+        font-weight: 850;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        margin-top: 10px;
+      }
+
+      .chip {
+        border-radius: 999px;
+        background: #f1f5f9;
+        color: #475569;
+        padding: 4px 8px;
+        font-size: 12px;
+        font-weight: 650;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">S</div>
+          <div>
+            <div class="brand-title">SuperTeam</div>
+            <div class="brand-subtitle">工程效率组</div>
+          </div>
+        </div>
+
+        <div class="nav-group">工作区</div>
+        <div class="nav-item"><span>⌘ 工作台</span></div>
+        <div class="nav-item"><span>◎ 任务中心</span></div>
+        <div class="nav-item"><span>▣ 项目</span></div>
+        <div class="nav-item"><span>♢ 团队管理</span></div>
+        <div class="nav-item active"><span>☷ 数字员工</span><span class="dot"></span></div>
+        <div class="nav-item"><span>↬ 流程编排</span></div>
+
+        <div class="nav-group">执行与治理</div>
+        <div class="nav-item"><span>◌ Runtime 节点</span></div>
+        <div class="nav-item"><span>◇ 外部能力</span></div>
+        <div class="nav-item"><span>✓ 审批中心</span></div>
+        <div class="nav-item"><span>☰ 审计日志</span></div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <div class="crumb">数字员工 &gt; 合并验证数字员工 &gt; <b>Dashboard</b></div>
+          <div class="search">搜索调用、工件、日志</div>
+        </div>
+
+        <section class="header">
+          <div class="identity">
+            <div class="avatar">合</div>
+            <div>
+              <h1>合并验证数字员工</h1>
+              <div class="subtitle">merge-verification-agent · 工程效率组 · 全栈工程执行</div>
+              <div class="meta-row">
+                <span class="pill success"><span class="dot"></span>ready</span>
+                <span class="pill info">local-dev-node · Claude Code</span>
+                <span class="pill warn">中风险</span>
+                <span class="pill">归属人 王培</span>
+              </div>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn primary">▶ 单次调用测试</button>
+            <button class="btn">运行诊断</button>
+            <button class="btn">配置</button>
+            <button class="btn">查看审计</button>
+            <button class="btn">···</button>
+          </div>
+        </section>
+
+        <nav class="tabs">
+          <div class="tab active">Dashboard</div>
+          <div class="tab">Instructions 宪法</div>
+          <div class="tab">Skills 技能</div>
+          <div class="tab">MCP 能力</div>
+          <div class="tab">Configuration 配置</div>
+          <div class="tab">Runs 调用记录</div>
+          <div class="tab">Budget 预算</div>
+        </nav>
+
+        <section class="section latest">
+          <b>最近一次调用</b>
+          <span class="status ok">已完成</span>
+          <span class="mono muted">cmd-26cef043</span>
+          <span>合并后真实执行闭环验证</span>
+          <span class="muted">2 分钟前</span>
+          <span class="link">查看详情 →</span>
+        </section>
+
+        <section class="metrics">
+          <div class="section metric">
+            <div class="metric-title">调用活动</div>
+            <div class="metric-sub">最近 14 天</div>
+            <div class="chart">
+              <div class="bar" style="height: 22px"></div>
+              <div class="bar" style="height: 38px"></div>
+              <div class="bar" style="height: 18px"></div>
+              <div class="bar" style="height: 48px"></div>
+              <div class="bar" style="height: 32px"></div>
+              <div class="bar" style="height: 58px"></div>
+              <div class="bar" style="height: 42px"></div>
+            </div>
+          </div>
+          <div class="section metric">
+            <div class="metric-title">端到端健康</div>
+            <div class="metric-sub">员工、Runtime、Provider、预算预检</div>
+            <div class="health">
+              <div class="health-score">4/4</div>
+              <div>
+                <div class="status ok">全部通过</div>
+                <div class="metric-sub">最近诊断 1 分钟前</div>
+              </div>
+            </div>
+          </div>
+          <div class="section metric">
+            <div class="metric-title">成功率</div>
+            <div class="metric-sub">最近 30 次调用</div>
+            <div class="metric-value">92%</div>
+            <div class="trend">+8% 较上周</div>
+          </div>
+          <div class="section metric">
+            <div class="metric-title">Token 与成本</div>
+            <div class="metric-sub">今日用量</div>
+            <div class="cost-grid">
+              <div class="cost-cell muted">Input <b>3.4k</b></div>
+              <div class="cost-cell muted">Output <b>2.8k</b></div>
+              <div class="cost-cell muted">Cached <b>0.9k</b></div>
+              <div class="cost-cell muted">Cost <b>$0.00</b></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="body-grid">
+          <div class="section">
+            <div class="section-header">
+              <div>
+                <h2>调用记录</h2>
+                <div class="muted">单次测试与工作流触发后的历史执行事实。</div>
+              </div>
+              <span class="link">查看全部运行 →</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>调用</th>
+                  <th>类型</th>
+                  <th>状态</th>
+                  <th>Runtime / Provider</th>
+                  <th>耗时</th>
+                  <th>Token</th>
+                  <th>结果</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><b>MERGE-105</b><br /><span class="muted">合并验证执行环境</span></td>
+                  <td>单次测试</td>
+                  <td><span class="status ok">成功</span></td>
+                  <td>local-dev-node · Claude Code</td>
+                  <td>42s</td>
+                  <td>1.8k</td>
+                  <td><span class="link">工件 2</span></td>
+                </tr>
+                <tr>
+                  <td><b>CFG-087</b><br /><span class="muted">检查员工宪法覆盖</span></td>
+                  <td>配置验证</td>
+                  <td><span class="status ok">成功</span></td>
+                  <td>local-dev-node · Claude Code</td>
+                  <td>18s</td>
+                  <td>620</td>
+                  <td><span class="link">工件 1</span></td>
+                </tr>
+                <tr>
+                  <td><b>RUN-042</b><br /><span class="muted">回归调用</span></td>
+                  <td>工作流调用</td>
+                  <td><span class="status fail">失败</span></td>
+                  <td>local-dev-node · Claude Code</td>
+                  <td>2m 11s</td>
+                  <td>3.4k</td>
+                  <td><span class="link">查看诊断</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <aside class="section test-panel">
+            <h2>单次调用测试</h2>
+            <div class="muted">验证这个数字员工端到端能力是否正常。</div>
+            <div class="preflight">
+              <span class="pill success">员工 ready</span>
+              <span class="pill success">Runtime 在线</span>
+              <span class="pill success">Provider healthy</span>
+              <span class="pill info">预算剩余 38%</span>
+            </div>
+            <label>测试目标</label>
+            <textarea>验证合并后执行环境，返回结构化结果与工件引用。</textarea>
+            <label>测试提示</label>
+            <textarea>请读取当前上下文切片，执行最小验证，不进行发布或写入生产环境。</textarea>
+            <label>上下文切片</label>
+            <select>
+              <option>使用当前员工上下文切片</option>
+            </select>
+            <label>输出契约</label>
+            <select>
+              <option>结构化结果 + 工件引用</option>
+            </select>
+            <button class="full-btn">开始调用测试</button>
+            <div class="hint">仅用于验证该数字员工端到端能力，不创建正式业务任务；正式执行由后续 Workflow/Project 编排触发。</div>
+          </aside>
+        </section>
+
+        <section class="section inheritance">
+          <div class="section-header">
+            <div>
+              <h2>能力来源与员工覆盖</h2>
+              <div class="muted">团队共享能力作为基线，数字员工在此基础上定义自己的宪法、技能、MCP 和输出契约。</div>
+            </div>
+            <span class="pill info">继承 + 覆盖</span>
+          </div>
+          <div class="inherit-grid">
+            <div class="inherit-box">
+              <h3>团队共享</h3>
+              <div class="chips">
+                <span class="chip">团队宪法 v3</span>
+                <span class="chip">规则 12</span>
+                <span class="chip">MCP 3</span>
+                <span class="chip">Skills 8</span>
+              </div>
+            </div>
+            <div class="merge">→ 合成 →</div>
+            <div class="inherit-box">
+              <h3>员工覆盖</h3>
+              <div class="chips">
+                <span class="chip">员工宪法 v5</span>
+                <span class="chip">自选 Skills 5</span>
+                <span class="chip">MCP 2</span>
+                <span class="chip">结构化结果 + 工件引用</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

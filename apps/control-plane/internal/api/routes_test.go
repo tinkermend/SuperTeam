@@ -1463,6 +1463,36 @@ func TestRuntimeWebSocketSendsDispatchedCommand(t *testing.T) {
 	}
 }
 
+func TestRuntimeWebSocketRejectsCrossOriginHandshake(t *testing.T) {
+	service := &routeRuntimeService{}
+	registry := runtime.NewConnectionRegistry()
+	runtimeHandler := handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{})
+	runtimeHandler.SetConnectionRegistry(registry)
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		runtimeHandler,
+		&routeRuntimeAuthService{},
+		service,
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/v1/runtime/ws"
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer session-token")
+	headers.Set("Origin", "https://console.example.com")
+
+	_, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: headers})
+	if err == nil {
+		t.Fatal("expected cross-origin runtime websocket handshake to be rejected")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Fatalf("expected forbidden cross-origin websocket handshake, got %v", err)
+	}
+}
+
 func TestRuntimeWebSocketClientCloseUnregistersConnection(t *testing.T) {
 	service := &routeRuntimeService{}
 	registry := runtime.NewConnectionRegistry()

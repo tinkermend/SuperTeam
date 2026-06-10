@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-09 01:03：新增数字员工详情页单次调用测试 Dashboard 静态原型，参考 paperclip Agent 页的信息架构，突出调用记录、端到端健康、单次测试入口以及团队共享能力与员工覆盖关系。
 - 2026-06-07 19:50：新增数字员工内置头像库，提供 20 个工程师头像资产、Control Plane 头像资产列表 API、创建时 `avatar_asset_id` 校验与 metadata 快照，并在 Web 创建、列表和详情页展示员工头像。
 - 2026-06-07 15:35：数字员工页面新增"配置"功能，支持创建配置修订版本（Config Revision），包括 Role Profile、Constitution Addendum、Capability Selection、Context Policy Override、Approval Policy Override 和 Output Contract Addendum 的 JSON 配置编辑。
 - 2026-06-07 02:28：Runtime Agent 完成执行能力底座核心模块开发，新增按执行实例隔离的工作目录管理、S3 工件上传基础设施和 Provider 会话状态扩展支持。
@@ -16,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-09 09:37：恢复 Runtime WebSocket 默认 Origin 校验，移除对所有跨源握手的全局放行，并补齐跨源连接拒绝的回归测试。
 - 2026-06-08 22:37：调整数字员工卡片选中视觉，左侧选中标记仅在选中卡片显示且不承载团队或运行状态颜色，未选中卡片保持干净边界。
 - 2026-06-08 22:31：优化数字员工卡片选中态，移除“选中/已选中”文字按钮，改为单层选中边框与轻量高亮，避免边框叠加。
 - 2026-06-08 21:28：修复数字员工工作台筛选时清空旧数据造成的整页加载闪烁，并支持点击员工卡片本体切换选中状态。
