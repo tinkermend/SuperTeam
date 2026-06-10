@@ -665,3 +665,52 @@ func TestDevAdminSeedMigrationIsIdempotentAndUsesBcrypt(t *testing.T) {
 		t.Fatalf("expected default admin bcrypt hash to match admin password: %v", err)
 	}
 }
+
+func TestProjectManagementV0MigrationDefinesProjectFactsAndEvents(t *testing.T) {
+	body, err := os.ReadFile("migrations/013_project_management_v0.sql")
+	if err != nil {
+		t.Fatalf("read project management migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"CREATE TABLE projects",
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"tenant_id UUID NOT NULL",
+		"team_id UUID",
+		"human_owner_user_id UUID NOT NULL",
+		"coordination_workflow_id VARCHAR(255)",
+		"CREATE TABLE project_members",
+		"principal_type VARCHAR(50) NOT NULL",
+		"project_role VARCHAR(50) NOT NULL",
+		"CREATE TABLE project_tasks",
+		"runtime_task_id UUID",
+		"digital_employee_run_id UUID",
+		"CREATE TABLE project_events",
+		"sequence_number BIGINT NOT NULL",
+		"CREATE UNIQUE INDEX uq_project_events_project_sequence",
+		"ON project_events(project_id, sequence_number)",
+		"CREATE INDEX idx_project_events_tenant_project_sequence",
+		"CREATE TABLE project_demands",
+		"submitted_by_user_id UUID NOT NULL",
+		"CREATE TABLE project_config_revisions",
+		"revision_number INTEGER NOT NULL",
+		"COMMENT ON TABLE projects IS",
+		"COMMENT ON COLUMN project_events.sequence_number IS",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected project management migration to contain %q", expected)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"coordinator_employee_id",
+		"project_role VARCHAR(50) NOT NULL CHECK",
+		"CREATE TYPE project_status",
+		"BIGSERIAL PRIMARY KEY",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("project management migration must not contain %q", forbidden)
+		}
+	}
+}
