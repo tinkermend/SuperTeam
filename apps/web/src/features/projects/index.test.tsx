@@ -98,6 +98,20 @@ function createProjectFetcher(options: { slowFilteredList?: boolean } = {}) {
           : projects,
       );
     }
+    if (url.pathname === "/api/v1/projects" && method === "POST") {
+      const body = JSON.parse(String(init?.body)) as Partial<Project>;
+      const created = makeProject("project-3", body.name ?? "新建项目");
+      created.acceptance_user_id = body.acceptance_user_id;
+      created.description = body.description;
+      created.goal = body.goal ?? created.goal;
+      created.human_owner_user_id = body.human_owner_user_id ?? created.human_owner_user_id;
+      created.leader_user_id = body.leader_user_id;
+      projects.unshift(created);
+      return jsonResponse({
+        members: [],
+        project: created,
+      });
+    }
 
     if (url.pathname === "/api/v1/projects/project-1/overview" && method === "GET") {
       return jsonResponse({
@@ -263,6 +277,36 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("项目已创建")).toBeInTheDocument();
     await expect.element(screen.getByText("整理接入证据")).toBeInTheDocument();
     await expect.element(screen.getByText("补充上线验收说明")).toBeInTheDocument();
+    await expect.element(screen.getByText("当前阶段")).toBeInTheDocument();
+    await expect.element(screen.getByText("待人工处理")).toBeInTheDocument();
+    await expect.element(screen.getByText("证据策略")).toBeInTheDocument();
+    await expect.element(screen.getByText("V0 暂未接入人类决策队列")).toBeInTheDocument();
+  });
+
+  it("creates a project with human leader and acceptance roles", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    await userEvent.fill(screen.getByLabelText("项目名称"), "客户验收推进");
+    await userEvent.fill(screen.getByLabelText("目标"), "完成客户验收闭环");
+    await userEvent.fill(screen.getByLabelText("人类 Owner 用户 ID"), "owner-user-id");
+    await userEvent.fill(screen.getByLabelText("Leader 用户 ID"), "leader-user-id");
+    await userEvent.fill(screen.getByLabelText("验收人用户 ID"), "acceptance-user-id");
+    await userEvent.click(screen.getByRole("button", { name: "创建项目" }));
+
+    await vi.waitFor(() => {
+      const postCall = fetchCalls(fetcher).find(([url, init]) => {
+        return String(url).endsWith("/api/v1/projects") && init?.method === "POST";
+      });
+      expect(postCall).toBeTruthy();
+      expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
+        acceptance_user_id: "acceptance-user-id",
+        human_owner_user_id: "owner-user-id",
+        leader_user_id: "leader-user-id",
+        name: "客户验收推进",
+      });
+    });
   });
 
   it("submits a demand to the current project", async () => {

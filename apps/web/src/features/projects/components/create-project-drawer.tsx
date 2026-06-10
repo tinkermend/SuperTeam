@@ -21,8 +21,10 @@ type CreateProjectDrawerProps = {
 };
 
 const emptyDraft: CreateProjectInput = {
+  acceptance_user_id: "",
   goal: "",
   human_owner_user_id: "",
+  leader_user_id: "",
   name: "",
 };
 
@@ -51,8 +53,10 @@ export function CreateProjectDrawer({
     setError("");
     onSubmit({
       ...draft,
+      acceptance_user_id: draft.acceptance_user_id?.trim() || undefined,
       goal: draft.goal.trim(),
       human_owner_user_id: draft.human_owner_user_id.trim(),
+      leader_user_id: draft.leader_user_id?.trim() || undefined,
       name: draft.name.trim(),
     });
   }
@@ -95,6 +99,30 @@ export function CreateProjectDrawer({
                 }))
               }
               placeholder="UUID"
+            />
+          </Field>
+          <Field label="Leader 用户 ID">
+            <Input
+              value={draft.leader_user_id ?? ""}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  leader_user_id: event.target.value,
+                }))
+              }
+              placeholder="可选 UUID"
+            />
+          </Field>
+          <Field label="验收人用户 ID">
+            <Input
+              value={draft.acceptance_user_id ?? ""}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  acceptance_user_id: event.target.value,
+                }))
+              }
+              placeholder="可选 UUID"
             />
           </Field>
           <Field label="描述">

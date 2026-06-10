@@ -70,8 +70,10 @@ function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
     description: "配置说明",
     evidence_policy: { retention_days: 90 },
     goal: "完成客户接入验收",
+    acceptance_user_id: "acceptance-user-1",
     human_owner_user_id: "human-owner-1",
     id: "project-1",
+    leader_user_id: "leader-user-1",
     name: "客户接入验收",
     status,
     tenant_id: "tenant-1",
@@ -114,19 +116,39 @@ function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
   };
 }
 
-function createConfigFetcher(status: "running" | "archived" = "running") {
+function createConfigFetcher(
+  status: "running" | "archived" = "running",
+  configs: ProjectConfig[] = [makeConfig(status)],
+) {
+  let requestCount = 0;
+  const latestConfig = () => configs[Math.min(requestCount, configs.length - 1)];
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
 
     if (url.pathname === "/api/v1/projects/project-1/config" && method === "GET") {
-      return jsonResponse(makeConfig(status));
+      const config = configs[Math.min(requestCount, configs.length - 1)];
+      requestCount += 1;
+      return jsonResponse(config);
     }
     if (url.pathname === "/api/v1/projects/project-1/config" && method === "PUT") {
-      return jsonResponse(makeConfig(status).project);
+      return jsonResponse(latestConfig().project);
     }
     if (url.pathname === "/api/v1/projects/project-1/members" && method === "PUT") {
-      return jsonResponse(makeConfig(status).members);
+      return jsonResponse(latestConfig().members);
+    }
+    if (url.pathname === "/api/v1/projects/project-1/tasks" && method === "GET") {
+      return jsonResponse([
+        {
+          id: "task-history-1",
+          project_id: "project-1",
+          requires_human_approval: false,
+          status: "completed",
+          summary: "完成验收材料整理",
+          tenant_id: "tenant-1",
+          title: "整理历史任务",
+        },
+      ]);
     }
 
     return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 500);
@@ -142,8 +164,9 @@ function fetchCalls(fetcher: typeof fetch) {
 }
 
 async function renderConfig(fetcher: typeof fetch) {
+  const queryClient = createQueryClient();
   return await render(
-    <QueryClientProvider client={createQueryClient()}>
+    <QueryClientProvider client={queryClient}>
       <ProjectConfigView
         apiBaseUrl="http://control-plane.test"
         fetcher={fetcher}
@@ -151,6 +174,21 @@ async function renderConfig(fetcher: typeof fetch) {
       />
     </QueryClientProvider>,
   );
+}
+
+async function renderConfigWithClient(fetcher: typeof fetch) {
+  const queryClient = createQueryClient();
+  const screen = await render(
+    <QueryClientProvider client={queryClient}>
+      <ProjectConfigView
+        apiBaseUrl="http://control-plane.test"
+        fetcher={fetcher}
+        projectId="project-1"
+      />
+    </QueryClientProvider>,
+  );
+
+  return { queryClient, screen };
 }
 
 describe("ProjectConfigView", () => {
@@ -161,6 +199,10 @@ describe("ProjectConfigView", () => {
     await expect
       .element(screen.getByRole("heading", { name: "客户接入验收" }))
       .toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "任务历史" })).toBeInTheDocument();
+    await userEvent.fill(screen.getByLabelText("人类 Owner 用户 ID"), "human-owner-2");
+    await userEvent.fill(screen.getByLabelText("Leader 用户 ID"), "leader-user-2");
+    await userEvent.fill(screen.getByLabelText("验收人用户 ID"), "acceptance-user-2");
     await userEvent.click(screen.getByRole("tab", { name: "协调策略" }));
     await expect.element(screen.getByLabelText("协调策略 JSON")).toBeInTheDocument();
     await userEvent.fill(screen.getByLabelText("协调策略 JSON"), '{"cadence":"hourly"}');
@@ -175,7 +217,10 @@ describe("ProjectConfigView", () => {
       });
       expect(putCall).toBeTruthy();
       expect(JSON.parse(String(putCall?.[1]?.body))).toMatchObject({
+        acceptance_user_id: "acceptance-user-2",
         coordination_policy: { cadence: "hourly" },
+        human_owner_user_id: "human-owner-2",
+        leader_user_id: "leader-user-2",
       });
     });
   });
@@ -215,6 +260,64 @@ describe("ProjectConfigView", () => {
         ],
       });
     });
+  });
+
+  it("preserves dirty config and member drafts during background refetch", async () => {
+    const refreshedConfig = makeConfig();
+    refreshedConfig.coordination_policy = { cadence: "weekly" };
+    refreshedConfig.members = [
+      {
+        display_name_snapshot: "后台刷新成员",
+        id: "member-3",
+        principal_id: "de-refetch",
+        principal_type: "digital_employee",
+        project_id: "project-1",
+        project_role: "executor",
+        settings: {},
+        status: "active",
+        tenant_id: "tenant-1",
+      },
+    ];
+    refreshedConfig.digital_employee_pool = refreshedConfig.members;
+    refreshedConfig.human_roles = [];
+    const fetcher = createConfigFetcher("running", [makeConfig(), refreshedConfig]);
+    const { queryClient, screen } = await renderConfigWithClient(fetcher);
+
+    await userEvent.click(screen.getByRole("tab", { name: "协调策略" }));
+    await userEvent.fill(
+      screen.getByLabelText("协调策略 JSON"),
+      '{"cadence":"hourly"}',
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await userEvent.fill(
+      screen.getByLabelText("成员 JSON"),
+      JSON.stringify([
+        {
+          principal_id: "human-owner-1",
+          principal_type: "human_user",
+          project_role: "owner",
+        },
+      ]),
+    );
+
+    await queryClient.refetchQueries({ queryKey: ["project-config", "project-1"] });
+
+    await userEvent.click(screen.getByRole("tab", { name: "协调策略" }));
+    await expect
+      .element(screen.getByLabelText("协调策略 JSON"))
+      .toHaveValue('{"cadence":"hourly"}');
+    await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await expect
+      .element(screen.getByLabelText("成员 JSON"))
+      .toHaveValue(
+        JSON.stringify([
+          {
+            principal_id: "human-owner-1",
+            principal_type: "human_user",
+            project_role: "owner",
+          },
+        ]),
+      );
   });
 
   it("disables saves for archived projects", async () => {

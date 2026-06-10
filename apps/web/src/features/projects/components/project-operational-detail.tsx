@@ -4,8 +4,8 @@ import {
   Activity,
   Archive,
   Bot,
-  CalendarClock,
   ClipboardList,
+  FileArchive,
   ExternalLink,
   FileText,
   GitBranch,
@@ -58,6 +58,9 @@ export function ProjectOperationalDetail({
   const digitalPool = overview?.digital_employee_pool ?? [];
   const activeTasks = overview?.active_tasks?.length ? overview.active_tasks : tasks;
   const recentEvents = overview?.recent_events?.length ? overview.recent_events : events;
+  const taskSummary = overview?.task_summary;
+  const currentPhase = overview?.status_summary.current_phase || project.status;
+  const evidencePolicyConfigured = Object.keys(project.evidence_policy ?? {}).length > 0;
 
   return (
     <div className="grid min-w-0 gap-4">
@@ -114,18 +117,18 @@ export function ProjectOperationalDetail({
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <FactTile
             icon={<GitBranch />}
-            label="协调线程"
-            value={project.coordination_workflow_id}
+            label="当前阶段"
+            value={currentPhase}
           />
           <FactTile
             icon={<UserRound />}
-            label="人类 Owner"
-            value={project.human_owner_user_id}
+            label="待人工处理"
+            value={`${taskSummary?.pending_human_tasks ?? 0} 项`}
           />
           <FactTile
-            icon={<Bot />}
-            label="数字员工池"
-            value={`${digitalPool.length} 个`}
+            icon={<FileArchive />}
+            label="证据策略"
+            value={evidencePolicyConfigured ? "已配置" : "未配置"}
           />
           <FactTile
             icon={<ClipboardList />}
@@ -162,6 +165,15 @@ export function ProjectOperationalDetail({
                 ))
               )}
             </div>
+          </LiquidCard>
+
+          <LiquidCard className="rounded-xl">
+            <PanelHeader
+              icon={<UserRound />}
+              title="人类决策队列"
+              meta="V0"
+            />
+            <EmptyLine label="V0 暂未接入人类决策队列" />
           </LiquidCard>
 
           <LiquidCard className="rounded-xl">
@@ -212,6 +224,21 @@ export function ProjectOperationalDetail({
             members={digitalPool}
             title="数字员工池"
           />
+          <LiquidCard className="rounded-xl">
+            <PanelHeader
+              icon={<GitBranch />}
+              title="协调线程"
+              meta={overview?.coordination_workflow.status || project.coordination_status}
+            />
+            <div className="p-4">
+              <p className="truncate text-sm font-medium">
+                {project.coordination_workflow_id}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                虚拟协调线程，仅作为项目 Workflow 元数据展示。
+              </p>
+            </div>
+          </LiquidCard>
           <LiquidCard className="rounded-xl">
             <PanelHeader
               icon={<FileText />}

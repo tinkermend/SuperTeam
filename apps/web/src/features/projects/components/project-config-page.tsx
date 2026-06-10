@@ -9,6 +9,7 @@ import {
   Archive,
   Bot,
   Check,
+  ClipboardList,
   FileArchive,
   GitBranch,
   ShieldCheck,
@@ -31,10 +32,12 @@ import {
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
   getProjectConfig,
+  listProjectTasks,
   replaceProjectMembers,
   updateProjectConfig,
   type ProjectConfig,
   type ProjectMemberInput,
+  type ProjectTask,
   type UpdateProjectConfigInput,
 } from "@/lib/api/projects";
 import { statusLabel, statusTone } from "./project-switcher-pane";
@@ -48,11 +51,14 @@ type ProjectConfigViewProps = {
 };
 
 type ConfigDraft = {
+  acceptanceUserID: string;
   approvalPolicy: string;
   coordinationPolicy: string;
   description: string;
   evidencePolicy: string;
   goal: string;
+  humanOwnerUserID: string;
+  leaderUserID: string;
   name: string;
 };
 
@@ -75,31 +81,43 @@ export function ProjectConfigView({
     queryFn: () => getProjectConfig(apiOptions, projectId),
     placeholderData: keepPreviousData,
   });
+  const tasksQuery = useQuery({
+    queryKey: ["project-tasks", projectId],
+    queryFn: () => listProjectTasks(apiOptions, projectId, { limit: 20 }),
+    placeholderData: keepPreviousData,
+  });
 
   const [draft, setDraft] = useState<ConfigDraft>(() => emptyConfigDraft());
   const [memberDraft, setMemberDraft] = useState<MemberDraft>({ members: "[]" });
   const [error, setError] = useState("");
   const [memberError, setMemberError] = useState("");
+  const [hydratedProjectId, setHydratedProjectId] = useState("");
+  const [isConfigDirty, setConfigDirty] = useState(false);
+  const [isMembersDirty, setMembersDirty] = useState(false);
 
   useEffect(() => {
     if (!configQuery.data) return;
-    setDraft(configToDraft(configQuery.data));
-    setMemberDraft({
-      members: JSON.stringify(
-        configQuery.data.members.map((member) => ({
-          display_name_snapshot: member.display_name_snapshot,
-          principal_id: member.principal_id,
-          principal_type: member.principal_type,
-          project_role: member.project_role,
-          settings: member.settings,
-        })),
-        null,
-        2,
-      ),
-    });
-    setError("");
-    setMemberError("");
-  }, [configQuery.data]);
+    const projectChanged = hydratedProjectId !== projectId;
+    if (projectChanged || !isConfigDirty) {
+      setDraft(configToDraft(configQuery.data));
+      setError("");
+    }
+    if (projectChanged || !isMembersDirty) {
+      setMemberDraft(configToMemberDraft(configQuery.data));
+      setMemberError("");
+    }
+    if (projectChanged) {
+      setHydratedProjectId(projectId);
+      setConfigDirty(false);
+      setMembersDirty(false);
+    }
+  }, [
+    configQuery.data,
+    hydratedProjectId,
+    isConfigDirty,
+    isMembersDirty,
+    projectId,
+  ]);
 
   const config = configQuery.data;
   const isArchived = config?.project.status === "archived";
@@ -107,7 +125,21 @@ export function ProjectConfigView({
   const updateMutation = useMutation({
     mutationFn: (input: UpdateProjectConfigInput) =>
       updateProjectConfig(apiOptions, projectId, input),
-    onSuccess: async () => {
+    onSuccess: async (project) => {
+      setConfigDirty(false);
+      queryClient.setQueryData<ProjectConfig>(
+        ["project-config", projectId],
+        (current) =>
+          current
+            ? {
+                ...current,
+                approval_policy: project.approval_policy,
+                coordination_policy: project.coordination_policy,
+                evidence_policy: project.evidence_policy,
+                project,
+              }
+            : current,
+      );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["project-config", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
@@ -119,13 +151,33 @@ export function ProjectConfigView({
   const replaceMembersMutation = useMutation({
     mutationFn: (members: ProjectMemberInput[]) =>
       replaceProjectMembers(apiOptions, projectId, members),
-    onSuccess: async () => {
+    onSuccess: async (members) => {
+      setMembersDirty(false);
+      queryClient.setQueryData<ProjectConfig>(
+        ["project-config", projectId],
+        (current) =>
+          current
+            ? {
+                ...current,
+                digital_employee_pool: members.filter(
+                  (member) => member.principal_type === "digital_employee",
+                ),
+                human_roles: members.filter(
+                  (member) => member.principal_type === "human_user",
+                ),
+                members,
+              }
+            : current,
+      );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["project-config", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
       ]);
     },
   });
+  const isConfigSaving = updateMutation.isPending;
+  const isMembersSaving = replaceMembersMutation.isPending;
+  const configFieldsDisabled = isArchived || isConfigSaving;
 
   function saveConfig() {
     if (isArchived) return;
@@ -147,6 +199,16 @@ export function ProjectConfigView({
     } catch (saveError) {
       setMemberError(saveError instanceof Error ? saveError.message : "成员 JSON 无效");
     }
+  }
+
+  function updateDraft(update: (current: ConfigDraft) => ConfigDraft) {
+    setConfigDirty(true);
+    setDraft(update);
+  }
+
+  function updateMemberDraft(members: string) {
+    setMembersDirty(true);
+    setMemberDraft({ members });
   }
 
   return (
@@ -188,7 +250,7 @@ export function ProjectConfigView({
                 </div>
               </div>
               <Button
-                disabled={isArchived || updateMutation.isPending}
+                disabled={configFieldsDisabled}
                 type="button"
                 onClick={saveConfig}
               >
@@ -218,6 +280,7 @@ export function ProjectConfigView({
               <LiquidTabsTrigger value="coordination">协调策略</LiquidTabsTrigger>
               <LiquidTabsTrigger value="approval">审批规则</LiquidTabsTrigger>
               <LiquidTabsTrigger value="evidence">证据归档</LiquidTabsTrigger>
+              <LiquidTabsTrigger value="history">任务历史</LiquidTabsTrigger>
             </LiquidTabsList>
 
             <TabsContent value="overview">
@@ -225,31 +288,73 @@ export function ProjectConfigView({
                 <div className="grid gap-4 lg:grid-cols-2">
                   <Field label="项目名称">
                     <Input
-                      disabled={isArchived}
+                      disabled={configFieldsDisabled}
                       value={draft.name}
                       onChange={(event) =>
-                        setDraft((current) => ({ ...current, name: event.target.value }))
+                        updateDraft((current) => ({
+                          ...current,
+                          name: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field label="人类 Owner 用户 ID">
+                    <Input
+                      disabled={configFieldsDisabled}
+                      value={draft.humanOwnerUserID}
+                      onChange={(event) =>
+                        updateDraft((current) => ({
+                          ...current,
+                          humanOwnerUserID: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field label="Leader 用户 ID">
+                    <Input
+                      disabled={configFieldsDisabled}
+                      value={draft.leaderUserID}
+                      onChange={(event) =>
+                        updateDraft((current) => ({
+                          ...current,
+                          leaderUserID: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field label="验收人用户 ID">
+                    <Input
+                      disabled={configFieldsDisabled}
+                      value={draft.acceptanceUserID}
+                      onChange={(event) =>
+                        updateDraft((current) => ({
+                          ...current,
+                          acceptanceUserID: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field label="目标">
+                    <Textarea
+                      disabled={configFieldsDisabled}
+                      value={draft.goal}
+                      onChange={(event) =>
+                        updateDraft((current) => ({
+                          ...current,
+                          goal: event.target.value,
+                        }))
                       }
                     />
                   </Field>
                   <Field label="协调线程">
                     <Input readOnly value={config.coordination_workflow.workflow_id} />
                   </Field>
-                  <Field label="目标">
-                    <Textarea
-                      disabled={isArchived}
-                      value={draft.goal}
-                      onChange={(event) =>
-                        setDraft((current) => ({ ...current, goal: event.target.value }))
-                      }
-                    />
-                  </Field>
                   <Field label="描述">
                     <Textarea
-                      disabled={isArchived}
+                      disabled={configFieldsDisabled}
                       value={draft.description}
                       onChange={(event) =>
-                        setDraft((current) => ({
+                        updateDraft((current) => ({
                           ...current,
                           description: event.target.value,
                         }))
@@ -262,11 +367,11 @@ export function ProjectConfigView({
 
             <TabsContent value="members">
               <MemberJsonPanel
-                disabled={isArchived}
+                disabled={isArchived || isMembersSaving}
                 error={memberError || replaceMembersMutation.error?.message}
-                isSaving={replaceMembersMutation.isPending}
+                isSaving={isMembersSaving}
                 members={memberDraft.members}
-                onMembersChange={(members) => setMemberDraft({ members })}
+                onMembersChange={updateMemberDraft}
                 onSave={saveMembers}
               />
             </TabsContent>
@@ -281,38 +386,42 @@ export function ProjectConfigView({
 
             <TabsContent value="coordination">
               <PolicyPanel
-                disabled={isArchived}
+                disabled={configFieldsDisabled}
                 icon={<GitBranch />}
                 label="协调策略 JSON"
                 value={draft.coordinationPolicy}
                 onChange={(value) =>
-                  setDraft((current) => ({ ...current, coordinationPolicy: value }))
+                  updateDraft((current) => ({ ...current, coordinationPolicy: value }))
                 }
               />
             </TabsContent>
 
             <TabsContent value="approval">
               <PolicyPanel
-                disabled={isArchived}
+                disabled={configFieldsDisabled}
                 icon={<ShieldCheck />}
                 label="审批规则 JSON"
                 value={draft.approvalPolicy}
                 onChange={(value) =>
-                  setDraft((current) => ({ ...current, approvalPolicy: value }))
+                  updateDraft((current) => ({ ...current, approvalPolicy: value }))
                 }
               />
             </TabsContent>
 
             <TabsContent value="evidence">
               <PolicyPanel
-                disabled={isArchived}
+                disabled={configFieldsDisabled}
                 icon={<FileArchive />}
                 label="证据归档 JSON"
                 value={draft.evidencePolicy}
                 onChange={(value) =>
-                  setDraft((current) => ({ ...current, evidencePolicy: value }))
+                  updateDraft((current) => ({ ...current, evidencePolicy: value }))
                 }
               />
+            </TabsContent>
+
+            <TabsContent value="history">
+              <TaskHistoryPanel tasks={tasksQuery.data ?? []} />
             </TabsContent>
           </Tabs>
         </div>
@@ -323,33 +432,58 @@ export function ProjectConfigView({
 
 function emptyConfigDraft(): ConfigDraft {
   return {
+    acceptanceUserID: "",
     approvalPolicy: "{}",
     coordinationPolicy: "{}",
     description: "",
     evidencePolicy: "{}",
     goal: "",
+    humanOwnerUserID: "",
+    leaderUserID: "",
     name: "",
   };
 }
 
 function configToDraft(config: ProjectConfig): ConfigDraft {
   return {
+    acceptanceUserID: config.project.acceptance_user_id ?? "",
     approvalPolicy: JSON.stringify(config.approval_policy ?? {}, null, 2),
     coordinationPolicy: JSON.stringify(config.coordination_policy ?? {}, null, 2),
     description: config.project.description ?? "",
     evidencePolicy: JSON.stringify(config.evidence_policy ?? {}, null, 2),
     goal: config.project.goal,
+    humanOwnerUserID: config.project.human_owner_user_id,
+    leaderUserID: config.project.leader_user_id ?? "",
     name: config.project.name,
+  };
+}
+
+function configToMemberDraft(config: ProjectConfig): MemberDraft {
+  return {
+    members: JSON.stringify(
+      config.members.map((member) => ({
+        display_name_snapshot: member.display_name_snapshot,
+        principal_id: member.principal_id,
+        principal_type: member.principal_type,
+        project_role: member.project_role,
+        settings: member.settings,
+      })),
+      null,
+      2,
+    ),
   };
 }
 
 function draftToInput(draft: ConfigDraft): UpdateProjectConfigInput {
   return {
+    acceptance_user_id: draft.acceptanceUserID.trim() || undefined,
     approval_policy: parseJsonObject(draft.approvalPolicy, "审批规则"),
     coordination_policy: parseJsonObject(draft.coordinationPolicy, "协调策略"),
     description: draft.description.trim() || undefined,
     evidence_policy: parseJsonObject(draft.evidencePolicy, "证据归档"),
     goal: draft.goal.trim() || undefined,
+    human_owner_user_id: draft.humanOwnerUserID.trim() || undefined,
+    leader_user_id: draft.leaderUserID.trim() || undefined,
     name: draft.name.trim() || undefined,
   };
 }
@@ -367,7 +501,54 @@ function parseMembers(value: string): ProjectMemberInput[] {
   if (!Array.isArray(parsed)) {
     throw new Error("成员必须是 JSON array");
   }
-  return parsed as ProjectMemberInput[];
+  return parsed.map((member, index) => {
+    if (!member || typeof member !== "object" || Array.isArray(member)) {
+      throw new Error(`第 ${index + 1} 个成员必须是 JSON object`);
+    }
+    const candidate = member as Record<string, unknown>;
+    if (
+      candidate.principal_type !== "human_user" &&
+      candidate.principal_type !== "digital_employee" &&
+      candidate.principal_type !== "team"
+    ) {
+      throw new Error(`第 ${index + 1} 个成员 principal_type 无效`);
+    }
+    if (
+      candidate.project_role !== "owner" &&
+      candidate.project_role !== "leader" &&
+      candidate.project_role !== "acceptance" &&
+      candidate.project_role !== "executor" &&
+      candidate.project_role !== "reviewer" &&
+      candidate.project_role !== "observer"
+    ) {
+      throw new Error(`第 ${index + 1} 个成员 project_role 无效`);
+    }
+    if (typeof candidate.principal_id !== "string" || !candidate.principal_id.trim()) {
+      throw new Error(`第 ${index + 1} 个成员 principal_id 不能为空`);
+    }
+    if (
+      candidate.display_name_snapshot !== undefined &&
+      typeof candidate.display_name_snapshot !== "string"
+    ) {
+      throw new Error(`第 ${index + 1} 个成员 display_name_snapshot 必须是字符串`);
+    }
+    if (
+      candidate.settings !== undefined &&
+      (!candidate.settings ||
+        typeof candidate.settings !== "object" ||
+        Array.isArray(candidate.settings))
+    ) {
+      throw new Error(`第 ${index + 1} 个成员 settings 必须是 JSON object`);
+    }
+
+    return {
+      display_name_snapshot: candidate.display_name_snapshot as string | undefined,
+      principal_id: candidate.principal_id.trim(),
+      principal_type: candidate.principal_type,
+      project_role: candidate.project_role,
+      settings: candidate.settings as Record<string, unknown> | undefined,
+    };
+  });
 }
 
 function Field({ children, label }: { children: ReactNode; label: string }) {
@@ -480,6 +661,37 @@ function MembersPanel({
                 </p>
               </div>
               <StatusBadge tone="neutral">{member.status}</StatusBadge>
+            </div>
+          ))
+        )}
+      </div>
+    </LiquidCard>
+  );
+}
+
+function TaskHistoryPanel({ tasks }: { tasks: ProjectTask[] }) {
+  return (
+    <LiquidCard className="rounded-xl">
+      <div className="flex items-center justify-between gap-3 border-b p-4">
+        <div className="flex items-center gap-2">
+          <ClipboardList className="size-4 text-primary" />
+          <h3 className="font-semibold">任务历史</h3>
+        </div>
+        <span className="text-xs text-muted-foreground">{tasks.length} 条</span>
+      </div>
+      <div className="divide-y">
+        {tasks.length === 0 ? (
+          <div className="p-5 text-sm text-muted-foreground">暂无任务历史</div>
+        ) : (
+          tasks.map((task) => (
+            <div className="grid gap-1 p-4" key={task.id}>
+              <div className="flex items-center justify-between gap-3">
+                <p className="min-w-0 truncate text-sm font-medium">{task.title}</p>
+                <StatusBadge tone="info">{task.status}</StatusBadge>
+              </div>
+              <p className="line-clamp-2 text-xs text-muted-foreground">
+                {task.summary || "暂无摘要"}
+              </p>
             </div>
           ))
         )}

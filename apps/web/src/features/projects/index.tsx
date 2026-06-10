@@ -17,8 +17,7 @@ import {
   listProjectTasks,
   submitProjectDemand,
   type CreateProjectInput,
-  type Project,
-  type ProjectListFilters,
+  type ListProjectsFilters,
   type ProjectStatus,
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
@@ -102,8 +101,8 @@ export function ProjectsView({
     }
   }, [routeProjectId]);
 
-  const listFilters = useMemo<ProjectListFilters>(() => {
-    const request: ProjectListFilters = { limit: 50, offset: 0 };
+  const listFilters = useMemo<ListProjectsFilters>(() => {
+    const request: ListProjectsFilters = { limit: 50, offset: 0 };
     if (filters.q.trim()) {
       request.q = filters.q.trim();
     }
@@ -210,7 +209,8 @@ export function ProjectsView({
   });
 
   const isInitialLoading = projectsQuery.isLoading && !projectsQuery.data;
-  const isArchived = selectedProject?.status === "archived";
+  const displayedProject = overviewQuery.data?.project ?? selectedProject;
+  const isArchived = displayedProject?.status === "archived";
 
   return (
     <ProjectManagementShell
@@ -248,7 +248,7 @@ export function ProjectsView({
             }}
             onSubmitDemand={() => setDemandOpen(true)}
             overview={overviewQuery.data}
-            project={overviewQuery.data?.project ?? selectedProject}
+            project={displayedProject}
             tasks={tasksQuery.data ?? []}
           />
         </div>
