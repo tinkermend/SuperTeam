@@ -23,7 +23,6 @@ type HandlerService interface {
 	ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error)
 	ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error)
 	ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error)
-	GetLatestProjectConfigRevision(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectConfigRevision, error)
 	SubmitDemand(ctx context.Context, req SubmitProjectDemandRequest) (*ProjectDemand, error)
 	ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error)
 	GetOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error)
@@ -231,12 +230,12 @@ func (h *HTTPHandler) GetProjectConfig(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	revision, err := service.GetLatestProjectConfigRevision(r.Context(), tenantID, projectID)
+	overview, err := service.GetOverview(r.Context(), tenantID, projectID)
 	if err != nil {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, configRevisionResponseFromDomain(*revision))
+	writeJSON(w, http.StatusOK, projectConfigResponseFromDomain(overview))
 }
 
 func (h *HTTPHandler) UpdateProjectConfig(w http.ResponseWriter, r *http.Request) {
@@ -547,6 +546,17 @@ type projectConfigRevisionResponse struct {
 	CreatedEventID  *string        `json:"created_event_id,omitempty"`
 }
 
+type projectConfigResponse struct {
+	Project              projectResponse             `json:"project"`
+	HumanRoles           []projectMemberResponse     `json:"human_roles"`
+	DigitalEmployeePool  []projectMemberResponse     `json:"digital_employee_pool"`
+	Members              []projectMemberResponse     `json:"members"`
+	CoordinationPolicy   map[string]any              `json:"coordination_policy"`
+	ApprovalPolicy       map[string]any              `json:"approval_policy"`
+	EvidencePolicy       map[string]any              `json:"evidence_policy"`
+	CoordinationWorkflow ProjectCoordinationWorkflow `json:"coordination_workflow"`
+}
+
 type projectOverviewResponse struct {
 	Project              projectResponse             `json:"project"`
 	HumanRoles           []projectMemberResponse     `json:"human_roles"`
@@ -684,6 +694,21 @@ func configRevisionResponseFromDomain(revision ProjectConfigRevision) projectCon
 		ChangeSummary:   revision.ChangeSummary,
 		CreatedByUserID: revision.CreatedByUserID.String(),
 		CreatedEventID:  stringPtr(revision.CreatedEventID),
+	}
+}
+
+func projectConfigResponseFromDomain(overview *ProjectOverview) projectConfigResponse {
+	members := append([]ProjectMember{}, overview.HumanRoles...)
+	members = append(members, overview.DigitalEmployeePool...)
+	return projectConfigResponse{
+		Project:              projectResponseFromDomain(overview.Project),
+		HumanRoles:           memberResponses(overview.HumanRoles),
+		DigitalEmployeePool:  memberResponses(overview.DigitalEmployeePool),
+		Members:              memberResponses(members),
+		CoordinationPolicy:   mapOrEmpty(overview.Project.CoordinationPolicy),
+		ApprovalPolicy:       mapOrEmpty(overview.Project.ApprovalPolicy),
+		EvidencePolicy:       mapOrEmpty(overview.Project.EvidencePolicy),
+		CoordinationWorkflow: overview.CoordinationWorkflow,
 	}
 }
 

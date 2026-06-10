@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -65,10 +66,46 @@ func TestProjectHandlerMapsArchivedConflict(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerGetConfigUsesCurrentOverview(t *testing.T) {
+	projectID := uuid.New()
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/config", nil)
+	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, uuid.New()))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, uuid.New()))
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("projectId", projectID.String())
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	resp := httptest.NewRecorder()
+
+	handler.GetProjectConfig(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected current config to return 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.getOverviewCalls != 1 {
+		t.Fatalf("expected get config to call overview once, got %d", service.getOverviewCalls)
+	}
+	var body struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+		CoordinationPolicy map[string]any `json:"coordination_policy"`
+		HumanRoles         []any          `json:"human_roles"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode config response: %v", err)
+	}
+	if body.Project.ID != projectID.String() || body.CoordinationPolicy == nil || len(body.HumanRoles) != 1 {
+		t.Fatalf("unexpected config response: %#v", body)
+	}
+}
+
 type handlerTestService struct {
-	createReq       CreateProjectRequest
-	submitDemandReq SubmitProjectDemandRequest
-	submitDemandErr error
+	createReq        CreateProjectRequest
+	submitDemandReq  SubmitProjectDemandRequest
+	submitDemandErr  error
+	getOverviewCalls int
 }
 
 func (s *handlerTestService) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -115,11 +152,6 @@ func (s *handlerTestService) ListProjectEvents(ctx context.Context, tenantID, pr
 	return nil, nil
 }
 
-func (s *handlerTestService) GetLatestProjectConfigRevision(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectConfigRevision, error) {
-	revision := ProjectConfigRevision{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, RevisionNumber: 1, ConfigSnapshot: map[string]any{}, CreatedByUserID: uuid.New()}
-	return &revision, nil
-}
-
 func (s *handlerTestService) SubmitDemand(ctx context.Context, req SubmitProjectDemandRequest) (*ProjectDemand, error) {
 	s.submitDemandReq = req
 	if s.submitDemandErr != nil {
@@ -134,8 +166,20 @@ func (s *handlerTestService) ListProjectDemands(ctx context.Context, tenantID, p
 }
 
 func (s *handlerTestService) GetOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error) {
+	s.getOverviewCalls++
 	project := testProject(tenantID, projectID, uuid.New())
-	return &ProjectOverview{Project: project, CoordinationWorkflow: ProjectCoordinationWorkflow{WorkflowID: project.CoordinationWorkflowID, Status: project.CoordinationStatus}}, nil
+	project.CoordinationPolicy = map[string]any{"cadence": "daily"}
+	owner := ProjectMember{
+		ID:            uuid.New(),
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		PrincipalType: PrincipalTypeHumanUser,
+		PrincipalID:   project.HumanOwnerUserID,
+		ProjectRole:   ProjectRoleOwner,
+		Status:        "active",
+		Settings:      map[string]any{},
+	}
+	return &ProjectOverview{Project: project, HumanRoles: []ProjectMember{owner}, CoordinationWorkflow: ProjectCoordinationWorkflow{WorkflowID: project.CoordinationWorkflowID, Status: project.CoordinationStatus}}, nil
 }
 
 func testProject(tenantID, projectID, ownerID uuid.UUID) Project {

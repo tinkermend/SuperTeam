@@ -85,6 +85,31 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 		t.Fatalf("expected overview tenant/project %s/%s, got %s/%s", expectedTenantID, service.projectID, service.overviewTenantID, service.overviewProjectID)
 	}
 
+	configReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/config", nil)
+	configReq.AddCookie(cookie)
+	configResp := httptest.NewRecorder()
+	server.ServeHTTP(configResp, configReq)
+	if configResp.Code != http.StatusOK {
+		t.Fatalf("expected current config to succeed without config revision, got %d: %s", configResp.Code, configResp.Body.String())
+	}
+	if service.latestConfigRevisionCalls != 0 {
+		t.Fatalf("expected get config not to call latest revision, got %d calls", service.latestConfigRevisionCalls)
+	}
+	if service.overviewCalls < 2 {
+		t.Fatalf("expected overview to serve both overview and config routes, got %d calls", service.overviewCalls)
+	}
+
+	eventsReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/events?limit=10&offset=2", nil)
+	eventsReq.AddCookie(cookie)
+	eventsResp := httptest.NewRecorder()
+	server.ServeHTTP(eventsResp, eventsReq)
+	if eventsResp.Code != http.StatusOK {
+		t.Fatalf("expected events route to succeed, got %d: %s", eventsResp.Code, eventsResp.Body.String())
+	}
+	if service.eventsTenantID != expectedTenantID || service.eventsProjectID != service.projectID || service.eventsLimit != 10 || service.eventsOffset != 2 {
+		t.Fatalf("expected events tenant/project/page from route, got tenant=%s project=%s limit=%d offset=%d", service.eventsTenantID, service.eventsProjectID, service.eventsLimit, service.eventsOffset)
+	}
+
 	spoofedProjectID := uuid.New()
 	spoofedSubmitterID := uuid.New()
 	demandReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+service.projectID.String()+"/demands", strings.NewReader(`{
@@ -160,13 +185,19 @@ func TestProjectRoutesRejectBadRequestsAndConflicts(t *testing.T) {
 }
 
 type routeProjectService struct {
-	projectID         uuid.UUID
-	createReq         project.CreateProjectRequest
-	listReq           project.ListProjectsRequest
-	overviewTenantID  uuid.UUID
-	overviewProjectID uuid.UUID
-	submitDemandReq   project.SubmitProjectDemandRequest
-	archiveErr        error
+	projectID                 uuid.UUID
+	createReq                 project.CreateProjectRequest
+	listReq                   project.ListProjectsRequest
+	overviewTenantID          uuid.UUID
+	overviewProjectID         uuid.UUID
+	overviewCalls             int
+	eventsTenantID            uuid.UUID
+	eventsProjectID           uuid.UUID
+	eventsLimit               int32
+	eventsOffset              int32
+	latestConfigRevisionCalls int
+	submitDemandReq           project.SubmitProjectDemandRequest
+	archiveErr                error
 }
 
 func (s *routeProjectService) ensureProjectID() uuid.UUID {
@@ -221,12 +252,25 @@ func (s *routeProjectService) ListProjectTasks(ctx context.Context, tenantID, pr
 }
 
 func (s *routeProjectService) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.ProjectEvent, error) {
-	return nil, nil
+	s.eventsTenantID = tenantID
+	s.eventsProjectID = projectID
+	s.eventsLimit = limit
+	s.eventsOffset = offset
+	return []project.ProjectEvent{{
+		ID:             uuid.New(),
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		SequenceNumber: 1,
+		EventType:      project.ProjectEventCreated,
+		ActorType:      "human_user",
+		ActorID:        uuid.New().String(),
+		Payload:        map[string]any{},
+	}}, nil
 }
 
 func (s *routeProjectService) GetLatestProjectConfigRevision(ctx context.Context, tenantID, projectID uuid.UUID) (*project.ProjectConfigRevision, error) {
-	revision := project.ProjectConfigRevision{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, RevisionNumber: 1, ConfigSnapshot: map[string]any{}, CreatedByUserID: uuid.New()}
-	return &revision, nil
+	s.latestConfigRevisionCalls++
+	return nil, project.ErrProjectNotFound
 }
 
 func (s *routeProjectService) SubmitDemand(ctx context.Context, req project.SubmitProjectDemandRequest) (*project.ProjectDemand, error) {
@@ -240,6 +284,7 @@ func (s *routeProjectService) ListProjectDemands(ctx context.Context, tenantID, 
 }
 
 func (s *routeProjectService) GetOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*project.ProjectOverview, error) {
+	s.overviewCalls++
 	s.overviewTenantID = tenantID
 	s.overviewProjectID = projectID
 	projectValue := routeProject(tenantID, projectID, uuid.New())
