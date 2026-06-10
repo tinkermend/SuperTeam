@@ -12,6 +12,10 @@ type Service struct {
 	repository Repository
 }
 
+type latestConfigRevisionRepository interface {
+	GetLatestConfigRevision(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectConfigRevision, error)
+}
+
 func NewService(repository Repository) (*Service, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("project repository is required")
@@ -188,6 +192,14 @@ func (s *Service) ListProjectMembers(ctx context.Context, tenantID, projectID uu
 	return s.repository.ListProjectMembers(ctx, tenantID, projectID)
 }
 
+func (s *Service) ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	limit, offset = normalizePagination(limit, offset)
+	return s.repository.ListProjectTasks(ctx, tenantID, projectID, status, limit, offset)
+}
+
 func (s *Service) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
@@ -237,6 +249,21 @@ func (s *Service) ListProjectDemands(ctx context.Context, tenantID, projectID uu
 	}
 	limit, offset = normalizePagination(limit, offset)
 	return s.repository.ListProjectDemands(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) GetLatestProjectConfigRevision(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectConfigRevision, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	repository, ok := s.repository.(latestConfigRevisionRepository)
+	if !ok {
+		return nil, fmt.Errorf("project repository does not support latest config revision")
+	}
+	revision, err := repository.GetLatestConfigRevision(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return &revision, nil
 }
 
 func (s *Service) GetProjectOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error) {

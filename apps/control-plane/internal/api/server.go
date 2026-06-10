@@ -12,6 +12,7 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/tenant"
 )
@@ -27,6 +28,7 @@ type Server struct {
 	authorizer                     authz.Authorizer
 	authzCenterHandler             *authzcenter.HTTPHandler
 	employeeHandler                *employee.HTTPHandler
+	projectHandler                 *project.HTTPHandler
 	skillHandler                   *skill.HTTPHandler
 	tenantHandler                  *tenant.HTTPHandler
 }
@@ -111,6 +113,11 @@ func (s *Server) SetEmployeeHandler(employeeHandler *employee.HTTPHandler) {
 	s.registerRoutes()
 }
 
+func (s *Server) SetProjectHandler(projectHandler *project.HTTPHandler) {
+	s.projectHandler = projectHandler
+	s.registerRoutes()
+}
+
 func (s *Server) SetTenantHandler(tenantHandler *tenant.HTTPHandler) {
 	s.tenantHandler = tenantHandler
 	if tenantHandler != nil {
@@ -177,6 +184,26 @@ func (s *Server) registerRoutes() {
 				r.Get("/digital-employees/{employeeId}/runs/{runId}", s.employeeHandler.GetDigitalEmployeeRun)
 				r.Get("/digital-employees/{employeeId}/runs/{runId}/events", s.employeeHandler.ListDigitalEmployeeRunEvents)
 				r.Post("/digital-employees/{employeeId}/runs/{runId}/stop", s.employeeHandler.StopDigitalEmployeeRun)
+			})
+		}
+
+		if s.projectHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/projects", s.projectHandler.ListProjects)
+				r.Post("/projects", s.projectHandler.CreateProject)
+				r.Get("/projects/{projectId}", s.projectHandler.GetProject)
+				r.Patch("/projects/{projectId}", s.projectHandler.UpdateProject)
+				r.Post("/projects/{projectId}/archive", s.projectHandler.ArchiveProject)
+				r.Get("/projects/{projectId}/overview", s.projectHandler.GetOverview)
+				r.Get("/projects/{projectId}/members", s.projectHandler.ListProjectMembers)
+				r.Put("/projects/{projectId}/members", s.projectHandler.ReplaceProjectMembers)
+				r.Get("/projects/{projectId}/tasks", s.projectHandler.ListProjectTasks)
+				r.Get("/projects/{projectId}/events", s.projectHandler.ListProjectEvents)
+				r.Get("/projects/{projectId}/config", s.projectHandler.GetProjectConfig)
+				r.Put("/projects/{projectId}/config", s.projectHandler.UpdateProjectConfig)
+				r.Post("/projects/{projectId}/demands", s.projectHandler.SubmitDemand)
+				r.Get("/projects/{projectId}/demands", s.projectHandler.ListProjectDemands)
 			})
 		}
 

@@ -313,6 +313,18 @@ func (r *PgRepository) CreateConfigRevision(ctx context.Context, req UpdateProje
 	return ProjectConfigRevision{}, lastErr
 }
 
+func (r *PgRepository) GetLatestConfigRevision(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectConfigRevision, error) {
+	return r.GetLatestProjectConfigRevision(ctx, tenantID, projectID)
+}
+
+func (r *PgRepository) GetLatestProjectConfigRevision(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectConfigRevision, error) {
+	row, err := r.q.GetLatestProjectConfigRevision(ctx, queries.GetLatestProjectConfigRevisionParams{TenantID: tenantID, ProjectID: projectID})
+	if err != nil {
+		return ProjectConfigRevision{}, err
+	}
+	return configRevisionFromRecord(row)
+}
+
 func projectFromRecord(row queries.Project) (Project, error) {
 	coordinationPolicy, err := mapFromJSON(row.CoordinationPolicy)
 	if err != nil {

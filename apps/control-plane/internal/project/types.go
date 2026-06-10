@@ -166,11 +166,11 @@ type ProjectConfigRevision struct {
 }
 
 type ProjectMemberInput struct {
-	PrincipalType       PrincipalType
-	PrincipalID         uuid.UUID
-	ProjectRole         ProjectRole
-	DisplayNameSnapshot string
-	Settings            map[string]any
+	PrincipalType       PrincipalType  `json:"principal_type"`
+	PrincipalID         uuid.UUID      `json:"principal_id"`
+	ProjectRole         ProjectRole    `json:"project_role"`
+	DisplayNameSnapshot string         `json:"display_name_snapshot"`
+	Settings            map[string]any `json:"settings"`
 }
 
 type CreateProjectRequest struct {

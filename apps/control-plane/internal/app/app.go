@@ -13,6 +13,7 @@ import (
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/config"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/project"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/storage"
@@ -26,6 +27,7 @@ type Container struct {
 	TaskService                    *task.Service
 	RuntimeService                 *runtimepkg.Service
 	EmployeeService                *employee.Service
+	ProjectService                 *project.Service
 	EmployeeRun                    *employee.DigitalEmployeeRunService
 	EmployeeRunWriteback           *employee.DigitalEmployeeRunWritebackService
 	SkillService                   *skill.Service
@@ -40,6 +42,7 @@ type Container struct {
 	RuntimeHandler                 *handlers.RuntimeHandler
 	RuntimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler
 	EmployeeHandler                *employee.HTTPHandler
+	ProjectHandler                 *project.HTTPHandler
 	SkillHandler                   *skill.HTTPHandler
 	TenantHandler                  *tenant.HTTPHandler
 	AuthzHandler                   *authzcenter.HTTPHandler
@@ -100,6 +103,12 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		return nil, err
 	}
 
+	projectRepository := project.NewPgRepository(q, stores.Postgres)
+	projectService, err := project.NewService(projectRepository)
+	if err != nil {
+		return nil, err
+	}
+
 	auditRepository := audit.NewPgRepository(q)
 	auditService, err := audit.NewService(auditRepository)
 	if err != nil {
@@ -140,6 +149,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
 	runtimeCommandWritebackHandler := handlers.NewRuntimeCommandWritebackHandler(runWritebackService)
 	employeeHandler := employee.NewHandlerWithRunService(employeeService, runService)
+	projectHandler := project.NewHandler(projectService)
 	skillHandler := skill.NewHandler(skillService)
 	tenantHandler := tenant.NewHandler(tenantService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
@@ -147,6 +157,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	server.SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler)
 	server.SetTenantHandler(tenantHandler)
 	server.SetEmployeeHandler(employeeHandler)
+	server.SetProjectHandler(projectHandler)
 	server.SetSkillHandler(skillHandler)
 
 	return &Container{
@@ -154,6 +165,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		TaskService:                    taskService,
 		RuntimeService:                 runtimeService,
 		EmployeeService:                employeeService,
+		ProjectService:                 projectService,
 		EmployeeRun:                    runService,
 		EmployeeRunWriteback:           runWritebackService,
 		SkillService:                   skillService,
@@ -168,6 +180,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		RuntimeHandler:                 runtimeHandler,
 		RuntimeCommandWritebackHandler: runtimeCommandWritebackHandler,
 		EmployeeHandler:                employeeHandler,
+		ProjectHandler:                 projectHandler,
 		SkillHandler:                   skillHandler,
 		TenantHandler:                  tenantHandler,
 		AuthzHandler:                   authzCenterHandler,
