@@ -90,12 +90,15 @@ V2 不做：
 - `tenant_id`
 - `project_id`
 - `project_task_id`
+- `artifact_id`
 - `artifact_type`
 - `title`
 - `object_ref`
 - `content_type`
 - `size_bytes`
 - `checksum`
+- `retention_status`
+- `retention_hold_id`
 - `metadata`
 - `created_event_id`
 - `created_at`
@@ -157,6 +160,8 @@ V2 不做：
 - `object_ref`
 - `summary`
 - `included_counts`
+- `retained_artifact_ids`
+- `retention_lock_event_id`
 - `created_by_user_id`
 - `created_event_id`
 - `created_at`
@@ -186,7 +191,20 @@ superseded
 
 V2 只做证据引用和校验状态，不做自动真伪鉴定。
 
-## 6. 预算与成本
+## 6. 工件保留与归档锁定
+
+项目侧不直接拥有 S3 对象生命周期。底层对象仍由 `artifact` 模块统一管理，`project_artifact_refs.artifact_id` 指向全局工件记录，`object_ref`、`checksum`、`size_bytes` 等字段只是项目侧审计快照。
+
+归档项目时，V2 必须调用 `artifact` 模块为所有被 EvidenceRef、ReportRef、ArchiveSnapshot 引用的工件设置保留锁或等效 GC 保护标记。建议语义为：
+
+```text
+retention_status = project_archive_hold
+retention_hold_id = artifact 模块返回的保留锁标识
+```
+
+归档快照必须记录 `retained_artifact_ids` 和 `retention_lock_event_id`。全局对象 GC 策略不得删除处于项目归档保留状态的工件；如果保留锁失败，项目归档应失败或进入 `archive_pending_retention` 状态，不能生成看似成功但证据可能被清理的归档。
+
+## 7. 预算与成本
 
 BudgetLedger 记录项目级成本流水。
 
@@ -208,9 +226,9 @@ BudgetLedger 记录项目级成本流水。
 
 V2 成本中心联动只要求能按 `project_id` 查询与汇总，不要求复杂预测。
 
-## 7. 验收与归档
+## 8. 验收与归档
 
-### 7.1 验收
+### 8.1 验收
 
 验收动作由人类负责人或验收人执行。
 
@@ -230,7 +248,7 @@ partially_accepted
 - 未解决风险。
 - 人类结论。
 
-### 7.2 归档
+### 8.2 归档
 
 项目归档前必须生成归档预览：
 
@@ -253,8 +271,9 @@ ReportRef 数
 - 项目不可再修改配置。
 - 项目可查看归档快照。
 - 审计、证据、工件、预算和报告保留。
+- 所有关联工件必须已获得 artifact 模块的保留锁或 GC 保护。
 
-## 8. 前端设计
+## 9. 前端设计
 
 项目详情新增 Tab 或区域：
 
@@ -283,7 +302,7 @@ ReportRef 数
 - 生成归档快照。
 - 下载或查看归档报告。
 
-## 9. API 设计
+## 10. API 设计
 
 V2 新增：
 
@@ -311,7 +330,7 @@ GET    /api/v1/projects/{projectId}/config-revisions/{revisionId}
 
 所有写操作必须写 ProjectEvent。
 
-## 10. 审计与联动
+## 11. 审计与联动
 
 审计中心：
 
@@ -325,10 +344,11 @@ GET    /api/v1/projects/{projectId}/config-revisions/{revisionId}
 
 审批中心：
 
-- ProjectDecisionRequest 与全局审批中心保持可关联。
+- 项目侧人类决策投影必须通过 `approval_request_id` 指向全局审批请求。
+- 全局 approval 模块是审批事实源，项目侧只负责展示项目上下文、事件关联和跳转。
 - 审批中心处理结果必须能回到项目事件流。
 
-## 11. 验收标准
+## 12. 验收标准
 
 功能验收：
 
@@ -337,6 +357,7 @@ GET    /api/v1/projects/{projectId}/config-revisions/{revisionId}
 - 项目能生成预算流水和成本汇总。
 - 项目能提交验收结论。
 - 项目归档前有预览，归档后有快照。
+- 项目归档会锁定所有被证据、报告和归档快照引用的 artifact，防止全局 GC 清理。
 - 配置修订历史可查看。
 
 技术验收：
@@ -345,12 +366,14 @@ GET    /api/v1/projects/{projectId}/config-revisions/{revisionId}
 - 所有新增写操作写 ProjectEvent。
 - 审计中心能按 project_id 查询关键动作。
 - 成本中心能按 project_id 聚合。
+- artifact 模块能按 project archive hold 阻止对象 GC。
 - 归档后历史仍可解释，不依赖被删除对象。
 - 前端 Playwright 覆盖证据、验收和归档主路径。
 
-## 12. 风险
+## 13. 风险
 
 - 证据链如果只做 UI 标签，会失去审计价值。必须落结构化引用。
 - 成本如果直接混入任务表，会破坏运行事实。必须用 ledger。
 - 归档如果只改项目状态，没有快照，后续复盘会受对象变更影响。
+- 归档如果没有调用 artifact 保留锁，全局 GC 可能删除项目证据，必须阻断。
 - V2 不应反向修改 V0/V1 的核心心智，只增强治理闭环。

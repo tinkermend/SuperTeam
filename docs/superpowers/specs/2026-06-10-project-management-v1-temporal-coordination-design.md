@@ -40,7 +40,7 @@ V1 依赖 V0 已完成：
 - `RouteDecision`。
 - `ExecutionSummary`。
 - `TransferRequest`。
-- `DecisionRequest`。
+- 项目侧人类决策投影，审批事实源优先归全局 `approval` 模块。
 - Control Plane API 到 Temporal signal 的桥接。
 - Runtime 或数字员工回写到项目事件流。
 
@@ -82,7 +82,7 @@ Workflow 负责：
 - 串行处理同一项目内的协调决策。
 - 接收需求、成员变更、策略变更、执行结果和人类决策。
 - 调用 Activity 读取项目快照、成员池、策略和历史结果。
-- 调用 Activity 写入 `CoordinationJob`、`RouteDecision`、`ProjectTask`、`DecisionRequest` 和 `ProjectEvent`。
+- 调用 Activity 写入 `CoordinationJob`、`RouteDecision`、`ProjectTask`、项目侧人类决策投影和 `ProjectEvent`。
 - 等待数字员工结果、人类决策和超时。
 
 Workflow 不负责：
@@ -129,6 +129,7 @@ EmployeeTransferRequested
 - requested_event_id
 
 HumanDecisionSubmitted
+- approval_request_id
 - decision_request_id
 - decision
 - resolved_event_id
@@ -142,7 +143,8 @@ CreateCoordinationJob
 PlanDemandRoute
 PersistRouteDecision
 CreateProjectTasks
-CreateDecisionRequest
+CreateApprovalRequestForProjectDecision
+CreateProjectDecisionProjection
 UpdateProjectTaskStatus
 PersistExecutionSummary
 PersistTransferRequest
@@ -228,17 +230,24 @@ DispatchProjectTask
 - `id`
 - `tenant_id`
 - `project_id`
+- `approval_request_id`
+- `coordination_job_id`
+- `project_task_id`
 - `target_user_id`
 - `decision_type`
-- `title`
-- `summary`
-- `risk_level`
-- `options`
-- `status`
+- `title_snapshot`
+- `summary_snapshot`
+- `risk_level_snapshot`
+- `status_snapshot`
 - `created_event_id`
 - `resolved_event_id`
 - `created_at`
+- `updated_at`
 - `resolved_at`
+
+`project_decision_requests` 不是独立审批引擎，只是项目侧查询投影和事件关联表。审批请求、候选选项、处理人、决策结果、审批状态流转的事实源应归全局 `approval` 模块，例如 `approval_requests` 与 `approval_decisions`。
+
+如果 V1 启动时全局 `approval` 模块仍只有 service 空壳、没有可复用数据结构，则 V1 的第一个后端切片必须先补最小审批核心，再由项目模块通过 `approval_request_id` 引用它。不得在 project 模块内实现一套不可迁移的平行审批流。
 
 ## 6. 执行流
 
@@ -285,10 +294,12 @@ Digital Employee 提交 TransferRequest
 
 ```text
 Workflow 判断需要人工处理
-  -> 写 ProjectDecisionRequest
+  -> 写全局 ApprovalRequest
+  -> 写 project_decision_requests 投影，保存 approval_request_id
   -> 写 ProjectEvent: decision.requested
   -> 前端决策队列展示
   -> 人类负责人批准、驳回或要求补证
+  -> approval 模块写 ApprovalDecision
   -> Control Plane 写 ProjectEvent: decision.submitted
   -> Control Plane signal HumanDecisionSubmitted
   -> Workflow 继续
@@ -357,7 +368,7 @@ V1 必须保持 API 兼容，不能破坏 V0 前端调用。
 - Workflow 生成 RouteDecision 和 ProjectTask。
 - ProjectTask 只能分派给项目数字员工池内员工。
 - 数字员工完成、失败、转派请求能更新项目运行态。
-- 需要人工判断时生成 ProjectDecisionRequest。
+- 需要人工判断时生成全局 ApprovalRequest，并在项目侧生成带 `approval_request_id` 的决策投影。
 - 人类负责人处理决策后 Workflow 继续。
 
 技术验收：
@@ -365,6 +376,7 @@ V1 必须保持 API 兼容，不能破坏 V0 前端调用。
 - Temporal workflow test suite 覆盖主要 signals。
 - 并发 signal 测试证明同一项目协调决策串行。
 - Activity 单元测试覆盖结构化规划输出校验。
+- approval 模块集成测试覆盖项目决策创建、处理和回写事件。
 - Go handler 测试覆盖 decision resolve 与 route decision 查询。
 - 前端测试覆盖规划中、待决策、转派请求和执行完成状态。
 
@@ -373,4 +385,5 @@ V1 必须保持 API 兼容，不能破坏 V0 前端调用。
 - Workflow 内执行非确定性逻辑会导致 replay 问题。所有外部调用必须放 Activity。
 - LLM 输出不校验会污染项目任务。RouteDecision 必须结构化校验。
 - 如果允许数字员工绕过 Workflow 转派，会破坏审计链。
+- 如果 project 模块自行实现审批事实源，会和全局 approval 模块产生逻辑分裂。项目侧只能保存审批投影和 `approval_request_id`。
 - 如果 V1 修改 V0 的项目配置心智，会让项目管理变成 Workflow 后台，而不是业务项目控制台。
