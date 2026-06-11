@@ -9,10 +9,8 @@ export const Route = createFileRoute("/_authenticated/costs/")({
 });
 
 function CostsRoute() {
-  const search = useSearch({ from: "/_authenticated/costs/" }) as {
-    project_id?: string;
-  };
-  const projectId = search.project_id?.trim();
+  const search = useSearch({ strict: false });
+  const projectId = projectIDFromSearch(search);
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 md:p-6">
@@ -50,4 +48,12 @@ function CostsRoute() {
       )}
     </div>
   );
+}
+
+function projectIDFromSearch(search: unknown) {
+  if (!search || typeof search !== "object" || !("project_id" in search)) {
+    return undefined;
+  }
+  const value = search.project_id;
+  return typeof value === "string" ? value.trim() : undefined;
 }

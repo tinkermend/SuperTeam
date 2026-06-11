@@ -47,6 +47,15 @@ WHERE (sqlc.narg('event_type')::varchar IS NULL OR event_type = sqlc.narg('event
   AND (sqlc.narg('start_time')::timestamptz IS NULL OR created_at >= sqlc.narg('start_time'))
   AND (sqlc.narg('end_time')::timestamptz IS NULL OR created_at <= sqlc.narg('end_time'));
 
+-- name: ListAuditEventsByResource :many
+SELECT *
+FROM audit_events
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND resource_type = sqlc.arg('resource_type')::varchar
+  AND resource_id = sqlc.arg('resource_id')::varchar
+ORDER BY created_at DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
 -- name: ListTeamAuditEvents :many
 SELECT *
 FROM audit_events

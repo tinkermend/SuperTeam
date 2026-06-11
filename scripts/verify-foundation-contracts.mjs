@@ -30,6 +30,7 @@ const requiredOpenApiOperations = new Set([
   "GET /api/v1/teams",
   "POST /api/v1/teams",
   "GET /api/v1/teams/{teamId}",
+  "GET /api/v1/audit/events",
   "POST /api/v1/teams/{teamId}/config-revisions",
   "GET /api/v1/teams/{teamId}/config-revisions/current",
   "POST /api/v1/digital-employees/{employeeId}/config-revisions",

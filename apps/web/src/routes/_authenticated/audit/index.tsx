@@ -35,11 +35,14 @@ type AuditEvent = {
   created_at?: string;
 };
 
+type ProjectAuditEventsResult = {
+  projectId: string;
+  events: AuditEvent[];
+};
+
 function AuditRoute() {
-  const search = useSearch({ from: "/_authenticated/audit/" }) as {
-    project_id?: string;
-  };
-  const projectId = search.project_id?.trim();
+  const search = useSearch({ strict: false });
+  const projectId = projectIDFromSearch(search);
   const apiBaseUrl = resolveControlPlaneUrl();
   const eventsQuery = useQuery({
     enabled: Boolean(projectId),
@@ -47,6 +50,11 @@ function AuditRoute() {
     queryFn: () => listProjectAuditEvents(apiBaseUrl, projectId as string),
     placeholderData: keepPreviousData,
   });
+  const eventData = eventsQuery.data;
+  let currentEvents: AuditEvent[] | undefined;
+  if (eventData && eventData.projectId === projectId) {
+    currentEvents = eventData.events;
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 md:p-6">
@@ -66,20 +74,28 @@ function AuditRoute() {
         <AuditEmptyState />
       ) : (
         <ProjectAuditTable
-          events={eventsQuery.data ?? []}
+          events={currentEvents ?? []}
           isError={eventsQuery.isError}
           isFetching={eventsQuery.isFetching}
-          isLoading={eventsQuery.isLoading && !eventsQuery.data}
+          isLoading={eventsQuery.isLoading && !currentEvents}
         />
       )}
     </div>
   );
 }
 
+function projectIDFromSearch(search: unknown) {
+  if (!search || typeof search !== "object" || !("project_id" in search)) {
+    return undefined;
+  }
+  const value = search.project_id;
+  return typeof value === "string" ? value.trim() : undefined;
+}
+
 async function listProjectAuditEvents(
   apiBaseUrl: string,
   projectId: string,
-): Promise<AuditEvent[]> {
+): Promise<ProjectAuditEventsResult> {
   const params = new URLSearchParams({
     limit: "50",
     resource_id: projectId,
@@ -93,7 +109,8 @@ async function listProjectAuditEvents(
       method: "GET",
     },
   );
-  return parseJson<AuditEvent[]>(response, "project audit events");
+  const events = await parseJson<AuditEvent[]>(response, "project audit events");
+  return { projectId, events };
 }
 
 function AuditEmptyState() {

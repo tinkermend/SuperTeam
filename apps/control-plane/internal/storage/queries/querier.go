@@ -160,6 +160,7 @@ type Querier interface {
 	ListApprovalDecisionsForRequest(ctx context.Context, arg ListApprovalDecisionsForRequestParams) ([]ApprovalDecision, error)
 	ListArtifactRetentionHolds(ctx context.Context, arg ListArtifactRetentionHoldsParams) ([]ArtifactRetentionHold, error)
 	ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]AuditEvent, error)
+	ListAuditEventsByResource(ctx context.Context, arg ListAuditEventsByResourceParams) ([]AuditEvent, error)
 	ListAuthzDecisions(ctx context.Context, arg ListAuthzDecisionsParams) ([]WebOperationLog, error)
 	ListAuthzMembers(ctx context.Context, arg ListAuthzMembersParams) ([]ListAuthzMembersRow, error)
 	ListDigitalEmployeeExecutionInstances(ctx context.Context, arg ListDigitalEmployeeExecutionInstancesParams) ([]DigitalEmployeeExecutionInstance, error)

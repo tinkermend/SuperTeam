@@ -1403,6 +1403,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TeamOverview"
+  /api/v1/audit/events:
+    get:
+      operationId: listAuditEvents
+      summary: List audit events by project resource
+      parameters:
+        - name: resource_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - project
+        - name: resource_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditEvent"
+        "400":
+          $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}:
     get:
       operationId: getTeam
@@ -4572,6 +4603,45 @@ components:
         - active
         - disabled
         - archived
+    AuditEvent:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - event_type
+        - actor_type
+        - actor_id
+        - resource_type
+        - resource_id
+        - action
+        - details
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        actor_type:
+          type: string
+        actor_id:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        action:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        ip_address:
+          type: string
+        created_at:
+          type: string
+          format: date-time
     TeamAuditEvent:
       type: object
       required:

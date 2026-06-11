@@ -88,16 +88,17 @@ func (r *PgRepository) ListTeamEvents(ctx context.Context, tenantID, teamID uuid
 }
 
 func (r *PgRepository) ListResourceEvents(ctx context.Context, tenantID uuid.UUID, resourceType, resourceID string, limit, offset int) ([]*Event, error) {
-	events, err := r.q.ListAuditEvents(ctx, queries.ListAuditEventsParams{
-		ResourceType: textFromString(resourceType),
-		ResourceID:   textFromString(resourceID),
+	events, err := r.q.ListAuditEventsByResource(ctx, queries.ListAuditEventsByResourceParams{
+		TenantID:     tenantID,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
 		Offset:       int32(offset),
 		Limit:        int32(limit),
 	})
 	if err != nil {
 		return nil, err
 	}
-	return filterEventsByTenant(eventsFromQuery(events), tenantID), nil
+	return eventsFromQuery(events), nil
 }
 
 type Service struct {
@@ -140,16 +141,6 @@ func (s *Service) ListProjectEvents(ctx context.Context, tenantID, projectID uui
 		return nil, errors.New("project id is required")
 	}
 	return s.repository.ListResourceEvents(ctx, tenantID, "project", projectID.String(), limit, offset)
-}
-
-func filterEventsByTenant(events []*Event, tenantID uuid.UUID) []*Event {
-	filtered := make([]*Event, 0, len(events))
-	for _, event := range events {
-		if event != nil && event.TenantID == tenantID {
-			filtered = append(filtered, event)
-		}
-	}
-	return filtered
 }
 
 func eventsFromQuery(events []queries.AuditEvent) []*Event {

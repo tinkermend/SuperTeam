@@ -351,7 +351,7 @@ func seedTestTeamConfigRevision(t *testing.T, db *pgxpool.Pool, tenantID, teamID
 		ArtifactContract:            []byte(`{}`),
 		InternalCollaborationPolicy: []byte(`{}`),
 		RuntimeScopePolicy:          []byte(`{}`),
-		HumanOwnerUserIds: []uuid.UUID{ownerID.UUID},
+		HumanOwnerUserIds:           []uuid.UUID{ownerID.UUID},
 		Status:                      status,
 	})
 	require.NoError(t, err)
@@ -373,11 +373,11 @@ func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
 	require.NoError(t, err)
 
 	team, err := testQueries.CreateTenantTeam(ctx, queries.CreateTenantTeamParams{
-		TenantID:         tenantID,
-		Slug:             "ops",
-		Name:             "运维团队",
+		TenantID:          tenantID,
+		Slug:              "ops",
+		Name:              "运维团队",
 		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
-		Metadata:         []byte(`{"domain":"operations"}`),
+		Metadata:          []byte(`{"domain":"operations"}`),
 	})
 	require.NoError(t, err)
 
@@ -392,7 +392,7 @@ func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {
 		ArtifactContract:            []byte(`{"required":["Finding","Risk","DecisionRequest"]}`),
 		InternalCollaborationPolicy: []byte(`{"allowed_request_types":["info_request","review_request","artifact_request"],"max_auto_rounds":2,"max_auto_participants":3}`),
 		RuntimeScopePolicy:          []byte(`{"allowed_provider_types":["codex"]}`),
-		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
+		HumanOwnerUserIds:           []uuid.UUID{uuid.New()},
 		Status:                      "active",
 		ApprovedBy:                  uuid.NullUUID{UUID: owner.ID, Valid: true},
 		ApprovedAt:                  pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
@@ -881,11 +881,11 @@ func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
 	require.NoError(t, err)
 
 	team, err := testQueries.CreateTenantTeam(ctx, queries.CreateTenantTeamParams{
-		TenantID:         tenantID,
-		Slug:             "ops-summary",
-		Name:             "运维团队",
+		TenantID:          tenantID,
+		Slug:              "ops-summary",
+		Name:              "运维团队",
 		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
-		Metadata:         []byte(`{"domain":"operations"}`),
+		Metadata:          []byte(`{"domain":"operations"}`),
 	})
 	require.NoError(t, err)
 
@@ -916,7 +916,7 @@ func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
 		ArtifactContract:            []byte(`{"required":["Finding","Risk","DecisionRequest"]}`),
 		InternalCollaborationPolicy: []byte(`{"allowed_request_types":["info_request","review_request"]}`),
 		RuntimeScopePolicy:          []byte(`{"allowed_provider_types":["codex"]}`),
-		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
+		HumanOwnerUserIds:           []uuid.UUID{uuid.New()},
 		Status:                      "active",
 		ApprovedBy:                  uuid.NullUUID{UUID: owner.ID, Valid: true},
 		ApprovedAt:                  pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
@@ -951,12 +951,12 @@ func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
 	}
 
 	archivedTeam, err := testQueries.CreateTenantTeam(ctx, queries.CreateTenantTeamParams{
-		TenantID:         tenantID,
-		Slug:             "archive-summary",
-		Name:             "归档团队",
-		Status:           "archived",
+		TenantID:          tenantID,
+		Slug:              "archive-summary",
+		Name:              "归档团队",
+		Status:            "archived",
 		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
-		Metadata:         []byte(`{}`),
+		Metadata:          []byte(`{}`),
 	})
 	require.NoError(t, err)
 	_, err = testQueries.SetTenantTeamStatus(ctx, queries.SetTenantTeamStatusParams{
@@ -1011,12 +1011,12 @@ func TestTeamMemberRoleRequestQueries(t *testing.T) {
 	require.NoError(t, err)
 
 	team, err := testQueries.CreateTenantTeam(ctx, queries.CreateTenantTeamParams{
-		TenantID:         tenantID,
-		Slug:             "role-requests",
-		Name:             "角色申请团队",
-		Status:           "active",
+		TenantID:          tenantID,
+		Slug:              "role-requests",
+		Name:              "角色申请团队",
+		Status:            "active",
 		HumanOwnerUserIds: []uuid.UUID{uuid.New()},
-		Metadata:         []byte(`{"domain":"team-management"}`),
+		Metadata:          []byte(`{"domain":"team-management"}`),
 	})
 	require.NoError(t, err)
 
@@ -4576,6 +4576,66 @@ func TestListAuditEvents(t *testing.T) {
 	for _, event := range createdEvents {
 		assert.Equal(t, "task.created", event.EventType)
 	}
+}
+
+func TestListAuditEventsByResourceFiltersTenantBeforePagination(t *testing.T) {
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	otherTenantID := uuid.New()
+	projectID := uuid.New()
+	detailsJSON, err := json.Marshal(map[string]interface{}{"test": true})
+	require.NoError(t, err)
+
+	_, err = testDB.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'other-resource-audit-tenant', 'Other Resource Audit Tenant', 'active')
+	`, otherTenantID)
+	require.NoError(t, err)
+
+	currentTenantEvent, err := testQueries.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: true},
+		EventType:    "project.updated",
+		ActorType:    "user",
+		ActorID:      "auditor",
+		ResourceType: pgtype.Text{String: "project", Valid: true},
+		ResourceID:   pgtype.Text{String: projectID.String(), Valid: true},
+		Action:       "project.update",
+		Details:      detailsJSON,
+	})
+	require.NoError(t, err)
+
+	otherTenantEvent, err := testQueries.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: otherTenantID, Valid: true},
+		EventType:    "project.updated",
+		ActorType:    "user",
+		ActorID:      "auditor",
+		ResourceType: pgtype.Text{String: "project", Valid: true},
+		ResourceID:   pgtype.Text{String: projectID.String(), Valid: true},
+		Action:       "project.update",
+		Details:      detailsJSON,
+	})
+	require.NoError(t, err)
+
+	_, err = testDB.Exec(ctx, `
+		UPDATE audit_events
+		SET created_at = created_at + interval '1 hour'
+		WHERE id = $1
+	`, otherTenantEvent.ID)
+	require.NoError(t, err)
+
+	events, err := testQueries.ListAuditEventsByResource(ctx, queries.ListAuditEventsByResourceParams{
+		TenantID:     tenantID,
+		ResourceType: "project",
+		ResourceID:   projectID.String(),
+		Offset:       0,
+		Limit:        1,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, currentTenantEvent.ID, events[0].ID)
+	assert.Equal(t, tenantID, events[0].TenantID)
 }
 
 func TestListTeamAuditEvents(t *testing.T) {

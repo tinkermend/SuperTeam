@@ -205,6 +205,62 @@ func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams
 	return items, nil
 }
 
+const ListAuditEventsByResource = `-- name: ListAuditEventsByResource :many
+SELECT id, tenant_id, event_type, actor_type, actor_id, resource_type, resource_id, action, details, ip_address, created_at
+FROM audit_events
+WHERE tenant_id = $1::uuid
+  AND resource_type = $2::varchar
+  AND resource_id = $3::varchar
+ORDER BY created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListAuditEventsByResourceParams struct {
+	TenantID     uuid.UUID `json:"tenant_id"`
+	ResourceType string    `json:"resource_type"`
+	ResourceID   string    `json:"resource_id"`
+	Offset       int32     `json:"offset"`
+	Limit        int32     `json:"limit"`
+}
+
+func (q *Queries) ListAuditEventsByResource(ctx context.Context, arg ListAuditEventsByResourceParams) ([]AuditEvent, error) {
+	rows, err := q.db.Query(ctx, ListAuditEventsByResource,
+		arg.TenantID,
+		arg.ResourceType,
+		arg.ResourceID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuditEvent{}
+	for rows.Next() {
+		var i AuditEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.EventType,
+			&i.ActorType,
+			&i.ActorID,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Action,
+			&i.Details,
+			&i.IpAddress,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListTeamAuditEvents = `-- name: ListTeamAuditEvents :many
 SELECT id, tenant_id, event_type, actor_type, actor_id, resource_type, resource_id, action, details, ip_address, created_at
 FROM audit_events

@@ -2203,18 +2203,25 @@ git commit -m "feat: show project config revision history"
 - Modify: `apps/control-plane/internal/audit/service.go`
 - Modify: `apps/control-plane/internal/audit/service_test.go`
 - Create: `apps/control-plane/internal/audit/handler.go`
+- Modify: `apps/control-plane/internal/storage/queries/audit.sql`
+- Modify: `apps/control-plane/internal/storage/queries/audit.sql.go`
+- Modify: `apps/control-plane/internal/storage/queries/querier.go`
+- Modify: `apps/control-plane/internal/storage/queries/queries_test.go`
 - Modify: `apps/control-plane/internal/api/server.go`
 - Modify: `apps/control-plane/internal/api/project_routes_test.go`
 - Modify: `apps/control-plane/internal/app/app.go`
 - Modify: `apps/control-plane/internal/app/app_test.go`
+- Modify: `contracts/control-plane/openapi.yaml`
+- Modify: `scripts/verify-foundation-contracts.mjs`
 - Modify: `apps/web/src/features/projects/components/project-budget-panel.tsx`
 - Modify: `apps/web/src/routes/_authenticated/audit/index.tsx`
 - Modify: `apps/web/src/routes/_authenticated/costs/index.tsx`
 
 Task 10 允许补充 audit service 和 API route 测试文件，用于验证 project_id/resource query 只使用当前 console tenant，并避免审计/成本入口变成未测试占位。
 Task 10 也允许补充 app wiring 和项目预算面板导出：新建的 audit handler 必须接入真实容器；成本中心路由复用项目预算查询与面板时，可以在 `project-budget-panel.tsx` 中导出 `CostsProjectView`。
+Task 10 的后续 reviewer 修复还必须把 project audit 查询下沉到 SQL tenant/resource 过滤后再分页，补齐 OpenAPI/contract guard，并确保前端 `keepPreviousData` 不会在项目切换时短暂展示旧项目数据。
 
-- [ ] **Step 1: 写 audit project query 失败测试**
+- [ ] **Step 1: 写 audit project query 失败测试与 storage tenant 分页测试**
 
 Append to `apps/control-plane/internal/audit/service_test.go`:
 
@@ -2246,68 +2253,100 @@ func TestAuditServiceListsProjectEventsByResource(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run failing audit test**
+同时在 `apps/control-plane/internal/storage/queries/queries_test.go` 的 audit 测试附近增加 `TestListAuditEventsByResourceFiltersTenantBeforePagination`：
+
+- 插入当前租户 project audit event。
+- 插入同 `resource_id` 的其他租户 project audit event，并让它的 `created_at` 更新。
+- `limit=1 offset=0` 调用新 query 时必须返回当前租户记录，证明 tenant/resource 过滤发生在 SQL 分页之前。
+
+- [ ] **Step 2: Run failing audit/storage tests**
 
 Run:
 
 ```bash
 go test ./apps/control-plane/internal/audit -run TestAuditServiceListsProjectEventsByResource -count=1
+go test ./apps/control-plane/internal/storage -run TestListAuditEventsByResourceFiltersTenantBeforePagination -count=1
 ```
 
-Expected: FAIL with undefined `ListProjectEvents`.
+Expected: FAIL with undefined service/query implementation.
 
-- [ ] **Step 3: Add audit project query**
+- [ ] **Step 3: Add SQL-level audit project query**
+
+Extend `apps/control-plane/internal/storage/queries/audit.sql`:
+
+```sql
+-- name: ListAuditEventsByResource :many
+SELECT *
+FROM audit_events
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND resource_type = sqlc.arg('resource_type')::varchar
+  AND resource_id = sqlc.arg('resource_id')::varchar
+ORDER BY created_at DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+```
+
+Run `cd apps/control-plane && sqlc generate` and commit generated updates in `audit.sql.go` and `querier.go`.
+`PgRepository.ListResourceEvents` must call `ListAuditEventsByResource`; do not filter tenant in Go after `LIMIT/OFFSET`.
+
+- [ ] **Step 4: Add audit service, handler and app wiring**
 
 Extend audit repository/service:
 
-```go
-func (s *Service) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int) ([]*Event, error) {
-	if tenantID == uuid.Nil || projectID == uuid.Nil {
-		return nil, errors.New("tenant_id and project_id are required")
-	}
-	return s.repository.ListResourceEvents(ctx, tenantID, "project", projectID.String(), limit, offset)
-}
-```
+- `Repository.ListResourceEvents(ctx, tenantID, resourceType, resourceID, limit, offset)`。
+- `Service.ListProjectEvents(ctx, tenantID, projectID, limit, offset)`，校验 non-nil UUID。
+- memory repo 测试必须真实按 tenant/resource 过滤。
 
 Create `apps/control-plane/internal/audit/handler.go` with `GET /api/v1/audit/events?resource_type=project&resource_id={uuid}` and console auth scoping.
+在 `api.Server` 中增加 `SetAuditHandler` 并挂到 `/api/v1` console auth group；在 `app.Container` 中创建并保存 `AuditHandler`。
 
-- [ ] **Step 4: Update cost center route**
+- [ ] **Step 5: Update audit/cost center routes**
+
+In `apps/web/src/routes/_authenticated/audit/index.tsx`, replace the unimplemented page with a compact project-aware audit view:
+
+- 使用 `validateSearch` 安全解析 `project_id`。
+- 无 `project_id` 时显示紧凑空状态。
+- 有 `project_id` 时请求 `/api/v1/audit/events?resource_type=project&resource_id=${project_id}&limit=50`。
+- 查询结果包装为 `{ projectId, events }`；渲染前只使用 `data.projectId === 当前 projectId` 的数据，避免 `keepPreviousData` 切换项目时展示旧项目审计。
 
 In `apps/web/src/routes/_authenticated/costs/index.tsx`, replace the unimplemented page with a project-aware view:
 
-```tsx
-import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { CostsProjectView } from "@/features/projects/components/project-budget-panel";
+- 使用 `validateSearch` 安全解析 `project_id`。
+- 无 `project_id` 时显示紧凑空状态。
+- 有 `project_id` 时渲染 `CostsProjectView`。
 
-export const Route = createFileRoute("/_authenticated/costs/")({
-  component: CostsRoute,
-});
+`CostsProjectView` must call `getProjectBudgetSummary` plus `listProjectBudgetLedger` when `project_id` exists. Ledger 和 summary 查询结果都必须包装为 `{ projectId, ... }`，且只把匹配当前 `projectId` 的数据传给 `ProjectBudgetPanel`。
 
-function CostsRoute() {
-  const search = useSearch({ from: "/_authenticated/costs/" }) as { project_id?: string };
-  return <CostsProjectView projectId={search.project_id} />;
-}
-```
+- [ ] **Step 6: Update OpenAPI and contract guard**
 
-`CostsProjectView` must show a compact empty state when `project_id` is absent, and must call `getProjectBudgetSummary` plus `listProjectBudgetLedger` when `project_id` exists.
+Update `contracts/control-plane/openapi.yaml`:
 
-- [ ] **Step 5: Run audit/cost tests**
+- Add `GET /api/v1/audit/events`。
+- Query 参数：`resource_type`（当前 enum 只支持 `project`）、`resource_id`（uuid）、`limit`、`offset`。
+- Response schema 使用 `AuditEvent`，字段与 handler JSON 一致：`id, tenant_id, event_type, actor_type, actor_id, resource_type, resource_id, action, details, ip_address, created_at`。
+
+Update `scripts/verify-foundation-contracts.mjs` required operations with `GET /api/v1/audit/events`。
+
+- [ ] **Step 7: Run audit/cost/contract tests**
 
 Run:
 
 ```bash
-go test ./apps/control-plane/internal/audit ./apps/control-plane/internal/api -run 'Audit|ProjectEvents' -count=1
-pnpm --filter @superteam/web test -- src/features/projects/index.test.tsx
+cd apps/control-plane && sqlc generate
+go test ./apps/control-plane/internal/storage ./apps/control-plane/internal/audit ./apps/control-plane/internal/api ./apps/control-plane/internal/app -run 'Audit|ProjectEvents|NewContainer' -count=1
+go test ./apps/control-plane/internal/audit ./apps/control-plane/internal/api ./apps/control-plane/internal/app -count=1
+pnpm verify:contracts
+pnpm --filter @superteam/web test -- src/features/projects/index.test.tsx src/features/projects/config.test.tsx
 pnpm --filter @superteam/web typecheck
+git diff --check
 ```
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add apps/control-plane/internal/audit apps/control-plane/internal/api/server.go apps/web/src/routes/_authenticated/audit/index.tsx apps/web/src/routes/_authenticated/costs/index.tsx
-git commit -m "feat: link audit and costs to projects"
+git add apps/control-plane/internal/audit apps/control-plane/internal/storage/queries/audit.sql apps/control-plane/internal/storage/queries/audit.sql.go apps/control-plane/internal/storage/queries/querier.go apps/control-plane/internal/storage/queries/queries_test.go apps/control-plane/internal/api/server.go apps/control-plane/internal/api/project_routes_test.go apps/control-plane/internal/app/app.go apps/control-plane/internal/app/app_test.go contracts/control-plane/openapi.yaml scripts/verify-foundation-contracts.mjs apps/web/src/features/projects/components/project-budget-panel.tsx apps/web/src/routes/_authenticated/audit/index.tsx apps/web/src/routes/_authenticated/costs/index.tsx docs/superpowers/plans/2026-06-11-project-management-v2-governance-archive.md
+git commit -m "fix: scope project audit and cost views"
 ```
 
 ## Task 11: 浏览器验证、全量测试和变更日志

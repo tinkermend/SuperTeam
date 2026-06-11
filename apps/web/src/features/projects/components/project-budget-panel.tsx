@@ -34,6 +34,16 @@ type CostsProjectViewProps = {
   projectId: string;
 };
 
+type ProjectBudgetLedgerResult = {
+  projectId: string;
+  ledger: ProjectBudgetLedgerEntry[];
+};
+
+type ProjectBudgetSummaryResult = {
+  projectId: string;
+  summary: ProjectBudgetSummary;
+};
+
 export function CostsProjectView({
   apiBaseUrl,
   fetcher,
@@ -43,19 +53,33 @@ export function CostsProjectView({
   const ledgerQuery = useQuery({
     enabled: Boolean(projectId),
     queryKey: ["costs-project-budget-ledger", projectId],
-    queryFn: () => listProjectBudgetLedger(apiOptions, projectId, { limit: 50 }),
+    queryFn: async (): Promise<ProjectBudgetLedgerResult> => {
+      const ledger = await listProjectBudgetLedger(apiOptions, projectId, {
+        limit: 50,
+      });
+      return { projectId, ledger };
+    },
     placeholderData: keepPreviousData,
   });
   const summaryQuery = useQuery({
     enabled: Boolean(projectId),
     queryKey: ["costs-project-budget-summary", projectId],
-    queryFn: () => getProjectBudgetSummary(apiOptions, projectId),
+    queryFn: async (): Promise<ProjectBudgetSummaryResult> => {
+      const summary = await getProjectBudgetSummary(apiOptions, projectId);
+      return { projectId, summary };
+    },
     placeholderData: keepPreviousData,
   });
+  const ledgerData = ledgerQuery.data;
+  const summaryData = summaryQuery.data;
+  const currentLedger =
+    ledgerData?.projectId === projectId ? ledgerData.ledger : undefined;
+  const currentSummary =
+    summaryData?.projectId === projectId ? summaryData.summary : undefined;
   const isInitialLoading =
     (ledgerQuery.isLoading || summaryQuery.isLoading) &&
-    !ledgerQuery.data &&
-    !summaryQuery.data;
+    !currentLedger &&
+    !currentSummary;
   const error = ledgerQuery.error ?? summaryQuery.error;
 
   if (isInitialLoading) {
@@ -90,8 +114,8 @@ export function CostsProjectView({
         </div>
       ) : null}
       <ProjectBudgetPanel
-        budgetLedger={ledgerQuery.data ?? []}
-        budgetSummary={summaryQuery.data}
+        budgetLedger={currentLedger ?? []}
+        budgetSummary={currentSummary}
       />
     </div>
   );
