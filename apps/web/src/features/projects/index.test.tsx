@@ -309,6 +309,53 @@ function createProjectFetcher(
       ]);
     }
     if (
+      [
+        "/evidence",
+        "/artifacts",
+        "/reports",
+        "/budget-ledger",
+        "/archive-snapshots",
+      ].some((suffix) => url.pathname.endsWith(suffix)) &&
+      method === "GET"
+    ) {
+      return jsonResponse([]);
+    }
+    if (url.pathname.endsWith("/budget-summary") && method === "GET") {
+      return jsonResponse({
+        actual_cost: "0",
+        actual_tokens: 0,
+        estimated_cost: "0",
+        estimated_tokens: 0,
+        ledger_count: 0,
+      });
+    }
+    if (url.pathname.endsWith("/acceptance") && method === "GET") {
+      const id = url.pathname.split("/")[4];
+      return jsonResponse({
+        accepted_by_user_id: "human-owner-1",
+        conclusion: "等待验收",
+        evidence_ref_ids: [],
+        id: `acceptance-${id}`,
+        project_id: id,
+        report_ref_ids: [],
+        status: "needs_more_evidence",
+        tenant_id: "tenant-1",
+        unresolved_risks: [],
+      });
+    }
+    if (url.pathname.endsWith("/archive-preview") && method === "GET") {
+      const id = url.pathname.split("/")[4];
+      return jsonResponse({
+        artifact_count: 0,
+        blocked_reasons: [],
+        estimated_object_refs: [],
+        evidence_count: 0,
+        project_id: id,
+        report_count: 0,
+        retention_pending: false,
+      });
+    }
+    if (
       url.pathname === "/api/v1/projects/project-1/decisions/decision-1/resolve" &&
       method === "POST"
     ) {

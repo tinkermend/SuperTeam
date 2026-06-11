@@ -18,13 +18,21 @@ import { Button } from "@/components/ui/button";
 import { LiquidCard, SemanticIconTile, StatusBadge } from "@/components/superteam";
 import type {
   Project,
+  ProjectAcceptanceRecord,
+  ProjectArchivePreview,
+  ProjectArchiveSnapshot,
+  ProjectArtifactRef,
+  ProjectBudgetLedgerEntry,
+  ProjectBudgetSummary,
   ProjectCoordinationJob,
   ProjectDecisionRequest,
   ProjectDemand,
+  ProjectEvidenceRef,
   ProjectEvent,
   ProjectExecutionSummary,
   ProjectMember,
   ProjectOverview,
+  ProjectReportRef,
   ProjectRouteDecision,
   ProjectTask,
   ProjectTransferRequest,
@@ -32,9 +40,16 @@ import type {
 import { statusLabel, statusTone } from "./project-switcher-pane";
 
 type ProjectOperationalDetailProps = {
+  acceptance?: ProjectAcceptanceRecord;
+  archivePreview?: ProjectArchivePreview;
+  archiveSnapshots?: ProjectArchiveSnapshot[];
+  artifacts?: ProjectArtifactRef[];
+  budgetLedger?: ProjectBudgetLedgerEntry[];
+  budgetSummary?: ProjectBudgetSummary;
   coordinationJobs: ProjectCoordinationJob[];
   decisionRequests: ProjectDecisionRequest[];
   demands: ProjectDemand[];
+  evidence?: ProjectEvidenceRef[];
   events: ProjectEvent[];
   executionSummaries: ProjectExecutionSummary[];
   isArchived?: boolean;
@@ -43,6 +58,7 @@ type ProjectOperationalDetailProps = {
   onSubmitDemand: () => void;
   overview?: ProjectOverview;
   project?: Project;
+  reports?: ProjectReportRef[];
   routeDecisions: ProjectRouteDecision[];
   tasks: ProjectTask[];
   transferRequests: ProjectTransferRequest[];

@@ -31,7 +31,15 @@ export type ProjectEventType =
   | "project_task.failed"
   | "transfer.requested"
   | "decision.requested"
-  | "decision.submitted";
+  | "decision.submitted"
+  | "project.evidence.linked"
+  | "project.evidence.verified"
+  | "project.artifact.linked"
+  | "project.report.linked"
+  | "project.budget.recorded"
+  | "project.acceptance.submitted"
+  | "project.archive_snapshot.created"
+  | "project.archive.retention_pending";
 export type ProjectDemandSourceType =
   | "manual"
   | "github"
@@ -43,6 +51,17 @@ export type ProjectDemandStatus =
   | "recorded"
   | "planning_pending"
   | "cancelled";
+export type ProjectEvidenceVerificationStatus =
+  | "submitted"
+  | "linked"
+  | "verified"
+  | "rejected"
+  | "superseded";
+export type ProjectAcceptanceStatus =
+  | "accepted"
+  | "rejected"
+  | "needs_more_evidence"
+  | "partially_accepted";
 
 export type Project = {
   id: string;
@@ -252,6 +271,146 @@ export type ProjectTransferRequest = {
   updated_at?: string;
 };
 
+export type ProjectEvidenceRef = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  project_task_id?: string;
+  route_decision_id?: string;
+  execution_summary_id?: string;
+  evidence_type: string;
+  title: string;
+  summary?: string;
+  source_type: string;
+  source_ref: string;
+  artifact_ref_id?: string;
+  submitted_by_type: string;
+  submitted_by_id?: string;
+  verification_status: ProjectEvidenceVerificationStatus;
+  metadata: Record<string, unknown>;
+  created_event_id?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type ProjectArtifactRef = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  project_task_id?: string;
+  artifact_id?: string;
+  artifact_type: string;
+  title: string;
+  object_ref: string;
+  content_type?: string;
+  size_bytes?: number;
+  checksum?: string;
+  retention_status: string;
+  retention_hold_id?: string;
+  metadata: Record<string, unknown>;
+  created_event_id?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type ProjectReportRef = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  report_type: string;
+  title: string;
+  summary?: string;
+  object_ref: string;
+  format: string;
+  generated_by_type: string;
+  generated_by_id?: string;
+  created_event_id?: string;
+  created_at?: string;
+};
+
+export type ProjectBudgetLedgerEntry = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  coordination_job_id?: string;
+  project_task_id?: string;
+  digital_employee_id?: string;
+  cost_type: string;
+  estimated_tokens?: number;
+  actual_tokens?: number;
+  estimated_cost: string;
+  actual_cost: string;
+  source: string;
+  reason?: string;
+  created_event_id?: string;
+  created_at?: string;
+};
+
+export type ProjectBudgetSummary = {
+  estimated_tokens: number;
+  actual_tokens: number;
+  estimated_cost: string;
+  actual_cost: string;
+  ledger_count: number;
+};
+
+export type ProjectAcceptanceRecord = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  accepted_by_user_id: string;
+  status: ProjectAcceptanceStatus;
+  conclusion: string;
+  summary?: string;
+  evidence_ref_ids: string[];
+  report_ref_ids: string[];
+  unresolved_risks: unknown[];
+  created_event_id?: string;
+  created_at?: string;
+};
+
+export type ProjectArchivePreview = {
+  project_id: string;
+  evidence_count: number;
+  artifact_count: number;
+  report_count: number;
+  retention_pending: boolean;
+  blocked_reasons: unknown[];
+  estimated_object_refs: unknown[];
+};
+
+export type ProjectArchiveSnapshot = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  snapshot_type: string;
+  status: string;
+  object_ref?: string;
+  summary?: string;
+  included_counts: Record<string, unknown>;
+  retained_artifact_ids: string[];
+  retention_lock_event_id?: string;
+  created_by_user_id: string;
+  created_event_id?: string;
+  created_at?: string;
+};
+
+export type ProjectConfigRevision = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  revision_number: number;
+  config_snapshot: Record<string, unknown>;
+  change_summary?: string;
+  created_by_user_id: string;
+  created_event_id?: string;
+  created_at?: string;
+  changed_sections: unknown[];
+  previous_revision_id?: string;
+  policy_fingerprint?: string;
+  diff_summary: Record<string, unknown>;
+};
+
 export type CreateProjectInput = {
   team_id?: string;
   name: string;
@@ -292,6 +451,39 @@ export type SubmitProjectDemandInput = {
   attachments?: unknown[];
 };
 
+export type CreateProjectEvidenceInput = {
+  project_task_id?: string;
+  route_decision_id?: string;
+  execution_summary_id?: string;
+  evidence_type: string;
+  title: string;
+  summary?: string;
+  source_type: string;
+  source_ref: string;
+  artifact_ref_id?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type PatchProjectEvidenceInput = {
+  verification_status: ProjectEvidenceVerificationStatus;
+  metadata?: Record<string, unknown>;
+};
+
+export type CreateProjectAcceptanceInput = {
+  status: ProjectAcceptanceStatus;
+  conclusion: string;
+  summary?: string;
+  evidence_ref_ids?: string[];
+  report_ref_ids?: string[];
+  unresolved_risks?: unknown[];
+};
+
+export type CreateProjectArchiveSnapshotInput = {
+  snapshot_type: string;
+  summary?: string;
+  object_ref?: string;
+};
+
 export type ListProjectsFilters = {
   status?: ProjectStatus;
   q?: string;
@@ -308,6 +500,10 @@ export type ListProjectTasksFilters = {
 export type PaginationFilters = {
   limit?: number;
   offset?: number;
+};
+
+export type ListProjectEvidenceFilters = PaginationFilters & {
+  status?: ProjectEvidenceVerificationStatus;
 };
 
 async function getJson<T>(
@@ -406,6 +602,16 @@ function paginationQuery(filters: PaginationFilters = {}): string {
   }
   if (filters.offset !== undefined) {
     params.set("offset", String(filters.offset));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function evidenceQuery(filters: ListProjectEvidenceFilters = {}): string {
+  const pagination = paginationQuery(filters);
+  const params = new URLSearchParams(pagination ? pagination.slice(1) : "");
+  if (filters.status) {
+    params.set("status", filters.status);
   }
   const query = params.toString();
   return query ? `?${query}` : "";
@@ -656,5 +862,175 @@ export function listProjectTransferRequests(
     options,
     projectPath(projectId, `/transfer-requests${paginationQuery(filters)}`),
     "project transfer requests",
+  );
+}
+
+export function listProjectEvidence(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: ListProjectEvidenceFilters = {},
+): Promise<ProjectEvidenceRef[]> {
+  return getJson<ProjectEvidenceRef[]>(
+    options,
+    projectPath(projectId, `/evidence${evidenceQuery(filters)}`),
+    "project evidence",
+  );
+}
+
+export function createProjectEvidence(
+  options: ApiClientOptions,
+  projectId: string,
+  input: CreateProjectEvidenceInput,
+): Promise<ProjectEvidenceRef> {
+  return postJson<ProjectEvidenceRef>(
+    options,
+    projectPath(projectId, "/evidence"),
+    input,
+    "create project evidence",
+  );
+}
+
+export function patchProjectEvidence(
+  options: ApiClientOptions,
+  projectId: string,
+  evidenceId: string,
+  input: PatchProjectEvidenceInput,
+): Promise<ProjectEvidenceRef> {
+  return patchJson<ProjectEvidenceRef>(
+    options,
+    projectPath(projectId, `/evidence/${encodeURIComponent(evidenceId)}`),
+    input,
+    "patch project evidence",
+  );
+}
+
+export function listProjectArtifacts(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: PaginationFilters = {},
+): Promise<ProjectArtifactRef[]> {
+  return getJson<ProjectArtifactRef[]>(
+    options,
+    projectPath(projectId, `/artifacts${paginationQuery(filters)}`),
+    "project artifacts",
+  );
+}
+
+export function listProjectReports(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: PaginationFilters = {},
+): Promise<ProjectReportRef[]> {
+  return getJson<ProjectReportRef[]>(
+    options,
+    projectPath(projectId, `/reports${paginationQuery(filters)}`),
+    "project reports",
+  );
+}
+
+export function listProjectBudgetLedger(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: PaginationFilters = {},
+): Promise<ProjectBudgetLedgerEntry[]> {
+  return getJson<ProjectBudgetLedgerEntry[]>(
+    options,
+    projectPath(projectId, `/budget-ledger${paginationQuery(filters)}`),
+    "project budget ledger",
+  );
+}
+
+export function getProjectBudgetSummary(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<ProjectBudgetSummary> {
+  return getJson<ProjectBudgetSummary>(
+    options,
+    projectPath(projectId, "/budget-summary"),
+    "project budget summary",
+  );
+}
+
+export function createProjectAcceptance(
+  options: ApiClientOptions,
+  projectId: string,
+  input: CreateProjectAcceptanceInput,
+): Promise<ProjectAcceptanceRecord> {
+  return postJson<ProjectAcceptanceRecord>(
+    options,
+    projectPath(projectId, "/acceptance"),
+    input,
+    "create project acceptance",
+  );
+}
+
+export function getProjectAcceptance(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<ProjectAcceptanceRecord> {
+  return getJson<ProjectAcceptanceRecord>(
+    options,
+    projectPath(projectId, "/acceptance"),
+    "project acceptance",
+  );
+}
+
+export function getProjectArchivePreview(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<ProjectArchivePreview> {
+  return getJson<ProjectArchivePreview>(
+    options,
+    projectPath(projectId, "/archive-preview"),
+    "project archive preview",
+  );
+}
+
+export function createProjectArchiveSnapshot(
+  options: ApiClientOptions,
+  projectId: string,
+  input: CreateProjectArchiveSnapshotInput,
+): Promise<ProjectArchiveSnapshot> {
+  return postJson<ProjectArchiveSnapshot>(
+    options,
+    projectPath(projectId, "/archive-snapshot"),
+    input,
+    "create project archive snapshot",
+  );
+}
+
+export function listProjectArchiveSnapshots(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: PaginationFilters = {},
+): Promise<ProjectArchiveSnapshot[]> {
+  return getJson<ProjectArchiveSnapshot[]>(
+    options,
+    projectPath(projectId, `/archive-snapshots${paginationQuery(filters)}`),
+    "project archive snapshots",
+  );
+}
+
+export function listProjectConfigRevisions(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: PaginationFilters = {},
+): Promise<ProjectConfigRevision[]> {
+  return getJson<ProjectConfigRevision[]>(
+    options,
+    projectPath(projectId, `/config-revisions${paginationQuery(filters)}`),
+    "project config revisions",
+  );
+}
+
+export function getProjectConfigRevision(
+  options: ApiClientOptions,
+  projectId: string,
+  revisionId: string,
+): Promise<ProjectConfigRevision> {
+  return getJson<ProjectConfigRevision>(
+    options,
+    projectPath(projectId, `/config-revisions/${encodeURIComponent(revisionId)}`),
+    "project config revision",
   );
 }

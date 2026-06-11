@@ -10,12 +10,20 @@ import {
   archiveProject,
   createProject,
   getProject,
+  getProjectAcceptance,
+  getProjectArchivePreview,
+  getProjectBudgetSummary,
   getProjectOverview,
+  listProjectArchiveSnapshots,
+  listProjectArtifacts,
+  listProjectBudgetLedger,
   listProjectCoordinationJobs,
   listProjectDecisionRequests,
   listProjectDemands,
+  listProjectEvidence,
   listProjectEvents,
   listProjectExecutionSummaries,
+  listProjectReports,
   listProjectRouteDecisions,
   listProjects,
   listProjectTasks,
@@ -224,6 +232,64 @@ export function ProjectsView({
     placeholderData: keepPreviousData,
   });
 
+  const evidenceQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-evidence", effectiveProjectId],
+    queryFn: () => listProjectEvidence(apiOptions, effectiveProjectId as string, { limit: 20 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const artifactsQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-artifacts", effectiveProjectId],
+    queryFn: () => listProjectArtifacts(apiOptions, effectiveProjectId as string, { limit: 20 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const reportsQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-reports", effectiveProjectId],
+    queryFn: () => listProjectReports(apiOptions, effectiveProjectId as string, { limit: 20 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const budgetLedgerQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-budget-ledger", effectiveProjectId],
+    queryFn: () =>
+      listProjectBudgetLedger(apiOptions, effectiveProjectId as string, { limit: 20 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const budgetSummaryQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-budget-summary", effectiveProjectId],
+    queryFn: () => getProjectBudgetSummary(apiOptions, effectiveProjectId as string),
+    placeholderData: keepPreviousData,
+  });
+
+  const acceptanceQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-acceptance", effectiveProjectId],
+    queryFn: () => getProjectAcceptance(apiOptions, effectiveProjectId as string),
+    placeholderData: keepPreviousData,
+  });
+
+  const archivePreviewQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-archive-preview", effectiveProjectId],
+    queryFn: () => getProjectArchivePreview(apiOptions, effectiveProjectId as string),
+    placeholderData: keepPreviousData,
+  });
+
+  const archiveSnapshotsQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-archive-snapshots", effectiveProjectId],
+    queryFn: () =>
+      listProjectArchiveSnapshots(apiOptions, effectiveProjectId as string, { limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+
   const createMutation = useMutation({
     mutationFn: (input: CreateProjectInput) => createProject(apiOptions, input),
     onSuccess: async (response) => {
@@ -311,6 +377,29 @@ export function ProjectsView({
   const projectDemands = (demandsQuery.data ?? []).filter(
     (demand) => demand.project_id === effectiveProjectId,
   );
+  const projectEvidence = (evidenceQuery.data ?? []).filter(
+    (evidence) => evidence.project_id === effectiveProjectId,
+  );
+  const projectArtifacts = (artifactsQuery.data ?? []).filter(
+    (artifact) => artifact.project_id === effectiveProjectId,
+  );
+  const projectReports = (reportsQuery.data ?? []).filter(
+    (report) => report.project_id === effectiveProjectId,
+  );
+  const projectBudgetLedger = (budgetLedgerQuery.data ?? []).filter(
+    (entry) => entry.project_id === effectiveProjectId,
+  );
+  const projectAcceptance =
+    acceptanceQuery.data?.project_id === effectiveProjectId
+      ? acceptanceQuery.data
+      : undefined;
+  const projectArchivePreview =
+    archivePreviewQuery.data?.project_id === effectiveProjectId
+      ? archivePreviewQuery.data
+      : undefined;
+  const projectArchiveSnapshots = (archiveSnapshotsQuery.data ?? []).filter(
+    (snapshot) => snapshot.project_id === effectiveProjectId,
+  );
 
   return (
     <ProjectManagementShell
@@ -338,9 +427,16 @@ export function ProjectsView({
             selectedProjectId={effectiveProjectId}
           />
           <ProjectOperationalDetail
+            acceptance={projectAcceptance}
+            archivePreview={projectArchivePreview}
+            archiveSnapshots={projectArchiveSnapshots}
+            artifacts={projectArtifacts}
+            budgetLedger={projectBudgetLedger}
+            budgetSummary={budgetSummaryQuery.data}
             coordinationJobs={projectCoordinationJobs}
             decisionRequests={projectDecisionRequests}
             demands={projectDemands}
+            evidence={projectEvidence}
             events={projectEvents}
             executionSummaries={projectExecutionSummaries}
             isArchived={isArchived}
@@ -357,6 +453,7 @@ export function ProjectsView({
             onSubmitDemand={() => setDemandOpen(true)}
             overview={overview}
             project={displayedProject}
+            reports={projectReports}
             routeDecisions={projectRouteDecisions}
             tasks={projectTasks}
             transferRequests={projectTransferRequests}

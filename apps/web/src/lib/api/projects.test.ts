@@ -2,9 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import {
   archiveProject,
   createProject,
+  createProjectEvidence,
+  getProjectArchivePreview,
+  getProjectBudgetSummary,
   getProjectConfig,
+  getProjectConfigRevision,
   getProjectOverview,
+  listProjectConfigRevisions,
+  listProjectEvidence,
   listProjectRouteDecisions,
+  patchProjectEvidence,
   replaceProjectMembers,
   resolveProjectDecision,
   submitProjectDemand,
@@ -334,6 +341,249 @@ describe("project API", () => {
         body: JSON.stringify({ decision: "approved", comment: "同意继续" }),
         method: "POST",
       }),
+    );
+  });
+
+  it("creates evidence with encoded project id and cookie credentials", async () => {
+    const evidence = {
+      evidence_type: "test_report",
+      id: "66666666-6666-4666-8666-666666666666",
+      metadata: { suite: "regression" },
+      project_id: "11111111-1111-4111-8111-111111111111",
+      source_ref: "s3://bucket/report.md",
+      source_type: "s3",
+      submitted_by_type: "human_user",
+      tenant_id: "22222222-2222-4222-8222-222222222222",
+      title: "回归测试报告",
+      verification_status: "submitted",
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(evidence), {
+          headers: { "content-type": "application/json" },
+          status: 201,
+        }),
+    );
+    const input = {
+      evidence_type: "test_report",
+      metadata: { suite: "regression" },
+      source_ref: "s3://bucket/report.md",
+      source_type: "s3",
+      title: "回归测试报告",
+    };
+
+    await expect(
+      createProjectEvidence(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+        input,
+      ),
+    ).resolves.toEqual(evidence);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/evidence",
+      {
+        body: JSON.stringify(input),
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+  });
+
+  it("lists and patches project evidence through V2 evidence routes", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify([]), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      listProjectEvidence(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+        { limit: 20, offset: 5, status: "verified" },
+      ),
+    ).resolves.toEqual([]);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/evidence?limit=20&offset=5&status=verified",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+
+    const patched = {
+      evidence_type: "test_report",
+      id: "evidence 1",
+      metadata: { reviewer: "owner" },
+      project_id: "11111111-1111-4111-8111-111111111111",
+      source_ref: "s3://bucket/report.md",
+      source_type: "s3",
+      submitted_by_type: "human_user",
+      tenant_id: "22222222-2222-4222-8222-222222222222",
+      title: "回归测试报告",
+      verification_status: "verified",
+    };
+    fetcher.mockResolvedValueOnce(
+      new Response(JSON.stringify(patched), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      patchProjectEvidence(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+        "evidence 1",
+        { metadata: { reviewer: "owner" }, verification_status: "verified" },
+      ),
+    ).resolves.toEqual(patched);
+
+    expect(fetcher).toHaveBeenLastCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/evidence/evidence%201",
+      expect.objectContaining({
+        body: JSON.stringify({
+          metadata: { reviewer: "owner" },
+          verification_status: "verified",
+        }),
+        credentials: "include",
+        method: "PATCH",
+      }),
+    );
+  });
+
+  it("gets archive preview and budget summary with Task 6 response fields", async () => {
+    const archivePreview = {
+      artifact_count: 1,
+      blocked_reasons: [],
+      estimated_object_refs: ["s3://bucket/final.md"],
+      evidence_count: 2,
+      project_id: "11111111-1111-4111-8111-111111111111",
+      report_count: 1,
+      retention_pending: false,
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(archivePreview), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      getProjectArchivePreview(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+      ),
+    ).resolves.toEqual(archivePreview);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/archive-preview",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+
+    const budgetSummary = {
+      actual_cost: "0.80",
+      actual_tokens: 800,
+      estimated_cost: "1.00",
+      estimated_tokens: 1000,
+      ledger_count: 1,
+    };
+    fetcher.mockResolvedValueOnce(
+      new Response(JSON.stringify(budgetSummary), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      getProjectBudgetSummary(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+      ),
+    ).resolves.toEqual(budgetSummary);
+
+    expect(fetcher).toHaveBeenLastCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/budget-summary",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
+  it("lists and gets project config revisions", async () => {
+    const revision = {
+      changed_sections: ["approval_policy"],
+      config_snapshot: { approval_policy: { high_risk: "human" } },
+      created_by_user_id: "33333333-3333-4333-8333-333333333333",
+      diff_summary: { approval_policy: "changed" },
+      id: "revision 1",
+      project_id: "11111111-1111-4111-8111-111111111111",
+      revision_number: 2,
+      tenant_id: "22222222-2222-4222-8222-222222222222",
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify([revision]), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      listProjectConfigRevisions(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+        { limit: 10 },
+      ),
+    ).resolves.toEqual([revision]);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/config-revisions?limit=10",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+
+    fetcher.mockResolvedValueOnce(
+      new Response(JSON.stringify(revision), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      getProjectConfigRevision(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+        "revision 1",
+      ),
+    ).resolves.toEqual(revision);
+
+    expect(fetcher).toHaveBeenLastCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/config-revisions/revision%201",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
     );
   });
 });
