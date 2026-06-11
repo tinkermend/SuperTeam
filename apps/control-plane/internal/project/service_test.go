@@ -215,6 +215,71 @@ func TestProjectAcceptanceRequiresHumanOwnerAndFinalReport(t *testing.T) {
 	}
 }
 
+func TestProjectArchivePreviewCountsAllPages(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusAcceptance, HumanOwnerUserID: ownerID}
+
+	for i := 0; i < 105; i++ {
+		_, err := repo.CreateEvidenceRef(context.Background(), CreateEvidenceRefRequest{
+			TenantID:           tenantID,
+			ProjectID:          projectID,
+			EvidenceType:       "test_result",
+			Title:              fmt.Sprintf("证据 %d", i),
+			SourceType:         "artifact",
+			SourceRef:          fmt.Sprintf("s3://bucket/evidence/%d.json", i),
+			SubmittedByType:    "human_user",
+			SubmittedByID:      &ownerID,
+			VerificationStatus: EvidenceVerificationStatusSubmitted,
+		})
+		if err != nil {
+			t.Fatalf("seed evidence: %v", err)
+		}
+	}
+	for i := 0; i < 103; i++ {
+		_, err := repo.CreateArtifactRef(context.Background(), CreateArtifactRefRequest{
+			TenantID:        tenantID,
+			ProjectID:       projectID,
+			ArtifactType:    "execution_log",
+			Title:           fmt.Sprintf("工件 %d", i),
+			ObjectRef:       fmt.Sprintf("s3://bucket/artifacts/%d.log", i),
+			RetentionStatus: "locked",
+		})
+		if err != nil {
+			t.Fatalf("seed artifact: %v", err)
+		}
+	}
+	for i := 0; i < 102; i++ {
+		_, err := repo.CreateReportRef(context.Background(), CreateReportRefRequest{
+			TenantID:        tenantID,
+			ProjectID:       projectID,
+			ReportType:      "final_report",
+			Title:           fmt.Sprintf("报告 %d", i),
+			ObjectRef:       fmt.Sprintf("s3://bucket/reports/%d.md", i),
+			Format:          "markdown",
+			GeneratedByType: "human_user",
+			GeneratedByID:   &ownerID,
+		})
+		if err != nil {
+			t.Fatalf("seed report: %v", err)
+		}
+	}
+
+	preview, err := service.BuildArchivePreview(context.Background(), tenantID, projectID)
+	if err != nil {
+		t.Fatalf("build archive preview: %v", err)
+	}
+	if preview.EvidenceCount != 105 || preview.ArtifactCount != 103 || preview.ReportCount != 102 {
+		t.Fatalf("expected full counts, got evidence=%d artifact=%d report=%d", preview.EvidenceCount, preview.ArtifactCount, preview.ReportCount)
+	}
+}
+
 func TestSubmitDemandSignalsProjectCoordinatorInV1(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}

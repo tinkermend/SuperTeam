@@ -431,15 +431,22 @@ func (s *Service) BuildArchivePreview(ctx context.Context, tenantID, projectID u
 	if err != nil {
 		return nil, err
 	}
-	evidenceRefs, err := s.repository.ListEvidenceRefs(ctx, tenantID, projectID, nil, 100, 0)
+	pageSize, _ := normalizePagination(100, 0)
+	evidenceRefs, err := collectArchivePreviewPages(ctx, pageSize, func(limit, offset int32) ([]ProjectEvidenceRef, error) {
+		return s.repository.ListEvidenceRefs(ctx, tenantID, projectID, nil, limit, offset)
+	})
 	if err != nil {
 		return nil, err
 	}
-	artifactRefs, err := s.repository.ListArtifactRefs(ctx, tenantID, projectID, 100, 0)
+	artifactRefs, err := collectArchivePreviewPages(ctx, pageSize, func(limit, offset int32) ([]ProjectArtifactRef, error) {
+		return s.repository.ListArtifactRefs(ctx, tenantID, projectID, limit, offset)
+	})
 	if err != nil {
 		return nil, err
 	}
-	reportRefs, err := s.repository.ListReportRefs(ctx, tenantID, projectID, 100, 0)
+	reportRefs, err := collectArchivePreviewPages(ctx, pageSize, func(limit, offset int32) ([]ProjectReportRef, error) {
+		return s.repository.ListReportRefs(ctx, tenantID, projectID, limit, offset)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -503,10 +510,6 @@ func (s *Service) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSn
 	if projectArchived(project) {
 		return nil, ErrProjectArchived
 	}
-	preview, err := s.BuildArchivePreview(ctx, req.TenantID, req.ProjectID)
-	if err != nil {
-		return nil, err
-	}
 	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
 		TenantID:     req.TenantID,
 		ProjectID:    req.ProjectID,
@@ -516,10 +519,7 @@ func (s *Service) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSn
 		ResourceType: strPtr("project_archive_snapshot"),
 		Summary:      "项目归档快照已创建",
 		Payload: map[string]any{
-			"snapshot_type":  req.SnapshotType,
-			"evidence_count": preview.EvidenceCount,
-			"artifact_count": preview.ArtifactCount,
-			"report_count":   preview.ReportCount,
+			"snapshot_type": req.SnapshotType,
 		},
 	})
 	if err != nil {
@@ -532,7 +532,7 @@ func (s *Service) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSn
 		Status:          "snapshot_created",
 		ObjectRef:       req.ObjectRef,
 		Summary:         req.Summary,
-		IncludedCounts:  archiveIncludedCounts(*preview),
+		IncludedCounts:  map[string]any{},
 		CreatedByUserID: req.CreatedByUserID,
 		CreatedEventID:  &event.ID,
 	})
@@ -1324,12 +1324,28 @@ func projectArchived(project Project) bool {
 	return project.Status == ProjectStatusArchived || project.ArchivedAt != nil
 }
 
-func archiveIncludedCounts(preview ProjectArchivePreview) map[string]any {
-	return map[string]any{
-		"evidence": preview.EvidenceCount,
-		"artifact": preview.ArtifactCount,
-		"report":   preview.ReportCount,
+func collectArchivePreviewPages[T any](ctx context.Context, pageSize int32, list func(limit, offset int32) ([]T, error)) ([]T, error) {
+	pageSize, offset := normalizePagination(pageSize, 0)
+	values := make([]T, 0)
+	for page := 0; page < 10000; page++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		rows, err := list(pageSize, offset)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, rows...)
+		if int32(len(rows)) < pageSize {
+			return values, nil
+		}
+		nextOffset := offset + int32(len(rows))
+		if nextOffset <= offset {
+			return nil, ErrInvalidProject
+		}
+		offset = nextOffset
 	}
+	return nil, ErrInvalidProject
 }
 
 func validateMembers(members []ProjectMemberInput) error {
