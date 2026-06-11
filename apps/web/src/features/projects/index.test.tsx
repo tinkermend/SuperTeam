@@ -77,7 +77,12 @@ function makeProject(id: string, name: string, status: Project["status"] = "runn
   };
 }
 
-function createProjectFetcher(options: { slowFilteredList?: boolean } = {}) {
+function createProjectFetcher(
+  options: {
+    project2OverviewGate?: Promise<void>;
+    slowFilteredList?: boolean;
+  } = {},
+) {
   const projects = [
     makeProject("project-1", "客户接入验收"),
     makeProject("project-2", "生产巡检整改"),
@@ -181,6 +186,9 @@ function createProjectFetcher(options: { slowFilteredList?: boolean } = {}) {
 
     if (url.pathname.endsWith("/overview") && method === "GET") {
       const id = url.pathname.split("/")[4];
+      if (id === "project-2" && options.project2OverviewGate) {
+        await options.project2OverviewGate;
+      }
       return jsonResponse({
         active_tasks: [],
         coordination_workflow: {
@@ -334,6 +342,9 @@ function createProjectFetcher(options: { slowFilteredList?: boolean } = {}) {
     if (url.pathname === "/api/v1/projects/project-1/archive" && method === "POST") {
       return jsonResponse({ ...projects[0], status: "archived" });
     }
+    if (url.pathname === "/api/v1/projects/project-2/archive" && method === "POST") {
+      return jsonResponse({ ...projects[1], status: "archived" });
+    }
 
     return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 500);
   });
@@ -474,7 +485,9 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("转派请求")).toBeInTheDocument();
     await expect.element(screen.getByText("需要负责人确认")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "批准" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "批准：需要负责人确认" }),
+    );
 
     await vi.waitFor(() => {
       expect(
@@ -485,6 +498,54 @@ describe("ProjectsView", () => {
             ) &&
             init?.method === "POST" &&
             JSON.parse(String(init.body)).decision === "approved"
+          );
+        }),
+      ).toBe(true);
+    });
+  });
+
+  it("does not keep stale project detail actions after selecting another project", async () => {
+    let releaseProject2Overview!: () => void;
+    const project2OverviewGate = new Promise<void>((resolve) => {
+      releaseProject2Overview = resolve;
+    });
+    const fetcher = createProjectFetcher({ project2OverviewGate });
+    const screen = await renderProjects(fetcher);
+
+    await expect.element(screen.getByText("需要负责人确认")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /生产巡检整改/ }));
+
+    await vi.waitFor(() => {
+      expect(
+        fetchCalls(fetcher).some(([url]) =>
+          String(url).includes("/api/v1/projects/project-2/overview"),
+        ),
+      ).toBe(true);
+    });
+
+    try {
+      const detailHeadings = Array.from(
+        screen.container.querySelectorAll("h2"),
+        (heading) => heading.textContent?.trim(),
+      );
+      expect(detailHeadings).toContain("生产巡检整改");
+      expect(
+        screen.container.querySelector(
+          'button[aria-label="批准：需要负责人确认"]',
+        ),
+      ).toBeNull();
+    } finally {
+      releaseProject2Overview();
+    }
+
+    await userEvent.click(screen.getByRole("button", { name: "归档" }));
+
+    await vi.waitFor(() => {
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          return (
+            String(url).endsWith("/api/v1/projects/project-2/archive") &&
+            init?.method === "POST"
           );
         }),
       ).toBe(true);

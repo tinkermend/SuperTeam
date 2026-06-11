@@ -136,8 +136,12 @@ export function ProjectsView({
     placeholderData: keepPreviousData,
   });
 
-  const selectedProject = selectedProjectFromList ?? selectedProjectQuery.data;
-  const effectiveProjectId = selectedProject?.id ?? selectedProjectId;
+  const selectedProject =
+    selectedProjectFromList ??
+    (selectedProjectQuery.data?.id === selectedProjectId
+      ? selectedProjectQuery.data
+      : undefined);
+  const effectiveProjectId = selectedProjectId;
 
   useEffect(() => {
     if (routeProjectId || projects.length === 0) {
@@ -244,12 +248,13 @@ export function ProjectsView({
   const submitDemandMutation = useMutation({
     mutationFn: (input: SubmitProjectDemandInput) =>
       submitProjectDemand(apiOptions, effectiveProjectId as string, input),
-    onSuccess: async () => {
+    onSuccess: async (demand) => {
+      const projectId = demand.project_id || effectiveProjectId;
       setDemandOpen(false);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["project-demands", effectiveProjectId] }),
-        queryClient.invalidateQueries({ queryKey: ["project-events", effectiveProjectId] }),
-        queryClient.invalidateQueries({ queryKey: ["project-overview", effectiveProjectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-demands", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
       ]);
     },
   });
@@ -274,8 +279,38 @@ export function ProjectsView({
   });
 
   const isInitialLoading = projectsQuery.isLoading && !projectsQuery.data;
-  const displayedProject = overviewQuery.data?.project ?? selectedProject;
+  const overview =
+    overviewQuery.data?.project.id === effectiveProjectId
+      ? overviewQuery.data
+      : undefined;
+  const displayedProject =
+    overview?.project ??
+    (selectedProject?.id === effectiveProjectId ? selectedProject : undefined);
   const isArchived = displayedProject?.status === "archived";
+  const projectRouteDecisions = (routeDecisionsQuery.data ?? []).filter(
+    (decision) => decision.project_id === effectiveProjectId,
+  );
+  const projectCoordinationJobs = (coordinationJobsQuery.data ?? []).filter(
+    (job) => job.project_id === effectiveProjectId,
+  );
+  const projectDecisionRequests = (decisionRequestsQuery.data ?? []).filter(
+    (decision) => decision.project_id === effectiveProjectId,
+  );
+  const projectExecutionSummaries = (executionSummariesQuery.data ?? []).filter(
+    (summary) => summary.project_id === effectiveProjectId,
+  );
+  const projectTransferRequests = (transferRequestsQuery.data ?? []).filter(
+    (request) => request.project_id === effectiveProjectId,
+  );
+  const projectTasks = (tasksQuery.data ?? []).filter(
+    (task) => task.project_id === effectiveProjectId,
+  );
+  const projectEvents = (eventsQuery.data ?? []).filter(
+    (event) => event.project_id === effectiveProjectId,
+  );
+  const projectDemands = (demandsQuery.data ?? []).filter(
+    (demand) => demand.project_id === effectiveProjectId,
+  );
 
   return (
     <ProjectManagementShell
@@ -303,11 +338,11 @@ export function ProjectsView({
             selectedProjectId={effectiveProjectId}
           />
           <ProjectOperationalDetail
-            coordinationJobs={coordinationJobsQuery.data ?? []}
-            decisionRequests={decisionRequestsQuery.data ?? []}
-            demands={demandsQuery.data ?? []}
-            events={eventsQuery.data ?? []}
-            executionSummaries={executionSummariesQuery.data ?? []}
+            coordinationJobs={projectCoordinationJobs}
+            decisionRequests={projectDecisionRequests}
+            demands={projectDemands}
+            events={projectEvents}
+            executionSummaries={projectExecutionSummaries}
             isArchived={isArchived}
             onArchiveProject={() => {
               if (effectiveProjectId) {
@@ -320,11 +355,11 @@ export function ProjectsView({
               }
             }}
             onSubmitDemand={() => setDemandOpen(true)}
-            overview={overviewQuery.data}
+            overview={overview}
             project={displayedProject}
-            routeDecisions={routeDecisionsQuery.data ?? []}
-            tasks={tasksQuery.data ?? []}
-            transferRequests={transferRequestsQuery.data ?? []}
+            routeDecisions={projectRouteDecisions}
+            tasks={projectTasks}
+            transferRequests={projectTransferRequests}
           />
         </div>
       ) : null}

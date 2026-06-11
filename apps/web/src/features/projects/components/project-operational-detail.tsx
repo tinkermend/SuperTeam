@@ -216,6 +216,7 @@ export function ProjectOperationalDetail({
                     {decision.status_snapshot === "pending" ? (
                       <div className="flex flex-wrap gap-2">
                         <Button
+                          aria-label={`批准：${decision.title_snapshot}`}
                           size="sm"
                           type="button"
                           onClick={() => onResolveDecision(decision.id, "approved")}
@@ -223,6 +224,7 @@ export function ProjectOperationalDetail({
                           批准
                         </Button>
                         <Button
+                          aria-label={`要求补证：${decision.title_snapshot}`}
                           size="sm"
                           type="button"
                           variant="outline"
