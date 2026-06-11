@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -145,6 +146,190 @@ func TestProjectHandlerListsRouteDecisionsAndResolvesDecision(t *testing.T) {
 	if service.resolveDecisionReq.Payload["source"] != "console" {
 		t.Fatalf("expected payload to be decoded, got %#v", service.resolveDecisionReq.Payload)
 	}
+}
+
+func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{demandSignalErr: errors.New("temporal unavailable")}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	handler := NewHandler(service)
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "HTTP E2E 仿真项目",
+		Goal:                   "验证接口到服务的项目协调闭环",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       ownerID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+		CoordinationStatus:     "registered",
+	}
+
+	submitReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/demands", strings.NewReader(`{
+		"title":"验证 Runtime 执行回写",
+		"content":"模拟 Workflow signal 短暂失败"
+	}`))
+	submitReq = withProjectRouteParams(submitReq, map[string]string{"projectId": projectID.String()})
+	submitReq = withConsoleContext(submitReq, tenantID, ownerID)
+	submitResp := httptest.NewRecorder()
+
+	handler.SubmitDemand(submitResp, submitReq)
+
+	if submitResp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected transient signal failure to surface as 500, got %d: %s", submitResp.Code, submitResp.Body.String())
+	}
+	if len(repo.demands) != 1 || countProjectEvents(repo.eventTypes, ProjectEventDemandSubmitted) != 1 {
+		t.Fatalf("expected one demand persisted before signal retry, demands=%d events=%#v", len(repo.demands), repo.eventTypes)
+	}
+	if repo.demands[0].Content == nil || *repo.demands[0].Content != "模拟 Workflow signal 短暂失败" {
+		t.Fatalf("expected demand content to be decoded and persisted, got %#v", repo.demands[0])
+	}
+	failedDemandSignalEvent := repo.events[len(repo.events)-1]
+	if failedDemandSignalEvent.Payload["signal_name"] != "DemandSubmitted" || failedDemandSignalEvent.Payload["status"] != "failed" {
+		t.Fatalf("expected failed demand signal event, got %#v", failedDemandSignalEvent)
+	}
+
+	coordinator.demandSignalErr = nil
+	retryDemandReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/events/"+failedDemandSignalEvent.ID.String()+"/retry-workflow-signal", nil)
+	retryDemandReq = withProjectRouteParams(retryDemandReq, map[string]string{"projectId": projectID.String(), "eventId": failedDemandSignalEvent.ID.String()})
+	retryDemandReq = withConsoleContext(retryDemandReq, tenantID, ownerID)
+	retryDemandResp := httptest.NewRecorder()
+
+	handler.RetryWorkflowSignal(retryDemandResp, retryDemandReq)
+
+	if retryDemandResp.Code != http.StatusAccepted {
+		t.Fatalf("expected demand signal retry to return 202, got %d: %s", retryDemandResp.Code, retryDemandResp.Body.String())
+	}
+	if coordinator.demandSignals != 2 || len(repo.demands) != 1 {
+		t.Fatalf("expected retry to resend demand signal without duplicate demand, signals=%d demands=%d", coordinator.demandSignals, len(repo.demands))
+	}
+
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理执行证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+
+	wrongRuntimeReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-tasks/"+taskID.String()+"/complete", strings.NewReader(`{
+		"digital_employee_id":"`+employeeID.String()+`",
+		"conclusion":"错误 Runtime 尝试写回"
+	}`))
+	wrongRuntimeReq = withProjectRouteParams(wrongRuntimeReq, map[string]string{"projectTaskId": taskID.String()})
+	wrongRuntimeReq = withRuntimeContext(wrongRuntimeReq, tenantID, uuid.New())
+	wrongRuntimeResp := httptest.NewRecorder()
+
+	handler.CompleteProjectTask(wrongRuntimeResp, wrongRuntimeReq)
+
+	if wrongRuntimeResp.Code != http.StatusForbidden {
+		t.Fatalf("expected wrong runtime writeback to return 403, got %d: %s", wrongRuntimeResp.Code, wrongRuntimeResp.Body.String())
+	}
+	if len(repo.executionSummaries) != 0 || countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted) != 0 {
+		t.Fatalf("expected wrong runtime writeback to have no side effects, summaries=%d events=%#v", len(repo.executionSummaries), repo.eventTypes)
+	}
+
+	coordinator.completedSignalErr = errors.New("temporal unavailable")
+	completeReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-tasks/"+taskID.String()+"/complete", strings.NewReader(`{
+		"digital_employee_id":"`+employeeID.String()+`",
+		"conclusion":"证据充分",
+		"evidence_refs":["s3://bucket/e2e-report.md"],
+		"artifact_refs":["artifact-runtime-log"],
+		"confidence_factors":{"tests":"passed"},
+		"recommended_next_action":"提交负责人验收"
+	}`))
+	completeReq = withProjectRouteParams(completeReq, map[string]string{"projectTaskId": taskID.String()})
+	completeReq = withRuntimeContext(completeReq, tenantID, runtimeNodeID)
+	completeResp := httptest.NewRecorder()
+
+	handler.CompleteProjectTask(completeResp, completeReq)
+
+	if completeResp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected completed signal failure to surface as 500, got %d: %s", completeResp.Code, completeResp.Body.String())
+	}
+	if repo.tasks[0].Status != "completed" || len(repo.executionSummaries) != 1 || countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted) != 1 {
+		t.Fatalf("expected task writeback persisted before signal retry, task=%#v summaries=%d events=%#v", repo.tasks[0], len(repo.executionSummaries), repo.eventTypes)
+	}
+	summary := repo.executionSummaries[0]
+	if len(summary.EvidenceRefs) != 1 || summary.EvidenceRefs[0] != "s3://bucket/e2e-report.md" {
+		t.Fatalf("expected evidence refs to be decoded, got %#v", summary.EvidenceRefs)
+	}
+	if len(summary.ArtifactRefs) != 1 || summary.ArtifactRefs[0] != "artifact-runtime-log" {
+		t.Fatalf("expected artifact refs to be decoded, got %#v", summary.ArtifactRefs)
+	}
+	if summary.ConfidenceFactors["tests"] != "passed" {
+		t.Fatalf("expected confidence factors to be decoded, got %#v", summary.ConfidenceFactors)
+	}
+	if summary.RecommendedNextAction == nil || *summary.RecommendedNextAction != "提交负责人验收" {
+		t.Fatalf("expected recommended next action to be decoded, got %#v", summary.RecommendedNextAction)
+	}
+	failedCompletedSignalEvent := repo.events[len(repo.events)-1]
+	if failedCompletedSignalEvent.Payload["signal_name"] != "EmployeeTaskCompleted" || failedCompletedSignalEvent.Payload["status"] != "failed" {
+		t.Fatalf("expected failed completed signal event, got %#v", failedCompletedSignalEvent)
+	}
+
+	coordinator.completedSignalErr = nil
+	retryCompletedReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/events/"+failedCompletedSignalEvent.ID.String()+"/retry-workflow-signal", nil)
+	retryCompletedReq = withProjectRouteParams(retryCompletedReq, map[string]string{"projectId": projectID.String(), "eventId": failedCompletedSignalEvent.ID.String()})
+	retryCompletedReq = withConsoleContext(retryCompletedReq, tenantID, ownerID)
+	retryCompletedResp := httptest.NewRecorder()
+
+	handler.RetryWorkflowSignal(retryCompletedResp, retryCompletedReq)
+
+	if retryCompletedResp.Code != http.StatusAccepted {
+		t.Fatalf("expected completed signal retry to return 202, got %d: %s", retryCompletedResp.Code, retryCompletedResp.Body.String())
+	}
+	if coordinator.completedSignals != 2 || len(repo.executionSummaries) != 1 || countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted) != 1 {
+		t.Fatalf("expected retry to resend completed signal without duplicate facts, signals=%d summaries=%d events=%#v", coordinator.completedSignals, len(repo.executionSummaries), repo.eventTypes)
+	}
+
+	listSummariesReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/execution-summaries", nil)
+	listSummariesReq = withProjectRouteParams(listSummariesReq, map[string]string{"projectId": projectID.String()})
+	listSummariesReq = withConsoleContext(listSummariesReq, tenantID, ownerID)
+	listSummariesResp := httptest.NewRecorder()
+
+	handler.ListExecutionSummaries(listSummariesResp, listSummariesReq)
+
+	if listSummariesResp.Code != http.StatusOK {
+		t.Fatalf("expected execution summaries read model to return 200, got %d: %s", listSummariesResp.Code, listSummariesResp.Body.String())
+	}
+	var summaries []map[string]any
+	if err := json.NewDecoder(listSummariesResp.Body).Decode(&summaries); err != nil {
+		t.Fatalf("decode execution summaries: %v", err)
+	}
+	if len(summaries) != 1 || summaries[0]["project_task_id"] != taskID.String() {
+		t.Fatalf("unexpected execution summaries response: %#v", summaries)
+	}
+}
+
+func withProjectRouteParams(req *http.Request, params map[string]string) *http.Request {
+	rctx := chi.NewRouteContext()
+	for key, value := range params {
+		rctx.URLParams.Add(key, value)
+	}
+	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+}
+
+func withConsoleContext(req *http.Request, tenantID, userID uuid.UUID) *http.Request {
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
+	ctx = context.WithValue(ctx, middleware.UserIDKey, userID)
+	return req.WithContext(ctx)
+}
+
+func withRuntimeContext(req *http.Request, tenantID, runtimeNodeID uuid.UUID) *http.Request {
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
+	ctx = context.WithValue(ctx, middleware.RuntimeNodeIDKey, runtimeNodeID)
+	return req.WithContext(ctx)
 }
 
 type handlerTestService struct {

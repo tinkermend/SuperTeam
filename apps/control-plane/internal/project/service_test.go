@@ -439,6 +439,149 @@ func TestRetryWorkflowSignalReplaysCompletedTaskWithoutDuplicateWriteback(t *tes
 	}
 }
 
+func TestProjectCoordinationBackendE2ESimulation(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{demandSignalErr: fmt.Errorf("temporal unavailable")}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "E2E 仿真项目",
+		Goal:                   "验证需求、Runtime 写回和 Workflow signal 重试闭环",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       ownerID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+		CoordinationStatus:     "registered",
+	}
+
+	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		SubmittedByUserID: ownerID,
+		Title:             "验证 Runtime 执行回写",
+		Content:           "模拟 Temporal 短暂不可用后的重试恢复",
+	})
+	if err == nil {
+		t.Fatal("expected demand signal failure")
+	}
+	if len(repo.demands) != 1 || countProjectEvents(repo.eventTypes, ProjectEventDemandSubmitted) != 1 {
+		t.Fatalf("expected one persisted demand before retry, demands=%d events=%#v", len(repo.demands), repo.eventTypes)
+	}
+	failedDemandSignalEvent := repo.events[len(repo.events)-1]
+	if failedDemandSignalEvent.EventType != ProjectEventWorkflowSignaled || failedDemandSignalEvent.Payload["signal_name"] != "DemandSubmitted" || failedDemandSignalEvent.Payload["status"] != "failed" {
+		t.Fatalf("expected retryable demand signal failure event, got %#v", failedDemandSignalEvent)
+	}
+
+	coordinator.demandSignalErr = nil
+	retryDemandEvent, err := service.RetryWorkflowSignal(context.Background(), RetryWorkflowSignalRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventID:   failedDemandSignalEvent.ID,
+		ActorID:   ownerID,
+	})
+	if err != nil {
+		t.Fatalf("retry demand workflow signal: %v", err)
+	}
+	if retryDemandEvent.Payload["status"] != "sent" || retryDemandEvent.Payload["retry_of_event_id"] != failedDemandSignalEvent.ID.String() {
+		t.Fatalf("unexpected demand retry event payload: %#v", retryDemandEvent.Payload)
+	}
+	if coordinator.demandSignals != 2 || len(repo.demands) != 1 || countProjectEvents(repo.eventTypes, ProjectEventDemandSubmitted) != 1 {
+		t.Fatalf("expected demand retry to only resend signal, signals=%d demands=%d events=%#v", coordinator.demandSignals, len(repo.demands), repo.eventTypes)
+	}
+
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理执行证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+
+	_, err = service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          tenantID,
+		RuntimeNodeID:     uuid.New(),
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		Conclusion:        "错误 Runtime 尝试写回",
+	})
+	if !errors.Is(err, ErrProjectTaskForbidden) {
+		t.Fatalf("expected wrong runtime rejection, got %v", err)
+	}
+	if repo.tasks[0].Status != "assigned" || len(repo.executionSummaries) != 0 || countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted) != 0 {
+		t.Fatalf("expected rejected runtime writeback to have no side effects, task=%#v summaries=%d events=%#v", repo.tasks[0], len(repo.executionSummaries), repo.eventTypes)
+	}
+
+	coordinator.completedSignalErr = fmt.Errorf("temporal unavailable")
+	_, err = service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:              tenantID,
+		RuntimeNodeID:         runtimeNodeID,
+		ProjectTaskID:         taskID,
+		DigitalEmployeeID:     employeeID,
+		Conclusion:            "证据充分",
+		EvidenceRefs:          []any{"s3://bucket/e2e-report.md"},
+		ArtifactRefs:          []any{"artifact-runtime-log"},
+		ConfidenceFactors:     map[string]any{"tests": "passed"},
+		RecommendedNextAction: "提交负责人验收",
+	})
+	if err == nil {
+		t.Fatal("expected completed task signal failure")
+	}
+	if repo.tasks[0].Status != "completed" || len(repo.executionSummaries) != 1 || countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted) != 1 {
+		t.Fatalf("expected successful writeback before signal retry, task=%#v summaries=%d events=%#v", repo.tasks[0], len(repo.executionSummaries), repo.eventTypes)
+	}
+	failedCompletedSignalEvent := repo.events[len(repo.events)-1]
+	if failedCompletedSignalEvent.EventType != ProjectEventWorkflowSignaled || failedCompletedSignalEvent.Payload["signal_name"] != "EmployeeTaskCompleted" || failedCompletedSignalEvent.Payload["status"] != "failed" {
+		t.Fatalf("expected retryable completed signal failure event, got %#v", failedCompletedSignalEvent)
+	}
+
+	coordinator.completedSignalErr = nil
+	retryCompletedEvent, err := service.RetryWorkflowSignal(context.Background(), RetryWorkflowSignalRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventID:   failedCompletedSignalEvent.ID,
+		ActorID:   ownerID,
+	})
+	if err != nil {
+		t.Fatalf("retry completed workflow signal: %v", err)
+	}
+	if retryCompletedEvent.Payload["status"] != "sent" || retryCompletedEvent.Payload["retry_of_event_id"] != failedCompletedSignalEvent.ID.String() {
+		t.Fatalf("unexpected completed retry event payload: %#v", retryCompletedEvent.Payload)
+	}
+	if coordinator.completedSignals != 2 || coordinator.lastCompleted.ExecutionSummaryID != repo.executionSummaries[0].ID {
+		t.Fatalf("expected completed signal replay, signals=%d last=%#v summary=%#v", coordinator.completedSignals, coordinator.lastCompleted, repo.executionSummaries[0])
+	}
+	if len(repo.executionSummaries) != 1 || countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted) != 1 {
+		t.Fatalf("expected completed retry not to duplicate facts, summaries=%d events=%#v", len(repo.executionSummaries), repo.eventTypes)
+	}
+
+	demands, err := service.ListProjectDemands(context.Background(), tenantID, projectID, 50, 0)
+	if err != nil {
+		t.Fatalf("list demands: %v", err)
+	}
+	summaries, err := service.ListExecutionSummaries(context.Background(), tenantID, projectID, 50, 0)
+	if err != nil {
+		t.Fatalf("list execution summaries: %v", err)
+	}
+	events, err := service.ListProjectEvents(context.Background(), tenantID, projectID, 50, 0)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if len(demands) != 1 || len(summaries) != 1 || countProjectEvents(projectEventTypes(events), ProjectEventWorkflowSignaled) != 4 {
+		t.Fatalf("unexpected API-facing read model: demands=%d summaries=%d events=%#v", len(demands), len(summaries), projectEventTypes(events))
+	}
+}
+
 func TestProjectTaskWritebackRequiresRuntimeNodeIdentity(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewServiceWithCoordinator(repo, &fakeCoordinatorSignalClient{})
@@ -2018,4 +2161,12 @@ func countProjectEvents(values []ProjectEventType, target ProjectEventType) int 
 		}
 	}
 	return count
+}
+
+func projectEventTypes(events []ProjectEvent) []ProjectEventType {
+	values := make([]ProjectEventType, 0, len(events))
+	for _, event := range events {
+		values = append(values, event.EventType)
+	}
+	return values
 }
