@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-11 15:45：项目管理 V1 接入 Temporal 虚拟协调线程，新增 RouteDecision、CoordinationJob、ExecutionSummary、TransferRequest、人类决策投影和 Workflow signal 可观测能力。
 - 2026-06-11 04:01：项目管理 V0 新增真实项目管理入口、项目事实模型、项目事件流、配置治理页与提交需求到当前项目能力。
 - 2026-06-09 01:03：新增数字员工详情页单次调用测试 Dashboard 静态原型，参考 paperclip Agent 页的信息架构，突出调用记录、端到端健康、单次测试入口以及团队共享能力与员工覆盖关系。
 - 2026-06-07 19:50：新增数字员工内置头像库，提供 20 个工程师头像资产、Control Plane 头像资产列表 API、创建时 `avatar_asset_id` 校验与 metadata 快照，并在 Web 创建、列表和详情页展示员工头像。
