@@ -118,6 +118,12 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return nil, err
 	}
 
+	approvalRepository := approval.NewPgRepository(q)
+	approvalService, err := approval.NewService(approvalRepository)
+	if err != nil {
+		return nil, err
+	}
+
 	projectRepository := project.NewPgRepository(q, stores.Postgres)
 	coordinatorClient := project.CoordinatorSignalClient(project.NoopCoordinatorSignalClient{})
 	var coordinationWorker lifecycleWorker
@@ -136,13 +142,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore)
 		coordinationWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
 	}
-	projectService, err := project.NewServiceWithCoordinator(projectRepository, coordinatorClient)
-	if err != nil {
-		return nil, err
-	}
-
-	approvalRepository := approval.NewPgRepository(q)
-	approvalService, err := approval.NewService(approvalRepository)
+	projectService, err := project.NewServiceWithCoordinatorAndApprovals(projectRepository, coordinatorClient, project.NewApprovalServiceAdapter(approvalService))
 	if err != nil {
 		return nil, err
 	}

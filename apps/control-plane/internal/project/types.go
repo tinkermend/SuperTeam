@@ -12,6 +12,7 @@ var (
 	ErrInvalidProjectMember = errors.New("invalid project member")
 	ErrProjectNotFound      = errors.New("project not found")
 	ErrProjectArchived      = errors.New("project archived")
+	ErrProjectTaskForbidden = errors.New("project task forbidden")
 )
 
 type ProjectStatus string
@@ -317,6 +318,59 @@ type SubmitProjectDemandRequest struct {
 	SourceType        DemandSourceType
 	SourceRefs        map[string]any
 	Attachments       []any
+}
+
+type ResolveApprovalRequest struct {
+	TenantID          uuid.UUID
+	ApprovalRequestID uuid.UUID
+	DecidedByUserID   uuid.UUID
+	Decision          string
+	Comment           string
+	Payload           map[string]any
+}
+
+type ResolveDecisionRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DecisionRequestID uuid.UUID
+	DecidedByUserID   uuid.UUID
+	Decision          string
+	Comment           string
+	Payload           map[string]any
+}
+
+type CompleteProjectTaskRequest struct {
+	TenantID              uuid.UUID
+	RuntimeNodeID         uuid.UUID
+	ProjectTaskID         uuid.UUID
+	DigitalEmployeeID     uuid.UUID
+	Conclusion            string
+	EvidenceRefs          []any
+	ArtifactRefs          []any
+	ConfidenceFactors     map[string]any
+	Uncertainty           string
+	MissingInformation    []any
+	RecommendedNextAction string
+	RequiresHumanReview   bool
+}
+
+type FailProjectTaskRequest struct {
+	TenantID          uuid.UUID
+	RuntimeNodeID     uuid.UUID
+	ProjectTaskID     uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	FailureSummary    string
+}
+
+type RequestProjectTaskTransferRequest struct {
+	TenantID                    uuid.UUID
+	RuntimeNodeID               uuid.UUID
+	ProjectTaskID               uuid.UUID
+	DigitalEmployeeID           uuid.UUID
+	Reason                      string
+	SuggestedEmployeeType       string
+	SuggestedDigitalEmployeeIDs []uuid.UUID
+	MissingContextRefs          []any
 }
 
 type ListProjectsRequest struct {

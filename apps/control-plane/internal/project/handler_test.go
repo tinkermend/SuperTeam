@@ -101,11 +101,62 @@ func TestProjectHandlerGetConfigUsesCurrentOverview(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerListsRouteDecisionsAndResolvesDecision(t *testing.T) {
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/route-decisions?limit=10&offset=2", nil)
+	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, tenantID))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, actorID))
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("projectId", projectID.String())
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	resp := httptest.NewRecorder()
+
+	handler.ListRouteDecisions(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected route decisions 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.routeDecisionTenantID != tenantID || service.routeDecisionProjectID != projectID || service.routeDecisionLimit != 10 || service.routeDecisionOffset != 2 {
+		t.Fatalf("unexpected route decision query: tenant=%s project=%s limit=%d offset=%d", service.routeDecisionTenantID, service.routeDecisionProjectID, service.routeDecisionLimit, service.routeDecisionOffset)
+	}
+
+	resolveReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/decisions/"+decisionID.String()+"/resolve", strings.NewReader(`{"decision":"approved","comment":"同意","payload":{"source":"console"}}`))
+	resolveReq = resolveReq.WithContext(context.WithValue(resolveReq.Context(), middleware.TenantIDKey, tenantID))
+	resolveReq = resolveReq.WithContext(context.WithValue(resolveReq.Context(), middleware.UserIDKey, actorID))
+	rctx = chi.NewRouteContext()
+	rctx.URLParams.Add("projectId", projectID.String())
+	rctx.URLParams.Add("decisionId", decisionID.String())
+	resolveReq = resolveReq.WithContext(context.WithValue(resolveReq.Context(), chi.RouteCtxKey, rctx))
+	resolveResp := httptest.NewRecorder()
+
+	handler.ResolveDecision(resolveResp, resolveReq)
+
+	if resolveResp.Code != http.StatusOK {
+		t.Fatalf("expected decision resolve 200, got %d: %s", resolveResp.Code, resolveResp.Body.String())
+	}
+	if service.resolveDecisionReq.TenantID != tenantID || service.resolveDecisionReq.ProjectID != projectID || service.resolveDecisionReq.DecisionRequestID != decisionID || service.resolveDecisionReq.DecidedByUserID != actorID || service.resolveDecisionReq.Decision != "approved" {
+		t.Fatalf("unexpected resolve request: %#v", service.resolveDecisionReq)
+	}
+	if service.resolveDecisionReq.Payload["source"] != "console" {
+		t.Fatalf("expected payload to be decoded, got %#v", service.resolveDecisionReq.Payload)
+	}
+}
+
 type handlerTestService struct {
-	createReq        CreateProjectRequest
-	submitDemandReq  SubmitProjectDemandRequest
-	submitDemandErr  error
-	getOverviewCalls int
+	createReq              CreateProjectRequest
+	submitDemandReq        SubmitProjectDemandRequest
+	submitDemandErr        error
+	getOverviewCalls       int
+	routeDecisionTenantID  uuid.UUID
+	routeDecisionProjectID uuid.UUID
+	routeDecisionLimit     int32
+	routeDecisionOffset    int32
+	resolveDecisionReq     ResolveDecisionRequest
 }
 
 func (s *handlerTestService) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -180,6 +231,68 @@ func (s *handlerTestService) GetOverview(ctx context.Context, tenantID, projectI
 		Settings:      map[string]any{},
 	}
 	return &ProjectOverview{Project: project, HumanRoles: []ProjectMember{owner}, CoordinationWorkflow: ProjectCoordinationWorkflow{WorkflowID: project.CoordinationWorkflowID, Status: project.CoordinationStatus}}, nil
+}
+
+func (s *handlerTestService) ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error) {
+	s.routeDecisionTenantID = tenantID
+	s.routeDecisionProjectID = projectID
+	s.routeDecisionLimit = limit
+	s.routeDecisionOffset = offset
+	return []RouteDecision{{
+		ID:                          uuid.New(),
+		TenantID:                    tenantID,
+		ProjectID:                   projectID,
+		CoordinationJobID:           uuid.New(),
+		CandidateDigitalEmployeeIDs: []uuid.UUID{uuid.New()},
+		SelectedDigitalEmployeeIDs:  []uuid.UUID{uuid.New()},
+		Reason:                      "选择项目数字员工池中的 active executor",
+		InputRequirements:           map[string]any{},
+		ExpectedOutputs:             []any{"执行摘要"},
+		BudgetEstimate:              map[string]any{},
+	}}, nil
+}
+
+func (s *handlerTestService) ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error) {
+	return nil, nil
+}
+
+func (s *handlerTestService) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error) {
+	return nil, nil
+}
+
+func (s *handlerTestService) ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error) {
+	s.resolveDecisionReq = req
+	decision := DecisionRequest{
+		ID:                req.DecisionRequestID,
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		ApprovalRequestID: uuid.New(),
+		TargetUserID:      req.DecidedByUserID,
+		DecisionType:      "route_review",
+		TitleSnapshot:     "需要负责人确认",
+		StatusSnapshot:    req.Decision,
+	}
+	return &decision, nil
+}
+
+func (s *handlerTestService) ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error) {
+	return nil, nil
+}
+
+func (s *handlerTestService) ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]TransferRequest, error) {
+	return nil, nil
+}
+
+func (s *handlerTestService) CompleteProjectTask(ctx context.Context, req CompleteProjectTaskRequest) (*ExecutionSummary, error) {
+	return nil, nil
+}
+
+func (s *handlerTestService) FailProjectTask(ctx context.Context, req FailProjectTaskRequest) (*ProjectTask, error) {
+	return nil, nil
+}
+
+func (s *handlerTestService) RequestProjectTaskTransfer(ctx context.Context, req RequestProjectTaskTransferRequest) (*TransferRequest, error) {
+	return nil, nil
 }
 
 func testProject(tenantID, projectID, ownerID uuid.UUID) Project {

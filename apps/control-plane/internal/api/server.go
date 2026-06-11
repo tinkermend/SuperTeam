@@ -204,6 +204,12 @@ func (s *Server) registerRoutes() {
 				r.Put("/projects/{projectId}/config", s.projectHandler.UpdateProjectConfig)
 				r.Post("/projects/{projectId}/demands", s.projectHandler.SubmitDemand)
 				r.Get("/projects/{projectId}/demands", s.projectHandler.ListProjectDemands)
+				r.Get("/projects/{projectId}/route-decisions", s.projectHandler.ListRouteDecisions)
+				r.Get("/projects/{projectId}/coordination-jobs", s.projectHandler.ListCoordinationJobs)
+				r.Get("/projects/{projectId}/decisions", s.projectHandler.ListDecisionRequests)
+				r.Post("/projects/{projectId}/decisions/{decisionId}/resolve", s.projectHandler.ResolveDecision)
+				r.Get("/projects/{projectId}/execution-summaries", s.projectHandler.ListExecutionSummaries)
+				r.Get("/projects/{projectId}/transfer-requests", s.projectHandler.ListTransferRequests)
 			})
 		}
 
@@ -284,6 +290,11 @@ func (s *Server) registerRoutes() {
 					r.Post("/commands/{commandId}/fail", s.runtimeCommandWritebackHandler.Fail)
 					r.Post("/commands/{commandId}/cancelled", s.runtimeCommandWritebackHandler.Cancel)
 					r.Post("/commands/{commandId}/timed-out", s.runtimeCommandWritebackHandler.TimedOut)
+				}
+				if s.projectHandler != nil {
+					r.Post("/project-tasks/{projectTaskId}/complete", s.projectHandler.CompleteProjectTask)
+					r.Post("/project-tasks/{projectTaskId}/fail", s.projectHandler.FailProjectTask)
+					r.Post("/project-tasks/{projectTaskId}/transfer-requests", s.projectHandler.RequestProjectTaskTransfer)
 				}
 				r.Get("/ws", s.runtimeHandler.WebSocket)
 			})

@@ -2440,7 +2440,7 @@ go test ./apps/control-plane/internal/project ./apps/control-plane/internal/app 
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit service bridge**
+- [x] **Step 7: Commit service bridge**
 
 Run:
 
@@ -2462,7 +2462,7 @@ Expected: commit succeeds.
 - Modify: `apps/control-plane/internal/api/project_routes_test.go`
 - Modify: `contracts/control-plane/openapi.yaml`
 
-- [ ] **Step 1: Write failing handler tests for V1 APIs**
+- [x] **Step 1: Write failing handler tests for V1 APIs**
 
 Add tests to `apps/control-plane/internal/project/handler_test.go`:
 
@@ -2505,7 +2505,7 @@ func TestProjectHandlerListsRouteDecisionsAndResolvesDecision(t *testing.T) {
 
 Extend `handlerTestService` with V1 methods and in-memory return values.
 
-- [ ] **Step 2: Run failing handler tests**
+- [x] **Step 2: Run failing handler tests**
 
 Run:
 
@@ -2515,7 +2515,7 @@ go test ./apps/control-plane/internal/project -run TestProjectHandlerListsRouteD
 
 Expected: FAIL because handler methods and service interface entries are missing.
 
-- [ ] **Step 3: Add service methods**
+- [x] **Step 3: Add service methods**
 
 Implement these methods in `apps/control-plane/internal/project/service.go`:
 
@@ -2538,7 +2538,7 @@ Validation rules:
 - Transfer writes `TransferRequest` status `requested`, appends `transfer.requested`, then signals `EmployeeTransferRequested`.
 - Decision resolve calls approval service, appends `decision.submitted`, updates project decision projection, then signals `HumanDecisionSubmitted`.
 
-- [ ] **Step 4: Add handler methods and response mappers**
+- [x] **Step 4: Add handler methods and response mappers**
 
 Add methods in `apps/control-plane/internal/project/handler.go`:
 
@@ -2582,7 +2582,7 @@ type completeProjectTaskBody struct {
 }
 ```
 
-- [ ] **Step 5: Register routes**
+- [x] **Step 5: Register routes**
 
 In `apps/control-plane/internal/api/server.go`, add Console routes:
 
@@ -2603,11 +2603,11 @@ r.Post("/project-tasks/{projectTaskId}/fail", s.projectHandler.FailProjectTask)
 r.Post("/project-tasks/{projectTaskId}/transfer-requests", s.projectHandler.RequestProjectTaskTransfer)
 ```
 
-- [ ] **Step 6: Update OpenAPI contract**
+- [x] **Step 6: Update OpenAPI contract**
 
 Modify `contracts/control-plane/openapi.yaml` to include the V1 paths from the spec and the runtime writeback paths above. Use UUID string schemas for all IDs and `additionalProperties: true` for JSON snapshots.
 
-- [ ] **Step 7: Run API tests**
+- [x] **Step 7: Run API tests**
 
 Run:
 

@@ -206,6 +206,118 @@ func TestSubmitDemandSignalsProjectCoordinatorInV1(t *testing.T) {
 	}
 }
 
+func TestCompleteProjectTaskWritesSummaryAndSignalsCoordinator(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+
+	summary, err := service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:              tenantID,
+		ProjectTaskID:         taskID,
+		DigitalEmployeeID:     employeeID,
+		Conclusion:            "证据充分",
+		EvidenceRefs:          []any{"s3://bucket/report.md"},
+		ArtifactRefs:          []any{"artifact-1"},
+		ConfidenceFactors:     map[string]any{"tests": "passed"},
+		RecommendedNextAction: "提交负责人验收",
+	})
+	if err != nil {
+		t.Fatalf("complete project task: %v", err)
+	}
+	if summary.ProjectTaskID != taskID || summary.DigitalEmployeeID != employeeID {
+		t.Fatalf("unexpected summary: %#v", summary)
+	}
+	if repo.tasks[0].Status != "completed" {
+		t.Fatalf("expected task completed, got %s", repo.tasks[0].Status)
+	}
+	if coordinator.completedSignals != 1 || coordinator.lastCompleted.ExecutionSummaryID != summary.ID {
+		t.Fatalf("expected completed signal for summary, got count=%d signal=%#v", coordinator.completedSignals, coordinator.lastCompleted)
+	}
+	if repo.eventTypes[len(repo.eventTypes)-1] != ProjectEventTaskCompleted {
+		t.Fatalf("expected completed event, got %#v", repo.eventTypes)
+	}
+}
+
+func TestResolveDecisionUsesApprovalAndSignalsCoordinator(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      "route_review",
+		TitleSnapshot:     "需要负责人确认",
+		StatusSnapshot:    "pending",
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          "approved",
+		Comment:           "同意",
+		Payload:           map[string]any{"source": "console"},
+	})
+	if err != nil {
+		t.Fatalf("resolve decision: %v", err)
+	}
+	if resolved.StatusSnapshot != "approved" {
+		t.Fatalf("expected approved projection, got %s", resolved.StatusSnapshot)
+	}
+	if approvals.calls != 1 || approvals.last.ApprovalRequestID != approvalID || approvals.last.Decision != "approved" {
+		t.Fatalf("expected approval resolver call, got count=%d last=%#v", approvals.calls, approvals.last)
+	}
+	if coordinator.decisionSignals != 1 || coordinator.lastDecision.DecisionRequestID != decisionID || coordinator.lastDecision.ResolvedEventID == uuid.Nil {
+		t.Fatalf("expected decision signal, got count=%d signal=%#v", coordinator.decisionSignals, coordinator.lastDecision)
+	}
+}
+
 func TestUpdateConfigRejectsArchivedProject(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -928,6 +1040,8 @@ type fakeCoordinatorSignalClient struct {
 	transferSignals  int
 	decisionSignals  int
 	lastDemand       DemandSubmittedSignal
+	lastCompleted    EmployeeTaskCompletedSignal
+	lastDecision     HumanDecisionSubmittedSignal
 }
 
 func (f *fakeCoordinatorSignalClient) EnsureProjectCoordinator(ctx context.Context, signal ProjectCoordinatorSignal) error {
@@ -953,6 +1067,7 @@ func (f *fakeCoordinatorSignalClient) SignalProjectMemberChanged(ctx context.Con
 
 func (f *fakeCoordinatorSignalClient) SignalEmployeeTaskCompleted(ctx context.Context, signal EmployeeTaskCompletedSignal) error {
 	f.completedSignals++
+	f.lastCompleted = signal
 	return nil
 }
 
@@ -968,5 +1083,17 @@ func (f *fakeCoordinatorSignalClient) SignalEmployeeTransferRequested(ctx contex
 
 func (f *fakeCoordinatorSignalClient) SignalHumanDecisionSubmitted(ctx context.Context, signal HumanDecisionSubmittedSignal) error {
 	f.decisionSignals++
+	f.lastDecision = signal
+	return nil
+}
+
+type fakeApprovalResolver struct {
+	calls int
+	last  ResolveApprovalRequest
+}
+
+func (f *fakeApprovalResolver) ResolveApproval(ctx context.Context, req ResolveApprovalRequest) error {
+	f.calls++
+	f.last = req
 	return nil
 }

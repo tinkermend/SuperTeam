@@ -319,6 +319,63 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RuntimeCommandWritebackAccepted"
+  /api/v1/runtime/project-tasks/{projectTaskId}/complete:
+    post:
+      operationId: completeProjectTask
+      summary: Complete a project task from a Runtime Agent session
+      parameters:
+        - $ref: "#/components/parameters/ProjectTaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteProjectTaskRequest"
+      responses:
+        "202":
+          description: Project task completion accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectExecutionSummary"
+  /api/v1/runtime/project-tasks/{projectTaskId}/fail:
+    post:
+      operationId: failProjectTask
+      summary: Fail a project task from a Runtime Agent session
+      parameters:
+        - $ref: "#/components/parameters/ProjectTaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FailProjectTaskRequest"
+      responses:
+        "202":
+          description: Project task failure accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectTask"
+  /api/v1/runtime/project-tasks/{projectTaskId}/transfer-requests:
+    post:
+      operationId: requestProjectTaskTransfer
+      summary: Request project task transfer from a Runtime Agent session
+      parameters:
+        - $ref: "#/components/parameters/ProjectTaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestProjectTaskTransferRequest"
+      responses:
+        "202":
+          description: Project task transfer request accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectTransferRequest"
   /api/v1/runtime/nodes:
     get:
       operationId: listRuntimeNodes
@@ -868,6 +925,115 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
         "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/route-decisions:
+    get:
+      operationId: listProjectRouteDecisions
+      summary: List project route decisions
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project route decision list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectRouteDecision"
+  /api/v1/projects/{projectId}/coordination-jobs:
+    get:
+      operationId: listProjectCoordinationJobs
+      summary: List project coordination jobs
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project coordination job list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectCoordinationJob"
+  /api/v1/projects/{projectId}/decisions:
+    get:
+      operationId: listProjectDecisionRequests
+      summary: List project human decision requests
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project decision request list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectDecisionRequest"
+  /api/v1/projects/{projectId}/decisions/{decisionId}/resolve:
+    post:
+      operationId: resolveProjectDecision
+      summary: Resolve a project human decision request
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/DecisionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveProjectDecisionRequest"
+      responses:
+        "200":
+          description: Project decision request resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDecisionRequest"
+  /api/v1/projects/{projectId}/execution-summaries:
+    get:
+      operationId: listProjectExecutionSummaries
+      summary: List project execution summaries
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project execution summary list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectExecutionSummary"
+  /api/v1/projects/{projectId}/transfer-requests:
+    get:
+      operationId: listProjectTransferRequests
+      summary: List project transfer requests
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project transfer request list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectTransferRequest"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
           $ref: "#/components/responses/Error"
   /api/v1/teams:
     get:
@@ -1877,6 +2043,20 @@ components:
       schema:
         type: string
         format: uuid
+    ProjectTaskId:
+      name: projectTaskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DecisionId:
+      name: decisionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     SkillId:
       name: skillId
       in: path
@@ -2556,6 +2736,16 @@ components:
         - project.config.changed
         - project.archived
         - demand.submitted
+        - workflow.signaled
+        - coordination_job.created
+        - route_decision.created
+        - project_task.created
+        - project_task.dispatched
+        - project_task.completed
+        - project_task.failed
+        - transfer.requested
+        - decision.requested
+        - decision.submitted
     ProjectDemandSourceType:
       type: string
       enum:
@@ -2804,6 +2994,278 @@ components:
         created_event_id:
           type: string
           format: uuid
+    ProjectCoordinationJob:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - workflow_id
+        - job_type
+        - status
+        - input_snapshot_ref
+        - output_event_ids
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        workflow_id:
+          type: string
+        trigger_event_id:
+          type: string
+          format: uuid
+        job_type:
+          type: string
+        status:
+          type: string
+        input_snapshot_ref:
+          type: object
+          additionalProperties: true
+        output_event_ids:
+          type: array
+          items: {}
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    ProjectRouteDecision:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - coordination_job_id
+        - candidate_digital_employee_ids
+        - selected_digital_employee_ids
+        - reason
+        - input_requirements
+        - expected_outputs
+        - budget_estimate
+        - requires_human_review
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        coordination_job_id:
+          type: string
+          format: uuid
+        demand_id:
+          type: string
+          format: uuid
+        candidate_digital_employee_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        selected_digital_employee_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        reason:
+          type: string
+        input_requirements:
+          type: object
+          additionalProperties: true
+        expected_outputs:
+          type: array
+          items: {}
+        budget_estimate:
+          type: object
+          additionalProperties: true
+        requires_human_review:
+          type: boolean
+        created_event_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+    ProjectExecutionSummary:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - project_task_id
+        - digital_employee_id
+        - conclusion
+        - evidence_refs
+        - artifact_refs
+        - confidence_factors
+        - missing_information
+        - requires_human_review
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        project_task_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        conclusion:
+          type: string
+        evidence_refs:
+          type: array
+          items: {}
+        artifact_refs:
+          type: array
+          items: {}
+        confidence_factors:
+          type: object
+          additionalProperties: true
+        uncertainty:
+          type: string
+        missing_information:
+          type: array
+          items: {}
+        recommended_next_action:
+          type: string
+        requires_human_review:
+          type: boolean
+        transfer_request_id:
+          type: string
+          format: uuid
+        created_event_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+    ProjectTransferRequest:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - project_task_id
+        - requested_by_digital_employee_id
+        - reason
+        - suggested_digital_employee_ids
+        - missing_context_refs
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        project_task_id:
+          type: string
+          format: uuid
+        requested_by_digital_employee_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        suggested_employee_type:
+          type: string
+        suggested_digital_employee_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        missing_context_refs:
+          type: array
+          items: {}
+        status:
+          type: string
+        created_event_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProjectDecisionRequest:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - approval_request_id
+        - target_user_id
+        - decision_type
+        - title_snapshot
+        - status_snapshot
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        approval_request_id:
+          type: string
+          format: uuid
+        coordination_job_id:
+          type: string
+          format: uuid
+        project_task_id:
+          type: string
+          format: uuid
+        target_user_id:
+          type: string
+          format: uuid
+        decision_type:
+          type: string
+        title_snapshot:
+          type: string
+        summary_snapshot:
+          type: string
+        risk_level_snapshot:
+          type: string
+        status_snapshot:
+          type: string
+        created_event_id:
+          type: string
+          format: uuid
+        resolved_event_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
     ProjectStatusSummary:
       type: object
       required:
@@ -3023,6 +3485,83 @@ components:
           type: object
           additionalProperties: true
         attachments:
+          type: array
+          items: {}
+    ResolveProjectDecisionRequest:
+      type: object
+      required:
+        - decision
+      properties:
+        decision:
+          type: string
+          enum:
+            - approved
+            - rejected
+            - needs_more_evidence
+        comment:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+    CompleteProjectTaskRequest:
+      type: object
+      required:
+        - digital_employee_id
+        - conclusion
+      properties:
+        digital_employee_id:
+          type: string
+          format: uuid
+        conclusion:
+          type: string
+        evidence_refs:
+          type: array
+          items: {}
+        artifact_refs:
+          type: array
+          items: {}
+        confidence_factors:
+          type: object
+          additionalProperties: true
+        uncertainty:
+          type: string
+        missing_information:
+          type: array
+          items: {}
+        recommended_next_action:
+          type: string
+        requires_human_review:
+          type: boolean
+    FailProjectTaskRequest:
+      type: object
+      required:
+        - digital_employee_id
+        - failure_summary
+      properties:
+        digital_employee_id:
+          type: string
+          format: uuid
+        failure_summary:
+          type: string
+    RequestProjectTaskTransferRequest:
+      type: object
+      required:
+        - digital_employee_id
+        - reason
+      properties:
+        digital_employee_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        suggested_employee_type:
+          type: string
+        suggested_digital_employee_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        missing_context_refs:
           type: array
           items: {}
     Team:

@@ -11,10 +11,15 @@ import (
 type Service struct {
 	repository  Repository
 	coordinator CoordinatorSignalClient
+	approvals   ApprovalResolver
 }
 
 type latestConfigRevisionRepository interface {
 	GetLatestConfigRevision(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectConfigRevision, error)
+}
+
+type ApprovalResolver interface {
+	ResolveApproval(ctx context.Context, req ResolveApprovalRequest) error
 }
 
 func NewService(repository Repository) (*Service, error) {
@@ -22,13 +27,17 @@ func NewService(repository Repository) (*Service, error) {
 }
 
 func NewServiceWithCoordinator(repository Repository, coordinator CoordinatorSignalClient) (*Service, error) {
+	return NewServiceWithCoordinatorAndApprovals(repository, coordinator, nil)
+}
+
+func NewServiceWithCoordinatorAndApprovals(repository Repository, coordinator CoordinatorSignalClient, approvals ApprovalResolver) (*Service, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("project repository is required")
 	}
 	if coordinator == nil {
 		coordinator = NoopCoordinatorSignalClient{}
 	}
-	return &Service{repository: repository, coordinator: coordinator}, nil
+	return &Service{repository: repository, coordinator: coordinator, approvals: approvals}, nil
 }
 
 func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -302,6 +311,264 @@ func (s *Service) ListProjectDemands(ctx context.Context, tenantID, projectID uu
 	return s.repository.ListProjectDemands(ctx, tenantID, projectID, limit, offset)
 }
 
+func (s *Service) ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	limit, offset = normalizePagination(limit, offset)
+	return s.repository.ListRouteDecisions(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	limit, offset = normalizePagination(limit, offset)
+	return s.repository.ListCoordinationJobs(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	limit, offset = normalizePagination(limit, offset)
+	return s.repository.ListDecisionRequests(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	limit, offset = normalizePagination(limit, offset)
+	return s.repository.ListExecutionSummaries(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]TransferRequest, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	limit, offset = normalizePagination(limit, offset)
+	return s.repository.ListTransferRequests(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) CompleteProjectTask(ctx context.Context, req CompleteProjectTaskRequest) (*ExecutionSummary, error) {
+	req.Conclusion = strings.TrimSpace(req.Conclusion)
+	if req.TenantID == uuid.Nil || req.ProjectTaskID == uuid.Nil || req.DigitalEmployeeID == uuid.Nil || req.Conclusion == "" {
+		return nil, ErrInvalidProject
+	}
+	task, projectRecord, err := s.taskAndProjectForWriteback(ctx, req.TenantID, req.ProjectTaskID, req.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	summary, err := s.repository.CreateExecutionSummary(ctx, CreateExecutionSummaryRequest{
+		TenantID:              req.TenantID,
+		ProjectID:             task.ProjectID,
+		ProjectTaskID:         task.ID,
+		DigitalEmployeeID:     req.DigitalEmployeeID,
+		Conclusion:            req.Conclusion,
+		EvidenceRefs:          sliceOrEmptyAny(req.EvidenceRefs),
+		ArtifactRefs:          sliceOrEmptyAny(req.ArtifactRefs),
+		ConfidenceFactors:     mapOrEmptyAny(req.ConfidenceFactors),
+		Uncertainty:           strings.TrimSpace(req.Uncertainty),
+		MissingInformation:    sliceOrEmptyAny(req.MissingInformation),
+		RecommendedNextAction: strings.TrimSpace(req.RecommendedNextAction),
+		RequiresHumanReview:   req.RequiresHumanReview,
+	})
+	if err != nil {
+		return nil, err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    task.ProjectID,
+		EventType:    ProjectEventTaskCompleted,
+		ActorType:    "digital_employee",
+		ActorID:      req.DigitalEmployeeID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务已完成",
+		Payload: map[string]any{
+			"project_task_id":      task.ID.String(),
+			"execution_summary_id": summary.ID.String(),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	updatedSummary := summary
+	updatedSummary.CreatedEventID = &event.ID
+	if _, err := s.repository.UpdateProjectTaskStatus(ctx, req.TenantID, task.ID, "completed", &event.ID); err != nil {
+		return nil, err
+	}
+	if err := s.coordinator.SignalEmployeeTaskCompleted(ctx, EmployeeTaskCompletedSignal{
+		TenantID:           req.TenantID,
+		ProjectID:          task.ProjectID,
+		ProjectTaskID:      task.ID,
+		ExecutionSummaryID: summary.ID,
+		CompletedEventID:   event.ID,
+		WorkflowID:         projectRecord.CoordinationWorkflowID,
+	}); err != nil {
+		return nil, err
+	}
+	return &updatedSummary, nil
+}
+
+func (s *Service) FailProjectTask(ctx context.Context, req FailProjectTaskRequest) (*ProjectTask, error) {
+	req.FailureSummary = strings.TrimSpace(req.FailureSummary)
+	if req.TenantID == uuid.Nil || req.ProjectTaskID == uuid.Nil || req.DigitalEmployeeID == uuid.Nil || req.FailureSummary == "" {
+		return nil, ErrInvalidProject
+	}
+	task, projectRecord, err := s.taskAndProjectForWriteback(ctx, req.TenantID, req.ProjectTaskID, req.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    task.ProjectID,
+		EventType:    ProjectEventTaskFailed,
+		ActorType:    "digital_employee",
+		ActorID:      req.DigitalEmployeeID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务执行失败",
+		Payload: map[string]any{
+			"project_task_id": task.ID.String(),
+			"failure_summary": req.FailureSummary,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	updated, err := s.repository.UpdateProjectTaskStatus(ctx, req.TenantID, task.ID, "failed", &event.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.coordinator.SignalEmployeeTaskFailed(ctx, EmployeeTaskFailedSignal{
+		TenantID:       req.TenantID,
+		ProjectID:      task.ProjectID,
+		ProjectTaskID:  task.ID,
+		FailureSummary: req.FailureSummary,
+		FailedEventID:  event.ID,
+		WorkflowID:     projectRecord.CoordinationWorkflowID,
+	}); err != nil {
+		return nil, err
+	}
+	return &updated, nil
+}
+
+func (s *Service) RequestProjectTaskTransfer(ctx context.Context, req RequestProjectTaskTransferRequest) (*TransferRequest, error) {
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.TenantID == uuid.Nil || req.ProjectTaskID == uuid.Nil || req.DigitalEmployeeID == uuid.Nil || req.Reason == "" {
+		return nil, ErrInvalidProject
+	}
+	task, projectRecord, err := s.taskAndProjectForWriteback(ctx, req.TenantID, req.ProjectTaskID, req.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    task.ProjectID,
+		EventType:    ProjectEventTransferRequested,
+		ActorType:    "digital_employee",
+		ActorID:      req.DigitalEmployeeID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "数字员工请求转派",
+		Payload:      map[string]any{"project_task_id": task.ID.String(), "reason": req.Reason},
+	})
+	if err != nil {
+		return nil, err
+	}
+	transfer, err := s.repository.CreateTransferRequest(ctx, CreateTransferRequestRequest{
+		TenantID:                     req.TenantID,
+		ProjectID:                    task.ProjectID,
+		ProjectTaskID:                task.ID,
+		RequestedByDigitalEmployeeID: req.DigitalEmployeeID,
+		Reason:                       req.Reason,
+		SuggestedEmployeeType:        strings.TrimSpace(req.SuggestedEmployeeType),
+		SuggestedDigitalEmployeeIDs:  req.SuggestedDigitalEmployeeIDs,
+		MissingContextRefs:           sliceOrEmptyAny(req.MissingContextRefs),
+		Status:                       "requested",
+		CreatedEventID:               &event.ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.coordinator.SignalEmployeeTransferRequested(ctx, EmployeeTransferRequestedSignal{
+		TenantID:          req.TenantID,
+		ProjectID:         task.ProjectID,
+		ProjectTaskID:     task.ID,
+		TransferRequestID: transfer.ID,
+		RequestedEventID:  event.ID,
+		WorkflowID:        projectRecord.CoordinationWorkflowID,
+	}); err != nil {
+		return nil, err
+	}
+	return &transfer, nil
+}
+
+func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error) {
+	req.Decision = strings.TrimSpace(req.Decision)
+	req.Comment = strings.TrimSpace(req.Comment)
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.DecisionRequestID == uuid.Nil || req.DecidedByUserID == uuid.Nil || !validHumanDecision(req.Decision) {
+		return nil, ErrInvalidProject
+	}
+	projectRecord, err := s.repository.GetProject(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	decision, err := s.findDecisionRequest(ctx, req.TenantID, req.ProjectID, req.DecisionRequestID)
+	if err != nil {
+		return nil, err
+	}
+	if s.approvals != nil {
+		if err := s.approvals.ResolveApproval(ctx, ResolveApprovalRequest{
+			TenantID:          req.TenantID,
+			ApprovalRequestID: decision.ApprovalRequestID,
+			DecidedByUserID:   req.DecidedByUserID,
+			Decision:          req.Decision,
+			Comment:           req.Comment,
+			Payload:           mapOrEmptyAny(req.Payload),
+		}); err != nil {
+			return nil, err
+		}
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    req.ProjectID,
+		EventType:    ProjectEventDecisionSubmitted,
+		ActorType:    "human_user",
+		ActorID:      req.DecidedByUserID.String(),
+		ResourceType: strPtr("decision_request"),
+		ResourceID:   strPtr(req.DecisionRequestID.String()),
+		Summary:      "人类决策已提交",
+		Payload:      map[string]any{"decision": req.Decision, "comment": req.Comment},
+	})
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := s.repository.ResolveDecisionRequest(ctx, ResolveDecisionRequestRepositoryRequest{
+		TenantID:        req.TenantID,
+		ID:              req.DecisionRequestID,
+		StatusSnapshot:  req.Decision,
+		ResolvedEventID: &event.ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.coordinator.SignalHumanDecisionSubmitted(ctx, HumanDecisionSubmittedSignal{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		ApprovalRequestID: decision.ApprovalRequestID,
+		DecisionRequestID: req.DecisionRequestID,
+		Decision:          req.Decision,
+		ResolvedEventID:   event.ID,
+		WorkflowID:        projectRecord.CoordinationWorkflowID,
+	}); err != nil {
+		return nil, err
+	}
+	return &resolved, nil
+}
+
 func (s *Service) GetLatestProjectConfigRevision(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectConfigRevision, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
@@ -380,6 +647,43 @@ func (s *Service) GetOverview(ctx context.Context, tenantID, projectID uuid.UUID
 	return &overview, nil
 }
 
+func (s *Service) taskAndProjectForWriteback(ctx context.Context, tenantID, projectTaskID, digitalEmployeeID uuid.UUID) (ProjectTask, Project, error) {
+	task, err := s.repository.GetProjectTask(ctx, tenantID, projectTaskID)
+	if err != nil {
+		return ProjectTask{}, Project{}, err
+	}
+	if task.AssignedDigitalEmployeeID == nil || *task.AssignedDigitalEmployeeID != digitalEmployeeID {
+		return ProjectTask{}, Project{}, ErrProjectTaskForbidden
+	}
+	projectRecord, err := s.repository.GetProject(ctx, tenantID, task.ProjectID)
+	if err != nil {
+		return ProjectTask{}, Project{}, err
+	}
+	return task, projectRecord, nil
+}
+
+func (s *Service) findDecisionRequest(ctx context.Context, tenantID, projectID, decisionID uuid.UUID) (DecisionRequest, error) {
+	decisions, err := s.repository.ListDecisionRequests(ctx, tenantID, projectID, 100, 0)
+	if err != nil {
+		return DecisionRequest{}, err
+	}
+	for _, decision := range decisions {
+		if decision.ID == decisionID {
+			return decision, nil
+		}
+	}
+	return DecisionRequest{}, ErrProjectNotFound
+}
+
+func validHumanDecision(decision string) bool {
+	switch decision {
+	case "approved", "rejected", "needs_more_evidence":
+		return true
+	default:
+		return false
+	}
+}
+
 func validateMembers(members []ProjectMemberInput) error {
 	for _, member := range members {
 		if member.PrincipalID == uuid.Nil {
@@ -423,4 +727,22 @@ func normalizePagination(limit, offset int32) (int32, int32) {
 		offset = 0
 	}
 	return limit, offset
+}
+
+func strPtr(value string) *string {
+	return &value
+}
+
+func mapOrEmptyAny(value map[string]any) map[string]any {
+	if value == nil {
+		return map[string]any{}
+	}
+	return value
+}
+
+func sliceOrEmptyAny(value []any) []any {
+	if value == nil {
+		return []any{}
+	}
+	return value
 }

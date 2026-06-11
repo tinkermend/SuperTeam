@@ -12,6 +12,7 @@ import (
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/project"
+	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 )
 
 func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
@@ -137,6 +138,71 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 	if service.submitDemandReq.SourceRefs["ticket"] != "SUP-1" || len(service.submitDemandReq.Attachments) != 1 {
 		t.Fatalf("expected demand source refs and attachments, got %#v/%#v", service.submitDemandReq.SourceRefs, service.submitDemandReq.Attachments)
 	}
+
+	routeDecisionReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/route-decisions?limit=7", nil)
+	routeDecisionReq.AddCookie(cookie)
+	routeDecisionResp := httptest.NewRecorder()
+	server.ServeHTTP(routeDecisionResp, routeDecisionReq)
+	if routeDecisionResp.Code != http.StatusOK {
+		t.Fatalf("expected route decisions to succeed, got %d: %s", routeDecisionResp.Code, routeDecisionResp.Body.String())
+	}
+	if service.routeDecisionTenantID != expectedTenantID || service.routeDecisionProjectID != service.projectID || service.routeDecisionLimit != 7 {
+		t.Fatalf("expected route decision tenant/project/page from route, got tenant=%s project=%s limit=%d", service.routeDecisionTenantID, service.routeDecisionProjectID, service.routeDecisionLimit)
+	}
+
+	decisionID := uuid.New()
+	resolveReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+service.projectID.String()+"/decisions/"+decisionID.String()+"/resolve", strings.NewReader(`{"decision":"approved","comment":"同意"}`))
+	resolveReq.Header.Set("Content-Type", "application/json")
+	resolveReq.AddCookie(cookie)
+	resolveResp := httptest.NewRecorder()
+	server.ServeHTTP(resolveResp, resolveReq)
+	if resolveResp.Code != http.StatusOK {
+		t.Fatalf("expected decision resolve to succeed, got %d: %s", resolveResp.Code, resolveResp.Body.String())
+	}
+	if service.resolveDecisionReq.TenantID != expectedTenantID || service.resolveDecisionReq.ProjectID != service.projectID || service.resolveDecisionReq.DecisionRequestID != decisionID || service.resolveDecisionReq.DecidedByUserID != user.ID {
+		t.Fatalf("expected resolve decision context/path/user, got %#v", service.resolveDecisionReq)
+	}
+}
+
+func TestRuntimeProjectTaskWritebackRoutesUseRuntimeSessionAuth(t *testing.T) {
+	runtimeAuth := &routeRuntimeSessionAuth{
+		tenantID:      uuid.MustParse(auth.DefaultTenantID),
+		runtimeNodeID: uuid.New(),
+		sessionID:     uuid.New(),
+		nodeID:        "runtime-node-1",
+		token:         "runtime-session-token",
+	}
+	service := &routeProjectService{}
+	server := NewServerWithAuthzAndRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		nil,
+		nil,
+		runtimeAuth,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	projectTaskID := uuid.New()
+	employeeID := uuid.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-tasks/"+projectTaskID.String()+"/complete", strings.NewReader(`{
+		"digital_employee_id":"`+employeeID.String()+`",
+		"conclusion":"证据充分",
+		"evidence_refs":["s3://bucket/report.md"],
+		"artifact_refs":[],
+		"confidence_factors":{"tests":"passed"}
+	}`))
+	req.Header.Set("Authorization", "Bearer runtime-session-token")
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected project task complete to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.completeTaskReq.TenantID != runtimeAuth.tenantID || service.completeTaskReq.RuntimeNodeID != runtimeAuth.runtimeNodeID || service.completeTaskReq.ProjectTaskID != projectTaskID || service.completeTaskReq.DigitalEmployeeID != employeeID {
+		t.Fatalf("expected runtime context/path/body in complete request, got %#v", service.completeTaskReq)
+	}
 }
 
 func TestProjectRoutesRejectBadRequestsAndConflicts(t *testing.T) {
@@ -197,6 +263,11 @@ type routeProjectService struct {
 	eventsOffset              int32
 	latestConfigRevisionCalls int
 	submitDemandReq           project.SubmitProjectDemandRequest
+	routeDecisionTenantID     uuid.UUID
+	routeDecisionProjectID    uuid.UUID
+	routeDecisionLimit        int32
+	resolveDecisionReq        project.ResolveDecisionRequest
+	completeTaskReq           project.CompleteProjectTaskRequest
 	archiveErr                error
 }
 
@@ -295,6 +366,79 @@ func (s *routeProjectService) GetOverview(ctx context.Context, tenantID, project
 	}, nil
 }
 
+func (s *routeProjectService) ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.RouteDecision, error) {
+	s.routeDecisionTenantID = tenantID
+	s.routeDecisionProjectID = projectID
+	s.routeDecisionLimit = limit
+	return []project.RouteDecision{{
+		ID:                          uuid.New(),
+		TenantID:                    tenantID,
+		ProjectID:                   projectID,
+		CoordinationJobID:           uuid.New(),
+		CandidateDigitalEmployeeIDs: []uuid.UUID{uuid.New()},
+		SelectedDigitalEmployeeIDs:  []uuid.UUID{uuid.New()},
+		Reason:                      "选择项目数字员工池中的 active executor",
+		InputRequirements:           map[string]any{},
+		ExpectedOutputs:             []any{"执行摘要"},
+		BudgetEstimate:              map[string]any{},
+	}}, nil
+}
+
+func (s *routeProjectService) ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.CoordinationJob, error) {
+	return nil, nil
+}
+
+func (s *routeProjectService) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.DecisionRequest, error) {
+	return nil, nil
+}
+
+func (s *routeProjectService) ResolveDecision(ctx context.Context, req project.ResolveDecisionRequest) (*project.DecisionRequest, error) {
+	s.resolveDecisionReq = req
+	decision := project.DecisionRequest{
+		ID:                req.DecisionRequestID,
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		ApprovalRequestID: uuid.New(),
+		TargetUserID:      req.DecidedByUserID,
+		DecisionType:      "route_review",
+		TitleSnapshot:     "需要负责人确认",
+		StatusSnapshot:    req.Decision,
+	}
+	return &decision, nil
+}
+
+func (s *routeProjectService) ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.ExecutionSummary, error) {
+	return nil, nil
+}
+
+func (s *routeProjectService) ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.TransferRequest, error) {
+	return nil, nil
+}
+
+func (s *routeProjectService) CompleteProjectTask(ctx context.Context, req project.CompleteProjectTaskRequest) (*project.ExecutionSummary, error) {
+	s.completeTaskReq = req
+	summary := project.ExecutionSummary{
+		ID:                uuid.New(),
+		TenantID:          req.TenantID,
+		ProjectID:         uuid.New(),
+		ProjectTaskID:     req.ProjectTaskID,
+		DigitalEmployeeID: req.DigitalEmployeeID,
+		Conclusion:        req.Conclusion,
+		EvidenceRefs:      req.EvidenceRefs,
+		ArtifactRefs:      req.ArtifactRefs,
+		ConfidenceFactors: req.ConfidenceFactors,
+	}
+	return &summary, nil
+}
+
+func (s *routeProjectService) FailProjectTask(ctx context.Context, req project.FailProjectTaskRequest) (*project.ProjectTask, error) {
+	return &project.ProjectTask{ID: req.ProjectTaskID, TenantID: req.TenantID, ProjectID: uuid.New(), Status: "failed"}, nil
+}
+
+func (s *routeProjectService) RequestProjectTaskTransfer(ctx context.Context, req project.RequestProjectTaskTransferRequest) (*project.TransferRequest, error) {
+	return &project.TransferRequest{ID: uuid.New(), TenantID: req.TenantID, ProjectID: uuid.New(), ProjectTaskID: req.ProjectTaskID, RequestedByDigitalEmployeeID: req.DigitalEmployeeID, Reason: req.Reason, Status: "requested"}, nil
+}
+
 func routeProject(tenantID, projectID, ownerID uuid.UUID) project.Project {
 	now := time.Now().UTC()
 	return project.Project{
@@ -312,4 +456,25 @@ func routeProject(tenantID, projectID, ownerID uuid.UUID) project.Project {
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}
+}
+
+type routeRuntimeSessionAuth struct {
+	tenantID      uuid.UUID
+	runtimeNodeID uuid.UUID
+	sessionID     uuid.UUID
+	nodeID        string
+	token         string
+}
+
+func (s *routeRuntimeSessionAuth) ValidateRuntimeSession(ctx context.Context, token string) (*runtimepkg.RuntimeSessionValidation, error) {
+	if token != s.token {
+		return nil, context.Canceled
+	}
+	return &runtimepkg.RuntimeSessionValidation{
+		SessionID:     s.sessionID,
+		TenantID:      s.tenantID,
+		RuntimeNodeID: s.runtimeNodeID,
+		NodeID:        s.nodeID,
+		ExpiresAt:     time.Now().Add(time.Hour),
+	}, nil
 }
