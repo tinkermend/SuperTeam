@@ -50,13 +50,26 @@ export function ProjectGovernanceTabs({
   const unresolvedRiskCount = acceptance?.unresolved_risks.length ?? 0;
 
   return (
-    <Tabs className="gap-3" defaultValue="evidence">
-      <LiquidTabsList aria-label="项目详情治理视图">
-        <LiquidTabsTrigger value="evidence">证据链</LiquidTabsTrigger>
-        <LiquidTabsTrigger value="artifacts">工件报告</LiquidTabsTrigger>
-        <LiquidTabsTrigger value="budget">预算流水</LiquidTabsTrigger>
-        <LiquidTabsTrigger value="acceptance">验收结论</LiquidTabsTrigger>
-        <LiquidTabsTrigger value="archive">归档预览</LiquidTabsTrigger>
+    <Tabs className="grid w-full min-w-0 gap-3" defaultValue="evidence">
+      <LiquidTabsList
+        aria-label="项目详情治理视图"
+        className="min-w-0 max-w-full overflow-x-auto"
+      >
+        <LiquidTabsTrigger className="flex-none shrink-0" value="evidence">
+          证据链
+        </LiquidTabsTrigger>
+        <LiquidTabsTrigger className="flex-none shrink-0" value="artifacts">
+          工件报告
+        </LiquidTabsTrigger>
+        <LiquidTabsTrigger className="flex-none shrink-0" value="budget">
+          预算流水
+        </LiquidTabsTrigger>
+        <LiquidTabsTrigger className="flex-none shrink-0" value="acceptance">
+          验收结论
+        </LiquidTabsTrigger>
+        <LiquidTabsTrigger className="flex-none shrink-0" value="archive">
+          归档预览
+        </LiquidTabsTrigger>
       </LiquidTabsList>
 
       <TabsContent className="m-0" value="evidence">
