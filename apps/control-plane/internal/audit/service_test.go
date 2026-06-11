@@ -18,18 +18,32 @@ func (m *memoryRepository) CreateEvent(ctx context.Context, event *Event) error 
 }
 
 func (m *memoryRepository) ListEvents(ctx context.Context, limit, offset int) ([]*Event, error) {
-	if offset >= len(m.events) {
-		return []*Event{}, nil
-	}
-	end := offset + limit
-	if end > len(m.events) {
-		end = len(m.events)
-	}
-	return m.events[offset:end], nil
+	return paginateEvents(m.events, limit, offset), nil
 }
 
 func (m *memoryRepository) ListTeamEvents(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int) ([]*Event, error) {
-	return m.ListEvents(ctx, limit, offset)
+	return m.ListResourceEvents(ctx, tenantID, "team", teamID.String(), limit, offset)
+}
+
+func (m *memoryRepository) ListResourceEvents(ctx context.Context, tenantID uuid.UUID, resourceType, resourceID string, limit, offset int) ([]*Event, error) {
+	filtered := make([]*Event, 0, len(m.events))
+	for _, event := range m.events {
+		if event.TenantID == tenantID && event.ResourceType == resourceType && event.ResourceID == resourceID {
+			filtered = append(filtered, event)
+		}
+	}
+	return paginateEvents(filtered, limit, offset), nil
+}
+
+func paginateEvents(events []*Event, limit, offset int) []*Event {
+	if offset >= len(events) || limit <= 0 {
+		return []*Event{}
+	}
+	end := offset + limit
+	if end > len(events) {
+		end = len(events)
+	}
+	return events[offset:end]
 }
 
 func TestNewServiceRequiresRepository(t *testing.T) {
@@ -92,5 +106,62 @@ func TestListEvents(t *testing.T) {
 	}
 	if len(events) != 2 {
 		t.Errorf("expected 2 events, got %d", len(events))
+	}
+}
+
+func TestListProjectEventsFiltersByProjectResource(t *testing.T) {
+	tenantID := uuid.New()
+	otherTenantID := uuid.New()
+	projectID := uuid.New()
+	otherProjectID := uuid.New()
+	repo := &memoryRepository{events: []*Event{
+		{
+			ID:           uuid.New(),
+			TenantID:     tenantID,
+			EventType:    "project.created",
+			ResourceType: "project",
+			ResourceID:   projectID.String(),
+			Action:       "project.create",
+		},
+		{
+			ID:           uuid.New(),
+			TenantID:     tenantID,
+			EventType:    "project.created",
+			ResourceType: "project",
+			ResourceID:   otherProjectID.String(),
+			Action:       "project.create",
+		},
+		{
+			ID:           uuid.New(),
+			TenantID:     otherTenantID,
+			EventType:    "project.created",
+			ResourceType: "project",
+			ResourceID:   projectID.String(),
+			Action:       "project.create",
+		},
+		{
+			ID:           uuid.New(),
+			TenantID:     tenantID,
+			EventType:    "project.created",
+			ResourceType: "task",
+			ResourceID:   projectID.String(),
+			Action:       "task.create",
+		},
+	}}
+	service, _ := NewService(repo)
+
+	events, err := service.ListProjectEvents(context.Background(), tenantID, projectID, 10, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected one project event, got %d", len(events))
+	}
+	if events[0].TenantID != tenantID || events[0].ResourceType != "project" || events[0].ResourceID != projectID.String() {
+		t.Fatalf("expected project resource event, got %#v", events[0])
+	}
+
+	if _, err := service.ListProjectEvents(context.Background(), tenantID, uuid.Nil, 10, 0); err == nil {
+		t.Fatal("expected nil project id to fail")
 	}
 }

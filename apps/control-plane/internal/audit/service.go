@@ -29,6 +29,7 @@ type Repository interface {
 	CreateEvent(ctx context.Context, event *Event) error
 	ListEvents(ctx context.Context, limit, offset int) ([]*Event, error)
 	ListTeamEvents(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int) ([]*Event, error)
+	ListResourceEvents(ctx context.Context, tenantID uuid.UUID, resourceType, resourceID string, limit, offset int) ([]*Event, error)
 }
 
 type PgRepository struct {
@@ -86,6 +87,19 @@ func (r *PgRepository) ListTeamEvents(ctx context.Context, tenantID, teamID uuid
 	return eventsFromQuery(events), nil
 }
 
+func (r *PgRepository) ListResourceEvents(ctx context.Context, tenantID uuid.UUID, resourceType, resourceID string, limit, offset int) ([]*Event, error) {
+	events, err := r.q.ListAuditEvents(ctx, queries.ListAuditEventsParams{
+		ResourceType: textFromString(resourceType),
+		ResourceID:   textFromString(resourceID),
+		Offset:       int32(offset),
+		Limit:        int32(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return filterEventsByTenant(eventsFromQuery(events), tenantID), nil
+}
+
 type Service struct {
 	repository Repository
 }
@@ -116,6 +130,26 @@ func (s *Service) ListEvents(ctx context.Context, limit, offset int) ([]*Event, 
 
 func (s *Service) ListTeamEvents(ctx context.Context, tenantID, teamID uuid.UUID, limit, offset int) ([]*Event, error) {
 	return s.repository.ListTeamEvents(ctx, tenantID, teamID, limit, offset)
+}
+
+func (s *Service) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int) ([]*Event, error) {
+	if tenantID == uuid.Nil {
+		return nil, errors.New("tenant id is required")
+	}
+	if projectID == uuid.Nil {
+		return nil, errors.New("project id is required")
+	}
+	return s.repository.ListResourceEvents(ctx, tenantID, "project", projectID.String(), limit, offset)
+}
+
+func filterEventsByTenant(events []*Event, tenantID uuid.UUID) []*Event {
+	filtered := make([]*Event, 0, len(events))
+	for _, event := range events {
+		if event != nil && event.TenantID == tenantID {
+			filtered = append(filtered, event)
+		}
+	}
+	return filtered
 }
 
 func eventsFromQuery(events []queries.AuditEvent) []*Event {

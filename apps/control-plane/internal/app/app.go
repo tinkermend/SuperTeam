@@ -56,6 +56,7 @@ type Container struct {
 	RuntimeHandler                 *handlers.RuntimeHandler
 	RuntimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler
 	EmployeeHandler                *employee.HTTPHandler
+	AuditHandler                   *audit.HTTPHandler
 	ProjectHandler                 *project.HTTPHandler
 	SkillHandler                   *skill.HTTPHandler
 	TenantHandler                  *tenant.HTTPHandler
@@ -258,6 +259,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
 	runtimeCommandWritebackHandler := handlers.NewRuntimeCommandWritebackHandler(runWritebackService)
 	employeeHandler := employee.NewHandlerWithRunService(employeeService, runService)
+	auditHandler := audit.NewHandler(auditService)
 	projectHandler := project.NewHandler(projectService)
 	skillHandler := skill.NewHandler(skillService)
 	tenantHandler := tenant.NewHandler(tenantService)
@@ -266,6 +268,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler)
 	server.SetTenantHandler(tenantHandler)
 	server.SetEmployeeHandler(employeeHandler)
+	server.SetAuditHandler(auditHandler)
 	server.SetProjectHandler(projectHandler)
 	server.SetSkillHandler(skillHandler)
 
@@ -293,6 +296,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		RuntimeHandler:                 runtimeHandler,
 		RuntimeCommandWritebackHandler: runtimeCommandWritebackHandler,
 		EmployeeHandler:                employeeHandler,
+		AuditHandler:                   auditHandler,
 		ProjectHandler:                 projectHandler,
 		SkillHandler:                   skillHandler,
 		TenantHandler:                  tenantHandler,

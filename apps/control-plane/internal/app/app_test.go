@@ -141,6 +141,9 @@ func TestNewContainerWithConfigWiresTemporalOnlyWhenEnabled(t *testing.T) {
 	if disabled.ProjectService == nil {
 		t.Fatalf("expected project service to be wired")
 	}
+	if disabled.AuditHandler == nil {
+		t.Fatalf("expected audit handler to be wired")
+	}
 
 	enabled, err := NewContainerWithConfig(stores, config.Config{
 		Temporal: config.TemporalConfig{
@@ -164,6 +167,9 @@ func TestNewContainerWithConfigWiresTemporalOnlyWhenEnabled(t *testing.T) {
 	}
 	if enabled.ProjectService == nil {
 		t.Fatalf("expected project service to be wired")
+	}
+	if enabled.AuditHandler == nil {
+		t.Fatalf("expected audit handler to be wired")
 	}
 	enabled.TemporalClientClose()
 }

@@ -1,14 +1,53 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { CircleDollarSign } from "lucide-react";
-import { UnimplementedPage } from "@/features/shared/unimplemented-page";
+import { LiquidCard, SemanticIconTile } from "@/components/superteam";
+import { CostsProjectView } from "@/features/projects/components/project-budget-panel";
+import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 
 export const Route = createFileRoute("/_authenticated/costs/")({
-  component: () => (
-    <UnimplementedPage
-      tone="success"
-      icon={CircleDollarSign}
-      title="成本管理"
-      description="按数字员工查看 token 消耗成本，并预留每日、每月 token 成本统计视图。"
-    />
-  ),
+  component: CostsRoute,
 });
+
+function CostsRoute() {
+  const search = useSearch({ from: "/_authenticated/costs/" }) as {
+    project_id?: string;
+  };
+  const projectId = search.project_id?.trim();
+
+  return (
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 md:p-6">
+      <div className="flex items-center gap-3">
+        <SemanticIconTile tone="warning" size="sm">
+          <CircleDollarSign />
+        </SemanticIconTile>
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold">成本中心</h1>
+          <p className="truncate text-sm text-muted-foreground">
+            {projectId ? `项目 ${projectId}` : "等待项目上下文"}
+          </p>
+        </div>
+      </div>
+
+      {projectId ? (
+        <CostsProjectView
+          apiBaseUrl={resolveControlPlaneUrl()}
+          projectId={projectId}
+        />
+      ) : (
+        <LiquidCard className="rounded-xl p-5">
+          <div className="flex items-center gap-3">
+            <SemanticIconTile tone="warning" size="sm">
+              <CircleDollarSign />
+            </SemanticIconTile>
+            <div>
+              <h2 className="font-semibold">请选择项目后查看成本</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                从项目详情进入成本中心，或在地址中提供 project_id。
+              </p>
+            </div>
+          </div>
+        </LiquidCard>
+      )}
+    </div>
+  );
+}

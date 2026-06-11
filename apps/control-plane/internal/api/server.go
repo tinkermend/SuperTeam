@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
@@ -26,6 +27,7 @@ type Server struct {
 	runtimeSessionAuth             middleware.RuntimeSessionAuthService
 	authService                    *auth.Service
 	authorizer                     authz.Authorizer
+	auditHandler                   *audit.HTTPHandler
 	authzCenterHandler             *authzcenter.HTTPHandler
 	employeeHandler                *employee.HTTPHandler
 	projectHandler                 *project.HTTPHandler
@@ -110,6 +112,11 @@ func (s *Server) SetEmployeeHandler(employeeHandler *employee.HTTPHandler) {
 	if employeeHandler != nil {
 		employeeHandler.SetAuthorizer(s.authorizer)
 	}
+	s.registerRoutes()
+}
+
+func (s *Server) SetAuditHandler(auditHandler *audit.HTTPHandler) {
+	s.auditHandler = auditHandler
 	s.registerRoutes()
 }
 
@@ -256,6 +263,13 @@ func (s *Server) registerRoutes() {
 				r.Post("/teams/{teamId}/governance/drafts/{draftId}/approve", s.tenantHandler.ApproveGovernanceDraft)
 				r.Post("/teams/{teamId}/governance/drafts/{draftId}/reject", s.tenantHandler.RejectGovernanceDraft)
 				r.Get("/teams/{teamId}/governance/drafts/{draftId}/diff", s.tenantHandler.PreviewGovernanceDiff)
+			})
+		}
+
+		if s.auditHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/audit/events", s.auditHandler.ListEvents)
 			})
 		}
 

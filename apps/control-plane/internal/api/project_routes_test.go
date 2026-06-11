@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/handlers"
+	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/project"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
@@ -268,6 +270,89 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 	}
 	if service.configRevisionTenantID != expectedTenantID || service.configRevisionProjectID != service.projectID || service.configRevisionID != revisionID {
 		t.Fatalf("expected config revision context/path, got tenant=%s project=%s revision=%s", service.configRevisionTenantID, service.configRevisionProjectID, service.configRevisionID)
+	}
+}
+
+func TestAuditEventsRouteUsesConsoleTenantAndProjectResource(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeAuditService{}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetAuditHandler(audit.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	projectID := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/audit/events?tenant_id="+uuid.New().String()+"&resource_type=project&resource_id="+projectID.String()+"&limit=25&offset=5", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected audit events route to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	if service.tenantID != expectedTenantID || service.projectID != projectID || service.limit != 25 || service.offset != 5 {
+		t.Fatalf("expected console tenant/project/page, got tenant=%s project=%s limit=%d offset=%d", service.tenantID, service.projectID, service.limit, service.offset)
+	}
+
+	var events []map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &events); err != nil {
+		t.Fatalf("expected audit JSON array: %v", err)
+	}
+	if len(events) != 1 || events[0]["resource_type"] != "project" || events[0]["resource_id"] != projectID.String() {
+		t.Fatalf("expected project audit response, got %#v", events)
+	}
+}
+
+func TestAuditEventsRouteRejectsInvalidResourceFilters(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeAuditService{}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetAuditHandler(audit.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	tests := []string{
+		"/api/v1/audit/events?resource_type=team&resource_id=" + uuid.New().String(),
+		"/api/v1/audit/events?resource_type=project",
+		"/api/v1/audit/events?resource_type=project&resource_id=not-a-uuid",
+	}
+	for _, path := range tests {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(cookie)
+		resp := httptest.NewRecorder()
+
+		server.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("expected %s to fail with 400, got %d: %s", path, resp.Code, resp.Body.String())
+		}
+	}
+	if service.called {
+		t.Fatal("expected invalid filters not to call audit service")
 	}
 }
 
@@ -781,6 +866,37 @@ func routeStringPtr(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+type routeAuditService struct {
+	called    bool
+	tenantID  uuid.UUID
+	projectID uuid.UUID
+	limit     int
+	offset    int
+}
+
+func (s *routeAuditService) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int) ([]*audit.Event, error) {
+	s.called = true
+	s.tenantID = tenantID
+	s.projectID = projectID
+	s.limit = limit
+	s.offset = offset
+	return []*audit.Event{
+		{
+			ID:           uuid.New(),
+			TenantID:     tenantID,
+			EventType:    "project.created",
+			ActorType:    "human_user",
+			ActorID:      uuid.New().String(),
+			ResourceType: "project",
+			ResourceID:   projectID.String(),
+			Action:       "project.create",
+			Details:      map[string]any{"source": "route-test"},
+			IPAddress:    "127.0.0.1",
+			CreatedAt:    time.Now().UTC(),
+		},
+	}, nil
 }
 
 type routeRuntimeSessionAuth struct {

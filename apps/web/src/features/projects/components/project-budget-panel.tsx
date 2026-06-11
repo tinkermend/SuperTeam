@@ -1,3 +1,4 @@
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { BadgeDollarSign } from "lucide-react";
 import {
   LiquidCard,
@@ -12,15 +13,89 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import type { ApiClientOptions } from "@/lib/api/client";
 import type {
   ProjectBudgetLedgerEntry,
   ProjectBudgetSummary,
+} from "@/lib/api/projects";
+import {
+  getProjectBudgetSummary,
+  listProjectBudgetLedger,
 } from "@/lib/api/projects";
 
 type ProjectBudgetPanelProps = {
   budgetLedger?: ProjectBudgetLedgerEntry[];
   budgetSummary?: ProjectBudgetSummary;
 };
+
+type CostsProjectViewProps = {
+  apiBaseUrl: string;
+  fetcher?: typeof fetch;
+  projectId: string;
+};
+
+export function CostsProjectView({
+  apiBaseUrl,
+  fetcher,
+  projectId,
+}: CostsProjectViewProps) {
+  const apiOptions: ApiClientOptions = { baseUrl: apiBaseUrl, fetcher };
+  const ledgerQuery = useQuery({
+    enabled: Boolean(projectId),
+    queryKey: ["costs-project-budget-ledger", projectId],
+    queryFn: () => listProjectBudgetLedger(apiOptions, projectId, { limit: 50 }),
+    placeholderData: keepPreviousData,
+  });
+  const summaryQuery = useQuery({
+    enabled: Boolean(projectId),
+    queryKey: ["costs-project-budget-summary", projectId],
+    queryFn: () => getProjectBudgetSummary(apiOptions, projectId),
+    placeholderData: keepPreviousData,
+  });
+  const isInitialLoading =
+    (ledgerQuery.isLoading || summaryQuery.isLoading) &&
+    !ledgerQuery.data &&
+    !summaryQuery.data;
+  const error = ledgerQuery.error ?? summaryQuery.error;
+
+  if (isInitialLoading) {
+    return (
+      <LiquidCard className="rounded-xl p-5 text-sm text-muted-foreground">
+        正在加载项目成本数据...
+      </LiquidCard>
+    );
+  }
+
+  if (error) {
+    return (
+      <LiquidCard className="rounded-xl p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="font-semibold">项目成本加载失败</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              请稍后重试，或确认当前账号仍有项目访问权限。
+            </p>
+          </div>
+          <StatusBadge tone="danger">失败</StatusBadge>
+        </div>
+      </LiquidCard>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {ledgerQuery.isFetching || summaryQuery.isFetching ? (
+        <div className="flex justify-end">
+          <StatusBadge tone="info">刷新中</StatusBadge>
+        </div>
+      ) : null}
+      <ProjectBudgetPanel
+        budgetLedger={ledgerQuery.data ?? []}
+        budgetSummary={summaryQuery.data}
+      />
+    </div>
+  );
+}
 
 export function ProjectBudgetPanel({
   budgetLedger = [],
