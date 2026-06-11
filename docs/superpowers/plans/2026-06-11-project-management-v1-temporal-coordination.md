@@ -853,7 +853,7 @@ go test ./apps/control-plane/internal/storage -run 'TestProjectManagementV1Tempo
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit database foundation**
+- [x] **Step 8: Commit database foundation**
 
 Run:
 
@@ -874,7 +874,7 @@ Expected: commit succeeds.
 - Modify: `apps/control-plane/internal/approval/service_test.go`
 - Create: `apps/control-plane/internal/approval/pg_repository_test.go`
 
-- [ ] **Step 1: Write the failing service test**
+- [x] **Step 1: Write the failing service test**
 
 Replace the current empty-shell test content in `apps/control-plane/internal/approval/service_test.go` with:
 
@@ -986,7 +986,7 @@ func TestApprovalServiceRejectsInvalidAndDuplicateResolution(t *testing.T) {
 
 Also include a small memory repository in the same test file with methods matching `Repository`. Use maps keyed by `uuid.UUID`, update status only when current status is `pending`, and return `ErrApprovalAlreadyResolved` on duplicate resolution.
 
-- [ ] **Step 2: Run the failing approval test**
+- [x] **Step 2: Run the failing approval test**
 
 Run:
 
@@ -996,7 +996,7 @@ go test ./apps/control-plane/internal/approval -count=1
 
 Expected: FAIL with undefined `CreateRequestInput`, `ApprovalStatusPending`, and service methods.
 
-- [ ] **Step 3: Implement approval domain types**
+- [x] **Step 3: Implement approval domain types**
 
 Create `apps/control-plane/internal/approval/types.go`:
 
@@ -1090,7 +1090,7 @@ type ResolveRequestInput struct {
 }
 ```
 
-- [ ] **Step 4: Implement repository interface and service**
+- [x] **Step 4: Implement repository interface and service**
 
 Create `apps/control-plane/internal/approval/repository.go`:
 
@@ -1197,7 +1197,7 @@ func statusFromDecision(decision ApprovalDecision) ApprovalStatus {
 }
 ```
 
-- [ ] **Step 5: Implement PostgreSQL repository**
+- [x] **Step 5: Implement PostgreSQL repository**
 
 Create `apps/control-plane/internal/approval/pg_repository.go` with mapper helpers mirroring `project.PgRepository` JSON handling. Required methods:
 
@@ -1344,7 +1344,7 @@ func decisionFromRecord(row queries.ApprovalDecision) (ApprovalDecisionRecord, e
 
 Also add helper functions in this file: `textOrNull`, `ptrText`, `nullUUID`, `ptrUUID`, `ptrTime`, `jsonbObject`, `jsonbArray`, `mapFromJSON`. Copy their behavior from the existing `project` repository helpers and keep them unexported in `approval`.
 
-- [ ] **Step 6: Run approval tests**
+- [x] **Step 6: Run approval tests**
 
 Run:
 
