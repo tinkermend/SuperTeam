@@ -549,7 +549,7 @@ func (s *Service) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSn
 	}
 
 	includedCounts := archiveSnapshotIncludedCounts(preview)
-	result, err := s.repository.CreateArchiveSnapshotWithEvent(ctx, CreateArchiveSnapshotWithEventRequest{
+	snapshotReq := CreateArchiveSnapshotWithEventRequest{
 		Event: AppendProjectEventRequest{
 			TenantID:     req.TenantID,
 			ProjectID:    req.ProjectID,
@@ -580,14 +580,15 @@ func (s *Service) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSn
 			RetentionLockEventID: retentionLockEventID,
 			CreatedByUserID:      req.CreatedByUserID,
 		},
-	})
+	}
+	var result ProjectArchiveSnapshotWriteResult
+	if status == "archived" {
+		result, err = s.repository.CreateArchiveSnapshotWithEventAndArchiveProject(ctx, snapshotReq)
+	} else {
+		result, err = s.repository.CreateArchiveSnapshotWithEvent(ctx, snapshotReq)
+	}
 	if err != nil {
 		return nil, err
-	}
-	if status == "archived" {
-		if _, err := s.repository.ArchiveProject(ctx, req.TenantID, req.ProjectID); err != nil {
-			return nil, err
-		}
 	}
 	return &result.Snapshot, nil
 }

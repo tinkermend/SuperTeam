@@ -476,8 +476,11 @@ func TestArchiveSnapshotReturnsArchiveProjectErrorAfterSuccessfulLock(t *testing
 	if !errors.Is(err, repo.archiveProjectErr) {
 		t.Fatalf("expected archive project error, got %v", err)
 	}
-	if len(repo.archiveSnapshots) != 1 || repo.archiveSnapshots[0].Status != "archived" {
-		t.Fatalf("expected archived snapshot before archive project failure, got %#v", repo.archiveSnapshots)
+	if len(repo.archiveSnapshots) != 0 {
+		t.Fatalf("expected archived snapshot to roll back after archive project failure, got %#v", repo.archiveSnapshots)
+	}
+	if countProjectEvents(repo.eventTypes, ProjectEventArchiveSnapshotCreated) != 0 {
+		t.Fatalf("expected archive snapshot event to roll back after archive project failure, got %#v", repo.eventTypes)
 	}
 	if repo.projects[projectID].Status == ProjectStatusArchived {
 		t.Fatalf("project must not be marked archived when repository archive update fails")
@@ -1773,6 +1776,14 @@ func newMemoryRepository() *memoryRepository {
 	}
 }
 
+func cloneProjects(projects map[uuid.UUID]Project) map[uuid.UUID]Project {
+	cloned := make(map[uuid.UUID]Project, len(projects))
+	for id, project := range projects {
+		cloned[id] = project
+	}
+	return cloned
+}
+
 func strPtrOrNil(value string) *string {
 	if value == "" {
 		return nil
@@ -2442,6 +2453,25 @@ func (r *memoryRepository) CreateArchiveSnapshotWithEvent(ctx context.Context, r
 	return ProjectArchiveSnapshotWriteResult{Event: event, Snapshot: snapshot}, nil
 }
 
+func (r *memoryRepository) CreateArchiveSnapshotWithEventAndArchiveProject(ctx context.Context, req CreateArchiveSnapshotWithEventRequest) (ProjectArchiveSnapshotWriteResult, error) {
+	eventSnapshot := append([]ProjectEvent(nil), r.events...)
+	eventTypesSnapshot := append([]ProjectEventType(nil), r.eventTypes...)
+	archiveSnapshotsSnapshot := append([]ProjectArchiveSnapshot(nil), r.archiveSnapshots...)
+	projectsSnapshot := cloneProjects(r.projects)
+	result, err := r.CreateArchiveSnapshotWithEvent(ctx, req)
+	if err != nil {
+		return ProjectArchiveSnapshotWriteResult{}, err
+	}
+	if _, err := r.ArchiveProject(ctx, req.Snapshot.TenantID, req.Snapshot.ProjectID); err != nil {
+		r.events = eventSnapshot
+		r.eventTypes = eventTypesSnapshot
+		r.archiveSnapshots = archiveSnapshotsSnapshot
+		r.projects = projectsSnapshot
+		return ProjectArchiveSnapshotWriteResult{}, err
+	}
+	return result, nil
+}
+
 type governanceMemoryRepository struct {
 	*memoryRepository
 	evidenceRefs         []ProjectEvidenceRef
@@ -2745,6 +2775,19 @@ func (r *governanceMemoryRepository) CreateArchiveSnapshotWithEvent(ctx context.
 	return ProjectArchiveSnapshotWriteResult{Event: event, Snapshot: archiveSnapshot}, nil
 }
 
+func (r *governanceMemoryRepository) CreateArchiveSnapshotWithEventAndArchiveProject(ctx context.Context, req CreateArchiveSnapshotWithEventRequest) (ProjectArchiveSnapshotWriteResult, error) {
+	snapshot := r.governanceSnapshot()
+	result, err := r.CreateArchiveSnapshotWithEvent(ctx, req)
+	if err != nil {
+		return ProjectArchiveSnapshotWriteResult{}, err
+	}
+	if _, err := r.ArchiveProject(ctx, req.Snapshot.TenantID, req.Snapshot.ProjectID); err != nil {
+		r.restoreGovernanceSnapshot(snapshot)
+		return ProjectArchiveSnapshotWriteResult{}, err
+	}
+	return result, nil
+}
+
 func (r *governanceMemoryRepository) ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArchiveSnapshot, error) {
 	filtered := make([]ProjectArchiveSnapshot, 0, len(r.archiveSnapshots))
 	for _, snapshot := range r.archiveSnapshots {
@@ -2775,6 +2818,7 @@ func (r *governanceMemoryRepository) GetConfigRevision(ctx context.Context, tena
 }
 
 type governanceMemorySnapshot struct {
+	projects          map[uuid.UUID]Project
 	events            []ProjectEvent
 	eventTypes        []ProjectEventType
 	evidenceRefs      []ProjectEvidenceRef
@@ -2784,6 +2828,7 @@ type governanceMemorySnapshot struct {
 
 func (r *governanceMemoryRepository) governanceSnapshot() governanceMemorySnapshot {
 	return governanceMemorySnapshot{
+		projects:          cloneProjects(r.projects),
 		events:            append([]ProjectEvent(nil), r.events...),
 		eventTypes:        append([]ProjectEventType(nil), r.eventTypes...),
 		evidenceRefs:      append([]ProjectEvidenceRef(nil), r.evidenceRefs...),
@@ -2793,6 +2838,7 @@ func (r *governanceMemoryRepository) governanceSnapshot() governanceMemorySnapsh
 }
 
 func (r *governanceMemoryRepository) restoreGovernanceSnapshot(snapshot governanceMemorySnapshot) {
+	r.projects = snapshot.projects
 	r.events = snapshot.events
 	r.eventTypes = snapshot.eventTypes
 	r.evidenceRefs = snapshot.evidenceRefs

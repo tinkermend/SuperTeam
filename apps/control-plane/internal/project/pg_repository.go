@@ -146,7 +146,11 @@ func (r *PgRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjec
 }
 
 func (r *PgRepository) ArchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error) {
-	row, err := r.q.ArchiveProject(ctx, queries.ArchiveProjectParams{TenantID: tenantID, ID: projectID})
+	return r.archiveProjectWithQueries(ctx, r.q, tenantID, projectID)
+}
+
+func (r *PgRepository) archiveProjectWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID uuid.UUID) (Project, error) {
+	row, err := q.ArchiveProject(ctx, queries.ArchiveProjectParams{TenantID: tenantID, ID: projectID})
 	if err != nil {
 		return Project{}, err
 	}
@@ -1077,6 +1081,25 @@ func (r *PgRepository) CreateArchiveSnapshotWithEvent(ctx context.Context, req C
 		snapshotReq.CreatedEventID = &event.ID
 		snapshot, err := r.createArchiveSnapshotWithQueries(ctx, q, snapshotReq)
 		if err != nil {
+			return ProjectArchiveSnapshotWriteResult{}, err
+		}
+		return ProjectArchiveSnapshotWriteResult{Event: event, Snapshot: snapshot}, nil
+	})
+}
+
+func (r *PgRepository) CreateArchiveSnapshotWithEventAndArchiveProject(ctx context.Context, req CreateArchiveSnapshotWithEventRequest) (ProjectArchiveSnapshotWriteResult, error) {
+	return withProjectQueries(ctx, r, "project archive finalization", func(q *queries.Queries) (ProjectArchiveSnapshotWriteResult, error) {
+		event, err := r.appendProjectEventWithQueries(ctx, q, req.Event)
+		if err != nil {
+			return ProjectArchiveSnapshotWriteResult{}, err
+		}
+		snapshotReq := req.Snapshot
+		snapshotReq.CreatedEventID = &event.ID
+		snapshot, err := r.createArchiveSnapshotWithQueries(ctx, q, snapshotReq)
+		if err != nil {
+			return ProjectArchiveSnapshotWriteResult{}, err
+		}
+		if _, err := r.archiveProjectWithQueries(ctx, q, req.Snapshot.TenantID, req.Snapshot.ProjectID); err != nil {
 			return ProjectArchiveSnapshotWriteResult{}, err
 		}
 		return ProjectArchiveSnapshotWriteResult{Event: event, Snapshot: snapshot}, nil
