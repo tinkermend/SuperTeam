@@ -20,14 +20,14 @@
 
 ## 当前 Worktree 与分支策略
 
-计划编写过程中曾观察到 `codex/project-management-v0-foundation` 分支包含 V0 未提交内容；随后复查时当前工作树已在 `main`，且 `main` 上已经包含项目管理 V0 相关提交。V1 必须作为堆叠开发建立在“包含 V0 完整内容的当前基线”之上，不能回滚未合并的 V0 文件。
+计划执行前复查到当前工作树位于 `codex/project-management-v1-temporal-coordination` 分支，HEAD 为 `56522da`，从 `main` 的 `2da5012` 分出。`main` 历史中已经包含项目管理 V0 的后端、前端、契约与修复提交，`codex/project-management-v0-foundation` 指向其中一个 V0 祖先提交。当前唯一未提交改动是 `apps/control-plane/internal/storage/migrations_test.go` 中的 V1 迁移失败测试；该改动属于 Task 1 的 RED 阶段，不能回滚。
 
 执行顺序：
 
-1. 执行时先用 `git status --short --branch` 和 `git log --oneline --decorate -8` 确认当前 HEAD 是否已经包含 V0。
-2. 如果仍在 V0 脏分支，先验证并提交当前 V0 收尾改动，再创建 `codex/project-management-v1-temporal-coordination`。
-3. 如果已经在包含 V0 的 `main` 或干净集成分支，直接从当前 HEAD 创建 `codex/project-management-v1-temporal-coordination`。
-4. V1 每个任务独立提交，后续合并顺序为 V0 基线先稳定，再合并 V1 分支。
+1. 执行时先用 `git status --short --branch`、`git log --oneline --decorate -8` 和 `git branch --contains 0e595fb` 确认当前 HEAD 包含 V0。
+2. 如果当前分支已经是 `codex/project-management-v1-temporal-coordination`，继续在该分支执行，不再创建同名分支。
+3. 如果后续在其他机器上执行且发现 V0 尚未合入当前基线，应先把 `codex/project-management-v0-foundation` 合并或变基进 V1 分支，再执行 Task 1；不要在缺少 V0 project 模块的基线上硬写 V1。
+4. V1 每个任务独立提交。不要回滚 V0 文件；如果遇到 V0 未提交文件，只能在确认属于 V0 收尾后先提交 V0 checkpoint，再继续 V1。
 
 ## 范围边界
 
@@ -160,62 +160,70 @@
 - 修改：`CHANGELOG.md`
   - V1 开发完成时追加 Asia/Shanghai 时间戳。
 
-## Task 0: Confirm V0 Baseline And Create V1 Branch
+## Task 0: Confirm V0 Baseline And V1 Branch
 
 **Files:**
 - Read: `AGENTS.md`
 - Read: `CHANGELOG.md`
 - Read: `apps/control-plane/internal/project/*`
 - Read: `apps/web/src/features/projects/*`
-- Modify: git branch state only
+- Modify: git branch state only when the V1 branch does not already exist
 
-- [ ] **Step 1: Inspect current dirty state**
+- [ ] **Step 1: Inspect current branch and dirty state**
 
 Run:
 
 ```bash
 git status --short --branch
 git diff --name-only
+git log --oneline --decorate -8
+git branch --contains 0e595fb
 ```
 
-Expected: one of these states is true:
+Expected:
 
-- branch is `codex/project-management-v0-foundation` and dirty files are V0 project management files, plan/docs files, prototype files, or explicit user-approved files.
-- branch is `main` or another integration branch and recent commits already include V0 project management commits.
+- Current branch is `codex/project-management-v1-temporal-coordination`, or another explicitly chosen V1 feature branch.
+- `git branch --contains 0e595fb` includes the current branch, proving the V0 project management page stabilization commit is in the V1 baseline.
+- Dirty files are either this plan file or Task 1 RED-stage files such as `apps/control-plane/internal/storage/migrations_test.go`.
 
 - [ ] **Step 2: Run focused V0 verification before branching**
 
 Run:
 
 ```bash
-go test ./apps/control-plane/internal/project ./apps/control-plane/internal/api ./apps/control-plane/internal/storage
+go test ./apps/control-plane/internal/project ./apps/control-plane/internal/api ./apps/control-plane/internal/storage -run 'Project|Migration|Migrations' -count=1
 pnpm --filter @superteam/web test -- src/features/projects src/lib/api/projects.test.ts src/routes/_authenticated/projects/-project-route.test.tsx
 pnpm --filter @superteam/web typecheck
 ```
 
-Expected: all commands exit 0. If a command fails, inspect the failing assertion, fix only the V0-related failure, and rerun the same command until it exits 0.
+Expected: project/api/web V0 checks exit 0. If `internal/storage` fails only because `TestProjectManagementV1TemporalCoordinationMigration` cannot find migration `014_project_management_v1_temporal_coordination.sql`, record that as the expected Task 1 RED failure and continue.
 
-- [ ] **Step 3: Commit V0 checkpoint only if V0 files are still dirty**
+- [ ] **Step 3: Create or reuse the stacked V1 branch**
 
 Run:
+
+```bash
+current_branch="$(git branch --show-current)"
+if [ "$current_branch" = "codex/project-management-v1-temporal-coordination" ]; then
+  git status --short --branch
+else
+  git switch -c codex/project-management-v1-temporal-coordination
+  git status --short --branch
+fi
+```
+
+Expected: branch is `codex/project-management-v1-temporal-coordination`; worktree is clean except this plan file and/or Task 1 RED-stage migration test.
+
+- [ ] **Step 4: Commit V0 checkpoint only if V0 source files are unexpectedly dirty**
+
+If Step 1 shows dirty V0 source files unrelated to the V1 migration test, run:
 
 ```bash
 git add AGENTS.md CHANGELOG.md apps/control-plane/internal/project apps/control-plane/internal/api apps/control-plane/internal/app apps/control-plane/internal/storage apps/web/src/features/projects apps/web/src/lib/api/projects.ts apps/web/src/lib/api/projects.test.ts apps/web/src/routes/_authenticated/projects docs/design/projectManager docs/prototypes docs/superpowers/plans/2026-06-11-project-management-v0-foundation.md
 git commit -m "feat: add project management v0 foundation"
 ```
 
-Expected: if V0 files were dirty, commit succeeds and `git status --short` no longer shows V0 source files as unstaged. If V0 was already committed, skip this step and record the current V0 baseline commit hash in the task notes.
-
-- [ ] **Step 4: Create the stacked V1 branch**
-
-Run:
-
-```bash
-git switch -c codex/project-management-v1-temporal-coordination
-git status --short --branch
-```
-
-Expected: branch is `codex/project-management-v1-temporal-coordination`; worktree is clean except this plan file if it was created before the branch switch.
+Expected: commit succeeds only when actual V0 files were dirty. If dirty state contains only `apps/control-plane/internal/storage/migrations_test.go` with V1 assertions, skip this step because that file belongs to Task 1.
 
 ## Task 1: Add V1 Database Tables And sqlc Queries
 
@@ -227,7 +235,7 @@ Expected: branch is `codex/project-management-v1-temporal-coordination`; worktre
 - Modify: `apps/control-plane/internal/storage/queries/project.sql`
 - Regenerate: `apps/control-plane/internal/storage/queries/*.sql.go`
 
-- [ ] **Step 1: Write the failing migration test**
+- [x] **Step 1: Write the failing migration test**
 
 Append this test to `apps/control-plane/internal/storage/migrations_test.go`:
 
@@ -273,7 +281,7 @@ func TestProjectManagementV1TemporalCoordinationMigration(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the migration test and verify it fails**
+- [x] **Step 2: Run the migration test and verify it fails**
 
 Run:
 
@@ -283,7 +291,7 @@ go test ./apps/control-plane/internal/storage -run TestProjectManagementV1Tempor
 
 Expected: FAIL because `014_project_management_v1_temporal_coordination.sql` does not exist yet.
 
-- [ ] **Step 3: Create the V1 migration**
+- [x] **Step 3: Create the V1 migration**
 
 Create `apps/control-plane/internal/storage/migrations/014_project_management_v1_temporal_coordination.sql` with:
 
@@ -543,7 +551,7 @@ CREATE INDEX idx_project_decision_requests_tenant_approval ON project_decision_r
 CREATE TRIGGER update_project_decision_requests_updated_at BEFORE UPDATE ON project_decision_requests FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 ```
 
-- [ ] **Step 4: Add approval sqlc queries**
+- [x] **Step 4: Add approval sqlc queries**
 
 Create `apps/control-plane/internal/storage/queries/approval.sql` with:
 
@@ -618,7 +626,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY created_at DESC;
 ```
 
-- [ ] **Step 5: Add project sqlc queries**
+- [x] **Step 5: Add project sqlc queries**
 
 Append these queries to `apps/control-plane/internal/storage/queries/project.sql`:
 
@@ -825,7 +833,7 @@ ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 ```
 
-- [ ] **Step 6: Generate sqlc code**
+- [x] **Step 6: Generate sqlc code**
 
 Run:
 
@@ -835,7 +843,7 @@ cd apps/control-plane && sqlc generate
 
 Expected: generated Go files include `CreateApprovalRequest`, `CreateProjectCoordinationJob`, `CreateProjectRouteDecision`, `CreateProjectExecutionSummary`, `CreateProjectTransferRequest`, and `CreateProjectDecisionRequest`.
 
-- [ ] **Step 7: Run database verification**
+- [x] **Step 7: Run database verification**
 
 Run:
 
@@ -1841,7 +1849,7 @@ if cfg.Temporal.Enabled {
 
 - [ ] **Step 3: Update example config**
 
-Append to `apps/control-plane/config/config.example.yaml`:
+Ensure `apps/control-plane/config/config.example.yaml` contains this block. If it is already present from commit `56522da`, leave it unchanged:
 
 ```yaml
 temporal:
@@ -1975,6 +1983,7 @@ func TestProjectCoordinatorHandlesDemandSubmitted(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
 	activities := &Activities{}
+	executorID := uuid.New()
 	env.RegisterActivity(activities.LoadProjectCoordinationSnapshot)
 	env.RegisterActivity(activities.CreateCoordinationJob)
 	env.RegisterActivity(activities.PlanDemandRoute)
@@ -1985,12 +1994,12 @@ func TestProjectCoordinatorHandlesDemandSubmitted(t *testing.T) {
 	env.OnActivity(activities.LoadProjectCoordinationSnapshot, mockAny(), mockAny()).Return(CoordinationSnapshot{
 		ProjectID: uuid.New(),
 		Demand: DemandSnapshot{ID: uuid.New(), Title: "验证 Runtime", Content: "检查心跳"},
-		DigitalEmployeePool: []ProjectMemberSnapshot{{PrincipalID: uuid.New(), ProjectRole: "executor", Status: "active"}},
+		DigitalEmployeePool: []ProjectMemberSnapshot{{PrincipalID: executorID, ProjectRole: "executor", Status: "active"}},
 	}, nil)
 	env.OnActivity(activities.CreateCoordinationJob, mockAny(), mockAny()).Return(CoordinationJobResult{ID: uuid.New()}, nil)
 	env.OnActivity(activities.PlanDemandRoute, mockAny(), mockAny()).Return(RouteDecisionPlan{
-		CandidateDigitalEmployeeIDs: []uuid.UUID{uuid.New()},
-		SelectedDigitalEmployeeIDs:  []uuid.UUID{uuid.New()},
+		CandidateDigitalEmployeeIDs: []uuid.UUID{executorID},
+		SelectedDigitalEmployeeIDs:  []uuid.UUID{executorID},
 		Reason:                      "测试路由",
 		ExpectedOutputs:             []string{"execution_summary"},
 		TaskTitle:                   "验证 Runtime",

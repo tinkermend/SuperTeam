@@ -11,6 +11,64 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// 全局审批处理记录表，保存人类处理动作和意见
+type ApprovalDecision struct {
+	// 审批处理记录ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 关联审批请求ID，由应用层校验租户和状态
+	ApprovalRequestID uuid.UUID `json:"approval_request_id"`
+	// 处理审批的人类用户ID
+	DecidedByUserID uuid.UUID `json:"decided_by_user_id"`
+	// 处理结论：approved、rejected、needs_more_evidence
+	Decision string `json:"decision"`
+	// 处理意见
+	Comment pgtype.Text `json:"comment"`
+	// 处理时提交的结构化补充信息
+	Payload []byte `json:"payload"`
+	// 处理记录创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// 全局审批请求事实表，保存人类决策请求的事实源
+type ApprovalRequest struct {
+	// 审批请求ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 审批关联资源类型，由应用层校验
+	ResourceType string `json:"resource_type"`
+	// 审批关联资源ID
+	ResourceID uuid.UUID `json:"resource_id"`
+	// 发起者类型，例如 project_coordinator、human_user 或 system
+	RequesterType string `json:"requester_type"`
+	// 发起者ID，可为空表示系统发起
+	RequesterID uuid.NullUUID `json:"requester_id"`
+	// 目标处理人用户ID
+	TargetUserID uuid.UUID `json:"target_user_id"`
+	// 决策类型，由应用层注册和校验
+	DecisionType string `json:"decision_type"`
+	// 审批标题快照
+	Title string `json:"title"`
+	// 审批摘要快照
+	Summary pgtype.Text `json:"summary"`
+	// 风险等级快照
+	RiskLevel pgtype.Text `json:"risk_level"`
+	// 审批状态：pending、approved、rejected、needs_more_evidence、cancelled
+	Status string `json:"status"`
+	// 可选决策项 JSON 数组
+	Options []byte `json:"options"`
+	// 审批上下文快照
+	ContextPayload []byte `json:"context_payload"`
+	// 审批创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 审批更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 审批处理完成时间
+	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
+}
+
 // 审计事件表
 type AuditEvent struct {
 	// 审计事件主键 UUID
@@ -329,6 +387,72 @@ type ProjectConfigRevision struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// 项目协调作业记录，追踪一次 Workflow 协调决策的输入、状态和输出事件
+type ProjectCoordinationJob struct {
+	// 协调作业ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属项目ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// Temporal Workflow ID
+	WorkflowID string `json:"workflow_id"`
+	// 触发该作业的项目事件ID
+	TriggerEventID uuid.NullUUID `json:"trigger_event_id"`
+	// 协调作业类型，例如 demand_route、transfer_review、human_decision
+	JobType string `json:"job_type"`
+	// 协调作业状态：running、completed、failed、noop
+	Status string `json:"status"`
+	// 输入快照引用或小型快照 JSON
+	InputSnapshotRef []byte `json:"input_snapshot_ref"`
+	// 该作业产生的项目事件ID列表
+	OutputEventIds []byte `json:"output_event_ids"`
+	// 协调作业开始时间
+	StartedAt pgtype.Timestamptz `json:"started_at"`
+	// 协调作业结束时间
+	FinishedAt pgtype.Timestamptz `json:"finished_at"`
+	// 协调作业创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// 项目侧人类决策查询投影，审批事实源归 approval_requests 与 approval_decisions
+type ProjectDecisionRequest struct {
+	// 项目决策请求投影ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属项目ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 全局审批请求ID，审批事实源引用
+	ApprovalRequestID uuid.UUID `json:"approval_request_id"`
+	// 关联协调作业ID
+	CoordinationJobID uuid.NullUUID `json:"coordination_job_id"`
+	// 关联项目任务ID
+	ProjectTaskID uuid.NullUUID `json:"project_task_id"`
+	// 目标处理人用户ID
+	TargetUserID uuid.UUID `json:"target_user_id"`
+	// 决策类型
+	DecisionType string `json:"decision_type"`
+	// 决策标题快照
+	TitleSnapshot string `json:"title_snapshot"`
+	// 决策摘要快照
+	SummarySnapshot pgtype.Text `json:"summary_snapshot"`
+	// 风险等级快照
+	RiskLevelSnapshot pgtype.Text `json:"risk_level_snapshot"`
+	// 审批状态快照
+	StatusSnapshot string `json:"status_snapshot"`
+	// 创建该投影时产生的项目事件ID
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// 处理该投影时产生的项目事件ID
+	ResolvedEventID uuid.NullUUID `json:"resolved_event_id"`
+	// 投影创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 投影更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 投影处理完成时间
+	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
+}
+
 // 用户或外部系统提交到项目的需求
 type ProjectDemand struct {
 	// 项目需求ID
@@ -391,6 +515,42 @@ type ProjectEvent struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// 项目任务执行摘要表，保存数字员工回写的结论、证据、工件和不确定性
+type ProjectExecutionSummary struct {
+	// 执行摘要ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属项目ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 关联项目任务ID
+	ProjectTaskID uuid.UUID `json:"project_task_id"`
+	// 回写摘要的数字员工ID
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 执行结论
+	Conclusion string `json:"conclusion"`
+	// 证据引用数组
+	EvidenceRefs []byte `json:"evidence_refs"`
+	// 工件引用数组
+	ArtifactRefs []byte `json:"artifact_refs"`
+	// 置信度因素快照
+	ConfidenceFactors []byte `json:"confidence_factors"`
+	// 不确定性说明
+	Uncertainty pgtype.Text `json:"uncertainty"`
+	// 缺失信息数组
+	MissingInformation []byte `json:"missing_information"`
+	// 建议下一步动作
+	RecommendedNextAction pgtype.Text `json:"recommended_next_action"`
+	// 是否需要人类复核
+	RequiresHumanReview bool `json:"requires_human_review"`
+	// 关联转派请求ID
+	TransferRequestID uuid.NullUUID `json:"transfer_request_id"`
+	// 创建该摘要时产生的项目事件ID
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// 执行摘要创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 // 项目成员与数字员工池
 type ProjectMember struct {
 	// 项目成员记录ID
@@ -415,6 +575,38 @@ type ProjectMember struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 项目成员更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 项目需求路由决策表，保存虚拟协调线程选择执行员工和输出契约的结构化结论
+type ProjectRouteDecision struct {
+	// 路由决策ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属项目ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 产生该决策的协调作业ID
+	CoordinationJobID uuid.UUID `json:"coordination_job_id"`
+	// 关联需求ID
+	DemandID uuid.NullUUID `json:"demand_id"`
+	// 候选数字员工ID数组
+	CandidateDigitalEmployeeIds []byte `json:"candidate_digital_employee_ids"`
+	// 选中的数字员工ID数组
+	SelectedDigitalEmployeeIds []byte `json:"selected_digital_employee_ids"`
+	// 路由理由
+	Reason string `json:"reason"`
+	// 任务输入要求
+	InputRequirements []byte `json:"input_requirements"`
+	// 期望输出契约数组
+	ExpectedOutputs []byte `json:"expected_outputs"`
+	// 预算估算快照
+	BudgetEstimate []byte `json:"budget_estimate"`
+	// 是否需要人类先审核该决策
+	RequiresHumanReview bool `json:"requires_human_review"`
+	// 创建该决策时产生的项目事件ID
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// 路由决策创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // 项目内可分派、可执行的工作项
@@ -448,6 +640,36 @@ type ProjectTask struct {
 	// 项目任务创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 项目任务更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 项目任务转派请求表，保存数字员工发起的结构化转派事实
+type ProjectTransferRequest struct {
+	// 转派请求ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属项目ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 关联项目任务ID
+	ProjectTaskID uuid.UUID `json:"project_task_id"`
+	// 发起转派请求的数字员工ID
+	RequestedByDigitalEmployeeID uuid.UUID `json:"requested_by_digital_employee_id"`
+	// 转派理由
+	Reason string `json:"reason"`
+	// 建议员工类型
+	SuggestedEmployeeType pgtype.Text `json:"suggested_employee_type"`
+	// 建议数字员工ID数组
+	SuggestedDigitalEmployeeIds []byte `json:"suggested_digital_employee_ids"`
+	// 缺失上下文引用数组
+	MissingContextRefs []byte `json:"missing_context_refs"`
+	// 转派请求状态：requested、accepted、rejected、cancelled
+	Status string `json:"status"`
+	// 创建该请求时产生的项目事件ID
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// 转派请求创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 转派请求更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
