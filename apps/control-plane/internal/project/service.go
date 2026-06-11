@@ -266,6 +266,309 @@ func (s *Service) ListProjectEvents(ctx context.Context, tenantID, projectID uui
 	return s.repository.ListProjectEvents(ctx, tenantID, projectID, limit, offset)
 }
 
+func (s *Service) CreateEvidenceRef(ctx context.Context, req CreateEvidenceRefServiceRequest) (*ProjectEvidenceRef, error) {
+	req.ActorType = strings.TrimSpace(req.ActorType)
+	req.EvidenceType = strings.TrimSpace(req.EvidenceType)
+	req.Title = strings.TrimSpace(req.Title)
+	req.Summary = strings.TrimSpace(req.Summary)
+	req.SourceType = strings.TrimSpace(req.SourceType)
+	req.SourceRef = strings.TrimSpace(req.SourceRef)
+	req.SubmittedByType = strings.TrimSpace(req.SubmittedByType)
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ActorID == uuid.Nil || req.ActorType == "" || req.EvidenceType == "" || req.Title == "" || req.SourceType == "" || req.SourceRef == "" || req.SubmittedByType == "" || req.SubmittedByID == nil || *req.SubmittedByID == uuid.Nil {
+		return nil, ErrInvalidProjectEvidence
+	}
+	project, err := s.repository.GetProject(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if projectArchived(project) {
+		return nil, ErrProjectArchived
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    req.ProjectID,
+		EventType:    ProjectEventEvidenceLinked,
+		ActorType:    req.ActorType,
+		ActorID:      req.ActorID.String(),
+		ResourceType: strPtr("project_evidence_ref"),
+		Summary:      "项目证据已关联",
+		Payload: map[string]any{
+			"evidence_type": req.EvidenceType,
+			"title":         req.Title,
+			"source_type":   req.SourceType,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	evidence, err := s.repository.CreateEvidenceRef(ctx, CreateEvidenceRefRequest{
+		TenantID:           req.TenantID,
+		ProjectID:          req.ProjectID,
+		ProjectTaskID:      req.ProjectTaskID,
+		RouteDecisionID:    req.RouteDecisionID,
+		ExecutionSummaryID: req.ExecutionSummaryID,
+		EvidenceType:       req.EvidenceType,
+		Title:              req.Title,
+		Summary:            req.Summary,
+		SourceType:         req.SourceType,
+		SourceRef:          req.SourceRef,
+		ArtifactRefID:      req.ArtifactRefID,
+		SubmittedByType:    req.SubmittedByType,
+		SubmittedByID:      req.SubmittedByID,
+		VerificationStatus: EvidenceVerificationStatusSubmitted,
+		Metadata:           mapOrEmptyAny(req.Metadata),
+		CreatedEventID:     &event.ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &evidence, nil
+}
+
+func (s *Service) ListEvidenceRefs(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	limit, offset = normalizePagination(limit, offset)
+	return s.repository.ListEvidenceRefs(ctx, tenantID, projectID, status, limit, offset)
+}
+
+func (s *Service) ListArtifactRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	limit, offset = normalizePagination(limit, offset)
+	return s.repository.ListArtifactRefs(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) ListReportRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectReportRef, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	limit, offset = normalizePagination(limit, offset)
+	return s.repository.ListReportRefs(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) ListBudgetLedger(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectBudgetLedgerEntry, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	limit, offset = normalizePagination(limit, offset)
+	return s.repository.ListBudgetLedger(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectBudgetSummary, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	summary, err := s.repository.GetBudgetSummary(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return &summary, nil
+}
+
+func (s *Service) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceServiceRequest) (*ProjectAcceptanceRecord, error) {
+	req.Status = strings.TrimSpace(req.Status)
+	req.Conclusion = strings.TrimSpace(req.Conclusion)
+	req.Summary = strings.TrimSpace(req.Summary)
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.AcceptedByUserID == uuid.Nil || req.Conclusion == "" || !validAcceptanceStatus(req.Status) {
+		return nil, ErrInvalidProjectAcceptance
+	}
+	project, err := s.repository.GetProject(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if projectArchived(project) {
+		return nil, ErrProjectArchived
+	}
+	if req.AcceptedByUserID != project.HumanOwnerUserID && (project.AcceptanceUserID == nil || req.AcceptedByUserID != *project.AcceptanceUserID) {
+		return nil, ErrInvalidProjectAcceptance
+	}
+	if req.Status == "accepted" && (len(req.EvidenceRefIDs) == 0 || len(req.ReportRefIDs) == 0) {
+		return nil, ErrInvalidProjectAcceptance
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    req.ProjectID,
+		EventType:    ProjectEventAcceptanceSubmitted,
+		ActorType:    "human_user",
+		ActorID:      req.AcceptedByUserID.String(),
+		ResourceType: strPtr("project_acceptance_record"),
+		Summary:      "项目验收结论已提交",
+		Payload: map[string]any{
+			"status":             req.Status,
+			"evidence_ref_count": len(req.EvidenceRefIDs),
+			"report_ref_count":   len(req.ReportRefIDs),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	acceptance, err := s.repository.CreateAcceptanceRecord(ctx, CreateAcceptanceRecordRequest{
+		TenantID:         req.TenantID,
+		ProjectID:        req.ProjectID,
+		AcceptedByUserID: req.AcceptedByUserID,
+		Status:           req.Status,
+		Conclusion:       req.Conclusion,
+		Summary:          req.Summary,
+		EvidenceRefIDs:   req.EvidenceRefIDs,
+		ReportRefIDs:     req.ReportRefIDs,
+		UnresolvedRisks:  sliceOrEmptyAny(req.UnresolvedRisks),
+		CreatedEventID:   &event.ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &acceptance, nil
+}
+
+func (s *Service) BuildArchivePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectArchivePreview, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	project, err := s.repository.GetProject(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	evidenceRefs, err := s.repository.ListEvidenceRefs(ctx, tenantID, projectID, nil, 100, 0)
+	if err != nil {
+		return nil, err
+	}
+	artifactRefs, err := s.repository.ListArtifactRefs(ctx, tenantID, projectID, 100, 0)
+	if err != nil {
+		return nil, err
+	}
+	reportRefs, err := s.repository.ListReportRefs(ctx, tenantID, projectID, 100, 0)
+	if err != nil {
+		return nil, err
+	}
+	budgetSummary, err := s.repository.GetBudgetSummary(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	blockedReasons := make([]any, 0)
+	if len(reportRefs) == 0 {
+		blockedReasons = append(blockedReasons, "missing_final_report")
+	}
+	if len(evidenceRefs) == 0 {
+		blockedReasons = append(blockedReasons, "missing_evidence")
+	}
+	retentionPending := false
+	estimatedObjectRefs := make([]any, 0, len(artifactRefs)+len(reportRefs))
+	for _, artifact := range artifactRefs {
+		if strings.TrimSpace(artifact.ObjectRef) != "" {
+			estimatedObjectRefs = append(estimatedObjectRefs, artifact.ObjectRef)
+		}
+		if artifact.RetentionStatus == "" || artifact.RetentionStatus == "pending" || artifact.RetentionStatus == "retention_pending" {
+			retentionPending = true
+		}
+	}
+	for _, report := range reportRefs {
+		if strings.TrimSpace(report.ObjectRef) != "" {
+			estimatedObjectRefs = append(estimatedObjectRefs, report.ObjectRef)
+		}
+	}
+	if projectArchived(project) {
+		blockedReasons = append(blockedReasons, "project_already_archived")
+	}
+	if budgetSummary.LedgerCount > 0 {
+		estimatedObjectRefs = append(estimatedObjectRefs, map[string]any{
+			"budget_ledger_count": budgetSummary.LedgerCount,
+			"actual_cost":         budgetSummary.ActualCost,
+		})
+	}
+	return &ProjectArchivePreview{
+		ProjectID:           projectID,
+		EvidenceCount:       int64(len(evidenceRefs)),
+		ArtifactCount:       int64(len(artifactRefs)),
+		ReportCount:         int64(len(reportRefs)),
+		RetentionPending:    retentionPending,
+		BlockedReasons:      blockedReasons,
+		EstimatedObjectRefs: estimatedObjectRefs,
+	}, nil
+}
+
+func (s *Service) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotServiceRequest) (*ProjectArchiveSnapshot, error) {
+	req.SnapshotType = strings.TrimSpace(req.SnapshotType)
+	req.Summary = strings.TrimSpace(req.Summary)
+	req.ObjectRef = strings.TrimSpace(req.ObjectRef)
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.CreatedByUserID == uuid.Nil || req.SnapshotType == "" {
+		return nil, ErrInvalidProject
+	}
+	project, err := s.repository.GetProject(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if projectArchived(project) {
+		return nil, ErrProjectArchived
+	}
+	preview, err := s.BuildArchivePreview(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    req.ProjectID,
+		EventType:    ProjectEventArchiveSnapshotCreated,
+		ActorType:    "human_user",
+		ActorID:      req.CreatedByUserID.String(),
+		ResourceType: strPtr("project_archive_snapshot"),
+		Summary:      "项目归档快照已创建",
+		Payload: map[string]any{
+			"snapshot_type":  req.SnapshotType,
+			"evidence_count": preview.EvidenceCount,
+			"artifact_count": preview.ArtifactCount,
+			"report_count":   preview.ReportCount,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := s.repository.CreateArchiveSnapshot(ctx, CreateArchiveSnapshotRequest{
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		SnapshotType:    req.SnapshotType,
+		Status:          "snapshot_created",
+		ObjectRef:       req.ObjectRef,
+		Summary:         req.Summary,
+		IncludedCounts:  archiveIncludedCounts(*preview),
+		CreatedByUserID: req.CreatedByUserID,
+		CreatedEventID:  &event.ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &snapshot, nil
+}
+
+func (s *Service) ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArchiveSnapshot, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	limit, offset = normalizePagination(limit, offset)
+	return s.repository.ListArchiveSnapshots(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) ListConfigRevisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectConfigRevision, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	limit, offset = normalizePagination(limit, offset)
+	return s.repository.ListConfigRevisions(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (*ProjectConfigRevision, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil || revisionID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	revision, err := s.repository.GetConfigRevision(ctx, tenantID, projectID, revisionID)
+	if err != nil {
+		return nil, err
+	}
+	return &revision, nil
+}
+
 func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandRequest) (*ProjectDemand, error) {
 	req.Title = strings.TrimSpace(req.Title)
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.SubmittedByUserID == uuid.Nil || req.Title == "" {
@@ -1005,6 +1308,27 @@ func validHumanDecision(decision string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func validAcceptanceStatus(status string) bool {
+	switch status {
+	case "accepted", "rejected", "needs_more_evidence", "partially_accepted":
+		return true
+	default:
+		return false
+	}
+}
+
+func projectArchived(project Project) bool {
+	return project.Status == ProjectStatusArchived || project.ArchivedAt != nil
+}
+
+func archiveIncludedCounts(preview ProjectArchivePreview) map[string]any {
+	return map[string]any{
+		"evidence": preview.EvidenceCount,
+		"artifact": preview.ArtifactCount,
+		"report":   preview.ReportCount,
 	}
 }
 

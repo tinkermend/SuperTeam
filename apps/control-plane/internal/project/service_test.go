@@ -167,6 +167,54 @@ func TestSubmitDemandRecordsDemandAndEventWithoutAutoCreatingTask(t *testing.T) 
 	}
 }
 
+func TestProjectGovernanceCreatesEvidenceAndProjectEvent(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusRunning, HumanOwnerUserID: actorID}
+
+	evidence, err := service.CreateEvidenceRef(context.Background(), CreateEvidenceRefServiceRequest{
+		TenantID: tenantID, ProjectID: projectID, ActorType: "human_user", ActorID: actorID,
+		EvidenceType: "test_result", Title: "回归测试结果", SourceType: "artifact",
+		SourceRef: "s3://bucket/reports/regression.json", SubmittedByType: "human_user", SubmittedByID: &actorID,
+	})
+	if err != nil {
+		t.Fatalf("create evidence: %v", err)
+	}
+	if evidence.VerificationStatus != EvidenceVerificationStatusSubmitted {
+		t.Fatalf("expected submitted evidence, got %s", evidence.VerificationStatus)
+	}
+	if repo.eventTypes[len(repo.eventTypes)-1] != ProjectEventEvidenceLinked {
+		t.Fatalf("expected evidence event, got %#v", repo.eventTypes)
+	}
+}
+
+func TestProjectAcceptanceRequiresHumanOwnerAndFinalReport(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	otherUserID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusAcceptance, HumanOwnerUserID: ownerID}
+
+	_, err = service.CreateAcceptanceRecord(context.Background(), CreateAcceptanceServiceRequest{
+		TenantID: tenantID, ProjectID: projectID, AcceptedByUserID: otherUserID,
+		Status: "accepted", Conclusion: "通过", EvidenceRefIDs: []uuid.UUID{uuid.New()}, ReportRefIDs: []uuid.UUID{uuid.New()},
+	})
+	if !errors.Is(err, ErrInvalidProjectAcceptance) {
+		t.Fatalf("expected invalid acceptance actor, got %v", err)
+	}
+}
+
 func TestSubmitDemandSignalsProjectCoordinatorInV1(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -1426,6 +1474,12 @@ type memoryRepository struct {
 	executionSummaries []ExecutionSummary
 	transferRequests   []TransferRequest
 	decisionRequests   []DecisionRequest
+	evidenceRefs       []ProjectEvidenceRef
+	artifactRefs       []ProjectArtifactRef
+	reportRefs         []ProjectReportRef
+	budgetLedger       []ProjectBudgetLedgerEntry
+	acceptanceRecords  []ProjectAcceptanceRecord
+	archiveSnapshots   []ProjectArchiveSnapshot
 	lastListProjects   ListProjectsRequest
 	lastTasksLimit     int32
 	lastTasksOffset    int32
@@ -2073,6 +2127,278 @@ func (r *memoryRepository) ListDecisionRequests(ctx context.Context, tenantID, p
 	return filtered[start:end], nil
 }
 
+type governanceMemoryRepository struct {
+	*memoryRepository
+	evidenceRefs      []ProjectEvidenceRef
+	artifactRefs      []ProjectArtifactRef
+	reportRefs        []ProjectReportRef
+	budgetLedger      []ProjectBudgetLedgerEntry
+	acceptanceRecords []ProjectAcceptanceRecord
+	archiveSnapshots  []ProjectArchiveSnapshot
+}
+
+func newGovernanceMemoryRepository() *governanceMemoryRepository {
+	return &governanceMemoryRepository{memoryRepository: newMemoryRepository()}
+}
+
+func (r *governanceMemoryRepository) CreateEvidenceRef(ctx context.Context, req CreateEvidenceRefRequest) (ProjectEvidenceRef, error) {
+	evidence := ProjectEvidenceRef{
+		ID:                 uuid.New(),
+		TenantID:           req.TenantID,
+		ProjectID:          req.ProjectID,
+		ProjectTaskID:      req.ProjectTaskID,
+		RouteDecisionID:    req.RouteDecisionID,
+		ExecutionSummaryID: req.ExecutionSummaryID,
+		EvidenceType:       req.EvidenceType,
+		Title:              req.Title,
+		Summary:            strPtrOrNil(req.Summary),
+		SourceType:         req.SourceType,
+		SourceRef:          req.SourceRef,
+		ArtifactRefID:      req.ArtifactRefID,
+		SubmittedByType:    req.SubmittedByType,
+		SubmittedByID:      req.SubmittedByID,
+		VerificationStatus: req.VerificationStatus,
+		Metadata:           req.Metadata,
+		CreatedEventID:     req.CreatedEventID,
+		CreatedAt:          time.Now().UTC(),
+		UpdatedAt:          time.Now().UTC(),
+	}
+	r.evidenceRefs = append(r.evidenceRefs, evidence)
+	return evidence, nil
+}
+
+func (r *governanceMemoryRepository) ListEvidenceRefs(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error) {
+	filtered := make([]ProjectEvidenceRef, 0, len(r.evidenceRefs))
+	for _, evidence := range r.evidenceRefs {
+		if evidence.TenantID == tenantID && evidence.ProjectID == projectID && (status == nil || evidence.VerificationStatus == *status) {
+			filtered = append(filtered, evidence)
+		}
+	}
+	return paginateSlice(filtered, limit, offset), nil
+}
+
+func (r *governanceMemoryRepository) UpdateEvidenceVerificationStatus(ctx context.Context, req UpdateEvidenceVerificationStatusRequest) (ProjectEvidenceRef, error) {
+	for index, evidence := range r.evidenceRefs {
+		if evidence.ID == req.ID && evidence.TenantID == req.TenantID && evidence.ProjectID == req.ProjectID {
+			evidence.VerificationStatus = req.VerificationStatus
+			evidence.Metadata = req.Metadata
+			evidence.UpdatedAt = time.Now().UTC()
+			r.evidenceRefs[index] = evidence
+			return evidence, nil
+		}
+	}
+	return ProjectEvidenceRef{}, ErrProjectNotFound
+}
+
+func (r *governanceMemoryRepository) CreateArtifactRef(ctx context.Context, req CreateArtifactRefRequest) (ProjectArtifactRef, error) {
+	artifact := ProjectArtifactRef{
+		ID:              uuid.New(),
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		ProjectTaskID:   req.ProjectTaskID,
+		ArtifactID:      req.ArtifactID,
+		ArtifactType:    req.ArtifactType,
+		Title:           req.Title,
+		ObjectRef:       req.ObjectRef,
+		ContentType:     strPtrOrNil(req.ContentType),
+		SizeBytes:       req.SizeBytes,
+		Checksum:        strPtrOrNil(req.Checksum),
+		RetentionStatus: req.RetentionStatus,
+		RetentionHoldID: req.RetentionHoldID,
+		Metadata:        req.Metadata,
+		CreatedEventID:  req.CreatedEventID,
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
+	}
+	r.artifactRefs = append(r.artifactRefs, artifact)
+	return artifact, nil
+}
+
+func (r *governanceMemoryRepository) ListArtifactRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error) {
+	filtered := make([]ProjectArtifactRef, 0, len(r.artifactRefs))
+	for _, artifact := range r.artifactRefs {
+		if artifact.TenantID == tenantID && artifact.ProjectID == projectID {
+			filtered = append(filtered, artifact)
+		}
+	}
+	return paginateSlice(filtered, limit, offset), nil
+}
+
+func (r *governanceMemoryRepository) UpdateArtifactRetention(ctx context.Context, req UpdateArtifactRetentionRequest) (ProjectArtifactRef, error) {
+	for index, artifact := range r.artifactRefs {
+		if artifact.ID == req.ID && artifact.TenantID == req.TenantID && artifact.ProjectID == req.ProjectID {
+			artifact.RetentionStatus = req.RetentionStatus
+			artifact.RetentionHoldID = req.RetentionHoldID
+			artifact.UpdatedAt = time.Now().UTC()
+			r.artifactRefs[index] = artifact
+			return artifact, nil
+		}
+	}
+	return ProjectArtifactRef{}, ErrProjectNotFound
+}
+
+func (r *governanceMemoryRepository) CreateReportRef(ctx context.Context, req CreateReportRefRequest) (ProjectReportRef, error) {
+	report := ProjectReportRef{
+		ID:              uuid.New(),
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		ReportType:      req.ReportType,
+		Title:           req.Title,
+		Summary:         strPtrOrNil(req.Summary),
+		ObjectRef:       req.ObjectRef,
+		Format:          req.Format,
+		GeneratedByType: req.GeneratedByType,
+		GeneratedByID:   req.GeneratedByID,
+		CreatedEventID:  req.CreatedEventID,
+		CreatedAt:       time.Now().UTC(),
+	}
+	r.reportRefs = append(r.reportRefs, report)
+	return report, nil
+}
+
+func (r *governanceMemoryRepository) ListReportRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectReportRef, error) {
+	filtered := make([]ProjectReportRef, 0, len(r.reportRefs))
+	for _, report := range r.reportRefs {
+		if report.TenantID == tenantID && report.ProjectID == projectID {
+			filtered = append(filtered, report)
+		}
+	}
+	return paginateSlice(filtered, limit, offset), nil
+}
+
+func (r *governanceMemoryRepository) CreateBudgetLedgerEntry(ctx context.Context, req CreateBudgetLedgerEntryRequest) (ProjectBudgetLedgerEntry, error) {
+	entry := ProjectBudgetLedgerEntry{
+		ID:                uuid.New(),
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		CoordinationJobID: req.CoordinationJobID,
+		ProjectTaskID:     req.ProjectTaskID,
+		DigitalEmployeeID: req.DigitalEmployeeID,
+		CostType:          req.CostType,
+		EstimatedTokens:   req.EstimatedTokens,
+		ActualTokens:      req.ActualTokens,
+		EstimatedCost:     req.EstimatedCost,
+		ActualCost:        req.ActualCost,
+		Source:            req.Source,
+		Reason:            strPtrOrNil(req.Reason),
+		CreatedEventID:    req.CreatedEventID,
+		CreatedAt:         time.Now().UTC(),
+	}
+	r.budgetLedger = append(r.budgetLedger, entry)
+	return entry, nil
+}
+
+func (r *governanceMemoryRepository) ListBudgetLedger(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectBudgetLedgerEntry, error) {
+	filtered := make([]ProjectBudgetLedgerEntry, 0, len(r.budgetLedger))
+	for _, entry := range r.budgetLedger {
+		if entry.TenantID == tenantID && entry.ProjectID == projectID {
+			filtered = append(filtered, entry)
+		}
+	}
+	return paginateSlice(filtered, limit, offset), nil
+}
+
+func (r *governanceMemoryRepository) GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectBudgetSummary, error) {
+	var summary ProjectBudgetSummary
+	for _, entry := range r.budgetLedger {
+		if entry.TenantID != tenantID || entry.ProjectID != projectID {
+			continue
+		}
+		summary.LedgerCount++
+		if entry.EstimatedTokens != nil {
+			summary.EstimatedTokens += *entry.EstimatedTokens
+		}
+		if entry.ActualTokens != nil {
+			summary.ActualTokens += *entry.ActualTokens
+		}
+		if entry.EstimatedCost != "" {
+			summary.EstimatedCost = entry.EstimatedCost
+		}
+		if entry.ActualCost != "" {
+			summary.ActualCost = entry.ActualCost
+		}
+	}
+	return summary, nil
+}
+
+func (r *governanceMemoryRepository) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error) {
+	record := ProjectAcceptanceRecord{
+		ID:               uuid.New(),
+		TenantID:         req.TenantID,
+		ProjectID:        req.ProjectID,
+		AcceptedByUserID: req.AcceptedByUserID,
+		Status:           req.Status,
+		Conclusion:       req.Conclusion,
+		Summary:          strPtrOrNil(req.Summary),
+		EvidenceRefIDs:   req.EvidenceRefIDs,
+		ReportRefIDs:     req.ReportRefIDs,
+		UnresolvedRisks:  req.UnresolvedRisks,
+		CreatedEventID:   req.CreatedEventID,
+		CreatedAt:        time.Now().UTC(),
+	}
+	r.acceptanceRecords = append(r.acceptanceRecords, record)
+	return record, nil
+}
+
+func (r *governanceMemoryRepository) GetLatestAcceptanceRecord(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectAcceptanceRecord, error) {
+	for index := len(r.acceptanceRecords) - 1; index >= 0; index-- {
+		record := r.acceptanceRecords[index]
+		if record.TenantID == tenantID && record.ProjectID == projectID {
+			return record, nil
+		}
+	}
+	return ProjectAcceptanceRecord{}, ErrProjectNotFound
+}
+
+func (r *governanceMemoryRepository) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotRequest) (ProjectArchiveSnapshot, error) {
+	snapshot := ProjectArchiveSnapshot{
+		ID:                   uuid.New(),
+		TenantID:             req.TenantID,
+		ProjectID:            req.ProjectID,
+		SnapshotType:         req.SnapshotType,
+		Status:               req.Status,
+		ObjectRef:            strPtrOrNil(req.ObjectRef),
+		Summary:              strPtrOrNil(req.Summary),
+		IncludedCounts:       req.IncludedCounts,
+		RetainedArtifactIDs:  req.RetainedArtifactIDs,
+		RetentionLockEventID: req.RetentionLockEventID,
+		CreatedByUserID:      req.CreatedByUserID,
+		CreatedEventID:       req.CreatedEventID,
+		CreatedAt:            time.Now().UTC(),
+	}
+	r.archiveSnapshots = append(r.archiveSnapshots, snapshot)
+	return snapshot, nil
+}
+
+func (r *governanceMemoryRepository) ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArchiveSnapshot, error) {
+	filtered := make([]ProjectArchiveSnapshot, 0, len(r.archiveSnapshots))
+	for _, snapshot := range r.archiveSnapshots {
+		if snapshot.TenantID == tenantID && snapshot.ProjectID == projectID {
+			filtered = append(filtered, snapshot)
+		}
+	}
+	return paginateSlice(filtered, limit, offset), nil
+}
+
+func (r *governanceMemoryRepository) ListConfigRevisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectConfigRevision, error) {
+	filtered := make([]ProjectConfigRevision, 0, len(r.revisions))
+	for _, revision := range r.revisions {
+		if revision.TenantID == tenantID && revision.ProjectID == projectID {
+			filtered = append(filtered, revision)
+		}
+	}
+	return paginateSlice(filtered, limit, offset), nil
+}
+
+func (r *governanceMemoryRepository) GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (ProjectConfigRevision, error) {
+	for _, revision := range r.revisions {
+		if revision.ID == revisionID && revision.TenantID == tenantID && revision.ProjectID == projectID {
+			return revision, nil
+		}
+	}
+	return ProjectConfigRevision{}, ErrProjectNotFound
+}
+
 type fakeCoordinatorSignalClient struct {
 	ensureSignals      int
 	demandSignals      int
@@ -2151,6 +2477,18 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func paginateSlice[T any](values []T, limit, offset int32) []T {
+	start := int(offset)
+	if start > len(values) {
+		return []T{}
+	}
+	end := start + int(limit)
+	if end > len(values) {
+		end = len(values)
+	}
+	return values[start:end]
 }
 
 func countProjectEvents(values []ProjectEventType, target ProjectEventType) int {

@@ -471,6 +471,46 @@ type SubmitProjectDemandRequest struct {
 	Attachments       []any
 }
 
+type CreateEvidenceRefServiceRequest struct {
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	ActorType          string
+	ActorID            uuid.UUID
+	ProjectTaskID      *uuid.UUID
+	RouteDecisionID    *uuid.UUID
+	ExecutionSummaryID *uuid.UUID
+	EvidenceType       string
+	Title              string
+	Summary            string
+	SourceType         string
+	SourceRef          string
+	ArtifactRefID      *uuid.UUID
+	SubmittedByType    string
+	SubmittedByID      *uuid.UUID
+	Metadata           map[string]any
+}
+
+type CreateAcceptanceServiceRequest struct {
+	TenantID         uuid.UUID
+	ProjectID        uuid.UUID
+	AcceptedByUserID uuid.UUID
+	Status           string
+	Conclusion       string
+	Summary          string
+	EvidenceRefIDs   []uuid.UUID
+	ReportRefIDs     []uuid.UUID
+	UnresolvedRisks  []any
+}
+
+type CreateArchiveSnapshotServiceRequest struct {
+	TenantID        uuid.UUID
+	ProjectID       uuid.UUID
+	CreatedByUserID uuid.UUID
+	SnapshotType    string
+	Summary         string
+	ObjectRef       string
+}
+
 type ResolveApprovalRequest struct {
 	TenantID          uuid.UUID
 	ApprovalRequestID uuid.UUID
