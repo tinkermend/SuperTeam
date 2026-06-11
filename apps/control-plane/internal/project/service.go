@@ -9,9 +9,10 @@ import (
 )
 
 type Service struct {
-	repository  Repository
-	coordinator CoordinatorSignalClient
-	approvals   ApprovalResolver
+	repository            Repository
+	coordinator           CoordinatorSignalClient
+	approvals             ApprovalResolver
+	archiveArtifactLocker ArchiveArtifactLocker
 }
 
 type latestConfigRevisionRepository interface {
@@ -31,13 +32,21 @@ func NewServiceWithCoordinator(repository Repository, coordinator CoordinatorSig
 }
 
 func NewServiceWithCoordinatorAndApprovals(repository Repository, coordinator CoordinatorSignalClient, approvals ApprovalResolver) (*Service, error) {
+	return NewServiceWithCoordinatorApprovalsAndArchiveArtifactLocker(repository, coordinator, approvals, nil)
+}
+
+func NewServiceWithArchiveArtifactLocker(repository Repository, locker ArchiveArtifactLocker) (*Service, error) {
+	return NewServiceWithCoordinatorApprovalsAndArchiveArtifactLocker(repository, NoopCoordinatorSignalClient{}, nil, locker)
+}
+
+func NewServiceWithCoordinatorApprovalsAndArchiveArtifactLocker(repository Repository, coordinator CoordinatorSignalClient, approvals ApprovalResolver, locker ArchiveArtifactLocker) (*Service, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("project repository is required")
 	}
 	if coordinator == nil {
 		coordinator = NoopCoordinatorSignalClient{}
 	}
-	return &Service{repository: repository, coordinator: coordinator, approvals: approvals}, nil
+	return &Service{repository: repository, coordinator: coordinator, approvals: approvals, archiveArtifactLocker: locker}, nil
 }
 
 func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -511,6 +520,35 @@ func (s *Service) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSn
 	if projectArchived(project) {
 		return nil, ErrProjectArchived
 	}
+	preview, err := s.BuildArchivePreview(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	artifactIDs, err := s.collectArchiveArtifactIDs(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+
+	status := "archived"
+	retainedArtifactIDs := []uuid.UUID(nil)
+	var retentionLockEventID *uuid.UUID
+	if len(artifactIDs) > 0 {
+		if s.archiveArtifactLocker == nil {
+			status = "archive_pending_retention"
+		} else {
+			lockResult, lockErr := s.archiveArtifactLocker.LockProjectArtifacts(ctx, req.TenantID, req.ProjectID, artifactIDs)
+			if lockErr != nil {
+				status = "archive_pending_retention"
+				retainedArtifactIDs = lockResult.ArtifactIDs
+				retentionLockEventID = lockResult.EventID
+			} else {
+				retainedArtifactIDs = lockResult.ArtifactIDs
+				retentionLockEventID = lockResult.EventID
+			}
+		}
+	}
+
+	includedCounts := archiveSnapshotIncludedCounts(preview)
 	result, err := s.repository.CreateArchiveSnapshotWithEvent(ctx, CreateArchiveSnapshotWithEventRequest{
 		Event: AppendProjectEventRequest{
 			TenantID:     req.TenantID,
@@ -522,21 +560,34 @@ func (s *Service) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSn
 			Summary:      "项目归档快照已创建",
 			Payload: map[string]any{
 				"snapshot_type": req.SnapshotType,
+				"status":        status,
+				"included_counts": map[string]any{
+					"evidence": preview.EvidenceCount,
+					"artifact": preview.ArtifactCount,
+					"report":   preview.ReportCount,
+				},
 			},
 		},
 		Snapshot: CreateArchiveSnapshotRequest{
-			TenantID:        req.TenantID,
-			ProjectID:       req.ProjectID,
-			SnapshotType:    req.SnapshotType,
-			Status:          "snapshot_created",
-			ObjectRef:       req.ObjectRef,
-			Summary:         req.Summary,
-			IncludedCounts:  map[string]any{},
-			CreatedByUserID: req.CreatedByUserID,
+			TenantID:             req.TenantID,
+			ProjectID:            req.ProjectID,
+			SnapshotType:         req.SnapshotType,
+			Status:               status,
+			ObjectRef:            req.ObjectRef,
+			Summary:              req.Summary,
+			IncludedCounts:       includedCounts,
+			RetainedArtifactIDs:  retainedArtifactIDs,
+			RetentionLockEventID: retentionLockEventID,
+			CreatedByUserID:      req.CreatedByUserID,
 		},
 	})
 	if err != nil {
 		return nil, err
+	}
+	if status == "archived" {
+		if _, err := s.repository.ArchiveProject(ctx, req.TenantID, req.ProjectID); err != nil {
+			return nil, err
+		}
 	}
 	return &result.Snapshot, nil
 }
@@ -1345,6 +1396,40 @@ func collectArchivePreviewPages[T any](ctx context.Context, pageSize int32, list
 		offset = nextOffset
 	}
 	return nil, ErrInvalidProject
+}
+
+func (s *Service) collectArchiveArtifactIDs(ctx context.Context, tenantID, projectID uuid.UUID) ([]uuid.UUID, error) {
+	pageSize, _ := normalizePagination(100, 0)
+	artifactRefs, err := collectArchivePreviewPages(ctx, pageSize, func(limit, offset int32) ([]ProjectArtifactRef, error) {
+		return s.repository.ListArtifactRefs(ctx, tenantID, projectID, limit, offset)
+	})
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[uuid.UUID]struct{}, len(artifactRefs))
+	artifactIDs := make([]uuid.UUID, 0, len(artifactRefs))
+	for _, artifactRef := range artifactRefs {
+		if artifactRef.ArtifactID == nil || *artifactRef.ArtifactID == uuid.Nil {
+			continue
+		}
+		if _, ok := seen[*artifactRef.ArtifactID]; ok {
+			continue
+		}
+		seen[*artifactRef.ArtifactID] = struct{}{}
+		artifactIDs = append(artifactIDs, *artifactRef.ArtifactID)
+	}
+	return artifactIDs, nil
+}
+
+func archiveSnapshotIncludedCounts(preview *ProjectArchivePreview) map[string]any {
+	if preview == nil {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"evidence_ref_count": preview.EvidenceCount,
+		"artifact_ref_count": preview.ArtifactCount,
+		"report_ref_count":   preview.ReportCount,
+	}
 }
 
 func (s *Service) validateAcceptanceRefs(ctx context.Context, tenantID, projectID uuid.UUID, evidenceRefIDs, reportRefIDs []uuid.UUID) error {

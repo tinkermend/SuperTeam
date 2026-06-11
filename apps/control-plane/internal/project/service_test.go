@@ -378,6 +378,108 @@ func TestProjectArchivePreviewCountsAllPages(t *testing.T) {
 	}
 }
 
+func TestArchiveSnapshotLocksReferencedArtifactsBeforeArchiving(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	locker := &fakeArchiveArtifactLocker{}
+	service, err := NewServiceWithArchiveArtifactLocker(repo, locker)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	artifactID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusAcceptance, HumanOwnerUserID: ownerID}
+	repo.artifactRefs = append(repo.artifactRefs, ProjectArtifactRef{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ArtifactID: &artifactID,
+		ObjectRef: "s3://bucket/report.md", Title: "最终报告",
+	})
+	snapshot, err := service.CreateArchiveSnapshot(context.Background(), CreateArchiveSnapshotServiceRequest{
+		TenantID: tenantID, ProjectID: projectID, CreatedByUserID: ownerID,
+		SnapshotType: "final_archive", Summary: "验收通过后归档", ObjectRef: "s3://bucket/archive/project.json",
+	})
+	if err != nil {
+		t.Fatalf("archive snapshot: %v", err)
+	}
+	if snapshot.Status != "archived" {
+		t.Fatalf("expected archived snapshot, got %s", snapshot.Status)
+	}
+	if len(locker.artifactIDs) != 1 || locker.artifactIDs[0] != artifactID {
+		t.Fatalf("expected artifact lock, got %#v", locker.artifactIDs)
+	}
+	if repo.projects[projectID].Status != ProjectStatusArchived {
+		t.Fatalf("expected project archived after retention lock, got %s", repo.projects[projectID].Status)
+	}
+}
+
+func TestArchiveSnapshotStaysPendingWhenArtifactLockFails(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	locker := &fakeArchiveArtifactLocker{err: errors.New("retention store unavailable")}
+	service, err := NewServiceWithArchiveArtifactLocker(repo, locker)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	artifactID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusAcceptance, HumanOwnerUserID: ownerID}
+	repo.artifactRefs = append(repo.artifactRefs, ProjectArtifactRef{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ArtifactID: &artifactID,
+		ObjectRef: "s3://bucket/report.md", Title: "最终报告",
+	})
+
+	snapshot, err := service.CreateArchiveSnapshot(context.Background(), CreateArchiveSnapshotServiceRequest{
+		TenantID: tenantID, ProjectID: projectID, CreatedByUserID: ownerID,
+		SnapshotType: "final_archive", Summary: "验收通过后归档", ObjectRef: "s3://bucket/archive/project.json",
+	})
+	if err != nil {
+		t.Fatalf("archive snapshot should return pending state without error: %v", err)
+	}
+	if snapshot.Status != "archive_pending_retention" {
+		t.Fatalf("expected retention pending snapshot, got %s", snapshot.Status)
+	}
+	if repo.projects[projectID].Status == ProjectStatusArchived {
+		t.Fatalf("project must not be archived when retention lock fails")
+	}
+	if len(repo.archiveSnapshots) != 1 || repo.archiveSnapshots[0].Status != "archive_pending_retention" {
+		t.Fatalf("expected persisted pending snapshot, got %#v", repo.archiveSnapshots)
+	}
+}
+
+func TestArchiveSnapshotReturnsArchiveProjectErrorAfterSuccessfulLock(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	repo.archiveProjectErr = errors.New("archive update failed")
+	locker := &fakeArchiveArtifactLocker{}
+	service, err := NewServiceWithArchiveArtifactLocker(repo, locker)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	artifactID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusAcceptance, HumanOwnerUserID: ownerID}
+	repo.artifactRefs = append(repo.artifactRefs, ProjectArtifactRef{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ArtifactID: &artifactID,
+		ObjectRef: "s3://bucket/report.md", Title: "最终报告",
+	})
+
+	_, err = service.CreateArchiveSnapshot(context.Background(), CreateArchiveSnapshotServiceRequest{
+		TenantID: tenantID, ProjectID: projectID, CreatedByUserID: ownerID,
+		SnapshotType: "final_archive", Summary: "验收通过后归档", ObjectRef: "s3://bucket/archive/project.json",
+	})
+	if !errors.Is(err, repo.archiveProjectErr) {
+		t.Fatalf("expected archive project error, got %v", err)
+	}
+	if len(repo.archiveSnapshots) != 1 || repo.archiveSnapshots[0].Status != "archived" {
+		t.Fatalf("expected archived snapshot before archive project failure, got %#v", repo.archiveSnapshots)
+	}
+	if repo.projects[projectID].Status == ProjectStatusArchived {
+		t.Fatalf("project must not be marked archived when repository archive update fails")
+	}
+}
+
 func TestSubmitDemandSignalsProjectCoordinatorInV1(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -1655,6 +1757,7 @@ type memoryRepository struct {
 	appendProjectEventErr      error
 	createExecutionSummaryErr  error
 	createTransferRequestErr   error
+	archiveProjectErr          error
 	projectTaskRunRuntimeNodes map[uuid.UUID]uuid.UUID
 }
 
@@ -1765,6 +1868,9 @@ func (r *memoryRepository) UpdateProjectConfig(ctx context.Context, req UpdatePr
 }
 
 func (r *memoryRepository) ArchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error) {
+	if r.archiveProjectErr != nil {
+		return Project{}, r.archiveProjectErr
+	}
 	project, ok := r.projects[projectID]
 	if !ok || project.TenantID != tenantID {
 		return Project{}, ErrProjectNotFound
@@ -2688,6 +2794,28 @@ func (r *governanceMemoryRepository) restoreGovernanceSnapshot(snapshot governan
 	r.evidenceRefs = snapshot.evidenceRefs
 	r.acceptanceRecords = snapshot.acceptanceRecords
 	r.archiveSnapshots = snapshot.archiveSnapshots
+}
+
+type fakeArchiveArtifactLocker struct {
+	artifactIDs []uuid.UUID
+	holdIDs     []uuid.UUID
+	eventID     *uuid.UUID
+	err         error
+}
+
+func (l *fakeArchiveArtifactLocker) LockProjectArtifacts(ctx context.Context, tenantID, projectID uuid.UUID, artifactIDs []uuid.UUID) (ArchiveArtifactLockResult, error) {
+	l.artifactIDs = append([]uuid.UUID(nil), artifactIDs...)
+	if len(l.holdIDs) == 0 {
+		l.holdIDs = make([]uuid.UUID, 0, len(artifactIDs))
+		for range artifactIDs {
+			l.holdIDs = append(l.holdIDs, uuid.New())
+		}
+	}
+	return ArchiveArtifactLockResult{
+		HoldIDs:     append([]uuid.UUID(nil), l.holdIDs...),
+		ArtifactIDs: append([]uuid.UUID(nil), artifactIDs...),
+		EventID:     l.eventID,
+	}, l.err
 }
 
 type fakeCoordinatorSignalClient struct {

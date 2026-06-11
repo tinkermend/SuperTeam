@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -413,6 +414,16 @@ type ProjectArchiveSnapshot struct {
 	CreatedByUserID      uuid.UUID
 	CreatedEventID       *uuid.UUID
 	CreatedAt            time.Time
+}
+
+type ArchiveArtifactLocker interface {
+	LockProjectArtifacts(ctx context.Context, tenantID, projectID uuid.UUID, artifactIDs []uuid.UUID) (ArchiveArtifactLockResult, error)
+}
+
+type ArchiveArtifactLockResult struct {
+	HoldIDs     []uuid.UUID
+	ArtifactIDs []uuid.UUID
+	EventID     *uuid.UUID
 }
 
 type ProjectMemberInput struct {

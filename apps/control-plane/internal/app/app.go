@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api"
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/approval"
+	"github.com/superteam/control-plane/internal/artifact"
 	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
@@ -37,6 +39,7 @@ type Container struct {
 	EmployeeService                *employee.Service
 	ProjectService                 *project.Service
 	ApprovalService                *approval.Service
+	ArtifactService                *artifact.Service
 	EmployeeRun                    *employee.DigitalEmployeeRunService
 	EmployeeRunWriteback           *employee.DigitalEmployeeRunWritebackService
 	SkillService                   *skill.Service
@@ -88,6 +91,26 @@ func (a runtimeEventRecorderAdapter) RecordRuntimeEvent(ctx context.Context, req
 	})
 }
 
+type projectArtifactLocker struct {
+	artifactService *artifact.Service
+}
+
+func (l projectArtifactLocker) LockProjectArtifacts(ctx context.Context, tenantID, projectID uuid.UUID, artifactIDs []uuid.UUID) (project.ArchiveArtifactLockResult, error) {
+	if l.artifactService == nil {
+		return project.ArchiveArtifactLockResult{}, nil
+	}
+	result, err := l.artifactService.HoldProjectArchiveArtifacts(ctx, artifact.HoldProjectArchiveArtifactsRequest{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
+		ArtifactIDs: artifactIDs,
+		Reason:      "project archive snapshot",
+	})
+	return project.ArchiveArtifactLockResult{
+		HoldIDs:     result.HoldIDs,
+		ArtifactIDs: result.ArtifactIDs,
+	}, err
+}
+
 func NewContainer(stores *storage.Clients) (*Container, error) {
 	return NewContainerWithConfig(stores, config.Config{})
 }
@@ -124,6 +147,12 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return nil, err
 	}
 
+	artifactRepository := artifact.NewPgRepository(q)
+	artifactService, err := artifact.NewService(artifactRepository)
+	if err != nil {
+		return nil, err
+	}
+
 	projectRepository := project.NewPgRepository(q, stores.Postgres)
 	coordinatorClient := project.CoordinatorSignalClient(project.NoopCoordinatorSignalClient{})
 	var coordinationWorker lifecycleWorker
@@ -142,7 +171,12 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore)
 		coordinationWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
 	}
-	projectService, err := project.NewServiceWithCoordinatorAndApprovals(projectRepository, coordinatorClient, project.NewApprovalServiceAdapter(approvalService))
+	projectService, err := project.NewServiceWithCoordinatorApprovalsAndArchiveArtifactLocker(
+		projectRepository,
+		coordinatorClient,
+		project.NewApprovalServiceAdapter(approvalService),
+		projectArtifactLocker{artifactService: artifactService},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -205,6 +239,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		EmployeeService:                employeeService,
 		ProjectService:                 projectService,
 		ApprovalService:                approvalService,
+		ArtifactService:                artifactService,
 		EmployeeRun:                    runService,
 		EmployeeRunWriteback:           runWritebackService,
 		SkillService:                   skillService,
