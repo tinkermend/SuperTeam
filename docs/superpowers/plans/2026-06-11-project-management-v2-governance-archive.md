@@ -2205,10 +2205,14 @@ git commit -m "feat: show project config revision history"
 - Create: `apps/control-plane/internal/audit/handler.go`
 - Modify: `apps/control-plane/internal/api/server.go`
 - Modify: `apps/control-plane/internal/api/project_routes_test.go`
+- Modify: `apps/control-plane/internal/app/app.go`
+- Modify: `apps/control-plane/internal/app/app_test.go`
+- Modify: `apps/web/src/features/projects/components/project-budget-panel.tsx`
 - Modify: `apps/web/src/routes/_authenticated/audit/index.tsx`
 - Modify: `apps/web/src/routes/_authenticated/costs/index.tsx`
 
 Task 10 允许补充 audit service 和 API route 测试文件，用于验证 project_id/resource query 只使用当前 console tenant，并避免审计/成本入口变成未测试占位。
+Task 10 也允许补充 app wiring 和项目预算面板导出：新建的 audit handler 必须接入真实容器；成本中心路由复用项目预算查询与面板时，可以在 `project-budget-panel.tsx` 中导出 `CostsProjectView`。
 
 - [ ] **Step 1: 写 audit project query 失败测试**
 
