@@ -4,7 +4,9 @@ import {
   createProject,
   getProjectConfig,
   getProjectOverview,
+  listProjectRouteDecisions,
   replaceProjectMembers,
+  resolveProjectDecision,
   submitProjectDemand,
 } from "./projects";
 
@@ -280,6 +282,58 @@ describe("project API", () => {
         },
         method: "POST",
       },
+    );
+  });
+
+  it("lists route decisions and resolves project decisions", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify([]), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      listProjectRouteDecisions(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+        { limit: 10 },
+      ),
+    ).resolves.toEqual([]);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/route-decisions?limit=10",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+
+    fetcher.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ id: "decision-1", status_snapshot: "approved" }),
+        {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        },
+      ),
+    );
+
+    await resolveProjectDecision(
+      { baseUrl: "http://control-plane.local", fetcher },
+      "project 1/primary",
+      "decision 1",
+      { decision: "approved", comment: "同意继续" },
+    );
+
+    expect(fetcher).toHaveBeenLastCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/decisions/decision%201/resolve",
+      expect.objectContaining({
+        body: JSON.stringify({ decision: "approved", comment: "同意继续" }),
+        method: "POST",
+      }),
     );
   });
 });

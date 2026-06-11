@@ -11,10 +11,16 @@ import {
   createProject,
   getProject,
   getProjectOverview,
+  listProjectCoordinationJobs,
+  listProjectDecisionRequests,
   listProjectDemands,
   listProjectEvents,
+  listProjectExecutionSummaries,
+  listProjectRouteDecisions,
   listProjects,
   listProjectTasks,
+  listProjectTransferRequests,
+  resolveProjectDecision,
   submitProjectDemand,
   type CreateProjectInput,
   type ListProjectsFilters,
@@ -174,6 +180,46 @@ export function ProjectsView({
     placeholderData: keepPreviousData,
   });
 
+  const routeDecisionsQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-route-decisions", effectiveProjectId],
+    queryFn: () =>
+      listProjectRouteDecisions(apiOptions, effectiveProjectId as string, { limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const coordinationJobsQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-coordination-jobs", effectiveProjectId],
+    queryFn: () =>
+      listProjectCoordinationJobs(apiOptions, effectiveProjectId as string, { limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const decisionRequestsQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-decisions", effectiveProjectId],
+    queryFn: () =>
+      listProjectDecisionRequests(apiOptions, effectiveProjectId as string, { limit: 20 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const executionSummariesQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-execution-summaries", effectiveProjectId],
+    queryFn: () =>
+      listProjectExecutionSummaries(apiOptions, effectiveProjectId as string, { limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const transferRequestsQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-transfer-requests", effectiveProjectId],
+    queryFn: () =>
+      listProjectTransferRequests(apiOptions, effectiveProjectId as string, { limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+
   const createMutation = useMutation({
     mutationFn: (input: CreateProjectInput) => createProject(apiOptions, input),
     onSuccess: async (response) => {
@@ -208,6 +254,25 @@ export function ProjectsView({
     },
   });
 
+  const resolveDecisionMutation = useMutation({
+    mutationFn: (input: { decisionId: string; decision: string }) =>
+      resolveProjectDecision(
+        apiOptions,
+        effectiveProjectId as string,
+        input.decisionId,
+        { decision: input.decision },
+      ),
+    onSuccess: async (decisionRequest) => {
+      const projectId = decisionRequest.project_id || effectiveProjectId;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["project-decisions", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-tasks", projectId] }),
+      ]);
+    },
+  });
+
   const isInitialLoading = projectsQuery.isLoading && !projectsQuery.data;
   const displayedProject = overviewQuery.data?.project ?? selectedProject;
   const isArchived = displayedProject?.status === "archived";
@@ -238,18 +303,28 @@ export function ProjectsView({
             selectedProjectId={effectiveProjectId}
           />
           <ProjectOperationalDetail
+            coordinationJobs={coordinationJobsQuery.data ?? []}
+            decisionRequests={decisionRequestsQuery.data ?? []}
             demands={demandsQuery.data ?? []}
             events={eventsQuery.data ?? []}
+            executionSummaries={executionSummariesQuery.data ?? []}
             isArchived={isArchived}
             onArchiveProject={() => {
               if (effectiveProjectId) {
                 archiveMutation.mutate(effectiveProjectId);
               }
             }}
+            onResolveDecision={(decisionId, decision) => {
+              if (effectiveProjectId) {
+                resolveDecisionMutation.mutate({ decisionId, decision });
+              }
+            }}
             onSubmitDemand={() => setDemandOpen(true)}
             overview={overviewQuery.data}
             project={displayedProject}
+            routeDecisions={routeDecisionsQuery.data ?? []}
             tasks={tasksQuery.data ?? []}
+            transferRequests={transferRequestsQuery.data ?? []}
           />
         </div>
       ) : null}

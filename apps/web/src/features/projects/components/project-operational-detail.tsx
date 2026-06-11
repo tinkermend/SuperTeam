@@ -5,6 +5,7 @@ import {
   Archive,
   Bot,
   ClipboardList,
+  FileCheck2,
   FileArchive,
   ExternalLink,
   FileText,
@@ -17,34 +18,51 @@ import { Button } from "@/components/ui/button";
 import { LiquidCard, SemanticIconTile, StatusBadge } from "@/components/superteam";
 import type {
   Project,
+  ProjectCoordinationJob,
+  ProjectDecisionRequest,
   ProjectDemand,
   ProjectEvent,
+  ProjectExecutionSummary,
   ProjectMember,
   ProjectOverview,
+  ProjectRouteDecision,
   ProjectTask,
+  ProjectTransferRequest,
 } from "@/lib/api/projects";
 import { statusLabel, statusTone } from "./project-switcher-pane";
 
 type ProjectOperationalDetailProps = {
+  coordinationJobs: ProjectCoordinationJob[];
+  decisionRequests: ProjectDecisionRequest[];
   demands: ProjectDemand[];
   events: ProjectEvent[];
+  executionSummaries: ProjectExecutionSummary[];
   isArchived?: boolean;
   onArchiveProject: () => void;
+  onResolveDecision: (decisionId: string, decision: string) => void;
   onSubmitDemand: () => void;
   overview?: ProjectOverview;
   project?: Project;
+  routeDecisions: ProjectRouteDecision[];
   tasks: ProjectTask[];
+  transferRequests: ProjectTransferRequest[];
 };
 
 export function ProjectOperationalDetail({
+  coordinationJobs,
+  decisionRequests,
   demands,
   events,
+  executionSummaries,
   isArchived,
   onArchiveProject,
+  onResolveDecision,
   onSubmitDemand,
   overview,
   project,
+  routeDecisions,
   tasks,
+  transferRequests,
 }: ProjectOperationalDetailProps) {
   if (!project) {
     return (
@@ -171,9 +189,91 @@ export function ProjectOperationalDetail({
             <PanelHeader
               icon={<UserRound />}
               title="人类决策队列"
-              meta="V0"
+              meta={`${decisionRequests.length} 项`}
             />
-            <EmptyLine label="V0 暂未接入人类决策队列" />
+            <div className="divide-y">
+              {decisionRequests.length === 0 ? (
+                <EmptyLine label="当前没有待处理的人类决策" />
+              ) : (
+                decisionRequests.slice(0, 5).map((decision) => (
+                  <div className="grid gap-3 p-4" key={decision.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {decision.title_snapshot}
+                        </p>
+                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                          {decision.summary_snapshot &&
+                          decision.summary_snapshot !== decision.title_snapshot
+                            ? decision.summary_snapshot
+                            : "等待负责人处理"}
+                        </p>
+                      </div>
+                      <StatusBadge tone={decisionTone(decision.status_snapshot)}>
+                        {decision.status_snapshot}
+                      </StatusBadge>
+                    </div>
+                    {decision.status_snapshot === "pending" ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          type="button"
+                          onClick={() => onResolveDecision(decision.id, "approved")}
+                        >
+                          批准
+                        </Button>
+                        <Button
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                          onClick={() =>
+                            onResolveDecision(decision.id, "needs_more_evidence")
+                          }
+                        >
+                          要求补证
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
+          </LiquidCard>
+
+          <LiquidCard className="rounded-xl">
+            <PanelHeader
+              icon={<GitBranch />}
+              title="路由决策"
+              meta={`${routeDecisions.length} 条`}
+            />
+            <div className="divide-y">
+              {routeDecisions.length === 0 ? (
+                <EmptyLine label="暂无路由决策" />
+              ) : (
+                routeDecisions.slice(0, 5).map((decision) => (
+                  <div className="grid gap-2 p-4" key={decision.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="min-w-0 line-clamp-2 text-sm font-medium">
+                        {decision.reason}
+                      </p>
+                      {decision.requires_human_review ? (
+                        <StatusBadge tone="warning">需人工复核</StatusBadge>
+                      ) : (
+                        <StatusBadge tone="success">已规划</StatusBadge>
+                      )}
+                    </div>
+                    <RuntimeMeta
+                      label="已选数字员工"
+                      value={formatIdList(decision.selected_digital_employee_ids)}
+                    />
+                    <RuntimeMeta
+                      label="候选数字员工"
+                      value={formatIdList(decision.candidate_digital_employee_ids)}
+                    />
+                  </div>
+                ))
+              )}
+            </div>
           </LiquidCard>
 
           <LiquidCard className="rounded-xl">
@@ -214,6 +314,104 @@ export function ProjectOperationalDetail({
         </section>
 
         <aside className="grid min-w-0 gap-4">
+          <LiquidCard className="rounded-xl">
+            <PanelHeader
+              icon={<GitBranch />}
+              title="协调任务"
+              meta={`${coordinationJobs.length} 条`}
+            />
+            <div className="divide-y">
+              {coordinationJobs.length === 0 ? (
+                <EmptyLine label="暂无协调任务" />
+              ) : (
+                coordinationJobs.slice(0, 4).map((job) => (
+                  <div className="grid gap-2 p-4" key={job.id}>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="min-w-0 truncate text-sm font-medium">
+                        {job.job_type}
+                      </p>
+                      <StatusBadge tone={jobTone(job.status)}>{job.status}</StatusBadge>
+                    </div>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {job.workflow_id}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </LiquidCard>
+
+          <LiquidCard className="rounded-xl">
+            <PanelHeader
+              icon={<FileCheck2 />}
+              title="执行摘要"
+              meta={`${executionSummaries.length} 条`}
+            />
+            <div className="divide-y">
+              {executionSummaries.length === 0 ? (
+                <EmptyLine label="暂无执行回写摘要" />
+              ) : (
+                executionSummaries.slice(0, 4).map((summary) => (
+                  <div className="grid gap-2 p-4" key={summary.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="min-w-0 line-clamp-2 text-sm font-medium">
+                        {summary.conclusion}
+                      </p>
+                      {summary.requires_human_review ? (
+                        <StatusBadge tone="warning">需复核</StatusBadge>
+                      ) : (
+                        <StatusBadge tone="success">已回写</StatusBadge>
+                      )}
+                    </div>
+                    <RuntimeMeta
+                      label="执行员工"
+                      value={summary.digital_employee_id}
+                    />
+                    {summary.recommended_next_action ? (
+                      <p className="line-clamp-2 text-xs text-muted-foreground">
+                        {summary.recommended_next_action}
+                      </p>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
+          </LiquidCard>
+
+          <LiquidCard className="rounded-xl">
+            <PanelHeader
+              icon={<Bot />}
+              title="转派请求"
+              meta={`${transferRequests.length} 条`}
+            />
+            <div className="divide-y">
+              {transferRequests.length === 0 ? (
+                <EmptyLine label="暂无转派请求" />
+              ) : (
+                transferRequests.slice(0, 4).map((request) => (
+                  <div className="grid gap-2 p-4" key={request.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="min-w-0 line-clamp-2 text-sm font-medium">
+                        {request.reason}
+                      </p>
+                      <StatusBadge tone={requestTone(request.status)}>
+                        {request.status}
+                      </StatusBadge>
+                    </div>
+                    <RuntimeMeta
+                      label="发起员工"
+                      value={request.requested_by_digital_employee_id}
+                    />
+                    <RuntimeMeta
+                      label="建议员工"
+                      value={formatIdList(request.suggested_digital_employee_ids)}
+                    />
+                  </div>
+                ))
+              )}
+            </div>
+          </LiquidCard>
+
           <MemberPanel
             icon={<UserRound />}
             members={humanRoles}
@@ -352,4 +550,53 @@ function EmptyLine({ label }: { label: string }) {
       {label}
     </div>
   );
+}
+
+function RuntimeMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-3 text-xs">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="min-w-0 truncate font-medium">{value}</span>
+    </div>
+  );
+}
+
+function formatIdList(ids: string[]) {
+  return ids.length > 0 ? ids.join("、") : "未指定";
+}
+
+function decisionTone(status: string) {
+  if (status === "pending") {
+    return "warning";
+  }
+  if (status === "approved") {
+    return "success";
+  }
+  if (status === "rejected") {
+    return "danger";
+  }
+  return "neutral";
+}
+
+function jobTone(status: string) {
+  if (status === "completed" || status === "succeeded") {
+    return "success";
+  }
+  if (status === "failed") {
+    return "danger";
+  }
+  if (status === "running" || status === "started") {
+    return "info";
+  }
+  return "neutral";
+}
+
+function requestTone(status: string) {
+  if (status === "approved" || status === "resolved") {
+    return "success";
+  }
+  if (status === "rejected" || status === "failed") {
+    return "danger";
+  }
+  return "warning";
 }

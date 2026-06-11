@@ -222,6 +222,99 @@ function createProjectFetcher(options: { slowFilteredList?: boolean } = {}) {
         },
       ]);
     }
+    if (url.pathname === "/api/v1/projects/project-1/route-decisions" && method === "GET") {
+      return jsonResponse([
+        {
+          budget_estimate: {},
+          candidate_digital_employee_ids: ["de-1"],
+          coordination_job_id: "job-1",
+          expected_outputs: ["执行摘要"],
+          id: "route-1",
+          input_requirements: {},
+          project_id: "project-1",
+          reason: "选择项目数字员工池中的 active executor",
+          requires_human_review: false,
+          selected_digital_employee_ids: ["de-1"],
+          tenant_id: "tenant-1",
+        },
+      ]);
+    }
+    if (url.pathname === "/api/v1/projects/project-1/coordination-jobs" && method === "GET") {
+      return jsonResponse([
+        {
+          id: "job-1",
+          input_snapshot_ref: { demand_id: "demand-1" },
+          job_type: "demand_route",
+          output_event_ids: [],
+          project_id: "project-1",
+          status: "completed",
+          tenant_id: "tenant-1",
+          workflow_id: "project-coordinator:project-1",
+        },
+      ]);
+    }
+    if (url.pathname === "/api/v1/projects/project-1/decisions" && method === "GET") {
+      return jsonResponse([
+        {
+          approval_request_id: "approval-1",
+          decision_type: "route_review",
+          id: "decision-1",
+          project_id: "project-1",
+          status_snapshot: "pending",
+          summary_snapshot: "需要负责人确认",
+          target_user_id: "human-owner-1",
+          tenant_id: "tenant-1",
+          title_snapshot: "需要负责人确认",
+        },
+      ]);
+    }
+    if (url.pathname === "/api/v1/projects/project-1/execution-summaries" && method === "GET") {
+      return jsonResponse([
+        {
+          artifact_refs: [],
+          confidence_factors: {},
+          conclusion: "证据充分",
+          digital_employee_id: "de-1",
+          evidence_refs: [],
+          id: "summary-1",
+          missing_information: [],
+          project_id: "project-1",
+          project_task_id: "task-1",
+          requires_human_review: false,
+          tenant_id: "tenant-1",
+        },
+      ]);
+    }
+    if (url.pathname === "/api/v1/projects/project-1/transfer-requests" && method === "GET") {
+      return jsonResponse([
+        {
+          id: "transfer-1",
+          missing_context_refs: [],
+          project_id: "project-1",
+          project_task_id: "task-1",
+          reason: "需要安全专家补充上线窗口评估",
+          requested_by_digital_employee_id: "de-1",
+          status: "requested",
+          suggested_digital_employee_ids: [],
+          tenant_id: "tenant-1",
+        },
+      ]);
+    }
+    if (
+      url.pathname === "/api/v1/projects/project-1/decisions/decision-1/resolve" &&
+      method === "POST"
+    ) {
+      return jsonResponse({
+        approval_request_id: "approval-1",
+        decision_type: "route_review",
+        id: "decision-1",
+        project_id: "project-1",
+        status_snapshot: "approved",
+        target_user_id: "human-owner-1",
+        tenant_id: "tenant-1",
+        title_snapshot: "需要负责人确认",
+      });
+    }
     if (url.pathname.endsWith("/demands") && method === "GET") {
       return jsonResponse([]);
     }
@@ -280,7 +373,7 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("当前阶段")).toBeInTheDocument();
     await expect.element(screen.getByText("待人工处理")).toBeInTheDocument();
     await expect.element(screen.getByText("证据策略")).toBeInTheDocument();
-    await expect.element(screen.getByText("V0 暂未接入人类决策队列")).toBeInTheDocument();
+    await expect.element(screen.getByText("人类决策队列")).toBeInTheDocument();
   });
 
   it("creates a project with human leader and acceptance roles", async () => {
@@ -364,6 +457,34 @@ describe("ProjectsView", () => {
           return (
             String(url).endsWith("/api/v1/projects/project-1/archive") &&
             init?.method === "POST"
+          );
+        }),
+      ).toBe(true);
+    });
+  });
+
+  it("renders route decisions, transfer requests, and resolves pending human decisions", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher, "project-1");
+
+    await expect.element(screen.getByText("路由决策")).toBeInTheDocument();
+    await expect
+      .element(screen.getByText("选择项目数字员工池中的 active executor"))
+      .toBeInTheDocument();
+    await expect.element(screen.getByText("转派请求")).toBeInTheDocument();
+    await expect.element(screen.getByText("需要负责人确认")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "批准" }));
+
+    await vi.waitFor(() => {
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          return (
+            String(url).endsWith(
+              "/api/v1/projects/project-1/decisions/decision-1/resolve",
+            ) &&
+            init?.method === "POST" &&
+            JSON.parse(String(init.body)).decision === "approved"
           );
         }),
       ).toBe(true);

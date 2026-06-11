@@ -21,7 +21,17 @@ export type ProjectEventType =
   | "project.created"
   | "project.config.changed"
   | "project.archived"
-  | "demand.submitted";
+  | "demand.submitted"
+  | "workflow.signaled"
+  | "coordination_job.created"
+  | "route_decision.created"
+  | "project_task.created"
+  | "project_task.dispatched"
+  | "project_task.completed"
+  | "project_task.failed"
+  | "transfer.requested"
+  | "decision.requested"
+  | "decision.submitted";
 export type ProjectDemandSourceType =
   | "manual"
   | "github"
@@ -153,6 +163,93 @@ export type ProjectConfig = {
   approval_policy: Record<string, unknown>;
   evidence_policy: Record<string, unknown>;
   coordination_workflow: ProjectCoordinationWorkflow;
+};
+
+export type ProjectRouteDecision = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  coordination_job_id: string;
+  demand_id?: string;
+  candidate_digital_employee_ids: string[];
+  selected_digital_employee_ids: string[];
+  reason: string;
+  input_requirements: Record<string, unknown>;
+  expected_outputs: unknown[];
+  budget_estimate: Record<string, unknown>;
+  requires_human_review: boolean;
+  created_event_id?: string;
+  created_at?: string;
+};
+
+export type ProjectCoordinationJob = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  workflow_id: string;
+  trigger_event_id?: string;
+  job_type: string;
+  status: string;
+  input_snapshot_ref: Record<string, unknown>;
+  output_event_ids: unknown[];
+  started_at?: string;
+  finished_at?: string;
+  created_at?: string;
+};
+
+export type ProjectDecisionRequest = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  approval_request_id: string;
+  coordination_job_id?: string;
+  project_task_id?: string;
+  target_user_id: string;
+  decision_type: string;
+  title_snapshot: string;
+  summary_snapshot?: string;
+  risk_level_snapshot?: string;
+  status_snapshot: string;
+  created_event_id?: string;
+  resolved_event_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  resolved_at?: string;
+};
+
+export type ProjectExecutionSummary = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  project_task_id: string;
+  digital_employee_id: string;
+  conclusion: string;
+  evidence_refs: unknown[];
+  artifact_refs: unknown[];
+  confidence_factors: Record<string, unknown>;
+  uncertainty?: string;
+  missing_information: unknown[];
+  recommended_next_action?: string;
+  requires_human_review: boolean;
+  transfer_request_id?: string;
+  created_event_id?: string;
+  created_at?: string;
+};
+
+export type ProjectTransferRequest = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  project_task_id: string;
+  requested_by_digital_employee_id: string;
+  reason: string;
+  suggested_employee_type?: string;
+  suggested_digital_employee_ids: string[];
+  missing_context_refs: unknown[];
+  status: string;
+  created_event_id?: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type CreateProjectInput = {
@@ -485,5 +582,79 @@ export function submitProjectDemand(
     projectPath(projectId, "/demands"),
     input,
     "submit project demand",
+  );
+}
+
+export function listProjectRouteDecisions(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: PaginationFilters = {},
+): Promise<ProjectRouteDecision[]> {
+  return getJson<ProjectRouteDecision[]>(
+    options,
+    projectPath(projectId, `/route-decisions${paginationQuery(filters)}`),
+    "project route decisions",
+  );
+}
+
+export function listProjectCoordinationJobs(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: PaginationFilters = {},
+): Promise<ProjectCoordinationJob[]> {
+  return getJson<ProjectCoordinationJob[]>(
+    options,
+    projectPath(projectId, `/coordination-jobs${paginationQuery(filters)}`),
+    "project coordination jobs",
+  );
+}
+
+export function listProjectDecisionRequests(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: PaginationFilters = {},
+): Promise<ProjectDecisionRequest[]> {
+  return getJson<ProjectDecisionRequest[]>(
+    options,
+    projectPath(projectId, `/decisions${paginationQuery(filters)}`),
+    "project decisions",
+  );
+}
+
+export function resolveProjectDecision(
+  options: ApiClientOptions,
+  projectId: string,
+  decisionId: string,
+  input: { decision: string; comment?: string; payload?: Record<string, unknown> },
+): Promise<ProjectDecisionRequest> {
+  return postJson<ProjectDecisionRequest>(
+    options,
+    projectPath(projectId, `/decisions/${encodeURIComponent(decisionId)}/resolve`),
+    input,
+    "resolve project decision",
+  );
+}
+
+export function listProjectExecutionSummaries(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: PaginationFilters = {},
+): Promise<ProjectExecutionSummary[]> {
+  return getJson<ProjectExecutionSummary[]>(
+    options,
+    projectPath(projectId, `/execution-summaries${paginationQuery(filters)}`),
+    "project execution summaries",
+  );
+}
+
+export function listProjectTransferRequests(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: PaginationFilters = {},
+): Promise<ProjectTransferRequest[]> {
+  return getJson<ProjectTransferRequest[]>(
+    options,
+    projectPath(projectId, `/transfer-requests${paginationQuery(filters)}`),
+    "project transfer requests",
   );
 }
