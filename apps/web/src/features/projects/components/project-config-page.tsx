@@ -265,6 +265,15 @@ export function ProjectConfigView({
                 <AlertDescription>配置页只读，保存与成员替换已禁用。</AlertDescription>
               </Alert>
             ) : null}
+            {isConfigDirty ? (
+              <Alert className="mt-4 border-[color:var(--superteam-info)]/30 bg-white/70">
+                <GitBranch className="text-[color:var(--superteam-info)]" />
+                <AlertTitle>协调 Workflow 将收到配置变更</AlertTitle>
+                <AlertDescription>
+                  保存后会向当前项目协调 Workflow 发送策略变更 signal，新的项目任务将使用最新策略。
+                </AlertDescription>
+              </Alert>
+            ) : null}
             {error || updateMutation.error ? (
               <p className="mt-3 text-sm text-destructive">
                 {error || updateMutation.error?.message}
@@ -371,6 +380,7 @@ export function ProjectConfigView({
                 error={memberError || replaceMembersMutation.error?.message}
                 isSaving={isMembersSaving}
                 members={memberDraft.members}
+                showWorkflowImpactNotice={isMembersDirty}
                 onMembersChange={updateMemberDraft}
                 onSave={saveMembers}
               />
@@ -595,6 +605,7 @@ function MemberJsonPanel({
   error,
   isSaving,
   members,
+  showWorkflowImpactNotice,
   onMembersChange,
   onSave,
 }: {
@@ -602,6 +613,7 @@ function MemberJsonPanel({
   error?: string;
   isSaving?: boolean;
   members: string;
+  showWorkflowImpactNotice?: boolean;
   onMembersChange: (members: string) => void;
   onSave: () => void;
 }) {
@@ -616,8 +628,17 @@ function MemberJsonPanel({
           保存成员池
         </Button>
       </div>
+      {showWorkflowImpactNotice ? (
+        <Alert className="mb-4 border-[color:var(--superteam-decision)]/30 bg-white/70">
+          <UserRound className="text-[color:var(--superteam-decision)]" />
+          <AlertTitle>数字员工池变更将影响新任务</AlertTitle>
+          <AlertDescription>
+            保存成员后会向当前项目协调 Workflow 发送成员变更 signal，后续分派只能使用最新 active 数字员工池。
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <Textarea
-        aria-label="成员 JSON"
+        aria-label="项目成员 JSON"
         className="min-h-[320px] font-mono text-xs"
         disabled={disabled}
         value={members}

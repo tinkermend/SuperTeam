@@ -231,7 +231,7 @@ describe("ProjectConfigView", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "成员" }));
     await userEvent.fill(
-      screen.getByLabelText("成员 JSON"),
+      screen.getByLabelText("项目成员 JSON"),
       JSON.stringify([
         {
           principal_id: "human-owner-1",
@@ -262,6 +262,25 @@ describe("ProjectConfigView", () => {
     });
   });
 
+  it("shows workflow impact notice when coordination policy or members are dirty", async () => {
+    const fetcher = createConfigFetcher();
+    const screen = await renderConfig(fetcher);
+
+    await userEvent.click(screen.getByRole("tab", { name: "协调策略" }));
+    await userEvent.fill(screen.getByLabelText("协调策略 JSON"), '{"cadence":"hourly"}');
+
+    await expect
+      .element(screen.getByText("保存后会向当前项目协调 Workflow 发送策略变更 signal"))
+      .toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await userEvent.fill(screen.getByLabelText("项目成员 JSON"), "[]");
+
+    await expect
+      .element(screen.getByText("保存成员后会向当前项目协调 Workflow 发送成员变更 signal"))
+      .toBeInTheDocument();
+  });
+
   it("preserves dirty config and member drafts during background refetch", async () => {
     const refreshedConfig = makeConfig();
     refreshedConfig.coordination_policy = { cadence: "weekly" };
@@ -290,7 +309,7 @@ describe("ProjectConfigView", () => {
     );
     await userEvent.click(screen.getByRole("tab", { name: "成员" }));
     await userEvent.fill(
-      screen.getByLabelText("成员 JSON"),
+      screen.getByLabelText("项目成员 JSON"),
       JSON.stringify([
         {
           principal_id: "human-owner-1",
@@ -308,7 +327,7 @@ describe("ProjectConfigView", () => {
       .toHaveValue('{"cadence":"hourly"}');
     await userEvent.click(screen.getByRole("tab", { name: "成员" }));
     await expect
-      .element(screen.getByLabelText("成员 JSON"))
+      .element(screen.getByLabelText("项目成员 JSON"))
       .toHaveValue(
         JSON.stringify([
           {
