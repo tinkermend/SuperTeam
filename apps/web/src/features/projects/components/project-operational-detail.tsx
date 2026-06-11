@@ -37,6 +37,7 @@ import type {
   ProjectTask,
   ProjectTransferRequest,
 } from "@/lib/api/projects";
+import { ProjectGovernanceTabs } from "./project-governance-tabs";
 import { statusLabel, statusTone } from "./project-switcher-pane";
 
 type ProjectOperationalDetailProps = {
@@ -65,9 +66,16 @@ type ProjectOperationalDetailProps = {
 };
 
 export function ProjectOperationalDetail({
+  acceptance,
+  archivePreview,
+  archiveSnapshots,
+  artifacts,
+  budgetLedger,
+  budgetSummary,
   coordinationJobs,
   decisionRequests,
   demands,
+  evidence,
   events,
   executionSummaries,
   isArchived,
@@ -76,6 +84,7 @@ export function ProjectOperationalDetail({
   onSubmitDemand,
   overview,
   project,
+  reports,
   routeDecisions,
   tasks,
   transferRequests,
@@ -293,6 +302,22 @@ export function ProjectOperationalDetail({
               )}
             </div>
           </LiquidCard>
+
+          <ProjectGovernanceTabs
+            acceptance={acceptance}
+            archivePreview={archivePreview}
+            archiveSnapshots={archiveSnapshots}
+            artifacts={artifacts}
+            budgetLedger={budgetLedger}
+            budgetSummary={budgetSummary}
+            decisionRequestCount={decisionRequests.length}
+            demandCount={demands.length}
+            evidence={evidence}
+            executionSummaryCount={executionSummaries.length}
+            reports={reports}
+            routeDecisionCount={routeDecisions.length}
+            taskCount={tasks.length}
+          />
 
           <LiquidCard className="rounded-xl">
             <PanelHeader

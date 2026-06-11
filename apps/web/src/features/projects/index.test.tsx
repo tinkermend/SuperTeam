@@ -308,6 +308,130 @@ function createProjectFetcher(
         },
       ]);
     }
+    if (url.pathname === "/api/v1/projects/project-1/evidence" && method === "GET") {
+      return jsonResponse([
+        {
+          evidence_type: "acceptance_check",
+          id: "evidence-1",
+          metadata: { severity: "medium" },
+          project_id: "project-1",
+          source_ref: "ticket://SUP-42",
+          source_type: "ticket",
+          submitted_by_id: "de-1",
+          submitted_by_type: "digital_employee",
+          summary: "接入链路验收证据已整理",
+          tenant_id: "tenant-1",
+          title: "上线验收证据",
+          verification_status: "verified",
+        },
+      ]);
+    }
+    if (url.pathname === "/api/v1/projects/project-1/artifacts" && method === "GET") {
+      return jsonResponse([
+        {
+          artifact_type: "log_bundle",
+          content_type: "application/gzip",
+          id: "artifact-1",
+          metadata: {},
+          object_ref: "s3://superteam/project-1/logs.tgz",
+          project_id: "project-1",
+          retention_status: "retained",
+          size_bytes: 2048,
+          tenant_id: "tenant-1",
+          title: "回归日志包",
+        },
+      ]);
+    }
+    if (url.pathname === "/api/v1/projects/project-1/reports" && method === "GET") {
+      return jsonResponse([
+        {
+          format: "markdown",
+          generated_by_id: "de-1",
+          generated_by_type: "digital_employee",
+          id: "report-1",
+          object_ref: "s3://superteam/project-1/acceptance.md",
+          project_id: "project-1",
+          report_type: "acceptance",
+          summary: "验收摘要已生成",
+          tenant_id: "tenant-1",
+          title: "客户接入验收报告",
+        },
+      ]);
+    }
+    if (url.pathname === "/api/v1/projects/project-1/budget-ledger" && method === "GET") {
+      return jsonResponse([
+        {
+          actual_cost: "2.50",
+          actual_tokens: 4800,
+          cost_type: "llm",
+          digital_employee_id: "de-1",
+          estimated_cost: "3.00",
+          estimated_tokens: 6000,
+          id: "budget-1",
+          project_id: "project-1",
+          reason: "整理验收证据与报告",
+          source: "execution_summary",
+          tenant_id: "tenant-1",
+        },
+      ]);
+    }
+    if (url.pathname === "/api/v1/projects/project-1/budget-summary" && method === "GET") {
+      return jsonResponse({
+        actual_cost: "2.50",
+        actual_tokens: 4800,
+        estimated_cost: "3.00",
+        estimated_tokens: 6000,
+        ledger_count: 1,
+      });
+    }
+    if (url.pathname === "/api/v1/projects/project-1/acceptance" && method === "GET") {
+      return jsonResponse({
+        accepted_by_user_id: "human-owner-1",
+        conclusion: "同意客户接入验收通过",
+        evidence_ref_ids: ["evidence-1"],
+        id: "acceptance-1",
+        project_id: "project-1",
+        report_ref_ids: ["report-1"],
+        status: "accepted",
+        summary: "证据、工件和报告均已归档",
+        tenant_id: "tenant-1",
+        unresolved_risks: [],
+      });
+    }
+    if (url.pathname === "/api/v1/projects/project-1/archive-snapshots" && method === "GET") {
+      return jsonResponse([
+        {
+          created_by_user_id: "human-owner-1",
+          id: "snapshot-1",
+          included_counts: {
+            artifacts: 1,
+            evidence: 1,
+            reports: 1,
+          },
+          object_ref: "s3://superteam/project-1/archive.json",
+          project_id: "project-1",
+          retained_artifact_ids: ["artifact-1"],
+          snapshot_type: "project_archive",
+          status: "completed",
+          summary: "当前项目归档快照",
+          tenant_id: "tenant-1",
+        },
+      ]);
+    }
+    if (url.pathname === "/api/v1/projects/project-1/archive-preview" && method === "GET") {
+      return jsonResponse({
+        artifact_count: 1,
+        blocked_reasons: [],
+        estimated_object_refs: [
+          "s3://superteam/project-1/logs.tgz",
+          "s3://superteam/project-1/acceptance.md",
+        ],
+        evidence_count: 1,
+        project_id: "project-1",
+        report_count: 1,
+        retention_pending: false,
+      });
+    }
     if (
       [
         "/evidence",
@@ -425,21 +549,40 @@ describe("ProjectsView", () => {
 
   it("treats missing project acceptance as an optional empty state", async () => {
     const fetcher = createProjectFetcher();
-    const screen = await renderProjects(fetcher, "project-1");
+    const screen = await renderProjects(fetcher, "project-2");
 
     await expect
-      .element(screen.getByRole("heading", { name: "客户接入验收" }))
+      .element(screen.getByRole("heading", { name: "生产巡检整改" }))
       .toBeInTheDocument();
 
     await vi.waitFor(() => {
       expect(
         fetchCalls(fetcher).some(([url, init]) => {
           return (
-            String(url).endsWith("/api/v1/projects/project-1/acceptance") &&
+            String(url).endsWith("/api/v1/projects/project-2/acceptance") &&
             init?.method === "GET"
           );
         }),
       ).toBe(true);
+    });
+  });
+
+  it("renders governance tabs and archive preview metrics", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher, "project-1");
+
+    await expect.element(screen.getByRole("tab", { name: "证据链" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "预算流水" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "验收结论" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "归档预览" })).toBeInTheDocument();
+    await expect.element(screen.getByText("上线验收证据")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "归档预览" }));
+
+    await vi.waitFor(() => {
+      expect(screen.container.textContent).toContain("需求数");
+      expect(screen.container.textContent).toContain("保留工件");
+      expect(screen.container.textContent).toContain("当前项目");
     });
   });
 
