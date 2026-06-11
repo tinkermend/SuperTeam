@@ -12,7 +12,7 @@ CREATE TABLE project_evidence_refs (
     title VARCHAR(255) NOT NULL,
     summary TEXT,
     source_type VARCHAR(100) NOT NULL,
-    source_ref TEXT,
+    source_ref TEXT NOT NULL,
     artifact_ref_id UUID,
     submitted_by_type VARCHAR(50) NOT NULL,
     submitted_by_id UUID,
@@ -197,12 +197,12 @@ CREATE TABLE project_archive_snapshots (
     project_id UUID NOT NULL,
     snapshot_type VARCHAR(100) NOT NULL,
     status VARCHAR(50) NOT NULL,
-    object_ref TEXT NOT NULL,
+    object_ref TEXT,
     summary TEXT,
     included_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
     retained_artifact_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
     retention_lock_event_id UUID,
-    created_by_user_id UUID,
+    created_by_user_id UUID NOT NULL,
     created_event_id UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

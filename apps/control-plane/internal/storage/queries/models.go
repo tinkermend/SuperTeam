@@ -432,7 +432,7 @@ type ProjectArchiveSnapshot struct {
 	// 归档快照状态，由应用层注册和校验
 	Status string `json:"status"`
 	// 归档快照对象存储引用或外部对象引用
-	ObjectRef string `json:"object_ref"`
+	ObjectRef pgtype.Text `json:"object_ref"`
 	// 归档摘要
 	Summary pgtype.Text `json:"summary"`
 	// 归档包含对象数量统计
@@ -442,7 +442,7 @@ type ProjectArchiveSnapshot struct {
 	// 创建归档保留锁时产生的项目事件ID
 	RetentionLockEventID uuid.NullUUID `json:"retention_lock_event_id"`
 	// 创建归档快照的人类用户ID
-	CreatedByUserID uuid.NullUUID `json:"created_by_user_id"`
+	CreatedByUserID uuid.UUID `json:"created_by_user_id"`
 	// 创建该归档快照时产生的项目事件ID
 	CreatedEventID uuid.NullUUID `json:"created_event_id"`
 	// 归档快照创建时间
@@ -700,7 +700,7 @@ type ProjectEvidenceRef struct {
 	// 证据来源类型，例如 artifact、report、manual、external
 	SourceType string `json:"source_type"`
 	// 证据来源引用，保存外部ID、对象地址或结构化引用摘要
-	SourceRef pgtype.Text `json:"source_ref"`
+	SourceRef string `json:"source_ref"`
 	// 关联项目工件引用ID
 	ArtifactRefID uuid.NullUUID `json:"artifact_ref_id"`
 	// 提交者类型，例如 human_user、digital_employee、system

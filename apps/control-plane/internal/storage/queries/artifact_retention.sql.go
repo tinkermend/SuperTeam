@@ -98,7 +98,6 @@ const ListArtifactRetentionHolds = `-- name: ListArtifactRetentionHolds :many
 SELECT id, tenant_id, artifact_id, hold_type, resource_type, resource_id, reason, status, created_event_id, created_at, released_at FROM artifact_retention_holds
 WHERE tenant_id = $1::uuid
   AND artifact_id = $2::uuid
-  AND status = 'active'
   AND released_at IS NULL
 ORDER BY created_at DESC
 `

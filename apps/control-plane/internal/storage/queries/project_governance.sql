@@ -26,7 +26,7 @@ INSERT INTO project_evidence_refs (
     sqlc.arg('title')::varchar,
     sqlc.narg('summary')::text,
     sqlc.arg('source_type')::varchar,
-    sqlc.narg('source_ref')::text,
+    sqlc.arg('source_ref')::text,
     sqlc.narg('artifact_ref_id')::uuid,
     sqlc.arg('submitted_by_type')::varchar,
     sqlc.narg('submitted_by_id')::uuid,
@@ -45,8 +45,10 @@ LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: UpdateProjectEvidenceVerificationStatus :one
 UPDATE project_evidence_refs
-SET verification_status = sqlc.arg('verification_status')::varchar
+SET verification_status = sqlc.arg('verification_status')::varchar,
+    metadata = COALESCE(sqlc.narg('metadata')::jsonb, metadata)
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
   AND id = sqlc.arg('id')::uuid
 RETURNING *;
 
@@ -97,6 +99,7 @@ UPDATE project_artifact_refs
 SET retention_status = sqlc.arg('retention_status')::varchar,
     retention_hold_id = sqlc.narg('retention_hold_id')::uuid
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
   AND id = sqlc.arg('id')::uuid
 RETURNING *;
 
@@ -233,12 +236,12 @@ INSERT INTO project_archive_snapshots (
     sqlc.arg('project_id')::uuid,
     sqlc.arg('snapshot_type')::varchar,
     sqlc.arg('status')::varchar,
-    sqlc.arg('object_ref')::text,
+    sqlc.narg('object_ref')::text,
     sqlc.narg('summary')::text,
     COALESCE(sqlc.narg('included_counts')::jsonb, '{}'::jsonb),
     COALESCE(sqlc.narg('retained_artifact_ids')::jsonb, '[]'::jsonb),
     sqlc.narg('retention_lock_event_id')::uuid,
-    sqlc.narg('created_by_user_id')::uuid,
+    sqlc.arg('created_by_user_id')::uuid,
     sqlc.narg('created_event_id')::uuid
 ) RETURNING *;
 

@@ -1,4 +1,4 @@
-h1:1Y1rWYxeUh5PU3W55ZMrQLh92KF+oQZCwF7Mqy9/Tlg=
+h1:y0keLYQl6CIQLWIKnWixN9XmloDTmKn6dcMrju5Nzzw=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -13,4 +13,4 @@ h1:1Y1rWYxeUh5PU3W55ZMrQLh92KF+oQZCwF7Mqy9/Tlg=
 012_digital_employee_budget_policy.sql h1:CjT+vlYUJvxrLwfp0ZNd81ujLHHNBCEzOeY1cHjDAqI=
 013_project_management_v0.sql h1:zDEArlHvrEkPId8QGsAYVrK0A3zalIepTeEdPVvDfHU=
 014_project_management_v1_temporal_coordination.sql h1:3okElkMuXiMSdKygC7OFhK/EAf93cWXNmAX8pGJ8V0I=
-015_project_management_v2_governance_archive.sql h1:gRWY3m6wbnqak+RskvH3dtGH67GvpKvIUpxyAvOyY8I=
+015_project_management_v2_governance_archive.sql h1:p9hvPGEIDyszx6FQ2jiz/B+YgDs9D31CgorRpHb2Z34=

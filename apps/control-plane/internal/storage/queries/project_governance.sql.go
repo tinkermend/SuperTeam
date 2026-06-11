@@ -115,12 +115,12 @@ type CreateProjectArchiveSnapshotParams struct {
 	ProjectID            uuid.UUID     `json:"project_id"`
 	SnapshotType         string        `json:"snapshot_type"`
 	Status               string        `json:"status"`
-	ObjectRef            string        `json:"object_ref"`
+	ObjectRef            pgtype.Text   `json:"object_ref"`
 	Summary              pgtype.Text   `json:"summary"`
 	IncludedCounts       []byte        `json:"included_counts"`
 	RetainedArtifactIds  []byte        `json:"retained_artifact_ids"`
 	RetentionLockEventID uuid.NullUUID `json:"retention_lock_event_id"`
-	CreatedByUserID      uuid.NullUUID `json:"created_by_user_id"`
+	CreatedByUserID      uuid.UUID     `json:"created_by_user_id"`
 	CreatedEventID       uuid.NullUUID `json:"created_event_id"`
 }
 
@@ -380,7 +380,7 @@ type CreateProjectEvidenceRefParams struct {
 	Title              string        `json:"title"`
 	Summary            pgtype.Text   `json:"summary"`
 	SourceType         string        `json:"source_type"`
-	SourceRef          pgtype.Text   `json:"source_ref"`
+	SourceRef          string        `json:"source_ref"`
 	ArtifactRefID      uuid.NullUUID `json:"artifact_ref_id"`
 	SubmittedByType    string        `json:"submitted_by_type"`
 	SubmittedByID      uuid.NullUUID `json:"submitted_by_id"`
@@ -963,7 +963,8 @@ UPDATE project_artifact_refs
 SET retention_status = $1::varchar,
     retention_hold_id = $2::uuid
 WHERE tenant_id = $3::uuid
-  AND id = $4::uuid
+  AND project_id = $4::uuid
+  AND id = $5::uuid
 RETURNING id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at
 `
 
@@ -971,6 +972,7 @@ type UpdateProjectArtifactRetentionParams struct {
 	RetentionStatus string        `json:"retention_status"`
 	RetentionHoldID uuid.NullUUID `json:"retention_hold_id"`
 	TenantID        uuid.UUID     `json:"tenant_id"`
+	ProjectID       uuid.UUID     `json:"project_id"`
 	ID              uuid.UUID     `json:"id"`
 }
 
@@ -979,6 +981,7 @@ func (q *Queries) UpdateProjectArtifactRetention(ctx context.Context, arg Update
 		arg.RetentionStatus,
 		arg.RetentionHoldID,
 		arg.TenantID,
+		arg.ProjectID,
 		arg.ID,
 	)
 	var i ProjectArtifactRef
@@ -1005,20 +1008,30 @@ func (q *Queries) UpdateProjectArtifactRetention(ctx context.Context, arg Update
 
 const UpdateProjectEvidenceVerificationStatus = `-- name: UpdateProjectEvidenceVerificationStatus :one
 UPDATE project_evidence_refs
-SET verification_status = $1::varchar
-WHERE tenant_id = $2::uuid
-  AND id = $3::uuid
+SET verification_status = $1::varchar,
+    metadata = COALESCE($2::jsonb, metadata)
+WHERE tenant_id = $3::uuid
+  AND project_id = $4::uuid
+  AND id = $5::uuid
 RETURNING id, tenant_id, project_id, project_task_id, route_decision_id, execution_summary_id, evidence_type, title, summary, source_type, source_ref, artifact_ref_id, submitted_by_type, submitted_by_id, verification_status, metadata, created_event_id, created_at
 `
 
 type UpdateProjectEvidenceVerificationStatusParams struct {
 	VerificationStatus string    `json:"verification_status"`
+	Metadata           []byte    `json:"metadata"`
 	TenantID           uuid.UUID `json:"tenant_id"`
+	ProjectID          uuid.UUID `json:"project_id"`
 	ID                 uuid.UUID `json:"id"`
 }
 
 func (q *Queries) UpdateProjectEvidenceVerificationStatus(ctx context.Context, arg UpdateProjectEvidenceVerificationStatusParams) (ProjectEvidenceRef, error) {
-	row := q.db.QueryRow(ctx, UpdateProjectEvidenceVerificationStatus, arg.VerificationStatus, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, UpdateProjectEvidenceVerificationStatus,
+		arg.VerificationStatus,
+		arg.Metadata,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ID,
+	)
 	var i ProjectEvidenceRef
 	err := row.Scan(
 		&i.ID,
