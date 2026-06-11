@@ -93,11 +93,35 @@ func (a runtimeEventRecorderAdapter) RecordRuntimeEvent(ctx context.Context, req
 
 type projectArtifactLocker struct {
 	artifactService *artifact.Service
+	projectEvents   projectEventAppender
+}
+
+type projectEventAppender interface {
+	AppendProjectEvent(ctx context.Context, event project.AppendProjectEventRequest) (project.ProjectEvent, error)
 }
 
 func (l projectArtifactLocker) LockProjectArtifacts(ctx context.Context, tenantID, projectID uuid.UUID, artifactIDs []uuid.UUID) (project.ArchiveArtifactLockResult, error) {
 	if l.artifactService == nil {
 		return project.ArchiveArtifactLockResult{}, nil
+	}
+	if l.projectEvents == nil {
+		return project.ArchiveArtifactLockResult{}, errors.New("project event appender is required")
+	}
+	event, err := l.projectEvents.AppendProjectEvent(ctx, project.AppendProjectEventRequest{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		EventType:    project.ProjectEventArchiveRetentionPending,
+		ActorType:    "system",
+		ActorID:      "project_archive_retention",
+		ResourceType: strPtr("project_archive_snapshot"),
+		Summary:      "项目归档工件保留锁已请求",
+		Payload: map[string]any{
+			"artifact_count": len(artifactIDs),
+			"artifact_ids":   uuidStrings(artifactIDs),
+		},
+	})
+	if err != nil {
+		return project.ArchiveArtifactLockResult{}, err
 	}
 	result, err := l.artifactService.HoldProjectArchiveArtifacts(ctx, artifact.HoldProjectArchiveArtifactsRequest{
 		TenantID:    tenantID,
@@ -108,7 +132,20 @@ func (l projectArtifactLocker) LockProjectArtifacts(ctx context.Context, tenantI
 	return project.ArchiveArtifactLockResult{
 		HoldIDs:     result.HoldIDs,
 		ArtifactIDs: result.ArtifactIDs,
+		EventID:     &event.ID,
 	}, err
+}
+
+func strPtr(value string) *string {
+	return &value
+}
+
+func uuidStrings(ids []uuid.UUID) []string {
+	values := make([]string, 0, len(ids))
+	for _, id := range ids {
+		values = append(values, id.String())
+	}
+	return values
 }
 
 func NewContainer(stores *storage.Clients) (*Container, error) {
@@ -175,7 +212,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		projectRepository,
 		coordinatorClient,
 		project.NewApprovalServiceAdapter(approvalService),
-		projectArtifactLocker{artifactService: artifactService},
+		projectArtifactLocker{artifactService: artifactService, projectEvents: projectRepository},
 	)
 	if err != nil {
 		return nil, err

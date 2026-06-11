@@ -380,7 +380,8 @@ func TestProjectArchivePreviewCountsAllPages(t *testing.T) {
 
 func TestArchiveSnapshotLocksReferencedArtifactsBeforeArchiving(t *testing.T) {
 	repo := newGovernanceMemoryRepository()
-	locker := &fakeArchiveArtifactLocker{}
+	lockEventID := uuid.New()
+	locker := &fakeArchiveArtifactLocker{eventID: &lockEventID}
 	service, err := NewServiceWithArchiveArtifactLocker(repo, locker)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
@@ -406,6 +407,9 @@ func TestArchiveSnapshotLocksReferencedArtifactsBeforeArchiving(t *testing.T) {
 	}
 	if len(locker.artifactIDs) != 1 || locker.artifactIDs[0] != artifactID {
 		t.Fatalf("expected artifact lock, got %#v", locker.artifactIDs)
+	}
+	if snapshot.RetentionLockEventID == nil || *snapshot.RetentionLockEventID != lockEventID {
+		t.Fatalf("expected retention lock event id %s, got %#v", lockEventID, snapshot.RetentionLockEventID)
 	}
 	if repo.projects[projectID].Status != ProjectStatusArchived {
 		t.Fatalf("expected project archived after retention lock, got %s", repo.projects[projectID].Status)
