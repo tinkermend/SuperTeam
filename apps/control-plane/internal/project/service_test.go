@@ -128,7 +128,7 @@ func TestCreateProjectValidatesRolePrincipalTypes(t *testing.T) {
 	}
 }
 
-func TestSubmitDemandRecordsOnlyV0DemandAndEvent(t *testing.T) {
+func TestSubmitDemandRecordsDemandAndEventWithoutAutoCreatingTask(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
 	if err != nil {
@@ -154,14 +154,55 @@ func TestSubmitDemandRecordsOnlyV0DemandAndEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("submit demand: %v", err)
 	}
-	if demand.Status != ProjectDemandStatusRecorded {
-		t.Fatalf("expected recorded V0 demand, got %s", demand.Status)
+	if demand.Status != ProjectDemandStatusPlanningPending {
+		t.Fatalf("expected planning pending demand, got %s", demand.Status)
 	}
 	if len(repo.tasks) != 0 {
-		t.Fatalf("V0 must not create project tasks from demand automatically")
+		t.Fatalf("service must not create project tasks from demand directly")
 	}
 	if len(repo.eventTypes) != 1 || repo.eventTypes[0] != ProjectEventDemandSubmitted {
 		t.Fatalf("expected demand event only, got %#v", repo.eventTypes)
+	}
+}
+
+func TestSubmitDemandSignalsProjectCoordinatorInV1(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	projectID := uuid.New()
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "客户侧 Runtime 接入验收",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       ownerID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+		CoordinationStatus:     "registered",
+	}
+
+	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		SubmittedByUserID: ownerID,
+		Title:             "验证 Runtime 连接",
+		Content:           "检查心跳和命令回写",
+	})
+	if err != nil {
+		t.Fatalf("submit demand: %v", err)
+	}
+	if demand.Status != ProjectDemandStatusPlanningPending {
+		t.Fatalf("expected planning pending demand, got %s", demand.Status)
+	}
+	if coordinator.demandSignals != 1 {
+		t.Fatalf("expected one DemandSubmitted signal, got %d", coordinator.demandSignals)
+	}
+	if coordinator.lastDemand.DemandID != demand.ID || coordinator.lastDemand.CreatedEventID == uuid.Nil {
+		t.Fatalf("unexpected demand signal: %#v", coordinator.lastDemand)
 	}
 }
 
@@ -875,4 +916,57 @@ func (r *memoryRepository) ListDecisionRequests(ctx context.Context, tenantID, p
 		}
 	}
 	return filtered, nil
+}
+
+type fakeCoordinatorSignalClient struct {
+	ensureSignals    int
+	demandSignals    int
+	policySignals    int
+	memberSignals    int
+	completedSignals int
+	failedSignals    int
+	transferSignals  int
+	decisionSignals  int
+	lastDemand       DemandSubmittedSignal
+}
+
+func (f *fakeCoordinatorSignalClient) EnsureProjectCoordinator(ctx context.Context, signal ProjectCoordinatorSignal) error {
+	f.ensureSignals++
+	return nil
+}
+
+func (f *fakeCoordinatorSignalClient) SignalDemandSubmitted(ctx context.Context, signal DemandSubmittedSignal) error {
+	f.demandSignals++
+	f.lastDemand = signal
+	return nil
+}
+
+func (f *fakeCoordinatorSignalClient) SignalProjectPolicyChanged(ctx context.Context, signal ProjectPolicyChangedSignal) error {
+	f.policySignals++
+	return nil
+}
+
+func (f *fakeCoordinatorSignalClient) SignalProjectMemberChanged(ctx context.Context, signal ProjectMemberChangedSignal) error {
+	f.memberSignals++
+	return nil
+}
+
+func (f *fakeCoordinatorSignalClient) SignalEmployeeTaskCompleted(ctx context.Context, signal EmployeeTaskCompletedSignal) error {
+	f.completedSignals++
+	return nil
+}
+
+func (f *fakeCoordinatorSignalClient) SignalEmployeeTaskFailed(ctx context.Context, signal EmployeeTaskFailedSignal) error {
+	f.failedSignals++
+	return nil
+}
+
+func (f *fakeCoordinatorSignalClient) SignalEmployeeTransferRequested(ctx context.Context, signal EmployeeTransferRequestedSignal) error {
+	f.transferSignals++
+	return nil
+}
+
+func (f *fakeCoordinatorSignalClient) SignalHumanDecisionSubmitted(ctx context.Context, signal HumanDecisionSubmittedSignal) error {
+	f.decisionSignals++
+	return nil
 }

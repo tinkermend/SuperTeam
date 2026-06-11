@@ -7,6 +7,7 @@ import (
 
 	"github.com/superteam/control-plane/internal/api"
 	"github.com/superteam/control-plane/internal/api/handlers"
+	"github.com/superteam/control-plane/internal/approval"
 	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
@@ -20,7 +21,14 @@ import (
 	"github.com/superteam/control-plane/internal/storage/queries"
 	"github.com/superteam/control-plane/internal/task"
 	"github.com/superteam/control-plane/internal/tenant"
+	"github.com/superteam/control-plane/internal/workflow/projectcoordination"
+	temporalclient "go.temporal.io/sdk/client"
 )
+
+type lifecycleWorker interface {
+	Start() error
+	Stop()
+}
 
 type Container struct {
 	Queries                        *queries.Queries
@@ -28,6 +36,7 @@ type Container struct {
 	RuntimeService                 *runtimepkg.Service
 	EmployeeService                *employee.Service
 	ProjectService                 *project.Service
+	ApprovalService                *approval.Service
 	EmployeeRun                    *employee.DigitalEmployeeRunService
 	EmployeeRunWriteback           *employee.DigitalEmployeeRunWritebackService
 	SkillService                   *skill.Service
@@ -38,6 +47,8 @@ type Container struct {
 	Authorizer                     authz.Authorizer
 	AuthzCenter                    *authzcenter.Service
 	Poller                         *runtimepkg.Poller
+	CoordinationWorker             lifecycleWorker
+	TemporalClientClose            func()
 	TaskHandler                    *handlers.TaskHandler
 	RuntimeHandler                 *handlers.RuntimeHandler
 	RuntimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler
@@ -78,6 +89,10 @@ func (a runtimeEventRecorderAdapter) RecordRuntimeEvent(ctx context.Context, req
 }
 
 func NewContainer(stores *storage.Clients) (*Container, error) {
+	return NewContainerWithConfig(stores, config.Config{})
+}
+
+func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Container, error) {
 	if stores == nil || stores.Postgres == nil {
 		return nil, errors.New("postgres client is required")
 	}
@@ -104,7 +119,30 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 	}
 
 	projectRepository := project.NewPgRepository(q, stores.Postgres)
-	projectService, err := project.NewService(projectRepository)
+	coordinatorClient := project.CoordinatorSignalClient(project.NoopCoordinatorSignalClient{})
+	var coordinationWorker lifecycleWorker
+	var temporalClientClose func()
+	if cfg.Temporal.Enabled {
+		temporalClient, err := temporalclient.NewLazyClient(temporalclient.Options{
+			HostPort:  cfg.Temporal.Address,
+			Namespace: cfg.Temporal.Namespace,
+		})
+		if err != nil {
+			return nil, err
+		}
+		temporalClientClose = temporalClient.Close
+		coordinatorClient = projectcoordination.NewSignalClient(temporalClient, cfg.Temporal.TaskQueue)
+		coordinationStore := projectcoordination.NewProjectStore(projectRepository)
+		coordinationActivities := projectcoordination.NewActivities(coordinationStore)
+		coordinationWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
+	}
+	projectService, err := project.NewServiceWithCoordinator(projectRepository, coordinatorClient)
+	if err != nil {
+		return nil, err
+	}
+
+	approvalRepository := approval.NewPgRepository(q)
+	approvalService, err := approval.NewService(approvalRepository)
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +204,7 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		RuntimeService:                 runtimeService,
 		EmployeeService:                employeeService,
 		ProjectService:                 projectService,
+		ApprovalService:                approvalService,
 		EmployeeRun:                    runService,
 		EmployeeRunWriteback:           runWritebackService,
 		SkillService:                   skillService,
@@ -176,6 +215,8 @@ func NewContainer(stores *storage.Clients) (*Container, error) {
 		Authorizer:                     authorizer,
 		AuthzCenter:                    authzCenterService,
 		Poller:                         poller,
+		CoordinationWorker:             coordinationWorker,
+		TemporalClientClose:            temporalClientClose,
 		TaskHandler:                    taskHandler,
 		RuntimeHandler:                 runtimeHandler,
 		RuntimeCommandWritebackHandler: runtimeCommandWritebackHandler,
@@ -206,7 +247,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	}
 	defer stores.Close()
 
-	container, err := NewContainer(stores)
+	container, err := NewContainerWithConfig(stores, cfg)
 	if err != nil {
 		return err
 	}
@@ -214,6 +255,15 @@ func Run(ctx context.Context, cfg config.Config) error {
 }
 
 func runContainer(ctx context.Context, container *Container, addr string) error {
+	if container.TemporalClientClose != nil {
+		defer container.TemporalClientClose()
+	}
+	if container.CoordinationWorker != nil {
+		if err := container.CoordinationWorker.Start(); err != nil {
+			return err
+		}
+		defer container.CoordinationWorker.Stop()
+	}
 	stopWatching := make(chan struct{})
 	go func() {
 		select {

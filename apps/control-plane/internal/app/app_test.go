@@ -9,8 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/superteam/control-plane/internal/api"
+	"github.com/superteam/control-plane/internal/config"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
+	"github.com/superteam/control-plane/internal/storage"
 )
 
 func TestHealthOnlyRouterIsExplicit(t *testing.T) {
@@ -64,6 +67,92 @@ func TestRunContainerClosesPollerWhenContextIsCanceled(t *testing.T) {
 	}
 }
 
+func TestRunContainerStartsAndStopsWorkflowWorker(t *testing.T) {
+	poller := runtimepkg.NewPoller()
+	worker := &recordingWorkflowWorker{}
+	client := &recordingTemporalClient{}
+	container := &Container{
+		Poller:              poller,
+		Server:              api.NewServer(nil, nil),
+		CoordinationWorker:  worker,
+		TemporalClientClose: client.Close,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := runContainer(ctx, container, "127.0.0.1:0"); err != nil {
+		t.Fatalf("expected clean shutdown, got %v", err)
+	}
+
+	if worker.starts != 1 {
+		t.Fatalf("expected workflow worker to start once, got %d", worker.starts)
+	}
+	if worker.stops != 1 {
+		t.Fatalf("expected workflow worker to stop once, got %d", worker.stops)
+	}
+	if client.closes != 1 {
+		t.Fatalf("expected temporal client to close once, got %d", client.closes)
+	}
+}
+
+func TestRunContainerClosesTemporalClientWhenWorkerStartFails(t *testing.T) {
+	startErr := errors.New("worker start failed")
+	worker := &recordingWorkflowWorker{startErr: startErr}
+	client := &recordingTemporalClient{}
+	container := &Container{
+		Poller:              runtimepkg.NewPoller(),
+		Server:              api.NewServer(nil, nil),
+		CoordinationWorker:  worker,
+		TemporalClientClose: client.Close,
+	}
+
+	err := runContainer(context.Background(), container, "127.0.0.1:0")
+	if !errors.Is(err, startErr) {
+		t.Fatalf("expected worker start error, got %v", err)
+	}
+	if client.closes != 1 {
+		t.Fatalf("expected temporal client to close on start failure, got %d", client.closes)
+	}
+	if worker.stops != 0 {
+		t.Fatalf("worker must not be stopped when start fails, got %d", worker.stops)
+	}
+}
+
+func TestNewContainerWithConfigWiresTemporalOnlyWhenEnabled(t *testing.T) {
+	stores := newTestStorageClients(t)
+
+	disabled, err := NewContainerWithConfig(stores, config.Config{})
+	if err != nil {
+		t.Fatalf("new disabled container: %v", err)
+	}
+	if disabled.CoordinationWorker != nil || disabled.TemporalClientClose != nil {
+		t.Fatalf("expected Temporal lifecycle to be nil when disabled")
+	}
+	if disabled.ApprovalService == nil {
+		t.Fatalf("expected approval service to be wired")
+	}
+
+	enabled, err := NewContainerWithConfig(stores, config.Config{
+		Temporal: config.TemporalConfig{
+			Enabled:   true,
+			Address:   "127.0.0.1:7233",
+			Namespace: "default",
+			TaskQueue: "superteam-project-coordination-test",
+		},
+	})
+	if err != nil {
+		t.Fatalf("new enabled container: %v", err)
+	}
+	if enabled.CoordinationWorker == nil {
+		t.Fatalf("expected coordination worker when Temporal is enabled")
+	}
+	if enabled.TemporalClientClose == nil {
+		t.Fatalf("expected Temporal client closer when Temporal is enabled")
+	}
+	enabled.TemporalClientClose()
+}
+
 func waitForActivePoller(t *testing.T, poller *runtimepkg.Poller) {
 	t.Helper()
 
@@ -82,4 +171,42 @@ func waitForActivePoller(t *testing.T, poller *runtimepkg.Poller) {
 		case <-ticker.C:
 		}
 	}
+}
+
+func newTestStorageClients(t *testing.T) *storage.Clients {
+	t.Helper()
+
+	poolConfig, err := pgxpool.ParseConfig("postgres://superteam:superteam@127.0.0.1:1/superteam_test?sslmode=disable")
+	if err != nil {
+		t.Fatalf("parse pgx pool config: %v", err)
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
+	if err != nil {
+		t.Fatalf("new pgx pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return &storage.Clients{Postgres: pool}
+}
+
+type recordingWorkflowWorker struct {
+	starts   int
+	stops    int
+	startErr error
+}
+
+func (w *recordingWorkflowWorker) Start() error {
+	w.starts++
+	return w.startErr
+}
+
+func (w *recordingWorkflowWorker) Stop() {
+	w.stops++
+}
+
+type recordingTemporalClient struct {
+	closes int
+}
+
+func (c *recordingTemporalClient) Close() {
+	c.closes++
 }

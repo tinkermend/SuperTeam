@@ -2287,7 +2287,7 @@ Expected: commit succeeds.
 - Modify: `apps/control-plane/internal/app/app.go`
 - Create: `apps/control-plane/internal/workflow/projectcoordination/project_store.go`
 
-- [ ] **Step 1: Write failing project service signal test**
+- [x] **Step 1: Write failing project service signal test**
 
 In `apps/control-plane/internal/project/service_test.go`, add:
 
@@ -2336,7 +2336,7 @@ func TestSubmitDemandSignalsProjectCoordinatorInV1(t *testing.T) {
 
 Add `fakeCoordinatorSignalClient` implementing all signal methods and counters.
 
-- [ ] **Step 2: Run failing service signal test**
+- [x] **Step 2: Run failing service signal test**
 
 Run:
 
@@ -2346,7 +2346,7 @@ go test ./apps/control-plane/internal/project -run TestSubmitDemandSignalsProjec
 
 Expected: FAIL because `NewServiceWithCoordinator` and V1 demand behavior do not exist.
 
-- [ ] **Step 3: Add service constructor and signal calls**
+- [x] **Step 3: Add service constructor and signal calls**
 
 Modify `apps/control-plane/internal/project/service.go`:
 
@@ -2405,7 +2405,7 @@ return &demand, nil
 
 In `UpdateProjectConfig` and `ReplaceProjectMembers`, signal `ProjectPolicyChanged` and `ProjectMemberChanged` after appending the config/member event.
 
-- [ ] **Step 4: Implement activity store adapter**
+- [x] **Step 4: Implement activity store adapter**
 
 Create `apps/control-plane/internal/workflow/projectcoordination/project_store.go` with a store struct depending on `project.Repository`. It must implement:
 
@@ -2419,7 +2419,7 @@ Create `apps/control-plane/internal/workflow/projectcoordination/project_store.g
 
 Use actor type `project_coordinator` and actor ID equal to WorkflowID for Workflow-created events.
 
-- [ ] **Step 5: Wire services in app container**
+- [x] **Step 5: Wire services in app container**
 
 Modify `apps/control-plane/internal/app/app.go`:
 
@@ -2430,7 +2430,7 @@ Modify `apps/control-plane/internal/app/app.go`:
 
 Keep app startup valid when Temporal is disabled so local tests and current dev config still run.
 
-- [ ] **Step 6: Run service and app tests**
+- [x] **Step 6: Run service and app tests**
 
 Run:
 

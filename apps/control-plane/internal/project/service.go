@@ -9,7 +9,8 @@ import (
 )
 
 type Service struct {
-	repository Repository
+	repository  Repository
+	coordinator CoordinatorSignalClient
 }
 
 type latestConfigRevisionRepository interface {
@@ -17,10 +18,17 @@ type latestConfigRevisionRepository interface {
 }
 
 func NewService(repository Repository) (*Service, error) {
+	return NewServiceWithCoordinator(repository, NoopCoordinatorSignalClient{})
+}
+
+func NewServiceWithCoordinator(repository Repository, coordinator CoordinatorSignalClient) (*Service, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("project repository is required")
 	}
-	return &Service{repository: repository}, nil
+	if coordinator == nil {
+		coordinator = NoopCoordinatorSignalClient{}
+	}
+	return &Service{repository: repository, coordinator: coordinator}, nil
 }
 
 func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -62,6 +70,13 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 		ActorID:   req.ActorUserID.String(),
 		Summary:   "项目配置已初始化",
 		Payload:   map[string]any{"member_count": len(members)},
+	}); err != nil {
+		return nil, err
+	}
+	if err := s.coordinator.EnsureProjectCoordinator(ctx, ProjectCoordinatorSignal{
+		TenantID:   req.TenantID,
+		ProjectID:  project.ID,
+		WorkflowID: project.CoordinationWorkflowID,
 	}); err != nil {
 		return nil, err
 	}
@@ -135,6 +150,14 @@ func (s *Service) UpdateProjectConfig(ctx context.Context, req UpdateProjectConf
 	if _, err := s.repository.CreateConfigRevision(ctx, req, updated, event.ID); err != nil {
 		return nil, err
 	}
+	if err := s.coordinator.SignalProjectPolicyChanged(ctx, ProjectPolicyChangedSignal{
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		ChangedEventID: event.ID,
+		WorkflowID:     updated.CoordinationWorkflowID,
+	}); err != nil {
+		return nil, err
+	}
 	return &updated, nil
 }
 
@@ -171,7 +194,7 @@ func (s *Service) ReplaceProjectMembers(ctx context.Context, tenantID, projectID
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
 		TenantID:  tenantID,
 		ProjectID: projectID,
 		EventType: ProjectEventConfigChanged,
@@ -179,6 +202,24 @@ func (s *Service) ReplaceProjectMembers(ctx context.Context, tenantID, projectID
 		ActorID:   actorUserID.String(),
 		Summary:   "项目成员已更新",
 		Payload:   map[string]any{"member_count": len(replaced)},
+	})
+	if err != nil {
+		return nil, err
+	}
+	project, err := s.repository.GetProject(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	changedMemberIDs := make([]uuid.UUID, 0, len(replaced))
+	for _, member := range replaced {
+		changedMemberIDs = append(changedMemberIDs, member.ID)
+	}
+	if err := s.coordinator.SignalProjectMemberChanged(ctx, ProjectMemberChangedSignal{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		ChangedMemberIDs: changedMemberIDs,
+		ChangedEventID:   event.ID,
+		WorkflowID:       project.CoordinationWorkflowID,
 	}); err != nil {
 		return nil, err
 	}
@@ -236,8 +277,18 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 	if err != nil {
 		return nil, err
 	}
-	demand, err := s.repository.CreateProjectDemand(ctx, req, ProjectDemandStatusRecorded, &event.ID)
+	demand, err := s.repository.CreateProjectDemand(ctx, req, ProjectDemandStatusPlanningPending, &event.ID)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.coordinator.SignalDemandSubmitted(ctx, DemandSubmittedSignal{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		DemandID:          demand.ID,
+		SubmittedByUserID: req.SubmittedByUserID,
+		CreatedEventID:    event.ID,
+		WorkflowID:        project.CoordinationWorkflowID,
+	}); err != nil {
 		return nil, err
 	}
 	return &demand, nil
