@@ -162,6 +162,113 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 	if service.resolveDecisionReq.TenantID != expectedTenantID || service.resolveDecisionReq.ProjectID != service.projectID || service.resolveDecisionReq.DecisionRequestID != decisionID || service.resolveDecisionReq.DecidedByUserID != user.ID {
 		t.Fatalf("expected resolve decision context/path/user, got %#v", service.resolveDecisionReq)
 	}
+
+	evidenceID := uuid.New()
+	evidenceReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+service.projectID.String()+"/evidence", strings.NewReader(`{
+		"tenant_id":"`+spoofedTenantID.String()+`",
+		"project_id":"`+spoofedProjectID.String()+`",
+		"actor_user_id":"`+spoofedActorID.String()+`",
+		"submitted_by_id":"`+spoofedActorID.String()+`",
+		"evidence_type":"test_report",
+		"title":"验收测试报告",
+		"source_type":"artifact",
+		"source_ref":"s3://bucket/report.md",
+		"metadata":{"suite":"routes"}
+	}`))
+	evidenceReq.Header.Set("Content-Type", "application/json")
+	evidenceReq.AddCookie(cookie)
+	evidenceResp := httptest.NewRecorder()
+	server.ServeHTTP(evidenceResp, evidenceReq)
+	if evidenceResp.Code != http.StatusCreated {
+		t.Fatalf("expected create evidence to succeed, got %d: %s", evidenceResp.Code, evidenceResp.Body.String())
+	}
+	if service.createEvidenceReq.TenantID != expectedTenantID || service.createEvidenceReq.ProjectID != service.projectID || service.createEvidenceReq.ActorID != user.ID {
+		t.Fatalf("expected evidence context/path/user, got %#v", service.createEvidenceReq)
+	}
+	if service.createEvidenceReq.SubmittedByID == nil || *service.createEvidenceReq.SubmittedByID != user.ID {
+		t.Fatalf("expected evidence submitted_by to use console user, got %#v", service.createEvidenceReq.SubmittedByID)
+	}
+
+	patchEvidenceReq := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/"+service.projectID.String()+"/evidence/"+evidenceID.String(), strings.NewReader(`{
+		"tenant_id":"`+spoofedTenantID.String()+`",
+		"project_id":"`+spoofedProjectID.String()+`",
+		"evidence_id":"`+uuid.New().String()+`",
+		"actor_user_id":"`+spoofedActorID.String()+`",
+		"verification_status":"verified",
+		"metadata":{"review":"manual"}
+	}`))
+	patchEvidenceReq.Header.Set("Content-Type", "application/json")
+	patchEvidenceReq.AddCookie(cookie)
+	patchEvidenceResp := httptest.NewRecorder()
+	server.ServeHTTP(patchEvidenceResp, patchEvidenceReq)
+	if patchEvidenceResp.Code != http.StatusOK {
+		t.Fatalf("expected patch evidence to succeed, got %d: %s", patchEvidenceResp.Code, patchEvidenceResp.Body.String())
+	}
+	if service.patchEvidenceReq.TenantID != expectedTenantID || service.patchEvidenceReq.ProjectID != service.projectID || service.patchEvidenceReq.EvidenceID != evidenceID || service.patchEvidenceReq.ActorUserID != user.ID {
+		t.Fatalf("expected patch evidence context/path/user, got %#v", service.patchEvidenceReq)
+	}
+
+	budgetSummaryReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/budget-summary", nil)
+	budgetSummaryReq.AddCookie(cookie)
+	budgetSummaryResp := httptest.NewRecorder()
+	server.ServeHTTP(budgetSummaryResp, budgetSummaryReq)
+	if budgetSummaryResp.Code != http.StatusOK {
+		t.Fatalf("expected budget summary to succeed, got %d: %s", budgetSummaryResp.Code, budgetSummaryResp.Body.String())
+	}
+	if service.budgetSummaryTenantID != expectedTenantID || service.budgetSummaryProjectID != service.projectID {
+		t.Fatalf("expected budget summary context/path, got tenant=%s project=%s", service.budgetSummaryTenantID, service.budgetSummaryProjectID)
+	}
+
+	acceptanceReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+service.projectID.String()+"/acceptance", strings.NewReader(`{
+		"tenant_id":"`+spoofedTenantID.String()+`",
+		"project_id":"`+spoofedProjectID.String()+`",
+		"accepted_by_user_id":"`+spoofedActorID.String()+`",
+		"status":"accepted",
+		"conclusion":"通过",
+		"evidence_ref_ids":["`+evidenceID.String()+`"],
+		"report_ref_ids":["`+uuid.New().String()+`"]
+	}`))
+	acceptanceReq.Header.Set("Content-Type", "application/json")
+	acceptanceReq.AddCookie(cookie)
+	acceptanceResp := httptest.NewRecorder()
+	server.ServeHTTP(acceptanceResp, acceptanceReq)
+	if acceptanceResp.Code != http.StatusCreated {
+		t.Fatalf("expected acceptance create to succeed, got %d: %s", acceptanceResp.Code, acceptanceResp.Body.String())
+	}
+	if service.createAcceptanceReq.TenantID != expectedTenantID || service.createAcceptanceReq.ProjectID != service.projectID || service.createAcceptanceReq.AcceptedByUserID != user.ID {
+		t.Fatalf("expected acceptance context/path/user, got %#v", service.createAcceptanceReq)
+	}
+
+	archiveSnapshotReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+service.projectID.String()+"/archive-snapshot", strings.NewReader(`{
+		"tenant_id":"`+spoofedTenantID.String()+`",
+		"project_id":"`+spoofedProjectID.String()+`",
+		"created_by_user_id":"`+spoofedActorID.String()+`",
+		"snapshot_type":"final",
+		"summary":"最终归档",
+		"object_ref":"s3://bucket/archive.json"
+	}`))
+	archiveSnapshotReq.Header.Set("Content-Type", "application/json")
+	archiveSnapshotReq.AddCookie(cookie)
+	archiveSnapshotResp := httptest.NewRecorder()
+	server.ServeHTTP(archiveSnapshotResp, archiveSnapshotReq)
+	if archiveSnapshotResp.Code != http.StatusCreated {
+		t.Fatalf("expected archive snapshot create to succeed, got %d: %s", archiveSnapshotResp.Code, archiveSnapshotResp.Body.String())
+	}
+	if service.createArchiveReq.TenantID != expectedTenantID || service.createArchiveReq.ProjectID != service.projectID || service.createArchiveReq.CreatedByUserID != user.ID {
+		t.Fatalf("expected archive snapshot context/path/user, got %#v", service.createArchiveReq)
+	}
+
+	revisionID := uuid.New()
+	configRevisionReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/config-revisions/"+revisionID.String(), nil)
+	configRevisionReq.AddCookie(cookie)
+	configRevisionResp := httptest.NewRecorder()
+	server.ServeHTTP(configRevisionResp, configRevisionReq)
+	if configRevisionResp.Code != http.StatusOK {
+		t.Fatalf("expected config revision route to succeed, got %d: %s", configRevisionResp.Code, configRevisionResp.Body.String())
+	}
+	if service.configRevisionTenantID != expectedTenantID || service.configRevisionProjectID != service.projectID || service.configRevisionID != revisionID {
+		t.Fatalf("expected config revision context/path, got tenant=%s project=%s revision=%s", service.configRevisionTenantID, service.configRevisionProjectID, service.configRevisionID)
+	}
 }
 
 func TestRuntimeProjectTaskWritebackRoutesUseRuntimeSessionAuth(t *testing.T) {
@@ -304,6 +411,15 @@ type routeProjectService struct {
 	resolveDecisionReq        project.ResolveDecisionRequest
 	retryWorkflowSignalReq    project.RetryWorkflowSignalRequest
 	completeTaskReq           project.CompleteProjectTaskRequest
+	createEvidenceReq         project.CreateEvidenceRefServiceRequest
+	patchEvidenceReq          project.PatchEvidenceRequest
+	budgetSummaryTenantID     uuid.UUID
+	budgetSummaryProjectID    uuid.UUID
+	createAcceptanceReq       project.CreateAcceptanceServiceRequest
+	createArchiveReq          project.CreateArchiveSnapshotServiceRequest
+	configRevisionTenantID    uuid.UUID
+	configRevisionProjectID   uuid.UUID
+	configRevisionID          uuid.UUID
 	archiveErr                error
 }
 
@@ -489,6 +605,96 @@ func (s *routeProjectService) RequestProjectTaskTransfer(ctx context.Context, re
 	return &project.TransferRequest{ID: uuid.New(), TenantID: req.TenantID, ProjectID: uuid.New(), ProjectTaskID: req.ProjectTaskID, RequestedByDigitalEmployeeID: req.DigitalEmployeeID, Reason: req.Reason, Status: "requested"}, nil
 }
 
+func (s *routeProjectService) ListEvidence(ctx context.Context, tenantID, projectID uuid.UUID, status *project.EvidenceVerificationStatus, limit, offset int32) ([]project.ProjectEvidenceRef, error) {
+	return []project.ProjectEvidenceRef{routeEvidence(tenantID, projectID, uuid.New())}, nil
+}
+
+func (s *routeProjectService) CreateEvidence(ctx context.Context, req project.CreateEvidenceRefServiceRequest) (*project.ProjectEvidenceRef, error) {
+	s.createEvidenceReq = req
+	evidence := routeEvidence(req.TenantID, req.ProjectID, req.ActorID)
+	evidence.EvidenceType = req.EvidenceType
+	evidence.Title = req.Title
+	evidence.SourceType = req.SourceType
+	evidence.SourceRef = req.SourceRef
+	evidence.SubmittedByType = req.SubmittedByType
+	evidence.SubmittedByID = req.SubmittedByID
+	evidence.Metadata = req.Metadata
+	return &evidence, nil
+}
+
+func (s *routeProjectService) PatchEvidence(ctx context.Context, req project.PatchEvidenceRequest) (*project.ProjectEvidenceRef, error) {
+	s.patchEvidenceReq = req
+	evidence := routeEvidence(req.TenantID, req.ProjectID, req.ActorUserID)
+	evidence.ID = req.EvidenceID
+	evidence.VerificationStatus = req.VerificationStatus
+	evidence.Metadata = req.Metadata
+	return &evidence, nil
+}
+
+func (s *routeProjectService) ListArtifacts(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.ProjectArtifactRef, error) {
+	return []project.ProjectArtifactRef{{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ArtifactType: "log", Title: "执行日志", ObjectRef: "s3://bucket/run.log", RetentionStatus: "retained", Metadata: map[string]any{}, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}}, nil
+}
+
+func (s *routeProjectService) ListReports(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.ProjectReportRef, error) {
+	return []project.ProjectReportRef{{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ReportType: "final", Title: "最终报告", ObjectRef: "s3://bucket/final.md", Format: "markdown", GeneratedByType: "human_user", CreatedAt: time.Now().UTC()}}, nil
+}
+
+func (s *routeProjectService) ListBudgetLedger(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.ProjectBudgetLedgerEntry, error) {
+	return []project.ProjectBudgetLedgerEntry{{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CostType: "tokens", EstimatedCost: "1.00", ActualCost: "0.80", Source: "runtime", CreatedAt: time.Now().UTC()}}, nil
+}
+
+func (s *routeProjectService) GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (*project.ProjectBudgetSummary, error) {
+	s.budgetSummaryTenantID = tenantID
+	s.budgetSummaryProjectID = projectID
+	return &project.ProjectBudgetSummary{EstimatedTokens: 1000, ActualTokens: 800, EstimatedCost: "1.00", ActualCost: "0.80", LedgerCount: 1}, nil
+}
+
+func (s *routeProjectService) CreateAcceptance(ctx context.Context, req project.CreateAcceptanceServiceRequest) (*project.ProjectAcceptanceRecord, error) {
+	s.createAcceptanceReq = req
+	record := routeAcceptance(req.TenantID, req.ProjectID, req.AcceptedByUserID)
+	record.Status = req.Status
+	record.Conclusion = req.Conclusion
+	record.EvidenceRefIDs = req.EvidenceRefIDs
+	record.ReportRefIDs = req.ReportRefIDs
+	record.UnresolvedRisks = req.UnresolvedRisks
+	return &record, nil
+}
+
+func (s *routeProjectService) GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*project.ProjectAcceptanceRecord, error) {
+	record := routeAcceptance(tenantID, projectID, uuid.New())
+	return &record, nil
+}
+
+func (s *routeProjectService) GetArchivePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*project.ProjectArchivePreview, error) {
+	return &project.ProjectArchivePreview{ProjectID: projectID, EvidenceCount: 1, ArtifactCount: 1, ReportCount: 1, BlockedReasons: []any{}, EstimatedObjectRefs: []any{"s3://bucket/final.md"}}, nil
+}
+
+func (s *routeProjectService) CreateArchiveSnapshot(ctx context.Context, req project.CreateArchiveSnapshotServiceRequest) (*project.ProjectArchiveSnapshot, error) {
+	s.createArchiveReq = req
+	snapshot := routeArchiveSnapshot(req.TenantID, req.ProjectID, req.CreatedByUserID)
+	snapshot.SnapshotType = req.SnapshotType
+	snapshot.ObjectRef = routeStringPtr(req.ObjectRef)
+	snapshot.Summary = routeStringPtr(req.Summary)
+	return &snapshot, nil
+}
+
+func (s *routeProjectService) ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.ProjectArchiveSnapshot, error) {
+	return []project.ProjectArchiveSnapshot{routeArchiveSnapshot(tenantID, projectID, uuid.New())}, nil
+}
+
+func (s *routeProjectService) ListConfigRevisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.ProjectConfigRevision, error) {
+	return []project.ProjectConfigRevision{routeConfigRevision(tenantID, projectID, uuid.New())}, nil
+}
+
+func (s *routeProjectService) GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (*project.ProjectConfigRevision, error) {
+	s.configRevisionTenantID = tenantID
+	s.configRevisionProjectID = projectID
+	s.configRevisionID = revisionID
+	revision := routeConfigRevision(tenantID, projectID, uuid.New())
+	revision.ID = revisionID
+	return &revision, nil
+}
+
 func routeProject(tenantID, projectID, ownerID uuid.UUID) project.Project {
 	now := time.Now().UTC()
 	return project.Project{
@@ -506,6 +712,75 @@ func routeProject(tenantID, projectID, ownerID uuid.UUID) project.Project {
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}
+}
+
+func routeEvidence(tenantID, projectID, userID uuid.UUID) project.ProjectEvidenceRef {
+	now := time.Now().UTC()
+	return project.ProjectEvidenceRef{
+		ID:                 uuid.New(),
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		EvidenceType:       "test_report",
+		Title:              "验收测试报告",
+		SourceType:         "artifact",
+		SourceRef:          "s3://bucket/report.md",
+		SubmittedByType:    "human_user",
+		SubmittedByID:      &userID,
+		VerificationStatus: project.EvidenceVerificationStatusSubmitted,
+		Metadata:           map[string]any{},
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+}
+
+func routeAcceptance(tenantID, projectID, userID uuid.UUID) project.ProjectAcceptanceRecord {
+	return project.ProjectAcceptanceRecord{
+		ID:               uuid.New(),
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		AcceptedByUserID: userID,
+		Status:           "accepted",
+		Conclusion:       "通过",
+		EvidenceRefIDs:   []uuid.UUID{uuid.New()},
+		ReportRefIDs:     []uuid.UUID{uuid.New()},
+		UnresolvedRisks:  []any{},
+		CreatedAt:        time.Now().UTC(),
+	}
+}
+
+func routeArchiveSnapshot(tenantID, projectID, userID uuid.UUID) project.ProjectArchiveSnapshot {
+	return project.ProjectArchiveSnapshot{
+		ID:                  uuid.New(),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		SnapshotType:        "final",
+		Status:              "archived",
+		IncludedCounts:      map[string]any{"evidence_ref_count": float64(1)},
+		RetainedArtifactIDs: []uuid.UUID{},
+		CreatedByUserID:     userID,
+		CreatedAt:           time.Now().UTC(),
+	}
+}
+
+func routeConfigRevision(tenantID, projectID, userID uuid.UUID) project.ProjectConfigRevision {
+	return project.ProjectConfigRevision{
+		ID:              uuid.New(),
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		RevisionNumber:  1,
+		ConfigSnapshot:  map[string]any{"name": "项目"},
+		CreatedByUserID: userID,
+		CreatedAt:       time.Now().UTC(),
+		ChangedSections: []any{},
+		DiffSummary:     map[string]any{},
+	}
+}
+
+func routeStringPtr(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 type routeRuntimeSessionAuth struct {

@@ -102,6 +102,65 @@ func TestProjectHandlerGetConfigUsesCurrentOverview(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerCreatesEvidenceFromConsoleContext(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	spoofedTenantID := uuid.New()
+	spoofedProjectID := uuid.New()
+	spoofedActorID := uuid.New()
+	spoofedSubmitterID := uuid.New()
+	taskID := uuid.New()
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/evidence", strings.NewReader(`{
+		"tenant_id":"`+spoofedTenantID.String()+`",
+		"project_id":"`+spoofedProjectID.String()+`",
+		"actor_user_id":"`+spoofedActorID.String()+`",
+		"submitted_by_id":"`+spoofedSubmitterID.String()+`",
+		"project_task_id":"`+taskID.String()+`",
+		"evidence_type":"test_report",
+		"title":"验收测试报告",
+		"summary":"全部通过",
+		"source_type":"artifact",
+		"source_ref":"s3://bucket/report.md",
+		"metadata":{"suite":"go"}
+	}`))
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.CreateEvidence(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected evidence create to return 201, got %d: %s", resp.Code, resp.Body.String())
+	}
+	got := service.createEvidenceReq
+	if got.TenantID != tenantID || got.ProjectID != projectID || got.ActorID != actorID {
+		t.Fatalf("expected evidence tenant/project/actor from context/path, got %#v", got)
+	}
+	if got.TenantID == spoofedTenantID || got.ProjectID == spoofedProjectID || got.ActorID == spoofedActorID {
+		t.Fatalf("expected evidence create to ignore spoofed tenant/project/actor ids")
+	}
+	if got.SubmittedByID == nil || *got.SubmittedByID != actorID || got.SubmittedByType != "human_user" {
+		t.Fatalf("expected submitted_by to use console actor, got type=%q id=%v", got.SubmittedByType, got.SubmittedByID)
+	}
+	if got.ProjectTaskID == nil || *got.ProjectTaskID != taskID || got.Metadata["suite"] != "go" {
+		t.Fatalf("expected evidence body facts to be forwarded, got %#v", got)
+	}
+	var body struct {
+		ProjectID          string `json:"project_id"`
+		SubmittedByID      string `json:"submitted_by_id"`
+		VerificationStatus string `json:"verification_status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode evidence response: %v", err)
+	}
+	if body.ProjectID != projectID.String() || body.SubmittedByID != actorID.String() || body.VerificationStatus != string(EvidenceVerificationStatusSubmitted) {
+		t.Fatalf("unexpected evidence response: %#v", body)
+	}
+}
+
 func TestProjectHandlerListsRouteDecisionsAndResolvesDecision(t *testing.T) {
 	projectID := uuid.New()
 	decisionID := uuid.New()
@@ -336,6 +395,10 @@ type handlerTestService struct {
 	createReq              CreateProjectRequest
 	submitDemandReq        SubmitProjectDemandRequest
 	submitDemandErr        error
+	createEvidenceReq      CreateEvidenceRefServiceRequest
+	patchEvidenceReq       PatchEvidenceRequest
+	createAcceptanceReq    CreateAcceptanceServiceRequest
+	createArchiveReq       CreateArchiveSnapshotServiceRequest
 	getOverviewCalls       int
 	routeDecisionTenantID  uuid.UUID
 	routeDecisionProjectID uuid.UUID
@@ -493,6 +556,96 @@ func (s *handlerTestService) RequestProjectTaskTransfer(ctx context.Context, req
 	return nil, nil
 }
 
+func (s *handlerTestService) ListEvidence(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error) {
+	return []ProjectEvidenceRef{testEvidence(tenantID, projectID, uuid.New())}, nil
+}
+
+func (s *handlerTestService) CreateEvidence(ctx context.Context, req CreateEvidenceRefServiceRequest) (*ProjectEvidenceRef, error) {
+	s.createEvidenceReq = req
+	evidence := testEvidence(req.TenantID, req.ProjectID, req.ActorID)
+	evidence.ProjectTaskID = req.ProjectTaskID
+	evidence.RouteDecisionID = req.RouteDecisionID
+	evidence.ExecutionSummaryID = req.ExecutionSummaryID
+	evidence.EvidenceType = req.EvidenceType
+	evidence.Title = req.Title
+	evidence.Summary = stringPtrValue(req.Summary)
+	evidence.SourceType = req.SourceType
+	evidence.SourceRef = req.SourceRef
+	evidence.ArtifactRefID = req.ArtifactRefID
+	evidence.SubmittedByType = req.SubmittedByType
+	evidence.SubmittedByID = req.SubmittedByID
+	evidence.Metadata = req.Metadata
+	return &evidence, nil
+}
+
+func (s *handlerTestService) PatchEvidence(ctx context.Context, req PatchEvidenceRequest) (*ProjectEvidenceRef, error) {
+	s.patchEvidenceReq = req
+	evidence := testEvidence(req.TenantID, req.ProjectID, req.ActorUserID)
+	evidence.ID = req.EvidenceID
+	evidence.VerificationStatus = req.VerificationStatus
+	evidence.Metadata = req.Metadata
+	return &evidence, nil
+}
+
+func (s *handlerTestService) ListArtifacts(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error) {
+	return []ProjectArtifactRef{testArtifact(tenantID, projectID)}, nil
+}
+
+func (s *handlerTestService) ListReports(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectReportRef, error) {
+	return []ProjectReportRef{testReport(tenantID, projectID)}, nil
+}
+
+func (s *handlerTestService) ListBudgetLedger(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectBudgetLedgerEntry, error) {
+	return []ProjectBudgetLedgerEntry{{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CostType: "tokens", EstimatedCost: "1.00", ActualCost: "0.80", Source: "runtime", CreatedAt: time.Now().UTC()}}, nil
+}
+
+func (s *handlerTestService) GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectBudgetSummary, error) {
+	return &ProjectBudgetSummary{EstimatedTokens: 1000, ActualTokens: 800, EstimatedCost: "1.00", ActualCost: "0.80", LedgerCount: 1}, nil
+}
+
+func (s *handlerTestService) CreateAcceptance(ctx context.Context, req CreateAcceptanceServiceRequest) (*ProjectAcceptanceRecord, error) {
+	s.createAcceptanceReq = req
+	record := testAcceptance(req.TenantID, req.ProjectID, req.AcceptedByUserID)
+	record.Status = req.Status
+	record.Conclusion = req.Conclusion
+	record.EvidenceRefIDs = req.EvidenceRefIDs
+	record.ReportRefIDs = req.ReportRefIDs
+	record.UnresolvedRisks = req.UnresolvedRisks
+	return &record, nil
+}
+
+func (s *handlerTestService) GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectAcceptanceRecord, error) {
+	record := testAcceptance(tenantID, projectID, uuid.New())
+	return &record, nil
+}
+
+func (s *handlerTestService) GetArchivePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectArchivePreview, error) {
+	return &ProjectArchivePreview{ProjectID: projectID, EvidenceCount: 1, ArtifactCount: 1, ReportCount: 1, BlockedReasons: []any{}, EstimatedObjectRefs: []any{"s3://bucket/report.md"}}, nil
+}
+
+func (s *handlerTestService) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotServiceRequest) (*ProjectArchiveSnapshot, error) {
+	s.createArchiveReq = req
+	snapshot := testArchiveSnapshot(req.TenantID, req.ProjectID, req.CreatedByUserID)
+	snapshot.SnapshotType = req.SnapshotType
+	snapshot.ObjectRef = stringPtrValue(req.ObjectRef)
+	snapshot.Summary = stringPtrValue(req.Summary)
+	return &snapshot, nil
+}
+
+func (s *handlerTestService) ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArchiveSnapshot, error) {
+	return []ProjectArchiveSnapshot{testArchiveSnapshot(tenantID, projectID, uuid.New())}, nil
+}
+
+func (s *handlerTestService) ListConfigRevisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectConfigRevision, error) {
+	return []ProjectConfigRevision{testConfigRevision(tenantID, projectID, uuid.New())}, nil
+}
+
+func (s *handlerTestService) GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (*ProjectConfigRevision, error) {
+	revision := testConfigRevision(tenantID, projectID, uuid.New())
+	revision.ID = revisionID
+	return &revision, nil
+}
+
 func testProject(tenantID, projectID, ownerID uuid.UUID) Project {
 	now := time.Now().UTC()
 	return Project{
@@ -510,4 +663,103 @@ func testProject(tenantID, projectID, ownerID uuid.UUID) Project {
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}
+}
+
+func testEvidence(tenantID, projectID, userID uuid.UUID) ProjectEvidenceRef {
+	now := time.Now().UTC()
+	return ProjectEvidenceRef{
+		ID:                 uuid.New(),
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		EvidenceType:       "test_report",
+		Title:              "验收测试报告",
+		SourceType:         "artifact",
+		SourceRef:          "s3://bucket/report.md",
+		SubmittedByType:    "human_user",
+		SubmittedByID:      &userID,
+		VerificationStatus: EvidenceVerificationStatusSubmitted,
+		Metadata:           map[string]any{},
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+}
+
+func testArtifact(tenantID, projectID uuid.UUID) ProjectArtifactRef {
+	now := time.Now().UTC()
+	return ProjectArtifactRef{
+		ID:              uuid.New(),
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		ArtifactType:    "log",
+		Title:           "执行日志",
+		ObjectRef:       "s3://bucket/run.log",
+		RetentionStatus: "retained",
+		Metadata:        map[string]any{},
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+}
+
+func testReport(tenantID, projectID uuid.UUID) ProjectReportRef {
+	return ProjectReportRef{
+		ID:              uuid.New(),
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		ReportType:      "final",
+		Title:           "最终报告",
+		ObjectRef:       "s3://bucket/final.md",
+		Format:          "markdown",
+		GeneratedByType: "human_user",
+		CreatedAt:       time.Now().UTC(),
+	}
+}
+
+func testAcceptance(tenantID, projectID, userID uuid.UUID) ProjectAcceptanceRecord {
+	return ProjectAcceptanceRecord{
+		ID:               uuid.New(),
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		AcceptedByUserID: userID,
+		Status:           "accepted",
+		Conclusion:       "通过",
+		EvidenceRefIDs:   []uuid.UUID{uuid.New()},
+		ReportRefIDs:     []uuid.UUID{uuid.New()},
+		UnresolvedRisks:  []any{},
+		CreatedAt:        time.Now().UTC(),
+	}
+}
+
+func testArchiveSnapshot(tenantID, projectID, userID uuid.UUID) ProjectArchiveSnapshot {
+	return ProjectArchiveSnapshot{
+		ID:                  uuid.New(),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		SnapshotType:        "final",
+		Status:              "archived",
+		IncludedCounts:      map[string]any{"evidence_ref_count": float64(1)},
+		RetainedArtifactIDs: []uuid.UUID{},
+		CreatedByUserID:     userID,
+		CreatedAt:           time.Now().UTC(),
+	}
+}
+
+func testConfigRevision(tenantID, projectID, userID uuid.UUID) ProjectConfigRevision {
+	return ProjectConfigRevision{
+		ID:              uuid.New(),
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		RevisionNumber:  1,
+		ConfigSnapshot:  map[string]any{"name": "项目"},
+		CreatedByUserID: userID,
+		CreatedAt:       time.Now().UTC(),
+		ChangedSections: []any{},
+		DiffSummary:     map[string]any{},
+	}
+}
+
+func stringPtrValue(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

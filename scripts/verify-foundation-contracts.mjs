@@ -64,6 +64,20 @@ const requiredOpenApiOperations = new Set([
   "POST /api/v1/projects/{projectId}/decisions/{decisionId}/resolve",
   "GET /api/v1/projects/{projectId}/execution-summaries",
   "GET /api/v1/projects/{projectId}/transfer-requests",
+  "GET /api/v1/projects/{projectId}/evidence",
+  "POST /api/v1/projects/{projectId}/evidence",
+  "PATCH /api/v1/projects/{projectId}/evidence/{evidenceId}",
+  "GET /api/v1/projects/{projectId}/artifacts",
+  "GET /api/v1/projects/{projectId}/reports",
+  "GET /api/v1/projects/{projectId}/budget-ledger",
+  "GET /api/v1/projects/{projectId}/budget-summary",
+  "POST /api/v1/projects/{projectId}/acceptance",
+  "GET /api/v1/projects/{projectId}/acceptance",
+  "GET /api/v1/projects/{projectId}/archive-preview",
+  "POST /api/v1/projects/{projectId}/archive-snapshot",
+  "GET /api/v1/projects/{projectId}/archive-snapshots",
+  "GET /api/v1/projects/{projectId}/config-revisions",
+  "GET /api/v1/projects/{projectId}/config-revisions/{revisionId}",
 ]);
 
 const requiredRustClientPaths = new Set([
@@ -135,7 +149,9 @@ function normalizePath(path) {
     .replace(/\/api\/v1\/runtime\/nodes\/\{id\}/g, "/api/v1/runtime/nodes/{nodeId}")
     .replace(/\{nodeId\}/g, "{nodeId}")
     .replace(/\{projectId\}/g, "{projectId}")
+    .replace(/\{evidenceId\}/g, "{evidenceId}")
     .replace(/\{decisionId\}/g, "{decisionId}")
+    .replace(/\{revisionId\}/g, "{revisionId}")
     .replace(/\{projectTaskId\}/g, "{projectTaskId}")
     .replace(/\/api\/v1\/skills\/\{skillId\}\/files\/\*/g, "/api/v1/skills/{skillId}/files/{filePath}")
     .replace(/\{filePath:\.\*\}/g, "{filePath}");

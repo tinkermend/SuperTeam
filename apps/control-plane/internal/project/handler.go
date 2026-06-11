@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -36,6 +37,20 @@ type HandlerService interface {
 	CompleteProjectTask(ctx context.Context, req CompleteProjectTaskRequest) (*ExecutionSummary, error)
 	FailProjectTask(ctx context.Context, req FailProjectTaskRequest) (*ProjectTask, error)
 	RequestProjectTaskTransfer(ctx context.Context, req RequestProjectTaskTransferRequest) (*TransferRequest, error)
+	ListEvidence(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error)
+	CreateEvidence(ctx context.Context, req CreateEvidenceRefServiceRequest) (*ProjectEvidenceRef, error)
+	PatchEvidence(ctx context.Context, req PatchEvidenceRequest) (*ProjectEvidenceRef, error)
+	ListArtifacts(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error)
+	ListReports(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectReportRef, error)
+	ListBudgetLedger(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectBudgetLedgerEntry, error)
+	GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectBudgetSummary, error)
+	CreateAcceptance(ctx context.Context, req CreateAcceptanceServiceRequest) (*ProjectAcceptanceRecord, error)
+	GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectAcceptanceRecord, error)
+	GetArchivePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectArchivePreview, error)
+	CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotServiceRequest) (*ProjectArchiveSnapshot, error)
+	ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArchiveSnapshot, error)
+	ListConfigRevisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectConfigRevision, error)
+	GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (*ProjectConfigRevision, error)
 }
 
 type HTTPHandler struct {
@@ -44,6 +59,99 @@ type HTTPHandler struct {
 
 func NewHandler(service HandlerService) *HTTPHandler {
 	return &HTTPHandler{service: service}
+}
+
+type PatchEvidenceRequest struct {
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	EvidenceID         uuid.UUID
+	ActorUserID        uuid.UUID
+	VerificationStatus EvidenceVerificationStatus
+	Metadata           map[string]any
+}
+
+func (s *Service) ListEvidence(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error) {
+	return s.ListEvidenceRefs(ctx, tenantID, projectID, status, limit, offset)
+}
+
+func (s *Service) CreateEvidence(ctx context.Context, req CreateEvidenceRefServiceRequest) (*ProjectEvidenceRef, error) {
+	return s.CreateEvidenceRef(ctx, req)
+}
+
+func (s *Service) PatchEvidence(ctx context.Context, req PatchEvidenceRequest) (*ProjectEvidenceRef, error) {
+	req.VerificationStatus = EvidenceVerificationStatus(strings.TrimSpace(string(req.VerificationStatus)))
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.EvidenceID == uuid.Nil || req.ActorUserID == uuid.Nil || !validEvidenceVerificationStatus(req.VerificationStatus) {
+		return nil, ErrInvalidProjectEvidence
+	}
+	project, err := s.repository.GetProject(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if projectArchived(project) {
+		return nil, ErrProjectArchived
+	}
+	updated, err := s.repository.UpdateEvidenceVerificationStatus(ctx, UpdateEvidenceVerificationStatusRequest{
+		TenantID:           req.TenantID,
+		ProjectID:          req.ProjectID,
+		ID:                 req.EvidenceID,
+		VerificationStatus: req.VerificationStatus,
+		Metadata:           mapOrEmptyAny(req.Metadata),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    req.ProjectID,
+		EventType:    ProjectEventEvidenceVerified,
+		ActorType:    "human_user",
+		ActorID:      req.ActorUserID.String(),
+		ResourceType: strPtr("project_evidence_ref"),
+		ResourceID:   strPtr(req.EvidenceID.String()),
+		Summary:      "项目证据校验状态已更新",
+		Payload: map[string]any{
+			"verification_status": string(req.VerificationStatus),
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return &updated, nil
+}
+
+func (s *Service) ListArtifacts(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error) {
+	return s.ListArtifactRefs(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) ListReports(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectReportRef, error) {
+	return s.ListReportRefs(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) CreateAcceptance(ctx context.Context, req CreateAcceptanceServiceRequest) (*ProjectAcceptanceRecord, error) {
+	return s.CreateAcceptanceRecord(ctx, req)
+}
+
+func (s *Service) GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectAcceptanceRecord, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	record, err := s.repository.GetLatestAcceptanceRecord(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
+func (s *Service) GetArchivePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectArchivePreview, error) {
+	return s.BuildArchivePreview(ctx, tenantID, projectID)
+}
+
+func validEvidenceVerificationStatus(status EvidenceVerificationStatus) bool {
+	switch status {
+	case EvidenceVerificationStatusSubmitted, EvidenceVerificationStatusLinked, EvidenceVerificationStatusVerified, EvidenceVerificationStatusRejected, EvidenceVerificationStatusSuperseded:
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *HTTPHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
@@ -431,6 +539,286 @@ func (h *HTTPHandler) ListTransferRequests(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, transferRequestResponses(transfers))
 }
 
+func (h *HTTPHandler) ListEvidence(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	limit, offset, ok := paginationFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var status *EvidenceVerificationStatus
+	if raw := r.URL.Query().Get("status"); raw != "" {
+		parsed := EvidenceVerificationStatus(raw)
+		if !validEvidenceVerificationStatus(parsed) {
+			http.Error(w, "invalid evidence status", http.StatusBadRequest)
+			return
+		}
+		status = &parsed
+	}
+	evidence, err := service.ListEvidence(r.Context(), tenantID, projectID, status, limit, offset)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, evidenceResponses(evidence))
+}
+
+func (h *HTTPHandler) CreateEvidence(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	var body createEvidenceBody
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	evidence, err := service.CreateEvidence(r.Context(), CreateEvidenceRefServiceRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ActorType:          "human_user",
+		ActorID:            actorID,
+		ProjectTaskID:      body.ProjectTaskID,
+		RouteDecisionID:    body.RouteDecisionID,
+		ExecutionSummaryID: body.ExecutionSummaryID,
+		EvidenceType:       body.EvidenceType,
+		Title:              body.Title,
+		Summary:            body.Summary,
+		SourceType:         body.SourceType,
+		SourceRef:          body.SourceRef,
+		ArtifactRefID:      body.ArtifactRefID,
+		SubmittedByType:    "human_user",
+		SubmittedByID:      &actorID,
+		Metadata:           body.Metadata,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, evidenceResponseFromDomain(*evidence))
+}
+
+func (h *HTTPHandler) PatchEvidence(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	evidenceID, ok := evidenceIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var body patchEvidenceBody
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	evidence, err := service.PatchEvidence(r.Context(), PatchEvidenceRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		EvidenceID:         evidenceID,
+		ActorUserID:        actorID,
+		VerificationStatus: body.VerificationStatus,
+		Metadata:           body.Metadata,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, evidenceResponseFromDomain(*evidence))
+}
+
+func (h *HTTPHandler) ListArtifacts(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	limit, offset, ok := paginationFromRequest(w, r)
+	if !ok {
+		return
+	}
+	artifacts, err := service.ListArtifacts(r.Context(), tenantID, projectID, limit, offset)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, artifactResponses(artifacts))
+}
+
+func (h *HTTPHandler) ListReports(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	limit, offset, ok := paginationFromRequest(w, r)
+	if !ok {
+		return
+	}
+	reports, err := service.ListReports(r.Context(), tenantID, projectID, limit, offset)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, reportResponses(reports))
+}
+
+func (h *HTTPHandler) ListBudgetLedger(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	limit, offset, ok := paginationFromRequest(w, r)
+	if !ok {
+		return
+	}
+	ledger, err := service.ListBudgetLedger(r.Context(), tenantID, projectID, limit, offset)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, budgetLedgerResponses(ledger))
+}
+
+func (h *HTTPHandler) GetBudgetSummary(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	summary, err := service.GetBudgetSummary(r.Context(), tenantID, projectID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, budgetSummaryResponseFromDomain(*summary))
+}
+
+func (h *HTTPHandler) CreateAcceptance(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	var body createAcceptanceBody
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	acceptance, err := service.CreateAcceptance(r.Context(), CreateAcceptanceServiceRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		AcceptedByUserID: actorID,
+		Status:           body.Status,
+		Conclusion:       body.Conclusion,
+		Summary:          body.Summary,
+		EvidenceRefIDs:   body.EvidenceRefIDs,
+		ReportRefIDs:     body.ReportRefIDs,
+		UnresolvedRisks:  body.UnresolvedRisks,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, acceptanceResponseFromDomain(*acceptance))
+}
+
+func (h *HTTPHandler) GetAcceptance(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	acceptance, err := service.GetAcceptance(r.Context(), tenantID, projectID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, acceptanceResponseFromDomain(*acceptance))
+}
+
+func (h *HTTPHandler) GetArchivePreview(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	preview, err := service.GetArchivePreview(r.Context(), tenantID, projectID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, archivePreviewResponseFromDomain(*preview))
+}
+
+func (h *HTTPHandler) CreateArchiveSnapshot(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	var body createArchiveSnapshotBody
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	snapshot, err := service.CreateArchiveSnapshot(r.Context(), CreateArchiveSnapshotServiceRequest{
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		CreatedByUserID: actorID,
+		SnapshotType:    body.SnapshotType,
+		Summary:         body.Summary,
+		ObjectRef:       body.ObjectRef,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, archiveSnapshotResponseFromDomain(*snapshot))
+}
+
+func (h *HTTPHandler) ListArchiveSnapshots(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	limit, offset, ok := paginationFromRequest(w, r)
+	if !ok {
+		return
+	}
+	snapshots, err := service.ListArchiveSnapshots(r.Context(), tenantID, projectID, limit, offset)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, archiveSnapshotResponses(snapshots))
+}
+
+func (h *HTTPHandler) ListConfigRevisions(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	limit, offset, ok := paginationFromRequest(w, r)
+	if !ok {
+		return
+	}
+	revisions, err := service.ListConfigRevisions(r.Context(), tenantID, projectID, limit, offset)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, configRevisionResponses(revisions))
+}
+
+func (h *HTTPHandler) GetConfigRevision(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	revisionID, ok := revisionIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	revision, err := service.GetConfigRevision(r.Context(), tenantID, projectID, revisionID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, configRevisionResponseFromDomain(*revision))
+}
+
 func (h *HTTPHandler) CompleteProjectTask(w http.ResponseWriter, r *http.Request) {
 	tenantID, runtimeNodeID, taskID, service, ok := h.runtimeProjectTaskContext(w, r)
 	if !ok {
@@ -633,6 +1021,24 @@ func projectTaskIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID
 	return taskID, true
 }
 
+func evidenceIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	evidenceID, err := uuid.Parse(chi.URLParam(r, "evidenceId"))
+	if err != nil || evidenceID == uuid.Nil {
+		http.Error(w, "invalid evidence id", http.StatusBadRequest)
+		return uuid.Nil, false
+	}
+	return evidenceID, true
+}
+
+func revisionIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	revisionID, err := uuid.Parse(chi.URLParam(r, "revisionId"))
+	if err != nil || revisionID == uuid.Nil {
+		http.Error(w, "invalid config revision id", http.StatusBadRequest)
+		return uuid.Nil, false
+	}
+	return revisionID, true
+}
+
 func paginationFromRequest(w http.ResponseWriter, r *http.Request) (int32, int32, bool) {
 	limit, ok := int32QueryParam(w, r, "limit")
 	if !ok {
@@ -670,13 +1076,13 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, target any) bool {
 
 func writeHandlerError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectMember):
+	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectMember), errors.Is(err, ErrInvalidProjectEvidence), errors.Is(err, ErrInvalidProjectAcceptance):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrProjectNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
 	case errors.Is(err, ErrProjectTaskForbidden):
 		http.Error(w, "project task forbidden", http.StatusForbidden)
-	case errors.Is(err, ErrProjectArchived):
+	case errors.Is(err, ErrProjectArchived), errors.Is(err, ErrProjectArchiveBlocked):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -761,6 +1167,55 @@ type requestProjectTaskTransferBody struct {
 	SuggestedEmployeeType       string      `json:"suggested_employee_type"`
 	SuggestedDigitalEmployeeIDs []uuid.UUID `json:"suggested_digital_employee_ids"`
 	MissingContextRefs          []any       `json:"missing_context_refs"`
+}
+
+type createEvidenceBody struct {
+	TenantID           uuid.UUID      `json:"tenant_id,omitempty"`
+	ProjectID          uuid.UUID      `json:"project_id,omitempty"`
+	ActorUserID        uuid.UUID      `json:"actor_user_id,omitempty"`
+	ActorID            uuid.UUID      `json:"actor_id,omitempty"`
+	ProjectTaskID      *uuid.UUID     `json:"project_task_id"`
+	RouteDecisionID    *uuid.UUID     `json:"route_decision_id"`
+	ExecutionSummaryID *uuid.UUID     `json:"execution_summary_id"`
+	EvidenceType       string         `json:"evidence_type"`
+	Title              string         `json:"title"`
+	Summary            string         `json:"summary"`
+	SourceType         string         `json:"source_type"`
+	SourceRef          string         `json:"source_ref"`
+	ArtifactRefID      *uuid.UUID     `json:"artifact_ref_id"`
+	SubmittedByType    string         `json:"submitted_by_type,omitempty"`
+	SubmittedByID      *uuid.UUID     `json:"submitted_by_id,omitempty"`
+	Metadata           map[string]any `json:"metadata"`
+}
+
+type patchEvidenceBody struct {
+	TenantID           uuid.UUID                  `json:"tenant_id,omitempty"`
+	ProjectID          uuid.UUID                  `json:"project_id,omitempty"`
+	EvidenceID         uuid.UUID                  `json:"evidence_id,omitempty"`
+	ActorUserID        uuid.UUID                  `json:"actor_user_id,omitempty"`
+	VerificationStatus EvidenceVerificationStatus `json:"verification_status"`
+	Metadata           map[string]any             `json:"metadata"`
+}
+
+type createAcceptanceBody struct {
+	TenantID         uuid.UUID   `json:"tenant_id,omitempty"`
+	ProjectID        uuid.UUID   `json:"project_id,omitempty"`
+	AcceptedByUserID uuid.UUID   `json:"accepted_by_user_id,omitempty"`
+	Status           string      `json:"status"`
+	Conclusion       string      `json:"conclusion"`
+	Summary          string      `json:"summary"`
+	EvidenceRefIDs   []uuid.UUID `json:"evidence_ref_ids"`
+	ReportRefIDs     []uuid.UUID `json:"report_ref_ids"`
+	UnresolvedRisks  []any       `json:"unresolved_risks"`
+}
+
+type createArchiveSnapshotBody struct {
+	TenantID        uuid.UUID `json:"tenant_id,omitempty"`
+	ProjectID       uuid.UUID `json:"project_id,omitempty"`
+	CreatedByUserID uuid.UUID `json:"created_by_user_id,omitempty"`
+	SnapshotType    string    `json:"snapshot_type"`
+	Summary         string    `json:"summary"`
+	ObjectRef       string    `json:"object_ref"`
 }
 
 type projectResponse struct {
@@ -929,15 +1384,144 @@ type projectDemandResponse struct {
 	CreatedEventID    *string             `json:"created_event_id,omitempty"`
 }
 
-type projectConfigRevisionResponse struct {
+type projectEvidenceResponse struct {
+	ID                 string                     `json:"id"`
+	TenantID           string                     `json:"tenant_id"`
+	ProjectID          string                     `json:"project_id"`
+	ProjectTaskID      *string                    `json:"project_task_id,omitempty"`
+	RouteDecisionID    *string                    `json:"route_decision_id,omitempty"`
+	ExecutionSummaryID *string                    `json:"execution_summary_id,omitempty"`
+	EvidenceType       string                     `json:"evidence_type"`
+	Title              string                     `json:"title"`
+	Summary            *string                    `json:"summary,omitempty"`
+	SourceType         string                     `json:"source_type"`
+	SourceRef          string                     `json:"source_ref"`
+	ArtifactRefID      *string                    `json:"artifact_ref_id,omitempty"`
+	SubmittedByType    string                     `json:"submitted_by_type"`
+	SubmittedByID      *string                    `json:"submitted_by_id,omitempty"`
+	VerificationStatus EvidenceVerificationStatus `json:"verification_status"`
+	Metadata           map[string]any             `json:"metadata"`
+	CreatedEventID     *string                    `json:"created_event_id,omitempty"`
+	CreatedAt          string                     `json:"created_at,omitempty"`
+	UpdatedAt          string                     `json:"updated_at,omitempty"`
+}
+
+type projectArtifactResponse struct {
 	ID              string         `json:"id"`
 	TenantID        string         `json:"tenant_id"`
 	ProjectID       string         `json:"project_id"`
-	RevisionNumber  int32          `json:"revision_number"`
-	ConfigSnapshot  map[string]any `json:"config_snapshot"`
-	ChangeSummary   *string        `json:"change_summary,omitempty"`
-	CreatedByUserID string         `json:"created_by_user_id"`
+	ProjectTaskID   *string        `json:"project_task_id,omitempty"`
+	ArtifactID      *string        `json:"artifact_id,omitempty"`
+	ArtifactType    string         `json:"artifact_type"`
+	Title           string         `json:"title"`
+	ObjectRef       string         `json:"object_ref"`
+	ContentType     *string        `json:"content_type,omitempty"`
+	SizeBytes       *int64         `json:"size_bytes,omitempty"`
+	Checksum        *string        `json:"checksum,omitempty"`
+	RetentionStatus string         `json:"retention_status"`
+	RetentionHoldID *string        `json:"retention_hold_id,omitempty"`
+	Metadata        map[string]any `json:"metadata"`
 	CreatedEventID  *string        `json:"created_event_id,omitempty"`
+	CreatedAt       string         `json:"created_at,omitempty"`
+	UpdatedAt       string         `json:"updated_at,omitempty"`
+}
+
+type projectReportResponse struct {
+	ID              string  `json:"id"`
+	TenantID        string  `json:"tenant_id"`
+	ProjectID       string  `json:"project_id"`
+	ReportType      string  `json:"report_type"`
+	Title           string  `json:"title"`
+	Summary         *string `json:"summary,omitempty"`
+	ObjectRef       string  `json:"object_ref"`
+	Format          string  `json:"format"`
+	GeneratedByType string  `json:"generated_by_type"`
+	GeneratedByID   *string `json:"generated_by_id,omitempty"`
+	CreatedEventID  *string `json:"created_event_id,omitempty"`
+	CreatedAt       string  `json:"created_at,omitempty"`
+}
+
+type projectBudgetLedgerResponse struct {
+	ID                string  `json:"id"`
+	TenantID          string  `json:"tenant_id"`
+	ProjectID         string  `json:"project_id"`
+	CoordinationJobID *string `json:"coordination_job_id,omitempty"`
+	ProjectTaskID     *string `json:"project_task_id,omitempty"`
+	DigitalEmployeeID *string `json:"digital_employee_id,omitempty"`
+	CostType          string  `json:"cost_type"`
+	EstimatedTokens   *int64  `json:"estimated_tokens,omitempty"`
+	ActualTokens      *int64  `json:"actual_tokens,omitempty"`
+	EstimatedCost     string  `json:"estimated_cost"`
+	ActualCost        string  `json:"actual_cost"`
+	Source            string  `json:"source"`
+	Reason            *string `json:"reason,omitempty"`
+	CreatedEventID    *string `json:"created_event_id,omitempty"`
+	CreatedAt         string  `json:"created_at,omitempty"`
+}
+
+type projectBudgetSummaryResponse struct {
+	EstimatedTokens int64  `json:"estimated_tokens"`
+	ActualTokens    int64  `json:"actual_tokens"`
+	EstimatedCost   string `json:"estimated_cost"`
+	ActualCost      string `json:"actual_cost"`
+	LedgerCount     int32  `json:"ledger_count"`
+}
+
+type projectAcceptanceResponse struct {
+	ID               string   `json:"id"`
+	TenantID         string   `json:"tenant_id"`
+	ProjectID        string   `json:"project_id"`
+	AcceptedByUserID string   `json:"accepted_by_user_id"`
+	Status           string   `json:"status"`
+	Conclusion       string   `json:"conclusion"`
+	Summary          *string  `json:"summary,omitempty"`
+	EvidenceRefIDs   []string `json:"evidence_ref_ids"`
+	ReportRefIDs     []string `json:"report_ref_ids"`
+	UnresolvedRisks  []any    `json:"unresolved_risks"`
+	CreatedEventID   *string  `json:"created_event_id,omitempty"`
+	CreatedAt        string   `json:"created_at,omitempty"`
+}
+
+type projectArchivePreviewResponse struct {
+	ProjectID           string `json:"project_id"`
+	EvidenceCount       int64  `json:"evidence_count"`
+	ArtifactCount       int64  `json:"artifact_count"`
+	ReportCount         int64  `json:"report_count"`
+	RetentionPending    bool   `json:"retention_pending"`
+	BlockedReasons      []any  `json:"blocked_reasons"`
+	EstimatedObjectRefs []any  `json:"estimated_object_refs"`
+}
+
+type projectArchiveSnapshotResponse struct {
+	ID                   string         `json:"id"`
+	TenantID             string         `json:"tenant_id"`
+	ProjectID            string         `json:"project_id"`
+	SnapshotType         string         `json:"snapshot_type"`
+	Status               string         `json:"status"`
+	ObjectRef            *string        `json:"object_ref,omitempty"`
+	Summary              *string        `json:"summary,omitempty"`
+	IncludedCounts       map[string]any `json:"included_counts"`
+	RetainedArtifactIDs  []string       `json:"retained_artifact_ids"`
+	RetentionLockEventID *string        `json:"retention_lock_event_id,omitempty"`
+	CreatedByUserID      string         `json:"created_by_user_id"`
+	CreatedEventID       *string        `json:"created_event_id,omitempty"`
+	CreatedAt            string         `json:"created_at,omitempty"`
+}
+
+type projectConfigRevisionResponse struct {
+	ID                 string         `json:"id"`
+	TenantID           string         `json:"tenant_id"`
+	ProjectID          string         `json:"project_id"`
+	RevisionNumber     int32          `json:"revision_number"`
+	ConfigSnapshot     map[string]any `json:"config_snapshot"`
+	ChangeSummary      *string        `json:"change_summary,omitempty"`
+	CreatedByUserID    string         `json:"created_by_user_id"`
+	CreatedEventID     *string        `json:"created_event_id,omitempty"`
+	CreatedAt          string         `json:"created_at,omitempty"`
+	ChangedSections    []any          `json:"changed_sections"`
+	PreviousRevisionID *string        `json:"previous_revision_id,omitempty"`
+	PolicyFingerprint  *string        `json:"policy_fingerprint,omitempty"`
+	DiffSummary        map[string]any `json:"diff_summary"`
 }
 
 type projectConfigResponse struct {
@@ -1215,16 +1799,205 @@ func demandResponseFromDomain(demand ProjectDemand) projectDemandResponse {
 	}
 }
 
+func evidenceResponses(evidence []ProjectEvidenceRef) []projectEvidenceResponse {
+	responses := make([]projectEvidenceResponse, 0, len(evidence))
+	for _, item := range evidence {
+		responses = append(responses, evidenceResponseFromDomain(item))
+	}
+	return responses
+}
+
+func evidenceResponseFromDomain(evidence ProjectEvidenceRef) projectEvidenceResponse {
+	return projectEvidenceResponse{
+		ID:                 evidence.ID.String(),
+		TenantID:           evidence.TenantID.String(),
+		ProjectID:          evidence.ProjectID.String(),
+		ProjectTaskID:      stringPtr(evidence.ProjectTaskID),
+		RouteDecisionID:    stringPtr(evidence.RouteDecisionID),
+		ExecutionSummaryID: stringPtr(evidence.ExecutionSummaryID),
+		EvidenceType:       evidence.EvidenceType,
+		Title:              evidence.Title,
+		Summary:            evidence.Summary,
+		SourceType:         evidence.SourceType,
+		SourceRef:          evidence.SourceRef,
+		ArtifactRefID:      stringPtr(evidence.ArtifactRefID),
+		SubmittedByType:    evidence.SubmittedByType,
+		SubmittedByID:      stringPtr(evidence.SubmittedByID),
+		VerificationStatus: evidence.VerificationStatus,
+		Metadata:           mapOrEmpty(evidence.Metadata),
+		CreatedEventID:     stringPtr(evidence.CreatedEventID),
+		CreatedAt:          timeValue(evidence.CreatedAt),
+		UpdatedAt:          timeValue(evidence.UpdatedAt),
+	}
+}
+
+func artifactResponses(artifacts []ProjectArtifactRef) []projectArtifactResponse {
+	responses := make([]projectArtifactResponse, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		responses = append(responses, artifactResponseFromDomain(artifact))
+	}
+	return responses
+}
+
+func artifactResponseFromDomain(artifact ProjectArtifactRef) projectArtifactResponse {
+	return projectArtifactResponse{
+		ID:              artifact.ID.String(),
+		TenantID:        artifact.TenantID.String(),
+		ProjectID:       artifact.ProjectID.String(),
+		ProjectTaskID:   stringPtr(artifact.ProjectTaskID),
+		ArtifactID:      stringPtr(artifact.ArtifactID),
+		ArtifactType:    artifact.ArtifactType,
+		Title:           artifact.Title,
+		ObjectRef:       artifact.ObjectRef,
+		ContentType:     artifact.ContentType,
+		SizeBytes:       artifact.SizeBytes,
+		Checksum:        artifact.Checksum,
+		RetentionStatus: artifact.RetentionStatus,
+		RetentionHoldID: stringPtr(artifact.RetentionHoldID),
+		Metadata:        mapOrEmpty(artifact.Metadata),
+		CreatedEventID:  stringPtr(artifact.CreatedEventID),
+		CreatedAt:       timeValue(artifact.CreatedAt),
+		UpdatedAt:       timeValue(artifact.UpdatedAt),
+	}
+}
+
+func reportResponses(reports []ProjectReportRef) []projectReportResponse {
+	responses := make([]projectReportResponse, 0, len(reports))
+	for _, report := range reports {
+		responses = append(responses, reportResponseFromDomain(report))
+	}
+	return responses
+}
+
+func reportResponseFromDomain(report ProjectReportRef) projectReportResponse {
+	return projectReportResponse{
+		ID:              report.ID.String(),
+		TenantID:        report.TenantID.String(),
+		ProjectID:       report.ProjectID.String(),
+		ReportType:      report.ReportType,
+		Title:           report.Title,
+		Summary:         report.Summary,
+		ObjectRef:       report.ObjectRef,
+		Format:          report.Format,
+		GeneratedByType: report.GeneratedByType,
+		GeneratedByID:   stringPtr(report.GeneratedByID),
+		CreatedEventID:  stringPtr(report.CreatedEventID),
+		CreatedAt:       timeValue(report.CreatedAt),
+	}
+}
+
+func budgetLedgerResponses(ledger []ProjectBudgetLedgerEntry) []projectBudgetLedgerResponse {
+	responses := make([]projectBudgetLedgerResponse, 0, len(ledger))
+	for _, entry := range ledger {
+		responses = append(responses, projectBudgetLedgerResponse{
+			ID:                entry.ID.String(),
+			TenantID:          entry.TenantID.String(),
+			ProjectID:         entry.ProjectID.String(),
+			CoordinationJobID: stringPtr(entry.CoordinationJobID),
+			ProjectTaskID:     stringPtr(entry.ProjectTaskID),
+			DigitalEmployeeID: stringPtr(entry.DigitalEmployeeID),
+			CostType:          entry.CostType,
+			EstimatedTokens:   entry.EstimatedTokens,
+			ActualTokens:      entry.ActualTokens,
+			EstimatedCost:     entry.EstimatedCost,
+			ActualCost:        entry.ActualCost,
+			Source:            entry.Source,
+			Reason:            entry.Reason,
+			CreatedEventID:    stringPtr(entry.CreatedEventID),
+			CreatedAt:         timeValue(entry.CreatedAt),
+		})
+	}
+	return responses
+}
+
+func budgetSummaryResponseFromDomain(summary ProjectBudgetSummary) projectBudgetSummaryResponse {
+	return projectBudgetSummaryResponse{
+		EstimatedTokens: summary.EstimatedTokens,
+		ActualTokens:    summary.ActualTokens,
+		EstimatedCost:   summary.EstimatedCost,
+		ActualCost:      summary.ActualCost,
+		LedgerCount:     summary.LedgerCount,
+	}
+}
+
+func acceptanceResponseFromDomain(acceptance ProjectAcceptanceRecord) projectAcceptanceResponse {
+	return projectAcceptanceResponse{
+		ID:               acceptance.ID.String(),
+		TenantID:         acceptance.TenantID.String(),
+		ProjectID:        acceptance.ProjectID.String(),
+		AcceptedByUserID: acceptance.AcceptedByUserID.String(),
+		Status:           acceptance.Status,
+		Conclusion:       acceptance.Conclusion,
+		Summary:          acceptance.Summary,
+		EvidenceRefIDs:   uuidStrings(acceptance.EvidenceRefIDs),
+		ReportRefIDs:     uuidStrings(acceptance.ReportRefIDs),
+		UnresolvedRisks:  sliceOrEmpty(acceptance.UnresolvedRisks),
+		CreatedEventID:   stringPtr(acceptance.CreatedEventID),
+		CreatedAt:        timeValue(acceptance.CreatedAt),
+	}
+}
+
+func archivePreviewResponseFromDomain(preview ProjectArchivePreview) projectArchivePreviewResponse {
+	return projectArchivePreviewResponse{
+		ProjectID:           preview.ProjectID.String(),
+		EvidenceCount:       preview.EvidenceCount,
+		ArtifactCount:       preview.ArtifactCount,
+		ReportCount:         preview.ReportCount,
+		RetentionPending:    preview.RetentionPending,
+		BlockedReasons:      sliceOrEmpty(preview.BlockedReasons),
+		EstimatedObjectRefs: sliceOrEmpty(preview.EstimatedObjectRefs),
+	}
+}
+
+func archiveSnapshotResponses(snapshots []ProjectArchiveSnapshot) []projectArchiveSnapshotResponse {
+	responses := make([]projectArchiveSnapshotResponse, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		responses = append(responses, archiveSnapshotResponseFromDomain(snapshot))
+	}
+	return responses
+}
+
+func archiveSnapshotResponseFromDomain(snapshot ProjectArchiveSnapshot) projectArchiveSnapshotResponse {
+	return projectArchiveSnapshotResponse{
+		ID:                   snapshot.ID.String(),
+		TenantID:             snapshot.TenantID.String(),
+		ProjectID:            snapshot.ProjectID.String(),
+		SnapshotType:         snapshot.SnapshotType,
+		Status:               snapshot.Status,
+		ObjectRef:            snapshot.ObjectRef,
+		Summary:              snapshot.Summary,
+		IncludedCounts:       mapOrEmpty(snapshot.IncludedCounts),
+		RetainedArtifactIDs:  uuidStrings(snapshot.RetainedArtifactIDs),
+		RetentionLockEventID: stringPtr(snapshot.RetentionLockEventID),
+		CreatedByUserID:      snapshot.CreatedByUserID.String(),
+		CreatedEventID:       stringPtr(snapshot.CreatedEventID),
+		CreatedAt:            timeValue(snapshot.CreatedAt),
+	}
+}
+
+func configRevisionResponses(revisions []ProjectConfigRevision) []projectConfigRevisionResponse {
+	responses := make([]projectConfigRevisionResponse, 0, len(revisions))
+	for _, revision := range revisions {
+		responses = append(responses, configRevisionResponseFromDomain(revision))
+	}
+	return responses
+}
+
 func configRevisionResponseFromDomain(revision ProjectConfigRevision) projectConfigRevisionResponse {
 	return projectConfigRevisionResponse{
-		ID:              revision.ID.String(),
-		TenantID:        revision.TenantID.String(),
-		ProjectID:       revision.ProjectID.String(),
-		RevisionNumber:  revision.RevisionNumber,
-		ConfigSnapshot:  mapOrEmpty(revision.ConfigSnapshot),
-		ChangeSummary:   revision.ChangeSummary,
-		CreatedByUserID: revision.CreatedByUserID.String(),
-		CreatedEventID:  stringPtr(revision.CreatedEventID),
+		ID:                 revision.ID.String(),
+		TenantID:           revision.TenantID.String(),
+		ProjectID:          revision.ProjectID.String(),
+		RevisionNumber:     revision.RevisionNumber,
+		ConfigSnapshot:     mapOrEmpty(revision.ConfigSnapshot),
+		ChangeSummary:      revision.ChangeSummary,
+		CreatedByUserID:    revision.CreatedByUserID.String(),
+		CreatedEventID:     stringPtr(revision.CreatedEventID),
+		CreatedAt:          timeValue(revision.CreatedAt),
+		ChangedSections:    sliceOrEmpty(revision.ChangedSections),
+		PreviousRevisionID: stringPtr(revision.PreviousRevisionID),
+		PolicyFingerprint:  revision.PolicyFingerprint,
+		DiffSummary:        mapOrEmpty(revision.DiffSummary),
 	}
 }
 

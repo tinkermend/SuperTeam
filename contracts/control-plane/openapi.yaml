@@ -1053,6 +1053,305 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/evidence:
+    get:
+      operationId: listProjectEvidence
+      summary: List project evidence refs
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ProjectEvidenceVerificationStatus"
+      responses:
+        "200":
+          description: Project evidence list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectEvidenceRef"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: createProjectEvidence
+      summary: Create a project evidence ref
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectEvidenceRequest"
+      responses:
+        "201":
+          description: Project evidence created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectEvidenceRef"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/evidence/{evidenceId}:
+    patch:
+      operationId: patchProjectEvidence
+      summary: Patch project evidence verification status
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EvidenceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchProjectEvidenceRequest"
+      responses:
+        "200":
+          description: Project evidence updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectEvidenceRef"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/artifacts:
+    get:
+      operationId: listProjectArtifacts
+      summary: List project artifact refs
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project artifact list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectArtifactRef"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/reports:
+    get:
+      operationId: listProjectReports
+      summary: List project report refs
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project report list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectReportRef"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/budget-ledger:
+    get:
+      operationId: listProjectBudgetLedger
+      summary: List project budget ledger entries
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project budget ledger
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectBudgetLedgerEntry"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/budget-summary:
+    get:
+      operationId: getProjectBudgetSummary
+      summary: Get project budget summary
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project budget summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectBudgetSummary"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/acceptance:
+    post:
+      operationId: createProjectAcceptance
+      summary: Submit project acceptance
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectAcceptanceRequest"
+      responses:
+        "201":
+          description: Project acceptance recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectAcceptanceRecord"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    get:
+      operationId: getProjectAcceptance
+      summary: Get latest project acceptance
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Latest project acceptance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectAcceptanceRecord"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/archive-preview:
+    get:
+      operationId: getProjectArchivePreview
+      summary: Preview project archive readiness
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project archive preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectArchivePreview"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/archive-snapshot:
+    post:
+      operationId: createProjectArchiveSnapshot
+      summary: Create project archive snapshot
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectArchiveSnapshotRequest"
+      responses:
+        "201":
+          description: Project archive snapshot created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectArchiveSnapshot"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/archive-snapshots:
+    get:
+      operationId: listProjectArchiveSnapshots
+      summary: List project archive snapshots
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project archive snapshot list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectArchiveSnapshot"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/config-revisions:
+    get:
+      operationId: listProjectConfigRevisions
+      summary: List project configuration revisions
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project configuration revision list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectConfigRevision"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/config-revisions/{revisionId}:
+    get:
+      operationId: getProjectConfigRevision
+      summary: Get project configuration revision
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/RevisionId"
+      responses:
+        "200":
+          description: Project configuration revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectConfigRevision"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/teams:
     get:
       operationId: listTeams
@@ -2068,8 +2367,22 @@ components:
       schema:
         type: string
         format: uuid
+    EvidenceId:
+      name: evidenceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     DecisionId:
       name: decisionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RevisionId:
+      name: revisionId
       in: path
       required: true
       schema:
@@ -2771,6 +3084,14 @@ components:
         - transfer.requested
         - decision.requested
         - decision.submitted
+        - project.evidence.linked
+        - project.evidence.verified
+        - project.artifact.linked
+        - project.report.linked
+        - project.budget.recorded
+        - project.acceptance.submitted
+        - project.archive_snapshot.created
+        - project.archive.retention_pending
     ProjectDemandSourceType:
       type: string
       enum:
@@ -2786,6 +3107,14 @@ components:
         - recorded
         - planning_pending
         - cancelled
+    ProjectEvidenceVerificationStatus:
+      type: string
+      enum:
+        - submitted
+        - linked
+        - verified
+        - rejected
+        - superseded
     Project:
       type: object
       required:
@@ -3019,6 +3348,377 @@ components:
         created_event_id:
           type: string
           format: uuid
+    ProjectEvidenceRef:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - evidence_type
+        - title
+        - source_type
+        - source_ref
+        - submitted_by_type
+        - verification_status
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        project_task_id:
+          type: string
+          format: uuid
+        route_decision_id:
+          type: string
+          format: uuid
+        execution_summary_id:
+          type: string
+          format: uuid
+        evidence_type:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        source_type:
+          type: string
+        source_ref:
+          type: string
+        artifact_ref_id:
+          type: string
+          format: uuid
+        submitted_by_type:
+          type: string
+        submitted_by_id:
+          type: string
+          format: uuid
+        verification_status:
+          $ref: "#/components/schemas/ProjectEvidenceVerificationStatus"
+        metadata:
+          type: object
+          additionalProperties: true
+        created_event_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProjectArtifactRef:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - artifact_type
+        - title
+        - object_ref
+        - retention_status
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        project_task_id:
+          type: string
+          format: uuid
+        artifact_id:
+          type: string
+          format: uuid
+        artifact_type:
+          type: string
+        title:
+          type: string
+        object_ref:
+          type: string
+        content_type:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        checksum:
+          type: string
+        retention_status:
+          type: string
+        retention_hold_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+          additionalProperties: true
+        created_event_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProjectReportRef:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - report_type
+        - title
+        - object_ref
+        - format
+        - generated_by_type
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        report_type:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        object_ref:
+          type: string
+        format:
+          type: string
+        generated_by_type:
+          type: string
+        generated_by_id:
+          type: string
+          format: uuid
+        created_event_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+    ProjectBudgetLedgerEntry:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - cost_type
+        - estimated_cost
+        - actual_cost
+        - source
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        coordination_job_id:
+          type: string
+          format: uuid
+        project_task_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        cost_type:
+          type: string
+        estimated_tokens:
+          type: integer
+          format: int64
+        actual_tokens:
+          type: integer
+          format: int64
+        estimated_cost:
+          type: string
+        actual_cost:
+          type: string
+        source:
+          type: string
+        reason:
+          type: string
+        created_event_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+    ProjectBudgetSummary:
+      type: object
+      required:
+        - estimated_tokens
+        - actual_tokens
+        - estimated_cost
+        - actual_cost
+        - ledger_count
+      properties:
+        estimated_tokens:
+          type: integer
+          format: int64
+        actual_tokens:
+          type: integer
+          format: int64
+        estimated_cost:
+          type: string
+        actual_cost:
+          type: string
+        ledger_count:
+          type: integer
+          format: int32
+    ProjectAcceptanceRecord:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - accepted_by_user_id
+        - status
+        - conclusion
+        - evidence_ref_ids
+        - report_ref_ids
+        - unresolved_risks
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        accepted_by_user_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - accepted
+            - rejected
+            - needs_more_evidence
+            - partially_accepted
+        conclusion:
+          type: string
+        summary:
+          type: string
+        evidence_ref_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        report_ref_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        unresolved_risks:
+          type: array
+          items: {}
+        created_event_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+    ProjectArchivePreview:
+      type: object
+      required:
+        - project_id
+        - evidence_count
+        - artifact_count
+        - report_count
+        - retention_pending
+        - blocked_reasons
+        - estimated_object_refs
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        evidence_count:
+          type: integer
+          format: int64
+        artifact_count:
+          type: integer
+          format: int64
+        report_count:
+          type: integer
+          format: int64
+        retention_pending:
+          type: boolean
+        blocked_reasons:
+          type: array
+          items: {}
+        estimated_object_refs:
+          type: array
+          items: {}
+    ProjectArchiveSnapshot:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - snapshot_type
+        - status
+        - included_counts
+        - retained_artifact_ids
+        - created_by_user_id
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        snapshot_type:
+          type: string
+        status:
+          type: string
+        object_ref:
+          type: string
+        summary:
+          type: string
+        included_counts:
+          type: object
+          additionalProperties: true
+        retained_artifact_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        retention_lock_event_id:
+          type: string
+          format: uuid
+        created_by_user_id:
+          type: string
+          format: uuid
+        created_event_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
     ProjectCoordinationJob:
       type: object
       required:
@@ -3404,6 +4104,55 @@ components:
           additionalProperties: true
         coordination_workflow:
           $ref: "#/components/schemas/ProjectCoordinationWorkflow"
+    ProjectConfigRevision:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - revision_number
+        - config_snapshot
+        - created_by_user_id
+        - changed_sections
+        - diff_summary
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        revision_number:
+          type: integer
+          format: int32
+        config_snapshot:
+          type: object
+          additionalProperties: true
+        change_summary:
+          type: string
+        created_by_user_id:
+          type: string
+          format: uuid
+        created_event_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        changed_sections:
+          type: array
+          items: {}
+        previous_revision_id:
+          type: string
+          format: uuid
+        policy_fingerprint:
+          type: string
+        diff_summary:
+          type: object
+          additionalProperties: true
     CreateProjectRequest:
       type: object
       required:
@@ -3512,6 +4261,90 @@ components:
         attachments:
           type: array
           items: {}
+    CreateProjectEvidenceRequest:
+      type: object
+      required:
+        - evidence_type
+        - title
+        - source_type
+        - source_ref
+      properties:
+        project_task_id:
+          type: string
+          format: uuid
+        route_decision_id:
+          type: string
+          format: uuid
+        execution_summary_id:
+          type: string
+          format: uuid
+        evidence_type:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        source_type:
+          type: string
+        source_ref:
+          type: string
+        artifact_ref_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+          additionalProperties: true
+    PatchProjectEvidenceRequest:
+      type: object
+      required:
+        - verification_status
+      properties:
+        verification_status:
+          $ref: "#/components/schemas/ProjectEvidenceVerificationStatus"
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateProjectAcceptanceRequest:
+      type: object
+      required:
+        - status
+        - conclusion
+      properties:
+        status:
+          type: string
+          enum:
+            - accepted
+            - rejected
+            - needs_more_evidence
+            - partially_accepted
+        conclusion:
+          type: string
+        summary:
+          type: string
+        evidence_ref_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        report_ref_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        unresolved_risks:
+          type: array
+          items: {}
+    CreateProjectArchiveSnapshotRequest:
+      type: object
+      required:
+        - snapshot_type
+      properties:
+        snapshot_type:
+          type: string
+        summary:
+          type: string
+        object_ref:
+          type: string
     ResolveProjectDecisionRequest:
       type: object
       required:
