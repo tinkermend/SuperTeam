@@ -50,7 +50,7 @@ export function ProjectGovernanceTabs({
   const unresolvedRiskCount = acceptance?.unresolved_risks.length ?? 0;
 
   return (
-    <Tabs className="grid w-full min-w-0 gap-3" defaultValue="evidence">
+    <Tabs className="flex w-full min-w-0 flex-col gap-3" defaultValue="evidence">
       <div className="w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden pb-1 [-webkit-overflow-scrolling:touch]">
         <LiquidTabsList
           aria-label="项目详情治理视图"
