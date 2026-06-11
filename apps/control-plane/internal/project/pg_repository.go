@@ -755,6 +755,310 @@ func (r *PgRepository) ListDecisionRequests(ctx context.Context, tenantID, proje
 	return decisionRequestsFromRecords(rows)
 }
 
+func (r *PgRepository) CreateEvidenceRef(ctx context.Context, req CreateEvidenceRefRequest) (ProjectEvidenceRef, error) {
+	metadata, err := jsonbObject(req.Metadata, "metadata")
+	if err != nil {
+		return ProjectEvidenceRef{}, err
+	}
+	row, err := r.q.CreateProjectEvidenceRef(ctx, queries.CreateProjectEvidenceRefParams{
+		TenantID:           req.TenantID,
+		ProjectID:          req.ProjectID,
+		ProjectTaskID:      nullUUID(req.ProjectTaskID),
+		RouteDecisionID:    nullUUID(req.RouteDecisionID),
+		ExecutionSummaryID: nullUUID(req.ExecutionSummaryID),
+		EvidenceType:       req.EvidenceType,
+		Title:              req.Title,
+		Summary:            textOrNull(req.Summary),
+		SourceType:         req.SourceType,
+		SourceRef:          req.SourceRef,
+		ArtifactRefID:      nullUUID(req.ArtifactRefID),
+		SubmittedByType:    req.SubmittedByType,
+		SubmittedByID:      nullUUID(req.SubmittedByID),
+		VerificationStatus: string(req.VerificationStatus),
+		Metadata:           metadata,
+		CreatedEventID:     nullUUID(req.CreatedEventID),
+	})
+	if err != nil {
+		return ProjectEvidenceRef{}, err
+	}
+	return evidenceRefFromRecord(row)
+}
+
+func (r *PgRepository) ListEvidenceRefs(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error) {
+	rows, err := r.q.ListProjectEvidenceRefs(ctx, queries.ListProjectEvidenceRefsParams{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		VerificationStatus: evidenceVerificationStatusPtr(status),
+		Limit:              limit,
+		Offset:             offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return evidenceRefsFromRecords(rows)
+}
+
+func (r *PgRepository) UpdateEvidenceVerificationStatus(ctx context.Context, req UpdateEvidenceVerificationStatusRequest) (ProjectEvidenceRef, error) {
+	metadata, err := jsonbObjectOrNull(req.Metadata, "metadata")
+	if err != nil {
+		return ProjectEvidenceRef{}, err
+	}
+	row, err := r.q.UpdateProjectEvidenceVerificationStatus(ctx, queries.UpdateProjectEvidenceVerificationStatusParams{
+		VerificationStatus: string(req.VerificationStatus),
+		Metadata:           metadata,
+		TenantID:           req.TenantID,
+		ProjectID:          req.ProjectID,
+		ID:                 req.ID,
+	})
+	if err != nil {
+		return ProjectEvidenceRef{}, err
+	}
+	return evidenceRefFromRecord(row)
+}
+
+func (r *PgRepository) CreateArtifactRef(ctx context.Context, req CreateArtifactRefRequest) (ProjectArtifactRef, error) {
+	metadata, err := jsonbObject(req.Metadata, "metadata")
+	if err != nil {
+		return ProjectArtifactRef{}, err
+	}
+	row, err := r.q.CreateProjectArtifactRef(ctx, queries.CreateProjectArtifactRefParams{
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		ProjectTaskID:   nullUUID(req.ProjectTaskID),
+		ArtifactID:      nullUUID(req.ArtifactID),
+		ArtifactType:    req.ArtifactType,
+		Title:           req.Title,
+		ObjectRef:       req.ObjectRef,
+		ContentType:     textOrNull(req.ContentType),
+		SizeBytes:       int8Ptr(req.SizeBytes),
+		Checksum:        textOrNull(req.Checksum),
+		RetentionStatus: textOrNull(req.RetentionStatus),
+		RetentionHoldID: nullUUID(req.RetentionHoldID),
+		Metadata:        metadata,
+		CreatedEventID:  nullUUID(req.CreatedEventID),
+	})
+	if err != nil {
+		return ProjectArtifactRef{}, err
+	}
+	return artifactRefFromRecord(row)
+}
+
+func (r *PgRepository) ListArtifactRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error) {
+	rows, err := r.q.ListProjectArtifactRefs(ctx, queries.ListProjectArtifactRefsParams{
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		ArtifactType:    pgtype.Text{},
+		RetentionStatus: pgtype.Text{},
+		Limit:           limit,
+		Offset:          offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return artifactRefsFromRecords(rows)
+}
+
+func (r *PgRepository) UpdateArtifactRetention(ctx context.Context, req UpdateArtifactRetentionRequest) (ProjectArtifactRef, error) {
+	row, err := r.q.UpdateProjectArtifactRetention(ctx, queries.UpdateProjectArtifactRetentionParams{
+		RetentionStatus: req.RetentionStatus,
+		RetentionHoldID: nullUUID(req.RetentionHoldID),
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		ID:              req.ID,
+	})
+	if err != nil {
+		return ProjectArtifactRef{}, err
+	}
+	return artifactRefFromRecord(row)
+}
+
+func (r *PgRepository) CreateReportRef(ctx context.Context, req CreateReportRefRequest) (ProjectReportRef, error) {
+	row, err := r.q.CreateProjectReportRef(ctx, queries.CreateProjectReportRefParams{
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		ReportType:      req.ReportType,
+		Title:           req.Title,
+		Summary:         textOrNull(req.Summary),
+		ObjectRef:       req.ObjectRef,
+		Format:          req.Format,
+		GeneratedByType: req.GeneratedByType,
+		GeneratedByID:   nullUUID(req.GeneratedByID),
+		CreatedEventID:  nullUUID(req.CreatedEventID),
+	})
+	if err != nil {
+		return ProjectReportRef{}, err
+	}
+	return reportRefFromRecord(row)
+}
+
+func (r *PgRepository) ListReportRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectReportRef, error) {
+	rows, err := r.q.ListProjectReportRefs(ctx, queries.ListProjectReportRefsParams{
+		TenantID:   tenantID,
+		ProjectID:  projectID,
+		ReportType: pgtype.Text{},
+		Limit:      limit,
+		Offset:     offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return reportRefsFromRecords(rows)
+}
+
+func (r *PgRepository) CreateBudgetLedgerEntry(ctx context.Context, req CreateBudgetLedgerEntryRequest) (ProjectBudgetLedgerEntry, error) {
+	estimatedCost, err := numericFromDecimalString(req.EstimatedCost)
+	if err != nil {
+		return ProjectBudgetLedgerEntry{}, fmt.Errorf("estimated_cost: %w", err)
+	}
+	actualCost, err := numericFromDecimalString(req.ActualCost)
+	if err != nil {
+		return ProjectBudgetLedgerEntry{}, fmt.Errorf("actual_cost: %w", err)
+	}
+	row, err := r.q.CreateProjectBudgetLedgerEntry(ctx, queries.CreateProjectBudgetLedgerEntryParams{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		CoordinationJobID: nullUUID(req.CoordinationJobID),
+		ProjectTaskID:     nullUUID(req.ProjectTaskID),
+		DigitalEmployeeID: nullUUID(req.DigitalEmployeeID),
+		CostType:          req.CostType,
+		EstimatedTokens:   int8Ptr(req.EstimatedTokens),
+		ActualTokens:      int8Ptr(req.ActualTokens),
+		EstimatedCost:     estimatedCost,
+		ActualCost:        actualCost,
+		Source:            req.Source,
+		Reason:            textOrNull(req.Reason),
+		CreatedEventID:    nullUUID(req.CreatedEventID),
+	})
+	if err != nil {
+		return ProjectBudgetLedgerEntry{}, err
+	}
+	return budgetLedgerEntryFromRecord(row)
+}
+
+func (r *PgRepository) ListBudgetLedger(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectBudgetLedgerEntry, error) {
+	rows, err := r.q.ListProjectBudgetLedger(ctx, queries.ListProjectBudgetLedgerParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		CostType:  pgtype.Text{},
+		Limit:     limit,
+		Offset:    offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return budgetLedgerEntriesFromRecords(rows)
+}
+
+func (r *PgRepository) GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectBudgetSummary, error) {
+	row, err := r.q.GetProjectBudgetSummary(ctx, queries.GetProjectBudgetSummaryParams{TenantID: tenantID, ProjectID: projectID})
+	if err != nil {
+		return ProjectBudgetSummary{}, err
+	}
+	return budgetSummaryFromRecord(row), nil
+}
+
+func (r *PgRepository) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error) {
+	evidenceRefIDs, err := jsonbUUIDSlice(req.EvidenceRefIDs, "evidence_ref_ids")
+	if err != nil {
+		return ProjectAcceptanceRecord{}, err
+	}
+	reportRefIDs, err := jsonbUUIDSlice(req.ReportRefIDs, "report_ref_ids")
+	if err != nil {
+		return ProjectAcceptanceRecord{}, err
+	}
+	unresolvedRisks, err := jsonbArray(req.UnresolvedRisks, "unresolved_risks")
+	if err != nil {
+		return ProjectAcceptanceRecord{}, err
+	}
+	row, err := r.q.CreateProjectAcceptanceRecord(ctx, queries.CreateProjectAcceptanceRecordParams{
+		TenantID:         req.TenantID,
+		ProjectID:        req.ProjectID,
+		AcceptedByUserID: req.AcceptedByUserID,
+		Status:           req.Status,
+		Conclusion:       req.Conclusion,
+		Summary:          textOrNull(req.Summary),
+		EvidenceRefIds:   evidenceRefIDs,
+		ReportRefIds:     reportRefIDs,
+		UnresolvedRisks:  unresolvedRisks,
+		CreatedEventID:   nullUUID(req.CreatedEventID),
+	})
+	if err != nil {
+		return ProjectAcceptanceRecord{}, err
+	}
+	return acceptanceRecordFromRecord(row)
+}
+
+func (r *PgRepository) GetLatestAcceptanceRecord(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectAcceptanceRecord, error) {
+	row, err := r.q.GetLatestProjectAcceptanceRecord(ctx, queries.GetLatestProjectAcceptanceRecordParams{TenantID: tenantID, ProjectID: projectID})
+	if err != nil {
+		return ProjectAcceptanceRecord{}, err
+	}
+	return acceptanceRecordFromRecord(row)
+}
+
+func (r *PgRepository) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotRequest) (ProjectArchiveSnapshot, error) {
+	includedCounts, err := jsonbObject(req.IncludedCounts, "included_counts")
+	if err != nil {
+		return ProjectArchiveSnapshot{}, err
+	}
+	retainedArtifactIDs, err := jsonbUUIDSlice(req.RetainedArtifactIDs, "retained_artifact_ids")
+	if err != nil {
+		return ProjectArchiveSnapshot{}, err
+	}
+	row, err := r.q.CreateProjectArchiveSnapshot(ctx, queries.CreateProjectArchiveSnapshotParams{
+		TenantID:             req.TenantID,
+		ProjectID:            req.ProjectID,
+		SnapshotType:         req.SnapshotType,
+		Status:               req.Status,
+		ObjectRef:            textOrNull(req.ObjectRef),
+		Summary:              textOrNull(req.Summary),
+		IncludedCounts:       includedCounts,
+		RetainedArtifactIds:  retainedArtifactIDs,
+		RetentionLockEventID: nullUUID(req.RetentionLockEventID),
+		CreatedByUserID:      req.CreatedByUserID,
+		CreatedEventID:       nullUUID(req.CreatedEventID),
+	})
+	if err != nil {
+		return ProjectArchiveSnapshot{}, err
+	}
+	return archiveSnapshotFromRecord(row)
+}
+
+func (r *PgRepository) ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArchiveSnapshot, error) {
+	rows, err := r.q.ListProjectArchiveSnapshots(ctx, queries.ListProjectArchiveSnapshotsParams{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		SnapshotType: pgtype.Text{},
+		Limit:        limit,
+		Offset:       offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return archiveSnapshotsFromRecords(rows)
+}
+
+func (r *PgRepository) ListConfigRevisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectConfigRevision, error) {
+	rows, err := r.q.ListProjectConfigRevisions(ctx, queries.ListProjectConfigRevisionsParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Limit:     limit,
+		Offset:    offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return configRevisionsFromRecords(rows)
+}
+
+func (r *PgRepository) GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (ProjectConfigRevision, error) {
+	row, err := r.q.GetProjectConfigRevision(ctx, queries.GetProjectConfigRevisionParams{TenantID: tenantID, ProjectID: projectID, ID: revisionID})
+	if err != nil {
+		return ProjectConfigRevision{}, err
+	}
+	return configRevisionFromRecord(row)
+}
+
 func projectFromRecord(row queries.Project) (Project, error) {
 	coordinationPolicy, err := mapFromJSON(row.CoordinationPolicy)
 	if err != nil {
@@ -886,16 +1190,28 @@ func configRevisionFromRecord(row queries.ProjectConfigRevision) (ProjectConfigR
 	if err != nil {
 		return ProjectConfigRevision{}, fmt.Errorf("config_snapshot: %w", err)
 	}
+	changedSections, err := anySliceFromJSON(row.ChangedSections)
+	if err != nil {
+		return ProjectConfigRevision{}, fmt.Errorf("changed_sections: %w", err)
+	}
+	diffSummary, err := mapFromJSON(row.DiffSummary)
+	if err != nil {
+		return ProjectConfigRevision{}, fmt.Errorf("diff_summary: %w", err)
+	}
 	return ProjectConfigRevision{
-		ID:              row.ID,
-		TenantID:        row.TenantID,
-		ProjectID:       row.ProjectID,
-		RevisionNumber:  row.RevisionNumber,
-		ConfigSnapshot:  snapshot,
-		ChangeSummary:   ptrText(row.ChangeSummary),
-		CreatedByUserID: row.CreatedByUserID,
-		CreatedEventID:  ptrUUID(row.CreatedEventID),
-		CreatedAt:       row.CreatedAt.Time,
+		ID:                 row.ID,
+		TenantID:           row.TenantID,
+		ProjectID:          row.ProjectID,
+		RevisionNumber:     row.RevisionNumber,
+		ConfigSnapshot:     snapshot,
+		ChangeSummary:      ptrText(row.ChangeSummary),
+		CreatedByUserID:    row.CreatedByUserID,
+		CreatedEventID:     ptrUUID(row.CreatedEventID),
+		CreatedAt:          row.CreatedAt.Time,
+		ChangedSections:    changedSections,
+		PreviousRevisionID: ptrUUID(row.PreviousRevisionID),
+		PolicyFingerprint:  ptrText(row.PolicyFingerprint),
+		DiffSummary:        diffSummary,
 	}, nil
 }
 
@@ -1058,6 +1374,172 @@ func decisionRequestFromRecord(row queries.ProjectDecisionRequest) (DecisionRequ
 	}, nil
 }
 
+func evidenceRefFromRecord(row queries.ProjectEvidenceRef) (ProjectEvidenceRef, error) {
+	metadata, err := mapFromJSON(row.Metadata)
+	if err != nil {
+		return ProjectEvidenceRef{}, fmt.Errorf("metadata: %w", err)
+	}
+	return ProjectEvidenceRef{
+		ID:                 row.ID,
+		TenantID:           row.TenantID,
+		ProjectID:          row.ProjectID,
+		ProjectTaskID:      ptrUUID(row.ProjectTaskID),
+		RouteDecisionID:    ptrUUID(row.RouteDecisionID),
+		ExecutionSummaryID: ptrUUID(row.ExecutionSummaryID),
+		EvidenceType:       row.EvidenceType,
+		Title:              row.Title,
+		Summary:            ptrText(row.Summary),
+		SourceType:         row.SourceType,
+		SourceRef:          row.SourceRef,
+		ArtifactRefID:      ptrUUID(row.ArtifactRefID),
+		SubmittedByType:    row.SubmittedByType,
+		SubmittedByID:      ptrUUID(row.SubmittedByID),
+		VerificationStatus: EvidenceVerificationStatus(row.VerificationStatus),
+		Metadata:           metadata,
+		CreatedEventID:     ptrUUID(row.CreatedEventID),
+		CreatedAt:          row.CreatedAt.Time,
+		UpdatedAt:          row.UpdatedAt.Time,
+	}, nil
+}
+
+func artifactRefFromRecord(row queries.ProjectArtifactRef) (ProjectArtifactRef, error) {
+	metadata, err := mapFromJSON(row.Metadata)
+	if err != nil {
+		return ProjectArtifactRef{}, fmt.Errorf("metadata: %w", err)
+	}
+	return ProjectArtifactRef{
+		ID:              row.ID,
+		TenantID:        row.TenantID,
+		ProjectID:       row.ProjectID,
+		ProjectTaskID:   ptrUUID(row.ProjectTaskID),
+		ArtifactID:      ptrUUID(row.ArtifactID),
+		ArtifactType:    row.ArtifactType,
+		Title:           row.Title,
+		ObjectRef:       row.ObjectRef,
+		ContentType:     ptrText(row.ContentType),
+		SizeBytes:       ptrInt8(row.SizeBytes),
+		Checksum:        ptrText(row.Checksum),
+		RetentionStatus: row.RetentionStatus,
+		RetentionHoldID: ptrUUID(row.RetentionHoldID),
+		Metadata:        metadata,
+		CreatedEventID:  ptrUUID(row.CreatedEventID),
+		CreatedAt:       row.CreatedAt.Time,
+		UpdatedAt:       row.UpdatedAt.Time,
+	}, nil
+}
+
+func reportRefFromRecord(row queries.ProjectReportRef) (ProjectReportRef, error) {
+	return ProjectReportRef{
+		ID:              row.ID,
+		TenantID:        row.TenantID,
+		ProjectID:       row.ProjectID,
+		ReportType:      row.ReportType,
+		Title:           row.Title,
+		Summary:         ptrText(row.Summary),
+		ObjectRef:       row.ObjectRef,
+		Format:          row.Format,
+		GeneratedByType: row.GeneratedByType,
+		GeneratedByID:   ptrUUID(row.GeneratedByID),
+		CreatedEventID:  ptrUUID(row.CreatedEventID),
+		CreatedAt:       row.CreatedAt.Time,
+	}, nil
+}
+
+func budgetLedgerEntryFromRecord(row queries.ProjectBudgetLedger) (ProjectBudgetLedgerEntry, error) {
+	estimatedCost, err := numericToString(row.EstimatedCost)
+	if err != nil {
+		return ProjectBudgetLedgerEntry{}, fmt.Errorf("estimated_cost: %w", err)
+	}
+	actualCost, err := numericToString(row.ActualCost)
+	if err != nil {
+		return ProjectBudgetLedgerEntry{}, fmt.Errorf("actual_cost: %w", err)
+	}
+	return ProjectBudgetLedgerEntry{
+		ID:                row.ID,
+		TenantID:          row.TenantID,
+		ProjectID:         row.ProjectID,
+		CoordinationJobID: ptrUUID(row.CoordinationJobID),
+		ProjectTaskID:     ptrUUID(row.ProjectTaskID),
+		DigitalEmployeeID: ptrUUID(row.DigitalEmployeeID),
+		CostType:          row.CostType,
+		EstimatedTokens:   ptrInt8(row.EstimatedTokens),
+		ActualTokens:      ptrInt8(row.ActualTokens),
+		EstimatedCost:     estimatedCost,
+		ActualCost:        actualCost,
+		Source:            row.Source,
+		Reason:            ptrText(row.Reason),
+		CreatedEventID:    ptrUUID(row.CreatedEventID),
+		CreatedAt:         row.CreatedAt.Time,
+	}, nil
+}
+
+func budgetSummaryFromRecord(row queries.GetProjectBudgetSummaryRow) ProjectBudgetSummary {
+	estimatedCost, _ := numericToString(row.EstimatedCost)
+	actualCost, _ := numericToString(row.ActualCost)
+	return ProjectBudgetSummary{
+		EstimatedTokens: row.EstimatedTokens,
+		ActualTokens:    row.ActualTokens,
+		EstimatedCost:   estimatedCost,
+		ActualCost:      actualCost,
+		LedgerCount:     row.LedgerCount,
+	}
+}
+
+func acceptanceRecordFromRecord(row queries.ProjectAcceptanceRecord) (ProjectAcceptanceRecord, error) {
+	evidenceRefIDs, err := uuidSliceFromJSON(row.EvidenceRefIds)
+	if err != nil {
+		return ProjectAcceptanceRecord{}, fmt.Errorf("evidence_ref_ids: %w", err)
+	}
+	reportRefIDs, err := uuidSliceFromJSON(row.ReportRefIds)
+	if err != nil {
+		return ProjectAcceptanceRecord{}, fmt.Errorf("report_ref_ids: %w", err)
+	}
+	unresolvedRisks, err := anySliceFromJSON(row.UnresolvedRisks)
+	if err != nil {
+		return ProjectAcceptanceRecord{}, fmt.Errorf("unresolved_risks: %w", err)
+	}
+	return ProjectAcceptanceRecord{
+		ID:               row.ID,
+		TenantID:         row.TenantID,
+		ProjectID:        row.ProjectID,
+		AcceptedByUserID: row.AcceptedByUserID,
+		Status:           row.Status,
+		Conclusion:       row.Conclusion,
+		Summary:          ptrText(row.Summary),
+		EvidenceRefIDs:   evidenceRefIDs,
+		ReportRefIDs:     reportRefIDs,
+		UnresolvedRisks:  unresolvedRisks,
+		CreatedEventID:   ptrUUID(row.CreatedEventID),
+		CreatedAt:        row.CreatedAt.Time,
+	}, nil
+}
+
+func archiveSnapshotFromRecord(row queries.ProjectArchiveSnapshot) (ProjectArchiveSnapshot, error) {
+	includedCounts, err := mapFromJSON(row.IncludedCounts)
+	if err != nil {
+		return ProjectArchiveSnapshot{}, fmt.Errorf("included_counts: %w", err)
+	}
+	retainedArtifactIDs, err := uuidSliceFromJSON(row.RetainedArtifactIds)
+	if err != nil {
+		return ProjectArchiveSnapshot{}, fmt.Errorf("retained_artifact_ids: %w", err)
+	}
+	return ProjectArchiveSnapshot{
+		ID:                   row.ID,
+		TenantID:             row.TenantID,
+		ProjectID:            row.ProjectID,
+		SnapshotType:         row.SnapshotType,
+		Status:               row.Status,
+		ObjectRef:            ptrText(row.ObjectRef),
+		Summary:              ptrText(row.Summary),
+		IncludedCounts:       includedCounts,
+		RetainedArtifactIDs:  retainedArtifactIDs,
+		RetentionLockEventID: ptrUUID(row.RetentionLockEventID),
+		CreatedByUserID:      row.CreatedByUserID,
+		CreatedEventID:       ptrUUID(row.CreatedEventID),
+		CreatedAt:            row.CreatedAt.Time,
+	}, nil
+}
+
 func projectsFromRecords(rows []queries.Project) ([]Project, error) {
 	projects := make([]Project, 0, len(rows))
 	for _, row := range rows {
@@ -1174,6 +1656,78 @@ func decisionRequestsFromRecords(rows []queries.ProjectDecisionRequest) ([]Decis
 	return requests, nil
 }
 
+func evidenceRefsFromRecords(rows []queries.ProjectEvidenceRef) ([]ProjectEvidenceRef, error) {
+	refs := make([]ProjectEvidenceRef, 0, len(rows))
+	for _, row := range rows {
+		ref, err := evidenceRefFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, ref)
+	}
+	return refs, nil
+}
+
+func artifactRefsFromRecords(rows []queries.ProjectArtifactRef) ([]ProjectArtifactRef, error) {
+	refs := make([]ProjectArtifactRef, 0, len(rows))
+	for _, row := range rows {
+		ref, err := artifactRefFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, ref)
+	}
+	return refs, nil
+}
+
+func reportRefsFromRecords(rows []queries.ProjectReportRef) ([]ProjectReportRef, error) {
+	refs := make([]ProjectReportRef, 0, len(rows))
+	for _, row := range rows {
+		ref, err := reportRefFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, ref)
+	}
+	return refs, nil
+}
+
+func budgetLedgerEntriesFromRecords(rows []queries.ProjectBudgetLedger) ([]ProjectBudgetLedgerEntry, error) {
+	entries := make([]ProjectBudgetLedgerEntry, 0, len(rows))
+	for _, row := range rows {
+		entry, err := budgetLedgerEntryFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
+}
+
+func archiveSnapshotsFromRecords(rows []queries.ProjectArchiveSnapshot) ([]ProjectArchiveSnapshot, error) {
+	snapshots := make([]ProjectArchiveSnapshot, 0, len(rows))
+	for _, row := range rows {
+		snapshot, err := archiveSnapshotFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots, nil
+}
+
+func configRevisionsFromRecords(rows []queries.ProjectConfigRevision) ([]ProjectConfigRevision, error) {
+	revisions := make([]ProjectConfigRevision, 0, len(rows))
+	for _, row := range rows {
+		revision, err := configRevisionFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		revisions = append(revisions, revision)
+	}
+	return revisions, nil
+}
+
 func textOrNull(value string) pgtype.Text {
 	if value == "" {
 		return pgtype.Text{}
@@ -1231,6 +1785,21 @@ func ptrTime(value pgtype.Timestamptz) *time.Time {
 	}
 	t := value.Time
 	return &t
+}
+
+func int8Ptr(value *int64) pgtype.Int8 {
+	if value == nil {
+		return pgtype.Int8{}
+	}
+	return pgtype.Int8{Int64: *value, Valid: true}
+}
+
+func ptrInt8(value pgtype.Int8) *int64 {
+	if !value.Valid {
+		return nil
+	}
+	n := value.Int64
+	return &n
 }
 
 func jsonbObject(value map[string]any, field string) ([]byte, error) {
@@ -1317,7 +1886,39 @@ func marshalJSON(value any, field string) ([]byte, error) {
 	return raw, nil
 }
 
+func numericFromDecimalString(value string) (pgtype.Numeric, error) {
+	if value == "" {
+		return pgtype.Numeric{}, nil
+	}
+	var numeric pgtype.Numeric
+	if err := numeric.Scan(value); err != nil {
+		return pgtype.Numeric{}, err
+	}
+	return numeric, nil
+}
+
+func numericToString(value pgtype.Numeric) (string, error) {
+	if !value.Valid {
+		return "", nil
+	}
+	encoded, err := value.Value()
+	if err != nil {
+		return "", err
+	}
+	if encoded == nil {
+		return "", nil
+	}
+	return fmt.Sprint(encoded), nil
+}
+
 func projectStatusPtr(status *ProjectStatus) pgtype.Text {
+	if status == nil {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: string(*status), Valid: true}
+}
+
+func evidenceVerificationStatusPtr(status *EvidenceVerificationStatus) pgtype.Text {
 	if status == nil {
 		return pgtype.Text{}
 	}

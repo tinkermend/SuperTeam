@@ -39,6 +39,23 @@ type Repository interface {
 	GetDecisionRequest(ctx context.Context, tenantID, projectID, decisionRequestID uuid.UUID) (DecisionRequest, error)
 	ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error)
 	ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error)
+	CreateEvidenceRef(ctx context.Context, req CreateEvidenceRefRequest) (ProjectEvidenceRef, error)
+	ListEvidenceRefs(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error)
+	UpdateEvidenceVerificationStatus(ctx context.Context, req UpdateEvidenceVerificationStatusRequest) (ProjectEvidenceRef, error)
+	CreateArtifactRef(ctx context.Context, req CreateArtifactRefRequest) (ProjectArtifactRef, error)
+	ListArtifactRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error)
+	UpdateArtifactRetention(ctx context.Context, req UpdateArtifactRetentionRequest) (ProjectArtifactRef, error)
+	CreateReportRef(ctx context.Context, req CreateReportRefRequest) (ProjectReportRef, error)
+	ListReportRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectReportRef, error)
+	CreateBudgetLedgerEntry(ctx context.Context, req CreateBudgetLedgerEntryRequest) (ProjectBudgetLedgerEntry, error)
+	ListBudgetLedger(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectBudgetLedgerEntry, error)
+	GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectBudgetSummary, error)
+	CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error)
+	GetLatestAcceptanceRecord(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectAcceptanceRecord, error)
+	CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotRequest) (ProjectArchiveSnapshot, error)
+	ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArchiveSnapshot, error)
+	ListConfigRevisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectConfigRevision, error)
+	GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (ProjectConfigRevision, error)
 }
 
 type ProjectTaskRuntimeBindingRepository interface {
@@ -192,4 +209,112 @@ type ResolveDecisionRequestRepositoryRequest struct {
 	ID              uuid.UUID
 	StatusSnapshot  string
 	ResolvedEventID *uuid.UUID
+}
+
+type CreateEvidenceRefRequest struct {
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	ProjectTaskID      *uuid.UUID
+	RouteDecisionID    *uuid.UUID
+	ExecutionSummaryID *uuid.UUID
+	EvidenceType       string
+	Title              string
+	Summary            string
+	SourceType         string
+	SourceRef          string
+	ArtifactRefID      *uuid.UUID
+	SubmittedByType    string
+	SubmittedByID      *uuid.UUID
+	VerificationStatus EvidenceVerificationStatus
+	Metadata           map[string]any
+	CreatedEventID     *uuid.UUID
+}
+
+type UpdateEvidenceVerificationStatusRequest struct {
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	ID                 uuid.UUID
+	VerificationStatus EvidenceVerificationStatus
+	Metadata           map[string]any
+}
+
+type CreateArtifactRefRequest struct {
+	TenantID        uuid.UUID
+	ProjectID       uuid.UUID
+	ProjectTaskID   *uuid.UUID
+	ArtifactID      *uuid.UUID
+	ArtifactType    string
+	Title           string
+	ObjectRef       string
+	ContentType     string
+	SizeBytes       *int64
+	Checksum        string
+	RetentionStatus string
+	RetentionHoldID *uuid.UUID
+	Metadata        map[string]any
+	CreatedEventID  *uuid.UUID
+}
+
+type UpdateArtifactRetentionRequest struct {
+	TenantID        uuid.UUID
+	ProjectID       uuid.UUID
+	ID              uuid.UUID
+	RetentionStatus string
+	RetentionHoldID *uuid.UUID
+}
+
+type CreateReportRefRequest struct {
+	TenantID        uuid.UUID
+	ProjectID       uuid.UUID
+	ReportType      string
+	Title           string
+	Summary         string
+	ObjectRef       string
+	Format          string
+	GeneratedByType string
+	GeneratedByID   *uuid.UUID
+	CreatedEventID  *uuid.UUID
+}
+
+type CreateBudgetLedgerEntryRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	CoordinationJobID *uuid.UUID
+	ProjectTaskID     *uuid.UUID
+	DigitalEmployeeID *uuid.UUID
+	CostType          string
+	EstimatedTokens   *int64
+	ActualTokens      *int64
+	EstimatedCost     string
+	ActualCost        string
+	Source            string
+	Reason            string
+	CreatedEventID    *uuid.UUID
+}
+
+type CreateAcceptanceRecordRequest struct {
+	TenantID         uuid.UUID
+	ProjectID        uuid.UUID
+	AcceptedByUserID uuid.UUID
+	Status           string
+	Conclusion       string
+	Summary          string
+	EvidenceRefIDs   []uuid.UUID
+	ReportRefIDs     []uuid.UUID
+	UnresolvedRisks  []any
+	CreatedEventID   *uuid.UUID
+}
+
+type CreateArchiveSnapshotRequest struct {
+	TenantID             uuid.UUID
+	ProjectID            uuid.UUID
+	SnapshotType         string
+	Status               string
+	ObjectRef            string
+	Summary              string
+	IncludedCounts       map[string]any
+	RetainedArtifactIDs  []uuid.UUID
+	RetentionLockEventID *uuid.UUID
+	CreatedByUserID      uuid.UUID
+	CreatedEventID       *uuid.UUID
 }

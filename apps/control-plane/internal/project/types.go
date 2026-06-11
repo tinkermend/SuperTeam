@@ -8,11 +8,14 @@ import (
 )
 
 var (
-	ErrInvalidProject       = errors.New("invalid project")
-	ErrInvalidProjectMember = errors.New("invalid project member")
-	ErrProjectNotFound      = errors.New("project not found")
-	ErrProjectArchived      = errors.New("project archived")
-	ErrProjectTaskForbidden = errors.New("project task forbidden")
+	ErrInvalidProject           = errors.New("invalid project")
+	ErrInvalidProjectMember     = errors.New("invalid project member")
+	ErrProjectNotFound          = errors.New("project not found")
+	ErrProjectArchived          = errors.New("project archived")
+	ErrProjectTaskForbidden     = errors.New("project task forbidden")
+	ErrInvalidProjectEvidence   = errors.New("invalid project evidence")
+	ErrInvalidProjectAcceptance = errors.New("invalid project acceptance")
+	ErrProjectArchiveBlocked    = errors.New("project archive blocked")
 )
 
 type ProjectStatus string
@@ -53,16 +56,34 @@ const (
 	ProjectEventArchived        ProjectEventType = "project.archived"
 	ProjectEventDemandSubmitted ProjectEventType = "demand.submitted"
 
-	ProjectEventWorkflowSignaled       ProjectEventType = "workflow.signaled"
-	ProjectEventCoordinationJobCreated ProjectEventType = "coordination_job.created"
-	ProjectEventRouteDecisionCreated   ProjectEventType = "route_decision.created"
-	ProjectEventTaskCreated            ProjectEventType = "project_task.created"
-	ProjectEventTaskDispatched         ProjectEventType = "project_task.dispatched"
-	ProjectEventTaskCompleted          ProjectEventType = "project_task.completed"
-	ProjectEventTaskFailed             ProjectEventType = "project_task.failed"
-	ProjectEventTransferRequested      ProjectEventType = "transfer.requested"
-	ProjectEventDecisionRequested      ProjectEventType = "decision.requested"
-	ProjectEventDecisionSubmitted      ProjectEventType = "decision.submitted"
+	ProjectEventWorkflowSignaled        ProjectEventType = "workflow.signaled"
+	ProjectEventCoordinationJobCreated  ProjectEventType = "coordination_job.created"
+	ProjectEventRouteDecisionCreated    ProjectEventType = "route_decision.created"
+	ProjectEventTaskCreated             ProjectEventType = "project_task.created"
+	ProjectEventTaskDispatched          ProjectEventType = "project_task.dispatched"
+	ProjectEventTaskCompleted           ProjectEventType = "project_task.completed"
+	ProjectEventTaskFailed              ProjectEventType = "project_task.failed"
+	ProjectEventTransferRequested       ProjectEventType = "transfer.requested"
+	ProjectEventDecisionRequested       ProjectEventType = "decision.requested"
+	ProjectEventDecisionSubmitted       ProjectEventType = "decision.submitted"
+	ProjectEventEvidenceLinked          ProjectEventType = "project.evidence.linked"
+	ProjectEventEvidenceVerified        ProjectEventType = "project.evidence.verified"
+	ProjectEventArtifactLinked          ProjectEventType = "project.artifact.linked"
+	ProjectEventReportLinked            ProjectEventType = "project.report.linked"
+	ProjectEventBudgetRecorded          ProjectEventType = "project.budget.recorded"
+	ProjectEventAcceptanceSubmitted     ProjectEventType = "project.acceptance.submitted"
+	ProjectEventArchiveSnapshotCreated  ProjectEventType = "project.archive_snapshot.created"
+	ProjectEventArchiveRetentionPending ProjectEventType = "project.archive.retention_pending"
+)
+
+type EvidenceVerificationStatus string
+
+const (
+	EvidenceVerificationStatusSubmitted  EvidenceVerificationStatus = "submitted"
+	EvidenceVerificationStatusLinked     EvidenceVerificationStatus = "linked"
+	EvidenceVerificationStatusVerified   EvidenceVerificationStatus = "verified"
+	EvidenceVerificationStatusRejected   EvidenceVerificationStatus = "rejected"
+	EvidenceVerificationStatusSuperseded EvidenceVerificationStatus = "superseded"
 )
 
 type DemandSourceType string
@@ -255,15 +276,143 @@ type ProjectDemand struct {
 }
 
 type ProjectConfigRevision struct {
+	ID                 uuid.UUID
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	RevisionNumber     int32
+	ConfigSnapshot     map[string]any
+	ChangeSummary      *string
+	CreatedByUserID    uuid.UUID
+	CreatedEventID     *uuid.UUID
+	CreatedAt          time.Time
+	ChangedSections    []any
+	PreviousRevisionID *uuid.UUID
+	PolicyFingerprint  *string
+	DiffSummary        map[string]any
+}
+
+type ProjectEvidenceRef struct {
+	ID                 uuid.UUID
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	ProjectTaskID      *uuid.UUID
+	RouteDecisionID    *uuid.UUID
+	ExecutionSummaryID *uuid.UUID
+	EvidenceType       string
+	Title              string
+	Summary            *string
+	SourceType         string
+	SourceRef          string
+	ArtifactRefID      *uuid.UUID
+	SubmittedByType    string
+	SubmittedByID      *uuid.UUID
+	VerificationStatus EvidenceVerificationStatus
+	Metadata           map[string]any
+	CreatedEventID     *uuid.UUID
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+type ProjectArtifactRef struct {
 	ID              uuid.UUID
 	TenantID        uuid.UUID
 	ProjectID       uuid.UUID
-	RevisionNumber  int32
-	ConfigSnapshot  map[string]any
-	ChangeSummary   *string
-	CreatedByUserID uuid.UUID
+	ProjectTaskID   *uuid.UUID
+	ArtifactID      *uuid.UUID
+	ArtifactType    string
+	Title           string
+	ObjectRef       string
+	ContentType     *string
+	SizeBytes       *int64
+	Checksum        *string
+	RetentionStatus string
+	RetentionHoldID *uuid.UUID
+	Metadata        map[string]any
 	CreatedEventID  *uuid.UUID
 	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+type ProjectReportRef struct {
+	ID              uuid.UUID
+	TenantID        uuid.UUID
+	ProjectID       uuid.UUID
+	ReportType      string
+	Title           string
+	Summary         *string
+	ObjectRef       string
+	Format          string
+	GeneratedByType string
+	GeneratedByID   *uuid.UUID
+	CreatedEventID  *uuid.UUID
+	CreatedAt       time.Time
+}
+
+type ProjectBudgetLedgerEntry struct {
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	CoordinationJobID *uuid.UUID
+	ProjectTaskID     *uuid.UUID
+	DigitalEmployeeID *uuid.UUID
+	CostType          string
+	EstimatedTokens   *int64
+	ActualTokens      *int64
+	EstimatedCost     string
+	ActualCost        string
+	Source            string
+	Reason            *string
+	CreatedEventID    *uuid.UUID
+	CreatedAt         time.Time
+}
+
+type ProjectBudgetSummary struct {
+	EstimatedTokens int64
+	ActualTokens    int64
+	EstimatedCost   string
+	ActualCost      string
+	LedgerCount     int32
+}
+
+type ProjectAcceptanceRecord struct {
+	ID               uuid.UUID
+	TenantID         uuid.UUID
+	ProjectID        uuid.UUID
+	AcceptedByUserID uuid.UUID
+	Status           string
+	Conclusion       string
+	Summary          *string
+	EvidenceRefIDs   []uuid.UUID
+	ReportRefIDs     []uuid.UUID
+	UnresolvedRisks  []any
+	CreatedEventID   *uuid.UUID
+	CreatedAt        time.Time
+}
+
+type ProjectArchivePreview struct {
+	ProjectID           uuid.UUID
+	EvidenceCount       int64
+	ArtifactCount       int64
+	ReportCount         int64
+	RetentionPending    bool
+	BlockedReasons      []any
+	EstimatedObjectRefs []any
+}
+
+type ProjectArchiveSnapshot struct {
+	ID                   uuid.UUID
+	TenantID             uuid.UUID
+	ProjectID            uuid.UUID
+	SnapshotType         string
+	Status               string
+	ObjectRef            *string
+	Summary              *string
+	IncludedCounts       map[string]any
+	RetainedArtifactIDs  []uuid.UUID
+	RetentionLockEventID *uuid.UUID
+	CreatedByUserID      uuid.UUID
+	CreatedEventID       *uuid.UUID
+	CreatedAt            time.Time
 }
 
 type ProjectMemberInput struct {

@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -258,4 +259,121 @@ func TestProjectConfigRevisionConflictDetection(t *testing.T) {
 	if maxProjectConfigRevisionAttempts != 3 {
 		t.Fatalf("expected 3 config revision attempts, got %d", maxProjectConfigRevisionAttempts)
 	}
+}
+
+func TestProjectGovernanceRepositoryMapsEvidenceBudgetAndArchive(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	eventID := uuid.New()
+	now := time.Now()
+
+	evidence, err := evidenceRefFromRecord(queries.ProjectEvidenceRef{
+		ID:                 uuid.New(),
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		EvidenceType:       "execution_log",
+		Title:              "测试日志",
+		SourceType:         "artifact",
+		SourceRef:          "s3://bucket/log.txt",
+		SubmittedByType:    "digital_employee",
+		VerificationStatus: "submitted",
+		Metadata:           []byte(`{"suite":"regression"}`),
+		CreatedEventID:     uuid.NullUUID{UUID: eventID, Valid: true},
+		CreatedAt:          pgtype.Timestamptz{Time: now, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("map evidence: %v", err)
+	}
+	if evidence.Metadata["suite"] != "regression" || *evidence.CreatedEventID != eventID {
+		t.Fatalf("unexpected evidence mapping: %#v", evidence)
+	}
+
+	summary := budgetSummaryFromRecord(queries.GetProjectBudgetSummaryRow{
+		EstimatedTokens: 1000,
+		ActualTokens:    800,
+		EstimatedCost:   numericFromString(t, "0.120000"),
+		ActualCost:      numericFromString(t, "0.096000"),
+		LedgerCount:     2,
+	})
+	if summary.ActualTokens != 800 || summary.LedgerCount != 2 {
+		t.Fatalf("unexpected budget summary: %#v", summary)
+	}
+}
+
+func numericFromString(t *testing.T, value string) pgtype.Numeric {
+	t.Helper()
+
+	var numeric pgtype.Numeric
+	if err := numeric.Scan(value); err != nil {
+		t.Fatalf("scan numeric %q: %v", value, err)
+	}
+	return numeric
+}
+
+func (r *memoryRepository) CreateEvidenceRef(ctx context.Context, req CreateEvidenceRefRequest) (ProjectEvidenceRef, error) {
+	return ProjectEvidenceRef{}, nil
+}
+
+func (r *memoryRepository) ListEvidenceRefs(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) UpdateEvidenceVerificationStatus(ctx context.Context, req UpdateEvidenceVerificationStatusRequest) (ProjectEvidenceRef, error) {
+	return ProjectEvidenceRef{}, nil
+}
+
+func (r *memoryRepository) CreateArtifactRef(ctx context.Context, req CreateArtifactRefRequest) (ProjectArtifactRef, error) {
+	return ProjectArtifactRef{}, nil
+}
+
+func (r *memoryRepository) ListArtifactRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) UpdateArtifactRetention(ctx context.Context, req UpdateArtifactRetentionRequest) (ProjectArtifactRef, error) {
+	return ProjectArtifactRef{}, nil
+}
+
+func (r *memoryRepository) CreateReportRef(ctx context.Context, req CreateReportRefRequest) (ProjectReportRef, error) {
+	return ProjectReportRef{}, nil
+}
+
+func (r *memoryRepository) ListReportRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectReportRef, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) CreateBudgetLedgerEntry(ctx context.Context, req CreateBudgetLedgerEntryRequest) (ProjectBudgetLedgerEntry, error) {
+	return ProjectBudgetLedgerEntry{}, nil
+}
+
+func (r *memoryRepository) ListBudgetLedger(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectBudgetLedgerEntry, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectBudgetSummary, error) {
+	return ProjectBudgetSummary{}, nil
+}
+
+func (r *memoryRepository) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error) {
+	return ProjectAcceptanceRecord{}, nil
+}
+
+func (r *memoryRepository) GetLatestAcceptanceRecord(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectAcceptanceRecord, error) {
+	return ProjectAcceptanceRecord{}, nil
+}
+
+func (r *memoryRepository) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotRequest) (ProjectArchiveSnapshot, error) {
+	return ProjectArchiveSnapshot{}, nil
+}
+
+func (r *memoryRepository) ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArchiveSnapshot, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) ListConfigRevisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectConfigRevision, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (ProjectConfigRevision, error) {
+	return ProjectConfigRevision{}, nil
 }
