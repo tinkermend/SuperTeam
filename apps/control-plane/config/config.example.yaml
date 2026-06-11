@@ -19,3 +19,9 @@ objectStore:
   accessKeyId: "xxx"
   secretAccessKey: "xxxx"
   forcePathStyle: false
+
+temporal:
+  enabled: false
+  address: "127.0.0.1:7233"
+  namespace: "default"
+  taskQueue: "superteam-project-coordination"

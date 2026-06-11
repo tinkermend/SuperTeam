@@ -3,6 +3,8 @@ package project
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -128,7 +130,7 @@ func TestCreateProjectValidatesRolePrincipalTypes(t *testing.T) {
 	}
 }
 
-func TestSubmitDemandRecordsOnlyV0DemandAndEvent(t *testing.T) {
+func TestSubmitDemandRecordsDemandAndEventWithoutAutoCreatingTask(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
 	if err != nil {
@@ -154,14 +156,1005 @@ func TestSubmitDemandRecordsOnlyV0DemandAndEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("submit demand: %v", err)
 	}
-	if demand.Status != ProjectDemandStatusRecorded {
-		t.Fatalf("expected recorded V0 demand, got %s", demand.Status)
+	if demand.Status != ProjectDemandStatusPlanningPending {
+		t.Fatalf("expected planning pending demand, got %s", demand.Status)
 	}
 	if len(repo.tasks) != 0 {
-		t.Fatalf("V0 must not create project tasks from demand automatically")
+		t.Fatalf("service must not create project tasks from demand directly")
 	}
 	if len(repo.eventTypes) != 1 || repo.eventTypes[0] != ProjectEventDemandSubmitted {
 		t.Fatalf("expected demand event only, got %#v", repo.eventTypes)
+	}
+}
+
+func TestSubmitDemandSignalsProjectCoordinatorInV1(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	projectID := uuid.New()
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "客户侧 Runtime 接入验收",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       ownerID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+		CoordinationStatus:     "registered",
+	}
+
+	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		SubmittedByUserID: ownerID,
+		Title:             "验证 Runtime 连接",
+		Content:           "检查心跳和命令回写",
+	})
+	if err != nil {
+		t.Fatalf("submit demand: %v", err)
+	}
+	if demand.Status != ProjectDemandStatusPlanningPending {
+		t.Fatalf("expected planning pending demand, got %s", demand.Status)
+	}
+	if coordinator.demandSignals != 1 {
+		t.Fatalf("expected one DemandSubmitted signal, got %d", coordinator.demandSignals)
+	}
+	if coordinator.lastDemand.DemandID != demand.ID || coordinator.lastDemand.CreatedEventID == uuid.Nil {
+		t.Fatalf("unexpected demand signal: %#v", coordinator.lastDemand)
+	}
+}
+
+func TestSubmitDemandRecordsRetryableWorkflowSignalFailure(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{demandSignalErr: errors.New("temporal unavailable")}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	projectID := uuid.New()
+	tenantID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "客户侧 Runtime 接入验收",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       ownerID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+		CoordinationStatus:     "registered",
+	}
+
+	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		SubmittedByUserID: ownerID,
+		Title:             "验证 Runtime 连接",
+		Content:           "检查心跳和命令回写",
+	})
+	if err == nil {
+		t.Fatal("expected signal error")
+	}
+	if len(repo.eventTypes) != 2 || repo.eventTypes[1] != ProjectEventWorkflowSignaled {
+		t.Fatalf("expected workflow signal failure event, got %#v", repo.eventTypes)
+	}
+	payload := repo.events[len(repo.events)-1].Payload
+	if payload["signal_name"] != "DemandSubmitted" || payload["status"] != "failed" || payload["retryable"] != true {
+		t.Fatalf("unexpected workflow signal payload: %#v", payload)
+	}
+	if payload["demand_id"] == "" || payload["error"] == "" {
+		t.Fatalf("expected retry payload to include demand id and error: %#v", payload)
+	}
+}
+
+func TestRetryWorkflowSignalReplaysFailedDemandSignal(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{demandSignalErr: fmt.Errorf("temporal unavailable")}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "客户侧 Runtime 接入验收",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       ownerID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+		CoordinationStatus:     "registered",
+	}
+
+	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		SubmittedByUserID: ownerID,
+		Title:             "验证 Runtime 连接",
+		Content:           "检查心跳和命令回写",
+	})
+	if err == nil {
+		t.Fatal("expected first signal error")
+	}
+	failedEvent := repo.events[len(repo.events)-1]
+	coordinator.demandSignalErr = nil
+
+	event, err := service.RetryWorkflowSignal(context.Background(), RetryWorkflowSignalRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventID:   failedEvent.ID,
+		ActorID:   ownerID,
+	})
+	if err != nil {
+		t.Fatalf("retry workflow signal: %v", err)
+	}
+	if repo.demands[0].CreatedEventID == nil {
+		t.Fatalf("expected demand created event id: %#v", repo.demands[0])
+	}
+	if coordinator.demandSignals != 2 || coordinator.lastDemand.DemandID != repo.demands[0].ID || coordinator.lastDemand.CreatedEventID != *repo.demands[0].CreatedEventID {
+		t.Fatalf("expected demand signal replay, count=%d signal=%#v demand=%#v", coordinator.demandSignals, coordinator.lastDemand, repo.demands[0])
+	}
+	if event.EventType != ProjectEventWorkflowSignaled || event.Payload["signal_name"] != "DemandSubmitted" || event.Payload["status"] != "sent" || event.Payload["retry_of_event_id"] != failedEvent.ID.String() {
+		t.Fatalf("unexpected retry event: %#v", event)
+	}
+}
+
+func TestCompleteProjectTaskWritesSummaryAndSignalsCoordinator(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+
+	summary, err := service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:              tenantID,
+		RuntimeNodeID:         runtimeNodeID,
+		ProjectTaskID:         taskID,
+		DigitalEmployeeID:     employeeID,
+		Conclusion:            "证据充分",
+		EvidenceRefs:          []any{"s3://bucket/report.md"},
+		ArtifactRefs:          []any{"artifact-1"},
+		ConfidenceFactors:     map[string]any{"tests": "passed"},
+		RecommendedNextAction: "提交负责人验收",
+	})
+	if err != nil {
+		t.Fatalf("complete project task: %v", err)
+	}
+	if summary.ProjectTaskID != taskID || summary.DigitalEmployeeID != employeeID {
+		t.Fatalf("unexpected summary: %#v", summary)
+	}
+	if summary.CreatedEventID == nil {
+		t.Fatalf("expected summary to reference created event: %#v", summary)
+	}
+	if repo.tasks[0].Status != "completed" {
+		t.Fatalf("expected task completed, got %s", repo.tasks[0].Status)
+	}
+	if coordinator.completedSignals != 1 || coordinator.lastCompleted.ExecutionSummaryID != summary.ID {
+		t.Fatalf("expected completed signal for summary, got count=%d signal=%#v", coordinator.completedSignals, coordinator.lastCompleted)
+	}
+	if repo.eventTypes[len(repo.eventTypes)-1] != ProjectEventTaskCompleted {
+		t.Fatalf("expected completed event, got %#v", repo.eventTypes)
+	}
+}
+
+func TestRetryWorkflowSignalReplaysCompletedTaskWithoutDuplicateWriteback(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{completedSignalErr: fmt.Errorf("temporal unavailable")}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+
+	_, err = service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          tenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		Conclusion:        "证据充分",
+	})
+	if err == nil {
+		t.Fatal("expected first completed signal error")
+	}
+	if len(repo.executionSummaries) != 1 {
+		t.Fatalf("expected one summary after failed signal, got %d", len(repo.executionSummaries))
+	}
+	completedEvents := countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted)
+	if completedEvents != 1 {
+		t.Fatalf("expected one completed event after failed signal, got %d events=%#v", completedEvents, repo.eventTypes)
+	}
+	failedSignalEvent := repo.events[len(repo.events)-1]
+	coordinator.completedSignalErr = nil
+
+	retryEvent, err := service.RetryWorkflowSignal(context.Background(), RetryWorkflowSignalRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventID:   failedSignalEvent.ID,
+		ActorID:   repo.projects[projectID].HumanOwnerUserID,
+	})
+	if err != nil {
+		t.Fatalf("retry completed workflow signal: %v", err)
+	}
+	if coordinator.completedSignals != 2 || coordinator.lastCompleted.ProjectTaskID != taskID || coordinator.lastCompleted.ExecutionSummaryID != repo.executionSummaries[0].ID {
+		t.Fatalf("expected completed signal replay, count=%d signal=%#v summary=%#v", coordinator.completedSignals, coordinator.lastCompleted, repo.executionSummaries[0])
+	}
+	if len(repo.executionSummaries) != 1 {
+		t.Fatalf("expected retry not to create duplicate summary, got %d", len(repo.executionSummaries))
+	}
+	if countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted) != 1 {
+		t.Fatalf("expected retry not to create duplicate completed event, events=%#v", repo.eventTypes)
+	}
+	if retryEvent.Payload["status"] != "sent" || retryEvent.Payload["retry_of_event_id"] != failedSignalEvent.ID.String() {
+		t.Fatalf("unexpected retry event payload: %#v", retryEvent.Payload)
+	}
+}
+
+func TestProjectCoordinationBackendE2ESimulation(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{demandSignalErr: fmt.Errorf("temporal unavailable")}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "E2E 仿真项目",
+		Goal:                   "验证需求、Runtime 写回和 Workflow signal 重试闭环",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       ownerID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+		CoordinationStatus:     "registered",
+	}
+
+	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		SubmittedByUserID: ownerID,
+		Title:             "验证 Runtime 执行回写",
+		Content:           "模拟 Temporal 短暂不可用后的重试恢复",
+	})
+	if err == nil {
+		t.Fatal("expected demand signal failure")
+	}
+	if len(repo.demands) != 1 || countProjectEvents(repo.eventTypes, ProjectEventDemandSubmitted) != 1 {
+		t.Fatalf("expected one persisted demand before retry, demands=%d events=%#v", len(repo.demands), repo.eventTypes)
+	}
+	failedDemandSignalEvent := repo.events[len(repo.events)-1]
+	if failedDemandSignalEvent.EventType != ProjectEventWorkflowSignaled || failedDemandSignalEvent.Payload["signal_name"] != "DemandSubmitted" || failedDemandSignalEvent.Payload["status"] != "failed" {
+		t.Fatalf("expected retryable demand signal failure event, got %#v", failedDemandSignalEvent)
+	}
+
+	coordinator.demandSignalErr = nil
+	retryDemandEvent, err := service.RetryWorkflowSignal(context.Background(), RetryWorkflowSignalRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventID:   failedDemandSignalEvent.ID,
+		ActorID:   ownerID,
+	})
+	if err != nil {
+		t.Fatalf("retry demand workflow signal: %v", err)
+	}
+	if retryDemandEvent.Payload["status"] != "sent" || retryDemandEvent.Payload["retry_of_event_id"] != failedDemandSignalEvent.ID.String() {
+		t.Fatalf("unexpected demand retry event payload: %#v", retryDemandEvent.Payload)
+	}
+	if coordinator.demandSignals != 2 || len(repo.demands) != 1 || countProjectEvents(repo.eventTypes, ProjectEventDemandSubmitted) != 1 {
+		t.Fatalf("expected demand retry to only resend signal, signals=%d demands=%d events=%#v", coordinator.demandSignals, len(repo.demands), repo.eventTypes)
+	}
+
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理执行证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+
+	_, err = service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          tenantID,
+		RuntimeNodeID:     uuid.New(),
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		Conclusion:        "错误 Runtime 尝试写回",
+	})
+	if !errors.Is(err, ErrProjectTaskForbidden) {
+		t.Fatalf("expected wrong runtime rejection, got %v", err)
+	}
+	if repo.tasks[0].Status != "assigned" || len(repo.executionSummaries) != 0 || countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted) != 0 {
+		t.Fatalf("expected rejected runtime writeback to have no side effects, task=%#v summaries=%d events=%#v", repo.tasks[0], len(repo.executionSummaries), repo.eventTypes)
+	}
+
+	coordinator.completedSignalErr = fmt.Errorf("temporal unavailable")
+	_, err = service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:              tenantID,
+		RuntimeNodeID:         runtimeNodeID,
+		ProjectTaskID:         taskID,
+		DigitalEmployeeID:     employeeID,
+		Conclusion:            "证据充分",
+		EvidenceRefs:          []any{"s3://bucket/e2e-report.md"},
+		ArtifactRefs:          []any{"artifact-runtime-log"},
+		ConfidenceFactors:     map[string]any{"tests": "passed"},
+		RecommendedNextAction: "提交负责人验收",
+	})
+	if err == nil {
+		t.Fatal("expected completed task signal failure")
+	}
+	if repo.tasks[0].Status != "completed" || len(repo.executionSummaries) != 1 || countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted) != 1 {
+		t.Fatalf("expected successful writeback before signal retry, task=%#v summaries=%d events=%#v", repo.tasks[0], len(repo.executionSummaries), repo.eventTypes)
+	}
+	failedCompletedSignalEvent := repo.events[len(repo.events)-1]
+	if failedCompletedSignalEvent.EventType != ProjectEventWorkflowSignaled || failedCompletedSignalEvent.Payload["signal_name"] != "EmployeeTaskCompleted" || failedCompletedSignalEvent.Payload["status"] != "failed" {
+		t.Fatalf("expected retryable completed signal failure event, got %#v", failedCompletedSignalEvent)
+	}
+
+	coordinator.completedSignalErr = nil
+	retryCompletedEvent, err := service.RetryWorkflowSignal(context.Background(), RetryWorkflowSignalRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventID:   failedCompletedSignalEvent.ID,
+		ActorID:   ownerID,
+	})
+	if err != nil {
+		t.Fatalf("retry completed workflow signal: %v", err)
+	}
+	if retryCompletedEvent.Payload["status"] != "sent" || retryCompletedEvent.Payload["retry_of_event_id"] != failedCompletedSignalEvent.ID.String() {
+		t.Fatalf("unexpected completed retry event payload: %#v", retryCompletedEvent.Payload)
+	}
+	if coordinator.completedSignals != 2 || coordinator.lastCompleted.ExecutionSummaryID != repo.executionSummaries[0].ID {
+		t.Fatalf("expected completed signal replay, signals=%d last=%#v summary=%#v", coordinator.completedSignals, coordinator.lastCompleted, repo.executionSummaries[0])
+	}
+	if len(repo.executionSummaries) != 1 || countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted) != 1 {
+		t.Fatalf("expected completed retry not to duplicate facts, summaries=%d events=%#v", len(repo.executionSummaries), repo.eventTypes)
+	}
+
+	demands, err := service.ListProjectDemands(context.Background(), tenantID, projectID, 50, 0)
+	if err != nil {
+		t.Fatalf("list demands: %v", err)
+	}
+	summaries, err := service.ListExecutionSummaries(context.Background(), tenantID, projectID, 50, 0)
+	if err != nil {
+		t.Fatalf("list execution summaries: %v", err)
+	}
+	events, err := service.ListProjectEvents(context.Background(), tenantID, projectID, 50, 0)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if len(demands) != 1 || len(summaries) != 1 || countProjectEvents(projectEventTypes(events), ProjectEventWorkflowSignaled) != 4 {
+		t.Fatalf("unexpected API-facing read model: demands=%d summaries=%d events=%#v", len(demands), len(summaries), projectEventTypes(events))
+	}
+}
+
+func TestProjectTaskWritebackRequiresRuntimeNodeIdentity(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewServiceWithCoordinator(repo, &fakeCoordinatorSignalClient{})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+
+	_, err = service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          tenantID,
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		Conclusion:        "证据充分",
+	})
+	if !errors.Is(err, ErrProjectTaskForbidden) {
+		t.Fatalf("expected runtime identity rejection, got %v", err)
+	}
+	if len(repo.executionSummaries) != 0 || len(repo.eventTypes) != 0 {
+		t.Fatalf("expected rejection before side effects, summaries=%d events=%#v", len(repo.executionSummaries), repo.eventTypes)
+	}
+}
+
+func TestProjectTaskWritebackRequiresDigitalEmployeeRunBinding(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewServiceWithCoordinator(repo, &fakeCoordinatorSignalClient{})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+
+	_, err = service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          tenantID,
+		RuntimeNodeID:     uuid.New(),
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		Conclusion:        "未绑定运行记录",
+	})
+	if !errors.Is(err, ErrProjectTaskForbidden) {
+		t.Fatalf("expected missing run binding rejection, got %v", err)
+	}
+	if len(repo.executionSummaries) != 0 || len(repo.eventTypes) != 0 {
+		t.Fatalf("expected rejection before side effects, summaries=%d events=%#v", len(repo.executionSummaries), repo.eventTypes)
+	}
+}
+
+func TestCompleteProjectTaskRejectsTerminalReplay(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "completed",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+
+	_, err = service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          tenantID,
+		RuntimeNodeID:     uuid.New(),
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		Conclusion:        "重复完成",
+	})
+	if !errors.Is(err, ErrProjectTaskForbidden) {
+		t.Fatalf("expected terminal replay rejection, got %v", err)
+	}
+	if len(repo.executionSummaries) != 0 || len(repo.eventTypes) != 0 || coordinator.completedSignals != 0 {
+		t.Fatalf("expected rejection before side effects, summaries=%d events=%#v signals=%d", len(repo.executionSummaries), repo.eventTypes, coordinator.completedSignals)
+	}
+}
+
+func TestCompleteProjectTaskRejectsConcurrentTerminalTransitionBeforeSideEffects(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	completed := "completed"
+	repo.taskStatusBeforeUpdate = &completed
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+
+	_, err = service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          tenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		Conclusion:        "并发完成",
+	})
+	if !errors.Is(err, ErrProjectNotFound) {
+		t.Fatalf("expected conditional status update rejection, got %v", err)
+	}
+	if len(repo.executionSummaries) != 0 || len(repo.eventTypes) != 0 || coordinator.completedSignals != 0 {
+		t.Fatalf("expected rejection before side effects, summaries=%d events=%#v signals=%d", len(repo.executionSummaries), repo.eventTypes, coordinator.completedSignals)
+	}
+}
+
+func TestCompleteProjectTaskRollsBackStatusWhenSummaryCreationFails(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.createExecutionSummaryErr = fmt.Errorf("summary unavailable")
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+
+	_, err = service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          tenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		Conclusion:        "写摘要失败",
+	})
+	if err == nil {
+		t.Fatal("expected summary creation error")
+	}
+	if repo.tasks[0].Status != "assigned" || len(repo.executionSummaries) != 0 || len(repo.eventTypes) != 0 || coordinator.completedSignals != 0 {
+		t.Fatalf("expected rollback before side effects, task=%#v summaries=%d events=%#v signals=%d", repo.tasks[0], len(repo.executionSummaries), repo.eventTypes, coordinator.completedSignals)
+	}
+}
+
+func TestFailProjectTaskRollsBackStatusWhenEventAppendFails(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.appendProjectEventErr = fmt.Errorf("event store unavailable")
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "running",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+
+	_, err = service.FailProjectTask(context.Background(), FailProjectTaskRequest{
+		TenantID:          tenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		FailureSummary:    "工具链失败",
+	})
+	if err == nil {
+		t.Fatal("expected event append error")
+	}
+	if repo.tasks[0].Status != "running" || len(repo.eventTypes) != 0 || coordinator.failedSignals != 0 {
+		t.Fatalf("expected rollback before side effects, task=%#v events=%#v signals=%d", repo.tasks[0], repo.eventTypes, coordinator.failedSignals)
+	}
+}
+
+func TestRequestProjectTaskTransferRollsBackStatusWhenTransferCreationFails(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.createTransferRequestErr = fmt.Errorf("transfer store unavailable")
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+
+	_, err = service.RequestProjectTaskTransfer(context.Background(), RequestProjectTaskTransferRequest{
+		TenantID:          tenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		Reason:            "上下文不足",
+	})
+	if err == nil {
+		t.Fatal("expected transfer creation error")
+	}
+	if repo.tasks[0].Status != "assigned" || len(repo.transferRequests) != 0 || len(repo.eventTypes) != 0 || coordinator.transferSignals != 0 {
+		t.Fatalf("expected rollback before side effects, task=%#v transfers=%d events=%#v signals=%d", repo.tasks[0], len(repo.transferRequests), repo.eventTypes, coordinator.transferSignals)
+	}
+}
+
+func TestCompleteProjectTaskRejectsWrongRuntimeWhenRunIsBound(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewServiceWithCoordinator(repo, &fakeCoordinatorSignalClient{})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runID := uuid.New()
+	expectedRuntimeNodeID := uuid.New()
+	repo.projectTaskRunRuntimeNodes[taskID] = expectedRuntimeNodeID
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+		DigitalEmployeeRunID:      &runID,
+	})
+
+	_, err = service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          tenantID,
+		RuntimeNodeID:     uuid.New(),
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		Conclusion:        "错误 Runtime 写回",
+	})
+	if !errors.Is(err, ErrProjectTaskForbidden) {
+		t.Fatalf("expected wrong runtime rejection, got %v", err)
+	}
+	if len(repo.executionSummaries) != 0 || len(repo.eventTypes) != 0 {
+		t.Fatalf("expected rejection before side effects, summaries=%d events=%#v", len(repo.executionSummaries), repo.eventTypes)
+	}
+}
+
+func TestRequestProjectTaskTransferRejectsWaitingHumanTask(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "等待负责人确认",
+		Status:                    "waiting_human",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+
+	_, err = service.RequestProjectTaskTransfer(context.Background(), RequestProjectTaskTransferRequest{
+		TenantID:          tenantID,
+		RuntimeNodeID:     uuid.New(),
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		Reason:            "上下文不足",
+	})
+	if !errors.Is(err, ErrProjectTaskForbidden) {
+		t.Fatalf("expected waiting human transfer rejection, got %v", err)
+	}
+	if len(repo.transferRequests) != 0 || len(repo.eventTypes) != 0 || coordinator.transferSignals != 0 {
+		t.Fatalf("expected rejection before side effects, transfers=%d events=%#v signals=%d", len(repo.transferRequests), repo.eventTypes, coordinator.transferSignals)
+	}
+}
+
+func TestRequestProjectTaskTransferMovesTaskToWaitingHuman(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+
+	transfer, err := service.RequestProjectTaskTransfer(context.Background(), RequestProjectTaskTransferRequest{
+		TenantID:          tenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		Reason:            "上下文不足",
+	})
+	if err != nil {
+		t.Fatalf("request transfer: %v", err)
+	}
+	if transfer.Status != "requested" || repo.tasks[0].Status != "waiting_human" {
+		t.Fatalf("expected transfer to pause task, transfer=%#v task=%#v", transfer, repo.tasks[0])
+	}
+	if coordinator.transferSignals != 1 {
+		t.Fatalf("expected transfer signal, got %d", coordinator.transferSignals)
+	}
+}
+
+func TestResolveDecisionUsesApprovalAndSignalsCoordinator(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      "route_review",
+		TitleSnapshot:     "需要负责人确认",
+		StatusSnapshot:    "pending",
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          "approved",
+		Comment:           "同意",
+		Payload:           map[string]any{"source": "console"},
+	})
+	if err != nil {
+		t.Fatalf("resolve decision: %v", err)
+	}
+	if resolved.StatusSnapshot != "approved" {
+		t.Fatalf("expected approved projection, got %s", resolved.StatusSnapshot)
+	}
+	if approvals.calls != 1 || approvals.last.ApprovalRequestID != approvalID || approvals.last.Decision != "approved" {
+		t.Fatalf("expected approval resolver call, got count=%d last=%#v", approvals.calls, approvals.last)
+	}
+	if coordinator.decisionSignals != 1 || coordinator.lastDecision.DecisionRequestID != decisionID || coordinator.lastDecision.ResolvedEventID == uuid.Nil {
+		t.Fatalf("expected decision signal, got count=%d signal=%#v", coordinator.decisionSignals, coordinator.lastDecision)
+	}
+}
+
+func TestResolveDecisionFindsDecisionBeyondFirstPage(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	targetDecisionID := uuid.New()
+	targetApprovalID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	for i := 0; i < 100; i++ {
+		repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+			ID:                uuid.New(),
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			ApprovalRequestID: uuid.New(),
+			TargetUserID:      actorID,
+			DecisionType:      "route_review",
+			TitleSnapshot:     "较新的决策",
+			StatusSnapshot:    "pending",
+			CreatedAt:         time.Now().UTC().Add(time.Duration(i+1) * time.Minute),
+		})
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                targetDecisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: targetApprovalID,
+		TargetUserID:      actorID,
+		DecisionType:      "route_review",
+		TitleSnapshot:     "较早的决策",
+		StatusSnapshot:    "pending",
+		CreatedAt:         time.Now().UTC().Add(-time.Hour),
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: targetDecisionID,
+		DecidedByUserID:   actorID,
+		Decision:          "approved",
+	})
+	if err != nil {
+		t.Fatalf("resolve older decision: %v", err)
+	}
+	if resolved.ID != targetDecisionID || approvals.last.ApprovalRequestID != targetApprovalID {
+		t.Fatalf("expected target decision to resolve, decision=%#v approval=%#v", resolved, approvals.last)
 	}
 }
 
@@ -225,6 +1218,47 @@ func TestUpdateProjectConfigCreatesRevision(t *testing.T) {
 	}
 	if len(repo.eventTypes) != 1 || repo.eventTypes[0] != ProjectEventConfigChanged {
 		t.Fatalf("expected config changed event, got %#v", repo.eventTypes)
+	}
+}
+
+func TestUpdateProjectConfigRecordsRetryableWorkflowSignalFailure(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{policySignalErr: errors.New("temporal unavailable")}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	projectID := uuid.New()
+	tenantID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "旧项目",
+		Goal:                   "旧目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+
+	_, err = service.UpdateProjectConfig(context.Background(), UpdateProjectConfigRequest{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
+		ActorUserID: uuid.New(),
+		Name:        "新项目",
+		Goal:        "新目标",
+	})
+	if err == nil {
+		t.Fatal("expected signal error")
+	}
+	if len(repo.eventTypes) != 2 || repo.eventTypes[1] != ProjectEventWorkflowSignaled {
+		t.Fatalf("expected workflow signal failure event, got %#v", repo.eventTypes)
+	}
+	payload := repo.events[len(repo.events)-1].Payload
+	if payload["signal_name"] != "ProjectPolicyChanged" || payload["status"] != "failed" || payload["retryable"] != true {
+		t.Fatalf("unexpected workflow signal payload: %#v", payload)
+	}
+	if payload["changed_event_id"] == "" || payload["error"] == "" {
+		t.Fatalf("expected retry payload to include event id and error: %#v", payload)
 	}
 }
 
@@ -380,26 +1414,38 @@ func TestListPaginationIsNormalized(t *testing.T) {
 }
 
 type memoryRepository struct {
-	projects          map[uuid.UUID]Project
-	members           map[uuid.UUID][]ProjectMember
-	tasks             []ProjectTask
-	events            []ProjectEvent
-	eventTypes        []ProjectEventType
-	demands           []ProjectDemand
-	revisions         []ProjectConfigRevision
-	lastListProjects  ListProjectsRequest
-	lastTasksLimit    int32
-	lastTasksOffset   int32
-	lastEventsLimit   int32
-	lastEventsOffset  int32
-	lastDemandsLimit  int32
-	lastDemandsOffset int32
+	projects           map[uuid.UUID]Project
+	members            map[uuid.UUID][]ProjectMember
+	tasks              []ProjectTask
+	events             []ProjectEvent
+	eventTypes         []ProjectEventType
+	demands            []ProjectDemand
+	revisions          []ProjectConfigRevision
+	coordinationJobs   []CoordinationJob
+	routeDecisions     []RouteDecision
+	executionSummaries []ExecutionSummary
+	transferRequests   []TransferRequest
+	decisionRequests   []DecisionRequest
+	lastListProjects   ListProjectsRequest
+	lastTasksLimit     int32
+	lastTasksOffset    int32
+	lastEventsLimit    int32
+	lastEventsOffset   int32
+	lastDemandsLimit   int32
+	lastDemandsOffset  int32
+
+	taskStatusBeforeUpdate     *string
+	appendProjectEventErr      error
+	createExecutionSummaryErr  error
+	createTransferRequestErr   error
+	projectTaskRunRuntimeNodes map[uuid.UUID]uuid.UUID
 }
 
 func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{
-		projects: map[uuid.UUID]Project{},
-		members:  map[uuid.UUID][]ProjectMember{},
+		projects:                   map[uuid.UUID]Project{},
+		members:                    map[uuid.UUID][]ProjectMember{},
+		projectTaskRunRuntimeNodes: map[uuid.UUID]uuid.UUID{},
 	}
 }
 
@@ -408,6 +1454,13 @@ func strPtrOrNil(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func bindTaskToRuntimeRun(repo *memoryRepository, taskIndex int, runtimeNodeID uuid.UUID) uuid.UUID {
+	runID := uuid.New()
+	repo.tasks[taskIndex].DigitalEmployeeRunID = &runID
+	repo.projectTaskRunRuntimeNodes[repo.tasks[taskIndex].ID] = runtimeNodeID
+	return runID
 }
 
 func (r *memoryRepository) CreateProject(ctx context.Context, req CreateProjectRequest, projectID uuid.UUID, workflowID string) (Project, error) {
@@ -553,6 +1606,9 @@ func (r *memoryRepository) ListProjectTasks(ctx context.Context, tenantID, proje
 }
 
 func (r *memoryRepository) AppendProjectEvent(ctx context.Context, event AppendProjectEventRequest) (ProjectEvent, error) {
+	if r.appendProjectEventErr != nil {
+		return ProjectEvent{}, r.appendProjectEventErr
+	}
 	projectEvent := ProjectEvent{
 		ID:             uuid.New(),
 		TenantID:       event.TenantID,
@@ -569,6 +1625,15 @@ func (r *memoryRepository) AppendProjectEvent(ctx context.Context, event AppendP
 	r.events = append(r.events, projectEvent)
 	r.eventTypes = append(r.eventTypes, event.EventType)
 	return projectEvent, nil
+}
+
+func (r *memoryRepository) GetProjectEvent(ctx context.Context, tenantID, projectID, eventID uuid.UUID) (ProjectEvent, error) {
+	for _, event := range r.events {
+		if event.ID == eventID && event.TenantID == tenantID && event.ProjectID == projectID {
+			return event, nil
+		}
+	}
+	return ProjectEvent{}, ErrProjectNotFound
 }
 
 func (r *memoryRepository) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error) {
@@ -626,4 +1691,482 @@ func (r *memoryRepository) CreateConfigRevision(ctx context.Context, req UpdateP
 	}
 	r.revisions = append(r.revisions, revision)
 	return revision, nil
+}
+
+func (r *memoryRepository) GetProjectDemand(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error) {
+	for _, demand := range r.demands {
+		if demand.ID == demandID && demand.TenantID == tenantID {
+			return demand, nil
+		}
+	}
+	return ProjectDemand{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTask, error) {
+	for _, task := range r.tasks {
+		if task.ID == projectTaskID && task.TenantID == tenantID {
+			return task, nil
+		}
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetProjectTaskRunRuntimeNodeID(ctx context.Context, tenantID, projectTaskID, runID uuid.UUID) (uuid.UUID, error) {
+	runtimeNodeID, ok := r.projectTaskRunRuntimeNodes[projectTaskID]
+	if !ok {
+		return uuid.Nil, ErrProjectNotFound
+	}
+	return runtimeNodeID, nil
+}
+
+func (r *memoryRepository) CreateCoordinationJob(ctx context.Context, req CreateCoordinationJobRequest) (CoordinationJob, error) {
+	job := CoordinationJob{
+		ID:               uuid.New(),
+		TenantID:         req.TenantID,
+		ProjectID:        req.ProjectID,
+		WorkflowID:       req.WorkflowID,
+		TriggerEventID:   req.TriggerEventID,
+		JobType:          req.JobType,
+		Status:           req.Status,
+		InputSnapshotRef: req.InputSnapshotRef,
+		OutputEventIDs:   []any{},
+		CreatedAt:        time.Now().UTC(),
+	}
+	r.coordinationJobs = append(r.coordinationJobs, job)
+	return job, nil
+}
+
+func (r *memoryRepository) FinishCoordinationJob(ctx context.Context, req FinishCoordinationJobRequest) (CoordinationJob, error) {
+	for index, job := range r.coordinationJobs {
+		if job.ID == req.ID && job.TenantID == req.TenantID {
+			now := time.Now().UTC()
+			job.Status = req.Status
+			job.OutputEventIDs = req.OutputEventIDs
+			job.FinishedAt = &now
+			r.coordinationJobs[index] = job
+			return job, nil
+		}
+	}
+	return CoordinationJob{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error) {
+	filtered := make([]CoordinationJob, 0, len(r.coordinationJobs))
+	for _, job := range r.coordinationJobs {
+		if job.TenantID == tenantID && job.ProjectID == projectID {
+			filtered = append(filtered, job)
+		}
+	}
+	return filtered, nil
+}
+
+func (r *memoryRepository) CreateRouteDecision(ctx context.Context, req CreateRouteDecisionRequest) (RouteDecision, error) {
+	decision := RouteDecision{
+		ID:                          uuid.New(),
+		TenantID:                    req.TenantID,
+		ProjectID:                   req.ProjectID,
+		CoordinationJobID:           req.CoordinationJobID,
+		DemandID:                    req.DemandID,
+		CandidateDigitalEmployeeIDs: req.CandidateDigitalEmployeeIDs,
+		SelectedDigitalEmployeeIDs:  req.SelectedDigitalEmployeeIDs,
+		Reason:                      req.Reason,
+		InputRequirements:           req.InputRequirements,
+		ExpectedOutputs:             req.ExpectedOutputs,
+		BudgetEstimate:              req.BudgetEstimate,
+		RequiresHumanReview:         req.RequiresHumanReview,
+		CreatedEventID:              req.CreatedEventID,
+		CreatedAt:                   time.Now().UTC(),
+	}
+	r.routeDecisions = append(r.routeDecisions, decision)
+	return decision, nil
+}
+
+func (r *memoryRepository) ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error) {
+	filtered := make([]RouteDecision, 0, len(r.routeDecisions))
+	for _, decision := range r.routeDecisions {
+		if decision.TenantID == tenantID && decision.ProjectID == projectID {
+			filtered = append(filtered, decision)
+		}
+	}
+	return filtered, nil
+}
+
+func (r *memoryRepository) CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error) {
+	task := ProjectTask{
+		ID:                        uuid.New(),
+		TenantID:                  req.TenantID,
+		ProjectID:                 req.ProjectID,
+		DemandID:                  req.DemandID,
+		Title:                     req.Title,
+		Summary:                   strPtrOrNil(req.Summary),
+		Status:                    req.Status,
+		AssignedDigitalEmployeeID: req.AssignedDigitalEmployeeID,
+		RiskLevel:                 strPtrOrNil(req.RiskLevel),
+		RequiresHumanApproval:     req.RequiresHumanApproval,
+		CreatedAt:                 time.Now().UTC(),
+		UpdatedAt:                 time.Now().UTC(),
+	}
+	r.tasks = append(r.tasks, task)
+	return task, nil
+}
+
+func (r *memoryRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error) {
+	for index, task := range r.tasks {
+		if task.ID == projectTaskID && task.TenantID == tenantID {
+			if r.taskStatusBeforeUpdate != nil {
+				task.Status = *r.taskStatusBeforeUpdate
+				r.tasks[index] = task
+				r.taskStatusBeforeUpdate = nil
+			}
+			if !containsString(currentStatuses, task.Status) {
+				return ProjectTask{}, ErrProjectNotFound
+			}
+			task.Status = status
+			task.UpdatedAt = time.Now().UTC()
+			r.tasks[index] = task
+			return task, nil
+		}
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) AssignProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, assignedDigitalEmployeeID, eventID *uuid.UUID) (ProjectTask, error) {
+	for index, task := range r.tasks {
+		if task.ID == projectTaskID && task.TenantID == tenantID {
+			task.Status = status
+			task.AssignedDigitalEmployeeID = assignedDigitalEmployeeID
+			task.UpdatedAt = time.Now().UTC()
+			r.tasks[index] = task
+			return task, nil
+		}
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) CreateExecutionSummary(ctx context.Context, req CreateExecutionSummaryRequest) (ExecutionSummary, error) {
+	if r.createExecutionSummaryErr != nil {
+		return ExecutionSummary{}, r.createExecutionSummaryErr
+	}
+	summary := ExecutionSummary{
+		ID:                    uuid.New(),
+		TenantID:              req.TenantID,
+		ProjectID:             req.ProjectID,
+		ProjectTaskID:         req.ProjectTaskID,
+		DigitalEmployeeID:     req.DigitalEmployeeID,
+		Conclusion:            req.Conclusion,
+		EvidenceRefs:          req.EvidenceRefs,
+		ArtifactRefs:          req.ArtifactRefs,
+		ConfidenceFactors:     req.ConfidenceFactors,
+		Uncertainty:           strPtrOrNil(req.Uncertainty),
+		MissingInformation:    req.MissingInformation,
+		RecommendedNextAction: strPtrOrNil(req.RecommendedNextAction),
+		RequiresHumanReview:   req.RequiresHumanReview,
+		TransferRequestID:     req.TransferRequestID,
+		CreatedEventID:        req.CreatedEventID,
+		CreatedAt:             time.Now().UTC(),
+	}
+	r.executionSummaries = append(r.executionSummaries, summary)
+	return summary, nil
+}
+
+func (r *memoryRepository) ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error) {
+	filtered := make([]ExecutionSummary, 0, len(r.executionSummaries))
+	for _, summary := range r.executionSummaries {
+		if summary.TenantID == tenantID && summary.ProjectID == projectID {
+			filtered = append(filtered, summary)
+		}
+	}
+	return filtered, nil
+}
+
+func (r *memoryRepository) CreateTransferRequest(ctx context.Context, req CreateTransferRequestRequest) (TransferRequest, error) {
+	if r.createTransferRequestErr != nil {
+		return TransferRequest{}, r.createTransferRequestErr
+	}
+	transfer := TransferRequest{
+		ID:                           uuid.New(),
+		TenantID:                     req.TenantID,
+		ProjectID:                    req.ProjectID,
+		ProjectTaskID:                req.ProjectTaskID,
+		RequestedByDigitalEmployeeID: req.RequestedByDigitalEmployeeID,
+		Reason:                       req.Reason,
+		SuggestedEmployeeType:        strPtrOrNil(req.SuggestedEmployeeType),
+		SuggestedDigitalEmployeeIDs:  req.SuggestedDigitalEmployeeIDs,
+		MissingContextRefs:           req.MissingContextRefs,
+		Status:                       req.Status,
+		CreatedEventID:               req.CreatedEventID,
+		CreatedAt:                    time.Now().UTC(),
+		UpdatedAt:                    time.Now().UTC(),
+	}
+	r.transferRequests = append(r.transferRequests, transfer)
+	return transfer, nil
+}
+
+func (r *memoryRepository) CompleteProjectTaskWriteback(ctx context.Context, req CompleteProjectTaskWritebackRequest) (ProjectTaskWritebackResult, error) {
+	snapshot := r.writebackSnapshot()
+	if _, err := r.UpdateProjectTaskStatus(ctx, req.Task.TenantID, req.Task.ID, "completed", nil, req.AllowedCurrentStatuses); err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	event, err := r.AppendProjectEvent(ctx, req.Event)
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	summaryReq := req.Summary
+	summaryReq.CreatedEventID = &event.ID
+	summary, err := r.CreateExecutionSummary(ctx, summaryReq)
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	task, err := r.UpdateProjectTaskStatus(ctx, req.Task.TenantID, req.Task.ID, "completed", &event.ID, []string{"completed"})
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary}, nil
+}
+
+func (r *memoryRepository) FailProjectTaskWriteback(ctx context.Context, req FailProjectTaskWritebackRequest) (ProjectTaskWritebackResult, error) {
+	snapshot := r.writebackSnapshot()
+	if _, err := r.UpdateProjectTaskStatus(ctx, req.Task.TenantID, req.Task.ID, "failed", nil, req.AllowedCurrentStatuses); err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	event, err := r.AppendProjectEvent(ctx, req.Event)
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	task, err := r.UpdateProjectTaskStatus(ctx, req.Task.TenantID, req.Task.ID, "failed", &event.ID, []string{"failed"})
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+}
+
+func (r *memoryRepository) RequestProjectTaskTransferWriteback(ctx context.Context, req RequestProjectTaskTransferWritebackRequest) (ProjectTaskTransferWritebackResult, error) {
+	snapshot := r.writebackSnapshot()
+	if _, err := r.UpdateProjectTaskStatus(ctx, req.Task.TenantID, req.Task.ID, "waiting_human", nil, req.AllowedCurrentStatuses); err != nil {
+		return ProjectTaskTransferWritebackResult{}, err
+	}
+	event, err := r.AppendProjectEvent(ctx, req.Event)
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskTransferWritebackResult{}, err
+	}
+	transferReq := req.Transfer
+	transferReq.CreatedEventID = &event.ID
+	transfer, err := r.CreateTransferRequest(ctx, transferReq)
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskTransferWritebackResult{}, err
+	}
+	task, err := r.UpdateProjectTaskStatus(ctx, req.Task.TenantID, req.Task.ID, "waiting_human", &event.ID, []string{"waiting_human"})
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskTransferWritebackResult{}, err
+	}
+	return ProjectTaskTransferWritebackResult{Task: task, Event: event, Transfer: transfer}, nil
+}
+
+type memoryWritebackSnapshot struct {
+	tasks              []ProjectTask
+	events             []ProjectEvent
+	eventTypes         []ProjectEventType
+	executionSummaries []ExecutionSummary
+	transferRequests   []TransferRequest
+}
+
+func (r *memoryRepository) writebackSnapshot() memoryWritebackSnapshot {
+	return memoryWritebackSnapshot{
+		tasks:              append([]ProjectTask(nil), r.tasks...),
+		events:             append([]ProjectEvent(nil), r.events...),
+		eventTypes:         append([]ProjectEventType(nil), r.eventTypes...),
+		executionSummaries: append([]ExecutionSummary(nil), r.executionSummaries...),
+		transferRequests:   append([]TransferRequest(nil), r.transferRequests...),
+	}
+}
+
+func (r *memoryRepository) restoreWritebackSnapshot(snapshot memoryWritebackSnapshot) {
+	r.tasks = snapshot.tasks
+	r.events = snapshot.events
+	r.eventTypes = snapshot.eventTypes
+	r.executionSummaries = snapshot.executionSummaries
+	r.transferRequests = snapshot.transferRequests
+}
+
+func (r *memoryRepository) ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]TransferRequest, error) {
+	filtered := make([]TransferRequest, 0, len(r.transferRequests))
+	for _, transfer := range r.transferRequests {
+		if transfer.TenantID == tenantID && transfer.ProjectID == projectID {
+			filtered = append(filtered, transfer)
+		}
+	}
+	return filtered, nil
+}
+
+func (r *memoryRepository) CreateDecisionRequest(ctx context.Context, req CreateDecisionRequestRequest) (DecisionRequest, error) {
+	decision := DecisionRequest{
+		ID:                uuid.New(),
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		ApprovalRequestID: req.ApprovalRequestID,
+		CoordinationJobID: req.CoordinationJobID,
+		ProjectTaskID:     req.ProjectTaskID,
+		TargetUserID:      req.TargetUserID,
+		DecisionType:      req.DecisionType,
+		TitleSnapshot:     req.TitleSnapshot,
+		SummarySnapshot:   strPtrOrNil(req.SummarySnapshot),
+		RiskLevelSnapshot: strPtrOrNil(req.RiskLevelSnapshot),
+		StatusSnapshot:    req.StatusSnapshot,
+		CreatedEventID:    req.CreatedEventID,
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+	}
+	r.decisionRequests = append(r.decisionRequests, decision)
+	return decision, nil
+}
+
+func (r *memoryRepository) GetDecisionRequest(ctx context.Context, tenantID, projectID, decisionRequestID uuid.UUID) (DecisionRequest, error) {
+	for _, decision := range r.decisionRequests {
+		if decision.ID == decisionRequestID && decision.TenantID == tenantID && decision.ProjectID == projectID {
+			return decision, nil
+		}
+	}
+	return DecisionRequest{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error) {
+	for index, decision := range r.decisionRequests {
+		if decision.ID == req.ID && decision.TenantID == req.TenantID && decision.ProjectID == req.ProjectID {
+			now := time.Now().UTC()
+			decision.StatusSnapshot = req.StatusSnapshot
+			decision.ResolvedEventID = req.ResolvedEventID
+			decision.ResolvedAt = &now
+			decision.UpdatedAt = now
+			r.decisionRequests[index] = decision
+			return decision, nil
+		}
+	}
+	return DecisionRequest{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error) {
+	filtered := make([]DecisionRequest, 0, len(r.decisionRequests))
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID == tenantID && decision.ProjectID == projectID {
+			filtered = append(filtered, decision)
+		}
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+	})
+	start := int(offset)
+	if start > len(filtered) {
+		return []DecisionRequest{}, nil
+	}
+	end := start + int(limit)
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return filtered[start:end], nil
+}
+
+type fakeCoordinatorSignalClient struct {
+	ensureSignals      int
+	demandSignals      int
+	policySignals      int
+	memberSignals      int
+	completedSignals   int
+	failedSignals      int
+	transferSignals    int
+	decisionSignals    int
+	lastDemand         DemandSubmittedSignal
+	lastCompleted      EmployeeTaskCompletedSignal
+	lastDecision       HumanDecisionSubmittedSignal
+	demandSignalErr    error
+	policySignalErr    error
+	completedSignalErr error
+}
+
+func (f *fakeCoordinatorSignalClient) EnsureProjectCoordinator(ctx context.Context, signal ProjectCoordinatorSignal) error {
+	f.ensureSignals++
+	return nil
+}
+
+func (f *fakeCoordinatorSignalClient) SignalDemandSubmitted(ctx context.Context, signal DemandSubmittedSignal) error {
+	f.demandSignals++
+	f.lastDemand = signal
+	return f.demandSignalErr
+}
+
+func (f *fakeCoordinatorSignalClient) SignalProjectPolicyChanged(ctx context.Context, signal ProjectPolicyChangedSignal) error {
+	f.policySignals++
+	return f.policySignalErr
+}
+
+func (f *fakeCoordinatorSignalClient) SignalProjectMemberChanged(ctx context.Context, signal ProjectMemberChangedSignal) error {
+	f.memberSignals++
+	return nil
+}
+
+func (f *fakeCoordinatorSignalClient) SignalEmployeeTaskCompleted(ctx context.Context, signal EmployeeTaskCompletedSignal) error {
+	f.completedSignals++
+	f.lastCompleted = signal
+	return f.completedSignalErr
+}
+
+func (f *fakeCoordinatorSignalClient) SignalEmployeeTaskFailed(ctx context.Context, signal EmployeeTaskFailedSignal) error {
+	f.failedSignals++
+	return nil
+}
+
+func (f *fakeCoordinatorSignalClient) SignalEmployeeTransferRequested(ctx context.Context, signal EmployeeTransferRequestedSignal) error {
+	f.transferSignals++
+	return nil
+}
+
+func (f *fakeCoordinatorSignalClient) SignalHumanDecisionSubmitted(ctx context.Context, signal HumanDecisionSubmittedSignal) error {
+	f.decisionSignals++
+	f.lastDecision = signal
+	return nil
+}
+
+type fakeApprovalResolver struct {
+	calls int
+	last  ResolveApprovalRequest
+}
+
+func (f *fakeApprovalResolver) ResolveApproval(ctx context.Context, req ResolveApprovalRequest) error {
+	f.calls++
+	f.last = req
+	return nil
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func countProjectEvents(values []ProjectEventType, target ProjectEventType) int {
+	count := 0
+	for _, value := range values {
+		if value == target {
+			count++
+		}
+	}
+	return count
+}
+
+func projectEventTypes(events []ProjectEvent) []ProjectEventType {
+	values := make([]ProjectEventType, 0, len(events))
+	for _, event := range events {
+		values = append(values, event.EventType)
+	}
+	return values
 }

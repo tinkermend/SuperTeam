@@ -296,8 +296,10 @@ describe("EmployeesView", () => {
     await expect.element(readyArticle).toHaveAttribute("aria-selected", "true");
     expect(readyArticle.element().querySelectorAll("span.absolute.inset-y-0.left-0.w-1")).toHaveLength(1);
     expect(unboundArticle.element().querySelectorAll("span.absolute.inset-y-0.left-0.w-1")).toHaveLength(0);
-    await expect.element(screen.getByText("已选中")).not.toBeInTheDocument();
-    await expect.element(screen.getByText("选中")).not.toBeInTheDocument();
+    expect(readyArticle.element().textContent).not.toContain("已选中");
+    expect(readyArticle.element().textContent).not.toContain("选中");
+    expect(unboundArticle.element().textContent).not.toContain("已选中");
+    expect(unboundArticle.element().textContent).not.toContain("选中");
     await userEvent.click(unboundArticle);
     await expect.element(readyArticle).toHaveAttribute("aria-selected", "false");
     await expect.element(unboundArticle).toHaveAttribute("aria-selected", "true");

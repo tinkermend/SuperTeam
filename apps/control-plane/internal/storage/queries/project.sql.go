@@ -53,6 +53,55 @@ func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) 
 	return i, err
 }
 
+const AssignProjectTask = `-- name: AssignProjectTask :one
+UPDATE project_tasks
+SET status = $1::varchar,
+    assigned_digital_employee_id = COALESCE($2::uuid, assigned_digital_employee_id),
+    latest_event_id = COALESCE($3::uuid, latest_event_id),
+    updated_at = NOW()
+WHERE tenant_id = $4::uuid
+  AND id = $5::uuid
+  AND status IN ('planned', 'pending')
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at
+`
+
+type AssignProjectTaskParams struct {
+	Status                    string        `json:"status"`
+	AssignedDigitalEmployeeID uuid.NullUUID `json:"assigned_digital_employee_id"`
+	LatestEventID             uuid.NullUUID `json:"latest_event_id"`
+	TenantID                  uuid.UUID     `json:"tenant_id"`
+	ID                        uuid.UUID     `json:"id"`
+}
+
+func (q *Queries) AssignProjectTask(ctx context.Context, arg AssignProjectTaskParams) (ProjectTask, error) {
+	row := q.db.QueryRow(ctx, AssignProjectTask,
+		arg.Status,
+		arg.AssignedDigitalEmployeeID,
+		arg.LatestEventID,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i ProjectTask
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Title,
+		&i.Summary,
+		&i.Status,
+		&i.AssignedDigitalEmployeeID,
+		&i.RuntimeTaskID,
+		&i.DigitalEmployeeRunID,
+		&i.RiskLevel,
+		&i.RequiresHumanApproval,
+		&i.LatestEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const CreateProject = `-- name: CreateProject :one
 INSERT INTO projects (
     id,
@@ -200,6 +249,149 @@ func (q *Queries) CreateProjectConfigRevision(ctx context.Context, arg CreatePro
 		&i.CreatedByUserID,
 		&i.CreatedEventID,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const CreateProjectCoordinationJob = `-- name: CreateProjectCoordinationJob :one
+INSERT INTO project_coordination_jobs (
+    tenant_id,
+    project_id,
+    workflow_id,
+    trigger_event_id,
+    job_type,
+    status,
+    input_snapshot_ref,
+    started_at
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::varchar,
+    $4::uuid,
+    $5::varchar,
+    $6::varchar,
+    COALESCE($7::jsonb, '{}'::jsonb),
+    NOW()
+) RETURNING id, tenant_id, project_id, workflow_id, trigger_event_id, job_type, status, input_snapshot_ref, output_event_ids, started_at, finished_at, created_at
+`
+
+type CreateProjectCoordinationJobParams struct {
+	TenantID         uuid.UUID     `json:"tenant_id"`
+	ProjectID        uuid.UUID     `json:"project_id"`
+	WorkflowID       string        `json:"workflow_id"`
+	TriggerEventID   uuid.NullUUID `json:"trigger_event_id"`
+	JobType          string        `json:"job_type"`
+	Status           string        `json:"status"`
+	InputSnapshotRef []byte        `json:"input_snapshot_ref"`
+}
+
+func (q *Queries) CreateProjectCoordinationJob(ctx context.Context, arg CreateProjectCoordinationJobParams) (ProjectCoordinationJob, error) {
+	row := q.db.QueryRow(ctx, CreateProjectCoordinationJob,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.WorkflowID,
+		arg.TriggerEventID,
+		arg.JobType,
+		arg.Status,
+		arg.InputSnapshotRef,
+	)
+	var i ProjectCoordinationJob
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.WorkflowID,
+		&i.TriggerEventID,
+		&i.JobType,
+		&i.Status,
+		&i.InputSnapshotRef,
+		&i.OutputEventIds,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const CreateProjectDecisionRequest = `-- name: CreateProjectDecisionRequest :one
+INSERT INTO project_decision_requests (
+    tenant_id,
+    project_id,
+    approval_request_id,
+    coordination_job_id,
+    project_task_id,
+    target_user_id,
+    decision_type,
+    title_snapshot,
+    summary_snapshot,
+    risk_level_snapshot,
+    status_snapshot,
+    created_event_id
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::uuid,
+    $5::uuid,
+    $6::uuid,
+    $7::varchar,
+    $8::varchar,
+    $9::text,
+    $10::varchar,
+    $11::varchar,
+    $12::uuid
+) RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at
+`
+
+type CreateProjectDecisionRequestParams struct {
+	TenantID          uuid.UUID     `json:"tenant_id"`
+	ProjectID         uuid.UUID     `json:"project_id"`
+	ApprovalRequestID uuid.UUID     `json:"approval_request_id"`
+	CoordinationJobID uuid.NullUUID `json:"coordination_job_id"`
+	ProjectTaskID     uuid.NullUUID `json:"project_task_id"`
+	TargetUserID      uuid.UUID     `json:"target_user_id"`
+	DecisionType      string        `json:"decision_type"`
+	TitleSnapshot     string        `json:"title_snapshot"`
+	SummarySnapshot   pgtype.Text   `json:"summary_snapshot"`
+	RiskLevelSnapshot pgtype.Text   `json:"risk_level_snapshot"`
+	StatusSnapshot    string        `json:"status_snapshot"`
+	CreatedEventID    uuid.NullUUID `json:"created_event_id"`
+}
+
+func (q *Queries) CreateProjectDecisionRequest(ctx context.Context, arg CreateProjectDecisionRequestParams) (ProjectDecisionRequest, error) {
+	row := q.db.QueryRow(ctx, CreateProjectDecisionRequest,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ApprovalRequestID,
+		arg.CoordinationJobID,
+		arg.ProjectTaskID,
+		arg.TargetUserID,
+		arg.DecisionType,
+		arg.TitleSnapshot,
+		arg.SummarySnapshot,
+		arg.RiskLevelSnapshot,
+		arg.StatusSnapshot,
+		arg.CreatedEventID,
+	)
+	var i ProjectDecisionRequest
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ApprovalRequestID,
+		&i.CoordinationJobID,
+		&i.ProjectTaskID,
+		&i.TargetUserID,
+		&i.DecisionType,
+		&i.TitleSnapshot,
+		&i.SummarySnapshot,
+		&i.RiskLevelSnapshot,
+		&i.StatusSnapshot,
+		&i.CreatedEventID,
+		&i.ResolvedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ResolvedAt,
 	)
 	return i, err
 }
@@ -355,6 +547,96 @@ func (q *Queries) CreateProjectEvent(ctx context.Context, arg CreateProjectEvent
 	return i, err
 }
 
+const CreateProjectExecutionSummary = `-- name: CreateProjectExecutionSummary :one
+INSERT INTO project_execution_summaries (
+    tenant_id,
+    project_id,
+    project_task_id,
+    digital_employee_id,
+    conclusion,
+    evidence_refs,
+    artifact_refs,
+    confidence_factors,
+    uncertainty,
+    missing_information,
+    recommended_next_action,
+    requires_human_review,
+    transfer_request_id,
+    created_event_id
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::uuid,
+    $5::text,
+    COALESCE($6::jsonb, '[]'::jsonb),
+    COALESCE($7::jsonb, '[]'::jsonb),
+    COALESCE($8::jsonb, '{}'::jsonb),
+    $9::text,
+    COALESCE($10::jsonb, '[]'::jsonb),
+    $11::text,
+    $12::boolean,
+    $13::uuid,
+    $14::uuid
+) RETURNING id, tenant_id, project_id, project_task_id, digital_employee_id, conclusion, evidence_refs, artifact_refs, confidence_factors, uncertainty, missing_information, recommended_next_action, requires_human_review, transfer_request_id, created_event_id, created_at
+`
+
+type CreateProjectExecutionSummaryParams struct {
+	TenantID              uuid.UUID     `json:"tenant_id"`
+	ProjectID             uuid.UUID     `json:"project_id"`
+	ProjectTaskID         uuid.UUID     `json:"project_task_id"`
+	DigitalEmployeeID     uuid.UUID     `json:"digital_employee_id"`
+	Conclusion            string        `json:"conclusion"`
+	EvidenceRefs          []byte        `json:"evidence_refs"`
+	ArtifactRefs          []byte        `json:"artifact_refs"`
+	ConfidenceFactors     []byte        `json:"confidence_factors"`
+	Uncertainty           pgtype.Text   `json:"uncertainty"`
+	MissingInformation    []byte        `json:"missing_information"`
+	RecommendedNextAction pgtype.Text   `json:"recommended_next_action"`
+	RequiresHumanReview   bool          `json:"requires_human_review"`
+	TransferRequestID     uuid.NullUUID `json:"transfer_request_id"`
+	CreatedEventID        uuid.NullUUID `json:"created_event_id"`
+}
+
+func (q *Queries) CreateProjectExecutionSummary(ctx context.Context, arg CreateProjectExecutionSummaryParams) (ProjectExecutionSummary, error) {
+	row := q.db.QueryRow(ctx, CreateProjectExecutionSummary,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ProjectTaskID,
+		arg.DigitalEmployeeID,
+		arg.Conclusion,
+		arg.EvidenceRefs,
+		arg.ArtifactRefs,
+		arg.ConfidenceFactors,
+		arg.Uncertainty,
+		arg.MissingInformation,
+		arg.RecommendedNextAction,
+		arg.RequiresHumanReview,
+		arg.TransferRequestID,
+		arg.CreatedEventID,
+	)
+	var i ProjectExecutionSummary
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ProjectTaskID,
+		&i.DigitalEmployeeID,
+		&i.Conclusion,
+		&i.EvidenceRefs,
+		&i.ArtifactRefs,
+		&i.ConfidenceFactors,
+		&i.Uncertainty,
+		&i.MissingInformation,
+		&i.RecommendedNextAction,
+		&i.RequiresHumanReview,
+		&i.TransferRequestID,
+		&i.CreatedEventID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const CreateProjectMember = `-- name: CreateProjectMember :one
 INSERT INTO project_members (
     tenant_id,
@@ -412,6 +694,86 @@ func (q *Queries) CreateProjectMember(ctx context.Context, arg CreateProjectMemb
 		&i.Settings,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const CreateProjectRouteDecision = `-- name: CreateProjectRouteDecision :one
+INSERT INTO project_route_decisions (
+    tenant_id,
+    project_id,
+    coordination_job_id,
+    demand_id,
+    candidate_digital_employee_ids,
+    selected_digital_employee_ids,
+    reason,
+    input_requirements,
+    expected_outputs,
+    budget_estimate,
+    requires_human_review,
+    created_event_id
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::uuid,
+    COALESCE($5::jsonb, '[]'::jsonb),
+    COALESCE($6::jsonb, '[]'::jsonb),
+    $7::text,
+    COALESCE($8::jsonb, '{}'::jsonb),
+    COALESCE($9::jsonb, '[]'::jsonb),
+    COALESCE($10::jsonb, '{}'::jsonb),
+    $11::boolean,
+    $12::uuid
+) RETURNING id, tenant_id, project_id, coordination_job_id, demand_id, candidate_digital_employee_ids, selected_digital_employee_ids, reason, input_requirements, expected_outputs, budget_estimate, requires_human_review, created_event_id, created_at
+`
+
+type CreateProjectRouteDecisionParams struct {
+	TenantID                    uuid.UUID     `json:"tenant_id"`
+	ProjectID                   uuid.UUID     `json:"project_id"`
+	CoordinationJobID           uuid.UUID     `json:"coordination_job_id"`
+	DemandID                    uuid.NullUUID `json:"demand_id"`
+	CandidateDigitalEmployeeIds []byte        `json:"candidate_digital_employee_ids"`
+	SelectedDigitalEmployeeIds  []byte        `json:"selected_digital_employee_ids"`
+	Reason                      string        `json:"reason"`
+	InputRequirements           []byte        `json:"input_requirements"`
+	ExpectedOutputs             []byte        `json:"expected_outputs"`
+	BudgetEstimate              []byte        `json:"budget_estimate"`
+	RequiresHumanReview         bool          `json:"requires_human_review"`
+	CreatedEventID              uuid.NullUUID `json:"created_event_id"`
+}
+
+func (q *Queries) CreateProjectRouteDecision(ctx context.Context, arg CreateProjectRouteDecisionParams) (ProjectRouteDecision, error) {
+	row := q.db.QueryRow(ctx, CreateProjectRouteDecision,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.CoordinationJobID,
+		arg.DemandID,
+		arg.CandidateDigitalEmployeeIds,
+		arg.SelectedDigitalEmployeeIds,
+		arg.Reason,
+		arg.InputRequirements,
+		arg.ExpectedOutputs,
+		arg.BudgetEstimate,
+		arg.RequiresHumanReview,
+		arg.CreatedEventID,
+	)
+	var i ProjectRouteDecision
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.CoordinationJobID,
+		&i.DemandID,
+		&i.CandidateDigitalEmployeeIds,
+		&i.SelectedDigitalEmployeeIds,
+		&i.Reason,
+		&i.InputRequirements,
+		&i.ExpectedOutputs,
+		&i.BudgetEstimate,
+		&i.RequiresHumanReview,
+		&i.CreatedEventID,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -489,6 +851,119 @@ func (q *Queries) CreateProjectTask(ctx context.Context, arg CreateProjectTaskPa
 		&i.LatestEventID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const CreateProjectTransferRequest = `-- name: CreateProjectTransferRequest :one
+INSERT INTO project_transfer_requests (
+    tenant_id,
+    project_id,
+    project_task_id,
+    requested_by_digital_employee_id,
+    reason,
+    suggested_employee_type,
+    suggested_digital_employee_ids,
+    missing_context_refs,
+    status,
+    created_event_id
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::uuid,
+    $5::text,
+    $6::varchar,
+    COALESCE($7::jsonb, '[]'::jsonb),
+    COALESCE($8::jsonb, '[]'::jsonb),
+    $9::varchar,
+    $10::uuid
+) RETURNING id, tenant_id, project_id, project_task_id, requested_by_digital_employee_id, reason, suggested_employee_type, suggested_digital_employee_ids, missing_context_refs, status, created_event_id, created_at, updated_at
+`
+
+type CreateProjectTransferRequestParams struct {
+	TenantID                     uuid.UUID     `json:"tenant_id"`
+	ProjectID                    uuid.UUID     `json:"project_id"`
+	ProjectTaskID                uuid.UUID     `json:"project_task_id"`
+	RequestedByDigitalEmployeeID uuid.UUID     `json:"requested_by_digital_employee_id"`
+	Reason                       string        `json:"reason"`
+	SuggestedEmployeeType        pgtype.Text   `json:"suggested_employee_type"`
+	SuggestedDigitalEmployeeIds  []byte        `json:"suggested_digital_employee_ids"`
+	MissingContextRefs           []byte        `json:"missing_context_refs"`
+	Status                       string        `json:"status"`
+	CreatedEventID               uuid.NullUUID `json:"created_event_id"`
+}
+
+func (q *Queries) CreateProjectTransferRequest(ctx context.Context, arg CreateProjectTransferRequestParams) (ProjectTransferRequest, error) {
+	row := q.db.QueryRow(ctx, CreateProjectTransferRequest,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ProjectTaskID,
+		arg.RequestedByDigitalEmployeeID,
+		arg.Reason,
+		arg.SuggestedEmployeeType,
+		arg.SuggestedDigitalEmployeeIds,
+		arg.MissingContextRefs,
+		arg.Status,
+		arg.CreatedEventID,
+	)
+	var i ProjectTransferRequest
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ProjectTaskID,
+		&i.RequestedByDigitalEmployeeID,
+		&i.Reason,
+		&i.SuggestedEmployeeType,
+		&i.SuggestedDigitalEmployeeIds,
+		&i.MissingContextRefs,
+		&i.Status,
+		&i.CreatedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const FinishProjectCoordinationJob = `-- name: FinishProjectCoordinationJob :one
+UPDATE project_coordination_jobs
+SET status = $1::varchar,
+    output_event_ids = COALESCE($2::jsonb, output_event_ids),
+    finished_at = NOW()
+WHERE tenant_id = $3::uuid
+  AND id = $4::uuid
+RETURNING id, tenant_id, project_id, workflow_id, trigger_event_id, job_type, status, input_snapshot_ref, output_event_ids, started_at, finished_at, created_at
+`
+
+type FinishProjectCoordinationJobParams struct {
+	Status         string    `json:"status"`
+	OutputEventIds []byte    `json:"output_event_ids"`
+	TenantID       uuid.UUID `json:"tenant_id"`
+	ID             uuid.UUID `json:"id"`
+}
+
+func (q *Queries) FinishProjectCoordinationJob(ctx context.Context, arg FinishProjectCoordinationJobParams) (ProjectCoordinationJob, error) {
+	row := q.db.QueryRow(ctx, FinishProjectCoordinationJob,
+		arg.Status,
+		arg.OutputEventIds,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i ProjectCoordinationJob
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.WorkflowID,
+		&i.TriggerEventID,
+		&i.JobType,
+		&i.Status,
+		&i.InputSnapshotRef,
+		&i.OutputEventIds,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -596,6 +1071,280 @@ func (q *Queries) GetProject(ctx context.Context, arg GetProjectParams) (Project
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const GetProjectDecisionRequest = `-- name: GetProjectDecisionRequest :one
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at FROM project_decision_requests
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND id = $3::uuid
+`
+
+type GetProjectDecisionRequestParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	ID        uuid.UUID `json:"id"`
+}
+
+func (q *Queries) GetProjectDecisionRequest(ctx context.Context, arg GetProjectDecisionRequestParams) (ProjectDecisionRequest, error) {
+	row := q.db.QueryRow(ctx, GetProjectDecisionRequest, arg.TenantID, arg.ProjectID, arg.ID)
+	var i ProjectDecisionRequest
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ApprovalRequestID,
+		&i.CoordinationJobID,
+		&i.ProjectTaskID,
+		&i.TargetUserID,
+		&i.DecisionType,
+		&i.TitleSnapshot,
+		&i.SummarySnapshot,
+		&i.RiskLevelSnapshot,
+		&i.StatusSnapshot,
+		&i.CreatedEventID,
+		&i.ResolvedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ResolvedAt,
+	)
+	return i, err
+}
+
+const GetProjectDemand = `-- name: GetProjectDemand :one
+SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at FROM project_demands
+WHERE tenant_id = $1::uuid
+  AND id = $2::uuid
+`
+
+type GetProjectDemandParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) GetProjectDemand(ctx context.Context, arg GetProjectDemandParams) (ProjectDemand, error) {
+	row := q.db.QueryRow(ctx, GetProjectDemand, arg.TenantID, arg.ID)
+	var i ProjectDemand
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.SubmittedByUserID,
+		&i.Title,
+		&i.Content,
+		&i.SourceType,
+		&i.SourceRefs,
+		&i.Attachments,
+		&i.Priority,
+		&i.RiskLevel,
+		&i.Status,
+		&i.CreatedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const GetProjectEvent = `-- name: GetProjectEvent :one
+SELECT id, tenant_id, project_id, sequence_number, event_type, actor_type, actor_id, resource_type, resource_id, summary, payload, created_at FROM project_events
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND id = $3::uuid
+`
+
+type GetProjectEventParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	ID        uuid.UUID `json:"id"`
+}
+
+func (q *Queries) GetProjectEvent(ctx context.Context, arg GetProjectEventParams) (ProjectEvent, error) {
+	row := q.db.QueryRow(ctx, GetProjectEvent, arg.TenantID, arg.ProjectID, arg.ID)
+	var i ProjectEvent
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.SequenceNumber,
+		&i.EventType,
+		&i.ActorType,
+		&i.ActorID,
+		&i.ResourceType,
+		&i.ResourceID,
+		&i.Summary,
+		&i.Payload,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const GetProjectTask = `-- name: GetProjectTask :one
+SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at FROM project_tasks
+WHERE tenant_id = $1::uuid
+  AND id = $2::uuid
+`
+
+type GetProjectTaskParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) GetProjectTask(ctx context.Context, arg GetProjectTaskParams) (ProjectTask, error) {
+	row := q.db.QueryRow(ctx, GetProjectTask, arg.TenantID, arg.ID)
+	var i ProjectTask
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Title,
+		&i.Summary,
+		&i.Status,
+		&i.AssignedDigitalEmployeeID,
+		&i.RuntimeTaskID,
+		&i.DigitalEmployeeRunID,
+		&i.RiskLevel,
+		&i.RequiresHumanApproval,
+		&i.LatestEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const GetProjectTaskRunRuntimeNodeID = `-- name: GetProjectTaskRunRuntimeNodeID :one
+SELECT tr.runtime_node_id
+FROM project_tasks pt
+JOIN task_runs tr
+  ON tr.tenant_id = pt.tenant_id
+ AND tr.id = $1::uuid
+ AND tr.id = pt.digital_employee_run_id
+WHERE pt.tenant_id = $2::uuid
+  AND pt.id = $3::uuid
+`
+
+type GetProjectTaskRunRuntimeNodeIDParams struct {
+	RunID         uuid.UUID `json:"run_id"`
+	TenantID      uuid.UUID `json:"tenant_id"`
+	ProjectTaskID uuid.UUID `json:"project_task_id"`
+}
+
+func (q *Queries) GetProjectTaskRunRuntimeNodeID(ctx context.Context, arg GetProjectTaskRunRuntimeNodeIDParams) (uuid.NullUUID, error) {
+	row := q.db.QueryRow(ctx, GetProjectTaskRunRuntimeNodeID, arg.RunID, arg.TenantID, arg.ProjectTaskID)
+	var runtime_node_id uuid.NullUUID
+	err := row.Scan(&runtime_node_id)
+	return runtime_node_id, err
+}
+
+const ListProjectCoordinationJobs = `-- name: ListProjectCoordinationJobs :many
+SELECT id, tenant_id, project_id, workflow_id, trigger_event_id, job_type, status, input_snapshot_ref, output_event_ids, started_at, finished_at, created_at FROM project_coordination_jobs
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListProjectCoordinationJobsParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	Offset    int32     `json:"offset"`
+	Limit     int32     `json:"limit"`
+}
+
+func (q *Queries) ListProjectCoordinationJobs(ctx context.Context, arg ListProjectCoordinationJobsParams) ([]ProjectCoordinationJob, error) {
+	rows, err := q.db.Query(ctx, ListProjectCoordinationJobs,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectCoordinationJob{}
+	for rows.Next() {
+		var i ProjectCoordinationJob
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.WorkflowID,
+			&i.TriggerEventID,
+			&i.JobType,
+			&i.Status,
+			&i.InputSnapshotRef,
+			&i.OutputEventIds,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectDecisionRequests = `-- name: ListProjectDecisionRequests :many
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at FROM project_decision_requests
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListProjectDecisionRequestsParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	Offset    int32     `json:"offset"`
+	Limit     int32     `json:"limit"`
+}
+
+func (q *Queries) ListProjectDecisionRequests(ctx context.Context, arg ListProjectDecisionRequestsParams) ([]ProjectDecisionRequest, error) {
+	rows, err := q.db.Query(ctx, ListProjectDecisionRequests,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectDecisionRequest{}
+	for rows.Next() {
+		var i ProjectDecisionRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ApprovalRequestID,
+			&i.CoordinationJobID,
+			&i.ProjectTaskID,
+			&i.TargetUserID,
+			&i.DecisionType,
+			&i.TitleSnapshot,
+			&i.SummarySnapshot,
+			&i.RiskLevelSnapshot,
+			&i.StatusSnapshot,
+			&i.CreatedEventID,
+			&i.ResolvedEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ListProjectDemands = `-- name: ListProjectDemands :many
@@ -707,6 +1456,63 @@ func (q *Queries) ListProjectEvents(ctx context.Context, arg ListProjectEventsPa
 	return items, nil
 }
 
+const ListProjectExecutionSummaries = `-- name: ListProjectExecutionSummaries :many
+SELECT id, tenant_id, project_id, project_task_id, digital_employee_id, conclusion, evidence_refs, artifact_refs, confidence_factors, uncertainty, missing_information, recommended_next_action, requires_human_review, transfer_request_id, created_event_id, created_at FROM project_execution_summaries
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListProjectExecutionSummariesParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	Offset    int32     `json:"offset"`
+	Limit     int32     `json:"limit"`
+}
+
+func (q *Queries) ListProjectExecutionSummaries(ctx context.Context, arg ListProjectExecutionSummariesParams) ([]ProjectExecutionSummary, error) {
+	rows, err := q.db.Query(ctx, ListProjectExecutionSummaries,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectExecutionSummary{}
+	for rows.Next() {
+		var i ProjectExecutionSummary
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ProjectTaskID,
+			&i.DigitalEmployeeID,
+			&i.Conclusion,
+			&i.EvidenceRefs,
+			&i.ArtifactRefs,
+			&i.ConfidenceFactors,
+			&i.Uncertainty,
+			&i.MissingInformation,
+			&i.RecommendedNextAction,
+			&i.RequiresHumanReview,
+			&i.TransferRequestID,
+			&i.CreatedEventID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectMembers = `-- name: ListProjectMembers :many
 SELECT id, tenant_id, project_id, principal_type, principal_id, project_role, display_name_snapshot, status, settings, created_at, updated_at FROM project_members
 WHERE tenant_id = $1::uuid
@@ -740,6 +1546,61 @@ func (q *Queries) ListProjectMembers(ctx context.Context, arg ListProjectMembers
 			&i.Settings,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectRouteDecisions = `-- name: ListProjectRouteDecisions :many
+SELECT id, tenant_id, project_id, coordination_job_id, demand_id, candidate_digital_employee_ids, selected_digital_employee_ids, reason, input_requirements, expected_outputs, budget_estimate, requires_human_review, created_event_id, created_at FROM project_route_decisions
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListProjectRouteDecisionsParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	Offset    int32     `json:"offset"`
+	Limit     int32     `json:"limit"`
+}
+
+func (q *Queries) ListProjectRouteDecisions(ctx context.Context, arg ListProjectRouteDecisionsParams) ([]ProjectRouteDecision, error) {
+	rows, err := q.db.Query(ctx, ListProjectRouteDecisions,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectRouteDecision{}
+	for rows.Next() {
+		var i ProjectRouteDecision
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.CoordinationJobID,
+			&i.DemandID,
+			&i.CandidateDigitalEmployeeIds,
+			&i.SelectedDigitalEmployeeIds,
+			&i.Reason,
+			&i.InputRequirements,
+			&i.ExpectedOutputs,
+			&i.BudgetEstimate,
+			&i.RequiresHumanReview,
+			&i.CreatedEventID,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -797,6 +1658,60 @@ func (q *Queries) ListProjectTasks(ctx context.Context, arg ListProjectTasksPara
 			&i.RiskLevel,
 			&i.RequiresHumanApproval,
 			&i.LatestEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectTransferRequests = `-- name: ListProjectTransferRequests :many
+SELECT id, tenant_id, project_id, project_task_id, requested_by_digital_employee_id, reason, suggested_employee_type, suggested_digital_employee_ids, missing_context_refs, status, created_event_id, created_at, updated_at FROM project_transfer_requests
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListProjectTransferRequestsParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	Offset    int32     `json:"offset"`
+	Limit     int32     `json:"limit"`
+}
+
+func (q *Queries) ListProjectTransferRequests(ctx context.Context, arg ListProjectTransferRequestsParams) ([]ProjectTransferRequest, error) {
+	rows, err := q.db.Query(ctx, ListProjectTransferRequests,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectTransferRequest{}
+	for rows.Next() {
+		var i ProjectTransferRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ProjectTaskID,
+			&i.RequestedByDigitalEmployeeID,
+			&i.Reason,
+			&i.SuggestedEmployeeType,
+			&i.SuggestedDigitalEmployeeIds,
+			&i.MissingContextRefs,
+			&i.Status,
+			&i.CreatedEventID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -892,6 +1807,58 @@ func (q *Queries) ReplaceProjectMembersDelete(ctx context.Context, arg ReplacePr
 	return err
 }
 
+const ResolveProjectDecisionRequest = `-- name: ResolveProjectDecisionRequest :one
+UPDATE project_decision_requests
+SET status_snapshot = $1::varchar,
+    resolved_event_id = $2::uuid,
+    resolved_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = $3::uuid
+  AND project_id = $4::uuid
+  AND id = $5::uuid
+  AND status_snapshot = 'pending'
+RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at
+`
+
+type ResolveProjectDecisionRequestParams struct {
+	StatusSnapshot  string        `json:"status_snapshot"`
+	ResolvedEventID uuid.NullUUID `json:"resolved_event_id"`
+	TenantID        uuid.UUID     `json:"tenant_id"`
+	ProjectID       uuid.UUID     `json:"project_id"`
+	ID              uuid.UUID     `json:"id"`
+}
+
+func (q *Queries) ResolveProjectDecisionRequest(ctx context.Context, arg ResolveProjectDecisionRequestParams) (ProjectDecisionRequest, error) {
+	row := q.db.QueryRow(ctx, ResolveProjectDecisionRequest,
+		arg.StatusSnapshot,
+		arg.ResolvedEventID,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var i ProjectDecisionRequest
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ApprovalRequestID,
+		&i.CoordinationJobID,
+		&i.ProjectTaskID,
+		&i.TargetUserID,
+		&i.DecisionType,
+		&i.TitleSnapshot,
+		&i.SummarySnapshot,
+		&i.RiskLevelSnapshot,
+		&i.StatusSnapshot,
+		&i.CreatedEventID,
+		&i.ResolvedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ResolvedAt,
+	)
+	return i, err
+}
+
 const UpdateProject = `-- name: UpdateProject :one
 UPDATE projects
 SET
@@ -960,6 +1927,54 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.ApprovalPolicy,
 		&i.EvidencePolicy,
 		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const UpdateProjectTaskStatus = `-- name: UpdateProjectTaskStatus :one
+UPDATE project_tasks
+SET status = $1::varchar,
+    latest_event_id = COALESCE($2::uuid, latest_event_id),
+    updated_at = NOW()
+WHERE tenant_id = $3::uuid
+  AND id = $4::uuid
+  AND status = ANY($5::varchar[])
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at
+`
+
+type UpdateProjectTaskStatusParams struct {
+	Status          string        `json:"status"`
+	LatestEventID   uuid.NullUUID `json:"latest_event_id"`
+	TenantID        uuid.UUID     `json:"tenant_id"`
+	ID              uuid.UUID     `json:"id"`
+	CurrentStatuses []string      `json:"current_statuses"`
+}
+
+func (q *Queries) UpdateProjectTaskStatus(ctx context.Context, arg UpdateProjectTaskStatusParams) (ProjectTask, error) {
+	row := q.db.QueryRow(ctx, UpdateProjectTaskStatus,
+		arg.Status,
+		arg.LatestEventID,
+		arg.TenantID,
+		arg.ID,
+		arg.CurrentStatuses,
+	)
+	var i ProjectTask
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Title,
+		&i.Summary,
+		&i.Status,
+		&i.AssignedDigitalEmployeeID,
+		&i.RuntimeTaskID,
+		&i.DigitalEmployeeRunID,
+		&i.RiskLevel,
+		&i.RequiresHumanApproval,
+		&i.LatestEventID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

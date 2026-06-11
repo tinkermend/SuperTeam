@@ -835,3 +835,43 @@ func TestProjectManagementV0MigrationDefinesProjectFactsAndEvents(t *testing.T) 
 		}
 	}
 }
+
+func TestProjectManagementV1TemporalCoordinationMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/014_project_management_v1_temporal_coordination.sql")
+	if err != nil {
+		t.Fatalf("read project management v1 migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"CREATE TABLE approval_requests",
+		"CREATE TABLE approval_decisions",
+		"CREATE TABLE project_coordination_jobs",
+		"CREATE TABLE project_route_decisions",
+		"candidate_digital_employee_ids JSONB NOT NULL DEFAULT '[]'::jsonb",
+		"selected_digital_employee_ids JSONB NOT NULL DEFAULT '[]'::jsonb",
+		"CREATE TABLE project_execution_summaries",
+		"CREATE TABLE project_transfer_requests",
+		"CREATE TABLE project_decision_requests",
+		"approval_request_id UUID NOT NULL",
+		"CREATE INDEX idx_project_route_decisions_tenant_project_created",
+		"CREATE INDEX idx_project_decision_requests_tenant_project_status",
+		"COMMENT ON TABLE approval_requests IS",
+		"COMMENT ON COLUMN project_decision_requests.approval_request_id IS",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected v1 migration to contain %q", expected)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"CREATE TYPE approval_status",
+		"CREATE TYPE project_coordination_job_status",
+		"BIGSERIAL PRIMARY KEY",
+		"REFERENCES digital_employees",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("v1 migration must not contain %q", forbidden)
+		}
+	}
+}

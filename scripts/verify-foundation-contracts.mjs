@@ -22,6 +22,9 @@ const requiredOpenApiOperations = new Set([
   "POST /api/v1/runtime/commands/{commandId}/fail",
   "POST /api/v1/runtime/commands/{commandId}/cancelled",
   "POST /api/v1/runtime/commands/{commandId}/timed-out",
+  "POST /api/v1/runtime/project-tasks/{projectTaskId}/complete",
+  "POST /api/v1/runtime/project-tasks/{projectTaskId}/fail",
+  "POST /api/v1/runtime/project-tasks/{projectTaskId}/transfer-requests",
   "GET /api/v1/runtime/nodes",
   "GET /api/v1/runtime/nodes/{nodeId}",
   "GET /api/v1/teams",
@@ -41,6 +44,26 @@ const requiredOpenApiOperations = new Set([
   "POST /api/v1/skills/uploads",
   "GET /api/v1/skills/{skillId}",
   "PUT /api/v1/skills/{skillId}/files/{filePath}",
+  "GET /api/v1/projects",
+  "POST /api/v1/projects",
+  "GET /api/v1/projects/{projectId}",
+  "PATCH /api/v1/projects/{projectId}",
+  "POST /api/v1/projects/{projectId}/archive",
+  "GET /api/v1/projects/{projectId}/overview",
+  "GET /api/v1/projects/{projectId}/members",
+  "PUT /api/v1/projects/{projectId}/members",
+  "GET /api/v1/projects/{projectId}/tasks",
+  "GET /api/v1/projects/{projectId}/events",
+  "GET /api/v1/projects/{projectId}/config",
+  "PUT /api/v1/projects/{projectId}/config",
+  "GET /api/v1/projects/{projectId}/demands",
+  "POST /api/v1/projects/{projectId}/demands",
+  "GET /api/v1/projects/{projectId}/route-decisions",
+  "GET /api/v1/projects/{projectId}/coordination-jobs",
+  "GET /api/v1/projects/{projectId}/decisions",
+  "POST /api/v1/projects/{projectId}/decisions/{decisionId}/resolve",
+  "GET /api/v1/projects/{projectId}/execution-summaries",
+  "GET /api/v1/projects/{projectId}/transfer-requests",
 ]);
 
 const requiredRustClientPaths = new Set([
@@ -100,6 +123,8 @@ function normalizePath(path) {
     .replace(/\{command_id\}/g, "{commandId}")
     .replace(/\/api\/v1\/runtime\/commands\/\{taskId\}/g, "/api/v1/runtime/commands/{commandId}")
     .replace(/\/api\/v1\/runtime\/commands\/\{id\}/g, "/api/v1/runtime/commands/{commandId}")
+    .replace(/\/api\/v1\/runtime\/project-tasks\/\{taskId\}/g, "/api/v1/runtime/project-tasks/{projectTaskId}")
+    .replace(/\/api\/v1\/runtime\/project-tasks\/\{id\}/g, "/api/v1/runtime/project-tasks/{projectTaskId}")
     .replace(/\/api\/v1\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/tasks/{taskId}")
     .replace(/\/api\/v1\/runtime\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/runtime/tasks/{taskId}")
     .replace(/\/api\/v1\/tasks\/\{id\}/g, "/api/v1/tasks/{taskId}")
@@ -109,6 +134,9 @@ function normalizePath(path) {
     .replace(/\/api\/v1\/runtime\/sessions\/\{id\}/g, "/api/v1/runtime/sessions/{sessionId}")
     .replace(/\/api\/v1\/runtime\/nodes\/\{id\}/g, "/api/v1/runtime/nodes/{nodeId}")
     .replace(/\{nodeId\}/g, "{nodeId}")
+    .replace(/\{projectId\}/g, "{projectId}")
+    .replace(/\{decisionId\}/g, "{decisionId}")
+    .replace(/\{projectTaskId\}/g, "{projectTaskId}")
     .replace(/\/api\/v1\/skills\/\{skillId\}\/files\/\*/g, "/api/v1/skills/{skillId}/files/{filePath}")
     .replace(/\{filePath:\.\*\}/g, "{filePath}");
 }

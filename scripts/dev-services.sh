@@ -15,14 +15,17 @@ STOP_TIMEOUT_SECONDS="${SUPERTEAM_DEV_STOP_TIMEOUT_SECONDS:-10}"
 CONTROL_PLANE_CMD="${SUPERTEAM_DEV_CONTROL_PLANE_CMD:-pnpm run dev:control-plane}"
 CONTROL_PLANE_WAIT_URL="${SUPERTEAM_DEV_CONTROL_PLANE_WAIT_URL-http://127.0.0.1:8081/health}"
 
+TEMPORAL_CMD="${SUPERTEAM_DEV_TEMPORAL_CMD:-temporal server start-dev}"
+TEMPORAL_WAIT_URL="${SUPERTEAM_DEV_TEMPORAL_WAIT_URL-http://127.0.0.1:8233/}"
+
 WEB_CMD="${SUPERTEAM_DEV_WEB_CMD:-pnpm run dev:web}"
 WEB_WAIT_URL="${SUPERTEAM_DEV_WEB_WAIT_URL-http://127.0.0.1:3000/}"
 
 RUNTIME_AGENT_CMD="${SUPERTEAM_DEV_RUNTIME_AGENT_CMD:-pnpm run dev:runtime-agent}"
 RUNTIME_AGENT_WAIT_URL="${SUPERTEAM_DEV_RUNTIME_AGENT_WAIT_URL-}"
 
-SERVICES=(control-plane web runtime-agent)
-STOP_SERVICES=(runtime-agent web control-plane)
+SERVICES=(temporal control-plane web runtime-agent)
+STOP_SERVICES=(runtime-agent web control-plane temporal)
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -49,7 +52,7 @@ log_success() {
 usage() {
     cat <<'USAGE'
 Usage:
-  scripts/dev-services.sh <start|stop|restart|status> [all|control-plane|web|runtime-agent]
+  scripts/dev-services.sh <start|stop|restart|status> [all|temporal|control-plane|web|runtime-agent]
 
 Examples:
   scripts/dev-services.sh start all
@@ -61,6 +64,8 @@ Environment overrides:
   SUPERTEAM_DEV_PID_DIR
   SUPERTEAM_DEV_LOG_DIR
   SUPERTEAM_DEV_WAIT_SECONDS
+  SUPERTEAM_DEV_TEMPORAL_CMD
+  SUPERTEAM_DEV_TEMPORAL_WAIT_URL
   SUPERTEAM_DEV_CONTROL_PLANE_CMD
   SUPERTEAM_DEV_CONTROL_PLANE_WAIT_URL
   SUPERTEAM_DEV_WEB_CMD
@@ -76,13 +81,14 @@ ensure_dirs() {
 
 is_known_service() {
     case "$1" in
-        control-plane|web|runtime-agent) return 0 ;;
+        temporal|control-plane|web|runtime-agent) return 0 ;;
         *) return 1 ;;
     esac
 }
 
 service_command() {
     case "$1" in
+        temporal) printf '%s\n' "$TEMPORAL_CMD" ;;
         control-plane) printf '%s\n' "$CONTROL_PLANE_CMD" ;;
         web) printf '%s\n' "$WEB_CMD" ;;
         runtime-agent) printf '%s\n' "$RUNTIME_AGENT_CMD" ;;
@@ -91,6 +97,7 @@ service_command() {
 
 service_wait_url() {
     case "$1" in
+        temporal) printf '%s\n' "$TEMPORAL_WAIT_URL" ;;
         control-plane) printf '%s\n' "$CONTROL_PLANE_WAIT_URL" ;;
         web) printf '%s\n' "$WEB_WAIT_URL" ;;
         runtime-agent) printf '%s\n' "$RUNTIME_AGENT_WAIT_URL" ;;

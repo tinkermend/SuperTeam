@@ -12,6 +12,7 @@ var (
 	ErrInvalidProjectMember = errors.New("invalid project member")
 	ErrProjectNotFound      = errors.New("project not found")
 	ErrProjectArchived      = errors.New("project archived")
+	ErrProjectTaskForbidden = errors.New("project task forbidden")
 )
 
 type ProjectStatus string
@@ -51,6 +52,17 @@ const (
 	ProjectEventConfigChanged   ProjectEventType = "project.config.changed"
 	ProjectEventArchived        ProjectEventType = "project.archived"
 	ProjectEventDemandSubmitted ProjectEventType = "demand.submitted"
+
+	ProjectEventWorkflowSignaled       ProjectEventType = "workflow.signaled"
+	ProjectEventCoordinationJobCreated ProjectEventType = "coordination_job.created"
+	ProjectEventRouteDecisionCreated   ProjectEventType = "route_decision.created"
+	ProjectEventTaskCreated            ProjectEventType = "project_task.created"
+	ProjectEventTaskDispatched         ProjectEventType = "project_task.dispatched"
+	ProjectEventTaskCompleted          ProjectEventType = "project_task.completed"
+	ProjectEventTaskFailed             ProjectEventType = "project_task.failed"
+	ProjectEventTransferRequested      ProjectEventType = "transfer.requested"
+	ProjectEventDecisionRequested      ProjectEventType = "decision.requested"
+	ProjectEventDecisionSubmitted      ProjectEventType = "decision.submitted"
 )
 
 type DemandSourceType string
@@ -116,10 +128,99 @@ type ProjectTask struct {
 	Summary                   *string
 	Status                    string
 	AssignedDigitalEmployeeID *uuid.UUID
+	RuntimeTaskID             *uuid.UUID
+	DigitalEmployeeRunID      *uuid.UUID
 	RiskLevel                 *string
 	RequiresHumanApproval     bool
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
+}
+
+type CoordinationJob struct {
+	ID               uuid.UUID
+	TenantID         uuid.UUID
+	ProjectID        uuid.UUID
+	WorkflowID       string
+	TriggerEventID   *uuid.UUID
+	JobType          string
+	Status           string
+	InputSnapshotRef map[string]any
+	OutputEventIDs   []any
+	StartedAt        *time.Time
+	FinishedAt       *time.Time
+	CreatedAt        time.Time
+}
+
+type RouteDecision struct {
+	ID                          uuid.UUID
+	TenantID                    uuid.UUID
+	ProjectID                   uuid.UUID
+	CoordinationJobID           uuid.UUID
+	DemandID                    *uuid.UUID
+	CandidateDigitalEmployeeIDs []uuid.UUID
+	SelectedDigitalEmployeeIDs  []uuid.UUID
+	Reason                      string
+	InputRequirements           map[string]any
+	ExpectedOutputs             []any
+	BudgetEstimate              map[string]any
+	RequiresHumanReview         bool
+	CreatedEventID              *uuid.UUID
+	CreatedAt                   time.Time
+}
+
+type ExecutionSummary struct {
+	ID                    uuid.UUID
+	TenantID              uuid.UUID
+	ProjectID             uuid.UUID
+	ProjectTaskID         uuid.UUID
+	DigitalEmployeeID     uuid.UUID
+	Conclusion            string
+	EvidenceRefs          []any
+	ArtifactRefs          []any
+	ConfidenceFactors     map[string]any
+	Uncertainty           *string
+	MissingInformation    []any
+	RecommendedNextAction *string
+	RequiresHumanReview   bool
+	TransferRequestID     *uuid.UUID
+	CreatedEventID        *uuid.UUID
+	CreatedAt             time.Time
+}
+
+type TransferRequest struct {
+	ID                           uuid.UUID
+	TenantID                     uuid.UUID
+	ProjectID                    uuid.UUID
+	ProjectTaskID                uuid.UUID
+	RequestedByDigitalEmployeeID uuid.UUID
+	Reason                       string
+	SuggestedEmployeeType        *string
+	SuggestedDigitalEmployeeIDs  []uuid.UUID
+	MissingContextRefs           []any
+	Status                       string
+	CreatedEventID               *uuid.UUID
+	CreatedAt                    time.Time
+	UpdatedAt                    time.Time
+}
+
+type DecisionRequest struct {
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	ApprovalRequestID uuid.UUID
+	CoordinationJobID *uuid.UUID
+	ProjectTaskID     *uuid.UUID
+	TargetUserID      uuid.UUID
+	DecisionType      string
+	TitleSnapshot     string
+	SummarySnapshot   *string
+	RiskLevelSnapshot *string
+	StatusSnapshot    string
+	CreatedEventID    *uuid.UUID
+	ResolvedEventID   *uuid.UUID
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	ResolvedAt        *time.Time
 }
 
 type ProjectEvent struct {
@@ -219,6 +320,66 @@ type SubmitProjectDemandRequest struct {
 	SourceType        DemandSourceType
 	SourceRefs        map[string]any
 	Attachments       []any
+}
+
+type ResolveApprovalRequest struct {
+	TenantID          uuid.UUID
+	ApprovalRequestID uuid.UUID
+	DecidedByUserID   uuid.UUID
+	Decision          string
+	Comment           string
+	Payload           map[string]any
+}
+
+type ResolveDecisionRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DecisionRequestID uuid.UUID
+	DecidedByUserID   uuid.UUID
+	Decision          string
+	Comment           string
+	Payload           map[string]any
+}
+
+type CompleteProjectTaskRequest struct {
+	TenantID              uuid.UUID
+	RuntimeNodeID         uuid.UUID
+	ProjectTaskID         uuid.UUID
+	DigitalEmployeeID     uuid.UUID
+	Conclusion            string
+	EvidenceRefs          []any
+	ArtifactRefs          []any
+	ConfidenceFactors     map[string]any
+	Uncertainty           string
+	MissingInformation    []any
+	RecommendedNextAction string
+	RequiresHumanReview   bool
+}
+
+type FailProjectTaskRequest struct {
+	TenantID          uuid.UUID
+	RuntimeNodeID     uuid.UUID
+	ProjectTaskID     uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	FailureSummary    string
+}
+
+type RequestProjectTaskTransferRequest struct {
+	TenantID                    uuid.UUID
+	RuntimeNodeID               uuid.UUID
+	ProjectTaskID               uuid.UUID
+	DigitalEmployeeID           uuid.UUID
+	Reason                      string
+	SuggestedEmployeeType       string
+	SuggestedDigitalEmployeeIDs []uuid.UUID
+	MissingContextRefs          []any
+}
+
+type RetryWorkflowSignalRequest struct {
+	TenantID  uuid.UUID
+	ProjectID uuid.UUID
+	EventID   uuid.UUID
+	ActorID   uuid.UUID
 }
 
 type ListProjectsRequest struct {

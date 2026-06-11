@@ -11,10 +11,16 @@ import {
   createProject,
   getProject,
   getProjectOverview,
+  listProjectCoordinationJobs,
+  listProjectDecisionRequests,
   listProjectDemands,
   listProjectEvents,
+  listProjectExecutionSummaries,
+  listProjectRouteDecisions,
   listProjects,
   listProjectTasks,
+  listProjectTransferRequests,
+  resolveProjectDecision,
   submitProjectDemand,
   type CreateProjectInput,
   type ListProjectsFilters,
@@ -130,8 +136,12 @@ export function ProjectsView({
     placeholderData: keepPreviousData,
   });
 
-  const selectedProject = selectedProjectFromList ?? selectedProjectQuery.data;
-  const effectiveProjectId = selectedProject?.id ?? selectedProjectId;
+  const selectedProject =
+    selectedProjectFromList ??
+    (selectedProjectQuery.data?.id === selectedProjectId
+      ? selectedProjectQuery.data
+      : undefined);
+  const effectiveProjectId = selectedProjectId;
 
   useEffect(() => {
     if (routeProjectId || projects.length === 0) {
@@ -174,6 +184,46 @@ export function ProjectsView({
     placeholderData: keepPreviousData,
   });
 
+  const routeDecisionsQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-route-decisions", effectiveProjectId],
+    queryFn: () =>
+      listProjectRouteDecisions(apiOptions, effectiveProjectId as string, { limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const coordinationJobsQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-coordination-jobs", effectiveProjectId],
+    queryFn: () =>
+      listProjectCoordinationJobs(apiOptions, effectiveProjectId as string, { limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const decisionRequestsQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-decisions", effectiveProjectId],
+    queryFn: () =>
+      listProjectDecisionRequests(apiOptions, effectiveProjectId as string, { limit: 20 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const executionSummariesQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-execution-summaries", effectiveProjectId],
+    queryFn: () =>
+      listProjectExecutionSummaries(apiOptions, effectiveProjectId as string, { limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const transferRequestsQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-transfer-requests", effectiveProjectId],
+    queryFn: () =>
+      listProjectTransferRequests(apiOptions, effectiveProjectId as string, { limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+
   const createMutation = useMutation({
     mutationFn: (input: CreateProjectInput) => createProject(apiOptions, input),
     onSuccess: async (response) => {
@@ -198,19 +248,69 @@ export function ProjectsView({
   const submitDemandMutation = useMutation({
     mutationFn: (input: SubmitProjectDemandInput) =>
       submitProjectDemand(apiOptions, effectiveProjectId as string, input),
-    onSuccess: async () => {
+    onSuccess: async (demand) => {
+      const projectId = demand.project_id || effectiveProjectId;
       setDemandOpen(false);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["project-demands", effectiveProjectId] }),
-        queryClient.invalidateQueries({ queryKey: ["project-events", effectiveProjectId] }),
-        queryClient.invalidateQueries({ queryKey: ["project-overview", effectiveProjectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-demands", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
+      ]);
+    },
+  });
+
+  const resolveDecisionMutation = useMutation({
+    mutationFn: (input: { decisionId: string; decision: string }) =>
+      resolveProjectDecision(
+        apiOptions,
+        effectiveProjectId as string,
+        input.decisionId,
+        { decision: input.decision },
+      ),
+    onSuccess: async (decisionRequest) => {
+      const projectId = decisionRequest.project_id || effectiveProjectId;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["project-decisions", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-tasks", projectId] }),
       ]);
     },
   });
 
   const isInitialLoading = projectsQuery.isLoading && !projectsQuery.data;
-  const displayedProject = overviewQuery.data?.project ?? selectedProject;
+  const overview =
+    overviewQuery.data?.project.id === effectiveProjectId
+      ? overviewQuery.data
+      : undefined;
+  const displayedProject =
+    overview?.project ??
+    (selectedProject?.id === effectiveProjectId ? selectedProject : undefined);
   const isArchived = displayedProject?.status === "archived";
+  const projectRouteDecisions = (routeDecisionsQuery.data ?? []).filter(
+    (decision) => decision.project_id === effectiveProjectId,
+  );
+  const projectCoordinationJobs = (coordinationJobsQuery.data ?? []).filter(
+    (job) => job.project_id === effectiveProjectId,
+  );
+  const projectDecisionRequests = (decisionRequestsQuery.data ?? []).filter(
+    (decision) => decision.project_id === effectiveProjectId,
+  );
+  const projectExecutionSummaries = (executionSummariesQuery.data ?? []).filter(
+    (summary) => summary.project_id === effectiveProjectId,
+  );
+  const projectTransferRequests = (transferRequestsQuery.data ?? []).filter(
+    (request) => request.project_id === effectiveProjectId,
+  );
+  const projectTasks = (tasksQuery.data ?? []).filter(
+    (task) => task.project_id === effectiveProjectId,
+  );
+  const projectEvents = (eventsQuery.data ?? []).filter(
+    (event) => event.project_id === effectiveProjectId,
+  );
+  const projectDemands = (demandsQuery.data ?? []).filter(
+    (demand) => demand.project_id === effectiveProjectId,
+  );
 
   return (
     <ProjectManagementShell
@@ -238,18 +338,28 @@ export function ProjectsView({
             selectedProjectId={effectiveProjectId}
           />
           <ProjectOperationalDetail
-            demands={demandsQuery.data ?? []}
-            events={eventsQuery.data ?? []}
+            coordinationJobs={projectCoordinationJobs}
+            decisionRequests={projectDecisionRequests}
+            demands={projectDemands}
+            events={projectEvents}
+            executionSummaries={projectExecutionSummaries}
             isArchived={isArchived}
             onArchiveProject={() => {
               if (effectiveProjectId) {
                 archiveMutation.mutate(effectiveProjectId);
               }
             }}
+            onResolveDecision={(decisionId, decision) => {
+              if (effectiveProjectId) {
+                resolveDecisionMutation.mutate({ decisionId, decision });
+              }
+            }}
             onSubmitDemand={() => setDemandOpen(true)}
-            overview={overviewQuery.data}
+            overview={overview}
             project={displayedProject}
-            tasks={tasksQuery.data ?? []}
+            routeDecisions={projectRouteDecisions}
+            tasks={projectTasks}
+            transferRequests={projectTransferRequests}
           />
         </div>
       ) : null}
