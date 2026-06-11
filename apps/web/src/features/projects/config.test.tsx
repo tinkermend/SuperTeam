@@ -4,7 +4,7 @@ import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { ProjectConfigView } from "@/features/projects/components/project-config-page";
-import type { ProjectConfig } from "@/lib/api/projects";
+import type { ProjectConfig, ProjectConfigRevision } from "@/lib/api/projects";
 
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
@@ -116,9 +116,69 @@ function makeConfig(status: "running" | "archived" = "running"): ProjectConfig {
   };
 }
 
+function makeConfigRevisions(): ProjectConfigRevision[] {
+  return [
+    {
+      changed_sections: ["coordination_policy"],
+      change_summary: "提高协调频率",
+      config_snapshot: {
+        approval_policy: { high_risk: "human" },
+        coordination_policy: { cadence: "continuous" },
+        evidence_policy: { retention_days: 120 },
+      },
+      created_at: "2026-01-03T08:00:00Z",
+      created_by_user_id: "human-owner-1",
+      diff_summary: { coordination_policy: "changed" },
+      id: "revision-3",
+      policy_fingerprint: "policy-fingerprint-3",
+      project_id: "project-1",
+      revision_number: 3,
+      tenant_id: "tenant-1",
+      previous_revision_id: "revision-2",
+    },
+    {
+      changed_sections: ["approvalPolicy", "evidence_policy"],
+      change_summary: "补充审批和证据规则",
+      config_snapshot: {
+        project: {
+          approvalPolicy: { highRisk: "human_review" },
+          coordination_policy: { cadence: "hourly" },
+          evidence_policy: { archive_mode: "locked", retention_days: 90 },
+        },
+      },
+      created_at: "2026-01-02T08:00:00Z",
+      created_by_user_id: "leader-user-1",
+      diff_summary: { approvalPolicy: "changed", evidence_policy: "changed" },
+      id: "revision-2",
+      policy_fingerprint: "policy-fingerprint-2",
+      project_id: "project-1",
+      revision_number: 2,
+      tenant_id: "tenant-1",
+      previous_revision_id: "revision-1",
+    },
+    {
+      changed_sections: [],
+      change_summary: "初始配置",
+      config_snapshot: {
+        approval_policy: { high_risk: "human" },
+        coordination_policy: { cadence: "daily" },
+        evidence_policy: { retention_days: 30 },
+      },
+      created_at: "2026-01-01T08:00:00Z",
+      created_by_user_id: "human-owner-1",
+      diff_summary: {},
+      id: "revision-1",
+      project_id: "project-1",
+      revision_number: 1,
+      tenant_id: "tenant-1",
+    },
+  ];
+}
+
 function createConfigFetcher(
   status: "running" | "archived" = "running",
   configs: ProjectConfig[] = [makeConfig(status)],
+  revisions: ProjectConfigRevision[] = makeConfigRevisions(),
 ) {
   let requestCount = 0;
   const latestConfig = () => configs[Math.min(requestCount, configs.length - 1)];
@@ -149,6 +209,24 @@ function createConfigFetcher(
           title: "整理历史任务",
         },
       ]);
+    }
+    if (
+      url.pathname === "/api/v1/projects/project-1/config-revisions" &&
+      method === "GET"
+    ) {
+      return jsonResponse(revisions);
+    }
+    if (
+      url.pathname.startsWith("/api/v1/projects/project-1/config-revisions/") &&
+      method === "GET"
+    ) {
+      const revisionId = decodeURIComponent(
+        url.pathname.replace("/api/v1/projects/project-1/config-revisions/", ""),
+      );
+      const revision = revisions.find((candidate) => candidate.id === revisionId);
+      return revision
+        ? jsonResponse(revision)
+        : jsonResponse({ error: "revision not found" }, 404);
     }
 
     return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 500);
@@ -192,6 +270,30 @@ async function renderConfigWithClient(fetcher: typeof fetch) {
 }
 
 describe("ProjectConfigView", () => {
+  it("renders config revision history and switches policy comparison details", async () => {
+    const fetcher = createConfigFetcher();
+    const screen = await renderConfig(fetcher);
+
+    await expect.element(screen.getByText("配置修订历史")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: "查看 revision #3" }))
+      .toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "查看 revision #2" }));
+
+    await expect
+      .element(screen.getByRole("heading", { name: "协调策略" }))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("heading", { name: "审批策略" }))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("heading", { name: "证据归档规则" }))
+      .toBeInTheDocument();
+    await expect.element(screen.getByText(/human_review/)).toBeInTheDocument();
+    await expect.element(screen.getByText(/archive_mode/)).toBeInTheDocument();
+  });
+
   it("renders config tabs and saves current project policy", async () => {
     const fetcher = createConfigFetcher();
     const screen = await renderConfig(fetcher);

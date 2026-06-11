@@ -32,10 +32,13 @@ import {
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
   getProjectConfig,
+  getProjectConfigRevision,
+  listProjectConfigRevisions,
   listProjectTasks,
   replaceProjectMembers,
   updateProjectConfig,
   type ProjectConfig,
+  type ProjectConfigRevision,
   type ProjectMemberInput,
   type ProjectTask,
   type UpdateProjectConfigInput,
@@ -43,6 +46,7 @@ import {
 import { statusLabel, statusTone } from "./project-switcher-pane";
 import { ProjectManagementShell } from "./project-management-shell";
 import { ProjectErrorState, ProjectLoadingState } from "./project-empty-states";
+import { ProjectConfigRevisionHistory } from "./project-config-revision-history";
 
 type ProjectConfigViewProps = {
   apiBaseUrl: string;
@@ -66,6 +70,11 @@ type MemberDraft = {
   members: string;
 };
 
+type RevisionSelection = {
+  projectId: string;
+  revisionId?: string;
+};
+
 export function ProjectConfigView({
   apiBaseUrl,
   fetcher,
@@ -86,6 +95,11 @@ export function ProjectConfigView({
     queryFn: () => listProjectTasks(apiOptions, projectId, { limit: 20 }),
     placeholderData: keepPreviousData,
   });
+  const configRevisionsQuery = useQuery({
+    queryKey: ["project-config-revisions", projectId],
+    queryFn: () => listProjectConfigRevisions(apiOptions, projectId, { limit: 20 }),
+    placeholderData: keepPreviousData,
+  });
 
   const [draft, setDraft] = useState<ConfigDraft>(() => emptyConfigDraft());
   const [memberDraft, setMemberDraft] = useState<MemberDraft>({ members: "[]" });
@@ -94,6 +108,65 @@ export function ProjectConfigView({
   const [hydratedProjectId, setHydratedProjectId] = useState("");
   const [isConfigDirty, setConfigDirty] = useState(false);
   const [isMembersDirty, setMembersDirty] = useState(false);
+  const [revisionSelection, setRevisionSelection] = useState<RevisionSelection>(() => ({
+    projectId,
+  }));
+
+  const projectConfigRevisions = useMemo(
+    () =>
+      (configRevisionsQuery.data ?? []).filter(
+        (revision) => revision.project_id === projectId,
+      ),
+    [configRevisionsQuery.data, projectId],
+  );
+  const latestConfigRevision = useMemo(
+    () => getLatestConfigRevision(projectConfigRevisions),
+    [projectConfigRevisions],
+  );
+
+  useEffect(() => {
+    if (!configRevisionsQuery.data) return;
+    setRevisionSelection((current) => {
+      const latestRevisionId = latestConfigRevision?.id;
+      if (current.projectId !== projectId) {
+        return { projectId, revisionId: latestRevisionId };
+      }
+      if (
+        current.revisionId &&
+        projectConfigRevisions.some((revision) => revision.id === current.revisionId)
+      ) {
+        return current;
+      }
+      if (current.revisionId === latestRevisionId) return current;
+      return { projectId, revisionId: latestRevisionId };
+    });
+  }, [
+    configRevisionsQuery.data,
+    latestConfigRevision?.id,
+    projectConfigRevisions,
+    projectId,
+  ]);
+
+  const selectedRevisionId =
+    revisionSelection.projectId === projectId ? revisionSelection.revisionId : undefined;
+  const selectedRevisionFromList = projectConfigRevisions.find(
+    (revision) => revision.id === selectedRevisionId,
+  );
+  const configRevisionDetailQuery = useQuery({
+    queryKey: ["project-config-revision", projectId, selectedRevisionId],
+    queryFn: () => {
+      if (!selectedRevisionId) {
+        throw new Error("未选择配置 revision");
+      }
+      return getProjectConfigRevision(apiOptions, projectId, selectedRevisionId);
+    },
+    enabled: Boolean(selectedRevisionId),
+    placeholderData: keepPreviousData,
+  });
+  const selectedRevision =
+    configRevisionDetailQuery.data?.id === selectedRevisionId
+      ? configRevisionDetailQuery.data
+      : selectedRevisionFromList;
 
   useEffect(() => {
     if (!configQuery.data) return;
@@ -142,6 +215,9 @@ export function ProjectConfigView({
       );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["project-config", projectId] }),
+        queryClient.invalidateQueries({
+          queryKey: ["project-config-revisions", projectId],
+        }),
         queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
       ]);
@@ -280,6 +356,22 @@ export function ProjectConfigView({
               </p>
             ) : null}
           </LiquidCard>
+
+          <ProjectConfigRevisionHistory
+            error={
+              configRevisionsQuery.error?.message ||
+              configRevisionDetailQuery.error?.message
+            }
+            isDetailLoading={configRevisionDetailQuery.isFetching}
+            isLoading={configRevisionsQuery.isLoading}
+            isRefreshing={configRevisionsQuery.isFetching}
+            revisions={projectConfigRevisions}
+            selectedRevision={selectedRevision}
+            selectedRevisionId={selectedRevisionId}
+            onSelectRevision={(revisionId) =>
+              setRevisionSelection({ projectId, revisionId })
+            }
+          />
 
           <Tabs defaultValue="overview" className="gap-4">
             <LiquidTabsList>
@@ -452,6 +544,13 @@ function emptyConfigDraft(): ConfigDraft {
     leaderUserID: "",
     name: "",
   };
+}
+
+function getLatestConfigRevision(revisions: ProjectConfigRevision[]) {
+  return revisions.reduce<ProjectConfigRevision | undefined>((latest, revision) => {
+    if (!latest || revision.revision_number > latest.revision_number) return revision;
+    return latest;
+  }, undefined);
 }
 
 function configToDraft(config: ProjectConfig): ConfigDraft {
