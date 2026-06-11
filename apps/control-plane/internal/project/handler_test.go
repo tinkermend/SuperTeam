@@ -161,6 +161,46 @@ func TestProjectHandlerCreatesEvidenceFromConsoleContext(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerMapsGovernanceNotFound(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	service := &handlerTestService{
+		patchEvidenceErr:     ErrProjectNotFound,
+		getAcceptanceErr:     ErrProjectNotFound,
+		getConfigRevisionErr: ErrProjectNotFound,
+	}
+	handler := NewHandler(service)
+
+	patchReq := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/"+projectID.String()+"/evidence/"+uuid.New().String(), strings.NewReader(`{"verification_status":"verified"}`))
+	patchReq = withProjectRouteParams(patchReq, map[string]string{"projectId": projectID.String(), "evidenceId": uuid.New().String()})
+	patchReq = withConsoleContext(patchReq, tenantID, actorID)
+	patchResp := httptest.NewRecorder()
+	handler.PatchEvidence(patchResp, patchReq)
+	if patchResp.Code != http.StatusNotFound {
+		t.Fatalf("expected missing evidence to return 404, got %d: %s", patchResp.Code, patchResp.Body.String())
+	}
+
+	acceptanceReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/acceptance", nil)
+	acceptanceReq = withProjectRouteParams(acceptanceReq, map[string]string{"projectId": projectID.String()})
+	acceptanceReq = withConsoleContext(acceptanceReq, tenantID, actorID)
+	acceptanceResp := httptest.NewRecorder()
+	handler.GetAcceptance(acceptanceResp, acceptanceReq)
+	if acceptanceResp.Code != http.StatusNotFound {
+		t.Fatalf("expected missing acceptance to return 404, got %d: %s", acceptanceResp.Code, acceptanceResp.Body.String())
+	}
+
+	revisionID := uuid.New()
+	revisionReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/config-revisions/"+revisionID.String(), nil)
+	revisionReq = withProjectRouteParams(revisionReq, map[string]string{"projectId": projectID.String(), "revisionId": revisionID.String()})
+	revisionReq = withConsoleContext(revisionReq, tenantID, actorID)
+	revisionResp := httptest.NewRecorder()
+	handler.GetConfigRevision(revisionResp, revisionReq)
+	if revisionResp.Code != http.StatusNotFound {
+		t.Fatalf("expected missing config revision to return 404, got %d: %s", revisionResp.Code, revisionResp.Body.String())
+	}
+}
+
 func TestProjectHandlerListsRouteDecisionsAndResolvesDecision(t *testing.T) {
 	projectID := uuid.New()
 	decisionID := uuid.New()
@@ -397,8 +437,11 @@ type handlerTestService struct {
 	submitDemandErr        error
 	createEvidenceReq      CreateEvidenceRefServiceRequest
 	patchEvidenceReq       PatchEvidenceRequest
+	patchEvidenceErr       error
 	createAcceptanceReq    CreateAcceptanceServiceRequest
 	createArchiveReq       CreateArchiveSnapshotServiceRequest
+	getAcceptanceErr       error
+	getConfigRevisionErr   error
 	getOverviewCalls       int
 	routeDecisionTenantID  uuid.UUID
 	routeDecisionProjectID uuid.UUID
@@ -580,6 +623,9 @@ func (s *handlerTestService) CreateEvidence(ctx context.Context, req CreateEvide
 
 func (s *handlerTestService) PatchEvidence(ctx context.Context, req PatchEvidenceRequest) (*ProjectEvidenceRef, error) {
 	s.patchEvidenceReq = req
+	if s.patchEvidenceErr != nil {
+		return nil, s.patchEvidenceErr
+	}
 	evidence := testEvidence(req.TenantID, req.ProjectID, req.ActorUserID)
 	evidence.ID = req.EvidenceID
 	evidence.VerificationStatus = req.VerificationStatus
@@ -615,6 +661,9 @@ func (s *handlerTestService) CreateAcceptance(ctx context.Context, req CreateAcc
 }
 
 func (s *handlerTestService) GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectAcceptanceRecord, error) {
+	if s.getAcceptanceErr != nil {
+		return nil, s.getAcceptanceErr
+	}
 	record := testAcceptance(tenantID, projectID, uuid.New())
 	return &record, nil
 }
@@ -641,6 +690,9 @@ func (s *handlerTestService) ListConfigRevisions(ctx context.Context, tenantID, 
 }
 
 func (s *handlerTestService) GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (*ProjectConfigRevision, error) {
+	if s.getConfigRevisionErr != nil {
+		return nil, s.getConfigRevisionErr
+	}
 	revision := testConfigRevision(tenantID, projectID, uuid.New())
 	revision.ID = revisionID
 	return &revision, nil

@@ -240,6 +240,128 @@ func TestProjectGovernanceEvidenceFailureDoesNotLeaveSuccessEvent(t *testing.T) 
 	}
 }
 
+func TestProjectPatchEvidencePreservesOrClearsMetadata(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusRunning, HumanOwnerUserID: ownerID}
+	evidence, err := repo.CreateEvidenceRef(context.Background(), CreateEvidenceRefRequest{
+		TenantID: tenantID, ProjectID: projectID, EvidenceType: "test_result", Title: "回归测试结果",
+		SourceType: "artifact", SourceRef: "s3://bucket/reports/regression.json",
+		SubmittedByType: "human_user", SubmittedByID: &ownerID, VerificationStatus: EvidenceVerificationStatusSubmitted,
+		Metadata: map[string]any{"suite": "regression", "passed": true},
+	})
+	if err != nil {
+		t.Fatalf("seed evidence: %v", err)
+	}
+
+	updated, err := service.PatchEvidence(context.Background(), PatchEvidenceRequest{
+		TenantID: tenantID, ProjectID: projectID, EvidenceID: evidence.ID, ActorUserID: ownerID,
+		VerificationStatus: EvidenceVerificationStatusVerified,
+	})
+	if err != nil {
+		t.Fatalf("patch evidence with omitted metadata: %v", err)
+	}
+	if updated.VerificationStatus != EvidenceVerificationStatusVerified || updated.Metadata["suite"] != "regression" || updated.Metadata["passed"] != true {
+		t.Fatalf("expected omitted metadata to keep existing values, got %#v", updated)
+	}
+
+	cleared, err := service.PatchEvidence(context.Background(), PatchEvidenceRequest{
+		TenantID: tenantID, ProjectID: projectID, EvidenceID: evidence.ID, ActorUserID: ownerID,
+		VerificationStatus: EvidenceVerificationStatusRejected,
+		Metadata:           map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("patch evidence with empty metadata: %v", err)
+	}
+	if cleared.VerificationStatus != EvidenceVerificationStatusRejected || len(cleared.Metadata) != 0 {
+		t.Fatalf("expected explicit empty metadata to clear values, got %#v", cleared)
+	}
+}
+
+func TestProjectPatchEvidenceEventFailureRollsBackStatusAndMetadata(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusRunning, HumanOwnerUserID: ownerID}
+	evidence, err := repo.CreateEvidenceRef(context.Background(), CreateEvidenceRefRequest{
+		TenantID: tenantID, ProjectID: projectID, EvidenceType: "test_result", Title: "回归测试结果",
+		SourceType: "artifact", SourceRef: "s3://bucket/reports/regression.json",
+		SubmittedByType: "human_user", SubmittedByID: &ownerID, VerificationStatus: EvidenceVerificationStatusSubmitted,
+		Metadata: map[string]any{"suite": "regression"},
+	})
+	if err != nil {
+		t.Fatalf("seed evidence: %v", err)
+	}
+	repo.appendProjectEventErr = errors.New("event store unavailable")
+
+	_, err = service.PatchEvidence(context.Background(), PatchEvidenceRequest{
+		TenantID: tenantID, ProjectID: projectID, EvidenceID: evidence.ID, ActorUserID: ownerID,
+		VerificationStatus: EvidenceVerificationStatusVerified,
+		Metadata:           map[string]any{"suite": "smoke"},
+	})
+	if err == nil {
+		t.Fatal("expected event write failure")
+	}
+	if repo.evidenceRefs[0].VerificationStatus != EvidenceVerificationStatusSubmitted || repo.evidenceRefs[0].Metadata["suite"] != "regression" {
+		t.Fatalf("expected evidence update rolled back, got %#v", repo.evidenceRefs[0])
+	}
+	if countProjectEvents(repo.eventTypes, ProjectEventEvidenceVerified) != 0 {
+		t.Fatalf("expected no verification event after rollback, got %#v", repo.eventTypes)
+	}
+}
+
+func TestProjectGovernanceMissingRecordsReturnNotFound(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusRunning, HumanOwnerUserID: ownerID}
+
+	_, err = service.PatchEvidence(context.Background(), PatchEvidenceRequest{
+		TenantID: tenantID, ProjectID: projectID, EvidenceID: uuid.New(), ActorUserID: ownerID,
+		VerificationStatus: EvidenceVerificationStatusVerified,
+	})
+	if !errors.Is(err, ErrProjectNotFound) {
+		t.Fatalf("expected missing evidence not found, got %v", err)
+	}
+	_, err = service.GetAcceptance(context.Background(), tenantID, projectID)
+	if !errors.Is(err, ErrProjectNotFound) {
+		t.Fatalf("expected missing acceptance not found, got %v", err)
+	}
+	_, err = service.GetConfigRevision(context.Background(), tenantID, projectID, uuid.New())
+	if !errors.Is(err, ErrProjectNotFound) {
+		t.Fatalf("expected missing config revision not found, got %v", err)
+	}
+}
+
+func TestProjectBudgetSummaryRequiresExistingProject(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = service.GetBudgetSummary(context.Background(), uuid.New(), uuid.New())
+	if !errors.Is(err, ErrProjectNotFound) {
+		t.Fatalf("expected missing project budget summary to return not found, got %v", err)
+	}
+}
+
 func TestProjectAcceptanceRejectsMissingEvidenceOrReportRefs(t *testing.T) {
 	repo := newGovernanceMemoryRepository()
 	service, err := NewService(repo)
@@ -2425,6 +2547,18 @@ func (r *memoryRepository) CreateEvidenceRefWithEvent(ctx context.Context, req C
 	return ProjectEvidenceRefWriteResult{Event: event, Evidence: evidence}, nil
 }
 
+func (r *memoryRepository) UpdateEvidenceVerificationStatusWithEvent(ctx context.Context, req UpdateEvidenceVerificationStatusWithEventRequest) (ProjectEvidenceRefWriteResult, error) {
+	evidence, err := r.UpdateEvidenceVerificationStatus(ctx, req.Evidence)
+	if err != nil {
+		return ProjectEvidenceRefWriteResult{}, err
+	}
+	event, err := r.AppendProjectEvent(ctx, req.Event)
+	if err != nil {
+		return ProjectEvidenceRefWriteResult{}, err
+	}
+	return ProjectEvidenceRefWriteResult{Event: event, Evidence: evidence}, nil
+}
+
 func (r *memoryRepository) CreateAcceptanceRecordWithEvent(ctx context.Context, req CreateAcceptanceRecordWithEventRequest) (ProjectAcceptanceRecordWriteResult, error) {
 	event, err := r.AppendProjectEvent(ctx, req.Event)
 	if err != nil {
@@ -2548,13 +2682,29 @@ func (r *governanceMemoryRepository) UpdateEvidenceVerificationStatus(ctx contex
 	for index, evidence := range r.evidenceRefs {
 		if evidence.ID == req.ID && evidence.TenantID == req.TenantID && evidence.ProjectID == req.ProjectID {
 			evidence.VerificationStatus = req.VerificationStatus
-			evidence.Metadata = req.Metadata
+			if req.Metadata != nil {
+				evidence.Metadata = req.Metadata
+			}
 			evidence.UpdatedAt = time.Now().UTC()
 			r.evidenceRefs[index] = evidence
 			return evidence, nil
 		}
 	}
 	return ProjectEvidenceRef{}, ErrProjectNotFound
+}
+
+func (r *governanceMemoryRepository) UpdateEvidenceVerificationStatusWithEvent(ctx context.Context, req UpdateEvidenceVerificationStatusWithEventRequest) (ProjectEvidenceRefWriteResult, error) {
+	snapshot := r.governanceSnapshot()
+	evidence, err := r.UpdateEvidenceVerificationStatus(ctx, req.Evidence)
+	if err != nil {
+		return ProjectEvidenceRefWriteResult{}, err
+	}
+	event, err := r.AppendProjectEvent(ctx, req.Event)
+	if err != nil {
+		r.restoreGovernanceSnapshot(snapshot)
+		return ProjectEvidenceRefWriteResult{}, err
+	}
+	return ProjectEvidenceRefWriteResult{Event: event, Evidence: evidence}, nil
 }
 
 func (r *governanceMemoryRepository) CreateArtifactRef(ctx context.Context, req CreateArtifactRefRequest) (ProjectArtifactRef, error) {

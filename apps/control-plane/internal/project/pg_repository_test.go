@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/superteam/control-plane/internal/storage/queries"
@@ -324,6 +325,52 @@ func TestProjectGovernanceRepositoryMapsEvidenceBudgetAndArchive(t *testing.T) {
 	if archive.RetentionLockEventID == nil || *archive.RetentionLockEventID != eventID || archive.CreatedByUserID != createdByUserID {
 		t.Fatalf("unexpected archive actors/events: %#v", archive)
 	}
+}
+
+func TestPgRepositoryMapsGovernanceNoRowsToDomainNotFound(t *testing.T) {
+	repo := NewPgRepository(queries.New(noRowsDB{}))
+	ctx := context.Background()
+	tenantID := uuid.New()
+	projectID := uuid.New()
+
+	_, err := repo.GetProject(ctx, tenantID, projectID)
+	if !errors.Is(err, ErrProjectNotFound) {
+		t.Fatalf("expected missing project to map to not found, got %v", err)
+	}
+	_, err = repo.UpdateEvidenceVerificationStatus(ctx, UpdateEvidenceVerificationStatusRequest{
+		TenantID: tenantID, ProjectID: projectID, ID: uuid.New(), VerificationStatus: EvidenceVerificationStatusVerified,
+	})
+	if !errors.Is(err, ErrProjectNotFound) {
+		t.Fatalf("expected missing evidence to map to not found, got %v", err)
+	}
+	_, err = repo.GetLatestAcceptanceRecord(ctx, tenantID, projectID)
+	if !errors.Is(err, ErrProjectNotFound) {
+		t.Fatalf("expected missing acceptance to map to not found, got %v", err)
+	}
+	_, err = repo.GetConfigRevision(ctx, tenantID, projectID, uuid.New())
+	if !errors.Is(err, ErrProjectNotFound) {
+		t.Fatalf("expected missing config revision to map to not found, got %v", err)
+	}
+}
+
+type noRowsDB struct{}
+
+func (noRowsDB) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, nil
+}
+
+func (noRowsDB) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+	return nil, pgx.ErrNoRows
+}
+
+func (noRowsDB) QueryRow(context.Context, string, ...interface{}) pgx.Row {
+	return noRowsRow{}
+}
+
+type noRowsRow struct{}
+
+func (noRowsRow) Scan(...interface{}) error {
+	return pgx.ErrNoRows
 }
 
 func numericFromString(t *testing.T, value string) pgtype.Numeric {

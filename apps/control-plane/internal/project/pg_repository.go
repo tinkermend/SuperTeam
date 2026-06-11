@@ -94,7 +94,7 @@ func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectReque
 func (r *PgRepository) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error) {
 	row, err := r.q.GetProject(ctx, queries.GetProjectParams{TenantID: tenantID, ID: projectID})
 	if err != nil {
-		return Project{}, err
+		return Project{}, projectRepositoryError(err)
 	}
 	return projectFromRecord(row)
 }
@@ -371,7 +371,7 @@ func (r *PgRepository) GetLatestConfigRevision(ctx context.Context, tenantID, pr
 func (r *PgRepository) GetLatestProjectConfigRevision(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectConfigRevision, error) {
 	row, err := r.q.GetLatestProjectConfigRevision(ctx, queries.GetLatestProjectConfigRevisionParams{TenantID: tenantID, ProjectID: projectID})
 	if err != nil {
-		return ProjectConfigRevision{}, err
+		return ProjectConfigRevision{}, projectRepositoryError(err)
 	}
 	return configRevisionFromRecord(row)
 }
@@ -850,11 +850,29 @@ func (r *PgRepository) ListEvidenceRefs(ctx context.Context, tenantID, projectID
 }
 
 func (r *PgRepository) UpdateEvidenceVerificationStatus(ctx context.Context, req UpdateEvidenceVerificationStatusRequest) (ProjectEvidenceRef, error) {
+	return r.updateEvidenceVerificationStatusWithQueries(ctx, r.q, req)
+}
+
+func (r *PgRepository) UpdateEvidenceVerificationStatusWithEvent(ctx context.Context, req UpdateEvidenceVerificationStatusWithEventRequest) (ProjectEvidenceRefWriteResult, error) {
+	return withProjectQueries(ctx, r, "project evidence verification write", func(q *queries.Queries) (ProjectEvidenceRefWriteResult, error) {
+		evidence, err := r.updateEvidenceVerificationStatusWithQueries(ctx, q, req.Evidence)
+		if err != nil {
+			return ProjectEvidenceRefWriteResult{}, err
+		}
+		event, err := r.appendProjectEventWithQueries(ctx, q, req.Event)
+		if err != nil {
+			return ProjectEvidenceRefWriteResult{}, err
+		}
+		return ProjectEvidenceRefWriteResult{Event: event, Evidence: evidence}, nil
+	})
+}
+
+func (r *PgRepository) updateEvidenceVerificationStatusWithQueries(ctx context.Context, q *queries.Queries, req UpdateEvidenceVerificationStatusRequest) (ProjectEvidenceRef, error) {
 	metadata, err := jsonbObjectOrNull(req.Metadata, "metadata")
 	if err != nil {
 		return ProjectEvidenceRef{}, err
 	}
-	row, err := r.q.UpdateProjectEvidenceVerificationStatus(ctx, queries.UpdateProjectEvidenceVerificationStatusParams{
+	row, err := q.UpdateProjectEvidenceVerificationStatus(ctx, queries.UpdateProjectEvidenceVerificationStatusParams{
 		VerificationStatus: string(req.VerificationStatus),
 		Metadata:           metadata,
 		TenantID:           req.TenantID,
@@ -862,7 +880,7 @@ func (r *PgRepository) UpdateEvidenceVerificationStatus(ctx context.Context, req
 		ID:                 req.ID,
 	})
 	if err != nil {
-		return ProjectEvidenceRef{}, err
+		return ProjectEvidenceRef{}, projectRepositoryError(err)
 	}
 	return evidenceRefFromRecord(row)
 }
@@ -1062,7 +1080,7 @@ func (r *PgRepository) createAcceptanceRecordWithQueries(ctx context.Context, q 
 func (r *PgRepository) GetLatestAcceptanceRecord(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectAcceptanceRecord, error) {
 	row, err := r.q.GetLatestProjectAcceptanceRecord(ctx, queries.GetLatestProjectAcceptanceRecordParams{TenantID: tenantID, ProjectID: projectID})
 	if err != nil {
-		return ProjectAcceptanceRecord{}, err
+		return ProjectAcceptanceRecord{}, projectRepositoryError(err)
 	}
 	return acceptanceRecordFromRecord(row)
 }
@@ -1164,9 +1182,16 @@ func (r *PgRepository) ListConfigRevisions(ctx context.Context, tenantID, projec
 func (r *PgRepository) GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (ProjectConfigRevision, error) {
 	row, err := r.q.GetProjectConfigRevision(ctx, queries.GetProjectConfigRevisionParams{TenantID: tenantID, ProjectID: projectID, ID: revisionID})
 	if err != nil {
-		return ProjectConfigRevision{}, err
+		return ProjectConfigRevision{}, projectRepositoryError(err)
 	}
 	return configRevisionFromRecord(row)
+}
+
+func projectRepositoryError(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrProjectNotFound
+	}
+	return err
 }
 
 func projectFromRecord(row queries.Project) (Project, error) {

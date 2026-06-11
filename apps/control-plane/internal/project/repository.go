@@ -43,6 +43,7 @@ type Repository interface {
 	CreateEvidenceRefWithEvent(ctx context.Context, req CreateEvidenceRefWithEventRequest) (ProjectEvidenceRefWriteResult, error)
 	ListEvidenceRefs(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error)
 	UpdateEvidenceVerificationStatus(ctx context.Context, req UpdateEvidenceVerificationStatusRequest) (ProjectEvidenceRef, error)
+	UpdateEvidenceVerificationStatusWithEvent(ctx context.Context, req UpdateEvidenceVerificationStatusWithEventRequest) (ProjectEvidenceRefWriteResult, error)
 	CreateArtifactRef(ctx context.Context, req CreateArtifactRefRequest) (ProjectArtifactRef, error)
 	ListArtifactRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error)
 	UpdateArtifactRetention(ctx context.Context, req UpdateArtifactRetentionRequest) (ProjectArtifactRef, error)
@@ -250,6 +251,11 @@ type UpdateEvidenceVerificationStatusRequest struct {
 	ID                 uuid.UUID
 	VerificationStatus EvidenceVerificationStatus
 	Metadata           map[string]any
+}
+
+type UpdateEvidenceVerificationStatusWithEventRequest struct {
+	Event    AppendProjectEventRequest
+	Evidence UpdateEvidenceVerificationStatusRequest
 }
 
 type CreateArtifactRefRequest struct {

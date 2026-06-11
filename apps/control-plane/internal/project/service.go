@@ -340,6 +340,63 @@ func (s *Service) ListEvidenceRefs(ctx context.Context, tenantID, projectID uuid
 	return s.repository.ListEvidenceRefs(ctx, tenantID, projectID, status, limit, offset)
 }
 
+type PatchEvidenceRequest struct {
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	EvidenceID         uuid.UUID
+	ActorUserID        uuid.UUID
+	VerificationStatus EvidenceVerificationStatus
+	Metadata           map[string]any
+}
+
+func (s *Service) ListEvidence(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error) {
+	return s.ListEvidenceRefs(ctx, tenantID, projectID, status, limit, offset)
+}
+
+func (s *Service) CreateEvidence(ctx context.Context, req CreateEvidenceRefServiceRequest) (*ProjectEvidenceRef, error) {
+	return s.CreateEvidenceRef(ctx, req)
+}
+
+func (s *Service) PatchEvidence(ctx context.Context, req PatchEvidenceRequest) (*ProjectEvidenceRef, error) {
+	req.VerificationStatus = EvidenceVerificationStatus(strings.TrimSpace(string(req.VerificationStatus)))
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.EvidenceID == uuid.Nil || req.ActorUserID == uuid.Nil || !validEvidenceVerificationStatus(req.VerificationStatus) {
+		return nil, ErrInvalidProjectEvidence
+	}
+	project, err := s.repository.GetProject(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if projectArchived(project) {
+		return nil, ErrProjectArchived
+	}
+	result, err := s.repository.UpdateEvidenceVerificationStatusWithEvent(ctx, UpdateEvidenceVerificationStatusWithEventRequest{
+		Event: AppendProjectEventRequest{
+			TenantID:     req.TenantID,
+			ProjectID:    req.ProjectID,
+			EventType:    ProjectEventEvidenceVerified,
+			ActorType:    "human_user",
+			ActorID:      req.ActorUserID.String(),
+			ResourceType: strPtr("project_evidence_ref"),
+			ResourceID:   strPtr(req.EvidenceID.String()),
+			Summary:      "项目证据校验状态已更新",
+			Payload: map[string]any{
+				"verification_status": string(req.VerificationStatus),
+			},
+		},
+		Evidence: UpdateEvidenceVerificationStatusRequest{
+			TenantID:           req.TenantID,
+			ProjectID:          req.ProjectID,
+			ID:                 req.EvidenceID,
+			VerificationStatus: req.VerificationStatus,
+			Metadata:           req.Metadata,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &result.Evidence, nil
+}
+
 func (s *Service) ListArtifactRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
@@ -348,12 +405,20 @@ func (s *Service) ListArtifactRefs(ctx context.Context, tenantID, projectID uuid
 	return s.repository.ListArtifactRefs(ctx, tenantID, projectID, limit, offset)
 }
 
+func (s *Service) ListArtifacts(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArtifactRef, error) {
+	return s.ListArtifactRefs(ctx, tenantID, projectID, limit, offset)
+}
+
 func (s *Service) ListReportRefs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectReportRef, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
 	limit, offset = normalizePagination(limit, offset)
 	return s.repository.ListReportRefs(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) ListReports(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectReportRef, error) {
+	return s.ListReportRefs(ctx, tenantID, projectID, limit, offset)
 }
 
 func (s *Service) ListBudgetLedger(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectBudgetLedgerEntry, error) {
@@ -367,6 +432,9 @@ func (s *Service) ListBudgetLedger(ctx context.Context, tenantID, projectID uuid
 func (s *Service) GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectBudgetSummary, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
+	}
+	if _, err := s.repository.GetProject(ctx, tenantID, projectID); err != nil {
+		return nil, err
 	}
 	summary, err := s.repository.GetBudgetSummary(ctx, tenantID, projectID)
 	if err != nil {
@@ -431,6 +499,21 @@ func (s *Service) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptan
 		return nil, err
 	}
 	return &result.Acceptance, nil
+}
+
+func (s *Service) CreateAcceptance(ctx context.Context, req CreateAcceptanceServiceRequest) (*ProjectAcceptanceRecord, error) {
+	return s.CreateAcceptanceRecord(ctx, req)
+}
+
+func (s *Service) GetAcceptance(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectAcceptanceRecord, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	record, err := s.repository.GetLatestAcceptanceRecord(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return &record, nil
 }
 
 func (s *Service) BuildArchivePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectArchivePreview, error) {
@@ -504,6 +587,10 @@ func (s *Service) BuildArchivePreview(ctx context.Context, tenantID, projectID u
 		BlockedReasons:      blockedReasons,
 		EstimatedObjectRefs: estimatedObjectRefs,
 	}, nil
+}
+
+func (s *Service) GetArchivePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectArchivePreview, error) {
+	return s.BuildArchivePreview(ctx, tenantID, projectID)
 }
 
 func (s *Service) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotServiceRequest) (*ProjectArchiveSnapshot, error) {
@@ -1365,6 +1452,15 @@ func validHumanDecision(decision string) bool {
 func validAcceptanceStatus(status string) bool {
 	switch status {
 	case "accepted", "rejected", "needs_more_evidence", "partially_accepted":
+		return true
+	default:
+		return false
+	}
+}
+
+func validEvidenceVerificationStatus(status EvidenceVerificationStatus) bool {
+	switch status {
+	case EvidenceVerificationStatusSubmitted, EvidenceVerificationStatusLinked, EvidenceVerificationStatusVerified, EvidenceVerificationStatusRejected, EvidenceVerificationStatusSuperseded:
 		return true
 	default:
 		return false
