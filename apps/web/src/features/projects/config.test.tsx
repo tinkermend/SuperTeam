@@ -175,6 +175,41 @@ function makeConfigRevisions(): ProjectConfigRevision[] {
   ];
 }
 
+function makeLatestRevision(): ProjectConfigRevision {
+  return {
+    changed_sections: ["coordination_policy"],
+    change_summary: "新增最新修订",
+    config_snapshot: {
+      approval_policy: { high_risk: "auto" },
+      coordination_policy: { cadence: "minute" },
+      evidence_policy: { fallbackLatest: true, retention_days: 365 },
+    },
+    created_at: "2026-01-04T08:00:00Z",
+    created_by_user_id: "human-owner-1",
+    diff_summary: { coordination_policy: "changed" },
+    id: "revision-4",
+    policy_fingerprint: "policy-fingerprint-4",
+    project_id: "project-1",
+    revision_number: 4,
+    tenant_id: "tenant-1",
+    previous_revision_id: "revision-3",
+  };
+}
+
+function makeMalformedConfigRevision(): ProjectConfigRevision {
+  return {
+    changed_sections: null,
+    change_summary: "历史异常 payload",
+    config_snapshot: null,
+    created_by_user_id: "legacy-import",
+    diff_summary: null,
+    id: "revision-malformed",
+    project_id: "project-1",
+    revision_number: 4,
+    tenant_id: "tenant-1",
+  } as unknown as ProjectConfigRevision;
+}
+
 function createConfigFetcher(
   status: "running" | "archived" = "running",
   configs: ProjectConfig[] = [makeConfig(status)],
@@ -292,6 +327,58 @@ describe("ProjectConfigView", () => {
       .toBeInTheDocument();
     await expect.element(screen.getByText(/human_review/)).toBeInTheDocument();
     await expect.element(screen.getByText(/archive_mode/)).toBeInTheDocument();
+  });
+
+  it("renders malformed config revision payloads with safe JSON fallbacks", async () => {
+    const malformedRevision = makeMalformedConfigRevision();
+    const fetcher = createConfigFetcher("running", [makeConfig()], [
+      malformedRevision,
+      ...makeConfigRevisions(),
+    ]);
+    const screen = await renderConfig(fetcher);
+
+    await expect.element(screen.getByText("配置修订历史")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "查看 revision #4" }));
+
+    await expect
+      .element(screen.getByRole("heading", { name: "协调策略" }))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("heading", { name: "审批策略" }))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("heading", { name: "证据归档规则" }))
+      .toBeInTheDocument();
+    await expect.element(screen.getByText("0 个变更区块")).toBeInTheDocument();
+    await expect.element(screen.getByText("null").first()).toBeInTheDocument();
+  });
+
+  it("keeps selected revisions across refetches and falls back when removed", async () => {
+    const revisions = makeConfigRevisions();
+    const fetcher = createConfigFetcher("running", [makeConfig()], revisions);
+    const { queryClient, screen } = await renderConfigWithClient(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "查看 revision #2" }));
+    await expect.element(screen.getByText(/human_review/)).toBeInTheDocument();
+
+    revisions.unshift(makeLatestRevision());
+    await queryClient.refetchQueries({
+      queryKey: ["project-config-revisions", "project-1"],
+    });
+
+    await expect.element(screen.getByText(/human_review/)).toBeInTheDocument();
+    await expect.element(screen.getByText(/fallbackLatest/)).not.toBeInTheDocument();
+
+    const selectedRevisionIndex = revisions.findIndex(
+      (revision) => revision.id === "revision-2",
+    );
+    revisions.splice(selectedRevisionIndex, 1);
+    await queryClient.refetchQueries({
+      queryKey: ["project-config-revisions", "project-1"],
+    });
+
+    await expect.element(screen.getByText(/fallbackLatest/)).toBeInTheDocument();
+    await expect.element(screen.getByText(/human_review/)).not.toBeInTheDocument();
   });
 
   it("renders config tabs and saves current project policy", async () => {

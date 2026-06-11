@@ -47,7 +47,7 @@ export function ProjectConfigRevisionHistory({
   onSelectRevision,
 }: ProjectConfigRevisionHistoryProps) {
   const sortedRevisions = [...revisions].sort(
-    (left, right) => right.revision_number - left.revision_number,
+    (left, right) => (right.revision_number ?? 0) - (left.revision_number ?? 0),
   );
 
   return (
@@ -146,6 +146,9 @@ function RevisionDetail({
   isDetailLoading?: boolean;
   revision: ProjectConfigRevision;
 }) {
+  const changedSections = revisionChangedSections(revision);
+  const configSnapshot = revisionConfigSnapshot(revision);
+
   return (
     <div className="grid gap-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -167,7 +170,7 @@ function RevisionDetail({
         </div>
         <dl className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2 lg:min-w-80">
           <RevisionMeta label="创建时间" value={formatDateTime(revision.created_at)} />
-          <RevisionMeta label="创建人" value={revision.created_by_user_id} />
+          <RevisionMeta label="创建人" value={revision.created_by_user_id || "未记录"} />
           <RevisionMeta label="策略指纹" value={revision.policy_fingerprint || "未记录"} />
           <RevisionMeta label="事件 ID" value={revision.created_event_id || "未记录"} />
         </dl>
@@ -177,13 +180,13 @@ function RevisionDetail({
         <div className="flex items-center justify-between gap-3">
           <h5 className="text-sm font-semibold">策略对比</h5>
           <StatusBadge tone="neutral">
-            {revision.changed_sections.length} 个变更区块
+            {changedSections.length} 个变更区块
           </StatusBadge>
         </div>
         <div className="grid gap-3 xl:grid-cols-3">
           {policySections.map((section) => {
             const Icon = section.icon;
-            const value = getPolicyValue(revision.config_snapshot, section.keys);
+            const value = getPolicyValue(configSnapshot, section.keys);
             const changed = isPolicyChanged(revision, section.keys);
             return (
               <section
@@ -220,6 +223,33 @@ function RevisionMeta({ label, value }: { label: string; value: string }) {
   );
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function revisionChangedSections(revision: ProjectConfigRevision): unknown[] {
+  return asArray(
+    (revision as ProjectConfigRevision & { changed_sections?: unknown }).changed_sections,
+  );
+}
+
+function revisionDiffSummary(revision: ProjectConfigRevision): Record<string, unknown> {
+  return asRecord(
+    (revision as ProjectConfigRevision & { diff_summary?: unknown }).diff_summary,
+  );
+}
+
+function revisionConfigSnapshot(revision: ProjectConfigRevision): Record<string, unknown> {
+  return asRecord(
+    (revision as ProjectConfigRevision & { config_snapshot?: unknown }).config_snapshot,
+  );
+}
+
 function getPolicyValue(
   snapshot: Record<string, unknown>,
   keys: readonly string[],
@@ -246,10 +276,8 @@ function getSnapshotContainers(snapshot: Record<string, unknown>) {
     "configSnapshot",
   ];
   for (const key of nestedKeys) {
-    const value = snapshot[key];
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      containers.push(value as Record<string, unknown>);
-    }
+    const value = asRecord(snapshot[key]);
+    if (Object.keys(value).length > 0) containers.push(value);
   }
   return containers;
 }
@@ -258,10 +286,13 @@ function isPolicyChanged(
   revision: ProjectConfigRevision,
   keys: readonly string[],
 ): boolean {
-  const changedSections = revision.changed_sections.map((section) => String(section));
+  const changedSections = revisionChangedSections(revision).map((section) =>
+    String(section),
+  );
+  const diffSummary = revisionDiffSummary(revision);
   if (keys.some((key) => changedSections.includes(key))) return true;
   return keys.some((key) =>
-    Object.prototype.hasOwnProperty.call(revision.diff_summary, key),
+    Object.prototype.hasOwnProperty.call(diffSummary, key),
   );
 }
 
