@@ -840,6 +840,24 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/events/{eventId}/retry-workflow-signal:
+    post:
+      operationId: retryProjectWorkflowSignal
+      summary: Retry a failed project Workflow signal event
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "202":
+          description: Workflow signal retry accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectEvent"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/config:
     get:
       operationId: getProjectConfig
@@ -2052,6 +2070,13 @@ components:
         format: uuid
     DecisionId:
       name: decisionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EventId:
+      name: eventId
       in: path
       required: true
       schema:

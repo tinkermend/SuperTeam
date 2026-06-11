@@ -34,6 +34,26 @@ func NewPgRepository(q *queries.Queries, db ...projectTransactionBeginner) Repos
 	return &PgRepository{q: q, db: beginner}
 }
 
+func withProjectQueries[T any](ctx context.Context, r *PgRepository, label string, fn func(*queries.Queries) (T, error)) (T, error) {
+	var zero T
+	if r.db == nil {
+		return fn(r.q)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return zero, fmt.Errorf("begin %s transaction: %w", label, err)
+	}
+	result, err := fn(r.q.WithTx(tx))
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return zero, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return zero, fmt.Errorf("commit %s transaction: %w", label, err)
+	}
+	return result, nil
+}
+
 func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectRequest, projectID uuid.UUID, workflowID string) (Project, error) {
 	coordinationPolicy, err := jsonbObject(req.CoordinationPolicy, "coordination_policy")
 	if err != nil {
@@ -133,22 +153,10 @@ func (r *PgRepository) ArchiveProject(ctx context.Context, tenantID, projectID u
 }
 
 func (r *PgRepository) ReplaceProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {
-	if r.db == nil {
-		return r.replaceProjectMembersWithQueries(ctx, r.q, tenantID, projectID, members)
-	}
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin project members transaction: %w", err)
-	}
-	created, err := r.replaceProjectMembersWithQueries(ctx, r.q.WithTx(tx), tenantID, projectID, members)
-	if err != nil {
-		_ = tx.Rollback(ctx)
-		return nil, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit project members transaction: %w", err)
-	}
-	return created, nil
+	created, err := withProjectQueries(ctx, r, "project members", func(q *queries.Queries) ([]ProjectMember, error) {
+		return r.replaceProjectMembersWithQueries(ctx, q, tenantID, projectID, members)
+	})
+	return created, err
 }
 
 func (r *PgRepository) replaceProjectMembersWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {
@@ -206,17 +214,21 @@ func (r *PgRepository) ListProjectTasks(ctx context.Context, tenantID, projectID
 }
 
 func (r *PgRepository) AppendProjectEvent(ctx context.Context, event AppendProjectEventRequest) (ProjectEvent, error) {
+	return r.appendProjectEventWithQueries(ctx, r.q, event)
+}
+
+func (r *PgRepository) appendProjectEventWithQueries(ctx context.Context, q *queries.Queries, event AppendProjectEventRequest) (ProjectEvent, error) {
 	payload, err := jsonbObject(event.Payload, "payload")
 	if err != nil {
 		return ProjectEvent{}, err
 	}
 	var lastErr error
 	for attempt := 0; attempt < maxProjectEventAppendAttempts; attempt++ {
-		latest, err := r.q.GetLatestProjectEventSequence(ctx, queries.GetLatestProjectEventSequenceParams{TenantID: event.TenantID, ProjectID: event.ProjectID})
+		latest, err := q.GetLatestProjectEventSequence(ctx, queries.GetLatestProjectEventSequenceParams{TenantID: event.TenantID, ProjectID: event.ProjectID})
 		if err != nil {
 			return ProjectEvent{}, err
 		}
-		row, err := r.q.CreateProjectEvent(ctx, queries.CreateProjectEventParams{
+		row, err := q.CreateProjectEvent(ctx, queries.CreateProjectEventParams{
 			TenantID:       event.TenantID,
 			ProjectID:      event.ProjectID,
 			SequenceNumber: latest + 1,
@@ -245,6 +257,14 @@ func (r *PgRepository) ListProjectEvents(ctx context.Context, tenantID, projectI
 		return nil, err
 	}
 	return eventsFromRecords(rows)
+}
+
+func (r *PgRepository) GetProjectEvent(ctx context.Context, tenantID, projectID, eventID uuid.UUID) (ProjectEvent, error) {
+	row, err := r.q.GetProjectEvent(ctx, queries.GetProjectEventParams{TenantID: tenantID, ProjectID: projectID, ID: eventID})
+	if err != nil {
+		return ProjectEvent{}, err
+	}
+	return eventFromRecord(row)
 }
 
 func (r *PgRepository) CreateProjectDemand(ctx context.Context, req SubmitProjectDemandRequest, status ProjectDemandStatus, createdEventID *uuid.UUID) (ProjectDemand, error) {
@@ -339,6 +359,21 @@ func (r *PgRepository) GetProjectTask(ctx context.Context, tenantID, projectTask
 		return ProjectTask{}, err
 	}
 	return taskFromRecord(row), nil
+}
+
+func (r *PgRepository) GetProjectTaskRunRuntimeNodeID(ctx context.Context, tenantID, projectTaskID, runID uuid.UUID) (uuid.UUID, error) {
+	runtimeNodeID, err := r.q.GetProjectTaskRunRuntimeNodeID(ctx, queries.GetProjectTaskRunRuntimeNodeIDParams{
+		TenantID:      tenantID,
+		ProjectTaskID: projectTaskID,
+		RunID:         runID,
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if !runtimeNodeID.Valid {
+		return uuid.Nil, ErrProjectNotFound
+	}
+	return runtimeNodeID.UUID, nil
 }
 
 func (r *PgRepository) CreateCoordinationJob(ctx context.Context, req CreateCoordinationJobRequest) (CoordinationJob, error) {
@@ -465,12 +500,17 @@ func (r *PgRepository) CreateProjectTask(ctx context.Context, req CreateProjectT
 	return taskFromRecord(row), nil
 }
 
-func (r *PgRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID) (ProjectTask, error) {
-	row, err := r.q.UpdateProjectTaskStatus(ctx, queries.UpdateProjectTaskStatusParams{
-		TenantID:      tenantID,
-		ID:            projectTaskID,
-		Status:        status,
-		LatestEventID: nullUUID(eventID),
+func (r *PgRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error) {
+	return r.updateProjectTaskStatusWithQueries(ctx, r.q, tenantID, projectTaskID, status, eventID, currentStatuses)
+}
+
+func (r *PgRepository) updateProjectTaskStatusWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error) {
+	row, err := q.UpdateProjectTaskStatus(ctx, queries.UpdateProjectTaskStatusParams{
+		TenantID:        tenantID,
+		ID:              projectTaskID,
+		Status:          status,
+		LatestEventID:   nullUUID(eventID),
+		CurrentStatuses: currentStatuses,
 	})
 	if err != nil {
 		return ProjectTask{}, err
@@ -493,6 +533,10 @@ func (r *PgRepository) AssignProjectTask(ctx context.Context, tenantID, projectT
 }
 
 func (r *PgRepository) CreateExecutionSummary(ctx context.Context, req CreateExecutionSummaryRequest) (ExecutionSummary, error) {
+	return r.createExecutionSummaryWithQueries(ctx, r.q, req)
+}
+
+func (r *PgRepository) createExecutionSummaryWithQueries(ctx context.Context, q *queries.Queries, req CreateExecutionSummaryRequest) (ExecutionSummary, error) {
 	evidenceRefs, err := jsonbArray(req.EvidenceRefs, "evidence_refs")
 	if err != nil {
 		return ExecutionSummary{}, err
@@ -509,7 +553,7 @@ func (r *PgRepository) CreateExecutionSummary(ctx context.Context, req CreateExe
 	if err != nil {
 		return ExecutionSummary{}, err
 	}
-	row, err := r.q.CreateProjectExecutionSummary(ctx, queries.CreateProjectExecutionSummaryParams{
+	row, err := q.CreateProjectExecutionSummary(ctx, queries.CreateProjectExecutionSummaryParams{
 		TenantID:              req.TenantID,
 		ProjectID:             req.ProjectID,
 		ProjectTaskID:         req.ProjectTaskID,
@@ -545,6 +589,73 @@ func (r *PgRepository) ListExecutionSummaries(ctx context.Context, tenantID, pro
 }
 
 func (r *PgRepository) CreateTransferRequest(ctx context.Context, req CreateTransferRequestRequest) (TransferRequest, error) {
+	return r.createTransferRequestWithQueries(ctx, r.q, req)
+}
+
+func (r *PgRepository) CompleteProjectTaskWriteback(ctx context.Context, req CompleteProjectTaskWritebackRequest) (ProjectTaskWritebackResult, error) {
+	return withProjectQueries(ctx, r, "project task completion writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		if _, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.Task.TenantID, req.Task.ID, "completed", nil, req.AllowedCurrentStatuses); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		event, err := r.appendProjectEventWithQueries(ctx, q, req.Event)
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		summaryReq := req.Summary
+		summaryReq.CreatedEventID = &event.ID
+		summary, err := r.createExecutionSummaryWithQueries(ctx, q, summaryReq)
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		task, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.Task.TenantID, req.Task.ID, "completed", &event.ID, []string{"completed"})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary}, nil
+	})
+}
+
+func (r *PgRepository) FailProjectTaskWriteback(ctx context.Context, req FailProjectTaskWritebackRequest) (ProjectTaskWritebackResult, error) {
+	return withProjectQueries(ctx, r, "project task failure writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		if _, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.Task.TenantID, req.Task.ID, "failed", nil, req.AllowedCurrentStatuses); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		event, err := r.appendProjectEventWithQueries(ctx, q, req.Event)
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		task, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.Task.TenantID, req.Task.ID, "failed", &event.ID, []string{"failed"})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+	})
+}
+
+func (r *PgRepository) RequestProjectTaskTransferWriteback(ctx context.Context, req RequestProjectTaskTransferWritebackRequest) (ProjectTaskTransferWritebackResult, error) {
+	return withProjectQueries(ctx, r, "project task transfer writeback", func(q *queries.Queries) (ProjectTaskTransferWritebackResult, error) {
+		if _, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.Task.TenantID, req.Task.ID, "waiting_human", nil, req.AllowedCurrentStatuses); err != nil {
+			return ProjectTaskTransferWritebackResult{}, err
+		}
+		event, err := r.appendProjectEventWithQueries(ctx, q, req.Event)
+		if err != nil {
+			return ProjectTaskTransferWritebackResult{}, err
+		}
+		transferReq := req.Transfer
+		transferReq.CreatedEventID = &event.ID
+		transfer, err := r.createTransferRequestWithQueries(ctx, q, transferReq)
+		if err != nil {
+			return ProjectTaskTransferWritebackResult{}, err
+		}
+		task, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.Task.TenantID, req.Task.ID, "waiting_human", &event.ID, []string{"waiting_human"})
+		if err != nil {
+			return ProjectTaskTransferWritebackResult{}, err
+		}
+		return ProjectTaskTransferWritebackResult{Task: task, Event: event, Transfer: transfer}, nil
+	})
+}
+
+func (r *PgRepository) createTransferRequestWithQueries(ctx context.Context, q *queries.Queries, req CreateTransferRequestRequest) (TransferRequest, error) {
 	suggestedIDs, err := jsonbUUIDSlice(req.SuggestedDigitalEmployeeIDs, "suggested_digital_employee_ids")
 	if err != nil {
 		return TransferRequest{}, err
@@ -553,7 +664,7 @@ func (r *PgRepository) CreateTransferRequest(ctx context.Context, req CreateTran
 	if err != nil {
 		return TransferRequest{}, err
 	}
-	row, err := r.q.CreateProjectTransferRequest(ctx, queries.CreateProjectTransferRequestParams{
+	row, err := q.CreateProjectTransferRequest(ctx, queries.CreateProjectTransferRequestParams{
 		TenantID:                     req.TenantID,
 		ProjectID:                    req.ProjectID,
 		ProjectTaskID:                req.ProjectTaskID,
@@ -605,9 +716,22 @@ func (r *PgRepository) CreateDecisionRequest(ctx context.Context, req CreateDeci
 	return decisionRequestFromRecord(row)
 }
 
+func (r *PgRepository) GetDecisionRequest(ctx context.Context, tenantID, projectID, decisionRequestID uuid.UUID) (DecisionRequest, error) {
+	row, err := r.q.GetProjectDecisionRequest(ctx, queries.GetProjectDecisionRequestParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		ID:        decisionRequestID,
+	})
+	if err != nil {
+		return DecisionRequest{}, err
+	}
+	return decisionRequestFromRecord(row)
+}
+
 func (r *PgRepository) ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error) {
 	row, err := r.q.ResolveProjectDecisionRequest(ctx, queries.ResolveProjectDecisionRequestParams{
 		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
 		ID:              req.ID,
 		StatusSnapshot:  req.StatusSnapshot,
 		ResolvedEventID: nullUUID(req.ResolvedEventID),
@@ -696,6 +820,8 @@ func taskFromRecord(row queries.ProjectTask) ProjectTask {
 		Summary:                   ptrText(row.Summary),
 		Status:                    row.Status,
 		AssignedDigitalEmployeeID: ptrUUID(row.AssignedDigitalEmployeeID),
+		RuntimeTaskID:             ptrUUID(row.RuntimeTaskID),
+		DigitalEmployeeRunID:      ptrUUID(row.DigitalEmployeeRunID),
 		RiskLevel:                 ptrText(row.RiskLevel),
 		RequiresHumanApproval:     row.RequiresHumanApproval,
 		CreatedAt:                 row.CreatedAt.Time,

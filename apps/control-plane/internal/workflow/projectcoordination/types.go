@@ -94,6 +94,17 @@ type CreateProjectTasksInput struct {
 	Decision  RouteDecisionPlan
 }
 
+type RequestRouteDecisionReviewInput struct {
+	TenantID            uuid.UUID
+	ProjectID           uuid.UUID
+	CoordinationJobID   uuid.UUID
+	DemandID            uuid.UUID
+	RouteDecisionID     uuid.UUID
+	Decision            RouteDecisionPlan
+	ProjectTaskIDs      []uuid.UUID
+	RouteCreatedEventID uuid.UUID
+}
+
 type AppendProjectEventInput struct {
 	TenantID  uuid.UUID
 	ProjectID uuid.UUID
@@ -128,5 +139,9 @@ type ProjectTaskResult struct {
 }
 
 type ProjectEventResult struct {
+	ID uuid.UUID
+}
+
+type DecisionRequestResult struct {
 	ID uuid.UUID
 }

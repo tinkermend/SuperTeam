@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-11 17:01：收紧项目管理 V1 协调运行态一致性，Runtime 写回需通过任务状态和数字员工运行记录绑定校验，高风险路由需等待人类审批后再分派，并为 Workflow signal 失败审计事件提供可重试入口。
 - 2026-06-11 10:04：修复项目配置子路由被项目详情父路由吞掉的问题，确保 `/projects/{projectId}/config` 正确渲染配置治理页。
 - 2026-06-09 09:37：恢复 Runtime WebSocket 默认 Origin 校验，移除对所有跨源握手的全局放行，并补齐跨源连接拒绝的回归测试。
 - 2026-06-08 22:37：调整数字员工卡片选中视觉，左侧选中标记仅在选中卡片显示且不承载团队或运行状态颜色，未选中卡片保持干净边界。

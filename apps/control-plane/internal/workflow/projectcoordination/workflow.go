@@ -21,6 +21,7 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 	transferCh := workflow.GetSignalChannel(ctx, SignalEmployeeTransferRequested)
 	humanCh := workflow.GetSignalChannel(ctx, SignalHumanDecisionSubmitted)
 	shutdownCh := workflow.GetSignalChannel(ctx, SignalShutdown)
+	pendingReviews := map[string]pendingRouteDecisionReview{}
 
 	for {
 		selector := workflow.NewSelector(ctx)
@@ -29,7 +30,11 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 		selector.AddReceive(demandCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal DemandSubmitted
 			c.Receive(ctx, &signal)
-			workflowErr = handleDemandSubmitted(ctx, input, signal)
+			var pending *pendingRouteDecisionReview
+			pending, workflowErr = handleDemandSubmitted(ctx, input, signal)
+			if workflowErr == nil && pending != nil {
+				pendingReviews[pending.DecisionRequestID.String()] = *pending
+			}
 		})
 		selector.AddReceive(policyCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal ProjectPolicyChanged
@@ -59,7 +64,7 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 		selector.AddReceive(humanCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal HumanDecisionSubmitted
 			c.Receive(ctx, &signal)
-			workflowErr = appendSignalObservedEvent(ctx, input, "human decision submitted")
+			workflowErr = handleHumanDecisionSubmitted(ctx, input, signal, pendingReviews)
 		})
 		selector.AddReceive(shutdownCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal ShutdownSignal
@@ -77,7 +82,15 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 	}
 }
 
-func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, signal DemandSubmitted) error {
+type pendingRouteDecisionReview struct {
+	DecisionRequestID uuid.UUID
+	ProjectID         uuid.UUID
+	JobID             uuid.UUID
+	TaskIDs           []uuid.UUID
+	OutputEventIDs    []uuid.UUID
+}
+
+func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, signal DemandSubmitted) (*pendingRouteDecisionReview, error) {
 	workflowID := input.WorkflowID
 	if workflowID == "" {
 		workflowID = "project-coordinator:" + input.ProjectID.String()
@@ -91,7 +104,7 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 	}
 	var job CoordinationJobResult
 	if err := workflow.ExecuteActivity(ctx, (*Activities).CreateCoordinationJob, jobInput).Get(ctx, &job); err != nil {
-		return err
+		return nil, err
 	}
 
 	var snapshot CoordinationSnapshot
@@ -100,12 +113,12 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 		ProjectID: signal.ProjectID,
 		DemandID:  signal.DemandID,
 	}).Get(ctx, &snapshot); err != nil {
-		return err
+		return nil, err
 	}
 
 	var decision RouteDecisionPlan
 	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
-		return err
+		return nil, err
 	}
 
 	var route RouteDecisionResult
@@ -116,7 +129,7 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 		DemandID:  signal.DemandID,
 		Decision:  decision,
 	}).Get(ctx, &route); err != nil {
-		return err
+		return nil, err
 	}
 
 	var tasks []ProjectTaskResult
@@ -126,23 +139,82 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 		DemandID:  signal.DemandID,
 		Decision:  decision,
 	}).Get(ctx, &tasks); err != nil {
-		return err
+		return nil, err
 	}
 
 	outputEventIDs := []uuid.UUID{route.CreatedEventID}
+	taskIDs := make([]uuid.UUID, 0, len(tasks))
 	for _, task := range tasks {
+		taskIDs = append(taskIDs, task.ID)
+	}
+	if decision.RequiresHumanReview {
+		var review DecisionRequestResult
+		if err := workflow.ExecuteActivity(ctx, (*Activities).RequestRouteDecisionReview, RequestRouteDecisionReviewInput{
+			TenantID:            input.TenantID,
+			ProjectID:           signal.ProjectID,
+			CoordinationJobID:   job.ID,
+			DemandID:            signal.DemandID,
+			RouteDecisionID:     route.ID,
+			Decision:            decision,
+			ProjectTaskIDs:      taskIDs,
+			RouteCreatedEventID: route.CreatedEventID,
+		}).Get(ctx, &review); err != nil {
+			return nil, err
+		}
+		return &pendingRouteDecisionReview{
+			DecisionRequestID: review.ID,
+			ProjectID:         signal.ProjectID,
+			JobID:             job.ID,
+			TaskIDs:           taskIDs,
+			OutputEventIDs:    outputEventIDs,
+		}, nil
+	}
+	if err := dispatchProjectTasks(ctx, input.TenantID, signal.ProjectID, taskIDs); err != nil {
+		return nil, err
+	}
+	return nil, finishCoordinationJob(ctx, input.TenantID, job.ID, "completed", outputEventIDs)
+}
+
+func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, pendingReviews map[string]pendingRouteDecisionReview) error {
+	pending, ok := pendingReviews[signal.DecisionRequestID.String()]
+	if !ok {
+		return appendSignalObservedEvent(ctx, input, "human decision submitted")
+	}
+	delete(pendingReviews, signal.DecisionRequestID.String())
+	outputEventIDs := append([]uuid.UUID{}, pending.OutputEventIDs...)
+	if signal.ResolvedEventID != uuid.Nil {
+		outputEventIDs = append(outputEventIDs, signal.ResolvedEventID)
+	}
+	if signal.Decision != "approved" {
+		if err := appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: pending.ProjectID}, "human route review rejected"); err != nil {
+			return err
+		}
+		return finishCoordinationJob(ctx, input.TenantID, pending.JobID, signal.Decision, outputEventIDs)
+	}
+	if err := dispatchProjectTasks(ctx, input.TenantID, pending.ProjectID, pending.TaskIDs); err != nil {
+		return err
+	}
+	return finishCoordinationJob(ctx, input.TenantID, pending.JobID, "completed", outputEventIDs)
+}
+
+func dispatchProjectTasks(ctx workflow.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) error {
+	for _, taskID := range taskIDs {
 		if err := workflow.ExecuteActivity(ctx, (*Activities).DispatchProjectTask, DispatchProjectTaskInput{
-			TenantID:  input.TenantID,
-			ProjectID: signal.ProjectID,
-			TaskID:    task.ID,
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			TaskID:    taskID,
 		}).Get(ctx, nil); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func finishCoordinationJob(ctx workflow.Context, tenantID, jobID uuid.UUID, status string, outputEventIDs []uuid.UUID) error {
 	finishInput := FinishCoordinationJobInput{
-		TenantID:       input.TenantID,
-		JobID:          job.ID,
-		Status:         "completed",
+		TenantID:       tenantID,
+		JobID:          jobID,
+		Status:         status,
 		OutputEventIDs: outputEventIDs,
 	}
 	return workflow.ExecuteActivity(ctx, (*Activities).FinishCoordinationJob, finishInput).Get(ctx, nil)

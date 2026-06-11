@@ -138,7 +138,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		}
 		temporalClientClose = temporalClient.Close
 		coordinatorClient = projectcoordination.NewSignalClient(temporalClient, cfg.Temporal.TaskQueue)
-		coordinationStore := projectcoordination.NewProjectStore(projectRepository)
+		coordinationStore := projectcoordination.NewProjectStoreWithApprovals(projectRepository, approvalService)
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore)
 		coordinationWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
 	}

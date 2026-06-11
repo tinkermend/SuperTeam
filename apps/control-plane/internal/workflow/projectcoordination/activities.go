@@ -16,6 +16,7 @@ type ActivityStore interface {
 	CreateCoordinationJob(ctx context.Context, input CreateCoordinationJobInput) (CoordinationJobResult, error)
 	PersistRouteDecision(ctx context.Context, input PersistRouteDecisionInput) (RouteDecisionResult, error)
 	CreateProjectTasks(ctx context.Context, input CreateProjectTasksInput) ([]ProjectTaskResult, error)
+	RequestRouteDecisionReview(ctx context.Context, input RequestRouteDecisionReviewInput) (DecisionRequestResult, error)
 	AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error)
 	DispatchProjectTask(ctx context.Context, input DispatchProjectTaskInput) error
 	FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error
@@ -55,6 +56,13 @@ func (a *Activities) CreateProjectTasks(ctx context.Context, input CreateProject
 		return nil, ErrActivityStoreRequired
 	}
 	return a.store.CreateProjectTasks(ctx, input)
+}
+
+func (a *Activities) RequestRouteDecisionReview(ctx context.Context, input RequestRouteDecisionReviewInput) (DecisionRequestResult, error) {
+	if a.store == nil {
+		return DecisionRequestResult{}, ErrActivityStoreRequired
+	}
+	return a.store.RequestRouteDecisionReview(ctx, input)
 }
 
 func (a *Activities) AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error) {

@@ -23,6 +23,7 @@ type HandlerService interface {
 	ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error)
 	ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error)
 	ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error)
+	RetryWorkflowSignal(ctx context.Context, req RetryWorkflowSignalRequest) (*ProjectEvent, error)
 	SubmitDemand(ctx context.Context, req SubmitProjectDemandRequest) (*ProjectDemand, error)
 	ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error)
 	GetOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error)
@@ -232,6 +233,28 @@ func (h *HTTPHandler) ListProjectEvents(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, eventResponses(events))
+}
+
+func (h *HTTPHandler) RetryWorkflowSignal(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	eventID, ok := projectEventIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	event, err := service.RetryWorkflowSignal(r.Context(), RetryWorkflowSignalRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventID:   eventID,
+		ActorID:   actorID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, eventResponseFromDomain(*event))
 }
 
 func (h *HTTPHandler) GetProjectConfig(w http.ResponseWriter, r *http.Request) {
@@ -590,6 +613,15 @@ func decisionIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, b
 		return uuid.Nil, false
 	}
 	return decisionID, true
+}
+
+func projectEventIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	eventID, err := uuid.Parse(chi.URLParam(r, "eventId"))
+	if err != nil || eventID == uuid.Nil {
+		http.Error(w, "invalid event id", http.StatusBadRequest)
+		return uuid.Nil, false
+	}
+	return eventID, true
 }
 
 func projectTaskIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
@@ -1138,21 +1170,25 @@ func decisionRequestResponseFromDomain(decision DecisionRequest) decisionRequest
 func eventResponses(events []ProjectEvent) []projectEventResponse {
 	responses := make([]projectEventResponse, 0, len(events))
 	for _, event := range events {
-		responses = append(responses, projectEventResponse{
-			ID:             event.ID.String(),
-			TenantID:       event.TenantID.String(),
-			ProjectID:      event.ProjectID.String(),
-			SequenceNumber: event.SequenceNumber,
-			EventType:      event.EventType,
-			ActorType:      event.ActorType,
-			ActorID:        event.ActorID,
-			ResourceType:   event.ResourceType,
-			ResourceID:     event.ResourceID,
-			Summary:        event.Summary,
-			Payload:        mapOrEmpty(event.Payload),
-		})
+		responses = append(responses, eventResponseFromDomain(event))
 	}
 	return responses
+}
+
+func eventResponseFromDomain(event ProjectEvent) projectEventResponse {
+	return projectEventResponse{
+		ID:             event.ID.String(),
+		TenantID:       event.TenantID.String(),
+		ProjectID:      event.ProjectID.String(),
+		SequenceNumber: event.SequenceNumber,
+		EventType:      event.EventType,
+		ActorType:      event.ActorType,
+		ActorID:        event.ActorID,
+		ResourceType:   event.ResourceType,
+		ResourceID:     event.ResourceID,
+		Summary:        event.Summary,
+		Payload:        mapOrEmpty(event.Payload),
+	}
 }
 
 func demandResponses(demands []ProjectDemand) []projectDemandResponse {

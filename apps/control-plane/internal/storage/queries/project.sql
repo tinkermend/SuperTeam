@@ -183,6 +183,12 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY sequence_number DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: GetProjectEvent :one
+SELECT * FROM project_events
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid;
+
 -- name: CreateProjectDemand :one
 INSERT INTO project_demands (
     tenant_id,
@@ -260,6 +266,16 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 SELECT * FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid;
+
+-- name: GetProjectTaskRunRuntimeNodeID :one
+SELECT tr.runtime_node_id
+FROM project_tasks pt
+JOIN task_runs tr
+  ON tr.tenant_id = pt.tenant_id
+ AND tr.id = sqlc.arg('run_id')::uuid
+ AND tr.id = pt.digital_employee_run_id
+WHERE pt.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pt.id = sqlc.arg('project_task_id')::uuid;
 
 -- name: CreateProjectCoordinationJob :one
 INSERT INTO project_coordination_jobs (
@@ -341,6 +357,7 @@ SET status = sqlc.arg('status')::varchar,
     updated_at = NOW()
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid
+  AND status = ANY(sqlc.arg('current_statuses')::varchar[])
 RETURNING *;
 
 -- name: AssignProjectTask :one
@@ -455,6 +472,12 @@ INSERT INTO project_decision_requests (
     sqlc.narg('created_event_id')::uuid
 ) RETURNING *;
 
+-- name: GetProjectDecisionRequest :one
+SELECT * FROM project_decision_requests
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid;
+
 -- name: ResolveProjectDecisionRequest :one
 UPDATE project_decision_requests
 SET status_snapshot = sqlc.arg('status_snapshot')::varchar,
@@ -462,6 +485,7 @@ SET status_snapshot = sqlc.arg('status_snapshot')::varchar,
     resolved_at = NOW(),
     updated_at = NOW()
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
   AND id = sqlc.arg('id')::uuid
   AND status_snapshot = 'pending'
 RETURNING *;

@@ -128,6 +128,8 @@ type ProjectTask struct {
 	Summary                   *string
 	Status                    string
 	AssignedDigitalEmployeeID *uuid.UUID
+	RuntimeTaskID             *uuid.UUID
+	DigitalEmployeeRunID      *uuid.UUID
 	RiskLevel                 *string
 	RequiresHumanApproval     bool
 	CreatedAt                 time.Time
@@ -371,6 +373,13 @@ type RequestProjectTaskTransferRequest struct {
 	SuggestedEmployeeType       string
 	SuggestedDigitalEmployeeIDs []uuid.UUID
 	MissingContextRefs          []any
+}
+
+type RetryWorkflowSignalRequest struct {
+	TenantID  uuid.UUID
+	ProjectID uuid.UUID
+	EventID   uuid.UUID
+	ActorID   uuid.UUID
 }
 
 type ListProjectsRequest struct {

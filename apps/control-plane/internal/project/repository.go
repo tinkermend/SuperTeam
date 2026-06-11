@@ -16,6 +16,7 @@ type Repository interface {
 	ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error)
 	ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error)
 	AppendProjectEvent(ctx context.Context, event AppendProjectEventRequest) (ProjectEvent, error)
+	GetProjectEvent(ctx context.Context, tenantID, projectID, eventID uuid.UUID) (ProjectEvent, error)
 	ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error)
 	CreateProjectDemand(ctx context.Context, req SubmitProjectDemandRequest, status ProjectDemandStatus, createdEventID *uuid.UUID) (ProjectDemand, error)
 	ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error)
@@ -28,15 +29,26 @@ type Repository interface {
 	CreateRouteDecision(ctx context.Context, req CreateRouteDecisionRequest) (RouteDecision, error)
 	ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error)
 	CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error)
-	UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID) (ProjectTask, error)
+	UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error)
 	AssignProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, assignedDigitalEmployeeID, eventID *uuid.UUID) (ProjectTask, error)
 	CreateExecutionSummary(ctx context.Context, req CreateExecutionSummaryRequest) (ExecutionSummary, error)
 	ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error)
 	CreateTransferRequest(ctx context.Context, req CreateTransferRequestRequest) (TransferRequest, error)
 	ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]TransferRequest, error)
 	CreateDecisionRequest(ctx context.Context, req CreateDecisionRequestRequest) (DecisionRequest, error)
+	GetDecisionRequest(ctx context.Context, tenantID, projectID, decisionRequestID uuid.UUID) (DecisionRequest, error)
 	ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error)
 	ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error)
+}
+
+type ProjectTaskRuntimeBindingRepository interface {
+	GetProjectTaskRunRuntimeNodeID(ctx context.Context, tenantID, projectTaskID, runID uuid.UUID) (uuid.UUID, error)
+}
+
+type ProjectTaskWritebackRepository interface {
+	CompleteProjectTaskWriteback(ctx context.Context, req CompleteProjectTaskWritebackRequest) (ProjectTaskWritebackResult, error)
+	FailProjectTaskWriteback(ctx context.Context, req FailProjectTaskWritebackRequest) (ProjectTaskWritebackResult, error)
+	RequestProjectTaskTransferWriteback(ctx context.Context, req RequestProjectTaskTransferWritebackRequest) (ProjectTaskTransferWritebackResult, error)
 }
 
 type AppendProjectEventRequest struct {
@@ -114,6 +126,38 @@ type CreateExecutionSummaryRequest struct {
 	CreatedEventID        *uuid.UUID
 }
 
+type CompleteProjectTaskWritebackRequest struct {
+	Task                   ProjectTask
+	Summary                CreateExecutionSummaryRequest
+	Event                  AppendProjectEventRequest
+	AllowedCurrentStatuses []string
+}
+
+type FailProjectTaskWritebackRequest struct {
+	Task                   ProjectTask
+	Event                  AppendProjectEventRequest
+	AllowedCurrentStatuses []string
+}
+
+type RequestProjectTaskTransferWritebackRequest struct {
+	Task                   ProjectTask
+	Event                  AppendProjectEventRequest
+	Transfer               CreateTransferRequestRequest
+	AllowedCurrentStatuses []string
+}
+
+type ProjectTaskWritebackResult struct {
+	Task    ProjectTask
+	Event   ProjectEvent
+	Summary ExecutionSummary
+}
+
+type ProjectTaskTransferWritebackResult struct {
+	Task     ProjectTask
+	Event    ProjectEvent
+	Transfer TransferRequest
+}
+
 type CreateTransferRequestRequest struct {
 	TenantID                     uuid.UUID
 	ProjectID                    uuid.UUID
@@ -144,6 +188,7 @@ type CreateDecisionRequestRequest struct {
 
 type ResolveDecisionRequestRepositoryRequest struct {
 	TenantID        uuid.UUID
+	ProjectID       uuid.UUID
 	ID              uuid.UUID
 	StatusSnapshot  string
 	ResolvedEventID *uuid.UUID

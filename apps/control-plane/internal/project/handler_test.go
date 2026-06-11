@@ -283,6 +283,19 @@ func (s *handlerTestService) ListTransferRequests(ctx context.Context, tenantID,
 	return nil, nil
 }
 
+func (s *handlerTestService) RetryWorkflowSignal(ctx context.Context, req RetryWorkflowSignalRequest) (*ProjectEvent, error) {
+	return &ProjectEvent{
+		ID:             uuid.New(),
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		SequenceNumber: 1,
+		EventType:      ProjectEventWorkflowSignaled,
+		ActorType:      "human_user",
+		ActorID:        req.ActorID.String(),
+		Payload:        map[string]any{"status": "sent"},
+	}, nil
+}
+
 func (s *handlerTestService) CompleteProjectTask(ctx context.Context, req CompleteProjectTaskRequest) (*ExecutionSummary, error) {
 	return nil, nil
 }

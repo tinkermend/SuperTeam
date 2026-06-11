@@ -4,15 +4,25 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/approval"
 	"github.com/superteam/control-plane/internal/project"
 )
 
 type ProjectStore struct {
 	repository project.Repository
+	approvals  ApprovalCreator
 }
 
 func NewProjectStore(repository project.Repository) *ProjectStore {
-	return &ProjectStore{repository: repository}
+	return NewProjectStoreWithApprovals(repository, nil)
+}
+
+type ApprovalCreator interface {
+	CreateRequest(ctx context.Context, input approval.CreateRequestInput) (*approval.ApprovalRequest, error)
+}
+
+func NewProjectStoreWithApprovals(repository project.Repository, approvals ApprovalCreator) *ProjectStore {
+	return &ProjectStore{repository: repository, approvals: approvals}
 }
 
 func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, input LoadSnapshotInput) (CoordinationSnapshot, error) {
@@ -147,6 +157,58 @@ func (s *ProjectStore) CreateProjectTasks(ctx context.Context, input CreateProje
 	return results, nil
 }
 
+func (s *ProjectStore) RequestRouteDecisionReview(ctx context.Context, input RequestRouteDecisionReviewInput) (DecisionRequestResult, error) {
+	if s.repository == nil || s.approvals == nil {
+		return DecisionRequestResult{}, ErrActivityStoreRequired
+	}
+	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
+		TenantID:       input.TenantID,
+		ResourceType:   "project_route_decision",
+		ResourceID:     input.RouteDecisionID,
+		RequesterType:  "project_coordinator",
+		TargetUserID:   projectRecord.HumanOwnerUserID,
+		DecisionType:   "route_review",
+		Title:          "确认项目路由决策",
+		Summary:        input.Decision.Reason,
+		RiskLevel:      "high",
+		Options:        []any{"approved", "rejected", "needs_more_evidence"},
+		ContextPayload: routeReviewContext(input),
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, input.CoordinationJobID.String(), "路由决策需要人类确认", map[string]any{
+		"approval_request_id": approvalRequest.ID.String(),
+		"route_decision_id":   input.RouteDecisionID.String(),
+		"demand_id":           input.DemandID.String(),
+	}))
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	coordinationJobID := input.CoordinationJobID
+	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
+		TenantID:          input.TenantID,
+		ProjectID:         input.ProjectID,
+		ApprovalRequestID: approvalRequest.ID,
+		CoordinationJobID: &coordinationJobID,
+		TargetUserID:      projectRecord.HumanOwnerUserID,
+		DecisionType:      "route_review",
+		TitleSnapshot:     "确认项目路由决策",
+		SummarySnapshot:   input.Decision.Reason,
+		RiskLevelSnapshot: "high",
+		StatusSnapshot:    "pending",
+		CreatedEventID:    &event.ID,
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	return DecisionRequestResult{ID: decision.ID}, nil
+}
+
 func (s *ProjectStore) AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error) {
 	if s.repository == nil {
 		return ProjectEventResult{}, ErrActivityStoreRequired
@@ -166,7 +228,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 	if err != nil {
 		return err
 	}
-	_, err = s.repository.UpdateProjectTaskStatus(ctx, input.TenantID, input.TaskID, "assigned", &event.ID)
+	_, err = s.repository.UpdateProjectTaskStatus(ctx, input.TenantID, input.TaskID, "assigned", &event.ID, []string{"planned", "pending"})
 	return err
 }
 
@@ -208,6 +270,27 @@ func stringsToAny(values []string) []any {
 		result = append(result, value)
 	}
 	return result
+}
+
+func uuidStrings(values []uuid.UUID) []any {
+	result := make([]any, 0, len(values))
+	for _, value := range values {
+		result = append(result, value.String())
+	}
+	return result
+}
+
+func routeReviewContext(input RequestRouteDecisionReviewInput) map[string]any {
+	return map[string]any{
+		"project_id":                    input.ProjectID.String(),
+		"demand_id":                     input.DemandID.String(),
+		"coordination_job_id":           input.CoordinationJobID.String(),
+		"route_decision_id":             input.RouteDecisionID.String(),
+		"project_task_ids":              uuidStrings(input.ProjectTaskIDs),
+		"selected_digital_employee_ids": uuidStrings(input.Decision.SelectedDigitalEmployeeIDs),
+		"reason":                        input.Decision.Reason,
+		"route_created_event_id":        input.RouteCreatedEventID.String(),
+	}
 }
 
 func isRoutableDigitalProjectRole(role project.ProjectRole) bool {

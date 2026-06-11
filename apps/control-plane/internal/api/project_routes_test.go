@@ -205,6 +205,41 @@ func TestRuntimeProjectTaskWritebackRoutesUseRuntimeSessionAuth(t *testing.T) {
 	}
 }
 
+func TestProjectWorkflowSignalRetryRouteUsesConsoleAuth(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	user, err := authService.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeProjectService{projectID: uuid.New()}
+	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+	eventID := uuid.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+service.projectID.String()+"/events/"+eventID.String()+"/retry-workflow-signal", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected retry workflow signal to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.retryWorkflowSignalReq.TenantID != expectedTenantID || service.retryWorkflowSignalReq.ProjectID != service.projectID || service.retryWorkflowSignalReq.EventID != eventID || service.retryWorkflowSignalReq.ActorID != user.ID {
+		t.Fatalf("expected retry context/path/user, got %#v", service.retryWorkflowSignalReq)
+	}
+}
+
 func TestProjectRoutesRejectBadRequestsAndConflicts(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -267,6 +302,7 @@ type routeProjectService struct {
 	routeDecisionProjectID    uuid.UUID
 	routeDecisionLimit        int32
 	resolveDecisionReq        project.ResolveDecisionRequest
+	retryWorkflowSignalReq    project.RetryWorkflowSignalRequest
 	completeTaskReq           project.CompleteProjectTaskRequest
 	archiveErr                error
 }
@@ -337,6 +373,20 @@ func (s *routeProjectService) ListProjectEvents(ctx context.Context, tenantID, p
 		ActorID:        uuid.New().String(),
 		Payload:        map[string]any{},
 	}}, nil
+}
+
+func (s *routeProjectService) RetryWorkflowSignal(ctx context.Context, req project.RetryWorkflowSignalRequest) (*project.ProjectEvent, error) {
+	s.retryWorkflowSignalReq = req
+	return &project.ProjectEvent{
+		ID:             uuid.New(),
+		TenantID:       req.TenantID,
+		ProjectID:      req.ProjectID,
+		SequenceNumber: 2,
+		EventType:      project.ProjectEventWorkflowSignaled,
+		ActorType:      "human_user",
+		ActorID:        req.ActorID.String(),
+		Payload:        map[string]any{"status": "sent"},
+	}, nil
 }
 
 func (s *routeProjectService) GetLatestProjectConfigRevision(ctx context.Context, tenantID, projectID uuid.UUID) (*project.ProjectConfigRevision, error) {

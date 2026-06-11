@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/approval"
 	"github.com/superteam/control-plane/internal/project"
 )
 
@@ -58,12 +59,74 @@ func TestProjectStoreSnapshotIncludesOnlyActiveDigitalExecutorsAndReviewers(t *t
 	}
 }
 
+func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProjection(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	jobID := uuid.New()
+	demandID := uuid.New()
+	routeID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	approvalID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			HumanOwnerUserID: ownerID,
+		},
+		approvalID: approvalID,
+	}
+	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
+	store := NewProjectStoreWithApprovals(repo, approvals)
+
+	result, err := store.RequestRouteDecisionReview(context.Background(), RequestRouteDecisionReviewInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		CoordinationJobID: jobID,
+		DemandID:          demandID,
+		RouteDecisionID:   routeID,
+		Decision: RouteDecisionPlan{
+			SelectedDigitalEmployeeIDs: []uuid.UUID{employeeID},
+			Reason:                     "高风险需求需要负责人确认",
+		},
+		ProjectTaskIDs:      []uuid.UUID{taskID},
+		RouteCreatedEventID: uuid.New(),
+	})
+	if err != nil {
+		t.Fatalf("request route review: %v", err)
+	}
+	if result.ID == uuid.Nil {
+		t.Fatal("expected decision request id")
+	}
+	if approvals.last.TargetUserID != ownerID || approvals.last.ResourceID != routeID || approvals.last.DecisionType != "route_review" {
+		t.Fatalf("unexpected approval request: %#v", approvals.last)
+	}
+	if approvals.last.ContextPayload["project_id"] != projectID.String() {
+		t.Fatalf("expected project context payload, got %#v", approvals.last.ContextPayload)
+	}
+	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventDecisionRequested {
+		t.Fatalf("expected decision requested event, got %#v", repo.events)
+	}
+	if len(repo.decisionRequests) != 1 {
+		t.Fatalf("expected project decision projection, got %d", len(repo.decisionRequests))
+	}
+	decision := repo.decisionRequests[0]
+	if decision.ApprovalRequestID != approvalID || decision.TargetUserID != ownerID || decision.StatusSnapshot != "pending" {
+		t.Fatalf("unexpected decision projection: %#v", decision)
+	}
+}
+
 type projectStoreMemoryRepository struct {
 	project.Repository
 
 	projectRecord project.Project
 	demand        project.ProjectDemand
 	members       []project.ProjectMember
+	approvalID    uuid.UUID
+
+	events           []project.ProjectEvent
+	decisionRequests []project.DecisionRequest
 }
 
 func (r *projectStoreMemoryRepository) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (project.Project, error) {
@@ -95,7 +158,9 @@ func (r *projectStoreMemoryRepository) CreateCoordinationJob(ctx context.Context
 }
 
 func (r *projectStoreMemoryRepository) AppendProjectEvent(ctx context.Context, req project.AppendProjectEventRequest) (project.ProjectEvent, error) {
-	return project.ProjectEvent{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, EventType: req.EventType, CreatedAt: time.Now().UTC()}, nil
+	event := project.ProjectEvent{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, EventType: req.EventType, CreatedAt: time.Now().UTC()}
+	r.events = append(r.events, event)
+	return event, nil
 }
 
 func (r *projectStoreMemoryRepository) CreateRouteDecision(ctx context.Context, req project.CreateRouteDecisionRequest) (project.RouteDecision, error) {
@@ -106,12 +171,54 @@ func (r *projectStoreMemoryRepository) CreateProjectTask(ctx context.Context, re
 	return project.ProjectTask{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, DemandID: req.DemandID, Status: req.Status, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, nil
 }
 
-func (r *projectStoreMemoryRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID) (project.ProjectTask, error) {
+func (r *projectStoreMemoryRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (project.ProjectTask, error) {
 	return project.ProjectTask{ID: projectTaskID, TenantID: tenantID, Status: status, UpdatedAt: time.Now().UTC()}, nil
 }
 
 func (r *projectStoreMemoryRepository) FinishCoordinationJob(ctx context.Context, req project.FinishCoordinationJobRequest) (project.CoordinationJob, error) {
 	return project.CoordinationJob{ID: req.ID, TenantID: req.TenantID, Status: req.Status, OutputEventIDs: req.OutputEventIDs, CreatedAt: time.Now().UTC()}, nil
+}
+
+func (r *projectStoreMemoryRepository) CreateDecisionRequest(ctx context.Context, req project.CreateDecisionRequestRequest) (project.DecisionRequest, error) {
+	decision := project.DecisionRequest{
+		ID:                uuid.New(),
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		ApprovalRequestID: req.ApprovalRequestID,
+		CoordinationJobID: req.CoordinationJobID,
+		TargetUserID:      req.TargetUserID,
+		DecisionType:      req.DecisionType,
+		TitleSnapshot:     req.TitleSnapshot,
+		StatusSnapshot:    req.StatusSnapshot,
+		CreatedEventID:    req.CreatedEventID,
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+	}
+	r.decisionRequests = append(r.decisionRequests, decision)
+	return decision, nil
+}
+
+type projectStoreApprovalCreator struct {
+	approvalID uuid.UUID
+	last       approval.CreateRequestInput
+}
+
+func (c *projectStoreApprovalCreator) CreateRequest(ctx context.Context, input approval.CreateRequestInput) (*approval.ApprovalRequest, error) {
+	c.last = input
+	id := c.approvalID
+	if id == uuid.Nil {
+		id = uuid.New()
+	}
+	return &approval.ApprovalRequest{
+		ID:           id,
+		TenantID:     input.TenantID,
+		ResourceType: input.ResourceType,
+		ResourceID:   input.ResourceID,
+		TargetUserID: input.TargetUserID,
+		DecisionType: input.DecisionType,
+		Title:        input.Title,
+		Status:       approval.ApprovalStatusPending,
+	}, nil
 }
 
 func strPtr(value string) *string {
