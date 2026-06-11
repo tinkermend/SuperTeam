@@ -19,7 +19,8 @@ CREATE TABLE project_evidence_refs (
     verification_status VARCHAR(50) NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_event_id UUID,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 COMMENT ON TABLE project_evidence_refs IS '项目证据引用表，保存任务、路由和执行摘要产出的可审计证据';
@@ -41,11 +42,13 @@ COMMENT ON COLUMN project_evidence_refs.verification_status IS '证据核验状�
 COMMENT ON COLUMN project_evidence_refs.metadata IS '证据扩展元数据';
 COMMENT ON COLUMN project_evidence_refs.created_event_id IS '创建该证据引用时产生的项目事件ID';
 COMMENT ON COLUMN project_evidence_refs.created_at IS '证据引用创建时间';
+COMMENT ON COLUMN project_evidence_refs.updated_at IS '证据引用更新时间';
 
 CREATE INDEX idx_project_evidence_refs_tenant_project_created ON project_evidence_refs(tenant_id, project_id, created_at DESC);
 CREATE INDEX idx_project_evidence_refs_tenant_task ON project_evidence_refs(tenant_id, project_task_id);
 CREATE INDEX idx_project_evidence_refs_tenant_execution_summary ON project_evidence_refs(tenant_id, execution_summary_id);
 CREATE INDEX idx_project_evidence_refs_tenant_status ON project_evidence_refs(tenant_id, project_id, verification_status);
+CREATE TRIGGER update_project_evidence_refs_updated_at BEFORE UPDATE ON project_evidence_refs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TABLE project_artifact_refs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -63,7 +66,8 @@ CREATE TABLE project_artifact_refs (
     retention_hold_id UUID,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_event_id UUID,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 COMMENT ON TABLE project_artifact_refs IS '项目工件引用表，保存项目内报告、附件、日志和执行产物的对象引用';
@@ -83,10 +87,12 @@ COMMENT ON COLUMN project_artifact_refs.retention_hold_id IS '当前关联的保
 COMMENT ON COLUMN project_artifact_refs.metadata IS '工件扩展元数据';
 COMMENT ON COLUMN project_artifact_refs.created_event_id IS '创建该工件引用时产生的项目事件ID';
 COMMENT ON COLUMN project_artifact_refs.created_at IS '工件引用创建时间';
+COMMENT ON COLUMN project_artifact_refs.updated_at IS '工件引用更新时间';
 
 CREATE INDEX idx_project_artifact_refs_tenant_project_created ON project_artifact_refs(tenant_id, project_id, created_at DESC);
 CREATE INDEX idx_project_artifact_refs_tenant_task ON project_artifact_refs(tenant_id, project_task_id);
 CREATE INDEX idx_project_artifact_refs_tenant_artifact ON project_artifact_refs(tenant_id, artifact_id);
+CREATE TRIGGER update_project_artifact_refs_updated_at BEFORE UPDATE ON project_artifact_refs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TABLE project_report_refs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -235,6 +241,7 @@ CREATE TABLE artifact_retention_holds (
     status VARCHAR(50) NOT NULL,
     created_event_id UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     released_at TIMESTAMPTZ
 );
 
@@ -249,10 +256,12 @@ COMMENT ON COLUMN artifact_retention_holds.reason IS '保留原因';
 COMMENT ON COLUMN artifact_retention_holds.status IS '保留锁状态，例如 active、released';
 COMMENT ON COLUMN artifact_retention_holds.created_event_id IS '创建该保留锁时产生的项目事件ID';
 COMMENT ON COLUMN artifact_retention_holds.created_at IS '保留锁创建时间';
+COMMENT ON COLUMN artifact_retention_holds.updated_at IS '保留锁更新时间';
 COMMENT ON COLUMN artifact_retention_holds.released_at IS '保留锁释放时间';
 
 CREATE INDEX idx_artifact_retention_holds_tenant_artifact_active ON artifact_retention_holds(tenant_id, artifact_id) WHERE released_at IS NULL AND status = 'active';
 CREATE INDEX idx_artifact_retention_holds_tenant_resource ON artifact_retention_holds(tenant_id, resource_type, resource_id, created_at DESC);
+CREATE TRIGGER update_artifact_retention_holds_updated_at BEFORE UPDATE ON artifact_retention_holds FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 ALTER TABLE project_config_revisions
     ADD COLUMN changed_sections JSONB NOT NULL DEFAULT '[]'::jsonb,

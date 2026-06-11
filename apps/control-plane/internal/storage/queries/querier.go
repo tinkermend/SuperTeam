@@ -45,6 +45,7 @@ type Querier interface {
 	CreateProjectArtifactRef(ctx context.Context, arg CreateProjectArtifactRefParams) (ProjectArtifactRef, error)
 	CreateProjectBudgetLedgerEntry(ctx context.Context, arg CreateProjectBudgetLedgerEntryParams) (ProjectBudgetLedger, error)
 	CreateProjectConfigRevision(ctx context.Context, arg CreateProjectConfigRevisionParams) (ProjectConfigRevision, error)
+	CreateProjectConfigRevisionWithGovernanceFields(ctx context.Context, arg CreateProjectConfigRevisionWithGovernanceFieldsParams) (ProjectConfigRevision, error)
 	CreateProjectCoordinationJob(ctx context.Context, arg CreateProjectCoordinationJobParams) (ProjectCoordinationJob, error)
 	CreateProjectDecisionRequest(ctx context.Context, arg CreateProjectDecisionRequestParams) (ProjectDecisionRequest, error)
 	CreateProjectDemand(ctx context.Context, arg CreateProjectDemandParams) (ProjectDemand, error)

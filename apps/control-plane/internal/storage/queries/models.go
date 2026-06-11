@@ -91,6 +91,8 @@ type ArtifactRetentionHold struct {
 	CreatedEventID uuid.NullUUID `json:"created_event_id"`
 	// 保留锁创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 保留锁更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	// 保留锁释放时间
 	ReleasedAt pgtype.Timestamptz `json:"released_at"`
 }
@@ -483,6 +485,8 @@ type ProjectArtifactRef struct {
 	CreatedEventID uuid.NullUUID `json:"created_event_id"`
 	// 工件引用创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 工件引用更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 // 项目预算流水表，记录协调、执行和外部能力调用的预算估算与实际消耗
@@ -715,6 +719,8 @@ type ProjectEvidenceRef struct {
 	CreatedEventID uuid.NullUUID `json:"created_event_id"`
 	// 证据引用创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 证据引用更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 // 项目任务执行摘要表，保存数字员工回写的结论、证据、工件和不确定性

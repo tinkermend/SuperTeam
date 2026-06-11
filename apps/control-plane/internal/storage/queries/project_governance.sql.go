@@ -188,7 +188,7 @@ INSERT INTO project_artifact_refs (
     $12::uuid,
     COALESCE($13::jsonb, '{}'::jsonb),
     $14::uuid
-) RETURNING id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at
+) RETURNING id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at, updated_at
 `
 
 type CreateProjectArtifactRefParams struct {
@@ -243,6 +243,7 @@ func (q *Queries) CreateProjectArtifactRef(ctx context.Context, arg CreateProjec
 		&i.Metadata,
 		&i.CreatedEventID,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -332,6 +333,81 @@ func (q *Queries) CreateProjectBudgetLedgerEntry(ctx context.Context, arg Create
 	return i, err
 }
 
+const CreateProjectConfigRevisionWithGovernanceFields = `-- name: CreateProjectConfigRevisionWithGovernanceFields :one
+INSERT INTO project_config_revisions (
+    tenant_id,
+    project_id,
+    revision_number,
+    config_snapshot,
+    change_summary,
+    changed_sections,
+    previous_revision_id,
+    policy_fingerprint,
+    diff_summary,
+    created_by_user_id,
+    created_event_id
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::integer,
+    $4::jsonb,
+    $5::text,
+    COALESCE($6::jsonb, '[]'::jsonb),
+    $7::uuid,
+    $8::varchar,
+    COALESCE($9::jsonb, '{}'::jsonb),
+    $10::uuid,
+    $11::uuid
+) RETURNING id, tenant_id, project_id, revision_number, config_snapshot, change_summary, created_by_user_id, created_event_id, created_at, changed_sections, previous_revision_id, policy_fingerprint, diff_summary
+`
+
+type CreateProjectConfigRevisionWithGovernanceFieldsParams struct {
+	TenantID           uuid.UUID     `json:"tenant_id"`
+	ProjectID          uuid.UUID     `json:"project_id"`
+	RevisionNumber     int32         `json:"revision_number"`
+	ConfigSnapshot     []byte        `json:"config_snapshot"`
+	ChangeSummary      pgtype.Text   `json:"change_summary"`
+	ChangedSections    []byte        `json:"changed_sections"`
+	PreviousRevisionID uuid.NullUUID `json:"previous_revision_id"`
+	PolicyFingerprint  pgtype.Text   `json:"policy_fingerprint"`
+	DiffSummary        []byte        `json:"diff_summary"`
+	CreatedByUserID    uuid.UUID     `json:"created_by_user_id"`
+	CreatedEventID     uuid.NullUUID `json:"created_event_id"`
+}
+
+func (q *Queries) CreateProjectConfigRevisionWithGovernanceFields(ctx context.Context, arg CreateProjectConfigRevisionWithGovernanceFieldsParams) (ProjectConfigRevision, error) {
+	row := q.db.QueryRow(ctx, CreateProjectConfigRevisionWithGovernanceFields,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.RevisionNumber,
+		arg.ConfigSnapshot,
+		arg.ChangeSummary,
+		arg.ChangedSections,
+		arg.PreviousRevisionID,
+		arg.PolicyFingerprint,
+		arg.DiffSummary,
+		arg.CreatedByUserID,
+		arg.CreatedEventID,
+	)
+	var i ProjectConfigRevision
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.RevisionNumber,
+		&i.ConfigSnapshot,
+		&i.ChangeSummary,
+		&i.CreatedByUserID,
+		&i.CreatedEventID,
+		&i.CreatedAt,
+		&i.ChangedSections,
+		&i.PreviousRevisionID,
+		&i.PolicyFingerprint,
+		&i.DiffSummary,
+	)
+	return i, err
+}
+
 const CreateProjectEvidenceRef = `-- name: CreateProjectEvidenceRef :one
 INSERT INTO project_evidence_refs (
     tenant_id,
@@ -367,7 +443,7 @@ INSERT INTO project_evidence_refs (
     $14::varchar,
     COALESCE($15::jsonb, '{}'::jsonb),
     $16::uuid
-) RETURNING id, tenant_id, project_id, project_task_id, route_decision_id, execution_summary_id, evidence_type, title, summary, source_type, source_ref, artifact_ref_id, submitted_by_type, submitted_by_id, verification_status, metadata, created_event_id, created_at
+) RETURNING id, tenant_id, project_id, project_task_id, route_decision_id, execution_summary_id, evidence_type, title, summary, source_type, source_ref, artifact_ref_id, submitted_by_type, submitted_by_id, verification_status, metadata, created_event_id, created_at, updated_at
 `
 
 type CreateProjectEvidenceRefParams struct {
@@ -428,6 +504,7 @@ func (q *Queries) CreateProjectEvidenceRef(ctx context.Context, arg CreateProjec
 		&i.Metadata,
 		&i.CreatedEventID,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -665,7 +742,7 @@ func (q *Queries) ListProjectArchiveSnapshots(ctx context.Context, arg ListProje
 }
 
 const ListProjectArtifactRefs = `-- name: ListProjectArtifactRefs :many
-SELECT id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at FROM project_artifact_refs
+SELECT id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at, updated_at FROM project_artifact_refs
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND ($3::varchar IS NULL OR artifact_type = $3::varchar)
@@ -716,6 +793,7 @@ func (q *Queries) ListProjectArtifactRefs(ctx context.Context, arg ListProjectAr
 			&i.Metadata,
 			&i.CreatedEventID,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -841,7 +919,7 @@ func (q *Queries) ListProjectConfigRevisions(ctx context.Context, arg ListProjec
 }
 
 const ListProjectEvidenceRefs = `-- name: ListProjectEvidenceRefs :many
-SELECT id, tenant_id, project_id, project_task_id, route_decision_id, execution_summary_id, evidence_type, title, summary, source_type, source_ref, artifact_ref_id, submitted_by_type, submitted_by_id, verification_status, metadata, created_event_id, created_at FROM project_evidence_refs
+SELECT id, tenant_id, project_id, project_task_id, route_decision_id, execution_summary_id, evidence_type, title, summary, source_type, source_ref, artifact_ref_id, submitted_by_type, submitted_by_id, verification_status, metadata, created_event_id, created_at, updated_at FROM project_evidence_refs
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND ($3::varchar IS NULL OR verification_status = $3::varchar)
@@ -891,6 +969,7 @@ func (q *Queries) ListProjectEvidenceRefs(ctx context.Context, arg ListProjectEv
 			&i.Metadata,
 			&i.CreatedEventID,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -965,7 +1044,7 @@ SET retention_status = $1::varchar,
 WHERE tenant_id = $3::uuid
   AND project_id = $4::uuid
   AND id = $5::uuid
-RETURNING id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at
+RETURNING id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at, updated_at
 `
 
 type UpdateProjectArtifactRetentionParams struct {
@@ -1002,6 +1081,7 @@ func (q *Queries) UpdateProjectArtifactRetention(ctx context.Context, arg Update
 		&i.Metadata,
 		&i.CreatedEventID,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1013,7 +1093,7 @@ SET verification_status = $1::varchar,
 WHERE tenant_id = $3::uuid
   AND project_id = $4::uuid
   AND id = $5::uuid
-RETURNING id, tenant_id, project_id, project_task_id, route_decision_id, execution_summary_id, evidence_type, title, summary, source_type, source_ref, artifact_ref_id, submitted_by_type, submitted_by_id, verification_status, metadata, created_event_id, created_at
+RETURNING id, tenant_id, project_id, project_task_id, route_decision_id, execution_summary_id, evidence_type, title, summary, source_type, source_ref, artifact_ref_id, submitted_by_type, submitted_by_id, verification_status, metadata, created_event_id, created_at, updated_at
 `
 
 type UpdateProjectEvidenceVerificationStatusParams struct {
@@ -1052,6 +1132,7 @@ func (q *Queries) UpdateProjectEvidenceVerificationStatus(ctx context.Context, a
 		&i.Metadata,
 		&i.CreatedEventID,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

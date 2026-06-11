@@ -253,6 +253,33 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: CreateProjectConfigRevisionWithGovernanceFields :one
+INSERT INTO project_config_revisions (
+    tenant_id,
+    project_id,
+    revision_number,
+    config_snapshot,
+    change_summary,
+    changed_sections,
+    previous_revision_id,
+    policy_fingerprint,
+    diff_summary,
+    created_by_user_id,
+    created_event_id
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('project_id')::uuid,
+    sqlc.arg('revision_number')::integer,
+    sqlc.arg('config_snapshot')::jsonb,
+    sqlc.narg('change_summary')::text,
+    COALESCE(sqlc.narg('changed_sections')::jsonb, '[]'::jsonb),
+    sqlc.narg('previous_revision_id')::uuid,
+    sqlc.narg('policy_fingerprint')::varchar,
+    COALESCE(sqlc.narg('diff_summary')::jsonb, '{}'::jsonb),
+    sqlc.arg('created_by_user_id')::uuid,
+    sqlc.narg('created_event_id')::uuid
+) RETURNING *;
+
 -- name: ListProjectConfigRevisions :many
 SELECT * FROM project_config_revisions
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
