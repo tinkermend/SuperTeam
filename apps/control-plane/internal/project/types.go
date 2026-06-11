@@ -51,6 +51,17 @@ const (
 	ProjectEventConfigChanged   ProjectEventType = "project.config.changed"
 	ProjectEventArchived        ProjectEventType = "project.archived"
 	ProjectEventDemandSubmitted ProjectEventType = "demand.submitted"
+
+	ProjectEventWorkflowSignaled       ProjectEventType = "workflow.signaled"
+	ProjectEventCoordinationJobCreated ProjectEventType = "coordination_job.created"
+	ProjectEventRouteDecisionCreated   ProjectEventType = "route_decision.created"
+	ProjectEventTaskCreated            ProjectEventType = "project_task.created"
+	ProjectEventTaskDispatched         ProjectEventType = "project_task.dispatched"
+	ProjectEventTaskCompleted          ProjectEventType = "project_task.completed"
+	ProjectEventTaskFailed             ProjectEventType = "project_task.failed"
+	ProjectEventTransferRequested      ProjectEventType = "transfer.requested"
+	ProjectEventDecisionRequested      ProjectEventType = "decision.requested"
+	ProjectEventDecisionSubmitted      ProjectEventType = "decision.submitted"
 )
 
 type DemandSourceType string
@@ -120,6 +131,93 @@ type ProjectTask struct {
 	RequiresHumanApproval     bool
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
+}
+
+type CoordinationJob struct {
+	ID               uuid.UUID
+	TenantID         uuid.UUID
+	ProjectID        uuid.UUID
+	WorkflowID       string
+	TriggerEventID   *uuid.UUID
+	JobType          string
+	Status           string
+	InputSnapshotRef map[string]any
+	OutputEventIDs   []any
+	StartedAt        *time.Time
+	FinishedAt       *time.Time
+	CreatedAt        time.Time
+}
+
+type RouteDecision struct {
+	ID                          uuid.UUID
+	TenantID                    uuid.UUID
+	ProjectID                   uuid.UUID
+	CoordinationJobID           uuid.UUID
+	DemandID                    *uuid.UUID
+	CandidateDigitalEmployeeIDs []uuid.UUID
+	SelectedDigitalEmployeeIDs  []uuid.UUID
+	Reason                      string
+	InputRequirements           map[string]any
+	ExpectedOutputs             []any
+	BudgetEstimate              map[string]any
+	RequiresHumanReview         bool
+	CreatedEventID              *uuid.UUID
+	CreatedAt                   time.Time
+}
+
+type ExecutionSummary struct {
+	ID                    uuid.UUID
+	TenantID              uuid.UUID
+	ProjectID             uuid.UUID
+	ProjectTaskID         uuid.UUID
+	DigitalEmployeeID     uuid.UUID
+	Conclusion            string
+	EvidenceRefs          []any
+	ArtifactRefs          []any
+	ConfidenceFactors     map[string]any
+	Uncertainty           *string
+	MissingInformation    []any
+	RecommendedNextAction *string
+	RequiresHumanReview   bool
+	TransferRequestID     *uuid.UUID
+	CreatedEventID        *uuid.UUID
+	CreatedAt             time.Time
+}
+
+type TransferRequest struct {
+	ID                           uuid.UUID
+	TenantID                     uuid.UUID
+	ProjectID                    uuid.UUID
+	ProjectTaskID                uuid.UUID
+	RequestedByDigitalEmployeeID uuid.UUID
+	Reason                       string
+	SuggestedEmployeeType        *string
+	SuggestedDigitalEmployeeIDs  []uuid.UUID
+	MissingContextRefs           []any
+	Status                       string
+	CreatedEventID               *uuid.UUID
+	CreatedAt                    time.Time
+	UpdatedAt                    time.Time
+}
+
+type DecisionRequest struct {
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	ApprovalRequestID uuid.UUID
+	CoordinationJobID *uuid.UUID
+	ProjectTaskID     *uuid.UUID
+	TargetUserID      uuid.UUID
+	DecisionType      string
+	TitleSnapshot     string
+	SummarySnapshot   *string
+	RiskLevelSnapshot *string
+	StatusSnapshot    string
+	CreatedEventID    *uuid.UUID
+	ResolvedEventID   *uuid.UUID
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	ResolvedAt        *time.Time
 }
 
 type ProjectEvent struct {

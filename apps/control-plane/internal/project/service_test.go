@@ -380,20 +380,25 @@ func TestListPaginationIsNormalized(t *testing.T) {
 }
 
 type memoryRepository struct {
-	projects          map[uuid.UUID]Project
-	members           map[uuid.UUID][]ProjectMember
-	tasks             []ProjectTask
-	events            []ProjectEvent
-	eventTypes        []ProjectEventType
-	demands           []ProjectDemand
-	revisions         []ProjectConfigRevision
-	lastListProjects  ListProjectsRequest
-	lastTasksLimit    int32
-	lastTasksOffset   int32
-	lastEventsLimit   int32
-	lastEventsOffset  int32
-	lastDemandsLimit  int32
-	lastDemandsOffset int32
+	projects           map[uuid.UUID]Project
+	members            map[uuid.UUID][]ProjectMember
+	tasks              []ProjectTask
+	events             []ProjectEvent
+	eventTypes         []ProjectEventType
+	demands            []ProjectDemand
+	revisions          []ProjectConfigRevision
+	coordinationJobs   []CoordinationJob
+	routeDecisions     []RouteDecision
+	executionSummaries []ExecutionSummary
+	transferRequests   []TransferRequest
+	decisionRequests   []DecisionRequest
+	lastListProjects   ListProjectsRequest
+	lastTasksLimit     int32
+	lastTasksOffset    int32
+	lastEventsLimit    int32
+	lastEventsOffset   int32
+	lastDemandsLimit   int32
+	lastDemandsOffset  int32
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -626,4 +631,248 @@ func (r *memoryRepository) CreateConfigRevision(ctx context.Context, req UpdateP
 	}
 	r.revisions = append(r.revisions, revision)
 	return revision, nil
+}
+
+func (r *memoryRepository) GetProjectDemand(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error) {
+	for _, demand := range r.demands {
+		if demand.ID == demandID && demand.TenantID == tenantID {
+			return demand, nil
+		}
+	}
+	return ProjectDemand{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTask, error) {
+	for _, task := range r.tasks {
+		if task.ID == projectTaskID && task.TenantID == tenantID {
+			return task, nil
+		}
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) CreateCoordinationJob(ctx context.Context, req CreateCoordinationJobRequest) (CoordinationJob, error) {
+	job := CoordinationJob{
+		ID:               uuid.New(),
+		TenantID:         req.TenantID,
+		ProjectID:        req.ProjectID,
+		WorkflowID:       req.WorkflowID,
+		TriggerEventID:   req.TriggerEventID,
+		JobType:          req.JobType,
+		Status:           req.Status,
+		InputSnapshotRef: req.InputSnapshotRef,
+		OutputEventIDs:   []any{},
+		CreatedAt:        time.Now().UTC(),
+	}
+	r.coordinationJobs = append(r.coordinationJobs, job)
+	return job, nil
+}
+
+func (r *memoryRepository) FinishCoordinationJob(ctx context.Context, req FinishCoordinationJobRequest) (CoordinationJob, error) {
+	for index, job := range r.coordinationJobs {
+		if job.ID == req.ID && job.TenantID == req.TenantID {
+			now := time.Now().UTC()
+			job.Status = req.Status
+			job.OutputEventIDs = req.OutputEventIDs
+			job.FinishedAt = &now
+			r.coordinationJobs[index] = job
+			return job, nil
+		}
+	}
+	return CoordinationJob{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error) {
+	filtered := make([]CoordinationJob, 0, len(r.coordinationJobs))
+	for _, job := range r.coordinationJobs {
+		if job.TenantID == tenantID && job.ProjectID == projectID {
+			filtered = append(filtered, job)
+		}
+	}
+	return filtered, nil
+}
+
+func (r *memoryRepository) CreateRouteDecision(ctx context.Context, req CreateRouteDecisionRequest) (RouteDecision, error) {
+	decision := RouteDecision{
+		ID:                          uuid.New(),
+		TenantID:                    req.TenantID,
+		ProjectID:                   req.ProjectID,
+		CoordinationJobID:           req.CoordinationJobID,
+		DemandID:                    req.DemandID,
+		CandidateDigitalEmployeeIDs: req.CandidateDigitalEmployeeIDs,
+		SelectedDigitalEmployeeIDs:  req.SelectedDigitalEmployeeIDs,
+		Reason:                      req.Reason,
+		InputRequirements:           req.InputRequirements,
+		ExpectedOutputs:             req.ExpectedOutputs,
+		BudgetEstimate:              req.BudgetEstimate,
+		RequiresHumanReview:         req.RequiresHumanReview,
+		CreatedEventID:              req.CreatedEventID,
+		CreatedAt:                   time.Now().UTC(),
+	}
+	r.routeDecisions = append(r.routeDecisions, decision)
+	return decision, nil
+}
+
+func (r *memoryRepository) ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error) {
+	filtered := make([]RouteDecision, 0, len(r.routeDecisions))
+	for _, decision := range r.routeDecisions {
+		if decision.TenantID == tenantID && decision.ProjectID == projectID {
+			filtered = append(filtered, decision)
+		}
+	}
+	return filtered, nil
+}
+
+func (r *memoryRepository) CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error) {
+	task := ProjectTask{
+		ID:                        uuid.New(),
+		TenantID:                  req.TenantID,
+		ProjectID:                 req.ProjectID,
+		DemandID:                  req.DemandID,
+		Title:                     req.Title,
+		Summary:                   strPtrOrNil(req.Summary),
+		Status:                    req.Status,
+		AssignedDigitalEmployeeID: req.AssignedDigitalEmployeeID,
+		RiskLevel:                 strPtrOrNil(req.RiskLevel),
+		RequiresHumanApproval:     req.RequiresHumanApproval,
+		CreatedAt:                 time.Now().UTC(),
+		UpdatedAt:                 time.Now().UTC(),
+	}
+	r.tasks = append(r.tasks, task)
+	return task, nil
+}
+
+func (r *memoryRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID) (ProjectTask, error) {
+	for index, task := range r.tasks {
+		if task.ID == projectTaskID && task.TenantID == tenantID {
+			task.Status = status
+			task.UpdatedAt = time.Now().UTC()
+			r.tasks[index] = task
+			return task, nil
+		}
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) AssignProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, assignedDigitalEmployeeID, eventID *uuid.UUID) (ProjectTask, error) {
+	for index, task := range r.tasks {
+		if task.ID == projectTaskID && task.TenantID == tenantID {
+			task.Status = status
+			task.AssignedDigitalEmployeeID = assignedDigitalEmployeeID
+			task.UpdatedAt = time.Now().UTC()
+			r.tasks[index] = task
+			return task, nil
+		}
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) CreateExecutionSummary(ctx context.Context, req CreateExecutionSummaryRequest) (ExecutionSummary, error) {
+	summary := ExecutionSummary{
+		ID:                    uuid.New(),
+		TenantID:              req.TenantID,
+		ProjectID:             req.ProjectID,
+		ProjectTaskID:         req.ProjectTaskID,
+		DigitalEmployeeID:     req.DigitalEmployeeID,
+		Conclusion:            req.Conclusion,
+		EvidenceRefs:          req.EvidenceRefs,
+		ArtifactRefs:          req.ArtifactRefs,
+		ConfidenceFactors:     req.ConfidenceFactors,
+		Uncertainty:           strPtrOrNil(req.Uncertainty),
+		MissingInformation:    req.MissingInformation,
+		RecommendedNextAction: strPtrOrNil(req.RecommendedNextAction),
+		RequiresHumanReview:   req.RequiresHumanReview,
+		TransferRequestID:     req.TransferRequestID,
+		CreatedEventID:        req.CreatedEventID,
+		CreatedAt:             time.Now().UTC(),
+	}
+	r.executionSummaries = append(r.executionSummaries, summary)
+	return summary, nil
+}
+
+func (r *memoryRepository) ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error) {
+	filtered := make([]ExecutionSummary, 0, len(r.executionSummaries))
+	for _, summary := range r.executionSummaries {
+		if summary.TenantID == tenantID && summary.ProjectID == projectID {
+			filtered = append(filtered, summary)
+		}
+	}
+	return filtered, nil
+}
+
+func (r *memoryRepository) CreateTransferRequest(ctx context.Context, req CreateTransferRequestRequest) (TransferRequest, error) {
+	transfer := TransferRequest{
+		ID:                           uuid.New(),
+		TenantID:                     req.TenantID,
+		ProjectID:                    req.ProjectID,
+		ProjectTaskID:                req.ProjectTaskID,
+		RequestedByDigitalEmployeeID: req.RequestedByDigitalEmployeeID,
+		Reason:                       req.Reason,
+		SuggestedEmployeeType:        strPtrOrNil(req.SuggestedEmployeeType),
+		SuggestedDigitalEmployeeIDs:  req.SuggestedDigitalEmployeeIDs,
+		MissingContextRefs:           req.MissingContextRefs,
+		Status:                       req.Status,
+		CreatedEventID:               req.CreatedEventID,
+		CreatedAt:                    time.Now().UTC(),
+		UpdatedAt:                    time.Now().UTC(),
+	}
+	r.transferRequests = append(r.transferRequests, transfer)
+	return transfer, nil
+}
+
+func (r *memoryRepository) ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]TransferRequest, error) {
+	filtered := make([]TransferRequest, 0, len(r.transferRequests))
+	for _, transfer := range r.transferRequests {
+		if transfer.TenantID == tenantID && transfer.ProjectID == projectID {
+			filtered = append(filtered, transfer)
+		}
+	}
+	return filtered, nil
+}
+
+func (r *memoryRepository) CreateDecisionRequest(ctx context.Context, req CreateDecisionRequestRequest) (DecisionRequest, error) {
+	decision := DecisionRequest{
+		ID:                uuid.New(),
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		ApprovalRequestID: req.ApprovalRequestID,
+		CoordinationJobID: req.CoordinationJobID,
+		ProjectTaskID:     req.ProjectTaskID,
+		TargetUserID:      req.TargetUserID,
+		DecisionType:      req.DecisionType,
+		TitleSnapshot:     req.TitleSnapshot,
+		SummarySnapshot:   strPtrOrNil(req.SummarySnapshot),
+		RiskLevelSnapshot: strPtrOrNil(req.RiskLevelSnapshot),
+		StatusSnapshot:    req.StatusSnapshot,
+		CreatedEventID:    req.CreatedEventID,
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+	}
+	r.decisionRequests = append(r.decisionRequests, decision)
+	return decision, nil
+}
+
+func (r *memoryRepository) ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error) {
+	for index, decision := range r.decisionRequests {
+		if decision.ID == req.ID && decision.TenantID == req.TenantID {
+			now := time.Now().UTC()
+			decision.StatusSnapshot = req.StatusSnapshot
+			decision.ResolvedEventID = req.ResolvedEventID
+			decision.ResolvedAt = &now
+			decision.UpdatedAt = now
+			r.decisionRequests[index] = decision
+			return decision, nil
+		}
+	}
+	return DecisionRequest{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error) {
+	filtered := make([]DecisionRequest, 0, len(r.decisionRequests))
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID == tenantID && decision.ProjectID == projectID {
+			filtered = append(filtered, decision)
+		}
+	}
+	return filtered, nil
 }

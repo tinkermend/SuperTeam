@@ -1354,7 +1354,7 @@ go test ./apps/control-plane/internal/approval -count=1
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit approval core**
+- [x] **Step 7: Commit approval core**
 
 Run:
 
@@ -1374,7 +1374,7 @@ Expected: commit succeeds.
 - Create: `apps/control-plane/internal/workflow/projectcoordination/planner.go`
 - Create: `apps/control-plane/internal/workflow/projectcoordination/planner_test.go`
 
-- [ ] **Step 1: Write failing planner tests**
+- [x] **Step 1: Write failing planner tests**
 
 Create `apps/control-plane/internal/workflow/projectcoordination/planner_test.go`:
 
@@ -1430,7 +1430,7 @@ func TestValidateRouteDecisionRejectsOutOfPoolSelection(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run failing planner tests**
+- [x] **Step 2: Run failing planner tests**
 
 Run:
 
@@ -1440,7 +1440,7 @@ go test ./apps/control-plane/internal/workflow/projectcoordination -run 'TestPla
 
 Expected: FAIL because the package and planner types do not exist.
 
-- [ ] **Step 3: Add project V1 types**
+- [x] **Step 3: Add project V1 types**
 
 Append these types and event constants to `apps/control-plane/internal/project/types.go`:
 
@@ -1546,7 +1546,7 @@ type DecisionRequest struct {
 }
 ```
 
-- [ ] **Step 4: Add repository interface methods**
+- [x] **Step 4: Add repository interface methods**
 
 Add to `apps/control-plane/internal/project/repository.go`:
 
@@ -1569,7 +1569,7 @@ Add to `apps/control-plane/internal/project/repository.go`:
 
 Define the request structs in the same file, using fields matching the domain structs and sqlc query inputs.
 
-- [ ] **Step 5: Implement structured planner**
+- [x] **Step 5: Implement structured planner**
 
 Create `apps/control-plane/internal/workflow/projectcoordination/planner.go`:
 
@@ -1683,7 +1683,7 @@ func highRiskPolicyEnabled(policy map[string]any) bool {
 }
 ```
 
-- [ ] **Step 6: Implement PgRepository V1 methods and mappers**
+- [x] **Step 6: Implement PgRepository V1 methods and mappers**
 
 In `apps/control-plane/internal/project/pg_repository.go`, add methods for each new repository interface method. Follow the existing JSON helper pattern:
 
@@ -1742,7 +1742,7 @@ func jsonbUUIDSlice(values []uuid.UUID, field string) ([]byte, error) {
 }
 ```
 
-- [ ] **Step 7: Run planner and project package compile tests**
+- [x] **Step 7: Run planner and project package compile tests**
 
 Run:
 

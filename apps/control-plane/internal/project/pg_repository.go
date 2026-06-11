@@ -325,6 +325,312 @@ func (r *PgRepository) GetLatestProjectConfigRevision(ctx context.Context, tenan
 	return configRevisionFromRecord(row)
 }
 
+func (r *PgRepository) GetProjectDemand(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error) {
+	row, err := r.q.GetProjectDemand(ctx, queries.GetProjectDemandParams{TenantID: tenantID, ID: demandID})
+	if err != nil {
+		return ProjectDemand{}, err
+	}
+	return demandFromRecord(row)
+}
+
+func (r *PgRepository) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTask, error) {
+	row, err := r.q.GetProjectTask(ctx, queries.GetProjectTaskParams{TenantID: tenantID, ID: projectTaskID})
+	if err != nil {
+		return ProjectTask{}, err
+	}
+	return taskFromRecord(row), nil
+}
+
+func (r *PgRepository) CreateCoordinationJob(ctx context.Context, req CreateCoordinationJobRequest) (CoordinationJob, error) {
+	inputSnapshotRef, err := jsonbObject(req.InputSnapshotRef, "input_snapshot_ref")
+	if err != nil {
+		return CoordinationJob{}, err
+	}
+	row, err := r.q.CreateProjectCoordinationJob(ctx, queries.CreateProjectCoordinationJobParams{
+		TenantID:         req.TenantID,
+		ProjectID:        req.ProjectID,
+		WorkflowID:       req.WorkflowID,
+		TriggerEventID:   nullUUID(req.TriggerEventID),
+		JobType:          req.JobType,
+		Status:           req.Status,
+		InputSnapshotRef: inputSnapshotRef,
+	})
+	if err != nil {
+		return CoordinationJob{}, err
+	}
+	return coordinationJobFromRecord(row)
+}
+
+func (r *PgRepository) FinishCoordinationJob(ctx context.Context, req FinishCoordinationJobRequest) (CoordinationJob, error) {
+	outputEventIDs, err := jsonbArray(req.OutputEventIDs, "output_event_ids")
+	if err != nil {
+		return CoordinationJob{}, err
+	}
+	row, err := r.q.FinishProjectCoordinationJob(ctx, queries.FinishProjectCoordinationJobParams{
+		TenantID:       req.TenantID,
+		ID:             req.ID,
+		Status:         req.Status,
+		OutputEventIds: outputEventIDs,
+	})
+	if err != nil {
+		return CoordinationJob{}, err
+	}
+	return coordinationJobFromRecord(row)
+}
+
+func (r *PgRepository) ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error) {
+	rows, err := r.q.ListProjectCoordinationJobs(ctx, queries.ListProjectCoordinationJobsParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Limit:     limit,
+		Offset:    offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return coordinationJobsFromRecords(rows)
+}
+
+func (r *PgRepository) CreateRouteDecision(ctx context.Context, req CreateRouteDecisionRequest) (RouteDecision, error) {
+	candidateIDs, err := jsonbUUIDSlice(req.CandidateDigitalEmployeeIDs, "candidate_digital_employee_ids")
+	if err != nil {
+		return RouteDecision{}, err
+	}
+	selectedIDs, err := jsonbUUIDSlice(req.SelectedDigitalEmployeeIDs, "selected_digital_employee_ids")
+	if err != nil {
+		return RouteDecision{}, err
+	}
+	inputRequirements, err := jsonbObject(req.InputRequirements, "input_requirements")
+	if err != nil {
+		return RouteDecision{}, err
+	}
+	expectedOutputs, err := jsonbArray(req.ExpectedOutputs, "expected_outputs")
+	if err != nil {
+		return RouteDecision{}, err
+	}
+	budgetEstimate, err := jsonbObject(req.BudgetEstimate, "budget_estimate")
+	if err != nil {
+		return RouteDecision{}, err
+	}
+	row, err := r.q.CreateProjectRouteDecision(ctx, queries.CreateProjectRouteDecisionParams{
+		TenantID:                    req.TenantID,
+		ProjectID:                   req.ProjectID,
+		CoordinationJobID:           req.CoordinationJobID,
+		DemandID:                    nullUUID(req.DemandID),
+		CandidateDigitalEmployeeIds: candidateIDs,
+		SelectedDigitalEmployeeIds:  selectedIDs,
+		Reason:                      req.Reason,
+		InputRequirements:           inputRequirements,
+		ExpectedOutputs:             expectedOutputs,
+		BudgetEstimate:              budgetEstimate,
+		RequiresHumanReview:         req.RequiresHumanReview,
+		CreatedEventID:              nullUUID(req.CreatedEventID),
+	})
+	if err != nil {
+		return RouteDecision{}, err
+	}
+	return routeDecisionFromRecord(row)
+}
+
+func (r *PgRepository) ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error) {
+	rows, err := r.q.ListProjectRouteDecisions(ctx, queries.ListProjectRouteDecisionsParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Limit:     limit,
+		Offset:    offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return routeDecisionsFromRecords(rows)
+}
+
+func (r *PgRepository) CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error) {
+	row, err := r.q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
+		TenantID:                  req.TenantID,
+		ProjectID:                 req.ProjectID,
+		DemandID:                  nullUUID(req.DemandID),
+		Title:                     req.Title,
+		Summary:                   textOrNull(req.Summary),
+		Status:                    req.Status,
+		AssignedDigitalEmployeeID: nullUUID(req.AssignedDigitalEmployeeID),
+		RuntimeTaskID:             nullUUID(req.RuntimeTaskID),
+		DigitalEmployeeRunID:      nullUUID(req.DigitalEmployeeRunID),
+		RiskLevel:                 textOrNull(req.RiskLevel),
+		RequiresHumanApproval:     req.RequiresHumanApproval,
+	})
+	if err != nil {
+		return ProjectTask{}, err
+	}
+	return taskFromRecord(row), nil
+}
+
+func (r *PgRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID) (ProjectTask, error) {
+	row, err := r.q.UpdateProjectTaskStatus(ctx, queries.UpdateProjectTaskStatusParams{
+		TenantID:      tenantID,
+		ID:            projectTaskID,
+		Status:        status,
+		LatestEventID: nullUUID(eventID),
+	})
+	if err != nil {
+		return ProjectTask{}, err
+	}
+	return taskFromRecord(row), nil
+}
+
+func (r *PgRepository) AssignProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, assignedDigitalEmployeeID, eventID *uuid.UUID) (ProjectTask, error) {
+	row, err := r.q.AssignProjectTask(ctx, queries.AssignProjectTaskParams{
+		TenantID:                  tenantID,
+		ID:                        projectTaskID,
+		Status:                    status,
+		AssignedDigitalEmployeeID: nullUUID(assignedDigitalEmployeeID),
+		LatestEventID:             nullUUID(eventID),
+	})
+	if err != nil {
+		return ProjectTask{}, err
+	}
+	return taskFromRecord(row), nil
+}
+
+func (r *PgRepository) CreateExecutionSummary(ctx context.Context, req CreateExecutionSummaryRequest) (ExecutionSummary, error) {
+	evidenceRefs, err := jsonbArray(req.EvidenceRefs, "evidence_refs")
+	if err != nil {
+		return ExecutionSummary{}, err
+	}
+	artifactRefs, err := jsonbArray(req.ArtifactRefs, "artifact_refs")
+	if err != nil {
+		return ExecutionSummary{}, err
+	}
+	confidenceFactors, err := jsonbObject(req.ConfidenceFactors, "confidence_factors")
+	if err != nil {
+		return ExecutionSummary{}, err
+	}
+	missingInformation, err := jsonbArray(req.MissingInformation, "missing_information")
+	if err != nil {
+		return ExecutionSummary{}, err
+	}
+	row, err := r.q.CreateProjectExecutionSummary(ctx, queries.CreateProjectExecutionSummaryParams{
+		TenantID:              req.TenantID,
+		ProjectID:             req.ProjectID,
+		ProjectTaskID:         req.ProjectTaskID,
+		DigitalEmployeeID:     req.DigitalEmployeeID,
+		Conclusion:            req.Conclusion,
+		EvidenceRefs:          evidenceRefs,
+		ArtifactRefs:          artifactRefs,
+		ConfidenceFactors:     confidenceFactors,
+		Uncertainty:           textOrNull(req.Uncertainty),
+		MissingInformation:    missingInformation,
+		RecommendedNextAction: textOrNull(req.RecommendedNextAction),
+		RequiresHumanReview:   req.RequiresHumanReview,
+		TransferRequestID:     nullUUID(req.TransferRequestID),
+		CreatedEventID:        nullUUID(req.CreatedEventID),
+	})
+	if err != nil {
+		return ExecutionSummary{}, err
+	}
+	return executionSummaryFromRecord(row)
+}
+
+func (r *PgRepository) ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error) {
+	rows, err := r.q.ListProjectExecutionSummaries(ctx, queries.ListProjectExecutionSummariesParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Limit:     limit,
+		Offset:    offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return executionSummariesFromRecords(rows)
+}
+
+func (r *PgRepository) CreateTransferRequest(ctx context.Context, req CreateTransferRequestRequest) (TransferRequest, error) {
+	suggestedIDs, err := jsonbUUIDSlice(req.SuggestedDigitalEmployeeIDs, "suggested_digital_employee_ids")
+	if err != nil {
+		return TransferRequest{}, err
+	}
+	missingContextRefs, err := jsonbArray(req.MissingContextRefs, "missing_context_refs")
+	if err != nil {
+		return TransferRequest{}, err
+	}
+	row, err := r.q.CreateProjectTransferRequest(ctx, queries.CreateProjectTransferRequestParams{
+		TenantID:                     req.TenantID,
+		ProjectID:                    req.ProjectID,
+		ProjectTaskID:                req.ProjectTaskID,
+		RequestedByDigitalEmployeeID: req.RequestedByDigitalEmployeeID,
+		Reason:                       req.Reason,
+		SuggestedEmployeeType:        textOrNull(req.SuggestedEmployeeType),
+		SuggestedDigitalEmployeeIds:  suggestedIDs,
+		MissingContextRefs:           missingContextRefs,
+		Status:                       req.Status,
+		CreatedEventID:               nullUUID(req.CreatedEventID),
+	})
+	if err != nil {
+		return TransferRequest{}, err
+	}
+	return transferRequestFromRecord(row)
+}
+
+func (r *PgRepository) ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]TransferRequest, error) {
+	rows, err := r.q.ListProjectTransferRequests(ctx, queries.ListProjectTransferRequestsParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Limit:     limit,
+		Offset:    offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return transferRequestsFromRecords(rows)
+}
+
+func (r *PgRepository) CreateDecisionRequest(ctx context.Context, req CreateDecisionRequestRequest) (DecisionRequest, error) {
+	row, err := r.q.CreateProjectDecisionRequest(ctx, queries.CreateProjectDecisionRequestParams{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		ApprovalRequestID: req.ApprovalRequestID,
+		CoordinationJobID: nullUUID(req.CoordinationJobID),
+		ProjectTaskID:     nullUUID(req.ProjectTaskID),
+		TargetUserID:      req.TargetUserID,
+		DecisionType:      req.DecisionType,
+		TitleSnapshot:     req.TitleSnapshot,
+		SummarySnapshot:   textOrNull(req.SummarySnapshot),
+		RiskLevelSnapshot: textOrNull(req.RiskLevelSnapshot),
+		StatusSnapshot:    req.StatusSnapshot,
+		CreatedEventID:    nullUUID(req.CreatedEventID),
+	})
+	if err != nil {
+		return DecisionRequest{}, err
+	}
+	return decisionRequestFromRecord(row)
+}
+
+func (r *PgRepository) ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error) {
+	row, err := r.q.ResolveProjectDecisionRequest(ctx, queries.ResolveProjectDecisionRequestParams{
+		TenantID:        req.TenantID,
+		ID:              req.ID,
+		StatusSnapshot:  req.StatusSnapshot,
+		ResolvedEventID: nullUUID(req.ResolvedEventID),
+	})
+	if err != nil {
+		return DecisionRequest{}, err
+	}
+	return decisionRequestFromRecord(row)
+}
+
+func (r *PgRepository) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error) {
+	rows, err := r.q.ListProjectDecisionRequests(ctx, queries.ListProjectDecisionRequestsParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Limit:     limit,
+		Offset:    offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return decisionRequestsFromRecords(rows)
+}
+
 func projectFromRecord(row queries.Project) (Project, error) {
 	coordinationPolicy, err := mapFromJSON(row.CoordinationPolicy)
 	if err != nil {
@@ -467,6 +773,165 @@ func configRevisionFromRecord(row queries.ProjectConfigRevision) (ProjectConfigR
 	}, nil
 }
 
+func coordinationJobFromRecord(row queries.ProjectCoordinationJob) (CoordinationJob, error) {
+	inputSnapshotRef, err := mapFromJSON(row.InputSnapshotRef)
+	if err != nil {
+		return CoordinationJob{}, fmt.Errorf("input_snapshot_ref: %w", err)
+	}
+	outputEventIDs := []any{}
+	if len(row.OutputEventIds) > 0 {
+		if err := json.Unmarshal(row.OutputEventIds, &outputEventIDs); err != nil {
+			return CoordinationJob{}, fmt.Errorf("output_event_ids: %w", err)
+		}
+		if outputEventIDs == nil {
+			outputEventIDs = []any{}
+		}
+	}
+	return CoordinationJob{
+		ID:               row.ID,
+		TenantID:         row.TenantID,
+		ProjectID:        row.ProjectID,
+		WorkflowID:       row.WorkflowID,
+		TriggerEventID:   ptrUUID(row.TriggerEventID),
+		JobType:          row.JobType,
+		Status:           row.Status,
+		InputSnapshotRef: inputSnapshotRef,
+		OutputEventIDs:   outputEventIDs,
+		StartedAt:        ptrTime(row.StartedAt),
+		FinishedAt:       ptrTime(row.FinishedAt),
+		CreatedAt:        row.CreatedAt.Time,
+	}, nil
+}
+
+func routeDecisionFromRecord(row queries.ProjectRouteDecision) (RouteDecision, error) {
+	candidateIDs, err := uuidSliceFromJSON(row.CandidateDigitalEmployeeIds)
+	if err != nil {
+		return RouteDecision{}, fmt.Errorf("candidate_digital_employee_ids: %w", err)
+	}
+	selectedIDs, err := uuidSliceFromJSON(row.SelectedDigitalEmployeeIds)
+	if err != nil {
+		return RouteDecision{}, fmt.Errorf("selected_digital_employee_ids: %w", err)
+	}
+	inputRequirements, err := mapFromJSON(row.InputRequirements)
+	if err != nil {
+		return RouteDecision{}, fmt.Errorf("input_requirements: %w", err)
+	}
+	expectedOutputs := []any{}
+	if len(row.ExpectedOutputs) > 0 {
+		if err := json.Unmarshal(row.ExpectedOutputs, &expectedOutputs); err != nil {
+			return RouteDecision{}, fmt.Errorf("expected_outputs: %w", err)
+		}
+		if expectedOutputs == nil {
+			expectedOutputs = []any{}
+		}
+	}
+	budgetEstimate, err := mapFromJSON(row.BudgetEstimate)
+	if err != nil {
+		return RouteDecision{}, fmt.Errorf("budget_estimate: %w", err)
+	}
+	return RouteDecision{
+		ID:                          row.ID,
+		TenantID:                    row.TenantID,
+		ProjectID:                   row.ProjectID,
+		CoordinationJobID:           row.CoordinationJobID,
+		DemandID:                    ptrUUID(row.DemandID),
+		CandidateDigitalEmployeeIDs: candidateIDs,
+		SelectedDigitalEmployeeIDs:  selectedIDs,
+		Reason:                      row.Reason,
+		InputRequirements:           inputRequirements,
+		ExpectedOutputs:             expectedOutputs,
+		BudgetEstimate:              budgetEstimate,
+		RequiresHumanReview:         row.RequiresHumanReview,
+		CreatedEventID:              ptrUUID(row.CreatedEventID),
+		CreatedAt:                   row.CreatedAt.Time,
+	}, nil
+}
+
+func executionSummaryFromRecord(row queries.ProjectExecutionSummary) (ExecutionSummary, error) {
+	evidenceRefs, err := anySliceFromJSON(row.EvidenceRefs)
+	if err != nil {
+		return ExecutionSummary{}, fmt.Errorf("evidence_refs: %w", err)
+	}
+	artifactRefs, err := anySliceFromJSON(row.ArtifactRefs)
+	if err != nil {
+		return ExecutionSummary{}, fmt.Errorf("artifact_refs: %w", err)
+	}
+	confidenceFactors, err := mapFromJSON(row.ConfidenceFactors)
+	if err != nil {
+		return ExecutionSummary{}, fmt.Errorf("confidence_factors: %w", err)
+	}
+	missingInformation, err := anySliceFromJSON(row.MissingInformation)
+	if err != nil {
+		return ExecutionSummary{}, fmt.Errorf("missing_information: %w", err)
+	}
+	return ExecutionSummary{
+		ID:                    row.ID,
+		TenantID:              row.TenantID,
+		ProjectID:             row.ProjectID,
+		ProjectTaskID:         row.ProjectTaskID,
+		DigitalEmployeeID:     row.DigitalEmployeeID,
+		Conclusion:            row.Conclusion,
+		EvidenceRefs:          evidenceRefs,
+		ArtifactRefs:          artifactRefs,
+		ConfidenceFactors:     confidenceFactors,
+		Uncertainty:           ptrText(row.Uncertainty),
+		MissingInformation:    missingInformation,
+		RecommendedNextAction: ptrText(row.RecommendedNextAction),
+		RequiresHumanReview:   row.RequiresHumanReview,
+		TransferRequestID:     ptrUUID(row.TransferRequestID),
+		CreatedEventID:        ptrUUID(row.CreatedEventID),
+		CreatedAt:             row.CreatedAt.Time,
+	}, nil
+}
+
+func transferRequestFromRecord(row queries.ProjectTransferRequest) (TransferRequest, error) {
+	suggestedIDs, err := uuidSliceFromJSON(row.SuggestedDigitalEmployeeIds)
+	if err != nil {
+		return TransferRequest{}, fmt.Errorf("suggested_digital_employee_ids: %w", err)
+	}
+	missingContextRefs, err := anySliceFromJSON(row.MissingContextRefs)
+	if err != nil {
+		return TransferRequest{}, fmt.Errorf("missing_context_refs: %w", err)
+	}
+	return TransferRequest{
+		ID:                           row.ID,
+		TenantID:                     row.TenantID,
+		ProjectID:                    row.ProjectID,
+		ProjectTaskID:                row.ProjectTaskID,
+		RequestedByDigitalEmployeeID: row.RequestedByDigitalEmployeeID,
+		Reason:                       row.Reason,
+		SuggestedEmployeeType:        ptrText(row.SuggestedEmployeeType),
+		SuggestedDigitalEmployeeIDs:  suggestedIDs,
+		MissingContextRefs:           missingContextRefs,
+		Status:                       row.Status,
+		CreatedEventID:               ptrUUID(row.CreatedEventID),
+		CreatedAt:                    row.CreatedAt.Time,
+		UpdatedAt:                    row.UpdatedAt.Time,
+	}, nil
+}
+
+func decisionRequestFromRecord(row queries.ProjectDecisionRequest) (DecisionRequest, error) {
+	return DecisionRequest{
+		ID:                row.ID,
+		TenantID:          row.TenantID,
+		ProjectID:         row.ProjectID,
+		ApprovalRequestID: row.ApprovalRequestID,
+		CoordinationJobID: ptrUUID(row.CoordinationJobID),
+		ProjectTaskID:     ptrUUID(row.ProjectTaskID),
+		TargetUserID:      row.TargetUserID,
+		DecisionType:      row.DecisionType,
+		TitleSnapshot:     row.TitleSnapshot,
+		SummarySnapshot:   ptrText(row.SummarySnapshot),
+		RiskLevelSnapshot: ptrText(row.RiskLevelSnapshot),
+		StatusSnapshot:    row.StatusSnapshot,
+		CreatedEventID:    ptrUUID(row.CreatedEventID),
+		ResolvedEventID:   ptrUUID(row.ResolvedEventID),
+		CreatedAt:         row.CreatedAt.Time,
+		UpdatedAt:         row.UpdatedAt.Time,
+		ResolvedAt:        ptrTime(row.ResolvedAt),
+	}, nil
+}
+
 func projectsFromRecords(rows []queries.Project) ([]Project, error) {
 	projects := make([]Project, 0, len(rows))
 	for _, row := range rows {
@@ -521,6 +986,66 @@ func demandsFromRecords(rows []queries.ProjectDemand) ([]ProjectDemand, error) {
 		demands = append(demands, demand)
 	}
 	return demands, nil
+}
+
+func coordinationJobsFromRecords(rows []queries.ProjectCoordinationJob) ([]CoordinationJob, error) {
+	jobs := make([]CoordinationJob, 0, len(rows))
+	for _, row := range rows {
+		job, err := coordinationJobFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, nil
+}
+
+func routeDecisionsFromRecords(rows []queries.ProjectRouteDecision) ([]RouteDecision, error) {
+	decisions := make([]RouteDecision, 0, len(rows))
+	for _, row := range rows {
+		decision, err := routeDecisionFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		decisions = append(decisions, decision)
+	}
+	return decisions, nil
+}
+
+func executionSummariesFromRecords(rows []queries.ProjectExecutionSummary) ([]ExecutionSummary, error) {
+	summaries := make([]ExecutionSummary, 0, len(rows))
+	for _, row := range rows {
+		summary, err := executionSummaryFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, summary)
+	}
+	return summaries, nil
+}
+
+func transferRequestsFromRecords(rows []queries.ProjectTransferRequest) ([]TransferRequest, error) {
+	requests := make([]TransferRequest, 0, len(rows))
+	for _, row := range rows {
+		request, err := transferRequestFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		requests = append(requests, request)
+	}
+	return requests, nil
+}
+
+func decisionRequestsFromRecords(rows []queries.ProjectDecisionRequest) ([]DecisionRequest, error) {
+	requests := make([]DecisionRequest, 0, len(rows))
+	for _, row := range rows {
+		request, err := decisionRequestFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		requests = append(requests, request)
+	}
+	return requests, nil
 }
 
 func textOrNull(value string) pgtype.Text {
@@ -601,6 +1126,47 @@ func jsonbArray(value []any, field string) ([]byte, error) {
 		return []byte("[]"), nil
 	}
 	return marshalJSON(value, field)
+}
+
+func jsonbUUIDSlice(values []uuid.UUID, field string) ([]byte, error) {
+	encoded := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != uuid.Nil {
+			encoded = append(encoded, value.String())
+		}
+	}
+	return marshalJSON(encoded, field)
+}
+
+func uuidSliceFromJSON(raw []byte) ([]uuid.UUID, error) {
+	values := []string{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &values); err != nil {
+			return nil, err
+		}
+	}
+	ids := make([]uuid.UUID, 0, len(values))
+	for _, value := range values {
+		id, err := uuid.Parse(value)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func anySliceFromJSON(raw []byte) ([]any, error) {
+	values := []any{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &values); err != nil {
+			return nil, err
+		}
+		if values == nil {
+			values = []any{}
+		}
+	}
+	return values, nil
 }
 
 func mapFromJSON(raw []byte) (map[string]any, error) {
