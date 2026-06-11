@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { ApiClientOptions } from "@/lib/api/client";
+import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
   archiveProject,
   createProject,
@@ -264,14 +264,28 @@ export function ProjectsView({
   const budgetSummaryQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-budget-summary", effectiveProjectId],
-    queryFn: () => getProjectBudgetSummary(apiOptions, effectiveProjectId as string),
+    queryFn: async () => {
+      const projectId = effectiveProjectId as string;
+      const summary = await getProjectBudgetSummary(apiOptions, projectId);
+      return { projectId, summary };
+    },
     placeholderData: keepPreviousData,
   });
 
   const acceptanceQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-acceptance", effectiveProjectId],
-    queryFn: () => getProjectAcceptance(apiOptions, effectiveProjectId as string),
+    queryFn: async () => {
+      const projectId = effectiveProjectId as string;
+      try {
+        return await getProjectAcceptance(apiOptions, projectId);
+      } catch (error) {
+        if (error instanceof ApiRequestError && error.status === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
     placeholderData: keepPreviousData,
   });
 
@@ -389,9 +403,19 @@ export function ProjectsView({
   const projectBudgetLedger = (budgetLedgerQuery.data ?? []).filter(
     (entry) => entry.project_id === effectiveProjectId,
   );
+  const budgetSummaryData = budgetSummaryQuery.data;
+  const projectBudgetSummary =
+    effectiveProjectId &&
+    budgetSummaryData &&
+    budgetSummaryData.projectId === effectiveProjectId
+      ? budgetSummaryData.summary
+      : undefined;
+  const acceptanceData = acceptanceQuery.data;
   const projectAcceptance =
-    acceptanceQuery.data?.project_id === effectiveProjectId
-      ? acceptanceQuery.data
+    effectiveProjectId &&
+    acceptanceData &&
+    acceptanceData.project_id === effectiveProjectId
+      ? acceptanceData
       : undefined;
   const projectArchivePreview =
     archivePreviewQuery.data?.project_id === effectiveProjectId
@@ -432,7 +456,7 @@ export function ProjectsView({
             archiveSnapshots={projectArchiveSnapshots}
             artifacts={projectArtifacts}
             budgetLedger={projectBudgetLedger}
-            budgetSummary={budgetSummaryQuery.data}
+            budgetSummary={projectBudgetSummary}
             coordinationJobs={projectCoordinationJobs}
             decisionRequests={projectDecisionRequests}
             demands={projectDemands}

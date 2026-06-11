@@ -330,18 +330,7 @@ function createProjectFetcher(
       });
     }
     if (url.pathname.endsWith("/acceptance") && method === "GET") {
-      const id = url.pathname.split("/")[4];
-      return jsonResponse({
-        accepted_by_user_id: "human-owner-1",
-        conclusion: "等待验收",
-        evidence_ref_ids: [],
-        id: `acceptance-${id}`,
-        project_id: id,
-        report_ref_ids: [],
-        status: "needs_more_evidence",
-        tenant_id: "tenant-1",
-        unresolved_risks: [],
-      });
+      return jsonResponse({ error: "acceptance not found" }, 404);
     }
     if (url.pathname.endsWith("/archive-preview") && method === "GET") {
       const id = url.pathname.split("/")[4];
@@ -434,6 +423,26 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("人类决策队列")).toBeInTheDocument();
   });
 
+  it("treats missing project acceptance as an optional empty state", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher, "project-1");
+
+    await expect
+      .element(screen.getByRole("heading", { name: "客户接入验收" }))
+      .toBeInTheDocument();
+
+    await vi.waitFor(() => {
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          return (
+            String(url).endsWith("/api/v1/projects/project-1/acceptance") &&
+            init?.method === "GET"
+          );
+        }),
+      ).toBe(true);
+    });
+  });
+
   it("creates a project with human leader and acceptance roles", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
@@ -510,14 +519,15 @@ describe("ProjectsView", () => {
     await userEvent.click(screen.getByRole("button", { name: "归档" }));
 
     await vi.waitFor(() => {
-      expect(
-        fetchCalls(fetcher).some(([url, init]) => {
-          return (
-            String(url).endsWith("/api/v1/projects/project-1/archive") &&
-            init?.method === "POST"
-          );
-        }),
-      ).toBe(true);
+      const archiveCall = fetchCalls(fetcher).find(([url, init]) => {
+        return (
+          String(url).endsWith("/api/v1/projects/project-1/archive") &&
+          init?.method === "POST"
+        );
+      });
+      expect(archiveCall).toBeTruthy();
+      expect(archiveCall?.[1]?.body).toBeUndefined();
+      expect(archiveCall?.[1]?.headers).toEqual({ accept: "application/json" });
     });
   });
 

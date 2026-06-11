@@ -538,6 +538,21 @@ async function postJson<T>(
   return parseJson<T>(response, resource);
 }
 
+async function postJsonWithoutBody<T>(
+  options: ApiClientOptions,
+  path: string,
+  resource: string,
+): Promise<T> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
+    credentials: "include",
+    headers: { accept: "application/json" },
+    method: "POST",
+  });
+
+  return parseJson<T>(response, resource);
+}
+
 async function patchJson<T>(
   options: ApiClientOptions,
   path: string,
@@ -675,10 +690,9 @@ export function archiveProject(
   options: ApiClientOptions,
   projectId: string,
 ): Promise<Project> {
-  return postJson<Project>(
+  return postJsonWithoutBody<Project>(
     options,
     projectPath(projectId, "/archive"),
-    {},
     "archive project",
   );
 }
