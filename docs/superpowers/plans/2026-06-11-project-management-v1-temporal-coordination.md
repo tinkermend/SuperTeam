@@ -1778,7 +1778,7 @@ Expected: commit succeeds.
 - Create: `apps/control-plane/internal/workflow/projectcoordination/worker.go`
 - Create: `apps/control-plane/internal/workflow/projectcoordination/workflow_test.go`
 
-- [ ] **Step 1: Add Temporal dependency**
+- [x] **Step 1: Add Temporal dependency**
 
 Run:
 
@@ -1788,7 +1788,7 @@ cd apps/control-plane && go get go.temporal.io/sdk@latest
 
 Expected: `apps/control-plane/go.mod` includes `go.temporal.io/sdk`.
 
-- [ ] **Step 2: Add Temporal config**
+- [x] **Step 2: Add Temporal config**
 
 Modify `apps/control-plane/internal/config/config.go`:
 
@@ -1847,7 +1847,7 @@ if cfg.Temporal.Enabled {
 }
 ```
 
-- [ ] **Step 3: Update example config**
+- [x] **Step 3: Update example config**
 
 Ensure `apps/control-plane/config/config.example.yaml` contains this block. If it is already present from commit `56522da`, leave it unchanged:
 
@@ -1859,7 +1859,7 @@ temporal:
   taskQueue: "superteam-project-coordination"
 ```
 
-- [ ] **Step 4: Define project signal interface**
+- [x] **Step 4: Define project signal interface**
 
 Create `apps/control-plane/internal/project/coordination_signal.go`:
 
@@ -1963,7 +1963,7 @@ type HumanDecisionSubmittedSignal struct {
 }
 ```
 
-- [ ] **Step 5: Write failing workflow tests**
+- [x] **Step 5: Write failing workflow tests**
 
 Create `apps/control-plane/internal/workflow/projectcoordination/workflow_test.go`:
 
@@ -2035,7 +2035,7 @@ func mockAny() interface{} {
 
 Import `github.com/stretchr/testify/mock` for the helper.
 
-- [ ] **Step 6: Implement workflow types and signal names**
+- [x] **Step 6: Implement workflow types and signal names**
 
 Create `apps/control-plane/internal/workflow/projectcoordination/types.go` with signal constants and compact activity DTOs. Use the exact signal names from the spec:
 
@@ -2125,7 +2125,7 @@ type ProjectEventResult struct {
 }
 ```
 
-- [ ] **Step 7: Implement workflow loop**
+- [x] **Step 7: Implement workflow loop**
 
 Create `apps/control-plane/internal/workflow/projectcoordination/workflow.go`:
 
@@ -2206,7 +2206,7 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 
 Implement `handleDemandSubmitted`, `appendSignalObservedEvent`, and `defaultRetryPolicy` in the same file. `handleDemandSubmitted` must call activities in this order: `CreateCoordinationJob`, `LoadProjectCoordinationSnapshot`, `PlanDemandRoute`, `PersistRouteDecision`, `CreateProjectTasks`, `DispatchProjectTask` for each created task, `FinishCoordinationJob`.
 
-- [ ] **Step 8: Implement activities shell**
+- [x] **Step 8: Implement activities shell**
 
 Create `apps/control-plane/internal/workflow/projectcoordination/activities.go`:
 
@@ -2236,7 +2236,7 @@ func NewActivities(store ActivityStore) *Activities {
 
 Each activity method must validate `a.store != nil`, then delegate to the store. `PlanDemandRoute` calls the deterministic planner from Task 3.
 
-- [ ] **Step 9: Implement Temporal client and worker registration**
+- [x] **Step 9: Implement Temporal client and worker registration**
 
 Create `apps/control-plane/internal/workflow/projectcoordination/client.go` with a struct wrapping `go.temporal.io/sdk/client.Client`. It must implement `project.CoordinatorSignalClient`. `EnsureProjectCoordinator` calls `ExecuteWorkflow` with ID reuse policy allowing existing workflow. Signal methods call `SignalWorkflow` with the exact signal names.
 
@@ -2258,7 +2258,7 @@ func NewWorker(c client.Client, taskQueue string, activities *Activities) worker
 }
 ```
 
-- [ ] **Step 10: Run workflow tests**
+- [x] **Step 10: Run workflow tests**
 
 Run:
 

@@ -14,6 +14,7 @@ type Config struct {
 	Postgres    PostgresConfig    `yaml:"postgres"`
 	Redis       RedisConfig       `yaml:"redis"`
 	ObjectStore ObjectStoreConfig `yaml:"objectStore"`
+	Temporal    TemporalConfig    `yaml:"temporal"`
 }
 
 type HTTPConfig struct {
@@ -35,6 +36,13 @@ type ObjectStoreConfig struct {
 	AccessKeyID     string `yaml:"accessKeyId"`
 	SecretAccessKey string `yaml:"secretAccessKey"`
 	ForcePathStyle  bool   `yaml:"forcePathStyle"`
+}
+
+type TemporalConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Address   string `yaml:"address"`
+	Namespace string `yaml:"namespace"`
+	TaskQueue string `yaml:"taskQueue"`
 }
 
 func LoadFromEnv() (Config, error) {
@@ -74,6 +82,12 @@ func defaultConfig() Config {
 		ObjectStore: ObjectStoreConfig{
 			Region: "us-east-1",
 		},
+		Temporal: TemporalConfig{
+			Enabled:   false,
+			Address:   "127.0.0.1:7233",
+			Namespace: "default",
+			TaskQueue: "superteam-project-coordination",
+		},
 	}
 }
 
@@ -89,6 +103,12 @@ func applyEnv(cfg Config) Config {
 	if value, ok := os.LookupEnv("S3_FORCE_PATH_STYLE"); ok {
 		cfg.ObjectStore.ForcePathStyle = parseBool(value)
 	}
+	if value, ok := os.LookupEnv("TEMPORAL_ENABLED"); ok {
+		cfg.Temporal.Enabled = parseBool(value)
+	}
+	cfg.Temporal.Address = envOrDefault("TEMPORAL_ADDRESS", cfg.Temporal.Address)
+	cfg.Temporal.Namespace = envOrDefault("TEMPORAL_NAMESPACE", cfg.Temporal.Namespace)
+	cfg.Temporal.TaskQueue = envOrDefault("TEMPORAL_TASK_QUEUE", cfg.Temporal.TaskQueue)
 	return cfg
 }
 
@@ -113,6 +133,17 @@ func (cfg Config) validate() error {
 	}
 	if strings.TrimSpace(cfg.ObjectStore.SecretAccessKey) == "" {
 		return errors.New("S3_SECRET_ACCESS_KEY is required")
+	}
+	if cfg.Temporal.Enabled {
+		if strings.TrimSpace(cfg.Temporal.Address) == "" {
+			return errors.New("TEMPORAL_ADDRESS is required when Temporal is enabled")
+		}
+		if strings.TrimSpace(cfg.Temporal.Namespace) == "" {
+			return errors.New("TEMPORAL_NAMESPACE is required when Temporal is enabled")
+		}
+		if strings.TrimSpace(cfg.Temporal.TaskQueue) == "" {
+			return errors.New("TEMPORAL_TASK_QUEUE is required when Temporal is enabled")
+		}
 	}
 
 	return nil
