@@ -298,6 +298,32 @@ func TestProjectGovernanceRepositoryMapsEvidenceBudgetAndArchive(t *testing.T) {
 	if summary.ActualTokens != 800 || summary.LedgerCount != 2 {
 		t.Fatalf("unexpected budget summary: %#v", summary)
 	}
+
+	retainedArtifactID := uuid.New()
+	createdByUserID := uuid.New()
+	archive, err := archiveSnapshotFromRecord(queries.ProjectArchiveSnapshot{
+		ID:                   uuid.New(),
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		SnapshotType:         "final_archive",
+		Status:               "created",
+		ObjectRef:            pgtype.Text{String: "s3://bucket/archive.zip", Valid: true},
+		Summary:              pgtype.Text{String: "项目归档快照", Valid: true},
+		IncludedCounts:       []byte(`{"evidence":3,"artifact":1,"report":2}`),
+		RetainedArtifactIds:  []byte(`["` + retainedArtifactID.String() + `"]`),
+		RetentionLockEventID: uuid.NullUUID{UUID: eventID, Valid: true},
+		CreatedByUserID:      createdByUserID,
+		CreatedAt:            pgtype.Timestamptz{Time: now, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("map archive snapshot: %v", err)
+	}
+	if archive.IncludedCounts["evidence"] != float64(3) || len(archive.RetainedArtifactIDs) != 1 || archive.RetainedArtifactIDs[0] != retainedArtifactID {
+		t.Fatalf("unexpected archive mapping: %#v", archive)
+	}
+	if archive.RetentionLockEventID == nil || *archive.RetentionLockEventID != eventID || archive.CreatedByUserID != createdByUserID {
+		t.Fatalf("unexpected archive actors/events: %#v", archive)
+	}
 }
 
 func numericFromString(t *testing.T, value string) pgtype.Numeric {

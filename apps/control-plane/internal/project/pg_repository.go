@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -303,7 +304,21 @@ func (r *PgRepository) ListProjectDemands(ctx context.Context, tenantID, project
 }
 
 func (r *PgRepository) CreateConfigRevision(ctx context.Context, req UpdateProjectConfigRequest, project Project, eventID uuid.UUID) (ProjectConfigRevision, error) {
-	snapshot, err := jsonbObject(projectConfigSnapshot(project), "config_snapshot")
+	snapshotMap := projectConfigSnapshot(project)
+	snapshot, err := jsonbObject(snapshotMap, "config_snapshot")
+	if err != nil {
+		return ProjectConfigRevision{}, err
+	}
+	changedSectionsValue := projectConfigChangedSections(req)
+	changedSections, err := jsonbArray(changedSectionsValue, "changed_sections")
+	if err != nil {
+		return ProjectConfigRevision{}, err
+	}
+	diffSummary, err := jsonbObject(projectConfigDiffSummary(changedSectionsValue), "diff_summary")
+	if err != nil {
+		return ProjectConfigRevision{}, err
+	}
+	policyFingerprint, err := projectConfigPolicyFingerprint(snapshotMap)
 	if err != nil {
 		return ProjectConfigRevision{}, err
 	}
@@ -313,14 +328,26 @@ func (r *PgRepository) CreateConfigRevision(ctx context.Context, req UpdateProje
 		if err != nil {
 			return ProjectConfigRevision{}, err
 		}
-		row, err := r.q.CreateProjectConfigRevision(ctx, queries.CreateProjectConfigRevisionParams{
-			TenantID:        req.TenantID,
-			ProjectID:       req.ProjectID,
-			RevisionNumber:  latest + 1,
-			ConfigSnapshot:  snapshot,
-			ChangeSummary:   textOrNull("项目配置已更新"),
-			CreatedByUserID: req.ActorUserID,
-			CreatedEventID:  nullUUID(&eventID),
+		var previousRevisionID uuid.NullUUID
+		latestRevision, err := r.q.GetLatestProjectConfigRevision(ctx, queries.GetLatestProjectConfigRevisionParams{TenantID: req.TenantID, ProjectID: req.ProjectID})
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return ProjectConfigRevision{}, err
+		}
+		if err == nil {
+			previousRevisionID = uuid.NullUUID{UUID: latestRevision.ID, Valid: true}
+		}
+		row, err := r.q.CreateProjectConfigRevisionWithGovernanceFields(ctx, queries.CreateProjectConfigRevisionWithGovernanceFieldsParams{
+			TenantID:           req.TenantID,
+			ProjectID:          req.ProjectID,
+			RevisionNumber:     latest + 1,
+			ConfigSnapshot:     snapshot,
+			ChangeSummary:      textOrNull("项目配置已更新"),
+			ChangedSections:    changedSections,
+			PreviousRevisionID: previousRevisionID,
+			PolicyFingerprint:  textOrNull(policyFingerprint),
+			DiffSummary:        diffSummary,
+			CreatedByUserID:    req.ActorUserID,
+			CreatedEventID:     nullUUID(&eventID),
 		})
 		if err == nil {
 			return configRevisionFromRecord(row)
@@ -1923,6 +1950,66 @@ func evidenceVerificationStatusPtr(status *EvidenceVerificationStatus) pgtype.Te
 		return pgtype.Text{}
 	}
 	return pgtype.Text{String: string(*status), Valid: true}
+}
+
+func projectConfigChangedSections(req UpdateProjectConfigRequest) []any {
+	sections := make([]any, 0, 9)
+	if req.Name != "" {
+		sections = append(sections, "name")
+	}
+	if req.Description != "" {
+		sections = append(sections, "description")
+	}
+	if req.Goal != "" {
+		sections = append(sections, "goal")
+	}
+	if req.HumanOwnerUserID != uuid.Nil {
+		sections = append(sections, "human_owner_user_id")
+	}
+	if req.LeaderUserID != nil {
+		sections = append(sections, "leader_user_id")
+	}
+	if req.AcceptanceUserID != nil {
+		sections = append(sections, "acceptance_user_id")
+	}
+	if req.CoordinationPolicy != nil {
+		sections = append(sections, "coordination_policy")
+	}
+	if req.ApprovalPolicy != nil {
+		sections = append(sections, "approval_policy")
+	}
+	if req.EvidencePolicy != nil {
+		sections = append(sections, "evidence_policy")
+	}
+	if len(sections) > 0 {
+		return sections
+	}
+	return []any{
+		"name",
+		"goal",
+		"human_owner_user_id",
+		"leader_user_id",
+		"acceptance_user_id",
+		"coordination_policy",
+		"approval_policy",
+		"evidence_policy",
+	}
+}
+
+func projectConfigDiffSummary(changedSections []any) map[string]any {
+	return map[string]any{
+		"change_summary":   "项目配置已更新",
+		"changed_sections": changedSections,
+	}
+}
+
+func projectConfigPolicyFingerprint(snapshot map[string]any) (string, error) {
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		return "", fmt.Errorf("marshal policy fingerprint snapshot: %w", err)
+	}
+	sum := sha256.Sum256(raw)
+	return fmt.Sprintf("%x", sum), nil
 }
 
 func projectConfigSnapshot(project Project) map[string]any {
