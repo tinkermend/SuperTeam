@@ -51,26 +51,28 @@ export function ProjectGovernanceTabs({
 
   return (
     <Tabs className="grid w-full min-w-0 gap-3" defaultValue="evidence">
-      <LiquidTabsList
-        aria-label="项目详情治理视图"
-        className="min-w-0 max-w-full overflow-x-auto"
-      >
-        <LiquidTabsTrigger className="flex-none shrink-0" value="evidence">
-          证据链
-        </LiquidTabsTrigger>
-        <LiquidTabsTrigger className="flex-none shrink-0" value="artifacts">
-          工件报告
-        </LiquidTabsTrigger>
-        <LiquidTabsTrigger className="flex-none shrink-0" value="budget">
-          预算流水
-        </LiquidTabsTrigger>
-        <LiquidTabsTrigger className="flex-none shrink-0" value="acceptance">
-          验收结论
-        </LiquidTabsTrigger>
-        <LiquidTabsTrigger className="flex-none shrink-0" value="archive">
-          归档预览
-        </LiquidTabsTrigger>
-      </LiquidTabsList>
+      <div className="w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden pb-1 [-webkit-overflow-scrolling:touch]">
+        <LiquidTabsList
+          aria-label="项目详情治理视图"
+          className="w-max min-w-full max-w-none flex-nowrap"
+        >
+          <LiquidTabsTrigger className="flex-none shrink-0" value="evidence">
+            证据链
+          </LiquidTabsTrigger>
+          <LiquidTabsTrigger className="flex-none shrink-0" value="artifacts">
+            工件报告
+          </LiquidTabsTrigger>
+          <LiquidTabsTrigger className="flex-none shrink-0" value="budget">
+            预算流水
+          </LiquidTabsTrigger>
+          <LiquidTabsTrigger className="flex-none shrink-0" value="acceptance">
+            验收结论
+          </LiquidTabsTrigger>
+          <LiquidTabsTrigger className="flex-none shrink-0" value="archive">
+            归档预览
+          </LiquidTabsTrigger>
+        </LiquidTabsList>
+      </div>
 
       <TabsContent className="m-0" value="evidence">
         <ProjectEvidencePanel evidence={evidence} />
