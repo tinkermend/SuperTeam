@@ -40,6 +40,7 @@ type Repository interface {
 	ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error)
 	ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error)
 	CreateEvidenceRef(ctx context.Context, req CreateEvidenceRefRequest) (ProjectEvidenceRef, error)
+	CreateEvidenceRefWithEvent(ctx context.Context, req CreateEvidenceRefWithEventRequest) (ProjectEvidenceRefWriteResult, error)
 	ListEvidenceRefs(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error)
 	UpdateEvidenceVerificationStatus(ctx context.Context, req UpdateEvidenceVerificationStatusRequest) (ProjectEvidenceRef, error)
 	CreateArtifactRef(ctx context.Context, req CreateArtifactRefRequest) (ProjectArtifactRef, error)
@@ -51,8 +52,10 @@ type Repository interface {
 	ListBudgetLedger(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectBudgetLedgerEntry, error)
 	GetBudgetSummary(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectBudgetSummary, error)
 	CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error)
+	CreateAcceptanceRecordWithEvent(ctx context.Context, req CreateAcceptanceRecordWithEventRequest) (ProjectAcceptanceRecordWriteResult, error)
 	GetLatestAcceptanceRecord(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectAcceptanceRecord, error)
 	CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotRequest) (ProjectArchiveSnapshot, error)
+	CreateArchiveSnapshotWithEvent(ctx context.Context, req CreateArchiveSnapshotWithEventRequest) (ProjectArchiveSnapshotWriteResult, error)
 	ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArchiveSnapshot, error)
 	ListConfigRevisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectConfigRevision, error)
 	GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (ProjectConfigRevision, error)
@@ -230,6 +233,16 @@ type CreateEvidenceRefRequest struct {
 	CreatedEventID     *uuid.UUID
 }
 
+type CreateEvidenceRefWithEventRequest struct {
+	Event    AppendProjectEventRequest
+	Evidence CreateEvidenceRefRequest
+}
+
+type ProjectEvidenceRefWriteResult struct {
+	Event    ProjectEvent
+	Evidence ProjectEvidenceRef
+}
+
 type UpdateEvidenceVerificationStatusRequest struct {
 	TenantID           uuid.UUID
 	ProjectID          uuid.UUID
@@ -305,6 +318,16 @@ type CreateAcceptanceRecordRequest struct {
 	CreatedEventID   *uuid.UUID
 }
 
+type CreateAcceptanceRecordWithEventRequest struct {
+	Event      AppendProjectEventRequest
+	Acceptance CreateAcceptanceRecordRequest
+}
+
+type ProjectAcceptanceRecordWriteResult struct {
+	Event      ProjectEvent
+	Acceptance ProjectAcceptanceRecord
+}
+
 type CreateArchiveSnapshotRequest struct {
 	TenantID             uuid.UUID
 	ProjectID            uuid.UUID
@@ -317,4 +340,14 @@ type CreateArchiveSnapshotRequest struct {
 	RetentionLockEventID *uuid.UUID
 	CreatedByUserID      uuid.UUID
 	CreatedEventID       *uuid.UUID
+}
+
+type CreateArchiveSnapshotWithEventRequest struct {
+	Event    AppendProjectEventRequest
+	Snapshot CreateArchiveSnapshotRequest
+}
+
+type ProjectArchiveSnapshotWriteResult struct {
+	Event    ProjectEvent
+	Snapshot ProjectArchiveSnapshot
 }

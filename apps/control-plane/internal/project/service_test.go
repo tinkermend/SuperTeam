@@ -215,6 +215,104 @@ func TestProjectAcceptanceRequiresHumanOwnerAndFinalReport(t *testing.T) {
 	}
 }
 
+func TestProjectGovernanceEvidenceFailureDoesNotLeaveSuccessEvent(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	repo.createEvidenceRefErr = fmt.Errorf("evidence store unavailable")
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusRunning, HumanOwnerUserID: actorID}
+
+	_, err = service.CreateEvidenceRef(context.Background(), CreateEvidenceRefServiceRequest{
+		TenantID: tenantID, ProjectID: projectID, ActorType: "human_user", ActorID: actorID,
+		EvidenceType: "test_result", Title: "回归测试结果", SourceType: "artifact",
+		SourceRef: "s3://bucket/reports/regression.json", SubmittedByType: "human_user", SubmittedByID: &actorID,
+	})
+	if err == nil {
+		t.Fatal("expected evidence write error")
+	}
+	if countProjectEvents(repo.eventTypes, ProjectEventEvidenceLinked) != 0 {
+		t.Fatalf("expected no success event after evidence failure, got %#v", repo.eventTypes)
+	}
+}
+
+func TestProjectAcceptanceRejectsMissingEvidenceOrReportRefs(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusAcceptance, HumanOwnerUserID: ownerID}
+
+	_, err = service.CreateAcceptanceRecord(context.Background(), CreateAcceptanceServiceRequest{
+		TenantID: tenantID, ProjectID: projectID, AcceptedByUserID: ownerID,
+		Status: "accepted", Conclusion: "通过", EvidenceRefIDs: []uuid.UUID{uuid.New()}, ReportRefIDs: []uuid.UUID{uuid.New()},
+	})
+	if !errors.Is(err, ErrInvalidProjectAcceptance) {
+		t.Fatalf("expected invalid acceptance refs, got %v", err)
+	}
+	if countProjectEvents(repo.eventTypes, ProjectEventAcceptanceSubmitted) != 0 {
+		t.Fatalf("expected no acceptance event for invalid refs, got %#v", repo.eventTypes)
+	}
+}
+
+func TestProjectAcceptanceSucceedsWithExistingEvidenceAndReportRefs(t *testing.T) {
+	repo := newGovernanceMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Status: ProjectStatusAcceptance, HumanOwnerUserID: ownerID}
+	evidence, err := repo.CreateEvidenceRef(context.Background(), CreateEvidenceRefRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		EvidenceType:       "test_result",
+		Title:              "回归测试结果",
+		SourceType:         "artifact",
+		SourceRef:          "s3://bucket/reports/regression.json",
+		SubmittedByType:    "human_user",
+		SubmittedByID:      &ownerID,
+		VerificationStatus: EvidenceVerificationStatusSubmitted,
+	})
+	if err != nil {
+		t.Fatalf("seed evidence: %v", err)
+	}
+	report, err := repo.CreateReportRef(context.Background(), CreateReportRefRequest{
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		ReportType:      "final_report",
+		Title:           "验收报告",
+		ObjectRef:       "s3://bucket/reports/final.md",
+		Format:          "markdown",
+		GeneratedByType: "human_user",
+		GeneratedByID:   &ownerID,
+	})
+	if err != nil {
+		t.Fatalf("seed report: %v", err)
+	}
+
+	acceptance, err := service.CreateAcceptanceRecord(context.Background(), CreateAcceptanceServiceRequest{
+		TenantID: tenantID, ProjectID: projectID, AcceptedByUserID: ownerID,
+		Status: "accepted", Conclusion: "通过", EvidenceRefIDs: []uuid.UUID{evidence.ID}, ReportRefIDs: []uuid.UUID{report.ID},
+	})
+	if err != nil {
+		t.Fatalf("create acceptance: %v", err)
+	}
+	if acceptance.CreatedEventID == nil || countProjectEvents(repo.eventTypes, ProjectEventAcceptanceSubmitted) != 1 {
+		t.Fatalf("expected acceptance event and record link, events=%#v acceptance=%#v", repo.eventTypes, acceptance)
+	}
+}
+
 func TestProjectArchivePreviewCountsAllPages(t *testing.T) {
 	repo := newGovernanceMemoryRepository()
 	service, err := NewService(repo)
@@ -2192,14 +2290,59 @@ func (r *memoryRepository) ListDecisionRequests(ctx context.Context, tenantID, p
 	return filtered[start:end], nil
 }
 
+func (r *memoryRepository) CreateEvidenceRefWithEvent(ctx context.Context, req CreateEvidenceRefWithEventRequest) (ProjectEvidenceRefWriteResult, error) {
+	event, err := r.AppendProjectEvent(ctx, req.Event)
+	if err != nil {
+		return ProjectEvidenceRefWriteResult{}, err
+	}
+	evidenceReq := req.Evidence
+	evidenceReq.CreatedEventID = &event.ID
+	evidence, err := r.CreateEvidenceRef(ctx, evidenceReq)
+	if err != nil {
+		return ProjectEvidenceRefWriteResult{}, err
+	}
+	return ProjectEvidenceRefWriteResult{Event: event, Evidence: evidence}, nil
+}
+
+func (r *memoryRepository) CreateAcceptanceRecordWithEvent(ctx context.Context, req CreateAcceptanceRecordWithEventRequest) (ProjectAcceptanceRecordWriteResult, error) {
+	event, err := r.AppendProjectEvent(ctx, req.Event)
+	if err != nil {
+		return ProjectAcceptanceRecordWriteResult{}, err
+	}
+	acceptanceReq := req.Acceptance
+	acceptanceReq.CreatedEventID = &event.ID
+	acceptance, err := r.CreateAcceptanceRecord(ctx, acceptanceReq)
+	if err != nil {
+		return ProjectAcceptanceRecordWriteResult{}, err
+	}
+	return ProjectAcceptanceRecordWriteResult{Event: event, Acceptance: acceptance}, nil
+}
+
+func (r *memoryRepository) CreateArchiveSnapshotWithEvent(ctx context.Context, req CreateArchiveSnapshotWithEventRequest) (ProjectArchiveSnapshotWriteResult, error) {
+	event, err := r.AppendProjectEvent(ctx, req.Event)
+	if err != nil {
+		return ProjectArchiveSnapshotWriteResult{}, err
+	}
+	snapshotReq := req.Snapshot
+	snapshotReq.CreatedEventID = &event.ID
+	snapshot, err := r.CreateArchiveSnapshot(ctx, snapshotReq)
+	if err != nil {
+		return ProjectArchiveSnapshotWriteResult{}, err
+	}
+	return ProjectArchiveSnapshotWriteResult{Event: event, Snapshot: snapshot}, nil
+}
+
 type governanceMemoryRepository struct {
 	*memoryRepository
-	evidenceRefs      []ProjectEvidenceRef
-	artifactRefs      []ProjectArtifactRef
-	reportRefs        []ProjectReportRef
-	budgetLedger      []ProjectBudgetLedgerEntry
-	acceptanceRecords []ProjectAcceptanceRecord
-	archiveSnapshots  []ProjectArchiveSnapshot
+	evidenceRefs         []ProjectEvidenceRef
+	artifactRefs         []ProjectArtifactRef
+	reportRefs           []ProjectReportRef
+	budgetLedger         []ProjectBudgetLedgerEntry
+	acceptanceRecords    []ProjectAcceptanceRecord
+	archiveSnapshots     []ProjectArchiveSnapshot
+	createEvidenceRefErr error
+	createAcceptanceErr  error
+	createArchiveSnapErr error
 }
 
 func newGovernanceMemoryRepository() *governanceMemoryRepository {
@@ -2207,6 +2350,9 @@ func newGovernanceMemoryRepository() *governanceMemoryRepository {
 }
 
 func (r *governanceMemoryRepository) CreateEvidenceRef(ctx context.Context, req CreateEvidenceRefRequest) (ProjectEvidenceRef, error) {
+	if r.createEvidenceRefErr != nil {
+		return ProjectEvidenceRef{}, r.createEvidenceRefErr
+	}
 	evidence := ProjectEvidenceRef{
 		ID:                 uuid.New(),
 		TenantID:           req.TenantID,
@@ -2230,6 +2376,22 @@ func (r *governanceMemoryRepository) CreateEvidenceRef(ctx context.Context, req 
 	}
 	r.evidenceRefs = append(r.evidenceRefs, evidence)
 	return evidence, nil
+}
+
+func (r *governanceMemoryRepository) CreateEvidenceRefWithEvent(ctx context.Context, req CreateEvidenceRefWithEventRequest) (ProjectEvidenceRefWriteResult, error) {
+	snapshot := r.governanceSnapshot()
+	event, err := r.AppendProjectEvent(ctx, req.Event)
+	if err != nil {
+		return ProjectEvidenceRefWriteResult{}, err
+	}
+	evidenceReq := req.Evidence
+	evidenceReq.CreatedEventID = &event.ID
+	evidence, err := r.CreateEvidenceRef(ctx, evidenceReq)
+	if err != nil {
+		r.restoreGovernanceSnapshot(snapshot)
+		return ProjectEvidenceRefWriteResult{}, err
+	}
+	return ProjectEvidenceRefWriteResult{Event: event, Evidence: evidence}, nil
 }
 
 func (r *governanceMemoryRepository) ListEvidenceRefs(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error) {
@@ -2387,6 +2549,9 @@ func (r *governanceMemoryRepository) GetBudgetSummary(ctx context.Context, tenan
 }
 
 func (r *governanceMemoryRepository) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error) {
+	if r.createAcceptanceErr != nil {
+		return ProjectAcceptanceRecord{}, r.createAcceptanceErr
+	}
 	record := ProjectAcceptanceRecord{
 		ID:               uuid.New(),
 		TenantID:         req.TenantID,
@@ -2405,6 +2570,22 @@ func (r *governanceMemoryRepository) CreateAcceptanceRecord(ctx context.Context,
 	return record, nil
 }
 
+func (r *governanceMemoryRepository) CreateAcceptanceRecordWithEvent(ctx context.Context, req CreateAcceptanceRecordWithEventRequest) (ProjectAcceptanceRecordWriteResult, error) {
+	snapshot := r.governanceSnapshot()
+	event, err := r.AppendProjectEvent(ctx, req.Event)
+	if err != nil {
+		return ProjectAcceptanceRecordWriteResult{}, err
+	}
+	acceptanceReq := req.Acceptance
+	acceptanceReq.CreatedEventID = &event.ID
+	acceptance, err := r.CreateAcceptanceRecord(ctx, acceptanceReq)
+	if err != nil {
+		r.restoreGovernanceSnapshot(snapshot)
+		return ProjectAcceptanceRecordWriteResult{}, err
+	}
+	return ProjectAcceptanceRecordWriteResult{Event: event, Acceptance: acceptance}, nil
+}
+
 func (r *governanceMemoryRepository) GetLatestAcceptanceRecord(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectAcceptanceRecord, error) {
 	for index := len(r.acceptanceRecords) - 1; index >= 0; index-- {
 		record := r.acceptanceRecords[index]
@@ -2416,6 +2597,9 @@ func (r *governanceMemoryRepository) GetLatestAcceptanceRecord(ctx context.Conte
 }
 
 func (r *governanceMemoryRepository) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotRequest) (ProjectArchiveSnapshot, error) {
+	if r.createArchiveSnapErr != nil {
+		return ProjectArchiveSnapshot{}, r.createArchiveSnapErr
+	}
 	snapshot := ProjectArchiveSnapshot{
 		ID:                   uuid.New(),
 		TenantID:             req.TenantID,
@@ -2433,6 +2617,22 @@ func (r *governanceMemoryRepository) CreateArchiveSnapshot(ctx context.Context, 
 	}
 	r.archiveSnapshots = append(r.archiveSnapshots, snapshot)
 	return snapshot, nil
+}
+
+func (r *governanceMemoryRepository) CreateArchiveSnapshotWithEvent(ctx context.Context, req CreateArchiveSnapshotWithEventRequest) (ProjectArchiveSnapshotWriteResult, error) {
+	snapshot := r.governanceSnapshot()
+	event, err := r.AppendProjectEvent(ctx, req.Event)
+	if err != nil {
+		return ProjectArchiveSnapshotWriteResult{}, err
+	}
+	snapshotReq := req.Snapshot
+	snapshotReq.CreatedEventID = &event.ID
+	archiveSnapshot, err := r.CreateArchiveSnapshot(ctx, snapshotReq)
+	if err != nil {
+		r.restoreGovernanceSnapshot(snapshot)
+		return ProjectArchiveSnapshotWriteResult{}, err
+	}
+	return ProjectArchiveSnapshotWriteResult{Event: event, Snapshot: archiveSnapshot}, nil
 }
 
 func (r *governanceMemoryRepository) ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArchiveSnapshot, error) {
@@ -2462,6 +2662,32 @@ func (r *governanceMemoryRepository) GetConfigRevision(ctx context.Context, tena
 		}
 	}
 	return ProjectConfigRevision{}, ErrProjectNotFound
+}
+
+type governanceMemorySnapshot struct {
+	events            []ProjectEvent
+	eventTypes        []ProjectEventType
+	evidenceRefs      []ProjectEvidenceRef
+	acceptanceRecords []ProjectAcceptanceRecord
+	archiveSnapshots  []ProjectArchiveSnapshot
+}
+
+func (r *governanceMemoryRepository) governanceSnapshot() governanceMemorySnapshot {
+	return governanceMemorySnapshot{
+		events:            append([]ProjectEvent(nil), r.events...),
+		eventTypes:        append([]ProjectEventType(nil), r.eventTypes...),
+		evidenceRefs:      append([]ProjectEvidenceRef(nil), r.evidenceRefs...),
+		acceptanceRecords: append([]ProjectAcceptanceRecord(nil), r.acceptanceRecords...),
+		archiveSnapshots:  append([]ProjectArchiveSnapshot(nil), r.archiveSnapshots...),
+	}
+}
+
+func (r *governanceMemoryRepository) restoreGovernanceSnapshot(snapshot governanceMemorySnapshot) {
+	r.events = snapshot.events
+	r.eventTypes = snapshot.eventTypes
+	r.evidenceRefs = snapshot.evidenceRefs
+	r.acceptanceRecords = snapshot.acceptanceRecords
+	r.archiveSnapshots = snapshot.archiveSnapshots
 }
 
 type fakeCoordinatorSignalClient struct {

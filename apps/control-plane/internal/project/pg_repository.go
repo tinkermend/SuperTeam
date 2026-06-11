@@ -783,11 +783,31 @@ func (r *PgRepository) ListDecisionRequests(ctx context.Context, tenantID, proje
 }
 
 func (r *PgRepository) CreateEvidenceRef(ctx context.Context, req CreateEvidenceRefRequest) (ProjectEvidenceRef, error) {
+	return r.createEvidenceRefWithQueries(ctx, r.q, req)
+}
+
+func (r *PgRepository) CreateEvidenceRefWithEvent(ctx context.Context, req CreateEvidenceRefWithEventRequest) (ProjectEvidenceRefWriteResult, error) {
+	return withProjectQueries(ctx, r, "project evidence ref write", func(q *queries.Queries) (ProjectEvidenceRefWriteResult, error) {
+		event, err := r.appendProjectEventWithQueries(ctx, q, req.Event)
+		if err != nil {
+			return ProjectEvidenceRefWriteResult{}, err
+		}
+		evidenceReq := req.Evidence
+		evidenceReq.CreatedEventID = &event.ID
+		evidence, err := r.createEvidenceRefWithQueries(ctx, q, evidenceReq)
+		if err != nil {
+			return ProjectEvidenceRefWriteResult{}, err
+		}
+		return ProjectEvidenceRefWriteResult{Event: event, Evidence: evidence}, nil
+	})
+}
+
+func (r *PgRepository) createEvidenceRefWithQueries(ctx context.Context, q *queries.Queries, req CreateEvidenceRefRequest) (ProjectEvidenceRef, error) {
 	metadata, err := jsonbObject(req.Metadata, "metadata")
 	if err != nil {
 		return ProjectEvidenceRef{}, err
 	}
-	row, err := r.q.CreateProjectEvidenceRef(ctx, queries.CreateProjectEvidenceRefParams{
+	row, err := q.CreateProjectEvidenceRef(ctx, queries.CreateProjectEvidenceRefParams{
 		TenantID:           req.TenantID,
 		ProjectID:          req.ProjectID,
 		ProjectTaskID:      nullUUID(req.ProjectTaskID),
@@ -985,6 +1005,26 @@ func (r *PgRepository) GetBudgetSummary(ctx context.Context, tenantID, projectID
 }
 
 func (r *PgRepository) CreateAcceptanceRecord(ctx context.Context, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error) {
+	return r.createAcceptanceRecordWithQueries(ctx, r.q, req)
+}
+
+func (r *PgRepository) CreateAcceptanceRecordWithEvent(ctx context.Context, req CreateAcceptanceRecordWithEventRequest) (ProjectAcceptanceRecordWriteResult, error) {
+	return withProjectQueries(ctx, r, "project acceptance record write", func(q *queries.Queries) (ProjectAcceptanceRecordWriteResult, error) {
+		event, err := r.appendProjectEventWithQueries(ctx, q, req.Event)
+		if err != nil {
+			return ProjectAcceptanceRecordWriteResult{}, err
+		}
+		acceptanceReq := req.Acceptance
+		acceptanceReq.CreatedEventID = &event.ID
+		acceptance, err := r.createAcceptanceRecordWithQueries(ctx, q, acceptanceReq)
+		if err != nil {
+			return ProjectAcceptanceRecordWriteResult{}, err
+		}
+		return ProjectAcceptanceRecordWriteResult{Event: event, Acceptance: acceptance}, nil
+	})
+}
+
+func (r *PgRepository) createAcceptanceRecordWithQueries(ctx context.Context, q *queries.Queries, req CreateAcceptanceRecordRequest) (ProjectAcceptanceRecord, error) {
 	evidenceRefIDs, err := jsonbUUIDSlice(req.EvidenceRefIDs, "evidence_ref_ids")
 	if err != nil {
 		return ProjectAcceptanceRecord{}, err
@@ -997,7 +1037,7 @@ func (r *PgRepository) CreateAcceptanceRecord(ctx context.Context, req CreateAcc
 	if err != nil {
 		return ProjectAcceptanceRecord{}, err
 	}
-	row, err := r.q.CreateProjectAcceptanceRecord(ctx, queries.CreateProjectAcceptanceRecordParams{
+	row, err := q.CreateProjectAcceptanceRecord(ctx, queries.CreateProjectAcceptanceRecordParams{
 		TenantID:         req.TenantID,
 		ProjectID:        req.ProjectID,
 		AcceptedByUserID: req.AcceptedByUserID,
@@ -1024,6 +1064,26 @@ func (r *PgRepository) GetLatestAcceptanceRecord(ctx context.Context, tenantID, 
 }
 
 func (r *PgRepository) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotRequest) (ProjectArchiveSnapshot, error) {
+	return r.createArchiveSnapshotWithQueries(ctx, r.q, req)
+}
+
+func (r *PgRepository) CreateArchiveSnapshotWithEvent(ctx context.Context, req CreateArchiveSnapshotWithEventRequest) (ProjectArchiveSnapshotWriteResult, error) {
+	return withProjectQueries(ctx, r, "project archive snapshot write", func(q *queries.Queries) (ProjectArchiveSnapshotWriteResult, error) {
+		event, err := r.appendProjectEventWithQueries(ctx, q, req.Event)
+		if err != nil {
+			return ProjectArchiveSnapshotWriteResult{}, err
+		}
+		snapshotReq := req.Snapshot
+		snapshotReq.CreatedEventID = &event.ID
+		snapshot, err := r.createArchiveSnapshotWithQueries(ctx, q, snapshotReq)
+		if err != nil {
+			return ProjectArchiveSnapshotWriteResult{}, err
+		}
+		return ProjectArchiveSnapshotWriteResult{Event: event, Snapshot: snapshot}, nil
+	})
+}
+
+func (r *PgRepository) createArchiveSnapshotWithQueries(ctx context.Context, q *queries.Queries, req CreateArchiveSnapshotRequest) (ProjectArchiveSnapshot, error) {
 	includedCounts, err := jsonbObject(req.IncludedCounts, "included_counts")
 	if err != nil {
 		return ProjectArchiveSnapshot{}, err
@@ -1032,7 +1092,7 @@ func (r *PgRepository) CreateArchiveSnapshot(ctx context.Context, req CreateArch
 	if err != nil {
 		return ProjectArchiveSnapshot{}, err
 	}
-	row, err := r.q.CreateProjectArchiveSnapshot(ctx, queries.CreateProjectArchiveSnapshotParams{
+	row, err := q.CreateProjectArchiveSnapshot(ctx, queries.CreateProjectArchiveSnapshotParams{
 		TenantID:             req.TenantID,
 		ProjectID:            req.ProjectID,
 		SnapshotType:         req.SnapshotType,
