@@ -417,14 +417,26 @@ Append this test to `apps/control-plane/internal/storage/queries/queries_test.go
 
 ```go
 func TestCapabilityQueriesCreateCredentialAndMergeMCPServers(t *testing.T) {
-	db := newQueriesTestDB(t)
-	q := New(db)
-	tenantID := seedTestTenant(t, db)
-	userID := seedTestAuthUser(t, db, "capability-owner")
-	teamID := seedTestTeam(t, db, tenantID, "platform", "平台工程")
-	employeeID := seedTestDigitalEmployee(t, db, tenantID, teamID, userID, "capability-agent")
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
 
-	credential, err := q.CreateUserCredential(context.Background(), CreateUserCredentialParams{
+	tenantID := seedTestTenant(t, testDB)
+	userID := seedTestAuthUser(t, testDB, "capability-owner")
+	teamID := seedTestTeam(t, testDB, tenantID, "platform", "平台工程")
+	employee, err := testQueries.CreateDigitalEmployee(ctx, CreateDigitalEmployeeParams{
+		TenantID:  tenantID,
+		TeamID:    pgtype.UUID{Bytes: teamID, Valid: true},
+		Name:      "capability-agent",
+		Role:      "capability_test",
+		Status:    "draft",
+		RiskLevel: "low",
+	})
+	if err != nil {
+		t.Fatalf("create digital employee: %v", err)
+	}
+	employeeID := employee.ID
+
+	credential, err := testQueries.CreateUserCredential(ctx, CreateUserCredentialParams{
 		TenantID:       tenantID,
 		UserID:         userID,
 		Name:           "ops-token",
@@ -436,29 +448,29 @@ func TestCapabilityQueriesCreateCredentialAndMergeMCPServers(t *testing.T) {
 		t.Fatalf("create credential: %v", err)
 	}
 
-	if _, err := q.CreateTeamMCPServer(context.Background(), CreateTeamMCPServerParams{
+	if _, err := testQueries.CreateTeamMCPServer(ctx, CreateTeamMCPServerParams{
 		TenantID:     tenantID,
 		TeamID:       teamID,
 		Name:         "ops-mcp",
 		Url:          "https://mcp.example.com",
-		CredentialID: uuidToPgtype(credential.ID),
-		CreatedBy:    uuidToPgtype(userID),
+		CredentialID: pgtype.UUID{Bytes: credential.ID, Valid: true},
+		CreatedBy:    pgtype.UUID{Bytes: userID, Valid: true},
 	}); err != nil {
 		t.Fatalf("create team mcp: %v", err)
 	}
 
-	if _, err := q.CreateDigitalEmployeeMCPBinding(context.Background(), CreateDigitalEmployeeMCPBindingParams{
+	if _, err := testQueries.CreateDigitalEmployeeMCPBinding(ctx, CreateDigitalEmployeeMCPBindingParams{
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
 		Name:              "personal-mcp",
 		Url:               "https://personal-mcp.example.com",
-		CredentialID:      uuidToPgtype(credential.ID),
-		CreatedBy:         uuidToPgtype(userID),
+		CredentialID:      pgtype.UUID{Bytes: credential.ID, Valid: true},
+		CreatedBy:         pgtype.UUID{Bytes: userID, Valid: true},
 	}); err != nil {
 		t.Fatalf("create employee mcp: %v", err)
 	}
 
-	merged, err := q.ListEffectiveMCPServersForEmployee(context.Background(), ListEffectiveMCPServersForEmployeeParams{
+	merged, err := testQueries.ListEffectiveMCPServersForEmployee(ctx, ListEffectiveMCPServersForEmployeeParams{
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
 	})
@@ -1806,11 +1818,12 @@ ORDER BY s.name ASC`, req.TenantID, req.TeamID)
 	defer rows.Close()
 	var skills []*Skill
 	for rows.Next() {
-		item, err := scanSkill(rows)
-		if err != nil {
-			return nil, err
-		}
-		if err := r.loadChildren(ctx, item); err != nil {
+		item := &Skill{}
+		if err := rows.Scan(
+			&item.ID, &item.TenantID, &item.Slug, &item.Name, &item.Description,
+			&item.Version, &item.Source, &item.RiskLevel, &item.Status,
+			&item.IconKey, &item.ColorToken, &item.Tags, &item.CreatedAt, &item.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		skills = append(skills, item)
@@ -1985,6 +1998,70 @@ func effectiveEmployeeSkillResponses(items []EffectiveEmployeeSkill) []effective
 		})
 	}
 	return responses
+}
+
+func (h *HTTPHandler) ListEffectiveEmployeeSkills(w http.ResponseWriter, r *http.Request) {
+	employeeID, err := uuid.Parse(chi.URLParam(r, "employeeId"))
+	if err != nil || employeeID == uuid.Nil {
+		http.Error(w, "invalid employee id", http.StatusBadRequest)
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionEmployeeRead, authz.ResourceRef{Type: authz.ResourceEmployee, ID: employeeID.String()}, "employee effective skills read")
+	if !ok {
+		return
+	}
+	items, err := h.service.ListEffectiveEmployeeSkills(r.Context(), ListEffectiveEmployeeSkillsRequest{TenantID: tenantID, DigitalEmployeeID: employeeID})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, effectiveEmployeeSkillResponses(items))
+}
+
+func (h *HTTPHandler) BindEmployeeSkill(w http.ResponseWriter, r *http.Request) {
+	employeeID, err := uuid.Parse(chi.URLParam(r, "employeeId"))
+	if err != nil || employeeID == uuid.Nil {
+		http.Error(w, "invalid employee id", http.StatusBadRequest)
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionEmployeeCapabilityEdit, authz.ResourceRef{Type: authz.ResourceEmployee, ID: employeeID.String()}, "employee skill bind")
+	if !ok {
+		return
+	}
+	var req struct {
+		SkillID uuid.UUID `json:"skill_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	item, err := h.service.BindSkillToEmployee(r.Context(), BindEmployeeSkillRequest{TenantID: tenantID, DigitalEmployeeID: employeeID, SkillID: req.SkillID})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, skillResponseFromDomain(item))
+}
+
+func (h *HTTPHandler) UnbindEmployeeSkill(w http.ResponseWriter, r *http.Request) {
+	employeeID, err := uuid.Parse(chi.URLParam(r, "employeeId"))
+	if err != nil || employeeID == uuid.Nil {
+		http.Error(w, "invalid employee id", http.StatusBadRequest)
+		return
+	}
+	skillID, ok := skillIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionEmployeeCapabilityEdit, authz.ResourceRef{Type: authz.ResourceEmployee, ID: employeeID.String()}, "employee skill unbind")
+	if !ok {
+		return
+	}
+	if err := h.service.UnbindSkillFromEmployee(r.Context(), BindEmployeeSkillRequest{TenantID: tenantID, DigitalEmployeeID: employeeID, SkillID: skillID}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 ```
 
@@ -2529,7 +2606,6 @@ Add actions:
 ActionCredentialRead   = "credential.read"
 ActionCredentialCreate = "credential.create"
 ActionCredentialDelete = "credential.delete"
-ActionTeamCapabilityManage = "team.capability.manage"
 ActionEmployeeCapabilityEdit = "employee.capability.edit"
 ```
 
@@ -2624,7 +2700,7 @@ func (h *HTTPHandler) CreateTeamMCPServer(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	tenantID, userID, ok := h.authorize(w, r, authz.ActionTeamCapabilityManage, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team mcp create")
+	tenantID, userID, ok := h.authorize(w, r, authz.ActionTeamCapabilityBind, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team mcp create")
 	if !ok {
 		return
 	}
@@ -2650,7 +2726,7 @@ func (h *HTTPHandler) ListTeamMCPServers(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	tenantID, userID, ok := h.authorize(w, r, authz.ActionTeamCapabilityManage, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team mcp read")
+	tenantID, userID, ok := h.authorize(w, r, authz.ActionTeamCapabilityBind, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team mcp read")
 	if !ok {
 		return
 	}
@@ -2671,7 +2747,7 @@ func (h *HTTPHandler) DeleteTeamMCPServer(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	tenantID, _, ok := h.authorize(w, r, authz.ActionTeamCapabilityManage, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team mcp delete")
+	tenantID, _, ok := h.authorize(w, r, authz.ActionTeamCapabilityUnbind, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team mcp delete")
 	if !ok {
 		return
 	}

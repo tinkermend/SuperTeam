@@ -1,0 +1,1366 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>项目管理 - 项目协调员控制平面原型</title>
+    <style>
+      :root {
+        --bg: #f8fbf7;
+        --panel: rgba(255, 255, 255, 0.78);
+        --panel-strong: rgba(255, 255, 255, 0.92);
+        --border: rgba(156, 242, 218, 0.44);
+        --border-blue: rgba(191, 219, 254, 0.58);
+        --text: #07140e;
+        --muted: #64748b;
+        --soft: #e6fbf5;
+        --teal: #2cc7aa;
+        --teal-deep: #0a806f;
+        --task: #2685e8;
+        --runtime: #0891b2;
+        --success: #16a34a;
+        --warning: #f59e0b;
+        --danger: #ef4444;
+        --artifact: #8b5cf6;
+        --decision: #10b981;
+        --neutral: #64748b;
+        --shadow-low: 0 18px 45px rgba(38, 72, 56, 0.08);
+        --shadow-mid: 0 26px 80px rgba(38, 72, 56, 0.13);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-width: 1360px;
+        margin: 0;
+        background:
+          linear-gradient(135deg, rgba(230, 251, 245, 0.86), rgba(248, 251, 255, 0.84) 42%, #ffffff 100%),
+          linear-gradient(90deg, rgba(209, 250, 229, 0.32), rgba(219, 234, 254, 0.28));
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+        font-size: 14px;
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 248px minmax(0, 1fr);
+        min-height: 1024px;
+      }
+
+      .sidebar {
+        border-right: 1px solid var(--border-blue);
+        background: rgba(255, 255, 255, 0.72);
+        backdrop-filter: blur(22px) saturate(1.16);
+        padding: 18px 14px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px 20px;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #9cf2da, #2cc7aa 58%, #0a806f);
+        color: white;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .brand-title {
+        font-weight: 760;
+      }
+
+      .brand-subtitle {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .nav-group {
+        margin: 20px 10px 8px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 760;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 40px;
+        margin: 2px 0;
+        border-radius: 8px;
+        padding: 0 10px;
+        color: #425466;
+      }
+
+      .nav-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .nav-item svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .nav-item.active {
+        background: linear-gradient(135deg, rgba(230, 251, 245, 0.96), rgba(219, 234, 254, 0.84));
+        box-shadow: inset 0 0 0 1px rgba(44, 199, 170, 0.34);
+        color: #063f37;
+        font-weight: 760;
+      }
+
+      .nav-count {
+        min-width: 22px;
+        border-radius: 999px;
+        background: rgba(44, 199, 170, 0.14);
+        color: var(--teal-deep);
+        font-size: 11px;
+        font-weight: 760;
+        line-height: 20px;
+        text-align: center;
+      }
+
+      .sidebar-footer {
+        margin-top: 28px;
+        border: 1px solid rgba(148, 197, 211, 0.34);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.58);
+        padding: 12px;
+      }
+
+      .main {
+        min-width: 0;
+        padding: 18px 26px 28px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border: 1px solid var(--border-blue);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.76);
+        padding: 10px 14px;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+      }
+
+      .crumb {
+        color: var(--muted);
+      }
+
+      .crumb b {
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .top-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .search {
+        width: 318px;
+        border: 1px solid rgba(148, 197, 211, 0.48);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.82);
+        color: var(--muted);
+        padding: 8px 14px;
+      }
+
+      .icon-button {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border: 1px solid rgba(148, 197, 211, 0.42);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.7);
+        color: #40576d;
+      }
+
+      .icon-button svg,
+      .btn svg,
+      .badge svg,
+      .panel-title svg,
+      .metric-icon svg,
+      .item-icon svg,
+      .timeline-icon svg {
+        width: 16px;
+        height: 16px;
+        stroke-width: 2;
+      }
+
+      .page-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        margin: 24px 0 16px;
+      }
+
+      .identity {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .page-icon {
+        display: grid;
+        width: 54px;
+        height: 54px;
+        place-items: center;
+        border: 1px solid rgba(6, 182, 212, 0.26);
+        border-radius: 14px;
+        background: linear-gradient(135deg, #ffffff, #ecfeff);
+        box-shadow: var(--shadow-low);
+        color: #0891b2;
+      }
+
+      .page-icon svg {
+        width: 25px;
+        height: 25px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 26px;
+        line-height: 1.18;
+      }
+
+      .subtitle {
+        margin-top: 6px;
+        color: var(--muted);
+      }
+
+      .header-actions,
+      .button-row,
+      .meta-row,
+      .toolbar,
+      .inline-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .header-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .btn {
+        min-height: 36px;
+        border: 1px solid rgba(148, 197, 211, 0.42);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.76);
+        color: #263a4d;
+        padding: 0 12px;
+        font-weight: 720;
+      }
+
+      .btn.primary {
+        border-color: transparent;
+        background: linear-gradient(135deg, #9cf2da, #2cc7aa 58%, #0a806f);
+        color: white;
+        box-shadow: 0 18px 46px rgba(44, 199, 170, 0.22);
+      }
+
+      .btn.danger {
+        color: var(--danger);
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .metric {
+        min-height: 116px;
+        border: 1px solid rgba(156, 242, 218, 0.38);
+        border-radius: 14px;
+        background: var(--panel);
+        box-shadow: var(--shadow-low);
+        padding: 14px;
+      }
+
+      .metric-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .metric-title {
+        color: #334155;
+        font-weight: 760;
+      }
+
+      .metric-value {
+        margin-top: 10px;
+        font-size: 31px;
+        font-weight: 820;
+        line-height: 1;
+      }
+
+      .metric-note {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .metric-icon,
+      .item-icon,
+      .timeline-icon {
+        display: grid;
+        place-items: center;
+        border-radius: 11px;
+        flex: 0 0 auto;
+      }
+
+      .metric-icon {
+        width: 42px;
+        height: 42px;
+        background: rgba(230, 251, 245, 0.9);
+        color: var(--teal-deep);
+      }
+
+      .dashboard {
+        display: grid;
+        grid-template-columns: 318px minmax(0, 1fr) 340px;
+        gap: 14px;
+        align-items: start;
+      }
+
+      .panel {
+        border: 1px solid rgba(156, 242, 218, 0.38);
+        border-radius: 14px;
+        background: var(--panel);
+        box-shadow: var(--shadow-low);
+        overflow: hidden;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 58px;
+        border-bottom: 1px solid rgba(214, 235, 229, 0.72);
+        background: rgba(255, 255, 255, 0.52);
+        padding: 13px 14px;
+      }
+
+      .panel-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 800;
+      }
+
+      .panel-subtitle {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .panel-body {
+        padding: 14px;
+      }
+
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 5px;
+        border: 1px solid rgba(148, 197, 211, 0.32);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.56);
+        padding: 4px;
+      }
+
+      .tab {
+        border-radius: 8px;
+        padding: 8px 6px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 740;
+        text-align: center;
+      }
+
+      .tab.active {
+        background: rgba(230, 251, 245, 0.96);
+        color: var(--teal-deep);
+        box-shadow: inset 0 0 0 1px rgba(44, 199, 170, 0.24);
+      }
+
+      .project-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .project-item {
+        border: 1px solid rgba(148, 197, 211, 0.32);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.58);
+        padding: 12px;
+      }
+
+      .project-item.selected {
+        border-color: rgba(44, 199, 170, 0.6);
+        background: linear-gradient(135deg, rgba(230, 251, 245, 0.88), rgba(255, 255, 255, 0.78));
+        box-shadow: 0 12px 34px rgba(44, 199, 170, 0.1);
+      }
+
+      .project-name {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        font-weight: 800;
+      }
+
+      .project-desc {
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 24px;
+        border: 1px solid currentColor;
+        border-color: color-mix(in srgb, currentColor 22%, transparent);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.6);
+        padding: 0 8px;
+        font-size: 11px;
+        font-weight: 760;
+        white-space: nowrap;
+      }
+
+      .badge::before {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: currentColor;
+        content: "";
+      }
+
+      .badge.info {
+        color: var(--runtime);
+      }
+
+      .badge.task {
+        color: var(--task);
+      }
+
+      .badge.success {
+        color: var(--success);
+      }
+
+      .badge.warning {
+        color: var(--warning);
+      }
+
+      .badge.danger {
+        color: var(--danger);
+      }
+
+      .badge.artifact {
+        color: var(--artifact);
+      }
+
+      .badge.decision {
+        color: var(--decision);
+      }
+
+      .badge.neutral {
+        color: var(--neutral);
+      }
+
+      .meta-row {
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+
+      .detail-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 14px;
+      }
+
+      .summary-band {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .summary-box {
+        border: 1px solid rgba(148, 197, 211, 0.3);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.58);
+        padding: 12px;
+      }
+
+      .section-label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 760;
+      }
+
+      .summary-title {
+        margin-top: 5px;
+        font-size: 18px;
+        font-weight: 820;
+      }
+
+      .owner-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .person {
+        border: 1px solid rgba(148, 197, 211, 0.28);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.6);
+        padding: 9px;
+      }
+
+      .person-role {
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .person-name {
+        margin-top: 4px;
+        font-weight: 800;
+      }
+
+      .budget {
+        margin-top: 12px;
+      }
+
+      .bar {
+        height: 8px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        overflow: hidden;
+      }
+
+      .bar > span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--teal), var(--task), var(--warning));
+      }
+
+      .stage-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+      }
+
+      .stage {
+        min-height: 74px;
+        border: 1px solid rgba(148, 197, 211, 0.28);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.58);
+        padding: 10px;
+      }
+
+      .stage.active {
+        border-color: rgba(44, 199, 170, 0.44);
+        background: rgba(230, 251, 245, 0.72);
+      }
+
+      .stage-name {
+        color: #334155;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .stage-meta {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .kanban {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .lane {
+        min-height: 168px;
+        border: 1px solid rgba(148, 197, 211, 0.3);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.5);
+        padding: 10px;
+      }
+
+      .lane-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: #334155;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .work-item {
+        margin-top: 9px;
+        border: 1px solid rgba(148, 197, 211, 0.28);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.78);
+        padding: 9px;
+      }
+
+      .work-title {
+        font-weight: 800;
+        line-height: 1.36;
+      }
+
+      .work-meta {
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
+      .timeline {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .timeline::before {
+        position: absolute;
+        top: 10px;
+        bottom: 12px;
+        left: 17px;
+        width: 1px;
+        background: rgba(148, 163, 184, 0.34);
+        content: "";
+      }
+
+      .event {
+        position: relative;
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 10px;
+      }
+
+      .timeline-icon {
+        z-index: 1;
+        width: 34px;
+        height: 34px;
+        border: 1px solid rgba(148, 197, 211, 0.32);
+        background: white;
+      }
+
+      .event-body {
+        border: 1px solid rgba(148, 197, 211, 0.28);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.64);
+        padding: 9px 10px;
+      }
+
+      .event-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-weight: 800;
+      }
+
+      .event-note {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .right-column {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .decision-box {
+        border: 1px solid rgba(16, 185, 129, 0.28);
+        border-radius: 12px;
+        background: linear-gradient(135deg, rgba(209, 250, 229, 0.58), rgba(255, 255, 255, 0.72));
+        padding: 12px;
+      }
+
+      .decision-title {
+        font-size: 15px;
+        font-weight: 820;
+        line-height: 1.35;
+      }
+
+      .decision-desc,
+      .report-text {
+        margin-top: 8px;
+        color: #475569;
+        line-height: 1.55;
+      }
+
+      .evidence-list,
+      .ledger-list {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+      }
+
+      .evidence-item,
+      .ledger-item {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr) auto;
+        gap: 9px;
+        align-items: center;
+        border: 1px solid rgba(148, 197, 211, 0.28);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.62);
+        padding: 9px;
+      }
+
+      .item-icon {
+        width: 34px;
+        height: 34px;
+        background: rgba(237, 233, 254, 0.74);
+        color: var(--artifact);
+      }
+
+      .item-title {
+        font-weight: 800;
+      }
+
+      .item-subtitle {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .small-number {
+        color: #0f172a;
+        font-size: 13px;
+        font-weight: 820;
+      }
+
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        border-radius: 12px;
+      }
+
+      .table th,
+      .table td {
+        border-bottom: 1px solid rgba(214, 235, 229, 0.72);
+        padding: 10px 9px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .table th {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 760;
+      }
+
+      .table td {
+        background: rgba(255, 255, 255, 0.48);
+      }
+
+      .confidence {
+        display: inline-flex;
+        min-width: 48px;
+        justify-content: center;
+        border-radius: 999px;
+        background: rgba(230, 251, 245, 0.9);
+        color: var(--teal-deep);
+        padding: 4px 8px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .danger-text {
+        color: var(--danger);
+      }
+
+      .teal-text {
+        color: var(--teal-deep);
+      }
+
+      .task-text {
+        color: var(--task);
+      }
+
+      .decision-text {
+        color: var(--decision);
+      }
+
+      .artifact-text {
+        color: var(--artifact);
+      }
+
+      .thin {
+        font-weight: 520;
+      }
+
+      @media (max-width: 1200px) {
+        body {
+          min-width: 1120px;
+        }
+
+        .app {
+          grid-template-columns: 224px minmax(0, 1fr);
+        }
+
+        .dashboard {
+          grid-template-columns: 290px minmax(0, 1fr);
+        }
+
+        .right-column {
+          grid-column: 1 / -1;
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">ST</div>
+          <div>
+            <div class="brand-title">SuperTeam</div>
+            <div class="brand-subtitle">AI 执行控制平面</div>
+          </div>
+        </div>
+
+        <div class="nav-group">工作区</div>
+        <div class="nav-item">
+          <span class="nav-label"><i data-lucide="layout-dashboard"></i>工作台</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-label"><i data-lucide="clipboard-list"></i>任务中心</span>
+          <span class="nav-count">18</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-label"><i data-lucide="bot"></i>数字员工</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-label"><i data-lucide="blocks"></i>技能管理</span>
+        </div>
+        <div class="nav-item active">
+          <span class="nav-label"><i data-lucide="folder-kanban"></i>项目管理</span>
+          <span class="nav-count">7</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-label"><i data-lucide="users-round"></i>团队管理</span>
+        </div>
+
+        <div class="nav-group">核心导航</div>
+        <div class="nav-item">
+          <span class="nav-label"><i data-lucide="git-branch"></i>流程编排</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-label"><i data-lucide="puzzle"></i>外部能力</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-label"><i data-lucide="messages-square"></i>协作集成</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-label"><i data-lucide="shield-check"></i>审批中心</span>
+          <span class="nav-count">4</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-label"><i data-lucide="server"></i>Runtime 节点</span>
+        </div>
+
+        <div class="nav-group">平台管理</div>
+        <div class="nav-item">
+          <span class="nav-label"><i data-lucide="key-round"></i>权限中心</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-label"><i data-lucide="circle-dollar-sign"></i>成本管理</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-label"><i data-lucide="file-clock"></i>审计日志</span>
+        </div>
+
+        <div class="sidebar-footer">
+          <div class="section-label">当前团队</div>
+          <div class="person-name">平台工程交付组</div>
+          <div class="brand-subtitle">Owner：王佩 · 5 个 Runtime 在线</div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <div class="crumb">工作区 / <b>项目管理</b></div>
+          <div class="top-actions">
+            <input class="search" value="搜索项目、任务、证据或决策请求" aria-label="搜索" readonly />
+            <button class="icon-button" aria-label="通知"><i data-lucide="bell"></i></button>
+            <button class="icon-button" aria-label="帮助"><i data-lucide="circle-help"></i></button>
+            <button class="icon-button" aria-label="用户"><i data-lucide="user-round"></i></button>
+          </div>
+        </div>
+
+        <header class="page-header">
+          <div class="identity">
+            <div class="page-icon"><i data-lucide="folder-kanban"></i></div>
+            <div>
+              <h1>项目管理</h1>
+              <div class="subtitle">把目标、项目协调员、执行任务、证据、预算和人类决策组织成可审计闭环。</div>
+              <div class="meta-row">
+                <span class="badge info">事件流在线</span>
+                <span class="badge decision">4 个决策待处理</span>
+                <span class="badge artifact">23 份证据包</span>
+              </div>
+            </div>
+          </div>
+          <div class="header-actions">
+            <button class="btn"><i data-lucide="upload"></i>导入问题场景</button>
+            <button class="btn"><i data-lucide="sliders-horizontal"></i>场景模板</button>
+            <button class="btn primary"><i data-lucide="plus"></i>新建项目</button>
+          </div>
+        </header>
+
+        <section class="metrics" aria-label="项目指标">
+          <div class="metric">
+            <div class="metric-head">
+              <div>
+                <div class="metric-title">进行中项目</div>
+                <div class="metric-value">24</div>
+              </div>
+              <span class="metric-icon"><i data-lucide="folder-kanban"></i></span>
+            </div>
+            <div class="metric-note">7 个处于人工决策或补证等待</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head">
+              <div>
+                <div class="metric-title">协调员路由命中率</div>
+                <div class="metric-value">86%</div>
+              </div>
+              <span class="metric-icon" style="color: var(--task); background: #dbeafe"><i data-lucide="route"></i></span>
+            </div>
+            <div class="metric-note">过去 7 天 RouteOutcome 统计</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head">
+              <div>
+                <div class="metric-title">证据完整度</div>
+                <div class="metric-value">91%</div>
+              </div>
+              <span class="metric-icon" style="color: var(--artifact); background: #ede9fe"><i data-lucide="package-check"></i></span>
+            </div>
+            <div class="metric-note">按 ExecutionSummary 与 ArtifactRefs 计算</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head">
+              <div>
+                <div class="metric-title">本周预算消耗</div>
+                <div class="metric-value">63.8k</div>
+              </div>
+              <span class="metric-icon" style="color: var(--warning); background: #fef3c7"><i data-lucide="wallet-cards"></i></span>
+            </div>
+            <div class="metric-note">Token 预算剩余 28%，高风险动作 0 次绕过</div>
+          </div>
+        </section>
+
+        <section class="dashboard">
+          <aside class="panel">
+            <div class="panel-header">
+              <div>
+                <div class="panel-title"><i data-lucide="list-filter"></i>项目队列</div>
+                <div class="panel-subtitle">按状态保留当前选中项</div>
+              </div>
+              <button class="icon-button" aria-label="刷新项目队列"><i data-lucide="refresh-cw"></i></button>
+            </div>
+            <div class="panel-body">
+              <div class="tabs">
+                <div class="tab active">全部</div>
+                <div class="tab">运行中</div>
+                <div class="tab">待决策</div>
+                <div class="tab">阻塞</div>
+              </div>
+              <div class="project-list">
+                <article class="project-item selected">
+                  <div class="project-name">
+                    <span>支付网关稳定性整改</span>
+                    <span class="badge decision">待确认</span>
+                  </div>
+                  <div class="project-desc">协调员已完成首轮路由，等待人类归属人确认灰度发布范围。</div>
+                  <div class="meta-row">
+                    <span class="badge task">9 任务</span>
+                    <span class="badge artifact">6 证据</span>
+                    <span class="badge warning">预算 72%</span>
+                  </div>
+                </article>
+                <article class="project-item">
+                  <div class="project-name">
+                    <span>客户侧 Runtime 接入验收</span>
+                    <span class="badge task">执行中</span>
+                  </div>
+                  <div class="project-desc">运维数字员工正在校验节点心跳、租约续期和 Provider 能力上报。</div>
+                  <div class="meta-row">
+                    <span class="badge info">3 Runtime</span>
+                    <span class="badge success">健康</span>
+                  </div>
+                </article>
+                <article class="project-item">
+                  <div class="project-name">
+                    <span>双层技能治理试点</span>
+                    <span class="badge artifact">补证</span>
+                  </div>
+                  <div class="project-desc">团队公共 Skills 与个人 Instructions 合并预览缺少安全审计记录。</div>
+                  <div class="meta-row">
+                    <span class="badge decision">1 决策</span>
+                    <span class="badge danger">高风险</span>
+                  </div>
+                </article>
+                <article class="project-item">
+                  <div class="project-name">
+                    <span>销售线索自动分派</span>
+                    <span class="badge success">验收中</span>
+                  </div>
+                  <div class="project-desc">最终汇报已生成，验收人正在查看工件和误分派样本。</div>
+                  <div class="meta-row">
+                    <span class="badge success">12/12 完成</span>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </aside>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <div class="panel-title"><i data-lucide="workflow"></i>项目闭环看板</div>
+                <div class="panel-subtitle">支付网关稳定性整改 · PRJ-2026-0610-004</div>
+              </div>
+              <div class="toolbar">
+                <span class="badge task">阶段：执行验证</span>
+                <span class="badge warning">SLA 18h</span>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="summary-band">
+                <div class="summary-box">
+                  <div class="section-label">项目目标</div>
+                  <div class="summary-title">定位间歇性支付超时并形成可灰度发布的修复包</div>
+                  <div class="owner-grid">
+                    <div class="person">
+                      <div class="person-role">项目协调员</div>
+                      <div class="person-name teal-text">交付协调员 A-17</div>
+                    </div>
+                    <div class="person">
+                      <div class="person-role">人类归属人</div>
+                      <div class="person-name">王佩</div>
+                    </div>
+                    <div class="person">
+                      <div class="person-role">验收人</div>
+                      <div class="person-name">平台负责人</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="summary-box">
+                  <div class="inline-row" style="justify-content: space-between">
+                    <span class="section-label">项目预算 Ledger</span>
+                    <span class="small-number">72% 已用</span>
+                  </div>
+                  <div class="budget">
+                    <div class="bar"><span style="width: 72%"></span></div>
+                  </div>
+                  <div class="stage-row" style="margin-top: 12px">
+                    <div class="stage active">
+                      <div class="stage-name">路由</div>
+                      <div class="stage-meta">3 次决策</div>
+                    </div>
+                    <div class="stage active">
+                      <div class="stage-name">执行</div>
+                      <div class="stage-meta">4 员工参与</div>
+                    </div>
+                    <div class="stage active">
+                      <div class="stage-name">补证</div>
+                      <div class="stage-meta">2 项缺口</div>
+                    </div>
+                    <div class="stage">
+                      <div class="stage-name">验收</div>
+                      <div class="stage-meta">待触发</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="detail-grid">
+                <section>
+                  <div class="panel-title" style="margin-bottom: 10px"><i data-lucide="columns-3"></i>任务流转</div>
+                  <div class="kanban">
+                    <div class="lane">
+                      <div class="lane-title">待分派 <span class="small-number">2</span></div>
+                      <div class="work-item">
+                        <div class="work-title">生成灰度回滚预案</div>
+                        <div class="work-meta">风险等级：中 · 需运维员工接手</div>
+                      </div>
+                      <div class="work-item">
+                        <div class="work-title">复核客户侧限制</div>
+                        <div class="work-meta">缺少租户网络白名单确认</div>
+                      </div>
+                    </div>
+                    <div class="lane">
+                      <div class="lane-title">执行中 <span class="small-number">3</span></div>
+                      <div class="work-item">
+                        <div class="work-title">超时链路诊断</div>
+                        <div class="work-meta">开发员工 · 置信度 0.82</div>
+                      </div>
+                      <div class="work-item">
+                        <div class="work-title">压测脚本复跑</div>
+                        <div class="work-meta">测试员工 · Runtime cn-bj-02</div>
+                      </div>
+                    </div>
+                    <div class="lane">
+                      <div class="lane-title">待证据 <span class="small-number">2</span></div>
+                      <div class="work-item">
+                        <div class="work-title">数据库慢查询证明</div>
+                        <div class="work-meta">需要补充 EXPLAIN 与日志片段</div>
+                      </div>
+                    </div>
+                    <div class="lane">
+                      <div class="lane-title">已完成 <span class="small-number">4</span></div>
+                      <div class="work-item">
+                        <div class="work-title">告警时间窗归因</div>
+                        <div class="work-meta">证据包 EV-481 已归档</div>
+                      </div>
+                      <div class="work-item">
+                        <div class="work-title">Provider 会话回写</div>
+                        <div class="work-meta">ExecutionSummary 已生成</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="panel-title" style="margin: 16px 0 8px"><i data-lucide="users-round"></i>执行员工路由</div>
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>员工</th>
+                        <th>RouteDecision</th>
+                        <th>结果</th>
+                        <th>置信度</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><b>后端开发员工</b><br /><span class="muted">owner: Platform Team</span></td>
+                        <td>定位支付超时根因</td>
+                        <td><span class="badge success">已完成</span></td>
+                        <td><span class="confidence">0.86</span></td>
+                      </tr>
+                      <tr>
+                        <td><b>测试验证员工</b><br /><span class="muted">Runtime cn-bj-02</span></td>
+                        <td>复跑压测与回归脚本</td>
+                        <td><span class="badge task">运行中</span></td>
+                        <td><span class="confidence">0.74</span></td>
+                      </tr>
+                      <tr>
+                        <td><b>运维发布员工</b><br /><span class="muted">requires approval</span></td>
+                        <td>准备灰度和回滚窗口</td>
+                        <td><span class="badge decision">待人类确认</span></td>
+                        <td><span class="confidence">0.68</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </section>
+
+                <section>
+                  <div class="panel-title" style="margin-bottom: 10px"><i data-lucide="activity"></i>项目事件流</div>
+                  <div class="timeline">
+                    <div class="event">
+                      <span class="timeline-icon" style="color: var(--teal)"><i data-lucide="git-pull-request-arrow"></i></span>
+                      <div class="event-body">
+                        <div class="event-title">RouteDecision 写入 <span class="muted thin">10:42</span></div>
+                        <div class="event-note">协调员选择后端开发员工执行首轮诊断，理由：历史命中率 83%，具备支付服务上下文。</div>
+                      </div>
+                    </div>
+                    <div class="event">
+                      <span class="timeline-icon" style="color: var(--artifact)"><i data-lucide="file-check-2"></i></span>
+                      <div class="event-body">
+                        <div class="event-title">ExecutionSummary 回写 <span class="muted thin">11:18</span></div>
+                        <div class="event-note">结论指向连接池耗尽与重试风暴叠加，附 3 份日志和 1 份 SQL 分析。</div>
+                      </div>
+                    </div>
+                    <div class="event">
+                      <span class="timeline-icon" style="color: var(--warning)"><i data-lucide="triangle-alert"></i></span>
+                      <div class="event-body">
+                        <div class="event-title">置信度扩散 <span class="muted thin">11:26</span></div>
+                        <div class="event-note">置信度低于发布门槛 0.8，协调员申请 8k token 预算派发测试验证。</div>
+                      </div>
+                    </div>
+                    <div class="event">
+                      <span class="timeline-icon" style="color: var(--decision)"><i data-lucide="shield-question"></i></span>
+                      <div class="event-body">
+                        <div class="event-title">DecisionRequest 发起 <span class="muted thin">12:05</span></div>
+                        <div class="event-note">是否允许在客户 A/B 两个租户灰度执行限流配置变更，等待人类归属人确认。</div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </section>
+
+          <aside class="right-column">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <div class="panel-title"><i data-lucide="shield-check"></i>人工决策</div>
+                  <div class="panel-subtitle">高风险动作必须暂停</div>
+                </div>
+                <span class="badge decision">待处理</span>
+              </div>
+              <div class="panel-body">
+                <div class="decision-box">
+                  <div class="decision-title">是否允许运维员工执行灰度限流配置变更？</div>
+                  <div class="decision-desc">
+                    影响租户：客户 A、客户 B。变更具备回滚预案，但测试员工仍在补充峰值压测证据。
+                  </div>
+                  <div class="meta-row">
+                    <span class="badge warning">风险：中高</span>
+                    <span class="badge artifact">缺 1 份证据</span>
+                  </div>
+                  <div class="button-row" style="margin-top: 12px">
+                    <button class="btn primary"><i data-lucide="check"></i>批准灰度</button>
+                    <button class="btn"><i data-lucide="file-plus-2"></i>要求补证</button>
+                    <button class="btn danger"><i data-lucide="x"></i>驳回</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <div class="panel-title"><i data-lucide="package"></i>证据包</div>
+                  <div class="panel-subtitle">EvidenceRefs / ArtifactRefs</div>
+                </div>
+                <span class="badge artifact">6 项</span>
+              </div>
+              <div class="panel-body evidence-list">
+                <div class="evidence-item">
+                  <span class="item-icon"><i data-lucide="file-text"></i></span>
+                  <div>
+                    <div class="item-title">支付超时日志片段</div>
+                    <div class="item-subtitle">S3: logs/pay-timeout-0610.jsonl</div>
+                  </div>
+                  <span class="badge success">可信</span>
+                </div>
+                <div class="evidence-item">
+                  <span class="item-icon"><i data-lucide="database"></i></span>
+                  <div>
+                    <div class="item-title">慢查询分析</div>
+                    <div class="item-subtitle">附 EXPLAIN 与索引命中率</div>
+                  </div>
+                  <span class="badge warning">待复核</span>
+                </div>
+                <div class="evidence-item">
+                  <span class="item-icon"><i data-lucide="scroll-text"></i></span>
+                  <div>
+                    <div class="item-title">回归测试报告</div>
+                    <div class="item-subtitle">42/45 通过，3 项待压测</div>
+                  </div>
+                  <span class="badge task">更新中</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <div class="panel-title"><i data-lucide="clipboard-check"></i>协调员汇报</div>
+                  <div class="panel-subtitle">可审计报告草稿</div>
+                </div>
+                <span class="badge neutral">v3</span>
+              </div>
+              <div class="panel-body">
+                <div class="report-text">
+                  根因倾向于连接池耗尽叠加重试风暴。当前修复建议为限流配置、连接池上限调整和失败重试降级。
+                  未确认项：峰值压测证据和客户侧灰度窗口。
+                </div>
+                <div class="ledger-list" style="margin-top: 12px">
+                  <div class="ledger-item">
+                    <span class="item-icon" style="background: #dbeafe; color: var(--task)"><i data-lucide="coins"></i></span>
+                    <div>
+                      <div class="item-title">route / probe</div>
+                      <div class="item-subtitle">协调员与开发员工</div>
+                    </div>
+                    <span class="small-number">18.4k</span>
+                  </div>
+                  <div class="ledger-item">
+                    <span class="item-icon" style="background: #fef3c7; color: var(--warning)"><i data-lucide="timer"></i></span>
+                    <div>
+                      <div class="item-title">execute / review</div>
+                      <div class="item-subtitle">测试验证与人工确认</div>
+                    </div>
+                    <span class="small-number">45.4k</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script>
+      window.addEventListener("load", function () {
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
+      });
+    </script>
+  </body>
+</html>
