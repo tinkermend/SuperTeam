@@ -215,7 +215,7 @@ INSERT INTO project_config_revisions (
     $5::text,
     $6::uuid,
     $7::uuid
-) RETURNING id, tenant_id, project_id, revision_number, config_snapshot, change_summary, created_by_user_id, created_event_id, created_at
+) RETURNING id, tenant_id, project_id, revision_number, config_snapshot, change_summary, created_by_user_id, created_event_id, created_at, changed_sections, previous_revision_id, policy_fingerprint, diff_summary
 `
 
 type CreateProjectConfigRevisionParams struct {
@@ -249,6 +249,10 @@ func (q *Queries) CreateProjectConfigRevision(ctx context.Context, arg CreatePro
 		&i.CreatedByUserID,
 		&i.CreatedEventID,
 		&i.CreatedAt,
+		&i.ChangedSections,
+		&i.PreviousRevisionID,
+		&i.PolicyFingerprint,
+		&i.DiffSummary,
 	)
 	return i, err
 }
@@ -969,7 +973,7 @@ func (q *Queries) FinishProjectCoordinationJob(ctx context.Context, arg FinishPr
 }
 
 const GetLatestProjectConfigRevision = `-- name: GetLatestProjectConfigRevision :one
-SELECT id, tenant_id, project_id, revision_number, config_snapshot, change_summary, created_by_user_id, created_event_id, created_at FROM project_config_revisions
+SELECT id, tenant_id, project_id, revision_number, config_snapshot, change_summary, created_by_user_id, created_event_id, created_at, changed_sections, previous_revision_id, policy_fingerprint, diff_summary FROM project_config_revisions
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
 ORDER BY revision_number DESC
@@ -994,6 +998,10 @@ func (q *Queries) GetLatestProjectConfigRevision(ctx context.Context, arg GetLat
 		&i.CreatedByUserID,
 		&i.CreatedEventID,
 		&i.CreatedAt,
+		&i.ChangedSections,
+		&i.PreviousRevisionID,
+		&i.PolicyFingerprint,
+		&i.DiffSummary,
 	)
 	return i, err
 }

@@ -69,6 +69,32 @@ type ApprovalRequest struct {
 	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
 }
 
+// 工件保留锁表，记录归档、审计和人工决策产生的工件保留要求
+type ArtifactRetentionHold struct {
+	// 工件保留锁ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 被保留的工件ID
+	ArtifactID uuid.UUID `json:"artifact_id"`
+	// 保留锁类型，由应用层注册和校验
+	HoldType string `json:"hold_type"`
+	// 触发保留锁的资源类型
+	ResourceType string `json:"resource_type"`
+	// 触发保留锁的资源ID
+	ResourceID uuid.UUID `json:"resource_id"`
+	// 保留原因
+	Reason pgtype.Text `json:"reason"`
+	// 保留锁状态，例如 active、released
+	Status string `json:"status"`
+	// 创建该保留锁时产生的项目事件ID
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// 保留锁创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 保留锁释放时间
+	ReleasedAt pgtype.Timestamptz `json:"released_at"`
+}
+
 // 审计事件表
 type AuditEvent struct {
 	// 审计事件主键 UUID
@@ -365,6 +391,134 @@ type Project struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 项目验收记录表，保存人类验收结论、证据引用和未解决风险
+type ProjectAcceptanceRecord struct {
+	// 项目验收记录ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属项目ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 做出验收结论的人类用户ID
+	AcceptedByUserID uuid.UUID `json:"accepted_by_user_id"`
+	// 验收状态，由应用层注册和校验
+	Status string `json:"status"`
+	// 验收结论
+	Conclusion string `json:"conclusion"`
+	// 验收摘要
+	Summary pgtype.Text `json:"summary"`
+	// 验收使用的证据引用ID数组
+	EvidenceRefIds []byte `json:"evidence_ref_ids"`
+	// 验收使用的报告引用ID数组
+	ReportRefIds []byte `json:"report_ref_ids"`
+	// 验收时仍未解决的风险数组
+	UnresolvedRisks []byte `json:"unresolved_risks"`
+	// 创建该验收记录时产生的项目事件ID
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// 验收记录创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// 项目归档快照表，保存项目证据、报告和工件归档结果
+type ProjectArchiveSnapshot struct {
+	// 项目归档快照ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属项目ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 归档快照类型，由应用层注册和校验
+	SnapshotType string `json:"snapshot_type"`
+	// 归档快照状态，由应用层注册和校验
+	Status string `json:"status"`
+	// 归档快照对象存储引用或外部对象引用
+	ObjectRef string `json:"object_ref"`
+	// 归档摘要
+	Summary pgtype.Text `json:"summary"`
+	// 归档包含对象数量统计
+	IncludedCounts []byte `json:"included_counts"`
+	// 归档时被保留锁覆盖的工件ID数组
+	RetainedArtifactIds []byte `json:"retained_artifact_ids"`
+	// 创建归档保留锁时产生的项目事件ID
+	RetentionLockEventID uuid.NullUUID `json:"retention_lock_event_id"`
+	// 创建归档快照的人类用户ID
+	CreatedByUserID uuid.NullUUID `json:"created_by_user_id"`
+	// 创建该归档快照时产生的项目事件ID
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// 归档快照创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// 项目工件引用表，保存项目内报告、附件、日志和执行产物的对象引用
+type ProjectArtifactRef struct {
+	// 项目工件引用ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属项目ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 关联项目任务ID，可为空表示项目级工件
+	ProjectTaskID uuid.NullUUID `json:"project_task_id"`
+	// 平台工件ID，可为空表示外部对象或尚未入库的对象
+	ArtifactID uuid.NullUUID `json:"artifact_id"`
+	// 工件类型，由应用层注册和校验
+	ArtifactType string `json:"artifact_type"`
+	// 工件标题快照
+	Title string `json:"title"`
+	// 对象存储引用或外部对象引用
+	ObjectRef string `json:"object_ref"`
+	// 工件内容类型
+	ContentType pgtype.Text `json:"content_type"`
+	// 工件大小字节数
+	SizeBytes pgtype.Int8 `json:"size_bytes"`
+	// 工件校验和
+	Checksum pgtype.Text `json:"checksum"`
+	// 保留状态，例如 unheld、held、released
+	RetentionStatus string `json:"retention_status"`
+	// 当前关联的保留锁ID
+	RetentionHoldID uuid.NullUUID `json:"retention_hold_id"`
+	// 工件扩展元数据
+	Metadata []byte `json:"metadata"`
+	// 创建该工件引用时产生的项目事件ID
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// 工件引用创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// 项目预算流水表，记录协调、执行和外部能力调用的预算估算与实际消耗
+type ProjectBudgetLedger struct {
+	// 项目预算流水ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属项目ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 关联协调作业ID
+	CoordinationJobID uuid.NullUUID `json:"coordination_job_id"`
+	// 关联项目任务ID
+	ProjectTaskID uuid.NullUUID `json:"project_task_id"`
+	// 关联数字员工ID
+	DigitalEmployeeID uuid.NullUUID `json:"digital_employee_id"`
+	// 成本类型，由应用层注册和校验
+	CostType string `json:"cost_type"`
+	// 预估 Token 数
+	EstimatedTokens pgtype.Int8 `json:"estimated_tokens"`
+	// 实际 Token 数
+	ActualTokens pgtype.Int8 `json:"actual_tokens"`
+	// 预估费用
+	EstimatedCost pgtype.Numeric `json:"estimated_cost"`
+	// 实际费用
+	ActualCost pgtype.Numeric `json:"actual_cost"`
+	// 预算流水来源，例如 coordinator、runtime、provider、capability
+	Source string `json:"source"`
+	// 记录该预算流水的原因
+	Reason pgtype.Text `json:"reason"`
+	// 创建该预算流水时产生的项目事件ID
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// 预算流水创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 // 项目配置与策略变更历史
 type ProjectConfigRevision struct {
 	// 项目配置修订ID
@@ -385,6 +539,14 @@ type ProjectConfigRevision struct {
 	CreatedEventID uuid.NullUUID `json:"created_event_id"`
 	// 配置修订创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 配置修订涉及的配置分区数组
+	ChangedSections []byte `json:"changed_sections"`
+	// 上一版项目配置修订ID
+	PreviousRevisionID uuid.NullUUID `json:"previous_revision_id"`
+	// 配置策略指纹，用于识别策略内容是否变化
+	PolicyFingerprint pgtype.Text `json:"policy_fingerprint"`
+	// 配置变更差异摘要
+	DiffSummary []byte `json:"diff_summary"`
 }
 
 // 项目协调作业记录，追踪一次 Workflow 协调决策的输入、状态和输出事件
@@ -515,6 +677,46 @@ type ProjectEvent struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// 项目证据引用表，保存任务、路由和执行摘要产出的可审计证据
+type ProjectEvidenceRef struct {
+	// 项目证据引用ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属项目ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 关联项目任务ID，可为空表示项目级证据
+	ProjectTaskID uuid.NullUUID `json:"project_task_id"`
+	// 关联路由决策ID
+	RouteDecisionID uuid.NullUUID `json:"route_decision_id"`
+	// 关联执行摘要ID
+	ExecutionSummaryID uuid.NullUUID `json:"execution_summary_id"`
+	// 证据类型，由应用层注册和校验
+	EvidenceType string `json:"evidence_type"`
+	// 证据标题快照
+	Title string `json:"title"`
+	// 证据摘要
+	Summary pgtype.Text `json:"summary"`
+	// 证据来源类型，例如 artifact、report、manual、external
+	SourceType string `json:"source_type"`
+	// 证据来源引用，保存外部ID、对象地址或结构化引用摘要
+	SourceRef pgtype.Text `json:"source_ref"`
+	// 关联项目工件引用ID
+	ArtifactRefID uuid.NullUUID `json:"artifact_ref_id"`
+	// 提交者类型，例如 human_user、digital_employee、system
+	SubmittedByType string `json:"submitted_by_type"`
+	// 提交者ID，可为空表示系统提交
+	SubmittedByID uuid.NullUUID `json:"submitted_by_id"`
+	// 证据核验状态，由应用层注册和校验
+	VerificationStatus string `json:"verification_status"`
+	// 证据扩展元数据
+	Metadata []byte `json:"metadata"`
+	// 创建该证据引用时产生的项目事件ID
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// 证据引用创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 // 项目任务执行摘要表，保存数字员工回写的结论、证据、工件和不确定性
 type ProjectExecutionSummary struct {
 	// 执行摘要ID
@@ -575,6 +777,34 @@ type ProjectMember struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 项目成员更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 项目报告引用表，保存阶段汇报、验收报告和归档报告的对象引用
+type ProjectReportRef struct {
+	// 项目报告引用ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属项目ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 报告类型，由应用层注册和校验
+	ReportType string `json:"report_type"`
+	// 报告标题快照
+	Title string `json:"title"`
+	// 报告摘要
+	Summary pgtype.Text `json:"summary"`
+	// 报告对象存储引用或外部对象引用
+	ObjectRef string `json:"object_ref"`
+	// 报告格式，例如 markdown、pdf、html、json
+	Format string `json:"format"`
+	// 生成者类型，例如 human_user、digital_employee、system
+	GeneratedByType string `json:"generated_by_type"`
+	// 生成者ID，可为空表示系统生成
+	GeneratedByID uuid.NullUUID `json:"generated_by_id"`
+	// 创建该报告引用时产生的项目事件ID
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// 报告引用创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // 项目需求路由决策表，保存虚拟协调线程选择执行员工和输出契约的结构化结论

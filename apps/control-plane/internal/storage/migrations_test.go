@@ -478,6 +478,48 @@ func TestRuntimeEnrollmentRequiresBootstrapKey(t *testing.T) {
 	}
 }
 
+func TestProjectManagementV2GovernanceArchiveMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/015_project_management_v2_governance_archive.sql")
+	if err != nil {
+		t.Fatalf("read v2 migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"CREATE TABLE project_evidence_refs",
+		"CREATE TABLE project_artifact_refs",
+		"CREATE TABLE project_report_refs",
+		"CREATE TABLE project_budget_ledger",
+		"CREATE TABLE project_acceptance_records",
+		"CREATE TABLE project_archive_snapshots",
+		"CREATE TABLE artifact_retention_holds",
+		"ALTER TABLE project_config_revisions",
+		"tenant_id UUID NOT NULL",
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"CREATE INDEX idx_project_evidence_refs_tenant_project_created",
+		"CREATE INDEX idx_project_budget_ledger_tenant_project_created",
+		"CREATE INDEX idx_project_archive_snapshots_tenant_project_created",
+		"CREATE INDEX idx_artifact_retention_holds_tenant_artifact_active",
+		"COMMENT ON TABLE project_evidence_refs IS",
+		"COMMENT ON COLUMN project_archive_snapshots.retained_artifact_ids IS",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected V2 migration to contain %q", expected)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"CREATE TYPE project_evidence_status",
+		"CREATE TYPE project_acceptance_status",
+		"BIGSERIAL PRIMARY KEY",
+		"ON DELETE CASCADE",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("V2 migration must not contain %q", forbidden)
+		}
+	}
+}
+
 func createTableBlock(t *testing.T, sql string, table string) string {
 	t.Helper()
 	startMarker := "CREATE TABLE " + table + " ("
