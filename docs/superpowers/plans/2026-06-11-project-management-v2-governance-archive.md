@@ -2201,10 +2201,14 @@ git commit -m "feat: show project config revision history"
 
 **Files:**
 - Modify: `apps/control-plane/internal/audit/service.go`
+- Modify: `apps/control-plane/internal/audit/service_test.go`
 - Create: `apps/control-plane/internal/audit/handler.go`
 - Modify: `apps/control-plane/internal/api/server.go`
+- Modify: `apps/control-plane/internal/api/project_routes_test.go`
 - Modify: `apps/web/src/routes/_authenticated/audit/index.tsx`
 - Modify: `apps/web/src/routes/_authenticated/costs/index.tsx`
+
+Task 10 允许补充 audit service 和 API route 测试文件，用于验证 project_id/resource query 只使用当前 console tenant，并避免审计/成本入口变成未测试占位。
 
 - [ ] **Step 1: 写 audit project query 失败测试**
 
