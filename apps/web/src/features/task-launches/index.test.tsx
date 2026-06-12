@@ -57,6 +57,7 @@ vi.mock("@/components/ui/select", async () => {
       </SelectContext>
     ),
     SelectContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    SelectGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
     SelectItem: ({ children, value }: { children: ReactNode; value: string }) => {
       const { onValueChange, value: selectedValue } = React.useContext(SelectContext);
       return (
@@ -69,6 +70,14 @@ vi.mock("@/components/ui/select", async () => {
         </button>
       );
     },
+    SelectLabel: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    SelectScrollDownButton: ({ children }: { children?: ReactNode }) => (
+      <button type="button">{children}</button>
+    ),
+    SelectScrollUpButton: ({ children }: { children?: ReactNode }) => (
+      <button type="button">{children}</button>
+    ),
+    SelectSeparator: () => <hr />,
     SelectTrigger: ({
       "aria-label": ariaLabel,
       children,
