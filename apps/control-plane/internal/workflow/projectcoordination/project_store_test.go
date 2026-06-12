@@ -474,8 +474,14 @@ func TestProjectStoreDispatchProjectTaskRejectsBoundRunMissingRuntimeTask(t *tes
 	if !errors.Is(err, project.ErrInvalidProject) {
 		t.Fatalf("expected invalid project error, got %v", err)
 	}
-	if len(starter.requests) != 0 || len(repo.bindRequests) != 0 || len(repo.events) != 0 {
-		t.Fatalf("expected no side effects, starts=%d binds=%d events=%d", len(starter.requests), len(repo.bindRequests), len(repo.events))
+	if !dispatchFailureRecorded(err) {
+		t.Fatalf("expected recorded dispatch failure, got %v", err)
+	}
+	if len(starter.requests) != 0 || len(repo.bindRequests) != 0 {
+		t.Fatalf("expected no run start or bind, starts=%d binds=%d", len(starter.requests), len(repo.bindRequests))
+	}
+	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventTaskDispatchFailed {
+		t.Fatalf("expected dispatch failed event, got %#v", repo.events)
 	}
 }
 

@@ -1,6 +1,11 @@
 package projectcoordination
 
-import "github.com/google/uuid"
+import (
+	"errors"
+
+	"github.com/google/uuid"
+	"go.temporal.io/sdk/temporal"
+)
 
 const (
 	SignalDemandSubmitted           = "DemandSubmitted"
@@ -158,6 +163,37 @@ func (e *ProjectTaskRunStartError) Unwrap() error {
 		return nil
 	}
 	return e.Err
+}
+
+type ProjectTaskDispatchError struct {
+	FailureRecorded bool
+	Err             error
+}
+
+func (e *ProjectTaskDispatchError) Error() string {
+	if e == nil || e.Err == nil {
+		return "project task dispatch failed"
+	}
+	return e.Err.Error()
+}
+
+func (e *ProjectTaskDispatchError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func dispatchFailureRecorded(err error) bool {
+	for current := err; current != nil; current = errors.Unwrap(current) {
+		if dispatchErr, ok := current.(*ProjectTaskDispatchError); ok {
+			return dispatchErr.FailureRecorded
+		}
+		if appErr, ok := current.(*temporal.ApplicationError); ok && appErr.Type() == "ProjectTaskDispatchError" {
+			return true
+		}
+	}
+	return false
 }
 
 type FinishCoordinationJobInput struct {

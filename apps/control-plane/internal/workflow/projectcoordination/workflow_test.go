@@ -192,14 +192,109 @@ func TestProjectCoordinatorDispatchesPendingTasksAfterHumanApproval(t *testing.T
 	}, store.calls)
 }
 
+func TestProjectCoordinatorReturnsUnrecordedDispatchFailure(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	executorID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: uuid.New(),
+			Demand: DemandSnapshot{
+				ID:      uuid.New(),
+				Title:   "验证 Runtime",
+				Content: "检查心跳",
+			},
+			DigitalEmployeePool: []ProjectMemberSnapshot{
+				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
+			},
+		},
+		jobID:         uuid.New(),
+		routeID:       uuid.New(),
+		routeEventID:  uuid.New(),
+		taskID:        uuid.New(),
+		dispatchEvent: uuid.New(),
+		dispatchErr:   errors.New("append dispatch failure event failed"),
+	}
+	activities := NewActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:         store.snapshot.ProjectID,
+			DemandID:          store.snapshot.Demand.ID,
+			SubmittedByUserID: uuid.New(),
+			CreatedEventID:    uuid.New(),
+		})
+	}, time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  store.snapshot.ProjectID,
+		WorkflowID: "project-coordinator:" + store.snapshot.ProjectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.Error(t, env.GetWorkflowError())
+	require.NotContains(t, store.calls, "FinishCoordinationJob")
+}
+
+func TestProjectCoordinatorContinuesAfterRecordedDispatchFailure(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	executorID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: uuid.New(),
+			Demand: DemandSnapshot{
+				ID:      uuid.New(),
+				Title:   "验证 Runtime",
+				Content: "检查心跳",
+			},
+			DigitalEmployeePool: []ProjectMemberSnapshot{
+				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
+			},
+		},
+		jobID:         uuid.New(),
+		routeID:       uuid.New(),
+		routeEventID:  uuid.New(),
+		taskID:        uuid.New(),
+		dispatchEvent: uuid.New(),
+		dispatchErr:   &ProjectTaskDispatchError{FailureRecorded: true, Err: project.ErrInvalidProject},
+	}
+	activities := NewActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:         store.snapshot.ProjectID,
+			DemandID:          store.snapshot.Demand.ID,
+			SubmittedByUserID: uuid.New(),
+			CreatedEventID:    uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  store.snapshot.ProjectID,
+		WorkflowID: "project-coordinator:" + store.snapshot.ProjectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Contains(t, store.calls, "FinishCoordinationJob")
+}
+
 func TestActivitiesDispatchProjectTaskWrapsTerminalErrorAsNonRetryable(t *testing.T) {
-	store := &recordingActivityStore{dispatchErr: project.ErrInvalidProject}
+	store := &recordingActivityStore{dispatchErr: &ProjectTaskDispatchError{FailureRecorded: true, Err: project.ErrInvalidProject}}
 	activities := NewActivities(store)
 	err := activities.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: uuid.New(), ProjectID: uuid.New(), TaskID: uuid.New()})
 	var appErr *temporal.ApplicationError
 	if !errors.As(err, &appErr) || !appErr.NonRetryable() {
 		t.Fatalf("expected non-retryable application error, got %#v", err)
 	}
+	require.Equal(t, "ProjectTaskDispatchTerminal", appErr.Type())
+	require.True(t, errors.Is(err, project.ErrInvalidProject) || errors.Is(appErr.Unwrap(), project.ErrInvalidProject))
 }
 
 func TestActivitiesDispatchProjectTaskKeepsTransientErrorRetryable(t *testing.T) {

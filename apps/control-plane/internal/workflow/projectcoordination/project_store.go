@@ -268,11 +268,11 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		return err
 	}
 	if task.ProjectID != input.ProjectID {
-		return project.ErrProjectNotFound
+		return s.recordDispatchFailure(ctx, input.TenantID, task.ProjectID, task, project.ErrProjectNotFound)
 	}
 	if task.DigitalEmployeeRunID != nil {
 		if task.RuntimeTaskID == nil {
-			return project.ErrInvalidProject
+			return s.recordDispatchFailure(ctx, input.TenantID, task.ProjectID, task, project.ErrInvalidProject)
 		}
 		exists, err := s.repository.ProjectTaskEventExists(ctx, input.TenantID, input.ProjectID, project.ProjectEventTaskDispatched, input.TaskID.String())
 		if err != nil {
@@ -289,7 +289,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		return err
 	}
 	if !projectTaskDispatchAllowed(task.Status) || task.AssignedDigitalEmployeeID == nil || task.DemandID == nil {
-		return project.ErrInvalidProject
+		return s.recordDispatchFailure(ctx, input.TenantID, task.ProjectID, task, project.ErrInvalidProject)
 	}
 	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
 	if err != nil {
@@ -318,8 +318,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		},
 	})
 	if err != nil {
-		_, _ = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskDispatchFailed, input.TaskID.String(), "项目任务分派失败", dispatchFailurePayload(task, err, dispatchErrorRetryable(err))))
-		return err
+		return s.recordDispatchFailure(ctx, input.TenantID, input.ProjectID, task, err)
 	}
 	if _, err := s.repository.BindProjectTaskRun(ctx, project.BindProjectTaskRunRequest{
 		TenantID:             input.TenantID,
@@ -328,7 +327,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		RuntimeTaskID:        run.RuntimeTaskID,
 		CurrentStatuses:      []string{"planned", "pending"},
 	}); err != nil {
-		return err
+		return s.recordDispatchFailure(ctx, input.TenantID, input.ProjectID, task, err)
 	}
 	_, err = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskDispatched, input.TaskID.String(), "项目任务已分派", map[string]any{
 		"project_task_id":         input.TaskID.String(),
@@ -341,6 +340,13 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		"dispatch_user_id":        projectRecord.HumanOwnerUserID.String(),
 	}))
 	return err
+}
+
+func (s *ProjectStore) recordDispatchFailure(ctx context.Context, tenantID, projectID uuid.UUID, task project.ProjectTask, dispatchErr error) error {
+	if _, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(tenantID, projectID, project.ProjectEventTaskDispatchFailed, task.ID.String(), "项目任务分派失败", dispatchFailurePayload(task, dispatchErr, dispatchErrorRetryable(dispatchErr)))); err != nil {
+		return err
+	}
+	return &ProjectTaskDispatchError{FailureRecorded: true, Err: dispatchErr}
 }
 
 func projectTaskDispatchAllowed(status string) bool {
