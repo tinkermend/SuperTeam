@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -15,6 +16,7 @@ import (
 	"github.com/superteam/control-plane/internal/api"
 	"github.com/superteam/control-plane/internal/artifact"
 	"github.com/superteam/control-plane/internal/config"
+	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/project"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/storage"
@@ -189,6 +191,58 @@ func TestNewContainerWithConfigWiresTemporalOnlyWhenEnabled(t *testing.T) {
 		t.Fatalf("expected audit handler to be wired")
 	}
 	enabled.TemporalClientClose()
+}
+
+func TestRunStartRetryableClassifiesRunStartFailures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		err       error
+		retryable bool
+	}{
+		{
+			name:      "invalid input terminal",
+			err:       fmt.Errorf("%w: objective is required", employee.ErrInvalidInput),
+			retryable: false,
+		},
+		{
+			name:      "effective config required terminal",
+			err:       fmt.Errorf("%w: approved effective config is required", employee.ErrEffectiveConfigRequired),
+			retryable: false,
+		},
+		{
+			name:      "active run conflict retryable",
+			err:       fmt.Errorf("%w: active digital employee run exists", employee.ErrConflict),
+			retryable: true,
+		},
+		{
+			name:      "idempotency fingerprint mismatch terminal",
+			err:       fmt.Errorf("%w: idempotency fingerprint mismatch", employee.ErrConflict),
+			retryable: false,
+		},
+		{
+			name:      "runtime unavailable retryable",
+			err:       fmt.Errorf("%w: runtime node is not connected", employee.ErrRuntimeUnavailable),
+			retryable: true,
+		},
+		{
+			name:      "provider unavailable retryable",
+			err:       fmt.Errorf("%w: provider capability must be healthy", employee.ErrProviderUnavailable),
+			retryable: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := runStartRetryable(tt.err); got != tt.retryable {
+				t.Fatalf("runStartRetryable() = %v, want %v", got, tt.retryable)
+			}
+		})
+	}
 }
 
 func TestProjectArtifactLockerReturnsRetentionEventID(t *testing.T) {

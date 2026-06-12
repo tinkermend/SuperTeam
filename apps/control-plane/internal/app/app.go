@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api"
@@ -128,7 +129,20 @@ func (a projectTaskRunStarterAdapter) StartProjectTaskRun(ctx context.Context, r
 }
 
 func runStartRetryable(err error) bool {
-	return !errors.Is(err, employee.ErrInvalidInput)
+	switch {
+	case errors.Is(err, employee.ErrInvalidInput):
+		return false
+	case errors.Is(err, employee.ErrEffectiveConfigRequired):
+		return false
+	case isRunStartIdempotencyFingerprintMismatch(err):
+		return false
+	default:
+		return true
+	}
+}
+
+func isRunStartIdempotencyFingerprintMismatch(err error) bool {
+	return errors.Is(err, employee.ErrConflict) && strings.Contains(err.Error(), "idempotency fingerprint mismatch")
 }
 
 type projectArtifactLocker struct {
