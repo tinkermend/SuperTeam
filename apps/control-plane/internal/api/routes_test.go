@@ -1885,6 +1885,17 @@ func (r *routeAuthRepo) UpdateUserPassword(ctx context.Context, userID uuid.UUID
 	return user, nil
 }
 
+func (r *routeAuthRepo) UpdateUserProfile(ctx context.Context, userID uuid.UUID, input auth.UpdateUserProfileInput) (*auth.User, error) {
+	user, ok := r.usersByID[userID]
+	if !ok {
+		return nil, auth.ErrUnauthorized
+	}
+	user.DisplayName = input.DisplayName
+	user.Email = input.Email
+	user.Avatar = input.Avatar
+	return user, nil
+}
+
 func (r *routeAuthRepo) CreateRuntimeToken(ctx context.Context, nodeID, tokenHash string, expiresAt time.Time) error {
 	return nil
 }
@@ -1943,15 +1954,25 @@ func (r *routeAuthRepo) CreateLoginLog(ctx context.Context, params auth.CreateLo
 }
 
 func (r *routeAuthRepo) ListLoginLogs(ctx context.Context, filter auth.ListLoginLogsFilter) ([]auth.LoginLog, error) {
+	logs := r.loginLogs
+	if filter.UserID != nil {
+		filtered := make([]auth.LoginLog, 0, len(logs))
+		for _, log := range logs {
+			if log.UserID != nil && *log.UserID == *filter.UserID {
+				filtered = append(filtered, log)
+			}
+		}
+		logs = filtered
+	}
 	start := int(filter.Offset)
-	if start >= len(r.loginLogs) {
+	if start >= len(logs) {
 		return []auth.LoginLog{}, nil
 	}
 	end := start + int(filter.Limit)
-	if end > len(r.loginLogs) {
-		end = len(r.loginLogs)
+	if end > len(logs) {
+		end = len(logs)
 	}
-	return append([]auth.LoginLog{}, r.loginLogs[start:end]...), nil
+	return append([]auth.LoginLog{}, logs[start:end]...), nil
 }
 
 func (r *routeAuthRepo) CreateOperationLog(ctx context.Context, params auth.CreateOperationLogParams) error {

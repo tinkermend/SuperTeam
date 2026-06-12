@@ -3,11 +3,14 @@ import {
   ApiRequestError,
   createUser,
   getCurrentUser,
+  listCurrentUserLoginLogs,
   listLoginLogs,
   listUsers,
   login,
   logout,
   resetUserPassword,
+  updateCurrentUserPassword,
+  updateCurrentUserProfile,
   updateUserStatus,
 } from "./auth";
 
@@ -15,6 +18,15 @@ const userId = "22222222-2222-4222-8222-222222222222";
 const operatorUserId = "22222222-2222-4222-8222-222222222223";
 const loginLogId = "44444444-4444-4444-8444-444444444444";
 const sessionId = "33333333-3333-4333-8333-333333333333";
+
+function jsonResponse(body: unknown) {
+  return new Response(JSON.stringify(body), {
+    headers: {
+      "content-type": "application/json",
+    },
+    status: 200,
+  });
+}
 
 describe("auth api client", () => {
   it("posts login credentials with cookie credentials and parses the user", async () => {
@@ -183,6 +195,45 @@ describe("auth api client", () => {
     });
   });
 
+  it("loads current user login logs with pagination and cookie credentials", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        items: [
+          {
+            id: loginLogId,
+            event_type: "login_succeeded",
+            user_id: operatorUserId,
+            username: "operator",
+            session_id: null,
+            client_ip: "127.0.0.1",
+            user_agent: "Chrome",
+            result: "succeeded",
+            created_at: "2026-06-12T08:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    const response = await listCurrentUserLoginLogs({
+      baseUrl: "http://control-plane.local",
+      fetcher,
+      limit: 5,
+      offset: 10,
+    });
+
+    expect(response.items).toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/auth/account/login-logs?limit=5&offset=10",
+      {
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+        },
+        method: "GET",
+      },
+    );
+  });
+
   it("loads users with filters and cookie credentials", async () => {
     const fetcher = vi.fn(async () =>
       new Response(
@@ -316,6 +367,75 @@ describe("auth api client", () => {
     });
     expect(fetcher).toHaveBeenNthCalledWith(3, `http://control-plane.local/api/auth/users/${operatorUserId}/reset-password`, {
       body: JSON.stringify({ password: "new-secret" }),
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+  });
+
+  it("updates current user profile and password with cookie credentials", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        user: {
+          id: operatorUserId,
+          username: "operator",
+          display_name: "值班负责人",
+          email: "operator@example.com",
+          status: "active",
+          avatar: {
+            provider: "dicebear",
+            style: "adventurer",
+            seed: "operator-v2",
+          },
+        },
+      }),
+    );
+
+    await updateCurrentUserProfile(
+      { baseUrl: "http://control-plane.local", fetcher },
+      {
+        avatar: {
+          provider: "dicebear",
+          seed: "operator-v2",
+          style: "adventurer",
+        },
+        display_name: "值班负责人",
+        email: "operator@example.com",
+      },
+    );
+    await updateCurrentUserPassword(
+      { baseUrl: "http://control-plane.local", fetcher },
+      {
+        current_password: "old-secret",
+        password: "new-secret",
+      },
+    );
+
+    expect(fetcher).toHaveBeenNthCalledWith(1, "http://control-plane.local/api/auth/account/profile", {
+      body: JSON.stringify({
+        avatar: {
+          provider: "dicebear",
+          seed: "operator-v2",
+          style: "adventurer",
+        },
+        display_name: "值班负责人",
+        email: "operator@example.com",
+      }),
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      method: "PATCH",
+    });
+    expect(fetcher).toHaveBeenNthCalledWith(2, "http://control-plane.local/api/auth/account/password", {
+      body: JSON.stringify({
+        current_password: "old-secret",
+        password: "new-secret",
+      }),
       credentials: "include",
       headers: {
         accept: "application/json",

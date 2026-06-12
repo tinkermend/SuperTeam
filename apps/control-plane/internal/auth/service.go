@@ -19,6 +19,7 @@ type Repository interface {
 	GetUserByID(ctx context.Context, id uuid.UUID) (*User, error)
 	UpdateUserStatus(ctx context.Context, userID uuid.UUID, status string) (*User, error)
 	UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) (*User, error)
+	UpdateUserProfile(ctx context.Context, userID uuid.UUID, input UpdateUserProfileInput) (*User, error)
 	CreateRuntimeToken(ctx context.Context, nodeID, tokenHash string, expiresAt time.Time) error
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (*RuntimeToken, error)
 	CreateSession(ctx context.Context, session *Session, tokenHash string) error
@@ -126,6 +127,42 @@ func (s *Service) ResetManagedUserPassword(ctx context.Context, actor Actor, use
 	}
 	_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserResetPassword, OperationResultSucceeded)
 	return user, nil
+}
+
+func (s *Service) UpdateCurrentUserProfile(ctx context.Context, actor Actor, input UpdateUserProfileInput) (*User, error) {
+	input.DisplayName = strings.TrimSpace(input.DisplayName)
+	input.Email = strings.TrimSpace(input.Email)
+	input.Avatar = normalizeUserAvatarConfig(actor.Username, input.Avatar)
+	user, err := s.repo.UpdateUserProfile(ctx, actor.UserID, input)
+	if err != nil {
+		_ = s.recordUserOperation(ctx, actor, actor.UserID, OperationActionUserUpdateOwnProfile, OperationResultFailed)
+		return nil, err
+	}
+	_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserUpdateOwnProfile, OperationResultSucceeded)
+	return user, nil
+}
+
+func (s *Service) ChangeCurrentUserPassword(ctx context.Context, actor Actor, currentPassword, newPassword string) (*User, error) {
+	user, err := s.repo.GetUserByID(ctx, actor.UserID)
+	if err != nil {
+		_ = s.recordUserOperation(ctx, actor, actor.UserID, OperationActionUserChangeOwnPassword, OperationResultFailed)
+		return nil, err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(currentPassword)); err != nil {
+		_ = s.recordUserOperation(ctx, actor, actor.UserID, OperationActionUserChangeOwnPassword, OperationResultFailed)
+		return nil, ErrInvalidCredentials
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := s.repo.UpdateUserPassword(ctx, actor.UserID, string(hash))
+	if err != nil {
+		_ = s.recordUserOperation(ctx, actor, actor.UserID, OperationActionUserChangeOwnPassword, OperationResultFailed)
+		return nil, err
+	}
+	_ = s.recordUserOperation(ctx, actor, updated.ID, OperationActionUserChangeOwnPassword, OperationResultSucceeded)
+	return updated, nil
 }
 
 func (s *Service) recordUserOperation(ctx context.Context, actor Actor, userID uuid.UUID, action, result string) error {
@@ -280,6 +317,17 @@ func (s *Service) ListLoginLogs(ctx context.Context, filter ListLoginLogsFilter)
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
+	return s.repo.ListLoginLogs(ctx, filter)
+}
+
+func (s *Service) ListCurrentUserLoginLogs(ctx context.Context, actor Actor, filter ListLoginLogsFilter) ([]LoginLog, error) {
+	if filter.Limit <= 0 || filter.Limit > 100 {
+		filter.Limit = 20
+	}
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	filter.UserID = &actor.UserID
 	return s.repo.ListLoginLogs(ctx, filter)
 }
 

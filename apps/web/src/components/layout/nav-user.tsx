@@ -23,8 +23,8 @@ export function NavUser() {
   const { user } = useAuth();
   const { isMobile } = useSidebar();
   const [open, setOpen] = useDialogState();
-  const displayName = user?.username ?? "未登录";
-  const displayEmail = user?.status === "active" ? "active" : "disabled";
+  const displayName = user?.display_name || user?.username || "未登录";
+  const displayEmail = user?.email || user?.username || (user?.status === "active" ? "active" : "disabled");
   const fallback = displayName.slice(0, 2).toUpperCase();
 
   return (
@@ -76,7 +76,7 @@ export function NavUser() {
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
-                <Link to="/users">
+                <Link to="/settings/account">
                   <BadgeCheck />
                   账户
                 </Link>

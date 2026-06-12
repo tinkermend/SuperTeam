@@ -5,6 +5,8 @@ export { ApiRequestError };
 
 export type UserSummary = {
   avatar: UserAvatar;
+  display_name?: string;
+  email?: string;
   id: string;
   status: "active" | "disabled";
   username: string;
@@ -77,6 +79,17 @@ export type ListLoginLogsOptions = ApiClientOptions & {
   offset?: number;
 };
 
+export type UpdateCurrentUserProfileRequest = {
+  avatar?: UserAvatar;
+  display_name?: string;
+  email?: string;
+};
+
+export type ChangeCurrentUserPasswordRequest = {
+  current_password: string;
+  password: string;
+};
+
 export async function login(options: ApiClientOptions, input: LoginRequest): Promise<LoginResponse> {
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(buildApiUrl(options.baseUrl, "/api/auth/login"), {
@@ -140,6 +153,28 @@ export async function listLoginLogs(options: ListLoginLogsOptions): Promise<Logi
   return parseJson<LoginLogListResponse>(response, "auth login logs");
 }
 
+export async function listCurrentUserLoginLogs(options: ListLoginLogsOptions): Promise<LoginLogListResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.offset !== undefined) {
+    params.set("offset", String(options.offset));
+  }
+  const query = params.toString();
+  const path = query ? `/api/auth/account/login-logs?${query}` : "/api/auth/account/login-logs";
+  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+    },
+    method: "GET",
+  });
+
+  return parseJson<LoginLogListResponse>(response, "auth current user login logs");
+}
+
 export async function listUsers(options: ListUsersOptions): Promise<UserListResponse> {
   const fetcher = options.fetcher ?? fetch;
   const params = new URLSearchParams();
@@ -182,6 +217,42 @@ export async function createUser(options: ApiClientOptions, input: CreateUserReq
   });
 
   return parseJson<UserResponse>(response, "auth create user");
+}
+
+export async function updateCurrentUserProfile(
+  options: ApiClientOptions,
+  input: UpdateCurrentUserProfileRequest,
+): Promise<UserResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/auth/account/profile"), {
+    body: JSON.stringify(input),
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    method: "PATCH",
+  });
+
+  return parseJson<UserResponse>(response, "auth current user profile");
+}
+
+export async function updateCurrentUserPassword(
+  options: ApiClientOptions,
+  input: ChangeCurrentUserPasswordRequest,
+): Promise<UserResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, "/api/auth/account/password"), {
+    body: JSON.stringify(input),
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    method: "POST",
+  });
+
+  return parseJson<UserResponse>(response, "auth current user password");
 }
 
 export async function updateUserStatus(

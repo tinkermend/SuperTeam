@@ -99,6 +99,83 @@ func (h *HTTPHandler) ListLoginLogs(w http.ResponseWriter, r *http.Request, para
 	writeJSON(w, http.StatusOK, LoginLogListResponse{Items: items})
 }
 
+func (h *HTTPHandler) ListCurrentUserLoginLogs(w http.ResponseWriter, r *http.Request, params ListCurrentUserLoginLogsParams) {
+	_, actorUser, err := h.currentSessionUser(r)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+
+	logs, err := h.service.ListCurrentUserLoginLogs(r.Context(), toActor(actorUser), ListLoginLogsFilter{
+		Limit:  valueOrDefault(params.Limit, 20),
+		Offset: valueOrDefault(params.Offset, 0),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	items := make([]LoginLogRecord, 0, len(logs))
+	for _, log := range logs {
+		items = append(items, toGeneratedLoginLogRecord(log))
+	}
+	writeJSON(w, http.StatusOK, LoginLogListResponse{Items: items})
+}
+
+func (h *HTTPHandler) UpdateCurrentUserProfile(w http.ResponseWriter, r *http.Request) {
+	_, actorUser, err := h.currentSessionUser(r)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+
+	var body UpdateCurrentUserProfileJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	input := UpdateUserProfileInput{
+		DisplayName: actorUser.DisplayName,
+		Email:       actorUser.Email,
+		Avatar:      actorUser.Avatar,
+	}
+	if body.DisplayName != nil {
+		input.DisplayName = *body.DisplayName
+	}
+	if body.Email != nil {
+		input.Email = string(*body.Email)
+	}
+	if body.Avatar != nil {
+		input.Avatar = userAvatarFromGenerated(body.Avatar)
+	}
+	user, err := h.service.UpdateCurrentUserProfile(r.Context(), toActor(actorUser), input)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, UserResponse{User: toGeneratedUserSummary(user)})
+}
+
+func (h *HTTPHandler) ChangeCurrentUserPassword(w http.ResponseWriter, r *http.Request) {
+	_, actorUser, err := h.currentSessionUser(r)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+
+	var body ChangeCurrentUserPasswordJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	user, err := h.service.ChangeCurrentUserPassword(r.Context(), toActor(actorUser), body.CurrentPassword, body.Password)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, UserResponse{User: toGeneratedUserSummary(user)})
+}
+
 func (h *HTTPHandler) ListUsers(w http.ResponseWriter, r *http.Request, params ListUsersParams) {
 	if _, _, err := h.currentSessionUser(r); err != nil {
 		h.writeAuthError(w, err)
@@ -254,10 +331,12 @@ func toGeneratedLoginLogRecord(log LoginLog) LoginLogRecord {
 
 func toGeneratedUserSummary(user *User) UserSummary {
 	return UserSummary{
-		Avatar:   toGeneratedUserAvatar(user.Avatar),
-		Id:       openapiUUID(user.ID),
-		Status:   UserSummaryStatus(user.Status),
-		Username: user.Username,
+		Avatar:      toGeneratedUserAvatar(user.Avatar),
+		DisplayName: optionalString(user.DisplayName),
+		Email:       optionalString(user.Email),
+		Id:          openapiUUID(user.ID),
+		Status:      UserSummaryStatus(user.Status),
+		Username:    user.Username,
 	}
 }
 

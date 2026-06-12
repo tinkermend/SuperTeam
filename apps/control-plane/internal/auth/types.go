@@ -10,6 +10,8 @@ import (
 type User struct {
 	ID           uuid.UUID        `db:"id"`
 	Username     string           `db:"username"`
+	DisplayName  string           `db:"display_name"`
+	Email        string           `db:"email"`
 	PasswordHash string           `db:"password_hash"`
 	Status       string           `db:"status"`
 	Avatar       UserAvatarConfig `db:"-"`
@@ -62,14 +64,16 @@ const (
 )
 
 const (
-	OperationModuleAuth              = "auth"
-	OperationResourceUser            = "auth_user"
-	OperationActionUserCreate        = "user.create"
-	OperationActionUserEnable        = "user.enable"
-	OperationActionUserDisable       = "user.disable"
-	OperationActionUserResetPassword = "user.reset_password"
-	OperationResultSucceeded         = "succeeded"
-	OperationResultFailed            = "failed"
+	OperationModuleAuth                  = "auth"
+	OperationResourceUser                = "auth_user"
+	OperationActionUserCreate            = "user.create"
+	OperationActionUserEnable            = "user.enable"
+	OperationActionUserDisable           = "user.disable"
+	OperationActionUserResetPassword     = "user.reset_password"
+	OperationActionUserUpdateOwnProfile  = "user.update_own_profile"
+	OperationActionUserChangeOwnPassword = "user.change_own_password"
+	OperationResultSucceeded             = "succeeded"
+	OperationResultFailed                = "failed"
 )
 
 // Actor 表示执行 Web 管理操作的当前登录用户。
@@ -91,6 +95,13 @@ type CreateManagedUserInput struct {
 	Username string
 	Password string
 	Avatar   UserAvatarConfig
+}
+
+// UpdateUserProfileInput 更新当前登录用户自服务资料的输入。
+type UpdateUserProfileInput struct {
+	DisplayName string
+	Email       string
+	Avatar      UserAvatarConfig
 }
 
 // LoginLog Web 控制台登录日志。
@@ -121,6 +132,7 @@ type CreateLoginLogParams struct {
 
 // ListLoginLogsFilter 登录日志列表过滤参数。
 type ListLoginLogsFilter struct {
+	UserID *uuid.UUID
 	Limit  int32
 	Offset int32
 }

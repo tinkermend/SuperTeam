@@ -164,17 +164,19 @@ func (q *Queries) CreateWebOperationLog(ctx context.Context, arg CreateWebOperat
 
 const ListWebLoginLogs = `-- name: ListWebLoginLogs :many
 SELECT id, tenant_id, event_type, user_id, username, session_id, client_ip, user_agent, result, failure_reason, details, created_at FROM web_login_logs
+WHERE $1::uuid IS NULL OR user_id = $1::uuid
 ORDER BY created_at DESC, id DESC
-LIMIT $2 OFFSET $1
+LIMIT $3 OFFSET $2
 `
 
 type ListWebLoginLogsParams struct {
-	Offset int32 `json:"offset"`
-	Limit  int32 `json:"limit"`
+	UserID uuid.NullUUID `json:"user_id"`
+	Offset int32         `json:"offset"`
+	Limit  int32         `json:"limit"`
 }
 
 func (q *Queries) ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error) {
-	rows, err := q.db.Query(ctx, ListWebLoginLogs, arg.Offset, arg.Limit)
+	rows, err := q.db.Query(ctx, ListWebLoginLogs, arg.UserID, arg.Offset, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

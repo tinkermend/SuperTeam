@@ -131,6 +131,94 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/auth/account/profile:
+    patch:
+      summary: 修改当前登录用户资料
+      operationId: updateCurrentUserProfile
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCurrentUserProfileRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/account/password:
+    post:
+      summary: 修改当前登录用户密码
+      operationId: changeCurrentUserPassword
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeCurrentUserPasswordRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/account/login-logs:
+    get:
+      summary: 查询当前登录用户登录日志
+      operationId: listCurrentUserLoginLogs
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginLogListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/auth/users:
     get:
       summary: 查询平台用户列表
@@ -349,6 +437,32 @@ components:
           format: password
           minLength: 1
 
+    UpdateCurrentUserProfileRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+          maxLength: 255
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        avatar:
+          $ref: '#/components/schemas/UserAvatar'
+
+    ChangeCurrentUserPasswordRequest:
+      type: object
+      required: [current_password, password]
+      properties:
+        current_password:
+          type: string
+          format: password
+          minLength: 1
+        password:
+          type: string
+          format: password
+          minLength: 1
+
     LoginLogRecord:
       type: object
       required: [id, event_type, username, result, created_at]
@@ -394,6 +508,12 @@ components:
           format: uuid
         username:
           type: string
+        display_name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
         status:
           type: string
           enum: [active, disabled]

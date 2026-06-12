@@ -33,6 +33,7 @@ import { Route as AuthenticatedCapabilitiesIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedAuditIndexRouteImport } from './routes/_authenticated/audit/index'
 import { Route as AuthenticatedApprovalsIndexRouteImport } from './routes/_authenticated/approvals/index'
 import { Route as AuthenticatedTeamsTeamIdRouteImport } from './routes/_authenticated/teams/$teamId'
+import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
 import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_authenticated/projects/$projectId'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedEmployeesNewRouteImport } from './routes/_authenticated/employees/new'
@@ -169,6 +170,12 @@ const AuthenticatedTeamsTeamIdRoute =
     path: '/teams/$teamId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedSettingsAccountRoute =
+  AuthenticatedSettingsAccountRouteImport.update({
+    id: '/settings/account',
+    path: '/settings/account',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedProjectsProjectIdRoute =
   AuthenticatedProjectsProjectIdRouteImport.update({
     id: '/projects/$projectId',
@@ -219,6 +226,7 @@ export interface FileRoutesByFullPath {
   '/employees/new': typeof AuthenticatedEmployeesNewRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
+  '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
   '/approvals/': typeof AuthenticatedApprovalsIndexRoute
   '/audit/': typeof AuthenticatedAuditIndexRoute
@@ -250,6 +258,7 @@ export interface FileRoutesByTo {
   '/employees/new': typeof AuthenticatedEmployeesNewRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
+  '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
   '/approvals': typeof AuthenticatedApprovalsIndexRoute
   '/audit': typeof AuthenticatedAuditIndexRoute
@@ -283,6 +292,7 @@ export interface FileRoutesById {
   '/_authenticated/employees/new': typeof AuthenticatedEmployeesNewRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
+  '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
   '/_authenticated/approvals/': typeof AuthenticatedApprovalsIndexRoute
   '/_authenticated/audit/': typeof AuthenticatedAuditIndexRoute
@@ -316,6 +326,7 @@ export interface FileRouteTypes {
     | '/employees/new'
     | '/errors/$error'
     | '/projects/$projectId'
+    | '/settings/account'
     | '/teams/$teamId'
     | '/approvals/'
     | '/audit/'
@@ -347,6 +358,7 @@ export interface FileRouteTypes {
     | '/employees/new'
     | '/errors/$error'
     | '/projects/$projectId'
+    | '/settings/account'
     | '/teams/$teamId'
     | '/approvals'
     | '/audit'
@@ -379,6 +391,7 @@ export interface FileRouteTypes {
     | '/_authenticated/employees/new'
     | '/_authenticated/errors/$error'
     | '/_authenticated/projects/$projectId'
+    | '/_authenticated/settings/account'
     | '/_authenticated/teams/$teamId'
     | '/_authenticated/approvals/'
     | '/_authenticated/audit/'
@@ -579,6 +592,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTeamsTeamIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/settings/account': {
+      id: '/_authenticated/settings/account'
+      path: '/settings/account'
+      fullPath: '/settings/account'
+      preLoaderRoute: typeof AuthenticatedSettingsAccountRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/projects/$projectId': {
       id: '/_authenticated/projects/$projectId'
       path: '/projects/$projectId'
@@ -660,6 +680,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedEmployeesNewRoute: typeof AuthenticatedEmployeesNewRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedProjectsProjectIdRoute: typeof AuthenticatedProjectsProjectIdRouteWithChildren
+  AuthenticatedSettingsAccountRoute: typeof AuthenticatedSettingsAccountRoute
   AuthenticatedTeamsTeamIdRoute: typeof AuthenticatedTeamsTeamIdRoute
   AuthenticatedApprovalsIndexRoute: typeof AuthenticatedApprovalsIndexRoute
   AuthenticatedAuditIndexRoute: typeof AuthenticatedAuditIndexRoute
@@ -685,6 +706,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedProjectsProjectIdRoute:
     AuthenticatedProjectsProjectIdRouteWithChildren,
+  AuthenticatedSettingsAccountRoute: AuthenticatedSettingsAccountRoute,
   AuthenticatedTeamsTeamIdRoute: AuthenticatedTeamsTeamIdRoute,
   AuthenticatedApprovalsIndexRoute: AuthenticatedApprovalsIndexRoute,
   AuthenticatedAuditIndexRoute: AuthenticatedAuditIndexRoute,

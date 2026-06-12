@@ -25,6 +25,7 @@ INSERT INTO web_login_logs (
 
 -- name: ListWebLoginLogs :many
 SELECT * FROM web_login_logs
+WHERE sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id')::uuid
 ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 

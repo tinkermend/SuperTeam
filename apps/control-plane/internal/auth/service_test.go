@@ -15,9 +15,10 @@ type mockRepo struct {
 	usersByID           map[uuid.UUID]*User
 	runtimeTokens       map[string]*RuntimeToken
 	sessions            map[string]*Session
-	loginLogs           []mockLoginLog
+	loginLogs           []LoginLog
 	operationLogs       []mockOperationLog
 	lastListUsersFilter ListUsersFilter
+	lastLoginLogFilter  ListLoginLogsFilter
 }
 
 func newMockRepo() *mockRepo {
@@ -26,20 +27,9 @@ func newMockRepo() *mockRepo {
 		usersByID:     make(map[uuid.UUID]*User),
 		runtimeTokens: make(map[string]*RuntimeToken),
 		sessions:      make(map[string]*Session),
-		loginLogs:     []mockLoginLog{},
+		loginLogs:     []LoginLog{},
 		operationLogs: []mockOperationLog{},
 	}
-}
-
-type mockLoginLog struct {
-	EventType     string
-	UserID        *uuid.UUID
-	Username      string
-	SessionID     *uuid.UUID
-	ClientIP      string
-	UserAgent     string
-	Result        string
-	FailureReason string
 }
 
 type mockOperationLog struct {
@@ -95,6 +85,18 @@ func (m *mockRepo) UpdateUserPassword(ctx context.Context, userID uuid.UUID, pas
 		return nil, errors.New("user not found")
 	}
 	user.PasswordHash = passwordHash
+	user.UpdatedAt = time.Now()
+	return user, nil
+}
+
+func (m *mockRepo) UpdateUserProfile(ctx context.Context, userID uuid.UUID, input UpdateUserProfileInput) (*User, error) {
+	user, ok := m.usersByID[userID]
+	if !ok {
+		return nil, errors.New("user not found")
+	}
+	user.DisplayName = input.DisplayName
+	user.Email = input.Email
+	user.Avatar = normalizeUserAvatarConfig(user.Username, input.Avatar)
 	user.UpdatedAt = time.Now()
 	return user, nil
 }
@@ -162,7 +164,8 @@ func (m *mockRepo) UpdateSessionLastSeen(ctx context.Context, token string, last
 }
 
 func (m *mockRepo) CreateLoginLog(ctx context.Context, params CreateLoginLogParams) error {
-	m.loginLogs = append(m.loginLogs, mockLoginLog{
+	m.loginLogs = append(m.loginLogs, LoginLog{
+		ID:            uuid.New(),
 		EventType:     params.EventType,
 		UserID:        params.UserID,
 		Username:      params.Username,
@@ -176,7 +179,17 @@ func (m *mockRepo) CreateLoginLog(ctx context.Context, params CreateLoginLogPara
 }
 
 func (m *mockRepo) ListLoginLogs(ctx context.Context, filter ListLoginLogsFilter) ([]LoginLog, error) {
-	return []LoginLog{}, nil
+	m.lastLoginLogFilter = filter
+	logs := make([]LoginLog, 0, len(m.loginLogs))
+	for _, log := range m.loginLogs {
+		if filter.UserID != nil {
+			if log.UserID == nil || *log.UserID != *filter.UserID {
+				continue
+			}
+		}
+		logs = append(logs, log)
+	}
+	return logs, nil
 }
 
 func (m *mockRepo) CreateOperationLog(ctx context.Context, params CreateOperationLogParams) error {
@@ -321,6 +334,135 @@ func TestCreateManagedUserDefaultsAvatarSeed(t *testing.T) {
 	}
 	if created.Avatar.Provider != "dicebear" || created.Avatar.Style != "adventurer" || created.Avatar.Seed != "user:reviewer" {
 		t.Fatalf("expected deterministic default avatar, got %#v", created.Avatar)
+	}
+}
+
+func TestUpdateCurrentUserProfileOnlyMutatesActorAndRecordsOperation(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	actor, err := svc.CreateUser(context.Background(), "operator", "secret")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	other, err := svc.CreateUser(context.Background(), "auditor", "secret")
+	if err != nil {
+		t.Fatalf("create other user: %v", err)
+	}
+
+	updated, err := svc.UpdateCurrentUserProfile(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, UpdateUserProfileInput{
+		DisplayName: "值班负责人",
+		Email:       "operator@example.com",
+		Avatar: UserAvatarConfig{
+			Provider: "dicebear",
+			Style:    "adventurer",
+			Seed:     "operator-v2",
+			Options:  map[string]any{"backgroundColor": "b6e3f4"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("update current profile: %v", err)
+	}
+	if updated.ID != actor.ID || updated.DisplayName != "值班负责人" || updated.Email != "operator@example.com" {
+		t.Fatalf("expected actor profile update, got %#v", updated)
+	}
+	if updated.Avatar.Seed != "operator-v2" || updated.Avatar.Options["backgroundColor"] != "b6e3f4" {
+		t.Fatalf("expected avatar update, got %#v", updated.Avatar)
+	}
+	if repo.usersByID[other.ID].DisplayName != "" || repo.usersByID[other.ID].Email != "" {
+		t.Fatalf("other user should not be mutated: %#v", repo.usersByID[other.ID])
+	}
+	if len(repo.operationLogs) != 1 {
+		t.Fatalf("expected one operation log, got %d", len(repo.operationLogs))
+	}
+	log := repo.operationLogs[0]
+	if log.Action != OperationActionUserUpdateOwnProfile || log.ResourceID != actor.ID.String() || log.Result != OperationResultSucceeded {
+		t.Fatalf("unexpected operation log: %#v", log)
+	}
+}
+
+func TestChangeCurrentUserPasswordRequiresCurrentPassword(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	actor, err := svc.CreateUser(context.Background(), "operator", "old-secret")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	oldHash := actor.PasswordHash
+
+	if _, err := svc.ChangeCurrentUserPassword(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, "wrong-secret", "new-secret"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("expected invalid credentials for wrong current password, got %v", err)
+	}
+	if actor.PasswordHash != oldHash {
+		t.Fatal("password hash changed after invalid current password")
+	}
+	if len(repo.operationLogs) != 1 || repo.operationLogs[0].Action != OperationActionUserChangeOwnPassword || repo.operationLogs[0].Result != OperationResultFailed {
+		t.Fatalf("expected failed password change operation log, got %#v", repo.operationLogs)
+	}
+
+	updated, err := svc.ChangeCurrentUserPassword(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, "old-secret", "new-secret")
+	if err != nil {
+		t.Fatalf("change current password: %v", err)
+	}
+	if updated.ID != actor.ID {
+		t.Fatalf("expected actor user back, got %#v", updated)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(updated.PasswordHash), []byte("new-secret")); err != nil {
+		t.Fatalf("new password hash mismatch: %v", err)
+	}
+	if len(repo.operationLogs) != 2 || repo.operationLogs[1].Action != OperationActionUserChangeOwnPassword || repo.operationLogs[1].Result != OperationResultSucceeded {
+		t.Fatalf("expected succeeded password change operation log, got %#v", repo.operationLogs)
+	}
+}
+
+func TestListCurrentUserLoginLogsFiltersToActor(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	actor, err := svc.CreateUser(context.Background(), "operator", "secret")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	other, err := svc.CreateUser(context.Background(), "auditor", "secret")
+	if err != nil {
+		t.Fatalf("create other user: %v", err)
+	}
+	actorSessionID := uuid.New()
+	otherSessionID := uuid.New()
+	repo.loginLogs = append(repo.loginLogs,
+		LoginLog{
+			ID:        uuid.New(),
+			EventType: LoginEventSucceeded,
+			UserID:    &actor.ID,
+			Username:  actor.Username,
+			SessionID: &actorSessionID,
+			Result:    LoginResultSucceeded,
+			CreatedAt: time.Now(),
+		},
+		LoginLog{
+			ID:        uuid.New(),
+			EventType: LoginEventSucceeded,
+			UserID:    &other.ID,
+			Username:  other.Username,
+			SessionID: &otherSessionID,
+			Result:    LoginResultSucceeded,
+			CreatedAt: time.Now(),
+		},
+	)
+
+	logs, err := svc.ListCurrentUserLoginLogs(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, ListLoginLogsFilter{
+		Limit:  200,
+		Offset: -5,
+	})
+	if err != nil {
+		t.Fatalf("list current user login logs: %v", err)
+	}
+	if len(logs) != 1 || logs[0].Username != actor.Username {
+		t.Fatalf("expected only actor login log, got %#v", logs)
+	}
+	if repo.lastLoginLogFilter.UserID == nil || *repo.lastLoginLogFilter.UserID != actor.ID {
+		t.Fatalf("expected current user id filter, got %#v", repo.lastLoginLogFilter)
+	}
+	if repo.lastLoginLogFilter.Limit != 20 || repo.lastLoginLogFilter.Offset != 0 {
+		t.Fatalf("expected normalized pagination 20/0, got %#v", repo.lastLoginLogFilter)
 	}
 }
 

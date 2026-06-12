@@ -109,6 +109,41 @@ func (r *PgRepository) UpdateUserPassword(ctx context.Context, userID uuid.UUID,
 	return toDomainUser(user), nil
 }
 
+func (r *PgRepository) UpdateUserProfile(ctx context.Context, userID uuid.UUID, input UpdateUserProfileInput) (*User, error) {
+	user, err := r.q.UpdateUser(ctx, queries.UpdateUserParams{
+		ID: userID,
+		DisplayName: pgtype.Text{
+			String: input.DisplayName,
+			Valid:  true,
+		},
+		Email: pgtype.Text{
+			String: input.Email,
+			Valid:  true,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	avatarOptions, err := json.Marshal(input.Avatar.Options)
+	if err != nil {
+		return nil, err
+	}
+	user, err = r.q.UpdateUserAvatar(ctx, queries.UpdateUserAvatarParams{
+		ID:             user.ID,
+		AvatarProvider: input.Avatar.Provider,
+		AvatarStyle:    input.Avatar.Style,
+		AvatarSeed: pgtype.Text{
+			String: input.Avatar.Seed,
+			Valid:  input.Avatar.Seed != "",
+		},
+		AvatarOptions: avatarOptions,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toDomainUser(user), nil
+}
+
 func toDomainUser(user queries.AuthUser) *User {
 	avatar := normalizeUserAvatarConfig(user.Username, UserAvatarConfig{
 		Provider: user.AvatarProvider,
@@ -119,6 +154,8 @@ func toDomainUser(user queries.AuthUser) *User {
 	return &User{
 		ID:           user.ID,
 		Username:     user.Username,
+		DisplayName:  user.DisplayName.String,
+		Email:        user.Email.String,
 		PasswordHash: user.PasswordHash,
 		Status:       user.Status,
 		Avatar:       avatar,
@@ -248,6 +285,7 @@ func (r *PgRepository) CreateLoginLog(ctx context.Context, params CreateLoginLog
 
 func (r *PgRepository) ListLoginLogs(ctx context.Context, filter ListLoginLogsFilter) ([]LoginLog, error) {
 	rows, err := r.q.ListWebLoginLogs(ctx, queries.ListWebLoginLogsParams{
+		UserID: nullUUID(filter.UserID),
 		Offset: filter.Offset,
 		Limit:  filter.Limit,
 	})
