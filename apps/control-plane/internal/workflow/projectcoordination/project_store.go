@@ -271,6 +271,9 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		return project.ErrProjectNotFound
 	}
 	if task.DigitalEmployeeRunID != nil {
+		if task.RuntimeTaskID == nil {
+			return project.ErrInvalidProject
+		}
 		exists, err := s.repository.ProjectTaskEventExists(ctx, input.TenantID, input.ProjectID, project.ProjectEventTaskDispatched, input.TaskID.String())
 		if err != nil {
 			return err

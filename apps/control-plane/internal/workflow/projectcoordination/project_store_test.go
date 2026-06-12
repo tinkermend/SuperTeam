@@ -446,6 +446,39 @@ func TestProjectStoreDispatchProjectTaskReemitsMissingDispatchedEvent(t *testing
 	}
 }
 
+func TestProjectStoreDispatchProjectTaskRejectsBoundRunMissingRuntimeTask(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	runID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    "assigned",
+			AssignedDigitalEmployeeID: &employeeID,
+			DigitalEmployeeRunID:      &runID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	if !errors.Is(err, project.ErrInvalidProject) {
+		t.Fatalf("expected invalid project error, got %v", err)
+	}
+	if len(starter.requests) != 0 || len(repo.bindRequests) != 0 || len(repo.events) != 0 {
+		t.Fatalf("expected no side effects, starts=%d binds=%d events=%d", len(starter.requests), len(repo.bindRequests), len(repo.events))
+	}
+}
+
 func TestDispatchErrorRetryableClassification(t *testing.T) {
 	if dispatchErrorRetryable(project.ErrInvalidProject) {
 		t.Fatal("expected ErrInvalidProject to be terminal")
