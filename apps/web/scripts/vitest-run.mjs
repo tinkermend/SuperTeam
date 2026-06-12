@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 
 const vitestArgs = process.argv.slice(2).filter((arg) => arg !== "--");
-const minChromiumHeadlessShellRevision = 1217;
 
 function playwrightCacheDir() {
   const configured = process.env.PLAYWRIGHT_BROWSERS_PATH?.trim();
@@ -35,7 +34,7 @@ function availableHeadlessShellPath(cacheDir) {
       const executablePath = path.join(cacheDir, entry.name, ...executableSegments);
       return { executablePath, revision: Number.isFinite(revision) ? revision : 0 };
     })
-    .filter((candidate) => candidate.revision >= minChromiumHeadlessShellRevision && existsSync(candidate.executablePath))
+    .filter((candidate) => existsSync(candidate.executablePath))
     .sort((left, right) => right.revision - left.revision)[0]?.executablePath ?? null;
 }
 
@@ -47,7 +46,7 @@ function configureChromiumExecutableFallback() {
   if (!fallback) return;
 
   process.env.VITEST_CHROMIUM_EXECUTABLE_PATH = fallback;
-  console.warn(`[vitest-run] using Playwright headless shell >= ${minChromiumHeadlessShellRevision}: ${fallback}`);
+  console.warn(`[vitest-run] using Playwright headless shell: ${fallback}`);
 }
 
 configureChromiumExecutableFallback();
