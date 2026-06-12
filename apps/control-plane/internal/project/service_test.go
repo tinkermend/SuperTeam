@@ -1299,6 +1299,75 @@ func TestCompleteProjectTaskWritesSummaryAndSignalsCoordinator(t *testing.T) {
 	}
 }
 
+func TestBindProjectTaskRunEnablesCompleteProjectTaskWriteback(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "planned",
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+
+	bound, err := repo.BindProjectTaskRun(context.Background(), BindProjectTaskRunRequest{
+		TenantID:             tenantID,
+		ProjectTaskID:        taskID,
+		DigitalEmployeeRunID: runID,
+		RuntimeTaskID:        runtimeTaskID,
+		CurrentStatuses:      []string{"planned", "pending"},
+	})
+	if err != nil {
+		t.Fatalf("bind project task run: %v", err)
+	}
+	repo.projectTaskRunRuntimeNodes[taskID] = runtimeNodeID
+	if bound.Status != "assigned" || bound.DigitalEmployeeRunID == nil || *bound.DigitalEmployeeRunID != runID ||
+		bound.RuntimeTaskID == nil || *bound.RuntimeTaskID != runtimeTaskID {
+		t.Fatalf("expected assigned run binding, got %#v", bound)
+	}
+
+	summary, err := service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          tenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		Conclusion:        "证据充分",
+	})
+	if err != nil {
+		t.Fatalf("complete project task: %v", err)
+	}
+	if summary.ProjectTaskID != taskID || summary.DigitalEmployeeID != employeeID {
+		t.Fatalf("unexpected summary: %#v", summary)
+	}
+	if repo.tasks[0].Status != "completed" {
+		t.Fatalf("expected task completed after runtime writeback, got %s", repo.tasks[0].Status)
+	}
+	if coordinator.completedSignals != 1 {
+		t.Fatalf("expected coordinator completion signal, got %d", coordinator.completedSignals)
+	}
+}
+
 func TestRetryWorkflowSignalReplaysCompletedTaskWithoutDuplicateWriteback(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{completedSignalErr: fmt.Errorf("temporal unavailable")}
