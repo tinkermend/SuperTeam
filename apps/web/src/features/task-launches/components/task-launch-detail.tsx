@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
 import {
   CheckCircle2,
   FileText,
@@ -66,10 +67,10 @@ export function TaskLaunchDetail({ detail }: { detail: ProjectDemandLaunchDetail
         </div>
 
         <Button asChild variant="outline" className="mt-4 w-full justify-start">
-          <a href={`/projects/${encodeURIComponent(detail.project.id)}`}>
+          <Link to="/projects/$projectId" params={{ projectId: detail.project.id }}>
             <FolderKanban className="size-4" />
             进入项目
-          </a>
+          </Link>
         </Button>
       </LiquidCard>
 

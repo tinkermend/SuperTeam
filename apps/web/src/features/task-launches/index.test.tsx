@@ -85,6 +85,20 @@ vi.mock("@/components/ui/select", async () => {
 });
 
 vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    params,
+    to,
+  }: {
+    children: ReactNode;
+    params?: Record<string, string>;
+    to: string;
+  }) => {
+    const href = params?.projectId
+      ? to.replace("$projectId", encodeURIComponent(params.projectId))
+      : to;
+    return <a href={href}>{children}</a>;
+  },
   useNavigate: () => mocks.navigate,
 }));
 
@@ -264,11 +278,19 @@ function createTaskLaunchFetcher({
   });
 }
 
-function makeLaunchDetail({ emptyFacts = false }: { emptyFacts?: boolean } = {}) {
+function makeLaunchDetail({
+  demandId = "demand-1",
+  emptyFacts = false,
+  title = "审查 PR",
+}: {
+  demandId?: string;
+  emptyFacts?: boolean;
+  title?: string;
+} = {}) {
   const baseDemand = {
     attachments: [],
     content: "统计 PR 数量，生成审查分工",
-    id: "demand-1",
+    id: demandId,
     project_id: "project-1",
     reviewer: {
       display_name: "王审核",
@@ -282,7 +304,7 @@ function makeLaunchDetail({ emptyFacts = false }: { emptyFacts?: boolean } = {})
     status: "submitted",
     submitted_by_user_id: "owner-1",
     tenant_id: "tenant-1",
-    title: "审查 PR",
+    title,
   };
   const empty = {
     coordination_jobs: [],
@@ -302,7 +324,7 @@ function makeLaunchDetail({ emptyFacts = false }: { emptyFacts?: boolean } = {})
           coordination_jobs: [
             {
               created_at: "2026-06-12T09:00:00Z",
-              demand_id: "demand-1",
+              demand_id: demandId,
               id: "job-1",
               job_type: "demand_intake",
               project_id: "project-1",
@@ -323,7 +345,7 @@ function makeLaunchDetail({ emptyFacts = false }: { emptyFacts?: boolean } = {})
           ],
           project_tasks: [
             {
-              demand_id: "demand-1",
+              demand_id: demandId,
               id: "task-1",
               project_id: "project-1",
               requires_human_approval: true,
@@ -338,7 +360,7 @@ function makeLaunchDetail({ emptyFacts = false }: { emptyFacts?: boolean } = {})
               budget_estimate: {},
               candidate_digital_employee_ids: ["employee-1"],
               coordination_job_id: "job-1",
-              demand_id: "demand-1",
+              demand_id: demandId,
               expected_outputs: [],
               id: "route-1",
               input_requirements: {},
@@ -357,15 +379,24 @@ async function renderWithQueryClient(children: ReactNode) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
+  const queryClient = createQueryClient();
   mountedRoots.push(root);
 
   await act(async () => {
-    root.render(
-      <QueryClientProvider client={createQueryClient()}>{children}</QueryClientProvider>,
-    );
+    root.render(<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>);
   });
 
-  return { container, root };
+  return { container, queryClient, root };
+}
+
+async function rerenderWithQueryClient(
+  root: Root,
+  queryClient: QueryClient,
+  children: ReactNode,
+) {
+  await act(async () => {
+    root.render(<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>);
+  });
 }
 
 function expectReviewerResolution(
@@ -548,14 +579,77 @@ describe("TaskLaunchDetailView", () => {
 
     await vi.waitFor(() => expect(getByText("等待项目协调线程处理")).toBeTruthy());
   });
+
+  it("does not show the previous demand detail while switching demand ids", async () => {
+    let resolveDemand2!: () => void;
+    const demand2Ready = new Promise<void>((resolve) => {
+      resolveDemand2 = resolve;
+    });
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+
+      if (
+        url.pathname === "/api/v1/project-demands/demand-1/launch-detail" &&
+        method === "GET"
+      ) {
+        return jsonResponse(
+          makeLaunchDetail({ demandId: "demand-1", title: "旧需求" }),
+        );
+      }
+      if (
+        url.pathname === "/api/v1/project-demands/demand-2/launch-detail" &&
+        method === "GET"
+      ) {
+        await demand2Ready;
+        return jsonResponse(
+          makeLaunchDetail({ demandId: "demand-2", title: "新需求" }),
+        );
+      }
+
+      return jsonResponse({ message: `Unhandled ${method} ${url.pathname}` }, 404);
+    });
+    const { queryClient, root } = await renderWithQueryClient(
+      <TaskLaunchDetailView
+        apiBaseUrl="http://control-plane.local"
+        demandId="demand-1"
+        fetcher={fetcher}
+      />,
+    );
+
+    await vi.waitFor(() => expect(getByText("旧需求")).toBeTruthy());
+    await rerenderWithQueryClient(
+      root,
+      queryClient,
+      <TaskLaunchDetailView
+        apiBaseUrl="http://control-plane.local"
+        demandId="demand-2"
+        fetcher={fetcher}
+      />,
+    );
+
+    await vi.waitFor(() => expect(getByText("正在加载发起详情")).toBeTruthy());
+    expect(queryByText("旧需求")).toBeNull();
+
+    await act(async () => {
+      resolveDemand2();
+    });
+    await vi.waitFor(() => expect(getByText("新需求")).toBeTruthy());
+  });
 });
 
-function getByText(text: string) {
-  const element = Array.from(document.body.querySelectorAll<HTMLElement>("*")).find(
-    (item) =>
-      item.textContent === text &&
-      Array.from(item.children).every((child) => child.textContent !== text),
+function queryByText(text: string) {
+  return (
+    Array.from(document.body.querySelectorAll<HTMLElement>("*")).find(
+      (item) =>
+        item.textContent === text &&
+        Array.from(item.children).every((child) => child.textContent !== text),
+    ) ?? null
   );
+}
+
+function getByText(text: string) {
+  const element = queryByText(text);
   if (!element) {
     throw new Error(`Unable to find text: ${text}`);
   }

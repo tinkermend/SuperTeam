@@ -120,13 +120,15 @@ export function TaskLaunchDetailView({
     queryFn: () => getProjectDemandLaunchDetail(apiOptions, demandId),
     queryKey: ["task-launch-detail", apiBaseUrl, demandId],
   });
+  const currentDetail =
+    detailQuery.data?.demand.id === demandId ? detailQuery.data : undefined;
 
   return (
     <TaskLaunchShell title="发起详情" description="查看一次任务发起触发的协调事实">
       {detailQuery.isError ? (
         <div className="text-sm text-destructive">发起详情加载失败</div>
-      ) : detailQuery.data ? (
-        <TaskLaunchDetail detail={detailQuery.data} />
+      ) : currentDetail ? (
+        <TaskLaunchDetail detail={currentDetail} />
       ) : (
         <div className="text-sm text-muted-foreground">正在加载发起详情</div>
       )}
