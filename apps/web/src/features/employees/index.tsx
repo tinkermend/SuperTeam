@@ -5,6 +5,8 @@ import {
   AlertTriangle,
   Bot,
   Check,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   Link as LinkIcon,
   Plus,
@@ -53,6 +55,9 @@ const DEFAULT_STATUS_OPTIONS: OverviewFilterOption[] = [
   { value: "error", label: "异常" },
 ];
 
+const DEFAULT_PAGE_SIZE = 12;
+const PAGE_SIZE_OPTIONS = [12, 24, 48];
+
 type FilterKey = Exclude<keyof DigitalEmployeeOverviewFilters, "limit" | "offset">;
 
 export function EmployeesPage() {
@@ -68,7 +73,7 @@ type EmployeesViewProps = {
 
 export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
   const [filters, setFilters] = useState<DigitalEmployeeOverviewFilters>({
-    limit: 50,
+    limit: DEFAULT_PAGE_SIZE,
     offset: 0,
   });
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>();
@@ -106,6 +111,22 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
 
   const handleSearchChange = (event: ChangeEvent<HTMLInputElement>) => {
     setFilters((current) => updateFilter(current, "q", event.target.value));
+  };
+
+  const handlePageChange = (offset: number) => {
+    setFilters((current) => ({
+      ...current,
+      offset: Math.max(0, offset),
+    }));
+  };
+
+  const handlePageSizeChange = (value: string) => {
+    const nextLimit = Number(value);
+    setFilters((current) => ({
+      ...current,
+      limit: Number.isFinite(nextLimit) && nextLimit > 0 ? nextLimit : DEFAULT_PAGE_SIZE,
+      offset: 0,
+    }));
   };
 
   return (
@@ -153,15 +174,24 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
                 {items.length === 0 ? (
                   <LiquidCard className="rounded-xl p-6 text-sm text-muted-foreground">暂无数字员工</LiquidCard>
                 ) : (
-                  <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-                    {items.map((item) => (
-                      <EmployeeWorkbenchCard
-                        key={item.identity_summary.id}
-                        item={item}
-                        selected={selectedItem?.identity_summary.id === item.identity_summary.id}
-                        onSelect={() => setSelectedEmployeeId(item.identity_summary.id)}
-                      />
-                    ))}
+                  <div className="flex flex-col gap-4">
+                    <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                      {items.map((item) => (
+                        <EmployeeWorkbenchCard
+                          key={item.identity_summary.id}
+                          item={item}
+                          selected={selectedItem?.identity_summary.id === item.identity_summary.id}
+                          onSelect={() => setSelectedEmployeeId(item.identity_summary.id)}
+                        />
+                      ))}
+                    </div>
+                    <EmployeeCardPagination
+                      isFetching={overview.isFetching}
+                      pagination={overview.data.pagination}
+                      visibleCount={items.length}
+                      onOffsetChange={handlePageChange}
+                      onPageSizeChange={handlePageSizeChange}
+                    />
                   </div>
                 )}
               </div>
@@ -187,6 +217,80 @@ export function EmployeesView({ apiBaseUrl, fetcher }: EmployeesViewProps) {
         </div>
       </Main>
     </>
+  );
+}
+
+function EmployeeCardPagination({
+  isFetching,
+  onOffsetChange,
+  onPageSizeChange,
+  pagination,
+  visibleCount,
+}: {
+  isFetching: boolean;
+  onOffsetChange: (offset: number) => void;
+  onPageSizeChange: (value: string) => void;
+  pagination: DigitalEmployeeOverview["pagination"];
+  visibleCount: number;
+}) {
+  const limit = pagination.limit || DEFAULT_PAGE_SIZE;
+  const offset = pagination.offset || 0;
+  const totalCount = pagination.total_count || 0;
+  const start = totalCount === 0 || visibleCount === 0 ? 0 : offset + 1;
+  const end = totalCount === 0 || visibleCount === 0 ? 0 : Math.min(offset + visibleCount, totalCount);
+  const canPrevious = offset > 0;
+  const canNext = offset + limit < totalCount;
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/80 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">
+          第 {formatNumber(start)}-{formatNumber(end)} 条，共 {formatNumber(totalCount)} 个
+        </span>
+        {isFetching ? <span>刷新中...</span> : null}
+      </div>
+      <div className="flex items-center justify-between gap-3 sm:justify-end">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">每页</span>
+          <Select value={String(limit)} onValueChange={onPageSizeChange}>
+            <SelectTrigger aria-label="每页数量" className="h-9 w-[84px] rounded-full bg-background/70 shadow-none">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {PAGE_SIZE_OPTIONS.map((pageSize) => (
+                  <SelectItem key={pageSize} value={String(pageSize)}>
+                    {pageSize}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            aria-label="上一页"
+            className="size-9 p-0"
+            disabled={!canPrevious}
+            type="button"
+            variant="outline"
+            onClick={() => onOffsetChange(Math.max(0, offset - limit))}
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+          <Button
+            aria-label="下一页"
+            className="size-9 p-0"
+            disabled={!canNext}
+            type="button"
+            variant="outline"
+            onClick={() => onOffsetChange(offset + limit)}
+          >
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 

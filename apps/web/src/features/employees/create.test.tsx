@@ -379,6 +379,12 @@ describe("CreateEmployeeView", () => {
     await expect.element(screen.getByLabelText("名称")).toBeVisible();
   });
 
+  it("keeps avatar choices compact in the identity step", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await expect.element(screen.getByRole("button", { name: "工程师头像 M01" })).toHaveClass("size-20");
+  });
+
   it("requires explicit runtime selection when multiple runtimes are available", async () => {
     const screen = await renderCreateEmployeeView(createWizardFetcher({ runtimeCount: 2 }));
 

@@ -41,12 +41,14 @@ type EmployeesFetcherOptions = {
   delayMs?: number;
   includeUnboundEmployee?: boolean;
   latestRunStatus?: string;
+  totalCount?: number;
 };
 
 function createEmployeesFetcher({
   delayMs = 0,
   includeUnboundEmployee = false,
   latestRunStatus = "completed",
+  totalCount = 18,
 }: EmployeesFetcherOptions = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -56,6 +58,9 @@ function createEmployeesFetcher({
       }
 
       const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+      const limit = Number(url.searchParams.get("limit") ?? "12");
+      const offset = Number(url.searchParams.get("offset") ?? "0");
+      const pageNumber = Math.floor(offset / Math.max(limit, 1)) + 1;
       const readyItem = {
         workbench_status: "ready",
         recent_events: [
@@ -66,7 +71,10 @@ function createEmployeesFetcher({
           },
         ],
         identity_summary: {
-          id: "11111111-1111-4111-8111-111111111111",
+          id:
+            offset === 0
+              ? "11111111-1111-4111-8111-111111111111"
+              : "99999999-9999-4999-8999-999999999999",
           tenant_id: "tenant-1",
           team_id: "team-1",
           team_name: "产品组",
@@ -74,7 +82,7 @@ function createEmployeesFetcher({
           owner_display_name: "王产品",
           employee_type: "requirements_analyst",
           employee_type_label: "需求分析",
-          name: "需求分析员工",
+          name: offset === 0 ? "需求分析员工" : `需求分析员工第${pageNumber}页`,
           role: "需求分析师",
           description: "负责需求拆解和交付风险识别",
           status: "active",
@@ -178,7 +186,7 @@ function createEmployeesFetcher({
             failed_recent_run_count: 1,
           },
           summary: {
-            total_count: 18,
+            total_count: totalCount,
             runnable_count: 14,
             running_count: 5,
             waiting_runtime_count: 2,
@@ -204,9 +212,9 @@ function createEmployeesFetcher({
             run_statuses: [{ value: "running", label: "运行中" }],
           },
           pagination: {
-            limit: 50,
-            offset: 0,
-            total_count: 18,
+            limit,
+            offset,
+            total_count: totalCount,
           },
         }),
         {
@@ -355,5 +363,42 @@ describe("EmployeesView", () => {
     await expect.element(screen.getByText("需求分析员工").first()).toBeVisible();
     await expect.element(screen.getByText("待处理队列")).toBeVisible();
     await expect.element(screen.getByText("加载中...")).not.toBeInTheDocument();
+  });
+
+  it("paginates employee cards through overview limit and offset", async () => {
+    const fetcher = createEmployeesFetcher({ totalCount: 25 });
+    const screen = await renderEmployeesView(fetcher);
+
+    await expect.element(screen.getByText("需求分析员工").first()).toBeVisible();
+    await expect.element(screen.getByText("第 1-1 条，共 25 个")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
+
+    await expect.element(screen.getByText("需求分析员工第2页").first()).toBeVisible();
+    await expect.element(screen.getByText("第 13-13 条，共 25 个")).toBeVisible();
+    expect(
+      fetchCalls(fetcher).some(([input]) => {
+        const url = new URL(String(input));
+        return (
+          url.pathname === "/api/v1/digital-employees/overview" &&
+          url.searchParams.get("limit") === "12" &&
+          url.searchParams.get("offset") === "12"
+        );
+      }),
+    ).toBe(true);
+
+    await userEvent.click(screen.getByRole("button", { name: "上一页" }));
+
+    await expect.element(screen.getByText("需求分析员工").first()).toBeVisible();
+    expect(
+      fetchCalls(fetcher).some(([input]) => {
+        const url = new URL(String(input));
+        return (
+          url.pathname === "/api/v1/digital-employees/overview" &&
+          url.searchParams.get("limit") === "12" &&
+          url.searchParams.get("offset") === "0"
+        );
+      }),
+    ).toBe(true);
   });
 });

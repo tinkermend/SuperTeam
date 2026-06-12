@@ -575,14 +575,14 @@ function AvatarSelection({
   return (
     <fieldset className="rounded-md border p-3">
       <legend className="px-1 text-sm font-medium">头像</legend>
-      <div className="mt-3 grid grid-cols-5 gap-3 sm:grid-cols-8 lg:grid-cols-10">
+      <div className="mt-3 flex flex-wrap gap-3">
         {assets.map((asset) => {
           const selected = asset.id === selectedAssetId;
           return (
             <button
               aria-pressed={selected}
               className={cn(
-                "flex aspect-square items-center justify-center rounded-full border bg-muted p-0.5 transition",
+                "flex size-20 shrink-0 items-center justify-center rounded-full border bg-muted p-0.5 transition",
                 selected ? "border-primary ring-2 ring-primary/30" : "hover:border-primary/60",
               )}
               key={asset.id}
