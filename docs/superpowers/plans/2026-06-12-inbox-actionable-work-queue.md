@@ -2167,7 +2167,7 @@ func (a DecisionProjectorAdapter) UpsertProjectDecisionRequest(ctx context.Conte
 	} else if decision.StatusSnapshot == "cancelled" {
 		status = StatusCancelled
 	}
-	
+
 	req := UpsertItemRequest{
 		TenantID:                decision.TenantID,
 		TargetUserID:            decision.TargetUserID,
