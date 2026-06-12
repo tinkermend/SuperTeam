@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/superteam/control-plane/internal/approval"
 	"github.com/superteam/control-plane/internal/project"
 )
@@ -236,6 +237,7 @@ func TestApprovalActionAdapterNormalizesSourceErrors(t *testing.T) {
 	}{
 		{name: "invalid approval request", source: approval.ErrInvalidApprovalRequest, wantErr: ErrInvalidAction},
 		{name: "approval not found", source: approval.ErrApprovalNotFound, wantErr: ErrSourceUnavailable},
+		{name: "approval no rows", source: pgx.ErrNoRows, wantErr: ErrSourceUnavailable},
 		{name: "approval already resolved", source: approval.ErrApprovalAlreadyResolved, wantErr: ErrInvalidAction},
 		{name: "unknown", source: unknownErr, wantErr: unknownErr},
 	}
@@ -344,6 +346,13 @@ func TestProjectDecisionActionAdapterNormalizesSourceErrors(t *testing.T) {
 			name: "project not found",
 			mutate: func(repo *projectActionRepository) {
 				repo.getProjectErr = project.ErrProjectNotFound
+			},
+			wantErr: ErrSourceUnavailable,
+		},
+		{
+			name: "project no rows",
+			mutate: func(repo *projectActionRepository) {
+				repo.getProjectErr = pgx.ErrNoRows
 			},
 			wantErr: ErrSourceUnavailable,
 		},

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/superteam/control-plane/internal/approval"
 	"github.com/superteam/control-plane/internal/project"
 )
@@ -164,7 +165,7 @@ func normalizeSourceActionError(err error) error {
 		return nil
 	case errors.Is(err, approval.ErrInvalidApprovalRequest), errors.Is(err, approval.ErrApprovalAlreadyResolved), errors.Is(err, project.ErrInvalidProject):
 		return ErrInvalidAction
-	case errors.Is(err, approval.ErrApprovalNotFound), errors.Is(err, project.ErrProjectNotFound):
+	case errors.Is(err, approval.ErrApprovalNotFound), errors.Is(err, project.ErrProjectNotFound), errors.Is(err, pgx.ErrNoRows):
 		return ErrSourceUnavailable
 	default:
 		return err
