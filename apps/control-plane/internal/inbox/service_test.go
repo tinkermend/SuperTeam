@@ -121,6 +121,33 @@ func TestServiceUpgradesProjectDecisionByApprovalSource(t *testing.T) {
 	if len(repo.itemsByID) != 1 {
 		t.Fatalf("expected single upgraded inbox item, got %d", len(repo.itemsByID))
 	}
+	if repo.upsertItemCalls != 0 {
+		t.Fatalf("expected approval-source upserts to bypass generic source upsert, got %d generic calls", repo.upsertItemCalls)
+	}
+	if repo.upsertByApprovalSourceCalls != 2 {
+		t.Fatalf("expected two approval-source upserts, got %d", repo.upsertByApprovalSourceCalls)
+	}
+}
+
+func TestServiceRejectsProjectDecisionUpsertWithoutProjectSource(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:     uuid.New(),
+		TargetUserID: uuid.New(),
+		Scope:        "personal",
+		ItemType:     ItemTypeProjectDecision,
+		SourceType:   SourceTypeProjectDecisionRequest,
+		SourceID:     uuid.New(),
+		Title:        "项目决策待处理",
+	})
+	if !errors.Is(err, ErrInvalidItem) {
+		t.Fatalf("expected invalid item, got %v", err)
+	}
 }
 
 func TestServiceRejectsActionsFromNonTargetUser(t *testing.T) {
@@ -157,6 +184,45 @@ func TestServiceRejectsActionsFromNonTargetUser(t *testing.T) {
 	})
 	if !errors.Is(err, ErrActionForbidden) {
 		t.Fatalf("expected forbidden action, got %v", err)
+	}
+	if resolver.calls != 0 {
+		t.Fatalf("expected source resolver not to be called, got %d calls", resolver.calls)
+	}
+}
+
+func TestServiceRejectsRequiredCommentActionsWithoutComment(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	resolver := &fakeApprovalResolver{}
+	service.SetApprovalActionResolver(resolver)
+	tenantID := uuid.New()
+	actorUserID := uuid.New()
+	item, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:     tenantID,
+		TargetUserID: actorUserID,
+		Scope:        "personal",
+		ItemType:     ItemTypeApproval,
+		SourceType:   SourceTypeApprovalRequest,
+		SourceID:     uuid.New(),
+		Title:        "审批待处理",
+		Actions:      []Action{{Key: "reject", Label: "驳回", RequiresComment: true}},
+	})
+	if err != nil {
+		t.Fatalf("upsert item: %v", err)
+	}
+
+	_, _, err = service.ExecuteAction(context.Background(), ExecuteActionRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorUserID,
+		ItemID:      item.ID,
+		Action:      "reject",
+		Comment:     "   ",
+	})
+	if !errors.Is(err, ErrInvalidAction) {
+		t.Fatalf("expected invalid action, got %v", err)
 	}
 	if resolver.calls != 0 {
 		t.Fatalf("expected source resolver not to be called, got %d calls", resolver.calls)
@@ -227,6 +293,50 @@ func TestServiceRoutesProjectDecisionActions(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsMalformedProjectDecisionActionsWithoutProjectSource(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	resolver := &fakeProjectDecisionResolver{}
+	service.SetProjectDecisionActionResolver(resolver)
+	tenantID := uuid.New()
+	actorUserID := uuid.New()
+	itemID := uuid.New()
+	now := time.Now().UTC()
+	repo.itemsByID[itemID] = Item{
+		ID:             itemID,
+		TenantID:       tenantID,
+		TargetUserID:   actorUserID,
+		Scope:          "personal",
+		ItemType:       ItemTypeProjectDecision,
+		SourceType:     SourceTypeProjectDecisionRequest,
+		SourceID:       uuid.New(),
+		Title:          "缺少项目来源的决策",
+		Status:         StatusOpen,
+		Actions:        []Action{{Key: "approve", Label: "同意"}},
+		ContextPayload: map[string]any{},
+		DeepLink:       map[string]any{},
+		LastActivityAt: now,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+
+	_, _, err = service.ExecuteAction(context.Background(), ExecuteActionRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorUserID,
+		ItemID:      itemID,
+		Action:      "approve",
+	})
+	if !errors.Is(err, ErrSourceUnavailable) {
+		t.Fatalf("expected source unavailable, got %v", err)
+	}
+	if resolver.calls != 0 {
+		t.Fatalf("expected source resolver not to be called, got %d calls", resolver.calls)
+	}
+}
+
 func TestServiceListsMineAndTeamItems(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -236,6 +346,7 @@ func TestServiceListsMineAndTeamItems(t *testing.T) {
 	tenantID := uuid.New()
 	actorUserID := uuid.New()
 	otherUserID := uuid.New()
+	projectID := uuid.New()
 	baseTime := time.Now().UTC().Add(-time.Hour)
 
 	mineOpen, err := service.UpsertItem(context.Background(), UpsertItemRequest{
@@ -253,15 +364,16 @@ func TestServiceListsMineAndTeamItems(t *testing.T) {
 		t.Fatalf("upsert mine open: %v", err)
 	}
 	teamOpen, err := service.UpsertItem(context.Background(), UpsertItemRequest{
-		TenantID:       tenantID,
-		TargetUserID:   otherUserID,
-		Scope:          "personal",
-		ItemType:       ItemTypeProjectDecision,
-		SourceType:     SourceTypeProjectDecisionRequest,
-		SourceID:       uuid.New(),
-		Title:          "团队项目决策",
-		RiskLevel:      "high",
-		LastActivityAt: baseTime.Add(2 * time.Minute),
+		TenantID:        tenantID,
+		TargetUserID:    otherUserID,
+		Scope:           "personal",
+		ItemType:        ItemTypeProjectDecision,
+		SourceType:      SourceTypeProjectDecisionRequest,
+		SourceID:        uuid.New(),
+		SourceProjectID: &projectID,
+		Title:           "团队项目决策",
+		RiskLevel:       "high",
+		LastActivityAt:  baseTime.Add(2 * time.Minute),
 	})
 	if err != nil {
 		t.Fatalf("upsert team open: %v", err)
@@ -318,10 +430,12 @@ func TestServiceListsMineAndTeamItems(t *testing.T) {
 }
 
 type memoryRepository struct {
-	mu              sync.Mutex
-	itemsByID       map[uuid.UUID]Item
-	itemsBySource   map[string]uuid.UUID
-	itemsByApproval map[uuid.UUID]uuid.UUID
+	mu                          sync.Mutex
+	itemsByID                   map[uuid.UUID]Item
+	itemsBySource               map[string]uuid.UUID
+	itemsByApproval             map[uuid.UUID]uuid.UUID
+	upsertItemCalls             int
+	upsertByApprovalSourceCalls int
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -336,6 +450,7 @@ func (r *memoryRepository) UpsertItem(_ context.Context, req UpsertItemRequest) 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	r.upsertItemCalls++
 	sourceKey := sourceKey(req.TenantID, req.SourceType, req.SourceID)
 	item, ok := r.itemByID(r.itemsBySource[sourceKey])
 	if !ok {
@@ -355,6 +470,7 @@ func (r *memoryRepository) UpsertItemByApprovalSource(_ context.Context, req Ups
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	r.upsertByApprovalSourceCalls++
 	if req.SourceApprovalRequestID == nil {
 		return Item{}, ErrInvalidItem
 	}

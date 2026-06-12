@@ -133,7 +133,11 @@ func (s *Service) ExecuteAction(ctx context.Context, req ExecuteActionRequest) (
 	if item.TargetUserID != req.ActorUserID {
 		return item, SourceActionResult{}, ErrActionForbidden
 	}
-	if !actionAllowed(item.Actions, req.Action) {
+	action, ok := findAction(item.Actions, req.Action)
+	if !ok {
+		return item, SourceActionResult{}, ErrInvalidAction
+	}
+	if action.RequiresComment && req.Comment == "" {
 		return item, SourceActionResult{}, ErrInvalidAction
 	}
 	sourceReq := SourceActionRequest{TenantID: req.TenantID, ActorUserID: req.ActorUserID, SourceID: item.SourceID, SourceProjectID: item.SourceProjectID, Action: req.Action, Comment: req.Comment, Payload: mapOrEmpty(req.Payload)}
@@ -145,6 +149,9 @@ func (s *Service) ExecuteAction(ctx context.Context, req ExecuteActionRequest) (
 		}
 		result, err = s.approvals.ResolveApprovalAction(ctx, sourceReq)
 	case SourceTypeProjectDecisionRequest:
+		if item.SourceProjectID == nil || *item.SourceProjectID == uuid.Nil {
+			return item, SourceActionResult{}, ErrSourceUnavailable
+		}
 		if s.decisions == nil {
 			return item, SourceActionResult{}, ErrSourceUnavailable
 		}
@@ -193,6 +200,9 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 	if req.ItemType == "" || req.SourceType == "" {
 		return UpsertItemRequest{}, ErrInvalidItem
 	}
+	if (req.ItemType == ItemTypeProjectDecision || req.SourceType == SourceTypeProjectDecisionRequest) && (req.SourceProjectID == nil || *req.SourceProjectID == uuid.Nil) {
+		return UpsertItemRequest{}, ErrInvalidItem
+	}
 	switch req.Status {
 	case "":
 		req.Status = StatusOpen
@@ -237,12 +247,17 @@ func DefaultActions(itemType ItemType) []Action {
 }
 
 func actionAllowed(actions []Action, action string) bool {
+	_, ok := findAction(actions, action)
+	return ok
+}
+
+func findAction(actions []Action, action string) (Action, bool) {
 	for _, candidate := range actions {
 		if strings.TrimSpace(candidate.Key) == action {
-			return true
+			return candidate, true
 		}
 	}
-	return false
+	return Action{}, false
 }
 
 func mapOrEmpty(values map[string]any) map[string]any {
