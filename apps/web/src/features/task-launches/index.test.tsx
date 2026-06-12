@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TaskLaunchView } from "@/features/task-launches";
+import { TaskLaunchDetailView, TaskLaunchView } from "@/features/task-launches";
 import {
   resolveDefaultReviewer,
   type ReviewerDefaultResolution,
@@ -142,9 +142,13 @@ function makeMember(
 
 function createTaskLaunchFetcher({
   includeSecondProject = false,
+  launchDetail = false,
   multipleReviewers = false,
+  emptyFacts = false,
 }: {
+  emptyFacts?: boolean;
   includeSecondProject?: boolean;
+  launchDetail?: boolean;
   multipleReviewers?: boolean;
 } = {}) {
   const submittedDemand = {
@@ -248,9 +252,105 @@ function createTaskLaunchFetcher({
         201,
       );
     }
+    if (
+      launchDetail &&
+      url.pathname === "/api/v1/project-demands/demand-1/launch-detail" &&
+      method === "GET"
+    ) {
+      return jsonResponse(makeLaunchDetail({ emptyFacts }));
+    }
 
     return jsonResponse({ message: `Unhandled ${method} ${url.pathname}` }, 404);
   });
+}
+
+function makeLaunchDetail({ emptyFacts = false }: { emptyFacts?: boolean } = {}) {
+  const baseDemand = {
+    attachments: [],
+    content: "统计 PR 数量，生成审查分工",
+    id: "demand-1",
+    project_id: "project-1",
+    reviewer: {
+      display_name: "王审核",
+      project_role: "reviewer",
+      resolved_from_rule: true,
+      reviewer_user_id: "reviewer-1",
+      selection_reason: "project_reviewer_default",
+    },
+    source_refs: {},
+    source_type: "manual",
+    status: "submitted",
+    submitted_by_user_id: "owner-1",
+    tenant_id: "tenant-1",
+    title: "审查 PR",
+  };
+  const empty = {
+    coordination_jobs: [],
+    decision_requests: [],
+    project_tasks: [],
+    route_decisions: [],
+  };
+
+  return {
+    demand: baseDemand,
+    project: makeProject(),
+    reviewer: baseDemand.reviewer,
+    recent_events: [],
+    ...(emptyFacts
+      ? empty
+      : {
+          coordination_jobs: [
+            {
+              created_at: "2026-06-12T09:00:00Z",
+              demand_id: "demand-1",
+              id: "job-1",
+              job_type: "demand_intake",
+              project_id: "project-1",
+              status: "running",
+              tenant_id: "tenant-1",
+              workflow_id: "project-coordinator:project-1",
+            },
+          ],
+          decision_requests: [
+            {
+              id: "decision-1",
+              project_id: "project-1",
+              status_snapshot: "pending",
+              target_user_id: "reviewer-1",
+              tenant_id: "tenant-1",
+              title_snapshot: "确认路由",
+            },
+          ],
+          project_tasks: [
+            {
+              demand_id: "demand-1",
+              id: "task-1",
+              project_id: "project-1",
+              requires_human_approval: true,
+              status: "pending",
+              summary: "汇总 PR 并输出分派建议",
+              tenant_id: "tenant-1",
+              title: "整理审查清单",
+            },
+          ],
+          route_decisions: [
+            {
+              budget_estimate: {},
+              candidate_digital_employee_ids: ["employee-1"],
+              coordination_job_id: "job-1",
+              demand_id: "demand-1",
+              expected_outputs: [],
+              id: "route-1",
+              input_requirements: {},
+              project_id: "project-1",
+              reason: "按能力分派",
+              requires_human_review: true,
+              selected_digital_employee_ids: ["employee-1"],
+              tenant_id: "tenant-1",
+            },
+          ],
+        }),
+  };
 }
 
 async function renderWithQueryClient(children: ReactNode) {
@@ -406,6 +506,47 @@ describe("TaskLaunchView", () => {
     await clickButton("发起任务");
 
     await vi.waitFor(() => expect(getByText("请选择审核人")).toBeTruthy());
+  });
+});
+
+describe("TaskLaunchDetailView", () => {
+  afterEach(() => {
+    for (const root of mountedRoots.splice(0)) {
+      act(() => {
+        root.unmount();
+      });
+    }
+    document.body.innerHTML = "";
+  });
+
+  it("renders launch detail coordination facts", async () => {
+    const fetcher = createTaskLaunchFetcher({ launchDetail: true });
+    await renderWithQueryClient(
+      <TaskLaunchDetailView
+        apiBaseUrl="http://control-plane.local"
+        demandId="demand-1"
+        fetcher={fetcher}
+      />,
+    );
+
+    await vi.waitFor(() => expect(getByText("审查 PR")).toBeTruthy());
+    expect(getByText("协调 Job")).toBeTruthy();
+    expect(getByText("按能力分派")).toBeTruthy();
+    expect(getByText("整理审查清单")).toBeTruthy();
+    expect(getByText("确认路由")).toBeTruthy();
+  });
+
+  it("shows waiting state when coordination facts are empty", async () => {
+    const fetcher = createTaskLaunchFetcher({ emptyFacts: true, launchDetail: true });
+    await renderWithQueryClient(
+      <TaskLaunchDetailView
+        apiBaseUrl="http://control-plane.local"
+        demandId="demand-1"
+        fetcher={fetcher}
+      />,
+    );
+
+    await vi.waitFor(() => expect(getByText("等待项目协调线程处理")).toBeTruthy());
   });
 });
 

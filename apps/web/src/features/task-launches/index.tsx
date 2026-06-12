@@ -3,9 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { TaskLaunchShell } from "./components/task-launch-shell";
 import { TaskLaunchForm } from "./components/task-launch-form";
+import { TaskLaunchDetail } from "./components/task-launch-detail";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
+  getProjectDemandLaunchDetail,
   listProjectMembers,
   listProjects,
   submitProjectDemand,
@@ -95,9 +97,39 @@ export function TaskLaunchView({ apiBaseUrl, fetcher }: TaskLaunchViewProps) {
 }
 
 export function TaskLaunchDetailPage({ demandId }: { demandId: string }) {
+  return <TaskLaunchDetailView apiBaseUrl={resolveControlPlaneUrl()} demandId={demandId} />;
+}
+
+type TaskLaunchDetailViewProps = {
+  apiBaseUrl: string;
+  demandId: string;
+  fetcher?: typeof fetch;
+};
+
+export function TaskLaunchDetailView({
+  apiBaseUrl,
+  demandId,
+  fetcher,
+}: TaskLaunchDetailViewProps) {
+  const apiOptions = useMemo<ApiClientOptions>(
+    () => ({ baseUrl: apiBaseUrl, fetcher }),
+    [apiBaseUrl, fetcher],
+  );
+  const detailQuery = useQuery({
+    placeholderData: keepPreviousData,
+    queryFn: () => getProjectDemandLaunchDetail(apiOptions, demandId),
+    queryKey: ["task-launch-detail", apiBaseUrl, demandId],
+  });
+
   return (
     <TaskLaunchShell title="发起详情" description="查看一次任务发起触发的协调事实">
-      <div>发起详情 {demandId}</div>
+      {detailQuery.isError ? (
+        <div className="text-sm text-destructive">发起详情加载失败</div>
+      ) : detailQuery.data ? (
+        <TaskLaunchDetail detail={detailQuery.data} />
+      ) : (
+        <div className="text-sm text-muted-foreground">正在加载发起详情</div>
+      )}
     </TaskLaunchShell>
   );
 }
