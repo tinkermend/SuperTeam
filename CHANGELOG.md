@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-13 03:01：Control Plane: 打通 ProjectTask 协调分派到 DigitalEmployeeRun 的执行桥接，成功分派先创建真实 run 再原子绑定 digital_employee_run_id/runtime_task_id（绑定先于事件，避免孤儿 run），重复分派与 Temporal 重试幂等；失败时按可重试性记录分派失败事件，终态失败标记为不可重试，单个任务分派失败不再中断同批其余任务。
 - 2026-06-12 21:20：新增“任务发起”一级入口，替换原主导航“任务中心”，支持按项目提交需求、自动或显式选择人类审核人，并提供任务发起详情页追踪协调 Job、路由决策、项目任务和人类决策请求等首版协调事实。
 - 2026-06-12 23:21 新增收件箱可操作工作队列：增加 `inbox_items` read model、Inbox API、审批/项目决策投影、左侧菜单入口和 `/inbox` 页面，支持个人待办、团队只读视图和轻量处理动作。
 - 2026-06-12 16:25：新增当前登录用户账户自服务页 `/settings/account`，支持查看个人资料、DiceBear 头像、自己的最近登录记录，并通过自服务 API 修改资料和密码。
