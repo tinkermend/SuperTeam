@@ -10,13 +10,18 @@ import (
 
 type Service struct {
 	repository Repository
+	inbox      InboxProjector
 }
 
 func NewService(repository Repository) (*Service, error) {
+	return NewServiceWithInboxProjector(repository, nil)
+}
+
+func NewServiceWithInboxProjector(repository Repository, inbox InboxProjector) (*Service, error) {
 	if repository == nil {
 		return nil, errors.New("approval repository is required")
 	}
-	return &Service{repository: repository}, nil
+	return &Service{repository: repository, inbox: inbox}, nil
 }
 
 func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (*ApprovalRequest, error) {
@@ -45,6 +50,11 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 	if err != nil {
 		return nil, err
 	}
+	if s.inbox != nil {
+		if err := s.inbox.UpsertApprovalRequest(ctx, request); err != nil {
+			return nil, err
+		}
+	}
 	return &request, nil
 }
 
@@ -71,12 +81,18 @@ func (s *Service) ResolveRequest(ctx context.Context, input ResolveRequestInput)
 		return nil, ErrInvalidApprovalRequest
 	}
 	status := statusFromDecision(input.Decision)
-	if _, err := s.repository.ResolveApprovalRequest(ctx, input, status); err != nil {
+	request, err := s.repository.ResolveApprovalRequest(ctx, input, status)
+	if err != nil {
 		return nil, err
 	}
 	decision, err := s.repository.CreateApprovalDecision(ctx, input)
 	if err != nil {
 		return nil, err
+	}
+	if s.inbox != nil {
+		if err := s.inbox.ResolveApprovalRequest(ctx, request); err != nil {
+			return nil, err
+		}
 	}
 	return &decision, nil
 }

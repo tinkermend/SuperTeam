@@ -75,6 +75,63 @@ func TestApprovalServiceCreatesAndResolvesRequest(t *testing.T) {
 	}
 }
 
+func TestApprovalServiceProjectsCreatedAndResolvedRequests(t *testing.T) {
+	repo := newMemoryRepository()
+	inbox := &fakeApprovalInboxProjector{}
+	service, err := NewServiceWithInboxProjector(repo, inbox)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	targetUserID := uuid.New()
+
+	request, err := service.CreateRequest(context.Background(), CreateRequestInput{
+		TenantID:      tenantID,
+		ResourceType:  "project_decision",
+		ResourceID:    uuid.New(),
+		RequesterType: "project_coordinator",
+		TargetUserID:  targetUserID,
+		DecisionType:  "route_review",
+		Title:         "确认高风险路由",
+	})
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	if len(inbox.upserts) != 1 || inbox.upserts[0].ID != request.ID || inbox.upserts[0].Status != ApprovalStatusPending {
+		t.Fatalf("expected created approval projection, got %#v", inbox.upserts)
+	}
+
+	if _, err := service.ResolveRequest(context.Background(), ResolveRequestInput{
+		TenantID:          tenantID,
+		ApprovalRequestID: request.ID,
+		DecidedByUserID:   targetUserID,
+		Decision:          ApprovalDecisionApproved,
+	}); err != nil {
+		t.Fatalf("resolve request: %v", err)
+	}
+	if len(inbox.resolutions) != 1 || inbox.resolutions[0].ID != request.ID || inbox.resolutions[0].Status != ApprovalStatusApproved || inbox.resolutions[0].ResolvedAt == nil {
+		t.Fatalf("expected resolved approval projection, got %#v", inbox.resolutions)
+	}
+
+	projectionErr := errors.New("inbox unavailable")
+	failingInbox := &fakeApprovalInboxProjector{upsertErr: projectionErr}
+	failingService, err := NewServiceWithInboxProjector(newMemoryRepository(), failingInbox)
+	if err != nil {
+		t.Fatalf("new failing service: %v", err)
+	}
+	if _, err := failingService.CreateRequest(context.Background(), CreateRequestInput{
+		TenantID:      uuid.New(),
+		ResourceType:  "project_decision",
+		ResourceID:    uuid.New(),
+		RequesterType: "project_coordinator",
+		TargetUserID:  uuid.New(),
+		DecisionType:  "route_review",
+		Title:         "确认高风险路由",
+	}); !errors.Is(err, projectionErr) {
+		t.Fatalf("expected projector error, got %v", err)
+	}
+}
+
 func TestApprovalServiceRejectsInvalidAndDuplicateResolution(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -233,6 +290,23 @@ func (r *memoryRepository) CreateApprovalDecision(_ context.Context, input Resol
 	}
 	r.decisions = append(r.decisions, decision)
 	return decision, nil
+}
+
+type fakeApprovalInboxProjector struct {
+	upserts     []ApprovalRequest
+	resolutions []ApprovalRequest
+	upsertErr   error
+	resolveErr  error
+}
+
+func (f *fakeApprovalInboxProjector) UpsertApprovalRequest(_ context.Context, request ApprovalRequest) error {
+	f.upserts = append(f.upserts, request)
+	return f.upsertErr
+}
+
+func (f *fakeApprovalInboxProjector) ResolveApprovalRequest(_ context.Context, request ApprovalRequest) error {
+	f.resolutions = append(f.resolutions, request)
+	return f.resolveErr
 }
 
 func optionalString(value string) *string {

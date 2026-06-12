@@ -12,6 +12,7 @@ type Service struct {
 	repository            Repository
 	coordinator           CoordinatorSignalClient
 	approvals             ApprovalResolver
+	inbox                 DecisionInboxProjector
 	archiveArtifactLocker ArchiveArtifactLocker
 }
 
@@ -40,13 +41,17 @@ func NewServiceWithArchiveArtifactLocker(repository Repository, locker ArchiveAr
 }
 
 func NewServiceWithCoordinatorApprovalsAndArchiveArtifactLocker(repository Repository, coordinator CoordinatorSignalClient, approvals ApprovalResolver, locker ArchiveArtifactLocker) (*Service, error) {
+	return NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repository, coordinator, approvals, nil, locker)
+}
+
+func NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repository Repository, coordinator CoordinatorSignalClient, approvals ApprovalResolver, inbox DecisionInboxProjector, locker ArchiveArtifactLocker) (*Service, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("project repository is required")
 	}
 	if coordinator == nil {
 		coordinator = NoopCoordinatorSignalClient{}
 	}
-	return &Service{repository: repository, coordinator: coordinator, approvals: approvals, archiveArtifactLocker: locker}, nil
+	return &Service{repository: repository, coordinator: coordinator, approvals: approvals, inbox: inbox, archiveArtifactLocker: locker}, nil
 }
 
 func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -1030,6 +1035,11 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 	})
 	if err != nil {
 		return nil, err
+	}
+	if s.inbox != nil {
+		if err := s.inbox.ResolveProjectDecisionRequest(ctx, resolved); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.coordinator.SignalHumanDecisionSubmitted(ctx, HumanDecisionSubmittedSignal{
 		TenantID:          req.TenantID,

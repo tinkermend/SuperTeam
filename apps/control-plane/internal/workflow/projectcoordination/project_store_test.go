@@ -78,7 +78,8 @@ func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProject
 		approvalID: approvalID,
 	}
 	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
-	store := NewProjectStoreWithApprovals(repo, approvals)
+	inbox := &projectStoreDecisionInboxProjector{}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, inbox)
 
 	result, err := store.RequestRouteDecisionReview(context.Background(), RequestRouteDecisionReviewInput{
 		TenantID:          tenantID,
@@ -114,6 +115,9 @@ func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProject
 	decision := repo.decisionRequests[0]
 	if decision.ApprovalRequestID != approvalID || decision.TargetUserID != ownerID || decision.StatusSnapshot != "pending" {
 		t.Fatalf("unexpected decision projection: %#v", decision)
+	}
+	if len(inbox.upserts) != 1 || inbox.upserts[0].ID != decision.ID || inbox.upserts[0].ApprovalRequestID != approvalID {
+		t.Fatalf("expected inbox decision projection, got %#v", inbox.upserts)
 	}
 }
 
@@ -219,6 +223,21 @@ func (c *projectStoreApprovalCreator) CreateRequest(ctx context.Context, input a
 		Title:        input.Title,
 		Status:       approval.ApprovalStatusPending,
 	}, nil
+}
+
+type projectStoreDecisionInboxProjector struct {
+	upserts     []project.DecisionRequest
+	resolutions []project.DecisionRequest
+}
+
+func (p *projectStoreDecisionInboxProjector) UpsertProjectDecisionRequest(ctx context.Context, decision project.DecisionRequest) error {
+	p.upserts = append(p.upserts, decision)
+	return nil
+}
+
+func (p *projectStoreDecisionInboxProjector) ResolveProjectDecisionRequest(ctx context.Context, decision project.DecisionRequest) error {
+	p.resolutions = append(p.resolutions, decision)
+	return nil
 }
 
 func strPtr(value string) *string {

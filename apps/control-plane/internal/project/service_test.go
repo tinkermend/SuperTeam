@@ -1538,6 +1538,101 @@ func TestResolveDecisionUsesApprovalAndSignalsCoordinator(t *testing.T) {
 	}
 }
 
+func TestResolveDecisionProjectsInboxResolution(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, coordinator, approvals, inbox, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      "route_review",
+		TitleSnapshot:     "需要负责人确认",
+		StatusSnapshot:    "pending",
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          "approved",
+	})
+	if err != nil {
+		t.Fatalf("resolve decision: %v", err)
+	}
+	if len(inbox.resolutions) != 1 || inbox.resolutions[0].ID != decisionID || inbox.resolutions[0].StatusSnapshot != "approved" || inbox.resolutions[0].ResolvedEventID == nil {
+		t.Fatalf("expected inbox resolution projection, got %#v", inbox.resolutions)
+	}
+	if resolved.ID != decisionID || coordinator.decisionSignals != 1 {
+		t.Fatalf("expected resolved decision and coordinator signal, resolved=%#v signals=%d", resolved, coordinator.decisionSignals)
+	}
+
+	projectionErr := errors.New("inbox unavailable")
+	failingRepo := newMemoryRepository()
+	failingCoordinator := &fakeCoordinatorSignalClient{}
+	failingApprovals := &fakeApprovalResolver{}
+	failingInbox := &fakeDecisionInboxProjector{resolveErr: projectionErr}
+	failingService, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(failingRepo, failingCoordinator, failingApprovals, failingInbox, nil)
+	if err != nil {
+		t.Fatalf("new failing service: %v", err)
+	}
+	failingProjectID := uuid.New()
+	failingDecisionID := uuid.New()
+	failingRepo.projects[failingProjectID] = Project{
+		ID:                     failingProjectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + failingProjectID.String(),
+	}
+	failingRepo.decisionRequests = append(failingRepo.decisionRequests, DecisionRequest{
+		ID:                failingDecisionID,
+		TenantID:          tenantID,
+		ProjectID:         failingProjectID,
+		ApprovalRequestID: uuid.New(),
+		TargetUserID:      actorID,
+		DecisionType:      "route_review",
+		TitleSnapshot:     "需要负责人确认",
+		StatusSnapshot:    "pending",
+	})
+	if _, err := failingService.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         failingProjectID,
+		DecisionRequestID: failingDecisionID,
+		DecidedByUserID:   actorID,
+		Decision:          "approved",
+	}); !errors.Is(err, projectionErr) {
+		t.Fatalf("expected projector error, got %v", err)
+	}
+	if failingCoordinator.decisionSignals != 0 {
+		t.Fatalf("expected no coordinator signal after projection failure, got %d", failingCoordinator.decisionSignals)
+	}
+}
+
 func TestResolveDecisionFindsDecisionBeyondFirstPage(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -3087,6 +3182,23 @@ func (f *fakeApprovalResolver) ResolveApproval(ctx context.Context, req ResolveA
 	f.calls++
 	f.last = req
 	return nil
+}
+
+type fakeDecisionInboxProjector struct {
+	upserts     []DecisionRequest
+	resolutions []DecisionRequest
+	upsertErr   error
+	resolveErr  error
+}
+
+func (f *fakeDecisionInboxProjector) UpsertProjectDecisionRequest(ctx context.Context, decision DecisionRequest) error {
+	f.upserts = append(f.upserts, decision)
+	return f.upsertErr
+}
+
+func (f *fakeDecisionInboxProjector) ResolveProjectDecisionRequest(ctx context.Context, decision DecisionRequest) error {
+	f.resolutions = append(f.resolutions, decision)
+	return f.resolveErr
 }
 
 func containsString(values []string, target string) bool {
