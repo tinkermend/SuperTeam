@@ -234,6 +234,34 @@ func TestHandlerExecuteActionReturnsSourceResult(t *testing.T) {
 	}
 }
 
+func TestHandlerExecuteActionReturnsNormalizedSourceErrorStatus(t *testing.T) {
+	itemID := uuid.New()
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+	}{
+		{name: "invalid source action", err: ErrInvalidAction, wantStatus: http.StatusBadRequest},
+		{name: "source unavailable", err: ErrSourceUnavailable, wantStatus: http.StatusUnprocessableEntity},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &handlerService{executeErr: tt.err}
+			handler := NewHandler(service)
+			req := httptest.NewRequest(http.MethodPost, "/inbox/items/"+itemID.String()+"/actions", strings.NewReader(`{"action":"approved"}`))
+			req = withConsoleIdentity(req, uuid.New(), uuid.New())
+			req = withItemRouteParam(req, itemID)
+			resp := httptest.NewRecorder()
+
+			handler.ExecuteAction(resp, req)
+
+			if resp.Code != tt.wantStatus {
+				t.Fatalf("expected %d, got %d: %s", tt.wantStatus, resp.Code, resp.Body.String())
+			}
+		})
+	}
+}
+
 type handlerService struct {
 	listReq          ListItemsRequest
 	listResult       ListItemsResult

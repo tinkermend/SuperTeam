@@ -227,6 +227,41 @@ func TestApprovalActionAdapterReturnsSourceUnavailableWithoutService(t *testing.
 	}
 }
 
+func TestApprovalActionAdapterNormalizesSourceErrors(t *testing.T) {
+	unknownErr := errors.New("approval store unavailable")
+	tests := []struct {
+		name    string
+		source  error
+		wantErr error
+	}{
+		{name: "invalid approval request", source: approval.ErrInvalidApprovalRequest, wantErr: ErrInvalidAction},
+		{name: "approval not found", source: approval.ErrApprovalNotFound, wantErr: ErrSourceUnavailable},
+		{name: "approval already resolved", source: approval.ErrApprovalAlreadyResolved, wantErr: ErrInvalidAction},
+		{name: "unknown", source: unknownErr, wantErr: unknownErr},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &approvalActionRepository{resolveErr: tt.source}
+			service, err := approval.NewService(repo)
+			if err != nil {
+				t.Fatalf("new approval service: %v", err)
+			}
+			adapter := NewApprovalActionAdapter(service)
+
+			_, err = adapter.ResolveApprovalAction(context.Background(), SourceActionRequest{
+				TenantID:    uuid.New(),
+				ActorUserID: uuid.New(),
+				SourceID:    uuid.New(),
+				Action:      "approved",
+			})
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("expected %v, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestProjectDecisionActionAdapterResolvesDecision(t *testing.T) {
 	projectID := uuid.New()
 	decisionID := uuid.New()
@@ -291,8 +326,83 @@ func TestProjectDecisionActionAdapterReturnsSourceUnavailableWithoutProjectID(t 
 	}
 }
 
+func TestProjectDecisionActionAdapterNormalizesSourceErrors(t *testing.T) {
+	unknownErr := errors.New("project store unavailable")
+	tests := []struct {
+		name    string
+		mutate  func(*projectActionRepository)
+		wantErr error
+	}{
+		{
+			name: "invalid decision request",
+			mutate: func(repo *projectActionRepository) {
+				repo.getDecisionErr = project.ErrInvalidProject
+			},
+			wantErr: ErrInvalidAction,
+		},
+		{
+			name: "project not found",
+			mutate: func(repo *projectActionRepository) {
+				repo.getProjectErr = project.ErrProjectNotFound
+			},
+			wantErr: ErrSourceUnavailable,
+		},
+		{
+			name: "unknown",
+			mutate: func(repo *projectActionRepository) {
+				repo.getDecisionErr = unknownErr
+			},
+			wantErr: unknownErr,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectID := uuid.New()
+			decisionID := uuid.New()
+			repo := &projectActionRepository{
+				project: project.Project{
+					ID:               projectID,
+					TenantID:         uuid.New(),
+					Name:             "Customer rollout",
+					Goal:             "Ship safely",
+					HumanOwnerUserID: uuid.New(),
+				},
+				decision: project.DecisionRequest{
+					ID:                decisionID,
+					ProjectID:         projectID,
+					ApprovalRequestID: uuid.New(),
+					TargetUserID:      uuid.New(),
+					DecisionType:      "route",
+					TitleSnapshot:     "Review route decision",
+					StatusSnapshot:    "pending",
+				},
+			}
+			repo.decision.TenantID = repo.project.TenantID
+			tt.mutate(repo)
+			service, err := project.NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, project.NoopCoordinatorSignalClient{}, nil, nil, nil)
+			if err != nil {
+				t.Fatalf("new project service: %v", err)
+			}
+			adapter := NewProjectDecisionActionAdapter(service)
+
+			_, err = adapter.ResolveProjectDecisionAction(context.Background(), SourceActionRequest{
+				TenantID:        repo.project.TenantID,
+				ActorUserID:     uuid.New(),
+				SourceID:        decisionID,
+				SourceProjectID: &projectID,
+				Action:          "approved",
+			})
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("expected %v, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
 type approvalActionRepository struct {
 	resolveInput approval.ResolveRequestInput
+	resolveErr   error
 }
 
 func (r *approvalActionRepository) CreateApprovalRequest(_ context.Context, input approval.CreateRequestInput, status approval.ApprovalStatus) (approval.ApprovalRequest, error) {
@@ -311,6 +421,9 @@ func (r *approvalActionRepository) GetApprovalRequest(_ context.Context, tenantI
 }
 
 func (r *approvalActionRepository) ResolveApprovalRequest(_ context.Context, input approval.ResolveRequestInput, status approval.ApprovalStatus) (approval.ApprovalRequest, error) {
+	if r.resolveErr != nil {
+		return approval.ApprovalRequest{}, r.resolveErr
+	}
 	r.resolveInput = input
 	return approval.ApprovalRequest{
 		ID:           input.ApprovalRequestID,
@@ -334,13 +447,19 @@ func (r *approvalActionRepository) CreateApprovalDecision(_ context.Context, inp
 
 type projectActionRepository struct {
 	project.Repository
-	project    project.Project
-	decision   project.DecisionRequest
-	event      project.AppendProjectEventRequest
-	resolveReq project.ResolveDecisionRequestRepositoryRequest
+	project        project.Project
+	decision       project.DecisionRequest
+	event          project.AppendProjectEventRequest
+	resolveReq     project.ResolveDecisionRequestRepositoryRequest
+	getProjectErr  error
+	getDecisionErr error
+	resolveErr     error
 }
 
 func (r projectActionRepository) GetProject(_ context.Context, tenantID, projectID uuid.UUID) (project.Project, error) {
+	if r.getProjectErr != nil {
+		return project.Project{}, r.getProjectErr
+	}
 	if r.project.TenantID != tenantID || r.project.ID != projectID {
 		return project.Project{}, project.ErrProjectNotFound
 	}
@@ -348,6 +467,9 @@ func (r projectActionRepository) GetProject(_ context.Context, tenantID, project
 }
 
 func (r projectActionRepository) GetDecisionRequest(_ context.Context, tenantID, projectID, decisionRequestID uuid.UUID) (project.DecisionRequest, error) {
+	if r.getDecisionErr != nil {
+		return project.DecisionRequest{}, r.getDecisionErr
+	}
 	if r.decision.TenantID != tenantID || r.decision.ProjectID != projectID || r.decision.ID != decisionRequestID {
 		return project.DecisionRequest{}, project.ErrInvalidProject
 	}
@@ -368,6 +490,9 @@ func (r *projectActionRepository) AppendProjectEvent(_ context.Context, event pr
 }
 
 func (r *projectActionRepository) ResolveDecisionRequest(_ context.Context, req project.ResolveDecisionRequestRepositoryRequest) (project.DecisionRequest, error) {
+	if r.resolveErr != nil {
+		return project.DecisionRequest{}, r.resolveErr
+	}
 	r.resolveReq = req
 	resolved := r.decision
 	resolved.StatusSnapshot = req.StatusSnapshot

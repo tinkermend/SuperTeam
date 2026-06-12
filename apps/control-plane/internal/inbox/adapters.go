@@ -2,6 +2,7 @@ package inbox
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -122,7 +123,7 @@ func (a *ApprovalActionAdapter) ResolveApprovalAction(ctx context.Context, req S
 		Payload:           req.Payload,
 	})
 	if err != nil {
-		return SourceActionResult{}, err
+		return SourceActionResult{}, normalizeSourceActionError(err)
 	}
 	return SourceActionResult{SourceType: string(SourceTypeApprovalRequest), SourceID: req.SourceID, Status: req.Action}, nil
 }
@@ -149,12 +150,25 @@ func (a *ProjectDecisionActionAdapter) ResolveProjectDecisionAction(ctx context.
 		Payload:           req.Payload,
 	})
 	if err != nil {
-		return SourceActionResult{}, err
+		return SourceActionResult{}, normalizeSourceActionError(err)
 	}
 	if resolved == nil {
 		return SourceActionResult{}, ErrSourceUnavailable
 	}
 	return SourceActionResult{SourceType: string(SourceTypeProjectDecisionRequest), SourceID: resolved.ID, Status: req.Action}, nil
+}
+
+func normalizeSourceActionError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, approval.ErrInvalidApprovalRequest), errors.Is(err, approval.ErrApprovalAlreadyResolved), errors.Is(err, project.ErrInvalidProject):
+		return ErrInvalidAction
+	case errors.Is(err, approval.ErrApprovalNotFound), errors.Is(err, project.ErrProjectNotFound):
+		return ErrSourceUnavailable
+	default:
+		return err
+	}
 }
 
 func statusFromApproval(status approval.ApprovalStatus) Status {
