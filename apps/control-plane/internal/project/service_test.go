@@ -2957,6 +2957,43 @@ func (r *memoryRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID
 	return ProjectTask{}, ErrProjectNotFound
 }
 
+func (r *memoryRepository) BindProjectTaskRun(ctx context.Context, req BindProjectTaskRunRequest) (ProjectTask, error) {
+	for i, task := range r.tasks {
+		if task.TenantID != req.TenantID || task.ID != req.ProjectTaskID {
+			continue
+		}
+		if task.DigitalEmployeeRunID != nil && *task.DigitalEmployeeRunID != req.DigitalEmployeeRunID {
+			return ProjectTask{}, ErrProjectConflict
+		}
+		allowed := false
+		for _, status := range req.CurrentStatuses {
+			if task.Status == status {
+				allowed = true
+				break
+			}
+		}
+		if !allowed && !(task.Status == "assigned" && task.DigitalEmployeeRunID != nil && *task.DigitalEmployeeRunID == req.DigitalEmployeeRunID) {
+			return ProjectTask{}, ErrProjectConflict
+		}
+		task.Status = "assigned"
+		task.DigitalEmployeeRunID = &req.DigitalEmployeeRunID
+		task.RuntimeTaskID = &req.RuntimeTaskID
+		task.UpdatedAt = time.Now().UTC()
+		r.tasks[i] = task
+		return task, nil
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) ProjectTaskEventExists(ctx context.Context, tenantID, projectID uuid.UUID, eventType ProjectEventType, actorID string) (bool, error) {
+	for _, event := range r.events {
+		if event.TenantID == tenantID && event.ProjectID == projectID && event.EventType == eventType && event.ActorID == actorID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (r *memoryRepository) AssignProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, assignedDigitalEmployeeID, eventID *uuid.UUID) (ProjectTask, error) {
 	for index, task := range r.tasks {
 		if task.ID == projectTaskID && task.TenantID == tenantID {

@@ -102,6 +102,69 @@ func (q *Queries) AssignProjectTask(ctx context.Context, arg AssignProjectTaskPa
 	return i, err
 }
 
+const BindProjectTaskRun = `-- name: BindProjectTaskRun :one
+UPDATE project_tasks
+SET status = 'assigned',
+    runtime_task_id = $1::uuid,
+    digital_employee_run_id = $2::uuid,
+    latest_event_id = COALESCE($3::uuid, latest_event_id),
+    updated_at = NOW()
+WHERE tenant_id = $4::uuid
+  AND id = $5::uuid
+  AND (
+      status = ANY($6::varchar[])
+      OR (
+          status = 'assigned'
+          AND runtime_task_id = $1::uuid
+          AND digital_employee_run_id = $2::uuid
+      )
+  )
+  AND (
+      digital_employee_run_id IS NULL
+      OR digital_employee_run_id = $2::uuid
+  )
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at
+`
+
+type BindProjectTaskRunParams struct {
+	RuntimeTaskID        uuid.UUID     `json:"runtime_task_id"`
+	DigitalEmployeeRunID uuid.UUID     `json:"digital_employee_run_id"`
+	LatestEventID        uuid.NullUUID `json:"latest_event_id"`
+	TenantID             uuid.UUID     `json:"tenant_id"`
+	ID                   uuid.UUID     `json:"id"`
+	CurrentStatuses      []string      `json:"current_statuses"`
+}
+
+func (q *Queries) BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRunParams) (ProjectTask, error) {
+	row := q.db.QueryRow(ctx, BindProjectTaskRun,
+		arg.RuntimeTaskID,
+		arg.DigitalEmployeeRunID,
+		arg.LatestEventID,
+		arg.TenantID,
+		arg.ID,
+		arg.CurrentStatuses,
+	)
+	var i ProjectTask
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Title,
+		&i.Summary,
+		&i.Status,
+		&i.AssignedDigitalEmployeeID,
+		&i.RuntimeTaskID,
+		&i.DigitalEmployeeRunID,
+		&i.RiskLevel,
+		&i.RequiresHumanApproval,
+		&i.LatestEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const CreateProject = `-- name: CreateProject :one
 INSERT INTO projects (
     id,
@@ -2101,6 +2164,35 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 		return nil, err
 	}
 	return items, nil
+}
+
+const ProjectTaskEventExists = `-- name: ProjectTaskEventExists :one
+SELECT EXISTS (
+    SELECT 1 FROM project_events
+    WHERE tenant_id = $1::uuid
+      AND project_id = $2::uuid
+      AND event_type = $3::varchar
+      AND actor_id = $4::varchar
+) AS event_exists
+`
+
+type ProjectTaskEventExistsParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	EventType string    `json:"event_type"`
+	ActorID   string    `json:"actor_id"`
+}
+
+func (q *Queries) ProjectTaskEventExists(ctx context.Context, arg ProjectTaskEventExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, ProjectTaskEventExists,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.EventType,
+		arg.ActorID,
+	)
+	var event_exists bool
+	err := row.Scan(&event_exists)
+	return event_exists, err
 }
 
 const ReplaceProjectMembersDelete = `-- name: ReplaceProjectMembersDelete :exec

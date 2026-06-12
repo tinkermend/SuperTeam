@@ -591,6 +591,51 @@ func (r *PgRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, pr
 	return r.updateProjectTaskStatusWithQueries(ctx, r.q, tenantID, projectTaskID, status, eventID, currentStatuses)
 }
 
+func (r *PgRepository) BindProjectTaskRun(ctx context.Context, req BindProjectTaskRunRequest) (ProjectTask, error) {
+	row, err := r.q.BindProjectTaskRun(ctx, queries.BindProjectTaskRunParams{
+		TenantID:             req.TenantID,
+		ID:                   req.ProjectTaskID,
+		RuntimeTaskID:        req.RuntimeTaskID,
+		DigitalEmployeeRunID: req.DigitalEmployeeRunID,
+		LatestEventID:        nullUUID(req.LatestEventID),
+		CurrentStatuses:      req.CurrentStatuses,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return r.bindProjectTaskRunConflict(ctx, req)
+		}
+		return ProjectTask{}, err
+	}
+	return taskFromRecord(row), nil
+}
+
+// bindProjectTaskRunConflict distinguishes a missing task from a real binding
+// conflict (task is bound to a different run, or is in a non-dispatchable state).
+func (r *PgRepository) bindProjectTaskRunConflict(ctx context.Context, req BindProjectTaskRunRequest) (ProjectTask, error) {
+	existing, err := r.q.GetProjectTask(ctx, queries.GetProjectTaskParams{TenantID: req.TenantID, ID: req.ProjectTaskID})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProjectTask{}, ErrProjectNotFound
+		}
+		return ProjectTask{}, err
+	}
+	task := taskFromRecord(existing)
+	if task.DigitalEmployeeRunID != nil && *task.DigitalEmployeeRunID == req.DigitalEmployeeRunID {
+		// Already bound to the same run by a prior attempt; treat as idempotent success.
+		return task, nil
+	}
+	return ProjectTask{}, ErrProjectConflict
+}
+
+func (r *PgRepository) ProjectTaskEventExists(ctx context.Context, tenantID, projectID uuid.UUID, eventType ProjectEventType, actorID string) (bool, error) {
+	return r.q.ProjectTaskEventExists(ctx, queries.ProjectTaskEventExistsParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventType: string(eventType),
+		ActorID:   actorID,
+	})
+}
+
 func (r *PgRepository) updateProjectTaskStatusWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error) {
 	row, err := q.UpdateProjectTaskStatus(ctx, queries.UpdateProjectTaskStatusParams{
 		TenantID:        tenantID,

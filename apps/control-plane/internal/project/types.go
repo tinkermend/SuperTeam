@@ -12,6 +12,7 @@ var (
 	ErrInvalidProject           = errors.New("invalid project")
 	ErrInvalidProjectMember     = errors.New("invalid project member")
 	ErrProjectNotFound          = errors.New("project not found")
+	ErrProjectConflict          = errors.New("project conflict")
 	ErrProjectArchived          = errors.New("project archived")
 	ErrProjectTaskForbidden     = errors.New("project task forbidden")
 	ErrInvalidProjectEvidence   = errors.New("invalid project evidence")
@@ -78,6 +79,7 @@ const (
 	ProjectEventRouteDecisionCreated    ProjectEventType = "route_decision.created"
 	ProjectEventTaskCreated             ProjectEventType = "project_task.created"
 	ProjectEventTaskDispatched          ProjectEventType = "project_task.dispatched"
+	ProjectEventTaskDispatchFailed      ProjectEventType = "project_task.dispatch_failed"
 	ProjectEventTaskCompleted           ProjectEventType = "project_task.completed"
 	ProjectEventTaskFailed              ProjectEventType = "project_task.failed"
 	ProjectEventTransferRequested       ProjectEventType = "transfer.requested"
@@ -172,6 +174,15 @@ type ProjectTask struct {
 	RequiresHumanApproval     bool
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
+}
+
+type BindProjectTaskRunRequest struct {
+	TenantID             uuid.UUID
+	ProjectTaskID        uuid.UUID
+	DigitalEmployeeRunID uuid.UUID
+	RuntimeTaskID        uuid.UUID
+	LatestEventID        *uuid.UUID
+	CurrentStatuses      []string
 }
 
 type CoordinationJob struct {

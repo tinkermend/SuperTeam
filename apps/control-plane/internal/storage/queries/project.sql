@@ -403,6 +403,38 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND status = ANY(sqlc.arg('current_statuses')::varchar[])
 RETURNING *;
 
+-- name: BindProjectTaskRun :one
+UPDATE project_tasks
+SET status = 'assigned',
+    runtime_task_id = sqlc.arg('runtime_task_id')::uuid,
+    digital_employee_run_id = sqlc.arg('digital_employee_run_id')::uuid,
+    latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND (
+      status = ANY(sqlc.arg('current_statuses')::varchar[])
+      OR (
+          status = 'assigned'
+          AND runtime_task_id = sqlc.arg('runtime_task_id')::uuid
+          AND digital_employee_run_id = sqlc.arg('digital_employee_run_id')::uuid
+      )
+  )
+  AND (
+      digital_employee_run_id IS NULL
+      OR digital_employee_run_id = sqlc.arg('digital_employee_run_id')::uuid
+  )
+RETURNING *;
+
+-- name: ProjectTaskEventExists :one
+SELECT EXISTS (
+    SELECT 1 FROM project_events
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND project_id = sqlc.arg('project_id')::uuid
+      AND event_type = sqlc.arg('event_type')::varchar
+      AND actor_id = sqlc.arg('actor_id')::varchar
+) AS event_exists;
+
 -- name: AssignProjectTask :one
 UPDATE project_tasks
 SET status = sqlc.arg('status')::varchar,
