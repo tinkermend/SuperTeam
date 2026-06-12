@@ -259,9 +259,11 @@ describe("InboxView", () => {
     });
   });
 
-  it("requests project and target user filters and omits them after reset", async () => {
+  it("validates project and target user UUID filters before applying them", async () => {
     const fetcher = createInboxFetcher();
     const screen = await renderInboxView(fetcher);
+    const projectId = "11111111-1111-4111-8111-111111111111";
+    const targetUserId = "22222222-2222-4222-8222-222222222222";
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
     await userEvent.fill(screen.getByLabelText("项目 ID"), "project-42");
@@ -269,8 +271,19 @@ describe("InboxView", () => {
 
     await vi.waitFor(() => {
       const requestUrl = latestInboxRequestUrl(fetcher);
-      expect(requestUrl?.searchParams.get("project_id")).toBe("project-42");
-      expect(requestUrl?.searchParams.get("target_user_id")).toBe("human-owner-42");
+      expect(requestUrl?.searchParams.has("project_id")).toBe(false);
+      expect(requestUrl?.searchParams.has("target_user_id")).toBe(false);
+      expect(requestUrl?.searchParams.get("offset")).toBe("0");
+    });
+    await expect.element(screen.getByText("请输入有效 UUID")).toBeVisible();
+
+    await userEvent.fill(screen.getByLabelText("项目 ID"), projectId);
+    await userEvent.fill(screen.getByLabelText("目标用户 ID"), targetUserId);
+
+    await vi.waitFor(() => {
+      const requestUrl = latestInboxRequestUrl(fetcher);
+      expect(requestUrl?.searchParams.get("project_id")).toBe(projectId);
+      expect(requestUrl?.searchParams.get("target_user_id")).toBe(targetUserId);
       expect(requestUrl?.searchParams.get("offset")).toBe("0");
     });
 
@@ -283,6 +296,11 @@ describe("InboxView", () => {
       expect(requestUrl?.searchParams.get("status")).toBe("open");
       expect(requestUrl?.searchParams.get("offset")).toBe("0");
     });
+    await expect.element(screen.getByLabelText("项目 ID")).toHaveValue("");
+    await expect.element(screen.getByLabelText("目标用户 ID")).toHaveValue("");
+    await expect.element(screen.getByRole("combobox", { name: "状态" })).toHaveTextContent(
+      "开放",
+    );
   });
 
   it("keeps existing data while switching to team inbox", async () => {

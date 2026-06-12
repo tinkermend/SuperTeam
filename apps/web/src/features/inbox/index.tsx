@@ -17,7 +17,13 @@ import {
 } from "@/lib/api/inbox";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { InboxActionDialog } from "./components/inbox-action-dialog";
-import { InboxShell, type InboxFilterKey } from "./components/inbox-shell";
+import {
+  InboxShell,
+  type InboxFilterChangeValue,
+  type InboxFilterKey,
+  type InboxUuidFilterDrafts,
+  type InboxUuidFilterKey,
+} from "./components/inbox-shell";
 
 type InboxPageProps = {
   fetcher?: typeof fetch;
@@ -39,6 +45,22 @@ const DEFAULT_INBOX_FILTERS = {
   status: "open",
 } satisfies InboxListFilters;
 
+const EMPTY_UUID_FILTER_DRAFTS = {
+  project_id: "",
+  target_user_id: "",
+} satisfies InboxUuidFilterDrafts;
+
+const UUID_FILTER_ERROR = "请输入有效 UUID";
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const INBOX_STATUSES = ["open", "resolved", "cancelled"] satisfies Array<
+  NonNullable<InboxListFilters["status"]>
+>;
+const INBOX_ITEM_TYPES = ["approval", "project_decision"] satisfies Array<
+  NonNullable<InboxListFilters["item_type"]>
+>;
+
 export function InboxPage({ fetcher }: InboxPageProps = {}) {
   return <InboxView apiBaseUrl={resolveControlPlaneUrl()} fetcher={fetcher} />;
 }
@@ -54,7 +76,28 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
   const [filters, setFilters] = useState<InboxListFilters>(() => ({
     ...DEFAULT_INBOX_FILTERS,
   }));
+  const [uuidFilterDrafts, setUuidFilterDrafts] = useState<InboxUuidFilterDrafts>(() => ({
+    ...EMPTY_UUID_FILTER_DRAFTS,
+  }));
   const [selectedAction, setSelectedAction] = useState<SelectedAction | null>(null);
+  const uuidFilterErrors = useMemo(
+    () => ({
+      project_id: getUuidFilterError(uuidFilterDrafts.project_id),
+      target_user_id: getUuidFilterError(uuidFilterDrafts.target_user_id),
+    }),
+    [uuidFilterDrafts],
+  );
+
+  const handleFilterChange = <Key extends InboxFilterKey>(
+    key: Key,
+    value: InboxFilterChangeValue<Key>,
+  ) => {
+    if (isUuidFilterKey(key)) {
+      setUuidFilterDrafts((current) => ({ ...current, [key]: value }));
+    }
+
+    setFilters((current) => updateInboxFilter(current, key, value));
+  };
 
   const inboxQuery = useQuery({
     queryKey: ["inbox-items", view, filters],
@@ -93,17 +136,18 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
           actionMutation.reset();
           setSelectedAction({ action, item });
         }}
-        onFilterChange={(key, value) => {
-          setFilters((current) => updateInboxFilter(current, key, value));
-        }}
+        onFilterChange={handleFilterChange}
         onRetry={() => {
           void inboxQuery.refetch();
         }}
         onResetFilters={() => {
+          setUuidFilterDrafts({ ...EMPTY_UUID_FILTER_DRAFTS });
           setFilters({ ...DEFAULT_INBOX_FILTERS });
         }}
         onViewChange={setView}
         filters={filters}
+        uuidFilterDrafts={uuidFilterDrafts}
+        uuidFilterErrors={uuidFilterErrors}
         view={view}
       />
       <InboxActionDialog
@@ -145,6 +189,11 @@ function updateInboxFilter(
     return next;
   }
 
+  if (isUuidFilterKey(key) && !isValidNonNilUuid(normalized)) {
+    clearInboxFilter(next, key);
+    return next;
+  }
+
   setInboxFilter(next, key, normalized);
   return next;
 }
@@ -172,19 +221,55 @@ function clearInboxFilter(filters: InboxListFilters, key: InboxFilterKey) {
 function setInboxFilter(filters: InboxListFilters, key: InboxFilterKey, value: string) {
   switch (key) {
     case "item_type":
-      filters.item_type = value as InboxListFilters["item_type"];
+      if (isInboxItemType(value)) {
+        filters.item_type = value;
+      }
       break;
     case "project_id":
-      filters.project_id = value;
+      if (isValidNonNilUuid(value)) {
+        filters.project_id = value;
+      }
       break;
     case "risk_level":
       filters.risk_level = value;
       break;
     case "status":
-      filters.status = value as InboxListFilters["status"];
+      if (isInboxStatus(value)) {
+        filters.status = value;
+      }
       break;
     case "target_user_id":
-      filters.target_user_id = value;
+      if (isValidNonNilUuid(value)) {
+        filters.target_user_id = value;
+      }
       break;
   }
+}
+
+function getUuidFilterError(value: string) {
+  const normalized = value.trim();
+  return normalized !== "" && !isValidNonNilUuid(normalized) ? UUID_FILTER_ERROR : undefined;
+}
+
+function isUuidFilterKey(key: InboxFilterKey): key is InboxUuidFilterKey {
+  return key === "project_id" || key === "target_user_id";
+}
+
+function isValidNonNilUuid(value: string) {
+  return value.toLowerCase() !== NIL_UUID && UUID_PATTERN.test(value);
+}
+
+function isInboxStatus(value: string): value is NonNullable<InboxListFilters["status"]> {
+  return includesString(INBOX_STATUSES, value);
+}
+
+function isInboxItemType(value: string): value is NonNullable<InboxListFilters["item_type"]> {
+  return includesString(INBOX_ITEM_TYPES, value);
+}
+
+function includesString<Value extends string>(
+  values: readonly Value[],
+  value: string,
+): value is Value {
+  return values.some((candidate) => candidate === value);
 }

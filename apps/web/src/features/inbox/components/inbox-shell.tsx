@@ -23,10 +23,32 @@ import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
-import type { InboxAction, InboxItem, InboxListFilters, InboxListResponse, InboxViewMode } from "@/lib/api/inbox";
+import type {
+  InboxAction,
+  InboxItem,
+  InboxItemType,
+  InboxListFilters,
+  InboxListResponse,
+  InboxStatus,
+  InboxViewMode,
+} from "@/lib/api/inbox";
 import { InboxItemList } from "./inbox-item-list";
 
 export type InboxFilterKey = "status" | "item_type" | "risk_level" | "project_id" | "target_user_id";
+export type InboxUuidFilterKey = Extract<InboxFilterKey, "project_id" | "target_user_id">;
+export type InboxUuidFilterDrafts = Record<InboxUuidFilterKey, string>;
+export type InboxUuidFilterErrors = Partial<Record<InboxUuidFilterKey, string | undefined>>;
+export type InboxFilterChangeValue<Key extends InboxFilterKey> = {
+  item_type: InboxItemType | "all";
+  project_id: string;
+  risk_level: string;
+  status: InboxStatus;
+  target_user_id: string;
+}[Key];
+type InboxFilterChangeHandler = <Key extends InboxFilterKey>(
+  key: Key,
+  value: InboxFilterChangeValue<Key>,
+) => void;
 
 type InboxShellProps = {
   data?: InboxListResponse;
@@ -36,10 +58,12 @@ type InboxShellProps = {
   isLoading: boolean;
   mutationError: Error | null;
   onAction: (item: InboxItem, action: InboxAction) => void;
-  onFilterChange: (key: InboxFilterKey, value: string) => void;
+  onFilterChange: InboxFilterChangeHandler;
   onRetry: () => void;
   onResetFilters: () => void;
   onViewChange: (view: InboxViewMode) => void;
+  uuidFilterDrafts: InboxUuidFilterDrafts;
+  uuidFilterErrors: InboxUuidFilterErrors;
   view: InboxViewMode;
 };
 
@@ -55,6 +79,8 @@ export function InboxShell({
   onRetry,
   onResetFilters,
   onViewChange,
+  uuidFilterDrafts,
+  uuidFilterErrors,
   view,
 }: InboxShellProps) {
   const hasItems = Boolean(data?.items.length);
@@ -97,6 +123,8 @@ export function InboxShell({
             filters={filters}
             onFilterChange={onFilterChange}
             onReset={onResetFilters}
+            uuidFilterDrafts={uuidFilterDrafts}
+            uuidFilterErrors={uuidFilterErrors}
           />
 
           {mutationError ? (
@@ -149,69 +177,90 @@ export function InboxShell({
 
 type InboxFiltersProps = {
   filters: InboxListFilters;
-  onFilterChange: (key: InboxFilterKey, value: string) => void;
+  onFilterChange: InboxFilterChangeHandler;
   onReset: () => void;
+  uuidFilterDrafts: InboxUuidFilterDrafts;
+  uuidFilterErrors: InboxUuidFilterErrors;
 };
 
-type SelectOption = {
+type SelectOption<Value extends string> = {
   label: string;
-  value: string;
+  value: Value;
 };
 
-const statusOptions: SelectOption[] = [
+const statusOptions = [
   { label: "开放", value: "open" },
   { label: "已处理", value: "resolved" },
   { label: "已取消", value: "cancelled" },
-];
+] satisfies Array<SelectOption<InboxStatus>>;
 
-const itemTypeOptions: SelectOption[] = [
+const itemTypeOptions = [
   { label: "全部类型", value: "all" },
   { label: "审批", value: "approval" },
   { label: "项目决策", value: "project_decision" },
-];
+] satisfies Array<SelectOption<InboxItemType | "all">>;
 
-const riskOptions: SelectOption[] = [
+const riskOptions = [
   { label: "全部风险", value: "all" },
   { label: "阻断", value: "blocked" },
   { label: "高风险", value: "high" },
   { label: "中风险", value: "medium" },
   { label: "低风险", value: "low" },
-];
+] satisfies Array<SelectOption<string>>;
 
-function InboxFilters({ filters, onFilterChange, onReset }: InboxFiltersProps) {
+function InboxFilters({
+  filters,
+  onFilterChange,
+  onReset,
+  uuidFilterDrafts,
+  uuidFilterErrors,
+}: InboxFiltersProps) {
+  const hasUuidFilterError = Boolean(
+    uuidFilterErrors.project_id || uuidFilterErrors.target_user_id,
+  );
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border bg-card/60 p-3 shadow-sm backdrop-blur-sm xl:flex-row xl:items-end">
-      <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <FilterSelect
-          label="状态"
-          options={statusOptions}
-          value={filters.status ?? "open"}
-          onValueChange={(value) => onFilterChange("status", value)}
-        />
-        <FilterSelect
-          label="事项类型"
-          options={itemTypeOptions}
-          value={filters.item_type ?? "all"}
-          onValueChange={(value) => onFilterChange("item_type", value)}
-        />
-        <FilterSelect
-          label="风险等级"
-          options={riskOptions}
-          value={filters.risk_level ?? "all"}
-          onValueChange={(value) => onFilterChange("risk_level", value)}
-        />
-        <FilterInput
-          label="项目 ID"
-          placeholder="精确匹配"
-          value={filters.project_id ?? ""}
-          onValueChange={(value) => onFilterChange("project_id", value)}
-        />
-        <FilterInput
-          label="目标用户 ID"
-          placeholder="精确匹配"
-          value={filters.target_user_id ?? ""}
-          onValueChange={(value) => onFilterChange("target_user_id", value)}
-        />
+      <div className="flex flex-1 flex-col gap-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <FilterSelect
+            label="状态"
+            options={statusOptions}
+            value={filters.status ?? "open"}
+            onValueChange={(value) => onFilterChange("status", value)}
+          />
+          <FilterSelect
+            label="事项类型"
+            options={itemTypeOptions}
+            value={filters.item_type ?? "all"}
+            onValueChange={(value) => onFilterChange("item_type", value)}
+          />
+          <FilterSelect
+            label="风险等级"
+            options={riskOptions}
+            value={filters.risk_level ?? "all"}
+            onValueChange={(value) => onFilterChange("risk_level", value)}
+          />
+          <FilterInput
+            invalid={Boolean(uuidFilterErrors.project_id)}
+            label="项目 ID"
+            placeholder="精确匹配"
+            value={uuidFilterDrafts.project_id}
+            onValueChange={(value) => onFilterChange("project_id", value)}
+          />
+          <FilterInput
+            invalid={Boolean(uuidFilterErrors.target_user_id)}
+            label="目标用户 ID"
+            placeholder="精确匹配"
+            value={uuidFilterDrafts.target_user_id}
+            onValueChange={(value) => onFilterChange("target_user_id", value)}
+          />
+        </div>
+        {hasUuidFilterError ? (
+          <p className="text-xs text-destructive" role="alert">
+            请输入有效 UUID
+          </p>
+        ) : null}
       </div>
       <Button
         className="h-9 shrink-0"
@@ -226,14 +275,19 @@ function InboxFilters({ filters, onFilterChange, onReset }: InboxFiltersProps) {
   );
 }
 
-type FilterSelectProps = {
+type FilterSelectProps<Value extends string> = {
   label: string;
-  onValueChange: (value: string) => void;
-  options: SelectOption[];
-  value: string;
+  onValueChange: (value: Value) => void;
+  options: ReadonlyArray<SelectOption<Value>>;
+  value: Value;
 };
 
-function FilterSelect({ label, onValueChange, options, value }: FilterSelectProps) {
+function FilterSelect<Value extends string>({
+  label,
+  onValueChange,
+  options,
+  value,
+}: FilterSelectProps<Value>) {
   const selectId = `inbox-filter-${label}`;
 
   return (
@@ -264,13 +318,14 @@ function FilterSelect({ label, onValueChange, options, value }: FilterSelectProp
 }
 
 type FilterInputProps = {
+  invalid?: boolean;
   label: string;
   onValueChange: (value: string) => void;
   placeholder: string;
   value: string;
 };
 
-function FilterInput({ label, onValueChange, placeholder, value }: FilterInputProps) {
+function FilterInput({ invalid = false, label, onValueChange, placeholder, value }: FilterInputProps) {
   const inputId = `inbox-filter-${label}`;
 
   return (
@@ -279,6 +334,7 @@ function FilterInput({ label, onValueChange, placeholder, value }: FilterInputPr
         {label}
       </label>
       <Input
+        aria-invalid={invalid || undefined}
         id={inputId}
         className="h-9 rounded-full bg-background/70 shadow-none"
         onChange={(event) => onValueChange(event.target.value)}
