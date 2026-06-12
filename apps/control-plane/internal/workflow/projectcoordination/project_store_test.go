@@ -244,7 +244,7 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndBindsTask(t *testing.T) {
 			TenantID:  tenantID,
 			ProjectID: projectID,
 			Title:     "检查上线证据",
-			Content:   stringPtr("需要确认测试报告和回滚方案。"),
+			Content:   strPtr("需要确认测试报告和回滚方案。"),
 		},
 		tasks: []project.ProjectTask{{
 			ID:                        taskID,
@@ -252,7 +252,7 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndBindsTask(t *testing.T) {
 			ProjectID:                 projectID,
 			DemandID:                  &demandID,
 			Title:                     "整理证据",
-			Summary:                   stringPtr("输出证据清单"),
+			Summary:                   strPtr("输出证据清单"),
 			Status:                    "planned",
 			AssignedDigitalEmployeeID: &employeeID,
 		}},
@@ -542,7 +542,10 @@ func (r *projectStoreMemoryRepository) BindProjectTaskRun(ctx context.Context, r
 		if task.TenantID != req.TenantID || task.ID != req.ProjectTaskID {
 			continue
 		}
-		if task.DigitalEmployeeRunID != nil && *task.DigitalEmployeeRunID != req.DigitalEmployeeRunID {
+		if task.DigitalEmployeeRunID != nil {
+			if task.RuntimeTaskID != nil && *task.DigitalEmployeeRunID == req.DigitalEmployeeRunID && *task.RuntimeTaskID == req.RuntimeTaskID {
+				return task, nil
+			}
 			return project.ProjectTask{}, project.ErrProjectConflict
 		}
 		task.Status = "assigned"
@@ -642,10 +645,6 @@ func (f *projectTaskRunStarterFake) StartProjectTaskRun(ctx context.Context, req
 		return StartProjectTaskRunResult{}, f.err
 	}
 	return f.result, nil
-}
-
-func stringPtr(value string) *string {
-	return &value
 }
 
 func strPtr(value string) *string {
