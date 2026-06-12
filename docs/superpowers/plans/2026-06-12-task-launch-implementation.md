@@ -689,6 +689,8 @@ git commit -m "feat: add project demand launch detail"
 
 **Files:**
 - Modify: `contracts/control-plane/openapi.yaml`
+- Modify: `apps/control-plane/internal/project/handler.go`
+- Modify: `apps/control-plane/internal/project/handler_test.go`
 - Modify: `apps/web/src/lib/api/projects.ts`
 - Modify: `apps/web/src/lib/api/projects.test.ts`
 - Generated: Control Plane generated files from `pnpm generate:control-plane`
@@ -875,6 +877,13 @@ Add schemas:
 ```
 
 - [ ] **Step 4: Update web API client**
+
+Before the web client work, update the handwritten Control Plane handler surface:
+
+- Extend `submitDemandBody` with `reviewer_user_id` and `reviewer_selection_reason`.
+- Pass those fields into `SubmitProjectDemandRequest` in `HTTPHandler.SubmitDemand`.
+- Ensure `demandResponseFromDomain` exposes `reviewer` as a stable JSON key with `null` when no reviewer preference exists.
+- Add handler tests that post reviewer fields and assert the service receives them, and that the demand response includes the reviewer shape.
 
 In `apps/web/src/lib/api/projects.ts`, add types:
 
