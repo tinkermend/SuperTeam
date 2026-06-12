@@ -118,6 +118,48 @@ type DispatchProjectTaskInput struct {
 	TaskID    uuid.UUID
 }
 
+type StartProjectTaskRunRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DemandID          uuid.UUID
+	ProjectTaskID     uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	DispatchUserID    uuid.UUID
+	Objective         string
+	Prompt            string
+	IdempotencyKey    string
+	Metadata          map[string]any
+}
+
+type StartProjectTaskRunResult struct {
+	RunID         uuid.UUID
+	RuntimeTaskID uuid.UUID
+	RuntimeNodeID uuid.UUID
+	NodeID        string
+}
+
+// ProjectTaskRunStartError lets the run starter adapter classify whether a failed
+// run start is transient (retryable) or terminal, without coupling the coordination
+// store to the employee package's error sentinels.
+type ProjectTaskRunStartError struct {
+	Retryable bool
+	Err       error
+}
+
+func (e *ProjectTaskRunStartError) Error() string {
+	if e == nil || e.Err == nil {
+		return "project task run start failed"
+	}
+	return e.Err.Error()
+}
+
+func (e *ProjectTaskRunStartError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 type FinishCoordinationJobInput struct {
 	TenantID       uuid.UUID
 	JobID          uuid.UUID

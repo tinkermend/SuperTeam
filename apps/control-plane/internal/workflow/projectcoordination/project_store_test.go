@@ -3,6 +3,7 @@ package projectcoordination
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -134,20 +135,20 @@ func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProject
 	}
 
 	projectionErr := errors.New("inbox unavailable")
-		failingRepo := &projectStoreMemoryRepository{
-			projectRecord: project.Project{
-				ID:               projectID,
-				TenantID:         tenantID,
-				HumanOwnerUserID: ownerID,
-			},
-			demand: project.ProjectDemand{
-				ID:        demandID,
-				TenantID:  tenantID,
-				ProjectID: projectID,
-				Title:     "需要人工确认",
-			},
-			approvalID: approvalID,
-		}
+	failingRepo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			HumanOwnerUserID: ownerID,
+		},
+		demand: project.ProjectDemand{
+			ID:        demandID,
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			Title:     "需要人工确认",
+		},
+		approvalID: approvalID,
+	}
 	failingInbox := &projectStoreDecisionInboxProjector{upsertErr: projectionErr}
 	failingStore := NewProjectStoreWithApprovalsAndInbox(failingRepo, approvals, failingInbox)
 	if _, err := failingStore.RequestRouteDecisionReview(context.Background(), RequestRouteDecisionReviewInput{
@@ -226,14 +227,257 @@ func TestProjectStoreRequestRouteDecisionReviewTargetsDemandReviewerPreference(t
 	}
 }
 
+func TestProjectStoreDispatchProjectTaskStartsRunAndBindsTask(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		demand: project.ProjectDemand{
+			ID:        demandID,
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			Title:     "检查上线证据",
+			Content:   stringPtr("需要确认测试报告和回滚方案。"),
+		},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "整理证据",
+			Summary:                   stringPtr("输出证据清单"),
+			Status:                    "planned",
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
+		RunID:         runID,
+		RuntimeTaskID: runtimeTaskID,
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        "node-1",
+	}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	if err != nil {
+		t.Fatalf("dispatch project task: %v", err)
+	}
+	if len(starter.requests) != 1 {
+		t.Fatalf("expected one run start request, got %d", len(starter.requests))
+	}
+	req := starter.requests[0]
+	if req.DispatchUserID != ownerID || req.DigitalEmployeeID != employeeID || req.IdempotencyKey != "project-task:"+taskID.String() {
+		t.Fatalf("unexpected run start request: %#v", req)
+	}
+	if !strings.Contains(req.Prompt, "需要确认测试报告") || !strings.Contains(req.Prompt, taskID.String()) {
+		t.Fatalf("expected prompt to include demand content and task id, got %q", req.Prompt)
+	}
+	if len(repo.bindRequests) != 1 || repo.bindRequests[0].DigitalEmployeeRunID != runID || repo.bindRequests[0].RuntimeTaskID != runtimeTaskID {
+		t.Fatalf("expected bind request, got %#v", repo.bindRequests)
+	}
+	if repo.tasks[0].Status != "assigned" || repo.tasks[0].DigitalEmployeeRunID == nil || *repo.tasks[0].DigitalEmployeeRunID != runID {
+		t.Fatalf("expected assigned bound task, got %#v", repo.tasks[0])
+	}
+	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventTaskDispatched {
+		t.Fatalf("expected dispatched event, got %#v", repo.events)
+	}
+	if repo.events[0].Payload["digital_employee_run_id"] != runID.String() || repo.events[0].Payload["runtime_task_id"] != runtimeTaskID.String() {
+		t.Fatalf("expected run binding payload, got %#v", repo.events[0].Payload)
+	}
+}
+
+func TestProjectStoreDispatchProjectTaskRunStartFailureKeepsTaskPlanned(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    "planned",
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	// Plain error => default to retryable.
+	starter := &projectTaskRunStarterFake{err: errors.New("runtime node is not connected")}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	if err == nil {
+		t.Fatal("expected dispatch error")
+	}
+	if repo.tasks[0].Status != "planned" || len(repo.bindRequests) != 0 {
+		t.Fatalf("expected planned unbound task, task=%#v binds=%#v", repo.tasks[0], repo.bindRequests)
+	}
+	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventTaskDispatchFailed {
+		t.Fatalf("expected dispatch failed event, got %#v", repo.events)
+	}
+	if repo.events[0].Payload["retryable"] != true {
+		t.Fatalf("expected retryable failure payload, got %#v", repo.events[0].Payload)
+	}
+}
+
+func TestProjectStoreDispatchProjectTaskTerminalRunStartFailureMarksNonRetryable(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    "planned",
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{err: &ProjectTaskRunStartError{Retryable: false, Err: errors.New("invalid run input")}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	if err == nil {
+		t.Fatal("expected dispatch error")
+	}
+	if len(repo.events) != 1 || repo.events[0].Payload["retryable"] != false {
+		t.Fatalf("expected non-retryable failure payload, got %#v", repo.events)
+	}
+	if repo.tasks[0].Status != "planned" || len(repo.bindRequests) != 0 {
+		t.Fatalf("expected planned unbound task, task=%#v binds=%#v", repo.tasks[0], repo.bindRequests)
+	}
+}
+
+func TestProjectStoreDispatchProjectTaskAlreadyBoundSameRunIsIdempotent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    "assigned",
+			AssignedDigitalEmployeeID: &employeeID,
+			DigitalEmployeeRunID:      &runID,
+			RuntimeTaskID:             &runtimeTaskID,
+		}},
+	}
+	// The dispatched event already exists, so the idempotent replay must be a pure no-op.
+	repo.events = append(repo.events, project.ProjectEvent{TenantID: tenantID, ProjectID: projectID, EventType: project.ProjectEventTaskDispatched, ActorID: taskID.String()})
+	starter := &projectTaskRunStarterFake{}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	if err != nil {
+		t.Fatalf("expected idempotent success, got %v", err)
+	}
+	if len(starter.requests) != 0 || len(repo.bindRequests) != 0 || len(repo.events) != 1 {
+		t.Fatalf("expected no duplicate side effects, starts=%d binds=%d events=%d", len(starter.requests), len(repo.bindRequests), len(repo.events))
+	}
+}
+
+func TestProjectStoreDispatchProjectTaskReemitsMissingDispatchedEvent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    "assigned",
+			AssignedDigitalEmployeeID: &employeeID,
+			DigitalEmployeeRunID:      &runID,
+			RuntimeTaskID:             &runtimeTaskID,
+		}},
+	}
+	// Task is bound but the dispatched event is missing (e.g. a prior attempt crashed
+	// after binding); dispatch must re-emit exactly one event without restarting the run.
+	starter := &projectTaskRunStarterFake{}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	if err != nil {
+		t.Fatalf("expected idempotent success, got %v", err)
+	}
+	if len(starter.requests) != 0 || len(repo.bindRequests) != 0 {
+		t.Fatalf("expected no run start or bind, starts=%d binds=%d", len(starter.requests), len(repo.bindRequests))
+	}
+	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventTaskDispatched || repo.events[0].Payload["reemitted"] != true {
+		t.Fatalf("expected one re-emitted dispatched event, got %#v", repo.events)
+	}
+	if repo.events[0].Payload["digital_employee_run_id"] != runID.String() {
+		t.Fatalf("expected re-emitted payload to carry run id, got %#v", repo.events[0].Payload)
+	}
+}
+
+func TestDispatchErrorRetryableClassification(t *testing.T) {
+	if dispatchErrorRetryable(project.ErrInvalidProject) {
+		t.Fatal("expected ErrInvalidProject to be terminal")
+	}
+	if dispatchErrorRetryable(project.ErrProjectNotFound) {
+		t.Fatal("expected ErrProjectNotFound to be terminal")
+	}
+	if dispatchErrorRetryable(project.ErrProjectConflict) {
+		t.Fatal("expected ErrProjectConflict to be terminal")
+	}
+	if dispatchErrorRetryable(&ProjectTaskRunStartError{Retryable: false, Err: errors.New("x")}) {
+		t.Fatal("expected non-retryable start error to be terminal")
+	}
+	if !dispatchErrorRetryable(&ProjectTaskRunStartError{Retryable: true, Err: errors.New("x")}) {
+		t.Fatal("expected retryable start error to be transient")
+	}
+	if !dispatchErrorRetryable(errors.New("db timeout")) {
+		t.Fatal("expected unknown error to default to transient")
+	}
+}
+
 type projectStoreMemoryRepository struct {
 	project.Repository
 
 	projectRecord project.Project
 	demand        project.ProjectDemand
 	members       []project.ProjectMember
+	tasks         []project.ProjectTask
 	approvalID    uuid.UUID
 
+	bindRequests     []project.BindProjectTaskRunRequest
+	bindErr          error
 	events           []project.ProjectEvent
 	decisionRequests []project.DecisionRequest
 }
@@ -267,7 +511,7 @@ func (r *projectStoreMemoryRepository) CreateCoordinationJob(ctx context.Context
 }
 
 func (r *projectStoreMemoryRepository) AppendProjectEvent(ctx context.Context, req project.AppendProjectEventRequest) (project.ProjectEvent, error) {
-	event := project.ProjectEvent{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, EventType: req.EventType, Payload: req.Payload, CreatedAt: time.Now().UTC()}
+	event := project.ProjectEvent{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, EventType: req.EventType, ActorID: req.ActorID, Payload: req.Payload, CreatedAt: time.Now().UTC()}
 	r.events = append(r.events, event)
 	return event, nil
 }
@@ -278,6 +522,46 @@ func (r *projectStoreMemoryRepository) CreateRouteDecision(ctx context.Context, 
 
 func (r *projectStoreMemoryRepository) CreateProjectTask(ctx context.Context, req project.CreateProjectTaskRequest) (project.ProjectTask, error) {
 	return project.ProjectTask{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, DemandID: req.DemandID, Status: req.Status, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, nil
+}
+
+func (r *projectStoreMemoryRepository) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (project.ProjectTask, error) {
+	for _, task := range r.tasks {
+		if task.TenantID == tenantID && task.ID == projectTaskID {
+			return task, nil
+		}
+	}
+	return project.ProjectTask{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) BindProjectTaskRun(ctx context.Context, req project.BindProjectTaskRunRequest) (project.ProjectTask, error) {
+	r.bindRequests = append(r.bindRequests, req)
+	if r.bindErr != nil {
+		return project.ProjectTask{}, r.bindErr
+	}
+	for i, task := range r.tasks {
+		if task.TenantID != req.TenantID || task.ID != req.ProjectTaskID {
+			continue
+		}
+		if task.DigitalEmployeeRunID != nil && *task.DigitalEmployeeRunID != req.DigitalEmployeeRunID {
+			return project.ProjectTask{}, project.ErrProjectConflict
+		}
+		task.Status = "assigned"
+		task.DigitalEmployeeRunID = &req.DigitalEmployeeRunID
+		task.RuntimeTaskID = &req.RuntimeTaskID
+		task.UpdatedAt = time.Now().UTC()
+		r.tasks[i] = task
+		return task, nil
+	}
+	return project.ProjectTask{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) ProjectTaskEventExists(ctx context.Context, tenantID, projectID uuid.UUID, eventType project.ProjectEventType, actorID string) (bool, error) {
+	for _, event := range r.events {
+		if event.TenantID == tenantID && event.ProjectID == projectID && event.EventType == eventType && event.ActorID == actorID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (r *projectStoreMemoryRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (project.ProjectTask, error) {
@@ -344,6 +628,24 @@ func (p *projectStoreDecisionInboxProjector) UpsertProjectDecisionRequest(ctx co
 func (p *projectStoreDecisionInboxProjector) ResolveProjectDecisionRequest(ctx context.Context, decision project.DecisionRequest) error {
 	p.resolutions = append(p.resolutions, decision)
 	return nil
+}
+
+type projectTaskRunStarterFake struct {
+	requests []StartProjectTaskRunRequest
+	result   StartProjectTaskRunResult
+	err      error
+}
+
+func (f *projectTaskRunStarterFake) StartProjectTaskRun(ctx context.Context, req StartProjectTaskRunRequest) (StartProjectTaskRunResult, error) {
+	f.requests = append(f.requests, req)
+	if f.err != nil {
+		return StartProjectTaskRunResult{}, f.err
+	}
+	return f.result, nil
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
 
 func strPtr(value string) *string {
