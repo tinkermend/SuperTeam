@@ -312,6 +312,59 @@ func TestSubmitDemandRejectsInvalidReviewerSelectionReason(t *testing.T) {
 	}
 }
 
+func TestSubmitDemandDiscardsSpoofedReviewerSourceRefs(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	reviewerID := uuid.New()
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.members[projectID] = []ProjectMember{
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: ownerID,
+			ProjectRole: ProjectRoleOwner, Status: "active",
+		},
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: reviewerID,
+			ProjectRole: ProjectRoleReviewer, Status: "active",
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
+		Title: "审查 PR", ReviewerUserID: &reviewerID,
+		SourceRefs: map[string]any{
+			"reviewer_display_name": "Spoofed",
+			"reviewer_user_id":      "bad",
+			"external_ticket":       "T-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("submit demand: %v", err)
+	}
+
+	if demand.SourceRefs["reviewer_user_id"] != reviewerID.String() {
+		t.Fatalf("expected canonical reviewer id, got source refs: %#v", demand.SourceRefs)
+	}
+	if _, ok := demand.SourceRefs["reviewer_display_name"]; ok {
+		t.Fatalf("expected spoofed display name to be discarded: %#v", demand.SourceRefs)
+	}
+	if demand.SourceRefs["external_ticket"] != "T-1" {
+		t.Fatalf("expected non-reviewer source ref to remain: %#v", demand.SourceRefs)
+	}
+}
+
 func TestSubmitDemandFallsBackToHumanOwnerWhenNoReviewer(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

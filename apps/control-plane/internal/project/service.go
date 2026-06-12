@@ -849,6 +849,9 @@ func isValidReviewerSelectionReason(reason ReviewerSelectionReason) bool {
 func mergeReviewerSourceRefs(sourceRefs map[string]any, reviewer map[string]any) map[string]any {
 	merged := map[string]any{}
 	for key, value := range sourceRefs {
+		if strings.HasPrefix(key, "reviewer_") {
+			continue
+		}
 		merged[key] = value
 	}
 	for key, value := range reviewer {
