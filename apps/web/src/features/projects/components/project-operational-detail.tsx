@@ -25,9 +25,13 @@ import type {
   ProjectBudgetLedgerEntry,
   ProjectBudgetSummary,
   ProjectCoordinationJob,
+  CreateProjectAcceptanceInput,
+  CreateProjectArchiveSnapshotInput,
+  CreateProjectEvidenceInput,
   ProjectDecisionRequest,
   ProjectDemand,
   ProjectEvidenceRef,
+  ProjectEvidenceVerificationStatus,
   ProjectEvent,
   ProjectExecutionSummary,
   ProjectMember,
@@ -55,6 +59,13 @@ type ProjectOperationalDetailProps = {
   executionSummaries: ProjectExecutionSummary[];
   isArchived?: boolean;
   onArchiveProject: () => void;
+  onCreateAcceptance: (input: CreateProjectAcceptanceInput) => void;
+  onCreateArchiveSnapshot: (input: CreateProjectArchiveSnapshotInput) => void;
+  onCreateEvidence: (input: CreateProjectEvidenceInput) => void;
+  onPatchEvidence: (
+    evidenceId: string,
+    verificationStatus: ProjectEvidenceVerificationStatus,
+  ) => void;
   onResolveDecision: (decisionId: string, decision: string) => void;
   onSubmitDemand: () => void;
   overview?: ProjectOverview;
@@ -80,6 +91,10 @@ export function ProjectOperationalDetail({
   executionSummaries,
   isArchived,
   onArchiveProject,
+  onCreateAcceptance,
+  onCreateArchiveSnapshot,
+  onCreateEvidence,
+  onPatchEvidence,
   onResolveDecision,
   onSubmitDemand,
   overview,
@@ -143,6 +158,18 @@ export function ProjectOperationalDetail({
               >
                 <Settings2 data-icon="inline-start" />
                 配置
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link search={{ project_id: project.id }} to="/audit">
+                <History data-icon="inline-start" />
+                审计
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link search={{ project_id: project.id }} to="/costs">
+                <FileCheck2 data-icon="inline-start" />
+                成本
               </Link>
             </Button>
             <Button
@@ -314,6 +341,10 @@ export function ProjectOperationalDetail({
             demandCount={demands.length}
             evidence={evidence}
             executionSummaryCount={executionSummaries.length}
+            onCreateAcceptance={onCreateAcceptance}
+            onCreateArchiveSnapshot={onCreateArchiveSnapshot}
+            onCreateEvidence={onCreateEvidence}
+            onPatchEvidence={onPatchEvidence}
             reports={reports}
             routeDecisionCount={routeDecisions.length}
             taskCount={tasks.length}

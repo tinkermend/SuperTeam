@@ -1,3 +1,4 @@
+import { useState, type ReactNode } from "react";
 import { CheckCircle2 } from "lucide-react";
 import {
   LiquidCard,
@@ -5,15 +6,48 @@ import {
   StatusBadge,
   type Tone,
 } from "@/components/superteam";
-import type { ProjectAcceptanceRecord } from "@/lib/api/projects";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import type {
+  CreateProjectAcceptanceInput,
+  ProjectAcceptanceRecord,
+} from "@/lib/api/projects";
 
 type ProjectAcceptancePanelProps = {
   acceptance?: ProjectAcceptanceRecord;
+  evidenceRefIds?: string[];
+  onCreateAcceptance: (input: CreateProjectAcceptanceInput) => void;
+  reportRefIds?: string[];
 };
 
 export function ProjectAcceptancePanel({
   acceptance,
+  evidenceRefIds = [],
+  onCreateAcceptance,
+  reportRefIds = [],
 }: ProjectAcceptancePanelProps) {
+  const [conclusion, setConclusion] = useState("");
+  const [summary, setSummary] = useState("");
+
+  function submitAcceptance() {
+    const nextConclusion = conclusion.trim();
+    if (!nextConclusion) {
+      return;
+    }
+
+    onCreateAcceptance({
+      conclusion: nextConclusion,
+      evidence_ref_ids: evidenceRefIds,
+      report_ref_ids: reportRefIds,
+      status: "accepted",
+      summary: summary.trim() || undefined,
+      unresolved_risks: [],
+    });
+    setConclusion("");
+    setSummary("");
+  }
+
   return (
     <LiquidCard className="rounded-xl">
       <div className="flex items-center justify-between gap-3 border-b p-4">
@@ -35,6 +69,38 @@ export function ProjectAcceptancePanel({
         ) : (
           <StatusBadge tone="neutral">未提交</StatusBadge>
         )}
+      </div>
+
+      <div className="grid gap-3 border-b p-4">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <Field label="验收结论">
+            <Textarea
+              aria-label="验收结论"
+              value={conclusion}
+              onChange={(event) => setConclusion(event.target.value)}
+              placeholder="证据完整，同意归档"
+            />
+          </Field>
+          <Field label="验收摘要">
+            <Textarea
+              value={summary}
+              onChange={(event) => setSummary(event.target.value)}
+              placeholder="补充验收范围、例外项或后续动作"
+            />
+          </Field>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            EvidenceRef {evidenceRefIds.length} 条，ReportRef {reportRefIds.length} 条
+          </p>
+          <Button
+            disabled={!conclusion.trim()}
+            type="button"
+            onClick={submitAcceptance}
+          >
+            提交验收
+          </Button>
+        </div>
       </div>
 
       {!acceptance ? (
@@ -101,6 +167,15 @@ export function ProjectAcceptancePanel({
         </div>
       )}
     </LiquidCard>
+  );
+}
+
+function Field({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <Label className="grid gap-2">
+      <span>{label}</span>
+      {children}
+    </Label>
   );
 }
 

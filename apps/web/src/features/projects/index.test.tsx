@@ -26,22 +26,22 @@ vi.mock("@tanstack/react-router", () => {
   type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
     children: ReactNode;
     params?: Record<string, string>;
+    search?: Record<string, string>;
     to: string;
   };
   const Link = forwardRef<HTMLAnchorElement, MockLinkProps>(
-    ({ children, params, to, ...props }, ref) => (
-      <a
-        {...props}
-        href={
-          params?.projectId
-            ? to.replace("$projectId", encodeURIComponent(params.projectId))
-            : to
-        }
-        ref={ref}
-      >
-        {children}
-      </a>
-    ),
+    ({ children, params, search, to, ...props }, ref) => {
+      const path = params?.projectId
+        ? to.replace("$projectId", encodeURIComponent(params.projectId))
+        : to;
+      const query = search ? `?${new URLSearchParams(search).toString()}` : "";
+
+      return (
+        <a {...props} href={`${path}${query}`} ref={ref}>
+          {children}
+        </a>
+      );
+    },
   );
   Link.displayName = "MockRouterLink";
 
@@ -326,6 +326,46 @@ function createProjectFetcher(
         },
       ]);
     }
+    if (url.pathname === "/api/v1/projects/project-1/evidence" && method === "POST") {
+      const body = JSON.parse(String(init?.body));
+      return jsonResponse(
+        {
+          created_event_id: "event-evidence-created",
+          evidence_type: body.evidence_type,
+          id: "evidence-created",
+          metadata: body.metadata ?? {},
+          project_id: "project-1",
+          source_ref: body.source_ref,
+          source_type: body.source_type,
+          submitted_by_id: "human-owner-1",
+          submitted_by_type: "human_user",
+          summary: body.summary,
+          tenant_id: "tenant-1",
+          title: body.title,
+          verification_status: "submitted",
+        },
+        201,
+      );
+    }
+    if (
+      url.pathname === "/api/v1/projects/project-1/evidence/evidence-1" &&
+      method === "PATCH"
+    ) {
+      const body = JSON.parse(String(init?.body));
+      return jsonResponse({
+        evidence_type: "acceptance_check",
+        id: "evidence-1",
+        metadata: body.metadata ?? {},
+        project_id: "project-1",
+        source_ref: "ticket://SUP-42",
+        source_type: "ticket",
+        submitted_by_id: "de-1",
+        submitted_by_type: "digital_employee",
+        tenant_id: "tenant-1",
+        title: "上线验收证据",
+        verification_status: body.verification_status,
+      });
+    }
     if (url.pathname === "/api/v1/projects/project-1/artifacts" && method === "GET") {
       return jsonResponse([
         {
@@ -398,6 +438,24 @@ function createProjectFetcher(
         unresolved_risks: [],
       });
     }
+    if (url.pathname === "/api/v1/projects/project-1/acceptance" && method === "POST") {
+      const body = JSON.parse(String(init?.body));
+      return jsonResponse(
+        {
+          accepted_by_user_id: "human-owner-1",
+          conclusion: body.conclusion,
+          evidence_ref_ids: body.evidence_ref_ids,
+          id: "acceptance-created",
+          project_id: "project-1",
+          report_ref_ids: body.report_ref_ids,
+          status: body.status,
+          summary: body.summary,
+          tenant_id: "tenant-1",
+          unresolved_risks: body.unresolved_risks ?? [],
+        },
+        201,
+      );
+    }
     if (url.pathname === "/api/v1/projects/project-1/archive-snapshots" && method === "GET") {
       return jsonResponse([
         {
@@ -417,6 +475,24 @@ function createProjectFetcher(
           tenant_id: "tenant-1",
         },
       ]);
+    }
+    if (url.pathname === "/api/v1/projects/project-1/archive-snapshot" && method === "POST") {
+      const body = JSON.parse(String(init?.body));
+      return jsonResponse(
+        {
+          created_by_user_id: "human-owner-1",
+          id: "archive-created",
+          included_counts: { evidence: 1, reports: 1 },
+          object_ref: body.object_ref,
+          project_id: "project-1",
+          retained_artifact_ids: [],
+          snapshot_type: body.snapshot_type,
+          status: "archived",
+          summary: body.summary,
+          tenant_id: "tenant-1",
+        },
+        201,
+      );
     }
     if (url.pathname === "/api/v1/projects/project-1/archive-preview" && method === "GET") {
       return jsonResponse({
@@ -583,6 +659,92 @@ describe("ProjectsView", () => {
       expect(screen.container.textContent).toContain("需求数");
       expect(screen.container.textContent).toContain("保留工件");
       expect(screen.container.textContent).toContain("当前项目");
+    });
+  });
+
+  it("links the selected project to audit and cost center views", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher, "project-1");
+
+    const auditLink = screen.getByRole("link", { name: "审计" });
+    const costLink = screen.getByRole("link", { name: "成本" });
+
+    await expect.element(auditLink).toHaveAttribute("href", "/audit?project_id=project-1");
+    await expect.element(costLink).toHaveAttribute("href", "/costs?project_id=project-1");
+  });
+
+  it("creates and verifies project evidence from the governance tab", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher, "project-1");
+
+    await userEvent.fill(screen.getByLabelText("证据标题"), "补充验收附件");
+    await userEvent.fill(
+      screen.getByLabelText("来源引用"),
+      "s3://superteam/project-1/additional.md",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "新增证据" }));
+    await userEvent.click(screen.getByRole("button", { name: "标记已验证：上线验收证据" }));
+
+    await vi.waitFor(() => {
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          return (
+            String(url).endsWith("/api/v1/projects/project-1/evidence") &&
+            init?.method === "POST" &&
+            JSON.parse(String(init.body)).title === "补充验收附件"
+          );
+        }),
+      ).toBe(true);
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          return (
+            String(url).endsWith("/api/v1/projects/project-1/evidence/evidence-1") &&
+            init?.method === "PATCH" &&
+            JSON.parse(String(init.body)).verification_status === "verified"
+          );
+        }),
+      ).toBe(true);
+    });
+  });
+
+  it("submits project acceptance and creates an archive snapshot", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher, "project-1");
+
+    await userEvent.click(screen.getByRole("tab", { name: "验收结论" }));
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "验收结论" }),
+      "证据完整，同意归档",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "提交验收" }));
+
+    await userEvent.click(screen.getByRole("tab", { name: "归档预览" }));
+    await userEvent.fill(
+      screen.getByLabelText("快照 Object Ref"),
+      "s3://superteam/project-1/final-archive.json",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "生成归档快照" }));
+
+    await vi.waitFor(() => {
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          return (
+            String(url).endsWith("/api/v1/projects/project-1/acceptance") &&
+            init?.method === "POST" &&
+            JSON.parse(String(init.body)).conclusion === "证据完整，同意归档"
+          );
+        }),
+      ).toBe(true);
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          return (
+            String(url).endsWith("/api/v1/projects/project-1/archive-snapshot") &&
+            init?.method === "POST" &&
+            JSON.parse(String(init.body)).object_ref ===
+              "s3://superteam/project-1/final-archive.json"
+          );
+        }),
+      ).toBe(true);
     });
   });
 

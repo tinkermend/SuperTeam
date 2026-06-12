@@ -9,6 +9,9 @@ import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
   archiveProject,
   createProject,
+  createProjectAcceptance,
+  createProjectArchiveSnapshot,
+  createProjectEvidence,
   getProject,
   getProjectAcceptance,
   getProjectArchivePreview,
@@ -28,10 +31,15 @@ import {
   listProjects,
   listProjectTasks,
   listProjectTransferRequests,
+  patchProjectEvidence,
   resolveProjectDecision,
   submitProjectDemand,
+  type CreateProjectAcceptanceInput,
+  type CreateProjectArchiveSnapshotInput,
+  type CreateProjectEvidenceInput,
   type CreateProjectInput,
   type ListProjectsFilters,
+  type ProjectEvidenceVerificationStatus,
   type ProjectStatus,
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
@@ -358,6 +366,74 @@ export function ProjectsView({
     },
   });
 
+  const createEvidenceMutation = useMutation({
+    mutationFn: (input: CreateProjectEvidenceInput) =>
+      createProjectEvidence(apiOptions, effectiveProjectId as string, input),
+    onSuccess: async (evidence) => {
+      const projectId = evidence.project_id || effectiveProjectId;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["project-evidence", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
+        queryClient.invalidateQueries({
+          queryKey: ["project-archive-preview", projectId],
+        }),
+      ]);
+    },
+  });
+
+  const patchEvidenceMutation = useMutation({
+    mutationFn: (input: {
+      evidenceId: string;
+      verificationStatus: ProjectEvidenceVerificationStatus;
+    }) =>
+      patchProjectEvidence(apiOptions, effectiveProjectId as string, input.evidenceId, {
+        verification_status: input.verificationStatus,
+      }),
+    onSuccess: async (evidence) => {
+      const projectId = evidence.project_id || effectiveProjectId;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["project-evidence", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
+        queryClient.invalidateQueries({
+          queryKey: ["project-archive-preview", projectId],
+        }),
+      ]);
+    },
+  });
+
+  const createAcceptanceMutation = useMutation({
+    mutationFn: (input: CreateProjectAcceptanceInput) =>
+      createProjectAcceptance(apiOptions, effectiveProjectId as string, input),
+    onSuccess: async (acceptance) => {
+      const projectId = acceptance.project_id || effectiveProjectId;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["project-acceptance", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
+        queryClient.invalidateQueries({
+          queryKey: ["project-archive-preview", projectId],
+        }),
+      ]);
+    },
+  });
+
+  const createArchiveSnapshotMutation = useMutation({
+    mutationFn: (input: CreateProjectArchiveSnapshotInput) =>
+      createProjectArchiveSnapshot(apiOptions, effectiveProjectId as string, input),
+    onSuccess: async (snapshot) => {
+      const projectId = snapshot.project_id || effectiveProjectId;
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["project-archive-snapshots", projectId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["project-archive-preview", projectId],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+      ]);
+    },
+  });
+
   const isInitialLoading = projectsQuery.isLoading && !projectsQuery.data;
   const overview =
     overviewQuery.data?.project.id === effectiveProjectId
@@ -467,6 +543,26 @@ export function ProjectsView({
             onArchiveProject={() => {
               if (effectiveProjectId) {
                 archiveMutation.mutate(effectiveProjectId);
+              }
+            }}
+            onCreateAcceptance={(input) => {
+              if (effectiveProjectId) {
+                createAcceptanceMutation.mutate(input);
+              }
+            }}
+            onCreateArchiveSnapshot={(input) => {
+              if (effectiveProjectId) {
+                createArchiveSnapshotMutation.mutate(input);
+              }
+            }}
+            onCreateEvidence={(input) => {
+              if (effectiveProjectId) {
+                createEvidenceMutation.mutate(input);
+              }
+            }}
+            onPatchEvidence={(evidenceId, verificationStatus) => {
+              if (effectiveProjectId) {
+                patchEvidenceMutation.mutate({ evidenceId, verificationStatus });
               }
             }}
             onResolveDecision={(decisionId, decision) => {

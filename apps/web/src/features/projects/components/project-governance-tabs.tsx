@@ -1,6 +1,9 @@
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { LiquidTabsList, LiquidTabsTrigger } from "@/components/superteam";
 import type {
+  CreateProjectAcceptanceInput,
+  CreateProjectArchiveSnapshotInput,
+  CreateProjectEvidenceInput,
   ProjectAcceptanceRecord,
   ProjectArchivePreview,
   ProjectArchiveSnapshot,
@@ -8,6 +11,7 @@ import type {
   ProjectBudgetLedgerEntry,
   ProjectBudgetSummary,
   ProjectEvidenceRef,
+  ProjectEvidenceVerificationStatus,
   ProjectReportRef,
 } from "@/lib/api/projects";
 import { ProjectAcceptancePanel } from "./project-acceptance-panel";
@@ -27,6 +31,13 @@ type ProjectGovernanceTabsProps = {
   demandCount: number;
   evidence?: ProjectEvidenceRef[];
   executionSummaryCount: number;
+  onCreateAcceptance: (input: CreateProjectAcceptanceInput) => void;
+  onCreateArchiveSnapshot: (input: CreateProjectArchiveSnapshotInput) => void;
+  onCreateEvidence: (input: CreateProjectEvidenceInput) => void;
+  onPatchEvidence: (
+    evidenceId: string,
+    verificationStatus: ProjectEvidenceVerificationStatus,
+  ) => void;
   reports?: ProjectReportRef[];
   routeDecisionCount: number;
   taskCount: number;
@@ -43,6 +54,10 @@ export function ProjectGovernanceTabs({
   demandCount,
   evidence = [],
   executionSummaryCount,
+  onCreateAcceptance,
+  onCreateArchiveSnapshot,
+  onCreateEvidence,
+  onPatchEvidence,
   reports = [],
   routeDecisionCount,
   taskCount,
@@ -75,7 +90,11 @@ export function ProjectGovernanceTabs({
       </div>
 
       <TabsContent className="m-0" value="evidence">
-        <ProjectEvidencePanel evidence={evidence} />
+        <ProjectEvidencePanel
+          evidence={evidence}
+          onCreateEvidence={onCreateEvidence}
+          onPatchEvidence={onPatchEvidence}
+        />
       </TabsContent>
       <TabsContent className="m-0" value="artifacts">
         <ProjectArtifactReportPanel artifacts={artifacts} reports={reports} />
@@ -87,7 +106,12 @@ export function ProjectGovernanceTabs({
         />
       </TabsContent>
       <TabsContent className="m-0" value="acceptance">
-        <ProjectAcceptancePanel acceptance={acceptance} />
+        <ProjectAcceptancePanel
+          acceptance={acceptance}
+          evidenceRefIds={evidence.map((item) => item.id)}
+          onCreateAcceptance={onCreateAcceptance}
+          reportRefIds={reports.map((item) => item.id)}
+        />
       </TabsContent>
       <TabsContent className="m-0" value="archive">
         <ProjectArchivePanel
@@ -99,6 +123,7 @@ export function ProjectGovernanceTabs({
           demandCount={demandCount}
           evidenceCount={evidence.length}
           executionSummaryCount={executionSummaryCount}
+          onCreateArchiveSnapshot={onCreateArchiveSnapshot}
           reportCount={reports.length}
           routeDecisionCount={routeDecisionCount}
           taskCount={taskCount}

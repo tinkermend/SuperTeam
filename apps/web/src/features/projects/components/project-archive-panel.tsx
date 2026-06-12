@@ -1,9 +1,13 @@
+import { useState, type ReactNode } from "react";
 import { Archive, Database } from "lucide-react";
 import {
   LiquidCard,
   SemanticIconTile,
   StatusBadge,
 } from "@/components/superteam";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -13,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type {
+  CreateProjectArchiveSnapshotInput,
   ProjectArchivePreview,
   ProjectArchiveSnapshot,
 } from "@/lib/api/projects";
@@ -26,6 +31,7 @@ type ProjectArchivePanelProps = {
   demandCount: number;
   evidenceCount: number;
   executionSummaryCount: number;
+  onCreateArchiveSnapshot: (input: CreateProjectArchiveSnapshotInput) => void;
   reportCount: number;
   routeDecisionCount: number;
   taskCount: number;
@@ -41,11 +47,14 @@ export function ProjectArchivePanel({
   demandCount,
   evidenceCount,
   executionSummaryCount,
+  onCreateArchiveSnapshot,
   reportCount,
   routeDecisionCount,
   taskCount,
   unresolvedRiskCount,
 }: ProjectArchivePanelProps) {
+  const [objectRef, setObjectRef] = useState("");
+  const [summary, setSummary] = useState("");
   const retainedArtifactCount = new Set(
     archiveSnapshots.flatMap((snapshot) => snapshot.retained_artifact_ids),
   ).size;
@@ -65,6 +74,21 @@ export function ProjectArchivePanel({
       }
     : { label: "待预览", tone: "neutral" };
 
+  function submitArchiveSnapshot() {
+    const nextObjectRef = objectRef.trim();
+    if (!nextObjectRef) {
+      return;
+    }
+
+    onCreateArchiveSnapshot({
+      object_ref: nextObjectRef,
+      snapshot_type: "project_archive",
+      summary: summary.trim() || undefined,
+    });
+    setObjectRef("");
+    setSummary("");
+  }
+
   return (
     <LiquidCard className="rounded-xl">
       <div className="flex items-center justify-between gap-3 border-b p-4">
@@ -83,6 +107,34 @@ export function ProjectArchivePanel({
       </div>
 
       <div className="grid gap-4 p-4">
+        <div className="grid gap-3 rounded-lg border bg-white/55 p-3">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <Field label="快照 Object Ref">
+              <Input
+                value={objectRef}
+                onChange={(event) => setObjectRef(event.target.value)}
+                placeholder="s3://superteam/project/archive.json"
+              />
+            </Field>
+            <Field label="快照摘要">
+              <Input
+                value={summary}
+                onChange={(event) => setSummary(event.target.value)}
+                placeholder="当前项目归档快照"
+              />
+            </Field>
+          </div>
+          <div className="flex justify-end">
+            <Button
+              disabled={!objectRef.trim()}
+              type="button"
+              onClick={submitArchiveSnapshot}
+            >
+              生成归档快照
+            </Button>
+          </div>
+        </div>
+
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricBlock label="需求数" value={demandCount} />
           <MetricBlock label="任务数" value={taskCount} />
@@ -179,6 +231,15 @@ export function ProjectArchivePanel({
         </Table>
       </div>
     </LiquidCard>
+  );
+}
+
+function Field({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <Label className="grid gap-2">
+      <span>{label}</span>
+      {children}
+    </Label>
   );
 }
 
