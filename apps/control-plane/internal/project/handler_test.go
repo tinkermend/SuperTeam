@@ -247,6 +247,41 @@ func TestProjectHandlerListsRouteDecisionsAndResolvesDecision(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerGetsDemandLaunchDetail(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	service := &handlerTestService{launchDetailProjectID: projectID}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/project-demands/"+demandID.String()+"/launch-detail", nil)
+	req = withProjectRouteParams(req, map[string]string{"demandId": demandID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetDemandLaunchDetail(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected launch detail 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.launchDetailTenantID != tenantID || service.launchDetailDemandID != demandID {
+		t.Fatalf("unexpected launch detail request: tenant=%s demand=%s", service.launchDetailTenantID, service.launchDetailDemandID)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode launch detail response: %v", err)
+	}
+	if body["demand"].(map[string]any)["id"] != demandID.String() {
+		t.Fatalf("expected demand id in detail response: %#v", body)
+	}
+	if body["project"].(map[string]any)["id"] != projectID.String() {
+		t.Fatalf("expected project id in detail response: %#v", body)
+	}
+	if len(body["project_tasks"].([]any)) != 1 {
+		t.Fatalf("expected project tasks in launch detail: %#v", body)
+	}
+}
+
 func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{demandSignalErr: errors.New("temporal unavailable")}
@@ -449,6 +484,9 @@ type handlerTestService struct {
 	routeDecisionLimit     int32
 	routeDecisionOffset    int32
 	resolveDecisionReq     ResolveDecisionRequest
+	launchDetailTenantID   uuid.UUID
+	launchDetailDemandID   uuid.UUID
+	launchDetailProjectID  uuid.UUID
 }
 
 func (s *handlerTestService) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -550,6 +588,21 @@ func (s *handlerTestService) ListCoordinationJobs(ctx context.Context, tenantID,
 
 func (s *handlerTestService) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error) {
 	return nil, nil
+}
+
+func (s *handlerTestService) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error) {
+	s.launchDetailTenantID = tenantID
+	s.launchDetailDemandID = demandID
+	projectID := s.launchDetailProjectID
+	if projectID == uuid.Nil {
+		projectID = uuid.New()
+	}
+	project := testProject(tenantID, projectID, uuid.New())
+	return &DemandLaunchDetail{
+		Demand:       ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: uuid.New(), Title: "审查 PR", SourceType: DemandSourceManual, Status: ProjectDemandStatusPlanningPending},
+		Project:      project,
+		ProjectTasks: []ProjectTask{{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, DemandID: &demandID, Title: "审查 PR", Status: "pending"}},
+	}, nil
 }
 
 func (s *handlerTestService) ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error) {

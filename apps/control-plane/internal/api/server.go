@@ -212,6 +212,7 @@ func (s *Server) registerRoutes() {
 				r.Put("/projects/{projectId}/config", s.projectHandler.UpdateProjectConfig)
 				r.Post("/projects/{projectId}/demands", s.projectHandler.SubmitDemand)
 				r.Get("/projects/{projectId}/demands", s.projectHandler.ListProjectDemands)
+				r.Get("/project-demands/{demandId}/launch-detail", s.projectHandler.GetDemandLaunchDetail)
 				r.Get("/projects/{projectId}/route-decisions", s.projectHandler.ListRouteDecisions)
 				r.Get("/projects/{projectId}/coordination-jobs", s.projectHandler.ListCoordinationJobs)
 				r.Get("/projects/{projectId}/decisions", s.projectHandler.ListDecisionRequests)

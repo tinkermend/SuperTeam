@@ -868,6 +868,55 @@ func (s *Service) ListProjectDemands(ctx context.Context, tenantID, projectID uu
 	return s.repository.ListProjectDemands(ctx, tenantID, projectID, limit, offset)
 }
 
+func (s *Service) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error) {
+	if tenantID == uuid.Nil || demandID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	demand, err := s.repository.GetProjectDemand(ctx, tenantID, demandID)
+	if err != nil {
+		return nil, err
+	}
+	project, err := s.repository.GetProject(ctx, tenantID, demand.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	jobs, err := s.repository.ListCoordinationJobs(ctx, tenantID, demand.ProjectID, 100, 0)
+	if err != nil {
+		return nil, err
+	}
+	routes, err := s.repository.ListRouteDecisions(ctx, tenantID, demand.ProjectID, 100, 0)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := s.repository.ListProjectTasks(ctx, tenantID, demand.ProjectID, nil, 100, 0)
+	if err != nil {
+		return nil, err
+	}
+	decisions, err := s.repository.ListDecisionRequests(ctx, tenantID, demand.ProjectID, 100, 0)
+	if err != nil {
+		return nil, err
+	}
+	events, err := s.repository.ListProjectEvents(ctx, tenantID, demand.ProjectID, 50, 0)
+	if err != nil {
+		return nil, err
+	}
+	filteredJobs := filterJobsForDemand(jobs, demand)
+	filteredRoutes := filterRoutesForDemand(routes, demand.ID)
+	filteredTasks := filterTasksForDemand(tasks, demand.ID)
+	filteredDecisions := filterDecisionsForDemand(decisions, filteredJobs, filteredTasks)
+	filteredEvents := filterEventsForDemand(events, demand, filteredTasks, filteredDecisions)
+	return &DemandLaunchDetail{
+		Demand:           demand,
+		Project:          project,
+		Reviewer:         demand.ReviewerPreference,
+		CoordinationJobs: filteredJobs,
+		RouteDecisions:   filteredRoutes,
+		ProjectTasks:     filteredTasks,
+		DecisionRequests: filteredDecisions,
+		RecentEvents:     filteredEvents,
+	}, nil
+}
+
 func (s *Service) ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
@@ -890,6 +939,94 @@ func (s *Service) ListDecisionRequests(ctx context.Context, tenantID, projectID 
 	}
 	limit, offset = normalizePagination(limit, offset)
 	return s.repository.ListDecisionRequests(ctx, tenantID, projectID, limit, offset)
+}
+
+func filterJobsForDemand(jobs []CoordinationJob, demand ProjectDemand) []CoordinationJob {
+	filtered := []CoordinationJob{}
+	for _, job := range jobs {
+		if demand.CreatedEventID != nil && job.TriggerEventID != nil && *job.TriggerEventID == *demand.CreatedEventID {
+			filtered = append(filtered, job)
+		}
+	}
+	return filtered
+}
+
+func filterRoutesForDemand(routes []RouteDecision, demandID uuid.UUID) []RouteDecision {
+	filtered := []RouteDecision{}
+	for _, route := range routes {
+		if route.DemandID != nil && *route.DemandID == demandID {
+			filtered = append(filtered, route)
+		}
+	}
+	return filtered
+}
+
+func filterTasksForDemand(tasks []ProjectTask, demandID uuid.UUID) []ProjectTask {
+	filtered := []ProjectTask{}
+	for _, task := range tasks {
+		if task.DemandID != nil && *task.DemandID == demandID {
+			filtered = append(filtered, task)
+		}
+	}
+	return filtered
+}
+
+func filterDecisionsForDemand(decisions []DecisionRequest, jobs []CoordinationJob, tasks []ProjectTask) []DecisionRequest {
+	jobIDs := map[uuid.UUID]struct{}{}
+	for _, job := range jobs {
+		jobIDs[job.ID] = struct{}{}
+	}
+	taskIDs := map[uuid.UUID]struct{}{}
+	for _, task := range tasks {
+		taskIDs[task.ID] = struct{}{}
+	}
+	filtered := []DecisionRequest{}
+	for _, decision := range decisions {
+		if decision.CoordinationJobID != nil {
+			if _, ok := jobIDs[*decision.CoordinationJobID]; ok {
+				filtered = append(filtered, decision)
+				continue
+			}
+		}
+		if decision.ProjectTaskID != nil {
+			if _, ok := taskIDs[*decision.ProjectTaskID]; ok {
+				filtered = append(filtered, decision)
+			}
+		}
+	}
+	return filtered
+}
+
+func filterEventsForDemand(events []ProjectEvent, demand ProjectDemand, tasks []ProjectTask, decisions []DecisionRequest) []ProjectEvent {
+	taskIDs := map[string]struct{}{}
+	for _, task := range tasks {
+		taskIDs[task.ID.String()] = struct{}{}
+	}
+	decisionIDs := map[string]struct{}{}
+	for _, decision := range decisions {
+		decisionIDs[decision.ID.String()] = struct{}{}
+	}
+	filtered := []ProjectEvent{}
+	for _, event := range events {
+		if demand.CreatedEventID != nil && event.ID == *demand.CreatedEventID {
+			filtered = append(filtered, event)
+			continue
+		}
+		if event.ResourceID != nil {
+			if _, ok := taskIDs[*event.ResourceID]; ok {
+				filtered = append(filtered, event)
+				continue
+			}
+			if _, ok := decisionIDs[*event.ResourceID]; ok {
+				filtered = append(filtered, event)
+				continue
+			}
+		}
+		if rawDemandID, ok := event.Payload["demand_id"].(string); ok && rawDemandID == demand.ID.String() {
+			filtered = append(filtered, event)
+		}
+	}
+	return filtered
 }
 
 func (s *Service) ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error) {

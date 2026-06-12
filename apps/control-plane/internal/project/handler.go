@@ -26,6 +26,7 @@ type HandlerService interface {
 	RetryWorkflowSignal(ctx context.Context, req RetryWorkflowSignalRequest) (*ProjectEvent, error)
 	SubmitDemand(ctx context.Context, req SubmitProjectDemandRequest) (*ProjectDemand, error)
 	ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error)
+	GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error)
 	GetOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error)
 	ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error)
 	ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error)
@@ -329,6 +330,28 @@ func (h *HTTPHandler) ListProjectDemands(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, demandResponses(demands))
+}
+
+func (h *HTTPHandler) GetDemandLaunchDetail(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := consoleIdentity(w, r)
+	if !ok {
+		return
+	}
+	demandID, err := uuid.Parse(chi.URLParam(r, "demandId"))
+	if err != nil {
+		writeHandlerError(w, ErrInvalidProject)
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	detail, err := service.GetDemandLaunchDetail(r.Context(), tenantID, demandID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, demandLaunchDetailResponseFromDomain(*detail))
 }
 
 func (h *HTTPHandler) ListRouteDecisions(w http.ResponseWriter, r *http.Request) {
@@ -1294,6 +1317,25 @@ type projectDemandResponse struct {
 	CreatedEventID    *string             `json:"created_event_id,omitempty"`
 }
 
+type demandLaunchDetailResponse struct {
+	Demand           projectDemandResponse       `json:"demand"`
+	Project          projectResponse             `json:"project"`
+	Reviewer         *reviewerPreferenceResponse `json:"reviewer,omitempty"`
+	CoordinationJobs []coordinationJobResponse   `json:"coordination_jobs"`
+	RouteDecisions   []routeDecisionResponse     `json:"route_decisions"`
+	ProjectTasks     []projectTaskResponse       `json:"project_tasks"`
+	DecisionRequests []decisionRequestResponse   `json:"decision_requests"`
+	RecentEvents     []projectEventResponse      `json:"recent_events"`
+}
+
+type reviewerPreferenceResponse struct {
+	ReviewerUserID   string                  `json:"reviewer_user_id"`
+	SelectionReason  ReviewerSelectionReason `json:"selection_reason"`
+	DisplayName      *string                 `json:"display_name,omitempty"`
+	ProjectRole      ProjectRole             `json:"project_role"`
+	ResolvedFromRule bool                    `json:"resolved_from_rule"`
+}
+
 type projectEvidenceResponse struct {
 	ID                 string                     `json:"id"`
 	TenantID           string                     `json:"tenant_id"`
@@ -1706,6 +1748,32 @@ func demandResponseFromDomain(demand ProjectDemand) projectDemandResponse {
 		Attachments:       sliceOrEmpty(demand.Attachments),
 		Status:            demand.Status,
 		CreatedEventID:    stringPtr(demand.CreatedEventID),
+	}
+}
+
+func demandLaunchDetailResponseFromDomain(detail DemandLaunchDetail) demandLaunchDetailResponse {
+	return demandLaunchDetailResponse{
+		Demand:           demandResponseFromDomain(detail.Demand),
+		Project:          projectResponseFromDomain(detail.Project),
+		Reviewer:         reviewerPreferenceResponseFromDomain(detail.Reviewer),
+		CoordinationJobs: coordinationJobResponses(detail.CoordinationJobs),
+		RouteDecisions:   routeDecisionResponses(detail.RouteDecisions),
+		ProjectTasks:     taskResponses(detail.ProjectTasks),
+		DecisionRequests: decisionRequestResponses(detail.DecisionRequests),
+		RecentEvents:     eventResponses(detail.RecentEvents),
+	}
+}
+
+func reviewerPreferenceResponseFromDomain(preference *ReviewerPreference) *reviewerPreferenceResponse {
+	if preference == nil {
+		return nil
+	}
+	return &reviewerPreferenceResponse{
+		ReviewerUserID:   preference.ReviewerUserID.String(),
+		SelectionReason:  preference.SelectionReason,
+		DisplayName:      preference.DisplayName,
+		ProjectRole:      preference.ProjectRole,
+		ResolvedFromRule: preference.ResolvedFromRule,
 	}
 }
 

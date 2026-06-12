@@ -293,6 +293,17 @@ type ProjectDemand struct {
 	UpdatedAt          time.Time
 }
 
+type DemandLaunchDetail struct {
+	Demand           ProjectDemand
+	Project          Project
+	Reviewer         *ReviewerPreference
+	CoordinationJobs []CoordinationJob
+	RouteDecisions   []RouteDecision
+	ProjectTasks     []ProjectTask
+	DecisionRequests []DecisionRequest
+	RecentEvents     []ProjectEvent
+}
+
 type ProjectConfigRevision struct {
 	ID                 uuid.UUID
 	TenantID           uuid.UUID

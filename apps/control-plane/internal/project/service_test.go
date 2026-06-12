@@ -169,6 +169,54 @@ func TestSubmitDemandRecordsDemandAndEventWithoutAutoCreatingTask(t *testing.T) 
 	}
 }
 
+func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "客户侧 Runtime 接入验收",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID, Title: "审查 PR",
+	})
+	if err != nil {
+		t.Fatalf("submit demand: %v", err)
+	}
+	job := CoordinationJob{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, TriggerEventID: demand.CreatedEventID, JobType: "demand_route", Status: "running"}
+	repo.coordinationJobs = append(repo.coordinationJobs, job)
+	task := ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, DemandID: &demand.ID, Title: "审查 PR", Status: "pending"}
+	repo.tasks = append(repo.tasks, task)
+	repo.routeDecisions = append(repo.routeDecisions, RouteDecision{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: job.ID, DemandID: &demand.ID, Reason: "按能力分派"})
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: &job.ID, TargetUserID: ownerID, DecisionType: "route_review", TitleSnapshot: "确认路由", StatusSnapshot: "pending"})
+
+	detail, err := service.GetDemandLaunchDetail(context.Background(), tenantID, demand.ID)
+	if err != nil {
+		t.Fatalf("launch detail: %v", err)
+	}
+	if detail.Demand.ID != demand.ID || detail.Project.ID != projectID {
+		t.Fatalf("unexpected demand/project: %#v", detail)
+	}
+	if detail.Reviewer == nil || detail.Reviewer.ReviewerUserID != ownerID {
+		t.Fatalf("expected reviewer preference in launch detail: %#v", detail.Reviewer)
+	}
+	if len(detail.CoordinationJobs) != 1 || len(detail.RouteDecisions) != 1 || len(detail.ProjectTasks) != 1 || len(detail.DecisionRequests) != 1 {
+		t.Fatalf("expected related facts, got %#v", detail)
+	}
+	if len(detail.RecentEvents) != 1 || detail.RecentEvents[0].ID != *demand.CreatedEventID {
+		t.Fatalf("expected demand event in launch detail: %#v", detail.RecentEvents)
+	}
+}
+
 func TestSubmitDemandPersistsDefaultReviewerPreference(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
