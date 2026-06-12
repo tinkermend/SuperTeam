@@ -534,6 +534,7 @@ describe("TaskLaunchView", () => {
     await typeInLabeledField("需求描述", "需要两位审核人项目确认");
     await vi.waitFor(() => expect(getByText("王审核 · reviewer")).toBeTruthy());
     await vi.waitFor(() => expect(getByText("李审核 · reviewer")).toBeTruthy());
+    expect(textOrder("王审核 · reviewer")).toBeLessThan(textOrder("负责人 · owner"));
     await clickButton("发起任务");
 
     await vi.waitFor(() => expect(getByText("请选择审核人")).toBeTruthy());
@@ -662,6 +663,11 @@ function getByLabelText(label: string) {
     throw new Error(`Unable to find label: ${label}`);
   }
   return element;
+}
+
+function textOrder(text: string) {
+  const element = getByText(text);
+  return Array.from(document.body.querySelectorAll<HTMLElement>("*")).indexOf(element);
 }
 
 function postBody(fetcher: ReturnType<typeof createTaskLaunchFetcher>, path: string) {

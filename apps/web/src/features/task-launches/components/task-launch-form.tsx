@@ -84,6 +84,10 @@ function deriveTitle(content: string): string {
   return content.trim().split(/\n+/)[0]?.slice(0, 80) ?? "";
 }
 
+function reviewerSortKey(member: ProjectMember): string {
+  return member.display_name_snapshot || member.principal_id;
+}
+
 export function TaskLaunchForm({
   isSubmitting = false,
   isReviewerLoading = false,
@@ -115,9 +119,20 @@ export function TaskLaunchForm({
   const selectedReason: ReviewerSelectionReason | undefined = reviewerId
     ? "user_selected"
     : reviewerDefault?.reason;
-  const humanReviewers = currentProjectMembers.filter(
-    (member) => member.principal_type === "human_user" && member.status === "active",
-  );
+  const humanReviewers = useMemo(() => {
+    const activeHumanMembers = currentProjectMembers.filter(
+      (member) => member.principal_type === "human_user" && member.status === "active",
+    );
+    return [...activeHumanMembers].sort((left, right) => {
+      if (left.project_role === "reviewer" && right.project_role !== "reviewer") {
+        return -1;
+      }
+      if (left.project_role !== "reviewer" && right.project_role === "reviewer") {
+        return 1;
+      }
+      return reviewerSortKey(left).localeCompare(reviewerSortKey(right));
+    });
+  }, [currentProjectMembers]);
 
   useEffect(() => {
     setReviewerId("");
