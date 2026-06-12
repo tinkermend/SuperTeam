@@ -84,6 +84,15 @@ func TestInboxItemMapperPreservesJSONAndOptionalFields(t *testing.T) {
 	if item.ResolvedAt == nil || !item.ResolvedAt.Equal(resolvedAt) {
 		t.Fatalf("expected resolved timestamp, got %#v", item.ResolvedAt)
 	}
+	if !item.LastActivityAt.Equal(row.LastActivityAt.Time) {
+		t.Fatalf("expected last activity timestamp %s, got %s", row.LastActivityAt.Time, item.LastActivityAt)
+	}
+	if !item.CreatedAt.Equal(row.CreatedAt.Time) {
+		t.Fatalf("expected created timestamp %s, got %s", row.CreatedAt.Time, item.CreatedAt)
+	}
+	if !item.UpdatedAt.Equal(row.UpdatedAt.Time) {
+		t.Fatalf("expected updated timestamp %s, got %s", row.UpdatedAt.Time, item.UpdatedAt)
+	}
 }
 
 func TestInboxItemMapperDefaultsEmptyJSONFields(t *testing.T) {
