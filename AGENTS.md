@@ -98,12 +98,22 @@ connectors/
 ## 开发规则
 
 - 每次功能开发完成写 `CHANGELOG.md` 记录变更日志；每条新增变更必须带具体时间，格式为 `YYYY-MM-DD HH:mm`，默认使用本地 `Asia/Shanghai` 时间。
+- 需要写变更时间时，先运行 `TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M'`，使用命令实际输出，不手写估算时间。
 - 不要盲目猜测,如果有不确定的地方与人类进行沟通
 - 自我评估阶段性任务开发完成后选择性做好必要的功能测试,单元测试,回归测试,如果设计到前端页面布局,样式变更请做真实游览器访问截图验证
 - 页面前端样式设计风格请阅读`DESIGN.md`
 - 列表、表格、卡片工作台的筛选/排序/分页/Tab 切换必须区分首次加载与后台刷新；已有数据时禁止卸载主内容，只能做局部刷新提示。
 - React Query 等数据请求在 queryKey 变化时应默认保留旧数据（如 `placeholderData: keepPreviousData`），除非业务明确要求清空。
 - 本地 UI 状态（选中项、展开项、当前视图）不得因 refetch 重置；仅当新数据不再包含该对象时才回退到默认状态。
+
+## 常用命令与验证流程
+
+- 本地 Web、Control Plane、Runtime Agent 分别使用根脚本启动：`pnpm dev:web`、`pnpm dev:control-plane`、`pnpm dev:runtime-agent`；需要统一启停时使用 `scripts/dev-services.sh start|stop|restart|status [all|temporal|control-plane|web|runtime-agent]`。
+- 按变更范围选择验证门禁：前端用 `pnpm verify:web`，Control Plane 用 `pnpm verify:control-plane`，Runtime Agent 用 `pnpm verify:runtime-agent`；跨层或合并前使用 `pnpm verify:foundation`。
+- Web 测试使用 Vitest Browser headless；如本机缺少 Playwright Chromium，先运行 `pnpm --filter @superteam/web test:browser:install`，再运行相关测试或 `pnpm verify:web`。
+- 修改 `contracts/control-plane/openapi.yaml` 后运行 `pnpm generate:control-plane` 并执行 `pnpm verify:contracts`；不要手工编辑 `*.gen.go`。
+- 修改 sqlc 查询或数据库 schema 后，按 `DATABASE_DESIGN.md` 使用新的 forward migration，并运行 `make -C apps/control-plane generate-sqlc`；`pnpm generate:control-plane` 不能替代 sqlc 生成。
+- 数据库迁移验证使用 Control Plane Makefile：`DATABASE_URL=... make -C apps/control-plane migrate-status` 或 `migrate-up`。只有在已确认测试库可迁移和清理时，才设置 `TEST_DATABASE_URL`、`TEST_REDIS_URL` 运行 `apps/control-plane/test.sh` 或查询集成测试。
 
 ## 其他规则
 
