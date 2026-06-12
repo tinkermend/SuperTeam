@@ -353,6 +353,56 @@ type DigitalEmployeeExecutionInstance struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 收件箱可操作事项 read model，聚合需要人类用户处理的审批和项目决策待办
+type InboxItem struct {
+	// 收件箱事项ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 团队ID，可为空；第一版主要用于后续团队范围过滤
+	TeamID uuid.NullUUID `json:"team_id"`
+	// 目标处理人用户ID；第一版只有目标处理人可以执行动作
+	TargetUserID uuid.UUID `json:"target_user_id"`
+	// 事项范围：personal 或 team，由应用层校验
+	Scope string `json:"scope"`
+	// 收件箱事项类型，例如 approval 或 project_decision，由应用层注册校验
+	ItemType string `json:"item_type"`
+	// 来源对象类型，例如 approval_request 或 project_decision_request
+	SourceType string `json:"source_type"`
+	// 来源对象ID，与 source_type 共同定位事实源
+	SourceID uuid.UUID `json:"source_id"`
+	// 来源项目ID，用于项目筛选和上下文跳转
+	SourceProjectID uuid.NullUUID `json:"source_project_id"`
+	// 来源项目任务ID，用于后续任务上下文筛选
+	SourceTaskID uuid.NullUUID `json:"source_task_id"`
+	// 关联全局审批请求ID，用于防止审批和项目决策重复投影
+	SourceApprovalRequestID uuid.NullUUID `json:"source_approval_request_id"`
+	// 事项标题快照
+	Title string `json:"title"`
+	// 事项摘要快照
+	Summary pgtype.Text `json:"summary"`
+	// 风险等级快照，例如 low、medium、high
+	RiskLevel pgtype.Text `json:"risk_level"`
+	// 队列优先级快照，由应用层校验
+	Priority pgtype.Text `json:"priority"`
+	// 收件箱状态：open、resolved、cancelled，由来源状态驱动
+	Status string `json:"status"`
+	// 前端可展示动作 schema，最终合法性仍由来源服务校验
+	ActionSchema []byte `json:"action_schema"`
+	// 展示上下文快照，不作为业务事实源
+	ContextPayload []byte `json:"context_payload"`
+	// 前端上下文跳转信息
+	DeepLink []byte `json:"deep_link"`
+	// 事项关闭时间
+	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
+	// 最后活动时间，用于收件箱排序
+	LastActivityAt pgtype.Timestamptz `json:"last_activity_at"`
+	// 事项创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 事项更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 项目核心事实容器
 type Project struct {
 	// 项目ID

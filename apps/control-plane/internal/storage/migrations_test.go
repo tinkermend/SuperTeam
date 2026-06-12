@@ -157,6 +157,48 @@ func TestForwardOnlyAuthAndWebLogMigrationsWereMergedIntoInitialSchema(t *testin
 	}
 }
 
+func TestInboxItemsMigrationAddsActionableQueueReadModel(t *testing.T) {
+	body, err := os.ReadFile("migrations/016_inbox_items.sql")
+	if err != nil {
+		t.Fatalf("read inbox migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"CREATE TABLE inbox_items",
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"tenant_id UUID NOT NULL",
+		"target_user_id UUID NOT NULL",
+		"source_type VARCHAR(100) NOT NULL",
+		"source_id UUID NOT NULL",
+		"source_approval_request_id UUID",
+		"action_schema JSONB NOT NULL DEFAULT '[]'::jsonb",
+		"context_payload JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"deep_link JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"CREATE UNIQUE INDEX uq_inbox_items_tenant_source",
+		"CREATE UNIQUE INDEX uq_inbox_items_tenant_approval_source",
+		"CREATE INDEX idx_inbox_items_tenant_target_status_activity",
+		"COMMENT ON TABLE inbox_items IS",
+		"COMMENT ON COLUMN inbox_items.source_approval_request_id IS",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected inbox migration to contain %q", expected)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"CREATE TYPE inbox",
+		"CREATE TYPE item_type",
+		"FOREIGN KEY",
+		"ON DELETE CASCADE",
+		"BIGSERIAL",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("inbox read model must avoid %q", forbidden)
+		}
+	}
+}
+
 func TestAuthUserAvatarMigrationAddsGeneratedAvatarConfig(t *testing.T) {
 	body, err := os.ReadFile("migrations/005_add_auth_user_avatar.sql")
 	if err != nil {
