@@ -13,6 +13,7 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/tenant"
@@ -30,6 +31,7 @@ type Server struct {
 	auditHandler                   *audit.HTTPHandler
 	authzCenterHandler             *authzcenter.HTTPHandler
 	employeeHandler                *employee.HTTPHandler
+	inboxHandler                   *inbox.HTTPHandler
 	projectHandler                 *project.HTTPHandler
 	skillHandler                   *skill.HTTPHandler
 	tenantHandler                  *tenant.HTTPHandler
@@ -112,6 +114,11 @@ func (s *Server) SetEmployeeHandler(employeeHandler *employee.HTTPHandler) {
 	if employeeHandler != nil {
 		employeeHandler.SetAuthorizer(s.authorizer)
 	}
+	s.registerRoutes()
+}
+
+func (s *Server) SetInboxHandler(inboxHandler *inbox.HTTPHandler) {
+	s.inboxHandler = inboxHandler
 	s.registerRoutes()
 }
 
@@ -232,6 +239,15 @@ func (s *Server) registerRoutes() {
 				r.Get("/projects/{projectId}/archive-snapshots", s.projectHandler.ListArchiveSnapshots)
 				r.Get("/projects/{projectId}/config-revisions", s.projectHandler.ListConfigRevisions)
 				r.Get("/projects/{projectId}/config-revisions/{revisionId}", s.projectHandler.GetConfigRevision)
+			})
+		}
+
+		if s.inboxHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/inbox/items", s.inboxHandler.ListItems)
+				r.Get("/inbox/badge", s.inboxHandler.GetBadge)
+				r.Post("/inbox/items/{itemId}/actions", s.inboxHandler.ExecuteAction)
 			})
 		}
 

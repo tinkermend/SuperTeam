@@ -1352,6 +1352,123 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/inbox/items:
+    get:
+      operationId: listInboxItems
+      summary: List actionable inbox items
+      parameters:
+        - name: view
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mine
+              - team
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - open
+              - resolved
+              - cancelled
+        - name: item_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - approval
+              - project_decision
+        - name: risk_level
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: target_user_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Inbox item list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InboxListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /api/v1/inbox/badge:
+    get:
+      operationId: getInboxBadge
+      summary: Get actionable inbox badge counts
+      responses:
+        "200":
+          description: Inbox badge counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InboxBadge"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /api/v1/inbox/items/{itemId}/actions:
+    post:
+      operationId: executeInboxAction
+      summary: Execute an inbox item action
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecuteInboxActionRequest"
+      responses:
+        "200":
+          description: Inbox action executed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecuteInboxActionResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
   /api/v1/teams:
     get:
       operationId: listTeams
@@ -2505,6 +2622,207 @@ components:
           type: string
           enum:
             - control-plane
+    InboxItemAction:
+      type: object
+      required:
+        - key
+        - label
+        - tone
+        - requires_comment
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        tone:
+          type: string
+        requires_comment:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+    InboxItem:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - target_user_id
+        - item_type
+        - source_type
+        - source_id
+        - title
+        - status
+        - actions
+        - context
+        - deep_link
+        - last_activity_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        target_user_id:
+          type: string
+          format: uuid
+        item_type:
+          type: string
+          enum:
+            - approval
+            - project_decision
+        source_type:
+          type: string
+          enum:
+            - approval_request
+            - project_decision_request
+        source_id:
+          type: string
+          format: uuid
+        source_project_id:
+          type: string
+          format: uuid
+        source_task_id:
+          type: string
+          format: uuid
+        source_approval_request_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        summary:
+          type: string
+        risk_level:
+          type: string
+        priority:
+          type: string
+        status:
+          type: string
+          enum:
+            - open
+            - resolved
+            - cancelled
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/InboxItemAction"
+        context:
+          type: object
+          additionalProperties: true
+        deep_link:
+          type: object
+          additionalProperties: true
+        last_activity_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+    InboxListResponse:
+      type: object
+      required:
+        - items
+        - pagination
+        - summary
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InboxItem"
+        pagination:
+          type: object
+          required:
+            - limit
+            - offset
+            - has_more
+          properties:
+            limit:
+              type: integer
+              format: int32
+            offset:
+              type: integer
+              format: int32
+            has_more:
+              type: boolean
+        summary:
+          type: object
+          required:
+            - open_count
+            - high_risk_count
+            - blocked_count
+          properties:
+            open_count:
+              type: integer
+              format: int64
+            high_risk_count:
+              type: integer
+              format: int64
+            blocked_count:
+              type: integer
+              format: int64
+    InboxBadge:
+      type: object
+      required:
+        - mine_open_count
+        - team_open_count
+        - high_risk_count
+      properties:
+        mine_open_count:
+          type: integer
+          format: int64
+        team_open_count:
+          type: integer
+          format: int64
+        high_risk_count:
+          type: integer
+          format: int64
+    ExecuteInboxActionRequest:
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          type: string
+        comment:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+    InboxSourceActionResult:
+      type: object
+      required:
+        - source_type
+        - source_id
+        - status
+      properties:
+        source_type:
+          type: string
+        source_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+    ExecuteInboxActionResponse:
+      type: object
+      required:
+        - item
+        - source_result
+      properties:
+        item:
+          $ref: "#/components/schemas/InboxItem"
+        source_result:
+          $ref: "#/components/schemas/InboxSourceActionResult"
     Task:
       type: object
       required:

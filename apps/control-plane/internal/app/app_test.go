@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -135,12 +136,20 @@ func TestNewContainerWithConfigWiresTemporalOnlyWhenEnabled(t *testing.T) {
 	if disabled.ApprovalService == nil {
 		t.Fatalf("expected approval service to be wired")
 	}
+	if disabled.InboxService == nil {
+		t.Fatalf("expected inbox service to be wired")
+	}
+	if disabled.InboxHandler == nil {
+		t.Fatalf("expected inbox handler to be wired")
+	}
 	if disabled.ArtifactService == nil {
 		t.Fatalf("expected artifact service to be wired")
 	}
 	if disabled.ProjectService == nil {
 		t.Fatalf("expected project service to be wired")
 	}
+	assertNonNilUnexportedField(t, disabled.ApprovalService, "inbox")
+	assertNonNilUnexportedField(t, disabled.ProjectService, "inbox")
 	if disabled.AuditHandler == nil {
 		t.Fatalf("expected audit handler to be wired")
 	}
@@ -165,9 +174,17 @@ func TestNewContainerWithConfigWiresTemporalOnlyWhenEnabled(t *testing.T) {
 	if enabled.ArtifactService == nil {
 		t.Fatalf("expected artifact service to be wired")
 	}
+	if enabled.InboxService == nil {
+		t.Fatalf("expected inbox service to be wired")
+	}
+	if enabled.InboxHandler == nil {
+		t.Fatalf("expected inbox handler to be wired")
+	}
 	if enabled.ProjectService == nil {
 		t.Fatalf("expected project service to be wired")
 	}
+	assertNonNilUnexportedField(t, enabled.ApprovalService, "inbox")
+	assertNonNilUnexportedField(t, enabled.ProjectService, "inbox")
 	if enabled.AuditHandler == nil {
 		t.Fatalf("expected audit handler to be wired")
 	}
@@ -253,6 +270,25 @@ func waitForActivePoller(t *testing.T, poller *runtimepkg.Poller) {
 			t.Fatal("timed out waiting for active poller waiter")
 		case <-ticker.C:
 		}
+	}
+}
+
+func assertNonNilUnexportedField(t *testing.T, owner any, fieldName string) {
+	t.Helper()
+
+	value := reflect.ValueOf(owner)
+	if value.Kind() == reflect.Pointer {
+		value = value.Elem()
+	}
+	field := value.FieldByName(fieldName)
+	if !field.IsValid() {
+		t.Fatalf("expected %T to have field %q", owner, fieldName)
+	}
+	if field.Kind() != reflect.Interface && field.Kind() != reflect.Pointer {
+		t.Fatalf("expected %T.%s to be interface or pointer, got %s", owner, fieldName, field.Kind())
+	}
+	if field.IsNil() {
+		t.Fatalf("expected %T.%s to be wired", owner, fieldName)
 	}
 }
 
