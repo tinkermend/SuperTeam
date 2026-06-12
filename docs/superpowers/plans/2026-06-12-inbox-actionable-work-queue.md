@@ -948,12 +948,10 @@ func (s *Service) ExecuteAction(ctx context.Context, req ExecuteActionRequest) (
 	if err != nil {
 		return item, SourceActionResult{}, err
 	}
-	closed := item
-	closed.Status = StatusResolved
-	now := time.Now().UTC()
-	closed.ResolvedAt = &now
-	closed.LastActivityAt = now
-	updated, err := s.repository.UpsertItem(ctx, itemToUpsert(closed))
+	// Inbox is a read model. The source action resolver synchronously updates the source,
+	// which then synchronously calls the Inbox projector to update the item state in the DB.
+	// We just fetch the updated item to return.
+	updated, err := s.repository.GetItem(ctx, req.TenantID, req.ItemID)
 	if err != nil {
 		return item, result, err
 	}
@@ -1307,6 +1305,124 @@ func timestamptzOrNull(value *time.Time) pgtype.Timestamptz {
 		return pgtype.Timestamptz{}
 	}
 	return pgtype.Timestamptz{Time: *value, Valid: true}
+}
+
+func upsertParams(req UpsertItemRequest) (queries.UpsertInboxItemParams, error) {
+	actionSchema, err := jsonbArray(req.Actions, "actions")
+	if err != nil {
+		return queries.UpsertInboxItemParams{}, err
+	}
+	contextPayload, err := jsonbObject(req.ContextPayload, "context_payload")
+	if err != nil {
+		return queries.UpsertInboxItemParams{}, err
+	}
+	deepLink, err := jsonbObject(req.DeepLink, "deep_link")
+	if err != nil {
+		return queries.UpsertInboxItemParams{}, err
+	}
+	return queries.UpsertInboxItemParams{
+		TenantID:                req.TenantID,
+		TeamID:                  nullUUID(req.TeamID),
+		TargetUserID:            req.TargetUserID,
+		Scope:                   req.Scope,
+		ItemType:                string(req.ItemType),
+		SourceType:              string(req.SourceType),
+		SourceID:                req.SourceID,
+		SourceProjectID:         nullUUID(req.SourceProjectID),
+		SourceTaskID:            nullUUID(req.SourceTaskID),
+		SourceApprovalRequestID: nullUUID(req.SourceApprovalRequestID),
+		Title:                   req.Title,
+		Summary:                 textOrNull(&req.Summary),
+		RiskLevel:               textOrNull(&req.RiskLevel),
+		Priority:                textOrNull(&req.Priority),
+		Status:                  string(req.Status),
+		ActionSchema:            actionSchema,
+		ContextPayload:          contextPayload,
+		DeepLink:                deepLink,
+		ResolvedAt:              timestamptzOrNull(req.ResolvedAt),
+		LastActivityAt:          req.LastActivityAt,
+	}, nil
+}
+
+func upsertApprovalParams(req UpsertItemRequest) (queries.UpsertInboxItemByApprovalSourceParams, error) {
+	actionSchema, err := jsonbArray(req.Actions, "actions")
+	if err != nil {
+		return queries.UpsertInboxItemByApprovalSourceParams{}, err
+	}
+	contextPayload, err := jsonbObject(req.ContextPayload, "context_payload")
+	if err != nil {
+		return queries.UpsertInboxItemByApprovalSourceParams{}, err
+	}
+	deepLink, err := jsonbObject(req.DeepLink, "deep_link")
+	if err != nil {
+		return queries.UpsertInboxItemByApprovalSourceParams{}, err
+	}
+	return queries.UpsertInboxItemByApprovalSourceParams{
+		TenantID:                req.TenantID,
+		TeamID:                  nullUUID(req.TeamID),
+		TargetUserID:            req.TargetUserID,
+		Scope:                   req.Scope,
+		ItemType:                string(req.ItemType),
+		SourceType:              string(req.SourceType),
+		SourceID:                req.SourceID,
+		SourceProjectID:         nullUUID(req.SourceProjectID),
+		SourceTaskID:            nullUUID(req.SourceTaskID),
+		SourceApprovalRequestID: nullUUID(req.SourceApprovalRequestID),
+		Title:                   req.Title,
+		Summary:                 textOrNull(&req.Summary),
+		RiskLevel:               textOrNull(&req.RiskLevel),
+		Priority:                textOrNull(&req.Priority),
+		Status:                  string(req.Status),
+		ActionSchema:            actionSchema,
+		ContextPayload:          contextPayload,
+		DeepLink:                deepLink,
+		ResolvedAt:              timestamptzOrNull(req.ResolvedAt),
+		LastActivityAt:          req.LastActivityAt,
+	}, nil
+}
+
+func itemFromRecord(row queries.InboxItem) (Item, error) {
+	var actions []Action
+	if err := json.Unmarshal(row.ActionSchema, &actions); err != nil {
+		return Item{}, fmt.Errorf("unmarshal actions: %w", err)
+	}
+	var contextPayload map[string]any
+	if err := json.Unmarshal(row.ContextPayload, &contextPayload); err != nil {
+		return Item{}, fmt.Errorf("unmarshal context: %w", err)
+	}
+	var deepLink map[string]any
+	if err := json.Unmarshal(row.DeepLink, &deepLink); err != nil {
+		return Item{}, fmt.Errorf("unmarshal deep link: %w", err)
+	}
+	var resolvedAt *time.Time
+	if row.ResolvedAt.Valid {
+		resolvedAt = &row.ResolvedAt.Time
+	}
+	return Item{
+		ID:                      row.ID,
+		TenantID:                row.TenantID,
+		TeamID:                  ptrUUID(row.TeamID),
+		TargetUserID:            row.TargetUserID,
+		Scope:                   row.Scope,
+		ItemType:                ItemType(row.ItemType),
+		SourceType:              SourceType(row.SourceType),
+		SourceID:                row.SourceID,
+		SourceProjectID:         ptrUUID(row.SourceProjectID),
+		SourceTaskID:            ptrUUID(row.SourceTaskID),
+		SourceApprovalRequestID: ptrUUID(row.SourceApprovalRequestID),
+		Title:                   row.Title,
+		Summary:                 ptrText(row.Summary),
+		RiskLevel:               ptrText(row.RiskLevel),
+		Priority:                ptrText(row.Priority),
+		Status:                  Status(row.Status),
+		Actions:                 actions,
+		ContextPayload:          contextPayload,
+		DeepLink:                deepLink,
+		ResolvedAt:              resolvedAt,
+		LastActivityAt:          row.LastActivityAt.Time,
+		CreatedAt:               row.CreatedAt.Time,
+		UpdatedAt:               row.UpdatedAt.Time,
+	}, nil
 }
 ```
 
@@ -1945,12 +2061,21 @@ if err != nil {
 	return nil, err
 }
 
-approvalService, err := approval.NewServiceWithInboxProjector(approvalRepository, inboxService)
+approvalProjector := inbox.NewApprovalProjectorAdapter(inboxService)
+decisionProjector := inbox.NewDecisionProjectorAdapter(inboxService)
+
+approvalService, err := approval.NewServiceWithInboxProjector(approvalRepository, approvalProjector)
 ```
 
-After `projectService` is created:
+After `projectService` is created, pass `decisionProjector` to project and projectcoordination constructors, and wire action resolvers:
 
 ```go
+// update existing project constructor
+projectService, err := project.NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(projectRepository, coordinatorClient, approvalService, decisionProjector, artifactLocker)
+
+// update existing project store constructor
+projectStore := projectcoordination.NewProjectStoreWithApprovalsAndInbox(projectRepository, approvalService, decisionProjector)
+
 inboxService.SetApprovalActionResolver(inbox.NewApprovalActionAdapter(approvalService))
 inboxService.SetProjectDecisionActionResolver(inbox.NewProjectDecisionActionAdapter(projectService))
 ```
@@ -1964,9 +2089,115 @@ server.SetInboxHandler(inboxHandler)
 
 Add `InboxService` and `InboxHandler` to `Container`.
 
-- [ ] **Step 6: Add action adapters**
+- [ ] **Step 6: Add action and projector adapters**
 
-In `apps/control-plane/internal/inbox/service.go` or `adapters.go`, add:
+In `apps/control-plane/internal/inbox/adapters.go` (or `service.go`), add the projector adapters to convert source domains to Inbox Items:
+
+```go
+package inbox
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/superteam/control-plane/internal/approval"
+	"github.com/superteam/control-plane/internal/project"
+)
+
+type ApprovalProjectorAdapter struct {
+	service *Service
+}
+
+func NewApprovalProjectorAdapter(service *Service) ApprovalProjectorAdapter {
+	return ApprovalProjectorAdapter{service: service}
+}
+
+func (a ApprovalProjectorAdapter) UpsertApprovalRequest(ctx context.Context, request approval.ApprovalRequest) error {
+	status := StatusOpen
+	var resolvedAt *time.Time
+	if request.Status == approval.ApprovalRequestStatusApproved || request.Status == approval.ApprovalRequestStatusRejected {
+		status = StatusResolved
+		if len(request.Decisions) > 0 {
+			resolvedAt = &request.Decisions[len(request.Decisions)-1].CreatedAt
+		}
+	} else if request.Status == approval.ApprovalRequestStatusCancelled {
+		status = StatusCancelled
+	}
+	_, err := a.service.UpsertItem(ctx, UpsertItemRequest{
+		TenantID:                request.TenantID,
+		TargetUserID:            request.TargetUserID,
+		Scope:                   "personal",
+		ItemType:                ItemTypeApproval,
+		SourceType:              SourceTypeApprovalRequest,
+		SourceID:                request.ID,
+		SourceApprovalRequestID: &request.ID,
+		Title:                   request.Title,
+		Summary:                 "", // Extract from request if available or necessary
+		RiskLevel:               "",
+		Priority:                "",
+		Status:                  status,
+		Actions:                 DefaultActions(),
+		ContextPayload:          map[string]any{},
+		DeepLink:                map[string]any{},
+		ResolvedAt:              resolvedAt,
+		LastActivityAt:          request.UpdatedAt,
+	})
+	return err
+}
+
+func (a ApprovalProjectorAdapter) ResolveApprovalRequest(ctx context.Context, request approval.ApprovalRequest) error {
+	return a.UpsertApprovalRequest(ctx, request)
+}
+
+type DecisionProjectorAdapter struct {
+	service *Service
+}
+
+func NewDecisionProjectorAdapter(service *Service) DecisionProjectorAdapter {
+	return DecisionProjectorAdapter{service: service}
+}
+
+func (a DecisionProjectorAdapter) UpsertProjectDecisionRequest(ctx context.Context, decision project.DecisionRequest) error {
+	status := StatusOpen
+	var resolvedAt *time.Time
+	if decision.StatusSnapshot == "approved" || decision.StatusSnapshot == "rejected" {
+		status = StatusResolved
+		resolvedAt = &decision.UpdatedAt
+	} else if decision.StatusSnapshot == "cancelled" {
+		status = StatusCancelled
+	}
+	
+	req := UpsertItemRequest{
+		TenantID:                decision.TenantID,
+		TargetUserID:            decision.TargetUserID,
+		Scope:                   "personal",
+		ItemType:                ItemTypeProjectDecision,
+		SourceType:              SourceTypeProjectDecisionRequest,
+		SourceID:                decision.ID,
+		SourceProjectID:         &decision.ProjectID,
+		SourceApprovalRequestID: decision.ApprovalRequestID,
+		Title:                   decision.TitleSnapshot,
+		Summary:                 "",
+		RiskLevel:               "",
+		Priority:                "",
+		Status:                  status,
+		Actions:                 DefaultActions(),
+		ContextPayload:          map[string]any{},
+		DeepLink:                map[string]any{"route": fmt.Sprintf("/projects/%s", decision.ProjectID), "anchor": decision.ID.String()},
+		ResolvedAt:              resolvedAt,
+		LastActivityAt:          decision.UpdatedAt,
+	}
+	_, err := a.service.UpsertItem(ctx, req)
+	return err
+}
+
+func (a DecisionProjectorAdapter) ResolveProjectDecisionRequest(ctx context.Context, decision project.DecisionRequest) error {
+	return a.UpsertProjectDecisionRequest(ctx, decision)
+}
+```
+
+Then add the action adapters to route actions back to the source services:
 
 ```go
 type ApprovalActionAdapter struct {
