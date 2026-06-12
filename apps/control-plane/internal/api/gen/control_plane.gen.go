@@ -465,6 +465,63 @@ func (e HealthResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for InboxItemItemType.
+const (
+	InboxItemItemTypeApproval        InboxItemItemType = "approval"
+	InboxItemItemTypeProjectDecision InboxItemItemType = "project_decision"
+)
+
+// Valid indicates whether the value is a known member of the InboxItemItemType enum.
+func (e InboxItemItemType) Valid() bool {
+	switch e {
+	case InboxItemItemTypeApproval:
+		return true
+	case InboxItemItemTypeProjectDecision:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InboxItemSourceType.
+const (
+	InboxItemSourceTypeApprovalRequest        InboxItemSourceType = "approval_request"
+	InboxItemSourceTypeProjectDecisionRequest InboxItemSourceType = "project_decision_request"
+)
+
+// Valid indicates whether the value is a known member of the InboxItemSourceType enum.
+func (e InboxItemSourceType) Valid() bool {
+	switch e {
+	case InboxItemSourceTypeApprovalRequest:
+		return true
+	case InboxItemSourceTypeProjectDecisionRequest:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InboxItemStatus.
+const (
+	InboxItemStatusCancelled InboxItemStatus = "cancelled"
+	InboxItemStatusOpen      InboxItemStatus = "open"
+	InboxItemStatusResolved  InboxItemStatus = "resolved"
+)
+
+// Valid indicates whether the value is a known member of the InboxItemStatus enum.
+func (e InboxItemStatus) Valid() bool {
+	switch e {
+	case InboxItemStatusCancelled:
+		return true
+	case InboxItemStatusOpen:
+		return true
+	case InboxItemStatusResolved:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectAcceptanceRecordStatus.
 const (
 	ProjectAcceptanceRecordStatusAccepted          ProjectAcceptanceRecordStatus = "accepted"
@@ -1085,19 +1142,19 @@ func (e TeamMemberRoleRequestRequestedRole) Valid() bool {
 
 // Defines values for TeamMemberRoleRequestStatus.
 const (
-	TeamMemberRoleRequestStatusApproved TeamMemberRoleRequestStatus = "approved"
-	TeamMemberRoleRequestStatusPending  TeamMemberRoleRequestStatus = "pending"
-	TeamMemberRoleRequestStatusRejected TeamMemberRoleRequestStatus = "rejected"
+	Approved TeamMemberRoleRequestStatus = "approved"
+	Pending  TeamMemberRoleRequestStatus = "pending"
+	Rejected TeamMemberRoleRequestStatus = "rejected"
 )
 
 // Valid indicates whether the value is a known member of the TeamMemberRoleRequestStatus enum.
 func (e TeamMemberRoleRequestStatus) Valid() bool {
 	switch e {
-	case TeamMemberRoleRequestStatusApproved:
+	case Approved:
 		return true
-	case TeamMemberRoleRequestStatusPending:
+	case Pending:
 		return true
-	case TeamMemberRoleRequestStatusRejected:
+	case Rejected:
 		return true
 	default:
 		return false
@@ -1164,6 +1221,63 @@ const (
 func (e ListAuditEventsParamsResourceType) Valid() bool {
 	switch e {
 	case ListAuditEventsParamsResourceTypeProject:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListInboxItemsParamsView.
+const (
+	ListInboxItemsParamsViewMine ListInboxItemsParamsView = "mine"
+	ListInboxItemsParamsViewTeam ListInboxItemsParamsView = "team"
+)
+
+// Valid indicates whether the value is a known member of the ListInboxItemsParamsView enum.
+func (e ListInboxItemsParamsView) Valid() bool {
+	switch e {
+	case ListInboxItemsParamsViewMine:
+		return true
+	case ListInboxItemsParamsViewTeam:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListInboxItemsParamsStatus.
+const (
+	Cancelled ListInboxItemsParamsStatus = "cancelled"
+	Open      ListInboxItemsParamsStatus = "open"
+	Resolved  ListInboxItemsParamsStatus = "resolved"
+)
+
+// Valid indicates whether the value is a known member of the ListInboxItemsParamsStatus enum.
+func (e ListInboxItemsParamsStatus) Valid() bool {
+	switch e {
+	case Cancelled:
+		return true
+	case Open:
+		return true
+	case Resolved:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListInboxItemsParamsItemType.
+const (
+	ListInboxItemsParamsItemTypeApproval        ListInboxItemsParamsItemType = "approval"
+	ListInboxItemsParamsItemTypeProjectDecision ListInboxItemsParamsItemType = "project_decision"
+)
+
+// Valid indicates whether the value is a known member of the ListInboxItemsParamsItemType enum.
+func (e ListInboxItemsParamsItemType) Valid() bool {
+	switch e {
+	case ListInboxItemsParamsItemTypeApproval:
+		return true
+	case ListInboxItemsParamsItemTypeProjectDecision:
 		return true
 	default:
 		return false
@@ -1866,6 +1980,19 @@ type EffectiveConfigValidationIssue struct {
 	Path    *string `json:"path,omitempty"`
 }
 
+// ExecuteInboxActionRequest defines model for ExecuteInboxActionRequest.
+type ExecuteInboxActionRequest struct {
+	Action  string                  `json:"action"`
+	Comment *string                 `json:"comment,omitempty"`
+	Payload *map[string]interface{} `json:"payload,omitempty"`
+}
+
+// ExecuteInboxActionResponse defines model for ExecuteInboxActionResponse.
+type ExecuteInboxActionResponse struct {
+	Item         InboxItem               `json:"item"`
+	SourceResult InboxSourceActionResult `json:"source_result"`
+}
+
 // FailProjectTaskRequest defines model for FailProjectTaskRequest.
 type FailProjectTaskRequest struct {
 	DigitalEmployeeId openapi_types.UUID `json:"digital_employee_id"`
@@ -1919,6 +2046,79 @@ type HealthResponseService string
 
 // HealthResponseStatus defines model for HealthResponse.Status.
 type HealthResponseStatus string
+
+// InboxBadge defines model for InboxBadge.
+type InboxBadge struct {
+	HighRiskCount int64 `json:"high_risk_count"`
+	MineOpenCount int64 `json:"mine_open_count"`
+	TeamOpenCount int64 `json:"team_open_count"`
+}
+
+// InboxItem defines model for InboxItem.
+type InboxItem struct {
+	Actions                 []InboxItemAction      `json:"actions"`
+	Context                 map[string]interface{} `json:"context"`
+	CreatedAt               time.Time              `json:"created_at"`
+	DeepLink                map[string]interface{} `json:"deep_link"`
+	Id                      openapi_types.UUID     `json:"id"`
+	ItemType                InboxItemItemType      `json:"item_type"`
+	LastActivityAt          time.Time              `json:"last_activity_at"`
+	Priority                *string                `json:"priority,omitempty"`
+	ResolvedAt              *time.Time             `json:"resolved_at,omitempty"`
+	RiskLevel               *string                `json:"risk_level,omitempty"`
+	SourceApprovalRequestId *openapi_types.UUID    `json:"source_approval_request_id,omitempty"`
+	SourceId                openapi_types.UUID     `json:"source_id"`
+	SourceProjectId         *openapi_types.UUID    `json:"source_project_id,omitempty"`
+	SourceTaskId            *openapi_types.UUID    `json:"source_task_id,omitempty"`
+	SourceType              InboxItemSourceType    `json:"source_type"`
+	Status                  InboxItemStatus        `json:"status"`
+	Summary                 *string                `json:"summary,omitempty"`
+	TargetUserId            openapi_types.UUID     `json:"target_user_id"`
+	TeamId                  *openapi_types.UUID    `json:"team_id,omitempty"`
+	TenantId                openapi_types.UUID     `json:"tenant_id"`
+	Title                   string                 `json:"title"`
+	UpdatedAt               time.Time              `json:"updated_at"`
+}
+
+// InboxItemItemType defines model for InboxItem.ItemType.
+type InboxItemItemType string
+
+// InboxItemSourceType defines model for InboxItem.SourceType.
+type InboxItemSourceType string
+
+// InboxItemStatus defines model for InboxItem.Status.
+type InboxItemStatus string
+
+// InboxItemAction defines model for InboxItemAction.
+type InboxItemAction struct {
+	Key             string                  `json:"key"`
+	Label           string                  `json:"label"`
+	Metadata        *map[string]interface{} `json:"metadata,omitempty"`
+	RequiresComment bool                    `json:"requires_comment"`
+	Tone            string                  `json:"tone"`
+}
+
+// InboxListResponse defines model for InboxListResponse.
+type InboxListResponse struct {
+	Items      []InboxItem `json:"items"`
+	Pagination struct {
+		HasMore bool  `json:"has_more"`
+		Limit   int32 `json:"limit"`
+		Offset  int32 `json:"offset"`
+	} `json:"pagination"`
+	Summary struct {
+		BlockedCount  int64 `json:"blocked_count"`
+		HighRiskCount int64 `json:"high_risk_count"`
+		OpenCount     int64 `json:"open_count"`
+	} `json:"summary"`
+}
+
+// InboxSourceActionResult defines model for InboxSourceActionResult.
+type InboxSourceActionResult struct {
+	SourceId   openapi_types.UUID `json:"source_id"`
+	SourceType string             `json:"source_type"`
+	Status     string             `json:"status"`
+}
 
 // OverviewFilterOption defines model for OverviewFilterOption.
 type OverviewFilterOption struct {
@@ -3124,6 +3324,27 @@ type ListDigitalEmployeeRunEventsParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// ListInboxItemsParams defines parameters for ListInboxItems.
+type ListInboxItemsParams struct {
+	View         *ListInboxItemsParamsView     `form:"view,omitempty" json:"view,omitempty"`
+	Status       *ListInboxItemsParamsStatus   `form:"status,omitempty" json:"status,omitempty"`
+	ItemType     *ListInboxItemsParamsItemType `form:"item_type,omitempty" json:"item_type,omitempty"`
+	RiskLevel    *string                       `form:"risk_level,omitempty" json:"risk_level,omitempty"`
+	ProjectId    *openapi_types.UUID           `form:"project_id,omitempty" json:"project_id,omitempty"`
+	TargetUserId *openapi_types.UUID           `form:"target_user_id,omitempty" json:"target_user_id,omitempty"`
+	Limit        *Limit                        `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset       *Offset                       `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListInboxItemsParamsView defines parameters for ListInboxItems.
+type ListInboxItemsParamsView string
+
+// ListInboxItemsParamsStatus defines parameters for ListInboxItems.
+type ListInboxItemsParamsStatus string
+
+// ListInboxItemsParamsItemType defines parameters for ListInboxItems.
+type ListInboxItemsParamsItemType string
+
 // ListProjectsParams defines parameters for ListProjects.
 type ListProjectsParams struct {
 	Limit  *Limit         `form:"limit,omitempty" json:"limit,omitempty"`
@@ -3387,6 +3608,9 @@ type StopDigitalEmployeeRunJSONRequestBody = StopDigitalEmployeeRunRequest
 
 // UpdateDigitalEmployeeStatusJSONRequestBody defines body for UpdateDigitalEmployeeStatus for application/json ContentType.
 type UpdateDigitalEmployeeStatusJSONRequestBody = UpdateDigitalEmployeeStatusRequest
+
+// ExecuteInboxActionJSONRequestBody defines body for ExecuteInboxAction for application/json ContentType.
+type ExecuteInboxActionJSONRequestBody = ExecuteInboxActionRequest
 
 // CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
 type CreateProjectJSONRequestBody = CreateProjectRequest
@@ -4026,6 +4250,15 @@ type ServerInterface interface {
 	// Update a digital employee status
 	// (PUT /api/v1/digital-employees/{employeeId}/status)
 	UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Get actionable inbox badge counts
+	// (GET /api/v1/inbox/badge)
+	GetInboxBadge(w http.ResponseWriter, r *http.Request)
+	// List actionable inbox items
+	// (GET /api/v1/inbox/items)
+	ListInboxItems(w http.ResponseWriter, r *http.Request, params ListInboxItemsParams)
+	// Execute an inbox item action
+	// (POST /api/v1/inbox/items/{itemId}/actions)
+	ExecuteInboxAction(w http.ResponseWriter, r *http.Request, itemId openapi_types.UUID)
 	// Get project demand launch detail
 	// (GET /api/v1/project-demands/{demandId}/launch-detail)
 	GetProjectDemandLaunchDetail(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
@@ -4452,6 +4685,24 @@ func (_ Unimplemented) StopDigitalEmployeeRun(w http.ResponseWriter, r *http.Req
 // Update a digital employee status
 // (PUT /api/v1/digital-employees/{employeeId}/status)
 func (_ Unimplemented) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get actionable inbox badge counts
+// (GET /api/v1/inbox/badge)
+func (_ Unimplemented) GetInboxBadge(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List actionable inbox items
+// (GET /api/v1/inbox/items)
+func (_ Unimplemented) ListInboxItems(w http.ResponseWriter, r *http.Request, params ListInboxItemsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Execute an inbox item action
+// (POST /api/v1/inbox/items/{itemId}/actions)
+func (_ Unimplemented) ExecuteInboxAction(w http.ResponseWriter, r *http.Request, itemId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5894,6 +6145,170 @@ func (siw *ServerInterfaceWrapper) UpdateDigitalEmployeeStatus(w http.ResponseWr
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateDigitalEmployeeStatus(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetInboxBadge operation middleware
+func (siw *ServerInterfaceWrapper) GetInboxBadge(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetInboxBadge(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListInboxItems operation middleware
+func (siw *ServerInterfaceWrapper) ListInboxItems(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListInboxItemsParams
+
+	// ------------- Optional query parameter "view" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "view", r.URL.Query(), &params.View, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "view"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "view", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "item_type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "item_type", r.URL.Query(), &params.ItemType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "item_type"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "risk_level" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "risk_level", r.URL.Query(), &params.RiskLevel, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "risk_level"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "risk_level", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "project_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project_id", r.URL.Query(), &params.ProjectId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "target_user_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "target_user_id", r.URL.Query(), &params.TargetUserId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "target_user_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target_user_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListInboxItems(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExecuteInboxAction operation middleware
+func (siw *ServerInterfaceWrapper) ExecuteInboxAction(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "itemId" -------------
+	var itemId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "itemId", chi.URLParam(r, "itemId"), &itemId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "itemId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExecuteInboxAction(w, r, itemId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9934,6 +10349,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/status", wrapper.UpdateDigitalEmployeeStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/inbox/badge", wrapper.GetInboxBadge)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/inbox/items", wrapper.ListInboxItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/inbox/items/{itemId}/actions", wrapper.ExecuteInboxAction)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/project-demands/{demandId}/launch-detail", wrapper.GetProjectDemandLaunchDetail)

@@ -261,6 +261,11 @@ type DecisionRequest struct {
 	ResolvedAt        *time.Time
 }
 
+type DecisionInboxProjector interface {
+	UpsertProjectDecisionRequest(ctx context.Context, decision DecisionRequest) error
+	ResolveProjectDecisionRequest(ctx context.Context, decision DecisionRequest) error
+}
+
 type ProjectEvent struct {
 	ID             uuid.UUID
 	TenantID       uuid.UUID

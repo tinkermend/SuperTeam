@@ -11,6 +11,7 @@ import (
 type ProjectStore struct {
 	repository project.Repository
 	approvals  ApprovalCreator
+	inbox      project.DecisionInboxProjector
 }
 
 func NewProjectStore(repository project.Repository) *ProjectStore {
@@ -22,7 +23,11 @@ type ApprovalCreator interface {
 }
 
 func NewProjectStoreWithApprovals(repository project.Repository, approvals ApprovalCreator) *ProjectStore {
-	return &ProjectStore{repository: repository, approvals: approvals}
+	return NewProjectStoreWithApprovalsAndInbox(repository, approvals, nil)
+}
+
+func NewProjectStoreWithApprovalsAndInbox(repository project.Repository, approvals ApprovalCreator, inbox project.DecisionInboxProjector) *ProjectStore {
+	return &ProjectStore{repository: repository, approvals: approvals, inbox: inbox}
 }
 
 func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, input LoadSnapshotInput) (CoordinationSnapshot, error) {
@@ -210,6 +215,11 @@ func (s *ProjectStore) RequestRouteDecisionReview(ctx context.Context, input Req
 	})
 	if err != nil {
 		return DecisionRequestResult{}, err
+	}
+	if s.inbox != nil {
+		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+			return DecisionRequestResult{}, err
+		}
 	}
 	return DecisionRequestResult{ID: decision.ID}, nil
 }

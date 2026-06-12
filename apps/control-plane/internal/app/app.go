@@ -16,6 +16,7 @@ import (
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/config"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/skill"
@@ -39,6 +40,7 @@ type Container struct {
 	EmployeeService                *employee.Service
 	ProjectService                 *project.Service
 	ApprovalService                *approval.Service
+	InboxService                   *inbox.Service
 	ArtifactService                *artifact.Service
 	EmployeeRun                    *employee.DigitalEmployeeRunService
 	EmployeeRunWriteback           *employee.DigitalEmployeeRunWritebackService
@@ -56,6 +58,7 @@ type Container struct {
 	RuntimeHandler                 *handlers.RuntimeHandler
 	RuntimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler
 	EmployeeHandler                *employee.HTTPHandler
+	InboxHandler                   *inbox.HTTPHandler
 	AuditHandler                   *audit.HTTPHandler
 	ProjectHandler                 *project.HTTPHandler
 	SkillHandler                   *skill.HTTPHandler
@@ -179,8 +182,15 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return nil, err
 	}
 
+	inboxRepository := inbox.NewPgRepository(q)
+	inboxService, err := inbox.NewService(inboxRepository)
+	if err != nil {
+		return nil, err
+	}
+	approvalProjector := inbox.NewApprovalProjectorAdapter(inboxService)
+
 	approvalRepository := approval.NewPgRepository(q)
-	approvalService, err := approval.NewService(approvalRepository)
+	approvalService, err := approval.NewServiceWithInboxProjector(approvalRepository, approvalProjector)
 	if err != nil {
 		return nil, err
 	}
@@ -192,6 +202,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 
 	projectRepository := project.NewPgRepository(q, stores.Postgres)
+	decisionProjector := inbox.NewDecisionProjectorAdapter(inboxService)
 	coordinatorClient := project.CoordinatorSignalClient(project.NoopCoordinatorSignalClient{})
 	var coordinationWorker lifecycleWorker
 	var temporalClientClose func()
@@ -205,19 +216,22 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		}
 		temporalClientClose = temporalClient.Close
 		coordinatorClient = projectcoordination.NewSignalClient(temporalClient, cfg.Temporal.TaskQueue)
-		coordinationStore := projectcoordination.NewProjectStoreWithApprovals(projectRepository, approvalService)
+		coordinationStore := projectcoordination.NewProjectStoreWithApprovalsAndInbox(projectRepository, approvalService, decisionProjector)
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore)
 		coordinationWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
 	}
-	projectService, err := project.NewServiceWithCoordinatorApprovalsAndArchiveArtifactLocker(
+	projectService, err := project.NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(
 		projectRepository,
 		coordinatorClient,
 		project.NewApprovalServiceAdapter(approvalService),
+		decisionProjector,
 		projectArtifactLocker{artifactService: artifactService, projectEvents: projectRepository},
 	)
 	if err != nil {
 		return nil, err
 	}
+	inboxService.SetApprovalActionResolver(inbox.NewApprovalActionAdapter(approvalService))
+	inboxService.SetProjectDecisionActionResolver(inbox.NewProjectDecisionActionAdapter(projectService))
 
 	auditRepository := audit.NewPgRepository(q)
 	auditService, err := audit.NewService(auditRepository)
@@ -259,6 +273,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
 	runtimeCommandWritebackHandler := handlers.NewRuntimeCommandWritebackHandler(runWritebackService)
 	employeeHandler := employee.NewHandlerWithRunService(employeeService, runService)
+	inboxHandler := inbox.NewHandler(inboxService)
 	auditHandler := audit.NewHandler(auditService)
 	projectHandler := project.NewHandler(projectService)
 	skillHandler := skill.NewHandler(skillService)
@@ -268,6 +283,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler)
 	server.SetTenantHandler(tenantHandler)
 	server.SetEmployeeHandler(employeeHandler)
+	server.SetInboxHandler(inboxHandler)
 	server.SetAuditHandler(auditHandler)
 	server.SetProjectHandler(projectHandler)
 	server.SetSkillHandler(skillHandler)
@@ -279,6 +295,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		EmployeeService:                employeeService,
 		ProjectService:                 projectService,
 		ApprovalService:                approvalService,
+		InboxService:                   inboxService,
 		ArtifactService:                artifactService,
 		EmployeeRun:                    runService,
 		EmployeeRunWriteback:           runWritebackService,
@@ -296,6 +313,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		RuntimeHandler:                 runtimeHandler,
 		RuntimeCommandWritebackHandler: runtimeCommandWritebackHandler,
 		EmployeeHandler:                employeeHandler,
+		InboxHandler:                   inboxHandler,
 		AuditHandler:                   auditHandler,
 		ProjectHandler:                 projectHandler,
 		SkillHandler:                   skillHandler,

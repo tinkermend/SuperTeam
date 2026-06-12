@@ -2168,7 +2168,7 @@ func (a DecisionProjectorAdapter) UpsertProjectDecisionRequest(ctx context.Conte
 		status = StatusCancelled
 	}
 
-		req := UpsertItemRequest{
+	req := UpsertItemRequest{
 		TenantID:                decision.TenantID,
 		TargetUserID:            decision.TargetUserID,
 		Scope:                   "personal",

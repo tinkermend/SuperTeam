@@ -1,6 +1,7 @@
 package approval
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -60,6 +61,11 @@ type ApprovalDecisionRecord struct {
 	Comment           *string
 	Payload           map[string]any
 	CreatedAt         time.Time
+}
+
+type InboxProjector interface {
+	UpsertApprovalRequest(ctx context.Context, request ApprovalRequest) error
+	ResolveApprovalRequest(ctx context.Context, request ApprovalRequest) error
 }
 
 type CreateRequestInput struct {
