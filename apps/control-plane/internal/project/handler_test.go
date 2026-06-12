@@ -67,6 +67,76 @@ func TestProjectHandlerMapsArchivedConflict(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerSubmitsDemandReviewerPreference(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	reviewerID := uuid.New()
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/demands", strings.NewReader(`{
+		"title":"审查 PR",
+		"content":"统计并审查 PR",
+		"reviewer_user_id":"`+reviewerID.String()+`",
+		"reviewer_selection_reason":"user_selected"
+	}`))
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.SubmitDemand(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected submit demand 201, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.submitDemandReq.ReviewerUserID == nil || *service.submitDemandReq.ReviewerUserID != reviewerID {
+		t.Fatalf("expected reviewer user id to pass through, got %#v", service.submitDemandReq.ReviewerUserID)
+	}
+	if service.submitDemandReq.ReviewerSelectionReason != ReviewerSelectionUserSelected {
+		t.Fatalf("expected reviewer reason to pass through, got %q", service.submitDemandReq.ReviewerSelectionReason)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode submit demand response: %v", err)
+	}
+	reviewer, ok := body["reviewer"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected reviewer object in response, got %#v", body)
+	}
+	if reviewer["reviewer_user_id"] != reviewerID.String() || reviewer["selection_reason"] != string(ReviewerSelectionUserSelected) {
+		t.Fatalf("unexpected reviewer response: %#v", reviewer)
+	}
+}
+
+func TestProjectHandlerDemandResponseIncludesNullReviewerWhenAbsent(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/demands", strings.NewReader(`{"title":"补充验收证据"}`))
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.SubmitDemand(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected submit demand 201, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode submit demand response: %v", err)
+	}
+	reviewer, ok := body["reviewer"]
+	if !ok {
+		t.Fatalf("expected stable reviewer key in response: %#v", body)
+	}
+	if reviewer != nil {
+		t.Fatalf("expected null reviewer when absent, got %#v", reviewer)
+	}
+}
+
 func TestProjectHandlerGetConfigUsesCurrentOverview(t *testing.T) {
 	projectID := uuid.New()
 	service := &handlerTestService{}
@@ -542,6 +612,14 @@ func (s *handlerTestService) SubmitDemand(ctx context.Context, req SubmitProject
 		return nil, s.submitDemandErr
 	}
 	demand := ProjectDemand{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, SubmittedByUserID: req.SubmittedByUserID, Title: req.Title, SourceType: req.SourceType, SourceRefs: req.SourceRefs, Attachments: req.Attachments, Status: ProjectDemandStatusRecorded}
+	if req.ReviewerUserID != nil {
+		demand.ReviewerPreference = &ReviewerPreference{
+			ReviewerUserID:   *req.ReviewerUserID,
+			SelectionReason:  req.ReviewerSelectionReason,
+			ProjectRole:      ProjectRoleReviewer,
+			ResolvedFromRule: false,
+		}
+	}
 	return &demand, nil
 }
 

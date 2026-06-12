@@ -7,6 +7,7 @@ import {
   getProjectBudgetSummary,
   getProjectConfig,
   getProjectConfigRevision,
+  getProjectDemandLaunchDetail,
   getProjectOverview,
   listProjectConfigRevisions,
   listProjectEvidence,
@@ -218,6 +219,104 @@ describe("project API", () => {
           "content-type": "application/json",
         },
         method: "POST",
+      },
+    );
+  });
+
+  it("submits demand with reviewer preference", async () => {
+    const demand = {
+      id: "55555555-5555-4555-8555-555555555555",
+      tenant_id: "22222222-2222-4222-8222-222222222222",
+      project_id: "11111111-1111-4111-8111-111111111111",
+      submitted_by_user_id: "33333333-3333-4333-8333-333333333333",
+      title: "审查 PR",
+      content: "统计并审查 PR",
+      source_type: "manual",
+      source_refs: {},
+      attachments: [],
+      status: "planning_pending",
+      reviewer: {
+        reviewer_user_id: "33333333-3333-4333-8333-333333333333",
+        selection_reason: "user_selected",
+        project_role: "reviewer",
+        resolved_from_rule: false,
+      },
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(demand), {
+          headers: { "content-type": "application/json" },
+          status: 201,
+        }),
+    );
+    const input = {
+      title: "审查 PR",
+      content: "统计并审查 PR",
+      reviewer_user_id: "33333333-3333-4333-8333-333333333333",
+      reviewer_selection_reason: "user_selected" as const,
+    };
+
+    await expect(
+      submitProjectDemand(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project-1",
+        input,
+      ),
+    ).resolves.toEqual(demand);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project-1/demands",
+      expect.objectContaining({
+        body: JSON.stringify(input),
+        method: "POST",
+      }),
+    );
+  });
+
+  it("gets project demand launch detail with encoded demand id", async () => {
+    const demand = {
+      id: "55555555-5555-4555-8555-555555555555",
+      tenant_id: "22222222-2222-4222-8222-222222222222",
+      project_id: "11111111-1111-4111-8111-111111111111",
+      submitted_by_user_id: "33333333-3333-4333-8333-333333333333",
+      title: "补充验收证据",
+      source_type: "manual",
+      source_refs: {},
+      attachments: [],
+      status: "recorded",
+      reviewer: null,
+    };
+    const detail = {
+      demand,
+      project,
+      reviewer: null,
+      coordination_jobs: [],
+      route_decisions: [],
+      project_tasks: [],
+      decision_requests: [],
+      recent_events: [],
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(detail), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      getProjectDemandLaunchDetail(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "demand 1/primary",
+      ),
+    ).resolves.toEqual(detail);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/project-demands/demand%201%2Fprimary/launch-detail",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
       },
     );
   });

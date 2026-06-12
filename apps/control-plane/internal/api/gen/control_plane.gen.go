@@ -93,6 +93,30 @@ func (e CreateDigitalEmployeeConfigRevisionRequestStatus) Valid() bool {
 	}
 }
 
+// Defines values for CreateProjectAcceptanceRequestStatus.
+const (
+	CreateProjectAcceptanceRequestStatusAccepted          CreateProjectAcceptanceRequestStatus = "accepted"
+	CreateProjectAcceptanceRequestStatusNeedsMoreEvidence CreateProjectAcceptanceRequestStatus = "needs_more_evidence"
+	CreateProjectAcceptanceRequestStatusPartiallyAccepted CreateProjectAcceptanceRequestStatus = "partially_accepted"
+	CreateProjectAcceptanceRequestStatusRejected          CreateProjectAcceptanceRequestStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the CreateProjectAcceptanceRequestStatus enum.
+func (e CreateProjectAcceptanceRequestStatus) Valid() bool {
+	switch e {
+	case CreateProjectAcceptanceRequestStatusAccepted:
+		return true
+	case CreateProjectAcceptanceRequestStatusNeedsMoreEvidence:
+		return true
+	case CreateProjectAcceptanceRequestStatusPartiallyAccepted:
+		return true
+	case CreateProjectAcceptanceRequestStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateTeamConfigRevisionRequestStatus.
 const (
 	CreateTeamConfigRevisionRequestStatusActive CreateTeamConfigRevisionRequestStatus = "active"
@@ -420,6 +444,309 @@ func (e HealthResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for ProjectAcceptanceRecordStatus.
+const (
+	ProjectAcceptanceRecordStatusAccepted          ProjectAcceptanceRecordStatus = "accepted"
+	ProjectAcceptanceRecordStatusNeedsMoreEvidence ProjectAcceptanceRecordStatus = "needs_more_evidence"
+	ProjectAcceptanceRecordStatusPartiallyAccepted ProjectAcceptanceRecordStatus = "partially_accepted"
+	ProjectAcceptanceRecordStatusRejected          ProjectAcceptanceRecordStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the ProjectAcceptanceRecordStatus enum.
+func (e ProjectAcceptanceRecordStatus) Valid() bool {
+	switch e {
+	case ProjectAcceptanceRecordStatusAccepted:
+		return true
+	case ProjectAcceptanceRecordStatusNeedsMoreEvidence:
+		return true
+	case ProjectAcceptanceRecordStatusPartiallyAccepted:
+		return true
+	case ProjectAcceptanceRecordStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectDemandSourceType.
+const (
+	Document ProjectDemandSourceType = "document"
+	Github   ProjectDemandSourceType = "github"
+	Log      ProjectDemandSourceType = "log"
+	Manual   ProjectDemandSourceType = "manual"
+	Ticket   ProjectDemandSourceType = "ticket"
+)
+
+// Valid indicates whether the value is a known member of the ProjectDemandSourceType enum.
+func (e ProjectDemandSourceType) Valid() bool {
+	switch e {
+	case Document:
+		return true
+	case Github:
+		return true
+	case Log:
+		return true
+	case Manual:
+		return true
+	case Ticket:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectDemandStatus.
+const (
+	ProjectDemandStatusCancelled       ProjectDemandStatus = "cancelled"
+	ProjectDemandStatusPlanningPending ProjectDemandStatus = "planning_pending"
+	ProjectDemandStatusRecorded        ProjectDemandStatus = "recorded"
+	ProjectDemandStatusSubmitted       ProjectDemandStatus = "submitted"
+)
+
+// Valid indicates whether the value is a known member of the ProjectDemandStatus enum.
+func (e ProjectDemandStatus) Valid() bool {
+	switch e {
+	case ProjectDemandStatusCancelled:
+		return true
+	case ProjectDemandStatusPlanningPending:
+		return true
+	case ProjectDemandStatusRecorded:
+		return true
+	case ProjectDemandStatusSubmitted:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectEventType.
+const (
+	CoordinationJobCreated         ProjectEventType = "coordination_job.created"
+	DecisionRequested              ProjectEventType = "decision.requested"
+	DecisionSubmitted              ProjectEventType = "decision.submitted"
+	DemandSubmitted                ProjectEventType = "demand.submitted"
+	ProjectAcceptanceSubmitted     ProjectEventType = "project.acceptance.submitted"
+	ProjectArchiveRetentionPending ProjectEventType = "project.archive.retention_pending"
+	ProjectArchiveSnapshotCreated  ProjectEventType = "project.archive_snapshot.created"
+	ProjectArchived                ProjectEventType = "project.archived"
+	ProjectArtifactLinked          ProjectEventType = "project.artifact.linked"
+	ProjectBudgetRecorded          ProjectEventType = "project.budget.recorded"
+	ProjectConfigChanged           ProjectEventType = "project.config.changed"
+	ProjectCreated                 ProjectEventType = "project.created"
+	ProjectEvidenceLinked          ProjectEventType = "project.evidence.linked"
+	ProjectEvidenceVerified        ProjectEventType = "project.evidence.verified"
+	ProjectReportLinked            ProjectEventType = "project.report.linked"
+	ProjectTaskCompleted           ProjectEventType = "project_task.completed"
+	ProjectTaskCreated             ProjectEventType = "project_task.created"
+	ProjectTaskDispatched          ProjectEventType = "project_task.dispatched"
+	ProjectTaskFailed              ProjectEventType = "project_task.failed"
+	RouteDecisionCreated           ProjectEventType = "route_decision.created"
+	TransferRequested              ProjectEventType = "transfer.requested"
+	WorkflowSignaled               ProjectEventType = "workflow.signaled"
+)
+
+// Valid indicates whether the value is a known member of the ProjectEventType enum.
+func (e ProjectEventType) Valid() bool {
+	switch e {
+	case CoordinationJobCreated:
+		return true
+	case DecisionRequested:
+		return true
+	case DecisionSubmitted:
+		return true
+	case DemandSubmitted:
+		return true
+	case ProjectAcceptanceSubmitted:
+		return true
+	case ProjectArchiveRetentionPending:
+		return true
+	case ProjectArchiveSnapshotCreated:
+		return true
+	case ProjectArchived:
+		return true
+	case ProjectArtifactLinked:
+		return true
+	case ProjectBudgetRecorded:
+		return true
+	case ProjectConfigChanged:
+		return true
+	case ProjectCreated:
+		return true
+	case ProjectEvidenceLinked:
+		return true
+	case ProjectEvidenceVerified:
+		return true
+	case ProjectReportLinked:
+		return true
+	case ProjectTaskCompleted:
+		return true
+	case ProjectTaskCreated:
+		return true
+	case ProjectTaskDispatched:
+		return true
+	case ProjectTaskFailed:
+		return true
+	case RouteDecisionCreated:
+		return true
+	case TransferRequested:
+		return true
+	case WorkflowSignaled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectEvidenceVerificationStatus.
+const (
+	ProjectEvidenceVerificationStatusLinked     ProjectEvidenceVerificationStatus = "linked"
+	ProjectEvidenceVerificationStatusRejected   ProjectEvidenceVerificationStatus = "rejected"
+	ProjectEvidenceVerificationStatusSubmitted  ProjectEvidenceVerificationStatus = "submitted"
+	ProjectEvidenceVerificationStatusSuperseded ProjectEvidenceVerificationStatus = "superseded"
+	ProjectEvidenceVerificationStatusVerified   ProjectEvidenceVerificationStatus = "verified"
+)
+
+// Valid indicates whether the value is a known member of the ProjectEvidenceVerificationStatus enum.
+func (e ProjectEvidenceVerificationStatus) Valid() bool {
+	switch e {
+	case ProjectEvidenceVerificationStatusLinked:
+		return true
+	case ProjectEvidenceVerificationStatusRejected:
+		return true
+	case ProjectEvidenceVerificationStatusSubmitted:
+		return true
+	case ProjectEvidenceVerificationStatusSuperseded:
+		return true
+	case ProjectEvidenceVerificationStatusVerified:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectPrincipalType.
+const (
+	ProjectPrincipalTypeDigitalEmployee ProjectPrincipalType = "digital_employee"
+	ProjectPrincipalTypeHumanUser       ProjectPrincipalType = "human_user"
+	ProjectPrincipalTypeTeam            ProjectPrincipalType = "team"
+)
+
+// Valid indicates whether the value is a known member of the ProjectPrincipalType enum.
+func (e ProjectPrincipalType) Valid() bool {
+	switch e {
+	case ProjectPrincipalTypeDigitalEmployee:
+		return true
+	case ProjectPrincipalTypeHumanUser:
+		return true
+	case ProjectPrincipalTypeTeam:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectRole.
+const (
+	ProjectRoleAcceptance ProjectRole = "acceptance"
+	ProjectRoleExecutor   ProjectRole = "executor"
+	ProjectRoleLeader     ProjectRole = "leader"
+	ProjectRoleObserver   ProjectRole = "observer"
+	ProjectRoleOwner      ProjectRole = "owner"
+	ProjectRoleReviewer   ProjectRole = "reviewer"
+)
+
+// Valid indicates whether the value is a known member of the ProjectRole enum.
+func (e ProjectRole) Valid() bool {
+	switch e {
+	case ProjectRoleAcceptance:
+		return true
+	case ProjectRoleExecutor:
+		return true
+	case ProjectRoleLeader:
+		return true
+	case ProjectRoleObserver:
+		return true
+	case ProjectRoleOwner:
+		return true
+	case ProjectRoleReviewer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectStatus.
+const (
+	ProjectStatusAcceptance  ProjectStatus = "acceptance"
+	ProjectStatusArchived    ProjectStatus = "archived"
+	ProjectStatusConfiguring ProjectStatus = "configuring"
+	ProjectStatusDraft       ProjectStatus = "draft"
+	ProjectStatusPaused      ProjectStatus = "paused"
+	ProjectStatusRunning     ProjectStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the ProjectStatus enum.
+func (e ProjectStatus) Valid() bool {
+	switch e {
+	case ProjectStatusAcceptance:
+		return true
+	case ProjectStatusArchived:
+		return true
+	case ProjectStatusConfiguring:
+		return true
+	case ProjectStatusDraft:
+		return true
+	case ProjectStatusPaused:
+		return true
+	case ProjectStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ResolveProjectDecisionRequestDecision.
+const (
+	ResolveProjectDecisionRequestDecisionApproved          ResolveProjectDecisionRequestDecision = "approved"
+	ResolveProjectDecisionRequestDecisionNeedsMoreEvidence ResolveProjectDecisionRequestDecision = "needs_more_evidence"
+	ResolveProjectDecisionRequestDecisionRejected          ResolveProjectDecisionRequestDecision = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the ResolveProjectDecisionRequestDecision enum.
+func (e ResolveProjectDecisionRequestDecision) Valid() bool {
+	switch e {
+	case ResolveProjectDecisionRequestDecisionApproved:
+		return true
+	case ResolveProjectDecisionRequestDecisionNeedsMoreEvidence:
+		return true
+	case ResolveProjectDecisionRequestDecisionRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReviewerPreferenceSelectionReason.
+const (
+	ReviewerPreferenceSelectionReasonProjectHumanOwnerFallback ReviewerPreferenceSelectionReason = "project_human_owner_fallback"
+	ReviewerPreferenceSelectionReasonProjectReviewerDefault    ReviewerPreferenceSelectionReason = "project_reviewer_default"
+	ReviewerPreferenceSelectionReasonUserSelected              ReviewerPreferenceSelectionReason = "user_selected"
+)
+
+// Valid indicates whether the value is a known member of the ReviewerPreferenceSelectionReason enum.
+func (e ReviewerPreferenceSelectionReason) Valid() bool {
+	switch e {
+	case ReviewerPreferenceSelectionReasonProjectHumanOwnerFallback:
+		return true
+	case ReviewerPreferenceSelectionReasonProjectReviewerDefault:
+		return true
+	case ReviewerPreferenceSelectionReasonUserSelected:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RuntimeCommandWritebackAcceptedStatus.
 const (
 	Accepted RuntimeCommandWritebackAcceptedStatus = "accepted"
@@ -612,6 +939,27 @@ func (e SkillStatus) Valid() bool {
 	}
 }
 
+// Defines values for SubmitProjectDemandRequestReviewerSelectionReason.
+const (
+	SubmitProjectDemandRequestReviewerSelectionReasonProjectHumanOwnerFallback SubmitProjectDemandRequestReviewerSelectionReason = "project_human_owner_fallback"
+	SubmitProjectDemandRequestReviewerSelectionReasonProjectReviewerDefault    SubmitProjectDemandRequestReviewerSelectionReason = "project_reviewer_default"
+	SubmitProjectDemandRequestReviewerSelectionReasonUserSelected              SubmitProjectDemandRequestReviewerSelectionReason = "user_selected"
+)
+
+// Valid indicates whether the value is a known member of the SubmitProjectDemandRequestReviewerSelectionReason enum.
+func (e SubmitProjectDemandRequestReviewerSelectionReason) Valid() bool {
+	switch e {
+	case SubmitProjectDemandRequestReviewerSelectionReasonProjectHumanOwnerFallback:
+		return true
+	case SubmitProjectDemandRequestReviewerSelectionReasonProjectReviewerDefault:
+		return true
+	case SubmitProjectDemandRequestReviewerSelectionReasonUserSelected:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TaskStatus.
 const (
 	TaskStatusCancelled TaskStatus = "cancelled"
@@ -695,19 +1043,19 @@ func (e TeamMemberRole) Valid() bool {
 
 // Defines values for TeamMemberRoleRequestRequestedRole.
 const (
-	Admin    TeamMemberRoleRequestRequestedRole = "admin"
-	Approver TeamMemberRoleRequestRequestedRole = "approver"
-	Owner    TeamMemberRoleRequestRequestedRole = "owner"
+	TeamMemberRoleRequestRequestedRoleAdmin    TeamMemberRoleRequestRequestedRole = "admin"
+	TeamMemberRoleRequestRequestedRoleApprover TeamMemberRoleRequestRequestedRole = "approver"
+	TeamMemberRoleRequestRequestedRoleOwner    TeamMemberRoleRequestRequestedRole = "owner"
 )
 
 // Valid indicates whether the value is a known member of the TeamMemberRoleRequestRequestedRole enum.
 func (e TeamMemberRoleRequestRequestedRole) Valid() bool {
 	switch e {
-	case Admin:
+	case TeamMemberRoleRequestRequestedRoleAdmin:
 		return true
-	case Approver:
+	case TeamMemberRoleRequestRequestedRoleApprover:
 		return true
-	case Owner:
+	case TeamMemberRoleRequestRequestedRoleOwner:
 		return true
 	default:
 		return false
@@ -786,6 +1134,21 @@ func (e TeamUserAvatarStyle) Valid() bool {
 	}
 }
 
+// Defines values for ListAuditEventsParamsResourceType.
+const (
+	ListAuditEventsParamsResourceTypeProject ListAuditEventsParamsResourceType = "project"
+)
+
+// Valid indicates whether the value is a known member of the ListAuditEventsParamsResourceType enum.
+func (e ListAuditEventsParamsResourceType) Valid() bool {
+	switch e {
+	case ListAuditEventsParamsResourceTypeProject:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListTeamsParamsStatus.
 const (
 	ListTeamsParamsStatusActive   ListTeamsParamsStatus = "active"
@@ -843,6 +1206,34 @@ type ApproveEffectiveConfigRequest struct {
 		EmployeeConfig ConfigRevisionRef `json:"employee_config"`
 		TeamConfig     ConfigRevisionRef `json:"team_config"`
 	} `json:"preview"`
+}
+
+// AuditEvent defines model for AuditEvent.
+type AuditEvent struct {
+	Action       string                 `json:"action"`
+	ActorId      string                 `json:"actor_id"`
+	ActorType    string                 `json:"actor_type"`
+	CreatedAt    *time.Time             `json:"created_at,omitempty"`
+	Details      map[string]interface{} `json:"details"`
+	EventType    string                 `json:"event_type"`
+	Id           openapi_types.UUID     `json:"id"`
+	IpAddress    *string                `json:"ip_address,omitempty"`
+	ResourceId   string                 `json:"resource_id"`
+	ResourceType string                 `json:"resource_type"`
+	TenantId     openapi_types.UUID     `json:"tenant_id"`
+}
+
+// CompleteProjectTaskRequest defines model for CompleteProjectTaskRequest.
+type CompleteProjectTaskRequest struct {
+	ArtifactRefs          *[]interface{}          `json:"artifact_refs,omitempty"`
+	Conclusion            string                  `json:"conclusion"`
+	ConfidenceFactors     *map[string]interface{} `json:"confidence_factors,omitempty"`
+	DigitalEmployeeId     openapi_types.UUID      `json:"digital_employee_id"`
+	EvidenceRefs          *[]interface{}          `json:"evidence_refs,omitempty"`
+	MissingInformation    *[]interface{}          `json:"missing_information,omitempty"`
+	RecommendedNextAction *string                 `json:"recommended_next_action,omitempty"`
+	RequiresHumanReview   *bool                   `json:"requires_human_review,omitempty"`
+	Uncertainty           *string                 `json:"uncertainty,omitempty"`
 }
 
 // CompleteTaskRequest defines model for CompleteTaskRequest.
@@ -910,6 +1301,61 @@ type CreateDigitalEmployeeRunRequest struct {
 	Prompt           *string                   `json:"prompt,omitempty"`
 	SecretRefs       *[]string                 `json:"secret_refs,omitempty"`
 	TimeoutSec       *int32                    `json:"timeout_sec,omitempty"`
+}
+
+// CreateProjectAcceptanceRequest defines model for CreateProjectAcceptanceRequest.
+type CreateProjectAcceptanceRequest struct {
+	Conclusion      string                               `json:"conclusion"`
+	EvidenceRefIds  *[]openapi_types.UUID                `json:"evidence_ref_ids,omitempty"`
+	ReportRefIds    *[]openapi_types.UUID                `json:"report_ref_ids,omitempty"`
+	Status          CreateProjectAcceptanceRequestStatus `json:"status"`
+	Summary         *string                              `json:"summary,omitempty"`
+	UnresolvedRisks *[]interface{}                       `json:"unresolved_risks,omitempty"`
+}
+
+// CreateProjectAcceptanceRequestStatus defines model for CreateProjectAcceptanceRequest.Status.
+type CreateProjectAcceptanceRequestStatus string
+
+// CreateProjectArchiveSnapshotRequest defines model for CreateProjectArchiveSnapshotRequest.
+type CreateProjectArchiveSnapshotRequest struct {
+	ObjectRef    *string `json:"object_ref,omitempty"`
+	SnapshotType string  `json:"snapshot_type"`
+	Summary      *string `json:"summary,omitempty"`
+}
+
+// CreateProjectEvidenceRequest defines model for CreateProjectEvidenceRequest.
+type CreateProjectEvidenceRequest struct {
+	ArtifactRefId      *openapi_types.UUID     `json:"artifact_ref_id,omitempty"`
+	EvidenceType       string                  `json:"evidence_type"`
+	ExecutionSummaryId *openapi_types.UUID     `json:"execution_summary_id,omitempty"`
+	Metadata           *map[string]interface{} `json:"metadata,omitempty"`
+	ProjectTaskId      *openapi_types.UUID     `json:"project_task_id,omitempty"`
+	RouteDecisionId    *openapi_types.UUID     `json:"route_decision_id,omitempty"`
+	SourceRef          string                  `json:"source_ref"`
+	SourceType         string                  `json:"source_type"`
+	Summary            *string                 `json:"summary,omitempty"`
+	Title              string                  `json:"title"`
+}
+
+// CreateProjectRequest defines model for CreateProjectRequest.
+type CreateProjectRequest struct {
+	AcceptanceUserId   *openapi_types.UUID     `json:"acceptance_user_id,omitempty"`
+	ApprovalPolicy     *map[string]interface{} `json:"approval_policy,omitempty"`
+	CoordinationPolicy *map[string]interface{} `json:"coordination_policy,omitempty"`
+	Description        *string                 `json:"description,omitempty"`
+	EvidencePolicy     *map[string]interface{} `json:"evidence_policy,omitempty"`
+	Goal               string                  `json:"goal"`
+	HumanOwnerUserId   openapi_types.UUID      `json:"human_owner_user_id"`
+	LeaderUserId       *openapi_types.UUID     `json:"leader_user_id,omitempty"`
+	Members            *[]ProjectMemberInput   `json:"members,omitempty"`
+	Name               string                  `json:"name"`
+	TeamId             *openapi_types.UUID     `json:"team_id,omitempty"`
+}
+
+// CreateProjectResponse defines model for CreateProjectResponse.
+type CreateProjectResponse struct {
+	Members []ProjectMember `json:"members"`
+	Project Project         `json:"project"`
 }
 
 // CreateProviderSessionRequest defines model for CreateProviderSessionRequest.
@@ -1387,6 +1833,12 @@ type EffectiveConfigValidationIssue struct {
 	Path    *string `json:"path,omitempty"`
 }
 
+// FailProjectTaskRequest defines model for FailProjectTaskRequest.
+type FailProjectTaskRequest struct {
+	DigitalEmployeeId openapi_types.UUID `json:"digital_employee_id"`
+	FailureSummary    string             `json:"failure_summary"`
+}
+
 // FailTaskRequest defines model for FailTaskRequest.
 type FailTaskRequest struct {
 	Error string `json:"error"`
@@ -1448,6 +1900,422 @@ type OverviewPagination struct {
 	TotalCount int32 `json:"total_count"`
 }
 
+// PatchProjectEvidenceRequest defines model for PatchProjectEvidenceRequest.
+type PatchProjectEvidenceRequest struct {
+	Metadata           *map[string]interface{}           `json:"metadata,omitempty"`
+	VerificationStatus ProjectEvidenceVerificationStatus `json:"verification_status"`
+}
+
+// Project defines model for Project.
+type Project struct {
+	AcceptanceUserId       *openapi_types.UUID    `json:"acceptance_user_id,omitempty"`
+	ApprovalPolicy         map[string]interface{} `json:"approval_policy"`
+	ArchivedAt             *time.Time             `json:"archived_at,omitempty"`
+	CoordinationPolicy     map[string]interface{} `json:"coordination_policy"`
+	CoordinationStatus     string                 `json:"coordination_status"`
+	CoordinationWorkflowId string                 `json:"coordination_workflow_id"`
+	CreatedAt              *time.Time             `json:"created_at,omitempty"`
+	Description            *string                `json:"description,omitempty"`
+	EvidencePolicy         map[string]interface{} `json:"evidence_policy"`
+	Goal                   string                 `json:"goal"`
+	HumanOwnerUserId       openapi_types.UUID     `json:"human_owner_user_id"`
+	Id                     openapi_types.UUID     `json:"id"`
+	LeaderUserId           *openapi_types.UUID    `json:"leader_user_id,omitempty"`
+	Name                   string                 `json:"name"`
+	Status                 ProjectStatus          `json:"status"`
+	TeamId                 *openapi_types.UUID    `json:"team_id,omitempty"`
+	TenantId               openapi_types.UUID     `json:"tenant_id"`
+	UpdatedAt              *time.Time             `json:"updated_at,omitempty"`
+}
+
+// ProjectAcceptanceRecord defines model for ProjectAcceptanceRecord.
+type ProjectAcceptanceRecord struct {
+	AcceptedByUserId openapi_types.UUID            `json:"accepted_by_user_id"`
+	Conclusion       string                        `json:"conclusion"`
+	CreatedAt        *time.Time                    `json:"created_at,omitempty"`
+	CreatedEventId   *openapi_types.UUID           `json:"created_event_id,omitempty"`
+	EvidenceRefIds   []openapi_types.UUID          `json:"evidence_ref_ids"`
+	Id               openapi_types.UUID            `json:"id"`
+	ProjectId        openapi_types.UUID            `json:"project_id"`
+	ReportRefIds     []openapi_types.UUID          `json:"report_ref_ids"`
+	Status           ProjectAcceptanceRecordStatus `json:"status"`
+	Summary          *string                       `json:"summary,omitempty"`
+	TenantId         openapi_types.UUID            `json:"tenant_id"`
+	UnresolvedRisks  []interface{}                 `json:"unresolved_risks"`
+}
+
+// ProjectAcceptanceRecordStatus defines model for ProjectAcceptanceRecord.Status.
+type ProjectAcceptanceRecordStatus string
+
+// ProjectArchivePreview defines model for ProjectArchivePreview.
+type ProjectArchivePreview struct {
+	ArtifactCount       int64              `json:"artifact_count"`
+	BlockedReasons      []interface{}      `json:"blocked_reasons"`
+	EstimatedObjectRefs []interface{}      `json:"estimated_object_refs"`
+	EvidenceCount       int64              `json:"evidence_count"`
+	ProjectId           openapi_types.UUID `json:"project_id"`
+	ReportCount         int64              `json:"report_count"`
+	RetentionPending    bool               `json:"retention_pending"`
+}
+
+// ProjectArchiveSnapshot defines model for ProjectArchiveSnapshot.
+type ProjectArchiveSnapshot struct {
+	CreatedAt            *time.Time             `json:"created_at,omitempty"`
+	CreatedByUserId      openapi_types.UUID     `json:"created_by_user_id"`
+	CreatedEventId       *openapi_types.UUID    `json:"created_event_id,omitempty"`
+	Id                   openapi_types.UUID     `json:"id"`
+	IncludedCounts       map[string]interface{} `json:"included_counts"`
+	ObjectRef            *string                `json:"object_ref,omitempty"`
+	ProjectId            openapi_types.UUID     `json:"project_id"`
+	RetainedArtifactIds  []openapi_types.UUID   `json:"retained_artifact_ids"`
+	RetentionLockEventId *openapi_types.UUID    `json:"retention_lock_event_id,omitempty"`
+	SnapshotType         string                 `json:"snapshot_type"`
+	Status               string                 `json:"status"`
+	Summary              *string                `json:"summary,omitempty"`
+	TenantId             openapi_types.UUID     `json:"tenant_id"`
+}
+
+// ProjectArtifactRef defines model for ProjectArtifactRef.
+type ProjectArtifactRef struct {
+	ArtifactId      *openapi_types.UUID    `json:"artifact_id,omitempty"`
+	ArtifactType    string                 `json:"artifact_type"`
+	Checksum        *string                `json:"checksum,omitempty"`
+	ContentType     *string                `json:"content_type,omitempty"`
+	CreatedAt       *time.Time             `json:"created_at,omitempty"`
+	CreatedEventId  *openapi_types.UUID    `json:"created_event_id,omitempty"`
+	Id              openapi_types.UUID     `json:"id"`
+	Metadata        map[string]interface{} `json:"metadata"`
+	ObjectRef       string                 `json:"object_ref"`
+	ProjectId       openapi_types.UUID     `json:"project_id"`
+	ProjectTaskId   *openapi_types.UUID    `json:"project_task_id,omitempty"`
+	RetentionHoldId *openapi_types.UUID    `json:"retention_hold_id,omitempty"`
+	RetentionStatus string                 `json:"retention_status"`
+	SizeBytes       *int64                 `json:"size_bytes,omitempty"`
+	TenantId        openapi_types.UUID     `json:"tenant_id"`
+	Title           string                 `json:"title"`
+	UpdatedAt       *time.Time             `json:"updated_at,omitempty"`
+}
+
+// ProjectBudgetLedgerEntry defines model for ProjectBudgetLedgerEntry.
+type ProjectBudgetLedgerEntry struct {
+	ActualCost        string              `json:"actual_cost"`
+	ActualTokens      *int64              `json:"actual_tokens,omitempty"`
+	CoordinationJobId *openapi_types.UUID `json:"coordination_job_id,omitempty"`
+	CostType          string              `json:"cost_type"`
+	CreatedAt         *time.Time          `json:"created_at,omitempty"`
+	CreatedEventId    *openapi_types.UUID `json:"created_event_id,omitempty"`
+	DigitalEmployeeId *openapi_types.UUID `json:"digital_employee_id,omitempty"`
+	EstimatedCost     string              `json:"estimated_cost"`
+	EstimatedTokens   *int64              `json:"estimated_tokens,omitempty"`
+	Id                openapi_types.UUID  `json:"id"`
+	ProjectId         openapi_types.UUID  `json:"project_id"`
+	ProjectTaskId     *openapi_types.UUID `json:"project_task_id,omitempty"`
+	Reason            *string             `json:"reason,omitempty"`
+	Source            string              `json:"source"`
+	TenantId          openapi_types.UUID  `json:"tenant_id"`
+}
+
+// ProjectBudgetSummary defines model for ProjectBudgetSummary.
+type ProjectBudgetSummary struct {
+	ActualCost      string `json:"actual_cost"`
+	ActualTokens    int64  `json:"actual_tokens"`
+	EstimatedCost   string `json:"estimated_cost"`
+	EstimatedTokens int64  `json:"estimated_tokens"`
+	LedgerCount     int32  `json:"ledger_count"`
+}
+
+// ProjectConfig defines model for ProjectConfig.
+type ProjectConfig struct {
+	ApprovalPolicy       map[string]interface{}      `json:"approval_policy"`
+	CoordinationPolicy   map[string]interface{}      `json:"coordination_policy"`
+	CoordinationWorkflow ProjectCoordinationWorkflow `json:"coordination_workflow"`
+	DigitalEmployeePool  []ProjectMember             `json:"digital_employee_pool"`
+	EvidencePolicy       map[string]interface{}      `json:"evidence_policy"`
+	HumanRoles           []ProjectMember             `json:"human_roles"`
+	Members              []ProjectMember             `json:"members"`
+	Project              Project                     `json:"project"`
+}
+
+// ProjectConfigRevision defines model for ProjectConfigRevision.
+type ProjectConfigRevision struct {
+	ChangeSummary      *string                `json:"change_summary,omitempty"`
+	ChangedSections    []interface{}          `json:"changed_sections"`
+	ConfigSnapshot     map[string]interface{} `json:"config_snapshot"`
+	CreatedAt          *time.Time             `json:"created_at,omitempty"`
+	CreatedByUserId    openapi_types.UUID     `json:"created_by_user_id"`
+	CreatedEventId     *openapi_types.UUID    `json:"created_event_id,omitempty"`
+	DiffSummary        map[string]interface{} `json:"diff_summary"`
+	Id                 openapi_types.UUID     `json:"id"`
+	PolicyFingerprint  *string                `json:"policy_fingerprint,omitempty"`
+	PreviousRevisionId *openapi_types.UUID    `json:"previous_revision_id,omitempty"`
+	ProjectId          openapi_types.UUID     `json:"project_id"`
+	RevisionNumber     int32                  `json:"revision_number"`
+	TenantId           openapi_types.UUID     `json:"tenant_id"`
+}
+
+// ProjectCoordinationJob defines model for ProjectCoordinationJob.
+type ProjectCoordinationJob struct {
+	CreatedAt        *time.Time             `json:"created_at,omitempty"`
+	FinishedAt       *time.Time             `json:"finished_at,omitempty"`
+	Id               openapi_types.UUID     `json:"id"`
+	InputSnapshotRef map[string]interface{} `json:"input_snapshot_ref"`
+	JobType          string                 `json:"job_type"`
+	OutputEventIds   []interface{}          `json:"output_event_ids"`
+	ProjectId        openapi_types.UUID     `json:"project_id"`
+	StartedAt        *time.Time             `json:"started_at,omitempty"`
+	Status           string                 `json:"status"`
+	TenantId         openapi_types.UUID     `json:"tenant_id"`
+	TriggerEventId   *openapi_types.UUID    `json:"trigger_event_id,omitempty"`
+	WorkflowId       string                 `json:"workflow_id"`
+}
+
+// ProjectCoordinationWorkflow defines model for ProjectCoordinationWorkflow.
+type ProjectCoordinationWorkflow struct {
+	Status     string `json:"status"`
+	WorkflowId string `json:"workflow_id"`
+}
+
+// ProjectDecisionRequest defines model for ProjectDecisionRequest.
+type ProjectDecisionRequest struct {
+	ApprovalRequestId openapi_types.UUID  `json:"approval_request_id"`
+	CoordinationJobId *openapi_types.UUID `json:"coordination_job_id,omitempty"`
+	CreatedAt         *time.Time          `json:"created_at,omitempty"`
+	CreatedEventId    *openapi_types.UUID `json:"created_event_id,omitempty"`
+	DecisionType      string              `json:"decision_type"`
+	Id                openapi_types.UUID  `json:"id"`
+	ProjectId         openapi_types.UUID  `json:"project_id"`
+	ProjectTaskId     *openapi_types.UUID `json:"project_task_id,omitempty"`
+	ResolvedAt        *time.Time          `json:"resolved_at,omitempty"`
+	ResolvedEventId   *openapi_types.UUID `json:"resolved_event_id,omitempty"`
+	RiskLevelSnapshot *string             `json:"risk_level_snapshot,omitempty"`
+	StatusSnapshot    string              `json:"status_snapshot"`
+	SummarySnapshot   *string             `json:"summary_snapshot,omitempty"`
+	TargetUserId      openapi_types.UUID  `json:"target_user_id"`
+	TenantId          openapi_types.UUID  `json:"tenant_id"`
+	TitleSnapshot     string              `json:"title_snapshot"`
+	UpdatedAt         *time.Time          `json:"updated_at,omitempty"`
+}
+
+// ProjectDemand defines model for ProjectDemand.
+type ProjectDemand struct {
+	Attachments       []interface{}           `json:"attachments"`
+	Content           *string                 `json:"content,omitempty"`
+	CreatedEventId    *openapi_types.UUID     `json:"created_event_id,omitempty"`
+	Id                openapi_types.UUID      `json:"id"`
+	ProjectId         openapi_types.UUID      `json:"project_id"`
+	Reviewer          *ReviewerPreference     `json:"reviewer"`
+	SourceRefs        map[string]interface{}  `json:"source_refs"`
+	SourceType        ProjectDemandSourceType `json:"source_type"`
+	Status            ProjectDemandStatus     `json:"status"`
+	SubmittedByUserId openapi_types.UUID      `json:"submitted_by_user_id"`
+	TenantId          openapi_types.UUID      `json:"tenant_id"`
+	Title             string                  `json:"title"`
+}
+
+// ProjectDemandLaunchDetail defines model for ProjectDemandLaunchDetail.
+type ProjectDemandLaunchDetail struct {
+	CoordinationJobs []ProjectCoordinationJob `json:"coordination_jobs"`
+	DecisionRequests []ProjectDecisionRequest `json:"decision_requests"`
+	Demand           ProjectDemand            `json:"demand"`
+	Project          Project                  `json:"project"`
+	ProjectTasks     []ProjectTask            `json:"project_tasks"`
+	RecentEvents     []ProjectEvent           `json:"recent_events"`
+	Reviewer         *ReviewerPreference      `json:"reviewer"`
+	RouteDecisions   []ProjectRouteDecision   `json:"route_decisions"`
+}
+
+// ProjectDemandSourceType defines model for ProjectDemandSourceType.
+type ProjectDemandSourceType string
+
+// ProjectDemandStatus defines model for ProjectDemandStatus.
+type ProjectDemandStatus string
+
+// ProjectEvent defines model for ProjectEvent.
+type ProjectEvent struct {
+	ActorId        string                 `json:"actor_id"`
+	ActorType      string                 `json:"actor_type"`
+	EventType      ProjectEventType       `json:"event_type"`
+	Id             openapi_types.UUID     `json:"id"`
+	Payload        map[string]interface{} `json:"payload"`
+	ProjectId      openapi_types.UUID     `json:"project_id"`
+	ResourceId     *string                `json:"resource_id,omitempty"`
+	ResourceType   *string                `json:"resource_type,omitempty"`
+	SequenceNumber int64                  `json:"sequence_number"`
+	Summary        *string                `json:"summary,omitempty"`
+	TenantId       openapi_types.UUID     `json:"tenant_id"`
+}
+
+// ProjectEventType defines model for ProjectEventType.
+type ProjectEventType string
+
+// ProjectEvidenceRef defines model for ProjectEvidenceRef.
+type ProjectEvidenceRef struct {
+	ArtifactRefId      *openapi_types.UUID               `json:"artifact_ref_id,omitempty"`
+	CreatedAt          *time.Time                        `json:"created_at,omitempty"`
+	CreatedEventId     *openapi_types.UUID               `json:"created_event_id,omitempty"`
+	EvidenceType       string                            `json:"evidence_type"`
+	ExecutionSummaryId *openapi_types.UUID               `json:"execution_summary_id,omitempty"`
+	Id                 openapi_types.UUID                `json:"id"`
+	Metadata           map[string]interface{}            `json:"metadata"`
+	ProjectId          openapi_types.UUID                `json:"project_id"`
+	ProjectTaskId      *openapi_types.UUID               `json:"project_task_id,omitempty"`
+	RouteDecisionId    *openapi_types.UUID               `json:"route_decision_id,omitempty"`
+	SourceRef          string                            `json:"source_ref"`
+	SourceType         string                            `json:"source_type"`
+	SubmittedById      *openapi_types.UUID               `json:"submitted_by_id,omitempty"`
+	SubmittedByType    string                            `json:"submitted_by_type"`
+	Summary            *string                           `json:"summary,omitempty"`
+	TenantId           openapi_types.UUID                `json:"tenant_id"`
+	Title              string                            `json:"title"`
+	UpdatedAt          *time.Time                        `json:"updated_at,omitempty"`
+	VerificationStatus ProjectEvidenceVerificationStatus `json:"verification_status"`
+}
+
+// ProjectEvidenceVerificationStatus defines model for ProjectEvidenceVerificationStatus.
+type ProjectEvidenceVerificationStatus string
+
+// ProjectExecutionSummary defines model for ProjectExecutionSummary.
+type ProjectExecutionSummary struct {
+	ArtifactRefs          []interface{}          `json:"artifact_refs"`
+	Conclusion            string                 `json:"conclusion"`
+	ConfidenceFactors     map[string]interface{} `json:"confidence_factors"`
+	CreatedAt             *time.Time             `json:"created_at,omitempty"`
+	CreatedEventId        *openapi_types.UUID    `json:"created_event_id,omitempty"`
+	DigitalEmployeeId     openapi_types.UUID     `json:"digital_employee_id"`
+	EvidenceRefs          []interface{}          `json:"evidence_refs"`
+	Id                    openapi_types.UUID     `json:"id"`
+	MissingInformation    []interface{}          `json:"missing_information"`
+	ProjectId             openapi_types.UUID     `json:"project_id"`
+	ProjectTaskId         openapi_types.UUID     `json:"project_task_id"`
+	RecommendedNextAction *string                `json:"recommended_next_action,omitempty"`
+	RequiresHumanReview   bool                   `json:"requires_human_review"`
+	TenantId              openapi_types.UUID     `json:"tenant_id"`
+	TransferRequestId     *openapi_types.UUID    `json:"transfer_request_id,omitempty"`
+	Uncertainty           *string                `json:"uncertainty,omitempty"`
+}
+
+// ProjectMember defines model for ProjectMember.
+type ProjectMember struct {
+	DisplayNameSnapshot *string                `json:"display_name_snapshot,omitempty"`
+	Id                  openapi_types.UUID     `json:"id"`
+	PrincipalId         openapi_types.UUID     `json:"principal_id"`
+	PrincipalType       ProjectPrincipalType   `json:"principal_type"`
+	ProjectId           openapi_types.UUID     `json:"project_id"`
+	ProjectRole         ProjectRole            `json:"project_role"`
+	Settings            map[string]interface{} `json:"settings"`
+	Status              string                 `json:"status"`
+	TenantId            openapi_types.UUID     `json:"tenant_id"`
+}
+
+// ProjectMemberInput defines model for ProjectMemberInput.
+type ProjectMemberInput struct {
+	DisplayNameSnapshot *string                 `json:"display_name_snapshot,omitempty"`
+	PrincipalId         openapi_types.UUID      `json:"principal_id"`
+	PrincipalType       ProjectPrincipalType    `json:"principal_type"`
+	ProjectRole         ProjectRole             `json:"project_role"`
+	Settings            *map[string]interface{} `json:"settings,omitempty"`
+}
+
+// ProjectOverview defines model for ProjectOverview.
+type ProjectOverview struct {
+	ActiveTasks          []ProjectTask               `json:"active_tasks"`
+	CoordinationWorkflow ProjectCoordinationWorkflow `json:"coordination_workflow"`
+	DigitalEmployeePool  []ProjectMember             `json:"digital_employee_pool"`
+	HumanRoles           []ProjectMember             `json:"human_roles"`
+	Project              Project                     `json:"project"`
+	RecentEvents         []ProjectEvent              `json:"recent_events"`
+	StatusSummary        ProjectStatusSummary        `json:"status_summary"`
+	TaskSummary          ProjectTaskSummary          `json:"task_summary"`
+}
+
+// ProjectPrincipalType defines model for ProjectPrincipalType.
+type ProjectPrincipalType string
+
+// ProjectReportRef defines model for ProjectReportRef.
+type ProjectReportRef struct {
+	CreatedAt       *time.Time          `json:"created_at,omitempty"`
+	CreatedEventId  *openapi_types.UUID `json:"created_event_id,omitempty"`
+	Format          string              `json:"format"`
+	GeneratedById   *openapi_types.UUID `json:"generated_by_id,omitempty"`
+	GeneratedByType string              `json:"generated_by_type"`
+	Id              openapi_types.UUID  `json:"id"`
+	ObjectRef       string              `json:"object_ref"`
+	ProjectId       openapi_types.UUID  `json:"project_id"`
+	ReportType      string              `json:"report_type"`
+	Summary         *string             `json:"summary,omitempty"`
+	TenantId        openapi_types.UUID  `json:"tenant_id"`
+	Title           string              `json:"title"`
+}
+
+// ProjectRole defines model for ProjectRole.
+type ProjectRole string
+
+// ProjectRouteDecision defines model for ProjectRouteDecision.
+type ProjectRouteDecision struct {
+	BudgetEstimate              map[string]interface{} `json:"budget_estimate"`
+	CandidateDigitalEmployeeIds []openapi_types.UUID   `json:"candidate_digital_employee_ids"`
+	CoordinationJobId           openapi_types.UUID     `json:"coordination_job_id"`
+	CreatedAt                   *time.Time             `json:"created_at,omitempty"`
+	CreatedEventId              *openapi_types.UUID    `json:"created_event_id,omitempty"`
+	DemandId                    *openapi_types.UUID    `json:"demand_id,omitempty"`
+	ExpectedOutputs             []interface{}          `json:"expected_outputs"`
+	Id                          openapi_types.UUID     `json:"id"`
+	InputRequirements           map[string]interface{} `json:"input_requirements"`
+	ProjectId                   openapi_types.UUID     `json:"project_id"`
+	Reason                      string                 `json:"reason"`
+	RequiresHumanReview         bool                   `json:"requires_human_review"`
+	SelectedDigitalEmployeeIds  []openapi_types.UUID   `json:"selected_digital_employee_ids"`
+	TenantId                    openapi_types.UUID     `json:"tenant_id"`
+}
+
+// ProjectStatus defines model for ProjectStatus.
+type ProjectStatus string
+
+// ProjectStatusSummary defines model for ProjectStatusSummary.
+type ProjectStatusSummary struct {
+	CurrentPhase string `json:"current_phase"`
+	IsArchived   bool   `json:"is_archived"`
+}
+
+// ProjectTask defines model for ProjectTask.
+type ProjectTask struct {
+	AssignedDigitalEmployeeId *openapi_types.UUID `json:"assigned_digital_employee_id,omitempty"`
+	DemandId                  *openapi_types.UUID `json:"demand_id,omitempty"`
+	Id                        openapi_types.UUID  `json:"id"`
+	ProjectId                 openapi_types.UUID  `json:"project_id"`
+	RequiresHumanApproval     bool                `json:"requires_human_approval"`
+	RiskLevel                 *string             `json:"risk_level,omitempty"`
+	Status                    string              `json:"status"`
+	Summary                   *string             `json:"summary,omitempty"`
+	TenantId                  openapi_types.UUID  `json:"tenant_id"`
+	Title                     string              `json:"title"`
+}
+
+// ProjectTaskSummary defines model for ProjectTaskSummary.
+type ProjectTaskSummary struct {
+	ActiveTasks       int32 `json:"active_tasks"`
+	CompletedTasks    int32 `json:"completed_tasks"`
+	FailedTasks       int32 `json:"failed_tasks"`
+	PendingHumanTasks int32 `json:"pending_human_tasks"`
+}
+
+// ProjectTransferRequest defines model for ProjectTransferRequest.
+type ProjectTransferRequest struct {
+	CreatedAt                    *time.Time           `json:"created_at,omitempty"`
+	CreatedEventId               *openapi_types.UUID  `json:"created_event_id,omitempty"`
+	Id                           openapi_types.UUID   `json:"id"`
+	MissingContextRefs           []interface{}        `json:"missing_context_refs"`
+	ProjectId                    openapi_types.UUID   `json:"project_id"`
+	ProjectTaskId                openapi_types.UUID   `json:"project_task_id"`
+	Reason                       string               `json:"reason"`
+	RequestedByDigitalEmployeeId openapi_types.UUID   `json:"requested_by_digital_employee_id"`
+	Status                       string               `json:"status"`
+	SuggestedDigitalEmployeeIds  []openapi_types.UUID `json:"suggested_digital_employee_ids"`
+	SuggestedEmployeeType        *string              `json:"suggested_employee_type,omitempty"`
+	TenantId                     openapi_types.UUID   `json:"tenant_id"`
+	UpdatedAt                    *time.Time           `json:"updated_at,omitempty"`
+}
+
 // ProviderSession defines model for ProviderSession.
 type ProviderSession struct {
 	ClosedAt            *time.Time              `json:"closed_at,omitempty"`
@@ -1506,6 +2374,42 @@ type RegisterRuntimeNodeRequest struct {
 	NodeId             string                  `json:"node_id"`
 	SupportedProviders []string                `json:"supported_providers"`
 }
+
+// ReplaceProjectMembersRequest defines model for ReplaceProjectMembersRequest.
+type ReplaceProjectMembersRequest struct {
+	Members []ProjectMemberInput `json:"members"`
+}
+
+// RequestProjectTaskTransferRequest defines model for RequestProjectTaskTransferRequest.
+type RequestProjectTaskTransferRequest struct {
+	DigitalEmployeeId           openapi_types.UUID    `json:"digital_employee_id"`
+	MissingContextRefs          *[]interface{}        `json:"missing_context_refs,omitempty"`
+	Reason                      string                `json:"reason"`
+	SuggestedDigitalEmployeeIds *[]openapi_types.UUID `json:"suggested_digital_employee_ids,omitempty"`
+	SuggestedEmployeeType       *string               `json:"suggested_employee_type,omitempty"`
+}
+
+// ResolveProjectDecisionRequest defines model for ResolveProjectDecisionRequest.
+type ResolveProjectDecisionRequest struct {
+	Comment  *string                               `json:"comment,omitempty"`
+	Decision ResolveProjectDecisionRequestDecision `json:"decision"`
+	Payload  *map[string]interface{}               `json:"payload,omitempty"`
+}
+
+// ResolveProjectDecisionRequestDecision defines model for ResolveProjectDecisionRequest.Decision.
+type ResolveProjectDecisionRequestDecision string
+
+// ReviewerPreference defines model for ReviewerPreference.
+type ReviewerPreference struct {
+	DisplayName      *string                           `json:"display_name,omitempty"`
+	ProjectRole      ProjectRole                       `json:"project_role"`
+	ResolvedFromRule bool                              `json:"resolved_from_rule"`
+	ReviewerUserId   openapi_types.UUID                `json:"reviewer_user_id"`
+	SelectionReason  ReviewerPreferenceSelectionReason `json:"selection_reason"`
+}
+
+// ReviewerPreferenceSelectionReason defines model for ReviewerPreference.SelectionReason.
+type ReviewerPreferenceSelectionReason string
 
 // RevokeRuntimeSessionRequest defines model for RevokeRuntimeSessionRequest.
 type RevokeRuntimeSessionRequest struct {
@@ -1803,6 +2707,20 @@ type StopDigitalEmployeeRunRequest struct {
 	Reason string `json:"reason"`
 }
 
+// SubmitProjectDemandRequest defines model for SubmitProjectDemandRequest.
+type SubmitProjectDemandRequest struct {
+	Attachments             *[]interface{}                                     `json:"attachments,omitempty"`
+	Content                 *string                                            `json:"content,omitempty"`
+	ReviewerSelectionReason *SubmitProjectDemandRequestReviewerSelectionReason `json:"reviewer_selection_reason,omitempty"`
+	ReviewerUserId          *openapi_types.UUID                                `json:"reviewer_user_id,omitempty"`
+	SourceRefs              *map[string]interface{}                            `json:"source_refs,omitempty"`
+	SourceType              *ProjectDemandSourceType                           `json:"source_type,omitempty"`
+	Title                   string                                             `json:"title"`
+}
+
+// SubmitProjectDemandRequestReviewerSelectionReason defines model for SubmitProjectDemandRequest.ReviewerSelectionReason.
+type SubmitProjectDemandRequestReviewerSelectionReason string
+
 // Task defines model for Task.
 type Task struct {
 	AssignedNodeId *string                 `json:"assigned_node_id,omitempty"`
@@ -1987,6 +2905,22 @@ type UpdateDigitalEmployeeStatusRequest struct {
 	Status DigitalEmployeeStatus `json:"status"`
 }
 
+// UpdateProjectConfigRequest defines model for UpdateProjectConfigRequest.
+type UpdateProjectConfigRequest struct {
+	AcceptanceUserId   *openapi_types.UUID     `json:"acceptance_user_id,omitempty"`
+	ApprovalPolicy     *map[string]interface{} `json:"approval_policy,omitempty"`
+	CoordinationPolicy *map[string]interface{} `json:"coordination_policy,omitempty"`
+	Description        *string                 `json:"description,omitempty"`
+	EvidencePolicy     *map[string]interface{} `json:"evidence_policy,omitempty"`
+	Goal               *string                 `json:"goal,omitempty"`
+	HumanOwnerUserId   *openapi_types.UUID     `json:"human_owner_user_id,omitempty"`
+	LeaderUserId       *openapi_types.UUID     `json:"leader_user_id,omitempty"`
+
+	// Members When present, replaces the project member set; when omitted, members are preserved.
+	Members *[]ProjectMemberInput `json:"members,omitempty"`
+	Name    *string               `json:"name,omitempty"`
+}
+
 // UpdateSkillFileRequest defines model for UpdateSkillFileRequest.
 type UpdateSkillFileRequest struct {
 	Content string `json:"content"`
@@ -2035,11 +2969,20 @@ type UpsertDigitalEmployeeExecutionInstanceRequest struct {
 // CommandId defines model for CommandId.
 type CommandId = string
 
+// DecisionId defines model for DecisionId.
+type DecisionId = openapi_types.UUID
+
 // EmployeeId defines model for EmployeeId.
 type EmployeeId = openapi_types.UUID
 
 // EnrollmentId defines model for EnrollmentId.
 type EnrollmentId = openapi_types.UUID
+
+// EventId defines model for EventId.
+type EventId = openapi_types.UUID
+
+// EvidenceId defines model for EvidenceId.
+type EvidenceId = openapi_types.UUID
 
 // GovernanceDraftId defines model for GovernanceDraftId.
 type GovernanceDraftId = openapi_types.UUID
@@ -2056,11 +2999,20 @@ type NodeId = string
 // Offset defines model for Offset.
 type Offset = int
 
+// ProjectId defines model for ProjectId.
+type ProjectId = openapi_types.UUID
+
+// ProjectTaskId defines model for ProjectTaskId.
+type ProjectTaskId = openapi_types.UUID
+
 // ProviderSessionId defines model for ProviderSessionId.
 type ProviderSessionId = openapi_types.UUID
 
 // RequestId defines model for RequestId.
 type RequestId = openapi_types.UUID
+
+// RevisionId defines model for RevisionId.
+type RevisionId = openapi_types.UUID
 
 // RunId defines model for RunId.
 type RunId = openapi_types.UUID
@@ -2082,6 +3034,17 @@ type TaskId = openapi_types.UUID
 
 // TeamId defines model for TeamId.
 type TeamId = openapi_types.UUID
+
+// ListAuditEventsParams defines parameters for ListAuditEvents.
+type ListAuditEventsParams struct {
+	ResourceType ListAuditEventsParamsResourceType `form:"resource_type" json:"resource_type"`
+	ResourceId   openapi_types.UUID                `form:"resource_id" json:"resource_id"`
+	Limit        *Limit                            `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset       *Offset                           `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListAuditEventsParamsResourceType defines parameters for ListAuditEvents.
+type ListAuditEventsParamsResourceType string
 
 // ListDigitalEmployeesParams defines parameters for ListDigitalEmployees.
 type ListDigitalEmployeesParams struct {
@@ -2124,6 +3087,100 @@ type ListDigitalEmployeeRunsParams struct {
 
 // ListDigitalEmployeeRunEventsParams defines parameters for ListDigitalEmployeeRunEvents.
 type ListDigitalEmployeeRunEventsParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListProjectsParams defines parameters for ListProjects.
+type ListProjectsParams struct {
+	Limit  *Limit         `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset        `form:"offset,omitempty" json:"offset,omitempty"`
+	Status *ProjectStatus `form:"status,omitempty" json:"status,omitempty"`
+	Q      *string        `form:"q,omitempty" json:"q,omitempty"`
+}
+
+// ListProjectArchiveSnapshotsParams defines parameters for ListProjectArchiveSnapshots.
+type ListProjectArchiveSnapshotsParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListProjectArtifactsParams defines parameters for ListProjectArtifacts.
+type ListProjectArtifactsParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListProjectBudgetLedgerParams defines parameters for ListProjectBudgetLedger.
+type ListProjectBudgetLedgerParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListProjectConfigRevisionsParams defines parameters for ListProjectConfigRevisions.
+type ListProjectConfigRevisionsParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListProjectCoordinationJobsParams defines parameters for ListProjectCoordinationJobs.
+type ListProjectCoordinationJobsParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListProjectDecisionRequestsParams defines parameters for ListProjectDecisionRequests.
+type ListProjectDecisionRequestsParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListProjectDemandsParams defines parameters for ListProjectDemands.
+type ListProjectDemandsParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListProjectEventsParams defines parameters for ListProjectEvents.
+type ListProjectEventsParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListProjectEvidenceParams defines parameters for ListProjectEvidence.
+type ListProjectEvidenceParams struct {
+	Limit  *Limit                             `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset                            `form:"offset,omitempty" json:"offset,omitempty"`
+	Status *ProjectEvidenceVerificationStatus `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// ListProjectExecutionSummariesParams defines parameters for ListProjectExecutionSummaries.
+type ListProjectExecutionSummariesParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListProjectReportsParams defines parameters for ListProjectReports.
+type ListProjectReportsParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListProjectRouteDecisionsParams defines parameters for ListProjectRouteDecisions.
+type ListProjectRouteDecisionsParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListProjectTasksParams defines parameters for ListProjectTasks.
+type ListProjectTasksParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+	Status *string `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// ListProjectTransferRequestsParams defines parameters for ListProjectTransferRequests.
+type ListProjectTransferRequestsParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
@@ -2298,6 +3355,36 @@ type StopDigitalEmployeeRunJSONRequestBody = StopDigitalEmployeeRunRequest
 // UpdateDigitalEmployeeStatusJSONRequestBody defines body for UpdateDigitalEmployeeStatus for application/json ContentType.
 type UpdateDigitalEmployeeStatusJSONRequestBody = UpdateDigitalEmployeeStatusRequest
 
+// CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
+type CreateProjectJSONRequestBody = CreateProjectRequest
+
+// UpdateProjectJSONRequestBody defines body for UpdateProject for application/json ContentType.
+type UpdateProjectJSONRequestBody = UpdateProjectConfigRequest
+
+// CreateProjectAcceptanceJSONRequestBody defines body for CreateProjectAcceptance for application/json ContentType.
+type CreateProjectAcceptanceJSONRequestBody = CreateProjectAcceptanceRequest
+
+// CreateProjectArchiveSnapshotJSONRequestBody defines body for CreateProjectArchiveSnapshot for application/json ContentType.
+type CreateProjectArchiveSnapshotJSONRequestBody = CreateProjectArchiveSnapshotRequest
+
+// UpdateProjectConfigJSONRequestBody defines body for UpdateProjectConfig for application/json ContentType.
+type UpdateProjectConfigJSONRequestBody = UpdateProjectConfigRequest
+
+// ResolveProjectDecisionJSONRequestBody defines body for ResolveProjectDecision for application/json ContentType.
+type ResolveProjectDecisionJSONRequestBody = ResolveProjectDecisionRequest
+
+// SubmitProjectDemandJSONRequestBody defines body for SubmitProjectDemand for application/json ContentType.
+type SubmitProjectDemandJSONRequestBody = SubmitProjectDemandRequest
+
+// CreateProjectEvidenceJSONRequestBody defines body for CreateProjectEvidence for application/json ContentType.
+type CreateProjectEvidenceJSONRequestBody = CreateProjectEvidenceRequest
+
+// PatchProjectEvidenceJSONRequestBody defines body for PatchProjectEvidence for application/json ContentType.
+type PatchProjectEvidenceJSONRequestBody = PatchProjectEvidenceRequest
+
+// ReplaceProjectMembersJSONRequestBody defines body for ReplaceProjectMembers for application/json ContentType.
+type ReplaceProjectMembersJSONRequestBody = ReplaceProjectMembersRequest
+
 // AppendProviderSessionEventJSONRequestBody defines body for AppendProviderSessionEvent for application/json ContentType.
 type AppendProviderSessionEventJSONRequestBody = AppendProviderSessionEventRequest
 
@@ -2330,6 +3417,15 @@ type HeartbeatRuntimeNodeJSONRequestBody = RuntimeHeartbeatRequest
 
 // UpsertRuntimeCapabilitiesJSONRequestBody defines body for UpsertRuntimeCapabilities for application/json ContentType.
 type UpsertRuntimeCapabilitiesJSONRequestBody = RuntimeCapabilityReportRequest
+
+// CompleteProjectTaskJSONRequestBody defines body for CompleteProjectTask for application/json ContentType.
+type CompleteProjectTaskJSONRequestBody = CompleteProjectTaskRequest
+
+// FailProjectTaskJSONRequestBody defines body for FailProjectTask for application/json ContentType.
+type FailProjectTaskJSONRequestBody = FailProjectTaskRequest
+
+// RequestProjectTaskTransferJSONRequestBody defines body for RequestProjectTaskTransfer for application/json ContentType.
+type RequestProjectTaskTransferJSONRequestBody = RequestProjectTaskTransferRequest
 
 // RegisterRuntimeNodeJSONRequestBody defines body for RegisterRuntimeNode for application/json ContentType.
 type RegisterRuntimeNodeJSONRequestBody = RegisterRuntimeNodeRequest
@@ -2837,6 +3933,9 @@ func (t *ProviderSessionEvent) UnmarshalJSON(b []byte) error {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// List audit events by project resource
+	// (GET /api/v1/audit/events)
+	ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams)
 	// List digital employee avatar assets
 	// (GET /api/v1/digital-employee-avatar-assets)
 	ListDigitalEmployeeAvatarAssets(w http.ResponseWriter, r *http.Request)
@@ -2894,6 +3993,114 @@ type ServerInterface interface {
 	// Update a digital employee status
 	// (PUT /api/v1/digital-employees/{employeeId}/status)
 	UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Get project demand launch detail
+	// (GET /api/v1/project-demands/{demandId}/launch-detail)
+	GetProjectDemandLaunchDetail(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
+	// List projects
+	// (GET /api/v1/projects)
+	ListProjects(w http.ResponseWriter, r *http.Request, params ListProjectsParams)
+	// Create a project
+	// (POST /api/v1/projects)
+	CreateProject(w http.ResponseWriter, r *http.Request)
+	// Get a project
+	// (GET /api/v1/projects/{projectId})
+	GetProject(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Update project configuration facts
+	// (PATCH /api/v1/projects/{projectId})
+	UpdateProject(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Get latest project acceptance
+	// (GET /api/v1/projects/{projectId}/acceptance)
+	GetProjectAcceptance(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Submit project acceptance
+	// (POST /api/v1/projects/{projectId}/acceptance)
+	CreateProjectAcceptance(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Archive a project
+	// (POST /api/v1/projects/{projectId}/archive)
+	ArchiveProject(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Preview project archive readiness
+	// (GET /api/v1/projects/{projectId}/archive-preview)
+	GetProjectArchivePreview(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Create project archive snapshot
+	// (POST /api/v1/projects/{projectId}/archive-snapshot)
+	CreateProjectArchiveSnapshot(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// List project archive snapshots
+	// (GET /api/v1/projects/{projectId}/archive-snapshots)
+	ListProjectArchiveSnapshots(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectArchiveSnapshotsParams)
+	// List project artifact refs
+	// (GET /api/v1/projects/{projectId}/artifacts)
+	ListProjectArtifacts(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectArtifactsParams)
+	// List project budget ledger entries
+	// (GET /api/v1/projects/{projectId}/budget-ledger)
+	ListProjectBudgetLedger(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectBudgetLedgerParams)
+	// Get project budget summary
+	// (GET /api/v1/projects/{projectId}/budget-summary)
+	GetProjectBudgetSummary(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Get current project configuration facts
+	// (GET /api/v1/projects/{projectId}/config)
+	GetProjectConfig(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Update project configuration facts
+	// (PUT /api/v1/projects/{projectId}/config)
+	UpdateProjectConfig(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// List project configuration revisions
+	// (GET /api/v1/projects/{projectId}/config-revisions)
+	ListProjectConfigRevisions(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectConfigRevisionsParams)
+	// Get project configuration revision
+	// (GET /api/v1/projects/{projectId}/config-revisions/{revisionId})
+	GetProjectConfigRevision(w http.ResponseWriter, r *http.Request, projectId ProjectId, revisionId RevisionId)
+	// List project coordination jobs
+	// (GET /api/v1/projects/{projectId}/coordination-jobs)
+	ListProjectCoordinationJobs(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectCoordinationJobsParams)
+	// List project human decision requests
+	// (GET /api/v1/projects/{projectId}/decisions)
+	ListProjectDecisionRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectDecisionRequestsParams)
+	// Resolve a project human decision request
+	// (POST /api/v1/projects/{projectId}/decisions/{decisionId}/resolve)
+	ResolveProjectDecision(w http.ResponseWriter, r *http.Request, projectId ProjectId, decisionId DecisionId)
+	// List project demands
+	// (GET /api/v1/projects/{projectId}/demands)
+	ListProjectDemands(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectDemandsParams)
+	// Submit a project demand
+	// (POST /api/v1/projects/{projectId}/demands)
+	SubmitProjectDemand(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// List project events
+	// (GET /api/v1/projects/{projectId}/events)
+	ListProjectEvents(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectEventsParams)
+	// Retry a failed project Workflow signal event
+	// (POST /api/v1/projects/{projectId}/events/{eventId}/retry-workflow-signal)
+	RetryProjectWorkflowSignal(w http.ResponseWriter, r *http.Request, projectId ProjectId, eventId EventId)
+	// List project evidence refs
+	// (GET /api/v1/projects/{projectId}/evidence)
+	ListProjectEvidence(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectEvidenceParams)
+	// Create a project evidence ref
+	// (POST /api/v1/projects/{projectId}/evidence)
+	CreateProjectEvidence(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Patch project evidence verification status
+	// (PATCH /api/v1/projects/{projectId}/evidence/{evidenceId})
+	PatchProjectEvidence(w http.ResponseWriter, r *http.Request, projectId ProjectId, evidenceId EvidenceId)
+	// List project execution summaries
+	// (GET /api/v1/projects/{projectId}/execution-summaries)
+	ListProjectExecutionSummaries(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectExecutionSummariesParams)
+	// List project members
+	// (GET /api/v1/projects/{projectId}/members)
+	ListProjectMembers(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Replace project members
+	// (PUT /api/v1/projects/{projectId}/members)
+	ReplaceProjectMembers(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Get project overview
+	// (GET /api/v1/projects/{projectId}/overview)
+	GetProjectOverview(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// List project report refs
+	// (GET /api/v1/projects/{projectId}/reports)
+	ListProjectReports(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectReportsParams)
+	// List project route decisions
+	// (GET /api/v1/projects/{projectId}/route-decisions)
+	ListProjectRouteDecisions(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectRouteDecisionsParams)
+	// List project tasks
+	// (GET /api/v1/projects/{projectId}/tasks)
+	ListProjectTasks(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTasksParams)
+	// List project transfer requests
+	// (GET /api/v1/projects/{projectId}/transfer-requests)
+	ListProjectTransferRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTransferRequestsParams)
 	// List provider session events
 	// (GET /api/v1/provider-sessions/{providerSessionId}/events)
 	ListProviderSessionEvents(w http.ResponseWriter, r *http.Request, providerSessionId ProviderSessionId)
@@ -2951,6 +4158,15 @@ type ServerInterface interface {
 	// Get Runtime Agent fleet overview
 	// (GET /api/v1/runtime/overview)
 	GetRuntimeOverview(w http.ResponseWriter, r *http.Request)
+	// Complete a project task from a Runtime Agent session
+	// (POST /api/v1/runtime/project-tasks/{projectTaskId}/complete)
+	CompleteProjectTask(w http.ResponseWriter, r *http.Request, projectTaskId ProjectTaskId)
+	// Fail a project task from a Runtime Agent session
+	// (POST /api/v1/runtime/project-tasks/{projectTaskId}/fail)
+	FailProjectTask(w http.ResponseWriter, r *http.Request, projectTaskId ProjectTaskId)
+	// Request project task transfer from a Runtime Agent session
+	// (POST /api/v1/runtime/project-tasks/{projectTaskId}/transfer-requests)
+	RequestProjectTaskTransfer(w http.ResponseWriter, r *http.Request, projectTaskId ProjectTaskId)
 	// Register a Runtime Agent node
 	// (POST /api/v1/runtime/register)
 	RegisterRuntimeNode(w http.ResponseWriter, r *http.Request, params RegisterRuntimeNodeParams)
@@ -3086,6 +4302,12 @@ type ServerInterface interface {
 
 type Unimplemented struct{}
 
+// List audit events by project resource
+// (GET /api/v1/audit/events)
+func (_ Unimplemented) ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List digital employee avatar assets
 // (GET /api/v1/digital-employee-avatar-assets)
 func (_ Unimplemented) ListDigitalEmployeeAvatarAssets(w http.ResponseWriter, r *http.Request) {
@@ -3200,6 +4422,222 @@ func (_ Unimplemented) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *htt
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Get project demand launch detail
+// (GET /api/v1/project-demands/{demandId}/launch-detail)
+func (_ Unimplemented) GetProjectDemandLaunchDetail(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List projects
+// (GET /api/v1/projects)
+func (_ Unimplemented) ListProjects(w http.ResponseWriter, r *http.Request, params ListProjectsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a project
+// (POST /api/v1/projects)
+func (_ Unimplemented) CreateProject(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get a project
+// (GET /api/v1/projects/{projectId})
+func (_ Unimplemented) GetProject(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Update project configuration facts
+// (PATCH /api/v1/projects/{projectId})
+func (_ Unimplemented) UpdateProject(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get latest project acceptance
+// (GET /api/v1/projects/{projectId}/acceptance)
+func (_ Unimplemented) GetProjectAcceptance(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Submit project acceptance
+// (POST /api/v1/projects/{projectId}/acceptance)
+func (_ Unimplemented) CreateProjectAcceptance(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Archive a project
+// (POST /api/v1/projects/{projectId}/archive)
+func (_ Unimplemented) ArchiveProject(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Preview project archive readiness
+// (GET /api/v1/projects/{projectId}/archive-preview)
+func (_ Unimplemented) GetProjectArchivePreview(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create project archive snapshot
+// (POST /api/v1/projects/{projectId}/archive-snapshot)
+func (_ Unimplemented) CreateProjectArchiveSnapshot(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project archive snapshots
+// (GET /api/v1/projects/{projectId}/archive-snapshots)
+func (_ Unimplemented) ListProjectArchiveSnapshots(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectArchiveSnapshotsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project artifact refs
+// (GET /api/v1/projects/{projectId}/artifacts)
+func (_ Unimplemented) ListProjectArtifacts(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectArtifactsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project budget ledger entries
+// (GET /api/v1/projects/{projectId}/budget-ledger)
+func (_ Unimplemented) ListProjectBudgetLedger(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectBudgetLedgerParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get project budget summary
+// (GET /api/v1/projects/{projectId}/budget-summary)
+func (_ Unimplemented) GetProjectBudgetSummary(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get current project configuration facts
+// (GET /api/v1/projects/{projectId}/config)
+func (_ Unimplemented) GetProjectConfig(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Update project configuration facts
+// (PUT /api/v1/projects/{projectId}/config)
+func (_ Unimplemented) UpdateProjectConfig(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project configuration revisions
+// (GET /api/v1/projects/{projectId}/config-revisions)
+func (_ Unimplemented) ListProjectConfigRevisions(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectConfigRevisionsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get project configuration revision
+// (GET /api/v1/projects/{projectId}/config-revisions/{revisionId})
+func (_ Unimplemented) GetProjectConfigRevision(w http.ResponseWriter, r *http.Request, projectId ProjectId, revisionId RevisionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project coordination jobs
+// (GET /api/v1/projects/{projectId}/coordination-jobs)
+func (_ Unimplemented) ListProjectCoordinationJobs(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectCoordinationJobsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project human decision requests
+// (GET /api/v1/projects/{projectId}/decisions)
+func (_ Unimplemented) ListProjectDecisionRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectDecisionRequestsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Resolve a project human decision request
+// (POST /api/v1/projects/{projectId}/decisions/{decisionId}/resolve)
+func (_ Unimplemented) ResolveProjectDecision(w http.ResponseWriter, r *http.Request, projectId ProjectId, decisionId DecisionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project demands
+// (GET /api/v1/projects/{projectId}/demands)
+func (_ Unimplemented) ListProjectDemands(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectDemandsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Submit a project demand
+// (POST /api/v1/projects/{projectId}/demands)
+func (_ Unimplemented) SubmitProjectDemand(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project events
+// (GET /api/v1/projects/{projectId}/events)
+func (_ Unimplemented) ListProjectEvents(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectEventsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Retry a failed project Workflow signal event
+// (POST /api/v1/projects/{projectId}/events/{eventId}/retry-workflow-signal)
+func (_ Unimplemented) RetryProjectWorkflowSignal(w http.ResponseWriter, r *http.Request, projectId ProjectId, eventId EventId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project evidence refs
+// (GET /api/v1/projects/{projectId}/evidence)
+func (_ Unimplemented) ListProjectEvidence(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectEvidenceParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a project evidence ref
+// (POST /api/v1/projects/{projectId}/evidence)
+func (_ Unimplemented) CreateProjectEvidence(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Patch project evidence verification status
+// (PATCH /api/v1/projects/{projectId}/evidence/{evidenceId})
+func (_ Unimplemented) PatchProjectEvidence(w http.ResponseWriter, r *http.Request, projectId ProjectId, evidenceId EvidenceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project execution summaries
+// (GET /api/v1/projects/{projectId}/execution-summaries)
+func (_ Unimplemented) ListProjectExecutionSummaries(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectExecutionSummariesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project members
+// (GET /api/v1/projects/{projectId}/members)
+func (_ Unimplemented) ListProjectMembers(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Replace project members
+// (PUT /api/v1/projects/{projectId}/members)
+func (_ Unimplemented) ReplaceProjectMembers(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get project overview
+// (GET /api/v1/projects/{projectId}/overview)
+func (_ Unimplemented) GetProjectOverview(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project report refs
+// (GET /api/v1/projects/{projectId}/reports)
+func (_ Unimplemented) ListProjectReports(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectReportsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project route decisions
+// (GET /api/v1/projects/{projectId}/route-decisions)
+func (_ Unimplemented) ListProjectRouteDecisions(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectRouteDecisionsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project tasks
+// (GET /api/v1/projects/{projectId}/tasks)
+func (_ Unimplemented) ListProjectTasks(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTasksParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project transfer requests
+// (GET /api/v1/projects/{projectId}/transfer-requests)
+func (_ Unimplemented) ListProjectTransferRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTransferRequestsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List provider session events
 // (GET /api/v1/provider-sessions/{providerSessionId}/events)
 func (_ Unimplemented) ListProviderSessionEvents(w http.ResponseWriter, r *http.Request, providerSessionId ProviderSessionId) {
@@ -3311,6 +4749,24 @@ func (_ Unimplemented) UpsertRuntimeCapabilities(w http.ResponseWriter, r *http.
 // Get Runtime Agent fleet overview
 // (GET /api/v1/runtime/overview)
 func (_ Unimplemented) GetRuntimeOverview(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Complete a project task from a Runtime Agent session
+// (POST /api/v1/runtime/project-tasks/{projectTaskId}/complete)
+func (_ Unimplemented) CompleteProjectTask(w http.ResponseWriter, r *http.Request, projectTaskId ProjectTaskId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Fail a project task from a Runtime Agent session
+// (POST /api/v1/runtime/project-tasks/{projectTaskId}/fail)
+func (_ Unimplemented) FailProjectTask(w http.ResponseWriter, r *http.Request, projectTaskId ProjectTaskId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Request project task transfer from a Runtime Agent session
+// (POST /api/v1/runtime/project-tasks/{projectTaskId}/transfer-requests)
+func (_ Unimplemented) RequestProjectTaskTransfer(w http.ResponseWriter, r *http.Request, projectTaskId ProjectTaskId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3580,6 +5036,78 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListAuditEvents operation middleware
+func (siw *ServerInterfaceWrapper) ListAuditEvents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAuditEventsParams
+
+	// ------------- Required query parameter "resource_type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "resource_type", r.URL.Query(), &params.ResourceType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "resource_type"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "resource_type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "resource_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "resource_id", r.URL.Query(), &params.ResourceId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "resource_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "resource_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAuditEvents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListDigitalEmployeeAvatarAssets operation middleware
 func (siw *ServerInterfaceWrapper) ListDigitalEmployeeAvatarAssets(w http.ResponseWriter, r *http.Request) {
@@ -4333,6 +5861,1444 @@ func (siw *ServerInterfaceWrapper) UpdateDigitalEmployeeStatus(w http.ResponseWr
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateDigitalEmployeeStatus(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectDemandLaunchDetail operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectDemandLaunchDetail(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "demandId" -------------
+	var demandId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "demandId", chi.URLParam(r, "demandId"), &demandId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "demandId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectDemandLaunchDetail(w, r, demandId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjects operation middleware
+func (siw *ServerInterfaceWrapper) ListProjects(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjects(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateProject operation middleware
+func (siw *ServerInterfaceWrapper) CreateProject(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateProject(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProject operation middleware
+func (siw *ServerInterfaceWrapper) GetProject(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProject(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateProject operation middleware
+func (siw *ServerInterfaceWrapper) UpdateProject(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateProject(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectAcceptance operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectAcceptance(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectAcceptance(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateProjectAcceptance operation middleware
+func (siw *ServerInterfaceWrapper) CreateProjectAcceptance(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateProjectAcceptance(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ArchiveProject operation middleware
+func (siw *ServerInterfaceWrapper) ArchiveProject(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ArchiveProject(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectArchivePreview operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectArchivePreview(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectArchivePreview(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateProjectArchiveSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) CreateProjectArchiveSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateProjectArchiveSnapshot(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectArchiveSnapshots operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectArchiveSnapshots(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectArchiveSnapshotsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectArchiveSnapshots(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectArtifacts operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectArtifacts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectArtifactsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectArtifacts(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectBudgetLedger operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectBudgetLedger(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectBudgetLedgerParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectBudgetLedger(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectBudgetSummary operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectBudgetSummary(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectBudgetSummary(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectConfig operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectConfig(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectConfig(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateProjectConfig operation middleware
+func (siw *ServerInterfaceWrapper) UpdateProjectConfig(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateProjectConfig(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectConfigRevisions operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectConfigRevisions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectConfigRevisionsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectConfigRevisions(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectConfigRevision operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectConfigRevision(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "revisionId" -------------
+	var revisionId RevisionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "revisionId", chi.URLParam(r, "revisionId"), &revisionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "revisionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectConfigRevision(w, r, projectId, revisionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectCoordinationJobs operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectCoordinationJobs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectCoordinationJobsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectCoordinationJobs(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectDecisionRequests operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectDecisionRequests(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectDecisionRequestsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectDecisionRequests(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResolveProjectDecision operation middleware
+func (siw *ServerInterfaceWrapper) ResolveProjectDecision(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "decisionId" -------------
+	var decisionId DecisionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "decisionId", chi.URLParam(r, "decisionId"), &decisionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "decisionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResolveProjectDecision(w, r, projectId, decisionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectDemands operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectDemands(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectDemandsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectDemands(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SubmitProjectDemand operation middleware
+func (siw *ServerInterfaceWrapper) SubmitProjectDemand(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitProjectDemand(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectEvents operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectEvents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectEventsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectEvents(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RetryProjectWorkflowSignal operation middleware
+func (siw *ServerInterfaceWrapper) RetryProjectWorkflowSignal(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId EventId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", chi.URLParam(r, "eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RetryProjectWorkflowSignal(w, r, projectId, eventId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectEvidence operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectEvidence(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectEvidenceParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectEvidence(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateProjectEvidence operation middleware
+func (siw *ServerInterfaceWrapper) CreateProjectEvidence(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateProjectEvidence(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PatchProjectEvidence operation middleware
+func (siw *ServerInterfaceWrapper) PatchProjectEvidence(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "evidenceId" -------------
+	var evidenceId EvidenceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "evidenceId", chi.URLParam(r, "evidenceId"), &evidenceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "evidenceId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchProjectEvidence(w, r, projectId, evidenceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectExecutionSummaries operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectExecutionSummaries(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectExecutionSummariesParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectExecutionSummaries(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectMembers operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectMembers(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceProjectMembers operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceProjectMembers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceProjectMembers(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectOverview operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectOverview(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectOverview(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectReports operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectReports(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectReportsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectReports(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectRouteDecisions operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectRouteDecisions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectRouteDecisionsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectRouteDecisions(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectTasks operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectTasks(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectTasksParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectTasks(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectTransferRequests operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectTransferRequests(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectTransferRequestsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectTransferRequests(w, r, projectId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5143,6 +8109,84 @@ func (siw *ServerInterfaceWrapper) GetRuntimeOverview(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetRuntimeOverview(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CompleteProjectTask operation middleware
+func (siw *ServerInterfaceWrapper) CompleteProjectTask(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectTaskId" -------------
+	var projectTaskId ProjectTaskId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectTaskId", chi.URLParam(r, "projectTaskId"), &projectTaskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectTaskId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CompleteProjectTask(w, r, projectTaskId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FailProjectTask operation middleware
+func (siw *ServerInterfaceWrapper) FailProjectTask(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectTaskId" -------------
+	var projectTaskId ProjectTaskId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectTaskId", chi.URLParam(r, "projectTaskId"), &projectTaskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectTaskId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FailProjectTask(w, r, projectTaskId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RequestProjectTaskTransfer operation middleware
+func (siw *ServerInterfaceWrapper) RequestProjectTaskTransfer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectTaskId" -------------
+	var projectTaskId ProjectTaskId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectTaskId", chi.URLParam(r, "projectTaskId"), &projectTaskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectTaskId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RequestProjectTaskTransfer(w, r, projectTaskId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6799,6 +9843,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/audit/events", wrapper.ListAuditEvents)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employee-avatar-assets", wrapper.ListDigitalEmployeeAvatarAssets)
 	})
 	r.Group(func(r chi.Router) {
@@ -6856,6 +9903,114 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/status", wrapper.UpdateDigitalEmployeeStatus)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/project-demands/{demandId}/launch-detail", wrapper.GetProjectDemandLaunchDetail)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects", wrapper.ListProjects)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects", wrapper.CreateProject)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}", wrapper.GetProject)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/v1/projects/{projectId}", wrapper.UpdateProject)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/acceptance", wrapper.GetProjectAcceptance)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/acceptance", wrapper.CreateProjectAcceptance)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/archive", wrapper.ArchiveProject)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/archive-preview", wrapper.GetProjectArchivePreview)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/archive-snapshot", wrapper.CreateProjectArchiveSnapshot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/archive-snapshots", wrapper.ListProjectArchiveSnapshots)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/artifacts", wrapper.ListProjectArtifacts)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/budget-ledger", wrapper.ListProjectBudgetLedger)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/budget-summary", wrapper.GetProjectBudgetSummary)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/config", wrapper.GetProjectConfig)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/projects/{projectId}/config", wrapper.UpdateProjectConfig)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/config-revisions", wrapper.ListProjectConfigRevisions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/config-revisions/{revisionId}", wrapper.GetProjectConfigRevision)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/coordination-jobs", wrapper.ListProjectCoordinationJobs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/decisions", wrapper.ListProjectDecisionRequests)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/decisions/{decisionId}/resolve", wrapper.ResolveProjectDecision)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/demands", wrapper.ListProjectDemands)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/demands", wrapper.SubmitProjectDemand)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/events", wrapper.ListProjectEvents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/events/{eventId}/retry-workflow-signal", wrapper.RetryProjectWorkflowSignal)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/evidence", wrapper.ListProjectEvidence)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/evidence", wrapper.CreateProjectEvidence)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/v1/projects/{projectId}/evidence/{evidenceId}", wrapper.PatchProjectEvidence)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/execution-summaries", wrapper.ListProjectExecutionSummaries)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/members", wrapper.ListProjectMembers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/projects/{projectId}/members", wrapper.ReplaceProjectMembers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/overview", wrapper.GetProjectOverview)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/reports", wrapper.ListProjectReports)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/route-decisions", wrapper.ListProjectRouteDecisions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/tasks", wrapper.ListProjectTasks)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/transfer-requests", wrapper.ListProjectTransferRequests)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/provider-sessions/{providerSessionId}/events", wrapper.ListProviderSessionEvents)
 	})
 	r.Group(func(r chi.Router) {
@@ -6911,6 +10066,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/runtime/overview", wrapper.GetRuntimeOverview)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/runtime/project-tasks/{projectTaskId}/complete", wrapper.CompleteProjectTask)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/runtime/project-tasks/{projectTaskId}/fail", wrapper.FailProjectTask)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/runtime/project-tasks/{projectTaskId}/transfer-requests", wrapper.RequestProjectTaskTransfer)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/register", wrapper.RegisterRuntimeNode)

@@ -299,14 +299,16 @@ func (h *HTTPHandler) SubmitDemand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	demand, err := service.SubmitDemand(r.Context(), SubmitProjectDemandRequest{
-		TenantID:          tenantID,
-		ProjectID:         projectID,
-		SubmittedByUserID: actorID,
-		Title:             req.Title,
-		Content:           req.Content,
-		SourceType:        req.SourceType,
-		SourceRefs:        req.SourceRefs,
-		Attachments:       req.Attachments,
+		TenantID:                tenantID,
+		ProjectID:               projectID,
+		SubmittedByUserID:       actorID,
+		Title:                   req.Title,
+		Content:                 req.Content,
+		SourceType:              req.SourceType,
+		SourceRefs:              req.SourceRefs,
+		Attachments:             req.Attachments,
+		ReviewerUserID:          req.ReviewerUserID,
+		ReviewerSelectionReason: req.ReviewerSelectionReason,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -1061,14 +1063,16 @@ type updateProjectBody struct {
 }
 
 type submitDemandBody struct {
-	TenantID          uuid.UUID        `json:"tenant_id,omitempty"`
-	ProjectID         uuid.UUID        `json:"project_id,omitempty"`
-	SubmittedByUserID uuid.UUID        `json:"submitted_by_user_id,omitempty"`
-	Title             string           `json:"title"`
-	Content           string           `json:"content"`
-	SourceType        DemandSourceType `json:"source_type"`
-	SourceRefs        map[string]any   `json:"source_refs"`
-	Attachments       []any            `json:"attachments"`
+	TenantID                uuid.UUID               `json:"tenant_id,omitempty"`
+	ProjectID               uuid.UUID               `json:"project_id,omitempty"`
+	SubmittedByUserID       uuid.UUID               `json:"submitted_by_user_id,omitempty"`
+	Title                   string                  `json:"title"`
+	Content                 string                  `json:"content"`
+	SourceType              DemandSourceType        `json:"source_type"`
+	SourceRefs              map[string]any          `json:"source_refs"`
+	Attachments             []any                   `json:"attachments"`
+	ReviewerUserID          *uuid.UUID              `json:"reviewer_user_id"`
+	ReviewerSelectionReason ReviewerSelectionReason `json:"reviewer_selection_reason"`
 }
 
 type resolveDecisionBody struct {
@@ -1304,17 +1308,18 @@ type projectEventResponse struct {
 }
 
 type projectDemandResponse struct {
-	ID                string              `json:"id"`
-	TenantID          string              `json:"tenant_id"`
-	ProjectID         string              `json:"project_id"`
-	SubmittedByUserID string              `json:"submitted_by_user_id"`
-	Title             string              `json:"title"`
-	Content           *string             `json:"content,omitempty"`
-	SourceType        DemandSourceType    `json:"source_type"`
-	SourceRefs        map[string]any      `json:"source_refs"`
-	Attachments       []any               `json:"attachments"`
-	Status            ProjectDemandStatus `json:"status"`
-	CreatedEventID    *string             `json:"created_event_id,omitempty"`
+	ID                string                      `json:"id"`
+	TenantID          string                      `json:"tenant_id"`
+	ProjectID         string                      `json:"project_id"`
+	SubmittedByUserID string                      `json:"submitted_by_user_id"`
+	Title             string                      `json:"title"`
+	Content           *string                     `json:"content,omitempty"`
+	SourceType        DemandSourceType            `json:"source_type"`
+	SourceRefs        map[string]any              `json:"source_refs"`
+	Attachments       []any                       `json:"attachments"`
+	Status            ProjectDemandStatus         `json:"status"`
+	CreatedEventID    *string                     `json:"created_event_id,omitempty"`
+	Reviewer          *reviewerPreferenceResponse `json:"reviewer"`
 }
 
 type demandLaunchDetailResponse struct {
@@ -1748,6 +1753,7 @@ func demandResponseFromDomain(demand ProjectDemand) projectDemandResponse {
 		Attachments:       sliceOrEmpty(demand.Attachments),
 		Status:            demand.Status,
 		CreatedEventID:    stringPtr(demand.CreatedEventID),
+		Reviewer:          reviewerPreferenceResponseFromDomain(demand.ReviewerPreference),
 	}
 }
 
