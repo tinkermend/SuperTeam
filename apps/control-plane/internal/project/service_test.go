@@ -197,11 +197,14 @@ func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 	task := ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, DemandID: &demand.ID, Title: "审查 PR", Status: "pending"}
 	repo.tasks = append(repo.tasks, task)
 	repo.routeDecisions = append(repo.routeDecisions, RouteDecision{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: job.ID, DemandID: &demand.ID, Reason: "按能力分派"})
-	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: &job.ID, TargetUserID: ownerID, DecisionType: "route_review", TitleSnapshot: "确认路由", StatusSnapshot: "pending"})
+	decisionRequest := DecisionRequest{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: &job.ID, TargetUserID: ownerID, DecisionType: "route_review", TitleSnapshot: "确认路由", StatusSnapshot: "pending"}
+	repo.decisionRequests = append(repo.decisionRequests, decisionRequest)
 	demandResourceType := "project_demand"
 	demandResourceID := demand.ID.String()
 	demandResourceEvent := ProjectEvent{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ResourceType: &demandResourceType, ResourceID: &demandResourceID, EventType: ProjectEventDemandSubmitted, ActorType: "human_user", ActorID: ownerID.String(), Payload: map[string]any{}}
-	repo.events = append(repo.events, demandResourceEvent)
+	taskPayloadEvent := ProjectEvent{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, EventType: ProjectEventTaskDispatched, ActorType: "workflow", ActorID: job.ID.String(), Payload: map[string]any{"project_task_id": task.ID.String()}}
+	decisionPayloadEvent := ProjectEvent{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, EventType: ProjectEventDecisionRequested, ActorType: "workflow", ActorID: job.ID.String(), Payload: map[string]any{"decision_request_id": decisionRequest.ID.String()}}
+	repo.events = append(repo.events, demandResourceEvent, taskPayloadEvent, decisionPayloadEvent)
 
 	detail, err := service.GetDemandLaunchDetail(context.Background(), tenantID, demand.ID)
 	if err != nil {
@@ -216,7 +219,7 @@ func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 	if len(detail.CoordinationJobs) != 1 || len(detail.RouteDecisions) != 1 || len(detail.ProjectTasks) != 1 || len(detail.DecisionRequests) != 1 {
 		t.Fatalf("expected related facts, got %#v", detail)
 	}
-	if len(detail.RecentEvents) != 2 {
+	if len(detail.RecentEvents) != 4 {
 		t.Fatalf("expected demand event in launch detail: %#v", detail.RecentEvents)
 	}
 	eventIDs := map[uuid.UUID]struct{}{}
@@ -228,6 +231,12 @@ func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 	}
 	if _, ok := eventIDs[demandResourceEvent.ID]; !ok {
 		t.Fatalf("expected demand resource event in launch detail: %#v", detail.RecentEvents)
+	}
+	if _, ok := eventIDs[taskPayloadEvent.ID]; !ok {
+		t.Fatalf("expected task payload event in launch detail: %#v", detail.RecentEvents)
+	}
+	if _, ok := eventIDs[decisionPayloadEvent.ID]; !ok {
+		t.Fatalf("expected decision payload event in launch detail: %#v", detail.RecentEvents)
 	}
 }
 

@@ -1028,6 +1028,18 @@ func filterEventsForDemand(events []ProjectEvent, demand ProjectDemand, tasks []
 		}
 		if rawDemandID, ok := event.Payload["demand_id"].(string); ok && rawDemandID == demand.ID.String() {
 			filtered = append(filtered, event)
+			continue
+		}
+		if rawProjectTaskID, ok := event.Payload["project_task_id"].(string); ok {
+			if _, exists := taskIDs[rawProjectTaskID]; exists {
+				filtered = append(filtered, event)
+				continue
+			}
+		}
+		if rawDecisionRequestID, ok := event.Payload["decision_request_id"].(string); ok {
+			if _, exists := decisionIDs[rawDecisionRequestID]; exists {
+				filtered = append(filtered, event)
+			}
 		}
 	}
 	return filtered
