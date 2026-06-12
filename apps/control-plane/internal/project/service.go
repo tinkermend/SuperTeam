@@ -812,7 +812,7 @@ func selectReviewer(explicit *uuid.UUID, project Project, members []ProjectMembe
 		return ProjectMember{}, "", false, ErrInvalidProjectMember
 	}
 	for _, member := range members {
-		if member.PrincipalType == PrincipalTypeHumanUser && member.PrincipalID == project.HumanOwnerUserID && member.Status == "active" {
+		if member.PrincipalType == PrincipalTypeHumanUser && member.PrincipalID == project.HumanOwnerUserID && member.ProjectRole == ProjectRoleOwner && member.Status == "active" {
 			return member, ReviewerSelectionProjectHumanOwnerFallback, true, nil
 		}
 	}

@@ -278,6 +278,22 @@ func TestSubmitDemandRequiresActiveHumanOwnerMemberForFallback(t *testing.T) {
 				Status:        "active",
 			}},
 		},
+		{
+			name: "observer owner member",
+			members: []ProjectMember{{
+				PrincipalType: PrincipalTypeHumanUser,
+				ProjectRole:   ProjectRoleObserver,
+				Status:        "active",
+			}},
+		},
+		{
+			name: "executor owner member",
+			members: []ProjectMember{{
+				PrincipalType: PrincipalTypeHumanUser,
+				ProjectRole:   ProjectRoleExecutor,
+				Status:        "active",
+			}},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tenantID := uuid.New()
