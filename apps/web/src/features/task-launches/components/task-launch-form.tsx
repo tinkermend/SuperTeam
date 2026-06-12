@@ -28,6 +28,7 @@ export type ReviewerDefaultResolution = {
 
 type TaskLaunchFormProps = {
   isSubmitting?: boolean;
+  isReviewerLoading?: boolean;
   members: ProjectMember[];
   onProjectChange: (projectId: string) => void;
   onSubmit: (projectId: string, input: SubmitProjectDemandInput) => void;
@@ -85,6 +86,7 @@ function deriveTitle(content: string): string {
 
 export function TaskLaunchForm({
   isSubmitting = false,
+  isReviewerLoading = false,
   members,
   onProjectChange,
   onSubmit,
@@ -101,15 +103,19 @@ export function TaskLaunchForm({
   const [error, setError] = useState("");
   const projectId = selectedProjectId || activeProjects[0]?.id || "";
   const project = activeProjects.find((item) => item.id === projectId);
+  const currentProjectMembers = useMemo(
+    () => members.filter((member) => member.project_id === projectId),
+    [members, projectId],
+  );
   const reviewerDefault = useMemo(
-    () => resolveDefaultReviewer(project, members),
-    [project, members],
+    () => resolveDefaultReviewer(project, currentProjectMembers),
+    [project, currentProjectMembers],
   );
   const selectedReviewerId = reviewerId || reviewerDefault?.member?.principal_id || "";
   const selectedReason: ReviewerSelectionReason | undefined = reviewerId
     ? "user_selected"
     : reviewerDefault?.reason;
-  const humanReviewers = members.filter(
+  const humanReviewers = currentProjectMembers.filter(
     (member) => member.principal_type === "human_user" && member.status === "active",
   );
 
@@ -218,7 +224,11 @@ export function TaskLaunchForm({
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
         <div className="flex justify-end">
-          <Button disabled={isSubmitting} onClick={handleSubmit} type="button">
+          <Button
+            disabled={isSubmitting || isReviewerLoading}
+            onClick={handleSubmit}
+            type="button"
+          >
             <SendHorizontal />
             发起任务
           </Button>

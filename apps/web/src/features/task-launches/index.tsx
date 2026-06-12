@@ -56,6 +56,11 @@ export function TaskLaunchView({ apiBaseUrl, fetcher }: TaskLaunchViewProps) {
     queryFn: () => listProjectMembers(apiOptions, selectedProjectId),
     queryKey: ["task-launch-project-members", apiBaseUrl, selectedProjectId],
   });
+  const hasSelectedProjectMembers = (membersQuery.data ?? []).some(
+    (member) => member.project_id === selectedProjectId,
+  );
+  const isReviewerLoading =
+    Boolean(selectedProjectId) && membersQuery.isFetching && !hasSelectedProjectMembers;
   const submitMutation = useMutation({
     mutationFn: ({
       input,
@@ -78,6 +83,7 @@ export function TaskLaunchView({ apiBaseUrl, fetcher }: TaskLaunchViewProps) {
     >
       <TaskLaunchForm
         isSubmitting={submitMutation.isPending}
+        isReviewerLoading={isReviewerLoading}
         members={membersQuery.data ?? []}
         onProjectChange={setSelectedProjectId}
         onSubmit={(projectId, input) => submitMutation.mutate({ input, projectId })}

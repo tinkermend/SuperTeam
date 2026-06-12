@@ -109,9 +109,14 @@ function makeProject(id = "project-1", status: Project["status"] = "running"): P
     coordination_workflow_id: `project-coordinator:${id}`,
     evidence_policy: {},
     goal: "完成一次任务发起",
-    human_owner_user_id: "owner-1",
+    human_owner_user_id: id === "project-2" ? "owner-2" : "owner-1",
     id,
-    name: id === "project-1" ? "客户接入项目" : "归档项目",
+    name:
+      id === "project-1"
+        ? "客户接入项目"
+        : id === "project-2"
+          ? "生产巡检项目"
+          : "归档项目",
     status,
     tenant_id: "tenant-1",
   };
@@ -136,8 +141,10 @@ function makeMember(
 }
 
 function createTaskLaunchFetcher({
+  includeSecondProject = false,
   multipleReviewers = false,
 }: {
+  includeSecondProject?: boolean;
   multipleReviewers?: boolean;
 } = {}) {
   const submittedDemand = {
@@ -158,7 +165,7 @@ function createTaskLaunchFetcher({
     tenant_id: "tenant-1",
     title: "审查这个开源项目的 PR，并按数量分配数字员工",
   };
-  const members = [
+  const projectOneMembers = [
     makeMember("owner-member", {
       display_name_snapshot: "负责人",
       principal_id: "owner-1",
@@ -183,6 +190,19 @@ function createTaskLaunchFetcher({
         ]
       : []),
   ];
+  const projectTwoMembers = [
+    makeMember("project-2-owner-member", {
+      display_name_snapshot: "第二项目负责人",
+      principal_id: "owner-2",
+      project_id: "project-2",
+      project_role: "owner",
+    }),
+    makeMember("project-2-reviewer-member", {
+      display_name_snapshot: "赵审核",
+      principal_id: "reviewer-2",
+      project_id: "project-2",
+    }),
+  ];
 
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -194,13 +214,39 @@ function createTaskLaunchFetcher({
       url.searchParams.get("offset") === "0" &&
       method === "GET"
     ) {
-      return jsonResponse([makeProject("archived-project", "archived"), makeProject()]);
+      return jsonResponse([
+        makeProject("archived-project", "archived"),
+        makeProject(),
+        ...(includeSecondProject ? [makeProject("project-2")] : []),
+      ]);
     }
     if (url.pathname === "/api/v1/projects/project-1/members" && method === "GET") {
-      return jsonResponse(members);
+      return jsonResponse(projectOneMembers);
+    }
+    if (url.pathname === "/api/v1/projects/project-2/members" && method === "GET") {
+      return jsonResponse(projectTwoMembers);
     }
     if (url.pathname === "/api/v1/projects/project-1/demands" && method === "POST") {
       return jsonResponse(submittedDemand, 201);
+    }
+    if (url.pathname === "/api/v1/projects/project-2/demands" && method === "POST") {
+      const body = JSON.parse(String(init?.body)) as { title?: string; content?: string };
+      return jsonResponse(
+        {
+          ...submittedDemand,
+          content: body.content,
+          id: "demand-2",
+          project_id: "project-2",
+          reviewer: {
+            project_role: "reviewer",
+            resolved_from_rule: true,
+            reviewer_user_id: "reviewer-2",
+            selection_reason: "project_reviewer_default",
+          },
+          title: body.title,
+        },
+        201,
+      );
     }
 
     return jsonResponse({ message: `Unhandled ${method} ${url.pathname}` }, 404);
@@ -303,13 +349,7 @@ describe("TaskLaunchView", () => {
     await vi.waitFor(() => expect(getByText("王审核 · reviewer")).toBeTruthy());
     await clickButton("发起任务");
 
-    const postCall = fetcher.mock.calls.find(
-      ([url]) =>
-        String(url) ===
-        "http://control-plane.local/api/v1/projects/project-1/demands",
-    );
-    expect(postCall).toBeDefined();
-    expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({
+    expect(postBody(fetcher, "/api/v1/projects/project-1/demands")).toEqual({
       title: "审查这个开源项目的 PR，并按数量分配数字员工",
       content: "审查这个开源项目的 PR，并按数量分配数字员工",
       source_type: "manual",
@@ -326,6 +366,34 @@ describe("TaskLaunchView", () => {
     });
   });
 
+  it("uses the selected project's reviewer after project changes", async () => {
+    mocks.navigate.mockClear();
+    const fetcher = createTaskLaunchFetcher({ includeSecondProject: true });
+    await renderWithQueryClient(
+      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await vi.waitFor(() => expect(getByText("生产巡检项目")).toBeTruthy());
+    await clickButton("生产巡检项目");
+    await typeInLabeledField("需求描述", "处理第二个项目的巡检问题");
+
+    await vi.waitFor(() => expect(getByText("赵审核 · reviewer")).toBeTruthy());
+    await clickButton("发起任务");
+
+    expect(postBody(fetcher, "/api/v1/projects/project-2/demands")).toMatchObject({
+      content: "处理第二个项目的巡检问题",
+      reviewer_selection_reason: "project_reviewer_default",
+      reviewer_user_id: "reviewer-2",
+      title: "处理第二个项目的巡检问题",
+    });
+    await vi.waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        params: { demandId: "demand-2" },
+        to: "/task-launches/$demandId",
+      });
+    });
+  });
+
   it("requires explicit reviewer selection when the selected project has multiple active human reviewers", async () => {
     const fetcher = createTaskLaunchFetcher({ multipleReviewers: true });
     await renderWithQueryClient(
@@ -333,6 +401,8 @@ describe("TaskLaunchView", () => {
     );
 
     await typeInLabeledField("需求描述", "需要两位审核人项目确认");
+    await vi.waitFor(() => expect(getByText("王审核 · reviewer")).toBeTruthy());
+    await vi.waitFor(() => expect(getByText("李审核 · reviewer")).toBeTruthy());
     await clickButton("发起任务");
 
     await vi.waitFor(() => expect(getByText("请选择审核人")).toBeTruthy());
@@ -357,6 +427,15 @@ function getByLabelText(label: string) {
     throw new Error(`Unable to find label: ${label}`);
   }
   return element;
+}
+
+function postBody(fetcher: ReturnType<typeof createTaskLaunchFetcher>, path: string) {
+  const call = fetcher.mock.calls.find(([url]) => {
+    const parsed = new URL(String(url));
+    return parsed.pathname === path;
+  });
+  expect(call).toBeDefined();
+  return JSON.parse(String(call?.[1]?.body)) as Record<string, unknown>;
 }
 
 async function typeInLabeledField(label: string, value: string) {
