@@ -1320,7 +1320,7 @@ type projectDemandResponse struct {
 type demandLaunchDetailResponse struct {
 	Demand           projectDemandResponse       `json:"demand"`
 	Project          projectResponse             `json:"project"`
-	Reviewer         *reviewerPreferenceResponse `json:"reviewer,omitempty"`
+	Reviewer         *reviewerPreferenceResponse `json:"reviewer"`
 	CoordinationJobs []coordinationJobResponse   `json:"coordination_jobs"`
 	RouteDecisions   []routeDecisionResponse     `json:"route_decisions"`
 	ProjectTasks     []projectTaskResponse       `json:"project_tasks"`

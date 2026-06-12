@@ -1013,6 +1013,10 @@ func filterEventsForDemand(events []ProjectEvent, demand ProjectDemand, tasks []
 			continue
 		}
 		if event.ResourceID != nil {
+			if *event.ResourceID == demand.ID.String() {
+				filtered = append(filtered, event)
+				continue
+			}
 			if _, ok := taskIDs[*event.ResourceID]; ok {
 				filtered = append(filtered, event)
 				continue

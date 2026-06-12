@@ -277,6 +277,9 @@ func TestProjectHandlerGetsDemandLaunchDetail(t *testing.T) {
 	if body["project"].(map[string]any)["id"] != projectID.String() {
 		t.Fatalf("expected project id in detail response: %#v", body)
 	}
+	if _, ok := body["reviewer"]; !ok {
+		t.Fatalf("expected reviewer key in launch detail response: %#v", body)
+	}
 	if len(body["project_tasks"].([]any)) != 1 {
 		t.Fatalf("expected project tasks in launch detail: %#v", body)
 	}

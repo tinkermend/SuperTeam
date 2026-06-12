@@ -198,6 +198,10 @@ func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 	repo.tasks = append(repo.tasks, task)
 	repo.routeDecisions = append(repo.routeDecisions, RouteDecision{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: job.ID, DemandID: &demand.ID, Reason: "按能力分派"})
 	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: &job.ID, TargetUserID: ownerID, DecisionType: "route_review", TitleSnapshot: "确认路由", StatusSnapshot: "pending"})
+	demandResourceType := "project_demand"
+	demandResourceID := demand.ID.String()
+	demandResourceEvent := ProjectEvent{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ResourceType: &demandResourceType, ResourceID: &demandResourceID, EventType: ProjectEventDemandSubmitted, ActorType: "human_user", ActorID: ownerID.String(), Payload: map[string]any{}}
+	repo.events = append(repo.events, demandResourceEvent)
 
 	detail, err := service.GetDemandLaunchDetail(context.Background(), tenantID, demand.ID)
 	if err != nil {
@@ -212,8 +216,18 @@ func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 	if len(detail.CoordinationJobs) != 1 || len(detail.RouteDecisions) != 1 || len(detail.ProjectTasks) != 1 || len(detail.DecisionRequests) != 1 {
 		t.Fatalf("expected related facts, got %#v", detail)
 	}
-	if len(detail.RecentEvents) != 1 || detail.RecentEvents[0].ID != *demand.CreatedEventID {
+	if len(detail.RecentEvents) != 2 {
 		t.Fatalf("expected demand event in launch detail: %#v", detail.RecentEvents)
+	}
+	eventIDs := map[uuid.UUID]struct{}{}
+	for _, event := range detail.RecentEvents {
+		eventIDs[event.ID] = struct{}{}
+	}
+	if _, ok := eventIDs[*demand.CreatedEventID]; !ok {
+		t.Fatalf("expected created demand event in launch detail: %#v", detail.RecentEvents)
+	}
+	if _, ok := eventIDs[demandResourceEvent.ID]; !ok {
+		t.Fatalf("expected demand resource event in launch detail: %#v", detail.RecentEvents)
 	}
 }
 
