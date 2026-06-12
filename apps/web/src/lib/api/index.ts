@@ -3,6 +3,7 @@ export * from "./authz";
 export * from "./client";
 export * from "./employees";
 export * from "./health";
+export * from "./inbox";
 export * from "./projects";
 export * from "./runtime";
 export * from "./tasks";

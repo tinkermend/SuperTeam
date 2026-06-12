@@ -79,4 +79,44 @@ describe('sidebar menu sizing', () => {
     expect(labelStyle.textShadow).toBe('none')
     expect(iconStyle.color).toBe('rgb(255, 255, 255)')
   })
+
+  it('keeps a badged inbox row at the standard navigation size', async () => {
+    await render(
+      <SidebarProvider>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton data-testid='badged-sidebar-menu-button'>
+              <Activity />
+              <span>收件箱</span>
+              <span className='ms-auto rounded-full px-1.5 py-0 text-xs'>
+                12
+              </span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarProvider>
+    )
+
+    const button = document.querySelector(
+      '[data-testid="badged-sidebar-menu-button"]'
+    )
+    const label = document.querySelector(
+      '[data-testid="badged-sidebar-menu-button"] span'
+    )
+    const badge = document.querySelector(
+      '[data-testid="badged-sidebar-menu-button"] span:last-child'
+    )
+
+    expect(button).toBeInstanceOf(HTMLElement)
+    expect(label).toBeInstanceOf(HTMLElement)
+    expect(badge).toBeInstanceOf(HTMLElement)
+
+    const buttonStyle = getComputedStyle(button as HTMLElement)
+    const labelStyle = getComputedStyle(label as HTMLElement)
+    const badgeStyle = getComputedStyle(badge as HTMLElement)
+
+    expect(buttonStyle.height).toBe('44px')
+    expect(labelStyle.fontSize).toBe('16px')
+    expect(badgeStyle.fontSize).toBe('12px')
+  })
 })
