@@ -68,6 +68,12 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 		PolicyDefaults struct {
 			SessionPolicy map[string]any `json:"session_policy"`
 		} `json:"policy_defaults"`
+		CreationChecks []struct {
+			Key     string `json:"key"`
+			Label   string `json:"label"`
+			Status  string `json:"status"`
+			Message string `json:"message"`
+		} `json:"creation_checks"`
 	}
 	if err := json.NewDecoder(optionsResp.Body).Decode(&optionsBody); err != nil {
 		t.Fatalf("decode create options: %v", err)
@@ -87,6 +93,9 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	if optionsBody.PolicyDefaults.SessionPolicy["mode"] != "reuse_latest" {
 		t.Fatalf("expected policy defaults, got %#v", optionsBody.PolicyDefaults)
 	}
+	assertCreateOptionCheck(t, optionsBody.CreationChecks, "team_governance", "passed")
+	assertCreateOptionCheck(t, optionsBody.CreationChecks, "employee_templates", "passed")
+	assertCreateOptionCheck(t, optionsBody.CreationChecks, "runtime_provider", "passed")
 
 	avatarReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employee-avatar-assets", nil)
 	avatarReq.AddCookie(cookie)
@@ -565,6 +574,12 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 			ExternalCapabilities []string `json:"external_capabilities"`
 		} `json:"capability_options"`
 		RuntimeProviderOptions []struct{} `json:"runtime_provider_options"`
+		CreationChecks         []struct {
+			Key     string `json:"key"`
+			Label   string `json:"label"`
+			Status  string `json:"status"`
+			Message string `json:"message"`
+		} `json:"creation_checks"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode create options: %v", err)
@@ -587,6 +602,8 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 	if body.RuntimeProviderOptions == nil || len(body.RuntimeProviderOptions) != 0 {
 		t.Fatalf("expected runtime_provider_options to decode as empty array, got %#v", body.RuntimeProviderOptions)
 	}
+	assertCreateOptionCheck(t, body.CreationChecks, "employee_templates", "passed")
+	assertCreateOptionCheck(t, body.CreationChecks, "runtime_provider", "blocked")
 
 	service.createOptions.EmployeeTypes = nil
 	emptyTypesReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/create-options?team_id="+teamID.String(), nil)
@@ -605,6 +622,27 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 	if emptyTypesBody.EmployeeTypes == nil || len(emptyTypesBody.EmployeeTypes) != 0 {
 		t.Fatalf("expected employee_types to decode as empty array, got %#v", emptyTypesBody.EmployeeTypes)
 	}
+}
+
+func assertCreateOptionCheck(t *testing.T, checks []struct {
+	Key     string `json:"key"`
+	Label   string `json:"label"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}, key string, status string) {
+	t.Helper()
+	for _, check := range checks {
+		if check.Key == key {
+			if check.Status != status {
+				t.Fatalf("expected check %s status %s, got %s", key, status, check.Status)
+			}
+			if check.Label == "" || check.Message == "" {
+				t.Fatalf("expected check %s to include label and message, got %#v", key, check)
+			}
+			return
+		}
+	}
+	t.Fatalf("expected creation check %s in %#v", key, checks)
 }
 
 func assertNonNilEmptyStringSlice(t *testing.T, field string, values []string) {

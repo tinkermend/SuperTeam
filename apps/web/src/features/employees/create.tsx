@@ -2,11 +2,26 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Bot, Check, ChevronLeft, ChevronRight, Loader2, Plus } from "lucide-react";
+import {
+  ArrowLeft,
+  Bot,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardCheck,
+  Code2,
+  Cpu,
+  FileText,
+  Gauge,
+  GitBranch,
+  Loader2,
+  Plus,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -97,6 +112,7 @@ export function CreateEmployeePage() {
 
 export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewProps) {
   const navigate = useNavigate();
+  const [workbenchMode, setWorkbenchMode] = useState<"select" | "configure">("select");
   const [stepIndex, setStepIndex] = useState(0);
   const [draft, setDraft] = useState<WizardDraft>(emptyDraft);
   const [errors, setErrors] = useState<ValidationErrors>({});
@@ -107,7 +123,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   });
 
   useEffect(() => {
-    const firstTeamId = teams.data?.[0]?.id;
+    const firstTeamId = teams.data?.find((team) => team.status === "active")?.id;
     if (!draft.team_id && firstTeamId) {
       setDraft((current) => ({ ...current, team_id: firstTeamId }));
     }
@@ -131,9 +147,10 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
   useEffect(() => {
     const optionsData = createOptions.data;
-    const firstType = optionsData?.employee_types[0];
+    const employeeTypes = optionsData?.employee_types ?? [];
+    const firstType = firstPreferredEmployeeType(employeeTypes);
     if (!firstType) return;
-    if (!draft.employee_type || !optionsData.employee_types.some((item) => item.type === draft.employee_type)) {
+    if (!draft.employee_type || !employeeTypes.some((item) => item.type === draft.employee_type)) {
       setDraft((current) => applyTypeDefaults(current, firstType));
     }
   }, [createOptions.data, draft.employee_type]);
@@ -208,6 +225,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
 
   const currentStep = steps[stepIndex];
   const teamOptions = useMemo(() => (teams.data ?? []).filter((team) => team.status === "active"), [teams.data]);
+  const selectedTeam = teamOptions.find((team) => team.id === draft.team_id);
 
   function updateDraft(patch: Partial<WizardDraft>) {
     setDraft((current) => ({ ...current, ...patch }));
@@ -248,6 +266,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     }
   }
 
+  function enterConfiguration() {
+    setWorkbenchMode("configure");
+    setStepIndex(0);
+  }
+
   return (
     <>
       <Header>
@@ -262,15 +285,42 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             </SemanticIconTile>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">创建数字员工</h1>
-              <p className="text-sm text-muted-foreground">创建后进入 ready 状态，再由任务运行链路调度执行。</p>
+              <p className="text-sm text-muted-foreground">
+                {workbenchMode === "select"
+                  ? "选择创建路径，确认职责边界、治理策略和运行绑定后再进入配置。"
+                  : "先定义职责画像、能力边界与运行约束，再生成 ready 员工。"}
+              </p>
             </div>
           </div>
-          <Button asChild type="button" variant="outline">
-            <Link to="/employees">
-              <ArrowLeft data-icon="inline-start" />
-              返回列表
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {workbenchMode === "configure" ? (
+              <Button onClick={() => setWorkbenchMode("select")} type="button" variant="outline">
+                <ArrowLeft data-icon="inline-start" />
+                返回
+              </Button>
+            ) : (
+              <Button asChild type="button" variant="outline">
+                <Link to="/employees">
+                  <ArrowLeft data-icon="inline-start" />
+                  返回数字员工
+                </Link>
+              </Button>
+            )}
+            <Button
+              disabled={
+                workbenchMode === "configure" ||
+                teamOptions.length === 0 ||
+                createOptions.isLoading ||
+                createOptions.isError ||
+                !draft.employee_type
+              }
+              onClick={enterConfiguration}
+              type="button"
+            >
+              进入配置
+              <ChevronRight data-icon="inline-end" />
+            </Button>
+          </div>
         </div>
 
         {teams.isError ? (
@@ -298,14 +348,60 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
           </Alert>
         ) : null}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>创建向导</CardTitle>
-            <CardDescription>按身份、能力、治理、运行绑定完成 ready 数字员工创建。</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            <div className="grid gap-3 md:grid-cols-[220px_1fr]">
-              <StepRail currentStep={currentStep} />
+        <CreationStageProgress mode={workbenchMode} currentStep={currentStep} />
+
+        {workbenchMode === "select" ? (
+          <>
+            <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_340px] min-[1760px]:grid-cols-[260px_minmax(0,1fr)_320px]">
+              <CreationPathPanel />
+
+              <TemplateSelectionPanel
+                draft={draft}
+                options={createOptions.data}
+                selectedType={selectedType}
+                onSelectType={selectType}
+              />
+
+              <CreationReadinessPanel
+                draft={draft}
+                options={createOptions.data}
+                selectedTeamName={selectedTeam?.name}
+                selectedType={selectedType}
+                onEnterConfiguration={enterConfiguration}
+              />
+            </div>
+            <CreationFactsBand />
+          </>
+        ) : (
+          <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_340px]">
+            <BlueprintSidebar
+              draft={draft}
+              options={createOptions.data}
+              selectedType={selectedType}
+              onSelectType={selectType}
+            />
+
+          <section className="min-w-0 rounded-md border bg-card/95 shadow-xs">
+            <div className="border-b p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">员工画像蓝图</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    按职责目标、可用能力、治理边界和运行绑定完成员工画像。
+                  </p>
+                </div>
+                <StepTabs currentStep={currentStep} />
+              </div>
+            </div>
+
+            <div className="grid gap-4 p-4">
+              <TemplateOverview
+                draft={draft}
+                options={createOptions.data}
+                selectedType={selectedType}
+                onSelectType={selectType}
+              />
+
               <div className="min-h-[420px] rounded-md border bg-background p-4">
                 {teams.isLoading || avatarAssets.isLoading || (draft.team_id && createOptions.isLoading) ? (
                   <div className="flex min-h-[360px] items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -350,9 +446,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             </div>
 
             {createEmployee.isError ? (
-              <p className="text-sm text-destructive">{getErrorMessage(createEmployee.error)}</p>
+              <p className="px-4 text-sm text-destructive">{getErrorMessage(createEmployee.error)}</p>
             ) : null}
-            <div className="flex justify-between gap-3 border-t pt-4">
+            <div className="flex justify-between gap-3 border-t p-4">
               <Button
                 disabled={stepIndex === 0 || createEmployee.isPending}
                 onClick={() => setStepIndex((current) => Math.max(current - 1, 0))}
@@ -397,19 +493,424 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                 </Button>
               )}
             </div>
-          </CardContent>
-        </Card>
+          </section>
+
+          <CreationPreflightPanel
+            draft={draft}
+            options={createOptions.data}
+            selectedType={selectedType}
+          />
+          </div>
+        )}
       </Main>
     </>
   );
 }
 
-function StepRail({ currentStep }: { currentStep: StepName }) {
+function CreationStageProgress({ currentStep, mode }: { currentStep: StepName; mode: "select" | "configure" }) {
+  const activeIndex = mode === "select" ? 0 : currentStep === "运行" ? 2 : 1;
+  const stages = [
+    { title: "选择路径", description: "选择创建方式和专业模板" },
+    { title: "预检治理", description: "检查治理策略和运行条件" },
+    { title: "完成配置", description: "进入详细配置向导" },
+  ];
+
+  return (
+    <section className="mb-4 rounded-md border bg-card/95 px-4 py-3 shadow-xs">
+      <div className="grid gap-3 md:grid-cols-3">
+        {stages.map((stage, index) => {
+          const active = index === activeIndex;
+          const done = index < activeIndex;
+
+          return (
+            <div className="flex items-center gap-3" key={stage.title}>
+              <span
+                className={cn(
+                  "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                  active ? "bg-primary text-primary-foreground" : "",
+                  done ? "bg-primary/15 text-primary" : "",
+                  !active && !done ? "bg-muted text-muted-foreground" : "",
+                )}
+              >
+                {done ? <Check className="size-4" /> : index + 1}
+              </span>
+              <span className="min-w-0">
+                <span className={cn("block text-sm font-semibold", active ? "text-primary" : "")}>{stage.title}</span>
+                <span className="block text-xs text-muted-foreground">{stage.description}</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function CreationPathPanel() {
+  const paths = [
+    {
+      title: "从专业模板创建",
+      description: "按职责模板带出默认角色、能力建议和治理策略。",
+      icon: Sparkles,
+      active: true,
+      badge: "推荐",
+    },
+    {
+      title: "从团队角色复制",
+      description: "复用团队内已验证的角色画像和能力边界。",
+      icon: ClipboardCheck,
+      active: false,
+      badge: "可用",
+    },
+    {
+      title: "从历史员工克隆",
+      description: "基于已有员工配置生成新草稿，保留审计来源。",
+      icon: GitBranch,
+      active: false,
+      badge: "可用",
+    },
+    {
+      title: "空白自定义",
+      description: "从空白身份开始逐项配置职责、能力和运行绑定。",
+      icon: FileText,
+      active: false,
+      badge: "高级",
+    },
+  ];
+
+  return (
+    <aside className="rounded-md border bg-card/95 p-3 shadow-xs">
+      <div className="mb-3 flex items-center gap-2 px-1">
+        <SemanticIconTile tone="primary" size="sm">
+          <Sparkles />
+        </SemanticIconTile>
+        <div>
+          <h2 className="text-base font-semibold">创建路径</h2>
+          <p className="text-xs text-muted-foreground">先选入口，再进入配置。</p>
+        </div>
+      </div>
+      <div className="grid gap-2">
+        {paths.map((path) => {
+          const Icon = path.icon;
+          return (
+            <button
+              aria-pressed={path.active}
+              className={cn(
+                "rounded-md border p-3 text-left transition",
+                path.active
+                  ? "border-primary/40 bg-primary/10 text-foreground shadow-xs"
+                  : "border-border/70 bg-background/80 text-muted-foreground hover:border-primary/30 hover:bg-primary/5",
+              )}
+              key={path.title}
+              type="button"
+            >
+              <span className="flex items-start gap-2">
+                <span
+                  className={cn(
+                    "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border",
+                    path.active ? "border-primary/30 bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  <Icon className="size-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{path.title}</span>
+                    <Badge variant={path.active ? "default" : "secondary"}>{path.badge}</Badge>
+                  </span>
+                  <span className="mt-1 block text-xs leading-5">{path.description}</span>
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-3 rounded-md border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+        创建后进入 ready，不会自动执行任务；项目或任务调度可手动发起。
+      </div>
+    </aside>
+  );
+}
+
+function TemplateSelectionPanel({
+  draft,
+  options,
+  selectedType,
+  onSelectType,
+}: {
+  draft: WizardDraft;
+  options?: DigitalEmployeeCreateOptions;
+  selectedType?: DigitalEmployeeTypeOption;
+  onSelectType: (value: string) => void;
+}) {
+  const employeeTypes = orderedEmployeeTypes(options?.employee_types ?? []);
+
+  return (
+    <section className="@container/template min-w-0 rounded-md border bg-card/95 p-4 shadow-xs">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-base font-semibold">选择专业类型</h2>
+          <p className="mt-1 text-sm text-muted-foreground">选择最贴合业务场景的专业类型，系统将提供推荐配置。</p>
+        </div>
+        <Badge variant="secondary">全部模板 ({employeeTypes.length})</Badge>
+      </div>
+      {employeeTypes.length === 0 ? (
+        <div className="flex min-h-[420px] items-center justify-center rounded-md border bg-muted/30 p-6 text-sm text-muted-foreground">
+          当前团队治理配置未返回可用专业模板。
+        </div>
+      ) : (
+        <div className="grid gap-3 @[640px]/template:grid-cols-2 @[980px]/template:grid-cols-3">
+          {employeeTypes.map((typeOption) => (
+            <TemplateCard
+              key={typeOption.type}
+              selected={typeOption.type === draft.employee_type}
+              typeOption={typeOption}
+              onSelect={() => onSelectType(typeOption.type)}
+            />
+          ))}
+        </div>
+      )}
+      <div className="mt-3 text-sm text-muted-foreground">
+        没有合适的模板？
+        <button className="ml-2 font-medium text-primary hover:underline" type="button">
+          选择空白自定义
+        </button>
+      </div>
+      {selectedType ? <span className="sr-only">当前选择：{selectedType.label}</span> : null}
+    </section>
+  );
+}
+
+function TemplateCard({
+  selected,
+  typeOption,
+  onSelect,
+}: {
+  selected: boolean;
+  typeOption: DigitalEmployeeTypeOption;
+  onSelect: () => void;
+}) {
+  const risk = String(typeOption.default_approval_policy?.min_risk_for_human ?? "medium");
+  const providerLabel = typeOption.recommended_provider_types?.join(" / ") || "按团队策略";
+
+  return (
+    <button
+      aria-pressed={selected}
+      className={cn(
+        "flex h-full min-h-[214px] flex-col rounded-md border p-3 text-left transition sm:p-4",
+        selected ? "border-primary/70 bg-primary/5 shadow-xs ring-1 ring-primary/20" : "bg-background hover:border-primary/40",
+      )}
+      onClick={onSelect}
+      type="button"
+    >
+      <span className="flex items-start justify-between gap-3">
+        <span className="flex items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <Code2 className="size-5" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-base font-semibold">{typeOption.label}</span>
+            <span className="mt-1 line-clamp-2 block text-sm leading-6 text-muted-foreground">{typeOption.description}</span>
+          </span>
+        </span>
+        {selected ? (
+          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <Check className="size-3.5" />
+          </span>
+        ) : null}
+      </span>
+      <span className="mt-4 flex min-w-0 items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs">
+        <span className="text-muted-foreground">默认角色</span>
+        <span className="truncate font-medium text-foreground">{typeOption.default_role || typeOption.type}</span>
+      </span>
+      <span className="mt-auto grid grid-cols-2 gap-x-3 gap-y-2 border-t pt-3 text-xs @[640px]/template:grid-cols-4 @[980px]/template:grid-cols-2">
+        <MetricPill label="技能" value={String(typeOption.recommended_skills?.length ?? 0)} />
+        <MetricPill label="MCP" value={String(typeOption.recommended_mcp_servers?.length ?? 0)} />
+        <MetricPill label="风险" value={risk} tone={risk === "high" || risk === "critical" ? "warning" : "success"} />
+        <MetricPill label="Provider" value={providerLabel} />
+      </span>
+    </button>
+  );
+}
+
+function MetricPill({ label, tone, value }: { label: string; tone?: "success" | "warning"; value: string }) {
+  return (
+    <span className="min-w-0">
+      <span className="block text-muted-foreground">{label}</span>
+      <span
+        className={cn(
+          "mt-1 block truncate font-semibold text-foreground",
+          tone === "success" ? "text-emerald-700 dark:text-emerald-300" : "",
+          tone === "warning" ? "text-amber-700 dark:text-amber-300" : "",
+        )}
+      >
+        {value}
+      </span>
+    </span>
+  );
+}
+
+function CreationReadinessPanel({
+  draft,
+  options,
+  selectedTeamName,
+  selectedType,
+  onEnterConfiguration,
+}: {
+  draft: WizardDraft;
+  options?: DigitalEmployeeCreateOptions;
+  selectedTeamName?: string;
+  selectedType?: DigitalEmployeeTypeOption;
+  onEnterConfiguration: () => void;
+}) {
+  return (
+    <aside className="grid content-start gap-4">
+      <CheckListPanel options={options} />
+      <section className="rounded-md border bg-card/95 p-4 shadow-xs">
+        <h2 className="text-base font-semibold">即将创建</h2>
+        <p className="mt-1 text-xs text-muted-foreground">确认以下信息后进入详细配置。</p>
+        <div className="mt-4 grid gap-2 text-sm">
+          <InlineSummary label="归属团队" value={selectedTeamName || "未选择"} />
+          <InlineSummary label="Owner" value="当前用户" />
+          <InlineSummary label="专业类型" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
+          <InlineSummary label="默认角色" value={draft.role || selectedType?.default_role || "未生成"} />
+          <InlineSummary label="推荐 Provider" value={selectedType?.recommended_provider_types?.join(" / ") || "按团队策略"} />
+          <InlineSummary label="风险等级" value={draft.risk_level || "medium"} />
+        </div>
+        <Button className="mt-4 w-full" disabled={!draft.employee_type} onClick={onEnterConfiguration} type="button">
+          确认并进入配置
+          <ChevronRight data-icon="inline-end" />
+        </Button>
+      </section>
+    </aside>
+  );
+}
+
+function CheckListPanel({ options }: { options?: DigitalEmployeeCreateOptions }) {
+  const checks = options?.creation_checks ?? [];
+
+  return (
+    <section className="rounded-md border bg-card/95 p-4 shadow-xs">
+      <h2 className="text-base font-semibold">创建预检</h2>
+      <p className="mt-1 text-xs text-muted-foreground">检查治理策略与运行条件。</p>
+      <div className="mt-4 grid gap-2">
+        {checks.length === 0 ? (
+          <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">等待创建候选加载。</p>
+        ) : (
+          checks.map((check) => (
+            <div className="flex items-center gap-3 rounded-md border bg-background p-3" key={check.key}>
+              <span className={cn("size-2 rounded-full", checkDotClassName(check.status))} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">{check.label}</span>
+                <span className="block truncate text-xs text-muted-foreground">{check.message}</span>
+              </span>
+              <Badge variant={check.status === "blocked" ? "destructive" : "secondary"}>{checkStatusLabel(check.status)}</Badge>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function InlineSummary({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="max-w-[180px] truncate font-medium">{value}</span>
+    </div>
+  );
+}
+
+function CreationFactsBand() {
+  const facts = [
+    {
+      title: "创建后进入 ready，不会自动执行任务",
+      description: "可被任务、项目或流程调度调用",
+      icon: Check,
+    },
+    {
+      title: "后续由任务或项目调度",
+      description: "支持手动发起或规则自动驱动执行",
+      icon: ClipboardCheck,
+    },
+    {
+      title: "所有选择写入审计",
+      description: "便于追溯开启角色审查",
+      icon: ShieldCheck,
+    },
+  ];
+
+  return (
+    <section className="mt-4 grid gap-3 rounded-md border bg-primary/5 p-4 md:grid-cols-3">
+      {facts.map((fact) => {
+        const Icon = fact.icon;
+        return (
+          <div className="flex items-center gap-3" key={fact.title}>
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-background text-primary">
+              <Icon className="size-5" />
+            </span>
+            <span>
+              <span className="block text-sm font-semibold">{fact.title}</span>
+              <span className="mt-1 block text-xs text-muted-foreground">{fact.description}</span>
+            </span>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function BlueprintSidebar({
+  draft,
+  options,
+  selectedType,
+  onSelectType,
+}: {
+  draft: WizardDraft;
+  options?: DigitalEmployeeCreateOptions;
+  selectedType?: DigitalEmployeeTypeOption;
+  onSelectType: (value: string) => void;
+}) {
+  const employeeTypes = orderedEmployeeTypes(options?.employee_types ?? []);
+
+  return (
+    <aside className="rounded-md border bg-card/95 p-3 shadow-xs">
+      <h2 className="px-1 text-base font-semibold">推荐起步画像</h2>
+      <p className="mt-1 px-1 text-xs text-muted-foreground">切换画像会同步默认角色与能力建议。</p>
+      <div className="mt-3 grid gap-2">
+        {employeeTypes.map((typeOption) => (
+          <button
+            aria-pressed={typeOption.type === draft.employee_type}
+            className={cn(
+              "rounded-md border p-3 text-left transition",
+              typeOption.type === draft.employee_type ? "border-primary/60 bg-primary/10" : "bg-background hover:border-primary/40",
+            )}
+            key={typeOption.type}
+            onClick={() => onSelectType(typeOption.type)}
+            type="button"
+          >
+            <span className="flex items-center justify-between gap-2">
+              <span className="font-medium">{typeOption.label}</span>
+              {typeOption.type === selectedType?.type ? <Check className="size-4 text-primary" /> : null}
+            </span>
+            <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{typeOption.description}</span>
+          </button>
+        ))}
+        <button className="rounded-md border border-dashed bg-background p-3 text-sm text-muted-foreground" type="button">
+          <Plus className="mr-2 inline size-4" />
+          从空白开始自定义
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function StepTabs({ currentStep }: { currentStep: StepName }) {
   const currentIndex = steps.indexOf(currentStep);
 
   return (
-    <div className="rounded-md border bg-muted/30 p-3">
-      <div className="flex flex-col gap-2">
+    <div className="flex flex-wrap gap-2 rounded-md border bg-muted/30 p-1">
         {steps.map((step, index) => {
           const active = step === currentStep;
           const done = index < currentIndex;
@@ -417,7 +918,7 @@ function StepRail({ currentStep }: { currentStep: StepName }) {
           return (
             <div
               className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground",
+                "flex h-8 items-center gap-2 rounded-md px-2 text-xs text-muted-foreground",
                 active ? "bg-background font-medium text-foreground shadow-xs" : "",
                 done ? "text-foreground" : "",
               )}
@@ -436,8 +937,157 @@ function StepRail({ currentStep }: { currentStep: StepName }) {
             </div>
           );
         })}
-      </div>
     </div>
+  );
+}
+
+function TemplateOverview({
+  draft,
+  options,
+  selectedType,
+  onSelectType,
+}: {
+  draft: WizardDraft;
+  options?: DigitalEmployeeCreateOptions;
+  selectedType?: DigitalEmployeeTypeOption;
+  onSelectType: (value: string) => void;
+}) {
+  const employeeTypes = orderedEmployeeTypes(options?.employee_types ?? []);
+  if (employeeTypes.length === 0) {
+    return (
+      <section className="rounded-md border bg-muted/30 p-4">
+        <h2 className="text-base font-semibold">专业模板</h2>
+        <p className="mt-1 text-sm text-muted-foreground">当前团队治理配置未返回可用专业模板。</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-md border bg-background p-4">
+      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-base font-semibold">专业模板</h2>
+          <p className="text-sm text-muted-foreground">模板只提供默认值和推荐能力，最终提交仍由控制平面校验。</p>
+        </div>
+        <Badge variant="secondary">{(selectedType?.label ?? draft.employee_type) || "未选择"}</Badge>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {employeeTypes.map((typeOption) => {
+          const selected = typeOption.type === draft.employee_type;
+          return (
+            <button
+              aria-pressed={selected}
+              className={cn(
+                "rounded-md border p-3 text-left transition",
+                selected ? "border-primary/50 bg-primary/10 shadow-xs" : "bg-card hover:border-primary/40",
+              )}
+              key={typeOption.type}
+              onClick={() => onSelectType(typeOption.type)}
+              type="button"
+            >
+              <span className="flex items-start justify-between gap-3">
+                <span>
+                  <span className="block text-sm font-semibold">{typeOption.label}</span>
+                  <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">
+                    {typeOption.description}
+                  </span>
+                </span>
+                {selected ? <Check className="size-4 shrink-0 text-primary" /> : null}
+              </span>
+              <span className="mt-3 flex flex-wrap gap-1.5">
+                <Badge variant="secondary">技能 {typeOption.recommended_skills?.length ?? 0}</Badge>
+                <Badge variant="secondary">MCP {typeOption.recommended_mcp_servers?.length ?? 0}</Badge>
+                <Badge variant="secondary">Provider {(typeOption.recommended_provider_types ?? []).join(", ") || "按团队"}</Badge>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function CreationPreflightPanel({
+  draft,
+  options,
+  selectedType,
+}: {
+  draft: WizardDraft;
+  options?: DigitalEmployeeCreateOptions;
+  selectedType?: DigitalEmployeeTypeOption;
+}) {
+  const checks = options?.creation_checks ?? [];
+  const runtimeOptions = options?.runtime_provider_options ?? [];
+  const availableRuntimeCount = runtimeOptions.filter((option) => option.available).length;
+
+  return (
+    <aside className="grid content-start gap-4">
+      <section className="rounded-md border bg-card/95 p-4 shadow-xs">
+        <div className="mb-3 flex items-center gap-2">
+          <SemanticIconTile tone="success" size="sm">
+            <ShieldCheck />
+          </SemanticIconTile>
+          <div>
+            <h2 className="text-base font-semibold">创建预检</h2>
+            <p className="text-xs text-muted-foreground">来自 Control Plane 创建候选接口。</p>
+          </div>
+        </div>
+        <div className="grid gap-2">
+          {checks.length === 0 ? (
+            <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">等待创建候选加载。</p>
+          ) : (
+            checks.map((check) => (
+              <div className="flex items-start gap-2 rounded-md border bg-background p-3" key={check.key}>
+                <span className={cn("mt-1 size-2 rounded-full", checkDotClassName(check.status))} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{check.label}</span>
+                    <Badge variant={check.status === "blocked" ? "destructive" : "secondary"}>
+                      {checkStatusLabel(check.status)}
+                    </Badge>
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">{check.message}</span>
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-md border bg-card/95 p-4 shadow-xs">
+        <div className="mb-3 flex items-center gap-2">
+          <SemanticIconTile tone="artifact" size="sm">
+            <Gauge />
+          </SemanticIconTile>
+          <div>
+            <h2 className="text-base font-semibold">画像摘要</h2>
+            <p className="text-xs text-muted-foreground">随配置实时更新。</p>
+          </div>
+        </div>
+        <div className="grid gap-3 text-sm">
+          <SummaryItem label="专业类型" value={(selectedType?.label ?? draft.employee_type) || "未选择"} />
+          <SummaryItem label="角色" value={draft.role || "未填写"} />
+          <SummaryItem label="风险等级" value={draft.risk_level || "medium"} />
+          <SummaryItem
+            label="能力选择"
+            value={`技能 ${draft.capability_selection.enabled_skills.length} · MCP ${draft.capability_selection.enabled_mcp_servers.length} · 外部 ${draft.capability_selection.enabled_external_capabilities.length}`}
+          />
+          <SummaryItem label="Runtime" value={draft.runtime_binding || `${availableRuntimeCount}/${runtimeOptions.length} 可用`} />
+        </div>
+      </section>
+
+      <section className="rounded-md border bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">
+        <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
+          <Cpu className="size-4 text-primary" />
+          创建后事实
+        </div>
+        <div className="grid gap-2">
+          <div>1. 写入身份与初始配置修订</div>
+          <div>2. 绑定 Runtime 执行实例</div>
+          <div>3. 进入 ready，等待任务调度</div>
+        </div>
+      </section>
+    </aside>
   );
 }
 
@@ -848,6 +1498,34 @@ const labelId: Record<string, string> = {
 const selectClassName =
   "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
 
+const preferredEmployeeTypeOrder = [
+  "frontend_engineer",
+  "backend_engineer",
+  "database_admin",
+  "devops_engineer",
+  "fullstack_engineer",
+  "implementation_engineer",
+  "general_engineer",
+];
+
+function firstPreferredEmployeeType(employeeTypes: DigitalEmployeeTypeOption[]) {
+  return orderedEmployeeTypes(employeeTypes)[0];
+}
+
+function orderedEmployeeTypes(employeeTypes: DigitalEmployeeTypeOption[]) {
+  return [...employeeTypes].sort((left, right) => {
+    const leftIndex = preferredEmployeeTypeOrder.indexOf(left.type);
+    const rightIndex = preferredEmployeeTypeOrder.indexOf(right.type);
+    const normalizedLeft = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
+    const normalizedRight = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
+
+    if (normalizedLeft !== normalizedRight) {
+      return normalizedLeft - normalizedRight;
+    }
+    return employeeTypes.indexOf(left) - employeeTypes.indexOf(right);
+  });
+}
+
 function applyTypeDefaults(current: WizardDraft, typeOption: DigitalEmployeeTypeOption): WizardDraft {
   const defaultCapabilitySelection = typeOption.default_capability_selection ?? {};
 
@@ -912,6 +1590,18 @@ function stringList(value: unknown) {
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value : "";
+}
+
+function checkDotClassName(status: string) {
+  if (status === "passed") return "bg-[color:var(--superteam-success)]";
+  if (status === "warning") return "bg-[color:var(--superteam-warning)]";
+  return "bg-destructive";
+}
+
+function checkStatusLabel(status: string) {
+  if (status === "passed") return "通过";
+  if (status === "warning") return "提醒";
+  return "阻断";
 }
 
 function getErrorMessage(error: unknown) {

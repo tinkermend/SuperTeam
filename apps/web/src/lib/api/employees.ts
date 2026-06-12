@@ -89,6 +89,13 @@ export type DigitalEmployeeRuntimeProviderOption = {
   disabled_reason?: string;
 };
 
+export type DigitalEmployeeCreateOptionCheck = {
+  key: string;
+  label: string;
+  status: "passed" | "warning" | "blocked";
+  message: string;
+};
+
 export type DigitalEmployeePolicyDefaults = {
   permission_policy: Record<string, unknown>;
   context_policy_override: Record<string, unknown>;
@@ -122,6 +129,7 @@ export type DigitalEmployeeCreateOptions = {
   employee_types: DigitalEmployeeTypeOption[];
   capability_options: DigitalEmployeeCapabilityOptions;
   runtime_provider_options: DigitalEmployeeRuntimeProviderOption[];
+  creation_checks: DigitalEmployeeCreateOptionCheck[];
   policy_defaults: DigitalEmployeePolicyDefaults;
 };
 

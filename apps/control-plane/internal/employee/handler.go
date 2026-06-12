@@ -733,7 +733,15 @@ type createOptionsResponse struct {
 	EmployeeTypes          []employeeTypeOptionResponse    `json:"employee_types"`
 	CapabilityOptions      capabilityOptionsResponse       `json:"capability_options"`
 	RuntimeProviderOptions []runtimeProviderOptionResponse `json:"runtime_provider_options"`
+	CreationChecks         []createOptionCheckResponse     `json:"creation_checks"`
 	PolicyDefaults         policyDefaultsResponse          `json:"policy_defaults"`
+}
+
+type createOptionCheckResponse struct {
+	Key     string `json:"key"`
+	Label   string `json:"label"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
 }
 
 type teamConfigCreateOptionResponse struct {
@@ -1135,6 +1143,19 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 			Metadata:                     cloneMap(definition.Metadata),
 		})
 	}
+	domainChecks := options.CreationChecks
+	if len(domainChecks) == 0 {
+		domainChecks = createOptionChecks(options.TeamConfig, options.EmployeeTypes, options.CapabilityOptions, options.RuntimeProviderOptions)
+	}
+	creationChecks := make([]createOptionCheckResponse, 0, len(domainChecks))
+	for _, check := range domainChecks {
+		creationChecks = append(creationChecks, createOptionCheckResponse{
+			Key:     check.Key,
+			Label:   check.Label,
+			Status:  check.Status,
+			Message: check.Message,
+		})
+	}
 	return createOptionsResponse{
 		TeamConfig: teamConfigCreateOptionResponse{
 			ID:                          options.TeamConfig.ID.String(),
@@ -1162,6 +1183,7 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 			ExternalCapabilities: stringSliceForJSON(options.CapabilityOptions.ExternalCapabilities),
 		},
 		RuntimeProviderOptions: runtimeOptions,
+		CreationChecks:         creationChecks,
 		PolicyDefaults: policyDefaultsResponse{
 			PermissionPolicy:      cloneMap(options.PolicyDefaults.PermissionPolicy),
 			ContextPolicyOverride: cloneMap(options.PolicyDefaults.ContextPolicyOverride),

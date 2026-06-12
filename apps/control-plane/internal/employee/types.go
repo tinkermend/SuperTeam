@@ -180,6 +180,13 @@ type RuntimeProviderOption struct {
 	DisabledReason        string
 }
 
+type CreateOptionCheck struct {
+	Key     string
+	Label   string
+	Status  string
+	Message string
+}
+
 type PolicyDefaults struct {
 	PermissionPolicy      map[string]any
 	ContextPolicyOverride map[string]any
@@ -300,6 +307,7 @@ type CreateOptions struct {
 	EmployeeTypes          []EmployeeTypeDefinition
 	CapabilityOptions      CapabilityOptions
 	RuntimeProviderOptions []RuntimeProviderOption
+	CreationChecks         []CreateOptionCheck
 	PolicyDefaults         PolicyDefaults
 }
 

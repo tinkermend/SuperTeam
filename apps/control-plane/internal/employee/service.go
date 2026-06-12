@@ -104,14 +104,74 @@ func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest
 	if err != nil {
 		return nil, fmt.Errorf("list runtime provider options: %w", err)
 	}
+	capabilityOptions := capabilityOptionsFromTeamConfig(teamConfig)
 
 	return &CreateOptions{
 		TeamConfig:             teamConfigOption,
 		EmployeeTypes:          employeeTypes,
-		CapabilityOptions:      capabilityOptionsFromTeamConfig(teamConfig),
+		CapabilityOptions:      capabilityOptions,
 		RuntimeProviderOptions: append([]RuntimeProviderOption(nil), runtimeOptions...),
-		PolicyDefaults:         emptyPolicyDefaults(),
+		CreationChecks: createOptionChecks(
+			teamConfigOption,
+			employeeTypes,
+			capabilityOptions,
+			runtimeOptions,
+		),
+		PolicyDefaults: emptyPolicyDefaults(),
 	}, nil
+}
+
+func createOptionChecks(
+	teamConfig TeamConfigCreateOption,
+	employeeTypes []EmployeeTypeDefinition,
+	capabilityOptions CapabilityOptions,
+	runtimeOptions []RuntimeProviderOption,
+) []CreateOptionCheck {
+	availableRuntimeCount := 0
+	for _, option := range runtimeOptions {
+		if option.Available {
+			availableRuntimeCount++
+		}
+	}
+
+	capabilityCount := len(capabilityOptions.Skills) + len(capabilityOptions.MCPServers) + len(capabilityOptions.ExternalCapabilities)
+
+	return []CreateOptionCheck{
+		{
+			Key:     "team_governance",
+			Label:   "团队治理版本",
+			Status:  checkStatus(teamConfig.Status == TeamConfigRevisionStatusActive, false),
+			Message: fmt.Sprintf("#%d %s", teamConfig.RevisionNumber, teamConfig.Status),
+		},
+		{
+			Key:     "employee_templates",
+			Label:   "专业模板",
+			Status:  checkStatus(len(employeeTypes) > 0, false),
+			Message: fmt.Sprintf("%d 个可用模板", len(employeeTypes)),
+		},
+		{
+			Key:     "capability_policy",
+			Label:   "能力边界",
+			Status:  checkStatus(capabilityCount > 0 || len(capabilityOptions.ProviderTypes) > 0, false),
+			Message: fmt.Sprintf("技能 %d · MCP %d · 外部能力 %d", len(capabilityOptions.Skills), len(capabilityOptions.MCPServers), len(capabilityOptions.ExternalCapabilities)),
+		},
+		{
+			Key:     "runtime_provider",
+			Label:   "Runtime 可用",
+			Status:  checkStatus(availableRuntimeCount > 0, false),
+			Message: fmt.Sprintf("%d/%d 个运行绑定可用", availableRuntimeCount, len(runtimeOptions)),
+		},
+	}
+}
+
+func checkStatus(passed bool, warning bool) string {
+	if passed {
+		return "passed"
+	}
+	if warning {
+		return "warning"
+	}
+	return "blocked"
 }
 
 func teamConfigCreateOption(teamConfig TeamConfigInput) (TeamConfigCreateOption, error) {

@@ -5914,6 +5914,7 @@ components:
         - employee_types
         - capability_options
         - runtime_provider_options
+        - creation_checks
         - policy_defaults
       properties:
         team_config:
@@ -5928,8 +5929,29 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DigitalEmployeeRuntimeProviderOption"
+        creation_checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DigitalEmployeeCreateOptionCheck"
         policy_defaults:
           $ref: "#/components/schemas/DigitalEmployeePolicyDefaults"
+    DigitalEmployeeCreateOptionCheck:
+      type: object
+      required:
+        - key
+        - label
+        - status
+        - message
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum: [passed, warning, blocked]
+        message:
+          type: string
     DigitalEmployeeCreateTeamConfig:
       type: object
       required:

@@ -306,6 +306,20 @@ describe("digital employee API", () => {
           available: true,
         },
       ],
+      creation_checks: [
+        {
+          key: "team_governance",
+          label: "团队治理版本",
+          status: "passed",
+          message: "#3 approved",
+        },
+        {
+          key: "runtime_provider",
+          label: "Runtime 可用",
+          status: "passed",
+          message: "1 个可用运行绑定",
+        },
+      ],
       policy_defaults: {
         permission_policy: { mode: "least_privilege" },
         context_policy_override: { max_refs: 8 },
@@ -343,6 +357,7 @@ describe("digital employee API", () => {
         method: "GET",
       },
     );
+    expect(createOptions.creation_checks[0].key).toBe("team_governance");
   });
 
   it("creates digital employee with ready creation body and cookie credentials", async () => {

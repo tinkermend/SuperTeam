@@ -189,6 +189,27 @@ func (e DigitalEmployeeConfigRevisionStatus) Valid() bool {
 	}
 }
 
+// Defines values for DigitalEmployeeCreateOptionCheckStatus.
+const (
+	DigitalEmployeeCreateOptionCheckStatusBlocked DigitalEmployeeCreateOptionCheckStatus = "blocked"
+	DigitalEmployeeCreateOptionCheckStatusPassed  DigitalEmployeeCreateOptionCheckStatus = "passed"
+	DigitalEmployeeCreateOptionCheckStatusWarning DigitalEmployeeCreateOptionCheckStatus = "warning"
+)
+
+// Valid indicates whether the value is a known member of the DigitalEmployeeCreateOptionCheckStatus enum.
+func (e DigitalEmployeeCreateOptionCheckStatus) Valid() bool {
+	switch e {
+	case DigitalEmployeeCreateOptionCheckStatusBlocked:
+		return true
+	case DigitalEmployeeCreateOptionCheckStatusPassed:
+		return true
+	case DigitalEmployeeCreateOptionCheckStatusWarning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DigitalEmployeeEffectiveConfigStatus.
 const (
 	DigitalEmployeeEffectiveConfigStatusApproved        DigitalEmployeeEffectiveConfigStatus = "approved"
@@ -371,19 +392,19 @@ func (e DigitalEmployeeStatus) Valid() bool {
 
 // Defines values for DigitalEmployeeWorkbenchStatus.
 const (
-	DigitalEmployeeWorkbenchStatusError          DigitalEmployeeWorkbenchStatus = "error"
-	DigitalEmployeeWorkbenchStatusPendingBinding DigitalEmployeeWorkbenchStatus = "pending_binding"
-	DigitalEmployeeWorkbenchStatusReady          DigitalEmployeeWorkbenchStatus = "ready"
+	Error          DigitalEmployeeWorkbenchStatus = "error"
+	PendingBinding DigitalEmployeeWorkbenchStatus = "pending_binding"
+	Ready          DigitalEmployeeWorkbenchStatus = "ready"
 )
 
 // Valid indicates whether the value is a known member of the DigitalEmployeeWorkbenchStatus enum.
 func (e DigitalEmployeeWorkbenchStatus) Valid() bool {
 	switch e {
-	case DigitalEmployeeWorkbenchStatusError:
+	case Error:
 		return true
-	case DigitalEmployeeWorkbenchStatusPendingBinding:
+	case PendingBinding:
 		return true
-	case DigitalEmployeeWorkbenchStatusReady:
+	case Ready:
 		return true
 	default:
 		return false
@@ -1507,9 +1528,21 @@ type DigitalEmployeeConfigRevision struct {
 // DigitalEmployeeConfigRevisionStatus defines model for DigitalEmployeeConfigRevision.Status.
 type DigitalEmployeeConfigRevisionStatus string
 
+// DigitalEmployeeCreateOptionCheck defines model for DigitalEmployeeCreateOptionCheck.
+type DigitalEmployeeCreateOptionCheck struct {
+	Key     string                                 `json:"key"`
+	Label   string                                 `json:"label"`
+	Message string                                 `json:"message"`
+	Status  DigitalEmployeeCreateOptionCheckStatus `json:"status"`
+}
+
+// DigitalEmployeeCreateOptionCheckStatus defines model for DigitalEmployeeCreateOptionCheck.Status.
+type DigitalEmployeeCreateOptionCheckStatus string
+
 // DigitalEmployeeCreateOptions defines model for DigitalEmployeeCreateOptions.
 type DigitalEmployeeCreateOptions struct {
 	CapabilityOptions      DigitalEmployeeCapabilityOptions       `json:"capability_options"`
+	CreationChecks         []DigitalEmployeeCreateOptionCheck     `json:"creation_checks"`
 	EmployeeTypes          []DigitalEmployeeTypeOption            `json:"employee_types"`
 	PolicyDefaults         DigitalEmployeePolicyDefaults          `json:"policy_defaults"`
 	RuntimeProviderOptions []DigitalEmployeeRuntimeProviderOption `json:"runtime_provider_options"`

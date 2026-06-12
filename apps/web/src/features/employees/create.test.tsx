@@ -167,6 +167,26 @@ function createOptionsFixture({
       external_capabilities: ["jira.search"],
     },
     runtime_provider_options: runtimeProviderOptions,
+    creation_checks: [
+      {
+        key: "team_governance",
+        label: "团队治理版本",
+        status: "passed",
+        message: "#3 approved",
+      },
+      {
+        key: "employee_templates",
+        label: "专业模板",
+        status: "passed",
+        message: "1 个可用模板",
+      },
+      {
+        key: "runtime_provider",
+        label: "Runtime 可用",
+        status: "passed",
+        message: "1 个可用运行绑定",
+      },
+    ],
     policy_defaults: {
       permission_policy: { mode: "least_privilege" },
       context_policy_override: { max_refs: 6 },
@@ -288,12 +308,32 @@ async function renderCreateEmployeeView(fetcher = createWizardFetcher()) {
   );
 }
 
+async function enterConfiguration(screen: Awaited<ReturnType<typeof renderCreateEmployeeView>>) {
+  await expect.element(screen.getByRole("heading", { name: "选择专业类型" })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: /确认并进入配置/ }));
+  await expect.element(screen.getByRole("heading", { name: "员工画像蓝图" })).toBeVisible();
+}
+
 describe("CreateEmployeeView", () => {
+  it("shows a command-center creation entry with server-side preflight checks", async () => {
+    const screen = await renderCreateEmployeeView();
+
+    await expect.element(screen.getByRole("heading", { name: "创建数字员工" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "创建路径" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "选择专业类型" })).toBeVisible();
+    await expect.element(screen.getByText("从专业模板创建")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "创建预检" })).toBeVisible();
+    await expect.element(screen.getByText("团队治理版本")).toBeVisible();
+    await expect.element(screen.getByText("Runtime 可用")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "即将创建" })).toBeVisible();
+  });
+
   it("creates a ready digital employee through the four-step wizard", async () => {
     const fetcher = createWizardFetcher();
     const screen = await renderCreateEmployeeView(fetcher);
 
     await expect.element(screen.getByRole("heading", { name: "创建数字员工" })).toBeVisible();
+    await enterConfiguration(screen);
     await expect.element(screen.getByLabelText("归属团队")).toHaveValue(team.id);
     await expect.element(screen.getByLabelText("员工类型")).toHaveValue("database_admin");
     await expect.element(screen.getByLabelText("角色")).toHaveValue("database_admin");
@@ -319,6 +359,7 @@ describe("CreateEmployeeView", () => {
     const fetcher = createWizardFetcher();
     const screen = await renderCreateEmployeeView(fetcher);
 
+    await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -338,6 +379,7 @@ describe("CreateEmployeeView", () => {
     const fetcher = createWizardFetcher();
     const screen = await renderCreateEmployeeView(fetcher);
 
+    await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -355,6 +397,7 @@ describe("CreateEmployeeView", () => {
     const fetcher = createWizardFetcher();
     const screen = await renderCreateEmployeeView(fetcher);
 
+    await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -371,6 +414,7 @@ describe("CreateEmployeeView", () => {
   it("blocks the next step until identity fields are valid", async () => {
     const screen = await renderCreateEmployeeView();
 
+    await enterConfiguration(screen);
     await expect.element(screen.getByRole("heading", { name: "身份" })).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
 
@@ -382,12 +426,14 @@ describe("CreateEmployeeView", () => {
   it("keeps avatar choices compact in the identity step", async () => {
     const screen = await renderCreateEmployeeView();
 
+    await enterConfiguration(screen);
     await expect.element(screen.getByRole("button", { name: "工程师头像 M01" })).toHaveClass("size-20");
   });
 
   it("requires explicit runtime selection when multiple runtimes are available", async () => {
     const screen = await renderCreateEmployeeView(createWizardFetcher({ runtimeCount: 2 }));
 
+    await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
@@ -408,6 +454,7 @@ describe("CreateEmployeeView", () => {
     });
     const screen = await renderCreateEmployeeView(fetcher);
 
+    await enterConfiguration(screen);
     await userEvent.fill(screen.getByLabelText("名称"), "数据库管理员工");
     await userEvent.fill(screen.getByLabelText("描述"), "负责生产数据库变更和恢复验证");
     await userEvent.click(screen.getByRole("button", { name: "下一步" }));
