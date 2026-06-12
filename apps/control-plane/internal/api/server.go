@@ -119,6 +119,9 @@ func (s *Server) SetEmployeeHandler(employeeHandler *employee.HTTPHandler) {
 
 func (s *Server) SetInboxHandler(inboxHandler *inbox.HTTPHandler) {
 	s.inboxHandler = inboxHandler
+	if inboxHandler != nil {
+		inboxHandler.SetAuthorizer(s.authorizer)
+	}
 	s.registerRoutes()
 }
 

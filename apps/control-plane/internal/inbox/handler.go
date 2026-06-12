@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/authz"
 )
 
 type HandlerService interface {
@@ -20,11 +21,16 @@ type HandlerService interface {
 }
 
 type HTTPHandler struct {
-	service HandlerService
+	service    HandlerService
+	authorizer authz.Authorizer
 }
 
 func NewHandler(service HandlerService) *HTTPHandler {
 	return &HTTPHandler{service: service}
+}
+
+func (h *HTTPHandler) SetAuthorizer(authorizer authz.Authorizer) {
+	h.authorizer = authorizer
 }
 
 func (h *HTTPHandler) ListItems(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +45,18 @@ func (h *HTTPHandler) ListItems(w http.ResponseWriter, r *http.Request) {
 	req, ok := listItemsRequestFromQuery(w, r, tenantID, actorID)
 	if !ok {
 		return
+	}
+	if req.View == ViewTeam {
+		allowed, err := h.canReadTeamInbox(r.Context(), tenantID, actorID, "inbox team view read")
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+		if !allowed {
+			writeJSONError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		req.TeamViewAllowed = true
 	}
 	result, err := service.ListItems(r.Context(), req)
 	if err != nil {
@@ -57,9 +75,12 @@ func (h *HTTPHandler) GetBadge(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Team badge projection requires a future team-view authorizer. Until that is
-	// wired, keep the console badge scoped to the actor to avoid tenant-wide count leaks.
-	badge, err := service.GetBadge(r.Context(), tenantID, actorID, false)
+	includeTeam, err := h.canReadTeamInbox(r.Context(), tenantID, actorID, "inbox badge team count read")
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	badge, err := service.GetBadge(r.Context(), tenantID, actorID, includeTeam)
 	if err != nil {
 		writeHandlerError(w, err)
 		return
@@ -118,6 +139,29 @@ func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService,
 	return h.service, true
 }
 
+func (h *HTTPHandler) canReadTeamInbox(ctx context.Context, tenantID, actorID uuid.UUID, auditReason string) (bool, error) {
+	if h == nil || h.authorizer == nil {
+		return false, nil
+	}
+	decision, err := h.authorizer.Check(ctx, authz.CheckRequest{
+		Actor: authz.ActorRef{
+			Type: authz.ActorUser,
+			ID:   actorID.String(),
+		},
+		Action: authz.ActionTeamRead,
+		Resource: authz.ResourceRef{
+			Type: authz.ResourceTenant,
+			ID:   tenantID.String(),
+		},
+		TenantID:    tenantID,
+		AuditReason: auditReason,
+	})
+	if err != nil {
+		return false, err
+	}
+	return decision.Allowed, nil
+}
+
 func listItemsRequestFromQuery(w http.ResponseWriter, r *http.Request, tenantID, actorID uuid.UUID) (ListItemsRequest, bool) {
 	query := r.URL.Query()
 	req := ListItemsRequest{
@@ -126,8 +170,7 @@ func listItemsRequestFromQuery(w http.ResponseWriter, r *http.Request, tenantID,
 		View:        View(query.Get("view")),
 		Status:      Status(query.Get("status")),
 	}
-	// Team view authorization will be supplied by a future authorizer hook. Until
-	// then the service must reject team view and team-scoped projections by default.
+	// Team view stays disabled until ListItems authorizes the tenant-level team read.
 	req.TeamViewAllowed = false
 	if raw := query.Get("item_type"); raw != "" {
 		itemType := ItemType(raw)

@@ -3,6 +3,7 @@ package inbox
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/authz"
 )
 
 func TestHandlerListItemsUsesConsoleIdentity(t *testing.T) {
@@ -153,7 +155,7 @@ func TestHandlerBadgeUsesConsoleIdentity(t *testing.T) {
 func TestHandlerTeamListWithoutAuthorizerReturnsForbidden(t *testing.T) {
 	tenantID := uuid.New()
 	userID := uuid.New()
-	service := &handlerService{listErr: ErrViewForbidden}
+	service := &handlerService{}
 	handler := NewHandler(service)
 	req := withConsoleIdentity(httptest.NewRequest(http.MethodGet, "/inbox/items?view=team", nil), tenantID, userID)
 	resp := httptest.NewRecorder()
@@ -163,11 +165,104 @@ func TestHandlerTeamListWithoutAuthorizerReturnsForbidden(t *testing.T) {
 	if resp.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d: %s", resp.Code, resp.Body.String())
 	}
-	if service.listReq.TenantID != tenantID || service.listReq.ActorUserID != userID {
-		t.Fatalf("expected console identity, got tenant=%s user=%s", service.listReq.TenantID, service.listReq.ActorUserID)
+	if service.listCalled {
+		t.Fatalf("expected unauthorized team view to stop before service, got %#v", service.listReq)
 	}
-	if service.listReq.View != ViewTeam || service.listReq.TeamViewAllowed {
-		t.Fatalf("expected team view request without team authorization, got %#v", service.listReq)
+}
+
+func TestHandlerTeamListWithAuthorizerAllowedPassesTeamView(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	service := &handlerService{
+		listResult: ListItemsResult{Limit: 50, Offset: 0},
+	}
+	authorizer := &handlerAuthorizer{allowed: true}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(authorizer)
+	req := withConsoleIdentity(httptest.NewRequest(http.MethodGet, "/inbox/items?view=team", nil), tenantID, userID)
+	resp := httptest.NewRecorder()
+
+	handler.ListItems(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if !service.listCalled || service.listReq.View != ViewTeam || !service.listReq.TeamViewAllowed {
+		t.Fatalf("expected authorized team view to reach service, got called=%v req=%#v", service.listCalled, service.listReq)
+	}
+	if len(authorizer.checks) != 1 {
+		t.Fatalf("expected one authz check, got %d", len(authorizer.checks))
+	}
+	check := authorizer.checks[0]
+	if check.Actor.Type != authz.ActorUser || check.Actor.ID != userID.String() || check.Action != authz.ActionTeamRead || check.Resource.Type != authz.ResourceTenant || check.Resource.ID != tenantID.String() || check.TenantID != tenantID {
+		t.Fatalf("unexpected authz check: %#v", check)
+	}
+}
+
+func TestHandlerTeamListAuthorizerErrorReturnsInternalServerError(t *testing.T) {
+	service := &handlerService{}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(&handlerAuthorizer{err: errors.New("authz unavailable")})
+	req := withConsoleIdentity(httptest.NewRequest(http.MethodGet, "/inbox/items?view=team", nil), uuid.New(), uuid.New())
+	resp := httptest.NewRecorder()
+
+	handler.ListItems(resp, req)
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.listCalled {
+		t.Fatalf("expected authz error to stop before service, got %#v", service.listReq)
+	}
+}
+
+func TestHandlerBadgeWithAuthorizerAllowedIncludesTeamCount(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	service := &handlerService{
+		badge: Badge{MineOpenCount: 4, TeamOpenCount: 9, HighRiskCount: 2},
+	}
+	authorizer := &handlerAuthorizer{allowed: true}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(authorizer)
+	req := withConsoleIdentity(httptest.NewRequest(http.MethodGet, "/inbox/badge", nil), tenantID, userID)
+	resp := httptest.NewRecorder()
+
+	handler.GetBadge(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.badgeTenantID != tenantID || service.badgeActorUserID != userID || !service.badgeIncludeTeam {
+		t.Fatalf("expected badge to include authorized team count, got tenant=%s user=%s includeTeam=%v", service.badgeTenantID, service.badgeActorUserID, service.badgeIncludeTeam)
+	}
+	var body struct {
+		MineOpenCount int64 `json:"mine_open_count"`
+		TeamOpenCount int64 `json:"team_open_count"`
+		HighRiskCount int64 `json:"high_risk_count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.MineOpenCount != 4 || body.TeamOpenCount != 9 || body.HighRiskCount != 2 {
+		t.Fatalf("unexpected badge: %#v", body)
+	}
+}
+
+func TestHandlerBadgeAuthorizerErrorReturnsInternalServerError(t *testing.T) {
+	service := &handlerService{}
+	handler := NewHandler(service)
+	handler.SetAuthorizer(&handlerAuthorizer{err: errors.New("authz unavailable")})
+	req := withConsoleIdentity(httptest.NewRequest(http.MethodGet, "/inbox/badge", nil), uuid.New(), uuid.New())
+	resp := httptest.NewRecorder()
+
+	handler.GetBadge(resp, req)
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.badgeCalled {
+		t.Fatalf("expected authz error to stop before service, got includeTeam=%v", service.badgeIncludeTeam)
 	}
 }
 
@@ -284,9 +379,11 @@ func TestHandlerExecuteActionReturnsNormalizedSourceErrorStatus(t *testing.T) {
 }
 
 type handlerService struct {
+	listCalled       bool
 	listReq          ListItemsRequest
 	listResult       ListItemsResult
 	listErr          error
+	badgeCalled      bool
 	badgeTenantID    uuid.UUID
 	badgeActorUserID uuid.UUID
 	badgeIncludeTeam bool
@@ -299,11 +396,13 @@ type handlerService struct {
 }
 
 func (s *handlerService) ListItems(_ context.Context, req ListItemsRequest) (ListItemsResult, error) {
+	s.listCalled = true
 	s.listReq = req
 	return s.listResult, s.listErr
 }
 
 func (s *handlerService) GetBadge(_ context.Context, tenantID, actorUserID uuid.UUID, includeTeam bool) (Badge, error) {
+	s.badgeCalled = true
 	s.badgeTenantID = tenantID
 	s.badgeActorUserID = actorUserID
 	s.badgeIncludeTeam = includeTeam
@@ -329,4 +428,21 @@ func withItemRouteParam(req *http.Request, itemID uuid.UUID) *http.Request {
 	routeCtx := chi.NewRouteContext()
 	routeCtx.URLParams.Add("itemId", itemID.String())
 	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+}
+
+type handlerAuthorizer struct {
+	allowed bool
+	err     error
+	checks  []authz.CheckRequest
+}
+
+func (a *handlerAuthorizer) Check(_ context.Context, req authz.CheckRequest) (authz.Decision, error) {
+	a.checks = append(a.checks, req)
+	if a.err != nil {
+		return authz.Decision{}, a.err
+	}
+	if a.allowed {
+		return authz.Decision{Allowed: true, Reason: authz.ReasonAllowed}, nil
+	}
+	return authz.Decision{Allowed: false, Reason: authz.ReasonNoMembership}, nil
 }
