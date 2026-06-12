@@ -620,8 +620,9 @@ func (r *PgRepository) bindProjectTaskRunConflict(ctx context.Context, req BindP
 		return ProjectTask{}, err
 	}
 	task := taskFromRecord(existing)
-	if task.DigitalEmployeeRunID != nil && *task.DigitalEmployeeRunID == req.DigitalEmployeeRunID {
-		// Already bound to the same run by a prior attempt; treat as idempotent success.
+	if task.DigitalEmployeeRunID != nil && *task.DigitalEmployeeRunID == req.DigitalEmployeeRunID &&
+		task.RuntimeTaskID != nil && *task.RuntimeTaskID == req.RuntimeTaskID {
+		// Already bound to the same run and runtime task by a prior attempt; treat as idempotent success.
 		return task, nil
 	}
 	return ProjectTask{}, ErrProjectConflict

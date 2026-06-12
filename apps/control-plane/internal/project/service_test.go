@@ -1602,6 +1602,38 @@ func TestProjectTaskWritebackRequiresDigitalEmployeeRunBinding(t *testing.T) {
 	}
 }
 
+func TestBindProjectTaskRunRejectsSameRunDifferentRuntimeTask(t *testing.T) {
+	repo := newMemoryRepository()
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	runID := uuid.New()
+	originalRuntimeTaskID := uuid.New()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                   taskID,
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		Title:                "整理证据",
+		Status:               "assigned",
+		DigitalEmployeeRunID: &runID,
+		RuntimeTaskID:        &originalRuntimeTaskID,
+	})
+
+	_, err := repo.BindProjectTaskRun(context.Background(), BindProjectTaskRunRequest{
+		TenantID:             tenantID,
+		ProjectTaskID:        taskID,
+		DigitalEmployeeRunID: runID,
+		RuntimeTaskID:        uuid.New(),
+		CurrentStatuses:      []string{"pending", "running"},
+	})
+	if !errors.Is(err, ErrProjectConflict) {
+		t.Fatalf("expected project conflict, got %v", err)
+	}
+	if repo.tasks[0].RuntimeTaskID == nil || *repo.tasks[0].RuntimeTaskID != originalRuntimeTaskID {
+		t.Fatalf("expected runtime task id to remain unchanged, got %#v", repo.tasks[0].RuntimeTaskID)
+	}
+}
+
 func TestCompleteProjectTaskRejectsTerminalReplay(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -2962,7 +2994,11 @@ func (r *memoryRepository) BindProjectTaskRun(ctx context.Context, req BindProje
 		if task.TenantID != req.TenantID || task.ID != req.ProjectTaskID {
 			continue
 		}
-		if task.DigitalEmployeeRunID != nil && *task.DigitalEmployeeRunID != req.DigitalEmployeeRunID {
+		if task.DigitalEmployeeRunID != nil || task.RuntimeTaskID != nil {
+			if task.DigitalEmployeeRunID != nil && *task.DigitalEmployeeRunID == req.DigitalEmployeeRunID &&
+				task.RuntimeTaskID != nil && *task.RuntimeTaskID == req.RuntimeTaskID {
+				return task, nil
+			}
 			return ProjectTask{}, ErrProjectConflict
 		}
 		allowed := false
@@ -2972,7 +3008,7 @@ func (r *memoryRepository) BindProjectTaskRun(ctx context.Context, req BindProje
 				break
 			}
 		}
-		if !allowed && !(task.Status == "assigned" && task.DigitalEmployeeRunID != nil && *task.DigitalEmployeeRunID == req.DigitalEmployeeRunID) {
+		if !allowed {
 			return ProjectTask{}, ErrProjectConflict
 		}
 		task.Status = "assigned"
