@@ -816,16 +816,6 @@ func selectReviewer(explicit *uuid.UUID, project Project, members []ProjectMembe
 			return member, ReviewerSelectionProjectHumanOwnerFallback, true, nil
 		}
 	}
-	if project.HumanOwnerUserID != uuid.Nil {
-		return ProjectMember{
-			TenantID:      project.TenantID,
-			ProjectID:     project.ID,
-			PrincipalType: PrincipalTypeHumanUser,
-			PrincipalID:   project.HumanOwnerUserID,
-			ProjectRole:   ProjectRoleOwner,
-			Status:        "active",
-		}, ReviewerSelectionProjectHumanOwnerFallback, true, nil
-	}
 	return ProjectMember{}, "", false, ErrInvalidProjectMember
 }
 

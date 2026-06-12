@@ -271,6 +271,7 @@ func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
 		CoordinationStatus:     "registered",
 	}
+	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
 
 	submitReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/demands", strings.NewReader(`{
 		"title":"验证 Runtime 执行回写",

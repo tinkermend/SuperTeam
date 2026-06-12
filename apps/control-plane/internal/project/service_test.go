@@ -256,6 +256,63 @@ func TestSubmitDemandFallsBackToHumanOwnerWhenNoReviewer(t *testing.T) {
 	}
 }
 
+func TestSubmitDemandRequiresActiveHumanOwnerMemberForFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		members []ProjectMember
+	}{
+		{name: "missing owner member"},
+		{
+			name: "inactive owner member",
+			members: []ProjectMember{{
+				PrincipalType: PrincipalTypeHumanUser,
+				ProjectRole:   ProjectRoleOwner,
+				Status:        "inactive",
+			}},
+		},
+		{
+			name: "digital owner member",
+			members: []ProjectMember{{
+				PrincipalType: PrincipalTypeDigitalEmployee,
+				ProjectRole:   ProjectRoleOwner,
+				Status:        "active",
+			}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tenantID := uuid.New()
+			projectID := uuid.New()
+			ownerID := uuid.New()
+			repo := newMemoryRepository()
+			repo.projects[projectID] = Project{
+				ID:               projectID,
+				TenantID:         tenantID,
+				Status:           ProjectStatusRunning,
+				HumanOwnerUserID: ownerID,
+			}
+			for _, member := range tc.members {
+				member.ID = uuid.New()
+				member.TenantID = tenantID
+				member.ProjectID = projectID
+				member.PrincipalID = ownerID
+				repo.members[projectID] = append(repo.members[projectID], member)
+			}
+			service, err := NewService(repo)
+			if err != nil {
+				t.Fatalf("new service: %v", err)
+			}
+
+			_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+				TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
+				Title: "补充证据",
+			})
+			if !errors.Is(err, ErrInvalidProjectMember) {
+				t.Fatalf("expected invalid project member, got %v", err)
+			}
+		})
+	}
+}
+
 func TestSubmitDemandRejectsDigitalEmployeeReviewer(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
