@@ -17,7 +17,7 @@ import {
 } from "@/lib/api/inbox";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { InboxActionDialog } from "./components/inbox-action-dialog";
-import { InboxShell } from "./components/inbox-shell";
+import { InboxShell, type InboxFilterKey } from "./components/inbox-shell";
 
 type InboxPageProps = {
   fetcher?: typeof fetch;
@@ -33,6 +33,12 @@ type SelectedAction = {
   item: InboxItem;
 };
 
+const DEFAULT_INBOX_FILTERS = {
+  limit: 50,
+  offset: 0,
+  status: "open",
+} satisfies InboxListFilters;
+
 export function InboxPage({ fetcher }: InboxPageProps = {}) {
   return <InboxView apiBaseUrl={resolveControlPlaneUrl()} fetcher={fetcher} />;
 }
@@ -45,11 +51,9 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
     [apiBaseUrl, fetcher],
   );
   const [view, setView] = useState<InboxViewMode>("mine");
-  const [filters] = useState<InboxListFilters>({
-    limit: 50,
-    offset: 0,
-    status: "open",
-  });
+  const [filters, setFilters] = useState<InboxListFilters>(() => ({
+    ...DEFAULT_INBOX_FILTERS,
+  }));
   const [selectedAction, setSelectedAction] = useState<SelectedAction | null>(null);
 
   const inboxQuery = useQuery({
@@ -89,10 +93,17 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
           actionMutation.reset();
           setSelectedAction({ action, item });
         }}
+        onFilterChange={(key, value) => {
+          setFilters((current) => updateInboxFilter(current, key, value));
+        }}
         onRetry={() => {
           void inboxQuery.refetch();
         }}
+        onResetFilters={() => {
+          setFilters({ ...DEFAULT_INBOX_FILTERS });
+        }}
         onViewChange={setView}
+        filters={filters}
         view={view}
       />
       <InboxActionDialog
@@ -119,4 +130,61 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
       />
     </>
   );
+}
+
+function updateInboxFilter(
+  filters: InboxListFilters,
+  key: InboxFilterKey,
+  value: string,
+): InboxListFilters {
+  const next: InboxListFilters = { ...filters, offset: 0 };
+  const normalized = value.trim();
+
+  if (normalized === "" || normalized === "all") {
+    clearInboxFilter(next, key);
+    return next;
+  }
+
+  setInboxFilter(next, key, normalized);
+  return next;
+}
+
+function clearInboxFilter(filters: InboxListFilters, key: InboxFilterKey) {
+  switch (key) {
+    case "item_type":
+      delete filters.item_type;
+      break;
+    case "project_id":
+      delete filters.project_id;
+      break;
+    case "risk_level":
+      delete filters.risk_level;
+      break;
+    case "status":
+      delete filters.status;
+      break;
+    case "target_user_id":
+      delete filters.target_user_id;
+      break;
+  }
+}
+
+function setInboxFilter(filters: InboxListFilters, key: InboxFilterKey, value: string) {
+  switch (key) {
+    case "item_type":
+      filters.item_type = value as InboxListFilters["item_type"];
+      break;
+    case "project_id":
+      filters.project_id = value;
+      break;
+    case "risk_level":
+      filters.risk_level = value;
+      break;
+    case "status":
+      filters.status = value as InboxListFilters["status"];
+      break;
+    case "target_user_id":
+      filters.target_user_id = value;
+      break;
+  }
 }

@@ -119,11 +119,11 @@ function createInboxFetcher(
     teamItem?: InboxItem;
   } = {},
 ) {
-  const requests: Array<{ method: string; pathname: string }> = [];
+  const requests: Array<{ method: string; pathname: string; url: string }> = [];
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
-    requests.push({ method, pathname: url.pathname });
+    requests.push({ method, pathname: url.pathname, url: url.toString() });
 
     if (url.pathname === "/api/v1/inbox/items" && method === "GET") {
       const view = url.searchParams.get("view") ?? "mine";
@@ -177,6 +177,21 @@ function createInboxFetcher(
   return fetcher;
 }
 
+function inboxRequestUrls(fetcher: typeof fetch) {
+  return (
+    fetcher as unknown as {
+      requests: Array<{ method: string; pathname: string; url: string }>;
+    }
+  ).requests
+    .filter((request) => request.method === "GET" && request.pathname === "/api/v1/inbox/items")
+    .map((request) => new URL(request.url));
+}
+
+function latestInboxRequestUrl(fetcher: typeof fetch) {
+  const urls = inboxRequestUrls(fetcher);
+  return urls[urls.length - 1];
+}
+
 async function renderInboxView(fetcher = createInboxFetcher()) {
   return await render(
     <QueryClientProvider client={createQueryClient()}>
@@ -192,6 +207,70 @@ describe("InboxView", () => {
     await expect.element(screen.getByRole("heading", { name: "收件箱" })).toBeVisible();
     await expect.element(screen.getByRole("tab", { name: "我的待办", selected: true })).toBeVisible();
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+  });
+
+  it("requests open inbox by default", async () => {
+    const fetcher = createInboxFetcher();
+    const screen = await renderInboxView(fetcher);
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+
+    const requestUrl = latestInboxRequestUrl(fetcher);
+    expect(requestUrl?.searchParams.get("status")).toBe("open");
+    expect(requestUrl?.searchParams.get("limit")).toBe("50");
+    expect(requestUrl?.searchParams.get("offset")).toBe("0");
+  });
+
+  it("requests selected status, type, and risk filters", async () => {
+    const fetcher = createInboxFetcher();
+    const screen = await renderInboxView(fetcher);
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    await userEvent.click(screen.getByRole("combobox", { name: "状态" }));
+    await userEvent.click(screen.getByRole("option", { name: "已处理" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "事项类型" }));
+    await userEvent.click(screen.getByRole("option", { name: "项目决策" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "风险等级" }));
+    await userEvent.click(screen.getByRole("option", { name: "高风险" }));
+
+    await vi.waitFor(() => {
+      expect(
+        inboxRequestUrls(fetcher).some((url) => {
+          return (
+            url.searchParams.get("status") === "resolved" &&
+            url.searchParams.get("item_type") === "project_decision" &&
+            url.searchParams.get("risk_level") === "high" &&
+            url.searchParams.get("offset") === "0"
+          );
+        }),
+      ).toBe(true);
+    });
+  });
+
+  it("requests project and target user filters and omits them after reset", async () => {
+    const fetcher = createInboxFetcher();
+    const screen = await renderInboxView(fetcher);
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    await userEvent.fill(screen.getByLabelText("项目 ID"), "project-42");
+    await userEvent.fill(screen.getByLabelText("目标用户 ID"), "human-owner-42");
+
+    await vi.waitFor(() => {
+      const requestUrl = latestInboxRequestUrl(fetcher);
+      expect(requestUrl?.searchParams.get("project_id")).toBe("project-42");
+      expect(requestUrl?.searchParams.get("target_user_id")).toBe("human-owner-42");
+      expect(requestUrl?.searchParams.get("offset")).toBe("0");
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "重置筛选" }));
+
+    await vi.waitFor(() => {
+      const requestUrl = latestInboxRequestUrl(fetcher);
+      expect(requestUrl?.searchParams.has("project_id")).toBe(false);
+      expect(requestUrl?.searchParams.has("target_user_id")).toBe(false);
+      expect(requestUrl?.searchParams.get("status")).toBe("open");
+      expect(requestUrl?.searchParams.get("offset")).toBe("0");
+    });
   });
 
   it("keeps existing data while switching to team inbox", async () => {
