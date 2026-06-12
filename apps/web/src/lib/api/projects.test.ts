@@ -186,6 +186,7 @@ describe("project API", () => {
       source_refs: { ticket: "SUP-1" },
       attachments: ["s3://bucket/log.txt"],
       status: "recorded",
+      reviewer: null,
     };
     const fetcher = vi.fn(
       async () =>

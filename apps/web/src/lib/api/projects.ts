@@ -155,7 +155,7 @@ export type ProjectDemand = {
   attachments: unknown[];
   status: ProjectDemandStatus;
   created_event_id?: string;
-  reviewer?: ReviewerPreference | null;
+  reviewer: ReviewerPreference | null;
 };
 
 export type ProjectStatusSummary = {
@@ -200,7 +200,7 @@ export type ProjectConfig = {
 export type ProjectDemandLaunchDetail = {
   demand: ProjectDemand;
   project: Project;
-  reviewer?: ReviewerPreference | null;
+  reviewer: ReviewerPreference | null;
   coordination_jobs: ProjectCoordinationJob[];
   route_decisions: ProjectRouteDecision[];
   project_tasks: ProjectTask[];
