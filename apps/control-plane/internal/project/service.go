@@ -771,7 +771,7 @@ func (s *Service) resolveDemandReviewer(ctx context.Context, req SubmitProjectDe
 	if err != nil {
 		return nil, nil, err
 	}
-	selected, reason, resolvedFromRule, err := selectReviewer(req.ReviewerUserID, project, members)
+	selected, reason, resolvedFromRule, err := selectReviewer(req.ReviewerUserID, req.ReviewerSelectionReason, project, members)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -782,19 +782,27 @@ func (s *Service) resolveDemandReviewer(ctx context.Context, req SubmitProjectDe
 		ProjectRole:      selected.ProjectRole,
 		ResolvedFromRule: resolvedFromRule,
 	}
-	return preference, map[string]any{
+	sourceRefs := map[string]any{
 		"reviewer_user_id":            preference.ReviewerUserID.String(),
 		"reviewer_selection_reason":   string(preference.SelectionReason),
 		"reviewer_project_role":       string(preference.ProjectRole),
 		"reviewer_resolved_from_rule": preference.ResolvedFromRule,
-	}, nil
+	}
+	if preference.DisplayName != nil {
+		sourceRefs["reviewer_display_name"] = *preference.DisplayName
+	}
+	return preference, sourceRefs, nil
 }
 
-func selectReviewer(explicit *uuid.UUID, project Project, members []ProjectMember) (ProjectMember, ReviewerSelectionReason, bool, error) {
+func selectReviewer(explicit *uuid.UUID, explicitReason ReviewerSelectionReason, project Project, members []ProjectMember) (ProjectMember, ReviewerSelectionReason, bool, error) {
 	if explicit != nil {
+		reason, err := normalizeReviewerSelectionReason(explicitReason)
+		if err != nil {
+			return ProjectMember{}, "", false, err
+		}
 		for _, member := range members {
 			if member.PrincipalType == PrincipalTypeHumanUser && member.PrincipalID == *explicit && member.Status == "active" {
-				return member, ReviewerSelectionUserSelected, false, nil
+				return member, reason, false, nil
 			}
 		}
 		return ProjectMember{}, "", false, ErrInvalidProjectMember
@@ -817,6 +825,25 @@ func selectReviewer(explicit *uuid.UUID, project Project, members []ProjectMembe
 		}
 	}
 	return ProjectMember{}, "", false, ErrInvalidProjectMember
+}
+
+func normalizeReviewerSelectionReason(reason ReviewerSelectionReason) (ReviewerSelectionReason, error) {
+	if reason == "" {
+		return ReviewerSelectionUserSelected, nil
+	}
+	if isValidReviewerSelectionReason(reason) {
+		return reason, nil
+	}
+	return "", ErrInvalidProjectMember
+}
+
+func isValidReviewerSelectionReason(reason ReviewerSelectionReason) bool {
+	switch reason {
+	case ReviewerSelectionProjectReviewerDefault, ReviewerSelectionProjectHumanOwnerFallback, ReviewerSelectionUserSelected:
+		return true
+	default:
+		return false
+	}
 }
 
 func mergeReviewerSourceRefs(sourceRefs map[string]any, reviewer map[string]any) map[string]any {

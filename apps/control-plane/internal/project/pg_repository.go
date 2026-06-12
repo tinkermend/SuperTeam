@@ -1339,10 +1339,15 @@ func reviewerPreferenceFromSourceRefs(sourceRefs map[string]any) *ReviewerPrefer
 	if rawRole, ok := sourceRefs["reviewer_project_role"].(string); ok {
 		role = ProjectRole(rawRole)
 	}
+	var displayName *string
+	if rawDisplayName, ok := sourceRefs["reviewer_display_name"].(string); ok {
+		displayName = &rawDisplayName
+	}
 	resolved, _ := sourceRefs["reviewer_resolved_from_rule"].(bool)
 	return &ReviewerPreference{
 		ReviewerUserID:   reviewerID,
 		SelectionReason:  reason,
+		DisplayName:      displayName,
 		ProjectRole:      role,
 		ResolvedFromRule: resolved,
 	}

@@ -220,6 +220,98 @@ func TestSubmitDemandPersistsDefaultReviewerPreference(t *testing.T) {
 	}
 }
 
+func TestSubmitDemandPersistsExplicitReviewerSelectionReason(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	reviewerID := uuid.New()
+	reviewerName := "审查负责人"
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.members[projectID] = []ProjectMember{
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: ownerID,
+			ProjectRole: ProjectRoleOwner, Status: "active",
+		},
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: reviewerID,
+			ProjectRole: ProjectRoleReviewer, DisplayNameSnapshot: &reviewerName, Status: "active",
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
+		Title: "审查 PR", ReviewerUserID: &reviewerID,
+		ReviewerSelectionReason: ReviewerSelectionProjectReviewerDefault,
+	})
+	if err != nil {
+		t.Fatalf("submit demand: %v", err)
+	}
+
+	if demand.ReviewerPreference == nil {
+		t.Fatalf("expected reviewer preference on demand: %#v", demand)
+	}
+	if demand.ReviewerPreference.SelectionReason != ReviewerSelectionProjectReviewerDefault {
+		t.Fatalf("expected explicit reason to be preserved, got %#v", demand.ReviewerPreference)
+	}
+	if demand.SourceRefs["reviewer_selection_reason"] != string(ReviewerSelectionProjectReviewerDefault) {
+		t.Fatalf("expected reviewer reason persisted in source refs: %#v", demand.SourceRefs)
+	}
+	if demand.SourceRefs["reviewer_display_name"] != reviewerName {
+		t.Fatalf("expected reviewer display name persisted in source refs: %#v", demand.SourceRefs)
+	}
+}
+
+func TestSubmitDemandRejectsInvalidReviewerSelectionReason(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	reviewerID := uuid.New()
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.members[projectID] = []ProjectMember{
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: ownerID,
+			ProjectRole: ProjectRoleOwner, Status: "active",
+		},
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: reviewerID,
+			ProjectRole: ProjectRoleReviewer, Status: "active",
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
+		Title: "审查 PR", ReviewerUserID: &reviewerID,
+		ReviewerSelectionReason: ReviewerSelectionReason("invalid_reason"),
+	})
+	if !errors.Is(err, ErrInvalidProjectMember) {
+		t.Fatalf("expected invalid project member, got %v", err)
+	}
+}
+
 func TestSubmitDemandFallsBackToHumanOwnerWhenNoReviewer(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -326,6 +418,27 @@ func TestSubmitDemandRequiresActiveHumanOwnerMemberForFallback(t *testing.T) {
 				t.Fatalf("expected invalid project member, got %v", err)
 			}
 		})
+	}
+}
+
+func TestReviewerPreferenceFromSourceRefsRestoresDisplayName(t *testing.T) {
+	reviewerID := uuid.New()
+	preference := reviewerPreferenceFromSourceRefs(map[string]any{
+		"reviewer_user_id":            reviewerID.String(),
+		"reviewer_selection_reason":   string(ReviewerSelectionProjectReviewerDefault),
+		"reviewer_project_role":       string(ProjectRoleReviewer),
+		"reviewer_resolved_from_rule": true,
+		"reviewer_display_name":       "审查负责人",
+	})
+
+	if preference == nil {
+		t.Fatal("expected reviewer preference")
+	}
+	if preference.DisplayName == nil || *preference.DisplayName != "审查负责人" {
+		t.Fatalf("expected display name restored, got %#v", preference)
+	}
+	if preference.ReviewerUserID != reviewerID || preference.SelectionReason != ReviewerSelectionProjectReviewerDefault || preference.ProjectRole != ProjectRoleReviewer || !preference.ResolvedFromRule {
+		t.Fatalf("unexpected reviewer preference: %#v", preference)
 	}
 }
 
