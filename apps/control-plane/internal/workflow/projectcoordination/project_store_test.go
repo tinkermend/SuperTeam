@@ -75,6 +75,12 @@ func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProject
 			TenantID:         tenantID,
 			HumanOwnerUserID: ownerID,
 		},
+		demand: project.ProjectDemand{
+			ID:        demandID,
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			Title:     "需要人工确认",
+		},
 		approvalID: approvalID,
 	}
 	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
@@ -114,6 +120,65 @@ func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProject
 	decision := repo.decisionRequests[0]
 	if decision.ApprovalRequestID != approvalID || decision.TargetUserID != ownerID || decision.StatusSnapshot != "pending" {
 		t.Fatalf("unexpected decision projection: %#v", decision)
+	}
+}
+
+func TestProjectStoreRequestRouteDecisionReviewTargetsDemandReviewerPreference(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	reviewerID := uuid.New()
+	jobID := uuid.New()
+	demandID := uuid.New()
+	routeID := uuid.New()
+	approvalID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			HumanOwnerUserID: ownerID,
+		},
+		demand: project.ProjectDemand{
+			ID:        demandID,
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			Title:     "需要指定审核人确认",
+			ReviewerPreference: &project.ReviewerPreference{
+				ReviewerUserID:   reviewerID,
+				SelectionReason:  project.ReviewerSelectionUserSelected,
+				ProjectRole:      project.ProjectRoleReviewer,
+				ResolvedFromRule: false,
+			},
+		},
+		approvalID: approvalID,
+	}
+	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
+	store := NewProjectStoreWithApprovals(repo, approvals)
+
+	_, err := store.RequestRouteDecisionReview(context.Background(), RequestRouteDecisionReviewInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		CoordinationJobID: jobID,
+		DemandID:          demandID,
+		RouteDecisionID:   routeID,
+		Decision: RouteDecisionPlan{
+			Reason:              "风险动作需要指定审核人确认",
+			RequiresHumanReview: true,
+		},
+		RouteCreatedEventID: uuid.New(),
+	})
+	if err != nil {
+		t.Fatalf("request route review: %v", err)
+	}
+
+	if approvals.last.TargetUserID != reviewerID {
+		t.Fatalf("expected approval target reviewer, got %#v", approvals.last)
+	}
+	if len(repo.decisionRequests) != 1 || repo.decisionRequests[0].TargetUserID != reviewerID {
+		t.Fatalf("expected decision request target reviewer, got %#v", repo.decisionRequests)
+	}
+	if len(repo.events) != 1 || repo.events[0].Payload["target_user_id"] != reviewerID.String() {
+		t.Fatalf("expected target user event payload, got %#v", repo.events)
 	}
 }
 
@@ -158,7 +223,7 @@ func (r *projectStoreMemoryRepository) CreateCoordinationJob(ctx context.Context
 }
 
 func (r *projectStoreMemoryRepository) AppendProjectEvent(ctx context.Context, req project.AppendProjectEventRequest) (project.ProjectEvent, error) {
-	event := project.ProjectEvent{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, EventType: req.EventType, CreatedAt: time.Now().UTC()}
+	event := project.ProjectEvent{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, EventType: req.EventType, Payload: req.Payload, CreatedAt: time.Now().UTC()}
 	r.events = append(r.events, event)
 	return event, nil
 }

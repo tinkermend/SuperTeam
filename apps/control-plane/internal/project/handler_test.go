@@ -67,6 +67,76 @@ func TestProjectHandlerMapsArchivedConflict(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerSubmitsDemandReviewerPreference(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	reviewerID := uuid.New()
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/demands", strings.NewReader(`{
+		"title":"审查 PR",
+		"content":"统计并审查 PR",
+		"reviewer_user_id":"`+reviewerID.String()+`",
+		"reviewer_selection_reason":"user_selected"
+	}`))
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.SubmitDemand(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected submit demand 201, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.submitDemandReq.ReviewerUserID == nil || *service.submitDemandReq.ReviewerUserID != reviewerID {
+		t.Fatalf("expected reviewer user id to pass through, got %#v", service.submitDemandReq.ReviewerUserID)
+	}
+	if service.submitDemandReq.ReviewerSelectionReason != ReviewerSelectionUserSelected {
+		t.Fatalf("expected reviewer reason to pass through, got %q", service.submitDemandReq.ReviewerSelectionReason)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode submit demand response: %v", err)
+	}
+	reviewer, ok := body["reviewer"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected reviewer object in response, got %#v", body)
+	}
+	if reviewer["reviewer_user_id"] != reviewerID.String() || reviewer["selection_reason"] != string(ReviewerSelectionUserSelected) {
+		t.Fatalf("unexpected reviewer response: %#v", reviewer)
+	}
+}
+
+func TestProjectHandlerDemandResponseIncludesNullReviewerWhenAbsent(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/demands", strings.NewReader(`{"title":"补充验收证据"}`))
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.SubmitDemand(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected submit demand 201, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode submit demand response: %v", err)
+	}
+	reviewer, ok := body["reviewer"]
+	if !ok {
+		t.Fatalf("expected stable reviewer key in response: %#v", body)
+	}
+	if reviewer != nil {
+		t.Fatalf("expected null reviewer when absent, got %#v", reviewer)
+	}
+}
+
 func TestProjectHandlerGetConfigUsesCurrentOverview(t *testing.T) {
 	projectID := uuid.New()
 	service := &handlerTestService{}
@@ -247,6 +317,44 @@ func TestProjectHandlerListsRouteDecisionsAndResolvesDecision(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerGetsDemandLaunchDetail(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	service := &handlerTestService{launchDetailProjectID: projectID}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/project-demands/"+demandID.String()+"/launch-detail", nil)
+	req = withProjectRouteParams(req, map[string]string{"demandId": demandID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetDemandLaunchDetail(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected launch detail 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.launchDetailTenantID != tenantID || service.launchDetailDemandID != demandID {
+		t.Fatalf("unexpected launch detail request: tenant=%s demand=%s", service.launchDetailTenantID, service.launchDetailDemandID)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode launch detail response: %v", err)
+	}
+	if body["demand"].(map[string]any)["id"] != demandID.String() {
+		t.Fatalf("expected demand id in detail response: %#v", body)
+	}
+	if body["project"].(map[string]any)["id"] != projectID.String() {
+		t.Fatalf("expected project id in detail response: %#v", body)
+	}
+	if _, ok := body["reviewer"]; !ok {
+		t.Fatalf("expected reviewer key in launch detail response: %#v", body)
+	}
+	if len(body["project_tasks"].([]any)) != 1 {
+		t.Fatalf("expected project tasks in launch detail: %#v", body)
+	}
+}
+
 func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{demandSignalErr: errors.New("temporal unavailable")}
@@ -271,6 +379,7 @@ func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
 		CoordinationStatus:     "registered",
 	}
+	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
 
 	submitReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/demands", strings.NewReader(`{
 		"title":"验证 Runtime 执行回写",
@@ -448,6 +557,9 @@ type handlerTestService struct {
 	routeDecisionLimit     int32
 	routeDecisionOffset    int32
 	resolveDecisionReq     ResolveDecisionRequest
+	launchDetailTenantID   uuid.UUID
+	launchDetailDemandID   uuid.UUID
+	launchDetailProjectID  uuid.UUID
 }
 
 func (s *handlerTestService) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -500,6 +612,14 @@ func (s *handlerTestService) SubmitDemand(ctx context.Context, req SubmitProject
 		return nil, s.submitDemandErr
 	}
 	demand := ProjectDemand{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, SubmittedByUserID: req.SubmittedByUserID, Title: req.Title, SourceType: req.SourceType, SourceRefs: req.SourceRefs, Attachments: req.Attachments, Status: ProjectDemandStatusRecorded}
+	if req.ReviewerUserID != nil {
+		demand.ReviewerPreference = &ReviewerPreference{
+			ReviewerUserID:   *req.ReviewerUserID,
+			SelectionReason:  req.ReviewerSelectionReason,
+			ProjectRole:      ProjectRoleReviewer,
+			ResolvedFromRule: false,
+		}
+	}
 	return &demand, nil
 }
 
@@ -549,6 +669,21 @@ func (s *handlerTestService) ListCoordinationJobs(ctx context.Context, tenantID,
 
 func (s *handlerTestService) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error) {
 	return nil, nil
+}
+
+func (s *handlerTestService) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error) {
+	s.launchDetailTenantID = tenantID
+	s.launchDetailDemandID = demandID
+	projectID := s.launchDetailProjectID
+	if projectID == uuid.Nil {
+		projectID = uuid.New()
+	}
+	project := testProject(tenantID, projectID, uuid.New())
+	return &DemandLaunchDetail{
+		Demand:       ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: uuid.New(), Title: "审查 PR", SourceType: DemandSourceManual, Status: ProjectDemandStatusPlanningPending},
+		Project:      project,
+		ProjectTasks: []ProjectTask{{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, DemandID: &demandID, Title: "审查 PR", Status: "pending"}},
+	}, nil
 }
 
 func (s *handlerTestService) ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error) {

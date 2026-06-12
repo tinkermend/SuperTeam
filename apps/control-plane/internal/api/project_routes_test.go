@@ -141,6 +141,18 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 		t.Fatalf("expected demand source refs and attachments, got %#v/%#v", service.submitDemandReq.SourceRefs, service.submitDemandReq.Attachments)
 	}
 
+	launchDemandID := uuid.New()
+	launchDetailReq := httptest.NewRequest(http.MethodGet, "/api/v1/project-demands/"+launchDemandID.String()+"/launch-detail", nil)
+	launchDetailReq.AddCookie(cookie)
+	launchDetailResp := httptest.NewRecorder()
+	server.ServeHTTP(launchDetailResp, launchDetailReq)
+	if launchDetailResp.Code != http.StatusOK {
+		t.Fatalf("expected launch detail to succeed, got %d: %s", launchDetailResp.Code, launchDetailResp.Body.String())
+	}
+	if service.launchDetailTenantID != expectedTenantID || service.launchDetailDemandID != launchDemandID {
+		t.Fatalf("expected launch detail tenant/demand from route, got tenant=%s demand=%s", service.launchDetailTenantID, service.launchDetailDemandID)
+	}
+
 	routeDecisionReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/route-decisions?limit=7", nil)
 	routeDecisionReq.AddCookie(cookie)
 	routeDecisionResp := httptest.NewRecorder()
@@ -270,6 +282,39 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 	}
 	if service.configRevisionTenantID != expectedTenantID || service.configRevisionProjectID != service.projectID || service.configRevisionID != revisionID {
 		t.Fatalf("expected config revision context/path, got tenant=%s project=%s revision=%s", service.configRevisionTenantID, service.configRevisionProjectID, service.configRevisionID)
+	}
+}
+
+func TestProjectDemandLaunchDetailRouteUsesDemandID(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &routeProjectService{}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+	demandID := uuid.New()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/project-demands/"+demandID.String()+"/launch-detail", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected launch detail to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.launchDetailTenantID != uuid.MustParse(auth.DefaultTenantID) || service.launchDetailDemandID != demandID {
+		t.Fatalf("expected service to receive tenant/demand from route, got tenant=%s demand=%s", service.launchDetailTenantID, service.launchDetailDemandID)
 	}
 }
 
@@ -505,6 +550,8 @@ type routeProjectService struct {
 	configRevisionTenantID    uuid.UUID
 	configRevisionProjectID   uuid.UUID
 	configRevisionID          uuid.UUID
+	launchDetailTenantID      uuid.UUID
+	launchDetailDemandID      uuid.UUID
 	archiveErr                error
 }
 
@@ -641,6 +688,18 @@ func (s *routeProjectService) ListCoordinationJobs(ctx context.Context, tenantID
 
 func (s *routeProjectService) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.DecisionRequest, error) {
 	return nil, nil
+}
+
+func (s *routeProjectService) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*project.DemandLaunchDetail, error) {
+	s.launchDetailTenantID = tenantID
+	s.launchDetailDemandID = demandID
+	projectID := s.ensureProjectID()
+	projectValue := routeProject(tenantID, projectID, uuid.New())
+	return &project.DemandLaunchDetail{
+		Demand:       project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: uuid.New(), Title: "补充验收证据", SourceType: project.DemandSourceManual, Status: project.ProjectDemandStatusPlanningPending},
+		Project:      projectValue,
+		ProjectTasks: []project.ProjectTask{{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, DemandID: &demandID, Title: "补充验收证据", Status: "pending"}},
+	}, nil
 }
 
 func (s *routeProjectService) ResolveDecision(ctx context.Context, req project.ResolveDecisionRequest) (*project.DecisionRequest, error) {

@@ -722,6 +722,11 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 	if project.Status == ProjectStatusArchived || project.ArchivedAt != nil {
 		return nil, ErrProjectArchived
 	}
+	preference, reviewerSourceRefs, err := s.resolveDemandReviewer(ctx, req, project)
+	if err != nil {
+		return nil, err
+	}
+	req.SourceRefs = mergeReviewerSourceRefs(req.SourceRefs, reviewerSourceRefs)
 
 	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
 		TenantID:  req.TenantID,
@@ -730,7 +735,11 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 		ActorType: "human_user",
 		ActorID:   req.SubmittedByUserID.String(),
 		Summary:   "需求已提交到当前项目",
-		Payload:   map[string]any{"title": req.Title},
+		Payload: map[string]any{
+			"title":                     req.Title,
+			"reviewer_user_id":          preference.ReviewerUserID.String(),
+			"reviewer_selection_reason": string(preference.SelectionReason),
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -739,6 +748,7 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 	if err != nil {
 		return nil, err
 	}
+	demand.ReviewerPreference = preference
 	if err := s.coordinator.SignalDemandSubmitted(ctx, DemandSubmittedSignal{
 		TenantID:          req.TenantID,
 		ProjectID:         req.ProjectID,
@@ -756,12 +766,151 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 	return &demand, nil
 }
 
+func (s *Service) resolveDemandReviewer(ctx context.Context, req SubmitProjectDemandRequest, project Project) (*ReviewerPreference, map[string]any, error) {
+	members, err := s.repository.ListProjectMembers(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	selected, reason, resolvedFromRule, err := selectReviewer(req.ReviewerUserID, req.ReviewerSelectionReason, project, members)
+	if err != nil {
+		return nil, nil, err
+	}
+	preference := &ReviewerPreference{
+		ReviewerUserID:   selected.PrincipalID,
+		SelectionReason:  reason,
+		DisplayName:      selected.DisplayNameSnapshot,
+		ProjectRole:      selected.ProjectRole,
+		ResolvedFromRule: resolvedFromRule,
+	}
+	sourceRefs := map[string]any{
+		"reviewer_user_id":            preference.ReviewerUserID.String(),
+		"reviewer_selection_reason":   string(preference.SelectionReason),
+		"reviewer_project_role":       string(preference.ProjectRole),
+		"reviewer_resolved_from_rule": preference.ResolvedFromRule,
+	}
+	if preference.DisplayName != nil {
+		sourceRefs["reviewer_display_name"] = *preference.DisplayName
+	}
+	return preference, sourceRefs, nil
+}
+
+func selectReviewer(explicit *uuid.UUID, explicitReason ReviewerSelectionReason, project Project, members []ProjectMember) (ProjectMember, ReviewerSelectionReason, bool, error) {
+	if explicit != nil {
+		reason, err := normalizeReviewerSelectionReason(explicitReason)
+		if err != nil {
+			return ProjectMember{}, "", false, err
+		}
+		for _, member := range members {
+			if member.PrincipalType == PrincipalTypeHumanUser && member.PrincipalID == *explicit && member.Status == "active" {
+				return member, reason, false, nil
+			}
+		}
+		return ProjectMember{}, "", false, ErrInvalidProjectMember
+	}
+	reviewers := make([]ProjectMember, 0, len(members))
+	for _, member := range members {
+		if member.PrincipalType == PrincipalTypeHumanUser && member.ProjectRole == ProjectRoleReviewer && member.Status == "active" {
+			reviewers = append(reviewers, member)
+		}
+	}
+	if len(reviewers) == 1 {
+		return reviewers[0], ReviewerSelectionProjectReviewerDefault, true, nil
+	}
+	if len(reviewers) > 1 {
+		return ProjectMember{}, "", false, ErrInvalidProjectMember
+	}
+	for _, member := range members {
+		if member.PrincipalType == PrincipalTypeHumanUser && member.PrincipalID == project.HumanOwnerUserID && member.ProjectRole == ProjectRoleOwner && member.Status == "active" {
+			return member, ReviewerSelectionProjectHumanOwnerFallback, true, nil
+		}
+	}
+	return ProjectMember{}, "", false, ErrInvalidProjectMember
+}
+
+func normalizeReviewerSelectionReason(reason ReviewerSelectionReason) (ReviewerSelectionReason, error) {
+	if reason == "" {
+		return ReviewerSelectionUserSelected, nil
+	}
+	if isValidReviewerSelectionReason(reason) {
+		return reason, nil
+	}
+	return "", ErrInvalidProjectMember
+}
+
+func isValidReviewerSelectionReason(reason ReviewerSelectionReason) bool {
+	switch reason {
+	case ReviewerSelectionProjectReviewerDefault, ReviewerSelectionProjectHumanOwnerFallback, ReviewerSelectionUserSelected:
+		return true
+	default:
+		return false
+	}
+}
+
+func mergeReviewerSourceRefs(sourceRefs map[string]any, reviewer map[string]any) map[string]any {
+	merged := map[string]any{}
+	for key, value := range sourceRefs {
+		if strings.HasPrefix(key, "reviewer_") {
+			continue
+		}
+		merged[key] = value
+	}
+	for key, value := range reviewer {
+		merged[key] = value
+	}
+	return merged
+}
+
 func (s *Service) ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
 	limit, offset = normalizePagination(limit, offset)
 	return s.repository.ListProjectDemands(ctx, tenantID, projectID, limit, offset)
+}
+
+func (s *Service) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error) {
+	if tenantID == uuid.Nil || demandID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	demand, err := s.repository.GetProjectDemand(ctx, tenantID, demandID)
+	if err != nil {
+		return nil, err
+	}
+	project, err := s.repository.GetProject(ctx, tenantID, demand.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	jobs, err := s.repository.ListDemandLaunchCoordinationJobs(ctx, tenantID, demand.ProjectID, demand.ID, demand.CreatedEventID, 100)
+	if err != nil {
+		return nil, err
+	}
+	routes, err := s.repository.ListDemandLaunchRouteDecisions(ctx, tenantID, demand.ProjectID, demand.ID, 100)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := s.repository.ListDemandLaunchProjectTasks(ctx, tenantID, demand.ProjectID, demand.ID, 100)
+	if err != nil {
+		return nil, err
+	}
+	taskIDs := projectTaskIDs(tasks)
+	decisions, err := s.repository.ListDemandLaunchDecisionRequests(ctx, tenantID, demand.ProjectID, coordinationJobIDs(jobs), taskIDs, 100)
+	if err != nil {
+		return nil, err
+	}
+	events, err := s.repository.ListDemandLaunchEvents(ctx, tenantID, demand.ProjectID, demand.ID, demand.CreatedEventID, taskIDs, decisionRequestIDs(decisions), 50)
+	if err != nil {
+		return nil, err
+	}
+	return &DemandLaunchDetail{
+		Demand:           demand,
+		Project:          project,
+		Reviewer:         demand.ReviewerPreference,
+		CoordinationJobs: jobs,
+		RouteDecisions:   routes,
+		ProjectTasks:     tasks,
+		DecisionRequests: decisions,
+		RecentEvents:     events,
+	}, nil
 }
 
 func (s *Service) ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error) {
@@ -786,6 +935,138 @@ func (s *Service) ListDecisionRequests(ctx context.Context, tenantID, projectID 
 	}
 	limit, offset = normalizePagination(limit, offset)
 	return s.repository.ListDecisionRequests(ctx, tenantID, projectID, limit, offset)
+}
+
+func coordinationJobIDs(jobs []CoordinationJob) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(jobs))
+	for _, job := range jobs {
+		ids = append(ids, job.ID)
+	}
+	return ids
+}
+
+func projectTaskIDs(tasks []ProjectTask) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.ID)
+	}
+	return ids
+}
+
+func decisionRequestIDs(decisions []DecisionRequest) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(decisions))
+	for _, decision := range decisions {
+		ids = append(ids, decision.ID)
+	}
+	return ids
+}
+
+func filterJobsForDemand(jobs []CoordinationJob, demand ProjectDemand) []CoordinationJob {
+	filtered := []CoordinationJob{}
+	for _, job := range jobs {
+		if demand.CreatedEventID != nil && job.TriggerEventID != nil && *job.TriggerEventID == *demand.CreatedEventID {
+			filtered = append(filtered, job)
+			continue
+		}
+		if rawDemandID, ok := job.InputSnapshotRef["demand_id"].(string); ok && rawDemandID == demand.ID.String() {
+			filtered = append(filtered, job)
+		}
+	}
+	return filtered
+}
+
+func filterRoutesForDemand(routes []RouteDecision, demandID uuid.UUID) []RouteDecision {
+	filtered := []RouteDecision{}
+	for _, route := range routes {
+		if route.DemandID != nil && *route.DemandID == demandID {
+			filtered = append(filtered, route)
+		}
+	}
+	return filtered
+}
+
+func filterTasksForDemand(tasks []ProjectTask, demandID uuid.UUID) []ProjectTask {
+	filtered := []ProjectTask{}
+	for _, task := range tasks {
+		if task.DemandID != nil && *task.DemandID == demandID {
+			filtered = append(filtered, task)
+		}
+	}
+	return filtered
+}
+
+func filterDecisionsForDemand(decisions []DecisionRequest, jobs []CoordinationJob, tasks []ProjectTask) []DecisionRequest {
+	jobIDs := map[uuid.UUID]struct{}{}
+	for _, job := range jobs {
+		jobIDs[job.ID] = struct{}{}
+	}
+	taskIDs := map[uuid.UUID]struct{}{}
+	for _, task := range tasks {
+		taskIDs[task.ID] = struct{}{}
+	}
+	filtered := []DecisionRequest{}
+	for _, decision := range decisions {
+		if decision.CoordinationJobID != nil {
+			if _, ok := jobIDs[*decision.CoordinationJobID]; ok {
+				filtered = append(filtered, decision)
+				continue
+			}
+		}
+		if decision.ProjectTaskID != nil {
+			if _, ok := taskIDs[*decision.ProjectTaskID]; ok {
+				filtered = append(filtered, decision)
+			}
+		}
+	}
+	return filtered
+}
+
+func filterEventsForDemand(events []ProjectEvent, demand ProjectDemand, tasks []ProjectTask, decisions []DecisionRequest) []ProjectEvent {
+	taskIDs := map[string]struct{}{}
+	for _, task := range tasks {
+		taskIDs[task.ID.String()] = struct{}{}
+	}
+	decisionIDs := map[string]struct{}{}
+	for _, decision := range decisions {
+		decisionIDs[decision.ID.String()] = struct{}{}
+	}
+	filtered := []ProjectEvent{}
+	for _, event := range events {
+		if demand.CreatedEventID != nil && event.ID == *demand.CreatedEventID {
+			filtered = append(filtered, event)
+			continue
+		}
+		if event.ResourceID != nil {
+			if *event.ResourceID == demand.ID.String() {
+				filtered = append(filtered, event)
+				continue
+			}
+			if _, ok := taskIDs[*event.ResourceID]; ok {
+				filtered = append(filtered, event)
+				continue
+			}
+			if _, ok := decisionIDs[*event.ResourceID]; ok {
+				filtered = append(filtered, event)
+				continue
+			}
+		}
+		if rawDemandID, ok := event.Payload["demand_id"].(string); ok && rawDemandID == demand.ID.String() {
+			filtered = append(filtered, event)
+			continue
+		}
+		if rawProjectTaskID, ok := event.Payload["project_task_id"].(string); ok {
+			if _, exists := taskIDs[rawProjectTaskID]; exists {
+				filtered = append(filtered, event)
+				continue
+			}
+		}
+		if rawDecisionRequestID, ok := event.Payload["decision_request_id"].(string); ok {
+			if _, exists := decisionIDs[rawDecisionRequestID]; exists {
+				filtered = append(filtered, event)
+			}
+		}
+	}
+	return filtered
 }
 
 func (s *Service) ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error) {

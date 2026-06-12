@@ -49,6 +49,22 @@ const (
 	ProjectRoleObserver   ProjectRole = "observer"
 )
 
+type ReviewerSelectionReason string
+
+const (
+	ReviewerSelectionProjectReviewerDefault    ReviewerSelectionReason = "project_reviewer_default"
+	ReviewerSelectionProjectHumanOwnerFallback ReviewerSelectionReason = "project_human_owner_fallback"
+	ReviewerSelectionUserSelected              ReviewerSelectionReason = "user_selected"
+)
+
+type ReviewerPreference struct {
+	ReviewerUserID   uuid.UUID
+	SelectionReason  ReviewerSelectionReason
+	DisplayName      *string
+	ProjectRole      ProjectRole
+	ResolvedFromRule bool
+}
+
 type ProjectEventType string
 
 const (
@@ -261,19 +277,31 @@ type ProjectEvent struct {
 }
 
 type ProjectDemand struct {
-	ID                uuid.UUID
-	TenantID          uuid.UUID
-	ProjectID         uuid.UUID
-	SubmittedByUserID uuid.UUID
-	Title             string
-	Content           *string
-	SourceType        DemandSourceType
-	SourceRefs        map[string]any
-	Attachments       []any
-	Status            ProjectDemandStatus
-	CreatedEventID    *uuid.UUID
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID                 uuid.UUID
+	TenantID           uuid.UUID
+	ProjectID          uuid.UUID
+	SubmittedByUserID  uuid.UUID
+	Title              string
+	Content            *string
+	SourceType         DemandSourceType
+	SourceRefs         map[string]any
+	Attachments        []any
+	ReviewerPreference *ReviewerPreference
+	Status             ProjectDemandStatus
+	CreatedEventID     *uuid.UUID
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+type DemandLaunchDetail struct {
+	Demand           ProjectDemand
+	Project          Project
+	Reviewer         *ReviewerPreference
+	CoordinationJobs []CoordinationJob
+	RouteDecisions   []RouteDecision
+	ProjectTasks     []ProjectTask
+	DecisionRequests []DecisionRequest
+	RecentEvents     []ProjectEvent
 }
 
 type ProjectConfigRevision struct {
@@ -472,14 +500,16 @@ type UpdateProjectConfigRequest struct {
 }
 
 type SubmitProjectDemandRequest struct {
-	TenantID          uuid.UUID
-	ProjectID         uuid.UUID
-	SubmittedByUserID uuid.UUID
-	Title             string
-	Content           string
-	SourceType        DemandSourceType
-	SourceRefs        map[string]any
-	Attachments       []any
+	TenantID                uuid.UUID
+	ProjectID               uuid.UUID
+	SubmittedByUserID       uuid.UUID
+	Title                   string
+	Content                 string
+	SourceType              DemandSourceType
+	SourceRefs              map[string]any
+	Attachments             []any
+	ReviewerUserID          *uuid.UUID
+	ReviewerSelectionReason ReviewerSelectionReason
 }
 
 type CreateEvidenceRefServiceRequest struct {

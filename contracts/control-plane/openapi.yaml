@@ -944,6 +944,28 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+  /api/v1/project-demands/{demandId}/launch-detail:
+    get:
+      operationId: getProjectDemandLaunchDetail
+      summary: Get project demand launch detail
+      parameters:
+        - name: demandId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Project demand launch detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDemandLaunchDetail"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/route-decisions:
     get:
       operationId: listProjectRouteDecisions
@@ -3337,6 +3359,29 @@ components:
         payload:
           type: object
           additionalProperties: true
+    ReviewerPreference:
+      type: object
+      required:
+        - reviewer_user_id
+        - selection_reason
+        - project_role
+        - resolved_from_rule
+      properties:
+        reviewer_user_id:
+          type: string
+          format: uuid
+        selection_reason:
+          type: string
+          enum:
+            - project_reviewer_default
+            - project_human_owner_fallback
+            - user_selected
+        display_name:
+          type: string
+        project_role:
+          $ref: "#/components/schemas/ProjectRole"
+        resolved_from_rule:
+          type: boolean
     ProjectDemand:
       type: object
       required:
@@ -3349,6 +3394,7 @@ components:
         - source_refs
         - attachments
         - status
+        - reviewer
       properties:
         id:
           type: string
@@ -3379,6 +3425,50 @@ components:
         created_event_id:
           type: string
           format: uuid
+        reviewer:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ReviewerPreference"
+    ProjectDemandLaunchDetail:
+      type: object
+      required:
+        - demand
+        - project
+        - reviewer
+        - coordination_jobs
+        - route_decisions
+        - project_tasks
+        - decision_requests
+        - recent_events
+      properties:
+        demand:
+          $ref: "#/components/schemas/ProjectDemand"
+        project:
+          $ref: "#/components/schemas/Project"
+        reviewer:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ReviewerPreference"
+        coordination_jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectCoordinationJob"
+        route_decisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectRouteDecision"
+        project_tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectTask"
+        decision_requests:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectDecisionRequest"
+        recent_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectEvent"
     ProjectEvidenceRef:
       type: object
       required:
@@ -4292,6 +4382,15 @@ components:
         attachments:
           type: array
           items: {}
+        reviewer_user_id:
+          type: string
+          format: uuid
+        reviewer_selection_reason:
+          type: string
+          enum:
+            - project_reviewer_default
+            - project_human_owner_fallback
+            - user_selected
     CreateProjectEvidenceRequest:
       type: object
       required:

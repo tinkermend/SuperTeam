@@ -1244,6 +1244,310 @@ func (q *Queries) GetProjectTaskRunRuntimeNodeID(ctx context.Context, arg GetPro
 	return runtime_node_id, err
 }
 
+const ListDemandLaunchCoordinationJobs = `-- name: ListDemandLaunchCoordinationJobs :many
+SELECT id, tenant_id, project_id, workflow_id, trigger_event_id, job_type, status, input_snapshot_ref, output_event_ids, started_at, finished_at, created_at FROM project_coordination_jobs
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND (
+    ($3::uuid IS NOT NULL AND trigger_event_id = $3::uuid)
+    OR input_snapshot_ref->>'demand_id' = ($4::uuid)::text
+  )
+ORDER BY created_at DESC
+LIMIT $5
+`
+
+type ListDemandLaunchCoordinationJobsParams struct {
+	TenantID       uuid.UUID     `json:"tenant_id"`
+	ProjectID      uuid.UUID     `json:"project_id"`
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	DemandID       uuid.UUID     `json:"demand_id"`
+	Limit          int32         `json:"limit"`
+}
+
+func (q *Queries) ListDemandLaunchCoordinationJobs(ctx context.Context, arg ListDemandLaunchCoordinationJobsParams) ([]ProjectCoordinationJob, error) {
+	rows, err := q.db.Query(ctx, ListDemandLaunchCoordinationJobs,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.CreatedEventID,
+		arg.DemandID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectCoordinationJob{}
+	for rows.Next() {
+		var i ProjectCoordinationJob
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.WorkflowID,
+			&i.TriggerEventID,
+			&i.JobType,
+			&i.Status,
+			&i.InputSnapshotRef,
+			&i.OutputEventIds,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListDemandLaunchDecisionRequests = `-- name: ListDemandLaunchDecisionRequests :many
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at FROM project_decision_requests
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND (
+    coordination_job_id = ANY($3::uuid[])
+    OR project_task_id = ANY($4::uuid[])
+  )
+ORDER BY created_at DESC
+LIMIT $5
+`
+
+type ListDemandLaunchDecisionRequestsParams struct {
+	TenantID           uuid.UUID   `json:"tenant_id"`
+	ProjectID          uuid.UUID   `json:"project_id"`
+	CoordinationJobIds []uuid.UUID `json:"coordination_job_ids"`
+	ProjectTaskIds     []uuid.UUID `json:"project_task_ids"`
+	Limit              int32       `json:"limit"`
+}
+
+func (q *Queries) ListDemandLaunchDecisionRequests(ctx context.Context, arg ListDemandLaunchDecisionRequestsParams) ([]ProjectDecisionRequest, error) {
+	rows, err := q.db.Query(ctx, ListDemandLaunchDecisionRequests,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.CoordinationJobIds,
+		arg.ProjectTaskIds,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectDecisionRequest{}
+	for rows.Next() {
+		var i ProjectDecisionRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ApprovalRequestID,
+			&i.CoordinationJobID,
+			&i.ProjectTaskID,
+			&i.TargetUserID,
+			&i.DecisionType,
+			&i.TitleSnapshot,
+			&i.SummarySnapshot,
+			&i.RiskLevelSnapshot,
+			&i.StatusSnapshot,
+			&i.CreatedEventID,
+			&i.ResolvedEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListDemandLaunchProjectEvents = `-- name: ListDemandLaunchProjectEvents :many
+SELECT id, tenant_id, project_id, sequence_number, event_type, actor_type, actor_id, resource_type, resource_id, summary, payload, created_at FROM project_events
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND (
+    ($3::uuid IS NOT NULL AND id = $3::uuid)
+    OR resource_id = ($4::uuid)::text
+    OR resource_id = ANY($5::varchar[])
+    OR resource_id = ANY($6::varchar[])
+    OR payload->>'demand_id' = ($4::uuid)::text
+    OR payload->>'project_task_id' = ANY($5::varchar[])
+    OR payload->>'decision_request_id' = ANY($6::varchar[])
+  )
+ORDER BY sequence_number DESC
+LIMIT $7
+`
+
+type ListDemandLaunchProjectEventsParams struct {
+	TenantID           uuid.UUID     `json:"tenant_id"`
+	ProjectID          uuid.UUID     `json:"project_id"`
+	CreatedEventID     uuid.NullUUID `json:"created_event_id"`
+	DemandID           uuid.UUID     `json:"demand_id"`
+	ProjectTaskIds     []string      `json:"project_task_ids"`
+	DecisionRequestIds []string      `json:"decision_request_ids"`
+	Limit              int32         `json:"limit"`
+}
+
+func (q *Queries) ListDemandLaunchProjectEvents(ctx context.Context, arg ListDemandLaunchProjectEventsParams) ([]ProjectEvent, error) {
+	rows, err := q.db.Query(ctx, ListDemandLaunchProjectEvents,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.CreatedEventID,
+		arg.DemandID,
+		arg.ProjectTaskIds,
+		arg.DecisionRequestIds,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectEvent{}
+	for rows.Next() {
+		var i ProjectEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.SequenceNumber,
+			&i.EventType,
+			&i.ActorType,
+			&i.ActorID,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Summary,
+			&i.Payload,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListDemandLaunchProjectTasks = `-- name: ListDemandLaunchProjectTasks :many
+SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at FROM project_tasks
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND demand_id = $3::uuid
+ORDER BY updated_at DESC
+LIMIT $4
+`
+
+type ListDemandLaunchProjectTasksParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	DemandID  uuid.UUID `json:"demand_id"`
+	Limit     int32     `json:"limit"`
+}
+
+func (q *Queries) ListDemandLaunchProjectTasks(ctx context.Context, arg ListDemandLaunchProjectTasksParams) ([]ProjectTask, error) {
+	rows, err := q.db.Query(ctx, ListDemandLaunchProjectTasks,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.DemandID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectTask{}
+	for rows.Next() {
+		var i ProjectTask
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.DemandID,
+			&i.Title,
+			&i.Summary,
+			&i.Status,
+			&i.AssignedDigitalEmployeeID,
+			&i.RuntimeTaskID,
+			&i.DigitalEmployeeRunID,
+			&i.RiskLevel,
+			&i.RequiresHumanApproval,
+			&i.LatestEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListDemandLaunchRouteDecisions = `-- name: ListDemandLaunchRouteDecisions :many
+SELECT id, tenant_id, project_id, coordination_job_id, demand_id, candidate_digital_employee_ids, selected_digital_employee_ids, reason, input_requirements, expected_outputs, budget_estimate, requires_human_review, created_event_id, created_at FROM project_route_decisions
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND demand_id = $3::uuid
+ORDER BY created_at DESC
+LIMIT $4
+`
+
+type ListDemandLaunchRouteDecisionsParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	DemandID  uuid.UUID `json:"demand_id"`
+	Limit     int32     `json:"limit"`
+}
+
+func (q *Queries) ListDemandLaunchRouteDecisions(ctx context.Context, arg ListDemandLaunchRouteDecisionsParams) ([]ProjectRouteDecision, error) {
+	rows, err := q.db.Query(ctx, ListDemandLaunchRouteDecisions,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.DemandID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectRouteDecision{}
+	for rows.Next() {
+		var i ProjectRouteDecision
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.CoordinationJobID,
+			&i.DemandID,
+			&i.CandidateDigitalEmployeeIds,
+			&i.SelectedDigitalEmployeeIds,
+			&i.Reason,
+			&i.InputRequirements,
+			&i.ExpectedOutputs,
+			&i.BudgetEstimate,
+			&i.RequiresHumanReview,
+			&i.CreatedEventID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectCoordinationJobs = `-- name: ListProjectCoordinationJobs :many
 SELECT id, tenant_id, project_id, workflow_id, trigger_event_id, job_type, status, input_snapshot_ref, output_event_ids, started_at, finished_at, created_at FROM project_coordination_jobs
 WHERE tenant_id = $1::uuid

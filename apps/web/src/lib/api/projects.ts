@@ -17,6 +17,10 @@ export type ProjectRole =
   | "executor"
   | "reviewer"
   | "observer";
+export type ReviewerSelectionReason =
+  | "project_reviewer_default"
+  | "project_human_owner_fallback"
+  | "user_selected";
 export type ProjectEventType =
   | "project.created"
   | "project.config.changed"
@@ -104,6 +108,14 @@ export type ProjectMemberInput = {
   settings?: Record<string, unknown>;
 };
 
+export type ReviewerPreference = {
+  reviewer_user_id: string;
+  selection_reason: ReviewerSelectionReason;
+  display_name?: string;
+  project_role: ProjectRole;
+  resolved_from_rule: boolean;
+};
+
 export type ProjectTask = {
   id: string;
   tenant_id: string;
@@ -143,6 +155,7 @@ export type ProjectDemand = {
   attachments: unknown[];
   status: ProjectDemandStatus;
   created_event_id?: string;
+  reviewer: ReviewerPreference | null;
 };
 
 export type ProjectStatusSummary = {
@@ -182,6 +195,17 @@ export type ProjectConfig = {
   approval_policy: Record<string, unknown>;
   evidence_policy: Record<string, unknown>;
   coordination_workflow: ProjectCoordinationWorkflow;
+};
+
+export type ProjectDemandLaunchDetail = {
+  demand: ProjectDemand;
+  project: Project;
+  reviewer: ReviewerPreference | null;
+  coordination_jobs: ProjectCoordinationJob[];
+  route_decisions: ProjectRouteDecision[];
+  project_tasks: ProjectTask[];
+  decision_requests: ProjectDecisionRequest[];
+  recent_events: ProjectEvent[];
 };
 
 export type ProjectRouteDecision = {
@@ -449,6 +473,8 @@ export type SubmitProjectDemandInput = {
   source_type?: ProjectDemandSourceType;
   source_refs?: Record<string, unknown>;
   attachments?: unknown[];
+  reviewer_user_id?: string;
+  reviewer_selection_reason?: ReviewerSelectionReason;
 };
 
 export type CreateProjectEvidenceInput = {
@@ -802,6 +828,17 @@ export function submitProjectDemand(
     projectPath(projectId, "/demands"),
     input,
     "submit project demand",
+  );
+}
+
+export function getProjectDemandLaunchDetail(
+  options: ApiClientOptions,
+  demandId: string,
+): Promise<ProjectDemandLaunchDetail> {
+  return getJson<ProjectDemandLaunchDetail>(
+    options,
+    `/api/v1/project-demands/${encodeURIComponent(demandId)}/launch-detail`,
+    "project demand launch detail",
   );
 }
 

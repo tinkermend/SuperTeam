@@ -137,18 +137,20 @@ func TestSubmitDemandRecordsDemandAndEventWithoutAutoCreatingTask(t *testing.T) 
 		t.Fatalf("new service: %v", err)
 	}
 	projectID := uuid.New()
+	ownerID := uuid.New()
 	repo.projects[projectID] = Project{
 		ID:               projectID,
 		TenantID:         uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 		Name:             "客户侧 Runtime 接入验收",
 		Status:           ProjectStatusRunning,
-		HumanOwnerUserID: uuid.New(),
+		HumanOwnerUserID: ownerID,
 	}
+	seedHumanOwnerMember(repo, repo.projects[projectID].TenantID, projectID, ownerID)
 
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID:          repo.projects[projectID].TenantID,
 		ProjectID:         projectID,
-		SubmittedByUserID: uuid.New(),
+		SubmittedByUserID: ownerID,
 		Title:             "验证 Runtime 连接",
 		Content:           "检查心跳和命令回写",
 		SourceType:        DemandSourceManual,
@@ -164,6 +166,493 @@ func TestSubmitDemandRecordsDemandAndEventWithoutAutoCreatingTask(t *testing.T) 
 	}
 	if len(repo.eventTypes) != 1 || repo.eventTypes[0] != ProjectEventDemandSubmitted {
 		t.Fatalf("expected demand event only, got %#v", repo.eventTypes)
+	}
+}
+
+func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "客户侧 Runtime 接入验收",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID, Title: "审查 PR",
+	})
+	if err != nil {
+		t.Fatalf("submit demand: %v", err)
+	}
+	job := CoordinationJob{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, TriggerEventID: demand.CreatedEventID, JobType: "demand_route", Status: "running"}
+	inputJob := CoordinationJob{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, JobType: "demand_route", Status: "running", InputSnapshotRef: map[string]any{"demand_id": demand.ID.String()}}
+	repo.coordinationJobs = append(repo.coordinationJobs, job, inputJob)
+	task := ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, DemandID: &demand.ID, Title: "审查 PR", Status: "pending"}
+	repo.tasks = append(repo.tasks, task)
+	repo.routeDecisions = append(repo.routeDecisions, RouteDecision{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: job.ID, DemandID: &demand.ID, Reason: "按能力分派"})
+	decisionRequest := DecisionRequest{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: &job.ID, TargetUserID: ownerID, DecisionType: "route_review", TitleSnapshot: "确认路由", StatusSnapshot: "pending"}
+	taskDecisionRequest := DecisionRequest{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ProjectTaskID: &task.ID, TargetUserID: ownerID, DecisionType: "task_review", TitleSnapshot: "确认任务", StatusSnapshot: "pending"}
+	repo.decisionRequests = append(repo.decisionRequests, decisionRequest, taskDecisionRequest)
+	demandResourceType := "project_demand"
+	demandResourceID := demand.ID.String()
+	demandResourceEvent := ProjectEvent{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ResourceType: &demandResourceType, ResourceID: &demandResourceID, EventType: ProjectEventDemandSubmitted, ActorType: "human_user", ActorID: ownerID.String(), Payload: map[string]any{}}
+	taskPayloadEvent := ProjectEvent{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, EventType: ProjectEventTaskDispatched, ActorType: "workflow", ActorID: job.ID.String(), Payload: map[string]any{"project_task_id": task.ID.String()}}
+	decisionPayloadEvent := ProjectEvent{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, EventType: ProjectEventDecisionRequested, ActorType: "workflow", ActorID: job.ID.String(), Payload: map[string]any{"decision_request_id": decisionRequest.ID.String()}}
+	repo.events = append(repo.events, demandResourceEvent, taskPayloadEvent, decisionPayloadEvent)
+	for i := 0; i < 120; i++ {
+		unrelatedDemandID := uuid.New()
+		unrelatedJobID := uuid.New()
+		unrelatedTaskID := uuid.New()
+		unrelatedDecisionID := uuid.New()
+		later := time.Now().UTC().Add(time.Duration(i+1) * time.Minute)
+		repo.coordinationJobs = append(repo.coordinationJobs, CoordinationJob{ID: unrelatedJobID, TenantID: tenantID, ProjectID: projectID, JobType: "demand_route", Status: "running", InputSnapshotRef: map[string]any{"demand_id": unrelatedDemandID.String()}, CreatedAt: later})
+		repo.tasks = append(repo.tasks, ProjectTask{ID: unrelatedTaskID, TenantID: tenantID, ProjectID: projectID, DemandID: &unrelatedDemandID, Title: "其他任务", Status: "pending", UpdatedAt: later})
+		repo.routeDecisions = append(repo.routeDecisions, RouteDecision{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: unrelatedJobID, DemandID: &unrelatedDemandID, Reason: "其他路由", CreatedAt: later})
+		repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{ID: unrelatedDecisionID, TenantID: tenantID, ProjectID: projectID, CoordinationJobID: &unrelatedJobID, ProjectTaskID: &unrelatedTaskID, TargetUserID: ownerID, DecisionType: "route_review", TitleSnapshot: "其他决策", StatusSnapshot: "pending", CreatedAt: later})
+		unrelatedTaskResourceID := unrelatedTaskID.String()
+		repo.events = append(repo.events, ProjectEvent{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, SequenceNumber: int64(1000 + i), EventType: ProjectEventTaskDispatched, ActorType: "workflow", ActorID: unrelatedJobID.String(), ResourceID: &unrelatedTaskResourceID, Payload: map[string]any{"project_task_id": unrelatedTaskID.String()}, CreatedAt: later})
+	}
+
+	detail, err := service.GetDemandLaunchDetail(context.Background(), tenantID, demand.ID)
+	if err != nil {
+		t.Fatalf("launch detail: %v", err)
+	}
+	if detail.Demand.ID != demand.ID || detail.Project.ID != projectID {
+		t.Fatalf("unexpected demand/project: %#v", detail)
+	}
+	if detail.Reviewer == nil || detail.Reviewer.ReviewerUserID != ownerID {
+		t.Fatalf("expected reviewer preference in launch detail: %#v", detail.Reviewer)
+	}
+	if len(detail.CoordinationJobs) != 2 || len(detail.RouteDecisions) != 1 || len(detail.ProjectTasks) != 1 || len(detail.DecisionRequests) != 2 {
+		t.Fatalf("expected related facts, got %#v", detail)
+	}
+	if len(detail.RecentEvents) != 4 {
+		t.Fatalf("expected demand event in launch detail: %#v", detail.RecentEvents)
+	}
+	eventIDs := map[uuid.UUID]struct{}{}
+	for _, event := range detail.RecentEvents {
+		eventIDs[event.ID] = struct{}{}
+	}
+	if _, ok := eventIDs[*demand.CreatedEventID]; !ok {
+		t.Fatalf("expected created demand event in launch detail: %#v", detail.RecentEvents)
+	}
+	if _, ok := eventIDs[demandResourceEvent.ID]; !ok {
+		t.Fatalf("expected demand resource event in launch detail: %#v", detail.RecentEvents)
+	}
+	if _, ok := eventIDs[taskPayloadEvent.ID]; !ok {
+		t.Fatalf("expected task payload event in launch detail: %#v", detail.RecentEvents)
+	}
+	if _, ok := eventIDs[decisionPayloadEvent.ID]; !ok {
+		t.Fatalf("expected decision payload event in launch detail: %#v", detail.RecentEvents)
+	}
+}
+
+func TestSubmitDemandPersistsDefaultReviewerPreference(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	reviewerID := uuid.New()
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.members[projectID] = []ProjectMember{
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: ownerID,
+			ProjectRole: ProjectRoleOwner, Status: "active",
+		},
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: reviewerID,
+			ProjectRole: ProjectRoleReviewer, Status: "active",
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
+		Title: "审查 PR", Content: "统计 PR 并分派审查",
+	})
+	if err != nil {
+		t.Fatalf("submit demand: %v", err)
+	}
+
+	if demand.ReviewerPreference == nil {
+		t.Fatalf("expected reviewer preference on demand: %#v", demand)
+	}
+	if demand.ReviewerPreference.ReviewerUserID != reviewerID {
+		t.Fatalf("expected reviewer %s, got %#v", reviewerID, demand.ReviewerPreference)
+	}
+	if demand.ReviewerPreference.SelectionReason != ReviewerSelectionProjectReviewerDefault {
+		t.Fatalf("unexpected reviewer reason: %#v", demand.ReviewerPreference)
+	}
+	if demand.SourceRefs["reviewer_user_id"] != reviewerID.String() {
+		t.Fatalf("expected reviewer persisted in source refs: %#v", demand.SourceRefs)
+	}
+}
+
+func TestSubmitDemandPersistsExplicitReviewerSelectionReason(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	reviewerID := uuid.New()
+	reviewerName := "审查负责人"
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.members[projectID] = []ProjectMember{
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: ownerID,
+			ProjectRole: ProjectRoleOwner, Status: "active",
+		},
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: reviewerID,
+			ProjectRole: ProjectRoleReviewer, DisplayNameSnapshot: &reviewerName, Status: "active",
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
+		Title: "审查 PR", ReviewerUserID: &reviewerID,
+		ReviewerSelectionReason: ReviewerSelectionProjectReviewerDefault,
+	})
+	if err != nil {
+		t.Fatalf("submit demand: %v", err)
+	}
+
+	if demand.ReviewerPreference == nil {
+		t.Fatalf("expected reviewer preference on demand: %#v", demand)
+	}
+	if demand.ReviewerPreference.SelectionReason != ReviewerSelectionProjectReviewerDefault {
+		t.Fatalf("expected explicit reason to be preserved, got %#v", demand.ReviewerPreference)
+	}
+	if demand.SourceRefs["reviewer_selection_reason"] != string(ReviewerSelectionProjectReviewerDefault) {
+		t.Fatalf("expected reviewer reason persisted in source refs: %#v", demand.SourceRefs)
+	}
+	if demand.SourceRefs["reviewer_display_name"] != reviewerName {
+		t.Fatalf("expected reviewer display name persisted in source refs: %#v", demand.SourceRefs)
+	}
+}
+
+func TestSubmitDemandRejectsInvalidReviewerSelectionReason(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	reviewerID := uuid.New()
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.members[projectID] = []ProjectMember{
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: ownerID,
+			ProjectRole: ProjectRoleOwner, Status: "active",
+		},
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: reviewerID,
+			ProjectRole: ProjectRoleReviewer, Status: "active",
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
+		Title: "审查 PR", ReviewerUserID: &reviewerID,
+		ReviewerSelectionReason: ReviewerSelectionReason("invalid_reason"),
+	})
+	if !errors.Is(err, ErrInvalidProjectMember) {
+		t.Fatalf("expected invalid project member, got %v", err)
+	}
+}
+
+func TestSubmitDemandDiscardsSpoofedReviewerSourceRefs(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	reviewerID := uuid.New()
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.members[projectID] = []ProjectMember{
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: ownerID,
+			ProjectRole: ProjectRoleOwner, Status: "active",
+		},
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: reviewerID,
+			ProjectRole: ProjectRoleReviewer, Status: "active",
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
+		Title: "审查 PR", ReviewerUserID: &reviewerID,
+		SourceRefs: map[string]any{
+			"reviewer_display_name": "Spoofed",
+			"reviewer_user_id":      "bad",
+			"external_ticket":       "T-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("submit demand: %v", err)
+	}
+
+	if demand.SourceRefs["reviewer_user_id"] != reviewerID.String() {
+		t.Fatalf("expected canonical reviewer id, got source refs: %#v", demand.SourceRefs)
+	}
+	if _, ok := demand.SourceRefs["reviewer_display_name"]; ok {
+		t.Fatalf("expected spoofed display name to be discarded: %#v", demand.SourceRefs)
+	}
+	if demand.SourceRefs["external_ticket"] != "T-1" {
+		t.Fatalf("expected non-reviewer source ref to remain: %#v", demand.SourceRefs)
+	}
+}
+
+func TestSubmitDemandFallsBackToHumanOwnerWhenNoReviewer(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.members[projectID] = []ProjectMember{{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+		PrincipalType: PrincipalTypeHumanUser, PrincipalID: ownerID,
+		ProjectRole: ProjectRoleOwner, Status: "active",
+	}}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
+		Title: "补充证据",
+	})
+	if err != nil {
+		t.Fatalf("submit demand: %v", err)
+	}
+	if demand.ReviewerPreference == nil || demand.ReviewerPreference.ReviewerUserID != ownerID {
+		t.Fatalf("expected owner fallback preference: %#v", demand.ReviewerPreference)
+	}
+	if demand.ReviewerPreference.SelectionReason != ReviewerSelectionProjectHumanOwnerFallback {
+		t.Fatalf("expected owner fallback reason, got %#v", demand.ReviewerPreference)
+	}
+}
+
+func TestSubmitDemandRequiresActiveHumanOwnerMemberForFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		members []ProjectMember
+	}{
+		{name: "missing owner member"},
+		{
+			name: "inactive owner member",
+			members: []ProjectMember{{
+				PrincipalType: PrincipalTypeHumanUser,
+				ProjectRole:   ProjectRoleOwner,
+				Status:        "inactive",
+			}},
+		},
+		{
+			name: "digital owner member",
+			members: []ProjectMember{{
+				PrincipalType: PrincipalTypeDigitalEmployee,
+				ProjectRole:   ProjectRoleOwner,
+				Status:        "active",
+			}},
+		},
+		{
+			name: "observer owner member",
+			members: []ProjectMember{{
+				PrincipalType: PrincipalTypeHumanUser,
+				ProjectRole:   ProjectRoleObserver,
+				Status:        "active",
+			}},
+		},
+		{
+			name: "executor owner member",
+			members: []ProjectMember{{
+				PrincipalType: PrincipalTypeHumanUser,
+				ProjectRole:   ProjectRoleExecutor,
+				Status:        "active",
+			}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tenantID := uuid.New()
+			projectID := uuid.New()
+			ownerID := uuid.New()
+			repo := newMemoryRepository()
+			repo.projects[projectID] = Project{
+				ID:               projectID,
+				TenantID:         tenantID,
+				Status:           ProjectStatusRunning,
+				HumanOwnerUserID: ownerID,
+			}
+			for _, member := range tc.members {
+				member.ID = uuid.New()
+				member.TenantID = tenantID
+				member.ProjectID = projectID
+				member.PrincipalID = ownerID
+				repo.members[projectID] = append(repo.members[projectID], member)
+			}
+			service, err := NewService(repo)
+			if err != nil {
+				t.Fatalf("new service: %v", err)
+			}
+
+			_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+				TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
+				Title: "补充证据",
+			})
+			if !errors.Is(err, ErrInvalidProjectMember) {
+				t.Fatalf("expected invalid project member, got %v", err)
+			}
+		})
+	}
+}
+
+func TestReviewerPreferenceFromSourceRefsRestoresDisplayName(t *testing.T) {
+	reviewerID := uuid.New()
+	preference := reviewerPreferenceFromSourceRefs(map[string]any{
+		"reviewer_user_id":            reviewerID.String(),
+		"reviewer_selection_reason":   string(ReviewerSelectionProjectReviewerDefault),
+		"reviewer_project_role":       string(ProjectRoleReviewer),
+		"reviewer_resolved_from_rule": true,
+		"reviewer_display_name":       "审查负责人",
+	})
+
+	if preference == nil {
+		t.Fatal("expected reviewer preference")
+	}
+	if preference.DisplayName == nil || *preference.DisplayName != "审查负责人" {
+		t.Fatalf("expected display name restored, got %#v", preference)
+	}
+	if preference.ReviewerUserID != reviewerID || preference.SelectionReason != ReviewerSelectionProjectReviewerDefault || preference.ProjectRole != ProjectRoleReviewer || !preference.ResolvedFromRule {
+		t.Fatalf("unexpected reviewer preference: %#v", preference)
+	}
+}
+
+func TestSubmitDemandRejectsDigitalEmployeeReviewer(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	digitalEmployeeID := uuid.New()
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.members[projectID] = []ProjectMember{
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: ownerID,
+			ProjectRole: ProjectRoleOwner, Status: "active",
+		},
+		{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeDigitalEmployee, PrincipalID: digitalEmployeeID,
+			ProjectRole: ProjectRoleExecutor, Status: "active",
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
+		Title: "需要审核", ReviewerUserID: &digitalEmployeeID,
+	})
+	if !errors.Is(err, ErrInvalidProjectMember) {
+		t.Fatalf("expected invalid project member, got %v", err)
+	}
+}
+
+func TestSubmitDemandRequiresExplicitReviewerWhenMultipleReviewers(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: ownerID,
+	}
+	repo.members[projectID] = []ProjectMember{{
+		ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+		PrincipalType: PrincipalTypeHumanUser, PrincipalID: ownerID,
+		ProjectRole: ProjectRoleOwner, Status: "active",
+	}}
+	for range 2 {
+		repo.members[projectID] = append(repo.members[projectID], ProjectMember{
+			ID: uuid.New(), TenantID: tenantID, ProjectID: projectID,
+			PrincipalType: PrincipalTypeHumanUser, PrincipalID: uuid.New(),
+			ProjectRole: ProjectRoleReviewer, Status: "active",
+		})
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
+		Title: "多审核人项目",
+	})
+	if !errors.Is(err, ErrInvalidProjectMember) {
+		t.Fatalf("expected reviewer selection error, got %v", err)
 	}
 }
 
@@ -628,6 +1117,7 @@ func TestSubmitDemandSignalsProjectCoordinatorInV1(t *testing.T) {
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
 		CoordinationStatus:     "registered",
 	}
+	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
 
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID:          tenantID,
@@ -669,6 +1159,7 @@ func TestSubmitDemandRecordsRetryableWorkflowSignalFailure(t *testing.T) {
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
 		CoordinationStatus:     "registered",
 	}
+	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
 
 	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID:          tenantID,
@@ -711,6 +1202,7 @@ func TestRetryWorkflowSignalReplaysFailedDemandSignal(t *testing.T) {
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
 		CoordinationStatus:     "registered",
 	}
+	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
 
 	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID:          tenantID,
@@ -904,6 +1396,7 @@ func TestProjectCoordinationBackendE2ESimulation(t *testing.T) {
 		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
 		CoordinationStatus:     "registered",
 	}
+	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
 
 	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID:          tenantID,
@@ -1913,6 +2406,30 @@ func strPtrOrNil(value string) *string {
 	return &value
 }
 
+func paginateTestSlice[T any](items []T, limit, offset int32) []T {
+	start := int(offset)
+	if start > len(items) {
+		return []T{}
+	}
+	end := start + int(limit)
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[start:end]
+}
+
+func seedHumanOwnerMember(repo *memoryRepository, tenantID, projectID, ownerID uuid.UUID) {
+	repo.members[projectID] = append(repo.members[projectID], ProjectMember{
+		ID:            uuid.New(),
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		PrincipalType: PrincipalTypeHumanUser,
+		PrincipalID:   ownerID,
+		ProjectRole:   ProjectRoleOwner,
+		Status:        "active",
+	})
+}
+
 func bindTaskToRuntimeRun(repo *memoryRepository, taskIndex int, runtimeNodeID uuid.UUID) uuid.UUID {
 	runID := uuid.New()
 	repo.tasks[taskIndex].DigitalEmployeeRunID = &runID
@@ -2062,7 +2579,10 @@ func (r *memoryRepository) ListProjectTasks(ctx context.Context, tenantID, proje
 			filtered = append(filtered, task)
 		}
 	}
-	return filtered, nil
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
+	})
+	return paginateTestSlice(filtered, limit, offset), nil
 }
 
 func (r *memoryRepository) AppendProjectEvent(ctx context.Context, event AppendProjectEventRequest) (ProjectEvent, error) {
@@ -2105,22 +2625,26 @@ func (r *memoryRepository) ListProjectEvents(ctx context.Context, tenantID, proj
 			filtered = append(filtered, event)
 		}
 	}
-	return filtered, nil
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].SequenceNumber > filtered[j].SequenceNumber
+	})
+	return paginateTestSlice(filtered, limit, offset), nil
 }
 
 func (r *memoryRepository) CreateProjectDemand(ctx context.Context, req SubmitProjectDemandRequest, status ProjectDemandStatus, createdEventID *uuid.UUID) (ProjectDemand, error) {
 	demand := ProjectDemand{
-		ID:                uuid.New(),
-		TenantID:          req.TenantID,
-		ProjectID:         req.ProjectID,
-		SubmittedByUserID: req.SubmittedByUserID,
-		Title:             req.Title,
-		Content:           strPtrOrNil(req.Content),
-		SourceType:        req.SourceType,
-		SourceRefs:        req.SourceRefs,
-		Attachments:       req.Attachments,
-		Status:            status,
-		CreatedEventID:    createdEventID,
+		ID:                 uuid.New(),
+		TenantID:           req.TenantID,
+		ProjectID:          req.ProjectID,
+		SubmittedByUserID:  req.SubmittedByUserID,
+		Title:              req.Title,
+		Content:            strPtrOrNil(req.Content),
+		SourceType:         req.SourceType,
+		SourceRefs:         req.SourceRefs,
+		Attachments:        req.Attachments,
+		ReviewerPreference: reviewerPreferenceFromSourceRefs(req.SourceRefs),
+		Status:             status,
+		CreatedEventID:     createdEventID,
 	}
 	r.demands = append(r.demands, demand)
 	return demand, nil
@@ -2217,7 +2741,24 @@ func (r *memoryRepository) ListCoordinationJobs(ctx context.Context, tenantID, p
 			filtered = append(filtered, job)
 		}
 	}
-	return filtered, nil
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+	})
+	return paginateTestSlice(filtered, limit, offset), nil
+}
+
+func (r *memoryRepository) ListDemandLaunchCoordinationJobs(ctx context.Context, tenantID, projectID, demandID uuid.UUID, createdEventID *uuid.UUID, limit int32) ([]CoordinationJob, error) {
+	candidates := make([]CoordinationJob, 0, len(r.coordinationJobs))
+	for _, job := range r.coordinationJobs {
+		if job.TenantID == tenantID && job.ProjectID == projectID {
+			candidates = append(candidates, job)
+		}
+	}
+	filtered := filterJobsForDemand(candidates, ProjectDemand{ID: demandID, CreatedEventID: createdEventID})
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+	})
+	return paginateTestSlice(filtered, limit, 0), nil
 }
 
 func (r *memoryRepository) CreateRouteDecision(ctx context.Context, req CreateRouteDecisionRequest) (RouteDecision, error) {
@@ -2248,7 +2789,24 @@ func (r *memoryRepository) ListRouteDecisions(ctx context.Context, tenantID, pro
 			filtered = append(filtered, decision)
 		}
 	}
-	return filtered, nil
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+	})
+	return paginateTestSlice(filtered, limit, offset), nil
+}
+
+func (r *memoryRepository) ListDemandLaunchRouteDecisions(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]RouteDecision, error) {
+	candidates := make([]RouteDecision, 0, len(r.routeDecisions))
+	for _, decision := range r.routeDecisions {
+		if decision.TenantID == tenantID && decision.ProjectID == projectID {
+			candidates = append(candidates, decision)
+		}
+	}
+	filtered := filterRoutesForDemand(candidates, demandID)
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+	})
+	return paginateTestSlice(filtered, limit, 0), nil
 }
 
 func (r *memoryRepository) CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error) {
@@ -2268,6 +2826,20 @@ func (r *memoryRepository) CreateProjectTask(ctx context.Context, req CreateProj
 	}
 	r.tasks = append(r.tasks, task)
 	return task, nil
+}
+
+func (r *memoryRepository) ListDemandLaunchProjectTasks(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]ProjectTask, error) {
+	candidates := make([]ProjectTask, 0, len(r.tasks))
+	for _, task := range r.tasks {
+		if task.TenantID == tenantID && task.ProjectID == projectID {
+			candidates = append(candidates, task)
+		}
+	}
+	filtered := filterTasksForDemand(candidates, demandID)
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
+	})
+	return paginateTestSlice(filtered, limit, 0), nil
 }
 
 func (r *memoryRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error) {
@@ -2522,15 +3094,61 @@ func (r *memoryRepository) ListDecisionRequests(ctx context.Context, tenantID, p
 	sort.SliceStable(filtered, func(i, j int) bool {
 		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
 	})
-	start := int(offset)
-	if start > len(filtered) {
-		return []DecisionRequest{}, nil
+	return paginateTestSlice(filtered, limit, offset), nil
+}
+
+func (r *memoryRepository) ListDemandLaunchDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, coordinationJobIDs, projectTaskIDs []uuid.UUID, limit int32) ([]DecisionRequest, error) {
+	jobIDs := map[uuid.UUID]struct{}{}
+	for _, id := range coordinationJobIDs {
+		jobIDs[id] = struct{}{}
 	}
-	end := start + int(limit)
-	if end > len(filtered) {
-		end = len(filtered)
+	taskIDs := map[uuid.UUID]struct{}{}
+	for _, id := range projectTaskIDs {
+		taskIDs[id] = struct{}{}
 	}
-	return filtered[start:end], nil
+	filtered := make([]DecisionRequest, 0, len(r.decisionRequests))
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID != tenantID || decision.ProjectID != projectID {
+			continue
+		}
+		if decision.CoordinationJobID != nil {
+			if _, ok := jobIDs[*decision.CoordinationJobID]; ok {
+				filtered = append(filtered, decision)
+				continue
+			}
+		}
+		if decision.ProjectTaskID != nil {
+			if _, ok := taskIDs[*decision.ProjectTaskID]; ok {
+				filtered = append(filtered, decision)
+			}
+		}
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+	})
+	return paginateTestSlice(filtered, limit, 0), nil
+}
+
+func (r *memoryRepository) ListDemandLaunchEvents(ctx context.Context, tenantID, projectID, demandID uuid.UUID, createdEventID *uuid.UUID, projectTaskIDs, decisionRequestIDs []uuid.UUID, limit int32) ([]ProjectEvent, error) {
+	candidates := make([]ProjectEvent, 0, len(r.events))
+	for _, event := range r.events {
+		if event.TenantID == tenantID && event.ProjectID == projectID {
+			candidates = append(candidates, event)
+		}
+	}
+	tasks := make([]ProjectTask, 0, len(projectTaskIDs))
+	for _, id := range projectTaskIDs {
+		tasks = append(tasks, ProjectTask{ID: id})
+	}
+	decisions := make([]DecisionRequest, 0, len(decisionRequestIDs))
+	for _, id := range decisionRequestIDs {
+		decisions = append(decisions, DecisionRequest{ID: id})
+	}
+	filtered := filterEventsForDemand(candidates, ProjectDemand{ID: demandID, CreatedEventID: createdEventID}, tasks, decisions)
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].SequenceNumber > filtered[j].SequenceNumber
+	})
+	return paginateTestSlice(filtered, limit, 0), nil
 }
 
 func (r *memoryRepository) CreateEvidenceRefWithEvent(ctx context.Context, req CreateEvidenceRefWithEventRequest) (ProjectEvidenceRefWriteResult, error) {

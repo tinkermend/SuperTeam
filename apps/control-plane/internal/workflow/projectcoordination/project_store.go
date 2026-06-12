@@ -165,12 +165,16 @@ func (s *ProjectStore) RequestRouteDecisionReview(ctx context.Context, input Req
 	if err != nil {
 		return DecisionRequestResult{}, err
 	}
+	targetUserID, err := s.routeReviewTargetUserID(ctx, input, projectRecord)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
 	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
 		TenantID:       input.TenantID,
 		ResourceType:   "project_route_decision",
 		ResourceID:     input.RouteDecisionID,
 		RequesterType:  "project_coordinator",
-		TargetUserID:   projectRecord.HumanOwnerUserID,
+		TargetUserID:   targetUserID,
 		DecisionType:   "route_review",
 		Title:          "确认项目路由决策",
 		Summary:        input.Decision.Reason,
@@ -185,6 +189,7 @@ func (s *ProjectStore) RequestRouteDecisionReview(ctx context.Context, input Req
 		"approval_request_id": approvalRequest.ID.String(),
 		"route_decision_id":   input.RouteDecisionID.String(),
 		"demand_id":           input.DemandID.String(),
+		"target_user_id":      targetUserID.String(),
 	}))
 	if err != nil {
 		return DecisionRequestResult{}, err
@@ -195,7 +200,7 @@ func (s *ProjectStore) RequestRouteDecisionReview(ctx context.Context, input Req
 		ProjectID:         input.ProjectID,
 		ApprovalRequestID: approvalRequest.ID,
 		CoordinationJobID: &coordinationJobID,
-		TargetUserID:      projectRecord.HumanOwnerUserID,
+		TargetUserID:      targetUserID,
 		DecisionType:      "route_review",
 		TitleSnapshot:     "确认项目路由决策",
 		SummarySnapshot:   input.Decision.Reason,
@@ -207,6 +212,20 @@ func (s *ProjectStore) RequestRouteDecisionReview(ctx context.Context, input Req
 		return DecisionRequestResult{}, err
 	}
 	return DecisionRequestResult{ID: decision.ID}, nil
+}
+
+func (s *ProjectStore) routeReviewTargetUserID(ctx context.Context, input RequestRouteDecisionReviewInput, projectRecord project.Project) (uuid.UUID, error) {
+	demand, err := s.repository.GetProjectDemand(ctx, input.TenantID, input.DemandID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if demand.ProjectID != input.ProjectID {
+		return uuid.Nil, project.ErrProjectNotFound
+	}
+	if demand.ReviewerPreference != nil && demand.ReviewerPreference.ReviewerUserID != uuid.Nil {
+		return demand.ReviewerPreference.ReviewerUserID, nil
+	}
+	return projectRecord.HumanOwnerUserID, nil
 }
 
 func (s *ProjectStore) AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error) {
