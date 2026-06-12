@@ -194,6 +194,97 @@ func TestServiceRejectsProjectDecisionUpsertWithoutProjectSource(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsInvalidUpsertBoundaries(t *testing.T) {
+	projectID := uuid.New()
+	tests := []struct {
+		name   string
+		mutate func(*UpsertItemRequest)
+	}{
+		{
+			name: "invalid scope",
+			mutate: func(req *UpsertItemRequest) {
+				req.Scope = "workspace"
+			},
+		},
+		{
+			name: "invalid item type",
+			mutate: func(req *UpsertItemRequest) {
+				req.ItemType = ItemType("runtime_escalation")
+			},
+		},
+		{
+			name: "invalid source type",
+			mutate: func(req *UpsertItemRequest) {
+				req.SourceType = SourceType("runtime_request")
+			},
+		},
+		{
+			name: "approval item with project decision source",
+			mutate: func(req *UpsertItemRequest) {
+				req.ItemType = ItemTypeApproval
+				req.SourceType = SourceTypeProjectDecisionRequest
+				req.SourceProjectID = &projectID
+			},
+		},
+		{
+			name: "project decision item with approval source",
+			mutate: func(req *UpsertItemRequest) {
+				req.ItemType = ItemTypeProjectDecision
+				req.SourceType = SourceTypeApprovalRequest
+				req.SourceProjectID = &projectID
+			},
+		},
+		{
+			name: "approval source id does not match source id",
+			mutate: func(req *UpsertItemRequest) {
+				mismatch := uuid.New()
+				req.SourceApprovalRequestID = &mismatch
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newMemoryRepository()
+			service, err := NewService(repo)
+			if err != nil {
+				t.Fatalf("new service: %v", err)
+			}
+			req := validApprovalUpsertRequest()
+			tc.mutate(&req)
+
+			_, err = service.UpsertItem(context.Background(), req)
+			if !errors.Is(err, ErrInvalidItem) {
+				t.Fatalf("expected invalid item, got %v", err)
+			}
+			if repo.upsertItemCalls != 0 || repo.upsertByApprovalSourceCalls != 0 {
+				t.Fatalf("expected rejection before repository upsert, got generic=%d approval=%d", repo.upsertItemCalls, repo.upsertByApprovalSourceCalls)
+			}
+		})
+	}
+}
+
+func TestServiceNormalizesMissingApprovalSourceIdentity(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	req := validApprovalUpsertRequest()
+	req.SourceApprovalRequestID = nil
+
+	item, err := service.UpsertItem(context.Background(), req)
+	if err != nil {
+		t.Fatalf("upsert approval item: %v", err)
+	}
+	if item.SourceApprovalRequestID == nil || *item.SourceApprovalRequestID != req.SourceID {
+		t.Fatalf("expected approval source to normalize to source id %s, got %#v", req.SourceID, item.SourceApprovalRequestID)
+	}
+	if repo.upsertItemCalls != 0 || repo.upsertByApprovalSourceCalls != 1 {
+		t.Fatalf("expected approval-source upsert path, got generic=%d approval=%d", repo.upsertItemCalls, repo.upsertByApprovalSourceCalls)
+	}
+}
+
 func TestServiceRejectsActionsFromNonTargetUser(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -270,6 +361,83 @@ func TestServiceRejectsRequiredCommentActionsWithoutComment(t *testing.T) {
 	}
 	if resolver.calls != 0 {
 		t.Fatalf("expected source resolver not to be called, got %d calls", resolver.calls)
+	}
+}
+
+func TestServiceExecutesDefaultApprovalActionsWithDecisionKeys(t *testing.T) {
+	tests := []struct {
+		action  string
+		comment string
+	}{
+		{action: "approved"},
+		{action: "rejected", comment: "风险过高"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.action, func(t *testing.T) {
+			repo := newMemoryRepository()
+			service, err := NewService(repo)
+			if err != nil {
+				t.Fatalf("new service: %v", err)
+			}
+			resolver := &fakeApprovalResolver{}
+			service.SetApprovalActionResolver(resolver)
+			tenantID := uuid.New()
+			actorUserID := uuid.New()
+			item, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+				TenantID:     tenantID,
+				TargetUserID: actorUserID,
+				Scope:        "personal",
+				ItemType:     ItemTypeApproval,
+				SourceType:   SourceTypeApprovalRequest,
+				SourceID:     uuid.New(),
+				Title:        "审批待处理",
+			})
+			if err != nil {
+				t.Fatalf("upsert item: %v", err)
+			}
+			resolver.onResolve = func(req SourceActionRequest) {
+				repo.resolveItem(t, tenantID, item.ID, req.Action)
+			}
+
+			_, _, err = service.ExecuteAction(context.Background(), ExecuteActionRequest{
+				TenantID:    tenantID,
+				ActorUserID: actorUserID,
+				ItemID:      item.ID,
+				Action:      tc.action,
+				Comment:     tc.comment,
+			})
+			if err != nil {
+				t.Fatalf("execute default action %q: %v", tc.action, err)
+			}
+			if resolver.calls != 1 {
+				t.Fatalf("expected resolver call, got %d", resolver.calls)
+			}
+			if resolver.last.Action != tc.action {
+				t.Fatalf("expected resolver action %q, got %q", tc.action, resolver.last.Action)
+			}
+			if resolver.last.Action == "approve" || resolver.last.Action == "reject" {
+				t.Fatalf("expected downstream decision key, got legacy action %q", resolver.last.Action)
+			}
+		})
+	}
+}
+
+func TestDefaultActionsRequireCommentsForNegativeDecisions(t *testing.T) {
+	actions := DefaultActions(ItemTypeApproval)
+	byKey := make(map[string]Action, len(actions))
+	for _, action := range actions {
+		byKey[action.Key] = action
+	}
+
+	if _, ok := byKey["approved"]; !ok {
+		t.Fatalf("expected approved default action, got %#v", actions)
+	}
+	if rejected, ok := byKey["rejected"]; !ok || !rejected.RequiresComment {
+		t.Fatalf("expected rejected action requiring comment, got %#v", rejected)
+	}
+	if needsMoreEvidence, ok := byKey["needs_more_evidence"]; !ok || !needsMoreEvidence.RequiresComment {
+		t.Fatalf("expected needs_more_evidence action requiring comment, got %#v", needsMoreEvidence)
 	}
 }
 
@@ -381,6 +549,64 @@ func TestServiceRejectsMalformedProjectDecisionActionsWithoutProjectSource(t *te
 	}
 }
 
+func TestServiceListItemsHasMoreRequiresExtraFetchedItem(t *testing.T) {
+	tests := []struct {
+		name        string
+		totalItems  int
+		wantHasMore bool
+	}{
+		{name: "exact limit", totalItems: 2, wantHasMore: false},
+		{name: "limit plus one", totalItems: 3, wantHasMore: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newMemoryRepository()
+			service, err := NewService(repo)
+			if err != nil {
+				t.Fatalf("new service: %v", err)
+			}
+			tenantID := uuid.New()
+			actorUserID := uuid.New()
+			baseTime := time.Now().UTC().Add(-time.Hour)
+			for i := 0; i < tc.totalItems; i++ {
+				_, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+					TenantID:       tenantID,
+					TargetUserID:   actorUserID,
+					Scope:          "personal",
+					ItemType:       ItemTypeApproval,
+					SourceType:     SourceTypeApprovalRequest,
+					SourceID:       uuid.New(),
+					Title:          "审批待处理",
+					LastActivityAt: baseTime.Add(time.Duration(i) * time.Minute),
+				})
+				if err != nil {
+					t.Fatalf("upsert item %d: %v", i, err)
+				}
+			}
+
+			result, err := service.ListItems(context.Background(), ListItemsRequest{
+				TenantID:    tenantID,
+				ActorUserID: actorUserID,
+				View:        ViewMine,
+				Limit:       2,
+			})
+			if err != nil {
+				t.Fatalf("list items: %v", err)
+			}
+			if result.HasMore != tc.wantHasMore {
+				t.Fatalf("expected hasMore=%v, got %v", tc.wantHasMore, result.HasMore)
+			}
+			if result.Limit != 2 {
+				t.Fatalf("expected result limit 2, got %d", result.Limit)
+			}
+			if len(result.Items) != 2 {
+				t.Fatalf("expected returned item count trimmed to 2, got %d", len(result.Items))
+			}
+		})
+	}
+}
+
 func TestServiceListsMineAndTeamItems(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -470,6 +696,20 @@ func TestServiceListsMineAndTeamItems(t *testing.T) {
 	}
 	if team.OpenCount != 2 || team.HighRiskCount != 2 {
 		t.Fatalf("expected team counts open=2 high=2, got open=%d high=%d", team.OpenCount, team.HighRiskCount)
+	}
+}
+
+func validApprovalUpsertRequest() UpsertItemRequest {
+	approvalID := uuid.New()
+	return UpsertItemRequest{
+		TenantID:                uuid.New(),
+		TargetUserID:            uuid.New(),
+		Scope:                   "personal",
+		ItemType:                ItemTypeApproval,
+		SourceType:              SourceTypeApprovalRequest,
+		SourceID:                approvalID,
+		SourceApprovalRequestID: &approvalID,
+		Title:                   "审批待处理",
 	}
 }
 
@@ -689,13 +929,17 @@ func sourceKey(tenantID uuid.UUID, sourceType SourceType, sourceID uuid.UUID) st
 }
 
 type fakeApprovalResolver struct {
-	calls int
-	last  SourceActionRequest
+	calls     int
+	last      SourceActionRequest
+	onResolve func(SourceActionRequest)
 }
 
 func (r *fakeApprovalResolver) ResolveApprovalAction(_ context.Context, req SourceActionRequest) (SourceActionResult, error) {
 	r.calls++
 	r.last = req
+	if r.onResolve != nil {
+		r.onResolve(req)
+	}
 	return SourceActionResult{SourceType: string(SourceTypeApprovalRequest), SourceID: req.SourceID, Status: string(StatusResolved)}, nil
 }
 

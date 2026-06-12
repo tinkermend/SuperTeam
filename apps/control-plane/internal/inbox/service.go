@@ -83,9 +83,15 @@ func (s *Service) ListItems(ctx context.Context, req ListItemsRequest) (ListItem
 	if req.View != ViewMine && req.View != ViewTeam {
 		return ListItemsResult{}, ErrViewForbidden
 	}
-	items, err := s.repository.ListItems(ctx, req)
+	fetchReq := req
+	fetchReq.Limit = req.Limit + 1
+	items, err := s.repository.ListItems(ctx, fetchReq)
 	if err != nil {
 		return ListItemsResult{}, err
+	}
+	hasMore := len(items) > int(req.Limit)
+	if hasMore {
+		items = items[:req.Limit]
 	}
 	openCount, err := s.repository.CountOpenItems(ctx, req.TenantID, req.TargetUserID)
 	if err != nil {
@@ -95,7 +101,7 @@ func (s *Service) ListItems(ctx context.Context, req ListItemsRequest) (ListItem
 	if err != nil {
 		return ListItemsResult{}, err
 	}
-	return ListItemsResult{Items: items, Limit: req.Limit, Offset: req.Offset, HasMore: len(items) == int(req.Limit), OpenCount: openCount, HighRiskCount: highRiskCount}, nil
+	return ListItemsResult{Items: items, Limit: req.Limit, Offset: req.Offset, HasMore: hasMore, OpenCount: openCount, HighRiskCount: highRiskCount}, nil
 }
 
 func (s *Service) GetBadge(ctx context.Context, tenantID, actorUserID uuid.UUID, includeTeam bool) (Badge, error) {
@@ -200,13 +206,32 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 	if req.Scope == "" {
 		req.Scope = "personal"
 	}
-	if req.ItemType == "" || req.SourceType == "" {
+	if !validScope(req.Scope) || !validItemType(req.ItemType) || !validSourceType(req.SourceType) {
 		return UpsertItemRequest{}, ErrInvalidItem
+	}
+	switch req.ItemType {
+	case ItemTypeApproval:
+		if req.SourceType != SourceTypeApprovalRequest {
+			return UpsertItemRequest{}, ErrInvalidItem
+		}
+	case ItemTypeProjectDecision:
+		if req.SourceType != SourceTypeProjectDecisionRequest {
+			return UpsertItemRequest{}, ErrInvalidItem
+		}
 	}
 	if req.SourceApprovalRequestID != nil && *req.SourceApprovalRequestID == uuid.Nil {
 		return UpsertItemRequest{}, ErrInvalidItem
 	}
-	if (req.ItemType == ItemTypeProjectDecision || req.SourceType == SourceTypeProjectDecisionRequest) && (req.SourceProjectID == nil || *req.SourceProjectID == uuid.Nil) {
+	if req.SourceType == SourceTypeApprovalRequest {
+		if req.SourceApprovalRequestID == nil {
+			sourceID := req.SourceID
+			req.SourceApprovalRequestID = &sourceID
+		}
+		if *req.SourceApprovalRequestID != req.SourceID {
+			return UpsertItemRequest{}, ErrInvalidItem
+		}
+	}
+	if req.ItemType == ItemTypeProjectDecision && (req.SourceProjectID == nil || *req.SourceProjectID == uuid.Nil) {
 		return UpsertItemRequest{}, ErrInvalidItem
 	}
 	if req.Status == "" {
@@ -237,8 +262,8 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 
 func DefaultActions(itemType ItemType) []Action {
 	actions := []Action{
-		{Key: "approve", Label: "Approve", Tone: "positive"},
-		{Key: "reject", Label: "Reject", Tone: "destructive", RequiresComment: true},
+		{Key: "approved", Label: "Approve", Tone: "positive"},
+		{Key: "rejected", Label: "Reject", Tone: "destructive", RequiresComment: true},
 		{Key: "needs_more_evidence", Label: "Request evidence", Tone: "warning", RequiresComment: true},
 	}
 	if itemType == ItemTypeProjectDecision {
@@ -267,6 +292,33 @@ func validStatus(status Status) bool {
 	}
 }
 
+func validScope(scope string) bool {
+	switch scope {
+	case "personal", "team":
+		return true
+	default:
+		return false
+	}
+}
+
+func validItemType(itemType ItemType) bool {
+	switch itemType {
+	case ItemTypeApproval, ItemTypeProjectDecision:
+		return true
+	default:
+		return false
+	}
+}
+
+func validSourceType(sourceType SourceType) bool {
+	switch sourceType {
+	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest:
+		return true
+	default:
+		return false
+	}
+}
+
 func mapOrEmpty(values map[string]any) map[string]any {
 	if len(values) == 0 {
 		return map[string]any{}
@@ -276,12 +328,4 @@ func mapOrEmpty(values map[string]any) map[string]any {
 		cloned[key] = value
 	}
 	return cloned
-}
-
-func stringValue(value string) *string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil
-	}
-	return &value
 }
