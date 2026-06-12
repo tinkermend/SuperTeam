@@ -95,6 +95,42 @@ func (a runtimeEventRecorderAdapter) RecordRuntimeEvent(ctx context.Context, req
 	})
 }
 
+type projectTaskRunStarterAdapter struct {
+	runService *employee.DigitalEmployeeRunService
+}
+
+func (a projectTaskRunStarterAdapter) StartProjectTaskRun(ctx context.Context, req projectcoordination.StartProjectTaskRunRequest) (projectcoordination.StartProjectTaskRunResult, error) {
+	if a.runService == nil {
+		return projectcoordination.StartProjectTaskRunResult{}, errors.New("digital employee run service is required")
+	}
+	idempotencyKey := req.IdempotencyKey
+	run, err := a.runService.CreateRun(ctx, employee.CreateDigitalEmployeeRunRequest{
+		TenantID:          req.TenantID,
+		UserID:            req.DispatchUserID,
+		DigitalEmployeeID: req.DigitalEmployeeID,
+		Objective:         req.Objective,
+		Prompt:            req.Prompt,
+		IdempotencyKey:    &idempotencyKey,
+		Metadata:          req.Metadata,
+	})
+	if err != nil {
+		return projectcoordination.StartProjectTaskRunResult{}, &projectcoordination.ProjectTaskRunStartError{
+			Retryable: runStartRetryable(err),
+			Err:       err,
+		}
+	}
+	return projectcoordination.StartProjectTaskRunResult{
+		RunID:         run.ID,
+		RuntimeTaskID: run.TaskID,
+		RuntimeNodeID: run.RuntimeNodeID,
+		NodeID:        run.NodeID,
+	}, nil
+}
+
+func runStartRetryable(err error) bool {
+	return !errors.Is(err, employee.ErrInvalidInput)
+}
+
 type projectArtifactLocker struct {
 	artifactService *artifact.Service
 	projectEvents   projectEventAppender
@@ -203,6 +239,23 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 
 	projectRepository := project.NewPgRepository(q, stores.Postgres)
 	decisionProjector := inbox.NewDecisionProjectorAdapter(inboxService)
+
+	auditRepository := audit.NewPgRepository(q)
+	auditService, err := audit.NewService(auditRepository)
+	if err != nil {
+		return nil, err
+	}
+
+	runRepository := employee.NewPgRunRepository(q, stores.Postgres)
+	runService, err := employee.NewDigitalEmployeeRunService(runRepository, runtimeCommands, auditService)
+	if err != nil {
+		return nil, err
+	}
+	runWritebackService, err := employee.NewDigitalEmployeeRunWritebackService(runRepository, auditService, runtimeEventRecorderAdapter{runtimeService: runtimeService})
+	if err != nil {
+		return nil, err
+	}
+
 	coordinatorClient := project.CoordinatorSignalClient(project.NoopCoordinatorSignalClient{})
 	var coordinationWorker lifecycleWorker
 	var temporalClientClose func()
@@ -216,7 +269,12 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		}
 		temporalClientClose = temporalClient.Close
 		coordinatorClient = projectcoordination.NewSignalClient(temporalClient, cfg.Temporal.TaskQueue)
-		coordinationStore := projectcoordination.NewProjectStoreWithApprovalsAndInbox(projectRepository, approvalService, decisionProjector)
+		coordinationStore := projectcoordination.NewProjectStoreWithApprovalsInboxAndRunStarter(
+			projectRepository,
+			approvalService,
+			decisionProjector,
+			projectTaskRunStarterAdapter{runService: runService},
+		)
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore)
 		coordinationWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
 	}
@@ -232,12 +290,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	inboxService.SetApprovalActionResolver(inbox.NewApprovalActionAdapter(approvalService))
 	inboxService.SetProjectDecisionActionResolver(inbox.NewProjectDecisionActionAdapter(projectService))
-
-	auditRepository := audit.NewPgRepository(q)
-	auditService, err := audit.NewService(auditRepository)
-	if err != nil {
-		return nil, err
-	}
 
 	tenantRepository := tenant.NewPgRepository(q, stores.Postgres)
 	tenantService, err := tenant.NewService(tenantRepository, auditService)
@@ -260,15 +312,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	authzCenterHandler := authzcenter.NewHandler(authzCenterService, authService)
 
 	poller := runtimepkg.NewPoller()
-	runRepository := employee.NewPgRunRepository(q, stores.Postgres)
-	runService, err := employee.NewDigitalEmployeeRunService(runRepository, runtimeCommands, auditService)
-	if err != nil {
-		return nil, err
-	}
-	runWritebackService, err := employee.NewDigitalEmployeeRunWritebackService(runRepository, auditService, runtimeEventRecorderAdapter{runtimeService: runtimeService})
-	if err != nil {
-		return nil, err
-	}
 	taskHandler := handlers.NewTaskHandler(taskService)
 	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
 	runtimeCommandWritebackHandler := handlers.NewRuntimeCommandWritebackHandler(runWritebackService)
