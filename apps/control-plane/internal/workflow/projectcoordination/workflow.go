@@ -204,7 +204,8 @@ func dispatchProjectTasks(ctx workflow.Context, tenantID, projectID uuid.UUID, t
 			ProjectID: projectID,
 			TaskID:    taskID,
 		}).Get(ctx, nil); err != nil {
-			return err
+			workflow.GetLogger(ctx).Warn("dispatch project task failed", "task_id", taskID.String(), "error", err.Error())
+			continue
 		}
 	}
 	return nil

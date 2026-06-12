@@ -3,6 +3,8 @@ package projectcoordination
 import (
 	"context"
 	"errors"
+
+	"go.temporal.io/sdk/temporal"
 )
 
 var ErrActivityStoreRequired = errors.New("project coordination activity store is required")
@@ -76,7 +78,11 @@ func (a *Activities) DispatchProjectTask(ctx context.Context, input DispatchProj
 	if a.store == nil {
 		return ErrActivityStoreRequired
 	}
-	return a.store.DispatchProjectTask(ctx, input)
+	err := a.store.DispatchProjectTask(ctx, input)
+	if err != nil && !dispatchErrorRetryable(err) {
+		return temporal.NewNonRetryableApplicationError("project task dispatch rejected", "ProjectTaskDispatchTerminal", err)
+	}
+	return err
 }
 
 func (a *Activities) FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error {

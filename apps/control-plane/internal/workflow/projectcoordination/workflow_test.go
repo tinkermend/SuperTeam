@@ -2,11 +2,14 @@ package projectcoordination
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/superteam/control-plane/internal/project"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 )
 
@@ -189,6 +192,29 @@ func TestProjectCoordinatorDispatchesPendingTasksAfterHumanApproval(t *testing.T
 	}, store.calls)
 }
 
+func TestActivitiesDispatchProjectTaskWrapsTerminalErrorAsNonRetryable(t *testing.T) {
+	store := &recordingActivityStore{dispatchErr: project.ErrInvalidProject}
+	activities := NewActivities(store)
+	err := activities.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: uuid.New(), ProjectID: uuid.New(), TaskID: uuid.New()})
+	var appErr *temporal.ApplicationError
+	if !errors.As(err, &appErr) || !appErr.NonRetryable() {
+		t.Fatalf("expected non-retryable application error, got %#v", err)
+	}
+}
+
+func TestActivitiesDispatchProjectTaskKeepsTransientErrorRetryable(t *testing.T) {
+	store := &recordingActivityStore{dispatchErr: errors.New("db timeout")}
+	activities := NewActivities(store)
+	err := activities.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: uuid.New(), ProjectID: uuid.New(), TaskID: uuid.New()})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var appErr *temporal.ApplicationError
+	if errors.As(err, &appErr) && appErr.NonRetryable() {
+		t.Fatalf("expected retryable error, got non-retryable %#v", err)
+	}
+}
+
 type recordingActivityStore struct {
 	calls             []string
 	snapshot          CoordinationSnapshot
@@ -198,6 +224,7 @@ type recordingActivityStore struct {
 	taskID            uuid.UUID
 	decisionRequestID uuid.UUID
 	dispatchEvent     uuid.UUID
+	dispatchErr       error
 }
 
 func (s *recordingActivityStore) LoadProjectCoordinationSnapshot(ctx context.Context, input LoadSnapshotInput) (CoordinationSnapshot, error) {
@@ -232,7 +259,7 @@ func (s *recordingActivityStore) AppendProjectEvent(ctx context.Context, input A
 
 func (s *recordingActivityStore) DispatchProjectTask(ctx context.Context, input DispatchProjectTaskInput) error {
 	s.calls = append(s.calls, "DispatchProjectTask")
-	return nil
+	return s.dispatchErr
 }
 
 func (s *recordingActivityStore) FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error {
