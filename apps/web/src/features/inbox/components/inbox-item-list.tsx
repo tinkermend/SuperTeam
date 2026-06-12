@@ -132,15 +132,40 @@ function readContextText(context: Record<string, unknown>, keys: string[]) {
 function resolveInboxHref(item: InboxItem) {
   const route = typeof item.deep_link.route === "string" ? item.deep_link.route : undefined;
   const anchor = typeof item.deep_link.anchor === "string" ? item.deep_link.anchor : undefined;
-  const path = route
-    ? route.startsWith("/")
-      ? route
-      : `/${route}`
-    : item.source_project_id
-      ? `/projects/${encodeURIComponent(item.source_project_id)}`
-      : "/inbox";
+  const path = resolveSafeInboxPath(route, item.source_project_id);
 
   return anchor ? `${path}#${encodeURIComponent(anchor)}` : path;
+}
+
+function resolveSafeInboxPath(route: string | undefined, sourceProjectId: string | undefined) {
+  if (route && isSafeAppPath(route)) {
+    return route;
+  }
+
+  if (sourceProjectId) {
+    return `/projects/${encodeURIComponent(sourceProjectId)}`;
+  }
+
+  return "/inbox";
+}
+
+function isSafeAppPath(route: string) {
+  if (
+    !route.startsWith("/") ||
+    route.startsWith("//") ||
+    route.includes("\\") ||
+    /[\u0000-\u001f\u007f]/.test(route) ||
+    /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(route)
+  ) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(route, "http://superteam.local");
+    return parsed.origin === "http://superteam.local" && parsed.pathname.startsWith("/");
+  } catch {
+    return false;
+  }
 }
 
 function formatDateTime(value: string) {

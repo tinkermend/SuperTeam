@@ -99,10 +99,31 @@ function makeListResponse(items: InboxItem[]): InboxListResponse {
   };
 }
 
-function createInboxFetcher(options: { slowTeamView?: boolean } = {}) {
-  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { promise, reject, resolve };
+}
+
+function createInboxFetcher(
+  options: {
+    actionDelay?: Promise<void>;
+    actionStatus?: number;
+    mineItem?: InboxItem;
+    slowTeamView?: boolean;
+    teamItem?: InboxItem;
+  } = {},
+) {
+  const requests: Array<{ method: string; pathname: string }> = [];
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
+    requests.push({ method, pathname: url.pathname });
 
     if (url.pathname === "/api/v1/inbox/items" && method === "GET") {
       const view = url.searchParams.get("view") ?? "mine";
@@ -114,20 +135,28 @@ function createInboxFetcher(options: { slowTeamView?: boolean } = {}) {
 
         return jsonResponse(
           makeListResponse([
-            makeInboxItem({
-              id: "team-inbox-item-1",
-              summary: "团队负责人需要确认发布窗口。",
-              target_user_id: "human-owner-1",
-              title: "团队发布窗口确认",
-            }),
+            options.teamItem ??
+              makeInboxItem({
+                id: "team-inbox-item-1",
+                summary: "团队负责人需要确认发布窗口。",
+                target_user_id: "human-owner-1",
+                title: "团队发布窗口确认",
+              }),
           ]),
         );
       }
 
-      return jsonResponse(makeListResponse([makeInboxItem()]));
+      return jsonResponse(makeListResponse([options.mineItem ?? makeInboxItem()]));
     }
 
     if (url.pathname === "/api/v1/inbox/items/inbox-item-1/actions" && method === "POST") {
+      if (options.actionDelay) {
+        await options.actionDelay;
+      }
+      if (options.actionStatus && options.actionStatus >= 400) {
+        return jsonResponse({ error: "上游审批服务暂时不可用" }, options.actionStatus);
+      }
+
       return jsonResponse({
         item: makeInboxItem({ status: "resolved" }),
         source_result: {
@@ -142,7 +171,10 @@ function createInboxFetcher(options: { slowTeamView?: boolean } = {}) {
       headers: { "content-type": "application/json" },
       status: 404,
     });
-  }) as unknown as typeof fetch;
+  }) as unknown as typeof fetch & { requests: typeof requests };
+
+  Object.assign(fetcher, { requests });
+  return fetcher;
 }
 
 async function renderInboxView(fetcher = createInboxFetcher()) {
@@ -186,5 +218,49 @@ describe("InboxView", () => {
       "href",
       "/projects/project-1/approvals#approval-1",
     );
+  });
+
+  it("falls back to the project link when deep_link route is unsafe", async () => {
+    const unsafeItem = makeInboxItem({
+      deep_link: {
+        anchor: "approval-1",
+        route: "//evil.example/path",
+      },
+      source_project_id: "safe-project",
+    });
+    const screen = await renderInboxView(createInboxFetcher({ mineItem: unsafeItem }));
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "查看上下文" })).toHaveAttribute(
+      "href",
+      "/projects/safe-project#approval-1",
+    );
+  });
+
+  it("shows failed action submissions inside the dialog without closing it", async () => {
+    const screen = await renderInboxView(createInboxFetcher({ actionStatus: 500 }));
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "通过" }));
+    await userEvent.click(screen.getByRole("button", { name: "提交" }));
+
+    await expect.element(screen.getByRole("dialog")).toBeVisible();
+    await expect.element(screen.getByText("上游审批服务暂时不可用")).toBeVisible();
+  });
+
+  it("guards rapid duplicate action submissions", async () => {
+    const deferred = createDeferred<void>();
+    const fetcher = createInboxFetcher({ actionDelay: deferred.promise });
+    const screen = await renderInboxView(fetcher);
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "通过" }));
+    await Promise.all([
+      userEvent.click(screen.getByRole("button", { name: "提交" })),
+      userEvent.click(screen.getByRole("button", { name: "提交" })),
+    ]);
+
+    expect(fetcher.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+    deferred.resolve();
   });
 });

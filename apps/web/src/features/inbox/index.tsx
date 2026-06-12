@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   keepPreviousData,
   useMutation,
@@ -39,6 +39,7 @@ export function InboxPage({ fetcher }: InboxPageProps = {}) {
 
 export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
   const queryClient = useQueryClient();
+  const actionInFlightRef = useRef(false);
   const apiOptions = useMemo<ApiClientOptions>(
     () => ({ baseUrl: apiBaseUrl, fetcher }),
     [apiBaseUrl, fetcher],
@@ -66,9 +67,13 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
       input: ExecuteInboxActionInput;
     }) => executeInboxAction(apiOptions, itemId, input),
     onSuccess: () => {
+      actionInFlightRef.current = false;
       setSelectedAction(null);
       void queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       void queryClient.invalidateQueries({ queryKey: ["inbox-badge"] });
+    },
+    onError: () => {
+      actionInFlightRef.current = false;
     },
   });
 
@@ -79,7 +84,7 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
         error={inboxQuery.error}
         isFetching={inboxQuery.isFetching}
         isLoading={inboxQuery.isLoading}
-        mutationError={actionMutation.error}
+        mutationError={selectedAction ? null : actionMutation.error}
         onAction={(item, action) => {
           actionMutation.reset();
           setSelectedAction({ action, item });
@@ -98,12 +103,17 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
             setSelectedAction(null);
           }
         }}
-        onSubmit={(input) =>
-          actionMutation.mutateAsync({
+        onSubmit={(input) => {
+          if (!selectedAction || actionInFlightRef.current) {
+            return Promise.resolve();
+          }
+
+          actionInFlightRef.current = true;
+          return actionMutation.mutateAsync({
             input,
-            itemId: selectedAction?.item.id ?? "",
-          })
-        }
+            itemId: selectedAction.item.id,
+          });
+        }}
         open={Boolean(selectedAction)}
         pending={actionMutation.isPending}
       />
