@@ -141,10 +141,12 @@ function queryByPlaceholder(placeholder: string) {
 }
 
 function queryByText(text: string) {
-  return Array.from(document.body.querySelectorAll<HTMLElement>('*')).find(
-    (element) =>
-      element.textContent === text &&
-      Array.from(element.children).every((child) => child.textContent !== text)
+  return (
+    Array.from(document.body.querySelectorAll<HTMLElement>('*')).find(
+      (element) =>
+        element.textContent === text &&
+        Array.from(element.children).every((child) => child.textContent !== text)
+    ) ?? null
   )
 }
 
@@ -154,6 +156,21 @@ function getByText(text: string) {
     throw new Error(`Unable to find text: ${text}`)
   }
   return element
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const valueSetter = Object.getOwnPropertyDescriptor(input, 'value')?.set
+  const prototypeValueSetter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    'value'
+  )?.set
+
+  if (prototypeValueSetter && valueSetter !== prototypeValueSetter) {
+    prototypeValueSetter.call(input, value)
+  } else {
+    valueSetter?.call(input, value)
+  }
+  input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
 /**
@@ -291,12 +308,12 @@ describe('SearchProvider and CommandMenu', () => {
       if (!input) {
         throw new Error('Command menu input was not found')
       }
-      input.value = 'zzzz-no-match-xxxx'
-      input.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      setInputValue(input, 'zzzz-no-match-xxxx')
     })
 
     await vi.waitFor(() => {
       expect(queryByText('No results found.')).not.toBeNull()
+      expect(queryByText('任务发起')).toBeNull()
     })
   })
 })
