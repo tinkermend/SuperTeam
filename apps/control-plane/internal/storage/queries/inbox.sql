@@ -96,7 +96,7 @@ INSERT INTO inbox_items (
     sqlc.arg('source_id')::uuid,
     sqlc.narg('source_project_id')::uuid,
     sqlc.narg('source_task_id')::uuid,
-    sqlc.narg('source_approval_request_id')::uuid,
+    sqlc.arg('source_approval_request_id')::uuid,
     sqlc.arg('title')::varchar,
     sqlc.narg('summary')::text,
     sqlc.narg('risk_level')::varchar,
@@ -157,7 +157,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
     sqlc.narg('source_project_id')::uuid IS NULL
     OR source_project_id = sqlc.narg('source_project_id')::uuid
   )
-ORDER BY last_activity_at DESC, created_at DESC
+ORDER BY last_activity_at DESC, created_at DESC, id DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: CountInboxItems :one
@@ -167,6 +167,18 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND (
     sqlc.narg('target_user_id')::uuid IS NULL
     OR target_user_id = sqlc.narg('target_user_id')::uuid
+  )
+  AND (
+    sqlc.narg('item_type')::varchar IS NULL
+    OR item_type = sqlc.narg('item_type')::varchar
+  )
+  AND (
+    sqlc.narg('risk_level')::varchar IS NULL
+    OR risk_level = sqlc.narg('risk_level')::varchar
+  )
+  AND (
+    sqlc.narg('source_project_id')::uuid IS NULL
+    OR source_project_id = sqlc.narg('source_project_id')::uuid
   );
 
 -- name: CountHighRiskInboxItems :one

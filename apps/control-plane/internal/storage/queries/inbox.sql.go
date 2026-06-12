@@ -43,16 +43,38 @@ WHERE tenant_id = $1::uuid
     $3::uuid IS NULL
     OR target_user_id = $3::uuid
   )
+  AND (
+    $4::varchar IS NULL
+    OR item_type = $4::varchar
+  )
+  AND (
+    $5::varchar IS NULL
+    OR risk_level = $5::varchar
+  )
+  AND (
+    $6::uuid IS NULL
+    OR source_project_id = $6::uuid
+  )
 `
 
 type CountInboxItemsParams struct {
-	TenantID     uuid.UUID     `json:"tenant_id"`
-	Status       string        `json:"status"`
-	TargetUserID uuid.NullUUID `json:"target_user_id"`
+	TenantID        uuid.UUID     `json:"tenant_id"`
+	Status          string        `json:"status"`
+	TargetUserID    uuid.NullUUID `json:"target_user_id"`
+	ItemType        pgtype.Text   `json:"item_type"`
+	RiskLevel       pgtype.Text   `json:"risk_level"`
+	SourceProjectID uuid.NullUUID `json:"source_project_id"`
 }
 
 func (q *Queries) CountInboxItems(ctx context.Context, arg CountInboxItemsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, CountInboxItems, arg.TenantID, arg.Status, arg.TargetUserID)
+	row := q.db.QueryRow(ctx, CountInboxItems,
+		arg.TenantID,
+		arg.Status,
+		arg.TargetUserID,
+		arg.ItemType,
+		arg.RiskLevel,
+		arg.SourceProjectID,
+	)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -120,7 +142,7 @@ WHERE tenant_id = $1::uuid
     $6::uuid IS NULL
     OR source_project_id = $6::uuid
   )
-ORDER BY last_activity_at DESC, created_at DESC
+ORDER BY last_activity_at DESC, created_at DESC, id DESC
 LIMIT $8 OFFSET $7
 `
 
@@ -409,7 +431,7 @@ type UpsertInboxItemByApprovalSourceParams struct {
 	SourceID                uuid.UUID          `json:"source_id"`
 	SourceProjectID         uuid.NullUUID      `json:"source_project_id"`
 	SourceTaskID            uuid.NullUUID      `json:"source_task_id"`
-	SourceApprovalRequestID uuid.NullUUID      `json:"source_approval_request_id"`
+	SourceApprovalRequestID uuid.UUID          `json:"source_approval_request_id"`
 	Title                   string             `json:"title"`
 	Summary                 pgtype.Text        `json:"summary"`
 	RiskLevel               pgtype.Text        `json:"risk_level"`

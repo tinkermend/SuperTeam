@@ -178,6 +178,9 @@ func TestInboxItemsMigrationAddsActionableQueueReadModel(t *testing.T) {
 		"CREATE UNIQUE INDEX uq_inbox_items_tenant_source",
 		"CREATE UNIQUE INDEX uq_inbox_items_tenant_approval_source",
 		"CREATE INDEX idx_inbox_items_tenant_target_status_activity",
+		"ON inbox_items(tenant_id, source_approval_request_id)",
+		"WHERE source_approval_request_id IS NOT NULL",
+		"ON inbox_items(tenant_id, source_project_id, status, last_activity_at DESC)",
 		"COMMENT ON TABLE inbox_items IS",
 		"COMMENT ON COLUMN inbox_items.source_approval_request_id IS",
 	} {
@@ -190,11 +193,114 @@ func TestInboxItemsMigrationAddsActionableQueueReadModel(t *testing.T) {
 		"CREATE TYPE inbox",
 		"CREATE TYPE item_type",
 		"FOREIGN KEY",
+		"REFERENCES",
 		"ON DELETE CASCADE",
 		"BIGSERIAL",
 	} {
 		if strings.Contains(sql, forbidden) {
 			t.Fatalf("inbox read model must avoid %q", forbidden)
+		}
+	}
+}
+
+func TestInboxQueriesUseFilteredCountsApprovalSourceAndStableOrdering(t *testing.T) {
+	body, err := os.ReadFile("queries/inbox.sql")
+	if err != nil {
+		t.Fatalf("read inbox queries: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		`-- name: UpsertInboxItem :one
+INSERT INTO inbox_items (
+    tenant_id,
+    team_id,
+    target_user_id,
+    scope,
+    item_type,
+    source_type,
+    source_id,
+    source_project_id,
+    source_task_id,
+    source_approval_request_id,
+    title,
+    summary,
+    risk_level,
+    priority,
+    status,
+    action_schema,
+    context_payload,
+    deep_link,
+    resolved_at,
+    last_activity_at
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.narg('team_id')::uuid,
+    sqlc.arg('target_user_id')::uuid,
+    sqlc.arg('scope')::varchar,
+    sqlc.arg('item_type')::varchar,
+    sqlc.arg('source_type')::varchar,
+    sqlc.arg('source_id')::uuid,
+    sqlc.narg('source_project_id')::uuid,
+    sqlc.narg('source_task_id')::uuid,
+    sqlc.narg('source_approval_request_id')::uuid,`,
+		`-- name: UpsertInboxItemByApprovalSource :one
+INSERT INTO inbox_items (
+    tenant_id,
+    team_id,
+    target_user_id,
+    scope,
+    item_type,
+    source_type,
+    source_id,
+    source_project_id,
+    source_task_id,
+    source_approval_request_id,
+    title,
+    summary,
+    risk_level,
+    priority,
+    status,
+    action_schema,
+    context_payload,
+    deep_link,
+    resolved_at,
+    last_activity_at
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.narg('team_id')::uuid,
+    sqlc.arg('target_user_id')::uuid,
+    sqlc.arg('scope')::varchar,
+    sqlc.arg('item_type')::varchar,
+    sqlc.arg('source_type')::varchar,
+    sqlc.arg('source_id')::uuid,
+    sqlc.narg('source_project_id')::uuid,
+    sqlc.narg('source_task_id')::uuid,
+    sqlc.arg('source_approval_request_id')::uuid,`,
+		"ORDER BY last_activity_at DESC, created_at DESC, id DESC",
+		`-- name: CountInboxItems :one
+SELECT COUNT(*)::bigint FROM inbox_items
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND status = sqlc.arg('status')::varchar
+  AND (
+    sqlc.narg('target_user_id')::uuid IS NULL
+    OR target_user_id = sqlc.narg('target_user_id')::uuid
+  )
+  AND (
+    sqlc.narg('item_type')::varchar IS NULL
+    OR item_type = sqlc.narg('item_type')::varchar
+  )
+  AND (
+    sqlc.narg('risk_level')::varchar IS NULL
+    OR risk_level = sqlc.narg('risk_level')::varchar
+  )
+  AND (
+    sqlc.narg('source_project_id')::uuid IS NULL
+    OR source_project_id = sqlc.narg('source_project_id')::uuid
+  );`,
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected inbox queries to contain %q", expected)
 		}
 	}
 }
