@@ -221,6 +221,18 @@ describe("InboxView", () => {
     expect(requestUrl?.searchParams.get("offset")).toBe("0");
   });
 
+  it("only offers backend-supported status filters", async () => {
+    const screen = await renderInboxView();
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    await userEvent.click(screen.getByRole("combobox", { name: "状态" }));
+
+    expect(screen.getByRole("option", { name: "全部状态" }).query()).toBeNull();
+    await expect.element(screen.getByRole("option", { name: "开放" })).toBeVisible();
+    await expect.element(screen.getByRole("option", { name: "已处理" })).toBeVisible();
+    await expect.element(screen.getByRole("option", { name: "已取消" })).toBeVisible();
+  });
+
   it("requests selected status, type, and risk filters", async () => {
     const fetcher = createInboxFetcher();
     const screen = await renderInboxView(fetcher);

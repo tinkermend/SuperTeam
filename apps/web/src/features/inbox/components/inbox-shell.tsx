@@ -159,7 +159,6 @@ type SelectOption = {
 };
 
 const statusOptions: SelectOption[] = [
-  { label: "全部状态", value: "all" },
   { label: "开放", value: "open" },
   { label: "已处理", value: "resolved" },
   { label: "已取消", value: "cancelled" },
@@ -186,7 +185,7 @@ function InboxFilters({ filters, onFilterChange, onReset }: InboxFiltersProps) {
         <FilterSelect
           label="状态"
           options={statusOptions}
-          value={filters.status ?? "all"}
+          value={filters.status ?? "open"}
           onValueChange={(value) => onFilterChange("status", value)}
         />
         <FilterSelect
