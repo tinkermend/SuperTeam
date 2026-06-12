@@ -722,6 +722,11 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 	if project.Status == ProjectStatusArchived || project.ArchivedAt != nil {
 		return nil, ErrProjectArchived
 	}
+	preference, reviewerSourceRefs, err := s.resolveDemandReviewer(ctx, req, project)
+	if err != nil {
+		return nil, err
+	}
+	req.SourceRefs = mergeReviewerSourceRefs(req.SourceRefs, reviewerSourceRefs)
 
 	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
 		TenantID:  req.TenantID,
@@ -730,7 +735,11 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 		ActorType: "human_user",
 		ActorID:   req.SubmittedByUserID.String(),
 		Summary:   "需求已提交到当前项目",
-		Payload:   map[string]any{"title": req.Title},
+		Payload: map[string]any{
+			"title":                     req.Title,
+			"reviewer_user_id":          preference.ReviewerUserID.String(),
+			"reviewer_selection_reason": string(preference.SelectionReason),
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -739,6 +748,7 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 	if err != nil {
 		return nil, err
 	}
+	demand.ReviewerPreference = preference
 	if err := s.coordinator.SignalDemandSubmitted(ctx, DemandSubmittedSignal{
 		TenantID:          req.TenantID,
 		ProjectID:         req.ProjectID,
@@ -754,6 +764,80 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 		return nil, err
 	}
 	return &demand, nil
+}
+
+func (s *Service) resolveDemandReviewer(ctx context.Context, req SubmitProjectDemandRequest, project Project) (*ReviewerPreference, map[string]any, error) {
+	members, err := s.repository.ListProjectMembers(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	selected, reason, resolvedFromRule, err := selectReviewer(req.ReviewerUserID, project, members)
+	if err != nil {
+		return nil, nil, err
+	}
+	preference := &ReviewerPreference{
+		ReviewerUserID:   selected.PrincipalID,
+		SelectionReason:  reason,
+		DisplayName:      selected.DisplayNameSnapshot,
+		ProjectRole:      selected.ProjectRole,
+		ResolvedFromRule: resolvedFromRule,
+	}
+	return preference, map[string]any{
+		"reviewer_user_id":            preference.ReviewerUserID.String(),
+		"reviewer_selection_reason":   string(preference.SelectionReason),
+		"reviewer_project_role":       string(preference.ProjectRole),
+		"reviewer_resolved_from_rule": preference.ResolvedFromRule,
+	}, nil
+}
+
+func selectReviewer(explicit *uuid.UUID, project Project, members []ProjectMember) (ProjectMember, ReviewerSelectionReason, bool, error) {
+	if explicit != nil {
+		for _, member := range members {
+			if member.PrincipalType == PrincipalTypeHumanUser && member.PrincipalID == *explicit && member.Status == "active" {
+				return member, ReviewerSelectionUserSelected, false, nil
+			}
+		}
+		return ProjectMember{}, "", false, ErrInvalidProjectMember
+	}
+	reviewers := make([]ProjectMember, 0, len(members))
+	for _, member := range members {
+		if member.PrincipalType == PrincipalTypeHumanUser && member.ProjectRole == ProjectRoleReviewer && member.Status == "active" {
+			reviewers = append(reviewers, member)
+		}
+	}
+	if len(reviewers) == 1 {
+		return reviewers[0], ReviewerSelectionProjectReviewerDefault, true, nil
+	}
+	if len(reviewers) > 1 {
+		return ProjectMember{}, "", false, ErrInvalidProjectMember
+	}
+	for _, member := range members {
+		if member.PrincipalType == PrincipalTypeHumanUser && member.PrincipalID == project.HumanOwnerUserID && member.Status == "active" {
+			return member, ReviewerSelectionProjectHumanOwnerFallback, true, nil
+		}
+	}
+	if project.HumanOwnerUserID != uuid.Nil {
+		return ProjectMember{
+			TenantID:      project.TenantID,
+			ProjectID:     project.ID,
+			PrincipalType: PrincipalTypeHumanUser,
+			PrincipalID:   project.HumanOwnerUserID,
+			ProjectRole:   ProjectRoleOwner,
+			Status:        "active",
+		}, ReviewerSelectionProjectHumanOwnerFallback, true, nil
+	}
+	return ProjectMember{}, "", false, ErrInvalidProjectMember
+}
+
+func mergeReviewerSourceRefs(sourceRefs map[string]any, reviewer map[string]any) map[string]any {
+	merged := map[string]any{}
+	for key, value := range sourceRefs {
+		merged[key] = value
+	}
+	for key, value := range reviewer {
+		merged[key] = value
+	}
+	return merged
 }
 
 func (s *Service) ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error) {

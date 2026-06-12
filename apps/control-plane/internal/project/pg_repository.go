@@ -1294,6 +1294,7 @@ func demandFromRecord(row queries.ProjectDemand) (ProjectDemand, error) {
 	if err != nil {
 		return ProjectDemand{}, fmt.Errorf("source_refs: %w", err)
 	}
+	preference := reviewerPreferenceFromSourceRefs(sourceRefs)
 	attachments := []any{}
 	if len(row.Attachments) > 0 {
 		if err := json.Unmarshal(row.Attachments, &attachments); err != nil {
@@ -1304,20 +1305,47 @@ func demandFromRecord(row queries.ProjectDemand) (ProjectDemand, error) {
 		}
 	}
 	return ProjectDemand{
-		ID:                row.ID,
-		TenantID:          row.TenantID,
-		ProjectID:         row.ProjectID,
-		SubmittedByUserID: row.SubmittedByUserID,
-		Title:             row.Title,
-		Content:           ptrText(row.Content),
-		SourceType:        DemandSourceType(row.SourceType),
-		SourceRefs:        sourceRefs,
-		Attachments:       attachments,
-		Status:            ProjectDemandStatus(row.Status),
-		CreatedEventID:    ptrUUID(row.CreatedEventID),
-		CreatedAt:         row.CreatedAt.Time,
-		UpdatedAt:         row.UpdatedAt.Time,
+		ID:                 row.ID,
+		TenantID:           row.TenantID,
+		ProjectID:          row.ProjectID,
+		SubmittedByUserID:  row.SubmittedByUserID,
+		Title:              row.Title,
+		Content:            ptrText(row.Content),
+		SourceType:         DemandSourceType(row.SourceType),
+		SourceRefs:         sourceRefs,
+		Attachments:        attachments,
+		ReviewerPreference: preference,
+		Status:             ProjectDemandStatus(row.Status),
+		CreatedEventID:     ptrUUID(row.CreatedEventID),
+		CreatedAt:          row.CreatedAt.Time,
+		UpdatedAt:          row.UpdatedAt.Time,
 	}, nil
+}
+
+func reviewerPreferenceFromSourceRefs(sourceRefs map[string]any) *ReviewerPreference {
+	rawReviewer, ok := sourceRefs["reviewer_user_id"].(string)
+	if !ok || rawReviewer == "" {
+		return nil
+	}
+	reviewerID, err := uuid.Parse(rawReviewer)
+	if err != nil {
+		return nil
+	}
+	reason := ReviewerSelectionReason("")
+	if rawReason, ok := sourceRefs["reviewer_selection_reason"].(string); ok {
+		reason = ReviewerSelectionReason(rawReason)
+	}
+	role := ProjectRole("")
+	if rawRole, ok := sourceRefs["reviewer_project_role"].(string); ok {
+		role = ProjectRole(rawRole)
+	}
+	resolved, _ := sourceRefs["reviewer_resolved_from_rule"].(bool)
+	return &ReviewerPreference{
+		ReviewerUserID:   reviewerID,
+		SelectionReason:  reason,
+		ProjectRole:      role,
+		ResolvedFromRule: resolved,
+	}
 }
 
 func configRevisionFromRecord(row queries.ProjectConfigRevision) (ProjectConfigRevision, error) {
