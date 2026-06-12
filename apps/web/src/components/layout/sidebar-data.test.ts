@@ -3,7 +3,7 @@ import { sidebarData } from './data/sidebar-data'
 
 const expectedIconTones = new Map([
   ['工作台', 'primary'],
-  ['任务中心', 'task'],
+  ['任务发起', 'task'],
   ['数字员工', 'employee'],
   ['技能管理', 'capability'],
   ['项目管理', 'workflow'],
@@ -27,10 +27,10 @@ describe('sidebarData', () => {
 
     expect(workspaceItems?.map((item) => item.title)).toEqual([
       '工作台',
-      '任务中心',
+      '任务发起',
+      '项目管理',
       '数字员工',
       '技能管理',
-      '项目管理',
       '团队管理',
     ])
     expect(workspaceItems?.[5]).toMatchObject({

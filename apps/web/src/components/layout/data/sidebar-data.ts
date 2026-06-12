@@ -2,7 +2,6 @@ import {
   Blocks,
   Bot,
   CircleDollarSign,
-  ClipboardList,
   FileClock,
   FolderKanban,
   GitBranch,
@@ -10,6 +9,7 @@ import {
   LayoutDashboard,
   MessagesSquare,
   Puzzle,
+  SendHorizontal,
   Server,
   ShieldCheck,
   Users,
@@ -29,10 +29,16 @@ export const sidebarData: SidebarData = {
           iconTone: "primary",
         },
         {
-          title: "任务中心",
-          url: "/tasks",
-          icon: ClipboardList,
+          title: "任务发起",
+          url: "/task-launches",
+          icon: SendHorizontal,
           iconTone: "task",
+        },
+        {
+          title: "项目管理",
+          url: "/projects",
+          icon: FolderKanban,
+          iconTone: "workflow",
         },
         {
           title: "数字员工",
@@ -45,12 +51,6 @@ export const sidebarData: SidebarData = {
           url: "/skills",
           icon: Blocks,
           iconTone: "capability",
-        },
-        {
-          title: "项目管理",
-          url: "/projects",
-          icon: FolderKanban,
-          iconTone: "workflow",
         },
         {
           title: "团队管理",

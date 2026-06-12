@@ -22,6 +22,7 @@ import { Route as AuthenticatedWorkflowsIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedTeamsIndexRouteImport } from './routes/_authenticated/teams/index'
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
+import { Route as AuthenticatedTaskLaunchesIndexRouteImport } from './routes/_authenticated/task-launches/index'
 import { Route as AuthenticatedSkillsIndexRouteImport } from './routes/_authenticated/skills/index'
 import { Route as AuthenticatedRuntimeIndexRouteImport } from './routes/_authenticated/runtime/index'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
@@ -33,6 +34,7 @@ import { Route as AuthenticatedCapabilitiesIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedAuditIndexRouteImport } from './routes/_authenticated/audit/index'
 import { Route as AuthenticatedApprovalsIndexRouteImport } from './routes/_authenticated/approvals/index'
 import { Route as AuthenticatedTeamsTeamIdRouteImport } from './routes/_authenticated/teams/$teamId'
+import { Route as AuthenticatedTaskLaunchesDemandIdRouteImport } from './routes/_authenticated/task-launches/$demandId'
 import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_authenticated/projects/$projectId'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedEmployeesNewRouteImport } from './routes/_authenticated/employees/new'
@@ -105,6 +107,12 @@ const AuthenticatedTasksIndexRoute = AuthenticatedTasksIndexRouteImport.update({
   path: '/tasks/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedTaskLaunchesIndexRoute =
+  AuthenticatedTaskLaunchesIndexRouteImport.update({
+    id: '/task-launches/',
+    path: '/task-launches/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedSkillsIndexRoute =
   AuthenticatedSkillsIndexRouteImport.update({
     id: '/skills/',
@@ -169,6 +177,12 @@ const AuthenticatedTeamsTeamIdRoute =
     path: '/teams/$teamId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedTaskLaunchesDemandIdRoute =
+  AuthenticatedTaskLaunchesDemandIdRouteImport.update({
+    id: '/task-launches/$demandId',
+    path: '/task-launches/$demandId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedProjectsProjectIdRoute =
   AuthenticatedProjectsProjectIdRouteImport.update({
     id: '/projects/$projectId',
@@ -219,6 +233,7 @@ export interface FileRoutesByFullPath {
   '/employees/new': typeof AuthenticatedEmployeesNewRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
+  '/task-launches/$demandId': typeof AuthenticatedTaskLaunchesDemandIdRoute
   '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
   '/approvals/': typeof AuthenticatedApprovalsIndexRoute
   '/audit/': typeof AuthenticatedAuditIndexRoute
@@ -230,6 +245,7 @@ export interface FileRoutesByFullPath {
   '/projects/': typeof AuthenticatedProjectsIndexRoute
   '/runtime/': typeof AuthenticatedRuntimeIndexRoute
   '/skills/': typeof AuthenticatedSkillsIndexRoute
+  '/task-launches/': typeof AuthenticatedTaskLaunchesIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
   '/teams/': typeof AuthenticatedTeamsIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
@@ -250,6 +266,7 @@ export interface FileRoutesByTo {
   '/employees/new': typeof AuthenticatedEmployeesNewRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
+  '/task-launches/$demandId': typeof AuthenticatedTaskLaunchesDemandIdRoute
   '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
   '/approvals': typeof AuthenticatedApprovalsIndexRoute
   '/audit': typeof AuthenticatedAuditIndexRoute
@@ -261,6 +278,7 @@ export interface FileRoutesByTo {
   '/projects': typeof AuthenticatedProjectsIndexRoute
   '/runtime': typeof AuthenticatedRuntimeIndexRoute
   '/skills': typeof AuthenticatedSkillsIndexRoute
+  '/task-launches': typeof AuthenticatedTaskLaunchesIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/teams': typeof AuthenticatedTeamsIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
@@ -283,6 +301,7 @@ export interface FileRoutesById {
   '/_authenticated/employees/new': typeof AuthenticatedEmployeesNewRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
+  '/_authenticated/task-launches/$demandId': typeof AuthenticatedTaskLaunchesDemandIdRoute
   '/_authenticated/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
   '/_authenticated/approvals/': typeof AuthenticatedApprovalsIndexRoute
   '/_authenticated/audit/': typeof AuthenticatedAuditIndexRoute
@@ -294,6 +313,7 @@ export interface FileRoutesById {
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
   '/_authenticated/runtime/': typeof AuthenticatedRuntimeIndexRoute
   '/_authenticated/skills/': typeof AuthenticatedSkillsIndexRoute
+  '/_authenticated/task-launches/': typeof AuthenticatedTaskLaunchesIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/teams/': typeof AuthenticatedTeamsIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
@@ -316,6 +336,7 @@ export interface FileRouteTypes {
     | '/employees/new'
     | '/errors/$error'
     | '/projects/$projectId'
+    | '/task-launches/$demandId'
     | '/teams/$teamId'
     | '/approvals/'
     | '/audit/'
@@ -327,6 +348,7 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/runtime/'
     | '/skills/'
+    | '/task-launches/'
     | '/tasks/'
     | '/teams/'
     | '/users/'
@@ -347,6 +369,7 @@ export interface FileRouteTypes {
     | '/employees/new'
     | '/errors/$error'
     | '/projects/$projectId'
+    | '/task-launches/$demandId'
     | '/teams/$teamId'
     | '/approvals'
     | '/audit'
@@ -358,6 +381,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/runtime'
     | '/skills'
+    | '/task-launches'
     | '/tasks'
     | '/teams'
     | '/users'
@@ -379,6 +403,7 @@ export interface FileRouteTypes {
     | '/_authenticated/employees/new'
     | '/_authenticated/errors/$error'
     | '/_authenticated/projects/$projectId'
+    | '/_authenticated/task-launches/$demandId'
     | '/_authenticated/teams/$teamId'
     | '/_authenticated/approvals/'
     | '/_authenticated/audit/'
@@ -390,6 +415,7 @@ export interface FileRouteTypes {
     | '/_authenticated/projects/'
     | '/_authenticated/runtime/'
     | '/_authenticated/skills/'
+    | '/_authenticated/task-launches/'
     | '/_authenticated/tasks/'
     | '/_authenticated/teams/'
     | '/_authenticated/users/'
@@ -502,6 +528,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTasksIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/task-launches/': {
+      id: '/_authenticated/task-launches/'
+      path: '/task-launches'
+      fullPath: '/task-launches/'
+      preLoaderRoute: typeof AuthenticatedTaskLaunchesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/skills/': {
       id: '/_authenticated/skills/'
       path: '/skills'
@@ -577,6 +610,13 @@ declare module '@tanstack/react-router' {
       path: '/teams/$teamId'
       fullPath: '/teams/$teamId'
       preLoaderRoute: typeof AuthenticatedTeamsTeamIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/task-launches/$demandId': {
+      id: '/_authenticated/task-launches/$demandId'
+      path: '/task-launches/$demandId'
+      fullPath: '/task-launches/$demandId'
+      preLoaderRoute: typeof AuthenticatedTaskLaunchesDemandIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/projects/$projectId': {
@@ -660,6 +700,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedEmployeesNewRoute: typeof AuthenticatedEmployeesNewRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedProjectsProjectIdRoute: typeof AuthenticatedProjectsProjectIdRouteWithChildren
+  AuthenticatedTaskLaunchesDemandIdRoute: typeof AuthenticatedTaskLaunchesDemandIdRoute
   AuthenticatedTeamsTeamIdRoute: typeof AuthenticatedTeamsTeamIdRoute
   AuthenticatedApprovalsIndexRoute: typeof AuthenticatedApprovalsIndexRoute
   AuthenticatedAuditIndexRoute: typeof AuthenticatedAuditIndexRoute
@@ -671,6 +712,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
   AuthenticatedRuntimeIndexRoute: typeof AuthenticatedRuntimeIndexRoute
   AuthenticatedSkillsIndexRoute: typeof AuthenticatedSkillsIndexRoute
+  AuthenticatedTaskLaunchesIndexRoute: typeof AuthenticatedTaskLaunchesIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
   AuthenticatedTeamsIndexRoute: typeof AuthenticatedTeamsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
@@ -685,6 +727,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedProjectsProjectIdRoute:
     AuthenticatedProjectsProjectIdRouteWithChildren,
+  AuthenticatedTaskLaunchesDemandIdRoute:
+    AuthenticatedTaskLaunchesDemandIdRoute,
   AuthenticatedTeamsTeamIdRoute: AuthenticatedTeamsTeamIdRoute,
   AuthenticatedApprovalsIndexRoute: AuthenticatedApprovalsIndexRoute,
   AuthenticatedAuditIndexRoute: AuthenticatedAuditIndexRoute,
@@ -696,6 +740,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
   AuthenticatedRuntimeIndexRoute: AuthenticatedRuntimeIndexRoute,
   AuthenticatedSkillsIndexRoute: AuthenticatedSkillsIndexRoute,
+  AuthenticatedTaskLaunchesIndexRoute: AuthenticatedTaskLaunchesIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
   AuthenticatedTeamsIndexRoute: AuthenticatedTeamsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
