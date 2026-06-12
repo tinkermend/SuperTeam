@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-12 21:20：新增“任务发起”一级入口，替换原主导航“任务中心”，支持按项目提交需求、自动或显式选择人类审核人，并提供任务发起详情页追踪协调 Job、路由决策、项目任务和人类决策请求等首版协调事实。
 - 2026-06-12 11:45：补齐项目管理 V2 Web 治理写入入口，项目详情支持跳转审计/成本视图，并可在证据链、验收结论、归档预览中新增证据、验证证据、提交验收和生成归档快照。
 - 2026-06-11 23:52：完成项目管理 V2 治理证据归档闭环，新增项目证据链、工件与报告引用、预算流水、验收结论、归档快照、归档工件保留锁、配置修订历史，以及审计中心和成本中心 project_id 联动。
 - 2026-06-11 15:45：项目管理 V1 接入 Temporal 虚拟协调线程，新增 RouteDecision、CoordinationJob、ExecutionSummary、TransferRequest、人类决策投影和 Workflow signal 可观测能力。
