@@ -2,6 +2,7 @@ package projectcoordination
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -116,8 +117,41 @@ func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProject
 	if decision.ApprovalRequestID != approvalID || decision.TargetUserID != ownerID || decision.StatusSnapshot != "pending" {
 		t.Fatalf("unexpected decision projection: %#v", decision)
 	}
-	if len(inbox.upserts) != 1 || inbox.upserts[0].ID != decision.ID || inbox.upserts[0].ApprovalRequestID != approvalID {
+	if len(inbox.upserts) != 1 ||
+		inbox.upserts[0].ID != decision.ID ||
+		inbox.upserts[0].ProjectID != projectID ||
+		inbox.upserts[0].TargetUserID != ownerID ||
+		inbox.upserts[0].TitleSnapshot != "确认项目路由决策" ||
+		inbox.upserts[0].StatusSnapshot != "pending" ||
+		inbox.upserts[0].ApprovalRequestID != approvalID {
 		t.Fatalf("expected inbox decision projection, got %#v", inbox.upserts)
+	}
+
+	projectionErr := errors.New("inbox unavailable")
+	failingRepo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			HumanOwnerUserID: ownerID,
+		},
+		approvalID: approvalID,
+	}
+	failingInbox := &projectStoreDecisionInboxProjector{upsertErr: projectionErr}
+	failingStore := NewProjectStoreWithApprovalsAndInbox(failingRepo, approvals, failingInbox)
+	if _, err := failingStore.RequestRouteDecisionReview(context.Background(), RequestRouteDecisionReviewInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		CoordinationJobID: jobID,
+		DemandID:          demandID,
+		RouteDecisionID:   routeID,
+		Decision: RouteDecisionPlan{
+			SelectedDigitalEmployeeIDs: []uuid.UUID{employeeID},
+			Reason:                     "高风险需求需要负责人确认",
+		},
+		ProjectTaskIDs:      []uuid.UUID{taskID},
+		RouteCreatedEventID: uuid.New(),
+	}); !errors.Is(err, projectionErr) {
+		t.Fatalf("expected inbox projector error, got %v", err)
 	}
 }
 
@@ -228,11 +262,12 @@ func (c *projectStoreApprovalCreator) CreateRequest(ctx context.Context, input a
 type projectStoreDecisionInboxProjector struct {
 	upserts     []project.DecisionRequest
 	resolutions []project.DecisionRequest
+	upsertErr   error
 }
 
 func (p *projectStoreDecisionInboxProjector) UpsertProjectDecisionRequest(ctx context.Context, decision project.DecisionRequest) error {
 	p.upserts = append(p.upserts, decision)
-	return nil
+	return p.upsertErr
 }
 
 func (p *projectStoreDecisionInboxProjector) ResolveProjectDecisionRequest(ctx context.Context, decision project.DecisionRequest) error {

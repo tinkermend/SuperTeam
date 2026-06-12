@@ -114,6 +114,28 @@ func TestApprovalServiceProjectsCreatedAndResolvedRequests(t *testing.T) {
 	}
 
 	projectionErr := errors.New("inbox unavailable")
+	resolveFailureRequest, err := service.CreateRequest(context.Background(), CreateRequestInput{
+		TenantID:      tenantID,
+		ResourceType:  "project_decision",
+		ResourceID:    uuid.New(),
+		RequesterType: "project_coordinator",
+		TargetUserID:  targetUserID,
+		DecisionType:  "route_review",
+		Title:         "确认高风险路由",
+	})
+	if err != nil {
+		t.Fatalf("create resolve failure request: %v", err)
+	}
+	inbox.resolveErr = projectionErr
+	if _, err := service.ResolveRequest(context.Background(), ResolveRequestInput{
+		TenantID:          tenantID,
+		ApprovalRequestID: resolveFailureRequest.ID,
+		DecidedByUserID:   targetUserID,
+		Decision:          ApprovalDecisionRejected,
+	}); !errors.Is(err, projectionErr) {
+		t.Fatalf("expected resolve projector error, got %v", err)
+	}
+
 	failingInbox := &fakeApprovalInboxProjector{upsertErr: projectionErr}
 	failingService, err := NewServiceWithInboxProjector(newMemoryRepository(), failingInbox)
 	if err != nil {
