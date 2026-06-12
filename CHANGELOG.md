@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- 2026-06-12 22:35：新增 Web 收件箱 API client，并在侧边栏工作区导航中加入收件箱入口和我的待处理数量 badge。
+- 2026-06-12 23:21 新增收件箱可操作工作队列：增加 `inbox_items` read model、Inbox API、审批/项目决策投影、左侧菜单入口和 `/inbox` 页面，支持个人待办、团队只读视图和轻量处理动作。
 - 2026-06-12 16:25：新增当前登录用户账户自服务页 `/settings/account`，支持查看个人资料、DiceBear 头像、自己的最近登录记录，并通过自服务 API 修改资料和密码。
 - 2026-06-12 11:45：补齐项目管理 V2 Web 治理写入入口，项目详情支持跳转审计/成本视图，并可在证据链、验收结论、归档预览中新增证据、验证证据、提交验收和生成归档快照。
 - 2026-06-11 23:52：完成项目管理 V2 治理证据归档闭环，新增项目证据链、工件与报告引用、预算流水、验收结论、归档快照、归档工件保留锁、配置修订历史，以及审计中心和成本中心 project_id 联动。
@@ -23,7 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- 2026-06-12 22:44：修正 Web 收件箱 API client 类型与当前 Control Plane OpenAPI/handler 合同不一致的问题，对齐 action tone、列表 pagination/summary、badge 计数和 source_result 响应结构。
 - 2026-06-12 16:17：收紧创建数字员工身份步骤的头像选择区，头像项改为固定小尺寸并自动换行，避免宽屏下圆形头像被网格撑得过大。
 - 2026-06-12 16:08：数字员工工作台员工卡片列表改为前端分页浏览，默认每页 12 个，翻页和每页数量会下传 overview `limit/offset`，避免一次性拉取和渲染全部员工。
 - 2026-06-11 17:19：补充项目管理 V1 后端端到端仿真测试，覆盖需求 Workflow signal 失败重试、Runtime 任务写回身份绑定、终态 signal 重试和读模型无重复事实。
