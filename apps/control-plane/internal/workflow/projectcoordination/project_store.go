@@ -2,6 +2,7 @@ package projectcoordination
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/approval"
@@ -12,6 +13,7 @@ type ProjectStore struct {
 	repository project.Repository
 	approvals  ApprovalCreator
 	inbox      project.DecisionInboxProjector
+	runStarter ProjectTaskRunStarter
 }
 
 func NewProjectStore(repository project.Repository) *ProjectStore {
@@ -22,12 +24,20 @@ type ApprovalCreator interface {
 	CreateRequest(ctx context.Context, input approval.CreateRequestInput) (*approval.ApprovalRequest, error)
 }
 
+type ProjectTaskRunStarter interface {
+	StartProjectTaskRun(ctx context.Context, req StartProjectTaskRunRequest) (StartProjectTaskRunResult, error)
+}
+
 func NewProjectStoreWithApprovals(repository project.Repository, approvals ApprovalCreator) *ProjectStore {
 	return NewProjectStoreWithApprovalsAndInbox(repository, approvals, nil)
 }
 
 func NewProjectStoreWithApprovalsAndInbox(repository project.Repository, approvals ApprovalCreator, inbox project.DecisionInboxProjector) *ProjectStore {
-	return &ProjectStore{repository: repository, approvals: approvals, inbox: inbox}
+	return NewProjectStoreWithApprovalsInboxAndRunStarter(repository, approvals, inbox, nil)
+}
+
+func NewProjectStoreWithApprovalsInboxAndRunStarter(repository project.Repository, approvals ApprovalCreator, inbox project.DecisionInboxProjector, runStarter ProjectTaskRunStarter) *ProjectStore {
+	return &ProjectStore{repository: repository, approvals: approvals, inbox: inbox, runStarter: runStarter}
 }
 
 func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, input LoadSnapshotInput) (CoordinationSnapshot, error) {
@@ -250,15 +260,160 @@ func (s *ProjectStore) AppendProjectEvent(ctx context.Context, input AppendProje
 }
 
 func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchProjectTaskInput) error {
-	if s.repository == nil {
+	if s.repository == nil || s.runStarter == nil {
 		return ErrActivityStoreRequired
 	}
-	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskDispatched, input.TaskID.String(), "项目任务已分派", map[string]any{"project_task_id": input.TaskID.String()}))
+	task, err := s.repository.GetProjectTask(ctx, input.TenantID, input.TaskID)
 	if err != nil {
 		return err
 	}
-	_, err = s.repository.UpdateProjectTaskStatus(ctx, input.TenantID, input.TaskID, "assigned", &event.ID, []string{"planned", "pending"})
+	if task.ProjectID != input.ProjectID {
+		return project.ErrProjectNotFound
+	}
+	if task.DigitalEmployeeRunID != nil {
+		exists, err := s.repository.ProjectTaskEventExists(ctx, input.TenantID, input.ProjectID, project.ProjectEventTaskDispatched, input.TaskID.String())
+		if err != nil {
+			return err
+		}
+		if exists {
+			return nil
+		}
+		projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+		if err != nil {
+			return err
+		}
+		_, err = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskDispatched, input.TaskID.String(), "项目任务已分派", reemittedDispatchedPayload(task, projectRecord)))
+		return err
+	}
+	if !projectTaskDispatchAllowed(task.Status) || task.AssignedDigitalEmployeeID == nil || task.DemandID == nil {
+		return project.ErrInvalidProject
+	}
+	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
+		return err
+	}
+	demand, err := s.repository.GetProjectDemand(ctx, input.TenantID, *task.DemandID)
+	if err != nil {
+		return err
+	}
+	run, err := s.runStarter.StartProjectTaskRun(ctx, StartProjectTaskRunRequest{
+		TenantID:          input.TenantID,
+		ProjectID:         input.ProjectID,
+		DemandID:          demand.ID,
+		ProjectTaskID:     task.ID,
+		DigitalEmployeeID: *task.AssignedDigitalEmployeeID,
+		DispatchUserID:    projectRecord.HumanOwnerUserID,
+		Objective:         task.Title,
+		Prompt:            projectTaskRunPrompt(projectRecord, demand, task),
+		IdempotencyKey:    projectTaskDispatchIdempotencyKey(task.ID),
+		Metadata: map[string]any{
+			"source":          "project_task_dispatch",
+			"actor_type":      "project_coordinator",
+			"project_id":      input.ProjectID.String(),
+			"demand_id":       demand.ID.String(),
+			"project_task_id": task.ID.String(),
+		},
+	})
+	if err != nil {
+		_, _ = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskDispatchFailed, input.TaskID.String(), "项目任务分派失败", dispatchFailurePayload(task, err, dispatchErrorRetryable(err))))
+		return err
+	}
+	if _, err := s.repository.BindProjectTaskRun(ctx, project.BindProjectTaskRunRequest{
+		TenantID:             input.TenantID,
+		ProjectTaskID:        input.TaskID,
+		DigitalEmployeeRunID: run.RunID,
+		RuntimeTaskID:        run.RuntimeTaskID,
+		CurrentStatuses:      []string{"planned", "pending"},
+	}); err != nil {
+		return err
+	}
+	_, err = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskDispatched, input.TaskID.String(), "项目任务已分派", map[string]any{
+		"project_task_id":         input.TaskID.String(),
+		"digital_employee_id":     task.AssignedDigitalEmployeeID.String(),
+		"digital_employee_run_id": run.RunID.String(),
+		"runtime_task_id":         run.RuntimeTaskID.String(),
+		"runtime_node_id":         run.RuntimeNodeID.String(),
+		"node_id":                 run.NodeID,
+		"dispatch_actor_type":     "project_coordinator",
+		"dispatch_user_id":        projectRecord.HumanOwnerUserID.String(),
+	}))
 	return err
+}
+
+func projectTaskDispatchAllowed(status string) bool {
+	return status == "planned" || status == "pending"
+}
+
+func projectTaskDispatchIdempotencyKey(taskID uuid.UUID) string {
+	return "project-task:" + taskID.String()
+}
+
+func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectDemand, task project.ProjectTask) string {
+	content := ""
+	if demand.Content != nil {
+		content = *demand.Content
+	}
+	summary := ""
+	if task.Summary != nil {
+		summary = *task.Summary
+	}
+	return "项目任务执行请求\n" +
+		"项目ID: " + projectRecord.ID.String() + "\n" +
+		"需求ID: " + demand.ID.String() + "\n" +
+		"ProjectTask ID: " + task.ID.String() + "\n" +
+		"需求标题: " + demand.Title + "\n" +
+		"需求内容: " + content + "\n" +
+		"任务标题: " + task.Title + "\n" +
+		"任务摘要: " + summary + "\n" +
+		"请按项目任务要求执行，并在完成后通过项目任务回写端点提交结论、证据、工件引用和不确定性。"
+}
+
+func dispatchFailurePayload(task project.ProjectTask, err error, retryable bool) map[string]any {
+	digitalEmployeeID := ""
+	if task.AssignedDigitalEmployeeID != nil {
+		digitalEmployeeID = task.AssignedDigitalEmployeeID.String()
+	}
+	return map[string]any{
+		"project_task_id":     task.ID.String(),
+		"digital_employee_id": digitalEmployeeID,
+		"error":               err.Error(),
+		"error_family":        "project_task_dispatch",
+		"retryable":           retryable,
+		"dispatch_actor_type": "project_coordinator",
+	}
+}
+
+func dispatchErrorRetryable(err error) bool {
+	switch {
+	case errors.Is(err, project.ErrProjectNotFound),
+		errors.Is(err, project.ErrInvalidProject),
+		errors.Is(err, project.ErrProjectConflict):
+		return false
+	}
+	var startErr *ProjectTaskRunStartError
+	if errors.As(err, &startErr) {
+		return startErr.Retryable
+	}
+	return true
+}
+
+func reemittedDispatchedPayload(task project.ProjectTask, projectRecord project.Project) map[string]any {
+	payload := map[string]any{
+		"project_task_id":     task.ID.String(),
+		"dispatch_actor_type": "project_coordinator",
+		"dispatch_user_id":    projectRecord.HumanOwnerUserID.String(),
+		"reemitted":           true,
+	}
+	if task.AssignedDigitalEmployeeID != nil {
+		payload["digital_employee_id"] = task.AssignedDigitalEmployeeID.String()
+	}
+	if task.DigitalEmployeeRunID != nil {
+		payload["digital_employee_run_id"] = task.DigitalEmployeeRunID.String()
+	}
+	if task.RuntimeTaskID != nil {
+		payload["runtime_task_id"] = task.RuntimeTaskID.String()
+	}
+	return payload
 }
 
 func (s *ProjectStore) FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error {
