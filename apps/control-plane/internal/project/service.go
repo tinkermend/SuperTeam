@@ -880,40 +880,36 @@ func (s *Service) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID 
 	if err != nil {
 		return nil, err
 	}
-	jobs, err := s.repository.ListCoordinationJobs(ctx, tenantID, demand.ProjectID, 100, 0)
+	jobs, err := s.repository.ListDemandLaunchCoordinationJobs(ctx, tenantID, demand.ProjectID, demand.ID, demand.CreatedEventID, 100)
 	if err != nil {
 		return nil, err
 	}
-	routes, err := s.repository.ListRouteDecisions(ctx, tenantID, demand.ProjectID, 100, 0)
+	routes, err := s.repository.ListDemandLaunchRouteDecisions(ctx, tenantID, demand.ProjectID, demand.ID, 100)
 	if err != nil {
 		return nil, err
 	}
-	tasks, err := s.repository.ListProjectTasks(ctx, tenantID, demand.ProjectID, nil, 100, 0)
+	tasks, err := s.repository.ListDemandLaunchProjectTasks(ctx, tenantID, demand.ProjectID, demand.ID, 100)
 	if err != nil {
 		return nil, err
 	}
-	decisions, err := s.repository.ListDecisionRequests(ctx, tenantID, demand.ProjectID, 100, 0)
+	taskIDs := projectTaskIDs(tasks)
+	decisions, err := s.repository.ListDemandLaunchDecisionRequests(ctx, tenantID, demand.ProjectID, coordinationJobIDs(jobs), taskIDs, 100)
 	if err != nil {
 		return nil, err
 	}
-	events, err := s.repository.ListProjectEvents(ctx, tenantID, demand.ProjectID, 50, 0)
+	events, err := s.repository.ListDemandLaunchEvents(ctx, tenantID, demand.ProjectID, demand.ID, demand.CreatedEventID, taskIDs, decisionRequestIDs(decisions), 50)
 	if err != nil {
 		return nil, err
 	}
-	filteredJobs := filterJobsForDemand(jobs, demand)
-	filteredRoutes := filterRoutesForDemand(routes, demand.ID)
-	filteredTasks := filterTasksForDemand(tasks, demand.ID)
-	filteredDecisions := filterDecisionsForDemand(decisions, filteredJobs, filteredTasks)
-	filteredEvents := filterEventsForDemand(events, demand, filteredTasks, filteredDecisions)
 	return &DemandLaunchDetail{
 		Demand:           demand,
 		Project:          project,
 		Reviewer:         demand.ReviewerPreference,
-		CoordinationJobs: filteredJobs,
-		RouteDecisions:   filteredRoutes,
-		ProjectTasks:     filteredTasks,
-		DecisionRequests: filteredDecisions,
-		RecentEvents:     filteredEvents,
+		CoordinationJobs: jobs,
+		RouteDecisions:   routes,
+		ProjectTasks:     tasks,
+		DecisionRequests: decisions,
+		RecentEvents:     events,
 	}, nil
 }
 
@@ -941,10 +937,38 @@ func (s *Service) ListDecisionRequests(ctx context.Context, tenantID, projectID 
 	return s.repository.ListDecisionRequests(ctx, tenantID, projectID, limit, offset)
 }
 
+func coordinationJobIDs(jobs []CoordinationJob) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(jobs))
+	for _, job := range jobs {
+		ids = append(ids, job.ID)
+	}
+	return ids
+}
+
+func projectTaskIDs(tasks []ProjectTask) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.ID)
+	}
+	return ids
+}
+
+func decisionRequestIDs(decisions []DecisionRequest) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(decisions))
+	for _, decision := range decisions {
+		ids = append(ids, decision.ID)
+	}
+	return ids
+}
+
 func filterJobsForDemand(jobs []CoordinationJob, demand ProjectDemand) []CoordinationJob {
 	filtered := []CoordinationJob{}
 	for _, job := range jobs {
 		if demand.CreatedEventID != nil && job.TriggerEventID != nil && *job.TriggerEventID == *demand.CreatedEventID {
+			filtered = append(filtered, job)
+			continue
+		}
+		if rawDemandID, ok := job.InputSnapshotRef["demand_id"].(string); ok && rawDemandID == demand.ID.String() {
 			filtered = append(filtered, job)
 		}
 	}

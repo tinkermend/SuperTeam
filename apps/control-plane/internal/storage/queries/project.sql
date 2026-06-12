@@ -118,6 +118,14 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY updated_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: ListDemandLaunchProjectTasks :many
+SELECT * FROM project_tasks
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND demand_id = sqlc.arg('demand_id')::uuid
+ORDER BY updated_at DESC
+LIMIT sqlc.arg('limit');
+
 -- name: CreateProjectTask :one
 INSERT INTO project_tasks (
     tenant_id,
@@ -182,6 +190,22 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
 ORDER BY sequence_number DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: ListDemandLaunchProjectEvents :many
+SELECT * FROM project_events
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND (
+    (sqlc.narg('created_event_id')::uuid IS NOT NULL AND id = sqlc.narg('created_event_id')::uuid)
+    OR resource_id = (sqlc.arg('demand_id')::uuid)::text
+    OR resource_id = ANY(sqlc.arg('project_task_ids')::varchar[])
+    OR resource_id = ANY(sqlc.arg('decision_request_ids')::varchar[])
+    OR payload->>'demand_id' = (sqlc.arg('demand_id')::uuid)::text
+    OR payload->>'project_task_id' = ANY(sqlc.arg('project_task_ids')::varchar[])
+    OR payload->>'decision_request_id' = ANY(sqlc.arg('decision_request_ids')::varchar[])
+  )
+ORDER BY sequence_number DESC
+LIMIT sqlc.arg('limit');
 
 -- name: GetProjectEvent :one
 SELECT * FROM project_events
@@ -314,6 +338,17 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: ListDemandLaunchCoordinationJobs :many
+SELECT * FROM project_coordination_jobs
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND (
+    (sqlc.narg('created_event_id')::uuid IS NOT NULL AND trigger_event_id = sqlc.narg('created_event_id')::uuid)
+    OR input_snapshot_ref->>'demand_id' = (sqlc.arg('demand_id')::uuid)::text
+  )
+ORDER BY created_at DESC
+LIMIT sqlc.arg('limit');
+
 -- name: CreateProjectRouteDecision :one
 INSERT INTO project_route_decisions (
     tenant_id,
@@ -349,6 +384,14 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: ListDemandLaunchRouteDecisions :many
+SELECT * FROM project_route_decisions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND demand_id = sqlc.arg('demand_id')::uuid
+ORDER BY created_at DESC
+LIMIT sqlc.arg('limit');
 
 -- name: UpdateProjectTaskStatus :one
 UPDATE project_tasks
@@ -496,3 +539,14 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: ListDemandLaunchDecisionRequests :many
+SELECT * FROM project_decision_requests
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND (
+    coordination_job_id = ANY(sqlc.arg('coordination_job_ids')::uuid[])
+    OR project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
+  )
+ORDER BY created_at DESC
+LIMIT sqlc.arg('limit');

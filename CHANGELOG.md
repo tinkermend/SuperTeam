@@ -458,6 +458,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### 项目需求启动详情分页前过滤 (2026-06-12 17:48)
+
+- 修复需求启动详情读模型先按项目分页再内存过滤导致相关事实被较新无关记录截断的问题，改为在仓储查询层按需求、任务、决策和事件关联条件过滤后再限制返回数量。
+
 #### Control Plane 迁移命令目录对齐 (2026-05-30)
 
 - 修正 `apps/control-plane/Makefile` 的 Atlas 迁移目录，统一指向实际 schema 源 `internal/storage/migrations`。

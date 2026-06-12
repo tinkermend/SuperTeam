@@ -193,18 +193,33 @@ func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 		t.Fatalf("submit demand: %v", err)
 	}
 	job := CoordinationJob{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, TriggerEventID: demand.CreatedEventID, JobType: "demand_route", Status: "running"}
-	repo.coordinationJobs = append(repo.coordinationJobs, job)
+	inputJob := CoordinationJob{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, JobType: "demand_route", Status: "running", InputSnapshotRef: map[string]any{"demand_id": demand.ID.String()}}
+	repo.coordinationJobs = append(repo.coordinationJobs, job, inputJob)
 	task := ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, DemandID: &demand.ID, Title: "审查 PR", Status: "pending"}
 	repo.tasks = append(repo.tasks, task)
 	repo.routeDecisions = append(repo.routeDecisions, RouteDecision{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: job.ID, DemandID: &demand.ID, Reason: "按能力分派"})
 	decisionRequest := DecisionRequest{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: &job.ID, TargetUserID: ownerID, DecisionType: "route_review", TitleSnapshot: "确认路由", StatusSnapshot: "pending"}
-	repo.decisionRequests = append(repo.decisionRequests, decisionRequest)
+	taskDecisionRequest := DecisionRequest{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ProjectTaskID: &task.ID, TargetUserID: ownerID, DecisionType: "task_review", TitleSnapshot: "确认任务", StatusSnapshot: "pending"}
+	repo.decisionRequests = append(repo.decisionRequests, decisionRequest, taskDecisionRequest)
 	demandResourceType := "project_demand"
 	demandResourceID := demand.ID.String()
 	demandResourceEvent := ProjectEvent{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, ResourceType: &demandResourceType, ResourceID: &demandResourceID, EventType: ProjectEventDemandSubmitted, ActorType: "human_user", ActorID: ownerID.String(), Payload: map[string]any{}}
 	taskPayloadEvent := ProjectEvent{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, EventType: ProjectEventTaskDispatched, ActorType: "workflow", ActorID: job.ID.String(), Payload: map[string]any{"project_task_id": task.ID.String()}}
 	decisionPayloadEvent := ProjectEvent{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, EventType: ProjectEventDecisionRequested, ActorType: "workflow", ActorID: job.ID.String(), Payload: map[string]any{"decision_request_id": decisionRequest.ID.String()}}
 	repo.events = append(repo.events, demandResourceEvent, taskPayloadEvent, decisionPayloadEvent)
+	for i := 0; i < 120; i++ {
+		unrelatedDemandID := uuid.New()
+		unrelatedJobID := uuid.New()
+		unrelatedTaskID := uuid.New()
+		unrelatedDecisionID := uuid.New()
+		later := time.Now().UTC().Add(time.Duration(i+1) * time.Minute)
+		repo.coordinationJobs = append(repo.coordinationJobs, CoordinationJob{ID: unrelatedJobID, TenantID: tenantID, ProjectID: projectID, JobType: "demand_route", Status: "running", InputSnapshotRef: map[string]any{"demand_id": unrelatedDemandID.String()}, CreatedAt: later})
+		repo.tasks = append(repo.tasks, ProjectTask{ID: unrelatedTaskID, TenantID: tenantID, ProjectID: projectID, DemandID: &unrelatedDemandID, Title: "其他任务", Status: "pending", UpdatedAt: later})
+		repo.routeDecisions = append(repo.routeDecisions, RouteDecision{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, CoordinationJobID: unrelatedJobID, DemandID: &unrelatedDemandID, Reason: "其他路由", CreatedAt: later})
+		repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{ID: unrelatedDecisionID, TenantID: tenantID, ProjectID: projectID, CoordinationJobID: &unrelatedJobID, ProjectTaskID: &unrelatedTaskID, TargetUserID: ownerID, DecisionType: "route_review", TitleSnapshot: "其他决策", StatusSnapshot: "pending", CreatedAt: later})
+		unrelatedTaskResourceID := unrelatedTaskID.String()
+		repo.events = append(repo.events, ProjectEvent{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, SequenceNumber: int64(1000 + i), EventType: ProjectEventTaskDispatched, ActorType: "workflow", ActorID: unrelatedJobID.String(), ResourceID: &unrelatedTaskResourceID, Payload: map[string]any{"project_task_id": unrelatedTaskID.String()}, CreatedAt: later})
+	}
 
 	detail, err := service.GetDemandLaunchDetail(context.Background(), tenantID, demand.ID)
 	if err != nil {
@@ -216,7 +231,7 @@ func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 	if detail.Reviewer == nil || detail.Reviewer.ReviewerUserID != ownerID {
 		t.Fatalf("expected reviewer preference in launch detail: %#v", detail.Reviewer)
 	}
-	if len(detail.CoordinationJobs) != 1 || len(detail.RouteDecisions) != 1 || len(detail.ProjectTasks) != 1 || len(detail.DecisionRequests) != 1 {
+	if len(detail.CoordinationJobs) != 2 || len(detail.RouteDecisions) != 1 || len(detail.ProjectTasks) != 1 || len(detail.DecisionRequests) != 2 {
 		t.Fatalf("expected related facts, got %#v", detail)
 	}
 	if len(detail.RecentEvents) != 4 {
@@ -2391,6 +2406,18 @@ func strPtrOrNil(value string) *string {
 	return &value
 }
 
+func paginateTestSlice[T any](items []T, limit, offset int32) []T {
+	start := int(offset)
+	if start > len(items) {
+		return []T{}
+	}
+	end := start + int(limit)
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[start:end]
+}
+
 func seedHumanOwnerMember(repo *memoryRepository, tenantID, projectID, ownerID uuid.UUID) {
 	repo.members[projectID] = append(repo.members[projectID], ProjectMember{
 		ID:            uuid.New(),
@@ -2552,7 +2579,10 @@ func (r *memoryRepository) ListProjectTasks(ctx context.Context, tenantID, proje
 			filtered = append(filtered, task)
 		}
 	}
-	return filtered, nil
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
+	})
+	return paginateTestSlice(filtered, limit, offset), nil
 }
 
 func (r *memoryRepository) AppendProjectEvent(ctx context.Context, event AppendProjectEventRequest) (ProjectEvent, error) {
@@ -2595,7 +2625,10 @@ func (r *memoryRepository) ListProjectEvents(ctx context.Context, tenantID, proj
 			filtered = append(filtered, event)
 		}
 	}
-	return filtered, nil
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].SequenceNumber > filtered[j].SequenceNumber
+	})
+	return paginateTestSlice(filtered, limit, offset), nil
 }
 
 func (r *memoryRepository) CreateProjectDemand(ctx context.Context, req SubmitProjectDemandRequest, status ProjectDemandStatus, createdEventID *uuid.UUID) (ProjectDemand, error) {
@@ -2708,7 +2741,24 @@ func (r *memoryRepository) ListCoordinationJobs(ctx context.Context, tenantID, p
 			filtered = append(filtered, job)
 		}
 	}
-	return filtered, nil
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+	})
+	return paginateTestSlice(filtered, limit, offset), nil
+}
+
+func (r *memoryRepository) ListDemandLaunchCoordinationJobs(ctx context.Context, tenantID, projectID, demandID uuid.UUID, createdEventID *uuid.UUID, limit int32) ([]CoordinationJob, error) {
+	candidates := make([]CoordinationJob, 0, len(r.coordinationJobs))
+	for _, job := range r.coordinationJobs {
+		if job.TenantID == tenantID && job.ProjectID == projectID {
+			candidates = append(candidates, job)
+		}
+	}
+	filtered := filterJobsForDemand(candidates, ProjectDemand{ID: demandID, CreatedEventID: createdEventID})
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+	})
+	return paginateTestSlice(filtered, limit, 0), nil
 }
 
 func (r *memoryRepository) CreateRouteDecision(ctx context.Context, req CreateRouteDecisionRequest) (RouteDecision, error) {
@@ -2739,7 +2789,24 @@ func (r *memoryRepository) ListRouteDecisions(ctx context.Context, tenantID, pro
 			filtered = append(filtered, decision)
 		}
 	}
-	return filtered, nil
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+	})
+	return paginateTestSlice(filtered, limit, offset), nil
+}
+
+func (r *memoryRepository) ListDemandLaunchRouteDecisions(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]RouteDecision, error) {
+	candidates := make([]RouteDecision, 0, len(r.routeDecisions))
+	for _, decision := range r.routeDecisions {
+		if decision.TenantID == tenantID && decision.ProjectID == projectID {
+			candidates = append(candidates, decision)
+		}
+	}
+	filtered := filterRoutesForDemand(candidates, demandID)
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+	})
+	return paginateTestSlice(filtered, limit, 0), nil
 }
 
 func (r *memoryRepository) CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error) {
@@ -2759,6 +2826,20 @@ func (r *memoryRepository) CreateProjectTask(ctx context.Context, req CreateProj
 	}
 	r.tasks = append(r.tasks, task)
 	return task, nil
+}
+
+func (r *memoryRepository) ListDemandLaunchProjectTasks(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]ProjectTask, error) {
+	candidates := make([]ProjectTask, 0, len(r.tasks))
+	for _, task := range r.tasks {
+		if task.TenantID == tenantID && task.ProjectID == projectID {
+			candidates = append(candidates, task)
+		}
+	}
+	filtered := filterTasksForDemand(candidates, demandID)
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
+	})
+	return paginateTestSlice(filtered, limit, 0), nil
 }
 
 func (r *memoryRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error) {
@@ -3013,15 +3094,61 @@ func (r *memoryRepository) ListDecisionRequests(ctx context.Context, tenantID, p
 	sort.SliceStable(filtered, func(i, j int) bool {
 		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
 	})
-	start := int(offset)
-	if start > len(filtered) {
-		return []DecisionRequest{}, nil
+	return paginateTestSlice(filtered, limit, offset), nil
+}
+
+func (r *memoryRepository) ListDemandLaunchDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, coordinationJobIDs, projectTaskIDs []uuid.UUID, limit int32) ([]DecisionRequest, error) {
+	jobIDs := map[uuid.UUID]struct{}{}
+	for _, id := range coordinationJobIDs {
+		jobIDs[id] = struct{}{}
 	}
-	end := start + int(limit)
-	if end > len(filtered) {
-		end = len(filtered)
+	taskIDs := map[uuid.UUID]struct{}{}
+	for _, id := range projectTaskIDs {
+		taskIDs[id] = struct{}{}
 	}
-	return filtered[start:end], nil
+	filtered := make([]DecisionRequest, 0, len(r.decisionRequests))
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID != tenantID || decision.ProjectID != projectID {
+			continue
+		}
+		if decision.CoordinationJobID != nil {
+			if _, ok := jobIDs[*decision.CoordinationJobID]; ok {
+				filtered = append(filtered, decision)
+				continue
+			}
+		}
+		if decision.ProjectTaskID != nil {
+			if _, ok := taskIDs[*decision.ProjectTaskID]; ok {
+				filtered = append(filtered, decision)
+			}
+		}
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+	})
+	return paginateTestSlice(filtered, limit, 0), nil
+}
+
+func (r *memoryRepository) ListDemandLaunchEvents(ctx context.Context, tenantID, projectID, demandID uuid.UUID, createdEventID *uuid.UUID, projectTaskIDs, decisionRequestIDs []uuid.UUID, limit int32) ([]ProjectEvent, error) {
+	candidates := make([]ProjectEvent, 0, len(r.events))
+	for _, event := range r.events {
+		if event.TenantID == tenantID && event.ProjectID == projectID {
+			candidates = append(candidates, event)
+		}
+	}
+	tasks := make([]ProjectTask, 0, len(projectTaskIDs))
+	for _, id := range projectTaskIDs {
+		tasks = append(tasks, ProjectTask{ID: id})
+	}
+	decisions := make([]DecisionRequest, 0, len(decisionRequestIDs))
+	for _, id := range decisionRequestIDs {
+		decisions = append(decisions, DecisionRequest{ID: id})
+	}
+	filtered := filterEventsForDemand(candidates, ProjectDemand{ID: demandID, CreatedEventID: createdEventID}, tasks, decisions)
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].SequenceNumber > filtered[j].SequenceNumber
+	})
+	return paginateTestSlice(filtered, limit, 0), nil
 }
 
 func (r *memoryRepository) CreateEvidenceRefWithEvent(ctx context.Context, req CreateEvidenceRefWithEventRequest) (ProjectEvidenceRefWriteResult, error) {

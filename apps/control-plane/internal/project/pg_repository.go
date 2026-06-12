@@ -218,6 +218,19 @@ func (r *PgRepository) ListProjectTasks(ctx context.Context, tenantID, projectID
 	return tasksFromRecords(rows)
 }
 
+func (r *PgRepository) ListDemandLaunchProjectTasks(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]ProjectTask, error) {
+	rows, err := r.q.ListDemandLaunchProjectTasks(ctx, queries.ListDemandLaunchProjectTasksParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
+		Limit:     limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return tasksFromRecords(rows)
+}
+
 func (r *PgRepository) AppendProjectEvent(ctx context.Context, event AppendProjectEventRequest) (ProjectEvent, error) {
 	return r.appendProjectEventWithQueries(ctx, r.q, event)
 }
@@ -258,6 +271,22 @@ func (r *PgRepository) appendProjectEventWithQueries(ctx context.Context, q *que
 
 func (r *PgRepository) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error) {
 	rows, err := r.q.ListProjectEvents(ctx, queries.ListProjectEventsParams{TenantID: tenantID, ProjectID: projectID, Limit: limit, Offset: offset})
+	if err != nil {
+		return nil, err
+	}
+	return eventsFromRecords(rows)
+}
+
+func (r *PgRepository) ListDemandLaunchEvents(ctx context.Context, tenantID, projectID, demandID uuid.UUID, createdEventID *uuid.UUID, projectTaskIDs, decisionRequestIDs []uuid.UUID, limit int32) ([]ProjectEvent, error) {
+	rows, err := r.q.ListDemandLaunchProjectEvents(ctx, queries.ListDemandLaunchProjectEventsParams{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		CreatedEventID:     nullUUID(createdEventID),
+		DemandID:           demandID,
+		ProjectTaskIds:     uuidStrings(projectTaskIDs),
+		DecisionRequestIds: uuidStrings(decisionRequestIDs),
+		Limit:              limit,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -457,6 +486,20 @@ func (r *PgRepository) ListCoordinationJobs(ctx context.Context, tenantID, proje
 	return coordinationJobsFromRecords(rows)
 }
 
+func (r *PgRepository) ListDemandLaunchCoordinationJobs(ctx context.Context, tenantID, projectID, demandID uuid.UUID, createdEventID *uuid.UUID, limit int32) ([]CoordinationJob, error) {
+	rows, err := r.q.ListDemandLaunchCoordinationJobs(ctx, queries.ListDemandLaunchCoordinationJobsParams{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		CreatedEventID: nullUUID(createdEventID),
+		DemandID:       demandID,
+		Limit:          limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return coordinationJobsFromRecords(rows)
+}
+
 func (r *PgRepository) CreateRouteDecision(ctx context.Context, req CreateRouteDecisionRequest) (RouteDecision, error) {
 	candidateIDs, err := jsonbUUIDSlice(req.CandidateDigitalEmployeeIDs, "candidate_digital_employee_ids")
 	if err != nil {
@@ -504,6 +547,19 @@ func (r *PgRepository) ListRouteDecisions(ctx context.Context, tenantID, project
 		ProjectID: projectID,
 		Limit:     limit,
 		Offset:    offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return routeDecisionsFromRecords(rows)
+}
+
+func (r *PgRepository) ListDemandLaunchRouteDecisions(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]RouteDecision, error) {
+	rows, err := r.q.ListDemandLaunchRouteDecisions(ctx, queries.ListDemandLaunchRouteDecisionsParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
+		Limit:     limit,
 	})
 	if err != nil {
 		return nil, err
@@ -779,6 +835,20 @@ func (r *PgRepository) ListDecisionRequests(ctx context.Context, tenantID, proje
 		ProjectID: projectID,
 		Limit:     limit,
 		Offset:    offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return decisionRequestsFromRecords(rows)
+}
+
+func (r *PgRepository) ListDemandLaunchDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, coordinationJobIDs, projectTaskIDs []uuid.UUID, limit int32) ([]DecisionRequest, error) {
+	rows, err := r.q.ListDemandLaunchDecisionRequests(ctx, queries.ListDemandLaunchDecisionRequestsParams{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		CoordinationJobIds: coordinationJobIDs,
+		ProjectTaskIds:     projectTaskIDs,
+		Limit:              limit,
 	})
 	if err != nil {
 		return nil, err
