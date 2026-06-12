@@ -57,7 +57,9 @@ func (h *HTTPHandler) GetBadge(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	badge, err := service.GetBadge(r.Context(), tenantID, actorID, true)
+	// Team badge projection requires a future team-view authorizer. Until that is
+	// wired, keep the console badge scoped to the actor to avoid tenant-wide count leaks.
+	badge, err := service.GetBadge(r.Context(), tenantID, actorID, false)
 	if err != nil {
 		writeHandlerError(w, err)
 		return
@@ -124,9 +126,9 @@ func listItemsRequestFromQuery(w http.ResponseWriter, r *http.Request, tenantID,
 		View:        View(query.Get("view")),
 		Status:      Status(query.Get("status")),
 	}
-	// Team view authorization will be supplied by a future authorizer hook; the
-	// service still centralizes the flag so the policy point remains explicit.
-	req.TeamViewAllowed = true
+	// Team view authorization will be supplied by a future authorizer hook. Until
+	// then the service must reject team view and team-scoped projections by default.
+	req.TeamViewAllowed = false
 	if raw := query.Get("item_type"); raw != "" {
 		itemType := ItemType(raw)
 		req.ItemType = &itemType

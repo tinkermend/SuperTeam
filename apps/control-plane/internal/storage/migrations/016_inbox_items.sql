@@ -58,6 +58,10 @@ CREATE INDEX idx_inbox_items_tenant_target_status_activity
 CREATE INDEX idx_inbox_items_tenant_status_activity
     ON inbox_items(tenant_id, status, last_activity_at DESC);
 
+CREATE INDEX idx_inbox_items_tenant_team_status_activity
+    ON inbox_items(tenant_id, team_id, status, last_activity_at DESC)
+    WHERE team_id IS NOT NULL;
+
 CREATE INDEX idx_inbox_items_tenant_project_status_activity
     ON inbox_items(tenant_id, source_project_id, status, last_activity_at DESC)
     WHERE source_project_id IS NOT NULL;

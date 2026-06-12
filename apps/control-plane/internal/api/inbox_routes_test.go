@@ -64,7 +64,7 @@ func TestInboxRoutesAreRegisteredWhenHandlerIsSet(t *testing.T) {
 		t.Fatalf("expected inbox badge route to succeed, got %d: %s", resp.Code, resp.Body.String())
 	}
 	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
-	if service.badgeTenantID != expectedTenantID || service.badgeActorUserID != user.ID || !service.badgeIncludeTeam {
+	if service.badgeTenantID != expectedTenantID || service.badgeActorUserID != user.ID || service.badgeIncludeTeam {
 		t.Fatalf("expected badge route to pass console identity, got tenant=%s user=%s includeTeam=%v", service.badgeTenantID, service.badgeActorUserID, service.badgeIncludeTeam)
 	}
 }

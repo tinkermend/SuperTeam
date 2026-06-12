@@ -134,8 +134,8 @@ func TestHandlerBadgeUsesConsoleIdentity(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
 	}
-	if service.badgeTenantID != tenantID || service.badgeActorUserID != userID || !service.badgeIncludeTeam {
-		t.Fatalf("expected badge to use console identity and include team, got tenant=%s user=%s includeTeam=%v", service.badgeTenantID, service.badgeActorUserID, service.badgeIncludeTeam)
+	if service.badgeTenantID != tenantID || service.badgeActorUserID != userID || service.badgeIncludeTeam {
+		t.Fatalf("expected badge to use console identity without team count, got tenant=%s user=%s includeTeam=%v", service.badgeTenantID, service.badgeActorUserID, service.badgeIncludeTeam)
 	}
 	var body struct {
 		MineOpenCount int64 `json:"mine_open_count"`
@@ -145,8 +145,29 @@ func TestHandlerBadgeUsesConsoleIdentity(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.MineOpenCount != 4 || body.TeamOpenCount != 9 || body.HighRiskCount != 2 {
+	if body.MineOpenCount != 4 || body.TeamOpenCount != 0 || body.HighRiskCount != 2 {
 		t.Fatalf("unexpected badge: %#v", body)
+	}
+}
+
+func TestHandlerTeamListWithoutAuthorizerReturnsForbidden(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	service := &handlerService{listErr: ErrViewForbidden}
+	handler := NewHandler(service)
+	req := withConsoleIdentity(httptest.NewRequest(http.MethodGet, "/inbox/items?view=team", nil), tenantID, userID)
+	resp := httptest.NewRecorder()
+
+	handler.ListItems(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.listReq.TenantID != tenantID || service.listReq.ActorUserID != userID {
+		t.Fatalf("expected console identity, got tenant=%s user=%s", service.listReq.TenantID, service.listReq.ActorUserID)
+	}
+	if service.listReq.View != ViewTeam || service.listReq.TeamViewAllowed {
+		t.Fatalf("expected team view request without team authorization, got %#v", service.listReq)
 	}
 }
 
@@ -286,7 +307,11 @@ func (s *handlerService) GetBadge(_ context.Context, tenantID, actorUserID uuid.
 	s.badgeTenantID = tenantID
 	s.badgeActorUserID = actorUserID
 	s.badgeIncludeTeam = includeTeam
-	return s.badge, s.badgeErr
+	badge := s.badge
+	if !includeTeam {
+		badge.TeamOpenCount = 0
+	}
+	return badge, s.badgeErr
 }
 
 func (s *handlerService) ExecuteAction(_ context.Context, req ExecuteActionRequest) (Item, SourceActionResult, error) {
