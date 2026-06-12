@@ -8,12 +8,13 @@ import (
 )
 
 var (
-	ErrInvalidItem       = errors.New("invalid inbox item")
-	ErrItemNotFound      = errors.New("inbox item not found")
-	ErrActionForbidden   = errors.New("inbox action forbidden")
-	ErrInvalidAction     = errors.New("invalid inbox action")
-	ErrSourceUnavailable = errors.New("inbox source unavailable")
-	ErrViewForbidden     = errors.New("inbox view forbidden")
+	ErrInvalidItem          = errors.New("invalid inbox item")
+	ErrItemNotFound         = errors.New("inbox item not found")
+	ErrActionForbidden      = errors.New("inbox action forbidden")
+	ErrInvalidAction        = errors.New("invalid inbox action")
+	ErrSourceUnavailable    = errors.New("inbox source unavailable")
+	ErrViewForbidden        = errors.New("inbox view forbidden")
+	ErrProjectionNotApplied = errors.New("inbox projection not applied")
 )
 
 type Status string
@@ -103,16 +104,17 @@ type UpsertItemRequest struct {
 }
 
 type ListItemsRequest struct {
-	TenantID     uuid.UUID
-	ActorUserID  uuid.UUID
-	View         View
-	Status       Status
-	ItemType     *ItemType
-	RiskLevel    *string
-	ProjectID    *uuid.UUID
-	TargetUserID *uuid.UUID
-	Limit        int32
-	Offset       int32
+	TenantID        uuid.UUID
+	ActorUserID     uuid.UUID
+	View            View
+	TeamViewAllowed bool
+	Status          Status
+	ItemType        *ItemType
+	RiskLevel       *string
+	ProjectID       *uuid.UUID
+	TargetUserID    *uuid.UUID
+	Limit           int32
+	Offset          int32
 }
 
 type ListItemsResult struct {

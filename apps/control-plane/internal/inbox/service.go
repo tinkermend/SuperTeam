@@ -83,6 +83,9 @@ func (s *Service) ListItems(ctx context.Context, req ListItemsRequest) (ListItem
 	if req.View != ViewMine && req.View != ViewTeam {
 		return ListItemsResult{}, ErrViewForbidden
 	}
+	if req.View == ViewTeam && !req.TeamViewAllowed {
+		return ListItemsResult{}, ErrViewForbidden
+	}
 	fetchReq := req
 	fetchReq.Limit = req.Limit + 1
 	items, err := s.repository.ListItems(ctx, fetchReq)
@@ -117,6 +120,8 @@ func (s *Service) GetBadge(ctx context.Context, tenantID, actorUserID uuid.UUID,
 		return Badge{}, err
 	}
 	var team int64
+	// Team badge visibility is authorized by the caller; this method only applies
+	// the already-authorized includeTeam projection.
 	if includeTeam {
 		team, err = s.repository.CountOpenItems(ctx, tenantID, nil)
 		if err != nil {
@@ -178,6 +183,9 @@ func (s *Service) ExecuteAction(ctx context.Context, req ExecuteActionRequest) (
 	if err != nil {
 		return item, result, err
 	}
+	if updated.Status == StatusOpen {
+		return updated, result, ErrProjectionNotApplied
+	}
 	return updated, result, nil
 }
 
@@ -234,6 +242,9 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 	if req.ItemType == ItemTypeProjectDecision && (req.SourceProjectID == nil || *req.SourceProjectID == uuid.Nil) {
 		return UpsertItemRequest{}, ErrInvalidItem
 	}
+	if req.ItemType == ItemTypeProjectDecision && req.SourceApprovalRequestID == nil {
+		return UpsertItemRequest{}, ErrInvalidItem
+	}
 	if req.Status == "" {
 		req.Status = StatusOpen
 	}
@@ -255,9 +266,33 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 	if len(req.Actions) == 0 {
 		req.Actions = DefaultActions(req.ItemType)
 	}
+	actions, err := normalizeActions(req.Actions)
+	if err != nil {
+		return UpsertItemRequest{}, err
+	}
+	req.Actions = actions
 	req.ContextPayload = mapOrEmpty(req.ContextPayload)
 	req.DeepLink = mapOrEmpty(req.DeepLink)
 	return req, nil
+}
+
+func normalizeActions(actions []Action) ([]Action, error) {
+	normalized := make([]Action, len(actions))
+	seen := make(map[string]struct{}, len(actions))
+	for i, action := range actions {
+		action.Key = strings.TrimSpace(action.Key)
+		action.Label = strings.TrimSpace(action.Label)
+		action.Tone = strings.TrimSpace(action.Tone)
+		if action.Key == "" || action.Label == "" {
+			return nil, ErrInvalidItem
+		}
+		if _, ok := seen[action.Key]; ok {
+			return nil, ErrInvalidItem
+		}
+		seen[action.Key] = struct{}{}
+		normalized[i] = action
+	}
+	return normalized, nil
 }
 
 func DefaultActions(itemType ItemType) []Action {

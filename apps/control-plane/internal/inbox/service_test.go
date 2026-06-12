@@ -179,18 +179,46 @@ func TestServiceRejectsProjectDecisionUpsertWithoutProjectSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
+	approvalID := uuid.New()
 
 	_, err = service.UpsertItem(context.Background(), UpsertItemRequest{
-		TenantID:     uuid.New(),
-		TargetUserID: uuid.New(),
-		Scope:        "personal",
-		ItemType:     ItemTypeProjectDecision,
-		SourceType:   SourceTypeProjectDecisionRequest,
-		SourceID:     uuid.New(),
-		Title:        "项目决策待处理",
+		TenantID:                uuid.New(),
+		TargetUserID:            uuid.New(),
+		Scope:                   "personal",
+		ItemType:                ItemTypeProjectDecision,
+		SourceType:              SourceTypeProjectDecisionRequest,
+		SourceID:                uuid.New(),
+		SourceApprovalRequestID: &approvalID,
+		Title:                   "项目决策待处理",
 	})
 	if !errors.Is(err, ErrInvalidItem) {
 		t.Fatalf("expected invalid item, got %v", err)
+	}
+}
+
+func TestServiceRejectsProjectDecisionUpsertWithoutApprovalSource(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	projectID := uuid.New()
+
+	_, err = service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:        uuid.New(),
+		TargetUserID:    uuid.New(),
+		Scope:           "personal",
+		ItemType:        ItemTypeProjectDecision,
+		SourceType:      SourceTypeProjectDecisionRequest,
+		SourceID:        uuid.New(),
+		SourceProjectID: &projectID,
+		Title:           "项目决策待处理",
+	})
+	if !errors.Is(err, ErrInvalidItem) {
+		t.Fatalf("expected invalid item, got %v", err)
+	}
+	if repo.upsertItemCalls != 0 || repo.upsertByApprovalSourceCalls != 0 {
+		t.Fatalf("expected rejection before repository upsert, got generic=%d approval=%d", repo.upsertItemCalls, repo.upsertByApprovalSourceCalls)
 	}
 }
 
@@ -364,6 +392,46 @@ func TestServiceRejectsRequiredCommentActionsWithoutComment(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsInvalidCustomActions(t *testing.T) {
+	tests := []struct {
+		name    string
+		actions []Action
+	}{
+		{
+			name:    "blank key",
+			actions: []Action{{Key: " ", Label: "同意"}},
+		},
+		{
+			name:    "blank label",
+			actions: []Action{{Key: "approve", Label: " \t "}},
+		},
+		{
+			name:    "duplicate keys",
+			actions: []Action{{Key: "approve", Label: "同意"}, {Key: " approve ", Label: "再次同意"}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newMemoryRepository()
+			service, err := NewService(repo)
+			if err != nil {
+				t.Fatalf("new service: %v", err)
+			}
+			req := validApprovalUpsertRequest()
+			req.Actions = tc.actions
+
+			_, err = service.UpsertItem(context.Background(), req)
+			if !errors.Is(err, ErrInvalidItem) {
+				t.Fatalf("expected invalid item, got %v", err)
+			}
+			if repo.upsertItemCalls != 0 || repo.upsertByApprovalSourceCalls != 0 {
+				t.Fatalf("expected rejection before repository upsert, got generic=%d approval=%d", repo.upsertItemCalls, repo.upsertByApprovalSourceCalls)
+			}
+		})
+	}
+}
+
 func TestServiceExecutesDefaultApprovalActionsWithDecisionKeys(t *testing.T) {
 	tests := []struct {
 		action  string
@@ -449,6 +517,7 @@ func TestServiceRoutesProjectDecisionActions(t *testing.T) {
 	}
 	tenantID := uuid.New()
 	actorUserID := uuid.New()
+	approvalID := uuid.New()
 	decisionID := uuid.New()
 	projectID := uuid.New()
 	resolver := &fakeProjectDecisionResolver{
@@ -460,15 +529,16 @@ func TestServiceRoutesProjectDecisionActions(t *testing.T) {
 	}
 	service.SetProjectDecisionActionResolver(resolver)
 	item, err := service.UpsertItem(context.Background(), UpsertItemRequest{
-		TenantID:        tenantID,
-		TargetUserID:    actorUserID,
-		Scope:           "personal",
-		ItemType:        ItemTypeProjectDecision,
-		SourceType:      SourceTypeProjectDecisionRequest,
-		SourceID:        decisionID,
-		SourceProjectID: &projectID,
-		Title:           "项目决策待处理",
-		Actions:         []Action{{Key: "approve", Label: "同意"}},
+		TenantID:                tenantID,
+		TargetUserID:            actorUserID,
+		Scope:                   "personal",
+		ItemType:                ItemTypeProjectDecision,
+		SourceType:              SourceTypeProjectDecisionRequest,
+		SourceID:                decisionID,
+		SourceProjectID:         &projectID,
+		SourceApprovalRequestID: &approvalID,
+		Title:                   "项目决策待处理",
+		Actions:                 []Action{{Key: "approve", Label: "同意"}},
 	})
 	if err != nil {
 		t.Fatalf("upsert item: %v", err)
@@ -502,6 +572,50 @@ func TestServiceRoutesProjectDecisionActions(t *testing.T) {
 	}
 	if resolver.last.Action != "approve" || resolver.last.Comment != "同意继续" {
 		t.Fatalf("expected normalized action/comment, got action=%q comment=%q", resolver.last.Action, resolver.last.Comment)
+	}
+}
+
+func TestServiceDetectsProjectionNotAppliedAfterResolverSuccess(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	resolver := &fakeApprovalResolver{}
+	service.SetApprovalActionResolver(resolver)
+	tenantID := uuid.New()
+	actorUserID := uuid.New()
+	item, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:     tenantID,
+		TargetUserID: actorUserID,
+		Scope:        "personal",
+		ItemType:     ItemTypeApproval,
+		SourceType:   SourceTypeApprovalRequest,
+		SourceID:     uuid.New(),
+		Title:        "审批待处理",
+		Actions:      []Action{{Key: "approve", Label: "同意"}},
+	})
+	if err != nil {
+		t.Fatalf("upsert item: %v", err)
+	}
+
+	updated, result, err := service.ExecuteAction(context.Background(), ExecuteActionRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorUserID,
+		ItemID:      item.ID,
+		Action:      "approve",
+	})
+	if !errors.Is(err, ErrProjectionNotApplied) {
+		t.Fatalf("expected projection error, got %v", err)
+	}
+	if updated.Status != StatusOpen {
+		t.Fatalf("expected still-open item to be returned, got %s", updated.Status)
+	}
+	if result.SourceType != string(SourceTypeApprovalRequest) || result.SourceID != item.SourceID {
+		t.Fatalf("unexpected source result: %#v", result)
+	}
+	if resolver.calls != 1 {
+		t.Fatalf("expected one resolver call, got %d", resolver.calls)
 	}
 }
 
@@ -617,6 +731,7 @@ func TestServiceListsMineAndTeamItems(t *testing.T) {
 	actorUserID := uuid.New()
 	otherUserID := uuid.New()
 	projectID := uuid.New()
+	approvalID := uuid.New()
 	baseTime := time.Now().UTC().Add(-time.Hour)
 
 	mineOpen, err := service.UpsertItem(context.Background(), UpsertItemRequest{
@@ -634,16 +749,17 @@ func TestServiceListsMineAndTeamItems(t *testing.T) {
 		t.Fatalf("upsert mine open: %v", err)
 	}
 	teamOpen, err := service.UpsertItem(context.Background(), UpsertItemRequest{
-		TenantID:        tenantID,
-		TargetUserID:    otherUserID,
-		Scope:           "personal",
-		ItemType:        ItemTypeProjectDecision,
-		SourceType:      SourceTypeProjectDecisionRequest,
-		SourceID:        uuid.New(),
-		SourceProjectID: &projectID,
-		Title:           "团队项目决策",
-		RiskLevel:       "high",
-		LastActivityAt:  baseTime.Add(2 * time.Minute),
+		TenantID:                tenantID,
+		TargetUserID:            otherUserID,
+		Scope:                   "personal",
+		ItemType:                ItemTypeProjectDecision,
+		SourceType:              SourceTypeProjectDecisionRequest,
+		SourceID:                uuid.New(),
+		SourceProjectID:         &projectID,
+		SourceApprovalRequestID: &approvalID,
+		Title:                   "团队项目决策",
+		RiskLevel:               "high",
+		LastActivityAt:          baseTime.Add(2 * time.Minute),
 	})
 	if err != nil {
 		t.Fatalf("upsert team open: %v", err)
@@ -681,9 +797,10 @@ func TestServiceListsMineAndTeamItems(t *testing.T) {
 	}
 
 	team, err := service.ListItems(context.Background(), ListItemsRequest{
-		TenantID:    tenantID,
-		ActorUserID: actorUserID,
-		View:        ViewTeam,
+		TenantID:        tenantID,
+		ActorUserID:     actorUserID,
+		View:            ViewTeam,
+		TeamViewAllowed: true,
 	})
 	if err != nil {
 		t.Fatalf("list team: %v", err)
@@ -696,6 +813,23 @@ func TestServiceListsMineAndTeamItems(t *testing.T) {
 	}
 	if team.OpenCount != 2 || team.HighRiskCount != 2 {
 		t.Fatalf("expected team counts open=2 high=2, got open=%d high=%d", team.OpenCount, team.HighRiskCount)
+	}
+}
+
+func TestServiceRejectsUnauthorizedTeamView(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = service.ListItems(context.Background(), ListItemsRequest{
+		TenantID:    uuid.New(),
+		ActorUserID: uuid.New(),
+		View:        ViewTeam,
+	})
+	if !errors.Is(err, ErrViewForbidden) {
+		t.Fatalf("expected view forbidden, got %v", err)
 	}
 }
 
