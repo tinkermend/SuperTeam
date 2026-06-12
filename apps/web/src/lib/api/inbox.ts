@@ -5,55 +5,78 @@ export type InboxViewMode = "mine" | "team";
 
 export type InboxStatus = "open" | "resolved" | "cancelled";
 
-export type InboxAction = {
+export type InboxItemType = "approval" | "project_decision";
+
+export type InboxSourceType = "approval_request" | "project_decision_request";
+
+export type InboxItemAction = {
   key: string;
   label: string;
-  style: string;
+  tone: string;
   requires_comment: boolean;
-  comment_placeholder?: string;
-  confirm_label?: string;
-  payload_schema?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 };
+
+export type InboxAction = InboxItemAction;
 
 export type InboxItem = {
   id: string;
   tenant_id: string;
-  item_type: string;
-  source_type: string;
+  team_id?: string;
+  target_user_id: string;
+  item_type: InboxItemType;
+  source_type: InboxSourceType;
   source_id: string;
   source_project_id?: string;
-  source_project_task_id?: string;
+  source_task_id?: string;
   source_approval_request_id?: string;
-  target_user_id: string;
   title: string;
-  summary: string;
+  summary?: string;
   status: InboxStatus;
-  risk_level: string;
-  actions: InboxAction[];
+  risk_level?: string;
+  priority?: string;
+  actions: InboxItemAction[];
   context: Record<string, unknown>;
+  deep_link: Record<string, unknown>;
   last_activity_at: string;
   created_at: string;
   updated_at: string;
+  resolved_at?: string;
 };
 
 export type InboxListFilters = {
   view?: InboxViewMode;
   status?: InboxStatus;
-  item_type?: string;
+  item_type?: InboxItemType;
   risk_level?: string;
-  source_project_id?: string;
+  project_id?: string;
+  target_user_id?: string;
   limit?: number;
   offset?: number;
 };
 
+export type InboxListPagination = {
+  limit: number;
+  offset: number;
+  has_more: boolean;
+};
+
+export type InboxListSummary = {
+  open_count: number;
+  high_risk_count: number;
+  blocked_count: number;
+};
+
 export type InboxListResponse = {
   items: InboxItem[];
-  total_count: number;
-  has_more: boolean;
+  pagination: InboxListPagination;
+  summary: InboxListSummary;
 };
 
 export type InboxBadge = {
   mine_open_count: number;
+  team_open_count: number;
+  high_risk_count: number;
 };
 
 export type ExecuteInboxActionInput = {
@@ -62,9 +85,15 @@ export type ExecuteInboxActionInput = {
   payload?: Record<string, unknown>;
 };
 
+export type InboxSourceActionResult = {
+  source_type: string;
+  source_id: string;
+  status: string;
+};
+
 export type ExecuteInboxActionResponse = {
   item: InboxItem;
-  source_result: Record<string, unknown>;
+  source_result: InboxSourceActionResult;
 };
 
 function buildInboxItemsUrl(baseUrl: string, filters: InboxListFilters): string {

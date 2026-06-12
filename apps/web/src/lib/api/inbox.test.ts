@@ -6,10 +6,9 @@ const inboxItem: InboxItem = {
   id: "item-1",
   tenant_id: "tenant-1",
   item_type: "approval",
-  source_type: "project",
+  source_type: "approval_request",
   source_id: "source-1",
   source_project_id: "project-1",
-  source_project_task_id: "task-1",
   source_approval_request_id: "approval-1",
   target_user_id: "user-1",
   title: "审批上线窗口",
@@ -20,14 +19,23 @@ const inboxItem: InboxItem = {
     {
       key: "approve",
       label: "批准",
-      style: "primary",
+      tone: "positive",
       requires_comment: false,
-      confirm_label: "确认批准",
+      metadata: {
+        source: "approval",
+      },
     },
   ],
   context: {
     project_title: "客户交付闭环",
   },
+  deep_link: {
+    route: "/projects/project-1",
+    anchor: "approval-1",
+  },
+  team_id: "team-1",
+  source_task_id: "task-1",
+  priority: "high",
   last_activity_at: "2026-06-12T02:00:00Z",
   created_at: "2026-06-12T01:00:00Z",
   updated_at: "2026-06-12T02:00:00Z",
@@ -37,8 +45,16 @@ describe("listInboxItems", () => {
   it("calls the inbox items endpoint with filters and parses JSON", async () => {
     const responseBody: InboxListResponse = {
       items: [inboxItem],
-      total_count: 1,
-      has_more: false,
+      pagination: {
+        limit: 50,
+        offset: 0,
+        has_more: false,
+      },
+      summary: {
+        open_count: 1,
+        high_risk_count: 1,
+        blocked_count: 0,
+      },
     };
     const fetcher = vi.fn(async () =>
       new Response(JSON.stringify(responseBody), {
@@ -58,12 +74,13 @@ describe("listInboxItems", () => {
         {
           view: "mine",
           status: "open",
+          project_id: "project-1",
           limit: 50,
         },
       ),
     ).resolves.toEqual(responseBody);
 
-    expect(fetcher).toHaveBeenCalledWith("http://api.test/api/v1/inbox/items?view=mine&status=open&limit=50", {
+    expect(fetcher).toHaveBeenCalledWith("http://api.test/api/v1/inbox/items?view=mine&status=open&project_id=project-1&limit=50", {
       credentials: "include",
       headers: {
         accept: "application/json",
@@ -75,8 +92,16 @@ describe("listInboxItems", () => {
   it("keeps zero-valued pagination filters in the query string", async () => {
     const responseBody: InboxListResponse = {
       items: [],
-      total_count: 0,
-      has_more: false,
+      pagination: {
+        limit: 0,
+        offset: 0,
+        has_more: false,
+      },
+      summary: {
+        open_count: 0,
+        high_risk_count: 0,
+        blocked_count: 0,
+      },
     };
     const fetcher = vi.fn(async () =>
       new Response(JSON.stringify(responseBody), {
@@ -113,6 +138,8 @@ describe("getInboxBadge", () => {
   it("calls the inbox badge endpoint and parses JSON", async () => {
     const responseBody: InboxBadge = {
       mine_open_count: 7,
+      team_open_count: 12,
+      high_risk_count: 3,
     };
     const fetcher = vi.fn(async () =>
       new Response(JSON.stringify(responseBody), {
@@ -148,7 +175,9 @@ describe("executeInboxAction", () => {
         status: "resolved" as const,
       },
       source_result: {
-        decision_id: "decision-1",
+        source_type: "approval_request",
+        source_id: "approval-1",
+        status: "approved",
       },
     };
     const fetcher = vi.fn(async () =>
@@ -197,7 +226,11 @@ describe("executeInboxAction", () => {
   it("defaults missing action comment and payload", async () => {
     const responseBody = {
       item: inboxItem,
-      source_result: {},
+      source_result: {
+        source_type: "approval_request",
+        source_id: "approval-1",
+        status: "resolved",
+      },
     };
     const fetcher = vi.fn(async () =>
       new Response(JSON.stringify(responseBody), {

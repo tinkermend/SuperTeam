@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-12 22:44：修正 Web 收件箱 API client 类型与当前 Control Plane OpenAPI/handler 合同不一致的问题，对齐 action tone、列表 pagination/summary、badge 计数和 source_result 响应结构。
 - 2026-06-12 16:17：收紧创建数字员工身份步骤的头像选择区，头像项改为固定小尺寸并自动换行，避免宽屏下圆形头像被网格撑得过大。
 - 2026-06-12 16:08：数字员工工作台员工卡片列表改为前端分页浏览，默认每页 12 个，翻页和每页数量会下传 overview `limit/offset`，避免一次性拉取和渲染全部员工。
 - 2026-06-11 17:19：补充项目管理 V1 后端端到端仿真测试，覆盖需求 Workflow signal 失败重试、Runtime 任务写回身份绑定、终态 signal 重试和读模型无重复事实。

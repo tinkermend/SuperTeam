@@ -24,7 +24,7 @@ export function AppSidebar() {
       try {
         return await getInboxBadge({ baseUrl: apiBaseUrl });
       } catch {
-        return { mine_open_count: 0 };
+        return { mine_open_count: 0, team_open_count: 0, high_risk_count: 0 };
       }
     },
     staleTime: 30 * 1000,
