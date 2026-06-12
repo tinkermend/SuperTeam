@@ -59,6 +59,32 @@ func TestServiceProjectsApprovalRequestsIntoOpenItems(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsZeroApprovalSourceID(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	approvalID := uuid.Nil
+
+	_, err = service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:                uuid.New(),
+		TargetUserID:            uuid.New(),
+		Scope:                   "personal",
+		ItemType:                ItemTypeApproval,
+		SourceType:              SourceTypeApprovalRequest,
+		SourceID:                uuid.New(),
+		SourceApprovalRequestID: &approvalID,
+		Title:                   "审批待处理",
+	})
+	if !errors.Is(err, ErrInvalidItem) {
+		t.Fatalf("expected invalid item, got %v", err)
+	}
+	if repo.upsertItemCalls != 0 || repo.upsertByApprovalSourceCalls != 0 {
+		t.Fatalf("expected rejection before repository upsert, got generic=%d approval=%d", repo.upsertItemCalls, repo.upsertByApprovalSourceCalls)
+	}
+}
+
 func TestServiceUpgradesProjectDecisionByApprovalSource(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -126,6 +152,24 @@ func TestServiceUpgradesProjectDecisionByApprovalSource(t *testing.T) {
 	}
 	if repo.upsertByApprovalSourceCalls != 2 {
 		t.Fatalf("expected two approval-source upserts, got %d", repo.upsertByApprovalSourceCalls)
+	}
+}
+
+func TestServiceRejectsInvalidListStatus(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = service.ListItems(context.Background(), ListItemsRequest{
+		TenantID:    uuid.New(),
+		ActorUserID: uuid.New(),
+		View:        ViewMine,
+		Status:      Status("archived"),
+	})
+	if !errors.Is(err, ErrInvalidItem) {
+		t.Fatalf("expected invalid item, got %v", err)
 	}
 }
 

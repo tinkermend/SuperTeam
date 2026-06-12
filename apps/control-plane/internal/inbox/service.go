@@ -74,6 +74,9 @@ func (s *Service) ListItems(ctx context.Context, req ListItemsRequest) (ListItem
 	if req.Status == "" {
 		req.Status = StatusOpen
 	}
+	if !validStatus(req.Status) {
+		return ListItemsResult{}, ErrInvalidItem
+	}
 	if req.View == ViewMine {
 		req.TargetUserID = &req.ActorUserID
 	}
@@ -200,16 +203,16 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 	if req.ItemType == "" || req.SourceType == "" {
 		return UpsertItemRequest{}, ErrInvalidItem
 	}
+	if req.SourceApprovalRequestID != nil && *req.SourceApprovalRequestID == uuid.Nil {
+		return UpsertItemRequest{}, ErrInvalidItem
+	}
 	if (req.ItemType == ItemTypeProjectDecision || req.SourceType == SourceTypeProjectDecisionRequest) && (req.SourceProjectID == nil || *req.SourceProjectID == uuid.Nil) {
 		return UpsertItemRequest{}, ErrInvalidItem
 	}
-	switch req.Status {
-	case "":
+	if req.Status == "" {
 		req.Status = StatusOpen
-	case StatusOpen:
-	case StatusResolved:
-	case StatusCancelled:
-	default:
+	}
+	if !validStatus(req.Status) {
 		return UpsertItemRequest{}, ErrInvalidItem
 	}
 	if req.ResolvedAt == nil && req.Status != StatusOpen {
@@ -246,11 +249,6 @@ func DefaultActions(itemType ItemType) []Action {
 	return actions
 }
 
-func actionAllowed(actions []Action, action string) bool {
-	_, ok := findAction(actions, action)
-	return ok
-}
-
 func findAction(actions []Action, action string) (Action, bool) {
 	for _, candidate := range actions {
 		if strings.TrimSpace(candidate.Key) == action {
@@ -258,6 +256,15 @@ func findAction(actions []Action, action string) (Action, bool) {
 		}
 	}
 	return Action{}, false
+}
+
+func validStatus(status Status) bool {
+	switch status {
+	case StatusOpen, StatusResolved, StatusCancelled:
+		return true
+	default:
+		return false
+	}
 }
 
 func mapOrEmpty(values map[string]any) map[string]any {
