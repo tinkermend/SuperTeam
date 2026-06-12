@@ -284,7 +284,9 @@ describe("resolveDefaultReviewer", () => {
 describe("TaskLaunchView", () => {
   afterEach(() => {
     for (const root of mountedRoots.splice(0)) {
-      root.unmount();
+      act(() => {
+        root.unmount();
+      });
     }
     document.body.innerHTML = "";
   });
@@ -301,20 +303,21 @@ describe("TaskLaunchView", () => {
     await vi.waitFor(() => expect(getByText("王审核 · reviewer")).toBeTruthy());
     await clickButton("发起任务");
 
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/projects/project-1/demands",
-      expect.objectContaining({
-        body: JSON.stringify({
-          title: "审查这个开源项目的 PR，并按数量分配数字员工",
-          content: "审查这个开源项目的 PR，并按数量分配数字员工",
-          source_type: "manual",
-          source_refs: {},
-          attachments: [],
-          reviewer_user_id: "reviewer-1",
-          reviewer_selection_reason: "project_reviewer_default",
-        }),
-      }),
+    const postCall = fetcher.mock.calls.find(
+      ([url]) =>
+        String(url) ===
+        "http://control-plane.local/api/v1/projects/project-1/demands",
     );
+    expect(postCall).toBeDefined();
+    expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({
+      title: "审查这个开源项目的 PR，并按数量分配数字员工",
+      content: "审查这个开源项目的 PR，并按数量分配数字员工",
+      source_type: "manual",
+      source_refs: {},
+      attachments: [],
+      reviewer_user_id: "reviewer-1",
+      reviewer_selection_reason: "project_reviewer_default",
+    });
     await vi.waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
         params: { demandId: "demand-1" },
