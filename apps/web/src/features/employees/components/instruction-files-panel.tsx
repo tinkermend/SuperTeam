@@ -19,11 +19,18 @@ type InstructionFilesPanelProps = {
   employeeId: string;
 };
 
+type InstructionDraft = {
+  content: string;
+  isDirty: boolean;
+  path: string;
+};
+
 export function InstructionFilesPanel({ apiOptions, employeeId }: InstructionFilesPanelProps) {
   const queryClient = useQueryClient();
   const [selectedPath, setSelectedPath] = useState("");
   const [draftPath, setDraftPath] = useState("");
   const [draftContent, setDraftContent] = useState("");
+  const [draftsByPath, setDraftsByPath] = useState<Record<string, InstructionDraft>>({});
   const [newFilePath, setNewFilePath] = useState("");
   const [isDirty, setIsDirty] = useState(false);
 
@@ -35,17 +42,33 @@ export function InstructionFilesPanel({ apiOptions, employeeId }: InstructionFil
 
   const files = useMemo(() => filesQuery.data ?? [], [filesQuery.data]);
   const selectedFile = files.find((file) => file.path === selectedPath);
+  const localDrafts = Object.entries(draftsByPath)
+    .filter(([path, draft]) => !files.some((file) => file.path === path) && draft.path.trim())
+    .sort(([left], [right]) => left.localeCompare(right));
 
   useEffect(() => {
     if (selectedPath) return;
 
     const defaultFile = files.find((file) => file.path === "AGENTS.md") ?? files[0];
     const nextPath = defaultFile?.path ?? "AGENTS.md";
+    const existingDraft = draftsByPath[nextPath];
     setSelectedPath(nextPath);
-    setDraftPath(nextPath);
-    setDraftContent(defaultFile?.content ?? "");
-    setIsDirty(false);
-  }, [files, selectedPath]);
+    setDraftPath(existingDraft?.path ?? nextPath);
+    setDraftContent(existingDraft?.content ?? defaultFile?.content ?? "");
+    setIsDirty(existingDraft?.isDirty ?? false);
+    setDraftsByPath((currentDrafts) => {
+      if (currentDrafts[nextPath]) return currentDrafts;
+
+      return {
+        ...currentDrafts,
+        [nextPath]: {
+          content: defaultFile?.content ?? "",
+          isDirty: false,
+          path: nextPath,
+        },
+      };
+    });
+  }, [draftsByPath, files, selectedPath]);
 
   const saveFile = useMutation({
     mutationFn: () =>
@@ -67,16 +90,41 @@ export function InstructionFilesPanel({ apiOptions, employeeId }: InstructionFil
       setDraftPath(savedFile.path);
       setDraftContent(savedFile.content);
       setIsDirty(false);
+      setDraftsByPath((currentDrafts) => {
+        const nextDrafts = { ...currentDrafts };
+        if (selectedPath && selectedPath !== savedFile.path) {
+          delete nextDrafts[selectedPath];
+        }
+        nextDrafts[savedFile.path] = {
+          content: savedFile.content,
+          isDirty: false,
+          path: savedFile.path,
+        };
+        return nextDrafts;
+      });
     },
   });
 
   const canSave = draftPath.trim().length > 0 && !saveFile.isPending;
 
   const handleSelectFile = (file: WorkspaceFile) => {
+    const existingDraft = draftsByPath[file.path];
     setSelectedPath(file.path);
-    setDraftPath(file.path);
-    setDraftContent(file.content);
-    setIsDirty(false);
+    setDraftPath(existingDraft?.path ?? file.path);
+    setDraftContent(existingDraft?.content ?? file.content);
+    setIsDirty(existingDraft?.isDirty ?? false);
+    setDraftsByPath((currentDrafts) => {
+      if (currentDrafts[file.path]) return currentDrafts;
+
+      return {
+        ...currentDrafts,
+        [file.path]: {
+          content: file.content,
+          isDirty: false,
+          path: file.path,
+        },
+      };
+    });
   };
 
   const handleCreateDraft = () => {
@@ -84,11 +132,37 @@ export function InstructionFilesPanel({ apiOptions, employeeId }: InstructionFil
     if (!path) return;
 
     const existingFile = files.find((file) => file.path === path);
+    const existingDraft = draftsByPath[path];
     setSelectedPath(path);
-    setDraftPath(path);
-    setDraftContent(existingFile?.content ?? "");
-    setIsDirty(false);
+    setDraftPath(existingDraft?.path ?? path);
+    setDraftContent(existingDraft?.content ?? existingFile?.content ?? "");
+    setIsDirty(existingDraft?.isDirty ?? !existingFile);
+    setDraftsByPath((currentDrafts) => ({
+      ...currentDrafts,
+      [path]: existingDraft ?? {
+        content: existingFile?.content ?? "",
+        isDirty: !existingFile,
+        path,
+      },
+    }));
     setNewFilePath("");
+  };
+
+  const updateSelectedDraft = (patch: Partial<InstructionDraft>) => {
+    const key = selectedPath || draftPath;
+    if (!key) return;
+
+    setDraftsByPath((currentDrafts) => ({
+      ...currentDrafts,
+      [key]: {
+        ...(currentDrafts[key] ?? {
+          content: draftContent,
+          isDirty,
+          path: draftPath,
+        }),
+        ...patch,
+      },
+    }));
   };
 
   return (
@@ -127,6 +201,23 @@ export function InstructionFilesPanel({ apiOptions, employeeId }: InstructionFil
                 <span className="truncate">{file.path}</span>
               </Button>
             ))}
+            {localDrafts.map(([path, draft]) => (
+              <Button
+                className="h-auto justify-start text-left"
+                key={path}
+                onClick={() => {
+                  setSelectedPath(path);
+                  setDraftPath(draft.path);
+                  setDraftContent(draft.content);
+                  setIsDirty(draft.isDirty);
+                }}
+                type="button"
+                variant={path === selectedPath ? "secondary" : "ghost"}
+              >
+                <FileText data-icon="inline-start" />
+                <span className="truncate">{draft.path}</span>
+              </Button>
+            ))}
           </div>
           <div className="space-y-2 rounded-md border bg-background/70 p-3">
             <Label htmlFor="new-instruction-path">新文件路径</Label>
@@ -158,8 +249,10 @@ export function InstructionFilesPanel({ apiOptions, employeeId }: InstructionFil
               <Input
                 id="instruction-path"
                 onChange={(event) => {
-                  setDraftPath(event.target.value);
+                  const nextPath = event.target.value;
+                  setDraftPath(nextPath);
                   setIsDirty(true);
+                  updateSelectedDraft({ isDirty: true, path: nextPath });
                 }}
                 value={draftPath}
               />
@@ -175,8 +268,10 @@ export function InstructionFilesPanel({ apiOptions, employeeId }: InstructionFil
               height="420px"
               language={draftPath.endsWith(".md") ? "markdown" : "plaintext"}
               onChange={(value) => {
-                setDraftContent(value ?? "");
+                const nextContent = value ?? "";
+                setDraftContent(nextContent);
                 setIsDirty(true);
+                updateSelectedDraft({ content: nextContent, isDirty: true });
               }}
               options={{
                 ariaLabel: "Workspace file editor",

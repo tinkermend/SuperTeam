@@ -123,6 +123,23 @@ function requestBody(fetcher: ReturnType<typeof createEmployeeConfigFetcher>, pa
   return JSON.parse(String(call?.[1]?.body));
 }
 
+function latestRequestBody(fetcher: ReturnType<typeof createEmployeeConfigFetcher>, path: string, method: string) {
+  const call = [...fetcher.mock.calls].reverse().find(([input, init]) => {
+    const url = new URL(requestUrl(input));
+    return url.pathname === path && requestMethod(input, init) === method;
+  });
+  expect(call).toBeTruthy();
+
+  return JSON.parse(String(call?.[1]?.body));
+}
+
+function hasRequest(fetcher: ReturnType<typeof createEmployeeConfigFetcher>, path: string, method: string) {
+  return fetcher.mock.calls.some(([input, init]) => {
+    const url = new URL(requestUrl(input));
+    return url.pathname === path && requestMethod(input, init) === method;
+  });
+}
+
 function skillFixture(id: string, name: string): Skill {
   return {
     id,
@@ -380,5 +397,124 @@ describe("EmployeeConfigView", () => {
         url: "https://personal.example.com/mcp",
         credential_id: "credential-1",
       });
+
+    await userEvent.fill(screen.getByRole("textbox", { name: "个人 MCP 名称" }), "无凭据 MCP");
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "个人 MCP URL" }),
+      "https://public.example.com/mcp",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "添加个人 MCP" }));
+    await expect
+      .poll(() => latestRequestBody(fetcher, `/api/v1/digital-employees/${employee.id}/mcp-bindings`, "POST"))
+      .toEqual({
+        name: "无凭据 MCP",
+        url: "https://public.example.com/mcp",
+      });
+  });
+
+  it("preserves unsaved workspace file drafts when switching files and creating a local file", async () => {
+    const workspaceFiles = [
+      {
+        id: "workspace-agents",
+        team_id: employee.team_id,
+        path: "AGENTS.md",
+        file_role: "entrypoint",
+        mime_type: "text/markdown",
+        sync_policy: "auto",
+        status: "active",
+        current_revision_id: "revision-agents",
+        revision_number: 1,
+        content: "# 原则",
+        content_hash: "sha-agents",
+        size_bytes: 8,
+        storage_backend: "db",
+      },
+      {
+        id: "workspace-notes",
+        team_id: employee.team_id,
+        path: "NOTES.md",
+        file_role: "supporting_doc",
+        mime_type: "text/markdown",
+        sync_policy: "auto",
+        status: "active",
+        current_revision_id: "revision-notes",
+        revision_number: 1,
+        content: "# 备注",
+        content_hash: "sha-notes",
+        size_bytes: 8,
+        storage_backend: "db",
+      },
+    ] satisfies WorkspaceFile[];
+    const fetcher = createEmployeeConfigFetcher({
+      extraRoutes: {
+        [`GET /api/v1/digital-employees/${employee.id}/workspace-files`]: workspaceFiles,
+      },
+    });
+
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <EmployeeConfigView
+          apiBaseUrl="http://localhost:8080"
+          employeeId={employee.id}
+          fetcher={fetcher}
+        />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "宪法/人格" }));
+    await expect.element(screen.getByRole("button", { name: "AGENTS.md" })).toBeVisible();
+    await userEvent.fill(screen.getByLabelText("Workspace file editor"), "# AGENTS 草稿");
+
+    await userEvent.click(screen.getByRole("button", { name: "NOTES.md" }));
+    await expect.element(screen.getByLabelText("Workspace file editor")).toHaveValue("# 备注");
+    await userEvent.fill(screen.getByLabelText("Workspace file editor"), "# NOTES 草稿");
+
+    await userEvent.click(screen.getByRole("button", { name: "AGENTS.md" }));
+    await expect.element(screen.getByLabelText("Workspace file editor")).toHaveValue("# AGENTS 草稿");
+
+    await userEvent.fill(screen.getByRole("textbox", { name: "新文件路径" }), "LOCAL.md");
+    await userEvent.click(screen.getByRole("button", { name: "新建文件" }));
+    await expect.element(screen.getByLabelText("Workspace file editor")).toHaveValue("");
+    await expect.element(screen.getByText("未保存")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "AGENTS.md" }));
+    await expect.element(screen.getByLabelText("Workspace file editor")).toHaveValue("# AGENTS 草稿");
+  });
+
+  it("removing a personal duplicate skill keeps inherited team capability visible", async () => {
+    const diagnose = skillFixture("skill-diagnose", "diagnose");
+    const effectiveSkills = [
+      { skill: diagnose, read_only: true, inherited: true, source_scope: "team" },
+      { skill: diagnose, read_only: false, inherited: false, source_scope: "employee" },
+    ] satisfies EffectiveEmployeeSkill[];
+    const fetcher = createEmployeeConfigFetcher({
+      extraRoutes: {
+        [`GET /api/v1/digital-employees/${employee.id}/skills`]: effectiveSkills,
+        "GET /api/v1/skills": [],
+        "GET /api/v1/user-credentials?credential_type=mcp_token": [],
+        [`GET /api/v1/digital-employees/${employee.id}/mcp-bindings`]: [],
+        [`GET /api/v1/digital-employees/${employee.id}/effective-mcp-servers`]: [],
+        [`DELETE /api/v1/digital-employees/${employee.id}/skills/skill-diagnose`]: {},
+      },
+    });
+
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <EmployeeConfigView
+          apiBaseUrl="http://localhost:8080"
+          employeeId={employee.id}
+          fetcher={fetcher}
+        />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "能力设置" }));
+    await expect.element(screen.getByRole("button", { name: "移除 diagnose" }).first()).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "移除 diagnose" }).last());
+    await expect
+      .poll(() => hasRequest(fetcher, `/api/v1/digital-employees/${employee.id}/skills/skill-diagnose`, "DELETE"))
+      .toBe(true);
+    await expect.element(screen.getByRole("button", { name: "移除 diagnose" }).first()).toBeDisabled();
+    await expect.element(screen.getByText("团队继承")).toBeVisible();
   });
 });

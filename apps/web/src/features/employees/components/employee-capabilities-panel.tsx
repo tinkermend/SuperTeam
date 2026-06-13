@@ -21,7 +21,6 @@ import {
   createEmployeeMcpBinding,
   deleteEmployeeMcpBinding,
   listEffectiveMcpServers,
-  listEmployeeMcpBindings,
   listUserCredentials,
   type McpServer,
   type UserCredential,
@@ -61,11 +60,6 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
   const credentials = useQuery({
     queryKey: ["user-credentials", "mcp_token"],
     queryFn: () => listUserCredentials(apiOptions, "mcp_token"),
-    placeholderData: keepPreviousData,
-  });
-  const personalMcp = useQuery({
-    queryKey: ["employee-mcp-bindings", employeeId],
-    queryFn: () => listEmployeeMcpBindings(apiOptions, employeeId),
     placeholderData: keepPreviousData,
   });
   const effectiveMcp = useQuery({
@@ -109,7 +103,8 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
     onSuccess: async (_result, skillId) => {
       queryClient.setQueryData<EffectiveEmployeeSkill[]>(
         ["employee-skills", employeeId],
-        (currentSkills = []) => currentSkills.filter((entry) => entry.skill.id !== skillId),
+        (currentSkills = []) =>
+          currentSkills.filter((entry) => entry.skill.id !== skillId || entry.source_scope !== "employee"),
       );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["employee-skills", employeeId] }),
@@ -278,14 +273,10 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-medium">已生效 MCP</h3>
-              {effectiveMcp.isFetching || personalMcp.isFetching ? <StatusBadge tone="info">刷新中</StatusBadge> : null}
+              {effectiveMcp.isFetching ? <StatusBadge tone="info">刷新中</StatusBadge> : null}
             </div>
-            {effectiveMcp.isLoading || personalMcp.isLoading ? (
-              <p className="text-sm text-muted-foreground">加载中</p>
-            ) : null}
-            {effectiveMcp.isError || personalMcp.isError ? (
-              <p className="text-sm text-destructive">MCP 加载失败</p>
-            ) : null}
+            {effectiveMcp.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
+            {effectiveMcp.isError ? <p className="text-sm text-destructive">MCP 加载失败</p> : null}
             {deleteMcpMutation.isError ? <p className="text-sm text-destructive">个人 MCP 移除失败</p> : null}
             {!effectiveMcp.isLoading && !effectiveMcp.isError && (effectiveMcp.data?.length ?? 0) === 0 ? (
               <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无生效 MCP</p>
