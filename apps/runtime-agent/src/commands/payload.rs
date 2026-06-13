@@ -29,11 +29,137 @@ pub struct RuntimeSessionPolicy {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RuntimeSessionCommandPayload {
+pub struct RuntimeWorkspaceFilePayload {
+    pub file_id: String,
+    pub revision_id: String,
+    pub path: String,
+    pub file_role: String,
+    pub mime_type: String,
+    pub sync_policy: String,
+    pub content_hash: String,
+    pub size_bytes: i64,
+    pub storage_backend: String,
+    #[serde(default)]
+    pub content_text: Option<String>,
+    #[serde(default)]
+    pub object_key: Option<String>,
+    #[serde(default = "default_metadata")]
+    pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeSkillPayload {
+    pub skill_id: String,
+    pub skill_key: String,
+    #[serde(default)]
+    pub revision_id: Option<String>,
+    #[serde(default)]
+    pub files: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub content_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeMCPServerPayload {
+    pub server_id: String,
+    pub server_key: String,
+    pub transport: String,
+    #[serde(default)]
+    pub config_ref: Option<String>,
+    #[serde(default = "default_metadata")]
+    pub permission_scope: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeProvisionInstanceCommandPayload {
     pub command_id: String,
+    pub tenant_id: String,
+    pub team_id: String,
     pub digital_employee_id: String,
     pub execution_instance_id: String,
+    pub runtime_node_id: String,
     pub provider_type: String,
+    pub agent_home_dir: String,
+    #[serde(default)]
+    pub workspace_files: Vec<RuntimeWorkspaceFilePayload>,
+    #[serde(default)]
+    pub skills: Vec<RuntimeSkillPayload>,
+    #[serde(default)]
+    pub mcp_servers: Vec<RuntimeMCPServerPayload>,
+}
+
+impl RuntimeProvisionInstanceCommandPayload {
+    pub fn from_command(command: &RuntimeCommand) -> Result<Self> {
+        if command.command_type != RuntimeCommandType::ProvisionInstance
+            && command.command_type != RuntimeCommandType::SyncWorkspaceFiles
+        {
+            anyhow::bail!(
+                "runtime command type is not a workspace materialization operation: {:?}",
+                command.command_type
+            );
+        }
+
+        if !command.payload.is_object() {
+            anyhow::bail!("runtime command payload must be an object");
+        }
+
+        let payload: Self = serde_json::from_value(command.payload.clone())
+            .context("invalid runtime provision instance command payload")?;
+        payload.validate(command)?;
+        Ok(payload)
+    }
+
+    fn validate(&self, command: &RuntimeCommand) -> Result<()> {
+        if self.command_id != command.id {
+            anyhow::bail!("command_id does not match runtime command id");
+        }
+
+        require_uuid_like("tenant_id", &self.tenant_id)?;
+        require_uuid_like("team_id", &self.team_id)?;
+        require_uuid_like("digital_employee_id", &self.digital_employee_id)?;
+        require_uuid_like("execution_instance_id", &self.execution_instance_id)?;
+        require_uuid_like("runtime_node_id", &self.runtime_node_id)?;
+
+        if self.provider_type.trim().is_empty() {
+            anyhow::bail!("provider_type is required");
+        }
+
+        if self.agent_home_dir.trim().is_empty() {
+            anyhow::bail!("agent_home_dir is required");
+        }
+
+        for file in &self.workspace_files {
+            require_uuid_like("workspace_files.file_id", &file.file_id)?;
+            require_uuid_like("workspace_files.revision_id", &file.revision_id)?;
+            if file.storage_backend == "db" && file.content_text.is_none() {
+                anyhow::bail!("content_text is required for db-backed workspace files");
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeSessionCommandPayload {
+    pub command_id: String,
+    #[serde(default)]
+    pub tenant_id: Option<String>,
+    #[serde(default)]
+    pub team_id: Option<String>,
+    pub digital_employee_id: String,
+    pub execution_instance_id: String,
+    #[serde(default)]
+    pub runtime_node_id: Option<String>,
+    pub provider_type: String,
+    #[serde(default)]
+    pub agent_home_dir: Option<String>,
+    #[serde(default)]
+    pub workspace_files: Vec<RuntimeWorkspaceFilePayload>,
+    #[serde(default)]
+    pub skills: Vec<RuntimeSkillPayload>,
+    #[serde(default)]
+    pub mcp_servers: Vec<RuntimeMCPServerPayload>,
     pub session_policy: RuntimeSessionPolicy,
     pub prompt: Option<String>,
     pub input: Option<String>,
@@ -96,6 +222,21 @@ impl RuntimeSessionCommandPayload {
         require_uuid_like("digital_employee_id", &self.digital_employee_id)?;
         require_uuid_like("execution_instance_id", &self.execution_instance_id)?;
 
+        if !matches!(command.command_type, RuntimeCommandType::StopSession) {
+            require_optional_uuid_like("tenant_id", &self.tenant_id)?;
+            require_optional_uuid_like("team_id", &self.team_id)?;
+            require_optional_uuid_like("runtime_node_id", &self.runtime_node_id)?;
+            if self
+                .agent_home_dir
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_none()
+            {
+                anyhow::bail!("agent_home_dir is required");
+            }
+        }
+
         if self.provider_kind() == "unsupported" {
             anyhow::bail!("unsupported provider_type: {}", self.provider_type);
         }
@@ -154,6 +295,17 @@ fn require_uuid_like(field: &str, value: &str) -> Result<()> {
         anyhow::bail!("{field} must be a UUID-like string");
     }
     Ok(())
+}
+
+fn require_optional_uuid_like(field: &str, value: &Option<String>) -> Result<()> {
+    match value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some(value) => require_uuid_like(field, value),
+        None => anyhow::bail!("{field} is required"),
+    }
 }
 
 fn is_uuid_like(value: &str) -> bool {

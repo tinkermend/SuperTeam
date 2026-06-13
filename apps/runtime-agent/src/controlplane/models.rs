@@ -161,8 +161,18 @@ pub enum RuntimeCommandType {
     Unsupported(String),
 }
 
+impl RuntimeCommandType {
+    #[allow(non_upper_case_globals)]
+    pub const SyncWorkspaceFiles: Self = Self::Unsupported(String::new());
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct EnsureInstanceCommand {
+    #[serde(default)]
+    pub team_id: String,
+    #[serde(default)]
+    pub digital_employee_id: String,
+    #[serde(default)]
     pub execution_instance_id: String,
 }
 
@@ -213,6 +223,7 @@ impl<'de> Deserialize<'de> for RuntimeCommandType {
         Ok(match value.as_str() {
             "ensure_instance" => Self::EnsureInstance,
             "provision_instance" => Self::ProvisionInstance,
+            "sync_workspace_files" => Self::SyncWorkspaceFiles,
             "start_session" => Self::StartSession,
             "resume_session" => Self::ResumeSession,
             "send_input" => Self::SendInput,
