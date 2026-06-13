@@ -19,6 +19,13 @@ SET current_revision_id = $1::uuid,
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND deleted_at IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM digital_employee_workspace_file_revisions r
+    WHERE r.id = $1::uuid
+      AND r.tenant_id = digital_employee_workspace_files.tenant_id
+      AND r.file_id = digital_employee_workspace_files.id
+  )
 RETURNING id, tenant_id, team_id, digital_employee_id, path, file_role, mime_type, sync_policy, current_revision_id, status, metadata, created_by, created_at, updated_at, archived_at, deleted_at
 `
 
@@ -225,6 +232,7 @@ FROM digital_employee_workspace_files f
 JOIN digital_employee_workspace_file_revisions r
   ON r.id = f.current_revision_id
  AND r.tenant_id = f.tenant_id
+ AND r.file_id = f.id
 WHERE f.tenant_id = $1::uuid
   AND f.digital_employee_id = $2::uuid
   AND f.status = 'active'

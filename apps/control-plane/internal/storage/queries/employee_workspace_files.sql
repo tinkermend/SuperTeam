@@ -57,6 +57,13 @@ SET current_revision_id = sqlc.arg('revision_id')::uuid,
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('file_id')::uuid
   AND deleted_at IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM digital_employee_workspace_file_revisions r
+    WHERE r.id = sqlc.arg('revision_id')::uuid
+      AND r.tenant_id = digital_employee_workspace_files.tenant_id
+      AND r.file_id = digital_employee_workspace_files.id
+  )
 RETURNING *;
 
 -- name: ListCurrentDigitalEmployeeWorkspaceFilesForSync :many
@@ -83,6 +90,7 @@ FROM digital_employee_workspace_files f
 JOIN digital_employee_workspace_file_revisions r
   ON r.id = f.current_revision_id
  AND r.tenant_id = f.tenant_id
+ AND r.file_id = f.id
 WHERE f.tenant_id = sqlc.arg('tenant_id')::uuid
   AND f.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND f.status = 'active'
