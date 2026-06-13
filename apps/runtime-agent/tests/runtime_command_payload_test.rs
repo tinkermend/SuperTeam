@@ -213,6 +213,58 @@ fn parses_valid_provision_payload_with_workspace_file() {
     assert!(parsed.mcp_servers.is_empty());
 }
 
+#[test]
+fn parses_provision_payload_with_effective_capabilities() {
+    let mut payload = valid_provision_payload("cmd-capabilities");
+    payload["skills"] = json!([
+        {
+            "skill_id": "77777777-7777-4777-8777-777777777777",
+            "skill_key": "database-troubleshooting",
+            "revision_id": "88888888-8888-4888-8888-888888888888",
+            "files": ["skills/database-troubleshooting/SKILL.md"],
+            "content_hash": "sha256:database-troubleshooting"
+        },
+        {
+            "skill_id": "99999999-9999-4999-8999-999999999999",
+            "skill_key": "sql-review",
+            "revision_id": null,
+            "files": [],
+            "content_hash": null
+        }
+    ]);
+    payload["mcp_servers"] = json!([
+        {
+            "server_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "server_key": "postgres-readonly",
+            "transport": "stdio",
+            "config_ref": "team:mcp/postgres-readonly",
+            "permission_scope": {
+                "schemas": ["public"],
+                "readonly": true
+            }
+        }
+    ]);
+    let command = RuntimeCommand {
+        id: "cmd-capabilities".to_string(),
+        command_type: RuntimeCommandType::ProvisionInstance,
+        payload,
+    };
+
+    let parsed = RuntimeProvisionInstanceCommandPayload::from_command(&command)
+        .expect("provision payload with effective capabilities");
+
+    assert_eq!(parsed.skills.len(), 2);
+    assert_eq!(parsed.skills[0].skill_key, "database-troubleshooting");
+    assert_eq!(parsed.skills[1].skill_key, "sql-review");
+    assert_eq!(parsed.mcp_servers.len(), 1);
+    assert_eq!(parsed.mcp_servers[0].server_key, "postgres-readonly");
+    assert_eq!(
+        parsed.mcp_servers[0].permission_scope["schemas"][0],
+        "public"
+    );
+    assert_eq!(parsed.mcp_servers[0].permission_scope["readonly"], true);
+}
+
 fn valid_provision_payload(command_id: &str) -> serde_json::Value {
     serde_json::json!({
         "command_id": command_id,

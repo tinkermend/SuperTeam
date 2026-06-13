@@ -104,6 +104,9 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 		"grace_sec",
 		"workspace_policy",
 		"session_policy",
+		"workspace_files",
+		"skills",
+		"mcp_servers",
 		"metadata",
 	}
 	for _, key := range required {
@@ -119,6 +122,12 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 	}
 	if payload["input"] != "请先复现再修复" {
 		t.Fatalf("expected start payload input to mirror prompt, got %#v", payload["input"])
+	}
+	for _, key := range []string{"skills", "mcp_servers"} {
+		values, ok := payload[key].([]any)
+		if !ok || len(values) != 0 {
+			t.Fatalf("expected start payload %s to be explicit empty array, got %#v", key, payload[key])
+		}
 	}
 	if len(repo.events) != 1 || repo.events[0].EventType != "run_dispatched" {
 		t.Fatalf("expected run_dispatched event, got %#v", repo.events)
