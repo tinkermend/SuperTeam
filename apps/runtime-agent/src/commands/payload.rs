@@ -37,7 +37,7 @@ pub struct RuntimeWorkspaceFilePayload {
     pub mime_type: String,
     pub sync_policy: String,
     pub content_hash: String,
-    pub size_bytes: i64,
+    pub size_bytes: i32,
     pub storage_backend: String,
     #[serde(default)]
     pub content_text: Option<String>,

@@ -11,3 +11,4 @@ pub mod providers;
 pub mod runs;
 pub mod server;
 pub mod session;
+pub mod workspace_files;

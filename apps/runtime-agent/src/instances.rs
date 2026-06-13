@@ -3,7 +3,8 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct EnsureInstanceRequest {
     pub base_dir: PathBuf,
-    pub execution_instance_id: String,
+    pub team_id: String,
+    pub digital_employee_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -14,17 +15,20 @@ pub struct EnsureInstanceResult {
 pub fn ensure_instance(request: EnsureInstanceRequest) -> anyhow::Result<EnsureInstanceResult> {
     let agent_home_dir = request
         .base_dir
-        .join("agents")
-        .join(sanitize_segment(&request.execution_instance_id)?);
-    std::fs::create_dir_all(agent_home_dir.join("state"))?;
-    std::fs::create_dir_all(agent_home_dir.join("sessions"))?;
-    std::fs::create_dir_all(agent_home_dir.join("runs"))?;
+        .join("teams")
+        .join(sanitize_segment("team_id", &request.team_id)?)
+        .join("employees")
+        .join(sanitize_segment(
+            "digital_employee_id",
+            &request.digital_employee_id,
+        )?);
+    std::fs::create_dir_all(&agent_home_dir)?;
     Ok(EnsureInstanceResult { agent_home_dir })
 }
 
-fn sanitize_segment(value: &str) -> anyhow::Result<String> {
+fn sanitize_segment(field: &str, value: &str) -> anyhow::Result<String> {
     if !is_uuid_like(value) {
-        anyhow::bail!("invalid execution instance id");
+        anyhow::bail!("{field} must be a UUID-like string");
     }
     Ok(value.to_string())
 }

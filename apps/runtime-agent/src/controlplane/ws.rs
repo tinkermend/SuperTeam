@@ -199,10 +199,16 @@ mod tests {
         .expect("command loop once");
         server.await.expect("server task");
 
-        let agent_home_dir = temp.path().join("agents").join(digital_employee_id);
-        assert!(agent_home_dir.join("state").is_dir());
-        assert!(agent_home_dir.join("sessions").is_dir());
-        assert!(agent_home_dir.join("runs").is_dir());
+        let agent_home_dir = temp
+            .path()
+            .join("teams")
+            .join(team_id)
+            .join("employees")
+            .join(digital_employee_id);
+        assert!(agent_home_dir.is_dir());
+        assert!(!agent_home_dir.join("state").exists());
+        assert!(!agent_home_dir.join("sessions").exists());
+        assert!(!agent_home_dir.join("runs").exists());
     }
 
     #[tokio::test]
@@ -389,11 +395,14 @@ printf '%s\n' '{"type":"result","result":"done"}'
         let agent_home_dir = config
             .workspace
             .base_dir
-            .join("agents")
+            .join("teams")
+            .join(TEAM_ID)
+            .join("employees")
             .join(DIGITAL_EMPLOYEE_ID);
-        assert!(agent_home_dir.join("state").is_dir());
-        assert!(agent_home_dir.join("sessions").is_dir());
-        assert!(agent_home_dir.join("runs").is_dir());
+        assert!(agent_home_dir.is_dir());
+        assert!(!agent_home_dir.join("state").exists());
+        assert!(!agent_home_dir.join("sessions").exists());
+        assert!(!agent_home_dir.join("runs").exists());
 
         let complete = wait_for_writeback(capture.complete.clone()).await;
         assert_eq!(complete.command_id, "cmd-provision");
@@ -437,8 +446,12 @@ printf '%s\n' '{"type":"result","result":"done"}'
                 }),
             })
             .await
-            .expect_err("invalid execution instance id should fail");
-        assert!(error.to_string().contains("invalid execution instance id"));
+            .expect_err("invalid digital employee id should fail");
+        assert!(
+            error
+                .to_string()
+                .contains("digital_employee_id must be a UUID-like string")
+        );
 
         let failed = wait_for_writeback(capture.fail.clone()).await;
         assert_eq!(failed.command_id, "cmd-provision-bad");

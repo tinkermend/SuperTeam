@@ -353,7 +353,8 @@ impl RuntimeCommandExecutor {
             })?;
         ensure_instance(EnsureInstanceRequest {
             base_dir: self.config.workspace.base_dir.clone(),
-            execution_instance_id: request.digital_employee_id,
+            team_id: request.team_id,
+            digital_employee_id: request.digital_employee_id,
         })
         .map_err(|error| self.recorded_error(&command.id, error))
     }
@@ -444,9 +445,14 @@ impl RuntimeCommandExecutor {
         command_id: &str,
         payload: &RuntimeSessionCommandPayload,
     ) -> anyhow::Result<PathBuf> {
+        let team_id = payload.team_id.as_ref().ok_or_else(|| {
+            self.recorded_error(command_id, anyhow::anyhow!("team_id is required"))
+        })?;
+
         ensure_instance(EnsureInstanceRequest {
             base_dir: self.config.workspace.base_dir.clone(),
-            execution_instance_id: payload.execution_instance_id.clone(),
+            team_id: team_id.clone(),
+            digital_employee_id: payload.digital_employee_id.clone(),
         })
         .map(|result| result.agent_home_dir)
         .map_err(|error| self.recorded_error(command_id, error))

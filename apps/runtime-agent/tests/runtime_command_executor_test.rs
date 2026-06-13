@@ -290,8 +290,11 @@ printf '%s\n' '{"type":"result","result":"done"}'
     assert_eq!(
         snapshot.workspace_path,
         temp.path()
-            .join("workspaces/agents")
-            .join(EXECUTION_INSTANCE_ID)
+            .join("workspaces")
+            .join("teams")
+            .join(TEAM_ID)
+            .join("employees")
+            .join(DIGITAL_EMPLOYEE_ID)
     );
     assert_eq!(
         snapshot.provider_session_id.as_deref(),
