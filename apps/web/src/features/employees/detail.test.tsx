@@ -105,6 +105,30 @@ function createDetailFetcher({
   eventsByRunId,
   executionInstanceStatus = 200,
   runsStatus = 200,
+  runtimeOverview = {
+    summary: {
+      online_nodes: 1,
+      total_nodes: 1,
+      pending_enrollments: 0,
+      active_provider_sessions: 0,
+      blocked_events: 0,
+    },
+    pending_enrollments: [],
+    nodes: [
+      {
+        runtime_node_id: executionInstance.runtime_node_id,
+        node_id: "node-a",
+        name: "node-a",
+        supported_providers: ["codex"],
+        max_slots: 3,
+        current_load: 0,
+        status: "online",
+        command_channel_connected: true,
+      },
+    ],
+    provider_capabilities: [],
+    recent_events: [],
+  },
 }: {
   events?: Array<Record<string, unknown>>;
   run?: Record<string, unknown>;
@@ -112,6 +136,7 @@ function createDetailFetcher({
   eventsByRunId?: Record<string, Array<Record<string, unknown>>>;
   executionInstanceStatus?: number;
   runsStatus?: number;
+  runtimeOverview?: Record<string, unknown>;
 } = {}) {
   let currentRun = run;
   let currentRuns = runs ?? [currentRun];
@@ -136,6 +161,10 @@ function createDetailFetcher({
         return jsonResponse({ error: "runs failed" }, runsStatus);
       }
       return jsonResponse(currentRuns);
+    }
+
+    if (url.pathname === "/api/v1/runtime/overview" && method === "GET") {
+      return jsonResponse(runtimeOverview);
     }
 
     if (url.pathname.startsWith(`/api/v1/digital-employees/${employee.id}/runs/`) && url.pathname.endsWith("/events") && method === "GET") {
@@ -237,6 +266,41 @@ describe("EmployeeDetailView", () => {
 
     await expect.element(screen.getByRole("button", { name: /调度中/ })).toBeVisible();
     expect(fetchCallCount(fetcher, `/api/v1/digital-employees/${employee.id}/runs`, "POST")).toBe(1);
+  });
+
+  it("keeps start disabled when runtime command channel is disconnected", async () => {
+    const fetcher = createDetailFetcher({
+      events: [],
+      run: runFixture({ status: "completed" }),
+      runtimeOverview: {
+        summary: {
+          online_nodes: 1,
+          total_nodes: 1,
+          pending_enrollments: 0,
+          active_provider_sessions: 0,
+          blocked_events: 0,
+        },
+        pending_enrollments: [],
+        nodes: [
+          {
+            runtime_node_id: executionInstance.runtime_node_id,
+            node_id: "node-a",
+            name: "node-a",
+            supported_providers: ["codex"],
+            max_slots: 3,
+            current_load: 0,
+            status: "online",
+            command_channel_connected: false,
+          },
+        ],
+        provider_capabilities: [],
+        recent_events: [],
+      },
+    });
+    const screen = await renderEmployeeDetail(fetcher);
+
+    await expect.element(screen.getByText("Runtime 命令通道未连接，暂不能开始任务")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "开始任务" })).toBeDisabled();
   });
 
   it("renders completed run result and failed run failure reason", async () => {

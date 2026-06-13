@@ -6,12 +6,14 @@ export type RuntimeEnrollmentStatus = "pending" | "approved" | "rejected" | "rev
 export type RuntimeEventSeverity = "info" | "success" | "warning" | "error";
 
 export type RuntimeNodeResponse = {
+  runtime_node_id?: string;
   node_id: string;
   name: string;
   supported_providers: string[];
   max_slots: number;
   current_load: number;
   status: RuntimeNodeStatus;
+  command_channel_connected?: boolean;
   metadata?: Record<string, unknown>;
   last_heartbeat_at?: string;
   created_at?: string;

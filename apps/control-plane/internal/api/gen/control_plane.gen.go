@@ -2826,16 +2826,18 @@ type RuntimeHeartbeatRequest struct {
 
 // RuntimeNode defines model for RuntimeNode.
 type RuntimeNode struct {
-	CreatedAt          *time.Time              `json:"created_at,omitempty"`
-	CurrentLoad        int32                   `json:"current_load"`
-	LastHeartbeatAt    *time.Time              `json:"last_heartbeat_at,omitempty"`
-	MaxSlots           int32                   `json:"max_slots"`
-	Metadata           *map[string]interface{} `json:"metadata,omitempty"`
-	Name               string                  `json:"name"`
-	NodeId             string                  `json:"node_id"`
-	Status             RuntimeNodeStatus       `json:"status"`
-	SupportedProviders []string                `json:"supported_providers"`
-	UpdatedAt          *time.Time              `json:"updated_at,omitempty"`
+	CommandChannelConnected *bool                   `json:"command_channel_connected,omitempty"`
+	CreatedAt               *time.Time              `json:"created_at,omitempty"`
+	CurrentLoad             int32                   `json:"current_load"`
+	LastHeartbeatAt         *time.Time              `json:"last_heartbeat_at,omitempty"`
+	MaxSlots                int32                   `json:"max_slots"`
+	Metadata                *map[string]interface{} `json:"metadata,omitempty"`
+	Name                    string                  `json:"name"`
+	NodeId                  string                  `json:"node_id"`
+	RuntimeNodeId           *openapi_types.UUID     `json:"runtime_node_id,omitempty"`
+	Status                  RuntimeNodeStatus       `json:"status"`
+	SupportedProviders      []string                `json:"supported_providers"`
+	UpdatedAt               *time.Time              `json:"updated_at,omitempty"`
 }
 
 // RuntimeNodeStatus defines model for RuntimeNode.Status.

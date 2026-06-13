@@ -184,7 +184,7 @@ func (h *RuntimeHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(newRuntimeOverviewResponse(overview))
+	json.NewEncoder(w).Encode(h.newRuntimeOverviewResponse(overview))
 }
 
 func (h *RuntimeHandler) ListRuntimeEvents(w http.ResponseWriter, r *http.Request) {
@@ -891,6 +891,18 @@ func newRuntimeOverviewResponse(overview *runtime.RuntimeOverview) runtimeOvervi
 		ProviderCapabilities: newRuntimeProviderCapabilitySummaryResponses(overview.ProviderCapabilities),
 		RecentEvents:         newRuntimeEventResponses(overview.RecentEvents),
 	}
+}
+
+func (h *RuntimeHandler) newRuntimeOverviewResponse(overview *runtime.RuntimeOverview) runtimeOverviewResponse {
+	response := newRuntimeOverviewResponse(overview)
+	if overview == nil || h.connectionRegistry == nil {
+		return response
+	}
+	response.Nodes = make([]runtimeNodeResponse, 0, len(overview.Nodes))
+	for _, node := range overview.Nodes {
+		response.Nodes = append(response.Nodes, newRuntimeNodeResponseWithCommandChannel(node, h.connectionRegistry.IsConnected(node.NodeID)))
+	}
+	return response
 }
 
 func newRuntimeProviderCapabilitySummaryResponses(summaries []runtime.RuntimeProviderCapabilitySummary) []runtimeProviderCapabilitySummaryResponse {

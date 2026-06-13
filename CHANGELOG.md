@@ -122,6 +122,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Runtime Agent 启动链路从旧版长生命周期 runtime token 注册切换为 bootstrap key hello 接入，批准后使用短期 runtime session token 访问 heartbeat、任务领取和事件回传接口，并按真实 Control Plane contract 上报扁平 capabilities。
 - Runtime Agent 建立短期 session 后会主动连接 Control Plane Runtime WebSocket 命令通道，并支持接收 `ensure_instance` 命令创建数字员工执行实例目录。
 
+### Fixed
+
+- 2026-06-13 13:21：修复数字员工详情页发起测试任务时被 stale 活跃运行卡住的问题；Control Plane 会根据终态 Runtime command receipt 回收仍显示为 queued/dispatching/running/cancelling 的旧 run，列表返回终态状态，新建 run 也可在同次请求内继续分派。
+- 2026-06-13 13:38：修复数字员工显示 Ready 但 Runtime 命令通道未连接时仍可发起测试任务的问题；Runtime overview 现在返回实时 command channel 连接状态，数字员工详情页会在通道断开时禁用开始任务并给出原因。
+
 ### Added
 
 - 2026-06-06 09:44：完成技能管理主链路，新增 Control Plane 技能包、文件、团队归属和 Agent 安装绑定 API，Web 技能页支持已安装技能树、Monaco 文件编辑、技能市场上传标签展示和彩色图标，以及 zip 弹窗上传并绑定多个团队。

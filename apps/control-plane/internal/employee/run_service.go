@@ -90,6 +90,18 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 		return nil, fmt.Errorf("get active run: %w", err)
 	}
 	if activeRun != nil {
+		reconciledRun, reconciled, err := s.reconcileTerminalReceipt(ctx, req.TenantID, activeRun)
+		if err != nil {
+			return nil, err
+		}
+		if reconciled && reconciledRun.Status.IsTerminal() {
+			if sameIdempotentRun(reconciledRun, idempotencyKey, fingerprint) {
+				return reconciledRun, nil
+			}
+			activeRun = nil
+		}
+	}
+	if activeRun != nil {
 		if sameIdempotentRun(activeRun, idempotencyKey, fingerprint) {
 			return s.dispatchStartSession(ctx, req, objective, prompt, preflight, activeRun)
 		}
@@ -345,7 +357,20 @@ func (s *DigitalEmployeeRunService) ListRuns(ctx context.Context, tenantID, empl
 	if employeeID == uuid.Nil {
 		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
 	}
-	return s.repository.ListRuns(ctx, tenantID, employeeID, limit, offset)
+	runs, err := s.repository.ListRuns(ctx, tenantID, employeeID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	for index, run := range runs {
+		reconciledRun, reconciled, err := s.reconcileTerminalReceipt(ctx, tenantID, run)
+		if err != nil {
+			return nil, err
+		}
+		if reconciled {
+			runs[index] = reconciledRun
+		}
+	}
+	return runs, nil
 }
 
 func (s *DigitalEmployeeRunService) GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error) {
@@ -367,6 +392,55 @@ func (s *DigitalEmployeeRunService) ListRunEvents(ctx context.Context, tenantID,
 		return nil, err
 	}
 	return s.repository.ListRunEvents(ctx, tenantID, run.TaskID, run.ID, limit, offset)
+}
+
+func (s *DigitalEmployeeRunService) reconcileTerminalReceipt(ctx context.Context, tenantID uuid.UUID, run *DigitalEmployeeRun) (*DigitalEmployeeRun, bool, error) {
+	if run == nil || !run.Status.IsActive() || strings.TrimSpace(run.CommandID) == "" {
+		return run, false, nil
+	}
+	receipt, err := s.repository.GetCommandReceipt(ctx, tenantID, run.CommandID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return run, false, nil
+		}
+		return nil, false, fmt.Errorf("get terminal receipt for active run: %w", err)
+	}
+	if receipt == nil || !isTerminalReceiptStatus(receipt.Status) {
+		return run, false, nil
+	}
+	updatedRun, err := s.repository.UpdateRunStatus(ctx, UpdateRunStatusRequest{
+		TenantID:     tenantID,
+		RunID:        run.ID,
+		Status:       DigitalEmployeeRunStatus(receipt.Status),
+		ErrorMessage: receipt.ErrorMessage,
+		ErrorCode:    terminalReceiptErrorCode(receipt),
+		ErrorFamily:  terminalReceiptErrorFamily(receipt),
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("reconcile terminal receipt for active run: %w", err)
+	}
+	return updatedRun, true, nil
+}
+
+func terminalReceiptErrorCode(receipt *RuntimeCommandReceipt) *string {
+	if receipt == nil || receipt.Status != string(DigitalEmployeeRunStatusFailed) {
+		return nil
+	}
+	return stringPtr("dispatch_failed")
+}
+
+func terminalReceiptErrorFamily(receipt *RuntimeCommandReceipt) *string {
+	if receipt == nil {
+		return nil
+	}
+	switch receipt.Status {
+	case string(DigitalEmployeeRunStatusFailed):
+		return stringPtr("dispatch_failed")
+	case string(DigitalEmployeeRunStatusTimedOut):
+		return stringPtr("timeout")
+	default:
+		return nil
+	}
 }
 
 func validateRunPreflight(preflight RunPreflight) error {

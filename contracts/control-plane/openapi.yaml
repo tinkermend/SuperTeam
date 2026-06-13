@@ -2945,6 +2945,9 @@ components:
         - current_load
         - status
       properties:
+        runtime_node_id:
+          type: string
+          format: uuid
         node_id:
           type: string
         name:
@@ -2964,6 +2967,8 @@ components:
           enum:
             - online
             - offline
+        command_channel_connected:
+          type: boolean
         metadata:
           type: object
           additionalProperties: true

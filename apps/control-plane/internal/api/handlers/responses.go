@@ -29,16 +29,18 @@ type taskResponse struct {
 }
 
 type runtimeNodeResponse struct {
-	NodeID             string                 `json:"node_id"`
-	Name               string                 `json:"name"`
-	SupportedProviders []string               `json:"supported_providers"`
-	MaxSlots           int32                  `json:"max_slots"`
-	CurrentLoad        int32                  `json:"current_load"`
-	Status             runtime.NodeStatus     `json:"status"`
-	Metadata           map[string]interface{} `json:"metadata,omitempty"`
-	LastHeartbeatAt    string                 `json:"last_heartbeat_at,omitempty"`
-	CreatedAt          string                 `json:"created_at,omitempty"`
-	UpdatedAt          string                 `json:"updated_at,omitempty"`
+	RuntimeNodeID           string                 `json:"runtime_node_id,omitempty"`
+	NodeID                  string                 `json:"node_id"`
+	Name                    string                 `json:"name"`
+	SupportedProviders      []string               `json:"supported_providers"`
+	MaxSlots                int32                  `json:"max_slots"`
+	CurrentLoad             int32                  `json:"current_load"`
+	Status                  runtime.NodeStatus     `json:"status"`
+	CommandChannelConnected *bool                  `json:"command_channel_connected,omitempty"`
+	Metadata                map[string]interface{} `json:"metadata,omitempty"`
+	LastHeartbeatAt         string                 `json:"last_heartbeat_at,omitempty"`
+	CreatedAt               string                 `json:"created_at,omitempty"`
+	UpdatedAt               string                 `json:"updated_at,omitempty"`
 }
 
 type runtimeEnrollmentResponse struct {
@@ -189,6 +191,9 @@ func newRuntimeNodeResponse(node *runtime.Node) runtimeNodeResponse {
 		Status:             node.Status,
 		Metadata:           node.Metadata,
 	}
+	if node.ID != uuid.Nil {
+		response.RuntimeNodeID = node.ID.String()
+	}
 	if !node.LastHeartbeatAt.IsZero() {
 		response.LastHeartbeatAt = node.LastHeartbeatAt.UTC().Format(timeRFC3339Nano)
 	}
@@ -198,6 +203,12 @@ func newRuntimeNodeResponse(node *runtime.Node) runtimeNodeResponse {
 	if !node.UpdatedAt.IsZero() {
 		response.UpdatedAt = node.UpdatedAt.UTC().Format(timeRFC3339Nano)
 	}
+	return response
+}
+
+func newRuntimeNodeResponseWithCommandChannel(node *runtime.Node, connected bool) runtimeNodeResponse {
+	response := newRuntimeNodeResponse(node)
+	response.CommandChannelConnected = &connected
 	return response
 }
 

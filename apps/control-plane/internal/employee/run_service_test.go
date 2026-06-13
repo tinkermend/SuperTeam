@@ -202,6 +202,31 @@ func TestRunServiceListRunEventsReturnsPersistedEvents(t *testing.T) {
 	}
 }
 
+func TestRunServiceListRunsReconcilesTerminalReceiptForActiveRun(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	staleRun := validRunServiceRun(DigitalEmployeeRunStatusDispatching)
+	staleRun.CommandID = "cmd-list-terminal-receipt"
+	repo.runs = []*DigitalEmployeeRun{staleRun}
+	repo.commandReceipt = &RuntimeCommandReceipt{
+		TenantID:  staleRun.TenantID,
+		CommandID: staleRun.CommandID,
+		Status:    "cancelled",
+	}
+	service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+
+	runs, err := service.ListRuns(context.Background(), staleRun.TenantID, staleRun.DigitalEmployeeID, 10, 0)
+
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Status != DigitalEmployeeRunStatusCancelled {
+		t.Fatalf("expected stale run returned as cancelled, got %#v", runs)
+	}
+	if len(repo.statusUpdates) != 1 || repo.statusUpdates[0].Status != DigitalEmployeeRunStatusCancelled {
+		t.Fatalf("expected stale listed run reconciled to cancelled, got %#v", repo.statusUpdates)
+	}
+}
+
 func TestRunServiceCreateRunReconcilesIdempotentQueuedRunWithoutReceipt(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()
@@ -328,15 +353,22 @@ func TestRunServiceCreateRunMarksFailedWhenReceiptFailed(t *testing.T) {
 }
 
 func TestRunServiceCreateRunDoesNotRestartTerminalReceipt(t *testing.T) {
-	for _, receiptStatus := range []string{"completed", "cancelled", "timed_out"} {
-		t.Run(receiptStatus, func(t *testing.T) {
+	for _, tc := range []struct {
+		receiptStatus string
+		expectedRun   DigitalEmployeeRunStatus
+	}{
+		{receiptStatus: "completed", expectedRun: DigitalEmployeeRunStatusCompleted},
+		{receiptStatus: "cancelled", expectedRun: DigitalEmployeeRunStatusCancelled},
+		{receiptStatus: "timed_out", expectedRun: DigitalEmployeeRunStatusTimedOut},
+	} {
+		t.Run(tc.receiptStatus, func(t *testing.T) {
 			repo := newFakeRunServiceRepository()
 			repo.preflight = validRunServicePreflight()
 			dispatcher := newFakeRunServiceDispatcher()
 			dispatcher.connected[repo.preflight.NodeID] = true
 			service := mustNewRunService(t, repo, dispatcher)
 			req := validCreateRunServiceRequest()
-			idempotencyKey := "idem-receipt-" + receiptStatus
+			idempotencyKey := "idem-receipt-" + tc.receiptStatus
 			req.IdempotencyKey = &idempotencyKey
 			fingerprint, err := computeRunIdempotencyFingerprint(req, strings.TrimSpace(req.Objective), strings.TrimSpace(req.Prompt), repo.preflight)
 			if err != nil {
@@ -348,7 +380,7 @@ func TestRunServiceCreateRunDoesNotRestartTerminalReceipt(t *testing.T) {
 			repo.commandReceipt = &RuntimeCommandReceipt{
 				TenantID:  repo.activeRun.TenantID,
 				CommandID: repo.activeRun.CommandID,
-				Status:    receiptStatus,
+				Status:    tc.receiptStatus,
 			}
 
 			run, err := service.CreateRun(context.Background(), req)
@@ -356,11 +388,50 @@ func TestRunServiceCreateRunDoesNotRestartTerminalReceipt(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create run retry: %v", err)
 			}
-			if run.Status != DigitalEmployeeRunStatusQueued {
-				t.Fatalf("expected existing queued run returned for terminal receipt, got %s", run.Status)
+			if run.Status != tc.expectedRun {
+				t.Fatalf("expected existing run reconciled to %s, got %s", tc.expectedRun, run.Status)
 			}
-			if len(dispatcher.commands) != 0 || len(repo.commandReceipts) != 0 || len(repo.statusUpdates) != 0 || len(repo.events) != 0 {
+			if len(dispatcher.commands) != 0 || len(repo.commandReceipts) != 0 || len(repo.statusUpdates) != 1 || len(repo.events) != 0 {
 				t.Fatalf("expected terminal receipt not to restart/write, commands=%#v receipts=%#v status=%#v events=%#v", dispatcher.commands, repo.commandReceipts, repo.statusUpdates, repo.events)
+			}
+		})
+	}
+}
+
+func TestRunServiceCreateRunReconcilesTerminalReceiptBeforeActiveConflict(t *testing.T) {
+	for _, tc := range []struct {
+		receiptStatus string
+		expectedRun   DigitalEmployeeRunStatus
+	}{
+		{receiptStatus: "completed", expectedRun: DigitalEmployeeRunStatusCompleted},
+		{receiptStatus: "cancelled", expectedRun: DigitalEmployeeRunStatusCancelled},
+		{receiptStatus: "timed_out", expectedRun: DigitalEmployeeRunStatusTimedOut},
+	} {
+		t.Run(tc.receiptStatus, func(t *testing.T) {
+			repo := newFakeRunServiceRepository()
+			repo.preflight = validRunServicePreflight()
+			dispatcher := newFakeRunServiceDispatcher()
+			dispatcher.connected[repo.preflight.NodeID] = true
+			service := mustNewRunService(t, repo, dispatcher)
+			req := validCreateRunServiceRequest()
+			repo.activeRun = validRunServiceRun(DigitalEmployeeRunStatusQueued)
+			repo.activeRun.CommandID = "cmd-stale-" + tc.receiptStatus
+			repo.commandReceipt = &RuntimeCommandReceipt{
+				TenantID:  repo.activeRun.TenantID,
+				CommandID: repo.activeRun.CommandID,
+				Status:    tc.receiptStatus,
+			}
+
+			run, err := service.CreateRun(context.Background(), req)
+
+			if err != nil {
+				t.Fatalf("create run after stale active reconciliation: %v", err)
+			}
+			if len(repo.statusUpdates) < 1 || repo.statusUpdates[0].Status != tc.expectedRun {
+				t.Fatalf("expected stale active run reconciled to %s, got %#v", tc.expectedRun, repo.statusUpdates)
+			}
+			if run.Status != DigitalEmployeeRunStatusDispatching || repo.createdRunCount != 1 || len(dispatcher.commands) != 1 {
+				t.Fatalf("expected new run dispatched after reconciliation, run=%#v creates=%d commands=%#v", run, repo.createdRunCount, dispatcher.commands)
 			}
 		})
 	}
@@ -723,6 +794,7 @@ type fakeRunServiceRepository struct {
 	preflight           RunPreflight
 	activeRun           *DigitalEmployeeRun
 	run                 *DigitalEmployeeRun
+	runs                []*DigitalEmployeeRun
 	createdRun          *DigitalEmployeeRun
 	createdRunCount     int
 	createRunRequests   []CreateRunRecordRequest
@@ -776,8 +848,14 @@ func (f *fakeRunServiceRepository) GetRunByCommandID(context.Context, uuid.UUID,
 	return nil, ErrNotFound
 }
 
-func (f *fakeRunServiceRepository) ListRuns(context.Context, uuid.UUID, uuid.UUID, int32, int32) ([]*DigitalEmployeeRun, error) {
-	return nil, nil
+func (f *fakeRunServiceRepository) ListRuns(_ context.Context, tenantID, employeeID uuid.UUID, _ int32, _ int32) ([]*DigitalEmployeeRun, error) {
+	out := make([]*DigitalEmployeeRun, 0, len(f.runs))
+	for _, run := range f.runs {
+		if run.TenantID == tenantID && run.DigitalEmployeeID == employeeID {
+			out = append(out, cloneRun(run))
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeRunServiceRepository) ListRunEvents(_ context.Context, _ uuid.UUID, taskID, runID uuid.UUID, _ int32, _ int32) ([]RuntimeCommandEventWriteback, error) {
@@ -814,6 +892,13 @@ func (f *fakeRunServiceRepository) UpdateRunStatus(_ context.Context, req Update
 		run = f.activeRun
 	} else if f.run != nil && f.run.ID == req.RunID {
 		run = f.run
+	} else {
+		for _, listedRun := range f.runs {
+			if listedRun.ID == req.RunID {
+				run = listedRun
+				break
+			}
+		}
 	}
 	if run == nil {
 		return nil, ErrNotFound

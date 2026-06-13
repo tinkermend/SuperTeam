@@ -337,13 +337,26 @@ func TestRuntimeOverviewAndEventsResponsesUseRuntimeConsoleShape(t *testing.T) {
 				HealthyCount:   1,
 				LastSeenAt:     time.Date(2026, 6, 5, 7, 2, 0, 0, time.UTC),
 			}},
+			Nodes: []*runtime.Node{{
+				ID:                 uuid.MustParse("33333333-3333-4333-8333-333333333333"),
+				NodeID:             "node-1",
+				Name:               "node-1",
+				SupportedProviders: []string{"codex"},
+				MaxSlots:           2,
+				Status:             runtime.NodeStatusOnline,
+			}},
 			RecentEvents: []runtime.RuntimeEvent{zeroNodeEvent, nodeEvent},
 		},
 		runtimeEvents: []runtime.RuntimeEvent{zeroNodeEvent, nodeEvent},
 	}
+	runtimeHandler := handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{})
+	registry := runtime.NewConnectionRegistry()
+	connection := registry.Register("node-1")
+	defer registry.Unregister("node-1", connection.ID)
+	runtimeHandler.SetConnectionRegistry(registry)
 	server := NewServerWithAuthz(
 		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		runtimeHandler,
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -367,6 +380,14 @@ func TestRuntimeOverviewAndEventsResponsesUseRuntimeConsoleShape(t *testing.T) {
 	}
 	if _, ok := overview["provider_capabilities"]; !ok {
 		t.Fatalf("expected provider_capabilities key in overview response: %#v", overview)
+	}
+	overviewNodes, ok := overview["nodes"].([]any)
+	if !ok || len(overviewNodes) != 1 {
+		t.Fatalf("expected one node in overview response, got %#v", overview["nodes"])
+	}
+	firstNode, ok := overviewNodes[0].(map[string]any)
+	if !ok || firstNode["runtime_node_id"] != "33333333-3333-4333-8333-333333333333" || firstNode["command_channel_connected"] != true {
+		t.Fatalf("expected runtime node identity and command channel state, got %#v", overviewNodes[0])
 	}
 	overviewEvents, ok := overview["recent_events"].([]any)
 	if !ok || len(overviewEvents) != 2 {

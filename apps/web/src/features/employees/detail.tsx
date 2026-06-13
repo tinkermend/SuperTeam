@@ -22,6 +22,7 @@ import {
   listDigitalEmployeeRuns,
   stopDigitalEmployeeRun,
 } from "@/lib/api/employees";
+import { getRuntimeOverview } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 import { EmployeeAvatar } from "./avatar";
@@ -65,6 +66,11 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
       const data = query.state.data as DigitalEmployeeRun[] | undefined;
       return data?.some((run) => isActiveRun(run.status)) ? 2500 : false;
     },
+  });
+  const runtimeOverview = useQuery({
+    queryKey: ["runtime-overview"],
+    queryFn: () => getRuntimeOverview(apiOptions),
+    refetchInterval: 5000,
   });
   const runList = runs.data ?? [];
   const latestRun = runList[0];
@@ -122,8 +128,17 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
   const employeeCanRun = employee.data?.status === "ready" || employee.data?.status === "active";
   const executionInstanceCanRun =
     instance.isSuccess && (instance.data.status === "ready" || instance.data.status === "active");
+  const executionRuntimeNodeId = instance.data?.runtime_node_id;
+  const selectedRunNodeId = selectedRun?.node_id;
+  const runtimeNode = runtimeOverview.data?.nodes.find(
+    (node) =>
+      (executionRuntimeNodeId && node.runtime_node_id === executionRuntimeNodeId) ||
+      (selectedRunNodeId && node.node_id === selectedRunNodeId),
+  );
+  const runtimeCommandChannelDisconnected =
+    runtimeOverview.isSuccess && runtimeNode?.command_channel_connected === false;
   const canStartTask =
-    employeeCanRun && executionInstanceCanRun && runs.isSuccess && !hasActiveRun;
+    employeeCanRun && executionInstanceCanRun && runs.isSuccess && !hasActiveRun && !runtimeCommandChannelDisconnected;
   const trimmedObjective = objective.trim();
   const avatarAsset = employee.data ? employeeAvatarAsset(employee.data) : null;
 
@@ -288,6 +303,9 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                   {hasActiveRun ? <p className="text-xs text-muted-foreground">当前已有活跃运行</p> : null}
                   {!executionInstanceCanRun && instance.isSuccess ? (
                     <p className="text-xs text-muted-foreground">执行实例当前不可执行</p>
+                  ) : null}
+                  {runtimeCommandChannelDisconnected ? (
+                    <p className="text-xs text-muted-foreground">Runtime 命令通道未连接，暂不能开始任务</p>
                   ) : null}
                   {instanceNotFound ? <p className="text-xs text-muted-foreground">未绑定 Runtime，暂不能开始任务</p> : null}
                   {runs.isError ? <p className="text-xs text-destructive">运行列表加载失败，暂不能开始新任务</p> : null}
