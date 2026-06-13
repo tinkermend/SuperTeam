@@ -28,6 +28,7 @@
 - 第一版文件正文存 DB，预留对象存储字段。
 - 创建数字员工时默认生成 `AGENTS.md` 文件资产，并同步到 Runtime 员工目录。
 - Runtime 根据绑定 Provider 初始化对应 dot dir，例如 `claude-code` 创建 `.claude`，`opencode` 创建 `.opencode`。
+- 创建数字员工时继承团队允许并启用的技能和 MCP 能力，并按 Provider adapter 的规则同步到员工目录。
 - `CLAUDE.md` 作为兼容产物指向 `AGENTS.md`，不作为用户可编辑主文件。
 - 后续文件新增、编辑和激活 revision 后，可以通过同步命令推送到对应数字员工目录。
 
@@ -39,6 +40,7 @@
 - 不定义 `.claude`、`.opencode` 等 Provider dot dir 的内部文件格式。
 - 不实现数字员工跨团队、跨 Runtime 或跨 Provider 迁移。
 - 不改变项目任务的业务归属模型；项目只进入 metadata 和上下文，不改变员工目录。
+- 不在第一期 materialize 团队知识库和外部能力；这两类能力在二期按独立能力接入方案实现。
 
 ## 5. 方案选择
 
@@ -210,8 +212,9 @@ storage_backend = "db"
 2. 创建唯一 execution instance。
 3. 合成团队治理、员工配置、技能/MCP 选择和角色画像。
 4. 创建默认 `AGENTS.md` workspace file 和 revision。
-5. 将 `agent_home_dir` 计算并写入 execution instance。
-6. 下发 `provision_instance` 命令，携带员工目录身份、Provider 类型和需要同步的文件 revision。
+5. 解析第一期需要继承并 materialize 的团队技能和 MCP 能力。
+6. 将 `agent_home_dir` 计算并写入 execution instance。
+7. 下发 `provision_instance` 命令，携带员工目录身份、Provider 类型、需要同步的文件 revision、技能清单和 MCP 清单。
 
 `AGENTS.md` 内容第一版由 Control Plane 生成，包含：
 
@@ -287,6 +290,8 @@ files: [
     content_text
   }
 ]
+skills: []
+mcp_servers: []
 delete_paths: []
 ```
 
@@ -327,7 +332,53 @@ Provider adapter 负责 Provider 专属目录和配置 materialization：
 - Provider adapter 可以把这些绑定 materialize 成 Provider 所需配置文件。
 - 本地 Provider 配置文件不是反向同步源。
 
-## 11. 项目任务与调试任务
+## 11. 团队技能与 MCP 继承
+
+第一期必须预留并打通团队技能和 MCP 的继承与下发，但不要求完整实现团队知识库和外部能力。
+
+数字员工创建时，Control Plane 从团队治理配置、团队技能绑定、团队 MCP 配置和员工初始配置中计算有效能力集合：
+
+```text
+effective_skills = team_inherited_skills + employee_enabled_skills - disabled_skills
+effective_mcp_servers = team_inherited_mcp + employee_enabled_mcp - disabled_mcp
+```
+
+当团队技能/MCP 管理表尚未全部完成时，接口和 payload 仍保留 `skills`、`mcp_servers` 字段，允许为空数组。后续团队能力模块补齐后，不需要重构 Runtime 命令协议。
+
+`provision_instance` 首次 materialize 时携带：
+
+```text
+skills: [
+  {
+    skill_id
+    skill_key
+    revision_id
+    files
+    content_hash
+  }
+]
+mcp_servers: [
+  {
+    server_id
+    server_key
+    transport
+    config_ref
+    permission_scope
+  }
+]
+```
+
+Runtime 不解释团队策略，只按 Control Plane 给出的有效能力集合执行 materialization。Provider adapter 决定落盘格式：
+
+- Claude Code adapter 按 Claude Code 目录和配置约定写入 `.claude/` 下所需配置。
+- OpenCode adapter 按 OpenCode 目录和配置约定写入 `.opencode/` 下所需配置。
+- 其他 Provider 后续通过 adapter 注册自己的能力 materializer。
+
+技能和 MCP 的绑定关系、版本、授权和审计仍以 Control Plane DB 为事实源。本地 Provider 配置只是同步副本，不允许 Runtime 反向写回为平台事实。
+
+团队知识库和外部能力不进入第一期 materialization。后续二期应扩展同一个 materialization plan，而不是把知识库或外部能力硬编码进员工目录规则。
+
+## 12. 项目任务与调试任务
 
 数字员工调试：
 
@@ -349,7 +400,7 @@ provider_session_id = 项目任务会话
 
 项目不改变目录。一个数字员工参与多个项目时，仍复用同一个员工目录，通过 Provider Session 和 Run metadata 隔离审计。
 
-## 12. 路径安全和保留路径
+## 13. 路径安全和保留路径
 
 普通 workspace file 不允许写入：
 
@@ -365,7 +416,7 @@ provider_session_id = 项目任务会话
 
 `AGENTS.md` 是保留入口文件，只能以 `entrypoint` 角色存在。`CLAUDE.md` 是 Runtime 兼容产物，不允许用户创建同名 workspace file。
 
-## 13. 同步状态
+## 14. 同步状态
 
 Control Plane 需要记录文件同步状态。首版使用独立同步投影表，避免把运行状态塞进文件 metadata：
 
@@ -397,7 +448,7 @@ Console 可以基于该表展示：
 - 同步失败原因。
 - 最后同步时间。
 
-## 14. 兼容和迁移
+## 15. 兼容和迁移
 
 已有 `agents/{execution_instance_id}` 目录不作为新模型继续扩展。迁移策略：
 
@@ -408,7 +459,7 @@ Console 可以基于该表展示：
 
 DB 迁移不删除 `execution_instance_id`，不删除 `agent_home_dir`，只调整其写入和使用语义。
 
-## 15. 测试策略
+## 16. 测试策略
 
 Control Plane 单元测试：
 
@@ -417,6 +468,7 @@ Control Plane 单元测试：
 - 新增文件校验 path、role、mime type 和权限。
 - 编辑文件创建新 revision，不覆盖历史。
 - `provision_instance` payload 包含 team/digital employee 目录身份和文件 revision。
+- `provision_instance` payload 预留并传递有效技能/MCP 集合，团队能力未配置时为空数组。
 - `start_session` payload 包含目标文件 revision/hash。
 
 Runtime Agent 单元测试：
@@ -426,6 +478,7 @@ Runtime Agent 单元测试：
 - `CLAUDE.md` 软链接或兼容文件创建正确。
 - `claude-code` 初始化 `.claude`，`opencode` 初始化 `.opencode`。
 - `sync_workspace_files` 原子写入并校验 hash。
+- Provider adapter 根据 provider 类型 materialize 技能/MCP 配置，且不反向写回为平台事实。
 - 写入 Provider 保留路径被拒绝。
 
 链路测试：
@@ -433,22 +486,25 @@ Runtime Agent 单元测试：
 - 创建数字员工后 Runtime 目录包含 `AGENTS.md` 和 provider dot dir。
 - 数字员工调试 run 和项目任务 run 使用同一个 `cwd`。
 - 修改 `AGENTS.md` 后触发同步，Runtime 本地 hash 与 DB revision hash 一致。
+- 数字员工创建后继承团队技能/MCP 的有效集合，并由对应 Provider adapter 生成本地配置。
 - 同步失败时 run 不应被表述为可用，Control Plane 返回可排查错误。
 
-## 16. 后续扩展
+## 17. 后续扩展
 
 - Console Instructions 页面：文件列表、ENTRY 标签、加号新增、编辑预览、同步状态。
 - 对象存储正文：大文件、二进制附件、导入文件包。
 - 文件级审批：高风险员工或生产团队修改 `AGENTS.md` 前需要人类审批。
 - Provider 配置可视化：只展示 adapter 暴露的安全摘要，不直接编辑 Provider 私有目录。
+- 团队知识库和外部能力 materialization：二期接入，不占用第一期目录规则。
 - 显式旧目录迁移工具：用于保留 Provider 缓存或人工确认搬迁。
 
-## 17. 实施顺序建议
+## 18. 实施顺序建议
 
 1. 新增 DB 表、sqlc 查询和领域类型。
 2. 调整数字员工创建流程，生成 `AGENTS.md` file/revision，并在 provisioning payload 中携带文件清单。
 3. 重构 Runtime `ensure_instance`，使用 `team_id + digital_employee_id` 创建员工根目录。
 4. 增加 Provider adapter 初始化接口。
-5. 增加 `sync_workspace_files` 命令。
-6. 调整 `start_session` 使用员工根目录，并校验同步 hash。
-7. 增加测试和最小 API/Console 数据读取能力。
+5. 将团队技能/MCP 有效集合加入 provisioning materialization plan，团队能力未配置时传空数组。
+6. 增加 `sync_workspace_files` 命令。
+7. 调整 `start_session` 使用员工根目录，并校验同步 hash。
+8. 增加测试和最小 API/Console 数据读取能力。
