@@ -114,6 +114,10 @@ mod tests {
 
     const DIGITAL_EMPLOYEE_ID: &str = "11111111-1111-4111-8111-111111111111";
     const EXECUTION_INSTANCE_ID: &str = "22222222-2222-4222-8222-222222222222";
+    const TENANT_ID: &str = "00000000-0000-4000-8000-000000000001";
+    const TEAM_ID: &str = "33333333-3333-4333-8333-333333333333";
+    const RUNTIME_NODE_ID: &str = "44444444-4444-4444-8444-444444444444";
+    const AGENT_HOME_DIR: &str = "/tmp/superteam-runtime-agent/ws-test-agent";
 
     #[test]
     fn runtime_ws_url_uses_runtime_ws_endpoint() {
@@ -143,7 +147,8 @@ mod tests {
     #[tokio::test]
     async fn command_loop_continues_after_bad_commands() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let execution_instance_id = "11111111-1111-4111-8111-111111111111";
+        let digital_employee_id = "11111111-1111-4111-8111-111111111111";
+        let team_id = "22222222-2222-4222-8222-222222222222";
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
         let addr = listener.local_addr().expect("local addr");
 
@@ -171,7 +176,7 @@ mod tests {
             socket
                 .send(Message::Text(
                     format!(
-                        r#"{{"id":"cmd-good","type":"ensure_instance","payload":{{"execution_instance_id":"{execution_instance_id}"}}}}"#
+                        r#"{{"id":"cmd-good","type":"ensure_instance","payload":{{"team_id":"{team_id}","digital_employee_id":"{digital_employee_id}"}}}}"#
                     )
                     .into(),
                 ))
@@ -194,7 +199,7 @@ mod tests {
         .expect("command loop once");
         server.await.expect("server task");
 
-        let agent_home_dir = temp.path().join("agents").join(execution_instance_id);
+        let agent_home_dir = temp.path().join("agents").join(digital_employee_id);
         assert!(agent_home_dir.join("state").is_dir());
         assert!(agent_home_dir.join("sessions").is_dir());
         assert!(agent_home_dir.join("runs").is_dir());
@@ -244,9 +249,16 @@ printf '%s\n' '{"type":"result","result":"done"}'
                         "type": "start_session",
                         "payload": {
                             "command_id": "cmd-ws-start",
+                            "tenant_id": TENANT_ID,
+                            "team_id": TEAM_ID,
                             "digital_employee_id": DIGITAL_EMPLOYEE_ID,
                             "execution_instance_id": EXECUTION_INSTANCE_ID,
+                            "runtime_node_id": RUNTIME_NODE_ID,
                             "provider_type": "claude-code",
+                            "agent_home_dir": AGENT_HOME_DIR,
+                            "workspace_files": [],
+                            "skills": [],
+                            "mcp_servers": [],
                             "session_policy": {
                                 "mode": "new",
                                 "provider_session_id": null,
@@ -344,7 +356,8 @@ printf '%s\n' '{"type":"result","result":"done"}'
                         "type": "provision_instance",
                         "payload": {
                             "command_id": "cmd-provision",
-                            "execution_instance_id": EXECUTION_INSTANCE_ID
+                            "team_id": TEAM_ID,
+                            "digital_employee_id": DIGITAL_EMPLOYEE_ID
                         }
                     })
                     .to_string()
@@ -377,7 +390,7 @@ printf '%s\n' '{"type":"result","result":"done"}'
             .workspace
             .base_dir
             .join("agents")
-            .join(EXECUTION_INSTANCE_ID);
+            .join(DIGITAL_EMPLOYEE_ID);
         assert!(agent_home_dir.join("state").is_dir());
         assert!(agent_home_dir.join("sessions").is_dir());
         assert!(agent_home_dir.join("runs").is_dir());
@@ -418,7 +431,10 @@ printf '%s\n' '{"type":"result","result":"done"}'
             .handle_command(RuntimeCommand {
                 id: "cmd-provision-bad".to_string(),
                 command_type: RuntimeCommandType::ProvisionInstance,
-                payload: json!({"execution_instance_id": "not-a-uuid"}),
+                payload: json!({
+                    "team_id": TEAM_ID,
+                    "digital_employee_id": "not-a-uuid"
+                }),
             })
             .await
             .expect_err("invalid execution instance id should fail");

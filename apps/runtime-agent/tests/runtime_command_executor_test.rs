@@ -12,6 +12,10 @@ use tempfile::TempDir;
 
 const DIGITAL_EMPLOYEE_ID: &str = "11111111-1111-4111-8111-111111111111";
 const EXECUTION_INSTANCE_ID: &str = "22222222-2222-4222-8222-222222222222";
+const TENANT_ID: &str = "00000000-0000-4000-8000-000000000001";
+const TEAM_ID: &str = "33333333-3333-4333-8333-333333333333";
+const RUNTIME_NODE_ID: &str = "44444444-4444-4444-8444-444444444444";
+const AGENT_HOME_DIR: &str = "/tmp/superteam-runtime-agent/executor-test-agent";
 
 fn make_script(dir: &Path, name: &str, body: &str) -> PathBuf {
     let path = dir.join(name);
@@ -114,9 +118,16 @@ fn session_command_full(
         command_type,
         payload: json!({
             "command_id": command_id,
+            "tenant_id": TENANT_ID,
+            "team_id": TEAM_ID,
             "digital_employee_id": DIGITAL_EMPLOYEE_ID,
             "execution_instance_id": EXECUTION_INSTANCE_ID,
+            "runtime_node_id": RUNTIME_NODE_ID,
             "provider_type": "claude-code",
+            "agent_home_dir": AGENT_HOME_DIR,
+            "workspace_files": [],
+            "skills": [],
+            "mcp_servers": [],
             "session_policy": {
                 "mode": mode,
                 "provider_session_id": provider_session_id,
@@ -130,6 +141,22 @@ fn session_command_full(
             "metadata": {"source": "executor-test"}
         }),
     }
+}
+
+fn workspace_materialization_payload(command_id: &str) -> serde_json::Value {
+    json!({
+        "command_id": command_id,
+        "tenant_id": TENANT_ID,
+        "team_id": TEAM_ID,
+        "digital_employee_id": DIGITAL_EMPLOYEE_ID,
+        "execution_instance_id": EXECUTION_INSTANCE_ID,
+        "runtime_node_id": RUNTIME_NODE_ID,
+        "provider_type": "claude-code",
+        "agent_home_dir": AGENT_HOME_DIR,
+        "workspace_files": [],
+        "skills": [],
+        "mcp_servers": []
+    })
 }
 
 async fn wait_for_status(runs: &RuntimeRunStore, run_id: &str, expected: RunStatus) -> RunSnapshot {
@@ -195,6 +222,34 @@ fn assert_tokens_in_order(args: &str, first: &str, second: &str) {
     assert!(
         first_index < second_index,
         "expected {first} before {second} in args: {args}"
+    );
+}
+
+#[tokio::test]
+async fn sync_workspace_files_fails_loudly_until_materialization_is_implemented() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"result","result":"unused"}'
+"#,
+    );
+    let executor = configure_runtime(&temp, fake_claude);
+
+    let error = executor
+        .handle_command(RuntimeCommand {
+            id: "cmd-sync-001".to_string(),
+            command_type: RuntimeCommandType::SyncWorkspaceFiles,
+            payload: workspace_materialization_payload("cmd-sync-001"),
+        })
+        .await
+        .expect_err("sync_workspace_files should fail loudly until Task 6 implements it");
+
+    assert!(
+        error
+            .to_string()
+            .contains("sync_workspace_files is not implemented by runtime executor")
     );
 }
 

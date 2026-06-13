@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 
 use futures::StreamExt;
 
-use crate::commands::payload::{RuntimeSessionCommandPayload, SessionPolicyMode};
+use crate::commands::payload::{
+    RuntimeProvisionInstanceCommandPayload, RuntimeSessionCommandPayload, SessionPolicyMode,
+};
 use crate::commands::registry::{ActiveRunLookup, RuntimeCommandRegistry, RuntimeRunBinding};
 use crate::config::RuntimeConfig;
 use crate::controlplane::ControlPlaneClient;
@@ -77,11 +79,9 @@ impl RuntimeCommandExecutor {
             RuntimeCommandType::StopSession => self.handle_stop_command(command).await,
             RuntimeCommandType::EnsureInstance => self.handle_ensure_instance(command),
             RuntimeCommandType::ProvisionInstance => self.handle_provision_instance(command).await,
-            RuntimeCommandType::SyncWorkspaceFiles => Ok(RuntimeCommandOutcome {
-                command_id: command.id,
-                accepted: false,
-                run_id: None,
-            }),
+            RuntimeCommandType::SyncWorkspaceFiles => {
+                self.handle_sync_workspace_files(command).await
+            }
             RuntimeCommandType::Unsupported(_) => Ok(RuntimeCommandOutcome {
                 command_id: command.id,
                 accepted: false,
@@ -316,6 +316,27 @@ impl RuntimeCommandExecutor {
             accepted: true,
             run_id: None,
         })
+    }
+
+    async fn handle_sync_workspace_files(
+        &self,
+        command: RuntimeCommand,
+    ) -> anyhow::Result<RuntimeCommandOutcome> {
+        if let Err(error) = RuntimeProvisionInstanceCommandPayload::from_command(&command)
+            .map_err(|error| self.recorded_error(&command.id, error))
+        {
+            self.write_command_failure(&command.id, error.to_string())
+                .await?;
+            return Err(error);
+        }
+
+        let error = self.recorded_error(
+            &command.id,
+            anyhow::anyhow!("sync_workspace_files is not implemented by runtime executor"),
+        );
+        self.write_command_failure(&command.id, error.to_string())
+            .await?;
+        Err(error)
     }
 
     fn ensure_instance_from_command(
