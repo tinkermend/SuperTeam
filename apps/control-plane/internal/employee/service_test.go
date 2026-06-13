@@ -453,11 +453,89 @@ func TestCreateDigitalEmployeeProvisionPayloadUsesTeamEmployeeHomeAndWorkspaceFi
 	if files["path"] != "AGENTS.md" || files["storage_backend"] != "db" {
 		t.Fatalf("unexpected workspace file payload: %#v", files)
 	}
+	if _, ok := files["content_text"]; !ok {
+		t.Fatalf("expected db-backed AGENTS.md payload to include content_text: %#v", files)
+	}
+	if _, ok := files["object_key"]; ok {
+		t.Fatalf("expected db-backed AGENTS.md payload not to include object_key: %#v", files)
+	}
 	if _, ok := payload["skills"].([]any); !ok {
 		t.Fatalf("expected skills array in payload, got %#v", payload["skills"])
 	}
 	if _, ok := payload["mcp_servers"].([]any); !ok {
 		t.Fatalf("expected mcp_servers array in payload, got %#v", payload["mcp_servers"])
+	}
+}
+
+func TestCreateDigitalEmployeeProvisionPayloadCarriesEffectiveCapabilityArrays(t *testing.T) {
+	svc, _, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	req.CapabilitySelection = map[string]any{
+		"enabled_skills":                []string{"database-troubleshooting", "sql-review"},
+		"enabled_mcp_servers":           []string{"postgres-readonly"},
+		"enabled_external_capabilities": []string{"change-ticket"},
+	}
+
+	if _, err := svc.CreateDigitalEmployee(context.Background(), req); err != nil {
+		t.Fatalf("create digital employee: %v", err)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one runtime command, got %d", len(dispatcher.commands))
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(dispatcher.commands[0].Payload, &payload); err != nil {
+		t.Fatalf("decode runtime command payload: %v", err)
+	}
+
+	skills, ok := payload["skills"].([]any)
+	if !ok || len(skills) != 2 {
+		t.Fatalf("expected two skill payloads, got %#v", payload["skills"])
+	}
+	firstSkill, ok := skills[0].(map[string]any)
+	if !ok || firstSkill["skill_key"] != "database-troubleshooting" {
+		t.Fatalf("unexpected first skill payload: %#v", skills[0])
+	}
+	mcpServers, ok := payload["mcp_servers"].([]any)
+	if !ok || len(mcpServers) != 1 {
+		t.Fatalf("expected one MCP server payload, got %#v", payload["mcp_servers"])
+	}
+	server, ok := mcpServers[0].(map[string]any)
+	if !ok || server["server_key"] != "postgres-readonly" {
+		t.Fatalf("unexpected MCP server payload: %#v", mcpServers[0])
+	}
+	if _, ok := server["permission_scope"].(map[string]any); !ok {
+		t.Fatalf("expected MCP permission_scope object, got %#v", server["permission_scope"])
+	}
+}
+
+func TestRuntimeWorkspaceFilesPayloadOmitsInlineContentForObjectStore(t *testing.T) {
+	objectKey := "tenant/employee/AGENTS.md"
+	payloads := runtimeWorkspaceFilesPayload([]WorkspaceFileForSyncRecord{{
+		FileID:            uuid.MustParse("55555555-5555-4555-8555-555555555555"),
+		TenantID:          uuid.MustParse("11111111-1111-4111-8111-111111111111"),
+		TeamID:            uuid.MustParse("22222222-2222-4222-8222-222222222222"),
+		DigitalEmployeeID: uuid.MustParse("33333333-3333-4333-8333-333333333333"),
+		Path:              "AGENTS.md",
+		FileRole:          "entrypoint",
+		MimeType:          "text/markdown",
+		SyncPolicy:        "auto",
+		RevisionID:        uuid.MustParse("66666666-6666-4666-8666-666666666666"),
+		RevisionNumber:    1,
+		ContentText:       "# Not inline for object store\n",
+		ContentHash:       sha256Hex("# Not inline for object store\n"),
+		SizeBytes:         int32(len([]byte("# Not inline for object store\n"))),
+		StorageBackend:    "object_store",
+		ObjectKey:         &objectKey,
+	}})
+	if len(payloads) != 1 {
+		t.Fatalf("expected one workspace file payload, got %#v", payloads)
+	}
+	payload := payloads[0]
+	if _, ok := payload["content_text"]; ok {
+		t.Fatalf("expected object-store payload not to include content_text: %#v", payload)
+	}
+	if payload["object_key"] != objectKey {
+		t.Fatalf("expected object_key %q, got %#v", objectKey, payload["object_key"])
 	}
 }
 

@@ -971,18 +971,18 @@ func workspaceFileForSyncFromDefault(file WorkspaceFileRecord, revision Workspac
 }
 
 type runtimeWorkspaceFilePayload struct {
-	FileID         string         `json:"file_id"`
-	RevisionID     string         `json:"revision_id"`
-	Path           string         `json:"path"`
-	FileRole       string         `json:"file_role"`
-	MimeType       string         `json:"mime_type"`
-	SyncPolicy     string         `json:"sync_policy"`
-	ContentHash    string         `json:"content_hash"`
-	SizeBytes      int32          `json:"size_bytes"`
-	StorageBackend string         `json:"storage_backend"`
-	ContentText    string         `json:"content_text"`
-	ObjectKey      string         `json:"object_key"`
-	Metadata       map[string]any `json:"metadata"`
+	FileID         string
+	RevisionID     string
+	Path           string
+	FileRole       string
+	MimeType       string
+	SyncPolicy     string
+	ContentHash    string
+	SizeBytes      int32
+	StorageBackend string
+	ContentText    string
+	ObjectKey      *string
+	Metadata       map[string]any
 }
 
 type runtimeSkillPayload struct {
@@ -994,20 +994,16 @@ type runtimeSkillPayload struct {
 }
 
 type runtimeMCPServerPayload struct {
-	ServerID        string `json:"server_id"`
-	ServerKey       string `json:"server_key"`
-	Transport       string `json:"transport"`
-	ConfigRef       string `json:"config_ref"`
-	PermissionScope string `json:"permission_scope"`
+	ServerID        string
+	ServerKey       string
+	Transport       string
+	ConfigRef       string
+	PermissionScope map[string]any
 }
 
 func runtimeWorkspaceFilesPayload(files []WorkspaceFileForSyncRecord) []map[string]any {
 	out := make([]map[string]any, 0, len(files))
 	for _, file := range files {
-		objectKey := ""
-		if file.ObjectKey != nil {
-			objectKey = *file.ObjectKey
-		}
 		payload := runtimeWorkspaceFilePayload{
 			FileID:         file.FileID.String(),
 			RevisionID:     file.RevisionID.String(),
@@ -1019,13 +1015,13 @@ func runtimeWorkspaceFilesPayload(files []WorkspaceFileForSyncRecord) []map[stri
 			SizeBytes:      file.SizeBytes,
 			StorageBackend: file.StorageBackend,
 			ContentText:    file.ContentText,
-			ObjectKey:      objectKey,
+			ObjectKey:      cloneStringPtr(file.ObjectKey),
 			Metadata: map[string]any{
 				"file":     cloneMap(file.FileMetadata),
 				"revision": cloneMap(file.RevisionMetadata),
 			},
 		}
-		out = append(out, map[string]any{
+		item := map[string]any{
 			"file_id":         payload.FileID,
 			"revision_id":     payload.RevisionID,
 			"path":            payload.Path,
@@ -1035,10 +1031,15 @@ func runtimeWorkspaceFilesPayload(files []WorkspaceFileForSyncRecord) []map[stri
 			"content_hash":    payload.ContentHash,
 			"size_bytes":      payload.SizeBytes,
 			"storage_backend": payload.StorageBackend,
-			"content_text":    payload.ContentText,
-			"object_key":      payload.ObjectKey,
 			"metadata":        payload.Metadata,
-		})
+		}
+		if payload.StorageBackend == "db" {
+			item["content_text"] = payload.ContentText
+		}
+		if payload.ObjectKey != nil {
+			item["object_key"] = *payload.ObjectKey
+		}
+		out = append(out, item)
 	}
 	return out
 }
@@ -1067,7 +1068,8 @@ func runtimeMCPServersPayload(capabilitySelection map[string]any) []map[string]a
 	out := make([]map[string]any, 0, len(keys))
 	for _, key := range keys {
 		payload := runtimeMCPServerPayload{
-			ServerKey: key,
+			ServerKey:       key,
+			PermissionScope: map[string]any{},
 		}
 		out = append(out, map[string]any{
 			"server_id":        payload.ServerID,
