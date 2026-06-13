@@ -445,6 +445,47 @@ func TestDigitalEmployeeBudgetPolicyMigration(t *testing.T) {
 	}
 }
 
+func TestDualLayerSkillManagementMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/013_dual_layer_skill_management.sql")
+	if err != nil {
+		t.Fatalf("read dual layer skill management migration: %v", err)
+	}
+	sql := string(body)
+
+	required := []string{
+		"CREATE TABLE IF NOT EXISTS user_credentials",
+		"CREATE TABLE IF NOT EXISTS team_mcp_servers",
+		"CREATE TABLE IF NOT EXISTS digital_employee_mcp_bindings",
+		"CREATE TABLE IF NOT EXISTS digital_employee_instruction_files",
+		"encrypted_value TEXT NOT NULL",
+		"credential_id UUID",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_user_credentials_owner_name_active",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_team_mcp_servers_team_name_active",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_digital_employee_mcp_bindings_employee_name_active",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_digital_employee_instruction_files_path_active",
+		"COMMENT ON TABLE user_credentials IS '个人凭据池，保存用户可复用的外部能力授权令牌密文'",
+		"COMMENT ON TABLE team_mcp_servers IS '团队公共 MCP 服务器配置，团队下数字员工强制继承'",
+		"COMMENT ON TABLE digital_employee_mcp_bindings IS '数字员工个人 MCP 服务器配置'",
+		"COMMENT ON TABLE digital_employee_instruction_files IS '数字员工个人 Instructions 文件内容'",
+	}
+	for _, expected := range required {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected migration to contain %q", expected)
+		}
+	}
+
+	forbidden := []string{
+		"credential_value",
+		"REFERENCES user_credentials",
+		"ON DELETE CASCADE",
+	}
+	for _, value := range forbidden {
+		if strings.Contains(sql, value) {
+			t.Fatalf("migration must not contain %q", value)
+		}
+	}
+}
+
 func TestSkillManagementMigrationAddsSkillPackageTables(t *testing.T) {
 	body, err := os.ReadFile("migrations/009_skill_management.sql")
 	if err != nil {
