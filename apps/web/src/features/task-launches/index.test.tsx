@@ -487,7 +487,7 @@ describe("TaskLaunchView", () => {
     await typeInLabeledField("需求描述", "审查这个开源项目的 PR，并按数量分配数字员工");
 
     await vi.waitFor(() => expect(getByText("王审核 · reviewer")).toBeTruthy());
-    await clickButton("发起任务");
+    await clickButton("提交需求");
 
     expect(postBody(fetcher, "/api/v1/projects/project-1/demands")).toEqual({
       title: "审查这个开源项目的 PR，并按数量分配数字员工",
@@ -518,7 +518,7 @@ describe("TaskLaunchView", () => {
     await typeInLabeledField("需求描述", "处理第二个项目的巡检问题");
 
     await vi.waitFor(() => expect(getByText("赵审核 · reviewer")).toBeTruthy());
-    await clickButton("发起任务");
+    await clickButton("提交需求");
 
     expect(postBody(fetcher, "/api/v1/projects/project-2/demands")).toMatchObject({
       content: "处理第二个项目的巡检问题",
@@ -544,9 +544,37 @@ describe("TaskLaunchView", () => {
     await vi.waitFor(() => expect(getByText("王审核 · reviewer")).toBeTruthy());
     await vi.waitFor(() => expect(getByText("李审核 · reviewer")).toBeTruthy());
     expect(textOrder("王审核 · reviewer")).toBeLessThan(textOrder("负责人 · owner"));
-    await clickButton("发起任务");
+    await clickButton("提交需求");
 
     await vi.waitFor(() => expect(getByText("请选择审核人")).toBeTruthy());
+  });
+
+  it("renders the pre-submit launch composer without orchestration state controls", async () => {
+    const fetcher = createTaskLaunchFetcher();
+    await renderWithQueryClient(
+      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+    );
+
+    await vi.waitFor(() => expect(getByText("提交后会发生什么")).toBeTruthy());
+
+    expect(getByText("01")).toBeTruthy();
+    expect(getByText("写入项目需求")).toBeTruthy();
+    expect(getByText("02")).toBeTruthy();
+    expect(getByText("启动协调线程")).toBeTruthy();
+    expect(getByText("03")).toBeTruthy();
+    expect(getByText("生成编排决策")).toBeTruthy();
+    expect(getByText("04")).toBeTruthy();
+    expect(getByText("进入运行视图")).toBeTruthy();
+    expect(getByText("提交前确认")).toBeTruthy();
+    expect(getByText("保存草稿")).toBeTruthy();
+    expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeTruthy();
+
+    expect(queryByText("上下文边界")).toBeNull();
+    expect(queryByText("备注")).toBeNull();
+    expect(queryByText("待提交")).toBeNull();
+    expect(queryByText("待生成")).toBeNull();
+    expect(queryByText("已完成")).toBeNull();
+    expect(queryByText("运行中")).toBeNull();
   });
 });
 

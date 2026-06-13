@@ -266,7 +266,7 @@
   .superteam-primary-action {
     border: 0;
     border-radius: 999px;
-    color: var(--primary-foreground);
+    color: #fff;
     background:
       linear-gradient(160deg, rgba(255, 255, 255, 0.16), transparent 38%),
       linear-gradient(
@@ -478,7 +478,7 @@
 
   [data-slot='sidebar-menu-button'][data-sidebar='menu-button'][data-active='true'] > span,
   [data-slot='sidebar-menu-button'][data-sidebar='menu-button'][data-active='true'] svg {
-    color: var(--primary-foreground) !important;
+    color: #fff !important;
     text-shadow: none;
   }
 
