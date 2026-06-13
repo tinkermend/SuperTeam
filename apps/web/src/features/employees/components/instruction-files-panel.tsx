@@ -311,7 +311,7 @@ export function InstructionFilesPanel({ apiOptions, employeeId }: InstructionFil
             <Editor
               height="420px"
               language={draftPath.endsWith(".md") ? "markdown" : "plaintext"}
-              onChange={(value) => {
+              onChange={(value: string | undefined) => {
                 const nextContent = value ?? "";
                 setDraftContent(nextContent);
                 setIsDirty(true);
