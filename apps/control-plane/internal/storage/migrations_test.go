@@ -203,6 +203,51 @@ func TestInboxItemsMigrationAddsActionableQueueReadModel(t *testing.T) {
 	}
 }
 
+func TestDigitalEmployeeWorkspaceFilesMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/017_digital_employee_workspace_files.sql")
+	if err != nil {
+		t.Fatalf("read digital employee workspace files migration: %v", err)
+	}
+	sql := string(body)
+
+	required := []string{
+		"CREATE TABLE IF NOT EXISTS digital_employee_workspace_files",
+		"CREATE TABLE IF NOT EXISTS digital_employee_workspace_file_revisions",
+		"CREATE TABLE IF NOT EXISTS digital_employee_workspace_file_syncs",
+		"current_revision_id UUID",
+		"storage_backend VARCHAR(50) NOT NULL",
+		"object_key TEXT",
+		"content_text TEXT",
+		"content_hash VARCHAR(64) NOT NULL",
+		"created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_de_workspace_files_active_path",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_de_workspace_file_revisions_number",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_de_workspace_file_syncs_target",
+		"COMMENT ON TABLE digital_employee_workspace_files IS '数字员工工作目录受控文件身份表'",
+		"COMMENT ON TABLE digital_employee_workspace_file_revisions IS '数字员工工作目录受控文件内容版本表'",
+		"COMMENT ON TABLE digital_employee_workspace_file_syncs IS '数字员工工作目录文件同步状态投影表'",
+		"COMMENT ON COLUMN digital_employee_workspace_file_syncs.id IS '同步状态主键 UUID'",
+		"COMMENT ON COLUMN digital_employee_workspace_file_syncs.created_at IS '同步状态创建时间'",
+	}
+	for _, expected := range required {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected migration to contain %q", expected)
+		}
+	}
+
+	forbidden := []string{
+		"CREATE TYPE",
+		"provider_type_enum",
+		"REFERENCES digital_employees",
+		"ON DELETE CASCADE",
+	}
+	for _, value := range forbidden {
+		if strings.Contains(sql, value) {
+			t.Fatalf("migration must not contain %q", value)
+		}
+	}
+}
+
 func TestInboxQueriesUseFilteredCountsApprovalSourceAndStableOrdering(t *testing.T) {
 	body, err := os.ReadFile("queries/inbox.sql")
 	if err != nil {

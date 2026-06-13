@@ -13,6 +13,7 @@ import (
 
 type Querier interface {
 	AbortProvisionedDigitalEmployee(ctx context.Context, arg AbortProvisionedDigitalEmployeeParams) error
+	ActivateDigitalEmployeeWorkspaceFileRevision(ctx context.Context, arg ActivateDigitalEmployeeWorkspaceFileRevisionParams) (DigitalEmployeeWorkspaceFile, error)
 	ActivateTenantTeamConfigRevision(ctx context.Context, arg ActivateTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (TenantMember, error)
 	AddTeamOwnerMembership(ctx context.Context, arg AddTeamOwnerMembershipParams) (TenantMember, error)
@@ -42,6 +43,8 @@ type Querier interface {
 	CreateDigitalEmployeeConfigRevision(ctx context.Context, arg CreateDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
 	CreateDigitalEmployeeEffectiveConfig(ctx context.Context, arg CreateDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error)
 	CreateDigitalEmployeeTaskRun(ctx context.Context, arg CreateDigitalEmployeeTaskRunParams) (CreateDigitalEmployeeTaskRunRow, error)
+	CreateDigitalEmployeeWorkspaceFile(ctx context.Context, arg CreateDigitalEmployeeWorkspaceFileParams) (DigitalEmployeeWorkspaceFile, error)
+	CreateDigitalEmployeeWorkspaceFileRevision(ctx context.Context, arg CreateDigitalEmployeeWorkspaceFileRevisionParams) (DigitalEmployeeWorkspaceFileRevision, error)
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
 	CreateProjectAcceptanceRecord(ctx context.Context, arg CreateProjectAcceptanceRecordParams) (ProjectAcceptanceRecord, error)
 	CreateProjectArchiveSnapshot(ctx context.Context, arg CreateProjectArchiveSnapshotParams) (ProjectArchiveSnapshot, error)
@@ -167,6 +170,7 @@ type Querier interface {
 	ListAuditEventsByResource(ctx context.Context, arg ListAuditEventsByResourceParams) ([]AuditEvent, error)
 	ListAuthzDecisions(ctx context.Context, arg ListAuthzDecisionsParams) ([]WebOperationLog, error)
 	ListAuthzMembers(ctx context.Context, arg ListAuthzMembersParams) ([]ListAuthzMembersRow, error)
+	ListCurrentDigitalEmployeeWorkspaceFilesForSync(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesForSyncParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesForSyncRow, error)
 	ListDemandLaunchCoordinationJobs(ctx context.Context, arg ListDemandLaunchCoordinationJobsParams) ([]ProjectCoordinationJob, error)
 	ListDemandLaunchDecisionRequests(ctx context.Context, arg ListDemandLaunchDecisionRequestsParams) ([]ProjectDecisionRequest, error)
 	ListDemandLaunchProjectEvents(ctx context.Context, arg ListDemandLaunchProjectEventsParams) ([]ProjectEvent, error)
@@ -262,6 +266,7 @@ type Querier interface {
 	UpdateUserAvatar(ctx context.Context, arg UpdateUserAvatarParams) (AuthUser, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AuthUser, error)
 	UpsertDigitalEmployeeExecutionInstance(ctx context.Context, arg UpsertDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
+	UpsertDigitalEmployeeWorkspaceFileSync(ctx context.Context, arg UpsertDigitalEmployeeWorkspaceFileSyncParams) error
 	UpsertInboxItem(ctx context.Context, arg UpsertInboxItemParams) (InboxItem, error)
 	UpsertInboxItemByApprovalSource(ctx context.Context, arg UpsertInboxItemByApprovalSourceParams) (InboxItem, error)
 	UpsertProviderSessionByExternalID(ctx context.Context, arg UpsertProviderSessionByExternalIDParams) (ProviderSession, error)

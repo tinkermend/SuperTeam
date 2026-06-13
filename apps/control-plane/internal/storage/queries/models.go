@@ -353,6 +353,104 @@ type DigitalEmployeeExecutionInstance struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 数字员工工作目录受控文件身份表
+type DigitalEmployeeWorkspaceFile struct {
+	// 受控文件主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 文件所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 文件所属数字员工团队 ID，目录按团队归属组织
+	TeamID uuid.UUID `json:"team_id"`
+	// 文件所属数字员工 ID
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 数字员工根目录下的安全相对路径
+	Path string `json:"path"`
+	// 文件角色，例如 entrypoint、supporting_doc、provider_config 或 generated，由应用层注册表校验
+	FileRole string `json:"file_role"`
+	// 文件 MIME 类型
+	MimeType string `json:"mime_type"`
+	// 同步策略，例如 auto、manual 或 disabled，由应用层注册表校验
+	SyncPolicy string `json:"sync_policy"`
+	// 当前激活的文件版本 ID
+	CurrentRevisionID uuid.NullUUID `json:"current_revision_id"`
+	// 文件状态，例如 active、archived 或 deleted
+	Status string `json:"status"`
+	// 文件扩展元数据 JSON
+	Metadata []byte `json:"metadata"`
+	// 创建文件的用户 ID，系统创建时可为空
+	CreatedBy uuid.NullUUID `json:"created_by"`
+	// 文件创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 文件更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 文件归档时间
+	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
+	// 文件软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+}
+
+// 数字员工工作目录受控文件内容版本表
+type DigitalEmployeeWorkspaceFileRevision struct {
+	// 文件版本主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 文件版本所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属受控文件 ID
+	FileID uuid.UUID `json:"file_id"`
+	// 文件内递增版本号
+	RevisionNumber int32 `json:"revision_number"`
+	// DB 存储模式下的文本正文
+	ContentText pgtype.Text `json:"content_text"`
+	// 文件正文 SHA-256 十六进制校验值
+	ContentHash string `json:"content_hash"`
+	// 文件正文 UTF-8 字节数
+	SizeBytes int32 `json:"size_bytes"`
+	// 正文存储后端，首版使用 db，预留 object_store
+	StorageBackend string `json:"storage_backend"`
+	// 对象存储模式下的对象键
+	ObjectKey pgtype.Text `json:"object_key"`
+	// 创建版本的用户 ID，系统创建时可为空
+	CreatedBy uuid.NullUUID `json:"created_by"`
+	// 文件版本创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 版本变更说明
+	ChangeNote pgtype.Text `json:"change_note"`
+	// 文件版本扩展元数据 JSON
+	Metadata []byte `json:"metadata"`
+}
+
+// 数字员工工作目录文件同步状态投影表
+type DigitalEmployeeWorkspaceFileSync struct {
+	// 同步状态主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 同步状态所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 同步状态所属数字员工 ID
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 同步目标执行实例 ID
+	ExecutionInstanceID uuid.UUID `json:"execution_instance_id"`
+	// 同步的受控文件 ID
+	FileID uuid.UUID `json:"file_id"`
+	// 同步目标文件版本 ID
+	RevisionID uuid.UUID `json:"revision_id"`
+	// 同步目标 Runtime 节点 ID
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// 同步状态，例如 pending、synced 或 failed
+	Status string `json:"status"`
+	// Runtime 回写的已同步文件校验值
+	SyncedHash pgtype.Text `json:"synced_hash"`
+	// 同步失败时的错误摘要
+	ErrorMessage pgtype.Text `json:"error_message"`
+	// 最后一次同步命令 ID
+	LastCommandID pgtype.Text `json:"last_command_id"`
+	// 最后同步成功时间
+	LastSyncedAt pgtype.Timestamptz `json:"last_synced_at"`
+	// 同步状态创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 同步状态更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 收件箱可操作事项 read model，聚合需要人类用户处理的审批和项目决策待办
 type InboxItem struct {
 	// 收件箱事项ID
