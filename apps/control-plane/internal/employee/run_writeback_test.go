@@ -691,7 +691,8 @@ func TestFailWorkspaceSyncCommandUpdatesFileSyncProjectionWithoutDeletingEmploye
 	repo := newFakeRunWritebackRepository()
 	receipt := validWorkspaceSyncReceipt("cmd-sync-failed")
 	repo.putReceipt(receipt)
-	service, err := NewDigitalEmployeeRunWritebackService(repo, nil)
+	audit := &fakeWritebackAuditLogger{}
+	service, err := NewDigitalEmployeeRunWritebackService(repo, audit)
 	if err != nil {
 		t.Fatalf("new writeback service: %v", err)
 	}
@@ -719,6 +720,38 @@ func TestFailWorkspaceSyncCommandUpdatesFileSyncProjectionWithoutDeletingEmploye
 	}
 	if len(repo.deletedExecutionInstances) != 0 || len(repo.deletedEmployees) != 0 {
 		t.Fatalf("workspace sync failure must not delete provisioned employee facts")
+	}
+	if len(audit.events) != 1 || audit.events[0].eventType != "digital_employee_workspace_files_sync_failed" || audit.events[0].action != "employee.workspace.sync_failed" {
+		t.Fatalf("expected failed workspace sync audit event, got %#v", audit.events)
+	}
+}
+
+func TestCompleteWorkspaceSyncRejectsMismatchedFileRevisionPair(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	receipt := validWorkspaceSyncReceipt("cmd-sync-mismatch")
+	repo.putReceipt(receipt)
+	service, err := NewDigitalEmployeeRunWritebackService(repo, nil)
+	if err != nil {
+		t.Fatalf("new writeback service: %v", err)
+	}
+
+	err = service.Complete(context.Background(), validProvisioningIdentity(receipt), receipt.CommandID, RuntimeCommandTerminalWriteback{
+		Status: DigitalEmployeeRunStatusCompleted,
+		Result: map[string]any{
+			"synced_files": []any{map[string]any{
+				"file_id":      "77777777-7777-4777-8777-777777777777",
+				"revision_id":  "66666666-6666-4666-8666-666666666666",
+				"path":         "AGENTS.md",
+				"content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			}},
+		},
+	})
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for mismatched file/revision pair, got %v", err)
+	}
+	if len(repo.workspaceFileSyncUpserts) != 0 || len(repo.receiptUpdates) != 0 {
+		t.Fatalf("expected mismatched sync result to reject before writes, upserts=%#v receipts=%#v", repo.workspaceFileSyncUpserts, repo.receiptUpdates)
 	}
 }
 

@@ -438,7 +438,7 @@ func (s *DigitalEmployeeRunWritebackService) recordWorkspaceSyncTerminal(ctx con
 	}
 	switch spec.status {
 	case DigitalEmployeeRunStatusCompleted:
-		hashes, err := syncedHashesByRevision(terminal.Result)
+		hashes, err := syncedHashesByTarget(terminal.Result)
 		if err != nil {
 			return err
 		}
@@ -460,10 +460,11 @@ func (s *DigitalEmployeeRunWritebackService) recordWorkspaceSyncTerminal(ctx con
 	}); err != nil {
 		return fmt.Errorf("update workspace sync command receipt terminal status: %w", err)
 	}
-	return s.logRuntimeAudit(ctx, "digital_employee_workspace_files_synced", receipt.NodeID, receipt.ResourceType, receipt.ResourceID.String(), "employee.workspace.sync")
+	eventType, action := workspaceSyncAuditEvent(spec.status)
+	return s.logRuntimeAudit(ctx, eventType, receipt.NodeID, receipt.ResourceType, receipt.ResourceID.String(), action)
 }
 
-func (s *DigitalEmployeeRunWritebackService) upsertSyncedWorkspaceFiles(ctx context.Context, receipt *RuntimeCommandReceipt, commandID string, targets []workspaceFileSyncTarget, hashes map[uuid.UUID]string, syncedAt time.Time) error {
+func (s *DigitalEmployeeRunWritebackService) upsertSyncedWorkspaceFiles(ctx context.Context, receipt *RuntimeCommandReceipt, commandID string, targets []workspaceFileSyncTarget, hashes map[workspaceFileSyncTarget]string, syncedAt time.Time) error {
 	digitalEmployeeID, err := uuidFromPayload(receipt.Payload, "digital_employee_id")
 	if err != nil {
 		return err
@@ -474,9 +475,9 @@ func (s *DigitalEmployeeRunWritebackService) upsertSyncedWorkspaceFiles(ctx cont
 	}
 	lastCommandID := commandID
 	for _, target := range targets {
-		hash, ok := hashes[target.revisionID]
+		hash, ok := hashes[target]
 		if !ok {
-			return fmt.Errorf("%w: synced_files missing content_hash for revision_id %s", ErrInvalidInput, target.revisionID)
+			return fmt.Errorf("%w: synced_files missing content_hash for file_id %s revision_id %s", ErrInvalidInput, target.fileID, target.revisionID)
 		}
 		syncedHash := hash
 		if err := s.repository.UpsertWorkspaceFileSync(ctx, UpsertWorkspaceFileSyncParams{
@@ -495,6 +496,13 @@ func (s *DigitalEmployeeRunWritebackService) upsertSyncedWorkspaceFiles(ctx cont
 		}
 	}
 	return nil
+}
+
+func workspaceSyncAuditEvent(status DigitalEmployeeRunStatus) (string, string) {
+	if status == DigitalEmployeeRunStatusFailed {
+		return "digital_employee_workspace_files_sync_failed", "employee.workspace.sync_failed"
+	}
+	return "digital_employee_workspace_files_synced", "employee.workspace.sync"
 }
 
 func (s *DigitalEmployeeRunWritebackService) upsertFailedWorkspaceFiles(ctx context.Context, receipt *RuntimeCommandReceipt, commandID string, targets []workspaceFileSyncTarget, errorMessage *string) error {
@@ -781,8 +789,8 @@ func uuidFromPayload(payload map[string]any, key string) (uuid.UUID, error) {
 	}
 }
 
-func syncedHashesByRevision(result map[string]any) (map[uuid.UUID]string, error) {
-	hashes := map[uuid.UUID]string{}
+func syncedHashesByTarget(result map[string]any) (map[workspaceFileSyncTarget]string, error) {
+	hashes := map[workspaceFileSyncTarget]string{}
 	if result == nil {
 		return hashes, nil
 	}
@@ -809,6 +817,10 @@ func syncedHashesByRevision(result map[string]any) (map[uuid.UUID]string, error)
 		if !ok {
 			return nil, fmt.Errorf("%w: synced_files entries must be objects", ErrInvalidInput)
 		}
+		fileID, err := uuidFromPayload(payload, "file_id")
+		if err != nil {
+			return nil, err
+		}
 		revisionID, err := uuidFromPayload(payload, "revision_id")
 		if err != nil {
 			return nil, err
@@ -818,7 +830,7 @@ func syncedHashesByRevision(result map[string]any) (map[uuid.UUID]string, error)
 		if contentHash == "" {
 			continue
 		}
-		hashes[revisionID] = contentHash
+		hashes[workspaceFileSyncTarget{fileID: fileID, revisionID: revisionID}] = contentHash
 	}
 	return hashes, nil
 }
