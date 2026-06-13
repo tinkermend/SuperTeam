@@ -196,6 +196,7 @@ impl RuntimeConfig {
             run_log_dir: self.runs.log_dir.clone(),
             claude_bin: self.providers.claude_code.binary_path.clone(),
             opencode_bin: self.providers.opencode.binary_path.clone(),
+            codex_bin: self.providers.codex.binary_path.clone(),
         }
     }
 

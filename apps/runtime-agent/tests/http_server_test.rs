@@ -33,6 +33,7 @@ printf '%s\n' '{"type":"result","result":"http done"}'
         run_log_dir: temp.path().join("run-logs"),
         claude_bin: fake_claude,
         opencode_bin: temp.path().join("missing-opencode"),
+        codex_bin: temp.path().join("missing-codex"),
     })
     .await
     .expect("bind server");
@@ -106,6 +107,7 @@ sleep 5
         run_log_dir: temp.path().join("run-logs"),
         claude_bin: fake_claude,
         opencode_bin: temp.path().join("missing-opencode"),
+        codex_bin: temp.path().join("missing-codex"),
     })
     .await
     .expect("bind server");
@@ -152,4 +154,64 @@ sleep 5
     }
 
     assert_eq!(final_run["status"], "cancelled");
+}
+
+#[tokio::test]
+async fn http_server_creates_codex_run_and_replays_events() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_codex = make_script(
+        &temp,
+        "fake-codex",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"session","session_id":"http-codex-session"}'
+printf '%s\n' '{"type":"message.delta","delta":"hello over codex http"}'
+printf '%s\n' '{"type":"turn.completed","summary":"codex http done"}'
+"#,
+    );
+
+    let server = RuntimeHttpServer::bind_ephemeral(RuntimeHttpConfig {
+        node_id: "node-http".to_string(),
+        run_log_dir: temp.path().join("run-logs"),
+        claude_bin: temp.path().join("missing-claude"),
+        opencode_bin: temp.path().join("missing-opencode"),
+        codex_bin: fake_codex,
+    })
+    .await
+    .expect("bind server");
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(format!("http://{}/runs", server.addr()))
+        .json(&json!({
+            "provider_kind": "codex",
+            "workspace_path": temp.path(),
+            "prompt": "hello",
+            "continue_session": false
+        }))
+        .send()
+        .await
+        .expect("post run");
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let run: serde_json::Value = response.json().await.expect("run json");
+    let run_id = run["id"].as_str().expect("run id");
+
+    let mut final_run = serde_json::Value::Null;
+    for _ in 0..150 {
+        let snapshot: serde_json::Value = client
+            .get(format!("http://{}/runs/{run_id}", server.addr()))
+            .send()
+            .await
+            .expect("get run")
+            .json()
+            .await
+            .expect("snapshot json");
+        if snapshot["status"] == "completed" {
+            final_run = snapshot;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    assert_eq!(final_run["status"], "completed");
+    assert_eq!(final_run["provider_session_id"], "http-codex-session");
 }

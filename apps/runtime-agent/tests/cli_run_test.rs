@@ -101,3 +101,39 @@ exit 12
             .contains("claude exited with status 12: provider unavailable")
     );
 }
+
+#[test]
+fn cli_run_supports_codex_provider() {
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let script = make_script(
+        &temp,
+        "fake-codex",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"session","session_id":"cli-codex-session"}'
+printf '%s\n' '{"type":"message.delta","delta":"hello from cli codex"}'
+printf '%s\n' '{"type":"turn.completed","summary":"done"}'
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_runtime-agent"))
+        .arg("run")
+        .arg("--provider")
+        .arg("codex")
+        .arg("--provider-bin")
+        .arg(script)
+        .arg("--workspace")
+        .arg(temp.path())
+        .arg("--prompt")
+        .arg("hello")
+        .output()
+        .expect("run runtime-agent");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(r#""type":"session_started""#));
+    assert!(stdout.contains("hello from cli codex"));
+}
