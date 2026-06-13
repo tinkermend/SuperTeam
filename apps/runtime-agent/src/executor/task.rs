@@ -95,3 +95,43 @@ fn extract_model(params: &serde_json::Value) -> Option<String> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    fn runtime_config_with_codex(enabled: bool) -> RuntimeConfig {
+        let mut config = RuntimeConfig::default();
+        config.providers.claude_code.enabled = false;
+        config.providers.opencode.enabled = false;
+        config.providers.codex.enabled = enabled;
+        config.providers.codex.binary_path = PathBuf::from("codex-test");
+        config
+    }
+
+    #[test]
+    fn select_provider_uses_catalog_for_enabled_codex() {
+        let config = runtime_config_with_codex(true);
+
+        let provider = select_provider("codex", &config);
+
+        assert!(provider.is_ok());
+    }
+
+    #[test]
+    fn select_provider_preserves_catalog_error_for_disabled_codex() {
+        let config = runtime_config_with_codex(false);
+
+        let error = match select_provider("codex", &config) {
+            Ok(_) => panic!("disabled codex should fail"),
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "Unsupported provider type: codex: Codex provider is disabled"
+        );
+    }
+}
