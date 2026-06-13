@@ -434,7 +434,7 @@ describe("EmployeeConfigView", () => {
       .toEqual({ path: "AGENTS.md", content: "# 新原则" });
 
     await userEvent.click(screen.getByRole("tab", { name: "能力设置" }));
-    await expect.element(screen.getByText("diagnose")).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "移除 diagnose" })).toBeVisible();
     await expect.element(screen.getByText("团队继承").first()).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "移除 diagnose" })).toBeDisabled();
 

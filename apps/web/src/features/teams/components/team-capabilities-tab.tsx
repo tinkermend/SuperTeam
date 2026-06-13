@@ -320,7 +320,9 @@ function PanelTitle({
         <SemanticIconTile tone={tone} size="sm">
           {icon}
         </SemanticIconTile>
-        <CardTitle className="truncate text-base">{title}</CardTitle>
+        <CardTitle aria-level={2} className="truncate text-base" role="heading">
+          {title}
+        </CardTitle>
       </div>
       <StatusBadge tone={tone}>{meta}</StatusBadge>
     </div>
