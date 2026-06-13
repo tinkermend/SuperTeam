@@ -108,6 +108,14 @@ fn codex_error_event_returns_error() {
 }
 
 #[test]
+fn codex_turn_failed_event_returns_nested_error_message() {
+    let error = parse_codex_event(r#"{"type":"turn.failed","error":{"message":"invalid model"}}"#)
+        .expect_err("codex failed turn should fail");
+
+    assert!(error.to_string().contains("invalid model"));
+}
+
+#[test]
 fn parses_codex_realistic_thread_item_and_turn_events() {
     let lines = [
         r#"{"type":"thread.started","thread":{"id":"thread-1"}}"#,

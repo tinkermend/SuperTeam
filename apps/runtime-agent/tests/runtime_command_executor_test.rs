@@ -322,21 +322,6 @@ async fn wait_for_status(runs: &RuntimeRunStore, run_id: &str, expected: RunStat
     );
 }
 
-async fn wait_for_run_status(
-    runs: &RuntimeRunStore,
-    run_id: &str,
-    status: RunStatus,
-) -> Option<RunSnapshot> {
-    for _ in 0..150 {
-        let snapshot = runs.get_run(run_id).await?;
-        if snapshot.status == status {
-            return Some(snapshot);
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    None
-}
-
 async fn wait_for_latest_provider_session(
     executor: &RuntimeCommandExecutor,
     expected_session_id: &str,
@@ -575,9 +560,7 @@ printf '%s\n' '{"type":"turn.completed","summary":"done"}'
         .await
         .expect("codex command accepted");
     let run_id = outcome.run_id.expect("run id");
-    let final_snapshot = wait_for_run_status(&executor.runs(), &run_id, RunStatus::Completed)
-        .await
-        .expect("completed codex run");
+    let final_snapshot = wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
 
     assert_eq!(
         final_snapshot.provider_session_id.as_deref(),

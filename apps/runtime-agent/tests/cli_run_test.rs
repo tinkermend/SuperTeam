@@ -1,6 +1,7 @@
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use serde_json::Value;
 use tempfile::TempDir;
@@ -127,6 +128,66 @@ printf '%s\n' '{"type":"turn.completed","summary":"done"}'
         .arg("hello")
         .output()
         .expect("run runtime-agent");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    let events: Vec<Value> = stdout
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("json line"))
+        .collect();
+
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[0]["type"], "session_started");
+    assert_eq!(events[0]["session_id"], "cli-codex-session");
+    assert_eq!(events[1]["type"], "text_delta");
+    assert_eq!(events[1]["text"], "hello from cli codex");
+    assert_eq!(events[2]["type"], "turn_completed");
+    assert_eq!(events[2]["summary"], "done");
+}
+
+#[test]
+fn cli_run_codex_provider_does_not_inherit_parent_stdin() {
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let script = make_script(
+        &temp,
+        "fake-codex-stdin",
+        r#"#!/usr/bin/env bash
+if IFS= read -r -t 1 inherited; then
+  printf 'inherited stdin: %s\n' "$inherited" >&2
+  exit 42
+fi
+printf '%s\n' '{"type":"session","session_id":"cli-codex-session"}'
+printf '%s\n' '{"type":"message.delta","delta":"hello from cli codex"}'
+printf '%s\n' '{"type":"turn.completed","summary":"done"}'
+"#,
+    );
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_runtime-agent"))
+        .arg("run")
+        .arg("--provider")
+        .arg("codex")
+        .arg("--provider-bin")
+        .arg(script)
+        .arg("--workspace")
+        .arg(temp.path())
+        .arg("--prompt")
+        .arg("hello")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn runtime-agent");
+
+    {
+        let mut stdin = child.stdin.take().expect("runtime-agent stdin");
+        writeln!(stdin, "contaminated parent stdin").expect("write runtime-agent stdin");
+    }
+
+    let output = child.wait_with_output().expect("run runtime-agent");
 
     assert!(
         output.status.success(),

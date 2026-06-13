@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::process::Stdio;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -52,8 +53,9 @@ impl CodexProvider {
 impl ProviderAdapter for CodexProvider {
     async fn start(&self, request: ProviderRequest) -> anyhow::Result<ProviderRun> {
         let mut command = self.build_command(&request);
-        command.stdout(std::process::Stdio::piped());
-        command.stderr(std::process::Stdio::piped());
+        command.stdin(Stdio::null());
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
         let mut child = command.spawn().context("failed to spawn codex")?;
         let stdout = child
             .stdout
@@ -80,10 +82,13 @@ pub fn parse_codex_event(value: &str) -> anyhow::Result<Option<ProviderEvent>> {
         .and_then(|value| value.as_str())
         .unwrap_or_default();
 
-    if matches!(event_type, "error" | "turn.error" | "failed" | "failure") {
+    if matches!(
+        event_type,
+        "error" | "turn.error" | "turn.failed" | "failed" | "failure"
+    ) {
         anyhow::bail!(
             "{}",
-            first_string(&event, &["message", "error", "reason"]).unwrap_or("codex failed")
+            extract_error_message(&event).unwrap_or("codex failed")
         );
     }
 
@@ -149,6 +154,16 @@ fn extract_summary(event: &Value) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
+}
+
+fn extract_error_message(event: &Value) -> Option<&str> {
+    first_string(event, &["message", "error", "reason"])
+        .or_else(|| nested_string(event, &["error", "message"]))
+        .or_else(|| nested_string(event, &["error", "reason"]))
+        .or_else(|| nested_string(event, &["error", "details"]))
+        .or_else(|| nested_string(event, &["error", "detail"]))
+        .or_else(|| nested_string(event, &["failure", "message"]))
+        .or_else(|| nested_string(event, &["failure", "reason"]))
 }
 
 fn first_string<'a>(value: &'a Value, keys: &[&str]) -> Option<&'a str> {
