@@ -2216,26 +2216,26 @@ paths:
                 $ref: "#/components/schemas/DigitalEmployee"
         "404":
           $ref: "#/components/responses/Error"
-  /api/v1/digital-employees/{employeeId}/instructions:
+  /api/v1/digital-employees/{employeeId}/workspace-files:
     get:
-      operationId: listEmployeeInstructionFiles
-      summary: List employee instruction files
+      operationId: listEmployeeWorkspaceFiles
+      summary: List employee workspace files
       parameters:
         - $ref: "#/components/parameters/EmployeeId"
       responses:
         "200":
-          description: Employee instruction file list
+          description: Employee workspace file list
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/InstructionFile"
+                  $ref: "#/components/schemas/WorkspaceFile"
         "403":
           $ref: "#/components/responses/Error"
     put:
-      operationId: upsertEmployeeInstructionFile
-      summary: Upsert an employee instruction file
+      operationId: upsertEmployeeWorkspaceFile
+      summary: Upsert an employee workspace file
       parameters:
         - $ref: "#/components/parameters/EmployeeId"
       requestBody:
@@ -2243,14 +2243,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpsertInstructionFileRequest"
+              $ref: "#/components/schemas/UpsertWorkspaceFileRequest"
       responses:
         "200":
-          description: Employee instruction file saved
+          description: Employee workspace file saved
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/InstructionFile"
+                $ref: "#/components/schemas/WorkspaceFile"
         "400":
           $ref: "#/components/responses/Error"
         "403":
@@ -6113,31 +6113,65 @@ components:
         credential_id:
           type: string
           format: uuid
-    InstructionFile:
+    WorkspaceFile:
       type: object
       required:
         - id
+        - team_id
         - path
+        - file_role
+        - mime_type
+        - sync_policy
+        - status
+        - current_revision_id
+        - revision_number
         - content
+        - content_hash
         - size_bytes
-        - checksum_sha256
+        - storage_backend
       properties:
         id:
           type: string
           format: uuid
+        team_id:
+          type: string
+          format: uuid
         path:
           type: string
+        file_role:
+          type: string
+        mime_type:
+          type: string
+        sync_policy:
+          type: string
+        status:
+          type: string
+        current_revision_id:
+          type: string
+          format: uuid
+        revision_number:
+          type: integer
+          format: int32
         content:
+          type: string
+        content_hash:
           type: string
         size_bytes:
           type: integer
-          format: int64
-        checksum_sha256:
+          format: int32
+        storage_backend:
           type: string
+        object_key:
+          type: string
+        change_note:
+          type: string
+        created_at:
+          type: string
+          format: date-time
         updated_at:
           type: string
           format: date-time
-    UpsertInstructionFileRequest:
+    UpsertWorkspaceFileRequest:
       type: object
       required:
         - path
@@ -6147,6 +6181,14 @@ components:
           type: string
           minLength: 1
         content:
+          type: string
+        file_role:
+          type: string
+        mime_type:
+          type: string
+        sync_policy:
+          type: string
+        change_note:
           type: string
     UploadSkillRequest:
       type: object

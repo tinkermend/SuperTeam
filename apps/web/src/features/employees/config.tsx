@@ -8,9 +8,10 @@ import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { SemanticIconTile } from "@/components/superteam/liquid-components";
+import { LiquidTabsList, LiquidTabsTrigger, SemanticIconTile } from "@/components/superteam/liquid-components";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createDigitalEmployeeConfigRevision,
@@ -18,6 +19,8 @@ import {
   type CreateDigitalEmployeeConfigRevisionInput,
 } from "@/lib/api/employees";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
+import { EmployeeCapabilitiesPanel } from "./components/employee-capabilities-panel";
+import { InstructionFilesPanel } from "./components/instruction-files-panel";
 
 export function EmployeeConfigPage({ employeeId }: { employeeId: string }) {
   const apiBaseUrl = resolveControlPlaneUrl();
@@ -84,6 +87,123 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
     });
   };
 
+  const advancedConfigForm = (
+    <form className="space-y-4" noValidate onSubmit={handleSubmit}>
+      <Card>
+        <CardHeader>
+          <CardTitle>角色配置</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label htmlFor="role-profile">Role Profile (JSON)</Label>
+            <Textarea
+              id="role-profile"
+              value={roleProfile}
+              onChange={(e) => setRoleProfile(e.target.value)}
+              rows={4}
+              className="font-mono text-xs"
+            />
+          </div>
+          <div>
+            <Label htmlFor="constitution">Constitution Addendum (JSON)</Label>
+            <Textarea
+              id="constitution"
+              value={constitutionAddendum}
+              onChange={(e) => setConstitutionAddendum(e.target.value)}
+              rows={4}
+              className="font-mono text-xs"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>能力与策略</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label htmlFor="capability">Capability Selection (JSON)</Label>
+            <Textarea
+              id="capability"
+              value={capabilitySelection}
+              onChange={(e) => setCapabilitySelection(e.target.value)}
+              rows={4}
+              className="font-mono text-xs"
+            />
+          </div>
+          <div>
+            <Label htmlFor="context-policy">Context Policy Override (JSON)</Label>
+            <Textarea
+              id="context-policy"
+              value={contextPolicyOverride}
+              onChange={(e) => setContextPolicyOverride(e.target.value)}
+              rows={4}
+              className="font-mono text-xs"
+            />
+          </div>
+          <div>
+            <Label htmlFor="approval-policy">Approval Policy Override (JSON)</Label>
+            <Textarea
+              id="approval-policy"
+              value={approvalPolicyOverride}
+              onChange={(e) => setApprovalPolicyOverride(e.target.value)}
+              rows={4}
+              className="font-mono text-xs"
+            />
+          </div>
+          <div>
+            <Label htmlFor="output-contract">Output Contract Addendum (JSON)</Label>
+            <Textarea
+              id="output-contract"
+              value={outputContractAddendum}
+              onChange={(e) => setOutputContractAddendum(e.target.value)}
+              rows={4}
+              className="font-mono text-xs"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>预算策略</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          <Label htmlFor="config-daily-token-limit">每日 Token 预算上限</Label>
+          <Input
+            id="config-daily-token-limit"
+            inputMode="numeric"
+            min={1}
+            onChange={(event) => {
+              setDailyTokenLimit(event.target.value);
+              setBudgetError("");
+            }}
+            placeholder="不填写表示无预算上限"
+            type="number"
+            aria-invalid={Boolean(budgetError)}
+            value={dailyTokenLimit}
+          />
+          {budgetError ? <p className="text-sm text-destructive">{budgetError}</p> : null}
+          <p className="text-xs text-muted-foreground">预算会进入新的配置版本，批准后生效。</p>
+        </CardContent>
+      </Card>
+
+      <div className="flex gap-3">
+        <Button type="submit" disabled={createRevision.isPending}>
+          <Save />
+          保存配置
+        </Button>
+        {createRevision.isSuccess ? (
+          <p className="text-sm text-green-600">配置已保存</p>
+        ) : null}
+        {createRevision.isError ? (
+          <p className="text-sm text-destructive">保存失败</p>
+        ) : null}
+      </div>
+    </form>
+  );
+
   return (
     <>
       <Header>
@@ -113,120 +233,20 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
         {employee.isError ? <p className="text-sm text-destructive">加载失败</p> : null}
 
         {employee.data ? (
-          <form className="space-y-4" noValidate onSubmit={handleSubmit}>
-            <Card>
-              <CardHeader>
-                <CardTitle>角色配置</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="role-profile">Role Profile (JSON)</Label>
-                  <Textarea
-                    id="role-profile"
-                    value={roleProfile}
-                    onChange={(e) => setRoleProfile(e.target.value)}
-                    rows={4}
-                    className="font-mono text-xs"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="constitution">Constitution Addendum (JSON)</Label>
-                  <Textarea
-                    id="constitution"
-                    value={constitutionAddendum}
-                    onChange={(e) => setConstitutionAddendum(e.target.value)}
-                    rows={4}
-                    className="font-mono text-xs"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>能力与策略</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="capability">Capability Selection (JSON)</Label>
-                  <Textarea
-                    id="capability"
-                    value={capabilitySelection}
-                    onChange={(e) => setCapabilitySelection(e.target.value)}
-                    rows={4}
-                    className="font-mono text-xs"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="context-policy">Context Policy Override (JSON)</Label>
-                  <Textarea
-                    id="context-policy"
-                    value={contextPolicyOverride}
-                    onChange={(e) => setContextPolicyOverride(e.target.value)}
-                    rows={4}
-                    className="font-mono text-xs"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="approval-policy">Approval Policy Override (JSON)</Label>
-                  <Textarea
-                    id="approval-policy"
-                    value={approvalPolicyOverride}
-                    onChange={(e) => setApprovalPolicyOverride(e.target.value)}
-                    rows={4}
-                    className="font-mono text-xs"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="output-contract">Output Contract Addendum (JSON)</Label>
-                  <Textarea
-                    id="output-contract"
-                    value={outputContractAddendum}
-                    onChange={(e) => setOutputContractAddendum(e.target.value)}
-                    rows={4}
-                    className="font-mono text-xs"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>预算策略</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                <Label htmlFor="config-daily-token-limit">每日 Token 预算上限</Label>
-                <Input
-                  id="config-daily-token-limit"
-                  inputMode="numeric"
-                  min={1}
-                  onChange={(event) => {
-                    setDailyTokenLimit(event.target.value);
-                    setBudgetError("");
-                  }}
-                  placeholder="不填写表示无预算上限"
-                  type="number"
-                  aria-invalid={Boolean(budgetError)}
-                  value={dailyTokenLimit}
-                />
-                {budgetError ? <p className="text-sm text-destructive">{budgetError}</p> : null}
-                <p className="text-xs text-muted-foreground">预算会进入新的配置版本，批准后生效。</p>
-              </CardContent>
-            </Card>
-
-            <div className="flex gap-3">
-              <Button type="submit" disabled={createRevision.isPending}>
-                <Save />
-                保存配置
-              </Button>
-              {createRevision.isSuccess ? (
-                <p className="text-sm text-green-600">配置已保存</p>
-              ) : null}
-              {createRevision.isError ? (
-                <p className="text-sm text-destructive">保存失败</p>
-              ) : null}
-            </div>
-          </form>
+          <Tabs defaultValue="instructions" className="gap-4">
+            <LiquidTabsList aria-label="数字员工配置视图" className="max-w-3xl">
+              <LiquidTabsTrigger value="instructions">宪法/人格</LiquidTabsTrigger>
+              <LiquidTabsTrigger value="capabilities">能力设置</LiquidTabsTrigger>
+              <LiquidTabsTrigger value="advanced">高级配置</LiquidTabsTrigger>
+            </LiquidTabsList>
+            <TabsContent value="instructions">
+              <InstructionFilesPanel apiOptions={apiOptions} employeeId={employeeId} />
+            </TabsContent>
+            <TabsContent value="capabilities">
+              <EmployeeCapabilitiesPanel apiOptions={apiOptions} employeeId={employeeId} />
+            </TabsContent>
+            <TabsContent value="advanced">{advancedConfigForm}</TabsContent>
+          </Tabs>
         ) : null}
       </Main>
     </>

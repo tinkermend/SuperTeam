@@ -9,18 +9,18 @@ import {
   getDigitalEmployee,
   getDigitalEmployeeExecutionInstance,
   getDigitalEmployeeRun,
-  listInstructionFiles,
+  listWorkspaceFiles,
   listDigitalEmployeeRunEvents,
   listDigitalEmployeeRuns,
   listDigitalEmployees,
   previewDigitalEmployeeEffectiveConfig,
   stopDigitalEmployeeRun,
-  upsertInstructionFile,
+  upsertWorkspaceFile,
   type DigitalEmployee,
   type DigitalEmployeeConfigRevision,
   type DigitalEmployeeCreateOptions,
   type DigitalEmployeeOverview,
-  type InstructionFile,
+  type WorkspaceFile,
 } from "./employees";
 
 describe("digital employee API", () => {
@@ -986,17 +986,25 @@ describe("digital employee API", () => {
     );
   });
 
-  it("lists instruction files with encoded employee id", async () => {
+  it("lists workspace files with encoded employee id", async () => {
     const files = [
       {
-        id: "instruction-1",
+        id: "workspace-file-1",
+        team_id: "team-1",
         path: "AGENTS.md",
+        file_role: "entrypoint",
+        mime_type: "text/markdown",
+        sync_policy: "auto",
+        status: "active",
+        current_revision_id: "revision-1",
+        revision_number: 1,
         content: "# 规则",
+        content_hash: "abc123",
         size_bytes: 8,
-        checksum_sha256: "abc123",
+        storage_backend: "db",
         updated_at: "2026-06-10T10:00:00Z",
       },
-    ] satisfies InstructionFile[];
+    ] satisfies WorkspaceFile[];
     const fetcher = vi.fn(
       async () =>
         new Response(JSON.stringify(files), {
@@ -1006,14 +1014,14 @@ describe("digital employee API", () => {
     );
 
     await expect(
-      listInstructionFiles(
+      listWorkspaceFiles(
         { baseUrl: "http://control-plane.local", fetcher },
         "employee 1/primary",
       ),
     ).resolves.toEqual(files);
 
     expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/instructions",
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/workspace-files",
       {
         credentials: "include",
         headers: { accept: "application/json" },
@@ -1022,15 +1030,23 @@ describe("digital employee API", () => {
     );
   });
 
-  it("upserts an instruction file with encoded employee id and JSON body", async () => {
+  it("upserts a workspace file with encoded employee id and JSON body", async () => {
     const file = {
-      id: "instruction-1",
+      id: "workspace-file-1",
+      team_id: "team-1",
       path: "docs/AGENTS.md",
+      file_role: "supporting_doc",
+      mime_type: "text/markdown",
+      sync_policy: "auto",
+      status: "active",
+      current_revision_id: "revision-2",
+      revision_number: 2,
       content: "# 新规则",
+      content_hash: "def456",
       size_bytes: 12,
-      checksum_sha256: "def456",
+      storage_backend: "db",
       updated_at: "2026-06-10T10:05:00Z",
-    } satisfies InstructionFile;
+    } satisfies WorkspaceFile;
     const fetcher = vi.fn(
       async () =>
         new Response(JSON.stringify(file), {
@@ -1040,7 +1056,7 @@ describe("digital employee API", () => {
     );
 
     await expect(
-      upsertInstructionFile(
+      upsertWorkspaceFile(
         { baseUrl: "http://control-plane.local", fetcher },
         "employee 1/primary",
         { path: "docs/AGENTS.md", content: "# 新规则" },
@@ -1048,7 +1064,7 @@ describe("digital employee API", () => {
     ).resolves.toEqual(file);
 
     expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/instructions",
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/workspace-files",
       {
         body: JSON.stringify({ path: "docs/AGENTS.md", content: "# 新规则" }),
         credentials: "include",

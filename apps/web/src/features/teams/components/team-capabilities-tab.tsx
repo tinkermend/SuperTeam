@@ -46,6 +46,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
   const marketplace = useQuery({
     queryKey: ["skills", ""],
     queryFn: () => listSkills(apiOptions),
+    placeholderData: keepPreviousData,
   });
   const teamSkills = useQuery({
     queryKey: ["team-skills", teamId],
@@ -74,7 +75,14 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
 
   const bindSkillMutation = useMutation({
     mutationFn: (skillId: string) => bindTeamSkill(apiOptions, teamId, skillId),
-    onSuccess: async () => {
+    onSuccess: async (installedSkill) => {
+      queryClient.setQueryData<Skill[]>(["team-skills", teamId], (currentSkills = []) => {
+        if (currentSkills.some((skill) => skill.id === installedSkill.id)) {
+          return currentSkills;
+        }
+
+        return [...currentSkills, installedSkill];
+      });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["team-skills", teamId] }),
         queryClient.invalidateQueries({ queryKey: ["skills", ""] }),
@@ -83,7 +91,10 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
   });
   const unbindSkillMutation = useMutation({
     mutationFn: (skillId: string) => unbindTeamSkill(apiOptions, teamId, skillId),
-    onSuccess: async () => {
+    onSuccess: async (_result, skillId) => {
+      queryClient.setQueryData<Skill[]>(["team-skills", teamId], (currentSkills = []) =>
+        currentSkills.filter((skill) => skill.id !== skillId),
+      );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["team-skills", teamId] }),
         queryClient.invalidateQueries({ queryKey: ["skills", ""] }),
@@ -133,6 +144,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
             <div className="flex flex-col gap-2">
               {teamSkills.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
               {teamSkills.isError ? <p className="text-sm text-destructive">公共技能加载失败</p> : null}
+              {unbindSkillMutation.isError ? <p className="text-sm text-destructive">公共技能移除失败</p> : null}
               {!teamSkills.isLoading && !teamSkills.isError && (teamSkills.data?.length ?? 0) === 0 ? (
                 <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无公共技能</p>
               ) : null}
@@ -158,6 +170,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
             <div className="flex flex-col gap-2">
               {marketplace.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
               {marketplace.isError ? <p className="text-sm text-destructive">技能市场加载失败</p> : null}
+              {bindSkillMutation.isError ? <p className="text-sm text-destructive">技能安装失败</p> : null}
               {!marketplace.isLoading && !marketplace.isError && availableSkills.length === 0 ? (
                 <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无可安装技能</p>
               ) : null}
@@ -244,6 +257,7 @@ export function TeamCapabilitiesTab({ apiOptions, canEdit, teamId }: TeamCapabil
             </div>
             {mcpServers.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
             {mcpServers.isError ? <p className="text-sm text-destructive">公共 MCP 加载失败</p> : null}
+            {deleteMcpMutation.isError ? <p className="text-sm text-destructive">公共 MCP 移除失败</p> : null}
             {!mcpServers.isLoading && !mcpServers.isError && (mcpServers.data?.length ?? 0) === 0 ? (
               <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无公共 MCP</p>
             ) : null}

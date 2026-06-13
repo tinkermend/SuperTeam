@@ -861,6 +861,24 @@ function createTeamPostBody(fetcher: typeof fetch) {
   return JSON.parse(String(postCall?.[1]?.body));
 }
 
+function requestBody(fetcher: typeof fetch, pathname: string, method: string) {
+  const call = fetchCalls(fetcher).find(([url, init]) => {
+    const requestUrl = new URL(String(url));
+
+    return requestUrl.pathname === pathname && init?.method === method;
+  });
+
+  return JSON.parse(String(call?.[1]?.body));
+}
+
+function hasRequest(fetcher: typeof fetch, pathname: string, method: string) {
+  return fetchCalls(fetcher).some(([url, init]) => {
+    const requestUrl = new URL(String(url));
+
+    return requestUrl.pathname === pathname && init?.method === method;
+  });
+}
+
 describe("TeamsView", () => {
   it("renders team card grid with summary stats", async () => {
     const fetcher = createTeamsFetcher();
@@ -1458,6 +1476,8 @@ describe("TeamDetailView", () => {
           source_scope: "team",
           inherited: false,
         },
+        "DELETE /api/v1/teams/team-1/skills/skill-observe": {},
+        "DELETE /api/v1/teams/team-1/mcp-servers/mcp-existing": {},
       },
     });
     const screen = await renderWithQueryClient(
@@ -1479,21 +1499,27 @@ describe("TeamDetailView", () => {
     await userEvent.click(screen.getByRole("button", { name: "安装 diagnose" }));
     await expect
       .poll(() =>
-        fetchCalls(fetcher).some(
-          ([url, init]) =>
-            String(url).endsWith("/api/v1/teams/team-1/skills") &&
-            init?.method === "POST",
-        ),
+        hasRequest(fetcher, "/api/v1/teams/team-1/skills", "POST"),
+      )
+      .toBe(true);
+    expect(requestBody(fetcher, "/api/v1/teams/team-1/skills", "POST")).toEqual({
+      skill_id: "skill-diagnose",
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "移除 observe" }));
+    await expect
+      .poll(() =>
+        hasRequest(fetcher, "/api/v1/teams/team-1/skills/skill-observe", "DELETE"),
       )
       .toBe(true);
 
     await userEvent.fill(
       screen.getByRole("textbox", { name: "MCP 名称" }),
-      "诊断 MCP",
+      " 诊断 MCP ",
     );
     await userEvent.fill(
       screen.getByRole("textbox", { name: "MCP URL" }),
-      "https://diagnose.example.com/mcp",
+      " https://diagnose.example.com/mcp ",
     );
     await userEvent.click(screen.getByRole("combobox", { name: "凭据" }));
     await userEvent.click(screen.getByRole("option", { name: "ops-token ****7890" }));
@@ -1501,11 +1527,53 @@ describe("TeamDetailView", () => {
 
     await expect
       .poll(() =>
-        fetchCalls(fetcher).some(
-          ([url, init]) =>
-            String(url).endsWith("/api/v1/teams/team-1/mcp-servers") &&
-            init?.method === "POST",
-        ),
+        hasRequest(fetcher, "/api/v1/teams/team-1/mcp-servers", "POST"),
+      )
+      .toBe(true);
+    expect(requestBody(fetcher, "/api/v1/teams/team-1/mcp-servers", "POST")).toEqual({
+      credential_id: "credential-ops",
+      name: "诊断 MCP",
+      url: "https://diagnose.example.com/mcp",
+    });
+    await expect
+      .element(screen.getByRole("textbox", { name: "MCP 名称" }))
+      .toHaveValue("");
+
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "MCP 名称" }),
+      "无需凭据 MCP",
+    );
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "MCP URL" }),
+      "https://public.example.com/mcp",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "添加公共 MCP" }));
+    await expect
+      .poll(() =>
+        fetchCalls(fetcher).filter(([url, init]) => {
+          const requestUrl = new URL(String(url));
+
+          return requestUrl.pathname === "/api/v1/teams/team-1/mcp-servers" && init?.method === "POST";
+        }).length,
+      )
+      .toBe(2);
+    const mcpPostBodies = fetchCalls(fetcher)
+      .filter(([url, init]) => {
+        const requestUrl = new URL(String(url));
+
+        return requestUrl.pathname === "/api/v1/teams/team-1/mcp-servers" && init?.method === "POST";
+      })
+      .map(([, init]) => JSON.parse(String(init?.body)));
+    expect(mcpPostBodies[1]).toEqual({
+      name: "无需凭据 MCP",
+      url: "https://public.example.com/mcp",
+    });
+    expect(mcpPostBodies[1]).not.toHaveProperty("credential_id");
+
+    await userEvent.click(screen.getByRole("button", { name: "移除 MCP ops-mcp" }));
+    await expect
+      .poll(() =>
+        hasRequest(fetcher, "/api/v1/teams/team-1/mcp-servers/mcp-existing", "DELETE"),
       )
       .toBe(true);
   });
