@@ -1,14 +1,22 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use axum::extract::{Path as AxumPath, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::routing::post;
+use axum::{Json, Router};
+use serde_json::Value;
 use serde_json::json;
 use superteam_runtime_agent::commands::executor::RuntimeCommandExecutor;
 use superteam_runtime_agent::config::RuntimeConfig;
+use superteam_runtime_agent::controlplane::ControlPlaneClient;
 use superteam_runtime_agent::controlplane::models::{RuntimeCommand, RuntimeCommandType};
 use superteam_runtime_agent::runs::{RunSnapshot, RunStatus, RuntimeRunStore};
 use tempfile::TempDir;
+use tokio::net::TcpListener;
 
 const DIGITAL_EMPLOYEE_ID: &str = "11111111-1111-4111-8111-111111111111";
 const EXECUTION_INSTANCE_ID: &str = "22222222-2222-4222-8222-222222222222";
@@ -34,6 +42,21 @@ fn configure_runtime(temp: &TempDir, claude_bin: PathBuf) -> RuntimeCommandExecu
     config.providers.opencode.enabled = false;
     config.providers.opencode.binary_path = temp.path().join("missing-opencode");
     RuntimeCommandExecutor::new(config)
+}
+
+fn configure_runtime_with_control_plane(
+    temp: &TempDir,
+    claude_bin: PathBuf,
+    control_plane: ControlPlaneClient,
+) -> RuntimeCommandExecutor {
+    let mut config = RuntimeConfig::default();
+    config.runs.log_dir = temp.path().join("run-logs");
+    config.workspace.base_dir = temp.path().join("workspaces");
+    config.providers.claude_code.enabled = true;
+    config.providers.claude_code.binary_path = claude_bin;
+    config.providers.opencode.enabled = false;
+    config.providers.opencode.binary_path = temp.path().join("missing-opencode");
+    RuntimeCommandExecutor::with_control_plane_client(config, control_plane)
 }
 
 fn employee_home(temp: &TempDir) -> PathBuf {
@@ -178,6 +201,12 @@ fn workspace_file(content: &str) -> serde_json::Value {
         "storage_backend": "db",
         "content_text": content
     })
+}
+
+fn workspace_file_with_hash(content: &str, content_hash: &str) -> serde_json::Value {
+    let mut file = workspace_file(content);
+    file["content_hash"] = serde_json::Value::String(content_hash.to_string());
+    file
 }
 
 fn provision_command(
@@ -329,6 +358,90 @@ fn assert_tokens_in_order(args: &str, first: &str, second: &str) {
     );
 }
 
+#[derive(Clone, Default)]
+struct CommandFailureCapture {
+    fail: Arc<Mutex<Option<CapturedWriteback>>>,
+}
+
+#[derive(Clone, Debug)]
+struct CapturedWriteback {
+    command_id: String,
+    authorization: Option<String>,
+    node_id: Option<String>,
+    payload: Value,
+}
+
+struct CommandWritebackServer {
+    addr: std::net::SocketAddr,
+    task: tokio::task::JoinHandle<()>,
+}
+
+async fn serve_command_failures(capture: CommandFailureCapture) -> CommandWritebackServer {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let addr = listener.local_addr().expect("local addr");
+    let app = Router::new()
+        .route(
+            "/api/v1/runtime/commands/{command_id}/fail",
+            post(capture_fail_writeback),
+        )
+        .with_state(capture);
+    let task = tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve writebacks");
+    });
+    CommandWritebackServer { addr, task }
+}
+
+async fn serve_failing_command_failures() -> CommandWritebackServer {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let addr = listener.local_addr().expect("local addr");
+    let app = Router::new().route(
+        "/api/v1/runtime/commands/{command_id}/fail",
+        post(reject_fail_writeback),
+    );
+    let task = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .await
+            .expect("serve failing writebacks");
+    });
+    CommandWritebackServer { addr, task }
+}
+
+async fn capture_fail_writeback(
+    AxumPath(command_id): AxumPath<String>,
+    State(capture): State<CommandFailureCapture>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    *capture.fail.lock().expect("fail lock") = Some(CapturedWriteback {
+        command_id,
+        authorization: header_value(&headers, "authorization"),
+        node_id: header_value(&headers, "x-node-id"),
+        payload,
+    });
+    StatusCode::ACCEPTED
+}
+
+async fn reject_fail_writeback() -> StatusCode {
+    StatusCode::INTERNAL_SERVER_ERROR
+}
+
+async fn wait_for_writeback(slot: Arc<Mutex<Option<CapturedWriteback>>>) -> CapturedWriteback {
+    for _ in 0..100 {
+        if let Some(writeback) = slot.lock().expect("writeback lock").clone() {
+            return writeback;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("runtime command writeback was not received");
+}
+
+fn header_value(headers: &HeaderMap, key: &str) -> Option<String> {
+    headers
+        .get(key)
+        .and_then(|value| value.to_str().ok())
+        .map(ToString::to_string)
+}
+
 #[tokio::test]
 async fn provision_instance_materializes_team_employee_home() {
     let temp = tempfile::tempdir().unwrap();
@@ -371,13 +484,18 @@ async fn provision_instance_materializes_team_employee_home() {
 #[tokio::test]
 async fn start_session_uses_agent_home_dir_as_provider_cwd() {
     let temp = tempfile::tempdir().unwrap();
+    let cwd_file = temp.path().join("provider-cwd.txt");
     let fake_claude = make_script(
         temp.path(),
         "fake-claude-cwd",
-        r#"#!/usr/bin/env bash
-printf '%s\n' '{"type":"system","session_id":"session-from-cwd-test"}'
-printf '%s\n' '{"type":"result","result":"done"}'
+        &format!(
+            r#"#!/usr/bin/env bash
+printf '%s\n' "$PWD" > {}
+printf '%s\n' '{{"type":"system","session_id":"session-from-cwd-test"}}'
+printf '%s\n' '{{"type":"result","result":"done"}}'
 "#,
+            shell_quote(&cwd_file)
+        ),
     );
     let executor = configure_runtime(&temp, fake_claude);
 
@@ -405,16 +523,154 @@ printf '%s\n' '{"type":"result","result":"done"}'
         .await
         .expect("start_session accepted");
 
-    let run = executor
-        .runs()
-        .get_run(outcome.run_id.as_deref().unwrap())
-        .await
-        .unwrap();
+    let run_id = outcome.run_id.as_deref().unwrap();
+    wait_for_status(&executor.runs(), run_id, RunStatus::Completed).await;
+    let run = executor.runs().get_run(run_id).await.unwrap();
     assert_eq!(run.workspace_path, home);
+    assert_eq!(
+        std::fs::canonicalize(std::fs::read_to_string(cwd_file).unwrap().trim_end()).unwrap(),
+        std::fs::canonicalize(&home).unwrap()
+    );
     assert_eq!(
         std::fs::read_to_string(run.workspace_path.join("AGENTS.md")).unwrap(),
         content
     );
+}
+
+#[tokio::test]
+async fn start_session_workspace_sync_failure_writes_workspace_terminal() {
+    let temp = tempfile::tempdir().unwrap();
+    let capture = CommandFailureCapture::default();
+    let http_server = serve_command_failures(capture.clone()).await;
+    let marker_file = temp.path().join("provider-ran.txt");
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude-should-not-run",
+        &format!(
+            r#"#!/usr/bin/env bash
+printf '%s\n' ran > {}
+printf '%s\n' '{{"type":"result","result":"done"}}'
+"#,
+            shell_quote(&marker_file)
+        ),
+    );
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        "node-1",
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+
+    let team_id = "11111111-1111-4111-8111-111111111111";
+    let employee_id = "22222222-2222-4222-8222-222222222222";
+    let home = temp
+        .path()
+        .join("workspaces")
+        .join("teams")
+        .join(team_id)
+        .join("employees")
+        .join(employee_id);
+    std::fs::create_dir_all(&home).unwrap();
+
+    let content = "# Execution Contract\n";
+    let mut command = start_session_command_with_home(
+        "cmd-start-bad-workspace",
+        team_id,
+        employee_id,
+        home.to_str().unwrap(),
+        content,
+    );
+    command.payload["workspace_files"] =
+        json!([workspace_file_with_hash(content, "not-the-content-hash")]);
+
+    let error = executor
+        .handle_command(command)
+        .await
+        .expect_err("bad workspace file hash should reject before provider start");
+    assert!(
+        error.to_string().contains("content_hash mismatch"),
+        "unexpected error: {error}"
+    );
+    assert_eq!(
+        executor
+            .registry()
+            .rejection("cmd-start-bad-workspace")
+            .as_deref(),
+        Some(error.to_string().as_str())
+    );
+
+    let failed = wait_for_writeback(capture.fail.clone()).await;
+    assert_eq!(failed.command_id, "cmd-start-bad-workspace");
+    assert_eq!(
+        failed.authorization.as_deref(),
+        Some("Bearer session-token")
+    );
+    assert_eq!(failed.node_id.as_deref(), Some("node-1"));
+    assert_eq!(failed.payload["status"], "failed");
+    assert_eq!(failed.payload["error_code"], "workspace_sync_failed");
+    assert_eq!(failed.payload["error_family"], "workspace_materialization");
+    assert!(
+        !marker_file.exists(),
+        "provider started after workspace failure"
+    );
+
+    http_server.task.abort();
+}
+
+#[tokio::test]
+async fn provision_failure_records_rejection_when_fail_writeback_fails() {
+    let temp = tempfile::tempdir().unwrap();
+    let http_server = serve_failing_command_failures().await;
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude-unused",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"result","result":"unused"}'
+"#,
+    );
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        "node-1",
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+
+    let command_id = "cmd-provision-writeback-fails";
+    let error = executor
+        .handle_command(RuntimeCommand {
+            id: command_id.to_string(),
+            command_type: RuntimeCommandType::ProvisionInstance,
+            payload: json!({
+                "command_id": command_id,
+                "tenant_id": TENANT_ID,
+                "team_id": TEAM_ID,
+                "digital_employee_id": "not-a-uuid",
+                "execution_instance_id": EXECUTION_INSTANCE_ID,
+                "runtime_node_id": RUNTIME_NODE_ID,
+                "provider_type": "claude-code",
+                "agent_home_dir": temp.path().join("workspaces").join("teams").join(TEAM_ID).join("employees").join("not-a-uuid"),
+                "workspace_files": [],
+                "skills": [],
+                "mcp_servers": []
+            }),
+        })
+        .await
+        .expect_err("invalid provision payload should reject");
+
+    assert!(
+        error.to_string().contains("Fail runtime command failed"),
+        "unexpected error: {error}"
+    );
+    let rejection = executor
+        .registry()
+        .rejection(command_id)
+        .expect("original rejection recorded");
+    assert!(
+        rejection.contains("digital_employee_id must be a UUID-like string"),
+        "unexpected rejection: {rejection}"
+    );
+
+    http_server.task.abort();
 }
 
 #[tokio::test]

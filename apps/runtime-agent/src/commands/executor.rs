@@ -135,7 +135,7 @@ impl RuntimeCommandExecutor {
         let workspace_path = match self.ensure_command_instance(&command.id, &payload) {
             Ok(workspace_path) => workspace_path,
             Err(error) => {
-                self.write_command_failure(&command.id, error.to_string())
+                self.write_workspace_sync_failure(&command.id, error.to_string())
                     .await?;
                 return Err(error);
             }
@@ -295,19 +295,21 @@ impl RuntimeCommandExecutor {
         let payload = match RuntimeProvisionInstanceCommandPayload::from_command(&command) {
             Ok(payload) => payload,
             Err(error) => {
+                let error = self.recorded_error(&command.id, error);
                 let message = error.to_string();
                 self.write_provisioning_failure(&command.id, message)
                     .await?;
-                return Err(self.recorded_error(&command.id, error));
+                return Err(error);
             }
         };
         let provider_home = match provider_home_kind(&payload.provider_type) {
             Ok(provider_home) => provider_home,
             Err(error) => {
+                let error = self.recorded_error(&command.id, error);
                 let message = error.to_string();
                 self.write_provisioning_failure(&command.id, message)
                     .await?;
-                return Err(self.recorded_error(&command.id, error));
+                return Err(error);
             }
         };
         let result = match materialize_workspace(WorkspaceMaterializationPlan {
@@ -317,10 +319,11 @@ impl RuntimeCommandExecutor {
         }) {
             Ok(result) => result,
             Err(error) => {
+                let error = self.recorded_error(&command.id, error);
                 let message = error.to_string();
                 self.write_provisioning_failure(&command.id, message)
                     .await?;
-                return Err(self.recorded_error(&command.id, error));
+                return Err(error);
             }
         };
 
@@ -350,19 +353,21 @@ impl RuntimeCommandExecutor {
         let payload = match RuntimeProvisionInstanceCommandPayload::from_command(&command) {
             Ok(payload) => payload,
             Err(error) => {
+                let error = self.recorded_error(&command.id, error);
                 let message = error.to_string();
                 self.write_workspace_sync_failure(&command.id, message)
                     .await?;
-                return Err(self.recorded_error(&command.id, error));
+                return Err(error);
             }
         };
         let provider_home = match provider_home_kind(&payload.provider_type) {
             Ok(provider_home) => provider_home,
             Err(error) => {
+                let error = self.recorded_error(&command.id, error);
                 let message = error.to_string();
                 self.write_workspace_sync_failure(&command.id, message)
                     .await?;
-                return Err(self.recorded_error(&command.id, error));
+                return Err(error);
             }
         };
         let result = match materialize_workspace(WorkspaceMaterializationPlan {
@@ -372,10 +377,11 @@ impl RuntimeCommandExecutor {
         }) {
             Ok(result) => result,
             Err(error) => {
+                let error = self.recorded_error(&command.id, error);
                 let message = error.to_string();
                 self.write_workspace_sync_failure(&command.id, message)
                     .await?;
-                return Err(self.recorded_error(&command.id, error));
+                return Err(error);
             }
         };
         if let Some(control_plane) = &self.control_plane {
