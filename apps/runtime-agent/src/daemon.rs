@@ -13,6 +13,7 @@ use crate::controlplane::models::{
 use crate::controlplane::ws::run_command_loop;
 use crate::executor::TaskExecutor;
 use crate::health::{ProviderHealth, ProviderHealthProbe, probe_provider_health};
+use crate::providers::catalog;
 use crate::session::RuntimeSession;
 
 const SESSION_RENEWAL_MARGIN: Duration = Duration::from_secs(5 * 60);
@@ -198,59 +199,33 @@ fn session_renewal_delay(expires_at: Option<&str>) -> Duration {
 }
 
 fn build_supported_providers(config: &RuntimeConfig) -> Vec<String> {
-    let mut providers = Vec::new();
-    if config.providers.claude_code.enabled {
-        providers.push("claude-code".to_string());
-    }
-    if config.providers.opencode.enabled {
-        providers.push("opencode".to_string());
-    }
-    providers
+    catalog::supported_provider_types(config)
 }
 
 async fn build_capabilities(config: &RuntimeConfig) -> Vec<RuntimeCapabilityInput> {
     let mut capabilities = Vec::new();
 
-    let claude_health = if config.providers.claude_code.enabled {
-        Some(
-            probe_provider_health(ProviderHealthProbe {
-                kind: "claude".to_string(),
-                bin_path: config.providers.claude_code.binary_path.clone(),
-            })
-            .await,
-        )
-    } else {
-        None
-    };
-    let opencode_health = if config.providers.opencode.enabled {
-        Some(
-            probe_provider_health(ProviderHealthProbe {
-                kind: "opencode".to_string(),
-                bin_path: config.providers.opencode.binary_path.clone(),
-            })
-            .await,
-        )
-    } else {
-        None
-    };
-
-    capabilities.push(provider_capability(
-        "claude-code",
-        config.providers.claude_code.enabled,
-        config
-            .providers
-            .claude_code
-            .binary_path
-            .display()
-            .to_string(),
-        claude_health,
-    ));
-    capabilities.push(provider_capability(
-        "opencode",
-        config.providers.opencode.enabled,
-        config.providers.opencode.binary_path.display().to_string(),
-        opencode_health,
-    ));
+    for descriptor in catalog::configured_provider_descriptors() {
+        let section = catalog::provider_section(config, descriptor.provider_type)
+            .expect("catalog descriptor must have config section");
+        let health = if section.enabled {
+            Some(
+                probe_provider_health(ProviderHealthProbe {
+                    kind: descriptor.health_kind.to_string(),
+                    bin_path: section.binary_path.clone(),
+                })
+                .await,
+            )
+        } else {
+            None
+        };
+        capabilities.push(provider_capability(
+            descriptor.provider_type,
+            section.enabled,
+            section.binary_path.display().to_string(),
+            health,
+        ));
+    }
 
     let mut workspace_labels = std::collections::HashMap::new();
     workspace_labels.insert(

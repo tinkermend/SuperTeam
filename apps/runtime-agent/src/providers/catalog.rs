@@ -33,6 +33,10 @@ pub const PROVIDERS: &[ProviderDescriptor] = &[
     },
 ];
 
+pub fn configured_provider_descriptors() -> &'static [ProviderDescriptor] {
+    PROVIDERS
+}
+
 pub fn provider_descriptor(provider_type: &str) -> Option<&'static ProviderDescriptor> {
     PROVIDERS
         .iter()
