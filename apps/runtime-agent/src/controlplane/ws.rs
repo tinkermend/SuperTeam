@@ -112,12 +112,11 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 
-    const DIGITAL_EMPLOYEE_ID: &str = "11111111-1111-4111-8111-111111111111";
+    const DIGITAL_EMPLOYEE_ID: &str = "22222222-2222-4222-8222-222222222222";
     const EXECUTION_INSTANCE_ID: &str = "22222222-2222-4222-8222-222222222222";
     const TENANT_ID: &str = "00000000-0000-4000-8000-000000000001";
-    const TEAM_ID: &str = "33333333-3333-4333-8333-333333333333";
+    const TEAM_ID: &str = "11111111-1111-4111-8111-111111111111";
     const RUNTIME_NODE_ID: &str = "44444444-4444-4444-8444-444444444444";
-    const AGENT_HOME_DIR: &str = "/tmp/superteam-runtime-agent/ws-test-agent";
 
     #[test]
     fn runtime_ws_url_uses_runtime_ws_endpoint() {
@@ -233,6 +232,15 @@ printf '%s\n' '{"type":"result","result":"done"}'
         config.providers.claude_code.binary_path = fake_claude;
         config.providers.opencode.enabled = false;
         config.providers.opencode.binary_path = temp.path().join("missing-opencode");
+        let agent_home_dir = config
+            .workspace
+            .base_dir
+            .join("teams")
+            .join(TEAM_ID)
+            .join("employees")
+            .join(DIGITAL_EMPLOYEE_ID);
+        fs::create_dir_all(&agent_home_dir).expect("create agent home dir");
+        let command_agent_home_dir = agent_home_dir.to_string_lossy().to_string();
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
         let addr = listener.local_addr().expect("local addr");
@@ -261,7 +269,7 @@ printf '%s\n' '{"type":"result","result":"done"}'
                             "execution_instance_id": EXECUTION_INSTANCE_ID,
                             "runtime_node_id": RUNTIME_NODE_ID,
                             "provider_type": "claude-code",
-                            "agent_home_dir": AGENT_HOME_DIR,
+                            "agent_home_dir": command_agent_home_dir,
                             "workspace_files": [],
                             "skills": [],
                             "mcp_servers": [],
@@ -312,6 +320,8 @@ printf '%s\n' '{"type":"result","result":"done"}'
         );
         let command_context = snapshot.command_context.expect("command context");
         assert_eq!(command_context.command_id, "cmd-ws-start");
+        assert_eq!(snapshot.workspace_path, agent_home_dir);
+        assert!(snapshot.workspace_path.join(".claude").is_dir());
 
         let complete = wait_for_writeback(capture.complete.clone()).await;
         assert_eq!(complete.command_id, "cmd-ws-start");
@@ -341,6 +351,14 @@ printf '%s\n' '{"type":"result","result":"done"}'
         let mut config = RuntimeConfig::new("node-1").expect("config");
         config.runtime.control_plane_url = format!("http://{}", http_server.addr);
         config.workspace.base_dir = temp.path().join("workspaces");
+        let agent_home_dir = config
+            .workspace
+            .base_dir
+            .join("teams")
+            .join(TEAM_ID)
+            .join("employees")
+            .join(DIGITAL_EMPLOYEE_ID);
+        let command_agent_home_dir = agent_home_dir.to_string_lossy().to_string();
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
         let ws_addr = listener.local_addr().expect("local addr");
@@ -362,8 +380,16 @@ printf '%s\n' '{"type":"result","result":"done"}'
                         "type": "provision_instance",
                         "payload": {
                             "command_id": "cmd-provision",
+                            "tenant_id": TENANT_ID,
                             "team_id": TEAM_ID,
-                            "digital_employee_id": DIGITAL_EMPLOYEE_ID
+                            "digital_employee_id": DIGITAL_EMPLOYEE_ID,
+                            "execution_instance_id": EXECUTION_INSTANCE_ID,
+                            "runtime_node_id": RUNTIME_NODE_ID,
+                            "provider_type": "claude-code",
+                            "agent_home_dir": command_agent_home_dir,
+                            "workspace_files": [],
+                            "skills": [],
+                            "mcp_servers": []
                         }
                     })
                     .to_string()
@@ -392,14 +418,8 @@ printf '%s\n' '{"type":"result","result":"done"}'
         .expect("command loop once");
         server.await.expect("server task");
 
-        let agent_home_dir = config
-            .workspace
-            .base_dir
-            .join("teams")
-            .join(TEAM_ID)
-            .join("employees")
-            .join(DIGITAL_EMPLOYEE_ID);
         assert!(agent_home_dir.is_dir());
+        assert!(agent_home_dir.join(".claude").is_dir());
         assert!(!agent_home_dir.join("state").exists());
         assert!(!agent_home_dir.join("sessions").exists());
         assert!(!agent_home_dir.join("runs").exists());
@@ -429,6 +449,15 @@ printf '%s\n' '{"type":"result","result":"done"}'
         let mut config = RuntimeConfig::new("node-1").expect("config");
         config.runtime.control_plane_url = format!("http://{}", http_server.addr);
         config.workspace.base_dir = temp.path().join("workspaces");
+        let bad_agent_home_dir = config
+            .workspace
+            .base_dir
+            .join("teams")
+            .join(TEAM_ID)
+            .join("employees")
+            .join("not-a-uuid")
+            .to_string_lossy()
+            .to_string();
         let control_plane = ControlPlaneClient::with_session_token(
             format!("http://{}", http_server.addr),
             "session-token",
@@ -441,8 +470,17 @@ printf '%s\n' '{"type":"result","result":"done"}'
                 id: "cmd-provision-bad".to_string(),
                 command_type: RuntimeCommandType::ProvisionInstance,
                 payload: json!({
+                    "command_id": "cmd-provision-bad",
+                    "tenant_id": TENANT_ID,
                     "team_id": TEAM_ID,
-                    "digital_employee_id": "not-a-uuid"
+                    "digital_employee_id": "not-a-uuid",
+                    "execution_instance_id": EXECUTION_INSTANCE_ID,
+                    "runtime_node_id": RUNTIME_NODE_ID,
+                    "provider_type": "claude-code",
+                    "agent_home_dir": bad_agent_home_dir,
+                    "workspace_files": [],
+                    "skills": [],
+                    "mcp_servers": []
                 }),
             })
             .await

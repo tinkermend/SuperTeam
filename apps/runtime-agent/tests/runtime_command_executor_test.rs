@@ -15,7 +15,6 @@ const EXECUTION_INSTANCE_ID: &str = "22222222-2222-4222-8222-222222222222";
 const TENANT_ID: &str = "00000000-0000-4000-8000-000000000001";
 const TEAM_ID: &str = "33333333-3333-4333-8333-333333333333";
 const RUNTIME_NODE_ID: &str = "44444444-4444-4444-8444-444444444444";
-const AGENT_HOME_DIR: &str = "/tmp/superteam-runtime-agent/executor-test-agent";
 
 fn make_script(dir: &Path, name: &str, body: &str) -> PathBuf {
     let path = dir.join(name);
@@ -37,7 +36,23 @@ fn configure_runtime(temp: &TempDir, claude_bin: PathBuf) -> RuntimeCommandExecu
     RuntimeCommandExecutor::new(config)
 }
 
-fn session_command(
+fn employee_home(temp: &TempDir) -> PathBuf {
+    temp.path()
+        .join("workspaces")
+        .join("teams")
+        .join(TEAM_ID)
+        .join("employees")
+        .join(DIGITAL_EMPLOYEE_ID)
+}
+
+fn prepare_employee_home(temp: &TempDir) -> PathBuf {
+    let home = employee_home(temp);
+    fs::create_dir_all(&home).expect("create employee home");
+    home
+}
+
+fn session_command_in_home(
+    agent_home_dir: &Path,
     command_id: &str,
     command_type: RuntimeCommandType,
     mode: &str,
@@ -45,19 +60,22 @@ fn session_command(
     prompt: Option<&str>,
     input: Option<&str>,
 ) -> RuntimeCommand {
-    session_command_with_refs(
+    session_command_full(
         command_id,
         command_type,
         mode,
         provider_session_id,
         prompt,
         input,
+        agent_home_dir.to_str().expect("agent home dir is utf-8"),
         Vec::new(),
         Vec::new(),
+        true,
     )
 }
 
-fn session_command_with_refs(
+fn session_command_with_refs_in_home(
+    agent_home_dir: &Path,
     command_id: &str,
     command_type: RuntimeCommandType,
     mode: &str,
@@ -74,13 +92,15 @@ fn session_command_with_refs(
         provider_session_id,
         prompt,
         input,
+        agent_home_dir.to_str().expect("agent home dir is utf-8"),
         context_refs,
         artifact_refs,
         true,
     )
 }
 
-fn session_command_with_recoverable(
+fn session_command_with_recoverable_in_home(
+    agent_home_dir: &Path,
     command_id: &str,
     command_type: RuntimeCommandType,
     mode: &str,
@@ -96,6 +116,7 @@ fn session_command_with_recoverable(
         provider_session_id,
         prompt,
         input,
+        agent_home_dir.to_str().expect("agent home dir is utf-8"),
         Vec::new(),
         Vec::new(),
         recoverable,
@@ -109,6 +130,7 @@ fn session_command_full(
     provider_session_id: Option<&str>,
     prompt: Option<&str>,
     input: Option<&str>,
+    agent_home_dir: &str,
     context_refs: Vec<serde_json::Value>,
     artifact_refs: Vec<serde_json::Value>,
     recoverable: bool,
@@ -124,7 +146,7 @@ fn session_command_full(
             "execution_instance_id": EXECUTION_INSTANCE_ID,
             "runtime_node_id": RUNTIME_NODE_ID,
             "provider_type": "claude-code",
-            "agent_home_dir": AGENT_HOME_DIR,
+            "agent_home_dir": agent_home_dir,
             "workspace_files": [],
             "skills": [],
             "mcp_servers": [],
@@ -143,7 +165,89 @@ fn session_command_full(
     }
 }
 
-fn workspace_materialization_payload(command_id: &str) -> serde_json::Value {
+fn workspace_file(content: &str) -> serde_json::Value {
+    serde_json::json!({
+        "file_id": "55555555-5555-4555-8555-555555555555",
+        "revision_id": "66666666-6666-4666-8666-666666666666",
+        "path": "AGENTS.md",
+        "file_role": "entrypoint",
+        "mime_type": "text/markdown",
+        "sync_policy": "auto",
+        "content_hash": superteam_runtime_agent::workspace_files::sha256_hex(content.as_bytes()),
+        "size_bytes": content.len() as i32,
+        "storage_backend": "db",
+        "content_text": content
+    })
+}
+
+fn provision_command(
+    command_id: &str,
+    team_id: &str,
+    employee_id: &str,
+    agent_home_dir: &str,
+    content: &str,
+) -> RuntimeCommand {
+    RuntimeCommand {
+        id: command_id.to_string(),
+        command_type: RuntimeCommandType::ProvisionInstance,
+        payload: json!({
+            "command_id": command_id,
+            "tenant_id": "00000000-0000-4000-8000-000000000001",
+            "team_id": team_id,
+            "digital_employee_id": employee_id,
+            "execution_instance_id": EXECUTION_INSTANCE_ID,
+            "runtime_node_id": "44444444-4444-4444-8444-444444444444",
+            "provider_type": "claude-code",
+            "agent_home_dir": agent_home_dir,
+            "workspace_files": [workspace_file(content)],
+            "skills": [],
+            "mcp_servers": []
+        }),
+    }
+}
+
+fn start_session_command_with_home(
+    command_id: &str,
+    team_id: &str,
+    employee_id: &str,
+    agent_home_dir: &str,
+    content: &str,
+) -> RuntimeCommand {
+    RuntimeCommand {
+        id: command_id.to_string(),
+        command_type: RuntimeCommandType::StartSession,
+        payload: json!({
+            "command_id": command_id,
+            "tenant_id": "00000000-0000-4000-8000-000000000001",
+            "team_id": team_id,
+            "digital_employee_id": employee_id,
+            "execution_instance_id": EXECUTION_INSTANCE_ID,
+            "runtime_node_id": "44444444-4444-4444-8444-444444444444",
+            "provider_type": "claude-code",
+            "agent_home_dir": agent_home_dir,
+            "workspace_files": [workspace_file(content)],
+            "skills": [],
+            "mcp_servers": [],
+            "session_policy": {
+                "mode": "new",
+                "provider_session_id": null,
+                "recoverable": true
+            },
+            "prompt": "write the summary",
+            "input": null,
+            "context_refs": [],
+            "artifact_refs": [],
+            "model": null,
+            "metadata": {"source": "executor-test"}
+        }),
+    }
+}
+
+fn workspace_materialization_payload(
+    command_id: &str,
+    agent_home_dir: &Path,
+    content: &str,
+) -> serde_json::Value {
     json!({
         "command_id": command_id,
         "tenant_id": TENANT_ID,
@@ -152,8 +256,8 @@ fn workspace_materialization_payload(command_id: &str) -> serde_json::Value {
         "execution_instance_id": EXECUTION_INSTANCE_ID,
         "runtime_node_id": RUNTIME_NODE_ID,
         "provider_type": "claude-code",
-        "agent_home_dir": AGENT_HOME_DIR,
-        "workspace_files": [],
+        "agent_home_dir": agent_home_dir,
+        "workspace_files": [workspace_file(content)],
         "skills": [],
         "mcp_servers": []
     })
@@ -226,31 +330,118 @@ fn assert_tokens_in_order(args: &str, first: &str, second: &str) {
 }
 
 #[tokio::test]
-async fn sync_workspace_files_fails_loudly_until_materialization_is_implemented() {
-    let temp = TempDir::new().expect("tempdir");
+async fn provision_instance_materializes_team_employee_home() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = RuntimeConfig::default();
+    config.workspace.base_dir = temp.path().join("workspaces");
+    let executor = RuntimeCommandExecutor::new(config.clone());
+
+    let team_id = "11111111-1111-4111-8111-111111111111";
+    let employee_id = "22222222-2222-4222-8222-222222222222";
+    let home = config
+        .workspace
+        .base_dir
+        .join("teams")
+        .join(team_id)
+        .join("employees")
+        .join(employee_id);
+    let content = "# Execution Contract\n";
+    let command = provision_command(
+        "cmd-provision",
+        team_id,
+        employee_id,
+        home.to_str().unwrap(),
+        content,
+    );
+
+    executor
+        .handle_command(command)
+        .await
+        .expect("provision accepted");
+
+    assert_eq!(
+        std::fs::read_to_string(home.join("AGENTS.md")).unwrap(),
+        content
+    );
+    assert!(home.join(".claude").is_dir());
+    assert!(home.join("CLAUDE.md").exists());
+    assert!(!home.join("state").exists());
+}
+
+#[tokio::test]
+async fn start_session_uses_agent_home_dir_as_provider_cwd() {
+    let temp = tempfile::tempdir().unwrap();
     let fake_claude = make_script(
         temp.path(),
-        "fake-claude",
+        "fake-claude-cwd",
         r#"#!/usr/bin/env bash
-printf '%s\n' '{"type":"result","result":"unused"}'
+printf '%s\n' '{"type":"system","session_id":"session-from-cwd-test"}'
+printf '%s\n' '{"type":"result","result":"done"}'
 "#,
     );
     let executor = configure_runtime(&temp, fake_claude);
 
-    let error = executor
+    let team_id = "11111111-1111-4111-8111-111111111111";
+    let employee_id = "22222222-2222-4222-8222-222222222222";
+    let home = temp
+        .path()
+        .join("workspaces")
+        .join("teams")
+        .join(team_id)
+        .join("employees")
+        .join(employee_id);
+    std::fs::create_dir_all(&home).unwrap();
+
+    let content = "# Execution Contract\n";
+    let command = start_session_command_with_home(
+        "cmd-start",
+        team_id,
+        employee_id,
+        home.to_str().unwrap(),
+        content,
+    );
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("start_session accepted");
+
+    let run = executor
+        .runs()
+        .get_run(outcome.run_id.as_deref().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(run.workspace_path, home);
+    assert_eq!(
+        std::fs::read_to_string(run.workspace_path.join("AGENTS.md")).unwrap(),
+        content
+    );
+}
+
+#[tokio::test]
+async fn sync_workspace_files_materializes_team_employee_home() {
+    let temp = TempDir::new().expect("tempdir");
+    let mut config = RuntimeConfig::default();
+    config.workspace.base_dir = temp.path().join("workspaces");
+    let executor = RuntimeCommandExecutor::new(config.clone());
+    let home = employee_home(&temp);
+    let content = "# Synced Contract\n";
+
+    let outcome = executor
         .handle_command(RuntimeCommand {
             id: "cmd-sync-001".to_string(),
             command_type: RuntimeCommandType::SyncWorkspaceFiles,
-            payload: workspace_materialization_payload("cmd-sync-001"),
+            payload: workspace_materialization_payload("cmd-sync-001", &home, content),
         })
         .await
-        .expect_err("sync_workspace_files should fail loudly until Task 6 implements it");
+        .expect("sync_workspace_files accepted");
 
-    assert!(
-        error
-            .to_string()
-            .contains("sync_workspace_files is not implemented by runtime executor")
+    assert!(outcome.accepted);
+    assert_eq!(
+        std::fs::read_to_string(home.join("AGENTS.md")).unwrap(),
+        content
     );
+    assert!(home.join(".claude").is_dir());
+    assert!(home.join("CLAUDE.md").exists());
 }
 
 #[tokio::test]
@@ -266,11 +457,13 @@ printf '%s\n' '{"type":"result","result":"done"}'
 "#,
     );
     let executor = configure_runtime(&temp, fake_claude);
+    let home = prepare_employee_home(&temp);
     let context_refs = vec![json!({"type": "document", "id": "ctx-1"})];
     let artifact_refs = vec![json!({"type": "report", "id": "artifact-1"})];
 
     let outcome = executor
-        .handle_command(session_command_with_refs(
+        .handle_command(session_command_with_refs_in_home(
+            &home,
             "cmd-start-001",
             RuntimeCommandType::StartSession,
             "new",
@@ -287,15 +480,7 @@ printf '%s\n' '{"type":"result","result":"done"}'
     let run_id = outcome.run_id.expect("run id");
     let snapshot = wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
 
-    assert_eq!(
-        snapshot.workspace_path,
-        temp.path()
-            .join("workspaces")
-            .join("teams")
-            .join(TEAM_ID)
-            .join("employees")
-            .join(DIGITAL_EMPLOYEE_ID)
-    );
+    assert_eq!(snapshot.workspace_path, home);
     assert_eq!(
         snapshot.provider_session_id.as_deref(),
         Some("session-from-command")
@@ -330,9 +515,11 @@ printf '%s\n' '{{"type":"result","result":"resumed"}}'
         ),
     );
     let executor = configure_runtime(&temp, fake_claude);
+    let home = prepare_employee_home(&temp);
 
     let outcome = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-resume-001",
             RuntimeCommandType::ResumeSession,
             "resume",
@@ -366,9 +553,11 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
         ),
     );
     let executor = configure_runtime(&temp, fake_claude);
+    let home = prepare_employee_home(&temp);
 
     let first = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-start-002",
             RuntimeCommandType::StartSession,
             "new",
@@ -386,7 +575,8 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
     .await;
 
     let second = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-send-001",
             RuntimeCommandType::SendInput,
             "reuse_latest",
@@ -419,9 +609,11 @@ sleep 5
 "#,
     );
     let executor = configure_runtime(&temp, fake_claude);
+    let home = prepare_employee_home(&temp);
 
     let start = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-start-slow",
             RuntimeCommandType::StartSession,
             "new",
@@ -435,7 +627,8 @@ sleep 5
     wait_for_latest_provider_session(&executor, "slow-session").await;
 
     let stop = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-stop-001",
             RuntimeCommandType::StopSession,
             "resume",
@@ -469,9 +662,11 @@ sleep 5
         ),
     );
     let executor = configure_runtime(&temp, fake_claude);
+    let home = prepare_employee_home(&temp);
 
     let start = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-start-racy",
             RuntimeCommandType::StartSession,
             "new",
@@ -484,7 +679,8 @@ sleep 5
     let started_run_id = start.run_id.expect("started run id");
 
     let stop = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-stop-racy",
             RuntimeCommandType::StopSession,
             "new",
@@ -518,9 +714,11 @@ sleep 5
 "#,
     );
     let executor = configure_runtime(&temp, fake_claude);
+    let home = prepare_employee_home(&temp);
 
     let start = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-start-completed-open",
             RuntimeCommandType::StartSession,
             "new",
@@ -534,7 +732,8 @@ sleep 5
     wait_for_status(&executor.runs(), &started_run_id, RunStatus::Completed).await;
 
     let stop_error = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-stop-completed-open",
             RuntimeCommandType::StopSession,
             "resume",
@@ -578,9 +777,11 @@ printf '%s\n' '{"type":"result","result":"ephemeral done"}'
 "#,
     );
     let executor = configure_runtime(&temp, fake_claude);
+    let home = prepare_employee_home(&temp);
 
     let start = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-start-ephemeral",
             RuntimeCommandType::StartSession,
             "ephemeral",
@@ -605,7 +806,8 @@ printf '%s\n' '{"type":"result","result":"ephemeral done"}'
     );
 
     let error = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-send-after-ephemeral",
             RuntimeCommandType::SendInput,
             "reuse_latest",
@@ -641,9 +843,11 @@ printf '%s\n' '{"type":"result","result":"non-recoverable done"}'
 "#,
     );
     let executor = configure_runtime(&temp, fake_claude);
+    let home = prepare_employee_home(&temp);
 
     let start = executor
-        .handle_command(session_command_with_recoverable(
+        .handle_command(session_command_with_recoverable_in_home(
+            &home,
             "cmd-start-non-recoverable",
             RuntimeCommandType::StartSession,
             "new",
@@ -669,7 +873,8 @@ printf '%s\n' '{"type":"result","result":"non-recoverable done"}'
     );
 
     let error = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-send-after-non-recoverable",
             RuntimeCommandType::SendInput,
             "reuse_latest",
@@ -723,9 +928,11 @@ esac
         ),
     );
     let executor = configure_runtime(&temp, fake_claude);
+    let home = prepare_employee_home(&temp);
 
     let first = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-start-other-active",
             RuntimeCommandType::StartSession,
             "new",
@@ -739,7 +946,8 @@ esac
     wait_for_latest_provider_session(&executor, "other-session").await;
 
     let ephemeral = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-start-ephemeral-explicit",
             RuntimeCommandType::StartSession,
             "ephemeral",
@@ -760,7 +968,8 @@ esac
     );
 
     let late = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-start-late-active",
             RuntimeCommandType::StartSession,
             "new",
@@ -773,7 +982,8 @@ esac
     let late_run_id = late.run_id.expect("late run id");
 
     let stop = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-stop-ephemeral-explicit",
             RuntimeCommandType::StopSession,
             "resume",
@@ -833,9 +1043,11 @@ printf '%s\n' '{"type":"result","result":"should not run"}'
 "#,
     );
     let executor = configure_runtime(&temp, fake_claude);
+    let home = prepare_employee_home(&temp);
 
     let error = executor
-        .handle_command(session_command(
+        .handle_command(session_command_in_home(
+            &home,
             "cmd-send-rejected",
             RuntimeCommandType::SendInput,
             "new",

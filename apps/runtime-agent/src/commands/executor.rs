@@ -19,6 +19,9 @@ use crate::providers::claude::ClaudeProvider;
 use crate::providers::opencode::OpenCodeProvider;
 use crate::providers::{ProviderAdapter, ProviderEventStream, ProviderRequest};
 use crate::runs::{RunEventRecord, RunSpec, RunStatus, RuntimeCommandRunContext, RuntimeRunStore};
+use crate::workspace_files::{
+    WorkspaceMaterializationPlan, materialize_workspace, provider_home_kind,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeCommandOutcome {
@@ -289,13 +292,35 @@ impl RuntimeCommandExecutor {
         &self,
         command: RuntimeCommand,
     ) -> anyhow::Result<RuntimeCommandOutcome> {
-        let result = match self.ensure_instance_from_command(&command, "provision_instance") {
+        let payload = match RuntimeProvisionInstanceCommandPayload::from_command(&command) {
+            Ok(payload) => payload,
+            Err(error) => {
+                let message = error.to_string();
+                self.write_provisioning_failure(&command.id, message)
+                    .await?;
+                return Err(self.recorded_error(&command.id, error));
+            }
+        };
+        let provider_home = match provider_home_kind(&payload.provider_type) {
+            Ok(provider_home) => provider_home,
+            Err(error) => {
+                let message = error.to_string();
+                self.write_provisioning_failure(&command.id, message)
+                    .await?;
+                return Err(self.recorded_error(&command.id, error));
+            }
+        };
+        let result = match materialize_workspace(WorkspaceMaterializationPlan {
+            agent_home_dir: PathBuf::from(&payload.agent_home_dir),
+            provider_home,
+            files: payload.workspace_files,
+        }) {
             Ok(result) => result,
             Err(error) => {
                 let message = error.to_string();
                 self.write_provisioning_failure(&command.id, message)
                     .await?;
-                return Err(error);
+                return Err(self.recorded_error(&command.id, error));
             }
         };
 
@@ -322,21 +347,50 @@ impl RuntimeCommandExecutor {
         &self,
         command: RuntimeCommand,
     ) -> anyhow::Result<RuntimeCommandOutcome> {
-        if let Err(error) = RuntimeProvisionInstanceCommandPayload::from_command(&command)
-            .map_err(|error| self.recorded_error(&command.id, error))
-        {
-            self.write_command_failure(&command.id, error.to_string())
+        let payload = match RuntimeProvisionInstanceCommandPayload::from_command(&command) {
+            Ok(payload) => payload,
+            Err(error) => {
+                let message = error.to_string();
+                self.write_workspace_sync_failure(&command.id, message)
+                    .await?;
+                return Err(self.recorded_error(&command.id, error));
+            }
+        };
+        let provider_home = match provider_home_kind(&payload.provider_type) {
+            Ok(provider_home) => provider_home,
+            Err(error) => {
+                let message = error.to_string();
+                self.write_workspace_sync_failure(&command.id, message)
+                    .await?;
+                return Err(self.recorded_error(&command.id, error));
+            }
+        };
+        let result = match materialize_workspace(WorkspaceMaterializationPlan {
+            agent_home_dir: PathBuf::from(&payload.agent_home_dir),
+            provider_home,
+            files: payload.workspace_files,
+        }) {
+            Ok(result) => result,
+            Err(error) => {
+                let message = error.to_string();
+                self.write_workspace_sync_failure(&command.id, message)
+                    .await?;
+                return Err(self.recorded_error(&command.id, error));
+            }
+        };
+        if let Some(control_plane) = &self.control_plane {
+            control_plane
+                .complete_runtime_command(
+                    &command.id,
+                    &workspace_sync_completed_terminal(&result.agent_home_dir, result.synced_files),
+                )
                 .await?;
-            return Err(error);
         }
-
-        let error = self.recorded_error(
-            &command.id,
-            anyhow::anyhow!("sync_workspace_files is not implemented by runtime executor"),
-        );
-        self.write_command_failure(&command.id, error.to_string())
-            .await?;
-        Err(error)
+        Ok(RuntimeCommandOutcome {
+            command_id: command.id,
+            accepted: true,
+            run_id: None,
+        })
     }
 
     fn ensure_instance_from_command(
@@ -367,6 +421,19 @@ impl RuntimeCommandExecutor {
         if let Some(control_plane) = &self.control_plane {
             control_plane
                 .fail_runtime_command(command_id, &provisioning_failed_terminal(error_message))
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn write_workspace_sync_failure(
+        &self,
+        command_id: &str,
+        error_message: String,
+    ) -> anyhow::Result<()> {
+        if let Some(control_plane) = &self.control_plane {
+            control_plane
+                .fail_runtime_command(command_id, &workspace_sync_failed_terminal(error_message))
                 .await?;
         }
         Ok(())
@@ -445,16 +512,33 @@ impl RuntimeCommandExecutor {
         command_id: &str,
         payload: &RuntimeSessionCommandPayload,
     ) -> anyhow::Result<PathBuf> {
-        let team_id = payload.team_id.as_ref().ok_or_else(|| {
-            self.recorded_error(command_id, anyhow::anyhow!("team_id is required"))
-        })?;
+        let agent_home_dir_text = payload
+            .agent_home_dir
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                self.recorded_error(command_id, anyhow::anyhow!("agent_home_dir is required"))
+            })?;
+        let agent_home_dir = PathBuf::from(agent_home_dir_text);
+        if !agent_home_dir.exists() {
+            return Err(self.recorded_error(
+                command_id,
+                anyhow::anyhow!(
+                    "agent_home_dir does not exist: {}",
+                    agent_home_dir.display()
+                ),
+            ));
+        }
 
-        ensure_instance(EnsureInstanceRequest {
-            base_dir: self.config.workspace.base_dir.clone(),
-            team_id: team_id.clone(),
-            digital_employee_id: payload.digital_employee_id.clone(),
+        let provider_home = provider_home_kind(&payload.provider_type)
+            .map_err(|error| self.recorded_error(command_id, error))?;
+        materialize_workspace(WorkspaceMaterializationPlan {
+            agent_home_dir: agent_home_dir.clone(),
+            provider_home,
+            files: payload.workspace_files.clone(),
         })
-        .map(|result| result.agent_home_dir)
+        .map(|_| agent_home_dir)
         .map_err(|error| self.recorded_error(command_id, error))
     }
 
@@ -576,6 +660,50 @@ fn provisioning_failed_terminal(error_message: String) -> RuntimeCommandTerminal
         error_message: Some(error_message),
         error_code: Some("provision_instance_failed".to_string()),
         error_family: Some("runtime_provisioning".to_string()),
+    }
+}
+
+fn workspace_sync_completed_terminal(
+    agent_home_dir: &Path,
+    synced_files: Vec<crate::workspace_files::SyncedWorkspaceFile>,
+) -> RuntimeCommandTerminalWriteback {
+    let mut result = HashMap::new();
+    result.insert(
+        "agent_home_dir".to_string(),
+        serde_json::Value::String(path_to_string(agent_home_dir)),
+    );
+    result.insert(
+        "synced_files".to_string(),
+        serde_json::to_value(synced_files).unwrap_or_else(|_| serde_json::Value::Array(Vec::new())),
+    );
+    RuntimeCommandTerminalWriteback {
+        status: "completed".to_string(),
+        summary: Some("digital employee workspace files synced".to_string()),
+        result: Some(result),
+        diagnostic: None,
+        provider_session_external_id: None,
+        session_state_patch: None,
+        log_ref: None,
+        raw_result_ref: None,
+        error_message: None,
+        error_code: None,
+        error_family: None,
+    }
+}
+
+fn workspace_sync_failed_terminal(error_message: String) -> RuntimeCommandTerminalWriteback {
+    RuntimeCommandTerminalWriteback {
+        status: "failed".to_string(),
+        summary: None,
+        result: None,
+        diagnostic: None,
+        provider_session_external_id: None,
+        session_state_patch: None,
+        log_ref: None,
+        raw_result_ref: None,
+        error_message: Some(error_message),
+        error_code: Some("workspace_sync_failed".to_string()),
+        error_family: Some("workspace_materialization".to_string()),
     }
 }
 
