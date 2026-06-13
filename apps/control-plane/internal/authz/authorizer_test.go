@@ -496,6 +496,21 @@ func TestDBAuthorizerEmployeeOwnerCanUsePersonalEmployeeActions(t *testing.T) {
 		t.Fatalf("expected unrelated member to be denied, got %#v", decision)
 	}
 
+	delete(repo.tenantRoles, tenantID.String()+":user:"+ownerID.String())
+	decision, err = authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: ownerID.String()},
+		Action:   ActionEmployeeCapabilityEdit,
+		Resource: ownerResource,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if decision.Allowed || decision.Reason != ReasonNoMembership {
+		t.Fatalf("expected employee owner without tenant membership to be denied, got %#v", decision)
+	}
+	repo.tenantRoles[tenantID.String()+":user:"+ownerID.String()] = RoleMember
+
 	decision, err = authorizer.Check(context.Background(), CheckRequest{
 		Actor:    ActorRef{Type: ActorUser, ID: ownerID.String()},
 		Action:   ActionEmployeeStatusUpdate,
@@ -549,6 +564,20 @@ func TestDBAuthorizerCredentialActionsAllowSelfResource(t *testing.T) {
 	}
 	if decision.Allowed || decision.Reason != ReasonNoMembership {
 		t.Fatalf("expected another user's credential resource to be denied, got %#v", decision)
+	}
+
+	delete(repo.tenantRoles, tenantID.String()+":user:"+userID.String())
+	decision, err = authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+		Action:   ActionCredentialCreate,
+		Resource: ResourceRef{Type: ResourceCredential, ID: userID.String()},
+		TenantID: tenantID,
+	})
+	if err != nil {
+		t.Fatalf("expected credential action to be supported, got %v", err)
+	}
+	if decision.Allowed || decision.Reason != ReasonNoMembership {
+		t.Fatalf("expected self credential without tenant membership to be denied, got %#v", decision)
 	}
 }
 

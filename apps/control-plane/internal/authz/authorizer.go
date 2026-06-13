@@ -273,6 +273,10 @@ func (a *DBAuthorizer) checkEmployeeOwnerAction(ctx context.Context, req CheckRe
 	if err != nil || adminDecision.Allowed || adminDecision.Reason != ReasonNoMembership {
 		return adminDecision, err
 	}
+	tenantDecision, err := a.checkTenantAccess(ctx, req)
+	if err != nil || !tenantDecision.Allowed {
+		return tenantDecision, err
+	}
 	principalID, ok := parseUUIDActor(req.Actor, ActorUser)
 	if !ok {
 		return deny(ReasonInvalidActor), nil
@@ -307,6 +311,10 @@ func (a *DBAuthorizer) checkCredentialSelfOrTenantAdmin(ctx context.Context, req
 		return deny(ReasonInvalidResource), nil
 	}
 	if credentialResourceID == principalID {
+		tenantDecision, err := a.checkTenantAccess(ctx, req)
+		if err != nil || !tenantDecision.Allowed {
+			return tenantDecision, err
+		}
 		return allow("credential.self", "self"), nil
 	}
 	return a.checkTenantAdminAccess(ctx, req)
