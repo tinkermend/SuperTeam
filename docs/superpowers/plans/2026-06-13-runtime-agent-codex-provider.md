@@ -35,7 +35,7 @@ The spec is one subsystem: Runtime Agent provider support. It touches several ru
 - Modify `apps/runtime-agent/src/daemon.rs`
   - Builds supported providers and provider capabilities from catalog.
 - Modify `apps/runtime-agent/src/server.rs`
-  - Extends HTTP config and smoke run path to Codex, preferably through catalog helpers.
+  - Extends HTTP config and smoke run path to Codex, following the existing `claude`/`opencode` `provider_kind` handling (the HTTP path keys off `provider_kind` strings, not the catalog).
 - Modify `apps/runtime-agent/src/main.rs`
   - Adds `--codex-bin` and `run --provider codex`.
 - Modify `apps/runtime-agent/src/workspace_files.rs`
@@ -185,10 +185,7 @@ Modify the `RuntimeConfigOverrides` struct literal in `apps/runtime-agent/src/ma
 Create `apps/runtime-agent/src/providers/catalog.rs`:
 
 ```rust
-use std::path::PathBuf;
-
 use crate::config::{ProviderSection, RuntimeConfig};
-use crate::health::ProviderHealthProbe;
 use crate::providers::claude::ClaudeProvider;
 use crate::providers::opencode::OpenCodeProvider;
 use crate::providers::ProviderAdapter;
@@ -254,21 +251,6 @@ pub fn supported_provider_types(config: &RuntimeConfig) -> Vec<String> {
             section.enabled.then(|| descriptor.provider_type.to_string())
         })
         .collect()
-}
-
-pub fn provider_health_probe(
-    config: &RuntimeConfig,
-    descriptor: &ProviderDescriptor,
-) -> Option<ProviderHealthProbe> {
-    let section = provider_section(config, descriptor.provider_type)?;
-    section.enabled.then(|| ProviderHealthProbe {
-        kind: descriptor.health_kind.to_string(),
-        bin_path: section.binary_path.clone(),
-    })
-}
-
-pub fn provider_binary_path(config: &RuntimeConfig, provider_type: &str) -> Option<PathBuf> {
-    provider_section(config, provider_type).map(|section| section.binary_path.clone())
 }
 
 pub fn select_provider(
@@ -715,7 +697,102 @@ git add apps/runtime-agent/src/providers/mod.rs apps/runtime-agent/src/providers
 git commit -m "feat: add codex provider adapter"
 ```
 
-## Task 3: Runtime Command Payload And Executor Selection
+## Task 3: Workspace Materialization For Codex
+
+> **Ordering note:** Workspace materialization must land before the executor routing task. `RuntimeCommandExecutor::handle_input_command` calls `ensure_command_instance` (which calls `provider_home_kind`) on every accepted session command, so an enabled Codex run cannot start until `provider_home_kind` understands `"codex"`. Implementing workspace support first keeps Task 4's enabled-Codex run test green.
+
+**Files:**
+- Modify: `apps/runtime-agent/src/workspace_files.rs`
+- Test: `apps/runtime-agent/tests/workspace_files_test.rs`
+
+- [ ] **Step 1: Add failing workspace path and materialization tests**
+
+In `apps/runtime-agent/tests/workspace_files_test.rs`, add `.codex/config.toml` to the reserved path list:
+
+```rust
+        ".codex/config.toml",
+```
+
+Append test:
+
+```rust
+#[test]
+fn materialize_workspace_creates_codex_provider_dir() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("employee");
+    std::fs::create_dir_all(&home).unwrap();
+
+    let result = materialize_workspace(WorkspaceMaterializationPlan {
+        agent_home_dir: home.clone(),
+        provider_home: ProviderHomeKind::Codex,
+        files: vec![agents_file("# Contract\n")],
+    })
+    .unwrap();
+
+    assert_eq!(result.synced_files.len(), 1);
+    assert!(home.join(".codex").is_dir());
+    assert!(home.join("CLAUDE.md").exists());
+}
+```
+
+- [ ] **Step 2: Run workspace tests and verify they fail**
+
+Run:
+
+```bash
+cargo test --manifest-path apps/runtime-agent/Cargo.toml --test workspace_files_test
+```
+
+Expected: FAIL because `ProviderHomeKind::Codex` is missing and `.codex` is not reserved.
+
+- [ ] **Step 3: Add Codex provider home support**
+
+Modify `apps/runtime-agent/src/workspace_files.rs`:
+
+```rust
+pub enum ProviderHomeKind {
+    ClaudeCode,
+    OpenCode,
+    Codex,
+}
+```
+
+Update `provider_home_kind`:
+
+```rust
+        "codex" => Ok(ProviderHomeKind::Codex),
+```
+
+Update reserved first path component:
+
+```rust
+    if matches!(first, ".claude" | ".opencode" | ".codex" | ".git" | ".superteam") {
+```
+
+Update `provider_private_dir`:
+
+```rust
+        ProviderHomeKind::Codex => ".codex",
+```
+
+- [ ] **Step 4: Run workspace tests**
+
+Run:
+
+```bash
+cargo test --manifest-path apps/runtime-agent/Cargo.toml --test workspace_files_test
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit Task 3**
+
+```bash
+git add apps/runtime-agent/src/workspace_files.rs apps/runtime-agent/tests/workspace_files_test.rs
+git commit -m "feat: materialize codex provider workspace"
+```
+
+## Task 4: Runtime Command Payload And Executor Selection
 
 **Files:**
 - Modify: `apps/runtime-agent/src/commands/payload.rs`
@@ -816,6 +893,8 @@ printf '%s\n' '{"type":"system","session_id":"unused"}'
 ```
 
 - [ ] **Step 5: Add failing executor test for enabled Codex run**
+
+This test exercises the full accepted-command path, including `ensure_command_instance` -> `provider_home_kind("codex")`, which is why Task 3 (workspace materialization) must already be implemented.
 
 Append test:
 
@@ -924,104 +1003,11 @@ cargo test --manifest-path apps/runtime-agent/Cargo.toml --test runtime_command_
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit Task 3**
+- [ ] **Step 8: Commit Task 4**
 
 ```bash
 git add apps/runtime-agent/src/commands/payload.rs apps/runtime-agent/src/commands/executor.rs apps/runtime-agent/tests/runtime_command_payload_test.rs apps/runtime-agent/tests/runtime_command_executor_test.rs
 git commit -m "feat: route runtime commands to codex provider"
-```
-
-## Task 4: Workspace Materialization For Codex
-
-**Files:**
-- Modify: `apps/runtime-agent/src/workspace_files.rs`
-- Test: `apps/runtime-agent/tests/workspace_files_test.rs`
-
-- [ ] **Step 1: Add failing workspace path and materialization tests**
-
-In `apps/runtime-agent/tests/workspace_files_test.rs`, add `.codex/config.toml` to the reserved path list:
-
-```rust
-        ".codex/config.toml",
-```
-
-Append test:
-
-```rust
-#[test]
-fn materialize_workspace_creates_codex_provider_dir() {
-    let temp = tempfile::tempdir().unwrap();
-    let home = temp.path().join("employee");
-    std::fs::create_dir_all(&home).unwrap();
-
-    let result = materialize_workspace(WorkspaceMaterializationPlan {
-        agent_home_dir: home.clone(),
-        provider_home: ProviderHomeKind::Codex,
-        files: vec![agents_file("# Contract\n")],
-    })
-    .unwrap();
-
-    assert_eq!(result.synced_files.len(), 1);
-    assert!(home.join(".codex").is_dir());
-    assert!(home.join("CLAUDE.md").exists());
-}
-```
-
-- [ ] **Step 2: Run workspace tests and verify they fail**
-
-Run:
-
-```bash
-cargo test --manifest-path apps/runtime-agent/Cargo.toml --test workspace_files_test
-```
-
-Expected: FAIL because `ProviderHomeKind::Codex` is missing and `.codex` is not reserved.
-
-- [ ] **Step 3: Add Codex provider home support**
-
-Modify `apps/runtime-agent/src/workspace_files.rs`:
-
-```rust
-pub enum ProviderHomeKind {
-    ClaudeCode,
-    OpenCode,
-    Codex,
-}
-```
-
-Update `provider_home_kind`:
-
-```rust
-        "codex" => Ok(ProviderHomeKind::Codex),
-```
-
-Update reserved first path component:
-
-```rust
-    if matches!(first, ".claude" | ".opencode" | ".codex" | ".git" | ".superteam") {
-```
-
-Update `provider_private_dir`:
-
-```rust
-        ProviderHomeKind::Codex => ".codex",
-```
-
-- [ ] **Step 4: Run workspace tests**
-
-Run:
-
-```bash
-cargo test --manifest-path apps/runtime-agent/Cargo.toml --test workspace_files_test
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit Task 4**
-
-```bash
-git add apps/runtime-agent/src/workspace_files.rs apps/runtime-agent/tests/workspace_files_test.rs
-git commit -m "feat: materialize codex provider workspace"
 ```
 
 ## Task 5: Capability Reporting From Catalog
@@ -1309,10 +1295,9 @@ printf '%s\n' '{"type":"turn.completed","summary":"codex http done"}'
 
 - [ ] **Step 2: Update HTTP config and provider handling**
 
-Modify `apps/runtime-agent/src/server.rs` imports:
+Modify `apps/runtime-agent/src/server.rs` imports (add alongside the existing `claude`/`opencode` provider imports):
 
 ```rust
-use crate::providers::catalog::{self, CODEX_PROVIDER_TYPE};
 use crate::providers::codex::CodexProvider;
 ```
 

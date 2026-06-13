@@ -19,7 +19,7 @@
 - First phase stores workspace file text in DB. Object-store columns are created now but remain inactive until a separate storage implementation is introduced.
 - First phase creates and syncs `AGENTS.md`; it models future user-added root files through the same file/revision tables. The Console Instructions UI is outside this plan.
 - `CLAUDE.md` is Runtime-generated compatibility material. It is not a user-editable workspace file.
-- First phase carries `skills` and `mcp_servers` arrays in `provision_instance` and `sync_workspace_files` payloads. Empty arrays are valid while team MCP management is incomplete. Team knowledge base and external capability materialization are outside this plan.
+- First phase carries `skills` and `mcp_servers` arrays in `provision_instance` and `sync_workspace_files` payloads. Empty arrays are valid only when the effective capability selection is empty or the team capability tables cannot yet provide stable IDs/revisions; enabled capability keys must not be silently dropped. Team knowledge base and external capability materialization are outside this plan.
 - Provider type, file role, sync policy, and storage backend are strings validated in application code, not PostgreSQL enums.
 - Do not rewrite unrelated existing worktree changes. Stage only files touched by this plan during implementation.
 
@@ -52,11 +52,19 @@ Control Plane employee domain:
   - Includes `team_id`, `agent_home_dir`, and target workspace file revisions in `start_session`.
 - Modify: `apps/control-plane/internal/employee/run_service_test.go`
   - Covers debug/project run payloads sharing the same employee home and carrying metadata.
+- Modify: `apps/control-plane/internal/employee/run_repository.go`
+  - Adds the writeback-side sync projection update method used by Runtime command completion.
+- Modify: `apps/control-plane/internal/employee/pg_run_repository.go`
+  - Implements workspace file sync projection updates from sqlc.
+- Modify: `apps/control-plane/internal/employee/run_writeback.go`
+  - Consumes `sync_workspace_files` terminal writebacks without mutating employee lifecycle state.
+- Modify: `apps/control-plane/internal/employee/run_writeback_test.go`
+  - Covers sync command completion/failure projection updates.
 
 Runtime Agent domain:
 
 - Modify: `apps/runtime-agent/src/controlplane/models.rs`
-  - Adds `sync_workspace_files` command type and provision payload shape.
+  - Adds `sync_workspace_files` command type, provision payload shape, and team/employee IDs for `ensure_instance`.
 - Modify: `apps/runtime-agent/src/commands/payload.rs`
   - Adds typed payload structs for provision/session/sync workspace file materialization.
 - Modify: `apps/runtime-agent/src/instances.rs`
@@ -116,12 +124,15 @@ func TestDigitalEmployeeWorkspaceFilesMigration(t *testing.T) {
 		"object_key TEXT",
 		"content_text TEXT",
 		"content_hash VARCHAR(64) NOT NULL",
+		"created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_de_workspace_files_active_path",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_de_workspace_file_revisions_number",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_de_workspace_file_syncs_target",
 		"COMMENT ON TABLE digital_employee_workspace_files IS '数字员工工作目录受控文件身份表'",
 		"COMMENT ON TABLE digital_employee_workspace_file_revisions IS '数字员工工作目录受控文件内容版本表'",
 		"COMMENT ON TABLE digital_employee_workspace_file_syncs IS '数字员工工作目录文件同步状态投影表'",
+		"COMMENT ON COLUMN digital_employee_workspace_file_syncs.id IS '同步状态主键 UUID'",
+		"COMMENT ON COLUMN digital_employee_workspace_file_syncs.created_at IS '同步状态创建时间'",
 	}
 	for _, expected := range required {
 		if !strings.Contains(sql, expected) {
@@ -222,6 +233,7 @@ CREATE INDEX IF NOT EXISTS idx_de_workspace_file_revisions_tenant_file
     ON digital_employee_workspace_file_revisions(tenant_id, file_id, revision_number DESC);
 
 CREATE TABLE IF NOT EXISTS digital_employee_workspace_file_syncs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     digital_employee_id UUID NOT NULL,
     execution_instance_id UUID NOT NULL,
@@ -233,6 +245,7 @@ CREATE TABLE IF NOT EXISTS digital_employee_workspace_file_syncs (
     error_message TEXT,
     last_command_id VARCHAR(255),
     last_synced_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -276,6 +289,7 @@ COMMENT ON COLUMN digital_employee_workspace_file_revisions.change_note IS '版�
 COMMENT ON COLUMN digital_employee_workspace_file_revisions.metadata IS '文件版本扩展元数据 JSON';
 
 COMMENT ON TABLE digital_employee_workspace_file_syncs IS '数字员工工作目录文件同步状态投影表';
+COMMENT ON COLUMN digital_employee_workspace_file_syncs.id IS '同步状态主键 UUID';
 COMMENT ON COLUMN digital_employee_workspace_file_syncs.tenant_id IS '同步状态所属租户 ID';
 COMMENT ON COLUMN digital_employee_workspace_file_syncs.digital_employee_id IS '同步状态所属数字员工 ID';
 COMMENT ON COLUMN digital_employee_workspace_file_syncs.execution_instance_id IS '同步目标执行实例 ID';
@@ -287,6 +301,7 @@ COMMENT ON COLUMN digital_employee_workspace_file_syncs.synced_hash IS 'Runtime 
 COMMENT ON COLUMN digital_employee_workspace_file_syncs.error_message IS '同步失败时的错误摘要';
 COMMENT ON COLUMN digital_employee_workspace_file_syncs.last_command_id IS '最后一次同步命令 ID';
 COMMENT ON COLUMN digital_employee_workspace_file_syncs.last_synced_at IS '最后同步成功时间';
+COMMENT ON COLUMN digital_employee_workspace_file_syncs.created_at IS '同步状态创建时间';
 COMMENT ON COLUMN digital_employee_workspace_file_syncs.updated_at IS '同步状态更新时间';
 ```
 
@@ -602,6 +617,20 @@ type CreateWorkspaceFileRevisionParams struct {
 	Metadata       map[string]any
 }
 
+type UpsertWorkspaceFileSyncParams struct {
+	TenantID            uuid.UUID
+	DigitalEmployeeID   uuid.UUID
+	ExecutionInstanceID uuid.UUID
+	FileID              uuid.UUID
+	RevisionID          uuid.UUID
+	RuntimeNodeID       uuid.UUID
+	Status              string
+	SyncedHash          *string
+	ErrorMessage        *string
+	LastCommandID       *string
+	LastSyncedAt        *time.Time
+}
+
 type WorkspaceFileRecord struct {
 	ID                uuid.UUID
 	TenantID          uuid.UUID
@@ -663,6 +692,7 @@ CreateWorkspaceFile(ctx context.Context, params CreateWorkspaceFileParams) (Work
 CreateWorkspaceFileRevision(ctx context.Context, params CreateWorkspaceFileRevisionParams) (WorkspaceFileRevisionRecord, error)
 ActivateWorkspaceFileRevision(ctx context.Context, tenantID, fileID, revisionID uuid.UUID) (WorkspaceFileRecord, error)
 ListWorkspaceFilesForSync(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error)
+UpsertWorkspaceFileSync(ctx context.Context, params UpsertWorkspaceFileSyncParams) error
 ```
 
 In `apps/control-plane/internal/employee/service_test.go`, extend `memoryRepository` with:
@@ -740,6 +770,10 @@ func (r *memoryRepository) ListWorkspaceFilesForSync(_ context.Context, tenantID
 		}
 	}
 	return out, nil
+}
+
+func (r *memoryRepository) UpsertWorkspaceFileSync(_ context.Context, params UpsertWorkspaceFileSyncParams) error {
+	return nil
 }
 ```
 
@@ -916,7 +950,7 @@ func (r *PgRepository) CreateWorkspaceFile(ctx context.Context, params CreateWor
 }
 ```
 
-Add equivalent implementations for revision create, activation, and list-for-sync. Add converter helpers:
+Add equivalent implementations for revision create, activation, list-for-sync, and sync projection upsert. `UpsertWorkspaceFileSync` should call generated `UpsertDigitalEmployeeWorkspaceFileSync` and pass nullable values through the existing nullable helpers. Add converter helpers:
 
 ```go
 func workspaceFileRecordFromQuery(row queries.DigitalEmployeeWorkspaceFile) (WorkspaceFileRecord, error) {
@@ -1051,6 +1085,36 @@ func runtimeWorkspaceFilesPayload(files []WorkspaceFileForSyncRecord) []map[stri
 	return out
 }
 
+func runtimeSkillsPayload(capabilitySelection map[string]any) []map[string]any {
+	keys := stringList(capabilitySelection["enabled_skills"])
+	out := make([]map[string]any, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, map[string]any{
+			"skill_id":     "",
+			"skill_key":    key,
+			"revision_id":  "",
+			"files":        []any{},
+			"content_hash": "",
+		})
+	}
+	return out
+}
+
+func runtimeMCPServersPayload(capabilitySelection map[string]any) []map[string]any {
+	keys := stringList(capabilitySelection["enabled_mcp_servers"])
+	out := make([]map[string]any, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, map[string]any{
+			"server_id":         "",
+			"server_key":        key,
+			"transport":         "",
+			"config_ref":        "",
+			"permission_scope":  map[string]any{},
+		})
+	}
+	return out
+}
+
 func emptyRuntimeSkillsPayload() []map[string]any {
 	return []map[string]any{}
 }
@@ -1083,11 +1147,11 @@ Add these payload fields:
 ```go
 "agent_home_dir":  instance.AgentHomeDir,
 "workspace_files": runtimeWorkspaceFilesPayload(workspaceFiles),
-"skills":          emptyRuntimeSkillsPayload(),
-"mcp_servers":     emptyRuntimeMCPServersPayload(),
+"skills":          runtimeSkillsPayload(configInput.CapabilitySelection),
+"mcp_servers":     runtimeMCPServersPayload(configInput.CapabilitySelection),
 ```
 
-Keep `capability_selection` in the payload. The empty `skills` and `mcp_servers` arrays are the first-phase contract surface for team capability inheritance.
+Keep `capability_selection` in the payload. `skills` and `mcp_servers` are the first-phase contract surface for team capability inheritance: they contain enabled capability keys when the effective config has them, and are empty arrays only when no effective skill/MCP selection exists yet. The placeholder `skill_id`, `server_id`, `revision_id`, `transport`, and `config_ref` values remain empty until the team capability management tables provide stable IDs and revisions.
 
 - [ ] **Step 4: Add failing start-session payload test**
 
@@ -1194,6 +1258,8 @@ Change `buildStartSessionPayload` signature to include `workspaceFiles []Workspa
 "skills":           emptyRuntimeSkillsPayload(),
 "mcp_servers":      emptyRuntimeMCPServersPayload(),
 ```
+
+`start_session` keeps the arrays explicit but does not re-resolve team capability selection in this first cut. Provider capability files are materialized by `provision_instance` and later `sync_workspace_files`; `start_session` only verifies/syncs workspace files before launching the Provider from the already-provisioned employee home.
 
 - [ ] **Step 6: Run targeted Control Plane tests**
 
@@ -1310,6 +1376,16 @@ Update deserialization:
 
 ```rust
 "sync_workspace_files" => Self::SyncWorkspaceFiles,
+```
+
+Update the existing `EnsureInstanceCommand` shape in the same file so the legacy `ensure_instance` command no longer depends on `execution_instance_id` for directory identity:
+
+```rust
+#[derive(Debug, Clone, Deserialize)]
+pub struct EnsureInstanceCommand {
+    pub team_id: String,
+    pub digital_employee_id: String,
+}
 ```
 
 - [ ] **Step 4: Add typed materialization payloads**
@@ -1990,7 +2066,35 @@ use crate::workspace_files::{
 };
 ```
 
-- [ ] **Step 4: Route `sync_workspace_files`**
+- [ ] **Step 4: Update legacy `ensure_instance` routing**
+
+In `ensure_instance_from_command`, build the new request from `team_id` and `digital_employee_id`:
+
+```rust
+fn ensure_instance_from_command(
+    &self,
+    command: &RuntimeCommand,
+    command_name: &str,
+) -> anyhow::Result<crate::instances::EnsureInstanceResult> {
+    let request: EnsureInstanceCommand = serde_json::from_value(command.payload.clone())
+        .map_err(|error| {
+            self.recorded_error(
+                &command.id,
+                anyhow::anyhow!("invalid {command_name} command payload: {error}"),
+            )
+        })?;
+    ensure_instance(EnsureInstanceRequest {
+        base_dir: self.config.workspace.base_dir.clone(),
+        team_id: request.team_id,
+        digital_employee_id: request.digital_employee_id,
+    })
+    .map_err(|error| self.recorded_error(&command.id, error))
+}
+```
+
+Update any `ensure_instance` test payloads to provide `team_id` and `digital_employee_id` instead of `execution_instance_id`.
+
+- [ ] **Step 5: Route `sync_workspace_files`**
 
 In `handle_command`, add:
 
@@ -2005,16 +2109,34 @@ async fn handle_sync_workspace_files(
     &self,
     command: RuntimeCommand,
 ) -> anyhow::Result<RuntimeCommandOutcome> {
-    let payload = RuntimeProvisionInstanceCommandPayload::from_command(&command)
-        .map_err(|error| self.recorded_error(&command.id, error))?;
-    let provider_home = provider_home_kind(&payload.provider_type)
-        .map_err(|error| self.recorded_error(&command.id, error))?;
-    let result = materialize_workspace(WorkspaceMaterializationPlan {
+    let payload = match RuntimeProvisionInstanceCommandPayload::from_command(&command) {
+        Ok(payload) => payload,
+        Err(error) => {
+            let message = error.to_string();
+            self.write_workspace_sync_failure(&command.id, message).await?;
+            return Err(self.recorded_error(&command.id, error));
+        }
+    };
+    let provider_home = match provider_home_kind(&payload.provider_type) {
+        Ok(provider_home) => provider_home,
+        Err(error) => {
+            let message = error.to_string();
+            self.write_workspace_sync_failure(&command.id, message).await?;
+            return Err(self.recorded_error(&command.id, error));
+        }
+    };
+    let result = match materialize_workspace(WorkspaceMaterializationPlan {
         agent_home_dir: PathBuf::from(&payload.agent_home_dir),
         provider_home,
         files: payload.workspace_files,
-    })
-    .map_err(|error| self.recorded_error(&command.id, error))?;
+    }) {
+        Ok(result) => result,
+        Err(error) => {
+            let message = error.to_string();
+            self.write_workspace_sync_failure(&command.id, message).await?;
+            return Err(self.recorded_error(&command.id, error));
+        }
+    };
     if let Some(control_plane) = &self.control_plane {
         control_plane
             .complete_runtime_command(
@@ -2031,7 +2153,7 @@ async fn handle_sync_workspace_files(
 }
 ```
 
-- [ ] **Step 5: Update provision handler**
+- [ ] **Step 6: Update provision handler**
 
 Replace `handle_provision_instance` parsing with `RuntimeProvisionInstanceCommandPayload::from_command`. Materialize the workspace using the payload `agent_home_dir`:
 
@@ -2062,7 +2184,7 @@ let result = match materialize_workspace(WorkspaceMaterializationPlan {
 
 Return `result.agent_home_dir` in `provisioning_completed_terminal`.
 
-- [ ] **Step 6: Update start-session workspace resolution**
+- [ ] **Step 7: Update start-session workspace resolution**
 
 Replace `ensure_command_instance` with:
 
@@ -2097,9 +2219,9 @@ fn ensure_command_instance(
 }
 ```
 
-- [ ] **Step 7: Add sync completion terminal**
+- [ ] **Step 8: Add sync completion and failure terminals**
 
-In `executor.rs`, add:
+In `executor.rs`, add `write_workspace_sync_failure` inside `impl RuntimeCommandExecutor`, and add the terminal builders near the existing `provisioning_*_terminal` helpers:
 
 ```rust
 fn workspace_sync_completed_terminal(
@@ -2130,11 +2252,40 @@ fn workspace_sync_completed_terminal(
         error_family: None,
     }
 }
+
+async fn write_workspace_sync_failure(
+    &self,
+    command_id: &str,
+    error_message: String,
+) -> anyhow::Result<()> {
+    if let Some(control_plane) = &self.control_plane {
+        control_plane
+            .fail_runtime_command(command_id, &workspace_sync_failed_terminal(error_message))
+            .await?;
+    }
+    Ok(())
+}
+
+fn workspace_sync_failed_terminal(error_message: String) -> RuntimeCommandTerminalWriteback {
+    RuntimeCommandTerminalWriteback {
+        status: "failed".to_string(),
+        summary: None,
+        result: None,
+        diagnostic: None,
+        provider_session_external_id: None,
+        session_state_patch: None,
+        log_ref: None,
+        raw_result_ref: None,
+        error_message: Some(error_message),
+        error_code: Some("workspace_sync_failed".to_string()),
+        error_family: Some("workspace_materialization".to_string()),
+    }
+}
 ```
 
 Derive `Serialize` for `SyncedWorkspaceFile` in `workspace_files.rs`.
 
-- [ ] **Step 8: Update websocket tests**
+- [ ] **Step 9: Update websocket tests**
 
 In `apps/runtime-agent/src/controlplane/ws.rs`, update provision and start-session command JSON payloads to include:
 
@@ -2151,7 +2302,7 @@ In `apps/runtime-agent/src/controlplane/ws.rs`, update provision and start-sessi
 
 Replace assertions for `state`, `sessions`, and `runs` directories with assertions for `.claude` and absence of generic directories.
 
-- [ ] **Step 9: Run Runtime command tests**
+- [ ] **Step 10: Run Runtime command tests**
 
 Run:
 
@@ -2162,7 +2313,7 @@ cargo test --manifest-path apps/runtime-agent/Cargo.toml controlplane::ws
 
 Expected: PASS.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add apps/runtime-agent/src/commands/executor.rs \
@@ -2201,25 +2352,35 @@ func TestCreateDigitalEmployeeProvisionPayloadCarriesEffectiveCapabilityArrays(t
 	if err := json.Unmarshal(dispatcher.commands[0].Payload, &payload); err != nil {
 		t.Fatalf("decode runtime command payload: %v", err)
 	}
-	if skills, ok := payload["skills"].([]any); !ok || len(skills) != 0 {
-		t.Fatalf("first phase should carry skills array and allow it empty, got %#v", payload["skills"])
+	skills, ok := payload["skills"].([]any)
+	if !ok || len(skills) != 1 {
+		t.Fatalf("expected one effective skill in payload, got %#v", payload["skills"])
 	}
-	if servers, ok := payload["mcp_servers"].([]any); !ok || len(servers) != 0 {
-		t.Fatalf("first phase should carry mcp_servers array and allow it empty, got %#v", payload["mcp_servers"])
+	skill, ok := skills[0].(map[string]any)
+	if !ok || skill["skill_key"] != "incident-diagnosis" {
+		t.Fatalf("expected incident-diagnosis skill payload, got %#v", skills[0])
+	}
+	servers, ok := payload["mcp_servers"].([]any)
+	if !ok || len(servers) != 1 {
+		t.Fatalf("expected one effective MCP server in payload, got %#v", payload["mcp_servers"])
+	}
+	server, ok := servers[0].(map[string]any)
+	if !ok || server["server_key"] != "prometheus-readonly" {
+		t.Fatalf("expected prometheus-readonly MCP payload, got %#v", servers[0])
 	}
 }
 ```
 
 - [ ] **Step 2: Keep capability arrays explicit in payload builders**
 
-Ensure both `buildProvisionInstancePayload` and `buildStartSessionPayload` always set:
+Ensure `buildProvisionInstancePayload` sets the arrays from the effective capability selection:
 
 ```go
-"skills":      emptyRuntimeSkillsPayload(),
-"mcp_servers": emptyRuntimeMCPServersPayload(),
+"skills":      runtimeSkillsPayload(configInput.CapabilitySelection),
+"mcp_servers": runtimeMCPServersPayload(configInput.CapabilitySelection),
 ```
 
-The service must not omit these fields when team capability data is empty.
+When the effective selection has no skill or MCP entries, these helpers must return empty arrays rather than omitting the fields. `buildStartSessionPayload` keeps explicit empty arrays in this first cut because Provider capability files are already materialized by provision/sync before session launch.
 
 - [ ] **Step 3: Add Runtime materialization no-op test**
 
@@ -2269,7 +2430,405 @@ git commit -m "feat: preserve team capability materialization contract"
 
 ---
 
-### Task 8: Update Compatibility Tests And Run Full Verification
+### Task 8: Consume Workspace Sync Writebacks In Control Plane
+
+**Files:**
+- Modify: `apps/control-plane/internal/employee/run_repository.go`
+- Modify: `apps/control-plane/internal/employee/pg_run_repository.go`
+- Modify: `apps/control-plane/internal/employee/run_writeback.go`
+- Modify: `apps/control-plane/internal/employee/run_writeback_test.go`
+
+- [ ] **Step 1: Add failing writeback tests**
+
+In `apps/control-plane/internal/employee/run_writeback_test.go`, add:
+
+```go
+func TestCompleteWorkspaceSyncCommandUpdatesFileSyncProjection(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	receipt := validWorkspaceSyncReceipt("cmd-sync")
+	repo.putReceipt(receipt)
+	service, err := NewDigitalEmployeeRunWritebackService(repo, nil)
+	if err != nil {
+		t.Fatalf("new writeback service: %v", err)
+	}
+
+	err = service.Complete(context.Background(), validProvisioningIdentity(receipt), receipt.CommandID, RuntimeCommandTerminalWriteback{
+		Status: DigitalEmployeeRunStatusCompleted,
+		Result: map[string]any{
+			"synced_files": []any{
+				map[string]any{
+					"file_id":      "55555555-5555-4555-8555-555555555555",
+					"revision_id":  "66666666-6666-4666-8666-666666666666",
+					"path":         "AGENTS.md",
+					"content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("complete sync command: %v", err)
+	}
+	if len(repo.workspaceFileSyncUpserts) != 1 {
+		t.Fatalf("expected one sync projection upsert, got %d", len(repo.workspaceFileSyncUpserts))
+	}
+	upsert := repo.workspaceFileSyncUpserts[0]
+	if upsert.Status != "synced" || upsert.SyncedHash == nil || *upsert.SyncedHash != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
+		t.Fatalf("unexpected sync projection upsert: %#v", upsert)
+	}
+	if len(repo.executionInstanceStatusUpdates) != 0 || len(repo.deletedEmployees) != 0 {
+		t.Fatalf("workspace sync completion must not mutate provisioning lifecycle state")
+	}
+}
+
+func TestFailWorkspaceSyncCommandUpdatesFileSyncProjectionWithoutDeletingEmployee(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	receipt := validWorkspaceSyncReceipt("cmd-sync-failed")
+	repo.putReceipt(receipt)
+	service, err := NewDigitalEmployeeRunWritebackService(repo, nil)
+	if err != nil {
+		t.Fatalf("new writeback service: %v", err)
+	}
+	message := "workspace file hash mismatch"
+
+	err = service.Fail(context.Background(), validProvisioningIdentity(receipt), receipt.CommandID, RuntimeCommandTerminalWriteback{
+		Status:       DigitalEmployeeRunStatusFailed,
+		ErrorMessage: &message,
+		Result: map[string]any{
+			"failed_files": []any{
+				map[string]any{
+					"file_id":     "55555555-5555-4555-8555-555555555555",
+					"revision_id": "66666666-6666-4666-8666-666666666666",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("fail sync command: %v", err)
+	}
+	if len(repo.workspaceFileSyncUpserts) != 1 {
+		t.Fatalf("expected one failed sync projection upsert, got %d", len(repo.workspaceFileSyncUpserts))
+	}
+	upsert := repo.workspaceFileSyncUpserts[0]
+	if upsert.Status != "failed" || upsert.ErrorMessage == nil || *upsert.ErrorMessage != message {
+		t.Fatalf("unexpected failed sync projection upsert: %#v", upsert)
+	}
+	if len(repo.deletedExecutionInstances) != 0 || len(repo.deletedEmployees) != 0 {
+		t.Fatalf("workspace sync failure must not delete provisioned employee facts")
+	}
+}
+```
+
+Add this helper near `validProvisioningReceipt`:
+
+```go
+func validWorkspaceSyncReceipt(commandID string) *RuntimeCommandReceipt {
+	return &RuntimeCommandReceipt{
+		ID:            uuid.New(),
+		TenantID:      runWritebackTenantID,
+		CommandID:     commandID,
+		CommandType:   "sync_workspace_files",
+		RuntimeNodeID: runWritebackRuntimeNodeID,
+		NodeID:        "runtime-node-1",
+		ResourceType:  "digital_employee_workspace_sync",
+		ResourceID:    runWritebackExecutionInstanceID,
+		Status:        "dispatched",
+		Payload: map[string]any{
+			"command_id":            commandID,
+			"digital_employee_id":   runWritebackEmployeeID.String(),
+			"execution_instance_id": runWritebackExecutionInstanceID.String(),
+			"workspace_files": []any{
+				map[string]any{
+					"file_id":     "55555555-5555-4555-8555-555555555555",
+					"revision_id": "66666666-6666-4666-8666-666666666666",
+				},
+			},
+		},
+		Result:    map[string]any{},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+}
+```
+
+Extend `fakeRunWritebackRepository` with `workspaceFileSyncUpserts []UpsertWorkspaceFileSyncParams` and add:
+
+```go
+func (f *fakeRunWritebackRepository) UpsertWorkspaceFileSync(_ context.Context, params UpsertWorkspaceFileSyncParams) error {
+	f.workspaceFileSyncUpserts = append(f.workspaceFileSyncUpserts, params)
+	return nil
+}
+```
+
+- [ ] **Step 2: Run writeback tests and confirm they fail**
+
+Run:
+
+```bash
+go test ./apps/control-plane/internal/employee -run 'TestCompleteWorkspaceSyncCommandUpdatesFileSyncProjection|TestFailWorkspaceSyncCommandUpdatesFileSyncProjectionWithoutDeletingEmployee' -count=1
+```
+
+Expected: FAIL because `DigitalEmployeeRunRepository` cannot update workspace sync projections and `sync_workspace_files` is still routed through provisioning terminal handling.
+
+- [ ] **Step 3: Extend run repository interface and Pg implementation**
+
+In `apps/control-plane/internal/employee/run_repository.go`, add:
+
+```go
+UpsertWorkspaceFileSync(ctx context.Context, params UpsertWorkspaceFileSyncParams) error
+```
+
+In `apps/control-plane/internal/employee/pg_run_repository.go`, implement it by calling generated `UpsertDigitalEmployeeWorkspaceFileSync` with the same field mapping used in Task 2's `PgRepository.UpsertWorkspaceFileSync`.
+
+- [ ] **Step 4: Route workspace sync terminal writebacks separately from provisioning**
+
+In `apps/control-plane/internal/employee/run_writeback.go`, add `time` to the import block; `strings` is already imported for existing helpers.
+
+In `loadCommandRun`, allow workspace sync receipts to be command-only receipts:
+
+```go
+if errors.Is(err, ErrNotFound) && (receipt.ResourceType == "digital_employee_execution_instance" || receipt.ResourceType == "digital_employee_workspace_sync") {
+	return receipt, nil, nil
+}
+```
+
+In `recordProvisioningTerminal`, route `sync_workspace_files` before provisioning lifecycle mutation:
+
+```go
+if receipt != nil && receipt.CommandType == "sync_workspace_files" {
+	return s.recordWorkspaceSyncTerminal(ctx, identity, commandID, receipt, terminal, spec)
+}
+```
+
+Add:
+
+```go
+func (s *DigitalEmployeeRunWritebackService) recordWorkspaceSyncTerminal(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
+	if err := validateWorkspaceSyncReceipt(identity, commandID, receipt); err != nil {
+		return err
+	}
+	if isTerminalReceiptStatus(receipt.Status) {
+		if receipt.Status == string(spec.status) {
+			return nil
+		}
+		return fmt.Errorf("%w: workspace sync command receipt is already terminal with status %s", ErrConflict, receipt.Status)
+	}
+	switch spec.status {
+	case DigitalEmployeeRunStatusCompleted:
+		if err := s.upsertSyncedWorkspaceFiles(ctx, identity, commandID, receipt, terminal); err != nil {
+			return err
+		}
+	case DigitalEmployeeRunStatusFailed:
+		if err := s.upsertFailedWorkspaceFiles(ctx, identity, commandID, receipt, terminal); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("%w: workspace sync only accepts completed or failed terminal writeback", ErrInvalidInput)
+	}
+	if _, err := s.repository.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
+		TenantID:     identity.TenantID,
+		CommandID:    commandID,
+		Status:       string(spec.status),
+		Result:       terminalReceiptResult(terminal, spec.status),
+		ErrorMessage: terminal.ErrorMessage,
+	}); err != nil {
+		return fmt.Errorf("update workspace sync command receipt: %w", err)
+	}
+	return s.logRuntimeAudit(ctx, "digital_employee_workspace_files_synced", receipt.NodeID, receipt.ResourceType, receipt.ResourceID.String(), "employee.workspace.sync")
+}
+```
+
+Add these helpers below `recordWorkspaceSyncTerminal`:
+
+```go
+type workspaceFileSyncTarget struct {
+	DigitalEmployeeID   uuid.UUID
+	ExecutionInstanceID uuid.UUID
+	FileID              uuid.UUID
+	RevisionID          uuid.UUID
+	ContentHash         *string
+}
+
+func validateWorkspaceSyncReceipt(identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt) error {
+	if receipt == nil {
+		return fmt.Errorf("%w: workspace sync command receipt is missing", ErrNotFound)
+	}
+	if receipt.TenantID != identity.TenantID || receipt.CommandID != commandID {
+		return fmt.Errorf("%w: workspace sync command receipt does not match request", ErrInvalidInput)
+	}
+	if err := ensureReceiptRuntimeIdentity(identity, receipt); err != nil {
+		return err
+	}
+	if receipt.CommandType != "sync_workspace_files" || receipt.ResourceType != "digital_employee_workspace_sync" || receipt.ResourceID == uuid.Nil {
+		return fmt.Errorf("%w: command receipt is not a digital employee workspace sync command", ErrInvalidInput)
+	}
+	return nil
+}
+
+func workspaceSyncTargetsFromReceipt(receipt *RuntimeCommandReceipt) ([]workspaceFileSyncTarget, error) {
+	digitalEmployeeID, err := uuidFromPayload(receipt.Payload, "digital_employee_id")
+	if err != nil {
+		return nil, err
+	}
+	executionInstanceID, err := uuidFromPayload(receipt.Payload, "execution_instance_id")
+	if err != nil {
+		return nil, err
+	}
+	rawFiles, ok := receipt.Payload["workspace_files"].([]any)
+	if !ok || len(rawFiles) == 0 {
+		return nil, fmt.Errorf("%w: workspace_files is required", ErrInvalidInput)
+	}
+	targets := make([]workspaceFileSyncTarget, 0, len(rawFiles))
+	for _, raw := range rawFiles {
+		file, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%w: workspace file payload must be an object", ErrInvalidInput)
+		}
+		fileID, err := uuidFromPayload(file, "file_id")
+		if err != nil {
+			return nil, err
+		}
+		revisionID, err := uuidFromPayload(file, "revision_id")
+		if err != nil {
+			return nil, err
+		}
+		targets = append(targets, workspaceFileSyncTarget{
+			DigitalEmployeeID:   digitalEmployeeID,
+			ExecutionInstanceID: executionInstanceID,
+			FileID:              fileID,
+			RevisionID:          revisionID,
+		})
+	}
+	return targets, nil
+}
+
+func (s *DigitalEmployeeRunWritebackService) upsertSyncedWorkspaceFiles(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback) error {
+	targets, err := workspaceSyncTargetsFromReceipt(receipt)
+	if err != nil {
+		return err
+	}
+	hashes, err := syncedHashesByRevision(terminal)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for _, target := range targets {
+		hash := hashes[target.RevisionID]
+		if hash == "" {
+			return fmt.Errorf("%w: synced file revision missing from terminal result", ErrInvalidInput)
+		}
+		commandIDRef := commandID
+		hashRef := hash
+		if err := s.repository.UpsertWorkspaceFileSync(ctx, UpsertWorkspaceFileSyncParams{
+			TenantID:            identity.TenantID,
+			DigitalEmployeeID:   target.DigitalEmployeeID,
+			ExecutionInstanceID: target.ExecutionInstanceID,
+			FileID:              target.FileID,
+			RevisionID:          target.RevisionID,
+			RuntimeNodeID:       identity.RuntimeNodeID,
+			Status:              "synced",
+			SyncedHash:          &hashRef,
+			LastCommandID:       &commandIDRef,
+			LastSyncedAt:        &now,
+		}); err != nil {
+			return fmt.Errorf("upsert synced workspace file: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *DigitalEmployeeRunWritebackService) upsertFailedWorkspaceFiles(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback) error {
+	targets, err := workspaceSyncTargetsFromReceipt(receipt)
+	if err != nil {
+		return err
+	}
+	message := ""
+	if terminal.ErrorMessage != nil {
+		message = *terminal.ErrorMessage
+	}
+	commandIDRef := commandID
+	for _, target := range targets {
+		messageRef := message
+		if err := s.repository.UpsertWorkspaceFileSync(ctx, UpsertWorkspaceFileSyncParams{
+			TenantID:            identity.TenantID,
+			DigitalEmployeeID:   target.DigitalEmployeeID,
+			ExecutionInstanceID: target.ExecutionInstanceID,
+			FileID:              target.FileID,
+			RevisionID:          target.RevisionID,
+			RuntimeNodeID:       identity.RuntimeNodeID,
+			Status:              "failed",
+			ErrorMessage:        &messageRef,
+			LastCommandID:       &commandIDRef,
+		}); err != nil {
+			return fmt.Errorf("upsert failed workspace file: %w", err)
+		}
+	}
+	return nil
+}
+```
+
+Add small parsing helpers used above:
+
+```go
+func uuidFromPayload(payload map[string]any, key string) (uuid.UUID, error) {
+	value, ok := payload[key].(string)
+	if !ok || strings.TrimSpace(value) == "" {
+		return uuid.Nil, fmt.Errorf("%w: %s is required", ErrInvalidInput, key)
+	}
+	id, err := uuid.Parse(value)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("%w: invalid %s", ErrInvalidInput, key)
+	}
+	return id, nil
+}
+
+func syncedHashesByRevision(terminal RuntimeCommandTerminalWriteback) (map[uuid.UUID]string, error) {
+	rawFiles, ok := terminal.Result["synced_files"].([]any)
+	if !ok || len(rawFiles) == 0 {
+		return nil, fmt.Errorf("%w: synced_files is required", ErrInvalidInput)
+	}
+	out := make(map[uuid.UUID]string, len(rawFiles))
+	for _, raw := range rawFiles {
+		file, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%w: synced file must be an object", ErrInvalidInput)
+		}
+		revisionID, err := uuidFromPayload(file, "revision_id")
+		if err != nil {
+			return nil, err
+		}
+		hash, ok := file["content_hash"].(string)
+		if !ok || strings.TrimSpace(hash) == "" {
+			return nil, fmt.Errorf("%w: content_hash is required", ErrInvalidInput)
+		}
+		out[revisionID] = hash
+	}
+	return out, nil
+}
+```
+
+- [ ] **Step 5: Run writeback tests**
+
+Run:
+
+```bash
+go test ./apps/control-plane/internal/employee -run 'TestCompleteWorkspaceSyncCommandUpdatesFileSyncProjection|TestFailWorkspaceSyncCommandUpdatesFileSyncProjectionWithoutDeletingEmployee' -count=1
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/control-plane/internal/employee/run_repository.go \
+  apps/control-plane/internal/employee/pg_run_repository.go \
+  apps/control-plane/internal/employee/run_writeback.go \
+  apps/control-plane/internal/employee/run_writeback_test.go
+git commit -m "feat: record digital employee workspace sync writebacks"
+```
+
+---
+
+### Task 9: Update Compatibility Tests And Run Full Verification
 
 **Files:**
 - Modify only test files already touched by earlier tasks if fixture payloads still use the old command shape.
@@ -2329,9 +2888,16 @@ Expected: `git diff --check` prints no whitespace errors. `git status --short` s
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/control-plane/internal/employee \
-  apps/control-plane/internal/storage \
-  apps/runtime-agent
+git status --short
+```
+
+If every implementation task already committed its own scoped changes and there are no verification-only fixture edits left, do not create a final empty commit. If Task 9 required additional fixture-only updates, stage only those exact files:
+
+```bash
+git add apps/runtime-agent/src/controlplane/ws.rs \
+  apps/runtime-agent/tests/runtime_command_executor_test.rs \
+  apps/runtime-agent/tests/runtime_command_payload_test.rs \
+  apps/control-plane/internal/employee/run_writeback_test.go
 git commit -m "test: verify digital employee workspace materialization"
 ```
 
@@ -2347,8 +2913,8 @@ git commit -m "test: verify digital employee workspace materialization"
 - Spec section 10 Provider Adapter 边界 maps to Tasks 5, 6, and 7.
 - Spec section 11 团队技能与 MCP 继承 maps to Task 7.
 - Spec section 12 项目任务与调试任务 maps to Task 3.
-- Spec sections 13 and 14 path safety/sync status map to Tasks 1, 5, and 6.
+- Spec sections 13 and 14 path safety/sync status map to Tasks 1, 5, 6, and 8.
 - Spec section 15 兼容和迁移 is covered by creating new homes for new/provisioned employees and by keeping `agent_home_dir` as the execution instance record.
-- Spec section 16 测试策略 maps to Tasks 1 through 8.
+- Spec section 16 测试策略 maps to Tasks 1 through 9.
 - No Console Instructions UI is included, matching the non-goal.
 - No Provider private directory format is defined beyond creating `.claude` or `.opencode`.
