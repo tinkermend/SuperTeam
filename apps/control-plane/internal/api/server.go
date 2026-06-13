@@ -12,6 +12,7 @@ import (
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
+	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
@@ -30,6 +31,7 @@ type Server struct {
 	authorizer                     authz.Authorizer
 	auditHandler                   *audit.HTTPHandler
 	authzCenterHandler             *authzcenter.HTTPHandler
+	capabilityHandler              *capability.HTTPHandler
 	employeeHandler                *employee.HTTPHandler
 	inboxHandler                   *inbox.HTTPHandler
 	projectHandler                 *project.HTTPHandler
@@ -147,6 +149,14 @@ func (s *Server) SetSkillHandler(skillHandler *skill.HTTPHandler) {
 	s.skillHandler = skillHandler
 	if skillHandler != nil {
 		skillHandler.SetAuthorizer(s.authorizer)
+	}
+	s.registerRoutes()
+}
+
+func (s *Server) SetCapabilityHandler(capabilityHandler *capability.HTTPHandler) {
+	s.capabilityHandler = capabilityHandler
+	if capabilityHandler != nil {
+		capabilityHandler.SetAuthorizer(s.authorizer)
 	}
 	s.registerRoutes()
 }
@@ -308,6 +318,21 @@ func (s *Server) registerRoutes() {
 				r.Get("/digital-employees/{employeeId}/skills", s.skillHandler.ListEffectiveEmployeeSkills)
 				r.Post("/digital-employees/{employeeId}/skills", s.skillHandler.BindEmployeeSkill)
 				r.Delete("/digital-employees/{employeeId}/skills/{skillId}", s.skillHandler.UnbindEmployeeSkill)
+			})
+		}
+
+		if s.capabilityHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/user-credentials", s.capabilityHandler.ListCredentials)
+				r.Post("/user-credentials", s.capabilityHandler.CreateCredential)
+				r.Get("/teams/{teamId}/mcp-servers", s.capabilityHandler.ListTeamMCPServers)
+				r.Post("/teams/{teamId}/mcp-servers", s.capabilityHandler.CreateTeamMCPServer)
+				r.Delete("/teams/{teamId}/mcp-servers/{serverId}", s.capabilityHandler.DeleteTeamMCPServer)
+				r.Get("/digital-employees/{employeeId}/mcp-bindings", s.capabilityHandler.ListEmployeeMCPBindings)
+				r.Post("/digital-employees/{employeeId}/mcp-bindings", s.capabilityHandler.CreateEmployeeMCPBinding)
+				r.Delete("/digital-employees/{employeeId}/mcp-bindings/{bindingId}", s.capabilityHandler.DeleteEmployeeMCPBinding)
+				r.Get("/digital-employees/{employeeId}/effective-mcp-servers", s.capabilityHandler.ListEffectiveMCPServers)
 			})
 		}
 

@@ -15,12 +15,13 @@ const (
 )
 
 const (
-	ResourceConsole  = "console"
-	ResourceTenant   = "tenant"
-	ResourceTeam     = "team"
-	ResourceEmployee = "employee"
-	ResourceSkill    = "skill"
-	ResourceTask     = "task"
+	ResourceConsole    = "console"
+	ResourceTenant     = "tenant"
+	ResourceTeam       = "team"
+	ResourceEmployee   = "employee"
+	ResourceSkill      = "skill"
+	ResourceCredential = "credential"
+	ResourceTask       = "task"
 )
 
 const (
@@ -31,16 +32,21 @@ const (
 	ActionRuntimeScopeManage = "runtime_scope.manage"
 	ActionAuthzCenterRead    = "authz_center.read"
 
-	ActionEmployeeCreate        = "employee.create"
-	ActionEmployeeRead          = "employee.read"
-	ActionEmployeeStatusUpdate  = "employee.status.update"
-	ActionEmployeeExecutionBind = "employee.execution.bind"
-	ActionEmployeeConfigCreate  = "employee.config.create"
-	ActionEmployeeConfigPreview = "employee.config.preview"
-	ActionEmployeeConfigApprove = "employee.config.approve"
-	ActionEmployeeRunCreate     = "employee.run.create"
-	ActionEmployeeRunStop       = "employee.run.stop"
-	ActionEmployeeRunLogRead    = "employee.run.log.read"
+	ActionEmployeeCreate         = "employee.create"
+	ActionEmployeeRead           = "employee.read"
+	ActionEmployeeStatusUpdate   = "employee.status.update"
+	ActionEmployeeExecutionBind  = "employee.execution.bind"
+	ActionEmployeeConfigCreate   = "employee.config.create"
+	ActionEmployeeConfigPreview  = "employee.config.preview"
+	ActionEmployeeConfigApprove  = "employee.config.approve"
+	ActionEmployeeCapabilityEdit = "employee.capability.edit"
+	ActionEmployeeRunCreate      = "employee.run.create"
+	ActionEmployeeRunStop        = "employee.run.stop"
+	ActionEmployeeRunLogRead     = "employee.run.log.read"
+
+	ActionCredentialRead   = "credential.read"
+	ActionCredentialCreate = "credential.create"
+	ActionCredentialDelete = "credential.delete"
 
 	ActionSkillRead   = "skill.read"
 	ActionSkillUpload = "skill.upload"
@@ -62,6 +68,7 @@ const (
 	ActionTeamGovernanceApprove           = "team.governance.approve"
 	ActionTeamCapabilityBind              = "team.capability.bind"
 	ActionTeamCapabilityUnbind            = "team.capability.unbind"
+	ActionTeamCapabilityManage            = "team.capability.manage"
 	ActionTeamAuditRead                   = "team.audit.read"
 )
 

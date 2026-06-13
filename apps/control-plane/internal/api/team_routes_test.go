@@ -16,6 +16,7 @@ import (
 	"github.com/superteam/control-plane/internal/audit"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
+	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/tenant"
 )
 
@@ -46,7 +47,7 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	createBody := `{
 		"slug":"platform",
 		"name":"Platform",
-		"human_owner_user_ids":["` + ownerID.String()  + `"],
+		"human_owner_user_ids":["` + ownerID.String() + `"],
 		"initial_members":[
 			{"user_id":"` + memberID.String() + `","role":"member"},
 			{"user_id":"` + viewerID.String() + `","role":"viewer"}
@@ -78,10 +79,10 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	}
 	var created struct {
 		Team struct {
-			ID               string         `json:"id"`
-			TenantID         string         `json:"tenant_id"`
+			ID                string         `json:"id"`
+			TenantID          string         `json:"tenant_id"`
 			HumanOwnerUserIDs []string       `json:"human_owner_user_ids"`
-			Metadata         map[string]any `json:"metadata"`
+			Metadata          map[string]any `json:"metadata"`
 		} `json:"team"`
 		AllowedActions []string `json:"allowed_actions"`
 	}
@@ -155,7 +156,7 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 		t.Fatalf("expected overview tenant/team %s/%s, got %s/%s", expectedTenantID, created.Team.ID, service.overviewTenantID, service.overviewTeamID)
 	}
 
-	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.Team.ID, strings.NewReader(`{"slug":"platform-sre","name":"Platform SRE","human_owner_user_ids":["` + ownerID.String() + `"],"metadata":{"cost_center":"ops"}}`))
+	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.Team.ID, strings.NewReader(`{"slug":"platform-sre","name":"Platform SRE","human_owner_user_ids":["`+ownerID.String()+`"],"metadata":{"cost_center":"ops"}}`))
 	updateReq.Header.Set("Content-Type", "application/json")
 	updateReq.AddCookie(cookie)
 	updateResp := httptest.NewRecorder()
@@ -191,7 +192,7 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	}
 
 	clientApprovedBy := uuid.New()
-	revisionReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+"/config-revisions", strings.NewReader(`{"human_owner_user_ids":["` + ownerID.String() + `"],"approved_by":"`+clientApprovedBy.String()+`","constitution":{"principle":"review"}}`))
+	revisionReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+"/config-revisions", strings.NewReader(`{"human_owner_user_ids":["`+ownerID.String()+`"],"approved_by":"`+clientApprovedBy.String()+`","constitution":{"principle":"review"}}`))
 	revisionReq.Header.Set("Content-Type", "application/json")
 	revisionReq.AddCookie(cookie)
 	revisionResp := httptest.NewRecorder()
@@ -245,7 +246,7 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 		t.Fatalf("expected list drafts tenant/team/pagination %s/%s/25/5, got %s/%s/%d/%d", expectedTenantID, created.Team.ID, service.listDraftsTenantID, service.listDraftsTeamID, service.listDraftsLimit, service.listDraftsOffset)
 	}
 
-	createDraftReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+"/governance/drafts", strings.NewReader(`{"human_owner_user_ids":["` + ownerID.String() + `"],"approved_by":"`+uuid.New().String()+`","constitution":{"hard_rules":["review before deploy"]}}`))
+	createDraftReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.Team.ID+"/governance/drafts", strings.NewReader(`{"human_owner_user_ids":["`+ownerID.String()+`"],"approved_by":"`+uuid.New().String()+`","constitution":{"hard_rules":["review before deploy"]}}`))
 	createDraftReq.Header.Set("Content-Type", "application/json")
 	createDraftReq.AddCookie(cookie)
 	createDraftResp := httptest.NewRecorder()
@@ -261,7 +262,7 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	}
 
 	draftID := uuid.New()
-	updateDraftReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.Team.ID+"/governance/drafts/"+draftID.String(), strings.NewReader(`{"human_owner_user_ids":["` + ownerID.String() + `"],"constitution":{"hard_rules":["keep audit trail"]},"capability_policy":{"bindings":["runtime:read"]}}`))
+	updateDraftReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.Team.ID+"/governance/drafts/"+draftID.String(), strings.NewReader(`{"human_owner_user_ids":["`+ownerID.String()+`"],"constitution":{"hard_rules":["keep audit trail"]},"capability_policy":{"bindings":["runtime:read"]}}`))
 	updateDraftReq.Header.Set("Content-Type", "application/json")
 	updateDraftReq.AddCookie(cookie)
 	updateDraftResp := httptest.NewRecorder()
@@ -312,6 +313,124 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	if service.diffTenantID != expectedTenantID || service.diffTeamID.String() != created.Team.ID || service.diffDraftID != draftID {
 		t.Fatalf("expected diff tenant/team/draft %s/%s/%s, got %s/%s/%s", expectedTenantID, created.Team.ID, draftID, service.diffTenantID, service.diffTeamID, service.diffDraftID)
 	}
+}
+
+func TestTeamMCPRoutesUseConsoleAuthAndCapabilityManage(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	user := routeConsoleUser(t, authService, uuid.MustParse(auth.DefaultTenantID))
+	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	teamID := uuid.New()
+	serverID := uuid.New()
+	service := &routeCapabilityService{
+		mcpServer: capability.MCPServer{
+			ID:             serverID,
+			TenantID:       tenantID,
+			TeamID:         &teamID,
+			Name:           "ops-mcp",
+			URL:            "https://mcp.example.com",
+			CredentialType: capability.CredentialTypeMCPToken,
+			Status:         "active",
+			SourceScope:    "team",
+		},
+	}
+	authorizer := newRecordingAuthorizer()
+	server := NewServerWithAuthz(nil, nil, authService, nil, authorizer)
+	server.SetCapabilityHandler(capability.NewHandler(service))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+teamID.String()+"/mcp-servers", strings.NewReader(`{"name":"ops-mcp","url":"https://mcp.example.com"}`))
+	req.Header.Set("Content-Type", "application/json")
+	withConsoleSessionCookie(req, user.SessionToken)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected create team mcp to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.createTeamReq.TenantID != tenantID || service.createTeamReq.UserID != user.User.ID || service.createTeamReq.TeamID != teamID {
+		t.Fatalf("unexpected create team mcp request: %#v", service.createTeamReq)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/teams/"+teamID.String()+"/mcp-servers/"+serverID.String(), nil)
+	withConsoleSessionCookie(deleteReq, user.SessionToken)
+	deleteResp := httptest.NewRecorder()
+	server.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusNoContent {
+		t.Fatalf("expected delete team mcp to succeed, got %d: %s", deleteResp.Code, deleteResp.Body.String())
+	}
+	if service.deleteTeamReq.TenantID != tenantID || service.deleteTeamReq.TeamID != teamID || service.deleteTeamReq.ServerID != serverID {
+		t.Fatalf("unexpected delete team mcp request: %#v", service.deleteTeamReq)
+	}
+
+	if len(authorizer.checks) != 2 {
+		t.Fatalf("expected two authz checks, got %#v", authorizer.checks)
+	}
+	for _, check := range authorizer.checks {
+		if check.Action != authz.ActionTeamCapabilityManage || check.Resource.Type != authz.ResourceTeam || check.Resource.ID != teamID.String() || check.TeamID == nil || *check.TeamID != teamID {
+			t.Fatalf("unexpected team mcp authz check: %#v", check)
+		}
+	}
+}
+
+type routeCapabilityService struct {
+	credential capability.Credential
+	mcpServer  capability.MCPServer
+
+	createCredentialReq capability.CreateCredentialRequest
+	listCredentialsReq  capability.ListCredentialsRequest
+	createTeamReq       capability.CreateTeamMCPServerRequest
+	listTeamReq         capability.TeamScopedRequest
+	deleteTeamReq       capability.DeleteTeamMCPServerRequest
+	createEmployeeReq   capability.CreateEmployeeMCPBindingRequest
+	listEmployeeReq     capability.EmployeeScopedRequest
+	deleteEmployeeReq   capability.DeleteEmployeeMCPBindingRequest
+	effectiveReq        capability.EmployeeScopedRequest
+}
+
+func (s *routeCapabilityService) CreateCredential(ctx context.Context, req capability.CreateCredentialRequest) (capability.Credential, error) {
+	s.createCredentialReq = req
+	return s.credential, nil
+}
+
+func (s *routeCapabilityService) ListCredentials(ctx context.Context, req capability.ListCredentialsRequest) ([]capability.Credential, error) {
+	s.listCredentialsReq = req
+	return []capability.Credential{s.credential}, nil
+}
+
+func (s *routeCapabilityService) CreateTeamMCPServer(ctx context.Context, req capability.CreateTeamMCPServerRequest) (capability.MCPServer, error) {
+	s.createTeamReq = req
+	return s.mcpServer, nil
+}
+
+func (s *routeCapabilityService) ListTeamMCPServers(ctx context.Context, req capability.TeamScopedRequest) ([]capability.MCPServer, error) {
+	s.listTeamReq = req
+	return []capability.MCPServer{s.mcpServer}, nil
+}
+
+func (s *routeCapabilityService) DeleteTeamMCPServer(ctx context.Context, req capability.DeleteTeamMCPServerRequest) error {
+	s.deleteTeamReq = req
+	return nil
+}
+
+func (s *routeCapabilityService) CreateEmployeeMCPBinding(ctx context.Context, req capability.CreateEmployeeMCPBindingRequest) (capability.MCPServer, error) {
+	s.createEmployeeReq = req
+	return s.mcpServer, nil
+}
+
+func (s *routeCapabilityService) ListEmployeeMCPBindings(ctx context.Context, req capability.EmployeeScopedRequest) ([]capability.MCPServer, error) {
+	s.listEmployeeReq = req
+	return []capability.MCPServer{s.mcpServer}, nil
+}
+
+func (s *routeCapabilityService) DeleteEmployeeMCPBinding(ctx context.Context, req capability.DeleteEmployeeMCPBindingRequest) error {
+	s.deleteEmployeeReq = req
+	return nil
+}
+
+func (s *routeCapabilityService) ListEffectiveMCPServers(ctx context.Context, req capability.EmployeeScopedRequest) ([]capability.MCPServer, error) {
+	s.effectiveReq = req
+	return []capability.MCPServer{s.mcpServer}, nil
 }
 
 func TestTeamRoutesRequireConsoleAuth(t *testing.T) {
@@ -415,18 +534,18 @@ func TestTeamRoutesRequireManagementAuthorization(t *testing.T) {
 		teamID       *uuid.UUID
 	}{
 		{name: "list", method: http.MethodGet, path: "/api/v1/teams", action: authz.ActionTeamRead, resourceType: authz.ResourceTenant},
-		{name: "create", method: http.MethodPost, path: "/api/v1/teams", body: `{"slug":"platform","name":"Platform","human_owner_user_ids":["` + ownerID  + `"]}`, action: authz.ActionTeamCreate, resourceType: authz.ResourceTenant},
+		{name: "create", method: http.MethodPost, path: "/api/v1/teams", body: `{"slug":"platform","name":"Platform","human_owner_user_ids":["` + ownerID + `"]}`, action: authz.ActionTeamCreate, resourceType: authz.ResourceTenant},
 		{name: "get", method: http.MethodGet, path: "/api/v1/teams/" + teamID, action: authz.ActionTeamRead, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "overview", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/overview", action: authz.ActionTeamRead, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "update", method: http.MethodPatch, path: "/api/v1/teams/" + teamID, body: `{"slug":"platform","name":"Platform"}`, action: authz.ActionTeamUpdate, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "disable", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/disable", action: authz.ActionTeamDisable, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "archive", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/archive", action: authz.ActionTeamArchive, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "restore", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/restore", action: authz.ActionTeamRestore, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "create config revision", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/config-revisions", body: `{"human_owner_user_ids":["` + ownerID  + `"]}`, action: authz.ActionTeamGovernanceApprove, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "create config revision", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/config-revisions", body: `{"human_owner_user_ids":["` + ownerID + `"]}`, action: authz.ActionTeamGovernanceApprove, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "current config revision", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/config-revisions/current", action: authz.ActionTeamGovernanceRead, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "current governance", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/governance/current", action: authz.ActionTeamGovernanceRead, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "list governance drafts", method: http.MethodGet, path: "/api/v1/teams/" + teamID + "/governance/drafts", action: authz.ActionTeamGovernanceRead, resourceType: authz.ResourceTeam, resourceID: teamID},
-		{name: "create governance draft", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/governance/drafts", body: `{"human_owner_user_ids":["` + ownerID  + `"]}`, action: authz.ActionTeamGovernanceEdit, resourceType: authz.ResourceTeam, resourceID: teamID},
+		{name: "create governance draft", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/governance/drafts", body: `{"human_owner_user_ids":["` + ownerID + `"]}`, action: authz.ActionTeamGovernanceEdit, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "update governance draft", method: http.MethodPatch, path: "/api/v1/teams/" + teamID + "/governance/drafts/" + uuid.New().String(), body: `{"constitution":{"hard_rules":["review"]}}`, action: authz.ActionTeamGovernanceEdit, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "approve governance draft", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/governance/drafts/" + uuid.New().String() + "/approve", action: authz.ActionTeamGovernanceApprove, resourceType: authz.ResourceTeam, resourceID: teamID},
 		{name: "reject governance draft", method: http.MethodPost, path: "/api/v1/teams/" + teamID + "/governance/drafts/" + uuid.New().String() + "/reject", action: authz.ActionTeamGovernanceApprove, resourceType: authz.ResourceTeam, resourceID: teamID},
@@ -630,7 +749,7 @@ func TestTeamConfigRevisionDraftUsesGovernanceEditAuthorization(t *testing.T) {
 	teamID := uuid.New()
 	ownerID := uuid.New()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+teamID.String()+"/config-revisions", strings.NewReader(`{"human_owner_user_ids":["` + ownerID.String() + `"],"status":"draft"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+teamID.String()+"/config-revisions", strings.NewReader(`{"human_owner_user_ids":["`+ownerID.String()+`"],"status":"draft"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(cookie)
 	resp := httptest.NewRecorder()
@@ -1006,15 +1125,15 @@ func (s *routeTeamService) CreateTeam(ctx context.Context, req tenant.CreateTeam
 		status = tenant.TeamStatusActive
 	}
 	team := &tenant.Team{
-		ID:               s.createdID,
-		TenantID:         req.TenantID,
-		Slug:             req.Slug,
-		Name:             req.Name,
-		Status:           status,
+		ID:                s.createdID,
+		TenantID:          req.TenantID,
+		Slug:              req.Slug,
+		Name:              req.Name,
+		Status:            status,
 		HumanOwnerUserIDs: req.HumanOwnerUserIDs,
-		Metadata:         req.Metadata,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		Metadata:          req.Metadata,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	return &tenant.TeamOverview{
 		Team:                 team,
@@ -1037,11 +1156,11 @@ func (s *routeTeamService) ListTeamSummaries(ctx context.Context, req tenant.Lis
 	return []*tenant.TeamListItem{
 		{
 			Team: tenant.Team{
-				ID:               uuid.New(),
-				TenantID:         req.TenantID,
-				Slug:             "ops",
-				Name:             "Ops",
-				Status:           tenant.TeamStatusActive,
+				ID:                uuid.New(),
+				TenantID:          req.TenantID,
+				Slug:              "ops",
+				Name:              "Ops",
+				Status:            tenant.TeamStatusActive,
 				HumanOwnerUserIDs: []uuid.UUID{ownerID},
 				HumanOwners: []tenant.TeamHumanOwner{{
 					UserID:      ownerID,
@@ -1071,15 +1190,15 @@ func (s *routeTeamService) GetTeam(ctx context.Context, tenantID, teamID uuid.UU
 	s.getTeamID = teamID
 	now := time.Now().UTC()
 	return &tenant.Team{
-		ID:               teamID,
-		TenantID:         tenantID,
-		Slug:             "platform",
-		Name:             "Platform",
-		Status:           tenant.TeamStatusActive,
+		ID:                teamID,
+		TenantID:          tenantID,
+		Slug:              "platform",
+		Name:              "Platform",
+		Status:            tenant.TeamStatusActive,
 		HumanOwnerUserIDs: []uuid.UUID{},
-		Metadata:         map[string]any{},
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		Metadata:          map[string]any{},
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}, nil
 }
 
@@ -1114,15 +1233,15 @@ func (s *routeTeamService) UpdateTeam(ctx context.Context, req tenant.UpdateTeam
 	s.updateReq = req
 	now := time.Now().UTC()
 	return &tenant.Team{
-		ID:               req.TeamID,
-		TenantID:         req.TenantID,
-		Slug:             req.Slug,
-		Name:             req.Name,
-		Status:           tenant.TeamStatusActive,
+		ID:                req.TeamID,
+		TenantID:          req.TenantID,
+		Slug:              req.Slug,
+		Name:              req.Name,
+		Status:            tenant.TeamStatusActive,
 		HumanOwnerUserIDs: req.HumanOwnerUserIDs,
-		Metadata:         req.Metadata,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		Metadata:          req.Metadata,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}, nil
 }
 
@@ -1165,7 +1284,7 @@ func (s *routeTeamService) CreateConfigRevision(ctx context.Context, req tenant.
 		ArtifactContract:            map[string]any{},
 		InternalCollaborationPolicy: map[string]any{},
 		RuntimeScopePolicy:          map[string]any{},
-		HumanOwnerUserIDs:            req.HumanOwnerUserIDs,
+		HumanOwnerUserIDs:           req.HumanOwnerUserIDs,
 		Status:                      status,
 		ApprovedBy:                  req.ApprovedBy,
 		ApprovedAt:                  &now,

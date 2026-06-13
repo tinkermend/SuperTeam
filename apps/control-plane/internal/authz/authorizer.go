@@ -88,10 +88,19 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 		ActionEmployeeConfigCreate,
 		ActionEmployeeConfigPreview,
 		ActionEmployeeConfigApprove,
+		ActionEmployeeCapabilityEdit,
 		ActionEmployeeRunCreate,
 		ActionEmployeeRunStop,
 		ActionEmployeeRunLogRead:
 		if !validUUIDResource(req.Resource, ResourceEmployee) {
+			decision = deny(ReasonInvalidResource)
+			break
+		}
+		decision, err = a.checkTenantAdminAccess(ctx, req)
+	case ActionCredentialRead,
+		ActionCredentialCreate,
+		ActionCredentialDelete:
+		if !validUUIDResource(req.Resource, ResourceCredential) {
 			decision = deny(ReasonInvalidResource)
 			break
 		}
@@ -148,6 +157,7 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 		ActionTeamGovernanceApprove,
 		ActionTeamCapabilityBind,
 		ActionTeamCapabilityUnbind,
+		ActionTeamCapabilityManage,
 		ActionTeamAuditRead:
 		if req.TeamID == nil || !resourceMatchesUUID(req.Resource, ResourceTeam, *req.TeamID) {
 			decision = deny(ReasonInvalidResource)
@@ -388,6 +398,7 @@ func roleAllowsTeamAction(action, role string) bool {
 		ActionTeamGovernanceEdit,
 		ActionTeamCapabilityBind,
 		ActionTeamCapabilityUnbind,
+		ActionTeamCapabilityManage,
 		ActionTeamAuditRead:
 		return roleAllowsTeamManagement(role)
 	case ActionTeamMemberApprovePrivilegedRole:

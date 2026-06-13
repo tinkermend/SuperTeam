@@ -14,6 +14,7 @@ import (
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
+	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/employee"
 )
 
@@ -320,6 +321,77 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	if service.approveReq.TenantID != expectedTenantID || service.approveReq.DigitalEmployeeID != employeeID || service.approveReq.ApprovedBy != user.ID {
 		t.Fatalf("unexpected approve request mapping: %#v", service.approveReq)
+	}
+}
+
+func TestEmployeeMCPRoutesUseConsoleAuthAndCapabilityActions(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	user := routeConsoleUser(t, authService, uuid.MustParse(auth.DefaultTenantID))
+	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	employeeID := uuid.New()
+	bindingID := uuid.New()
+	service := &routeCapabilityService{
+		mcpServer: capability.MCPServer{
+			ID:                bindingID,
+			TenantID:          tenantID,
+			DigitalEmployeeID: &employeeID,
+			Name:              "personal-mcp",
+			URL:               "https://personal.example.com",
+			CredentialType:    capability.CredentialTypeMCPToken,
+			Status:            "active",
+			SourceScope:       "employee",
+		},
+	}
+	authorizer := newRecordingAuthorizer()
+	server := NewServerWithAuthz(nil, nil, authService, nil, authorizer)
+	server.SetCapabilityHandler(capability.NewHandler(service))
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees/"+employeeID.String()+"/mcp-bindings", strings.NewReader(`{"name":"personal-mcp","url":"https://personal.example.com"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	withConsoleSessionCookie(createReq, user.SessionToken)
+	createResp := httptest.NewRecorder()
+	server.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected create employee mcp to succeed, got %d: %s", createResp.Code, createResp.Body.String())
+	}
+	if service.createEmployeeReq.TenantID != tenantID || service.createEmployeeReq.UserID != user.User.ID || service.createEmployeeReq.DigitalEmployeeID != employeeID {
+		t.Fatalf("unexpected create employee mcp request: %#v", service.createEmployeeReq)
+	}
+
+	effectiveReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/effective-mcp-servers", nil)
+	withConsoleSessionCookie(effectiveReq, user.SessionToken)
+	effectiveResp := httptest.NewRecorder()
+	server.ServeHTTP(effectiveResp, effectiveReq)
+	if effectiveResp.Code != http.StatusOK {
+		t.Fatalf("expected effective mcp to succeed, got %d: %s", effectiveResp.Code, effectiveResp.Body.String())
+	}
+	if service.effectiveReq.TenantID != tenantID || service.effectiveReq.UserID != user.User.ID || service.effectiveReq.DigitalEmployeeID != employeeID {
+		t.Fatalf("unexpected effective mcp request: %#v", service.effectiveReq)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/digital-employees/"+employeeID.String()+"/mcp-bindings/"+bindingID.String(), nil)
+	withConsoleSessionCookie(deleteReq, user.SessionToken)
+	deleteResp := httptest.NewRecorder()
+	server.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusNoContent {
+		t.Fatalf("expected delete employee mcp to succeed, got %d: %s", deleteResp.Code, deleteResp.Body.String())
+	}
+	if service.deleteEmployeeReq.TenantID != tenantID || service.deleteEmployeeReq.DigitalEmployeeID != employeeID || service.deleteEmployeeReq.BindingID != bindingID {
+		t.Fatalf("unexpected delete employee mcp request: %#v", service.deleteEmployeeReq)
+	}
+
+	expectedActions := []string{authz.ActionEmployeeCapabilityEdit, authz.ActionEmployeeRead, authz.ActionEmployeeCapabilityEdit}
+	if len(authorizer.checks) != len(expectedActions) {
+		t.Fatalf("expected %d authz checks, got %#v", len(expectedActions), authorizer.checks)
+	}
+	for i, action := range expectedActions {
+		check := authorizer.checks[i]
+		if check.Action != action || check.Resource.Type != authz.ResourceEmployee || check.Resource.ID != employeeID.String() {
+			t.Fatalf("unexpected employee mcp authz check at %d: %#v", i, check)
+		}
 	}
 }
 
