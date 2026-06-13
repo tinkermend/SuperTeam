@@ -118,3 +118,32 @@ type UpdateSkillFileRequest struct {
 	Path     string
 	Content  string
 }
+
+type BindTeamSkillRequest struct {
+	TenantID uuid.UUID
+	TeamID   uuid.UUID
+	SkillID  uuid.UUID
+}
+
+type ListTeamSkillsRequest struct {
+	TenantID uuid.UUID
+	TeamID   uuid.UUID
+}
+
+type BindEmployeeSkillRequest struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	SkillID           uuid.UUID
+}
+
+type ListEffectiveEmployeeSkillsRequest struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+}
+
+type EffectiveEmployeeSkill struct {
+	Skill       Skill
+	SourceScope string
+	Inherited   bool
+	ReadOnly    bool
+}

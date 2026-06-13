@@ -70,28 +70,6 @@ CREATE INDEX IF NOT EXISTS idx_digital_employee_mcp_bindings_employee_status
     ON digital_employee_mcp_bindings(tenant_id, digital_employee_id, status, created_at DESC)
     WHERE deleted_at IS NULL;
 
-CREATE TABLE IF NOT EXISTS digital_employee_instruction_files (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL,
-    digital_employee_id UUID NOT NULL,
-    path TEXT NOT NULL,
-    content TEXT NOT NULL DEFAULT '',
-    size_bytes BIGINT NOT NULL DEFAULT 0,
-    checksum_sha256 VARCHAR(64) NOT NULL DEFAULT '',
-    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    deleted_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_digital_employee_instruction_files_path_active
-    ON digital_employee_instruction_files(tenant_id, digital_employee_id, path)
-    WHERE deleted_at IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_digital_employee_instruction_files_employee_path
-    ON digital_employee_instruction_files(tenant_id, digital_employee_id, path)
-    WHERE deleted_at IS NULL;
-
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -118,13 +96,6 @@ BEGIN
         FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
     END IF;
 
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_trigger WHERE tgname = 'update_digital_employee_instruction_files_updated_at'
-    ) THEN
-        CREATE TRIGGER update_digital_employee_instruction_files_updated_at
-        BEFORE UPDATE ON digital_employee_instruction_files
-        FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-    END IF;
 END $$;
 
 COMMENT ON TABLE user_credentials IS '个人凭据池，保存用户可复用的外部能力授权令牌密文';
@@ -171,16 +142,3 @@ COMMENT ON COLUMN digital_employee_mcp_bindings.deleted_at IS '个人 MCP 软删
 COMMENT ON COLUMN digital_employee_mcp_bindings.created_by IS '创建个人 MCP 的用户 ID';
 COMMENT ON COLUMN digital_employee_mcp_bindings.created_at IS '个人 MCP 创建时间';
 COMMENT ON COLUMN digital_employee_mcp_bindings.updated_at IS '个人 MCP 更新时间';
-
-COMMENT ON TABLE digital_employee_instruction_files IS '数字员工个人 Instructions 文件内容';
-COMMENT ON COLUMN digital_employee_instruction_files.id IS '数字员工 Instructions 文件主键 UUID';
-COMMENT ON COLUMN digital_employee_instruction_files.tenant_id IS '文件所属租户 ID';
-COMMENT ON COLUMN digital_employee_instruction_files.digital_employee_id IS '数字员工 ID';
-COMMENT ON COLUMN digital_employee_instruction_files.path IS '文件相对路径，例如 AGENTS.md 或 SOUL.md';
-COMMENT ON COLUMN digital_employee_instruction_files.content IS '文件文本内容';
-COMMENT ON COLUMN digital_employee_instruction_files.size_bytes IS '文件内容字节数';
-COMMENT ON COLUMN digital_employee_instruction_files.checksum_sha256 IS '文件内容 SHA256 校验值';
-COMMENT ON COLUMN digital_employee_instruction_files.metadata IS '文件扩展元数据 JSON';
-COMMENT ON COLUMN digital_employee_instruction_files.deleted_at IS '文件软删除时间';
-COMMENT ON COLUMN digital_employee_instruction_files.created_at IS '文件创建时间';
-COMMENT ON COLUMN digital_employee_instruction_files.updated_at IS '文件更新时间';

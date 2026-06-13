@@ -190,6 +190,8 @@ func (s *Server) registerRoutes() {
 				r.Get("/digital-employees/create-options", s.employeeHandler.GetCreateOptions)
 				r.Get("/digital-employees/overview", s.employeeHandler.GetOverview)
 				r.Get("/digital-employees/{employeeId}", s.employeeHandler.GetDigitalEmployee)
+				r.Get("/digital-employees/{employeeId}/workspace-files", s.employeeHandler.ListWorkspaceFiles)
+				r.Put("/digital-employees/{employeeId}/workspace-files", s.employeeHandler.UpsertWorkspaceFile)
 				r.Put("/digital-employees/{employeeId}/status", s.employeeHandler.UpdateDigitalEmployeeStatus)
 				r.Get("/digital-employees/{employeeId}/execution-instance", s.employeeHandler.GetDigitalEmployeeExecutionInstance)
 				r.Put("/digital-employees/{employeeId}/execution-instance", s.employeeHandler.UpsertDigitalEmployeeExecutionInstance)
@@ -300,6 +302,12 @@ func (s *Server) registerRoutes() {
 				r.Post("/skills/uploads", s.skillHandler.UploadSkill)
 				r.Get("/skills/{skillId}", s.skillHandler.GetSkill)
 				r.Put("/skills/{skillId}/files/*", s.skillHandler.UpdateSkillFile)
+				r.Get("/teams/{teamId}/skills", s.skillHandler.ListTeamSkills)
+				r.Post("/teams/{teamId}/skills", s.skillHandler.BindTeamSkill)
+				r.Delete("/teams/{teamId}/skills/{skillId}", s.skillHandler.UnbindTeamSkill)
+				r.Get("/digital-employees/{employeeId}/skills", s.skillHandler.ListEffectiveEmployeeSkills)
+				r.Post("/digital-employees/{employeeId}/skills", s.skillHandler.BindEmployeeSkill)
+				r.Delete("/digital-employees/{employeeId}/skills/{skillId}", s.skillHandler.UnbindEmployeeSkill)
 			})
 		}
 

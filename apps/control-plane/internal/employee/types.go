@@ -109,6 +109,61 @@ type DigitalEmployee struct {
 	UpdatedAt        time.Time
 }
 
+type WorkspaceFile struct {
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	TeamID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	Path              string
+	FileRole          string
+	MimeType          string
+	SyncPolicy        string
+	Status            string
+	CurrentRevisionID uuid.UUID
+	RevisionNumber    int32
+	Content           string
+	ContentHash       string
+	SizeBytes         int32
+	StorageBackend    string
+	ObjectKey         *string
+	CreatedBy         *uuid.UUID
+	ChangeNote        *string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+type ListWorkspaceFilesRequest struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+}
+
+type UpsertWorkspaceFileRequest struct {
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	Path              string
+	Content           string
+	FileRole          string
+	MimeType          string
+	SyncPolicy        string
+	ChangeNote        *string
+	UpdatedBy         *uuid.UUID
+}
+
+type UpsertWorkspaceFileStoreRequest struct {
+	TenantID          uuid.UUID
+	TeamID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	Path              string
+	FileRole          string
+	MimeType          string
+	SyncPolicy        string
+	Content           string
+	ContentHash       string
+	SizeBytes         int32
+	ChangeNote        *string
+	UpdatedBy         *uuid.UUID
+}
+
 type EmployeeTypeDefinition struct {
 	Type                         string
 	Label                        string

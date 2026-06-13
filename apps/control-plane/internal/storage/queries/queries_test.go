@@ -251,7 +251,6 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 			provider_sessions,
 			digital_employee_execution_instances,
 			digital_employee_mcp_bindings,
-			digital_employee_instruction_files,
 			digital_employee_effective_configs,
 			digital_employee_config_revisions,
 			digital_employees,
@@ -371,6 +370,16 @@ func seedTestDigitalEmployee(t *testing.T, db *pgxpool.Pool, tenantID, teamID, o
 
 func uuidToPgtype(id uuid.UUID) uuid.NullUUID {
 	return uuid.NullUUID{UUID: id, Valid: true}
+}
+
+func requireNoEncryptedValueField(t *testing.T, row any) {
+	t.Helper()
+	rowType := reflect.TypeOf(row)
+	if rowType.Kind() == reflect.Ptr {
+		rowType = rowType.Elem()
+	}
+	_, ok := rowType.FieldByName("EncryptedValue")
+	require.False(t, ok, "%s should not expose encrypted credential values", rowType.Name())
 }
 
 func seedTestTeamConfigRevision(t *testing.T, db *pgxpool.Pool, tenantID, teamID uuid.UUID, status string, revisionNumber int32, ownerID uuid.NullUUID) queries.TenantTeamConfigRevision {
@@ -5019,7 +5028,96 @@ func TestCapabilityQueriesCreateCredentialAndMergeMCPServers(t *testing.T) {
 	if len(merged) != 2 {
 		t.Fatalf("expected 2 merged mcp servers, got %d", len(merged))
 	}
-	if merged[0].SourceScope != "team" || merged[1].SourceScope != "employee" {
-		t.Fatalf("expected team before employee source ordering, got %#v", merged)
-	}
+	require.Equal(t, "team", merged[0].SourceScope)
+	require.True(t, merged[0].Inherited)
+	require.True(t, merged[0].TeamID.Valid)
+	require.Equal(t, teamID, merged[0].TeamID.UUID)
+	require.Equal(t, "ops-token", merged[0].CredentialName)
+	require.Equal(t, "mcp_token", merged[0].CredentialType)
+	require.Equal(t, "7890", merged[0].CredentialLastFour)
+	requireNoEncryptedValueField(t, merged[0])
+
+	require.Equal(t, "employee", merged[1].SourceScope)
+	require.False(t, merged[1].Inherited)
+	require.False(t, merged[1].TeamID.Valid)
+	require.Equal(t, "ops-token", merged[1].CredentialName)
+	require.Equal(t, "mcp_token", merged[1].CredentialType)
+	require.Equal(t, "7890", merged[1].CredentialLastFour)
+	requireNoEncryptedValueField(t, merged[1])
+
+	teamServers, err := q.ListTeamMCPServers(context.Background(), queries.ListTeamMCPServersParams{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	require.NoError(t, err)
+	require.Len(t, teamServers, 1)
+	require.Equal(t, "ops-token", teamServers[0].CredentialName)
+	require.Equal(t, "mcp_token", teamServers[0].CredentialType)
+	require.Equal(t, "7890", teamServers[0].CredentialLastFour)
+	requireNoEncryptedValueField(t, teamServers[0])
+
+	employeeServers, err := q.ListDigitalEmployeeMCPBindings(context.Background(), queries.ListDigitalEmployeeMCPBindingsParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	require.NoError(t, err)
+	require.Len(t, employeeServers, 1)
+	require.Equal(t, "ops-token", employeeServers[0].CredentialName)
+	require.Equal(t, "mcp_token", employeeServers[0].CredentialType)
+	require.Equal(t, "7890", employeeServers[0].CredentialLastFour)
+	requireNoEncryptedValueField(t, employeeServers[0])
+}
+
+func TestCapabilityQueriesListEffectiveMCPServersSkipsSoftDeletedEmployee(t *testing.T) {
+	db := newQueriesTestDB(t)
+	q := queries.New(db)
+	ctx := context.Background()
+	tenantID := seedTestTenant(t, db)
+	userID := seedTestAuthUser(t, db, "deleted-capability-owner")
+	teamID := seedTestTeam(t, db, tenantID, "deleted-platform", "删除校验团队")
+	employeeID := seedTestDigitalEmployee(t, db, tenantID, teamID, userID, "deleted-capability-agent")
+
+	credential, err := q.CreateUserCredential(ctx, queries.CreateUserCredentialParams{
+		TenantID:       tenantID,
+		UserID:         userID,
+		Name:           "deleted-ops-token",
+		CredentialType: "mcp_token",
+		EncryptedValue: "sealed-token",
+		LastFour:       "1234",
+	})
+	require.NoError(t, err)
+
+	_, err = q.CreateTeamMCPServer(ctx, queries.CreateTeamMCPServerParams{
+		TenantID:     tenantID,
+		TeamID:       teamID,
+		Name:         "deleted-team-mcp",
+		Url:          "https://deleted-team-mcp.example.com",
+		CredentialID: uuidToPgtype(credential.ID),
+		CreatedBy:    uuidToPgtype(userID),
+	})
+	require.NoError(t, err)
+
+	_, err = q.CreateDigitalEmployeeMCPBinding(ctx, queries.CreateDigitalEmployeeMCPBindingParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Name:              "deleted-personal-mcp",
+		Url:               "https://deleted-personal-mcp.example.com",
+		CredentialID:      uuidToPgtype(credential.ID),
+		CreatedBy:         uuidToPgtype(userID),
+	})
+	require.NoError(t, err)
+
+	_, err = db.Exec(ctx, `
+		UPDATE digital_employees
+		SET deleted_at = NOW()
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, employeeID)
+	require.NoError(t, err)
+
+	merged, err := q.ListEffectiveMCPServersForEmployee(ctx, queries.ListEffectiveMCPServersForEmployeeParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	require.NoError(t, err)
+	require.Empty(t, merged)
 }

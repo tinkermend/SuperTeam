@@ -23,6 +23,9 @@ type Repository interface {
 	CreateWorkspaceFile(ctx context.Context, params CreateWorkspaceFileParams) (WorkspaceFileRecord, error)
 	CreateWorkspaceFileRevision(ctx context.Context, params CreateWorkspaceFileRevisionParams) (WorkspaceFileRevisionRecord, error)
 	ActivateWorkspaceFileRevision(ctx context.Context, tenantID, fileID, revisionID uuid.UUID) (WorkspaceFileRecord, error)
+	GetWorkspaceFileByPath(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, path string) (WorkspaceFileRecord, error)
+	GetNextWorkspaceFileRevisionNumber(ctx context.Context, tenantID, fileID uuid.UUID) (int32, error)
+	ListWorkspaceFiles(ctx context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error)
 	ListWorkspaceFilesForSync(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error)
 	UpsertWorkspaceFileSync(ctx context.Context, params UpsertWorkspaceFileSyncParams) error
 	CreateRuntimeCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error

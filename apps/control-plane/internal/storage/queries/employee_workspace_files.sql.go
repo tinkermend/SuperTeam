@@ -208,6 +208,179 @@ func (q *Queries) CreateDigitalEmployeeWorkspaceFileRevision(ctx context.Context
 	return i, err
 }
 
+const GetDigitalEmployeeWorkspaceFileByPath = `-- name: GetDigitalEmployeeWorkspaceFileByPath :one
+SELECT id, tenant_id, team_id, digital_employee_id, path, file_role, mime_type, sync_policy, current_revision_id, status, metadata, created_by, created_at, updated_at, archived_at, deleted_at
+FROM digital_employee_workspace_files
+WHERE tenant_id = $1::uuid
+  AND digital_employee_id = $2::uuid
+  AND path = $3::text
+  AND deleted_at IS NULL
+`
+
+type GetDigitalEmployeeWorkspaceFileByPathParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	Path              string    `json:"path"`
+}
+
+func (q *Queries) GetDigitalEmployeeWorkspaceFileByPath(ctx context.Context, arg GetDigitalEmployeeWorkspaceFileByPathParams) (DigitalEmployeeWorkspaceFile, error) {
+	row := q.db.QueryRow(ctx, GetDigitalEmployeeWorkspaceFileByPath, arg.TenantID, arg.DigitalEmployeeID, arg.Path)
+	var i DigitalEmployeeWorkspaceFile
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.DigitalEmployeeID,
+		&i.Path,
+		&i.FileRole,
+		&i.MimeType,
+		&i.SyncPolicy,
+		&i.CurrentRevisionID,
+		&i.Status,
+		&i.Metadata,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ArchivedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const GetNextDigitalEmployeeWorkspaceFileRevisionNumber = `-- name: GetNextDigitalEmployeeWorkspaceFileRevisionNumber :one
+SELECT (COALESCE(MAX(revision_number), 0) + 1)::integer AS next_revision_number
+FROM digital_employee_workspace_file_revisions
+WHERE tenant_id = $1::uuid
+  AND file_id = $2::uuid
+`
+
+type GetNextDigitalEmployeeWorkspaceFileRevisionNumberParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	FileID   uuid.UUID `json:"file_id"`
+}
+
+func (q *Queries) GetNextDigitalEmployeeWorkspaceFileRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeWorkspaceFileRevisionNumberParams) (int32, error) {
+	row := q.db.QueryRow(ctx, GetNextDigitalEmployeeWorkspaceFileRevisionNumber, arg.TenantID, arg.FileID)
+	var next_revision_number int32
+	err := row.Scan(&next_revision_number)
+	return next_revision_number, err
+}
+
+const ListCurrentDigitalEmployeeWorkspaceFiles = `-- name: ListCurrentDigitalEmployeeWorkspaceFiles :many
+SELECT
+    f.id AS file_id,
+    f.tenant_id,
+    f.team_id,
+    f.digital_employee_id,
+    f.path,
+    f.file_role,
+    f.mime_type,
+    f.sync_policy,
+    f.status,
+    f.metadata AS file_metadata,
+    f.created_by,
+    f.created_at AS file_created_at,
+    f.updated_at AS file_updated_at,
+    r.id AS revision_id,
+    r.revision_number,
+    r.content_text,
+    r.content_hash,
+    r.size_bytes,
+    r.storage_backend,
+    r.object_key,
+    r.created_by AS revision_created_by,
+    r.created_at AS revision_created_at,
+    r.change_note,
+    r.metadata AS revision_metadata
+FROM digital_employee_workspace_files f
+JOIN digital_employee_workspace_file_revisions r
+  ON r.id = f.current_revision_id
+ AND r.tenant_id = f.tenant_id
+ AND r.file_id = f.id
+WHERE f.tenant_id = $1::uuid
+  AND f.digital_employee_id = $2::uuid
+  AND f.status = 'active'
+  AND f.deleted_at IS NULL
+ORDER BY CASE WHEN f.file_role = 'entrypoint' THEN 0 ELSE 1 END, f.path ASC
+`
+
+type ListCurrentDigitalEmployeeWorkspaceFilesParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+}
+
+type ListCurrentDigitalEmployeeWorkspaceFilesRow struct {
+	FileID            uuid.UUID          `json:"file_id"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	TeamID            uuid.UUID          `json:"team_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+	Path              string             `json:"path"`
+	FileRole          string             `json:"file_role"`
+	MimeType          string             `json:"mime_type"`
+	SyncPolicy        string             `json:"sync_policy"`
+	Status            string             `json:"status"`
+	FileMetadata      []byte             `json:"file_metadata"`
+	CreatedBy         uuid.NullUUID      `json:"created_by"`
+	FileCreatedAt     pgtype.Timestamptz `json:"file_created_at"`
+	FileUpdatedAt     pgtype.Timestamptz `json:"file_updated_at"`
+	RevisionID        uuid.UUID          `json:"revision_id"`
+	RevisionNumber    int32              `json:"revision_number"`
+	ContentText       pgtype.Text        `json:"content_text"`
+	ContentHash       string             `json:"content_hash"`
+	SizeBytes         int32              `json:"size_bytes"`
+	StorageBackend    string             `json:"storage_backend"`
+	ObjectKey         pgtype.Text        `json:"object_key"`
+	RevisionCreatedBy uuid.NullUUID      `json:"revision_created_by"`
+	RevisionCreatedAt pgtype.Timestamptz `json:"revision_created_at"`
+	ChangeNote        pgtype.Text        `json:"change_note"`
+	RevisionMetadata  []byte             `json:"revision_metadata"`
+}
+
+func (q *Queries) ListCurrentDigitalEmployeeWorkspaceFiles(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesRow, error) {
+	rows, err := q.db.Query(ctx, ListCurrentDigitalEmployeeWorkspaceFiles, arg.TenantID, arg.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCurrentDigitalEmployeeWorkspaceFilesRow{}
+	for rows.Next() {
+		var i ListCurrentDigitalEmployeeWorkspaceFilesRow
+		if err := rows.Scan(
+			&i.FileID,
+			&i.TenantID,
+			&i.TeamID,
+			&i.DigitalEmployeeID,
+			&i.Path,
+			&i.FileRole,
+			&i.MimeType,
+			&i.SyncPolicy,
+			&i.Status,
+			&i.FileMetadata,
+			&i.CreatedBy,
+			&i.FileCreatedAt,
+			&i.FileUpdatedAt,
+			&i.RevisionID,
+			&i.RevisionNumber,
+			&i.ContentText,
+			&i.ContentHash,
+			&i.SizeBytes,
+			&i.StorageBackend,
+			&i.ObjectKey,
+			&i.RevisionCreatedBy,
+			&i.RevisionCreatedAt,
+			&i.ChangeNote,
+			&i.RevisionMetadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListCurrentDigitalEmployeeWorkspaceFilesForSync = `-- name: ListCurrentDigitalEmployeeWorkspaceFilesForSync :many
 SELECT
     f.id AS file_id,

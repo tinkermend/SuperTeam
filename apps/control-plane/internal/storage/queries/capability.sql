@@ -163,7 +163,7 @@ SELECT
     tm.id,
     tm.tenant_id,
     target_employee.digital_employee_id,
-    tm.team_id,
+    target_employee.team_id,
     tm.name,
     tm.url,
     tm.credential_id,
@@ -199,11 +199,11 @@ SELECT
     COALESCE(uc.last_four, '') AS credential_last_four,
     em.created_at,
     em.updated_at
-FROM digital_employee_mcp_bindings em
+FROM target_employee
+JOIN digital_employee_mcp_bindings em ON em.tenant_id = target_employee.tenant_id
+    AND em.digital_employee_id = target_employee.digital_employee_id
+    AND em.deleted_at IS NULL
 LEFT JOIN user_credentials uc ON uc.tenant_id = em.tenant_id
     AND uc.id = em.credential_id
     AND uc.deleted_at IS NULL
-WHERE em.tenant_id = sqlc.arg('tenant_id')::uuid
-  AND em.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
-  AND em.deleted_at IS NULL
 ORDER BY inherited DESC, name ASC;

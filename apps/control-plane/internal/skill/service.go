@@ -20,6 +20,12 @@ type Repository interface {
 	GetSkill(ctx context.Context, req GetSkillRequest) (*Skill, error)
 	UpsertSkillPackage(ctx context.Context, req UpsertSkillPackageRequest) (*Skill, error)
 	UpdateSkillFile(ctx context.Context, req UpdateSkillFileRequest) (*SkillFile, error)
+	BindSkillToTeam(ctx context.Context, req BindTeamSkillRequest) (*Skill, error)
+	UnbindSkillFromTeam(ctx context.Context, req BindTeamSkillRequest) error
+	ListTeamSkills(ctx context.Context, req ListTeamSkillsRequest) ([]*Skill, error)
+	BindSkillToEmployee(ctx context.Context, req BindEmployeeSkillRequest) (*Skill, error)
+	UnbindSkillFromEmployee(ctx context.Context, req BindEmployeeSkillRequest) error
+	ListEffectiveEmployeeSkills(ctx context.Context, req ListEffectiveEmployeeSkillsRequest) ([]EffectiveEmployeeSkill, error)
 }
 
 type Service struct {
@@ -109,6 +115,96 @@ func (s *Service) UpdateSkillFile(ctx context.Context, req UpdateSkillFileReques
 		return nil, fmt.Errorf("%w: file path is required", ErrInvalidInput)
 	}
 	return s.repository.UpdateSkillFile(ctx, req)
+}
+
+func (s *Service) BindSkillToTeam(ctx context.Context, req BindTeamSkillRequest) (*Skill, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
+	}
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if req.SkillID == uuid.Nil {
+		return nil, fmt.Errorf("%w: skill_id is required", ErrInvalidInput)
+	}
+	return s.repository.BindSkillToTeam(ctx, req)
+}
+
+func (s *Service) UnbindSkillFromTeam(ctx context.Context, req BindTeamSkillRequest) error {
+	if s == nil || s.repository == nil {
+		return fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
+	}
+	if req.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	if req.SkillID == uuid.Nil {
+		return fmt.Errorf("%w: skill_id is required", ErrInvalidInput)
+	}
+	return s.repository.UnbindSkillFromTeam(ctx, req)
+}
+
+func (s *Service) ListTeamSkills(ctx context.Context, req ListTeamSkillsRequest) ([]*Skill, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
+	}
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.TeamID == uuid.Nil {
+		return nil, fmt.Errorf("%w: team_id is required", ErrInvalidInput)
+	}
+	return s.repository.ListTeamSkills(ctx, req)
+}
+
+func (s *Service) BindSkillToEmployee(ctx context.Context, req BindEmployeeSkillRequest) (*Skill, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
+	}
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.DigitalEmployeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	if req.SkillID == uuid.Nil {
+		return nil, fmt.Errorf("%w: skill_id is required", ErrInvalidInput)
+	}
+	return s.repository.BindSkillToEmployee(ctx, req)
+}
+
+func (s *Service) UnbindSkillFromEmployee(ctx context.Context, req BindEmployeeSkillRequest) error {
+	if s == nil || s.repository == nil {
+		return fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
+	}
+	if req.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.DigitalEmployeeID == uuid.Nil {
+		return fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	if req.SkillID == uuid.Nil {
+		return fmt.Errorf("%w: skill_id is required", ErrInvalidInput)
+	}
+	return s.repository.UnbindSkillFromEmployee(ctx, req)
+}
+
+func (s *Service) ListEffectiveEmployeeSkills(ctx context.Context, req ListEffectiveEmployeeSkillsRequest) ([]EffectiveEmployeeSkill, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
+	}
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.DigitalEmployeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	return s.repository.ListEffectiveEmployeeSkills(ctx, req)
 }
 
 func filesFromZip(archive []byte) ([]*SkillFile, error) {

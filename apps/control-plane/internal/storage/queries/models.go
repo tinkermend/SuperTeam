@@ -353,32 +353,6 @@ type DigitalEmployeeExecutionInstance struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-// 数字员工个人 Instructions 文件内容
-type DigitalEmployeeInstructionFile struct {
-	// 数字员工 Instructions 文件主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 文件所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 数字员工 ID
-	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
-	// 文件相对路径，例如 AGENTS.md 或 SOUL.md
-	Path string `json:"path"`
-	// 文件文本内容
-	Content string `json:"content"`
-	// 文件内容字节数
-	SizeBytes int64 `json:"size_bytes"`
-	// 文件内容 SHA256 校验值
-	ChecksumSha256 string `json:"checksum_sha256"`
-	// 文件扩展元数据 JSON
-	Metadata []byte `json:"metadata"`
-	// 文件软删除时间
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-	// 文件创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 文件更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
 // 数字员工个人 MCP 服务器配置
 type DigitalEmployeeMcpBinding struct {
 	// 数字员工 MCP 配置主键 UUID

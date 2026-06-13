@@ -20,6 +20,8 @@ type HandlerService interface {
 	CreateDigitalEmployee(ctx context.Context, req CreateDigitalEmployeeRequest) (*DigitalEmployee, error)
 	ListDigitalEmployees(ctx context.Context, req ListDigitalEmployeesRequest) ([]*DigitalEmployee, error)
 	GetOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error)
+	ListWorkspaceFiles(ctx context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error)
+	UpsertWorkspaceFile(ctx context.Context, req UpsertWorkspaceFileRequest) (WorkspaceFile, error)
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployee, error)
 	UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*DigitalEmployee, error)
 	GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeExecutionInstance, error)
@@ -231,6 +233,74 @@ func (h *HTTPHandler) GetDigitalEmployee(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, employeeResponseFromDomain(employee))
+}
+
+func (h *HTTPHandler) ListWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee workspace files read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	files, err := service.ListWorkspaceFiles(r.Context(), ListWorkspaceFilesRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, workspaceFileResponses(files))
+}
+
+func (h *HTTPHandler) UpsertWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeConfigCreate, &employeeID, "digital employee workspace file upsert")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var req struct {
+		Path       string  `json:"path"`
+		Content    string  `json:"content"`
+		FileRole   string  `json:"file_role"`
+		MimeType   string  `json:"mime_type"`
+		SyncPolicy string  `json:"sync_policy"`
+		ChangeNote *string `json:"change_note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	updatedBy := middleware.GetUserID(r.Context())
+	file, err := service.UpsertWorkspaceFile(r.Context(), UpsertWorkspaceFileRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Path:              req.Path,
+		Content:           req.Content,
+		FileRole:          req.FileRole,
+		MimeType:          req.MimeType,
+		SyncPolicy:        req.SyncPolicy,
+		ChangeNote:        req.ChangeNote,
+		UpdatedBy:         &updatedBy,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, workspaceFileResponseFromDomain(file))
 }
 
 func (h *HTTPHandler) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request) {
@@ -728,6 +798,26 @@ type overviewPaginationResponse struct {
 	TotalCount int32 `json:"total_count"`
 }
 
+type workspaceFileResponse struct {
+	ID                string  `json:"id"`
+	TeamID            string  `json:"team_id"`
+	Path              string  `json:"path"`
+	FileRole          string  `json:"file_role"`
+	MimeType          string  `json:"mime_type"`
+	SyncPolicy        string  `json:"sync_policy"`
+	Status            string  `json:"status"`
+	CurrentRevisionID string  `json:"current_revision_id"`
+	RevisionNumber    int32   `json:"revision_number"`
+	Content           string  `json:"content"`
+	ContentHash       string  `json:"content_hash"`
+	SizeBytes         int32   `json:"size_bytes"`
+	StorageBackend    string  `json:"storage_backend"`
+	ObjectKey         *string `json:"object_key,omitempty"`
+	ChangeNote        *string `json:"change_note,omitempty"`
+	CreatedAt         string  `json:"created_at,omitempty"`
+	UpdatedAt         string  `json:"updated_at,omitempty"`
+}
+
 type createOptionsResponse struct {
 	TeamConfig             teamConfigCreateOptionResponse  `json:"team_config"`
 	EmployeeTypes          []employeeTypeOptionResponse    `json:"employee_types"`
@@ -936,6 +1026,36 @@ func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeRespon
 		ArchivedAt:       timeStringPtr(employee.ArchivedAt),
 		CreatedAt:        timeString(employee.CreatedAt),
 		UpdatedAt:        timeString(employee.UpdatedAt),
+	}
+}
+
+func workspaceFileResponses(files []WorkspaceFile) []workspaceFileResponse {
+	responses := make([]workspaceFileResponse, 0, len(files))
+	for _, file := range files {
+		responses = append(responses, workspaceFileResponseFromDomain(file))
+	}
+	return responses
+}
+
+func workspaceFileResponseFromDomain(file WorkspaceFile) workspaceFileResponse {
+	return workspaceFileResponse{
+		ID:                file.ID.String(),
+		TeamID:            file.TeamID.String(),
+		Path:              file.Path,
+		FileRole:          file.FileRole,
+		MimeType:          file.MimeType,
+		SyncPolicy:        file.SyncPolicy,
+		Status:            file.Status,
+		CurrentRevisionID: file.CurrentRevisionID.String(),
+		RevisionNumber:    file.RevisionNumber,
+		Content:           file.Content,
+		ContentHash:       file.ContentHash,
+		SizeBytes:         file.SizeBytes,
+		StorageBackend:    file.StorageBackend,
+		ObjectKey:         file.ObjectKey,
+		ChangeNote:        file.ChangeNote,
+		CreatedAt:         timeString(file.CreatedAt),
+		UpdatedAt:         timeString(file.UpdatedAt),
 	}
 }
 

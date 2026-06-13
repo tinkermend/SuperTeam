@@ -372,7 +372,7 @@ SELECT
     tm.id,
     tm.tenant_id,
     target_employee.digital_employee_id,
-    tm.team_id,
+    target_employee.team_id,
     tm.name,
     tm.url,
     tm.credential_id,
@@ -408,13 +408,13 @@ SELECT
     COALESCE(uc.last_four, '') AS credential_last_four,
     em.created_at,
     em.updated_at
-FROM digital_employee_mcp_bindings em
+FROM target_employee
+JOIN digital_employee_mcp_bindings em ON em.tenant_id = target_employee.tenant_id
+    AND em.digital_employee_id = target_employee.digital_employee_id
+    AND em.deleted_at IS NULL
 LEFT JOIN user_credentials uc ON uc.tenant_id = em.tenant_id
     AND uc.id = em.credential_id
     AND uc.deleted_at IS NULL
-WHERE em.tenant_id = $1::uuid
-  AND em.digital_employee_id = $2::uuid
-  AND em.deleted_at IS NULL
 ORDER BY inherited DESC, name ASC
 `
 
@@ -427,7 +427,7 @@ type ListEffectiveMCPServersForEmployeeRow struct {
 	ID                 uuid.UUID          `json:"id"`
 	TenantID           uuid.UUID          `json:"tenant_id"`
 	DigitalEmployeeID  uuid.UUID          `json:"digital_employee_id"`
-	TeamID             uuid.UUID          `json:"team_id"`
+	TeamID             uuid.NullUUID      `json:"team_id"`
 	Name               string             `json:"name"`
 	Url                string             `json:"url"`
 	CredentialID       uuid.NullUUID      `json:"credential_id"`

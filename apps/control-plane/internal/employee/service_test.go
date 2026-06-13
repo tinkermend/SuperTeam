@@ -226,6 +226,65 @@ func TestEmployeeServiceGetOverviewRejectsInvalidFilters(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidInput)
 }
 
+func TestServiceUpsertsWorkspaceFileWithRoleAndCurrentRevision(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	teamID := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:           employeeID,
+		TenantID:     tenantID,
+		TeamID:       &teamID,
+		OwnerUserID:  uuid.New(),
+		EmployeeType: "devops_engineer",
+		Name:         "Ops",
+		Role:         "devops_engineer",
+		Status:       DigitalEmployeeStatusReady,
+	}
+
+	file, err := service.UpsertWorkspaceFile(context.Background(), UpsertWorkspaceFileRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Path:              "AGENTS.md",
+		Content:           "# 工作原则\n\n只读取当前任务需要的上下文。",
+	})
+	if err != nil {
+		t.Fatalf("upsert workspace file: %v", err)
+	}
+	if file.Path != "AGENTS.md" {
+		t.Fatalf("expected AGENTS.md path, got %q", file.Path)
+	}
+	if file.TeamID != teamID || file.FileRole != "entrypoint" || file.MimeType != "text/markdown" || file.SyncPolicy != "auto" {
+		t.Fatalf("unexpected workspace file identity: %#v", file)
+	}
+	if file.RevisionNumber != 1 || file.CurrentRevisionID == uuid.Nil || file.SizeBytes == 0 || file.ContentHash == "" {
+		t.Fatalf("expected active revision metadata, got %#v", file)
+	}
+	if len(repo.workspaceFiles) != 1 || len(repo.workspaceFileRevisions) != 1 {
+		t.Fatalf("expected one file and one revision, got files=%d revisions=%d", len(repo.workspaceFiles), len(repo.workspaceFileRevisions))
+	}
+}
+
+func TestServiceRejectsUnsafeWorkspaceFilePath(t *testing.T) {
+	service, err := NewService(newMemoryRepository())
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	_, err = service.UpsertWorkspaceFile(context.Background(), UpsertWorkspaceFileRequest{
+		TenantID:          uuid.New(),
+		DigitalEmployeeID: uuid.New(),
+		Path:              "../AGENTS.md",
+		Content:           "# bad",
+	})
+	if err == nil {
+		t.Fatal("expected unsafe path to be rejected")
+	}
+}
+
 func TestCreateDigitalEmployeeParamsAndDomainMappingKeepOwnerAndType(t *testing.T) {
 	repo := newMemoryRepository()
 	tenantID := uuid.New()
@@ -2199,6 +2258,40 @@ func (r *memoryRepository) ActivateWorkspaceFileRevision(_ context.Context, tena
 		}
 	}
 	return WorkspaceFileRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) GetWorkspaceFileByPath(_ context.Context, tenantID, digitalEmployeeID uuid.UUID, filePath string) (WorkspaceFileRecord, error) {
+	for _, file := range r.workspaceFiles {
+		if file.TenantID == tenantID && file.DigitalEmployeeID == digitalEmployeeID && file.Path == filePath && file.DeletedAt == nil {
+			return file, nil
+		}
+	}
+	return WorkspaceFileRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) GetNextWorkspaceFileRevisionNumber(_ context.Context, tenantID, fileID uuid.UUID) (int32, error) {
+	var maxRevision int32
+	for _, revision := range r.workspaceFileRevisions {
+		if revision.TenantID == tenantID && revision.FileID == fileID && revision.RevisionNumber > maxRevision {
+			maxRevision = revision.RevisionNumber
+		}
+	}
+	return maxRevision + 1, nil
+}
+
+func (r *memoryRepository) ListWorkspaceFiles(_ context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error) {
+	out := make([]WorkspaceFile, 0)
+	for _, file := range r.workspaceFiles {
+		if file.TenantID != req.TenantID || file.DigitalEmployeeID != req.DigitalEmployeeID || file.CurrentRevisionID == nil || file.Status != "active" || file.DeletedAt != nil {
+			continue
+		}
+		for _, revision := range r.workspaceFileRevisions {
+			if revision.ID == *file.CurrentRevisionID {
+				out = append(out, workspaceFileFromRecords(file, revision))
+			}
+		}
+	}
+	return out, nil
 }
 
 func (r *memoryRepository) ListWorkspaceFilesForSync(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error) {
