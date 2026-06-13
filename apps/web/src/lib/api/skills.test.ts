@@ -1,10 +1,37 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  bindEmployeeSkill,
+  bindTeamSkill,
+  listEmployeeSkills,
   listSkills,
+  listTeamSkills,
   updateSkillFile,
+  unbindEmployeeSkill,
+  unbindTeamSkill,
   uploadSkill,
   type Skill,
 } from "./skills";
+
+function makeSkill(overrides: Partial<Skill> = {}): Skill {
+  return {
+    id: "skill-1",
+    tenant_id: "tenant-1",
+    slug: "diagnose",
+    name: "diagnose",
+    description: "诊断流程",
+    version: "v1.0.0",
+    source: "internal_market",
+    risk_level: "low",
+    status: "installed",
+    icon_key: "stethoscope",
+    color_token: "cyan",
+    tags: ["诊断", "测试"],
+    files: [],
+    team_bindings: [],
+    agent_bindings: [],
+    ...overrides,
+  };
+}
 
 describe("skills API", () => {
   it("lists skills with files and agent bindings", async () => {
@@ -112,6 +139,148 @@ describe("skills API", () => {
         credentials: "include",
         headers: { accept: "application/json", "content-type": "application/json" },
         method: "PUT",
+      },
+    );
+  });
+
+  it("lists binds and unbinds team skills with encoded path segments", async () => {
+    const skill = makeSkill({ id: "skill 1/ops" });
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+      if (init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({ skill_id: "skill 1/ops" });
+        return new Response(JSON.stringify(skill), {
+          headers: { "content-type": "application/json" },
+          status: 201,
+        });
+      }
+      return new Response(JSON.stringify([skill]), {
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    await expect(
+      listTeamSkills(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "team 1/ops",
+      ),
+    ).resolves.toEqual([skill]);
+    await expect(
+      bindTeamSkill(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "team 1/ops",
+        "skill 1/ops",
+      ),
+    ).resolves.toEqual(skill);
+    await expect(
+      unbindTeamSkill(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "team 1/ops",
+        "skill 1/ops",
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "http://control-plane.local/api/v1/teams/team%201%2Fops/skills",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "http://control-plane.local/api/v1/teams/team%201%2Fops/skills",
+      {
+        body: JSON.stringify({ skill_id: "skill 1/ops" }),
+        credentials: "include",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        method: "POST",
+      },
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      3,
+      "http://control-plane.local/api/v1/teams/team%201%2Fops/skills/skill%201%2Fops",
+      {
+        credentials: "include",
+        method: "DELETE",
+      },
+    );
+  });
+
+  it("lists binds and unbinds employee skills including inherited read only shape", async () => {
+    const skill = makeSkill({ id: "skill 1/ops" });
+    const effectiveSkill = {
+      skill,
+      source_scope: "team",
+      inherited: true,
+      read_only: true,
+    } as const;
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+      if (init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({ skill_id: "skill 1/ops" });
+        return new Response(JSON.stringify(skill), {
+          headers: { "content-type": "application/json" },
+          status: 201,
+        });
+      }
+      return new Response(JSON.stringify([effectiveSkill]), {
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    await expect(
+      listEmployeeSkills(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "employee 1/primary",
+      ),
+    ).resolves.toEqual([effectiveSkill]);
+    await expect(
+      bindEmployeeSkill(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "employee 1/primary",
+        "skill 1/ops",
+      ),
+    ).resolves.toEqual(skill);
+    await expect(
+      unbindEmployeeSkill(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "employee 1/primary",
+        "skill 1/ops",
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/skills",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/skills",
+      {
+        body: JSON.stringify({ skill_id: "skill 1/ops" }),
+        credentials: "include",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        method: "POST",
+      },
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      3,
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/skills/skill%201%2Fops",
+      {
+        credentials: "include",
+        method: "DELETE",
       },
     );
   });

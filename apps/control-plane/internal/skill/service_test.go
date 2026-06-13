@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -109,8 +111,126 @@ func TestServiceUploadSkillRejectsZipWithoutSkillMarkdown(t *testing.T) {
 	}
 }
 
+func TestServiceListsEffectiveEmployeeSkillsWithTeamInheritedFirst(t *testing.T) {
+	teamSkillID := uuid.New()
+	employeeSkillID := uuid.New()
+	repo := &serviceTestRepository{
+		effectiveSkills: []EffectiveEmployeeSkill{
+			{
+				Skill:       Skill{ID: teamSkillID, Name: "diagnose", Slug: "diagnose", Status: SkillStatusInstalled},
+				SourceScope: "team",
+				Inherited:   true,
+				ReadOnly:    true,
+			},
+			{
+				Skill:       Skill{ID: employeeSkillID, Name: "release", Slug: "release", Status: SkillStatusInstalled},
+				SourceScope: "employee",
+				Inherited:   false,
+				ReadOnly:    false,
+			},
+		},
+	}
+	service := NewService(repo)
+	items, err := service.ListEffectiveEmployeeSkills(context.Background(), ListEffectiveEmployeeSkillsRequest{
+		TenantID:          uuid.New(),
+		DigitalEmployeeID: uuid.New(),
+	})
+	if err != nil {
+		t.Fatalf("list effective employee skills: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 skills, got %d", len(items))
+	}
+	if items[0].Skill.ID != teamSkillID || items[1].Skill.ID != employeeSkillID {
+		t.Fatalf("expected team and employee skills in repository order, got %#v", items)
+	}
+	if !items[0].Inherited || !items[0].ReadOnly || items[0].SourceScope != "team" {
+		t.Fatalf("expected first skill to be readonly inherited team skill, got %#v", items[0])
+	}
+	if items[1].Inherited || items[1].ReadOnly || items[1].SourceScope != "employee" {
+		t.Fatalf("expected second skill to be editable employee skill, got %#v", items[1])
+	}
+}
+
+func TestServiceBindSkillToTeamReturnsBoundSkill(t *testing.T) {
+	boundSkill := &Skill{ID: uuid.New(), Name: "diagnose", Slug: "diagnose", Status: SkillStatusInstalled}
+	repo := &serviceTestRepository{boundTeamSkill: boundSkill}
+	service := NewService(repo)
+	tenantID := uuid.New()
+	teamID := uuid.New()
+
+	item, err := service.BindSkillToTeam(context.Background(), BindTeamSkillRequest{
+		TenantID: tenantID,
+		TeamID:   teamID,
+		SkillID:  boundSkill.ID,
+	})
+	if err != nil {
+		t.Fatalf("bind skill to team: %v", err)
+	}
+	if item != boundSkill {
+		t.Fatalf("expected bound skill to be returned, got %#v", item)
+	}
+	if repo.teamBindReq.TenantID != tenantID || repo.teamBindReq.TeamID != teamID || repo.teamBindReq.SkillID != boundSkill.ID {
+		t.Fatalf("expected team bind request to be forwarded, got %#v", repo.teamBindReq)
+	}
+}
+
+func TestServiceBindSkillToEmployeeReturnsBoundSkill(t *testing.T) {
+	boundSkill := &Skill{ID: uuid.New(), Name: "diagnose", Slug: "diagnose", Status: SkillStatusInstalled}
+	repo := &serviceTestRepository{boundEmployeeSkill: boundSkill}
+	service := NewService(repo)
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+
+	item, err := service.BindSkillToEmployee(context.Background(), BindEmployeeSkillRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		SkillID:           boundSkill.ID,
+	})
+	if err != nil {
+		t.Fatalf("bind skill to employee: %v", err)
+	}
+	if item != boundSkill {
+		t.Fatalf("expected bound skill to be returned, got %#v", item)
+	}
+	if repo.employeeBindReq.TenantID != tenantID || repo.employeeBindReq.DigitalEmployeeID != employeeID || repo.employeeBindReq.SkillID != boundSkill.ID {
+		t.Fatalf("expected employee bind request to be forwarded, got %#v", repo.employeeBindReq)
+	}
+}
+
+func TestPgRepositoryEffectiveEmployeeSkillsSQLSuppressesPersonalDuplicateRows(t *testing.T) {
+	source, err := os.ReadFile("pg_repository.go")
+	if err != nil {
+		t.Fatalf("read pg repository source: %v", err)
+	}
+	normalized := strings.Join(strings.Fields(string(source)), " ")
+	if !strings.Contains(normalized, "FROM skill_agent_bindings sab") ||
+		!strings.Contains(normalized, "WHERE NOT EXISTS ( SELECT 1 FROM skill_team_bindings inherited_binding") {
+		t.Fatal("effective employee skill SQL must suppress personal skill rows duplicated by team inheritance")
+	}
+}
+
+func TestPgRepositoryBindSkillsPreflightsTargetsBeforeInsert(t *testing.T) {
+	source, err := os.ReadFile("pg_repository.go")
+	if err != nil {
+		t.Fatalf("read pg repository source: %v", err)
+	}
+	normalized := strings.Join(strings.Fields(string(source)), " ")
+	if strings.Contains(normalized, "INSERT INTO skill_team_bindings (tenant_id, skill_id, team_id) SELECT $1, $2, $3 WHERE EXISTS") {
+		t.Fatal("team skill bind must not rely on zero-row INSERT SELECT for target validation")
+	}
+	if strings.Contains(normalized, "INSERT INTO skill_agent_bindings (tenant_id, skill_id, digital_employee_id, status) SELECT $1, $2, $3, 'enabled' WHERE EXISTS") {
+		t.Fatal("employee skill bind must not rely on zero-row INSERT SELECT for target validation")
+	}
+}
+
 type serviceTestRepository struct {
-	upsertReq UpsertSkillPackageRequest
+	upsertReq          UpsertSkillPackageRequest
+	teamBindReq        BindTeamSkillRequest
+	employeeBindReq    BindEmployeeSkillRequest
+	boundTeamSkill     *Skill
+	boundEmployeeSkill *Skill
+	effectiveSkills    []EffectiveEmployeeSkill
 }
 
 func (r *serviceTestRepository) ListSkills(context.Context, ListSkillsRequest) ([]*Skill, error) {
@@ -137,6 +257,32 @@ func (r *serviceTestRepository) UpsertSkillPackage(_ context.Context, req Upsert
 
 func (r *serviceTestRepository) UpdateSkillFile(context.Context, UpdateSkillFileRequest) (*SkillFile, error) {
 	return nil, nil
+}
+
+func (r *serviceTestRepository) BindSkillToTeam(_ context.Context, req BindTeamSkillRequest) (*Skill, error) {
+	r.teamBindReq = req
+	return r.boundTeamSkill, nil
+}
+
+func (r *serviceTestRepository) UnbindSkillFromTeam(context.Context, BindTeamSkillRequest) error {
+	return nil
+}
+
+func (r *serviceTestRepository) ListTeamSkills(context.Context, ListTeamSkillsRequest) ([]*Skill, error) {
+	return nil, nil
+}
+
+func (r *serviceTestRepository) BindSkillToEmployee(_ context.Context, req BindEmployeeSkillRequest) (*Skill, error) {
+	r.employeeBindReq = req
+	return r.boundEmployeeSkill, nil
+}
+
+func (r *serviceTestRepository) UnbindSkillFromEmployee(context.Context, BindEmployeeSkillRequest) error {
+	return nil
+}
+
+func (r *serviceTestRepository) ListEffectiveEmployeeSkills(context.Context, ListEffectiveEmployeeSkillsRequest) ([]EffectiveEmployeeSkill, error) {
+	return r.effectiveSkills, nil
 }
 
 func buildSkillZip(t *testing.T, files map[string]string) []byte {

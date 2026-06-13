@@ -388,6 +388,44 @@ func (r *PgRepository) ActivateWorkspaceFileRevision(ctx context.Context, tenant
 	return workspaceFileRecordFromQuery(row)
 }
 
+func (r *PgRepository) GetWorkspaceFileByPath(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, filePath string) (WorkspaceFileRecord, error) {
+	row, err := r.q.GetDigitalEmployeeWorkspaceFileByPath(ctx, queries.GetDigitalEmployeeWorkspaceFileByPathParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+		Path:              filePath,
+	})
+	if err != nil {
+		return WorkspaceFileRecord{}, mapNoRows(err)
+	}
+	return workspaceFileRecordFromQuery(row)
+}
+
+func (r *PgRepository) GetNextWorkspaceFileRevisionNumber(ctx context.Context, tenantID, fileID uuid.UUID) (int32, error) {
+	return r.q.GetNextDigitalEmployeeWorkspaceFileRevisionNumber(ctx, queries.GetNextDigitalEmployeeWorkspaceFileRevisionNumberParams{
+		TenantID: tenantID,
+		FileID:   fileID,
+	})
+}
+
+func (r *PgRepository) ListWorkspaceFiles(ctx context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error) {
+	rows, err := r.q.ListCurrentDigitalEmployeeWorkspaceFiles(ctx, queries.ListCurrentDigitalEmployeeWorkspaceFilesParams{
+		TenantID:          req.TenantID,
+		DigitalEmployeeID: req.DigitalEmployeeID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	records := make([]WorkspaceFile, 0, len(rows))
+	for _, row := range rows {
+		record, err := workspaceFileFromCurrentRow(row)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
 func (r *PgRepository) ListWorkspaceFilesForSync(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error) {
 	rows, err := r.q.ListCurrentDigitalEmployeeWorkspaceFilesForSync(ctx, queries.ListCurrentDigitalEmployeeWorkspaceFilesForSyncParams{
 		TenantID:          tenantID,
@@ -487,6 +525,17 @@ func (r *PgRepository) GetTeamConfigRevision(ctx context.Context, tenantID, team
 func (r *PgRepository) GetDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID, employeeConfigRevisionID uuid.UUID) (EmployeeConfigInput, error) {
 	revision, err := r.q.GetDigitalEmployeeConfigRevision(ctx, queries.GetDigitalEmployeeConfigRevisionParams{
 		ID:                employeeConfigRevisionID,
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	if err != nil {
+		return EmployeeConfigInput{}, mapNoRows(err)
+	}
+	return employeeConfigInputFromQuery(revision)
+}
+
+func (r *PgRepository) GetLatestDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error) {
+	revision, err := r.q.GetLatestDigitalEmployeeConfigRevision(ctx, queries.GetLatestDigitalEmployeeConfigRevisionParams{
 		TenantID:          tenantID,
 		DigitalEmployeeID: digitalEmployeeID,
 	})
@@ -1151,6 +1200,37 @@ func workspaceFileForSyncRecordFromQuery(row queries.ListCurrentDigitalEmployeeW
 		StorageBackend:    row.StorageBackend,
 		ObjectKey:         stringPtrFromText(row.ObjectKey),
 		RevisionMetadata:  revisionMetadata,
+	}, nil
+}
+
+func workspaceFileFromCurrentRow(row queries.ListCurrentDigitalEmployeeWorkspaceFilesRow) (WorkspaceFile, error) {
+	if _, err := mapFromJSONB(row.FileMetadata, "file_metadata"); err != nil {
+		return WorkspaceFile{}, err
+	}
+	if _, err := mapFromJSONB(row.RevisionMetadata, "revision_metadata"); err != nil {
+		return WorkspaceFile{}, err
+	}
+	return WorkspaceFile{
+		ID:                row.FileID,
+		TenantID:          row.TenantID,
+		TeamID:            row.TeamID,
+		DigitalEmployeeID: row.DigitalEmployeeID,
+		Path:              row.Path,
+		FileRole:          row.FileRole,
+		MimeType:          row.MimeType,
+		SyncPolicy:        row.SyncPolicy,
+		Status:            row.Status,
+		CurrentRevisionID: row.RevisionID,
+		RevisionNumber:    row.RevisionNumber,
+		Content:           textValue(row.ContentText),
+		ContentHash:       row.ContentHash,
+		SizeBytes:         row.SizeBytes,
+		StorageBackend:    row.StorageBackend,
+		ObjectKey:         stringPtrFromText(row.ObjectKey),
+		CreatedBy:         uuidPtrFromNull(row.CreatedBy),
+		ChangeNote:        stringPtrFromText(row.ChangeNote),
+		CreatedAt:         timeFromTimestamptz(row.FileCreatedAt),
+		UpdatedAt:         timeFromTimestamptz(row.FileUpdatedAt),
 	}, nil
 }
 

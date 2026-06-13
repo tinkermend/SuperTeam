@@ -510,6 +510,35 @@ export type ApproveEffectiveConfigInput = {
   preview: EffectiveConfigPreviewInput;
 };
 
+export type WorkspaceFile = {
+  id: string;
+  team_id: string;
+  path: string;
+  file_role: string;
+  mime_type: string;
+  sync_policy: string;
+  status: string;
+  current_revision_id: string;
+  revision_number: number;
+  content: string;
+  content_hash: string;
+  size_bytes: number;
+  storage_backend: string;
+  object_key?: string;
+  change_note?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type UpsertWorkspaceFileInput = {
+  path: string;
+  content: string;
+  file_role?: string;
+  mime_type?: string;
+  sync_policy?: string;
+  change_note?: string;
+};
+
 async function postJson<T>(
   options: ApiClientOptions,
   path: string,
@@ -522,6 +551,23 @@ async function postJson<T>(
     credentials: "include",
     headers: { accept: "application/json", "content-type": "application/json" },
     method: "POST",
+  });
+
+  return parseJson<T>(response, resource);
+}
+
+async function putJson<T>(
+  options: ApiClientOptions,
+  path: string,
+  input: unknown,
+  resource: string,
+): Promise<T> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
+    body: JSON.stringify(input),
+    credentials: "include",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    method: "PUT",
   });
 
   return parseJson<T>(response, resource);
@@ -697,6 +743,34 @@ export function approveDigitalEmployeeEffectiveConfig(
     `/api/v1/digital-employees/${encodedEmployeeId}/effective-configs/approve`,
     input,
     "approve digital employee effective config",
+  );
+}
+
+export function listWorkspaceFiles(
+  options: ApiClientOptions,
+  employeeId: string,
+): Promise<WorkspaceFile[]> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+
+  return getJson<WorkspaceFile[]>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/workspace-files`,
+    "employee workspace files",
+  );
+}
+
+export function upsertWorkspaceFile(
+  options: ApiClientOptions,
+  employeeId: string,
+  input: UpsertWorkspaceFileInput,
+): Promise<WorkspaceFile> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+
+  return putJson<WorkspaceFile>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/workspace-files`,
+    input,
+    "upsert employee workspace file",
   );
 }
 

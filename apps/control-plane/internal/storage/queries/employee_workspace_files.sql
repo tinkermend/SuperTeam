@@ -66,6 +66,57 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   )
 RETURNING *;
 
+-- name: GetDigitalEmployeeWorkspaceFileByPath :one
+SELECT *
+FROM digital_employee_workspace_files
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND path = sqlc.arg('path')::text
+  AND deleted_at IS NULL;
+
+-- name: GetNextDigitalEmployeeWorkspaceFileRevisionNumber :one
+SELECT (COALESCE(MAX(revision_number), 0) + 1)::integer AS next_revision_number
+FROM digital_employee_workspace_file_revisions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND file_id = sqlc.arg('file_id')::uuid;
+
+-- name: ListCurrentDigitalEmployeeWorkspaceFiles :many
+SELECT
+    f.id AS file_id,
+    f.tenant_id,
+    f.team_id,
+    f.digital_employee_id,
+    f.path,
+    f.file_role,
+    f.mime_type,
+    f.sync_policy,
+    f.status,
+    f.metadata AS file_metadata,
+    f.created_by,
+    f.created_at AS file_created_at,
+    f.updated_at AS file_updated_at,
+    r.id AS revision_id,
+    r.revision_number,
+    r.content_text,
+    r.content_hash,
+    r.size_bytes,
+    r.storage_backend,
+    r.object_key,
+    r.created_by AS revision_created_by,
+    r.created_at AS revision_created_at,
+    r.change_note,
+    r.metadata AS revision_metadata
+FROM digital_employee_workspace_files f
+JOIN digital_employee_workspace_file_revisions r
+  ON r.id = f.current_revision_id
+ AND r.tenant_id = f.tenant_id
+ AND r.file_id = f.id
+WHERE f.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND f.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND f.status = 'active'
+  AND f.deleted_at IS NULL
+ORDER BY CASE WHEN f.file_role = 'entrypoint' THEN 0 ELSE 1 END, f.path ASC;
+
 -- name: ListCurrentDigitalEmployeeWorkspaceFilesForSync :many
 SELECT
     f.id AS file_id,

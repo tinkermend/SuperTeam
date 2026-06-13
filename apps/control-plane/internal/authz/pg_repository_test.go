@@ -15,15 +15,18 @@ import (
 )
 
 type fakeAuthzQueryStore struct {
-	tenantParams  queries.GetActiveTenantMembershipParams
-	tenantMember  queries.TenantMember
-	tenantErr     error
-	teamParams    queries.GetActiveTeamMembershipParams
-	teamMember    queries.TenantMember
-	teamErr       error
-	runtimeParams queries.RuntimeNodeCoversTaskScopeParams
-	runtimeOK     bool
-	runtimeErr    error
+	tenantParams        queries.GetActiveTenantMembershipParams
+	tenantMember        queries.TenantMember
+	tenantErr           error
+	teamParams          queries.GetActiveTeamMembershipParams
+	teamMember          queries.TenantMember
+	teamErr             error
+	employeeScopeParams queries.GetDigitalEmployeeAuthzScopeParams
+	employeeScope       queries.GetDigitalEmployeeAuthzScopeRow
+	employeeScopeErr    error
+	runtimeParams       queries.RuntimeNodeCoversTaskScopeParams
+	runtimeOK           bool
+	runtimeErr          error
 }
 
 func (s *fakeAuthzQueryStore) GetActiveTenantMembership(ctx context.Context, params queries.GetActiveTenantMembershipParams) (queries.TenantMember, error) {
@@ -34,6 +37,11 @@ func (s *fakeAuthzQueryStore) GetActiveTenantMembership(ctx context.Context, par
 func (s *fakeAuthzQueryStore) GetActiveTeamMembership(ctx context.Context, params queries.GetActiveTeamMembershipParams) (queries.TenantMember, error) {
 	s.teamParams = params
 	return s.teamMember, s.teamErr
+}
+
+func (s *fakeAuthzQueryStore) GetDigitalEmployeeAuthzScope(ctx context.Context, params queries.GetDigitalEmployeeAuthzScopeParams) (queries.GetDigitalEmployeeAuthzScopeRow, error) {
+	s.employeeScopeParams = params
+	return s.employeeScope, s.employeeScopeErr
 }
 
 func (s *fakeAuthzQueryStore) RuntimeNodeCoversTaskScope(ctx context.Context, params queries.RuntimeNodeCoversTaskScopeParams) (bool, error) {
@@ -99,6 +107,36 @@ func TestPgRepositoryMapsTeamMembership(t *testing.T) {
 	require.NotNil(t, membership.TeamID)
 	require.Equal(t, teamID, *membership.TeamID)
 	require.Equal(t, RoleMember, membership.Role)
+}
+
+func TestPgRepositoryMapsDigitalEmployeeAuthzScope(t *testing.T) {
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	ownerUserID := uuid.New()
+	teamID := uuid.New()
+	store := &fakeAuthzQueryStore{
+		employeeScope: queries.GetDigitalEmployeeAuthzScopeRow{
+			TenantID:    tenantID,
+			EmployeeID:  employeeID,
+			OwnerUserID: ownerUserID,
+			TeamID:      uuid.NullUUID{UUID: teamID, Valid: true},
+		},
+	}
+	repo := NewPgRepository(store)
+
+	scope, err := repo.GetDigitalEmployeeAuthzScope(context.Background(), DigitalEmployeeAuthzScopeParams{
+		TenantID:   tenantID,
+		EmployeeID: employeeID,
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, tenantID, store.employeeScopeParams.TenantID)
+	require.Equal(t, employeeID, store.employeeScopeParams.EmployeeID)
+	require.Equal(t, tenantID, scope.TenantID)
+	require.Equal(t, employeeID, scope.EmployeeID)
+	require.Equal(t, ownerUserID, scope.OwnerUserID)
+	require.NotNil(t, scope.TeamID)
+	require.Equal(t, teamID, *scope.TeamID)
 }
 
 func TestPgRepositoryMapsNoRowsToNoMembership(t *testing.T) {

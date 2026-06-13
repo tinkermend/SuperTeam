@@ -16,6 +16,7 @@ import (
 type QueryStore interface {
 	GetActiveTenantMembership(ctx context.Context, params queries.GetActiveTenantMembershipParams) (queries.TenantMember, error)
 	GetActiveTeamMembership(ctx context.Context, params queries.GetActiveTeamMembershipParams) (queries.TenantMember, error)
+	GetDigitalEmployeeAuthzScope(ctx context.Context, params queries.GetDigitalEmployeeAuthzScopeParams) (queries.GetDigitalEmployeeAuthzScopeRow, error)
 	RuntimeNodeCoversTaskScope(ctx context.Context, params queries.RuntimeNodeCoversTaskScopeParams) (bool, error)
 }
 
@@ -50,6 +51,26 @@ func (r *PgRepository) GetActiveTeamMembership(ctx context.Context, params TeamM
 		return Membership{}, mapMembershipError(err)
 	}
 	return membershipFromTenantMember(member), nil
+}
+
+func (r *PgRepository) GetDigitalEmployeeAuthzScope(ctx context.Context, params DigitalEmployeeAuthzScopeParams) (DigitalEmployeeAuthzScope, error) {
+	scope, err := r.q.GetDigitalEmployeeAuthzScope(ctx, queries.GetDigitalEmployeeAuthzScopeParams{
+		TenantID:   params.TenantID,
+		EmployeeID: params.EmployeeID,
+	})
+	if err != nil {
+		return DigitalEmployeeAuthzScope{}, mapMembershipError(err)
+	}
+	var teamID *uuid.UUID
+	if scope.TeamID.Valid {
+		teamID = &scope.TeamID.UUID
+	}
+	return DigitalEmployeeAuthzScope{
+		TenantID:    scope.TenantID,
+		EmployeeID:  scope.EmployeeID,
+		OwnerUserID: scope.OwnerUserID,
+		TeamID:      teamID,
+	}, nil
 }
 
 func (r *PgRepository) RuntimeNodeCoversTaskScope(ctx context.Context, params RuntimeScopeParams) (bool, error) {

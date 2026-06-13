@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ const (
 	defaultProvisioningTimeout      = 10 * time.Second
 	defaultProvisioningPollInterval = 250 * time.Millisecond
 	defaultProvisioningAbortTimeout = 5 * time.Second
+	maxWorkspaceFileInlineBytes     = 10 * 1024 * 1024
 )
 
 func NewService(repository Repository) (*Service, error) {
@@ -76,6 +78,116 @@ func (s *Service) GetOverview(ctx context.Context, req GetDigitalEmployeeOvervie
 	overview.Pagination.Limit = req.Limit
 	overview.Pagination.Offset = req.Offset
 	return overview, nil
+}
+
+func (s *Service) ListWorkspaceFiles(ctx context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error) {
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.DigitalEmployeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	files, err := s.repository.ListWorkspaceFiles(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("list workspace files: %w", err)
+	}
+	return append([]WorkspaceFile(nil), files...), nil
+}
+
+func (s *Service) UpsertWorkspaceFile(ctx context.Context, req UpsertWorkspaceFileRequest) (WorkspaceFile, error) {
+	if req.TenantID == uuid.Nil {
+		return WorkspaceFile{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.DigitalEmployeeID == uuid.Nil {
+		return WorkspaceFile{}, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	normalizedPath, err := normalizeWorkspaceFilePath(req.Path)
+	if err != nil {
+		return WorkspaceFile{}, err
+	}
+	fileRole, err := normalizeWorkspaceFileRole(req.FileRole, normalizedPath)
+	if err != nil {
+		return WorkspaceFile{}, err
+	}
+	syncPolicy, err := normalizeWorkspaceFileSyncPolicy(req.SyncPolicy)
+	if err != nil {
+		return WorkspaceFile{}, err
+	}
+	mimeType := strings.TrimSpace(req.MimeType)
+	if mimeType == "" {
+		mimeType = inferWorkspaceFileMimeType(normalizedPath)
+	}
+	if strings.ContainsAny(mimeType, "\r\n\t") {
+		return WorkspaceFile{}, fmt.Errorf("%w: invalid workspace file mime_type", ErrInvalidInput)
+	}
+	employee, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
+		return WorkspaceFile{}, fmt.Errorf("get digital employee: %w", err)
+	}
+	if employee.TeamID == nil || *employee.TeamID == uuid.Nil {
+		return WorkspaceFile{}, fmt.Errorf("%w: employee team_id is required for workspace files", ErrInvalidInput)
+	}
+	contentBytes := []byte(req.Content)
+	if len(contentBytes) > maxWorkspaceFileInlineBytes {
+		return WorkspaceFile{}, fmt.Errorf("%w: workspace file content is too large", ErrInvalidInput)
+	}
+	var file WorkspaceFile
+	if err := s.repository.WithTransaction(ctx, func(repository Repository) error {
+		var fileRecord WorkspaceFileRecord
+		fileRecord, err = repository.GetWorkspaceFileByPath(ctx, req.TenantID, req.DigitalEmployeeID, normalizedPath)
+		if err != nil {
+			if !errors.Is(err, ErrNotFound) {
+				return err
+			}
+			fileRecord, err = repository.CreateWorkspaceFile(ctx, CreateWorkspaceFileParams{
+				TenantID:          req.TenantID,
+				TeamID:            *employee.TeamID,
+				DigitalEmployeeID: req.DigitalEmployeeID,
+				Path:              normalizedPath,
+				FileRole:          fileRole,
+				MimeType:          mimeType,
+				SyncPolicy:        syncPolicy,
+				Status:            "active",
+				Metadata: map[string]any{
+					"source": "console",
+				},
+				CreatedBy: req.UpdatedBy,
+			})
+			if err != nil {
+				return err
+			}
+		}
+		revisionNumber, err := repository.GetNextWorkspaceFileRevisionNumber(ctx, req.TenantID, fileRecord.ID)
+		if err != nil {
+			return err
+		}
+		revision, err := repository.CreateWorkspaceFileRevision(ctx, CreateWorkspaceFileRevisionParams{
+			TenantID:       req.TenantID,
+			FileID:         fileRecord.ID,
+			RevisionNumber: revisionNumber,
+			ContentText:    req.Content,
+			ContentHash:    sha256Hex(req.Content),
+			SizeBytes:      int32(len(contentBytes)),
+			StorageBackend: "db",
+			CreatedBy:      req.UpdatedBy,
+			ChangeNote:     req.ChangeNote,
+			Metadata: map[string]any{
+				"source": "console",
+			},
+		})
+		if err != nil {
+			return err
+		}
+		fileRecord, err = repository.ActivateWorkspaceFileRevision(ctx, req.TenantID, fileRecord.ID, revision.ID)
+		if err != nil {
+			return err
+		}
+		file = workspaceFileFromRecords(fileRecord, revision)
+		return nil
+	}); err != nil {
+		return WorkspaceFile{}, fmt.Errorf("upsert workspace file: %w", err)
+	}
+	return file, nil
 }
 
 func (s *Service) GetCreateOptions(ctx context.Context, req CreateOptionsRequest) (*CreateOptions, error) {
@@ -912,6 +1024,58 @@ func normalizeWorkspaceFilePath(path string) (string, error) {
 	return value, nil
 }
 
+func normalizeWorkspaceFileRole(fileRole, filePath string) (string, error) {
+	value := strings.TrimSpace(fileRole)
+	if value == "" {
+		if filePath == "AGENTS.md" {
+			return "entrypoint", nil
+		}
+		return "supporting_doc", nil
+	}
+	switch value {
+	case "entrypoint":
+		if filePath != "AGENTS.md" {
+			return "", fmt.Errorf("%w: entrypoint workspace file must be AGENTS.md", ErrInvalidInput)
+		}
+		return value, nil
+	case "supporting_doc", "provider_config", "generated":
+		if filePath == "AGENTS.md" && value != "entrypoint" {
+			return "", fmt.Errorf("%w: AGENTS.md must be the entrypoint workspace file", ErrInvalidInput)
+		}
+		return value, nil
+	default:
+		return "", fmt.Errorf("%w: invalid workspace file role", ErrInvalidInput)
+	}
+}
+
+func normalizeWorkspaceFileSyncPolicy(syncPolicy string) (string, error) {
+	value := strings.TrimSpace(syncPolicy)
+	if value == "" {
+		return "auto", nil
+	}
+	switch value {
+	case "auto", "manual", "disabled":
+		return value, nil
+	default:
+		return "", fmt.Errorf("%w: invalid workspace file sync_policy", ErrInvalidInput)
+	}
+}
+
+func inferWorkspaceFileMimeType(filePath string) string {
+	switch strings.ToLower(path.Ext(filePath)) {
+	case ".md", ".markdown":
+		return "text/markdown"
+	case ".json":
+		return "application/json"
+	case ".yaml", ".yml":
+		return "application/yaml"
+	case ".txt":
+		return "text/plain"
+	default:
+		return "text/plain"
+	}
+}
+
 func sha256Hex(content string) string {
 	sum := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(sum[:])
@@ -967,6 +1131,31 @@ func workspaceFileForSyncFromDefault(file WorkspaceFileRecord, revision Workspac
 		StorageBackend:    revision.StorageBackend,
 		ObjectKey:         cloneStringPtr(revision.ObjectKey),
 		RevisionMetadata:  cloneMap(revision.Metadata),
+	}
+}
+
+func workspaceFileFromRecords(file WorkspaceFileRecord, revision WorkspaceFileRevisionRecord) WorkspaceFile {
+	return WorkspaceFile{
+		ID:                file.ID,
+		TenantID:          file.TenantID,
+		TeamID:            file.TeamID,
+		DigitalEmployeeID: file.DigitalEmployeeID,
+		Path:              file.Path,
+		FileRole:          file.FileRole,
+		MimeType:          file.MimeType,
+		SyncPolicy:        file.SyncPolicy,
+		Status:            file.Status,
+		CurrentRevisionID: revision.ID,
+		RevisionNumber:    revision.RevisionNumber,
+		Content:           revision.ContentText,
+		ContentHash:       revision.ContentHash,
+		SizeBytes:         revision.SizeBytes,
+		StorageBackend:    revision.StorageBackend,
+		ObjectKey:         cloneStringPtr(revision.ObjectKey),
+		CreatedBy:         cloneUUIDPtr(file.CreatedBy),
+		ChangeNote:        cloneStringPtr(revision.ChangeNote),
+		CreatedAt:         file.CreatedAt,
+		UpdatedAt:         file.UpdatedAt,
 	}
 }
 
@@ -1225,13 +1414,43 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 	if status != ConfigRevisionStatusDraft {
 		return nil, fmt.Errorf("%w: invalid config revision status", ErrInvalidInput)
 	}
-	budgetPolicy, err := normalizeBudgetPolicy(req.BudgetPolicy)
-	if err != nil {
-		return nil, err
-	}
 	if _, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID); err != nil {
 		return nil, fmt.Errorf("get digital employee: %w", err)
 	}
+	var latestConfig *EmployeeConfigInput
+	latest, err := s.repository.GetLatestDigitalEmployeeConfigRevision(ctx, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			return nil, fmt.Errorf("get latest digital employee config revision: %w", err)
+		}
+	} else {
+		latestConfig = &latest
+	}
+	roleProfile := inheritedConfigMap(req.RoleProfile, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.RoleProfile
+	})
+	constitutionAddendum := inheritedConfigMap(req.ConstitutionAddendum, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.ConstitutionAddendum
+	})
+	capabilitySelection := inheritedConfigMap(req.CapabilitySelection, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.CapabilitySelection
+	})
+	contextPolicyOverride := inheritedConfigMap(req.ContextPolicyOverride, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.ContextPolicyOverride
+	})
+	approvalPolicyOverride := inheritedConfigMap(req.ApprovalPolicyOverride, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.ApprovalPolicyOverride
+	})
+	budgetPolicySource := inheritedConfigMap(req.BudgetPolicy, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.BudgetPolicy
+	})
+	budgetPolicy, err := normalizeBudgetPolicy(budgetPolicySource)
+	if err != nil {
+		return nil, err
+	}
+	outputContractAddendum := inheritedConfigMap(req.OutputContractAddendum, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.OutputContractAddendum
+	})
 	nextRevision, err := s.repository.GetNextDigitalEmployeeConfigRevisionNumber(ctx, req.TenantID, req.DigitalEmployeeID)
 	if err != nil {
 		return nil, fmt.Errorf("get next digital employee config revision number: %w", err)
@@ -1240,19 +1459,29 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 		TenantID:               req.TenantID,
 		DigitalEmployeeID:      req.DigitalEmployeeID,
 		RevisionNumber:         nextRevision,
-		RoleProfile:            cloneMap(req.RoleProfile),
-		ConstitutionAddendum:   cloneMap(req.ConstitutionAddendum),
-		CapabilitySelection:    cloneMap(req.CapabilitySelection),
-		ContextPolicyOverride:  cloneMap(req.ContextPolicyOverride),
-		ApprovalPolicyOverride: cloneMap(req.ApprovalPolicyOverride),
+		RoleProfile:            roleProfile,
+		ConstitutionAddendum:   constitutionAddendum,
+		CapabilitySelection:    capabilitySelection,
+		ContextPolicyOverride:  contextPolicyOverride,
+		ApprovalPolicyOverride: approvalPolicyOverride,
 		BudgetPolicy:           budgetPolicy,
-		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
+		OutputContractAddendum: outputContractAddendum,
 		Status:                 status,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create digital employee config revision: %w", err)
 	}
 	return configRevisionFromRecord(record), nil
+}
+
+func inheritedConfigMap(requested map[string]any, latest *EmployeeConfigInput, selectLatest func(EmployeeConfigInput) map[string]any) map[string]any {
+	if requested != nil {
+		return cloneMap(requested)
+	}
+	if latest == nil {
+		return map[string]any{}
+	}
+	return cloneMap(selectLatest(*latest))
 }
 
 func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffectiveConfigRequest) (*EffectiveConfigPreview, error) {
@@ -1769,6 +1998,14 @@ func trimOptionalString(value *string) *string {
 }
 
 func cloneStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
+}
+
+func cloneUUIDPtr(value *uuid.UUID) *uuid.UUID {
 	if value == nil {
 		return nil
 	}

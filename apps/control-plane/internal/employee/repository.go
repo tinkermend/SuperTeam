@@ -23,6 +23,9 @@ type Repository interface {
 	CreateWorkspaceFile(ctx context.Context, params CreateWorkspaceFileParams) (WorkspaceFileRecord, error)
 	CreateWorkspaceFileRevision(ctx context.Context, params CreateWorkspaceFileRevisionParams) (WorkspaceFileRevisionRecord, error)
 	ActivateWorkspaceFileRevision(ctx context.Context, tenantID, fileID, revisionID uuid.UUID) (WorkspaceFileRecord, error)
+	GetWorkspaceFileByPath(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, path string) (WorkspaceFileRecord, error)
+	GetNextWorkspaceFileRevisionNumber(ctx context.Context, tenantID, fileID uuid.UUID) (int32, error)
+	ListWorkspaceFiles(ctx context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error)
 	ListWorkspaceFilesForSync(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error)
 	UpsertWorkspaceFileSync(ctx context.Context, params UpsertWorkspaceFileSyncParams) error
 	CreateRuntimeCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error
@@ -31,6 +34,7 @@ type Repository interface {
 	CreateDigitalEmployeeConfigRevision(ctx context.Context, params CreateConfigRevisionParams) (DigitalEmployeeConfigRevisionRecord, error)
 	GetTeamConfigRevision(ctx context.Context, tenantID, teamConfigRevisionID uuid.UUID) (TeamConfigInput, error)
 	GetDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID, employeeConfigRevisionID uuid.UUID) (EmployeeConfigInput, error)
+	GetLatestDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error)
 	GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (int32, error)
 	GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (DigitalEmployeeEffectiveConfigRecord, error)
 	CreateDigitalEmployeeEffectiveConfig(ctx context.Context, params CreateEffectiveConfigParams) (DigitalEmployeeEffectiveConfigRecord, error)

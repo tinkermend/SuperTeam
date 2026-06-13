@@ -14,6 +14,7 @@ import (
 	"github.com/superteam/control-plane/internal/api/handlers"
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
+	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/employee"
 )
 
@@ -323,6 +324,77 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 }
 
+func TestEmployeeMCPRoutesUseConsoleAuthAndCapabilityActions(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	user := routeConsoleUser(t, authService, uuid.MustParse(auth.DefaultTenantID))
+	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	employeeID := uuid.New()
+	bindingID := uuid.New()
+	service := &routeCapabilityService{
+		mcpServer: capability.MCPServer{
+			ID:                bindingID,
+			TenantID:          tenantID,
+			DigitalEmployeeID: &employeeID,
+			Name:              "personal-mcp",
+			URL:               "https://personal.example.com",
+			CredentialType:    capability.CredentialTypeMCPToken,
+			Status:            "active",
+			SourceScope:       "employee",
+		},
+	}
+	authorizer := newRecordingAuthorizer()
+	server := NewServerWithAuthz(nil, nil, authService, nil, authorizer)
+	server.SetCapabilityHandler(capability.NewHandler(service))
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/digital-employees/"+employeeID.String()+"/mcp-bindings", strings.NewReader(`{"name":"personal-mcp","url":"https://personal.example.com"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	withConsoleSessionCookie(createReq, user.SessionToken)
+	createResp := httptest.NewRecorder()
+	server.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected create employee mcp to succeed, got %d: %s", createResp.Code, createResp.Body.String())
+	}
+	if service.createEmployeeReq.TenantID != tenantID || service.createEmployeeReq.UserID != user.User.ID || service.createEmployeeReq.DigitalEmployeeID != employeeID {
+		t.Fatalf("unexpected create employee mcp request: %#v", service.createEmployeeReq)
+	}
+
+	effectiveReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/effective-mcp-servers", nil)
+	withConsoleSessionCookie(effectiveReq, user.SessionToken)
+	effectiveResp := httptest.NewRecorder()
+	server.ServeHTTP(effectiveResp, effectiveReq)
+	if effectiveResp.Code != http.StatusOK {
+		t.Fatalf("expected effective mcp to succeed, got %d: %s", effectiveResp.Code, effectiveResp.Body.String())
+	}
+	if service.effectiveReq.TenantID != tenantID || service.effectiveReq.UserID != user.User.ID || service.effectiveReq.DigitalEmployeeID != employeeID {
+		t.Fatalf("unexpected effective mcp request: %#v", service.effectiveReq)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/digital-employees/"+employeeID.String()+"/mcp-bindings/"+bindingID.String(), nil)
+	withConsoleSessionCookie(deleteReq, user.SessionToken)
+	deleteResp := httptest.NewRecorder()
+	server.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusNoContent {
+		t.Fatalf("expected delete employee mcp to succeed, got %d: %s", deleteResp.Code, deleteResp.Body.String())
+	}
+	if service.deleteEmployeeReq.TenantID != tenantID || service.deleteEmployeeReq.DigitalEmployeeID != employeeID || service.deleteEmployeeReq.BindingID != bindingID {
+		t.Fatalf("unexpected delete employee mcp request: %#v", service.deleteEmployeeReq)
+	}
+
+	expectedActions := []string{authz.ActionEmployeeCapabilityEdit, authz.ActionEmployeeRead, authz.ActionEmployeeCapabilityEdit}
+	if len(authorizer.checks) != len(expectedActions) {
+		t.Fatalf("expected %d authz checks, got %#v", len(expectedActions), authorizer.checks)
+	}
+	for i, action := range expectedActions {
+		check := authorizer.checks[i]
+		if check.Action != action || check.Resource.Type != authz.ResourceEmployee || check.Resource.ID != employeeID.String() {
+			t.Fatalf("unexpected employee mcp authz check at %d: %#v", i, check)
+		}
+	}
+}
+
 func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -506,6 +578,90 @@ func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 	lastCheck := authorizer.checks[len(authorizer.checks)-1]
 	if lastCheck.Action != authz.ActionEmployeeRead || lastCheck.Resource.Type != authz.ResourceTenant || lastCheck.TenantID != tenantID {
 		t.Fatalf("unexpected overview authz check: %#v", lastCheck)
+	}
+}
+
+func TestEmployeeRoutesWorkspaceFilesUseConsoleTenantAndActions(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	user := routeConsoleUser(t, authService, uuid.MustParse(auth.DefaultTenantID))
+	tenantID := uuid.MustParse(auth.DefaultTenantID)
+	employeeID := uuid.New()
+	authorizer := newRecordingAuthorizer()
+	service := &routeEmployeeService{}
+	server := NewServerWithAuthz(nil, nil, authService, nil, authorizer)
+	server.SetEmployeeHandler(employee.NewHandler(service))
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/workspace-files", nil)
+	withConsoleSessionCookie(listReq, user.SessionToken)
+	listResp := httptest.NewRecorder()
+	server.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected list workspace files to succeed, got %d: %s", listResp.Code, listResp.Body.String())
+	}
+	if service.listWorkspaceFilesReq.TenantID != tenantID || service.listWorkspaceFilesReq.DigitalEmployeeID != employeeID {
+		t.Fatalf("unexpected list workspace files request: %#v", service.listWorkspaceFilesReq)
+	}
+	var listed []struct {
+		ID                string `json:"id"`
+		Path              string `json:"path"`
+		FileRole          string `json:"file_role"`
+		Content           string `json:"content"`
+		ContentHash       string `json:"content_hash"`
+		CurrentRevisionID string `json:"current_revision_id"`
+		RevisionNumber    int32  `json:"revision_number"`
+		SizeBytes         int32  `json:"size_bytes"`
+		UpdatedAt         string `json:"updated_at"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode list workspace files: %v", err)
+	}
+	if len(listed) != 1 || listed[0].Path != "AGENTS.md" || listed[0].FileRole != "entrypoint" || listed[0].Content != "# 工作原则" || listed[0].SizeBytes == 0 || listed[0].ContentHash == "" || listed[0].CurrentRevisionID == "" || listed[0].RevisionNumber != 1 || listed[0].UpdatedAt == "" {
+		t.Fatalf("unexpected list workspace files response: %#v", listed)
+	}
+
+	upsertReq := httptest.NewRequest(http.MethodPut, "/api/v1/digital-employees/"+employeeID.String()+"/workspace-files", strings.NewReader(`{"path":"AGENTS.md","content":"# 新规则","change_note":"update rules"}`))
+	upsertReq.Header.Set("Content-Type", "application/json")
+	withConsoleSessionCookie(upsertReq, user.SessionToken)
+	upsertResp := httptest.NewRecorder()
+	server.ServeHTTP(upsertResp, upsertReq)
+	if upsertResp.Code != http.StatusOK {
+		t.Fatalf("expected upsert workspace file to succeed, got %d: %s", upsertResp.Code, upsertResp.Body.String())
+	}
+	if service.upsertWorkspaceFileReq.TenantID != tenantID || service.upsertWorkspaceFileReq.DigitalEmployeeID != employeeID {
+		t.Fatalf("unexpected upsert workspace file identity: %#v", service.upsertWorkspaceFileReq)
+	}
+	if service.upsertWorkspaceFileReq.Path != "AGENTS.md" || service.upsertWorkspaceFileReq.Content != "# 新规则" || service.upsertWorkspaceFileReq.ChangeNote == nil || *service.upsertWorkspaceFileReq.ChangeNote != "update rules" {
+		t.Fatalf("unexpected upsert workspace file body: %#v", service.upsertWorkspaceFileReq)
+	}
+	var upserted struct {
+		Path        string `json:"path"`
+		Content     string `json:"content"`
+		ContentHash string `json:"content_hash"`
+	}
+	if err := json.NewDecoder(upsertResp.Body).Decode(&upserted); err != nil {
+		t.Fatalf("decode upsert workspace file: %v", err)
+	}
+	if upserted.Path != "AGENTS.md" || upserted.Content != "# 新规则" || upserted.ContentHash == "" {
+		t.Fatalf("expected normalized upsert response, got %#v", upserted)
+	}
+
+	expectedChecks := []struct {
+		action string
+	}{
+		{action: authz.ActionEmployeeRead},
+		{action: authz.ActionEmployeeConfigCreate},
+	}
+	if len(authorizer.checks) != len(expectedChecks) {
+		t.Fatalf("expected %d authorization checks, got %#v", len(expectedChecks), authorizer.checks)
+	}
+	for idx, expected := range expectedChecks {
+		check := authorizer.checks[idx]
+		if check.Action != expected.action || check.Resource.Type != authz.ResourceEmployee || check.Resource.ID != employeeID.String() || check.TenantID != tenantID {
+			t.Fatalf("unexpected workspace file authz check at %d: %#v", idx, check)
+		}
 	}
 }
 
@@ -1028,6 +1184,8 @@ func TestDigitalEmployeeRouteAuthorizationDenial(t *testing.T) {
 		{name: "create", method: http.MethodPost, path: "/api/v1/digital-employees", body: `{"team_id":"` + uuid.New().String() + `","name":"Requirements analyst","role":"requirements_analyst"}`, action: authz.ActionEmployeeCreate, resourceType: authz.ResourceTenant},
 		{name: "create options", method: http.MethodGet, path: "/api/v1/digital-employees/create-options?team_id=" + uuid.New().String(), action: authz.ActionEmployeeCreate, resourceType: authz.ResourceTenant},
 		{name: "get", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID, action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "list workspace files", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/workspace-files", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "upsert workspace file", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/workspace-files", body: `{"path":"AGENTS.md","content":"# rules"}`, action: authz.ActionEmployeeConfigCreate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "status", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/status", body: `{"status":"active"}`, action: authz.ActionEmployeeStatusUpdate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "get execution instance", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "upsert execution instance", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/execution-instance", body: `{"runtime_node_id":"` + runtimeNodeID + `","provider_type":"codex","agent_home_dir":"/srv/agents/requirements"}`, action: authz.ActionEmployeeExecutionBind, resourceType: authz.ResourceEmployee, resourceID: employeeID},
@@ -1169,30 +1327,34 @@ func TestDigitalEmployeeRouteSanitizesAuthorizationBackendError(t *testing.T) {
 }
 
 type routeEmployeeService struct {
-	createOptionsReq    employee.CreateOptionsRequest
-	createOptions       *employee.CreateOptions
-	createReq           employee.CreateDigitalEmployeeRequest
-	listReq             employee.ListDigitalEmployeesRequest
-	overviewReq         employee.GetDigitalEmployeeOverviewRequest
-	bindReq             employee.BindExecutionInstanceRequest
-	updateReq           employee.UpdateStatusRequest
-	getTenantID         uuid.UUID
-	getInstanceTenantID uuid.UUID
-	createCalled        bool
-	listCalled          bool
-	getCalled           bool
-	updateCalled        bool
-	getInstanceCalled   bool
-	bindCalled          bool
-	configRevisionReq   employee.CreateDigitalEmployeeConfigRevisionRequest
-	previewReq          employee.PreviewEffectiveConfigByRevisionIDsRequest
-	approveReq          employee.ApproveEffectiveConfigRequest
-	configCalled        bool
-	previewCalled       bool
-	approveCalled       bool
-	createdID           uuid.UUID
-	listErr             error
-	overviewErr         error
+	createOptionsReq          employee.CreateOptionsRequest
+	createOptions             *employee.CreateOptions
+	createReq                 employee.CreateDigitalEmployeeRequest
+	listReq                   employee.ListDigitalEmployeesRequest
+	overviewReq               employee.GetDigitalEmployeeOverviewRequest
+	listWorkspaceFilesReq     employee.ListWorkspaceFilesRequest
+	upsertWorkspaceFileReq    employee.UpsertWorkspaceFileRequest
+	bindReq                   employee.BindExecutionInstanceRequest
+	updateReq                 employee.UpdateStatusRequest
+	getTenantID               uuid.UUID
+	getInstanceTenantID       uuid.UUID
+	createCalled              bool
+	listCalled                bool
+	listWorkspaceFilesCalled  bool
+	upsertWorkspaceFileCalled bool
+	getCalled                 bool
+	updateCalled              bool
+	getInstanceCalled         bool
+	bindCalled                bool
+	configRevisionReq         employee.CreateDigitalEmployeeConfigRevisionRequest
+	previewReq                employee.PreviewEffectiveConfigByRevisionIDsRequest
+	approveReq                employee.ApproveEffectiveConfigRequest
+	configCalled              bool
+	previewCalled             bool
+	approveCalled             bool
+	createdID                 uuid.UUID
+	listErr                   error
+	overviewErr               error
 }
 
 func (s *routeEmployeeService) GetCreateOptions(ctx context.Context, req employee.CreateOptionsRequest) (*employee.CreateOptions, error) {
@@ -1335,6 +1497,57 @@ func (s *routeEmployeeService) GetDigitalEmployee(ctx context.Context, tenantID,
 	}, nil
 }
 
+func (s *routeEmployeeService) ListWorkspaceFiles(ctx context.Context, req employee.ListWorkspaceFilesRequest) ([]employee.WorkspaceFile, error) {
+	s.listWorkspaceFilesCalled = true
+	s.listWorkspaceFilesReq = req
+	now := time.Now().UTC()
+	revisionID := uuid.New()
+	return []employee.WorkspaceFile{{
+		ID:                uuid.New(),
+		TenantID:          req.TenantID,
+		TeamID:            uuid.New(),
+		DigitalEmployeeID: req.DigitalEmployeeID,
+		Path:              "AGENTS.md",
+		FileRole:          "entrypoint",
+		MimeType:          "text/markdown",
+		SyncPolicy:        "auto",
+		Status:            "active",
+		CurrentRevisionID: revisionID,
+		RevisionNumber:    1,
+		Content:           "# 工作原则",
+		SizeBytes:         int32(len([]byte("# 工作原则"))),
+		ContentHash:       "36e7ed868287830a2d6f4651737b36a7e0f9febadb211397b2a9c6b324bf9269",
+		StorageBackend:    "db",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}}, nil
+}
+
+func (s *routeEmployeeService) UpsertWorkspaceFile(ctx context.Context, req employee.UpsertWorkspaceFileRequest) (employee.WorkspaceFile, error) {
+	s.upsertWorkspaceFileCalled = true
+	s.upsertWorkspaceFileReq = req
+	now := time.Now().UTC()
+	return employee.WorkspaceFile{
+		ID:                uuid.New(),
+		TenantID:          req.TenantID,
+		TeamID:            uuid.New(),
+		DigitalEmployeeID: req.DigitalEmployeeID,
+		Path:              "AGENTS.md",
+		FileRole:          "entrypoint",
+		MimeType:          "text/markdown",
+		SyncPolicy:        "auto",
+		Status:            "active",
+		CurrentRevisionID: uuid.New(),
+		RevisionNumber:    2,
+		Content:           req.Content,
+		SizeBytes:         int32(len([]byte(req.Content))),
+		ContentHash:       "a7e47bdb6011e3ef9c2938480113c243d4136b4a73ba82e2f19e5f30d76c981c",
+		StorageBackend:    "db",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}, nil
+}
+
 func (s *routeEmployeeService) UpdateStatus(ctx context.Context, req employee.UpdateStatusRequest) (*employee.DigitalEmployee, error) {
 	s.updateCalled = true
 	s.updateReq = req
@@ -1459,6 +1672,8 @@ func (s *routeEmployeeService) ApproveEffectiveConfig(ctx context.Context, req e
 func (s *routeEmployeeService) called() bool {
 	return s.createCalled ||
 		s.listCalled ||
+		s.listWorkspaceFilesCalled ||
+		s.upsertWorkspaceFileCalled ||
 		s.getCalled ||
 		s.updateCalled ||
 		s.getInstanceCalled ||

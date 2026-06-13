@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ import (
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
+	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/config"
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/inbox"
@@ -46,6 +48,7 @@ type Container struct {
 	EmployeeRun                    *employee.DigitalEmployeeRunService
 	EmployeeRunWriteback           *employee.DigitalEmployeeRunWritebackService
 	SkillService                   *skill.Service
+	CapabilityService              *capability.Service
 	TenantService                  *tenant.Service
 	AuditService                   *audit.Service
 	RuntimeCommands                *runtimepkg.ConnectionRegistry
@@ -63,6 +66,7 @@ type Container struct {
 	AuditHandler                   *audit.HTTPHandler
 	ProjectHandler                 *project.HTTPHandler
 	SkillHandler                   *skill.HTTPHandler
+	CapabilityHandler              *capability.HTTPHandler
 	TenantHandler                  *tenant.HTTPHandler
 	AuthzHandler                   *authzcenter.HTTPHandler
 	Server                         *api.Server
@@ -312,6 +316,15 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	skillRepository := skill.NewPgRepository(stores.Postgres)
 	skillService := skill.NewService(skillRepository)
+	capabilityRepository := capability.NewPgRepository(q)
+	var credentialSealer capability.CredentialSealer
+	if credentialKey := os.Getenv("CONTROL_PLANE_CREDENTIAL_KEY"); credentialKey != "" {
+		credentialSealer, err = capability.NewAESGCMCredentialSealer(credentialKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+	capabilityService := capability.NewService(capabilityRepository, credentialSealer)
 
 	authRepository := auth.NewPgRepository(q)
 	authService, err := auth.NewService(authRepository)
@@ -334,6 +347,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	auditHandler := audit.NewHandler(auditService)
 	projectHandler := project.NewHandler(projectService)
 	skillHandler := skill.NewHandler(skillService)
+	capabilityHandler := capability.NewHandler(capabilityService)
 	tenantHandler := tenant.NewHandler(tenantService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
 	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
@@ -344,6 +358,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetAuditHandler(auditHandler)
 	server.SetProjectHandler(projectHandler)
 	server.SetSkillHandler(skillHandler)
+	server.SetCapabilityHandler(capabilityHandler)
 
 	return &Container{
 		Queries:                        q,
@@ -357,6 +372,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		EmployeeRun:                    runService,
 		EmployeeRunWriteback:           runWritebackService,
 		SkillService:                   skillService,
+		CapabilityService:              capabilityService,
 		TenantService:                  tenantService,
 		AuditService:                   auditService,
 		RuntimeCommands:                runtimeCommands,
@@ -374,6 +390,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		AuditHandler:                   auditHandler,
 		ProjectHandler:                 projectHandler,
 		SkillHandler:                   skillHandler,
+		CapabilityHandler:              capabilityHandler,
 		TenantHandler:                  tenantHandler,
 		AuthzHandler:                   authzCenterHandler,
 		Server:                         server,

@@ -160,6 +160,227 @@ RETURNING id, tenant_id, skill_id, path, file_type, content, size_bytes, checksu
 	return file, nil
 }
 
+func (r *PgRepository) BindSkillToTeam(ctx context.Context, req BindTeamSkillRequest) (*Skill, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	if _, err := r.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: req.SkillID}); err != nil {
+		return nil, err
+	}
+	if err := r.ensureTeamExists(ctx, req.TenantID, req.TeamID); err != nil {
+		return nil, err
+	}
+	if _, err := r.db.Exec(ctx, `
+INSERT INTO skill_team_bindings (tenant_id, skill_id, team_id)
+VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING`, req.TenantID, req.SkillID, req.TeamID); err != nil {
+		return nil, err
+	}
+	return r.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: req.SkillID})
+}
+
+func (r *PgRepository) UnbindSkillFromTeam(ctx context.Context, req BindTeamSkillRequest) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	_, err := r.db.Exec(ctx, `
+DELETE FROM skill_team_bindings
+WHERE tenant_id = $1 AND skill_id = $2 AND team_id = $3`, req.TenantID, req.SkillID, req.TeamID)
+	return err
+}
+
+func (r *PgRepository) ListTeamSkills(ctx context.Context, req ListTeamSkillsRequest) ([]*Skill, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	rows, err := r.db.Query(ctx, `
+SELECT s.id, s.tenant_id, s.slug, s.name, s.description, s.version, s.source, s.risk_level, s.status, s.icon_key, s.color_token, s.tags, s.created_at, s.updated_at
+FROM skill_team_bindings stb
+JOIN skills s ON s.tenant_id = stb.tenant_id
+    AND s.id = stb.skill_id
+    AND s.deleted_at IS NULL
+JOIN tenant_teams tt ON tt.tenant_id = stb.tenant_id
+    AND tt.id = stb.team_id
+    AND tt.deleted_at IS NULL
+WHERE stb.tenant_id = $1 AND stb.team_id = $2
+ORDER BY s.name ASC, s.updated_at DESC`, req.TenantID, req.TeamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var skills []*Skill
+	for rows.Next() {
+		item, err := scanSkill(rows)
+		if err != nil {
+			return nil, err
+		}
+		skills = append(skills, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, item := range skills {
+		if err := r.loadChildren(ctx, item); err != nil {
+			return nil, err
+		}
+	}
+	return skills, nil
+}
+
+func (r *PgRepository) BindSkillToEmployee(ctx context.Context, req BindEmployeeSkillRequest) (*Skill, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	if _, err := r.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: req.SkillID}); err != nil {
+		return nil, err
+	}
+	if err := r.ensureEmployeeExists(ctx, req.TenantID, req.DigitalEmployeeID); err != nil {
+		return nil, err
+	}
+	if _, err := r.db.Exec(ctx, `
+INSERT INTO skill_agent_bindings (tenant_id, skill_id, digital_employee_id, status)
+VALUES ($1, $2, $3, 'enabled')
+ON CONFLICT (tenant_id, skill_id, digital_employee_id)
+DO UPDATE SET status = 'enabled', updated_at = NOW()`, req.TenantID, req.SkillID, req.DigitalEmployeeID); err != nil {
+		return nil, err
+	}
+	return r.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: req.SkillID})
+}
+
+func (r *PgRepository) UnbindSkillFromEmployee(ctx context.Context, req BindEmployeeSkillRequest) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	_, err := r.db.Exec(ctx, `
+DELETE FROM skill_agent_bindings
+WHERE tenant_id = $1 AND skill_id = $2 AND digital_employee_id = $3`, req.TenantID, req.SkillID, req.DigitalEmployeeID)
+	return err
+}
+
+func (r *PgRepository) ListEffectiveEmployeeSkills(ctx context.Context, req ListEffectiveEmployeeSkillsRequest) ([]EffectiveEmployeeSkill, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	rows, err := r.db.Query(ctx, `
+WITH target_employee AS (
+    SELECT tenant_id, id AS digital_employee_id, team_id
+    FROM digital_employees
+    WHERE tenant_id = $1
+      AND id = $2
+      AND deleted_at IS NULL
+)
+SELECT
+    s.id,
+    s.tenant_id,
+    s.slug,
+    s.name,
+    s.description,
+    s.version,
+    s.source,
+    s.risk_level,
+    s.status,
+    s.icon_key,
+    s.color_token,
+    s.tags,
+    s.created_at,
+    s.updated_at,
+    'team'::text AS source_scope,
+    true AS inherited,
+    true AS read_only
+FROM target_employee
+JOIN skill_team_bindings stb ON stb.tenant_id = target_employee.tenant_id
+    AND stb.team_id = target_employee.team_id
+JOIN skills s ON s.tenant_id = stb.tenant_id
+    AND s.id = stb.skill_id
+    AND s.deleted_at IS NULL
+UNION ALL
+SELECT
+    s.id,
+    s.tenant_id,
+    s.slug,
+    s.name,
+    s.description,
+    s.version,
+    s.source,
+    s.risk_level,
+    s.status,
+    s.icon_key,
+    s.color_token,
+    s.tags,
+    s.created_at,
+    s.updated_at,
+    'employee'::text AS source_scope,
+    false AS inherited,
+    false AS read_only
+FROM target_employee
+JOIN skill_agent_bindings sab ON sab.tenant_id = target_employee.tenant_id
+    AND sab.digital_employee_id = target_employee.digital_employee_id
+    AND sab.status = 'enabled'
+JOIN skills s ON s.tenant_id = sab.tenant_id
+    AND s.id = sab.skill_id
+    AND s.deleted_at IS NULL
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM skill_team_bindings inherited_binding
+    WHERE inherited_binding.tenant_id = target_employee.tenant_id
+      AND inherited_binding.team_id = target_employee.team_id
+      AND inherited_binding.skill_id = sab.skill_id
+)
+ORDER BY inherited DESC, name ASC`, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var skills []EffectiveEmployeeSkill
+	for rows.Next() {
+		item := EffectiveEmployeeSkill{}
+		if err := rows.Scan(
+			&item.Skill.ID,
+			&item.Skill.TenantID,
+			&item.Skill.Slug,
+			&item.Skill.Name,
+			&item.Skill.Description,
+			&item.Skill.Version,
+			&item.Skill.Source,
+			&item.Skill.RiskLevel,
+			&item.Skill.Status,
+			&item.Skill.IconKey,
+			&item.Skill.ColorToken,
+			&item.Skill.Tags,
+			&item.Skill.CreatedAt,
+			&item.Skill.UpdatedAt,
+			&item.SourceScope,
+			&item.Inherited,
+			&item.ReadOnly,
+		); err != nil {
+			return nil, err
+		}
+		if err := r.loadChildren(ctx, &item.Skill); err != nil {
+			return nil, err
+		}
+		skills = append(skills, item)
+	}
+	return skills, rows.Err()
+}
+
+func (r *PgRepository) ensureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error {
+	var id uuid.UUID
+	err := r.db.QueryRow(ctx, `
+SELECT id
+FROM tenant_teams
+WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`, tenantID, teamID).Scan(&id)
+	return mapNoRows(err)
+}
+
+func (r *PgRepository) ensureEmployeeExists(ctx context.Context, tenantID, employeeID uuid.UUID) error {
+	var id uuid.UUID
+	err := r.db.QueryRow(ctx, `
+SELECT id
+FROM digital_employees
+WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`, tenantID, employeeID).Scan(&id)
+	return mapNoRows(err)
+}
+
 func (r *PgRepository) loadChildren(ctx context.Context, item *Skill) error {
 	files, err := r.listFiles(ctx, item.TenantID, item.ID)
 	if err != nil {

@@ -226,6 +226,65 @@ func TestEmployeeServiceGetOverviewRejectsInvalidFilters(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidInput)
 }
 
+func TestServiceUpsertsWorkspaceFileWithRoleAndCurrentRevision(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	teamID := uuid.New()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID:           employeeID,
+		TenantID:     tenantID,
+		TeamID:       &teamID,
+		OwnerUserID:  uuid.New(),
+		EmployeeType: "devops_engineer",
+		Name:         "Ops",
+		Role:         "devops_engineer",
+		Status:       DigitalEmployeeStatusReady,
+	}
+
+	file, err := service.UpsertWorkspaceFile(context.Background(), UpsertWorkspaceFileRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Path:              "AGENTS.md",
+		Content:           "# 工作原则\n\n只读取当前任务需要的上下文。",
+	})
+	if err != nil {
+		t.Fatalf("upsert workspace file: %v", err)
+	}
+	if file.Path != "AGENTS.md" {
+		t.Fatalf("expected AGENTS.md path, got %q", file.Path)
+	}
+	if file.TeamID != teamID || file.FileRole != "entrypoint" || file.MimeType != "text/markdown" || file.SyncPolicy != "auto" {
+		t.Fatalf("unexpected workspace file identity: %#v", file)
+	}
+	if file.RevisionNumber != 1 || file.CurrentRevisionID == uuid.Nil || file.SizeBytes == 0 || file.ContentHash == "" {
+		t.Fatalf("expected active revision metadata, got %#v", file)
+	}
+	if len(repo.workspaceFiles) != 1 || len(repo.workspaceFileRevisions) != 1 {
+		t.Fatalf("expected one file and one revision, got files=%d revisions=%d", len(repo.workspaceFiles), len(repo.workspaceFileRevisions))
+	}
+}
+
+func TestServiceRejectsUnsafeWorkspaceFilePath(t *testing.T) {
+	service, err := NewService(newMemoryRepository())
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	_, err = service.UpsertWorkspaceFile(context.Background(), UpsertWorkspaceFileRequest{
+		TenantID:          uuid.New(),
+		DigitalEmployeeID: uuid.New(),
+		Path:              "../AGENTS.md",
+		Content:           "# bad",
+	})
+	if err == nil {
+		t.Fatal("expected unsafe path to be rejected")
+	}
+}
+
 func TestCreateDigitalEmployeeParamsAndDomainMappingKeepOwnerAndType(t *testing.T) {
 	repo := newMemoryRepository()
 	tenantID := uuid.New()
@@ -1114,6 +1173,59 @@ func TestCreateConfigRevisionStoresBudgetPolicy(t *testing.T) {
 	}
 	if repo.createdConfigRevision.BudgetPolicy["daily_token_limit"] != float64(12000) {
 		t.Fatalf("expected budget policy persisted, got %#v", repo.createdConfigRevision.BudgetPolicy)
+	}
+}
+
+func TestCreateConfigRevisionPreservesOmittedMapFieldsFromLatestRevision(t *testing.T) {
+	svc, repo := newEmployeeServiceForTest(t)
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	seedConfigRevisionEmployee(repo, tenantID, employeeID)
+	latestID := uuid.New()
+	repo.employeeConfigs[latestID] = EmployeeConfigInput{
+		ID:                     latestID,
+		TenantID:               tenantID,
+		DigitalEmployeeID:      employeeID,
+		RevisionNumber:         7,
+		RoleProfile:            map[string]any{"title": "security reviewer"},
+		ConstitutionAddendum:   map[string]any{"rules": []any{"require evidence"}},
+		CapabilitySelection:    map[string]any{"skills": []any{"release-review"}},
+		ContextPolicyOverride:  map[string]any{"max_files": float64(8)},
+		ApprovalPolicyOverride: map[string]any{"required": true},
+		BudgetPolicy:           map[string]any{"daily_token_limit": float64(12000), "mode": "capped"},
+		OutputContractAddendum: map[string]any{"format": "checklist"},
+	}
+
+	revision, err := svc.CreateConfigRevision(context.Background(), CreateDigitalEmployeeConfigRevisionRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		BudgetPolicy:      map[string]any{"daily_token_limit": int64(24000), "mode": "capped"},
+		Status:            ConfigRevisionStatusDraft,
+	})
+	if err != nil {
+		t.Fatalf("create config revision: %v", err)
+	}
+
+	if revision.BudgetPolicy["daily_token_limit"] != float64(24000) {
+		t.Fatalf("expected budget change to be applied, got %#v", revision.BudgetPolicy)
+	}
+	if repo.createdConfigRevision.RoleProfile["title"] != "security reviewer" {
+		t.Fatalf("expected role_profile to be preserved, got %#v", repo.createdConfigRevision.RoleProfile)
+	}
+	if repo.createdConfigRevision.CapabilitySelection["skills"] == nil {
+		t.Fatalf("expected capability_selection to be preserved, got %#v", repo.createdConfigRevision.CapabilitySelection)
+	}
+	if repo.createdConfigRevision.ContextPolicyOverride["max_files"] != float64(8) {
+		t.Fatalf("expected context_policy_override to be preserved, got %#v", repo.createdConfigRevision.ContextPolicyOverride)
+	}
+	if repo.createdConfigRevision.ApprovalPolicyOverride["required"] != true {
+		t.Fatalf("expected approval_policy_override to be preserved, got %#v", repo.createdConfigRevision.ApprovalPolicyOverride)
+	}
+	if repo.createdConfigRevision.OutputContractAddendum["format"] != "checklist" {
+		t.Fatalf("expected output_contract_addendum to be preserved, got %#v", repo.createdConfigRevision.OutputContractAddendum)
+	}
+	if repo.createdConfigRevision.ConstitutionAddendum["rules"] == nil {
+		t.Fatalf("expected constitution_addendum to be preserved, got %#v", repo.createdConfigRevision.ConstitutionAddendum)
 	}
 }
 
@@ -2201,6 +2313,40 @@ func (r *memoryRepository) ActivateWorkspaceFileRevision(_ context.Context, tena
 	return WorkspaceFileRecord{}, ErrNotFound
 }
 
+func (r *memoryRepository) GetWorkspaceFileByPath(_ context.Context, tenantID, digitalEmployeeID uuid.UUID, filePath string) (WorkspaceFileRecord, error) {
+	for _, file := range r.workspaceFiles {
+		if file.TenantID == tenantID && file.DigitalEmployeeID == digitalEmployeeID && file.Path == filePath && file.DeletedAt == nil {
+			return file, nil
+		}
+	}
+	return WorkspaceFileRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) GetNextWorkspaceFileRevisionNumber(_ context.Context, tenantID, fileID uuid.UUID) (int32, error) {
+	var maxRevision int32
+	for _, revision := range r.workspaceFileRevisions {
+		if revision.TenantID == tenantID && revision.FileID == fileID && revision.RevisionNumber > maxRevision {
+			maxRevision = revision.RevisionNumber
+		}
+	}
+	return maxRevision + 1, nil
+}
+
+func (r *memoryRepository) ListWorkspaceFiles(_ context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error) {
+	out := make([]WorkspaceFile, 0)
+	for _, file := range r.workspaceFiles {
+		if file.TenantID != req.TenantID || file.DigitalEmployeeID != req.DigitalEmployeeID || file.CurrentRevisionID == nil || file.Status != "active" || file.DeletedAt != nil {
+			continue
+		}
+		for _, revision := range r.workspaceFileRevisions {
+			if revision.ID == *file.CurrentRevisionID {
+				out = append(out, workspaceFileFromRecords(file, revision))
+			}
+		}
+	}
+	return out, nil
+}
+
 func (r *memoryRepository) ListWorkspaceFilesForSync(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error) {
 	out := make([]WorkspaceFileForSyncRecord, 0)
 	for _, file := range r.workspaceFiles {
@@ -2272,6 +2418,24 @@ func (r *memoryRepository) GetDigitalEmployeeConfigRevision(_ context.Context, t
 		return EmployeeConfigInput{}, ErrNotFound
 	}
 	return record, nil
+}
+
+func (r *memoryRepository) GetLatestDigitalEmployeeConfigRevision(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error) {
+	var latest EmployeeConfigInput
+	found := false
+	for _, record := range r.employeeConfigs {
+		if record.TenantID != tenantID || record.DigitalEmployeeID != digitalEmployeeID {
+			continue
+		}
+		if !found || record.RevisionNumber > latest.RevisionNumber {
+			latest = record
+			found = true
+		}
+	}
+	if !found {
+		return EmployeeConfigInput{}, ErrNotFound
+	}
+	return latest, nil
 }
 
 func (r *memoryRepository) GetNextDigitalEmployeeConfigRevisionNumber(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) (int32, error) {

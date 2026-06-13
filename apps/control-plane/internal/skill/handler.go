@@ -22,6 +22,12 @@ type HandlerService interface {
 	GetSkill(ctx context.Context, req GetSkillRequest) (*Skill, error)
 	UploadSkill(ctx context.Context, req UploadSkillRequest) (*Skill, error)
 	UpdateSkillFile(ctx context.Context, req UpdateSkillFileRequest) (*SkillFile, error)
+	BindSkillToTeam(ctx context.Context, req BindTeamSkillRequest) (*Skill, error)
+	UnbindSkillFromTeam(ctx context.Context, req BindTeamSkillRequest) error
+	ListTeamSkills(ctx context.Context, req ListTeamSkillsRequest) ([]*Skill, error)
+	BindSkillToEmployee(ctx context.Context, req BindEmployeeSkillRequest) (*Skill, error)
+	UnbindSkillFromEmployee(ctx context.Context, req BindEmployeeSkillRequest) error
+	ListEffectiveEmployeeSkills(ctx context.Context, req ListEffectiveEmployeeSkillsRequest) ([]EffectiveEmployeeSkill, error)
 }
 
 type HTTPHandler struct {
@@ -159,6 +165,168 @@ func (h *HTTPHandler) UpdateSkillFile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, skillFileResponseFromDomain(file))
 }
 
+func (h *HTTPHandler) ListTeamSkills(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionTeamRead, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team skill read", &teamID)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	skills, err := service.ListTeamSkills(r.Context(), ListTeamSkillsRequest{
+		TenantID: tenantID,
+		TeamID:   teamID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, skillResponses(skills))
+}
+
+func (h *HTTPHandler) BindTeamSkill(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionTeamCapabilityBind, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team skill bind", &teamID)
+	if !ok {
+		return
+	}
+	skillID, ok := skillIDFromJSONBody(w, r)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	item, err := service.BindSkillToTeam(r.Context(), BindTeamSkillRequest{
+		TenantID: tenantID,
+		TeamID:   teamID,
+		SkillID:  skillID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, skillResponseFromDomain(item))
+}
+
+func (h *HTTPHandler) UnbindTeamSkill(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	skillID, ok := skillIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionTeamCapabilityUnbind, authz.ResourceRef{Type: authz.ResourceTeam, ID: teamID.String()}, "team skill unbind", &teamID)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	if err := service.UnbindSkillFromTeam(r.Context(), BindTeamSkillRequest{
+		TenantID: tenantID,
+		TeamID:   teamID,
+		SkillID:  skillID,
+	}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *HTTPHandler) ListEffectiveEmployeeSkills(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionEmployeeRead, authz.ResourceRef{Type: authz.ResourceEmployee, ID: employeeID.String()}, "effective employee skill read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	skills, err := service.ListEffectiveEmployeeSkills(r.Context(), ListEffectiveEmployeeSkillsRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, effectiveEmployeeSkillResponses(skills))
+}
+
+func (h *HTTPHandler) BindEmployeeSkill(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionEmployeeConfigCreate, authz.ResourceRef{Type: authz.ResourceEmployee, ID: employeeID.String()}, "employee skill bind")
+	if !ok {
+		return
+	}
+	skillID, ok := skillIDFromJSONBody(w, r)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	item, err := service.BindSkillToEmployee(r.Context(), BindEmployeeSkillRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		SkillID:           skillID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, skillResponseFromDomain(item))
+}
+
+func (h *HTTPHandler) UnbindEmployeeSkill(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	skillID, ok := skillIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionEmployeeConfigCreate, authz.ResourceRef{Type: authz.ResourceEmployee, ID: employeeID.String()}, "employee skill unbind")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	if err := service.UnbindSkillFromEmployee(r.Context(), BindEmployeeSkillRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		SkillID:           skillID,
+	}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService, bool) {
 	if h == nil || h.service == nil {
 		http.Error(w, "skill service is not configured", http.StatusServiceUnavailable)
@@ -167,7 +335,7 @@ func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService,
 	return h.service, true
 }
 
-func (h *HTTPHandler) authorizeSkillAction(w http.ResponseWriter, r *http.Request, action string, resource authz.ResourceRef, auditReason string) (uuid.UUID, bool) {
+func (h *HTTPHandler) authorizeSkillAction(w http.ResponseWriter, r *http.Request, action string, resource authz.ResourceRef, auditReason string, teamID ...*uuid.UUID) (uuid.UUID, bool) {
 	if h == nil || h.authorizer == nil {
 		http.Error(w, "skill authorization is not configured", http.StatusForbidden)
 		return uuid.Nil, false
@@ -186,6 +354,7 @@ func (h *HTTPHandler) authorizeSkillAction(w http.ResponseWriter, r *http.Reques
 		Action:      action,
 		Resource:    resource,
 		TenantID:    tenantID,
+		TeamID:      firstTeamID(teamID),
 		AuditReason: auditReason,
 	})
 	if err != nil {
@@ -242,10 +411,31 @@ type skillAgentBindingResponse struct {
 	Status    string `json:"status"`
 }
 
+type effectiveEmployeeSkillResponse struct {
+	Skill       skillResponse `json:"skill"`
+	SourceScope string        `json:"source_scope"`
+	Inherited   bool          `json:"inherited"`
+	ReadOnly    bool          `json:"read_only"`
+}
+
 func skillResponses(skills []*Skill) []skillResponse {
 	responses := make([]skillResponse, 0, len(skills))
 	for _, item := range skills {
 		responses = append(responses, skillResponseFromDomain(item))
+	}
+	return responses
+}
+
+func effectiveEmployeeSkillResponses(skills []EffectiveEmployeeSkill) []effectiveEmployeeSkillResponse {
+	responses := make([]effectiveEmployeeSkillResponse, 0, len(skills))
+	for _, item := range skills {
+		skillItem := item.Skill
+		responses = append(responses, effectiveEmployeeSkillResponse{
+			Skill:       skillResponseFromDomain(&skillItem),
+			SourceScope: item.SourceScope,
+			Inherited:   item.Inherited,
+			ReadOnly:    item.ReadOnly,
+		})
 	}
 	return responses
 }
@@ -344,6 +534,46 @@ func skillIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool
 		return uuid.Nil, false
 	}
 	return id, true
+}
+
+func teamIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	id, err := uuid.Parse(chi.URLParam(r, "teamId"))
+	if err != nil || id == uuid.Nil {
+		http.Error(w, "invalid team id", http.StatusBadRequest)
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+func employeeIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	id, err := uuid.Parse(chi.URLParam(r, "employeeId"))
+	if err != nil || id == uuid.Nil {
+		http.Error(w, "invalid employee id", http.StatusBadRequest)
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+func skillIDFromJSONBody(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	var req struct {
+		SkillID uuid.UUID `json:"skill_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return uuid.Nil, false
+	}
+	if req.SkillID == uuid.Nil {
+		http.Error(w, "skill_id is required", http.StatusBadRequest)
+		return uuid.Nil, false
+	}
+	return req.SkillID, true
+}
+
+func firstTeamID(values []*uuid.UUID) *uuid.UUID {
+	if len(values) == 0 {
+		return nil
+	}
+	return values[0]
 }
 
 func splitFormList(values []string) []string {

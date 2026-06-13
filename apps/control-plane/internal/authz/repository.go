@@ -9,6 +9,7 @@ import (
 type Repository interface {
 	GetActiveTenantMembership(ctx context.Context, params TenantMembershipParams) (Membership, error)
 	GetActiveTeamMembership(ctx context.Context, params TeamMembershipParams) (Membership, error)
+	GetDigitalEmployeeAuthzScope(ctx context.Context, params DigitalEmployeeAuthzScopeParams) (DigitalEmployeeAuthzScope, error)
 	RuntimeNodeCoversTaskScope(ctx context.Context, params RuntimeScopeParams) (bool, error)
 }
 
@@ -30,4 +31,16 @@ type RuntimeScopeParams struct {
 	TeamID   *uuid.UUID
 	TaskID   uuid.UUID
 	NodeID   string
+}
+
+type DigitalEmployeeAuthzScopeParams struct {
+	TenantID   uuid.UUID
+	EmployeeID uuid.UUID
+}
+
+type DigitalEmployeeAuthzScope struct {
+	TenantID    uuid.UUID
+	EmployeeID  uuid.UUID
+	OwnerUserID uuid.UUID
+	TeamID      *uuid.UUID
 }

@@ -108,6 +108,42 @@ func (q *Queries) GetActiveTenantMembership(ctx context.Context, arg GetActiveTe
 	return i, err
 }
 
+const GetDigitalEmployeeAuthzScope = `-- name: GetDigitalEmployeeAuthzScope :one
+SELECT
+  tenant_id,
+  id AS employee_id,
+  owner_user_id,
+  team_id
+FROM digital_employees
+WHERE tenant_id = $1::uuid
+  AND id = $2::uuid
+  AND deleted_at IS NULL
+`
+
+type GetDigitalEmployeeAuthzScopeParams struct {
+	TenantID   uuid.UUID `json:"tenant_id"`
+	EmployeeID uuid.UUID `json:"employee_id"`
+}
+
+type GetDigitalEmployeeAuthzScopeRow struct {
+	TenantID    uuid.UUID     `json:"tenant_id"`
+	EmployeeID  uuid.UUID     `json:"employee_id"`
+	OwnerUserID uuid.UUID     `json:"owner_user_id"`
+	TeamID      uuid.NullUUID `json:"team_id"`
+}
+
+func (q *Queries) GetDigitalEmployeeAuthzScope(ctx context.Context, arg GetDigitalEmployeeAuthzScopeParams) (GetDigitalEmployeeAuthzScopeRow, error) {
+	row := q.db.QueryRow(ctx, GetDigitalEmployeeAuthzScope, arg.TenantID, arg.EmployeeID)
+	var i GetDigitalEmployeeAuthzScopeRow
+	err := row.Scan(
+		&i.TenantID,
+		&i.EmployeeID,
+		&i.OwnerUserID,
+		&i.TeamID,
+	)
+	return i, err
+}
+
 const RuntimeNodeCoversTaskScope = `-- name: RuntimeNodeCoversTaskScope :one
 SELECT EXISTS (
   SELECT 1

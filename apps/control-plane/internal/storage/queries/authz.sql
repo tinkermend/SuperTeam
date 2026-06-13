@@ -38,6 +38,17 @@ ORDER BY
   END
 LIMIT 1;
 
+-- name: GetDigitalEmployeeAuthzScope :one
+SELECT
+  tenant_id,
+  id AS employee_id,
+  owner_user_id,
+  team_id
+FROM digital_employees
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('employee_id')::uuid
+  AND deleted_at IS NULL;
+
 -- name: RuntimeNodeCoversTaskScope :one
 SELECT EXISTS (
   SELECT 1

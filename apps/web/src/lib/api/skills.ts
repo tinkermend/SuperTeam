@@ -48,6 +48,13 @@ export type Skill = {
   updated_at?: string;
 };
 
+export type EffectiveEmployeeSkill = {
+  skill: Skill;
+  source_scope: "team" | "employee";
+  inherited: boolean;
+  read_only: boolean;
+};
+
 export type ListSkillsFilters = {
   q?: string;
   status?: SkillStatus;
@@ -131,4 +138,104 @@ export async function updateSkillFile(
   });
 
   return parseJson<SkillFile>(response, "update skill file");
+}
+
+export async function listTeamSkills(
+  options: ApiClientOptions,
+  teamId: string,
+): Promise<Skill[]> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedTeamId = encodeURIComponent(teamId);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/teams/${encodedTeamId}/skills`), {
+    credentials: "include",
+    headers: { accept: "application/json" },
+    method: "GET",
+  });
+
+  return parseJson<Skill[]>(response, "team skills");
+}
+
+export async function bindTeamSkill(
+  options: ApiClientOptions,
+  teamId: string,
+  skillId: string,
+): Promise<Skill> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedTeamId = encodeURIComponent(teamId);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/teams/${encodedTeamId}/skills`), {
+    body: JSON.stringify({ skill_id: skillId }),
+    credentials: "include",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    method: "POST",
+  });
+
+  return parseJson<Skill>(response, "bind team skill");
+}
+
+export async function unbindTeamSkill(
+  options: ApiClientOptions,
+  teamId: string,
+  skillId: string,
+): Promise<void> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedTeamId = encodeURIComponent(teamId);
+  const encodedSkillId = encodeURIComponent(skillId);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/teams/${encodedTeamId}/skills/${encodedSkillId}`), {
+    credentials: "include",
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    await parseJson<unknown>(response, "unbind team skill");
+  }
+}
+
+export async function listEmployeeSkills(
+  options: ApiClientOptions,
+  employeeId: string,
+): Promise<EffectiveEmployeeSkill[]> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedEmployeeId = encodeURIComponent(employeeId);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/digital-employees/${encodedEmployeeId}/skills`), {
+    credentials: "include",
+    headers: { accept: "application/json" },
+    method: "GET",
+  });
+
+  return parseJson<EffectiveEmployeeSkill[]>(response, "employee skills");
+}
+
+export async function bindEmployeeSkill(
+  options: ApiClientOptions,
+  employeeId: string,
+  skillId: string,
+): Promise<Skill> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedEmployeeId = encodeURIComponent(employeeId);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/digital-employees/${encodedEmployeeId}/skills`), {
+    body: JSON.stringify({ skill_id: skillId }),
+    credentials: "include",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    method: "POST",
+  });
+
+  return parseJson<Skill>(response, "bind employee skill");
+}
+
+export async function unbindEmployeeSkill(
+  options: ApiClientOptions,
+  employeeId: string,
+  skillId: string,
+): Promise<void> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedEmployeeId = encodeURIComponent(employeeId);
+  const encodedSkillId = encodeURIComponent(skillId);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/digital-employees/${encodedEmployeeId}/skills/${encodedSkillId}`), {
+    credentials: "include",
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    await parseJson<unknown>(response, "unbind employee skill");
+  }
 }

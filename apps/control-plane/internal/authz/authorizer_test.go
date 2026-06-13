@@ -9,11 +9,12 @@ import (
 )
 
 type memoryRepository struct {
-	tenantRoles map[string]string
-	teamRoles   map[string]string
-	runtimeOK   bool
-	taskID      uuid.UUID
-	err         error
+	tenantRoles    map[string]string
+	teamRoles      map[string]string
+	employeeScopes map[uuid.UUID]DigitalEmployeeAuthzScope
+	runtimeOK      bool
+	taskID         uuid.UUID
+	err            error
 }
 
 func (r *memoryRepository) GetActiveTenantMembership(ctx context.Context, params TenantMembershipParams) (Membership, error) {
@@ -36,6 +37,17 @@ func (r *memoryRepository) GetActiveTeamMembership(ctx context.Context, params T
 		return Membership{}, ErrNoMembership
 	}
 	return Membership{TenantID: params.TenantID, TeamID: &params.TeamID, PrincipalType: params.PrincipalType, PrincipalID: params.PrincipalID, Role: role, Status: "active"}, nil
+}
+
+func (r *memoryRepository) GetDigitalEmployeeAuthzScope(ctx context.Context, params DigitalEmployeeAuthzScopeParams) (DigitalEmployeeAuthzScope, error) {
+	if r.err != nil {
+		return DigitalEmployeeAuthzScope{}, r.err
+	}
+	scope, ok := r.employeeScopes[params.EmployeeID]
+	if !ok || scope.TenantID != params.TenantID {
+		return DigitalEmployeeAuthzScope{}, ErrNoMembership
+	}
+	return scope, nil
 }
 
 func (r *memoryRepository) RuntimeNodeCoversTaskScope(ctx context.Context, params RuntimeScopeParams) (bool, error) {
@@ -376,6 +388,7 @@ func TestDBAuthorizerEmployeeActionsUseBusinessActionSurface(t *testing.T) {
 		{name: "admin updates employee status", action: ActionEmployeeStatusUpdate, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
 		{name: "admin binds execution instance", action: ActionEmployeeExecutionBind, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
 		{name: "admin creates employee config", action: ActionEmployeeConfigCreate, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
+		{name: "admin edits employee capability", action: ActionEmployeeCapabilityEdit, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
 		{name: "admin previews employee config", action: ActionEmployeeConfigPreview, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleAdmin, allowed: true, matchedRule: "tenant.admin", resourceType: ResourceEmployee, resourceID: employeeID.String()},
 		{name: "owner approves employee config", action: ActionEmployeeConfigApprove, resource: ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}, tenantRole: RoleOwner, allowed: true, matchedRule: "tenant.owner", resourceType: ResourceEmployee, resourceID: employeeID.String()},
 		{name: "member cannot manage employees", action: ActionEmployeeCreate, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, tenantRole: RoleMember, denyReason: ReasonNoMembership, resourceType: ResourceTenant, resourceID: tenantID.String()},
@@ -417,6 +430,200 @@ func TestDBAuthorizerEmployeeActionsUseBusinessActionSurface(t *testing.T) {
 			record := recorder.records[0]
 			if record.Action != tt.action || record.ResourceType != tt.resourceType || record.ResourceID != tt.resourceID {
 				t.Fatalf("unexpected decision record: %#v", record)
+			}
+		})
+	}
+}
+
+func TestDBAuthorizerEmployeeOwnerCanUsePersonalEmployeeActions(t *testing.T) {
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	unrelatedID := uuid.New()
+	ownerResource := ResourceRef{Type: ResourceEmployee, ID: employeeID.String()}
+
+	repo := &memoryRepository{
+		tenantRoles: map[string]string{
+			tenantID.String() + ":user:" + ownerID.String():     RoleMember,
+			tenantID.String() + ":user:" + unrelatedID.String(): RoleMember,
+		},
+		employeeScopes: map[uuid.UUID]DigitalEmployeeAuthzScope{
+			employeeID: {
+				TenantID:    tenantID,
+				EmployeeID:  employeeID,
+				OwnerUserID: ownerID,
+				TeamID:      &teamID,
+			},
+		},
+	}
+	authorizer := NewDBAuthorizer(repo)
+
+	ownerActions := []string{
+		ActionEmployeeRead,
+		ActionEmployeeConfigCreate,
+		ActionEmployeeConfigPreview,
+		ActionEmployeeConfigApprove,
+		ActionEmployeeCapabilityEdit,
+	}
+	for _, action := range ownerActions {
+		t.Run("owner "+action, func(t *testing.T) {
+			decision, err := authorizer.Check(context.Background(), CheckRequest{
+				Actor:    ActorRef{Type: ActorUser, ID: ownerID.String()},
+				Action:   action,
+				Resource: ownerResource,
+				TenantID: tenantID,
+			})
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if !decision.Allowed || decision.MatchedRule != "employee.owner" {
+				t.Fatalf("expected owner to be allowed by employee.owner, got %#v", decision)
+			}
+		})
+	}
+
+	decision, err := authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: unrelatedID.String()},
+		Action:   ActionEmployeeCapabilityEdit,
+		Resource: ownerResource,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if decision.Allowed || decision.Reason != ReasonNoMembership {
+		t.Fatalf("expected unrelated member to be denied, got %#v", decision)
+	}
+
+	delete(repo.tenantRoles, tenantID.String()+":user:"+ownerID.String())
+	decision, err = authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: ownerID.String()},
+		Action:   ActionEmployeeCapabilityEdit,
+		Resource: ownerResource,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if decision.Allowed || decision.Reason != ReasonNoMembership {
+		t.Fatalf("expected employee owner without tenant membership to be denied, got %#v", decision)
+	}
+	repo.tenantRoles[tenantID.String()+":user:"+ownerID.String()] = RoleMember
+
+	decision, err = authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: ownerID.String()},
+		Action:   ActionEmployeeStatusUpdate,
+		Resource: ownerResource,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if decision.Allowed {
+		t.Fatalf("expected owner not to get status updates through personal owner rule, got %#v", decision)
+	}
+}
+
+func TestDBAuthorizerCredentialActionsAllowSelfResource(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	otherUserID := uuid.New()
+	repo := &memoryRepository{
+		tenantRoles: map[string]string{
+			tenantID.String() + ":user:" + userID.String(): RoleMember,
+		},
+	}
+	authorizer := NewDBAuthorizer(repo)
+
+	for _, action := range []string{ActionCredentialRead, ActionCredentialCreate, ActionCredentialDelete} {
+		t.Run("self "+action, func(t *testing.T) {
+			decision, err := authorizer.Check(context.Background(), CheckRequest{
+				Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+				Action:   action,
+				Resource: ResourceRef{Type: ResourceCredential, ID: userID.String()},
+				TenantID: tenantID,
+			})
+			if err != nil {
+				t.Fatalf("expected credential action to be supported, got %v", err)
+			}
+			if !decision.Allowed || decision.MatchedRule != "credential.self" {
+				t.Fatalf("expected self credential resource to be allowed, got %#v", decision)
+			}
+		})
+	}
+
+	decision, err := authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+		Action:   ActionCredentialRead,
+		Resource: ResourceRef{Type: ResourceCredential, ID: otherUserID.String()},
+		TenantID: tenantID,
+	})
+	if err != nil {
+		t.Fatalf("expected credential action to be supported, got %v", err)
+	}
+	if decision.Allowed || decision.Reason != ReasonNoMembership {
+		t.Fatalf("expected another user's credential resource to be denied, got %#v", decision)
+	}
+
+	delete(repo.tenantRoles, tenantID.String()+":user:"+userID.String())
+	decision, err = authorizer.Check(context.Background(), CheckRequest{
+		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+		Action:   ActionCredentialCreate,
+		Resource: ResourceRef{Type: ResourceCredential, ID: userID.String()},
+		TenantID: tenantID,
+	})
+	if err != nil {
+		t.Fatalf("expected credential action to be supported, got %v", err)
+	}
+	if decision.Allowed || decision.Reason != ReasonNoMembership {
+		t.Fatalf("expected self credential without tenant membership to be denied, got %#v", decision)
+	}
+}
+
+func TestDBAuthorizerCredentialActionsRequireTenantAdmin(t *testing.T) {
+	tenantID := uuid.New()
+	credentialID := uuid.New()
+
+	tests := []struct {
+		name       string
+		action     string
+		resource   ResourceRef
+		role       string
+		allowed    bool
+		wantReason string
+	}{
+		{name: "admin reads credential", action: ActionCredentialRead, resource: ResourceRef{Type: ResourceCredential, ID: credentialID.String()}, role: RoleAdmin, allowed: true},
+		{name: "owner creates credential for user id resource", action: ActionCredentialCreate, resource: ResourceRef{Type: ResourceCredential, ID: uuid.New().String()}, role: RoleOwner, allowed: true},
+		{name: "admin deletes credential", action: ActionCredentialDelete, resource: ResourceRef{Type: ResourceCredential, ID: credentialID.String()}, role: RoleAdmin, allowed: true},
+		{name: "member cannot read credential", action: ActionCredentialRead, resource: ResourceRef{Type: ResourceCredential, ID: credentialID.String()}, role: RoleMember, wantReason: ReasonNoMembership},
+		{name: "credential rejects tenant resource", action: ActionCredentialRead, resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()}, role: RoleOwner, wantReason: ReasonInvalidResource},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			userID := uuid.New()
+			repo := &memoryRepository{tenantRoles: map[string]string{}}
+			if tt.role != "" {
+				repo.tenantRoles[tenantID.String()+":user:"+userID.String()] = tt.role
+			}
+			authorizer := NewDBAuthorizer(repo)
+
+			decision, err := authorizer.Check(context.Background(), CheckRequest{
+				Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
+				Action:   tt.action,
+				Resource: tt.resource,
+				TenantID: tenantID,
+			})
+
+			if err != nil {
+				t.Fatalf("expected credential action to be supported, got %v", err)
+			}
+			if decision.Allowed != tt.allowed {
+				t.Fatalf("expected allowed=%v, got %#v", tt.allowed, decision)
+			}
+			if tt.wantReason != "" && decision.Reason != tt.wantReason {
+				t.Fatalf("expected reason %q, got %#v", tt.wantReason, decision)
 			}
 		})
 	}
@@ -1014,6 +1221,7 @@ func TestDBAuthorizerRecordsAllTeamManagementActions(t *testing.T) {
 		{name: "governance approve", action: ActionTeamGovernanceApprove, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleApprover, matchedRule: "team.approver", resourceTeam: true},
 		{name: "capability bind", action: ActionTeamCapabilityBind, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleOwner, matchedRule: "team.owner", resourceTeam: true},
 		{name: "capability unbind", action: ActionTeamCapabilityUnbind, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleAdmin, matchedRule: "team.admin", resourceTeam: true},
+		{name: "capability manage", action: ActionTeamCapabilityManage, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleAdmin, matchedRule: "team.admin", resourceTeam: true},
 		{name: "audit read", action: ActionTeamAuditRead, resource: ResourceRef{Type: ResourceTeam, ID: teamID.String()}, teamID: &teamID, teamRole: RoleOwner, matchedRule: "team.owner", resourceTeam: true},
 	}
 

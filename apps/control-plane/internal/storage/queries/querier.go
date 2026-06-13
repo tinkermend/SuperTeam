@@ -42,6 +42,7 @@ type Querier interface {
 	CreateDigitalEmployee(ctx context.Context, arg CreateDigitalEmployeeParams) (DigitalEmployee, error)
 	CreateDigitalEmployeeConfigRevision(ctx context.Context, arg CreateDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
 	CreateDigitalEmployeeEffectiveConfig(ctx context.Context, arg CreateDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error)
+	CreateDigitalEmployeeMCPBinding(ctx context.Context, arg CreateDigitalEmployeeMCPBindingParams) (DigitalEmployeeMcpBinding, error)
 	CreateDigitalEmployeeTaskRun(ctx context.Context, arg CreateDigitalEmployeeTaskRunParams) (CreateDigitalEmployeeTaskRunRow, error)
 	CreateDigitalEmployeeWorkspaceFile(ctx context.Context, arg CreateDigitalEmployeeWorkspaceFileParams) (DigitalEmployeeWorkspaceFile, error)
 	CreateDigitalEmployeeWorkspaceFileRevision(ctx context.Context, arg CreateDigitalEmployeeWorkspaceFileRevisionParams) (DigitalEmployeeWorkspaceFileRevision, error)
@@ -80,15 +81,18 @@ type Querier interface {
 	CreateTaskEventIfAbsent(ctx context.Context, arg CreateTaskEventIfAbsentParams) (CreateTaskEventIfAbsentRow, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
 	CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) (TaskStateHistory, error)
+	CreateTeamMCPServer(ctx context.Context, arg CreateTeamMCPServerParams) (TeamMcpServer, error)
 	CreateTeamMemberRoleRequest(ctx context.Context, arg CreateTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	CreateTenantTeam(ctx context.Context, arg CreateTenantTeamParams) (TenantTeam, error)
 	CreateTenantTeamConfigRevision(ctx context.Context, arg CreateTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error)
+	CreateUserCredential(ctx context.Context, arg CreateUserCredentialParams) (UserCredential, error)
 	CreateWebLoginLog(ctx context.Context, arg CreateWebLoginLogParams) (WebLoginLog, error)
 	CreateWebOperationLog(ctx context.Context, arg CreateWebOperationLogParams) (WebOperationLog, error)
 	DecideTeamMemberRoleRequest(ctx context.Context, arg DecideTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	DeleteDigitalEmployee(ctx context.Context, arg DeleteDigitalEmployeeParams) error
 	DeleteDigitalEmployeeExecutionInstance(ctx context.Context, arg DeleteDigitalEmployeeExecutionInstanceParams) error
+	DeleteDigitalEmployeeMCPBinding(ctx context.Context, arg DeleteDigitalEmployeeMCPBindingParams) error
 	DeleteExpiredRuntimeTokens(ctx context.Context) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteRuntimeNode(ctx context.Context, nodeID string) error
@@ -96,6 +100,7 @@ type Querier interface {
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error
 	DeleteTask(ctx context.Context, arg DeleteTaskParams) error
 	DeleteTaskArtifact(ctx context.Context, arg DeleteTaskArtifactParams) error
+	DeleteTeamMCPServer(ctx context.Context, arg DeleteTeamMCPServerParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
 	FinishProjectCoordinationJob(ctx context.Context, arg FinishProjectCoordinationJobParams) (ProjectCoordinationJob, error)
@@ -111,6 +116,7 @@ type Querier interface {
 	GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, arg GetCurrentDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error)
 	GetCurrentTenantTeamConfigRevision(ctx context.Context, arg GetCurrentTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
 	GetDigitalEmployee(ctx context.Context, arg GetDigitalEmployeeParams) (DigitalEmployee, error)
+	GetDigitalEmployeeAuthzScope(ctx context.Context, arg GetDigitalEmployeeAuthzScopeParams) (GetDigitalEmployeeAuthzScopeRow, error)
 	GetDigitalEmployeeConfigRevision(ctx context.Context, arg GetDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
 	GetDigitalEmployeeExecutionInstance(ctx context.Context, arg GetDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
 	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, arg GetDigitalEmployeeExecutionInstanceByEmployeeIDParams) (DigitalEmployeeExecutionInstance, error)
@@ -118,6 +124,7 @@ type Querier interface {
 	GetDigitalEmployeeRun(ctx context.Context, arg GetDigitalEmployeeRunParams) (TaskRun, error)
 	GetDigitalEmployeeRunByCommandID(ctx context.Context, arg GetDigitalEmployeeRunByCommandIDParams) (TaskRun, error)
 	GetDigitalEmployeeRunPreflight(ctx context.Context, arg GetDigitalEmployeeRunPreflightParams) (GetDigitalEmployeeRunPreflightRow, error)
+	GetDigitalEmployeeWorkspaceFileByPath(ctx context.Context, arg GetDigitalEmployeeWorkspaceFileByPathParams) (DigitalEmployeeWorkspaceFile, error)
 	GetInboxItem(ctx context.Context, arg GetInboxItemParams) (InboxItem, error)
 	GetLatestDigitalEmployeeConfigRevision(ctx context.Context, arg GetLatestDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
 	GetLatestDigitalEmployeeEffectiveConfig(ctx context.Context, arg GetLatestDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error)
@@ -129,6 +136,7 @@ type Querier interface {
 	GetLatestTaskEventSequence(ctx context.Context, arg GetLatestTaskEventSequenceParams) (int32, error)
 	GetLatestTaskRun(ctx context.Context, arg GetLatestTaskRunParams) (TaskRun, error)
 	GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeConfigRevisionNumberParams) (int32, error)
+	GetNextDigitalEmployeeWorkspaceFileRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeWorkspaceFileRevisionNumberParams) (int32, error)
 	GetNextTenantTeamConfigRevisionNumber(ctx context.Context, arg GetNextTenantTeamConfigRevisionNumberParams) (int32, error)
 	GetProject(ctx context.Context, arg GetProjectParams) (Project, error)
 	GetProjectBudgetSummary(ctx context.Context, arg GetProjectBudgetSummaryParams) (GetProjectBudgetSummaryRow, error)
@@ -163,6 +171,7 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email pgtype.Text) (AuthUser, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (AuthUser, error)
 	GetUserByUsername(ctx context.Context, username string) (AuthUser, error)
+	GetUserCredential(ctx context.Context, arg GetUserCredentialParams) (UserCredential, error)
 	ListActiveRuntimeBootstrapKeys(ctx context.Context, tenantID uuid.UUID) ([]RuntimeBootstrapKey, error)
 	ListApprovalDecisionsForRequest(ctx context.Context, arg ListApprovalDecisionsForRequestParams) ([]ApprovalDecision, error)
 	ListArtifactRetentionHolds(ctx context.Context, arg ListArtifactRetentionHoldsParams) ([]ArtifactRetentionHold, error)
@@ -170,6 +179,7 @@ type Querier interface {
 	ListAuditEventsByResource(ctx context.Context, arg ListAuditEventsByResourceParams) ([]AuditEvent, error)
 	ListAuthzDecisions(ctx context.Context, arg ListAuthzDecisionsParams) ([]WebOperationLog, error)
 	ListAuthzMembers(ctx context.Context, arg ListAuthzMembersParams) ([]ListAuthzMembersRow, error)
+	ListCurrentDigitalEmployeeWorkspaceFiles(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesRow, error)
 	ListCurrentDigitalEmployeeWorkspaceFilesForSync(ctx context.Context, arg ListCurrentDigitalEmployeeWorkspaceFilesForSyncParams) ([]ListCurrentDigitalEmployeeWorkspaceFilesForSyncRow, error)
 	ListDemandLaunchCoordinationJobs(ctx context.Context, arg ListDemandLaunchCoordinationJobsParams) ([]ProjectCoordinationJob, error)
 	ListDemandLaunchDecisionRequests(ctx context.Context, arg ListDemandLaunchDecisionRequestsParams) ([]ProjectDecisionRequest, error)
@@ -177,10 +187,12 @@ type Querier interface {
 	ListDemandLaunchProjectTasks(ctx context.Context, arg ListDemandLaunchProjectTasksParams) ([]ProjectTask, error)
 	ListDemandLaunchRouteDecisions(ctx context.Context, arg ListDemandLaunchRouteDecisionsParams) ([]ProjectRouteDecision, error)
 	ListDigitalEmployeeExecutionInstances(ctx context.Context, arg ListDigitalEmployeeExecutionInstancesParams) ([]DigitalEmployeeExecutionInstance, error)
+	ListDigitalEmployeeMCPBindings(ctx context.Context, arg ListDigitalEmployeeMCPBindingsParams) ([]ListDigitalEmployeeMCPBindingsRow, error)
 	ListDigitalEmployeeOverviewFilterOptions(ctx context.Context, tenantID uuid.UUID) ([]ListDigitalEmployeeOverviewFilterOptionsRow, error)
 	ListDigitalEmployeeOverviewItems(ctx context.Context, arg ListDigitalEmployeeOverviewItemsParams) ([]ListDigitalEmployeeOverviewItemsRow, error)
 	ListDigitalEmployeeRuns(ctx context.Context, arg ListDigitalEmployeeRunsParams) ([]TaskRun, error)
 	ListDigitalEmployees(ctx context.Context, arg ListDigitalEmployeesParams) ([]DigitalEmployee, error)
+	ListEffectiveMCPServersForEmployee(ctx context.Context, arg ListEffectiveMCPServersForEmployeeParams) ([]ListEffectiveMCPServersForEmployeeRow, error)
 	ListInboxItems(ctx context.Context, arg ListInboxItemsParams) ([]InboxItem, error)
 	ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
@@ -220,12 +232,14 @@ type Querier interface {
 	ListTaskStateHistory(ctx context.Context, arg ListTaskStateHistoryParams) ([]TaskStateHistory, error)
 	ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error)
 	ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]AuditEvent, error)
+	ListTeamMCPServers(ctx context.Context, arg ListTeamMCPServersParams) ([]ListTeamMCPServersRow, error)
 	ListTeamMemberRoleRequests(ctx context.Context, arg ListTeamMemberRoleRequestsParams) ([]TenantTeamMemberRoleRequest, error)
 	ListTeamMembers(ctx context.Context, arg ListTeamMembersParams) ([]ListTeamMembersRow, error)
 	ListTenantTeamConfigDrafts(ctx context.Context, arg ListTenantTeamConfigDraftsParams) ([]TenantTeamConfigRevision, error)
 	ListTenantTeamSummaries(ctx context.Context, arg ListTenantTeamSummariesParams) ([]ListTenantTeamSummariesRow, error)
 	ListTenantTeams(ctx context.Context, arg ListTenantTeamsParams) ([]TenantTeam, error)
 	ListTopDeniedAuthzActionsSince(ctx context.Context, arg ListTopDeniedAuthzActionsSinceParams) ([]ListTopDeniedAuthzActionsSinceRow, error)
+	ListUserCredentials(ctx context.Context, arg ListUserCredentialsParams) ([]UserCredential, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error)
 	ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error)
 	ProjectTaskEventExists(ctx context.Context, arg ProjectTaskEventExistsParams) (bool, error)
