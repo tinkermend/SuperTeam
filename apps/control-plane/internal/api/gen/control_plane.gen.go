@@ -174,6 +174,21 @@ func (e CreateTeamRequestInitialMembersRole) Valid() bool {
 	}
 }
 
+// Defines values for CredentialType.
+const (
+	McpToken CredentialType = "mcp_token"
+)
+
+// Valid indicates whether the value is a known member of the CredentialType enum.
+func (e CredentialType) Valid() bool {
+	switch e {
+	case McpToken:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DigitalEmployeeConfigRevisionStatus.
 const (
 	DigitalEmployeeConfigRevisionStatusDraft DigitalEmployeeConfigRevisionStatus = "draft"
@@ -411,6 +426,24 @@ func (e DigitalEmployeeWorkbenchStatus) Valid() bool {
 	}
 }
 
+// Defines values for EffectiveEmployeeSkillSourceScope.
+const (
+	EffectiveEmployeeSkillSourceScopeEmployee EffectiveEmployeeSkillSourceScope = "employee"
+	EffectiveEmployeeSkillSourceScopeTeam     EffectiveEmployeeSkillSourceScope = "team"
+)
+
+// Valid indicates whether the value is a known member of the EffectiveEmployeeSkillSourceScope enum.
+func (e EffectiveEmployeeSkillSourceScope) Valid() bool {
+	switch e {
+	case EffectiveEmployeeSkillSourceScopeEmployee:
+		return true
+	case EffectiveEmployeeSkillSourceScopeTeam:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GovernanceSummaryStatus.
 const (
 	GovernanceSummaryStatusActive        GovernanceSummaryStatus = "active"
@@ -516,6 +549,24 @@ func (e InboxItemStatus) Valid() bool {
 	case InboxItemStatusOpen:
 		return true
 	case InboxItemStatusResolved:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPServerSourceScope.
+const (
+	MCPServerSourceScopeEmployee MCPServerSourceScope = "employee"
+	MCPServerSourceScopeTeam     MCPServerSourceScope = "team"
+)
+
+// Valid indicates whether the value is a known member of the MCPServerSourceScope enum.
+func (e MCPServerSourceScope) Valid() bool {
+	switch e {
+	case MCPServerSourceScopeEmployee:
+		return true
+	case MCPServerSourceScopeTeam:
 		return true
 	default:
 		return false
@@ -1438,6 +1489,13 @@ type CreateDigitalEmployeeRunRequest struct {
 	TimeoutSec       *int32                    `json:"timeout_sec,omitempty"`
 }
 
+// CreateMCPServerRequest defines model for CreateMCPServerRequest.
+type CreateMCPServerRequest struct {
+	CredentialId *openapi_types.UUID `json:"credential_id,omitempty"`
+	Name         string              `json:"name"`
+	Url          string              `json:"url"`
+}
+
 // CreateProjectAcceptanceRequest defines model for CreateProjectAcceptanceRequest.
 type CreateProjectAcceptanceRequest struct {
 	Conclusion      string                               `json:"conclusion"`
@@ -1555,6 +1613,16 @@ type CreateTeamRequest struct {
 
 // CreateTeamRequestInitialMembersRole defines model for CreateTeamRequest.InitialMembers.Role.
 type CreateTeamRequestInitialMembersRole string
+
+// CreateUserCredentialRequest defines model for CreateUserCredentialRequest.
+type CreateUserCredentialRequest struct {
+	CredentialType  CredentialType `json:"credential_type"`
+	CredentialValue string         `json:"credential_value"`
+	Name            string         `json:"name"`
+}
+
+// CredentialType defines model for CredentialType.
+type CredentialType string
 
 // DecideTeamMemberRoleRequest defines model for DecideTeamMemberRoleRequest.
 type DecideTeamMemberRoleRequest struct {
@@ -1980,6 +2048,17 @@ type EffectiveConfigValidationIssue struct {
 	Path    *string `json:"path,omitempty"`
 }
 
+// EffectiveEmployeeSkill defines model for EffectiveEmployeeSkill.
+type EffectiveEmployeeSkill struct {
+	Inherited   bool                              `json:"inherited"`
+	ReadOnly    bool                              `json:"read_only"`
+	Skill       Skill                             `json:"skill"`
+	SourceScope EffectiveEmployeeSkillSourceScope `json:"source_scope"`
+}
+
+// EffectiveEmployeeSkillSourceScope defines model for EffectiveEmployeeSkill.SourceScope.
+type EffectiveEmployeeSkillSourceScope string
+
 // ExecuteInboxActionRequest defines model for ExecuteInboxActionRequest.
 type ExecuteInboxActionRequest struct {
 	Action  string                  `json:"action"`
@@ -2119,6 +2198,30 @@ type InboxSourceActionResult struct {
 	SourceType string             `json:"source_type"`
 	Status     string             `json:"status"`
 }
+
+// MCPServer defines model for MCPServer.
+type MCPServer struct {
+	CreatedAt          *time.Time           `json:"created_at,omitempty"`
+	CreatedBy          *openapi_types.UUID  `json:"created_by,omitempty"`
+	CredentialId       *openapi_types.UUID  `json:"credential_id,omitempty"`
+	CredentialLastFour *string              `json:"credential_last_four,omitempty"`
+	CredentialName     *string              `json:"credential_name,omitempty"`
+	CredentialType     *CredentialType      `json:"credential_type,omitempty"`
+	DigitalEmployeeId  *openapi_types.UUID  `json:"digital_employee_id,omitempty"`
+	DisabledAt         *time.Time           `json:"disabled_at,omitempty"`
+	Id                 openapi_types.UUID   `json:"id"`
+	Inherited          bool                 `json:"inherited"`
+	Name               string               `json:"name"`
+	SourceScope        MCPServerSourceScope `json:"source_scope"`
+	Status             string               `json:"status"`
+	TeamId             *openapi_types.UUID  `json:"team_id,omitempty"`
+	TenantId           openapi_types.UUID   `json:"tenant_id"`
+	UpdatedAt          *time.Time           `json:"updated_at,omitempty"`
+	Url                string               `json:"url"`
+}
+
+// MCPServerSourceScope defines model for MCPServer.SourceScope.
+type MCPServerSourceScope string
 
 // OverviewFilterOption defines model for OverviewFilterOption.
 type OverviewFilterOption struct {
@@ -3201,6 +3304,54 @@ type UpsertDigitalEmployeeExecutionInstanceRequest struct {
 	WorkspacePolicy      *map[string]interface{} `json:"workspace_policy,omitempty"`
 }
 
+// UpsertWorkspaceFileRequest defines model for UpsertWorkspaceFileRequest.
+type UpsertWorkspaceFileRequest struct {
+	ChangeNote *string `json:"change_note,omitempty"`
+	Content    string  `json:"content"`
+	FileRole   *string `json:"file_role,omitempty"`
+	MimeType   *string `json:"mime_type,omitempty"`
+	Path       string  `json:"path"`
+	SyncPolicy *string `json:"sync_policy,omitempty"`
+}
+
+// UserCredential defines model for UserCredential.
+type UserCredential struct {
+	CreatedAt      *time.Time         `json:"created_at,omitempty"`
+	CredentialType CredentialType     `json:"credential_type"`
+	DisabledAt     *time.Time         `json:"disabled_at,omitempty"`
+	Id             openapi_types.UUID `json:"id"`
+	LastFour       string             `json:"last_four"`
+	Name           string             `json:"name"`
+	Status         string             `json:"status"`
+	TenantId       openapi_types.UUID `json:"tenant_id"`
+	UpdatedAt      *time.Time         `json:"updated_at,omitempty"`
+	UserId         openapi_types.UUID `json:"user_id"`
+}
+
+// WorkspaceFile defines model for WorkspaceFile.
+type WorkspaceFile struct {
+	ChangeNote        *string            `json:"change_note,omitempty"`
+	Content           string             `json:"content"`
+	ContentHash       string             `json:"content_hash"`
+	CreatedAt         *time.Time         `json:"created_at,omitempty"`
+	CurrentRevisionId openapi_types.UUID `json:"current_revision_id"`
+	FileRole          string             `json:"file_role"`
+	Id                openapi_types.UUID `json:"id"`
+	MimeType          string             `json:"mime_type"`
+	ObjectKey         *string            `json:"object_key,omitempty"`
+	Path              string             `json:"path"`
+	RevisionNumber    int32              `json:"revision_number"`
+	SizeBytes         int32              `json:"size_bytes"`
+	Status            string             `json:"status"`
+	StorageBackend    string             `json:"storage_backend"`
+	SyncPolicy        string             `json:"sync_policy"`
+	TeamId            openapi_types.UUID `json:"team_id"`
+	UpdatedAt         *time.Time         `json:"updated_at,omitempty"`
+}
+
+// BindingId defines model for BindingId.
+type BindingId = openapi_types.UUID
+
 // CommandId defines model for CommandId.
 type CommandId = string
 
@@ -3257,6 +3408,9 @@ type RuntimeNodeIdHeader = string
 
 // RuntimeSessionId defines model for RuntimeSessionId.
 type RuntimeSessionId = openapi_types.UUID
+
+// ServerId defines model for ServerId.
+type ServerId = openapi_types.UUID
 
 // SkillFilePath defines model for SkillFilePath.
 type SkillFilePath = string
@@ -3324,6 +3478,11 @@ type ListDigitalEmployeeRunsParams struct {
 type ListDigitalEmployeeRunEventsParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// BindEmployeeSkillJSONBody defines parameters for BindEmployeeSkill.
+type BindEmployeeSkillJSONBody struct {
+	SkillId openapi_types.UUID `json:"skill_id"`
 }
 
 // ListInboxItemsParams defines parameters for ListInboxItems.
@@ -3584,6 +3743,16 @@ type ListTeamMembersParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// BindTeamSkillJSONBody defines parameters for BindTeamSkill.
+type BindTeamSkillJSONBody struct {
+	SkillId openapi_types.UUID `json:"skill_id"`
+}
+
+// ListUserCredentialsParams defines parameters for ListUserCredentials.
+type ListUserCredentialsParams struct {
+	CredentialType *CredentialType `form:"credential_type,omitempty" json:"credential_type,omitempty"`
+}
+
 // CreateDigitalEmployeeJSONRequestBody defines body for CreateDigitalEmployee for application/json ContentType.
 type CreateDigitalEmployeeJSONRequestBody = CreateDigitalEmployeeRequest
 
@@ -3599,6 +3768,9 @@ type PreviewDigitalEmployeeEffectiveConfigJSONRequestBody = EffectiveConfigPrevi
 // UpsertDigitalEmployeeExecutionInstanceJSONRequestBody defines body for UpsertDigitalEmployeeExecutionInstance for application/json ContentType.
 type UpsertDigitalEmployeeExecutionInstanceJSONRequestBody = UpsertDigitalEmployeeExecutionInstanceRequest
 
+// CreateEmployeeMCPBindingJSONRequestBody defines body for CreateEmployeeMCPBinding for application/json ContentType.
+type CreateEmployeeMCPBindingJSONRequestBody = CreateMCPServerRequest
+
 // CreateProviderSessionForDigitalEmployeeJSONRequestBody defines body for CreateProviderSessionForDigitalEmployee for application/json ContentType.
 type CreateProviderSessionForDigitalEmployeeJSONRequestBody = CreateProviderSessionRequest
 
@@ -3608,8 +3780,14 @@ type CreateDigitalEmployeeRunJSONRequestBody = CreateDigitalEmployeeRunRequest
 // StopDigitalEmployeeRunJSONRequestBody defines body for StopDigitalEmployeeRun for application/json ContentType.
 type StopDigitalEmployeeRunJSONRequestBody = StopDigitalEmployeeRunRequest
 
+// BindEmployeeSkillJSONRequestBody defines body for BindEmployeeSkill for application/json ContentType.
+type BindEmployeeSkillJSONRequestBody BindEmployeeSkillJSONBody
+
 // UpdateDigitalEmployeeStatusJSONRequestBody defines body for UpdateDigitalEmployeeStatus for application/json ContentType.
 type UpdateDigitalEmployeeStatusJSONRequestBody = UpdateDigitalEmployeeStatusRequest
+
+// UpsertEmployeeWorkspaceFileJSONRequestBody defines body for UpsertEmployeeWorkspaceFile for application/json ContentType.
+type UpsertEmployeeWorkspaceFileJSONRequestBody = UpsertWorkspaceFileRequest
 
 // ExecuteInboxActionJSONRequestBody defines body for ExecuteInboxAction for application/json ContentType.
 type ExecuteInboxActionJSONRequestBody = ExecuteInboxActionRequest
@@ -3728,6 +3906,9 @@ type CreateTeamGovernanceDraftJSONRequestBody = GovernanceDraftInput
 // UpdateTeamGovernanceDraftJSONRequestBody defines body for UpdateTeamGovernanceDraft for application/json ContentType.
 type UpdateTeamGovernanceDraftJSONRequestBody = GovernanceDraftInput
 
+// CreateTeamMCPServerJSONRequestBody defines body for CreateTeamMCPServer for application/json ContentType.
+type CreateTeamMCPServerJSONRequestBody = CreateMCPServerRequest
+
 // CreateTeamMemberRoleRequestJSONRequestBody defines body for CreateTeamMemberRoleRequest for application/json ContentType.
 type CreateTeamMemberRoleRequestJSONRequestBody = CreateTeamMemberRoleRequest
 
@@ -3739,6 +3920,12 @@ type RejectTeamMemberRoleRequestJSONRequestBody = DecideTeamMemberRoleRequest
 
 // AddTeamMemberJSONRequestBody defines body for AddTeamMember for application/json ContentType.
 type AddTeamMemberJSONRequestBody = AddTeamMemberRequest
+
+// BindTeamSkillJSONRequestBody defines body for BindTeamSkill for application/json ContentType.
+type BindTeamSkillJSONRequestBody BindTeamSkillJSONBody
+
+// CreateUserCredentialJSONRequestBody defines body for CreateUserCredential for application/json ContentType.
+type CreateUserCredentialJSONRequestBody = CreateUserCredentialRequest
 
 // AsAppendProviderSessionEventRequest0 returns the union data inside the AppendProviderSessionEventRequest as a AppendProviderSessionEventRequest0
 func (t AppendProviderSessionEventRequest) AsAppendProviderSessionEventRequest0() (AppendProviderSessionEventRequest0, error) {
@@ -4222,12 +4409,24 @@ type ServerInterface interface {
 	// Preview a digital employee effective config
 	// (POST /api/v1/digital-employees/{employeeId}/effective-configs/preview)
 	PreviewDigitalEmployeeEffectiveConfig(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// List merged team and personal MCP servers
+	// (GET /api/v1/digital-employees/{employeeId}/effective-mcp-servers)
+	ListEffectiveMCPServers(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// Get the digital employee execution instance
 	// (GET /api/v1/digital-employees/{employeeId}/execution-instance)
 	GetDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// Create or update the unique digital employee execution instance
 	// (PUT /api/v1/digital-employees/{employeeId}/execution-instance)
 	UpsertDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// List personal employee MCP bindings
+	// (GET /api/v1/digital-employees/{employeeId}/mcp-bindings)
+	ListEmployeeMCPBindings(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Create a personal employee MCP binding
+	// (POST /api/v1/digital-employees/{employeeId}/mcp-bindings)
+	CreateEmployeeMCPBinding(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Delete a personal employee MCP binding
+	// (DELETE /api/v1/digital-employees/{employeeId}/mcp-bindings/{bindingId})
+	DeleteEmployeeMCPBinding(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, bindingId BindingId)
 	// List provider sessions for a digital employee
 	// (GET /api/v1/digital-employees/{employeeId}/provider-sessions)
 	ListProviderSessionsForDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params ListProviderSessionsForDigitalEmployeeParams)
@@ -4249,9 +4448,24 @@ type ServerInterface interface {
 	// Stop an active digital employee run
 	// (POST /api/v1/digital-employees/{employeeId}/runs/{runId}/stop)
 	StopDigitalEmployeeRun(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, runId RunId)
+	// List effective employee skills
+	// (GET /api/v1/digital-employees/{employeeId}/skills)
+	ListEmployeeSkills(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Bind a personal employee skill
+	// (POST /api/v1/digital-employees/{employeeId}/skills)
+	BindEmployeeSkill(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Remove a personal employee skill binding
+	// (DELETE /api/v1/digital-employees/{employeeId}/skills/{skillId})
+	UnbindEmployeeSkill(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, skillId SkillId)
 	// Update a digital employee status
 	// (PUT /api/v1/digital-employees/{employeeId}/status)
 	UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// List employee workspace files
+	// (GET /api/v1/digital-employees/{employeeId}/workspace-files)
+	ListEmployeeWorkspaceFiles(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Upsert an employee workspace file
+	// (PUT /api/v1/digital-employees/{employeeId}/workspace-files)
+	UpsertEmployeeWorkspaceFile(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// Get actionable inbox badge counts
 	// (GET /api/v1/inbox/badge)
 	GetInboxBadge(w http.ResponseWriter, r *http.Request)
@@ -4534,6 +4748,15 @@ type ServerInterface interface {
 	// Reject a draft team governance revision
 	// (POST /api/v1/teams/{teamId}/governance/drafts/{draftId}/reject)
 	RejectTeamGovernanceDraft(w http.ResponseWriter, r *http.Request, teamId TeamId, draftId GovernanceDraftId)
+	// List team MCP servers
+	// (GET /api/v1/teams/{teamId}/mcp-servers)
+	ListTeamMCPServers(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// Create a team MCP server
+	// (POST /api/v1/teams/{teamId}/mcp-servers)
+	CreateTeamMCPServer(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// Delete a team MCP server
+	// (DELETE /api/v1/teams/{teamId}/mcp-servers/{serverId})
+	DeleteTeamMCPServer(w http.ResponseWriter, r *http.Request, teamId TeamId, serverId ServerId)
 	// List privileged team role requests
 	// (GET /api/v1/teams/{teamId}/member-role-requests)
 	ListTeamMemberRoleRequests(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamMemberRoleRequestsParams)
@@ -4561,6 +4784,21 @@ type ServerInterface interface {
 	// Restore a tenant team to active
 	// (POST /api/v1/teams/{teamId}/restore)
 	RestoreTeam(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// List team inherited skills
+	// (GET /api/v1/teams/{teamId}/skills)
+	ListTeamSkills(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// Bind a skill to a team
+	// (POST /api/v1/teams/{teamId}/skills)
+	BindTeamSkill(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// Remove a team skill binding
+	// (DELETE /api/v1/teams/{teamId}/skills/{skillId})
+	UnbindTeamSkill(w http.ResponseWriter, r *http.Request, teamId TeamId, skillId SkillId)
+	// List current user credentials
+	// (GET /api/v1/user-credentials)
+	ListUserCredentials(w http.ResponseWriter, r *http.Request, params ListUserCredentialsParams)
+	// Create a user credential
+	// (POST /api/v1/user-credentials)
+	CreateUserCredential(w http.ResponseWriter, r *http.Request)
 	// Read Control Plane health
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -4630,6 +4868,12 @@ func (_ Unimplemented) PreviewDigitalEmployeeEffectiveConfig(w http.ResponseWrit
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List merged team and personal MCP servers
+// (GET /api/v1/digital-employees/{employeeId}/effective-mcp-servers)
+func (_ Unimplemented) ListEffectiveMCPServers(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Get the digital employee execution instance
 // (GET /api/v1/digital-employees/{employeeId}/execution-instance)
 func (_ Unimplemented) GetDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
@@ -4639,6 +4883,24 @@ func (_ Unimplemented) GetDigitalEmployeeExecutionInstance(w http.ResponseWriter
 // Create or update the unique digital employee execution instance
 // (PUT /api/v1/digital-employees/{employeeId}/execution-instance)
 func (_ Unimplemented) UpsertDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List personal employee MCP bindings
+// (GET /api/v1/digital-employees/{employeeId}/mcp-bindings)
+func (_ Unimplemented) ListEmployeeMCPBindings(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a personal employee MCP binding
+// (POST /api/v1/digital-employees/{employeeId}/mcp-bindings)
+func (_ Unimplemented) CreateEmployeeMCPBinding(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete a personal employee MCP binding
+// (DELETE /api/v1/digital-employees/{employeeId}/mcp-bindings/{bindingId})
+func (_ Unimplemented) DeleteEmployeeMCPBinding(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, bindingId BindingId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4684,9 +4946,39 @@ func (_ Unimplemented) StopDigitalEmployeeRun(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List effective employee skills
+// (GET /api/v1/digital-employees/{employeeId}/skills)
+func (_ Unimplemented) ListEmployeeSkills(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Bind a personal employee skill
+// (POST /api/v1/digital-employees/{employeeId}/skills)
+func (_ Unimplemented) BindEmployeeSkill(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Remove a personal employee skill binding
+// (DELETE /api/v1/digital-employees/{employeeId}/skills/{skillId})
+func (_ Unimplemented) UnbindEmployeeSkill(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, skillId SkillId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Update a digital employee status
 // (PUT /api/v1/digital-employees/{employeeId}/status)
 func (_ Unimplemented) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List employee workspace files
+// (GET /api/v1/digital-employees/{employeeId}/workspace-files)
+func (_ Unimplemented) ListEmployeeWorkspaceFiles(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Upsert an employee workspace file
+// (PUT /api/v1/digital-employees/{employeeId}/workspace-files)
+func (_ Unimplemented) UpsertEmployeeWorkspaceFile(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5254,6 +5546,24 @@ func (_ Unimplemented) RejectTeamGovernanceDraft(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List team MCP servers
+// (GET /api/v1/teams/{teamId}/mcp-servers)
+func (_ Unimplemented) ListTeamMCPServers(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a team MCP server
+// (POST /api/v1/teams/{teamId}/mcp-servers)
+func (_ Unimplemented) CreateTeamMCPServer(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete a team MCP server
+// (DELETE /api/v1/teams/{teamId}/mcp-servers/{serverId})
+func (_ Unimplemented) DeleteTeamMCPServer(w http.ResponseWriter, r *http.Request, teamId TeamId, serverId ServerId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List privileged team role requests
 // (GET /api/v1/teams/{teamId}/member-role-requests)
 func (_ Unimplemented) ListTeamMemberRoleRequests(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamMemberRoleRequestsParams) {
@@ -5305,6 +5615,36 @@ func (_ Unimplemented) GetTeamOverview(w http.ResponseWriter, r *http.Request, t
 // Restore a tenant team to active
 // (POST /api/v1/teams/{teamId}/restore)
 func (_ Unimplemented) RestoreTeam(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List team inherited skills
+// (GET /api/v1/teams/{teamId}/skills)
+func (_ Unimplemented) ListTeamSkills(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Bind a skill to a team
+// (POST /api/v1/teams/{teamId}/skills)
+func (_ Unimplemented) BindTeamSkill(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Remove a team skill binding
+// (DELETE /api/v1/teams/{teamId}/skills/{skillId})
+func (_ Unimplemented) UnbindTeamSkill(w http.ResponseWriter, r *http.Request, teamId TeamId, skillId SkillId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List current user credentials
+// (GET /api/v1/user-credentials)
+func (_ Unimplemented) ListUserCredentials(w http.ResponseWriter, r *http.Request, params ListUserCredentialsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a user credential
+// (POST /api/v1/user-credentials)
+func (_ Unimplemented) CreateUserCredential(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5782,6 +6122,32 @@ func (siw *ServerInterfaceWrapper) PreviewDigitalEmployeeEffectiveConfig(w http.
 	handler.ServeHTTP(w, r)
 }
 
+// ListEffectiveMCPServers operation middleware
+func (siw *ServerInterfaceWrapper) ListEffectiveMCPServers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEffectiveMCPServers(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetDigitalEmployeeExecutionInstance operation middleware
 func (siw *ServerInterfaceWrapper) GetDigitalEmployeeExecutionInstance(w http.ResponseWriter, r *http.Request) {
 
@@ -5825,6 +6191,93 @@ func (siw *ServerInterfaceWrapper) UpsertDigitalEmployeeExecutionInstance(w http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpsertDigitalEmployeeExecutionInstance(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListEmployeeMCPBindings operation middleware
+func (siw *ServerInterfaceWrapper) ListEmployeeMCPBindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEmployeeMCPBindings(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateEmployeeMCPBinding operation middleware
+func (siw *ServerInterfaceWrapper) CreateEmployeeMCPBinding(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateEmployeeMCPBinding(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteEmployeeMCPBinding operation middleware
+func (siw *ServerInterfaceWrapper) DeleteEmployeeMCPBinding(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "bindingId" -------------
+	var bindingId BindingId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "bindingId", chi.URLParam(r, "bindingId"), &bindingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bindingId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteEmployeeMCPBinding(w, r, employeeId, bindingId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6130,6 +6583,93 @@ func (siw *ServerInterfaceWrapper) StopDigitalEmployeeRun(w http.ResponseWriter,
 	handler.ServeHTTP(w, r)
 }
 
+// ListEmployeeSkills operation middleware
+func (siw *ServerInterfaceWrapper) ListEmployeeSkills(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEmployeeSkills(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BindEmployeeSkill operation middleware
+func (siw *ServerInterfaceWrapper) BindEmployeeSkill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BindEmployeeSkill(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnbindEmployeeSkill operation middleware
+func (siw *ServerInterfaceWrapper) UnbindEmployeeSkill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "skillId" -------------
+	var skillId SkillId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "skillId", chi.URLParam(r, "skillId"), &skillId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skillId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnbindEmployeeSkill(w, r, employeeId, skillId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // UpdateDigitalEmployeeStatus operation middleware
 func (siw *ServerInterfaceWrapper) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request) {
 
@@ -6147,6 +6687,58 @@ func (siw *ServerInterfaceWrapper) UpdateDigitalEmployeeStatus(w http.ResponseWr
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateDigitalEmployeeStatus(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListEmployeeWorkspaceFiles operation middleware
+func (siw *ServerInterfaceWrapper) ListEmployeeWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEmployeeWorkspaceFiles(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpsertEmployeeWorkspaceFile operation middleware
+func (siw *ServerInterfaceWrapper) UpsertEmployeeWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpsertEmployeeWorkspaceFile(w, r, employeeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9833,6 +10425,93 @@ func (siw *ServerInterfaceWrapper) RejectTeamGovernanceDraft(w http.ResponseWrit
 	handler.ServeHTTP(w, r)
 }
 
+// ListTeamMCPServers operation middleware
+func (siw *ServerInterfaceWrapper) ListTeamMCPServers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTeamMCPServers(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateTeamMCPServer operation middleware
+func (siw *ServerInterfaceWrapper) CreateTeamMCPServer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateTeamMCPServer(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteTeamMCPServer operation middleware
+func (siw *ServerInterfaceWrapper) DeleteTeamMCPServer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", chi.URLParam(r, "serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteTeamMCPServer(w, r, teamId, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListTeamMemberRoleRequests operation middleware
 func (siw *ServerInterfaceWrapper) ListTeamMemberRoleRequests(w http.ResponseWriter, r *http.Request) {
 
@@ -10165,6 +10844,140 @@ func (siw *ServerInterfaceWrapper) RestoreTeam(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// ListTeamSkills operation middleware
+func (siw *ServerInterfaceWrapper) ListTeamSkills(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTeamSkills(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BindTeamSkill operation middleware
+func (siw *ServerInterfaceWrapper) BindTeamSkill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BindTeamSkill(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnbindTeamSkill operation middleware
+func (siw *ServerInterfaceWrapper) UnbindTeamSkill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "skillId" -------------
+	var skillId SkillId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "skillId", chi.URLParam(r, "skillId"), &skillId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skillId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnbindTeamSkill(w, r, teamId, skillId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListUserCredentials operation middleware
+func (siw *ServerInterfaceWrapper) ListUserCredentials(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListUserCredentialsParams
+
+	// ------------- Optional query parameter "credential_type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "credential_type", r.URL.Query(), &params.CredentialType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "credential_type"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "credential_type", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUserCredentials(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateUserCredential operation middleware
+func (siw *ServerInterfaceWrapper) CreateUserCredential(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateUserCredential(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
@@ -10323,10 +11136,22 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-configs/preview", wrapper.PreviewDigitalEmployeeEffectiveConfig)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/effective-mcp-servers", wrapper.ListEffectiveMCPServers)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/execution-instance", wrapper.GetDigitalEmployeeExecutionInstance)
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/execution-instance", wrapper.UpsertDigitalEmployeeExecutionInstance)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings", wrapper.ListEmployeeMCPBindings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings", wrapper.CreateEmployeeMCPBinding)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings/{bindingId}", wrapper.DeleteEmployeeMCPBinding)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/provider-sessions", wrapper.ListProviderSessionsForDigitalEmployee)
@@ -10350,7 +11175,22 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/runs/{runId}/stop", wrapper.StopDigitalEmployeeRun)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/skills", wrapper.ListEmployeeSkills)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/skills", wrapper.BindEmployeeSkill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/digital-employees/{employeeId}/skills/{skillId}", wrapper.UnbindEmployeeSkill)
+	})
+	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/status", wrapper.UpdateDigitalEmployeeStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/workspace-files", wrapper.ListEmployeeWorkspaceFiles)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/workspace-files", wrapper.UpsertEmployeeWorkspaceFile)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/inbox/badge", wrapper.GetInboxBadge)
@@ -10635,6 +11475,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/governance/drafts/{draftId}/reject", wrapper.RejectTeamGovernanceDraft)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/mcp-servers", wrapper.ListTeamMCPServers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/mcp-servers", wrapper.CreateTeamMCPServer)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/teams/{teamId}/mcp-servers/{serverId}", wrapper.DeleteTeamMCPServer)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/member-role-requests", wrapper.ListTeamMemberRoleRequests)
 	})
 	r.Group(func(r chi.Router) {
@@ -10660,6 +11509,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/restore", wrapper.RestoreTeam)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/skills", wrapper.ListTeamSkills)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/skills", wrapper.BindTeamSkill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/teams/{teamId}/skills/{skillId}", wrapper.UnbindTeamSkill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/user-credentials", wrapper.ListUserCredentials)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/user-credentials", wrapper.CreateUserCredential)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/health", wrapper.GetHealth)
