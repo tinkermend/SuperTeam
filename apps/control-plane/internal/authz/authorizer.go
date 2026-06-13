@@ -82,13 +82,9 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 			decision = deny(ReasonInvalidResource)
 			break
 		}
-		decision, err = a.checkTenantAdminAccess(ctx, req)
+		decision, err = a.checkEmployeeOwnerAction(ctx, req)
 	case ActionEmployeeStatusUpdate,
 		ActionEmployeeExecutionBind,
-		ActionEmployeeConfigCreate,
-		ActionEmployeeConfigPreview,
-		ActionEmployeeConfigApprove,
-		ActionEmployeeCapabilityEdit,
 		ActionEmployeeRunCreate,
 		ActionEmployeeRunStop,
 		ActionEmployeeRunLogRead:
@@ -97,6 +93,15 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 			break
 		}
 		decision, err = a.checkTenantAdminAccess(ctx, req)
+	case ActionEmployeeConfigCreate,
+		ActionEmployeeConfigPreview,
+		ActionEmployeeConfigApprove,
+		ActionEmployeeCapabilityEdit:
+		if !validUUIDResource(req.Resource, ResourceEmployee) {
+			decision = deny(ReasonInvalidResource)
+			break
+		}
+		decision, err = a.checkEmployeeOwnerAction(ctx, req)
 	case ActionCredentialRead,
 		ActionCredentialCreate,
 		ActionCredentialDelete:
@@ -104,7 +109,7 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 			decision = deny(ReasonInvalidResource)
 			break
 		}
-		decision, err = a.checkTenantAdminAccess(ctx, req)
+		decision, err = a.checkCredentialSelfOrTenantAdmin(ctx, req)
 	case ActionSkillRead:
 		if resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) {
 			decision, err = a.checkTenantAdminAccess(ctx, req)
@@ -261,6 +266,50 @@ func (a *DBAuthorizer) checkTenantAdminAccess(ctx context.Context, req CheckRequ
 		return allow("tenant."+membership.Role, membership.Role), nil
 	}
 	return deny(ReasonNoMembership), nil
+}
+
+func (a *DBAuthorizer) checkEmployeeOwnerAction(ctx context.Context, req CheckRequest) (Decision, error) {
+	adminDecision, err := a.checkTenantAdminAccess(ctx, req)
+	if err != nil || adminDecision.Allowed || adminDecision.Reason != ReasonNoMembership {
+		return adminDecision, err
+	}
+	principalID, ok := parseUUIDActor(req.Actor, ActorUser)
+	if !ok {
+		return deny(ReasonInvalidActor), nil
+	}
+	employeeID, err := uuid.Parse(req.Resource.ID)
+	if err != nil {
+		return deny(ReasonInvalidResource), nil
+	}
+	scope, err := a.repository.GetDigitalEmployeeAuthzScope(ctx, DigitalEmployeeAuthzScopeParams{
+		TenantID:   req.TenantID,
+		EmployeeID: employeeID,
+	})
+	if err != nil {
+		if errors.Is(err, ErrNoMembership) {
+			return deny(ReasonNoMembership), nil
+		}
+		return Decision{}, err
+	}
+	if scope.OwnerUserID == principalID {
+		return allow("employee.owner", "owner"), nil
+	}
+	return deny(ReasonNoMembership), nil
+}
+
+func (a *DBAuthorizer) checkCredentialSelfOrTenantAdmin(ctx context.Context, req CheckRequest) (Decision, error) {
+	principalID, ok := parseUUIDActor(req.Actor, ActorUser)
+	if !ok {
+		return deny(ReasonInvalidActor), nil
+	}
+	credentialResourceID, err := uuid.Parse(req.Resource.ID)
+	if err != nil {
+		return deny(ReasonInvalidResource), nil
+	}
+	if credentialResourceID == principalID {
+		return allow("credential.self", "self"), nil
+	}
+	return a.checkTenantAdminAccess(ctx, req)
 }
 
 func (a *DBAuthorizer) checkTeamManagementAction(ctx context.Context, req CheckRequest) (Decision, error) {

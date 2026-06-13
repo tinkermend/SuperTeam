@@ -1414,13 +1414,43 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 	if status != ConfigRevisionStatusDraft {
 		return nil, fmt.Errorf("%w: invalid config revision status", ErrInvalidInput)
 	}
-	budgetPolicy, err := normalizeBudgetPolicy(req.BudgetPolicy)
-	if err != nil {
-		return nil, err
-	}
 	if _, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID); err != nil {
 		return nil, fmt.Errorf("get digital employee: %w", err)
 	}
+	var latestConfig *EmployeeConfigInput
+	latest, err := s.repository.GetLatestDigitalEmployeeConfigRevision(ctx, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			return nil, fmt.Errorf("get latest digital employee config revision: %w", err)
+		}
+	} else {
+		latestConfig = &latest
+	}
+	roleProfile := inheritedConfigMap(req.RoleProfile, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.RoleProfile
+	})
+	constitutionAddendum := inheritedConfigMap(req.ConstitutionAddendum, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.ConstitutionAddendum
+	})
+	capabilitySelection := inheritedConfigMap(req.CapabilitySelection, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.CapabilitySelection
+	})
+	contextPolicyOverride := inheritedConfigMap(req.ContextPolicyOverride, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.ContextPolicyOverride
+	})
+	approvalPolicyOverride := inheritedConfigMap(req.ApprovalPolicyOverride, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.ApprovalPolicyOverride
+	})
+	budgetPolicySource := inheritedConfigMap(req.BudgetPolicy, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.BudgetPolicy
+	})
+	budgetPolicy, err := normalizeBudgetPolicy(budgetPolicySource)
+	if err != nil {
+		return nil, err
+	}
+	outputContractAddendum := inheritedConfigMap(req.OutputContractAddendum, latestConfig, func(config EmployeeConfigInput) map[string]any {
+		return config.OutputContractAddendum
+	})
 	nextRevision, err := s.repository.GetNextDigitalEmployeeConfigRevisionNumber(ctx, req.TenantID, req.DigitalEmployeeID)
 	if err != nil {
 		return nil, fmt.Errorf("get next digital employee config revision number: %w", err)
@@ -1429,19 +1459,29 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 		TenantID:               req.TenantID,
 		DigitalEmployeeID:      req.DigitalEmployeeID,
 		RevisionNumber:         nextRevision,
-		RoleProfile:            cloneMap(req.RoleProfile),
-		ConstitutionAddendum:   cloneMap(req.ConstitutionAddendum),
-		CapabilitySelection:    cloneMap(req.CapabilitySelection),
-		ContextPolicyOverride:  cloneMap(req.ContextPolicyOverride),
-		ApprovalPolicyOverride: cloneMap(req.ApprovalPolicyOverride),
+		RoleProfile:            roleProfile,
+		ConstitutionAddendum:   constitutionAddendum,
+		CapabilitySelection:    capabilitySelection,
+		ContextPolicyOverride:  contextPolicyOverride,
+		ApprovalPolicyOverride: approvalPolicyOverride,
 		BudgetPolicy:           budgetPolicy,
-		OutputContractAddendum: cloneMap(req.OutputContractAddendum),
+		OutputContractAddendum: outputContractAddendum,
 		Status:                 status,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create digital employee config revision: %w", err)
 	}
 	return configRevisionFromRecord(record), nil
+}
+
+func inheritedConfigMap(requested map[string]any, latest *EmployeeConfigInput, selectLatest func(EmployeeConfigInput) map[string]any) map[string]any {
+	if requested != nil {
+		return cloneMap(requested)
+	}
+	if latest == nil {
+		return map[string]any{}
+	}
+	return cloneMap(selectLatest(*latest))
 }
 
 func (s *Service) PreviewEffectiveConfig(ctx context.Context, req PreviewEffectiveConfigRequest) (*EffectiveConfigPreview, error) {

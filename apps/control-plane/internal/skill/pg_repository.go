@@ -319,6 +319,13 @@ JOIN skill_agent_bindings sab ON sab.tenant_id = target_employee.tenant_id
 JOIN skills s ON s.tenant_id = sab.tenant_id
     AND s.id = sab.skill_id
     AND s.deleted_at IS NULL
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM skill_team_bindings inherited_binding
+    WHERE inherited_binding.tenant_id = target_employee.tenant_id
+      AND inherited_binding.team_id = target_employee.team_id
+      AND inherited_binding.skill_id = sab.skill_id
+)
 ORDER BY inherited DESC, name ASC`, req.TenantID, req.DigitalEmployeeID)
 	if err != nil {
 		return nil, err

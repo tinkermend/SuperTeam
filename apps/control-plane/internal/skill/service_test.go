@@ -112,17 +112,18 @@ func TestServiceUploadSkillRejectsZipWithoutSkillMarkdown(t *testing.T) {
 }
 
 func TestServiceListsEffectiveEmployeeSkillsWithTeamInheritedFirst(t *testing.T) {
-	sharedSkillID := uuid.New()
+	teamSkillID := uuid.New()
+	employeeSkillID := uuid.New()
 	repo := &serviceTestRepository{
 		effectiveSkills: []EffectiveEmployeeSkill{
 			{
-				Skill:       Skill{ID: sharedSkillID, Name: "diagnose", Slug: "diagnose", Status: SkillStatusInstalled},
+				Skill:       Skill{ID: teamSkillID, Name: "diagnose", Slug: "diagnose", Status: SkillStatusInstalled},
 				SourceScope: "team",
 				Inherited:   true,
 				ReadOnly:    true,
 			},
 			{
-				Skill:       Skill{ID: sharedSkillID, Name: "diagnose", Slug: "diagnose", Status: SkillStatusInstalled},
+				Skill:       Skill{ID: employeeSkillID, Name: "release", Slug: "release", Status: SkillStatusInstalled},
 				SourceScope: "employee",
 				Inherited:   false,
 				ReadOnly:    false,
@@ -140,8 +141,8 @@ func TestServiceListsEffectiveEmployeeSkillsWithTeamInheritedFirst(t *testing.T)
 	if len(items) != 2 {
 		t.Fatalf("expected 2 skills, got %d", len(items))
 	}
-	if items[0].Skill.ID != sharedSkillID || items[1].Skill.ID != sharedSkillID {
-		t.Fatalf("expected duplicate team and employee scope rows for shared skill %s, got %#v", sharedSkillID, items)
+	if items[0].Skill.ID != teamSkillID || items[1].Skill.ID != employeeSkillID {
+		t.Fatalf("expected team and employee skills in repository order, got %#v", items)
 	}
 	if !items[0].Inherited || !items[0].ReadOnly || items[0].SourceScope != "team" {
 		t.Fatalf("expected first skill to be readonly inherited team skill, got %#v", items[0])
@@ -197,15 +198,15 @@ func TestServiceBindSkillToEmployeeReturnsBoundSkill(t *testing.T) {
 	}
 }
 
-func TestPgRepositoryEffectiveEmployeeSkillsSQLKeepsPersonalDuplicateRows(t *testing.T) {
+func TestPgRepositoryEffectiveEmployeeSkillsSQLSuppressesPersonalDuplicateRows(t *testing.T) {
 	source, err := os.ReadFile("pg_repository.go")
 	if err != nil {
 		t.Fatalf("read pg repository source: %v", err)
 	}
 	normalized := strings.Join(strings.Fields(string(source)), " ")
-	if strings.Contains(normalized, "FROM skill_agent_bindings sab") &&
-		strings.Contains(normalized, "WHERE NOT EXISTS ( SELECT 1 FROM skill_team_bindings inherited_binding") {
-		t.Fatal("effective employee skill SQL must not suppress personal skill rows duplicated by team inheritance")
+	if !strings.Contains(normalized, "FROM skill_agent_bindings sab") ||
+		!strings.Contains(normalized, "WHERE NOT EXISTS ( SELECT 1 FROM skill_team_bindings inherited_binding") {
+		t.Fatal("effective employee skill SQL must suppress personal skill rows duplicated by team inheritance")
 	}
 }
 

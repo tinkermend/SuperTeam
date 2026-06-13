@@ -116,6 +116,7 @@ type Querier interface {
 	GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, arg GetCurrentDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error)
 	GetCurrentTenantTeamConfigRevision(ctx context.Context, arg GetCurrentTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
 	GetDigitalEmployee(ctx context.Context, arg GetDigitalEmployeeParams) (DigitalEmployee, error)
+	GetDigitalEmployeeAuthzScope(ctx context.Context, arg GetDigitalEmployeeAuthzScopeParams) (GetDigitalEmployeeAuthzScopeRow, error)
 	GetDigitalEmployeeConfigRevision(ctx context.Context, arg GetDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
 	GetDigitalEmployeeExecutionInstance(ctx context.Context, arg GetDigitalEmployeeExecutionInstanceParams) (DigitalEmployeeExecutionInstance, error)
 	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, arg GetDigitalEmployeeExecutionInstanceByEmployeeIDParams) (DigitalEmployeeExecutionInstance, error)

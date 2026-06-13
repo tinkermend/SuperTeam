@@ -1176,6 +1176,59 @@ func TestCreateConfigRevisionStoresBudgetPolicy(t *testing.T) {
 	}
 }
 
+func TestCreateConfigRevisionPreservesOmittedMapFieldsFromLatestRevision(t *testing.T) {
+	svc, repo := newEmployeeServiceForTest(t)
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	seedConfigRevisionEmployee(repo, tenantID, employeeID)
+	latestID := uuid.New()
+	repo.employeeConfigs[latestID] = EmployeeConfigInput{
+		ID:                     latestID,
+		TenantID:               tenantID,
+		DigitalEmployeeID:      employeeID,
+		RevisionNumber:         7,
+		RoleProfile:            map[string]any{"title": "security reviewer"},
+		ConstitutionAddendum:   map[string]any{"rules": []any{"require evidence"}},
+		CapabilitySelection:    map[string]any{"skills": []any{"release-review"}},
+		ContextPolicyOverride:  map[string]any{"max_files": float64(8)},
+		ApprovalPolicyOverride: map[string]any{"required": true},
+		BudgetPolicy:           map[string]any{"daily_token_limit": float64(12000), "mode": "capped"},
+		OutputContractAddendum: map[string]any{"format": "checklist"},
+	}
+
+	revision, err := svc.CreateConfigRevision(context.Background(), CreateDigitalEmployeeConfigRevisionRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		BudgetPolicy:      map[string]any{"daily_token_limit": int64(24000), "mode": "capped"},
+		Status:            ConfigRevisionStatusDraft,
+	})
+	if err != nil {
+		t.Fatalf("create config revision: %v", err)
+	}
+
+	if revision.BudgetPolicy["daily_token_limit"] != float64(24000) {
+		t.Fatalf("expected budget change to be applied, got %#v", revision.BudgetPolicy)
+	}
+	if repo.createdConfigRevision.RoleProfile["title"] != "security reviewer" {
+		t.Fatalf("expected role_profile to be preserved, got %#v", repo.createdConfigRevision.RoleProfile)
+	}
+	if repo.createdConfigRevision.CapabilitySelection["skills"] == nil {
+		t.Fatalf("expected capability_selection to be preserved, got %#v", repo.createdConfigRevision.CapabilitySelection)
+	}
+	if repo.createdConfigRevision.ContextPolicyOverride["max_files"] != float64(8) {
+		t.Fatalf("expected context_policy_override to be preserved, got %#v", repo.createdConfigRevision.ContextPolicyOverride)
+	}
+	if repo.createdConfigRevision.ApprovalPolicyOverride["required"] != true {
+		t.Fatalf("expected approval_policy_override to be preserved, got %#v", repo.createdConfigRevision.ApprovalPolicyOverride)
+	}
+	if repo.createdConfigRevision.OutputContractAddendum["format"] != "checklist" {
+		t.Fatalf("expected output_contract_addendum to be preserved, got %#v", repo.createdConfigRevision.OutputContractAddendum)
+	}
+	if repo.createdConfigRevision.ConstitutionAddendum["rules"] == nil {
+		t.Fatalf("expected constitution_addendum to be preserved, got %#v", repo.createdConfigRevision.ConstitutionAddendum)
+	}
+}
+
 func TestCreateConfigRevisionRejectsInvalidBudgetPolicy(t *testing.T) {
 	svc, repo := newEmployeeServiceForTest(t)
 	tenantID := uuid.New()
@@ -2365,6 +2418,24 @@ func (r *memoryRepository) GetDigitalEmployeeConfigRevision(_ context.Context, t
 		return EmployeeConfigInput{}, ErrNotFound
 	}
 	return record, nil
+}
+
+func (r *memoryRepository) GetLatestDigitalEmployeeConfigRevision(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error) {
+	var latest EmployeeConfigInput
+	found := false
+	for _, record := range r.employeeConfigs {
+		if record.TenantID != tenantID || record.DigitalEmployeeID != digitalEmployeeID {
+			continue
+		}
+		if !found || record.RevisionNumber > latest.RevisionNumber {
+			latest = record
+			found = true
+		}
+	}
+	if !found {
+		return EmployeeConfigInput{}, ErrNotFound
+	}
+	return latest, nil
 }
 
 func (r *memoryRepository) GetNextDigitalEmployeeConfigRevisionNumber(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) (int32, error) {

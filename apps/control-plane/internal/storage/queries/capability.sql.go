@@ -415,6 +415,15 @@ JOIN digital_employee_mcp_bindings em ON em.tenant_id = target_employee.tenant_i
 LEFT JOIN user_credentials uc ON uc.tenant_id = em.tenant_id
     AND uc.id = em.credential_id
     AND uc.deleted_at IS NULL
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM team_mcp_servers team_duplicate
+    WHERE team_duplicate.tenant_id = target_employee.tenant_id
+      AND team_duplicate.team_id = target_employee.team_id
+      AND team_duplicate.name = em.name
+      AND team_duplicate.url = em.url
+      AND team_duplicate.deleted_at IS NULL
+)
 ORDER BY inherited DESC, name ASC
 `
 

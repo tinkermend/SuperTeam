@@ -534,6 +534,17 @@ func (r *PgRepository) GetDigitalEmployeeConfigRevision(ctx context.Context, ten
 	return employeeConfigInputFromQuery(revision)
 }
 
+func (r *PgRepository) GetLatestDigitalEmployeeConfigRevision(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (EmployeeConfigInput, error) {
+	revision, err := r.q.GetLatestDigitalEmployeeConfigRevision(ctx, queries.GetLatestDigitalEmployeeConfigRevisionParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	if err != nil {
+		return EmployeeConfigInput{}, mapNoRows(err)
+	}
+	return employeeConfigInputFromQuery(revision)
+}
+
 func (r *PgRepository) GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) (int32, error) {
 	nextRevision, err := r.q.GetNextDigitalEmployeeConfigRevisionNumber(ctx, queries.GetNextDigitalEmployeeConfigRevisionNumberParams{
 		TenantID:          tenantID,

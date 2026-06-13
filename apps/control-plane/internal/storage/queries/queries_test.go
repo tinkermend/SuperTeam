@@ -5010,6 +5010,17 @@ func TestCapabilityQueriesCreateCredentialAndMergeMCPServers(t *testing.T) {
 	if _, err := q.CreateDigitalEmployeeMCPBinding(context.Background(), queries.CreateDigitalEmployeeMCPBindingParams{
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
+		Name:              "ops-mcp",
+		Url:               "https://mcp.example.com",
+		CredentialID:      uuidToPgtype(credential.ID),
+		CreatedBy:         uuidToPgtype(userID),
+	}); err != nil {
+		t.Fatalf("create duplicate employee mcp: %v", err)
+	}
+
+	if _, err := q.CreateDigitalEmployeeMCPBinding(context.Background(), queries.CreateDigitalEmployeeMCPBindingParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
 		Name:              "personal-mcp",
 		Url:               "https://personal-mcp.example.com",
 		CredentialID:      uuidToPgtype(credential.ID),
@@ -5026,7 +5037,7 @@ func TestCapabilityQueriesCreateCredentialAndMergeMCPServers(t *testing.T) {
 		t.Fatalf("list effective mcp: %v", err)
 	}
 	if len(merged) != 2 {
-		t.Fatalf("expected 2 merged mcp servers, got %d", len(merged))
+		t.Fatalf("expected duplicate employee mcp to be suppressed, got %d merged mcp servers: %#v", len(merged), merged)
 	}
 	require.Equal(t, "team", merged[0].SourceScope)
 	require.True(t, merged[0].Inherited)
@@ -5038,6 +5049,7 @@ func TestCapabilityQueriesCreateCredentialAndMergeMCPServers(t *testing.T) {
 	requireNoEncryptedValueField(t, merged[0])
 
 	require.Equal(t, "employee", merged[1].SourceScope)
+	require.Equal(t, "personal-mcp", merged[1].Name)
 	require.False(t, merged[1].Inherited)
 	require.False(t, merged[1].TeamID.Valid)
 	require.Equal(t, "ops-token", merged[1].CredentialName)
@@ -5061,7 +5073,7 @@ func TestCapabilityQueriesCreateCredentialAndMergeMCPServers(t *testing.T) {
 		DigitalEmployeeID: employeeID,
 	})
 	require.NoError(t, err)
-	require.Len(t, employeeServers, 1)
+	require.Len(t, employeeServers, 2)
 	require.Equal(t, "ops-token", employeeServers[0].CredentialName)
 	require.Equal(t, "mcp_token", employeeServers[0].CredentialType)
 	require.Equal(t, "7890", employeeServers[0].CredentialLastFour)
