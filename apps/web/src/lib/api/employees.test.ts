@@ -9,15 +9,18 @@ import {
   getDigitalEmployee,
   getDigitalEmployeeExecutionInstance,
   getDigitalEmployeeRun,
+  listInstructionFiles,
   listDigitalEmployeeRunEvents,
   listDigitalEmployeeRuns,
   listDigitalEmployees,
   previewDigitalEmployeeEffectiveConfig,
   stopDigitalEmployeeRun,
+  upsertInstructionFile,
   type DigitalEmployee,
   type DigitalEmployeeConfigRevision,
   type DigitalEmployeeCreateOptions,
   type DigitalEmployeeOverview,
+  type InstructionFile,
 } from "./employees";
 
 describe("digital employee API", () => {
@@ -979,6 +982,78 @@ describe("digital employee API", () => {
           "content-type": "application/json",
         },
         method: "POST",
+      },
+    );
+  });
+
+  it("lists instruction files with encoded employee id", async () => {
+    const files = [
+      {
+        id: "instruction-1",
+        path: "AGENTS.md",
+        content: "# 规则",
+        size_bytes: 8,
+        checksum_sha256: "abc123",
+        updated_at: "2026-06-10T10:00:00Z",
+      },
+    ] satisfies InstructionFile[];
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(files), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      listInstructionFiles(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "employee 1/primary",
+      ),
+    ).resolves.toEqual(files);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/instructions",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+  });
+
+  it("upserts an instruction file with encoded employee id and JSON body", async () => {
+    const file = {
+      id: "instruction-1",
+      path: "docs/AGENTS.md",
+      content: "# 新规则",
+      size_bytes: 12,
+      checksum_sha256: "def456",
+      updated_at: "2026-06-10T10:05:00Z",
+    } satisfies InstructionFile;
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(file), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      upsertInstructionFile(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "employee 1/primary",
+        { path: "docs/AGENTS.md", content: "# 新规则" },
+      ),
+    ).resolves.toEqual(file);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/digital-employees/employee%201%2Fprimary/instructions",
+      {
+        body: JSON.stringify({ path: "docs/AGENTS.md", content: "# 新规则" }),
+        credentials: "include",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        method: "PUT",
       },
     );
   });

@@ -510,6 +510,20 @@ export type ApproveEffectiveConfigInput = {
   preview: EffectiveConfigPreviewInput;
 };
 
+export type InstructionFile = {
+  id: string;
+  path: string;
+  content: string;
+  size_bytes: number;
+  checksum_sha256: string;
+  updated_at?: string;
+};
+
+export type UpsertInstructionFileInput = {
+  path: string;
+  content: string;
+};
+
 async function postJson<T>(
   options: ApiClientOptions,
   path: string,
@@ -522,6 +536,23 @@ async function postJson<T>(
     credentials: "include",
     headers: { accept: "application/json", "content-type": "application/json" },
     method: "POST",
+  });
+
+  return parseJson<T>(response, resource);
+}
+
+async function putJson<T>(
+  options: ApiClientOptions,
+  path: string,
+  input: unknown,
+  resource: string,
+): Promise<T> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, path), {
+    body: JSON.stringify(input),
+    credentials: "include",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    method: "PUT",
   });
 
   return parseJson<T>(response, resource);
@@ -697,6 +728,34 @@ export function approveDigitalEmployeeEffectiveConfig(
     `/api/v1/digital-employees/${encodedEmployeeId}/effective-configs/approve`,
     input,
     "approve digital employee effective config",
+  );
+}
+
+export function listInstructionFiles(
+  options: ApiClientOptions,
+  employeeId: string,
+): Promise<InstructionFile[]> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+
+  return getJson<InstructionFile[]>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/instructions`,
+    "employee instruction files",
+  );
+}
+
+export function upsertInstructionFile(
+  options: ApiClientOptions,
+  employeeId: string,
+  input: UpsertInstructionFileInput,
+): Promise<InstructionFile> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+
+  return putJson<InstructionFile>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/instructions`,
+    input,
+    "upsert employee instruction file",
   );
 }
 

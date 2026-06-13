@@ -75,6 +75,33 @@ function fetchCalls(fetcher: typeof fetch) {
   ).mock.calls;
 }
 
+type ExtraRoutes = Record<string, unknown>;
+
+function routeKey(input: RequestInfo | URL, init?: RequestInit) {
+  const url = new URL(String(input));
+  const method = init?.method ?? "GET";
+
+  return `${method} ${url.pathname}${url.search}`;
+}
+
+function routeResponse(
+  extraRoutes: ExtraRoutes | undefined,
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) {
+  if (!extraRoutes) {
+    return undefined;
+  }
+  const key = routeKey(input, init);
+  if (!Object.prototype.hasOwnProperty.call(extraRoutes, key)) {
+    return undefined;
+  }
+  const method = init?.method ?? "GET";
+  const status = method === "POST" ? 201 : method === "DELETE" ? 200 : 200;
+
+  return jsonResponse(extraRoutes[key], status);
+}
+
 
 
 function createTeamPostIndex(fetcher: typeof fetch) {
@@ -125,11 +152,16 @@ function createTeamsFetcher(
   options: {
     createStatus?: number;
     disabledOverview?: boolean;
+    extraRoutes?: ExtraRoutes;
     secondPageMode?: "empty" | "error" | "normal";
   } = {},
 ) {
   const fetcher = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
+      const extraRouteResponse = routeResponse(options.extraRoutes, input, init);
+      if (extraRouteResponse) {
+        return extraRouteResponse;
+      }
       const url = new URL(String(input));
       const method = init?.method ?? "GET";
       const governanceRevision = {
@@ -1341,8 +1373,93 @@ describe("TeamDetailView", () => {
     );
   });
 
-  it("renders capabilities and saves binding changes as a governance draft", async () => {
-    const fetcher = createTeamsFetcher();
+  it("manages team public skills and MCP servers", async () => {
+    const installedSkill = {
+      id: "skill-observe",
+      tenant_id: "tenant-1",
+      slug: "observe",
+      name: "observe",
+      description: "观测巡检",
+      version: "1.0.0",
+      source: "marketplace",
+      risk_level: "low",
+      status: "installed",
+      icon_key: "network",
+      color_token: "info",
+      tags: ["ops"],
+      files: [],
+      team_bindings: [{ team_id: "team-1", team_name: "运维团队" }],
+      agent_bindings: [],
+    };
+    const installableSkill = {
+      id: "skill-diagnose",
+      tenant_id: "tenant-1",
+      slug: "diagnose",
+      name: "diagnose",
+      description: "故障诊断",
+      version: "1.0.0",
+      source: "marketplace",
+      risk_level: "medium",
+      status: "available",
+      icon_key: "boxes",
+      color_token: "warning",
+      tags: ["incident"],
+      files: [],
+      team_bindings: [],
+      agent_bindings: [],
+    };
+    const fetcher = createTeamsFetcher({
+      extraRoutes: {
+        "GET /api/v1/skills": [installedSkill, installableSkill],
+        "GET /api/v1/teams/team-1/skills": [installedSkill],
+        "GET /api/v1/user-credentials?credential_type=mcp_token": [
+          {
+            id: "credential-ops",
+            tenant_id: "tenant-1",
+            user_id: "owner-user",
+            name: "ops-token",
+            credential_type: "mcp_token",
+            last_four: "7890",
+            status: "active",
+          },
+        ],
+        "GET /api/v1/teams/team-1/mcp-servers": [
+          {
+            id: "mcp-existing",
+            tenant_id: "tenant-1",
+            team_id: "team-1",
+            name: "ops-mcp",
+            url: "https://mcp.example.com",
+            credential_id: "credential-ops",
+            credential_name: "ops-token",
+            credential_type: "mcp_token",
+            credential_last_four: "7890",
+            status: "active",
+            source_scope: "team",
+            inherited: false,
+          },
+        ],
+        "POST /api/v1/teams/team-1/skills": {
+          ...installableSkill,
+          status: "installed",
+          team_bindings: [{ team_id: "team-1", team_name: "运维团队" }],
+        },
+        "POST /api/v1/teams/team-1/mcp-servers": {
+          id: "mcp-created",
+          tenant_id: "tenant-1",
+          team_id: "team-1",
+          name: "诊断 MCP",
+          url: "https://diagnose.example.com/mcp",
+          credential_id: "credential-ops",
+          credential_name: "ops-token",
+          credential_type: "mcp_token",
+          credential_last_four: "7890",
+          status: "active",
+          source_scope: "team",
+          inherited: false,
+        },
+      },
+    });
     const screen = await renderWithQueryClient(
       <TeamDetailView
         apiBaseUrl="http://control-plane.local"
@@ -1353,21 +1470,44 @@ describe("TeamDetailView", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "能力与知识" }));
 
-    for (const section of ["Skills", "MCP", "知识库", "外部能力"]) {
-      await expect
-        .element(screen.getByText(section, { exact: true }))
-        .toBeVisible();
-    }
-    await expect.element(screen.getByText("绑定不会立即生效")).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "保存绑定草稿" }));
+    await expect
+      .element(screen.getByRole("heading", { name: "公共技能" }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByRole("heading", { name: "公共 MCP" }))
+      .toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "安装 diagnose" }));
+    await expect
+      .poll(() =>
+        fetchCalls(fetcher).some(
+          ([url, init]) =>
+            String(url).endsWith("/api/v1/teams/team-1/skills") &&
+            init?.method === "POST",
+        ),
+      )
+      .toBe(true);
 
-    expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/teams/team-1/governance/drafts/governance-draft-1",
-      expect.objectContaining({
-        credentials: "include",
-        method: "PATCH",
-      }),
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "MCP 名称" }),
+      "诊断 MCP",
     );
+    await userEvent.fill(
+      screen.getByRole("textbox", { name: "MCP URL" }),
+      "https://diagnose.example.com/mcp",
+    );
+    await userEvent.click(screen.getByRole("combobox", { name: "凭据" }));
+    await userEvent.click(screen.getByRole("option", { name: "ops-token ****7890" }));
+    await userEvent.click(screen.getByRole("button", { name: "添加公共 MCP" }));
+
+    await expect
+      .poll(() =>
+        fetchCalls(fetcher).some(
+          ([url, init]) =>
+            String(url).endsWith("/api/v1/teams/team-1/mcp-servers") &&
+            init?.method === "POST",
+        ),
+      )
+      .toBe(true);
   });
 
   it("renders governance editor with JSON preview and approval action", async () => {

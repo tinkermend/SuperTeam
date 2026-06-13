@@ -1608,6 +1608,118 @@ paths:
                 $ref: "#/components/schemas/Team"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/skills:
+    get:
+      operationId: listTeamSkills
+      summary: List team inherited skills
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team skill list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Skill"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: bindTeamSkill
+      summary: Bind a skill to a team
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - skill_id
+              properties:
+                skill_id:
+                  type: string
+                  format: uuid
+      responses:
+        "201":
+          description: Team skill bound
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Skill"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/skills/{skillId}:
+    delete:
+      operationId: unbindTeamSkill
+      summary: Remove a team skill binding
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/SkillId"
+      responses:
+        "204":
+          description: Team skill binding removed
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/mcp-servers:
+    get:
+      operationId: listTeamMCPServers
+      summary: List team MCP servers
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team MCP server list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPServer"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: createTeamMCPServer
+      summary: Create a team MCP server
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMCPServerRequest"
+      responses:
+        "201":
+          description: Team MCP server created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPServer"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/teams/{teamId}/mcp-servers/{serverId}:
+    delete:
+      operationId: deleteTeamMCPServer
+      summary: Delete a team MCP server
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/ServerId"
+      responses:
+        "204":
+          description: Team MCP server deleted
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/teams/{teamId}/overview:
     get:
       operationId: getTeamOverview
@@ -2104,6 +2216,174 @@ paths:
                 $ref: "#/components/schemas/DigitalEmployee"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/instructions:
+    get:
+      operationId: listEmployeeInstructionFiles
+      summary: List employee instruction files
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Employee instruction file list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InstructionFile"
+        "403":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: upsertEmployeeInstructionFile
+      summary: Upsert an employee instruction file
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertInstructionFileRequest"
+      responses:
+        "200":
+          description: Employee instruction file saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstructionFile"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/skills:
+    get:
+      operationId: listEmployeeSkills
+      summary: List effective employee skills
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Effective employee skill list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EffectiveEmployeeSkill"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: bindEmployeeSkill
+      summary: Bind a personal employee skill
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - skill_id
+              properties:
+                skill_id:
+                  type: string
+                  format: uuid
+      responses:
+        "201":
+          description: Personal employee skill bound
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Skill"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/skills/{skillId}:
+    delete:
+      operationId: unbindEmployeeSkill
+      summary: Remove a personal employee skill binding
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - $ref: "#/components/parameters/SkillId"
+      responses:
+        "204":
+          description: Personal employee skill binding removed
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/mcp-bindings:
+    get:
+      operationId: listEmployeeMCPBindings
+      summary: List personal employee MCP bindings
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Personal employee MCP binding list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPServer"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: createEmployeeMCPBinding
+      summary: Create a personal employee MCP binding
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMCPServerRequest"
+      responses:
+        "201":
+          description: Personal employee MCP binding created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPServer"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/mcp-bindings/{bindingId}:
+    delete:
+      operationId: deleteEmployeeMCPBinding
+      summary: Delete a personal employee MCP binding
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - $ref: "#/components/parameters/BindingId"
+      responses:
+        "204":
+          description: Personal employee MCP binding deleted
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/effective-mcp-servers:
+    get:
+      operationId: listEffectiveMCPServers
+      summary: List merged team and personal MCP servers
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Effective employee MCP server list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPServer"
+        "403":
+          $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/config-revisions:
     post:
       operationId: createDigitalEmployeeConfigRevision
@@ -2394,6 +2674,47 @@ paths:
                   $ref: "#/components/schemas/Skill"
         "403":
           $ref: "#/components/responses/Error"
+  /api/v1/user-credentials:
+    get:
+      operationId: listUserCredentials
+      summary: List current user credentials
+      parameters:
+        - name: credential_type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/CredentialType"
+      responses:
+        "200":
+          description: User credential list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserCredential"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: createUserCredential
+      summary: Create a user credential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserCredentialRequest"
+      responses:
+        "201":
+          description: User credential created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserCredential"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
   /api/v1/skills/uploads:
     post:
       operationId: uploadSkill
@@ -2580,6 +2901,20 @@ components:
       schema:
         type: string
         minLength: 1
+    ServerId:
+      name: serverId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    BindingId:
+      name: bindingId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     GovernanceDraftId:
       name: draftId
       in: path
@@ -5629,6 +5964,189 @@ components:
         team_name:
           type: string
         status:
+          type: string
+    EffectiveEmployeeSkill:
+      type: object
+      required:
+        - skill
+        - source_scope
+        - inherited
+        - read_only
+      properties:
+        skill:
+          $ref: "#/components/schemas/Skill"
+        source_scope:
+          type: string
+          enum:
+            - team
+            - employee
+        inherited:
+          type: boolean
+        read_only:
+          type: boolean
+    CredentialType:
+      type: string
+      enum:
+        - mcp_token
+    UserCredential:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - user_id
+        - name
+        - credential_type
+        - last_four
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        credential_type:
+          $ref: "#/components/schemas/CredentialType"
+        last_four:
+          type: string
+        status:
+          type: string
+        disabled_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateUserCredentialRequest:
+      type: object
+      required:
+        - name
+        - credential_type
+        - credential_value
+      properties:
+        name:
+          type: string
+          minLength: 1
+        credential_type:
+          $ref: "#/components/schemas/CredentialType"
+        credential_value:
+          type: string
+          minLength: 1
+    MCPServer:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - name
+        - url
+        - status
+        - source_scope
+        - inherited
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        url:
+          type: string
+          format: uri
+        credential_id:
+          type: string
+          format: uuid
+        credential_name:
+          type: string
+        credential_type:
+          $ref: "#/components/schemas/CredentialType"
+        credential_last_four:
+          type: string
+        status:
+          type: string
+        source_scope:
+          type: string
+          enum:
+            - team
+            - employee
+        inherited:
+          type: boolean
+        created_by:
+          type: string
+          format: uuid
+        disabled_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateMCPServerRequest:
+      type: object
+      required:
+        - name
+        - url
+      properties:
+        name:
+          type: string
+          minLength: 1
+        url:
+          type: string
+          format: uri
+        credential_id:
+          type: string
+          format: uuid
+    InstructionFile:
+      type: object
+      required:
+        - id
+        - path
+        - content
+        - size_bytes
+        - checksum_sha256
+      properties:
+        id:
+          type: string
+          format: uuid
+        path:
+          type: string
+        content:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        checksum_sha256:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+    UpsertInstructionFileRequest:
+      type: object
+      required:
+        - path
+        - content
+      properties:
+        path:
+          type: string
+          minLength: 1
+        content:
           type: string
     UploadSkillRequest:
       type: object
