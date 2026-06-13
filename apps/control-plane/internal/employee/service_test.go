@@ -387,6 +387,80 @@ func TestCreateDigitalEmployeeCreatesOwnerTypeConfigEffectiveConfigAndProvisioni
 	}
 }
 
+func TestCreateDigitalEmployeeCreatesDefaultAgentsWorkspaceFile(t *testing.T) {
+	svc, repo, _, req := newCreateDigitalEmployeeReadyFixture(t)
+	req.Name = "上架助手"
+
+	created, err := svc.CreateDigitalEmployee(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create digital employee: %v", err)
+	}
+
+	if len(repo.workspaceFiles) != 1 {
+		t.Fatalf("expected one workspace file, got %d", len(repo.workspaceFiles))
+	}
+	file := repo.workspaceFiles[0]
+	if file.DigitalEmployeeID != created.ID || file.TeamID != *req.TeamID {
+		t.Fatalf("workspace file owner mismatch: %#v", file)
+	}
+	if file.Path != "AGENTS.md" || file.FileRole != "entrypoint" || file.SyncPolicy != "auto" {
+		t.Fatalf("unexpected default workspace file: %#v", file)
+	}
+
+	if len(repo.workspaceFileRevisions) != 1 {
+		t.Fatalf("expected one workspace file revision, got %d", len(repo.workspaceFileRevisions))
+	}
+	revision := repo.workspaceFileRevisions[0]
+	if revision.FileID != file.ID || revision.StorageBackend != "db" {
+		t.Fatalf("unexpected default revision: %#v", revision)
+	}
+	if !strings.Contains(revision.ContentText, "上架助手") || !strings.Contains(revision.ContentText, "Execution Contract") {
+		t.Fatalf("default AGENTS.md content did not include role and contract: %q", revision.ContentText)
+	}
+	if revision.ContentHash != sha256Hex(revision.ContentText) {
+		t.Fatalf("revision hash mismatch: %s", revision.ContentHash)
+	}
+}
+
+func TestCreateDigitalEmployeeProvisionPayloadUsesTeamEmployeeHomeAndWorkspaceFiles(t *testing.T) {
+	svc, _, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+
+	created, err := svc.CreateDigitalEmployee(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create digital employee: %v", err)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one runtime command, got %d", len(dispatcher.commands))
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(dispatcher.commands[0].Payload, &payload); err != nil {
+		t.Fatalf("decode runtime command payload: %v", err)
+	}
+	expectedHome := "/runtime/reported/agent-home/teams/" + (*req.TeamID).String() + "/employees/" + created.ID.String()
+	if got := payload["agent_home_dir"]; got != expectedHome {
+		t.Fatalf("expected agent_home_dir %q, got %#v", expectedHome, got)
+	}
+
+	rawFiles, ok := payload["workspace_files"].([]any)
+	if !ok || len(rawFiles) != 1 {
+		t.Fatalf("expected one workspace file payload, got %#v", payload["workspace_files"])
+	}
+	files, ok := rawFiles[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected workspace file object, got %#v", rawFiles[0])
+	}
+	if files["path"] != "AGENTS.md" || files["storage_backend"] != "db" {
+		t.Fatalf("unexpected workspace file payload: %#v", files)
+	}
+	if _, ok := payload["skills"].([]any); !ok {
+		t.Fatalf("expected skills array in payload, got %#v", payload["skills"])
+	}
+	if _, ok := payload["mcp_servers"].([]any); !ok {
+		t.Fatalf("expected mcp_servers array in payload, got %#v", payload["mcp_servers"])
+	}
+}
+
 func TestCreateDigitalEmployeeRejectsUnknownEmployeeType(t *testing.T) {
 	repo := newMemoryRepository()
 	dispatcher := newFakeRuntimeCommandDispatcher()
@@ -1768,6 +1842,8 @@ type memoryRepository struct {
 	runtimeProviderOptions   []RuntimeProviderOption
 	employeeConfigs          map[uuid.UUID]EmployeeConfigInput
 	effectiveConfigs         map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord
+	workspaceFiles           []WorkspaceFileRecord
+	workspaceFileRevisions   []WorkspaceFileRevisionRecord
 	nextConfigRevisionNumber int32
 	createdConfigRevision    CreateConfigRevisionParams
 	createdEffectiveConfig   CreateEffectiveConfigParams
@@ -1969,6 +2045,77 @@ func (r *memoryRepository) GetDigitalEmployeeExecutionInstanceByEmployeeID(_ con
 		return DigitalEmployeeExecutionInstanceRecord{}, ErrNotFound
 	}
 	return record, nil
+}
+
+func (r *memoryRepository) CreateWorkspaceFile(_ context.Context, params CreateWorkspaceFileParams) (WorkspaceFileRecord, error) {
+	now := time.Now().UTC()
+	record := WorkspaceFileRecord{
+		ID:                uuid.New(),
+		TenantID:          params.TenantID,
+		TeamID:            params.TeamID,
+		DigitalEmployeeID: params.DigitalEmployeeID,
+		Path:              params.Path,
+		FileRole:          params.FileRole,
+		MimeType:          params.MimeType,
+		SyncPolicy:        params.SyncPolicy,
+		Status:            params.Status,
+		Metadata:          cloneMap(params.Metadata),
+		CreatedBy:         validUUIDPtr(params.CreatedBy),
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	r.workspaceFiles = append(r.workspaceFiles, record)
+	return record, nil
+}
+
+func (r *memoryRepository) CreateWorkspaceFileRevision(_ context.Context, params CreateWorkspaceFileRevisionParams) (WorkspaceFileRevisionRecord, error) {
+	record := WorkspaceFileRevisionRecord{
+		ID:             uuid.New(),
+		TenantID:       params.TenantID,
+		FileID:         params.FileID,
+		RevisionNumber: params.RevisionNumber,
+		ContentText:    params.ContentText,
+		ContentHash:    params.ContentHash,
+		SizeBytes:      params.SizeBytes,
+		StorageBackend: params.StorageBackend,
+		ObjectKey:      cloneStringPtrForTest(params.ObjectKey),
+		CreatedBy:      validUUIDPtr(params.CreatedBy),
+		CreatedAt:      time.Now().UTC(),
+		ChangeNote:     cloneStringPtrForTest(params.ChangeNote),
+		Metadata:       cloneMap(params.Metadata),
+	}
+	r.workspaceFileRevisions = append(r.workspaceFileRevisions, record)
+	return record, nil
+}
+
+func (r *memoryRepository) ActivateWorkspaceFileRevision(_ context.Context, tenantID, fileID, revisionID uuid.UUID) (WorkspaceFileRecord, error) {
+	for index := range r.workspaceFiles {
+		if r.workspaceFiles[index].TenantID == tenantID && r.workspaceFiles[index].ID == fileID {
+			r.workspaceFiles[index].CurrentRevisionID = &revisionID
+			r.workspaceFiles[index].UpdatedAt = time.Now().UTC()
+			return r.workspaceFiles[index], nil
+		}
+	}
+	return WorkspaceFileRecord{}, ErrNotFound
+}
+
+func (r *memoryRepository) ListWorkspaceFilesForSync(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error) {
+	out := make([]WorkspaceFileForSyncRecord, 0)
+	for _, file := range r.workspaceFiles {
+		if file.TenantID != tenantID || file.DigitalEmployeeID != digitalEmployeeID || file.CurrentRevisionID == nil || file.SyncPolicy == "disabled" {
+			continue
+		}
+		for _, revision := range r.workspaceFileRevisions {
+			if revision.ID == *file.CurrentRevisionID {
+				out = append(out, workspaceFileForSyncFromDefault(file, revision))
+			}
+		}
+	}
+	return out, nil
+}
+
+func (r *memoryRepository) UpsertWorkspaceFileSync(_ context.Context, _ UpsertWorkspaceFileSyncParams) error {
+	return nil
 }
 
 func (r *memoryRepository) CreateDigitalEmployeeConfigRevision(_ context.Context, params CreateConfigRevisionParams) (DigitalEmployeeConfigRevisionRecord, error) {
@@ -2186,6 +2333,8 @@ type memoryRepositorySnapshot struct {
 	commandReceipts          map[string]*RuntimeCommandReceipt
 	employeeConfigs          map[uuid.UUID]EmployeeConfigInput
 	effectiveConfigs         map[uuid.UUID]DigitalEmployeeEffectiveConfigRecord
+	workspaceFiles           []WorkspaceFileRecord
+	workspaceFileRevisions   []WorkspaceFileRevisionRecord
 	nextConfigRevisionNumber int32
 	createdEmployeeCount     int
 	createdConfigRevision    CreateConfigRevisionParams
@@ -2199,6 +2348,8 @@ func (r *memoryRepository) snapshot() memoryRepositorySnapshot {
 		commandReceipts:          cloneCommandReceiptMap(r.commandReceipts),
 		employeeConfigs:          cloneEmployeeConfigInputMap(r.employeeConfigs),
 		effectiveConfigs:         cloneEffectiveConfigRecordMap(r.effectiveConfigs),
+		workspaceFiles:           cloneWorkspaceFileRecords(r.workspaceFiles),
+		workspaceFileRevisions:   cloneWorkspaceFileRevisionRecords(r.workspaceFileRevisions),
 		nextConfigRevisionNumber: r.nextConfigRevisionNumber,
 		createdEmployeeCount:     r.createdEmployeeCount,
 		createdConfigRevision:    cloneCreateConfigRevisionParams(r.createdConfigRevision),
@@ -2212,6 +2363,8 @@ func (r *memoryRepository) restore(snapshot memoryRepositorySnapshot) {
 	r.commandReceipts = snapshot.commandReceipts
 	r.employeeConfigs = snapshot.employeeConfigs
 	r.effectiveConfigs = snapshot.effectiveConfigs
+	r.workspaceFiles = snapshot.workspaceFiles
+	r.workspaceFileRevisions = snapshot.workspaceFileRevisions
 	r.nextConfigRevisionNumber = snapshot.nextConfigRevisionNumber
 	r.createdEmployeeCount = snapshot.createdEmployeeCount
 	r.createdConfigRevision = snapshot.createdConfigRevision
@@ -2296,6 +2449,29 @@ func cloneEffectiveConfigRecordMap(values map[uuid.UUID]DigitalEmployeeEffective
 		record.ApprovedAt = cloneTimePtr(record.ApprovedAt)
 		record.RevokedAt = cloneTimePtr(record.RevokedAt)
 		cloned[id] = record
+	}
+	return cloned
+}
+
+func cloneWorkspaceFileRecords(values []WorkspaceFileRecord) []WorkspaceFileRecord {
+	cloned := make([]WorkspaceFileRecord, 0, len(values))
+	for _, record := range values {
+		record.CurrentRevisionID = validUUIDPtr(record.CurrentRevisionID)
+		record.Metadata = cloneMap(record.Metadata)
+		record.CreatedBy = validUUIDPtr(record.CreatedBy)
+		cloned = append(cloned, record)
+	}
+	return cloned
+}
+
+func cloneWorkspaceFileRevisionRecords(values []WorkspaceFileRevisionRecord) []WorkspaceFileRevisionRecord {
+	cloned := make([]WorkspaceFileRevisionRecord, 0, len(values))
+	for _, record := range values {
+		record.ObjectKey = cloneStringPtrForTest(record.ObjectKey)
+		record.CreatedBy = validUUIDPtr(record.CreatedBy)
+		record.ChangeNote = cloneStringPtrForTest(record.ChangeNote)
+		record.Metadata = cloneMap(record.Metadata)
+		cloned = append(cloned, record)
 	}
 	return cloned
 }

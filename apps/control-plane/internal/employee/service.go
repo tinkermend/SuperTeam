@@ -2,6 +2,8 @@ package employee
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -631,12 +633,13 @@ func createApprovedEffectiveConfig(ctx context.Context, repository Repository, r
 }
 
 func createProvisioningInstanceAndReceipt(ctx context.Context, repository Repository, record DigitalEmployeeRecord, req CreateDigitalEmployeeRequest, preflight RuntimeProvisioningPreflight, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) (DigitalEmployeeExecutionInstanceRecord, string, map[string]any, error) {
+	agentHomeDir := canonicalEmployeeHome(preflight.AgentHomeDir, preflight.TeamID, record.ID)
 	instance, err := repository.UpsertDigitalEmployeeExecutionInstance(ctx, UpsertExecutionInstanceParams{
 		TenantID:          req.TenantID,
 		DigitalEmployeeID: record.ID,
 		RuntimeNodeID:     req.RuntimeNodeID,
 		ProviderType:      req.ProviderType,
-		AgentHomeDir:      preflight.AgentHomeDir,
+		AgentHomeDir:      agentHomeDir,
 		WorkspacePolicy:   cloneMap(req.WorkspacePolicy),
 		SessionPolicy:     cloneMap(req.SessionPolicy),
 		RuntimeSelector: map[string]any{
@@ -652,8 +655,13 @@ func createProvisioningInstanceAndReceipt(ctx context.Context, repository Reposi
 		return DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("create digital employee execution instance: %w", err)
 	}
 
+	workspaceFiles, err := createDefaultAgentsWorkspaceFile(ctx, repository, record, preflight.TeamID, configInput, preview)
+	if err != nil {
+		return DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
+	}
+
 	commandID := newRuntimeCommandID()
-	payload := buildProvisionInstancePayload(commandID, record, instance, req.ProviderType, preflight, req, configInput, preview)
+	payload := buildProvisionInstancePayload(commandID, record, instance, req.ProviderType, preflight, req, configInput, preview, workspaceFiles)
 	if err := repository.CreateRuntimeCommandReceipt(ctx, CreateRuntimeCommandReceiptRequest{
 		TenantID:      req.TenantID,
 		CommandID:     commandID,
@@ -668,6 +676,47 @@ func createProvisioningInstanceAndReceipt(ctx context.Context, repository Reposi
 		return DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("create provisioning command receipt: %w", err)
 	}
 	return instance, commandID, payload, nil
+}
+
+func createDefaultAgentsWorkspaceFile(ctx context.Context, repository Repository, employee DigitalEmployeeRecord, teamID uuid.UUID, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) ([]WorkspaceFileForSyncRecord, error) {
+	agentsPath, err := normalizeWorkspaceFilePath("AGENTS.md")
+	if err != nil {
+		return nil, err
+	}
+	agentsContent := buildDefaultAgentsContent(employee, configInput, preview)
+	agentsRevisionHash := sha256Hex(agentsContent)
+	agentsFile, err := repository.CreateWorkspaceFile(ctx, CreateWorkspaceFileParams{
+		TenantID:          employee.TenantID,
+		TeamID:            teamID,
+		DigitalEmployeeID: employee.ID,
+		Path:              agentsPath,
+		FileRole:          "entrypoint",
+		MimeType:          "text/markdown",
+		SyncPolicy:        "auto",
+		Status:            "active",
+		Metadata:          map[string]any{"created_by": "digital_employee_create"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create default workspace file: %w", err)
+	}
+	agentsRevision, err := repository.CreateWorkspaceFileRevision(ctx, CreateWorkspaceFileRevisionParams{
+		TenantID:       employee.TenantID,
+		FileID:         agentsFile.ID,
+		RevisionNumber: 1,
+		ContentText:    agentsContent,
+		ContentHash:    agentsRevisionHash,
+		SizeBytes:      int32(len([]byte(agentsContent))),
+		StorageBackend: "db",
+		Metadata:       map[string]any{"source": "default_agents"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create default workspace file revision: %w", err)
+	}
+	agentsFile, err = repository.ActivateWorkspaceFileRevision(ctx, employee.TenantID, agentsFile.ID, agentsRevision.ID)
+	if err != nil {
+		return nil, fmt.Errorf("activate default workspace file revision: %w", err)
+	}
+	return []WorkspaceFileForSyncRecord{workspaceFileForSyncFromDefault(agentsFile, agentsRevision)}, nil
 }
 
 func dispatchRuntimeProvisioningCommand(ctx context.Context, dispatcher RuntimeCommandDispatcher, nodeID, commandID string, payload map[string]any) error {
@@ -800,7 +849,7 @@ func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight
 	return nil
 }
 
-func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRecord, instance DigitalEmployeeExecutionInstanceRecord, providerType string, preflight RuntimeProvisioningPreflight, req CreateDigitalEmployeeRequest, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) map[string]any {
+func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRecord, instance DigitalEmployeeExecutionInstanceRecord, providerType string, preflight RuntimeProvisioningPreflight, req CreateDigitalEmployeeRequest, configInput EmployeeConfigInput, preview *EffectiveConfigPreview, workspaceFiles []WorkspaceFileForSyncRecord) map[string]any {
 	return redactRuntimeEventPayload(map[string]any{
 		"command_id":                  commandID,
 		"digital_employee_id":         employee.ID.String(),
@@ -815,6 +864,7 @@ func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRec
 		"node_id":                     preflight.NodeID,
 		"provider_type":               providerType,
 		"provider_run_protocol":       providerRunProtocol,
+		"agent_home_dir":              instance.AgentHomeDir,
 		"team_config_revision_id":     preview.TeamConfigRevisionID.String(),
 		"employee_config_revision_id": preview.EmployeeConfigRevisionID.String(),
 		"governance_snapshot":         cloneMap(preflight.GovernanceSnapshot),
@@ -831,7 +881,118 @@ func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRec
 		"output_contract_addendum":    cloneMap(configInput.OutputContractAddendum),
 		"employee_metadata":           cloneMap(employee.Metadata),
 		"execution_instance_ref":      instance.ID.String(),
+		"workspace_files":             runtimeWorkspaceFilesPayload(workspaceFiles),
+		"skills":                      stringsToAnySlice(stringList(configInput.CapabilitySelection["enabled_skills"])),
+		"mcp_servers":                 stringsToAnySlice(stringList(configInput.CapabilitySelection["enabled_mcp_servers"])),
 	})
+}
+
+func canonicalEmployeeHome(workspaceBaseDir string, teamID, digitalEmployeeID uuid.UUID) string {
+	base := strings.TrimRight(strings.TrimSpace(workspaceBaseDir), "/")
+	return base + "/teams/" + teamID.String() + "/employees/" + digitalEmployeeID.String()
+}
+
+func normalizeWorkspaceFilePath(path string) (string, error) {
+	value := strings.TrimSpace(path)
+	if value == "" || strings.HasPrefix(value, "/") || strings.HasSuffix(value, "/") {
+		return "", fmt.Errorf("%w: invalid workspace file path", ErrInvalidInput)
+	}
+	if strings.Contains(value, "\\") || strings.Contains(value, "\x00") {
+		return "", fmt.Errorf("%w: invalid workspace file path", ErrInvalidInput)
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return "", fmt.Errorf("%w: invalid workspace file path", ErrInvalidInput)
+		}
+	}
+	if value == "CLAUDE.md" || strings.HasPrefix(value, ".claude/") || strings.HasPrefix(value, ".opencode/") || strings.HasPrefix(value, ".git/") || strings.HasPrefix(value, ".superteam/") {
+		return "", fmt.Errorf("%w: workspace file path is reserved", ErrInvalidInput)
+	}
+	return value, nil
+}
+
+func sha256Hex(content string) string {
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:])
+}
+
+func buildDefaultAgentsContent(employee DigitalEmployeeRecord, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) string {
+	var builder strings.Builder
+	builder.WriteString("You are an agent at SuperTeam.\n\n")
+	builder.WriteString("# Execution Contract\n\n")
+	builder.WriteString("- Work as digital employee: ")
+	builder.WriteString(employee.Name)
+	builder.WriteString("\n- Role: ")
+	builder.WriteString(employee.Role)
+	builder.WriteString("\n- Keep outputs aligned with the approved team and employee configuration.\n")
+	builder.WriteString("- Ask for human approval before high-risk or ambiguous actions.\n")
+	builder.WriteString("- Persist durable results through platform artifacts, evidence, or structured writeback.\n")
+	if preview != nil {
+		builder.WriteString("\n# Active Configuration\n\n")
+		builder.WriteString("- Team config revision: ")
+		builder.WriteString(preview.TeamConfigRevisionID.String())
+		builder.WriteString("\n- Employee config revision: ")
+		builder.WriteString(preview.EmployeeConfigRevisionID.String())
+		builder.WriteString("\n")
+	}
+	if len(configInput.OutputContractAddendum) > 0 {
+		builder.WriteString("\n# Output Contract Addendum\n\n")
+		builder.WriteString("Additional output contract data is governed by the Control Plane effective configuration.\n")
+	}
+	return builder.String()
+}
+
+func workspaceFileForSyncFromDefault(file WorkspaceFileRecord, revision WorkspaceFileRevisionRecord) WorkspaceFileForSyncRecord {
+	return WorkspaceFileForSyncRecord{
+		FileID:            file.ID,
+		TenantID:          file.TenantID,
+		TeamID:            file.TeamID,
+		DigitalEmployeeID: file.DigitalEmployeeID,
+		Path:              file.Path,
+		FileRole:          file.FileRole,
+		MimeType:          file.MimeType,
+		SyncPolicy:        file.SyncPolicy,
+		FileMetadata:      cloneMap(file.Metadata),
+		RevisionID:        revision.ID,
+		RevisionNumber:    revision.RevisionNumber,
+		ContentText:       revision.ContentText,
+		ContentHash:       revision.ContentHash,
+		SizeBytes:         revision.SizeBytes,
+		StorageBackend:    revision.StorageBackend,
+		ObjectKey:         cloneStringPtr(revision.ObjectKey),
+		RevisionMetadata:  cloneMap(revision.Metadata),
+	}
+}
+
+func runtimeWorkspaceFilesPayload(files []WorkspaceFileForSyncRecord) []any {
+	out := make([]any, 0, len(files))
+	for _, file := range files {
+		out = append(out, map[string]any{
+			"file_id":           file.FileID.String(),
+			"revision_id":       file.RevisionID.String(),
+			"path":              file.Path,
+			"file_role":         file.FileRole,
+			"mime_type":         file.MimeType,
+			"sync_policy":       file.SyncPolicy,
+			"revision_number":   file.RevisionNumber,
+			"content_text":      file.ContentText,
+			"content_hash":      file.ContentHash,
+			"size_bytes":        file.SizeBytes,
+			"storage_backend":   file.StorageBackend,
+			"object_key":        stringPtrValue(file.ObjectKey),
+			"file_metadata":     cloneMap(file.FileMetadata),
+			"revision_metadata": cloneMap(file.RevisionMetadata),
+		})
+	}
+	return out
+}
+
+func stringsToAnySlice(values []string) []any {
+	out := make([]any, 0, len(values))
+	for _, value := range values {
+		out = append(out, value)
+	}
+	return out
 }
 
 func provisioningErrorWithAbort(cause error, abortErr error) error {
@@ -1510,6 +1671,21 @@ func trimOptionalString(value *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func cloneStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
+}
+
+func stringPtrValue(value *string) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 func cloneMap(value map[string]any) map[string]any {

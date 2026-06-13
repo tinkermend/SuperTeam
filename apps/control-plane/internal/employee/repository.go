@@ -20,6 +20,11 @@ type Repository interface {
 	UpdateDigitalEmployeeStatus(ctx context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error)
 	UpsertDigitalEmployeeExecutionInstance(ctx context.Context, params UpsertExecutionInstanceParams) (DigitalEmployeeExecutionInstanceRecord, error)
 	GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx context.Context, tenantID, employeeID uuid.UUID) (DigitalEmployeeExecutionInstanceRecord, error)
+	CreateWorkspaceFile(ctx context.Context, params CreateWorkspaceFileParams) (WorkspaceFileRecord, error)
+	CreateWorkspaceFileRevision(ctx context.Context, params CreateWorkspaceFileRevisionParams) (WorkspaceFileRevisionRecord, error)
+	ActivateWorkspaceFileRevision(ctx context.Context, tenantID, fileID, revisionID uuid.UUID) (WorkspaceFileRecord, error)
+	ListWorkspaceFilesForSync(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error)
+	UpsertWorkspaceFileSync(ctx context.Context, params UpsertWorkspaceFileSyncParams) error
 	CreateRuntimeCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error
 	WaitForRuntimeCommandCompletion(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeCommandReceipt, error)
 	AbortProvisionedDigitalEmployee(ctx context.Context, tenantID, employeeID, executionInstanceID uuid.UUID, reason string) error
@@ -96,6 +101,47 @@ type CreateEffectiveConfigParams struct {
 	Status                   EffectiveConfigStatus
 	ApprovedBy               *uuid.UUID
 	ApprovedAt               *time.Time
+}
+
+type CreateWorkspaceFileParams struct {
+	TenantID          uuid.UUID
+	TeamID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	Path              string
+	FileRole          string
+	MimeType          string
+	SyncPolicy        string
+	Status            string
+	Metadata          map[string]any
+	CreatedBy         *uuid.UUID
+}
+
+type CreateWorkspaceFileRevisionParams struct {
+	TenantID       uuid.UUID
+	FileID         uuid.UUID
+	RevisionNumber int32
+	ContentText    string
+	ContentHash    string
+	SizeBytes      int32
+	StorageBackend string
+	ObjectKey      *string
+	CreatedBy      *uuid.UUID
+	ChangeNote     *string
+	Metadata       map[string]any
+}
+
+type UpsertWorkspaceFileSyncParams struct {
+	TenantID            uuid.UUID
+	DigitalEmployeeID   uuid.UUID
+	ExecutionInstanceID uuid.UUID
+	FileID              uuid.UUID
+	RevisionID          uuid.UUID
+	RuntimeNodeID       uuid.UUID
+	Status              string
+	SyncedHash          *string
+	ErrorMessage        *string
+	LastCommandID       *string
+	LastSyncedAt        *time.Time
 }
 
 type DigitalEmployeeRecord struct {
@@ -177,4 +223,57 @@ type DigitalEmployeeEffectiveConfigRecord struct {
 	RevokedAt                *time.Time
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
+}
+
+type WorkspaceFileRecord struct {
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	TeamID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	Path              string
+	FileRole          string
+	MimeType          string
+	SyncPolicy        string
+	CurrentRevisionID *uuid.UUID
+	Status            string
+	Metadata          map[string]any
+	CreatedBy         *uuid.UUID
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+type WorkspaceFileRevisionRecord struct {
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	FileID         uuid.UUID
+	RevisionNumber int32
+	ContentText    string
+	ContentHash    string
+	SizeBytes      int32
+	StorageBackend string
+	ObjectKey      *string
+	CreatedBy      *uuid.UUID
+	CreatedAt      time.Time
+	ChangeNote     *string
+	Metadata       map[string]any
+}
+
+type WorkspaceFileForSyncRecord struct {
+	FileID            uuid.UUID
+	TenantID          uuid.UUID
+	TeamID            uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	Path              string
+	FileRole          string
+	MimeType          string
+	SyncPolicy        string
+	FileMetadata      map[string]any
+	RevisionID        uuid.UUID
+	RevisionNumber    int32
+	ContentText       string
+	ContentHash       string
+	SizeBytes         int32
+	StorageBackend    string
+	ObjectKey         *string
+	RevisionMetadata  map[string]any
 }
