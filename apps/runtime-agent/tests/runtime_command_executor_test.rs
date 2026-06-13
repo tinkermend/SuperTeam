@@ -188,6 +188,11 @@ fn session_command_full(
     }
 }
 
+fn with_provider_type(mut command: RuntimeCommand, provider_type: &str) -> RuntimeCommand {
+    command.payload["provider_type"] = serde_json::Value::String(provider_type.to_string());
+    command
+}
+
 fn workspace_file(content: &str) -> serde_json::Value {
     serde_json::json!({
         "file_id": "55555555-5555-4555-8555-555555555555",
@@ -315,6 +320,21 @@ async fn wait_for_status(runs: &RuntimeRunStore, run_id: &str, expected: RunStat
         "run {run_id} did not reach {:?}; latest status: {:?}",
         expected, snapshot.status
     );
+}
+
+async fn wait_for_run_status(
+    runs: &RuntimeRunStore,
+    run_id: &str,
+    status: RunStatus,
+) -> Option<RunSnapshot> {
+    for _ in 0..150 {
+        let snapshot = runs.get_run(run_id).await?;
+        if snapshot.status == status {
+            return Some(snapshot);
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    None
 }
 
 async fn wait_for_latest_provider_session(
@@ -479,6 +499,90 @@ async fn provision_instance_materializes_team_employee_home() {
     assert!(home.join(".claude").is_dir());
     assert!(home.join("CLAUDE.md").exists());
     assert!(!home.join("state").exists());
+}
+
+#[tokio::test]
+async fn start_session_rejects_disabled_codex_provider() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"system","session_id":"unused"}'
+"#,
+    );
+    let executor = configure_runtime(&temp, fake_claude);
+    let home = prepare_employee_home(&temp);
+    let command = with_provider_type(
+        session_command_in_home(
+            &home,
+            "cmd-codex-disabled",
+            RuntimeCommandType::StartSession,
+            "new",
+            None,
+            Some("hello"),
+            None,
+        ),
+        "codex",
+    );
+
+    let error = executor
+        .handle_command(command)
+        .await
+        .expect_err("disabled codex should fail");
+
+    assert!(error.to_string().contains("Codex provider is disabled"));
+}
+
+#[tokio::test]
+async fn start_session_runs_codex_provider() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_codex = make_script(
+        temp.path(),
+        "fake-codex",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"session","session_id":"codex-runtime-session"}'
+printf '%s\n' '{"type":"message.delta","delta":"hello from codex runtime"}'
+printf '%s\n' '{"type":"turn.completed","summary":"done"}'
+"#,
+    );
+    let mut config = RuntimeConfig::default();
+    config.runs.log_dir = temp.path().join("run-logs");
+    config.workspace.base_dir = temp.path().join("workspaces");
+    config.providers.claude_code.enabled = false;
+    config.providers.claude_code.binary_path = temp.path().join("missing-claude");
+    config.providers.opencode.enabled = false;
+    config.providers.opencode.binary_path = temp.path().join("missing-opencode");
+    config.providers.codex.enabled = true;
+    config.providers.codex.binary_path = fake_codex;
+    let executor = RuntimeCommandExecutor::new(config);
+    let home = prepare_employee_home(&temp);
+    let command = with_provider_type(
+        session_command_in_home(
+            &home,
+            "cmd-codex-start",
+            RuntimeCommandType::StartSession,
+            "new",
+            None,
+            Some("hello"),
+            None,
+        ),
+        "codex",
+    );
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("codex command accepted");
+    let run_id = outcome.run_id.expect("run id");
+    let final_snapshot = wait_for_run_status(&executor.runs(), &run_id, RunStatus::Completed)
+        .await
+        .expect("completed codex run");
+
+    assert_eq!(
+        final_snapshot.provider_session_id.as_deref(),
+        Some("codex-runtime-session")
+    );
 }
 
 #[tokio::test]

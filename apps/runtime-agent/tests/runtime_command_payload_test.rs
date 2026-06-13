@@ -68,6 +68,18 @@ fn parses_opencode_provider_kind() {
 }
 
 #[test]
+fn parses_codex_provider_kind() {
+    let mut payload = valid_payload();
+    payload["provider_type"] = json!("codex");
+
+    let parsed =
+        RuntimeSessionCommandPayload::from_command(&command(payload)).expect("valid codex payload");
+
+    assert_eq!(parsed.provider_type, "codex");
+    assert_eq!(parsed.provider_kind(), "codex");
+}
+
+#[test]
 fn rejects_local_provider_kind_as_provider_type() {
     let mut payload = valid_payload();
     payload["provider_type"] = json!("claude");
