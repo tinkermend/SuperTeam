@@ -1,6 +1,6 @@
 use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::io::{ErrorKind, Write};
+use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
@@ -49,15 +49,10 @@ pub fn provider_home_kind(provider_type: &str) -> Result<ProviderHomeKind> {
 pub fn materialize_workspace(
     plan: WorkspaceMaterializationPlan,
 ) -> Result<WorkspaceMaterializationResult> {
-    fs::create_dir_all(&plan.agent_home_dir).with_context(|| {
-        format!(
-            "failed to create agent home directory {}",
-            plan.agent_home_dir.display()
-        )
-    })?;
-    fs::create_dir_all(
-        plan.agent_home_dir
-            .join(provider_private_dir(plan.provider_home)),
+    ensure_real_workspace_root(&plan.agent_home_dir)?;
+    ensure_workspace_directory(
+        &plan.agent_home_dir,
+        provider_private_dir(plan.provider_home),
     )?;
 
     let mut synced_files = Vec::new();
@@ -91,7 +86,7 @@ pub fn materialize_workspace(
             );
         }
 
-        atomic_write(&plan.agent_home_dir.join(&path), content.as_bytes())?;
+        atomic_write_workspace_file(&plan.agent_home_dir, &path, content.as_bytes())?;
         if path == "AGENTS.md" {
             has_agents_file = true;
         }
@@ -105,7 +100,7 @@ pub fn materialize_workspace(
 
     if has_agents_file {
         let agents_content = fs::read(plan.agent_home_dir.join("AGENTS.md"))?;
-        atomic_write(&plan.agent_home_dir.join("CLAUDE.md"), &agents_content)?;
+        atomic_write_workspace_file(&plan.agent_home_dir, "CLAUDE.md", &agents_content)?;
     }
 
     Ok(WorkspaceMaterializationResult {
@@ -127,7 +122,7 @@ pub fn validate_workspace_path(path: &str) -> Result<String> {
     if path.contains('\\') || path.contains('\0') {
         anyhow::bail!("workspace file path contains an unsafe character: {path}");
     }
-    if path == "CLAUDE.md" {
+    if path == "CLAUDE.md" || path.starts_with("CLAUDE.md/") {
         anyhow::bail!("CLAUDE.md is generated compatibility material");
     }
 
@@ -156,11 +151,16 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     out
 }
 
-pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| anyhow::anyhow!("workspace file path has no parent: {}", path.display()))?;
-    fs::create_dir_all(parent)?;
+    if !parent.is_dir() {
+        anyhow::bail!(
+            "workspace file parent is not a directory: {}",
+            parent.display()
+        );
+    }
 
     let temp_path = unique_temp_path(path);
     let write_result = (|| -> Result<()> {
@@ -186,6 +186,144 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     }
 
     write_result
+}
+
+fn atomic_write_workspace_file(
+    agent_home_dir: &Path,
+    relative_path: &str,
+    bytes: &[u8],
+) -> Result<()> {
+    let target = prepare_workspace_target(agent_home_dir, relative_path)?;
+    atomic_write(&target, bytes)
+}
+
+fn prepare_workspace_target(agent_home_dir: &Path, relative_path: &str) -> Result<PathBuf> {
+    let relative = Path::new(relative_path);
+    if let Some(parent) = relative.parent() {
+        ensure_workspace_directory_components(agent_home_dir, parent)?;
+    }
+
+    let target = agent_home_dir.join(relative);
+    reject_symlink_file_target(&target)?;
+    Ok(target)
+}
+
+fn ensure_real_workspace_root(agent_home_dir: &Path) -> Result<()> {
+    match fs::symlink_metadata(agent_home_dir) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() {
+                anyhow::bail!(
+                    "agent home directory must not be a symlink: {}",
+                    agent_home_dir.display()
+                );
+            }
+            if !metadata.is_dir() {
+                anyhow::bail!(
+                    "agent home path is not a directory: {}",
+                    agent_home_dir.display()
+                );
+            }
+            Ok(())
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            fs::create_dir_all(agent_home_dir).with_context(|| {
+                format!(
+                    "failed to create agent home directory {}",
+                    agent_home_dir.display()
+                )
+            })?;
+            ensure_real_workspace_root(agent_home_dir)
+        }
+        Err(error) => Err(error).with_context(|| {
+            format!(
+                "failed to inspect agent home directory {}",
+                agent_home_dir.display()
+            )
+        }),
+    }
+}
+
+fn ensure_workspace_directory(agent_home_dir: &Path, relative_dir: &str) -> Result<()> {
+    ensure_workspace_directory_components(agent_home_dir, Path::new(relative_dir))
+}
+
+fn ensure_workspace_directory_components(agent_home_dir: &Path, relative_dir: &Path) -> Result<()> {
+    let mut current = agent_home_dir.to_path_buf();
+    for component in relative_dir.components() {
+        match component {
+            Component::Normal(segment) => {
+                current.push(segment);
+                ensure_real_directory_component(&current)?;
+            }
+            Component::CurDir => {}
+            _ => anyhow::bail!(
+                "workspace directory path contains an unsafe component: {}",
+                relative_dir.display()
+            ),
+        }
+    }
+    Ok(())
+}
+
+fn ensure_real_directory_component(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() {
+                anyhow::bail!(
+                    "workspace directory component must not be a symlink: {}",
+                    path.display()
+                );
+            }
+            if !metadata.is_dir() {
+                anyhow::bail!(
+                    "workspace directory component is not a directory: {}",
+                    path.display()
+                );
+            }
+            Ok(())
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => match fs::create_dir(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                ensure_real_directory_component(path)
+            }
+            Err(error) => Err(error).with_context(|| {
+                format!(
+                    "failed to create workspace directory component {}",
+                    path.display()
+                )
+            }),
+        },
+        Err(error) => Err(error).with_context(|| {
+            format!(
+                "failed to inspect workspace directory component {}",
+                path.display()
+            )
+        }),
+    }
+}
+
+fn reject_symlink_file_target(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() {
+                anyhow::bail!(
+                    "workspace file target must not be a symlink: {}",
+                    path.display()
+                );
+            }
+            if metadata.is_dir() {
+                anyhow::bail!(
+                    "workspace file target must not be a directory: {}",
+                    path.display()
+                );
+            }
+            Ok(())
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error)
+            .with_context(|| format!("failed to inspect workspace file target {}", path.display())),
+    }
 }
 
 fn reject_component(component: &str, full_path: &str) -> Result<()> {
