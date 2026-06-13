@@ -105,7 +105,9 @@ tmp/
 temp/
 .agents/
 .claude/
-.codex/
+.codex/*
+!.codex/skills/
+!.codex/skills/**
 skills-lock.json
 
 # Local/private notes and sensitive documents.

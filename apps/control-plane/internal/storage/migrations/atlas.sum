@@ -1,4 +1,4 @@
-h1:r0LkWLRLMQznA2FC5BLz9mFHECgif5u3oyyscJ7PiHI=
+h1:kAiSsjiVtcOdfv15dPVZEiL6YMO651pf4wcJST7RlaU=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -14,4 +14,4 @@ h1:r0LkWLRLMQznA2FC5BLz9mFHECgif5u3oyyscJ7PiHI=
 013_project_management_v0.sql h1:zDEArlHvrEkPId8QGsAYVrK0A3zalIepTeEdPVvDfHU=
 014_project_management_v1_temporal_coordination.sql h1:3okElkMuXiMSdKygC7OFhK/EAf93cWXNmAX8pGJ8V0I=
 015_project_management_v2_governance_archive.sql h1:dWmYqLnNkbM2Jgmm7Bfn9SLbVeRYAf9EkdTDnG44ZLU=
-016_inbox_items.sql h1:56X34gp0m9B+23COzsKZkUB05boQOBVeVuXK4ssTGEY=
+016_inbox_items.sql h1:zGwTDgHpvRieriVJfyyeCT/HE/6exFcIBt0eJdIObEw=

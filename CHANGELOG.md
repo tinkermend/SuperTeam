@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-13 10:58：进一步瘦身 `AGENTS.md`，移除阶段性参考、完整技术清单、常用命令和重复收尾检查，将宪法收敛为项目定位、架构职责边界、主栈边界、数据库入口、目录边界和核心协作不变量。
+- 2026-06-13 10:53：精简 `AGENTS.md` 目录边界，删除完整目录树，保留 Web、Control Plane、Runtime、contracts、connectors 和 HTML 原型的关键放置规则，降低宪法上下文噪音。
+- 2026-06-13 10:47：将 `$superteam-completion-check` 从全局 Codex skills 迁移为项目内 `.codex/skills/superteam-completion-check`，并调整 `.gitignore` 仅允许项目 skills 进入版本控制，避免 SuperTeam 专用规则污染其他仓库。
+- 2026-06-13 10:45：扩展 `$superteam-completion-check`，从 `AGENTS.md` 提炼通用收尾检查项，覆盖变更日志、生成代码、数据库迁移、前端状态保持、真实浏览器验证、分层边界和项目/审批/人类决策不变量。
+- 2026-06-13 10:43：新增本地 Codex skill `$superteam-completion-check`，将 SuperTeam 任务完成前的真实链路、运行中服务、数据库迁移和交付声明检查从 `AGENTS.md` 长规则中提炼为可复用收尾流程；`AGENTS.md` 改为短触发规则。
+- 2026-06-13 10:36：收紧 `AGENTS.md` 开发宪法，要求跨层功能完成前区分 mock/局部验证与真实链路验证，确认运行中服务已加载当前代码，并验证数据库迁移实际落库后才能声明功能可用。
+- 2026-06-13 10:29：修正收件箱 `016_inbox_items.sql` 对应的 Atlas checksum，并完成真实 Control Plane 链路验证，避免迁移未落库时 `/inbox` 页面长期停留在加载态。
 - 2026-06-12 19:04：Web Browser-mode 测试脚本改为按最低支持 revision 选择本机已安装的最新 `chromium_headless_shell-*` 可执行文件，避免测试环境被锁死到单个 Playwright 缓存 revision。
 - 2026-06-12 18:38：优化数字员工创建页专业模板卡片的宽屏自适应布局，模板区在大屏下切换为三列展示，并移除与模板选择无关的头像堆叠，改为展示默认角色等后端模板字段。
 - 2026-06-12 18:13：数字员工创建页改为“选择路径/专业模板/预检摘要”与“员工画像蓝图配置”两段式工作台，并让创建候选接口返回 `creation_checks` 服务端预检摘要，保证前端预检展示与 Control Plane 创建校验口径一致。

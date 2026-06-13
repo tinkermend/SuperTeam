@@ -6,30 +6,17 @@ SuperTeam 目标是把 AI 执行能力、流程调度、人类审批、上下文
 
 项目不是只表示软件交付项目，也可以表示一次具体问题场景的闭环。项目是目标、负责人、虚拟协调线程、任务、证据、预算、审批和验收结论的聚合容器；流程编排是驱动项目运行的模板，不替代项目作为业务事实入口。
 
-- 当前项目功能设计部分可参考 /Users/wangpei/src/github/agentic/paperclip 项目,在一些设计理念上 当前项目与这个项目有一些是相通的
+## 架构职责边界
 
-## 架构分层
-
-- **Console Layer**：第一阶段只实现 Web 控制台主链路。Desktop 仅保留空壳或占位，暂不做业务适配；待 Web 主链路完整后，再作为原生壳承载通知和快速查看，不承担本机执行能力。
-- **Control Plane Layer**：Go 后端。负责任务、审批、审计、流程调度、上下文、工件、Runtime 注册和外部能力注册。对 Console 提供 API，也对 Runtime Agent 提供任务和心跳 API
-- **Runtime Layer**：部署在服务器节点、开发者机器或客户侧执行机上的 Rust daemon。负责领取任务、维护租约、管理本机 Provider 进程/会话、工作目录、日志、工件和执行槽位；Runtime 对外 HTTP/WS contract 参考 `AionUi` 的 WebUI/remote agent host 思路，但不承载控制台 UI 和业务策略,一个runtime agent 管理多个 Provider 进程/会话。
+- **Console Layer**：Web 控制台是管理、观察、审批和验收入口；不得承载本机执行能力、业务事实源或长期业务状态。
+- **Control Plane Layer**：Go 后端负责业务状态、任务、审批、审计、流程调度、上下文、工件、Runtime 注册和外部能力注册。对 Console 提供 API，也对 Runtime Agent 提供任务和心跳 API。
+- **Runtime Layer**：部署在服务器节点、开发者机器或客户侧执行机上的 daemon。负责领取任务、维护租约、管理本机 Provider 进程/会话、工作目录、日志、工件和执行槽位；不承载控制台 UI、业务策略和长期业务状态。
 - **Provider Layer**：Claude Code、OpenCode、Codex、Pi 等具体执行器。它们只在 Runtime Agent 管理下工作，不承载平台级状态；Provider 协议必须保持语言无关，使用结构化 schema 描述输入、事件、结果、工件和错误，Rust 只是一种 adapter 实现语言。
 - **Capability Integration Layer**：外部能力接入层。平台只负责外部能力的注册、授权、HTTP 调用和审计。
 
-## 技术选型
+## 主栈边界
 
-- Web：shadcn admin 脚手架 + React + shadcn/ui + Radix UI + Tailwind CSS
-- Control Plane：Go + chi/net/http；REST/OpenAPI 为主，使用 `oapi-codegen` 生成契约与客户端
-- Runtime Agent：Rust + Tokio + clap；HTTP claim + lease；WebSocket 回传实时事件；对外 HTTP/WS contract 参考 `AionUi` 的 WebUI/remote agent host；本机 Provider 通过语言无关的 `provider` contract 接入，Claude Code 和 OpenCode adapter 第一版参考 `desktop-cc-gui` 的 Rust/Tauri 后端会话、命令构造和事件桥；NATS 后续在多节点事件总线需要时再引入
-- 工作流：Temporal
-- 数据层：PostgreSQL 为主存储；Redis 用于缓存、唤醒和轻量队列；S3 兼容存储用于日志、报告、附件和执行产物
-- Go 数据访问：pgx + sqlc + Atlas
-- 权限：先保留统一授权接口，避免业务代码散落权限判断；企业级授权目标为 OpenFGA
-- 前端状态与交互：TanStack Query、TanStack Table、Monaco Editor、xterm.js
-- 表单校验：React Hook Form + Zod
-- 图标：lucide-react
-- 测试：Vitest、Playwright、Go test + testify、Rust cargo test、Temporal workflow test suite
-- 流程图: xyflow
+- 技术栈以当前 workspace、契约和构建脚本为准；不得在没有明确共识时引入替代主栈的并行框架或重复基础设施。
 
 ## 数据库设计规则
 
@@ -37,84 +24,29 @@ SuperTeam 目标是把 AI 执行能力、流程调度、人类审批、上下文
 
 ## 目录边界
 
-- html 原型设计放在 `docs/prototypes/` 目录下
-
-```text
-apps/
-  web/             # Web 控制台入口
-  control-plane/   # Control Plane Go 服务
-    cmd/control-plane/
-    internal/
-      api/          # REST/OpenAPI 路由、请求响应适配
-      auth/         # 登录、会话、访问控制入口
-      tenant/       # 租户、成员、工作区
-      employee/     # 数字员工定义、技能绑定、权限边界
-      project/      # 项目、项目成员、需求、项目任务、协调策略
-      task/         # 任务生命周期、状态流转
-      workflow/     # Temporal 项目协调 Workflow、Activity、Worker
-      approval/     # 人类审批、暂停/恢复
-      runtime/      # Runtime Agent 注册、心跳、claim、lease
-      artifact/     # 工件、日志、报告
-      audit/        # 审计事件、操作记录
-      capability/   # 外部能力注册、授权、HTTP 调用
-      policy/       # 风险策略、审批策略、权限判断
-      storage/      # DB、Redis、S3 封装
-      config/       # 配置加载
-  runtime-agent/   # Rust Runtime Agent daemon
-    src/
-      providers/    # Claude Code / OpenCode / Codex 等 Provider 适配
-      controlplane/ # 调用 Control Plane 的客户端，按实际需要创建
-      lease/        # claim、renew、heartbeat、任务租约，按实际需要创建
-      slots/        # 本机并发执行槽位，按实际需要创建
-      workspace/    # 本机工作目录、仓库、文件权限，按实际需要创建
-      artifact/     # 工件收集、上传，按实际需要创建
-      secrets/      # 本机密钥读取和脱敏，按实际需要创建
-      health/       # 节点健康检查、环境探测，按实际需要创建
-
-contracts/
-  control-plane/   # Console <-> Control Plane REST/OpenAPI 契约
-  runtime/         # Runtime Agent <-> Control Plane HTTP/WS 契约
-  provider/        # Runtime Agent <-> Provider 契约
-
-connectors/
-  http/            # 通用 HTTP 外部能力接入
-  custom/          # 客户专属连接器隔离放置
-```
+- Web 控制台代码放在 `apps/web/`，不把 Control Plane、Runtime 或 Provider 的业务状态搬进前端。
+- Control Plane Go 服务放在 `apps/control-plane/`，负责业务状态、策略、审批、审计、调度和 API，不直接执行本地命令。
+- Runtime Agent 放在 `apps/runtime-agent/`，只负责节点执行、租约、Provider 进程/会话、工作目录、日志和工件。
+- API 契约放在 `contracts/`；修改契约后必须走生成与契约验证流程。
+- 外部能力接入放在 `connectors/` 或 Capability 配置边界内，客户专属逻辑不得硬编码进核心流程。
+- HTML 原型放在 `docs/prototypes/`。
 
 ## 协作规则
 
 - Project 是面向具体目标或问题场景的业务闭环容器，不在核心模型里定义封闭项目类型枚举。场景差异通过场景模板、Workflow Template、项目画像、标签、Policy 和服务端注册校验表达。
 - 一个 Project 绑定一个虚拟协调线程。虚拟协调线程由 Temporal Workflow 承载（WorkflowID = `project-coordinator:{project_id}`），是项目内置的独占协调状态机，不是数字员工实体，不出现在数字员工列表中。它通过 Signal 接收事件、串行处理协调决策、并发分派数字员工执行任务，所有协调动作必须产出结构化的 RouteDecision、ProjectTask 和审计记录。
 - 每个项目必须绑定固定人类负责人（human_owner），并可绑定 leader 或验收人。人类负责人负责最终业务判断、审批、驳回、补证要求、汇报接收和验收结论。
-- 人类员工和数字员工都是项目成员，但职责不同。人类可以作为负责人、审批人、验收人、专家执行者或观察者；数字员工只作为项目内可调度的执行员工，从项目数字员工池中选取。不要把人类管理职责建模成数字员工能力，也不要让数字员工绕过人类决策。
-- Agent 之间不直接自由聊天，通过结构化对象协作；每个阶段都必须产出可持久化的工件、证据、决策或交接包。项目协调设计详见 `docs/design/projectManager/temporal-project-coordination-design.md`，旧协调员设计（`docs/design/global/project-coordinator-control-plane.md`）中的原则保留，但「项目协调员数字员工」口径已被「虚拟协调线程」替代。
+- 人类员工和数字员工都是项目成员，但职责不同。人类可以作为负责人、审批人、验收人、或观察者；数字员工只作为项目内可调度的执行员工，从项目数字员工池中选取。不要把人类管理职责建模成数字员工能力，也不要让数字员工绕过人类决策。
+- Agent 之间不直接自由聊天，通过结构化对象协作；每个阶段都必须产出可持久化的工件、证据、决策或交接包。
 - 人类决策是一等对象。高风险动作、需求歧义、权限不足、上线发布、删除写入、测试失败后的业务判断等场景必须暂停并等待确认。
 - 全局上下文由控制平面持久化；执行时只注入当前任务需要的上下文切片；关键结论必须结构化回写。
 - 客户差异不要进入核心流程代码，应放入 Tenant Profile、Connector、Semantic Mapping、Capability 配置和 Policy。
 - 外部能力类型和 Provider 类型不要在业务核心里依赖封闭枚举；以注册表和服务端校验为准。
-- Provider 接入优先走统一且语言无关的 `provider` contract；当 Provider 协议不完整时，再使用 CLI、stdio、JSON stream、PTY 或 HTTP adapter 兜底。Claude Code 和 OpenCode adapter 第一版参考 `desktop-cc-gui`，但不得把 `desktop-cc-gui` 的 UI、Tauri command 边界或本地状态模型搬进平台核心。
+- Provider 接入优先走统一且语言无关的 `provider` contract；当 Provider 协议不完整时，再使用 CLI、stdio、JSON stream、PTY 或 HTTP adapter 兜底。
 - 控制平面不直接执行本地命令。Runtime Agent 只负责节点执行，不负责业务策略、人类审批策略和长期业务状态。
 
 ## 开发规则
 
-- 每次功能开发完成写 `CHANGELOG.md` 记录变更日志；每条新增变更必须带具体时间，格式为 `YYYY-MM-DD HH:mm`，默认使用本地 `Asia/Shanghai` 时间。
-- 需要写变更时间时，先运行 `TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M'`，使用命令实际输出，不手写估算时间。
-- 不要盲目猜测,如果有不确定的地方与人类进行沟通
-- 自我评估阶段性任务开发完成后选择性做好必要的功能测试,单元测试,回归测试,如果设计到前端页面布局,样式变更请做真实游览器访问截图验证
-- 页面前端样式设计风格请阅读`DESIGN.md`
-- 列表、表格、卡片工作台的筛选/排序/分页/Tab 切换必须区分首次加载与后台刷新；已有数据时禁止卸载主内容，只能做局部刷新提示。
-- React Query 等数据请求在 queryKey 变化时应默认保留旧数据（如 `placeholderData: keepPreviousData`），除非业务明确要求清空。
-- 本地 UI 状态（选中项、展开项、当前视图）不得因 refetch 重置；仅当新数据不再包含该对象时才回退到默认状态。
-
-## 常用命令与验证流程
-
-- 本地 Web、Control Plane、Runtime Agent 分别使用根脚本启动：`pnpm dev:web`、`pnpm dev:control-plane`、`pnpm dev:runtime-agent`；需要统一启停时使用 `scripts/dev-services.sh start|stop|restart|status [all|temporal|control-plane|web|runtime-agent]`。
-- 按变更范围选择验证门禁：前端用 `pnpm verify:web`，Control Plane 用 `pnpm verify:control-plane`，Runtime Agent 用 `pnpm verify:runtime-agent`；跨层或合并前使用 `pnpm verify:foundation`。
-- Web 测试使用 Vitest Browser headless；如本机缺少 Playwright Chromium，先运行 `pnpm --filter @superteam/web test:browser:install`，再运行相关测试或 `pnpm verify:web`。
-- 修改 `contracts/control-plane/openapi.yaml` 后运行 `pnpm generate:control-plane` 并执行 `pnpm verify:contracts`；不要手工编辑 `*.gen.go`。
-- 修改 sqlc 查询或数据库 schema 后，按 `DATABASE_DESIGN.md` 使用新的 forward migration，并运行 `make -C apps/control-plane generate-sqlc`；`pnpm generate:control-plane` 不能替代 sqlc 生成。
-- 数据库迁移验证使用 Control Plane Makefile：`DATABASE_URL=... make -C apps/control-plane migrate-status` 或 `migrate-up`。只有在已确认测试库可迁移和清理时，才设置 `TEST_DATABASE_URL`、`TEST_REDIS_URL` 运行 `apps/control-plane/test.sh` 或查询集成测试。
-
-## 其他规则
-
-- 编写的文档语言都以简体中文输出
+- 不要盲目猜测；如果存在无法从本地上下文确认且会影响架构或业务判断的不确定点，先与人类沟通。
+- 前端页面、布局或样式变更前必须阅读 `DESIGN.md`。
+- 每次功能、修复、合并或跨层联调任务收尾前，必须使用项目内 skill `$superteam-completion-check`（`.codex/skills/superteam-completion-check/SKILL.md`）做完成前检查；不得把 mock、组件测试、单元测试或构建通过表述为真实链路已验证。

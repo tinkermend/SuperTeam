@@ -1,0 +1,4 @@
+interface:
+  display_name: "SuperTeam Completion Check"
+  short_description: "SuperTeam 交付前公共验证清单"
+  default_prompt: "Use $superteam-completion-check before claiming a SuperTeam task is complete."
