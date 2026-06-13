@@ -131,6 +131,65 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 	}
 }
 
+func TestRunServiceCreateRunDispatchesStartSessionWithEmployeeHomeAndWorkspaceFiles(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	repo.workspaceFilesForSync = []WorkspaceFileForSyncRecord{{
+		FileID:            uuid.MustParse("55555555-5555-4555-8555-555555555555"),
+		TenantID:          runServiceTenantID,
+		TeamID:            repo.preflight.TeamID,
+		DigitalEmployeeID: runServiceEmployeeID,
+		Path:              "AGENTS.md",
+		FileRole:          "entrypoint",
+		MimeType:          "text/markdown",
+		SyncPolicy:        "auto",
+		RevisionID:        uuid.MustParse("66666666-6666-4666-8666-666666666666"),
+		RevisionNumber:    1,
+		ContentText:       "# Execution Contract\n",
+		ContentHash:       sha256Hex("# Execution Contract\n"),
+		SizeBytes:         int32(len([]byte("# Execution Contract\n"))),
+		StorageBackend:    "db",
+	}}
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+
+	req := validCreateRunServiceRequest()
+	req.Metadata = map[string]any{
+		"source":          "project_task_dispatch",
+		"project_id":      "33333333-3333-4333-8333-333333333333",
+		"project_task_id": "44444444-4444-4444-8444-444444444444",
+	}
+
+	run, err := service.CreateRun(context.Background(), req)
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
+	}
+
+	payload := commandPayload(t, dispatcher.commands[0].command)
+	if payload["run_id"] != run.ID.String() {
+		t.Fatalf("run id mismatch in payload: %#v", payload)
+	}
+	if payload["agent_home_dir"] != repo.preflight.AgentHomeDir {
+		t.Fatalf("expected preflight employee home %q, got %#v", repo.preflight.AgentHomeDir, payload["agent_home_dir"])
+	}
+	files, ok := payload["workspace_files"].([]any)
+	if !ok || len(files) != 1 {
+		t.Fatalf("expected AGENTS.md workspace file in start payload, got %#v", payload["workspace_files"])
+	}
+	file, ok := files[0].(map[string]any)
+	if !ok || file["path"] != "AGENTS.md" {
+		t.Fatalf("expected AGENTS.md workspace file payload, got %#v", files[0])
+	}
+	metadata := payload["metadata"].(map[string]any)
+	if metadata["project_id"] != "33333333-3333-4333-8333-333333333333" {
+		t.Fatalf("project metadata missing from start payload: %#v", metadata)
+	}
+}
+
 func TestCreateRunRejectsWhenDailyTokenBudgetExceeded(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()
@@ -791,21 +850,22 @@ var (
 )
 
 type fakeRunServiceRepository struct {
-	preflight           RunPreflight
-	activeRun           *DigitalEmployeeRun
-	run                 *DigitalEmployeeRun
-	runs                []*DigitalEmployeeRun
-	createdRun          *DigitalEmployeeRun
-	createdRunCount     int
-	createRunRequests   []CreateRunRecordRequest
-	statusUpdates       []UpdateRunStatusRequest
-	events              []CreateRunEventRecordRequest
-	runEvents           []RuntimeCommandEventWriteback
-	listRunEventsTaskID uuid.UUID
-	listRunEventsRunID  uuid.UUID
-	commandReceipt      *RuntimeCommandReceipt
-	commandReceipts     []CreateRuntimeCommandReceiptRequest
-	receiptUpdates      []UpdateRuntimeCommandReceiptRequest
+	preflight             RunPreflight
+	activeRun             *DigitalEmployeeRun
+	run                   *DigitalEmployeeRun
+	runs                  []*DigitalEmployeeRun
+	createdRun            *DigitalEmployeeRun
+	createdRunCount       int
+	createRunRequests     []CreateRunRecordRequest
+	statusUpdates         []UpdateRunStatusRequest
+	events                []CreateRunEventRecordRequest
+	runEvents             []RuntimeCommandEventWriteback
+	workspaceFilesForSync []WorkspaceFileForSyncRecord
+	listRunEventsTaskID   uuid.UUID
+	listRunEventsRunID    uuid.UUID
+	commandReceipt        *RuntimeCommandReceipt
+	commandReceipts       []CreateRuntimeCommandReceiptRequest
+	receiptUpdates        []UpdateRuntimeCommandReceiptRequest
 }
 
 func newFakeRunServiceRepository() *fakeRunServiceRepository {
@@ -862,6 +922,16 @@ func (f *fakeRunServiceRepository) ListRunEvents(_ context.Context, _ uuid.UUID,
 	f.listRunEventsTaskID = taskID
 	f.listRunEventsRunID = runID
 	return f.runEvents, nil
+}
+
+func (f *fakeRunServiceRepository) ListWorkspaceFilesForSync(_ context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error) {
+	out := make([]WorkspaceFileForSyncRecord, 0, len(f.workspaceFilesForSync))
+	for _, file := range f.workspaceFilesForSync {
+		if file.TenantID == tenantID && file.DigitalEmployeeID == digitalEmployeeID {
+			out = append(out, file)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeRunServiceRepository) CreateRun(_ context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error) {

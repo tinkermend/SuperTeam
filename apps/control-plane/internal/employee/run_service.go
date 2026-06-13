@@ -144,7 +144,11 @@ func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, re
 		return run, nil
 	}
 
-	payload := buildStartSessionPayload(req, objective, prompt, preflight, run)
+	workspaceFiles, err := s.repository.ListWorkspaceFilesForSync(ctx, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
+		return nil, fmt.Errorf("list workspace files for start session: %w", err)
+	}
+	payload := buildStartSessionPayload(req, objective, prompt, preflight, run, workspaceFiles)
 	receipt, err := s.repository.GetCommandReceipt(ctx, req.TenantID, run.CommandID)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {
@@ -562,10 +566,11 @@ func buildRunParams(req CreateDigitalEmployeeRunRequest, objective, prompt strin
 	}
 }
 
-func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun) map[string]any {
+func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, workspaceFiles []WorkspaceFileForSyncRecord) map[string]any {
 	return map[string]any{
 		"provider_run_protocol": providerRunProtocol,
 		"tenant_id":             req.TenantID.String(),
+		"team_id":               preflight.TeamID.String(),
 		"task_id":               run.TaskID.String(),
 		"run_id":                run.ID.String(),
 		"command_id":            run.CommandID,
@@ -589,6 +594,9 @@ func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, pr
 		"workspace_policy":      cloneMap(preflight.WorkspacePolicy),
 		"session_policy":        cloneMap(preflight.SessionPolicy),
 		"runtime_selector":      cloneMap(preflight.RuntimeSelector),
+		"workspace_files":       runtimeWorkspaceFilesPayload(workspaceFiles),
+		"skills":                emptyRuntimeSkillsPayload(),
+		"mcp_servers":           emptyRuntimeMCPServersPayload(),
 		"metadata":              cloneMap(req.Metadata),
 	}
 }

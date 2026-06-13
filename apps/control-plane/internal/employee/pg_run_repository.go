@@ -194,6 +194,10 @@ func (r *PgRunRepository) ListRunEvents(ctx context.Context, tenantID, taskID, r
 	return out, nil
 }
 
+func (r *PgRunRepository) ListWorkspaceFilesForSync(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error) {
+	return (&PgRepository{q: r.q}).ListWorkspaceFilesForSync(ctx, tenantID, digitalEmployeeID)
+}
+
 func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error) {
 	if req.TeamID == uuid.Nil {
 		return nil, fmt.Errorf("%w: team_id is required for digital employee run", ErrInvalidInput)

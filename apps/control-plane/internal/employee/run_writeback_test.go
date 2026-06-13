@@ -909,6 +909,10 @@ func (f *fakeRunWritebackRepository) ListRunEvents(context.Context, uuid.UUID, u
 	return nil, nil
 }
 
+func (f *fakeRunWritebackRepository) ListWorkspaceFilesForSync(context.Context, uuid.UUID, uuid.UUID) ([]WorkspaceFileForSyncRecord, error) {
+	return nil, nil
+}
+
 func (f *fakeRunWritebackRepository) CreateTaskEventIfAbsent(_ context.Context, req CreateRunEventRecordRequest) (bool, error) {
 	key := fmt.Sprintf("%s:%s:%d", req.TenantID, req.RunID, req.SequenceNumber)
 	if _, exists := f.taskEventKeys[key]; exists {

@@ -883,8 +883,8 @@ func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRec
 		"employee_metadata":           cloneMap(employee.Metadata),
 		"execution_instance_ref":      instance.ID.String(),
 		"workspace_files":             runtimeWorkspaceFilesPayload(workspaceFiles),
-		"skills":                      stringsToAnySlice(stringList(configInput.CapabilitySelection["enabled_skills"])),
-		"mcp_servers":                 stringsToAnySlice(stringList(configInput.CapabilitySelection["enabled_mcp_servers"])),
+		"skills":                      runtimeSkillsPayload(configInput.CapabilitySelection),
+		"mcp_servers":                 runtimeMCPServersPayload(configInput.CapabilitySelection),
 	})
 }
 
@@ -970,35 +970,122 @@ func workspaceFileForSyncFromDefault(file WorkspaceFileRecord, revision Workspac
 	}
 }
 
-func runtimeWorkspaceFilesPayload(files []WorkspaceFileForSyncRecord) []any {
-	out := make([]any, 0, len(files))
+type runtimeWorkspaceFilePayload struct {
+	FileID         string         `json:"file_id"`
+	RevisionID     string         `json:"revision_id"`
+	Path           string         `json:"path"`
+	FileRole       string         `json:"file_role"`
+	MimeType       string         `json:"mime_type"`
+	SyncPolicy     string         `json:"sync_policy"`
+	ContentHash    string         `json:"content_hash"`
+	SizeBytes      int32          `json:"size_bytes"`
+	StorageBackend string         `json:"storage_backend"`
+	ContentText    string         `json:"content_text"`
+	ObjectKey      string         `json:"object_key"`
+	Metadata       map[string]any `json:"metadata"`
+}
+
+type runtimeSkillPayload struct {
+	SkillID     string   `json:"skill_id"`
+	SkillKey    string   `json:"skill_key"`
+	RevisionID  string   `json:"revision_id"`
+	Files       []string `json:"files"`
+	ContentHash string   `json:"content_hash"`
+}
+
+type runtimeMCPServerPayload struct {
+	ServerID        string `json:"server_id"`
+	ServerKey       string `json:"server_key"`
+	Transport       string `json:"transport"`
+	ConfigRef       string `json:"config_ref"`
+	PermissionScope string `json:"permission_scope"`
+}
+
+func runtimeWorkspaceFilesPayload(files []WorkspaceFileForSyncRecord) []map[string]any {
+	out := make([]map[string]any, 0, len(files))
 	for _, file := range files {
+		objectKey := ""
+		if file.ObjectKey != nil {
+			objectKey = *file.ObjectKey
+		}
+		payload := runtimeWorkspaceFilePayload{
+			FileID:         file.FileID.String(),
+			RevisionID:     file.RevisionID.String(),
+			Path:           file.Path,
+			FileRole:       file.FileRole,
+			MimeType:       file.MimeType,
+			SyncPolicy:     file.SyncPolicy,
+			ContentHash:    file.ContentHash,
+			SizeBytes:      file.SizeBytes,
+			StorageBackend: file.StorageBackend,
+			ContentText:    file.ContentText,
+			ObjectKey:      objectKey,
+			Metadata: map[string]any{
+				"file":     cloneMap(file.FileMetadata),
+				"revision": cloneMap(file.RevisionMetadata),
+			},
+		}
 		out = append(out, map[string]any{
-			"file_id":           file.FileID.String(),
-			"revision_id":       file.RevisionID.String(),
-			"path":              file.Path,
-			"file_role":         file.FileRole,
-			"mime_type":         file.MimeType,
-			"sync_policy":       file.SyncPolicy,
-			"revision_number":   file.RevisionNumber,
-			"content_text":      file.ContentText,
-			"content_hash":      file.ContentHash,
-			"size_bytes":        file.SizeBytes,
-			"storage_backend":   file.StorageBackend,
-			"object_key":        stringPtrValue(file.ObjectKey),
-			"file_metadata":     cloneMap(file.FileMetadata),
-			"revision_metadata": cloneMap(file.RevisionMetadata),
+			"file_id":         payload.FileID,
+			"revision_id":     payload.RevisionID,
+			"path":            payload.Path,
+			"file_role":       payload.FileRole,
+			"mime_type":       payload.MimeType,
+			"sync_policy":     payload.SyncPolicy,
+			"content_hash":    payload.ContentHash,
+			"size_bytes":      payload.SizeBytes,
+			"storage_backend": payload.StorageBackend,
+			"content_text":    payload.ContentText,
+			"object_key":      payload.ObjectKey,
+			"metadata":        payload.Metadata,
 		})
 	}
 	return out
 }
 
-func stringsToAnySlice(values []string) []any {
-	out := make([]any, 0, len(values))
-	for _, value := range values {
-		out = append(out, value)
+func runtimeSkillsPayload(capabilitySelection map[string]any) []map[string]any {
+	keys := stringList(capabilitySelection["enabled_skills"])
+	out := make([]map[string]any, 0, len(keys))
+	for _, key := range keys {
+		payload := runtimeSkillPayload{
+			SkillKey: key,
+			Files:    []string{},
+		}
+		out = append(out, map[string]any{
+			"skill_id":     payload.SkillID,
+			"skill_key":    payload.SkillKey,
+			"revision_id":  payload.RevisionID,
+			"files":        payload.Files,
+			"content_hash": payload.ContentHash,
+		})
 	}
 	return out
+}
+
+func runtimeMCPServersPayload(capabilitySelection map[string]any) []map[string]any {
+	keys := stringList(capabilitySelection["enabled_mcp_servers"])
+	out := make([]map[string]any, 0, len(keys))
+	for _, key := range keys {
+		payload := runtimeMCPServerPayload{
+			ServerKey: key,
+		}
+		out = append(out, map[string]any{
+			"server_id":        payload.ServerID,
+			"server_key":       payload.ServerKey,
+			"transport":        payload.Transport,
+			"config_ref":       payload.ConfigRef,
+			"permission_scope": payload.PermissionScope,
+		})
+	}
+	return out
+}
+
+func emptyRuntimeSkillsPayload() []map[string]any {
+	return []map[string]any{}
+}
+
+func emptyRuntimeMCPServersPayload() []map[string]any {
+	return []map[string]any{}
 }
 
 func provisioningErrorWithAbort(cause error, abortErr error) error {
