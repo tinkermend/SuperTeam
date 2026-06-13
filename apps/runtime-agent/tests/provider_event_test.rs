@@ -106,3 +106,32 @@ fn codex_error_event_returns_error() {
 
     assert!(error.to_string().contains("codex failed"));
 }
+
+#[test]
+fn parses_codex_realistic_thread_item_and_turn_events() {
+    let lines = [
+        r#"{"type":"thread.started","thread":{"id":"thread-1"}}"#,
+        r#"{"type":"turn.started"}"#,
+        r#"{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"OK"}}"#,
+        r#"{"type":"turn.completed"}"#,
+    ];
+
+    let events: Vec<_> = lines
+        .iter()
+        .filter_map(|line| parse_codex_event(line).expect("valid codex json line"))
+        .collect();
+
+    assert_eq!(
+        events,
+        vec![
+            ProviderEvent::SessionStarted {
+                session_id: "thread-1".to_string(),
+                session_state: None,
+            },
+            ProviderEvent::TextDelta {
+                text: "OK".to_string()
+            },
+            ProviderEvent::TurnCompleted { summary: None },
+        ]
+    );
+}

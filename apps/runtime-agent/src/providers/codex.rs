@@ -28,14 +28,17 @@ impl CodexProvider {
             command.arg("resume");
             if let Some(session_id) = &request.session_id {
                 command.arg(session_id);
+            } else {
+                command.arg("--last");
             }
             command.arg("--json");
             command.arg("--dangerously-bypass-approvals-and-sandbox");
+            command.arg("--skip-git-repo-check");
         } else {
             command.arg("--json");
             command.arg("--cd").arg(&request.workspace_path);
-            command.arg("--ask-for-approval").arg("never");
-            command.arg("--sandbox").arg("danger-full-access");
+            command.arg("--dangerously-bypass-approvals-and-sandbox");
+            command.arg("--skip-git-repo-check");
         }
         if let Some(model) = &request.model {
             command.arg("--model").arg(model);
@@ -95,6 +98,12 @@ pub fn parse_codex_event(value: &str) -> anyhow::Result<Option<ProviderEvent>> {
         return Ok(Some(ProviderEvent::TextDelta { text }));
     }
 
+    if event_type == "item.completed" {
+        if let Some(text) = extract_completed_agent_message_text(&event) {
+            return Ok(Some(ProviderEvent::TextDelta { text }));
+        }
+    }
+
     if matches!(
         event_type,
         "turn.completed" | "turn_complete" | "completed" | "result" | "done"
@@ -117,6 +126,19 @@ fn extract_session_id(event: &Value) -> Option<String> {
 fn extract_text(event: &Value) -> Option<String> {
     first_string(event, &["text", "delta", "content"])
         .or_else(|| nested_string(event, &["message", "content"]))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn extract_completed_agent_message_text(event: &Value) -> Option<String> {
+    let item = event.get("item")?;
+    let item_type = item.get("type").and_then(|value| value.as_str())?;
+    if item_type != "agent_message" {
+        return None;
+    }
+    item.get("text")
+        .and_then(|value| value.as_str())
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)

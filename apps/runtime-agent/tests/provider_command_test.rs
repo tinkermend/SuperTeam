@@ -98,13 +98,12 @@ fn codex_new_turn_uses_runtime_governed_exec_flags() {
             .any(|window| window == ["--cd", "/tmp/workspace"])
     );
     assert!(
-        args.windows(2)
-            .any(|window| window == ["--ask-for-approval", "never"])
+        args.iter()
+            .any(|arg| arg == "--dangerously-bypass-approvals-and-sandbox")
     );
-    assert!(
-        args.windows(2)
-            .any(|window| window == ["--sandbox", "danger-full-access"])
-    );
+    assert!(args.iter().any(|arg| arg == "--skip-git-repo-check"));
+    assert!(!args.iter().any(|arg| arg == "--ask-for-approval"));
+    assert!(!args.iter().any(|arg| arg == "--sandbox"));
     assert!(
         args.windows(2)
             .any(|window| window == ["--model", "model-a"])
@@ -130,10 +129,29 @@ fn codex_resume_uses_resume_subcommand_and_bypass_flag() {
         args.iter()
             .any(|arg| arg == "--dangerously-bypass-approvals-and-sandbox")
     );
+    assert!(args.iter().any(|arg| arg == "--skip-git-repo-check"));
     assert!(!args.iter().any(|arg| arg == "--cd"));
     assert!(
         args.windows(2)
             .any(|window| window == ["--model", "model-a"])
     );
+    assert_eq!(args.last().map(String::as_str), Some("hello"));
+}
+
+#[test]
+fn codex_resume_without_session_uses_last_so_prompt_is_not_session_id() {
+    let provider = CodexProvider::new("codex");
+    let command = provider.build_command(&request(None, true));
+    let args: Vec<_> = command
+        .as_std()
+        .get_args()
+        .map(|arg| arg.to_string_lossy().to_string())
+        .collect();
+
+    assert_eq!(args[0], "exec");
+    assert_eq!(args[1], "resume");
+    assert!(args.iter().any(|arg| arg == "--last"));
+    assert!(args.iter().any(|arg| arg == "--json"));
+    assert!(args.iter().any(|arg| arg == "--skip-git-repo-check"));
     assert_eq!(args.last().map(String::as_str), Some("hello"));
 }
