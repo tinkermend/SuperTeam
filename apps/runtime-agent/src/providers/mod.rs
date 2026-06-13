@@ -1,3 +1,4 @@
+pub mod catalog;
 pub mod claude;
 pub mod opencode;
 

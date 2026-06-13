@@ -105,6 +105,7 @@ async fn main() -> anyhow::Result<()> {
             run_log_dir: args.run_log_dir,
             claude_bin: args.claude_bin,
             opencode_bin: args.opencode_bin,
+            codex_bin: None,
         },
     )?;
     let daemon = RuntimeDaemon::new(config);

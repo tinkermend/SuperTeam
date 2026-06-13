@@ -61,6 +61,10 @@ providers:
     enabled: true
     binary_path: /usr/local/bin/file-opencode
     timeout: 180
+  codex:
+    enabled: true
+    binary_path: /usr/local/bin/file-codex
+    timeout: 240
 
 logging:
   level: debug
@@ -79,6 +83,10 @@ logging:
             (
                 "RUNTIME_AGENT_PROVIDER_CLAUDE_CODE_BINARY",
                 "/usr/local/bin/env-claude",
+            ),
+            (
+                "RUNTIME_AGENT_PROVIDER_CODEX_BINARY",
+                "/usr/local/bin/env-codex",
             ),
         ],
         Default::default(),
@@ -120,6 +128,12 @@ logging:
         std::path::PathBuf::from("/usr/local/bin/file-opencode")
     );
     assert_eq!(config.providers.opencode.timeout, 180);
+    assert!(config.providers.codex.enabled);
+    assert_eq!(
+        config.providers.codex.binary_path,
+        std::path::PathBuf::from("/usr/local/bin/env-codex")
+    );
+    assert_eq!(config.providers.codex.timeout, 240);
     assert_eq!(config.logging.level, "debug");
     assert_eq!(config.logging.format, "json");
     assert_eq!(config.logging.output, "file");
