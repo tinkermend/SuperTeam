@@ -133,7 +133,17 @@ printf '%s\n' '{"type":"turn.completed","summary":"done"}'
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains(r#""type":"session_started""#));
-    assert!(stdout.contains("hello from cli codex"));
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    let events: Vec<Value> = stdout
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("json line"))
+        .collect();
+
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[0]["type"], "session_started");
+    assert_eq!(events[0]["session_id"], "cli-codex-session");
+    assert_eq!(events[1]["type"], "text_delta");
+    assert_eq!(events[1]["text"], "hello from cli codex");
+    assert_eq!(events[2]["type"], "turn_completed");
+    assert_eq!(events[2]["summary"], "done");
 }
