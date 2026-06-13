@@ -3,22 +3,22 @@
   "private": true,
   "packageManager": "pnpm@10.32.1",
   "scripts": {
-    "dev:web": "pnpm --filter @superteam/web dev",
-    "build:web": "pnpm --filter @superteam/web build",
+    "dev:web": "corepack pnpm --filter @superteam/web dev",
+    "build:web": "corepack pnpm --filter @superteam/web build",
     "dev:control-plane": "go run ./apps/control-plane/cmd/control-plane --config apps/control-plane/config/config.yaml",
     "dev:runtime-agent": "cargo run --manifest-path apps/runtime-agent/Cargo.toml -- --config apps/runtime-agent/config.yaml",
     "generate:control-plane": "cd apps/control-plane && go generate ./internal/api",
     "verify:contracts": "node scripts/verify-foundation-contracts.mjs",
-    "verify:foundation": "pnpm verify:contracts && pnpm test:ts && pnpm typecheck && pnpm test:go && pnpm test:rust",
-    "verify:web": "pnpm --filter @superteam/web test && pnpm --filter @superteam/web typecheck && pnpm --filter @superteam/web build",
-    "verify:control-plane": "pnpm verify:contracts && pnpm test:go",
-    "verify:runtime-agent": "pnpm verify:contracts && pnpm test:rust",
-    "verify:db": "pnpm test:go",
-    "test": "pnpm test:ts && pnpm test:go && pnpm test:rust",
-    "test:ts": "pnpm -r --if-present test",
+    "verify:foundation": "corepack pnpm verify:contracts && corepack pnpm test:ts && corepack pnpm typecheck && corepack pnpm test:go && corepack pnpm test:rust",
+    "verify:web": "corepack pnpm --filter @superteam/web test && corepack pnpm --filter @superteam/web typecheck && corepack pnpm --filter @superteam/web build",
+    "verify:control-plane": "corepack pnpm verify:contracts && corepack pnpm test:go",
+    "verify:runtime-agent": "corepack pnpm verify:contracts && corepack pnpm test:rust",
+    "verify:db": "corepack pnpm test:go",
+    "test": "corepack pnpm test:ts && corepack pnpm test:go && corepack pnpm test:rust",
+    "test:ts": "corepack pnpm -r --if-present test",
     "test:go": "go test ./apps/control-plane/...",
     "test:rust": "cargo test --manifest-path apps/runtime-agent/Cargo.toml",
-    "typecheck": "pnpm -r --if-present typecheck"
+    "typecheck": "corepack pnpm -r --if-present typecheck"
   },
   "devDependencies": {}
 }
