@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -921,9 +922,9 @@ func buildDefaultAgentsContent(employee DigitalEmployeeRecord, configInput Emplo
 	builder.WriteString("You are an agent at SuperTeam.\n\n")
 	builder.WriteString("# Execution Contract\n\n")
 	builder.WriteString("- Work as digital employee: ")
-	builder.WriteString(employee.Name)
+	builder.WriteString(markdownInstructionDisplayValue(employee.Name))
 	builder.WriteString("\n- Role: ")
-	builder.WriteString(employee.Role)
+	builder.WriteString(markdownInstructionDisplayValue(employee.Role))
 	builder.WriteString("\n- Keep outputs aligned with the approved team and employee configuration.\n")
 	builder.WriteString("- Ask for human approval before high-risk or ambiguous actions.\n")
 	builder.WriteString("- Persist durable results through platform artifacts, evidence, or structured writeback.\n")
@@ -940,6 +941,11 @@ func buildDefaultAgentsContent(employee DigitalEmployeeRecord, configInput Emplo
 		builder.WriteString("Additional output contract data is governed by the Control Plane effective configuration.\n")
 	}
 	return builder.String()
+}
+
+func markdownInstructionDisplayValue(value string) string {
+	collapsed := strings.Join(strings.Fields(value), " ")
+	return strconv.Quote(collapsed)
 }
 
 func workspaceFileForSyncFromDefault(file WorkspaceFileRecord, revision WorkspaceFileRevisionRecord) WorkspaceFileForSyncRecord {

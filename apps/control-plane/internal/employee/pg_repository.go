@@ -1097,6 +1097,8 @@ func workspaceFileRecordFromQuery(row queries.DigitalEmployeeWorkspaceFile) (Wor
 		CreatedBy:         uuidPtrFromNull(row.CreatedBy),
 		CreatedAt:         timeFromTimestamptz(row.CreatedAt),
 		UpdatedAt:         timeFromTimestamptz(row.UpdatedAt),
+		ArchivedAt:        timePtrFromTimestamptz(row.ArchivedAt),
+		DeletedAt:         timePtrFromTimestamptz(row.DeletedAt),
 	}, nil
 }
 

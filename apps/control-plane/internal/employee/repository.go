@@ -240,6 +240,8 @@ type WorkspaceFileRecord struct {
 	CreatedBy         *uuid.UUID
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	ArchivedAt        *time.Time
+	DeletedAt         *time.Time
 }
 
 type WorkspaceFileRevisionRecord struct {

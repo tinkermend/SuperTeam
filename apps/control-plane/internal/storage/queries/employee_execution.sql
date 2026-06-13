@@ -642,6 +642,20 @@ aborted_effective_configs AS (
       AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)
     RETURNING deec.id
 ),
+aborted_workspace_files AS (
+    UPDATE digital_employee_workspace_files dewf
+    SET status = 'deleted',
+        archived_at = COALESCE(dewf.archived_at, NOW()),
+        deleted_at = COALESCE(dewf.deleted_at, NOW()),
+        updated_at = NOW()
+    FROM abort_args
+    WHERE dewf.tenant_id = abort_args.tenant_id
+      AND dewf.digital_employee_id = abort_args.digital_employee_id
+      AND dewf.deleted_at IS NULL
+      AND EXISTS (SELECT 1 FROM aborted_employee)
+      AND EXISTS (SELECT 1 FROM abort_scope WHERE matched)
+    RETURNING dewf.id
+),
 aborted_receipts AS (
     UPDATE runtime_command_receipts rcr
     SET status = CASE
