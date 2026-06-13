@@ -90,9 +90,10 @@ pub struct RuntimeProvisionInstanceCommandPayload {
 
 impl RuntimeProvisionInstanceCommandPayload {
     pub fn from_command(command: &RuntimeCommand) -> Result<Self> {
-        if command.command_type != RuntimeCommandType::ProvisionInstance
-            && command.command_type != RuntimeCommandType::SyncWorkspaceFiles
-        {
+        if !matches!(
+            command.command_type,
+            RuntimeCommandType::ProvisionInstance | RuntimeCommandType::SyncWorkspaceFiles
+        ) {
             anyhow::bail!(
                 "runtime command type is not a workspace materialization operation: {:?}",
                 command.command_type

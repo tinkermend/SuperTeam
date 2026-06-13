@@ -213,6 +213,22 @@ fn parses_valid_provision_payload_with_workspace_file() {
     assert!(parsed.mcp_servers.is_empty());
 }
 
+fn valid_provision_payload(command_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "command_id": command_id,
+        "tenant_id": "00000000-0000-4000-8000-000000000001",
+        "team_id": "11111111-1111-4111-8111-111111111111",
+        "digital_employee_id": "22222222-2222-4222-8222-222222222222",
+        "execution_instance_id": "33333333-3333-4333-8333-333333333333",
+        "runtime_node_id": "44444444-4444-4444-8444-444444444444",
+        "provider_type": "claude-code",
+        "agent_home_dir": "/tmp/workspaces/teams/11111111-1111-4111-8111-111111111111/employees/22222222-2222-4222-8222-222222222222",
+        "workspace_files": [],
+        "skills": [],
+        "mcp_servers": []
+    })
+}
+
 #[test]
 fn parses_sync_workspace_files_command_type() {
     let raw = serde_json::json!({
@@ -221,5 +237,44 @@ fn parses_sync_workspace_files_command_type() {
         "payload": {}
     });
     let command: RuntimeCommand = serde_json::from_value(raw).unwrap();
-    assert_eq!(command.command_type, RuntimeCommandType::SyncWorkspaceFiles);
+    assert!(matches!(
+        command.command_type,
+        RuntimeCommandType::SyncWorkspaceFiles
+    ));
+}
+
+#[test]
+fn rejects_unknown_command_type_for_workspace_materialization_payload() {
+    let command = RuntimeCommand {
+        id: "cmd-unknown".to_string(),
+        command_type: RuntimeCommandType::Unsupported("unknown".to_string()),
+        payload: valid_provision_payload("cmd-unknown"),
+    };
+
+    let error = RuntimeProvisionInstanceCommandPayload::from_command(&command)
+        .expect_err("unknown command type must not be accepted as workspace materialization");
+
+    assert!(
+        error
+            .to_string()
+            .contains("runtime command type is not a workspace materialization operation")
+    );
+}
+
+#[test]
+fn rejects_empty_command_type_for_workspace_materialization_payload() {
+    let command = RuntimeCommand {
+        id: "cmd-empty".to_string(),
+        command_type: RuntimeCommandType::Unsupported(String::new()),
+        payload: valid_provision_payload("cmd-empty"),
+    };
+
+    let error = RuntimeProvisionInstanceCommandPayload::from_command(&command)
+        .expect_err("empty command type must not be accepted as sync_workspace_files");
+
+    assert!(
+        error
+            .to_string()
+            .contains("runtime command type is not a workspace materialization operation")
+    );
 }

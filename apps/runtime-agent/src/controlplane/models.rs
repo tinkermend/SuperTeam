@@ -154,6 +154,7 @@ pub struct RuntimeCommand {
 pub enum RuntimeCommandType {
     EnsureInstance,
     ProvisionInstance,
+    SyncWorkspaceFiles,
     StartSession,
     ResumeSession,
     SendInput,
@@ -161,19 +162,10 @@ pub enum RuntimeCommandType {
     Unsupported(String),
 }
 
-impl RuntimeCommandType {
-    #[allow(non_upper_case_globals)]
-    pub const SyncWorkspaceFiles: Self = Self::Unsupported(String::new());
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct EnsureInstanceCommand {
-    #[serde(default)]
     pub team_id: String,
-    #[serde(default)]
     pub digital_employee_id: String,
-    #[serde(default)]
-    pub execution_instance_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

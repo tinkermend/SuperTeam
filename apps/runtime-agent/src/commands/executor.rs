@@ -77,6 +77,11 @@ impl RuntimeCommandExecutor {
             RuntimeCommandType::StopSession => self.handle_stop_command(command).await,
             RuntimeCommandType::EnsureInstance => self.handle_ensure_instance(command),
             RuntimeCommandType::ProvisionInstance => self.handle_provision_instance(command).await,
+            RuntimeCommandType::SyncWorkspaceFiles => Ok(RuntimeCommandOutcome {
+                command_id: command.id,
+                accepted: false,
+                run_id: None,
+            }),
             RuntimeCommandType::Unsupported(_) => Ok(RuntimeCommandOutcome {
                 command_id: command.id,
                 accepted: false,
@@ -327,7 +332,7 @@ impl RuntimeCommandExecutor {
             })?;
         ensure_instance(EnsureInstanceRequest {
             base_dir: self.config.workspace.base_dir.clone(),
-            execution_instance_id: request.execution_instance_id,
+            execution_instance_id: request.digital_employee_id,
         })
         .map_err(|error| self.recorded_error(&command.id, error))
     }
