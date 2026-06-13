@@ -182,7 +182,7 @@ describe("EmployeeConfigView", () => {
     await expect.element(screen.getByLabelText("Constitution Addendum (JSON)")).toBeVisible();
   });
 
-  it("submits config revision on save", async () => {
+  it("submits changed advanced JSON config revision on save", async () => {
     const queryClient = createQueryClient();
     const fetcher = createEmployeeConfigFetcher();
 
@@ -198,11 +198,18 @@ describe("EmployeeConfigView", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
     await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeVisible();
+    await userEvent.fill(screen.getByLabelText("Role Profile (JSON)"), '{"title":"analyst"}');
     await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
     await expect.element(screen.getByText("配置已保存")).toBeVisible();
+
+    const body = requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/config-revisions`, "POST");
+    expect(body).toEqual({
+      role_profile: { title: "analyst" },
+      status: "draft",
+    });
   });
 
-  it("submits budget policy as part of a config revision", async () => {
+  it("submits only budget policy for a budget-only config revision", async () => {
     const queryClient = createQueryClient();
     const fetcher = createEmployeeConfigFetcher();
 
@@ -222,10 +229,13 @@ describe("EmployeeConfigView", () => {
     await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
 
     const body = requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/config-revisions`, "POST");
-    expect(body.budget_policy).toEqual({ daily_token_limit: 15000 });
+    expect(body).toEqual({
+      budget_policy: { daily_token_limit: 15000 },
+      status: "draft",
+    });
   });
 
-  it("submits empty budget policy when the daily token budget is empty", async () => {
+  it("keeps save disabled when the untouched daily token budget is empty", async () => {
     const queryClient = createQueryClient();
     const fetcher = createEmployeeConfigFetcher();
 
@@ -240,12 +250,38 @@ describe("EmployeeConfigView", () => {
     );
 
     await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
-    await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: /保存配置/ })).toBeDisabled();
     await expect.element(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" })).toHaveValue(null);
+    expect(
+      hasRequest(fetcher, `/api/v1/digital-employees/${employee.id}/config-revisions`, "POST"),
+    ).toBe(false);
+  });
+
+  it("submits empty budget policy when the edited daily token budget is cleared", async () => {
+    const queryClient = createQueryClient();
+    const fetcher = createEmployeeConfigFetcher();
+
+    const screen = await render(
+      <QueryClientProvider client={queryClient}>
+        <EmployeeConfigView
+          apiBaseUrl="http://localhost:8080"
+          employeeId={employee.id}
+          fetcher={fetcher}
+        />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
+    const budgetInput = screen.getByRole("spinbutton", { name: "每日 Token 预算上限" });
+    await userEvent.type(budgetInput, "15000");
+    await userEvent.clear(budgetInput);
     await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
 
     const body = requestBody(fetcher, `/api/v1/digital-employees/${employee.id}/config-revisions`, "POST");
-    expect(body.budget_policy).toEqual({});
+    expect(body).toEqual({
+      budget_policy: {},
+      status: "draft",
+    });
   });
 
   it.each(["0", "12.5"])("blocks invalid daily token budget %s when saving config", async (invalidValue) => {
@@ -268,6 +304,31 @@ describe("EmployeeConfigView", () => {
     await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
 
     await expect.element(screen.getByText("每日 Token 预算上限必须是正整数")).toBeVisible();
+    const postCall = fetcher.mock.calls.find(
+      ([input, init]) => requestUrl(input).includes("/config-revisions") && init?.method === "POST",
+    );
+    expect(postCall).toBeUndefined();
+  });
+
+  it("blocks invalid advanced JSON when saving config", async () => {
+    const queryClient = createQueryClient();
+    const fetcher = createEmployeeConfigFetcher();
+
+    const screen = await render(
+      <QueryClientProvider client={queryClient}>
+        <EmployeeConfigView
+          apiBaseUrl="http://localhost:8080"
+          employeeId={employee.id}
+          fetcher={fetcher}
+        />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "高级配置" }));
+    await userEvent.fill(screen.getByLabelText("Role Profile (JSON)"), '{"title":');
+    await userEvent.click(screen.getByRole("button", { name: /保存配置/ }));
+
+    await expect.element(screen.getByText("Role Profile 必须是有效 JSON")).toBeVisible();
     const postCall = fetcher.mock.calls.find(
       ([input, init]) => requestUrl(input).includes("/config-revisions") && init?.method === "POST",
     );

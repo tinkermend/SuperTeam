@@ -33,6 +33,29 @@ type EmployeeConfigViewProps = {
   fetcher?: typeof fetch;
 };
 
+type AdvancedJsonFieldKey = Exclude<
+  keyof CreateDigitalEmployeeConfigRevisionInput,
+  "budget_policy" | "status"
+>;
+
+const advancedJsonFieldLabels: Record<AdvancedJsonFieldKey, string> = {
+  role_profile: "Role Profile",
+  constitution_addendum: "Constitution Addendum",
+  capability_selection: "Capability Selection",
+  context_policy_override: "Context Policy Override",
+  approval_policy_override: "Approval Policy Override",
+  output_contract_addendum: "Output Contract Addendum",
+};
+
+const createAdvancedJsonFieldState = <T,>(value: T) => ({
+  role_profile: value,
+  constitution_addendum: value,
+  capability_selection: value,
+  context_policy_override: value,
+  approval_policy_override: value,
+  output_contract_addendum: value,
+});
+
 export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: EmployeeConfigViewProps) {
   const apiOptions = { baseUrl: apiBaseUrl, fetcher };
   const queryClient = useQueryClient();
@@ -44,6 +67,13 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
   const [approvalPolicyOverride, setApprovalPolicyOverride] = useState("{}");
   const [outputContractAddendum, setOutputContractAddendum] = useState("{}");
   const [dailyTokenLimit, setDailyTokenLimit] = useState("");
+  const [advancedDirty, setAdvancedDirty] = useState<Record<AdvancedJsonFieldKey, boolean>>(
+    createAdvancedJsonFieldState(false),
+  );
+  const [advancedErrors, setAdvancedErrors] = useState<Record<AdvancedJsonFieldKey, string>>(
+    createAdvancedJsonFieldState(""),
+  );
+  const [budgetDirty, setBudgetDirty] = useState(false);
   const [budgetError, setBudgetError] = useState("");
 
   const employee = useQuery({
@@ -55,36 +85,65 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
     mutationFn: (input: CreateDigitalEmployeeConfigRevisionInput) =>
       createDigitalEmployeeConfigRevision(apiOptions, employeeId, input),
     onSuccess: () => {
+      setAdvancedDirty(createAdvancedJsonFieldState(false));
+      setAdvancedErrors(createAdvancedJsonFieldState(""));
+      setBudgetDirty(false);
+      setBudgetError("");
       queryClient.invalidateQueries({ queryKey: ["digital-employee", employeeId] });
     },
   });
 
+  const advancedJsonFields = [
+    { key: "role_profile", value: roleProfile },
+    { key: "constitution_addendum", value: constitutionAddendum },
+    { key: "capability_selection", value: capabilitySelection },
+    { key: "context_policy_override", value: contextPolicyOverride },
+    { key: "approval_policy_override", value: approvalPolicyOverride },
+    { key: "output_contract_addendum", value: outputContractAddendum },
+  ] satisfies { key: AdvancedJsonFieldKey; value: string }[];
+  const hasDirtyConfig = budgetDirty || Object.values(advancedDirty).some(Boolean);
+
+  const updateAdvancedField = (
+    key: AdvancedJsonFieldKey,
+    value: string,
+    setValue: React.Dispatch<React.SetStateAction<string>>,
+  ) => {
+    setValue(value);
+    setAdvancedDirty((current) => ({ ...current, [key]: true }));
+    setAdvancedErrors((current) => ({ ...current, [key]: "" }));
+  };
+
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    const parseJson = (str: string) => {
-      try {
-        return JSON.parse(str);
-      } catch {
-        return {};
-      }
-    };
-    const budgetPolicy = budgetPolicyFromDailyTokenLimit(dailyTokenLimit);
-    if (!budgetPolicy) {
-      setBudgetError("每日 Token 预算上限必须是正整数");
-      return;
-    }
-    setBudgetError("");
+    const input: CreateDigitalEmployeeConfigRevisionInput = { status: "draft" };
+    const nextAdvancedErrors = createAdvancedJsonFieldState("");
+    let hasAdvancedError = false;
 
-    createRevision.mutate({
-      role_profile: parseJson(roleProfile),
-      constitution_addendum: parseJson(constitutionAddendum),
-      capability_selection: parseJson(capabilitySelection),
-      context_policy_override: parseJson(contextPolicyOverride),
-      approval_policy_override: parseJson(approvalPolicyOverride),
-      budget_policy: budgetPolicy,
-      output_contract_addendum: parseJson(outputContractAddendum),
-      status: "draft",
+    advancedJsonFields.forEach((field) => {
+      if (!advancedDirty[field.key]) return;
+
+      try {
+        input[field.key] = JSON.parse(field.value);
+      } catch {
+        nextAdvancedErrors[field.key] = `${advancedJsonFieldLabels[field.key]} 必须是有效 JSON`;
+        hasAdvancedError = true;
+      }
     });
+
+    setAdvancedErrors(nextAdvancedErrors);
+    if (hasAdvancedError) return;
+
+    setBudgetError("");
+    if (budgetDirty) {
+      const budgetPolicy = budgetPolicyFromDailyTokenLimit(dailyTokenLimit);
+      if (!budgetPolicy) {
+        setBudgetError("每日 Token 预算上限必须是正整数");
+        return;
+      }
+      input.budget_policy = budgetPolicy;
+    }
+
+    createRevision.mutate(input);
   };
 
   const advancedConfigForm = (
@@ -99,20 +158,30 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
             <Textarea
               id="role-profile"
               value={roleProfile}
-              onChange={(e) => setRoleProfile(e.target.value)}
+              onChange={(e) => updateAdvancedField("role_profile", e.target.value, setRoleProfile)}
               rows={4}
               className="font-mono text-xs"
+              aria-invalid={Boolean(advancedErrors.role_profile)}
             />
+            {advancedErrors.role_profile ? (
+              <p className="text-sm text-destructive">{advancedErrors.role_profile}</p>
+            ) : null}
           </div>
           <div>
             <Label htmlFor="constitution">Constitution Addendum (JSON)</Label>
             <Textarea
               id="constitution"
               value={constitutionAddendum}
-              onChange={(e) => setConstitutionAddendum(e.target.value)}
+              onChange={(e) =>
+                updateAdvancedField("constitution_addendum", e.target.value, setConstitutionAddendum)
+              }
               rows={4}
               className="font-mono text-xs"
+              aria-invalid={Boolean(advancedErrors.constitution_addendum)}
             />
+            {advancedErrors.constitution_addendum ? (
+              <p className="text-sm text-destructive">{advancedErrors.constitution_addendum}</p>
+            ) : null}
           </div>
         </CardContent>
       </Card>
@@ -127,40 +196,64 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
             <Textarea
               id="capability"
               value={capabilitySelection}
-              onChange={(e) => setCapabilitySelection(e.target.value)}
+              onChange={(e) =>
+                updateAdvancedField("capability_selection", e.target.value, setCapabilitySelection)
+              }
               rows={4}
               className="font-mono text-xs"
+              aria-invalid={Boolean(advancedErrors.capability_selection)}
             />
+            {advancedErrors.capability_selection ? (
+              <p className="text-sm text-destructive">{advancedErrors.capability_selection}</p>
+            ) : null}
           </div>
           <div>
             <Label htmlFor="context-policy">Context Policy Override (JSON)</Label>
             <Textarea
               id="context-policy"
               value={contextPolicyOverride}
-              onChange={(e) => setContextPolicyOverride(e.target.value)}
+              onChange={(e) =>
+                updateAdvancedField("context_policy_override", e.target.value, setContextPolicyOverride)
+              }
               rows={4}
               className="font-mono text-xs"
+              aria-invalid={Boolean(advancedErrors.context_policy_override)}
             />
+            {advancedErrors.context_policy_override ? (
+              <p className="text-sm text-destructive">{advancedErrors.context_policy_override}</p>
+            ) : null}
           </div>
           <div>
             <Label htmlFor="approval-policy">Approval Policy Override (JSON)</Label>
             <Textarea
               id="approval-policy"
               value={approvalPolicyOverride}
-              onChange={(e) => setApprovalPolicyOverride(e.target.value)}
+              onChange={(e) =>
+                updateAdvancedField("approval_policy_override", e.target.value, setApprovalPolicyOverride)
+              }
               rows={4}
               className="font-mono text-xs"
+              aria-invalid={Boolean(advancedErrors.approval_policy_override)}
             />
+            {advancedErrors.approval_policy_override ? (
+              <p className="text-sm text-destructive">{advancedErrors.approval_policy_override}</p>
+            ) : null}
           </div>
           <div>
             <Label htmlFor="output-contract">Output Contract Addendum (JSON)</Label>
             <Textarea
               id="output-contract"
               value={outputContractAddendum}
-              onChange={(e) => setOutputContractAddendum(e.target.value)}
+              onChange={(e) =>
+                updateAdvancedField("output_contract_addendum", e.target.value, setOutputContractAddendum)
+              }
               rows={4}
               className="font-mono text-xs"
+              aria-invalid={Boolean(advancedErrors.output_contract_addendum)}
             />
+            {advancedErrors.output_contract_addendum ? (
+              <p className="text-sm text-destructive">{advancedErrors.output_contract_addendum}</p>
+            ) : null}
           </div>
         </CardContent>
       </Card>
@@ -177,6 +270,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
             min={1}
             onChange={(event) => {
               setDailyTokenLimit(event.target.value);
+              setBudgetDirty(true);
               setBudgetError("");
             }}
             placeholder="不填写表示无预算上限"
@@ -190,7 +284,7 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
       </Card>
 
       <div className="flex gap-3">
-        <Button type="submit" disabled={createRevision.isPending}>
+        <Button type="submit" disabled={!hasDirtyConfig || createRevision.isPending}>
           <Save />
           保存配置
         </Button>
