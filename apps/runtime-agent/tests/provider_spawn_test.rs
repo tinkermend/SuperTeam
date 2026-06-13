@@ -5,6 +5,7 @@ use std::path::Path;
 use futures::TryStreamExt;
 use superteam_runtime_agent::events::ProviderEvent;
 use superteam_runtime_agent::providers::claude::ClaudeProvider;
+use superteam_runtime_agent::providers::codex::CodexProvider;
 use superteam_runtime_agent::providers::opencode::OpenCodeProvider;
 use superteam_runtime_agent::providers::{ProviderAdapter, ProviderRequest};
 use tempfile::TempDir;
@@ -100,6 +101,45 @@ printf '%s\n' '{"type":"turn.completed"}'
                 text: "hello from opencode".to_string()
             },
             ProviderEvent::TurnCompleted { summary: None },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn codex_provider_streams_fake_cli_events() {
+    let temp = TempDir::new().expect("tempdir");
+    let script = make_script(
+        temp.path(),
+        "fake-codex",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"session","session_id":"codex-session"}'
+printf '%s\n' '{"type":"message.delta","delta":"hello from codex"}'
+printf '%s\n' '{"type":"turn.completed","summary":"done"}'
+"#,
+    );
+    let provider = CodexProvider::new(script);
+
+    let events: Vec<ProviderEvent> = provider
+        .run(request(temp.path()))
+        .await
+        .expect("run fake codex")
+        .try_collect()
+        .await
+        .expect("collect fake codex events");
+
+    assert_eq!(
+        events,
+        vec![
+            ProviderEvent::SessionStarted {
+                session_id: "codex-session".to_string(),
+                session_state: None,
+            },
+            ProviderEvent::TextDelta {
+                text: "hello from codex".to_string()
+            },
+            ProviderEvent::TurnCompleted {
+                summary: Some("done".to_string())
+            },
         ]
     );
 }

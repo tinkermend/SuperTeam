@@ -1,6 +1,7 @@
 use crate::config::{ProviderSection, RuntimeConfig};
 use crate::providers::ProviderAdapter;
 use crate::providers::claude::ClaudeProvider;
+use crate::providers::codex::CodexProvider;
 use crate::providers::opencode::OpenCodeProvider;
 
 pub const CLAUDE_CODE_PROVIDER_TYPE: &str = "claude-code";
@@ -84,7 +85,7 @@ pub fn select_provider(
     match provider_type {
         CLAUDE_CODE_PROVIDER_TYPE => Ok(Box::new(ClaudeProvider::new(section.binary_path.clone()))),
         OPENCODE_PROVIDER_TYPE => Ok(Box::new(OpenCodeProvider::new(section.binary_path.clone()))),
-        CODEX_PROVIDER_TYPE => Err(anyhow::anyhow!("Codex provider is not implemented yet")),
+        CODEX_PROVIDER_TYPE => Ok(Box::new(CodexProvider::new(section.binary_path.clone()))),
         _ => Err(anyhow::anyhow!(
             "unsupported provider_type: {provider_type}"
         )),
