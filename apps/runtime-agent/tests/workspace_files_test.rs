@@ -50,6 +50,23 @@ fn rejects_reserved_and_unsafe_workspace_paths() {
 }
 
 #[test]
+fn materialize_workspace_accepts_empty_skills_and_mcp_contract() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("employee");
+    std::fs::create_dir_all(&home).unwrap();
+
+    let result = materialize_workspace(WorkspaceMaterializationPlan {
+        agent_home_dir: home.clone(),
+        provider_home: ProviderHomeKind::OpenCode,
+        files: vec![agents_file("# Contract\n")],
+    })
+    .unwrap();
+
+    assert_eq!(result.synced_files.len(), 1);
+    assert!(home.join(".opencode").is_dir());
+}
+
+#[test]
 fn materialize_workspace_writes_agents_link_and_provider_dir() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("teams/team/employees/employee");
