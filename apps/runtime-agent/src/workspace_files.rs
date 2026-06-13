@@ -132,7 +132,10 @@ pub fn validate_workspace_path(path: &str) -> Result<String> {
         .next()
         .ok_or_else(|| anyhow::anyhow!("workspace file path must not be empty"))?;
     reject_component(first, path)?;
-    if matches!(first, ".claude" | ".opencode" | ".codex" | ".git" | ".superteam") {
+    if matches!(
+        first,
+        ".claude" | ".opencode" | ".codex" | ".git" | ".superteam"
+    ) {
         anyhow::bail!("workspace file path uses a reserved top-level directory: {path}");
     }
     for component in components {
