@@ -17,6 +17,7 @@ type DigitalEmployeeRunRepository interface {
 	ListRuns(ctx context.Context, tenantID, employeeID uuid.UUID, limit, offset int32) ([]*DigitalEmployeeRun, error)
 	ListRunEvents(ctx context.Context, tenantID, taskID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error)
 	ListWorkspaceFilesForSync(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]WorkspaceFileForSyncRecord, error)
+	UpsertWorkspaceFileSync(ctx context.Context, params UpsertWorkspaceFileSyncParams) error
 	CreateRun(ctx context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error)
 	UpdateRunStatus(ctx context.Context, req UpdateRunStatusRequest) (*DigitalEmployeeRun, error)
 	HasRunEventSequence(ctx context.Context, tenantID, taskID, runID uuid.UUID, sequenceNumber int32) (bool, error)

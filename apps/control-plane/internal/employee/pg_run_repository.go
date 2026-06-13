@@ -198,6 +198,10 @@ func (r *PgRunRepository) ListWorkspaceFilesForSync(ctx context.Context, tenantI
 	return (&PgRepository{q: r.q}).ListWorkspaceFilesForSync(ctx, tenantID, digitalEmployeeID)
 }
 
+func (r *PgRunRepository) UpsertWorkspaceFileSync(ctx context.Context, params UpsertWorkspaceFileSyncParams) error {
+	return (&PgRepository{q: r.q}).UpsertWorkspaceFileSync(ctx, params)
+}
+
 func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error) {
 	if req.TeamID == uuid.Nil {
 		return nil, fmt.Errorf("%w: team_id is required for digital employee run", ErrInvalidInput)

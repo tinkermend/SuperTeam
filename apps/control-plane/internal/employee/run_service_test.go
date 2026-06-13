@@ -943,6 +943,10 @@ func (f *fakeRunServiceRepository) ListWorkspaceFilesForSync(_ context.Context, 
 	return out, nil
 }
 
+func (f *fakeRunServiceRepository) UpsertWorkspaceFileSync(context.Context, UpsertWorkspaceFileSyncParams) error {
+	return nil
+}
+
 func (f *fakeRunServiceRepository) CreateRun(_ context.Context, req CreateRunRecordRequest) (*DigitalEmployeeRun, error) {
 	f.createdRunCount++
 	f.createRunRequests = append(f.createRunRequests, req)
