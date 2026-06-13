@@ -353,6 +353,62 @@ type DigitalEmployeeExecutionInstance struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 数字员工个人 Instructions 文件内容
+type DigitalEmployeeInstructionFile struct {
+	// 数字员工 Instructions 文件主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 文件所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 数字员工 ID
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 文件相对路径，例如 AGENTS.md 或 SOUL.md
+	Path string `json:"path"`
+	// 文件文本内容
+	Content string `json:"content"`
+	// 文件内容字节数
+	SizeBytes int64 `json:"size_bytes"`
+	// 文件内容 SHA256 校验值
+	ChecksumSha256 string `json:"checksum_sha256"`
+	// 文件扩展元数据 JSON
+	Metadata []byte `json:"metadata"`
+	// 文件软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 文件创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 文件更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 数字员工个人 MCP 服务器配置
+type DigitalEmployeeMcpBinding struct {
+	// 数字员工 MCP 配置主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 数字员工 MCP 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 数字员工 ID
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 个人 MCP 显示名称，同一数字员工下未删除时唯一
+	Name string `json:"name"`
+	// 个人 MCP 远程 HTTP 地址
+	Url string `json:"url"`
+	// 引用的个人凭据 ID，由应用层校验归属和类型
+	CredentialID uuid.NullUUID `json:"credential_id"`
+	// 个人 MCP 状态，例如 active 或 disabled
+	Status string `json:"status"`
+	// 个人 MCP 扩展元数据 JSON
+	Metadata []byte `json:"metadata"`
+	// 个人 MCP 禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// 个人 MCP 软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 创建个人 MCP 的用户 ID
+	CreatedBy uuid.NullUUID `json:"created_by"`
+	// 个人 MCP 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 个人 MCP 更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 数字员工工作目录受控文件身份表
 type DigitalEmployeeWorkspaceFile struct {
 	// 受控文件主键 UUID
@@ -1737,6 +1793,36 @@ type TaskStateHistory struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// 团队公共 MCP 服务器配置，团队下数字员工强制继承
+type TeamMcpServer struct {
+	// 团队 MCP 配置主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 团队 MCP 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 团队 MCP 所属团队 ID
+	TeamID uuid.UUID `json:"team_id"`
+	// 团队 MCP 显示名称，同一团队下未删除时唯一
+	Name string `json:"name"`
+	// 团队 MCP 远程 HTTP 地址
+	Url string `json:"url"`
+	// 引用的个人凭据 ID，由应用层校验归属和类型
+	CredentialID uuid.NullUUID `json:"credential_id"`
+	// 团队 MCP 状态，例如 active 或 disabled
+	Status string `json:"status"`
+	// 团队 MCP 扩展元数据 JSON
+	Metadata []byte `json:"metadata"`
+	// 团队 MCP 禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// 团队 MCP 软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 创建团队 MCP 的用户 ID
+	CreatedBy uuid.NullUUID `json:"created_by"`
+	// 团队 MCP 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 团队 MCP 更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 租户表
 type Tenant struct {
 	// 租户主键 UUID
@@ -1894,6 +1980,36 @@ type TenantTeamMemberRoleRequest struct {
 	// 创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 个人凭据池，保存用户可复用的外部能力授权令牌密文
+type UserCredential struct {
+	// 个人凭据主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 凭据所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 凭据所属用户 ID
+	UserID uuid.UUID `json:"user_id"`
+	// 凭据显示名称，同一用户下未删除时唯一
+	Name string `json:"name"`
+	// 凭据类型，例如 mcp_token，由服务端注册表校验
+	CredentialType string `json:"credential_type"`
+	// 服务端封存后的凭据密文，API 永不返回明文
+	EncryptedValue string `json:"encrypted_value"`
+	// 凭据明文末尾四位或更短尾标，用于用户识别
+	LastFour string `json:"last_four"`
+	// 凭据状态，例如 active 或 disabled
+	Status string `json:"status"`
+	// 凭据扩展元数据 JSON
+	Metadata []byte `json:"metadata"`
+	// 凭据禁用时间
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
+	// 凭据软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 凭据创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 凭据更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 

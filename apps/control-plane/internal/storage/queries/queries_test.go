@@ -250,9 +250,13 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 			provider_session_events,
 			provider_sessions,
 			digital_employee_execution_instances,
+			digital_employee_mcp_bindings,
+			digital_employee_instruction_files,
 			digital_employee_effective_configs,
 			digital_employee_config_revisions,
 			digital_employees,
+			team_mcp_servers,
+			user_credentials,
 			runtime_capabilities,
 			runtime_sessions,
 			runtime_enrollments,
@@ -281,6 +285,12 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 	`)
 	require.NoError(t, err)
 	seedDefaultTenant(t, db)
+}
+
+func newQueriesTestDB(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	cleanupTestData(t, testDB)
+	return testDB
 }
 
 func seedDefaultTenant(t *testing.T, db *pgxpool.Pool) {
@@ -336,6 +346,31 @@ func seedTestAuthUser(t *testing.T, db *pgxpool.Pool, username string) uuid.UUID
 	})
 	require.NoError(t, err)
 	return user.ID
+}
+
+func seedTestDigitalEmployee(t *testing.T, db *pgxpool.Pool, tenantID, teamID, ownerUserID uuid.UUID, name string) uuid.UUID {
+	t.Helper()
+	employee, err := queries.New(db).CreateDigitalEmployee(context.Background(), queries.CreateDigitalEmployeeParams{
+		TenantID:         tenantID,
+		TeamID:           uuid.NullUUID{UUID: teamID, Valid: true},
+		OwnerUserID:      ownerUserID,
+		EmployeeType:     "coordinator",
+		Name:             name,
+		Role:             "project_coordinator",
+		Description:      pgtype.Text{String: name, Valid: true},
+		Status:           "active",
+		PermissionPolicy: []byte(`{}`),
+		ContextPolicy:    []byte(`{}`),
+		ApprovalPolicy:   []byte(`{}`),
+		RiskLevel:        "medium",
+		Metadata:         []byte(`{}`),
+	})
+	require.NoError(t, err)
+	return employee.ID
+}
+
+func uuidToPgtype(id uuid.UUID) uuid.NullUUID {
+	return uuid.NullUUID{UUID: id, Valid: true}
 }
 
 func seedTestTeamConfigRevision(t *testing.T, db *pgxpool.Pool, tenantID, teamID uuid.UUID, status string, revisionNumber int32, ownerID uuid.NullUUID) queries.TenantTeamConfigRevision {
@@ -4930,4 +4965,61 @@ func TestCreateRuntimeToken_DuplicateNodeID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, token1.ID, token2.ID)
 	assert.Equal(t, "hash2", token2.TokenHash)
+}
+
+func TestCapabilityQueriesCreateCredentialAndMergeMCPServers(t *testing.T) {
+	db := newQueriesTestDB(t)
+	q := queries.New(db)
+	tenantID := seedTestTenant(t, db)
+	userID := seedTestAuthUser(t, db, "capability-owner")
+	teamID := seedTestTeam(t, db, tenantID, "platform", "平台工程")
+	employeeID := seedTestDigitalEmployee(t, db, tenantID, teamID, userID, "capability-agent")
+
+	credential, err := q.CreateUserCredential(context.Background(), queries.CreateUserCredentialParams{
+		TenantID:       tenantID,
+		UserID:         userID,
+		Name:           "ops-token",
+		CredentialType: "mcp_token",
+		EncryptedValue: "sealed-token",
+		LastFour:       "7890",
+	})
+	if err != nil {
+		t.Fatalf("create credential: %v", err)
+	}
+
+	if _, err := q.CreateTeamMCPServer(context.Background(), queries.CreateTeamMCPServerParams{
+		TenantID:     tenantID,
+		TeamID:       teamID,
+		Name:         "ops-mcp",
+		Url:          "https://mcp.example.com",
+		CredentialID: uuidToPgtype(credential.ID),
+		CreatedBy:    uuidToPgtype(userID),
+	}); err != nil {
+		t.Fatalf("create team mcp: %v", err)
+	}
+
+	if _, err := q.CreateDigitalEmployeeMCPBinding(context.Background(), queries.CreateDigitalEmployeeMCPBindingParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Name:              "personal-mcp",
+		Url:               "https://personal-mcp.example.com",
+		CredentialID:      uuidToPgtype(credential.ID),
+		CreatedBy:         uuidToPgtype(userID),
+	}); err != nil {
+		t.Fatalf("create employee mcp: %v", err)
+	}
+
+	merged, err := q.ListEffectiveMCPServersForEmployee(context.Background(), queries.ListEffectiveMCPServersForEmployeeParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		t.Fatalf("list effective mcp: %v", err)
+	}
+	if len(merged) != 2 {
+		t.Fatalf("expected 2 merged mcp servers, got %d", len(merged))
+	}
+	if merged[0].SourceScope != "team" || merged[1].SourceScope != "employee" {
+		t.Fatalf("expected team before employee source ordering, got %#v", merged)
+	}
 }
