@@ -481,6 +481,60 @@ describe("EmployeeConfigView", () => {
     await expect.element(screen.getByLabelText("Workspace file editor")).toHaveValue("# AGENTS 草稿");
   });
 
+  it("refreshes clean workspace file draft from server data without enabling save", async () => {
+    const queryClient = createQueryClient();
+    const workspaceFiles = [
+      {
+        id: "workspace-agents",
+        team_id: employee.team_id,
+        path: "AGENTS.md",
+        file_role: "entrypoint",
+        mime_type: "text/markdown",
+        sync_policy: "auto",
+        status: "active",
+        current_revision_id: "revision-agents",
+        revision_number: 1,
+        content: "# 旧原则",
+        content_hash: "sha-old",
+        size_bytes: 12,
+        storage_backend: "db",
+      },
+    ] satisfies WorkspaceFile[];
+    const fetcher = createEmployeeConfigFetcher({
+      extraRoutes: {
+        [`GET /api/v1/digital-employees/${employee.id}/workspace-files`]: workspaceFiles,
+      },
+    });
+
+    const screen = await render(
+      <QueryClientProvider client={queryClient}>
+        <EmployeeConfigView
+          apiBaseUrl="http://localhost:8080"
+          employeeId={employee.id}
+          fetcher={fetcher}
+        />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "宪法/人格" }));
+    await expect.element(screen.getByRole("button", { name: "AGENTS.md" })).toBeVisible();
+    await expect.element(screen.getByLabelText("Workspace file editor")).toHaveValue("# 旧原则");
+    await expect.element(screen.getByRole("button", { name: "保存文件" })).toBeDisabled();
+
+    workspaceFiles[0] = {
+      ...workspaceFiles[0],
+      content: "# 新原则",
+      content_hash: "sha-new",
+      current_revision_id: "revision-agents-2",
+      revision_number: 2,
+      size_bytes: 12,
+    };
+    await queryClient.invalidateQueries({ queryKey: ["employee-workspace-files", employee.id] });
+
+    await expect.element(screen.getByLabelText("Workspace file editor")).toHaveValue("# 新原则");
+    await expect.element(screen.getByRole("button", { name: "保存文件" })).toBeDisabled();
+  });
+
   it("removing a personal duplicate skill keeps inherited team capability visible", async () => {
     const diagnose = skillFixture("skill-diagnose", "diagnose");
     const effectiveSkills = [

@@ -70,6 +70,50 @@ export function InstructionFilesPanel({ apiOptions, employeeId }: InstructionFil
     });
   }, [draftsByPath, files, selectedPath]);
 
+  useEffect(() => {
+    if (files.length === 0) return;
+
+    const serverFilesByPath = new Map(files.map((file) => [file.path, file]));
+    setDraftsByPath((currentDrafts) => {
+      let changed = false;
+      const nextDrafts = { ...currentDrafts };
+
+      for (const file of files) {
+        const currentDraft = currentDrafts[file.path];
+        if (!currentDraft) {
+          nextDrafts[file.path] = {
+            content: file.content,
+            isDirty: false,
+            path: file.path,
+          };
+          changed = true;
+          continue;
+        }
+
+        if (!currentDraft.isDirty && (currentDraft.content !== file.content || currentDraft.path !== file.path)) {
+          nextDrafts[file.path] = {
+            content: file.content,
+            isDirty: false,
+            path: file.path,
+          };
+          changed = true;
+        }
+      }
+
+      return changed ? nextDrafts : currentDrafts;
+    });
+
+    const selectedServerFile = selectedPath ? serverFilesByPath.get(selectedPath) : undefined;
+    if (!selectedServerFile || isDirty) return;
+
+    if (draftPath !== selectedServerFile.path) {
+      setDraftPath(selectedServerFile.path);
+    }
+    if (draftContent !== selectedServerFile.content) {
+      setDraftContent(selectedServerFile.content);
+    }
+  }, [draftContent, draftPath, files, isDirty, selectedPath]);
+
   const saveFile = useMutation({
     mutationFn: () =>
       upsertWorkspaceFile(apiOptions, employeeId, {
@@ -105,7 +149,7 @@ export function InstructionFilesPanel({ apiOptions, employeeId }: InstructionFil
     },
   });
 
-  const canSave = draftPath.trim().length > 0 && !saveFile.isPending;
+  const canSave = draftPath.trim().length > 0 && isDirty && !saveFile.isPending;
 
   const handleSelectFile = (file: WorkspaceFile) => {
     const existingDraft = draftsByPath[file.path];
