@@ -125,6 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- 2026-06-13 23:28：修复 Runtime Agent 数字员工工作目录初始化时 `CLAUDE.md` 被写成普通副本的问题，改为在 Unix 环境下生成指向 `AGENTS.md` 的兼容软链，并覆盖已有旧副本，保持 Claude Code 与 OpenCode 的工作目录只创建对应 Provider 配置目录。
 - 2026-06-13 13:21：修复数字员工详情页发起测试任务时被 stale 活跃运行卡住的问题；Control Plane 会根据终态 Runtime command receipt 回收仍显示为 queued/dispatching/running/cancelling 的旧 run，列表返回终态状态，新建 run 也可在同次请求内继续分派。
 - 2026-06-13 13:38：修复数字员工显示 Ready 但 Runtime 命令通道未连接时仍可发起测试任务的问题；Runtime overview 现在返回实时 command channel 连接状态，数字员工详情页会在通道断开时禁用开始任务并给出原因。
 

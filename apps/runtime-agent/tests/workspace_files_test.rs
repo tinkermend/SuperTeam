@@ -86,8 +86,47 @@ fn materialize_workspace_writes_agents_link_and_provider_dir() {
     );
     assert!(home.join(".claude").is_dir());
     assert!(home.join("CLAUDE.md").exists());
+    #[cfg(unix)]
+    {
+        let claude_metadata = std::fs::symlink_metadata(home.join("CLAUDE.md")).unwrap();
+        assert!(
+            claude_metadata.file_type().is_symlink(),
+            "CLAUDE.md should be a compatibility symlink to AGENTS.md"
+        );
+        assert_eq!(
+            std::fs::read_link(home.join("CLAUDE.md")).unwrap(),
+            std::path::PathBuf::from("AGENTS.md")
+        );
+    }
     assert!(!home.join("state").exists());
     assert!(!home.join("runs").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn materialize_workspace_replaces_existing_claude_copy_with_symlink() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("teams/team/employees/employee");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(home.join("CLAUDE.md"), "old copy\n").unwrap();
+
+    materialize_workspace(WorkspaceMaterializationPlan {
+        agent_home_dir: home.clone(),
+        provider_home: ProviderHomeKind::ClaudeCode,
+        files: vec![agents_file("# Updated\n")],
+    })
+    .unwrap();
+
+    let claude_metadata = std::fs::symlink_metadata(home.join("CLAUDE.md")).unwrap();
+    assert!(claude_metadata.file_type().is_symlink());
+    assert_eq!(
+        std::fs::read_link(home.join("CLAUDE.md")).unwrap(),
+        std::path::PathBuf::from("AGENTS.md")
+    );
+    assert_eq!(
+        std::fs::read_to_string(home.join("CLAUDE.md")).unwrap(),
+        "# Updated\n"
+    );
 }
 
 #[cfg(unix)]

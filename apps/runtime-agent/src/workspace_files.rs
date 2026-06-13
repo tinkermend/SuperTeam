@@ -99,8 +99,7 @@ pub fn materialize_workspace(
     }
 
     if has_agents_file {
-        let agents_content = fs::read(plan.agent_home_dir.join("AGENTS.md"))?;
-        atomic_write_workspace_file(&plan.agent_home_dir, "CLAUDE.md", &agents_content)?;
+        materialize_claude_compat_link(&plan.agent_home_dir)?;
     }
 
     Ok(WorkspaceMaterializationResult {
@@ -195,6 +194,60 @@ fn atomic_write_workspace_file(
 ) -> Result<()> {
     let target = prepare_workspace_target(agent_home_dir, relative_path)?;
     atomic_write(&target, bytes)
+}
+
+#[cfg(unix)]
+fn materialize_claude_compat_link(agent_home_dir: &Path) -> Result<()> {
+    use std::os::unix::fs::symlink;
+
+    let target = agent_home_dir.join("CLAUDE.md");
+    let parent = target.parent().ok_or_else(|| {
+        anyhow::anyhow!("workspace file path has no parent: {}", target.display())
+    })?;
+    if !parent.is_dir() {
+        anyhow::bail!(
+            "workspace file parent is not a directory: {}",
+            parent.display()
+        );
+    }
+    if let Ok(metadata) = fs::symlink_metadata(&target) {
+        if metadata.is_dir() {
+            anyhow::bail!(
+                "workspace file target must not be a directory: {}",
+                target.display()
+            );
+        }
+    }
+
+    let temp_path = unique_temp_path(&target);
+    let link_result = (|| -> Result<()> {
+        symlink("AGENTS.md", &temp_path).with_context(|| {
+            format!(
+                "failed to create temp symlink {} -> AGENTS.md",
+                temp_path.display()
+            )
+        })?;
+        fs::rename(&temp_path, &target).with_context(|| {
+            format!(
+                "failed to rename temp symlink {} to {}",
+                temp_path.display(),
+                target.display()
+            )
+        })?;
+        Ok(())
+    })();
+
+    if link_result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
+
+    link_result
+}
+
+#[cfg(not(unix))]
+fn materialize_claude_compat_link(agent_home_dir: &Path) -> Result<()> {
+    let agents_content = fs::read(agent_home_dir.join("AGENTS.md"))?;
+    atomic_write_workspace_file(agent_home_dir, "CLAUDE.md", &agents_content)
 }
 
 fn prepare_workspace_target(agent_home_dir: &Path, relative_path: &str) -> Result<PathBuf> {
