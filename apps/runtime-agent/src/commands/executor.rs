@@ -886,6 +886,9 @@ async fn drain_provider_events(
             _ => None,
         };
         let record = runs.record_event(&run_id, event).await?;
+        if is_terminal {
+            registry.record_run_finished(&run_id);
+        }
         if let Some(writeback) = &writeback {
             writeback
                 .record_event(&record, latest_provider_session_id.as_deref())
@@ -897,9 +900,6 @@ async fn drain_provider_events(
                     .complete(summary, latest_provider_session_id.clone())
                     .await?;
             }
-        }
-        if is_terminal {
-            registry.record_run_finished(&run_id);
         }
     }
     Ok(())
