@@ -25,3 +25,12 @@ temporal:
   address: "127.0.0.1:7233"
   namespace: "default"
   taskQueue: "superteam-project-coordination"
+
+planner:
+  provider: "deepseek"
+  apiKey: "replace-with-deepseek-api-key"
+  baseURL: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  maxTokens: 8192
+  temperature: 0
+  maxAttempts: 2

@@ -15,6 +15,7 @@ type Config struct {
 	Redis       RedisConfig       `yaml:"redis"`
 	ObjectStore ObjectStoreConfig `yaml:"objectStore"`
 	Temporal    TemporalConfig    `yaml:"temporal"`
+	Planner     PlannerConfig     `yaml:"planner"`
 }
 
 type HTTPConfig struct {
@@ -43,6 +44,16 @@ type TemporalConfig struct {
 	Address   string `yaml:"address"`
 	Namespace string `yaml:"namespace"`
 	TaskQueue string `yaml:"taskQueue"`
+}
+
+type PlannerConfig struct {
+	Provider    string  `yaml:"provider"`
+	APIKey      string  `yaml:"apiKey"`
+	BaseURL     string  `yaml:"baseURL"`
+	Model       string  `yaml:"model"`
+	MaxTokens   int     `yaml:"maxTokens"`
+	Temperature float64 `yaml:"temperature"`
+	MaxAttempts int     `yaml:"maxAttempts"`
 }
 
 func LoadFromEnv() (Config, error) {
@@ -88,6 +99,14 @@ func defaultConfig() Config {
 			Namespace: "default",
 			TaskQueue: "superteam-project-coordination",
 		},
+		Planner: PlannerConfig{
+			Provider:    "deepseek",
+			BaseURL:     "https://api.deepseek.com",
+			Model:       "deepseek-chat",
+			MaxTokens:   8192,
+			Temperature: 0,
+			MaxAttempts: 2,
+		},
 	}
 }
 
@@ -109,6 +128,25 @@ func applyEnv(cfg Config) Config {
 	cfg.Temporal.Address = envOrDefault("TEMPORAL_ADDRESS", cfg.Temporal.Address)
 	cfg.Temporal.Namespace = envOrDefault("TEMPORAL_NAMESPACE", cfg.Temporal.Namespace)
 	cfg.Temporal.TaskQueue = envOrDefault("TEMPORAL_TASK_QUEUE", cfg.Temporal.TaskQueue)
+	cfg.Planner.Provider = envOrDefault("PLANNER_PROVIDER", cfg.Planner.Provider)
+	cfg.Planner.APIKey = envOrDefault("PLANNER_API_KEY", cfg.Planner.APIKey)
+	cfg.Planner.BaseURL = envOrDefault("PLANNER_BASE_URL", cfg.Planner.BaseURL)
+	cfg.Planner.Model = envOrDefault("PLANNER_MODEL", cfg.Planner.Model)
+	if value := os.Getenv("PLANNER_MAX_TOKENS"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			cfg.Planner.MaxTokens = parsed
+		}
+	}
+	if value := os.Getenv("PLANNER_TEMPERATURE"); value != "" {
+		if parsed, err := strconv.ParseFloat(value, 64); err == nil {
+			cfg.Planner.Temperature = parsed
+		}
+	}
+	if value := os.Getenv("PLANNER_MAX_ATTEMPTS"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			cfg.Planner.MaxAttempts = parsed
+		}
+	}
 	return cfg
 }
 

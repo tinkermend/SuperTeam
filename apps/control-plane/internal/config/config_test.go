@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoadFromEnvBuildsControlPlaneConfig(t *testing.T) {
@@ -146,6 +148,73 @@ objectStore:
 	}
 }
 
+func TestLoadFromFilePlannerConfig(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("REDIS_URL", "redis://example")
+	t.Setenv("S3_ENDPOINT", "http://minio.local")
+	t.Setenv("S3_REGION", "us-east-1")
+	t.Setenv("S3_BUCKET", "superteam")
+	t.Setenv("S3_ACCESS_KEY_ID", "access")
+	t.Setenv("S3_SECRET_ACCESS_KEY", "secret")
+
+	path := writeTempConfig(t, `
+planner:
+  provider: deepseek
+  apiKey: file-key
+  baseURL: https://api.deepseek.com
+  model: deepseek-v4-pro
+  maxTokens: 8192
+  temperature: 0.1
+  maxAttempts: 2
+`)
+
+	cfg, err := LoadFromFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "deepseek", cfg.Planner.Provider)
+	require.Equal(t, "file-key", cfg.Planner.APIKey)
+	require.Equal(t, "https://api.deepseek.com", cfg.Planner.BaseURL)
+	require.Equal(t, "deepseek-v4-pro", cfg.Planner.Model)
+	require.Equal(t, 8192, cfg.Planner.MaxTokens)
+	require.InDelta(t, 0.1, cfg.Planner.Temperature, 0.0001)
+	require.Equal(t, 2, cfg.Planner.MaxAttempts)
+}
+
+func TestPlannerEnvOverridesFileConfig(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("REDIS_URL", "redis://example")
+	t.Setenv("S3_ENDPOINT", "http://minio.local")
+	t.Setenv("S3_REGION", "us-east-1")
+	t.Setenv("S3_BUCKET", "superteam")
+	t.Setenv("S3_ACCESS_KEY_ID", "access")
+	t.Setenv("S3_SECRET_ACCESS_KEY", "secret")
+	t.Setenv("PLANNER_API_KEY", "env-key")
+	t.Setenv("PLANNER_BASE_URL", "https://gateway.local")
+	t.Setenv("PLANNER_MODEL", "deepseek-v4-flash")
+	t.Setenv("PLANNER_MAX_TOKENS", "4096")
+	t.Setenv("PLANNER_TEMPERATURE", "0")
+	t.Setenv("PLANNER_MAX_ATTEMPTS", "3")
+
+	path := writeTempConfig(t, `
+planner:
+  provider: deepseek
+  apiKey: file-key
+  baseURL: https://api.deepseek.com
+  model: deepseek-v4-pro
+  maxTokens: 8192
+  temperature: 0.3
+  maxAttempts: 1
+`)
+
+	cfg, err := LoadFromFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "env-key", cfg.Planner.APIKey)
+	require.Equal(t, "https://gateway.local", cfg.Planner.BaseURL)
+	require.Equal(t, "deepseek-v4-flash", cfg.Planner.Model)
+	require.Equal(t, 4096, cfg.Planner.MaxTokens)
+	require.Equal(t, 0.0, cfg.Planner.Temperature)
+	require.Equal(t, 3, cfg.Planner.MaxAttempts)
+}
+
 func writeConfigFile(t *testing.T, body string) string {
 	t.Helper()
 
@@ -154,4 +223,10 @@ func writeConfigFile(t *testing.T, body string) string {
 		t.Fatalf("write config file: %v", err)
 	}
 	return path
+}
+
+func writeTempConfig(t *testing.T, body string) string {
+	t.Helper()
+
+	return writeConfigFile(t, body)
 }
