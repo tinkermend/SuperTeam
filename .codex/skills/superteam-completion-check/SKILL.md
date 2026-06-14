@@ -7,6 +7,14 @@ description: SuperTeam completion gate for truthfully verifying work before fina
 
 Use this as the final gate before declaring SuperTeam work complete. The goal is to prevent mock-only validation, stale services, missing migrations, generated-code drift, UI regressions, missing changelog entries, and overclaiming.
 
+## Non-Negotiable Real-Chain Gate
+
+Real-chain verification is the default completion requirement for feature work, bug fixes, merges, frontend/backend integration, Runtime/Provider integration, database or migration changes, and any task where the final answer would imply "usable", "done", "fixed", "merged", "真实测试过", or "功能可用".
+
+Do not turn missing real-chain verification into a harmless disclaimer. If real-chain verification is required and cannot be completed because services are down, auth is missing, an external Provider is unavailable, migrations are unsafe, or the environment is unclear, the task is blocked until the dependency is resolved or the human explicitly narrows the scope to local-only verification.
+
+Unit tests, component tests, mock API tests, fake Provider scripts, typechecks, builds, and code review are supporting evidence only. They cannot replace real-chain verification for work that changes a user-visible, API-visible, cross-layer, Runtime/Provider, persistence, or merge result path.
+
 ## Workflow
 
 1. Identify the actual change surface:
@@ -22,6 +30,7 @@ Use this as the final gate before declaring SuperTeam work complete. The goal is
    - Mock API/browser tests prove UI behavior against a fake service only.
    - Build/typecheck prove compilation only.
    - Real-chain verification means the current running Web talks to the current running Control Plane and the target database/runtime dependency responds as expected.
+   - For any real-chain-required surface, write down the real path that must be exercised before running local-only gates.
 
 3. Verify current code is what is running:
    - Inspect `scripts/dev-services.sh status` or process commands when local services are involved.
@@ -29,12 +38,14 @@ Use this as the final gate before declaring SuperTeam work complete. The goal is
    - Do not kill unmanaged user processes without inspecting them first.
 
 4. Run the right gates:
-   - Web change: targeted Vitest/browser test, typecheck when risk justifies it, and real browser verification for visible UI.
-   - Control Plane change: targeted `go test` for the affected package and curl/API smoke with real auth when route behavior matters.
+   - Web change: targeted Vitest/browser test, typecheck when risk justifies it, and real browser verification against the running Web and real Control Plane for visible UI or data behavior.
+   - Control Plane change: targeted `go test` for the affected package and curl/API smoke against the running Control Plane with real auth when route behavior matters.
    - Contract change: regenerate OpenAPI output and run `pnpm verify:contracts`.
    - sqlc/schema change: run sqlc generation when queries/schema changed.
    - Database migration/read model: run migration status/apply against the intended development database and confirm the new table/column/index exists by status, schema inspect, or an equivalent read-only DB check.
    - Cross-layer workflow: verify at least one real path from UI or curl through Control Plane to the backing store, then confirm the page or API final state.
+   - Runtime/Provider integration: verify local unit/fake-Provider behavior, then run a real Runtime/Provider smoke when claiming the execution path is usable. If a real Provider binary, credentials, or safe execution workspace is unavailable, stop as blocked instead of claiming completion.
+   - Merge completion: after merging, rerun the relevant real-chain smoke on the merged code, not only on the feature branch.
 
 5. Run the common project hygiene checks:
    - Add a `CHANGELOG.md` entry for completed feature work using `TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M'`; do not hand-write the timestamp.
@@ -44,9 +55,10 @@ Use this as the final gate before declaring SuperTeam work complete. The goal is
    - Run `git diff --check` before final response when files changed.
 
 6. Report honestly:
-   - If only mock/component/unit/build verification ran, explicitly say that real-chain verification was not done.
+   - If only mock/component/unit/build verification ran for work that does not require real-chain verification, explicitly say that real-chain verification was not done.
    - If real-chain verification ran, name the concrete service/API/page/database checks.
-   - If any required verification is blocked, do not call the task complete; state the blocker and the exact command or dependency needed.
+   - If any required real-chain verification is blocked, do not call the task complete; state the blocker and the exact command, service, auth, Provider, migration, or dependency needed.
+   - Do not use `局部验证：...；未做真实链路验证，因为 ...` as a completion statement for real-chain-required work. Use `阻塞：...；尚不能声明完成` instead.
 
 ## Scope-Specific Checks
 
@@ -85,13 +97,14 @@ Use this as the final gate before declaring SuperTeam work complete. The goal is
 
 ## Minimum Real-Chain Smoke
 
-For SuperTeam cross-layer features, complete all of these before saying the feature is usable:
+For SuperTeam cross-layer features, complete all of these before saying the feature is usable. If any item cannot be completed, the task is blocked unless the human explicitly narrows the task to local-only verification:
 
 - Confirm Web's actual Control Plane URL.
 - Confirm the backend route returns the expected non-5xx status with real auth if the route is authenticated.
 - Confirm required migrations are applied and the database object exists when persistence changed.
 - Open the real page in a browser when visible UI changed and check the final state is not stuck loading.
 - Check logs or response bodies enough to distinguish success from silent fallback or mock data.
+- For Runtime/Provider paths, confirm the Runtime Agent is running current code and execute at least one real Provider smoke when the claim is that the provider execution path works.
 
 ## Final Answer Contract
 
@@ -102,3 +115,4 @@ Include a short verification section or sentence with one of these shapes:
 - `阻塞：...；尚不能声明完成`
 
 Never imply a broader verification scope than the commands and browser/API checks actually performed.
+Use the `局部验证` shape only for explicitly local-only work. For real-chain-required work without real-chain evidence, use the `阻塞` shape.
