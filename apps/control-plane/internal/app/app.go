@@ -293,7 +293,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			decisionProjector,
 			projectTaskRunStarterAdapter{runService: runService},
 		)
-		coordinationActivities := projectcoordination.NewActivities(coordinationStore)
+		coordinationActivities := projectcoordination.NewActivities(coordinationStore, routePlannerFromConfig(cfg.Planner))
 		coordinationWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
 	}
 	projectService, err := project.NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(
@@ -446,4 +446,20 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 	}()
 
 	return container.Server.ListenAndServe(ctx, addr)
+}
+
+func routePlannerFromConfig(cfg config.PlannerConfig) projectcoordination.RoutePlanner {
+	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
+	case "", "deepseek":
+		return projectcoordination.NewDeepSeekRoutePlanner(projectcoordination.DeepSeekPlannerConfig{
+			APIKey:      cfg.APIKey,
+			BaseURL:     cfg.BaseURL,
+			Model:       cfg.Model,
+			MaxTokens:   cfg.MaxTokens,
+			Temperature: cfg.Temperature,
+			MaxAttempts: cfg.MaxAttempts,
+		})
+	default:
+		return projectcoordination.HeuristicRoutePlanner{}
+	}
 }

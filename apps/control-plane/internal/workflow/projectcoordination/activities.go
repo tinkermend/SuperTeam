@@ -10,7 +10,8 @@ import (
 var ErrActivityStoreRequired = errors.New("project coordination activity store is required")
 
 type Activities struct {
-	store ActivityStore
+	store   ActivityStore
+	planner RoutePlanner
 }
 
 type ActivityStore interface {
@@ -24,8 +25,12 @@ type ActivityStore interface {
 	FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error
 }
 
-func NewActivities(store ActivityStore) *Activities {
-	return &Activities{store: store}
+func NewActivities(store ActivityStore, planner ...RoutePlanner) *Activities {
+	selected := RoutePlanner(HeuristicRoutePlanner{})
+	if len(planner) > 0 && planner[0] != nil {
+		selected = planner[0]
+	}
+	return &Activities{store: store, planner: selected}
 }
 
 func (a *Activities) LoadProjectCoordinationSnapshot(ctx context.Context, input LoadSnapshotInput) (CoordinationSnapshot, error) {
@@ -43,7 +48,18 @@ func (a *Activities) CreateCoordinationJob(ctx context.Context, input CreateCoor
 }
 
 func (a *Activities) PlanDemandRoute(ctx context.Context, snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
-	return PlanDemandRoute(snapshot)
+	planner := a.planner
+	if planner == nil {
+		planner = HeuristicRoutePlanner{}
+	}
+	plan, err := planner.Plan(ctx, snapshot)
+	if err == nil {
+		return plan, nil
+	}
+	if contextErr := terminalContextError(ctx, err); contextErr != nil {
+		return RouteDecisionPlan{}, contextErr
+	}
+	return HeuristicRoutePlanner{}.Plan(ctx, snapshot)
 }
 
 func (a *Activities) PersistRouteDecision(ctx context.Context, input PersistRouteDecisionInput) (RouteDecisionResult, error) {

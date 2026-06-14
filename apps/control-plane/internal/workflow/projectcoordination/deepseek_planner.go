@@ -1,0 +1,427 @@
+package projectcoordination
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+var ErrPlannerUnavailable = errors.New("route planner unavailable")
+
+const maxDeepSeekChatCompletionResponseBytes = 1 << 20
+
+type DeepSeekPlannerConfig struct {
+	APIKey      string
+	BaseURL     string
+	Model       string
+	MaxTokens   int
+	Temperature float64
+	MaxAttempts int
+}
+
+type DeepSeekChatRequest struct {
+	Model       string
+	System      string
+	User        string
+	MaxTokens   int
+	Temperature float64
+}
+
+type chatCompletionClient interface {
+	CreateChatCompletion(ctx context.Context, req DeepSeekChatRequest) (string, error)
+}
+
+type DeepSeekRoutePlanner struct {
+	cfg    DeepSeekPlannerConfig
+	client chatCompletionClient
+}
+
+func NewDeepSeekRoutePlanner(cfg DeepSeekPlannerConfig, clients ...chatCompletionClient) *DeepSeekRoutePlanner {
+	var client chatCompletionClient
+	if len(clients) > 0 {
+		client = clients[0]
+	}
+	if client == nil {
+		client = newDeepSeekHTTPChatCompletionClient(cfg.BaseURL, cfg.APIKey)
+	}
+	return &DeepSeekRoutePlanner{cfg: cfg, client: client}
+}
+
+func (p *DeepSeekRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
+	if p == nil || strings.TrimSpace(p.cfg.APIKey) == "" || strings.TrimSpace(p.cfg.BaseURL) == "" || strings.TrimSpace(p.cfg.Model) == "" || p.client == nil {
+		return RouteDecisionPlan{}, ErrPlannerUnavailable
+	}
+	if err := ctx.Err(); err != nil {
+		return RouteDecisionPlan{}, err
+	}
+	attempts := p.cfg.MaxAttempts
+	if attempts <= 0 {
+		attempts = 1
+	}
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return RouteDecisionPlan{}, err
+		}
+		content, err := p.client.CreateChatCompletion(ctx, DeepSeekChatRequest{
+			Model:       p.cfg.Model,
+			System:      buildPlannerSystemPrompt(),
+			User:        buildPlannerUserPrompt(snapshot),
+			MaxTokens:   p.cfg.MaxTokens,
+			Temperature: p.cfg.Temperature,
+		})
+		if err != nil {
+			if contextErr := terminalContextError(ctx, err); contextErr != nil {
+				return RouteDecisionPlan{}, contextErr
+			}
+			lastErr = err
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return RouteDecisionPlan{}, err
+		}
+		plan, err := decodePlannerJSON(content)
+		if err != nil {
+			if contextErr := terminalContextError(ctx, err); contextErr != nil {
+				return RouteDecisionPlan{}, contextErr
+			}
+			lastErr = err
+			continue
+		}
+		pool := activeExecutorIDs(snapshot.DigitalEmployeePool)
+		if err := ValidateRouteDecisionGraph(plan, pool, GraphValidationPolicy{MaxTasks: 12}); err != nil {
+			if contextErr := terminalContextError(ctx, err); contextErr != nil {
+				return RouteDecisionPlan{}, contextErr
+			}
+			lastErr = err
+			continue
+		}
+		return plan, nil
+	}
+	if lastErr == nil {
+		lastErr = ErrInvalidRouteDecision
+	}
+	return RouteDecisionPlan{}, lastErr
+}
+
+type deepSeekHTTPChatCompletionClient struct {
+	baseURL    string
+	apiKey     string
+	httpClient *http.Client
+}
+
+func newDeepSeekHTTPChatCompletionClient(baseURL, apiKey string) *deepSeekHTTPChatCompletionClient {
+	return &deepSeekHTTPChatCompletionClient{
+		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		apiKey:  strings.TrimSpace(apiKey),
+		httpClient: &http.Client{
+			Timeout: 60 * time.Second,
+		},
+	}
+}
+
+func (c *deepSeekHTTPChatCompletionClient) CreateChatCompletion(ctx context.Context, req DeepSeekChatRequest) (string, error) {
+	payload := deepSeekChatCompletionRequest{
+		Model: req.Model,
+		Messages: []deepSeekChatMessage{
+			{Role: "system", Content: req.System},
+			{Role: "user", Content: req.User},
+		},
+		Temperature: req.Temperature,
+		ResponseFormat: map[string]string{
+			"type": "json_object",
+		},
+	}
+	if req.MaxTokens > 0 {
+		payload.MaxTokens = &req.MaxTokens
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	httpClient := c.httpClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("deepseek chat completion status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	responseBody, err := readLimitedSuccessBody(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	var decoded deepSeekChatCompletionResponse
+	if err := json.Unmarshal(responseBody, &decoded); err != nil {
+		return "", err
+	}
+	if len(decoded.Choices) == 0 || strings.TrimSpace(decoded.Choices[0].Message.Content) == "" {
+		return "", errors.New("deepseek chat completion response missing content")
+	}
+	return decoded.Choices[0].Message.Content, nil
+}
+
+type deepSeekChatCompletionRequest struct {
+	Model          string                `json:"model"`
+	Messages       []deepSeekChatMessage `json:"messages"`
+	MaxTokens      *int                  `json:"max_tokens,omitempty"`
+	Temperature    float64               `json:"temperature"`
+	ResponseFormat map[string]string     `json:"response_format"`
+}
+
+type deepSeekChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type deepSeekChatCompletionResponse struct {
+	Choices []struct {
+		Message deepSeekChatMessage `json:"message"`
+	} `json:"choices"`
+}
+
+func buildPlannerSystemPrompt() string {
+	return strings.Join([]string{
+		"You are the SuperTeam project coordination route planner.",
+		"Return a single JSON object only; do not wrap it in markdown.",
+		"The JSON object must match this schema: reason string, requires_human_review bool, tasks array, budget_estimate object, template_key string, planner_metadata object.",
+		"Each task JSON object must include key, title, summary, selected_employee_id as a UUID string, expected_outputs, input_requirements, handoff_contract, blocked_by_keys, risk_level, and task_kind.",
+		"Use selected_employee_id only from active executor candidates provided by the user prompt.",
+	}, "\n")
+}
+
+func buildPlannerUserPrompt(snapshot CoordinationSnapshot) string {
+	payload := plannerPromptSnapshot{
+		ProjectID:            snapshot.ProjectID.String(),
+		Demand:               snapshot.Demand,
+		DigitalEmployeePool:  snapshot.DigitalEmployeePool,
+		CoordinationPolicy:   snapshot.CoordinationPolicy,
+		PreviousRouteContext: snapshot.PreviousRouteContext,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		body = []byte("{}")
+	}
+	return fmt.Sprintf("Plan the project demand route. Respond with JSON only.\nSnapshot JSON:\n%s", string(body))
+}
+
+type plannerPromptSnapshot struct {
+	ProjectID            string                  `json:"project_id"`
+	Demand               DemandSnapshot          `json:"demand"`
+	DigitalEmployeePool  []ProjectMemberSnapshot `json:"digital_employee_pool"`
+	CoordinationPolicy   map[string]any          `json:"coordination_policy,omitempty"`
+	PreviousRouteContext map[string]any          `json:"previous_route_context,omitempty"`
+}
+
+func decodePlannerJSON(content string) (RouteDecisionPlan, error) {
+	var decoded plannerJSON
+	if err := json.Unmarshal([]byte(content), &decoded); err != nil {
+		return RouteDecisionPlan{}, err
+	}
+	plan := RouteDecisionPlan{
+		Reason:              decoded.Reason,
+		RequiresHumanReview: decoded.RequiresHumanReview,
+		BudgetEstimate:      nonNilMap(decoded.BudgetEstimate),
+		TemplateKey:         decoded.TemplateKey,
+		PlannerMetadata:     sanitizePlannerMetadata(decoded.PlannerMetadata),
+		Tasks:               make([]PlannedTask, 0, len(decoded.Tasks)),
+	}
+	for _, task := range decoded.Tasks {
+		plan.Tasks = append(plan.Tasks, PlannedTask{
+			Key:                   task.Key,
+			Title:                 task.Title,
+			Summary:               task.Summary,
+			SelectedEmployeeID:    task.SelectedEmployeeID,
+			TaskKind:              task.TaskKind,
+			StageIndex:            task.StageIndex,
+			RiskLevel:             task.RiskLevel,
+			RequiresHumanApproval: task.RequiresHumanApproval,
+			ExpectedOutputs:       nonNilStrings(task.ExpectedOutputs),
+			InputRequirements:     nonNilMap(task.InputRequirements),
+			HandoffContract:       nonNilMap(task.HandoffContract),
+			BlockedByKeys:         nonNilStrings(task.BlockedByKeys),
+		})
+	}
+	return plan, nil
+}
+
+type plannerJSON struct {
+	Reason              string         `json:"reason"`
+	RequiresHumanReview bool           `json:"requires_human_review"`
+	BudgetEstimate      map[string]any `json:"budget_estimate"`
+	TemplateKey         string         `json:"template_key"`
+	PlannerMetadata     map[string]any `json:"planner_metadata"`
+	Tasks               []plannerTask  `json:"tasks"`
+}
+
+type plannerTask struct {
+	Key                   string         `json:"key"`
+	Title                 string         `json:"title"`
+	Summary               string         `json:"summary"`
+	SelectedEmployeeID    uuid.UUID      `json:"selected_employee_id"`
+	TaskKind              string         `json:"task_kind"`
+	StageIndex            *int32         `json:"stage_index"`
+	RiskLevel             string         `json:"risk_level"`
+	RequiresHumanApproval bool           `json:"requires_human_approval"`
+	ExpectedOutputs       []string       `json:"expected_outputs"`
+	InputRequirements     map[string]any `json:"input_requirements"`
+	HandoffContract       map[string]any `json:"handoff_contract"`
+	BlockedByKeys         []string       `json:"blocked_by_keys"`
+}
+
+func (t *plannerTask) UnmarshalJSON(data []byte) error {
+	type plannerTaskJSON struct {
+		Key                   string          `json:"key"`
+		Title                 string          `json:"title"`
+		Summary               string          `json:"summary"`
+		SelectedEmployeeID    uuid.UUID       `json:"selected_employee_id"`
+		TaskKind              string          `json:"task_kind"`
+		StageIndex            *int32          `json:"stage_index"`
+		RiskLevel             string          `json:"risk_level"`
+		RequiresHumanApproval bool            `json:"requires_human_approval"`
+		ExpectedOutputs       []string        `json:"expected_outputs"`
+		InputRequirements     json.RawMessage `json:"input_requirements"`
+		HandoffContract       json.RawMessage `json:"handoff_contract"`
+		BlockedByKeys         []string        `json:"blocked_by_keys"`
+	}
+	var raw plannerTaskJSON
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	inputRequirements, err := decodeRequiredPlannerObject(raw.InputRequirements, "input_requirements")
+	if err != nil {
+		return err
+	}
+	handoffContract, err := decodeRequiredPlannerObject(raw.HandoffContract, "handoff_contract")
+	if err != nil {
+		return err
+	}
+	*t = plannerTask{
+		Key:                   raw.Key,
+		Title:                 raw.Title,
+		Summary:               raw.Summary,
+		SelectedEmployeeID:    raw.SelectedEmployeeID,
+		TaskKind:              raw.TaskKind,
+		StageIndex:            raw.StageIndex,
+		RiskLevel:             raw.RiskLevel,
+		RequiresHumanApproval: raw.RequiresHumanApproval,
+		ExpectedOutputs:       raw.ExpectedOutputs,
+		InputRequirements:     inputRequirements,
+		HandoffContract:       handoffContract,
+		BlockedByKeys:         raw.BlockedByKeys,
+	}
+	return nil
+}
+
+func decodeRequiredPlannerObject(raw json.RawMessage, field string) (map[string]any, error) {
+	if len(raw) == 0 || string(bytes.TrimSpace(raw)) == "null" {
+		return nil, fmt.Errorf("planner task %s must be a JSON object", field)
+	}
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, fmt.Errorf("planner task %s must be a JSON object: %w", field, err)
+	}
+	if object == nil {
+		return nil, fmt.Errorf("planner task %s must be a JSON object", field)
+	}
+	return object, nil
+}
+
+func nonNilMap(value map[string]any) map[string]any {
+	if value == nil {
+		return map[string]any{}
+	}
+	return value
+}
+
+func nonNilStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
+}
+
+func sanitizePlannerMetadata(metadata map[string]any) map[string]any {
+	sanitized := map[string]any{}
+	for key, value := range metadata {
+		if plannerMetadataKeyDenied(key) {
+			continue
+		}
+		sanitized[key] = value
+	}
+	return sanitized
+}
+
+func plannerMetadataKeyDenied(key string) bool {
+	canonical := canonicalPlannerMetadataKey(key)
+	deniedFragments := []string{
+		"prompt",
+		"rawmodel",
+		"rawresponse",
+		"rawcompletion",
+		"rawmessage",
+		"rawcontent",
+		"rawoutput",
+		"rawtext",
+	}
+	for _, fragment := range deniedFragments {
+		if strings.Contains(canonical, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func canonicalPlannerMetadataKey(key string) string {
+	key = strings.ToLower(key)
+	var builder strings.Builder
+	for _, r := range key {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			builder.WriteRune(r)
+		}
+	}
+	return builder.String()
+}
+
+func readLimitedSuccessBody(body io.Reader) ([]byte, error) {
+	responseBody, err := io.ReadAll(io.LimitReader(body, maxDeepSeekChatCompletionResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(responseBody) > maxDeepSeekChatCompletionResponseBytes {
+		return nil, fmt.Errorf("deepseek chat completion response too large")
+	}
+	return responseBody, nil
+}
+
+func terminalContextError(ctx context.Context, err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	return nil
+}

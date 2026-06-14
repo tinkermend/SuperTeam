@@ -1,0 +1,439 @@
+package projectcoordination
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+)
+
+func TestDeepSeekRoutePlannerParsesJSONGraph(t *testing.T) {
+	employeeID := uuid.New()
+	planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://api.deepseek.com",
+		Model:       "deepseek-chat",
+		MaxTokens:   1024,
+		MaxAttempts: 1,
+	}, fakeChatCompletionClient{content: fmt.Sprintf(`{
+		"reason":"split demand",
+		"requires_human_review":false,
+		"tasks":[
+			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"stage_index":0,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{},"blocked_by_keys":[],"risk_level":"medium","task_kind":"analysis"}
+		],
+		"budget_estimate":{"mode":"planner"},
+		"template_key":"default",
+		"planner_metadata":{"provider":"deepseek"}
+	}`, employeeID.String())})
+
+	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
+		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, plan.Tasks, 1)
+	require.Equal(t, employeeID, plan.Tasks[0].SelectedEmployeeID)
+	require.Equal(t, int32(0), *plan.Tasks[0].StageIndex)
+}
+
+func TestDeepSeekRoutePlannerUnavailableConfigDoesNotCallClient(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  DeepSeekPlannerConfig
+	}{
+		{
+			name: "missing api key",
+			cfg:  DeepSeekPlannerConfig{BaseURL: "https://api.deepseek.com", Model: "deepseek-chat"},
+		},
+		{
+			name: "missing base url",
+			cfg:  DeepSeekPlannerConfig{APIKey: "test-key", Model: "deepseek-chat"},
+		},
+		{
+			name: "missing model",
+			cfg:  DeepSeekPlannerConfig{APIKey: "test-key", BaseURL: "https://api.deepseek.com"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &countingChatCompletionClient{content: `{}`}
+			planner := NewDeepSeekRoutePlanner(tc.cfg, client)
+
+			_, err := planner.Plan(context.Background(), CoordinationSnapshot{})
+
+			require.ErrorIs(t, err, ErrPlannerUnavailable)
+			require.Equal(t, int32(0), client.calls.Load())
+		})
+	}
+}
+
+func TestDeepSeekRoutePlannerRetriesInvalidOutput(t *testing.T) {
+	employeeID := uuid.New()
+	for _, tc := range []struct {
+		name    string
+		content string
+	}{
+		{name: "invalid json", content: `not-json`},
+		{name: "invalid graph", content: fmt.Sprintf(`{
+			"reason":"split demand",
+			"requires_human_review":false,
+			"tasks":[
+				{"key":" bad ","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{}}
+			]
+		}`, employeeID.String())},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &countingChatCompletionClient{content: tc.content}
+			planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+				APIKey:      "test-key",
+				BaseURL:     "https://api.deepseek.com",
+				Model:       "deepseek-chat",
+				MaxAttempts: 3,
+			}, client)
+
+			_, err := planner.Plan(context.Background(), CoordinationSnapshot{
+				Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
+				DigitalEmployeePool: []ProjectMemberSnapshot{
+					{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+				},
+			})
+
+			require.Error(t, err)
+			require.Equal(t, int32(3), client.calls.Load())
+		})
+	}
+}
+
+func TestDeepSeekRoutePlannerRejectsMissingRequiredTaskMaps(t *testing.T) {
+	employeeID := uuid.New()
+	for _, tc := range []struct {
+		name string
+		task string
+	}{
+		{
+			name: "missing input requirements",
+			task: fmt.Sprintf(`{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"handoff_contract":{}}`, employeeID.String()),
+		},
+		{
+			name: "null input requirements",
+			task: fmt.Sprintf(`{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":null,"handoff_contract":{}}`, employeeID.String()),
+		},
+		{
+			name: "missing handoff contract",
+			task: fmt.Sprintf(`{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":{}}`, employeeID.String()),
+		},
+		{
+			name: "null handoff contract",
+			task: fmt.Sprintf(`{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":null}`, employeeID.String()),
+		},
+		{
+			name: "wrong shape input requirements",
+			task: fmt.Sprintf(`{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":[],"handoff_contract":{}}`, employeeID.String()),
+		},
+		{
+			name: "wrong shape handoff contract",
+			task: fmt.Sprintf(`{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":"bad"}`, employeeID.String()),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &countingChatCompletionClient{content: fmt.Sprintf(`{
+				"reason":"split demand",
+				"requires_human_review":false,
+				"tasks":[%s]
+			}`, tc.task)}
+			planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+				APIKey:      "test-key",
+				BaseURL:     "https://api.deepseek.com",
+				Model:       "deepseek-chat",
+				MaxAttempts: 2,
+			}, client)
+
+			_, err := planner.Plan(context.Background(), CoordinationSnapshot{
+				Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
+				DigitalEmployeePool: []ProjectMemberSnapshot{
+					{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+				},
+			})
+
+			require.Error(t, err)
+			require.Equal(t, int32(2), client.calls.Load())
+		})
+	}
+}
+
+func TestDeepSeekRoutePlannerDoesNotRetryContextDone(t *testing.T) {
+	employeeID := uuid.New()
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{name: "canceled", err: context.Canceled},
+		{name: "deadline", err: context.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &countingChatCompletionClient{err: tc.err}
+			planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+				APIKey:      "test-key",
+				BaseURL:     "https://api.deepseek.com",
+				Model:       "deepseek-chat",
+				MaxAttempts: 3,
+			}, client)
+
+			_, err := planner.Plan(context.Background(), CoordinationSnapshot{
+				Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
+				DigitalEmployeePool: []ProjectMemberSnapshot{
+					{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+				},
+			})
+
+			require.ErrorIs(t, err, tc.err)
+			require.Equal(t, int32(1), client.calls.Load())
+		})
+	}
+}
+
+func TestDeepSeekRoutePlannerDoesNotCallClientWhenContextAlreadyDone(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	client := &countingChatCompletionClient{content: `{}`}
+	planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://api.deepseek.com",
+		Model:       "deepseek-chat",
+		MaxAttempts: 3,
+	}, client)
+
+	_, err := planner.Plan(ctx, CoordinationSnapshot{})
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, int32(0), client.calls.Load())
+}
+
+func TestDeepSeekHTTPChatCompletionClientBuildsRequest(t *testing.T) {
+	var gotPath string
+	var gotAuthorization string
+	var gotContentType string
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuthorization = r.Header.Get("Authorization")
+		gotContentType = r.Header.Get("Content-Type")
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"reason\":\"ok\",\"tasks\":[]}"}}]}`))
+	}))
+	defer server.Close()
+
+	client := newDeepSeekHTTPChatCompletionClient(server.URL+"/", "test-key")
+
+	content, err := client.CreateChatCompletion(context.Background(), DeepSeekChatRequest{
+		Model:       "deepseek-chat",
+		System:      "system json",
+		User:        "user json",
+		MaxTokens:   1024,
+		Temperature: 0.2,
+	})
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{"reason":"ok","tasks":[]}`, content)
+	require.Equal(t, "/chat/completions", gotPath)
+	require.Equal(t, "Bearer test-key", gotAuthorization)
+	require.Equal(t, "application/json", gotContentType)
+	require.Equal(t, "deepseek-chat", gotBody["model"])
+	require.Equal(t, float64(1024), gotBody["max_tokens"])
+	require.Equal(t, 0.2, gotBody["temperature"])
+	require.Len(t, gotBody["messages"], 2)
+	responseFormat, ok := gotBody["response_format"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "json_object", responseFormat["type"])
+}
+
+func TestDeepSeekHTTPChatCompletionClientOmitsNonPositiveMaxTokens(t *testing.T) {
+	for _, maxTokens := range []int{0, -1} {
+		t.Run(fmt.Sprintf("max_tokens_%d", maxTokens), func(t *testing.T) {
+			var gotBody map[string]any
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{}"}}]}`))
+			}))
+			defer server.Close()
+
+			client := newDeepSeekHTTPChatCompletionClient(server.URL, "test-key")
+
+			_, err := client.CreateChatCompletion(context.Background(), DeepSeekChatRequest{
+				Model:       "deepseek-chat",
+				System:      "system json",
+				User:        "user json",
+				MaxTokens:   maxTokens,
+				Temperature: 0,
+			})
+
+			require.NoError(t, err)
+			require.NotContains(t, gotBody, "max_tokens")
+		})
+	}
+}
+
+func TestDeepSeekHTTPChatCompletionClientRejectsOversizedSuccessBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(strings.Repeat(" ", 2*1024*1024)))
+	}))
+	defer server.Close()
+	client := newDeepSeekHTTPChatCompletionClient(server.URL, "test-key")
+
+	_, err := client.CreateChatCompletion(context.Background(), DeepSeekChatRequest{
+		Model:  "deepseek-chat",
+		System: "system json",
+		User:   "user json",
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "too large")
+}
+
+func TestDeepSeekRoutePlannerPromptsIncludeJSONWord(t *testing.T) {
+	employeeID := uuid.New()
+	client := &capturingChatCompletionClient{content: fmt.Sprintf(`{
+		"reason":"split demand",
+		"requires_human_review":false,
+		"tasks":[
+			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{}}
+		]
+	}`, employeeID.String())}
+	planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://api.deepseek.com",
+		Model:       "deepseek-chat",
+		MaxAttempts: 1,
+	}, client)
+
+	_, err := planner.Plan(context.Background(), CoordinationSnapshot{
+		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Contains(t, strings.ToLower(client.req.System), "json")
+	require.Contains(t, strings.ToLower(client.req.User), "json")
+}
+
+func TestSanitizePlannerMetadataRemovesPromptAndRawVariants(t *testing.T) {
+	metadata := sanitizePlannerMetadata(map[string]any{
+		"provider":     "deepseek",
+		"model":        "deepseek-chat",
+		"rawResponse":  "model text",
+		"raw-response": "model text",
+		"raw_model":    "model text",
+		"prompt":       "prompt text",
+		"systemPrompt": "prompt text",
+	})
+
+	require.Equal(t, "deepseek", metadata["provider"])
+	require.Equal(t, "deepseek-chat", metadata["model"])
+	require.NotContains(t, metadata, "rawResponse")
+	require.NotContains(t, metadata, "raw-response")
+	require.NotContains(t, metadata, "raw_model")
+	require.NotContains(t, metadata, "prompt")
+	require.NotContains(t, metadata, "systemPrompt")
+}
+
+func TestActivitiesPlanDemandRouteFallsBackToHeuristicPlanner(t *testing.T) {
+	employeeID := uuid.New()
+	activities := NewActivities(nil, failingRoutePlanner{err: errors.New("planner failed")})
+
+	plan, err := activities.PlanDemandRoute(context.Background(), CoordinationSnapshot{
+		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, plan.Tasks, 1)
+	require.Equal(t, employeeID, plan.Tasks[0].SelectedEmployeeID)
+	require.Equal(t, "heuristic.single_task", plan.TemplateKey)
+}
+
+func TestActivitiesPlanDemandRouteDoesNotFallBackOnContextDone(t *testing.T) {
+	employeeID := uuid.New()
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{name: "canceled", err: context.Canceled},
+		{name: "deadline", err: context.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			activities := NewActivities(nil, failingRoutePlanner{err: tc.err})
+
+			plan, err := activities.PlanDemandRoute(context.Background(), CoordinationSnapshot{
+				Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
+				DigitalEmployeePool: []ProjectMemberSnapshot{
+					{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+				},
+			})
+
+			require.ErrorIs(t, err, tc.err)
+			require.Empty(t, plan.Tasks)
+		})
+	}
+}
+
+type fakeChatCompletionClient struct {
+	content string
+	err     error
+}
+
+func (f fakeChatCompletionClient) CreateChatCompletion(ctx context.Context, req DeepSeekChatRequest) (string, error) {
+	_ = ctx
+	_ = req
+	return f.content, f.err
+}
+
+type countingChatCompletionClient struct {
+	content string
+	err     error
+	calls   atomic.Int32
+}
+
+func (f *countingChatCompletionClient) CreateChatCompletion(ctx context.Context, req DeepSeekChatRequest) (string, error) {
+	_ = ctx
+	_ = req
+	f.calls.Add(1)
+	return f.content, f.err
+}
+
+type capturingChatCompletionClient struct {
+	content string
+	req     DeepSeekChatRequest
+}
+
+func (f *capturingChatCompletionClient) CreateChatCompletion(ctx context.Context, req DeepSeekChatRequest) (string, error) {
+	_ = ctx
+	f.req = req
+	return f.content, nil
+}
+
+type failingRoutePlanner struct {
+	err error
+}
+
+func (p failingRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
+	_ = ctx
+	_ = snapshot
+	return RouteDecisionPlan{}, p.err
+}
