@@ -31,6 +31,15 @@ type Repository interface {
 	ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error)
 	ListDemandLaunchRouteDecisions(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]RouteDecision, error)
 	CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error)
+	CreateProjectTaskGraph(ctx context.Context, req CreateProjectTaskGraphRequest) (CreateProjectTaskGraphResult, error)
+	ListProjectTaskDependencies(ctx context.Context, tenantID, projectID uuid.UUID, dependentTaskIDs []uuid.UUID) ([]ProjectTaskDependency, error)
+	ListDependentsOfTask(ctx context.Context, tenantID, projectID, blockerTaskID uuid.UUID) ([]uuid.UUID, error)
+	ListUnresolvedBlockersForTasks(ctx context.Context, tenantID, projectID uuid.UUID, dependentTaskIDs []uuid.UUID) ([]ProjectTaskDependencyReadiness, error)
+	ListProjectTasksByCoordinationJob(ctx context.Context, tenantID, projectID, coordinationJobID uuid.UUID) ([]ProjectTask, error)
+	GetProjectTaskCompletionContract(ctx context.Context, tenantID, taskID uuid.UUID) (ProjectTaskCompletionContract, error)
+	GetCoordinationJobByTrigger(ctx context.Context, tenantID uuid.UUID, workflowID string, triggerEventID uuid.UUID, jobType string) (CoordinationJob, error)
+	GetRouteDecisionByCoordinationJob(ctx context.Context, tenantID, coordinationJobID uuid.UUID) (RouteDecision, error)
+	GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (ProjectTaskGraph, error)
 	ListDemandLaunchProjectTasks(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]ProjectTask, error)
 	UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error)
 	BindProjectTaskRun(ctx context.Context, req BindProjectTaskRunRequest) (ProjectTask, error)
@@ -136,6 +145,79 @@ type CreateProjectTaskRequest struct {
 	DigitalEmployeeRunID      *uuid.UUID
 	RiskLevel                 string
 	RequiresHumanApproval     bool
+	CoordinationJobID         *uuid.UUID
+	RouteDecisionID           *uuid.UUID
+	PlannedTaskKey            *string
+	TaskKind                  *string
+	StageIndex                *int32
+	ExpectedOutputs           []any
+	InputRequirements         map[string]any
+	HandoffContract           map[string]any
+	PlannerMetadata           map[string]any
+	BlockedByTaskIDs          []uuid.UUID
+}
+
+type CreateProjectTaskGraphRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DemandID          uuid.UUID
+	CoordinationJobID uuid.UUID
+	RouteDecisionID   uuid.UUID
+	Tasks             []ProjectTaskGraphCreateTask
+}
+
+type ProjectTaskGraphCreateTask struct {
+	Key                       string
+	Title                     string
+	Summary                   string
+	Status                    string
+	AssignedDigitalEmployeeID uuid.UUID
+	TaskKind                  string
+	StageIndex                *int32
+	RiskLevel                 string
+	RequiresHumanApproval     bool
+	ExpectedOutputs           []any
+	InputRequirements         map[string]any
+	HandoffContract           map[string]any
+	PlannerMetadata           map[string]any
+	BlockedByKeys             []string
+}
+
+type CreateProjectTaskGraphResult struct {
+	Tasks        []ProjectTaskGraphTaskResult
+	Dependencies []ProjectTaskDependency
+	GraphEventID uuid.UUID
+}
+
+type ProjectTaskGraphTaskResult struct {
+	ID             uuid.UUID
+	PlannedTaskKey string
+	StageIndex     *int32
+	CreatedEventID uuid.UUID
+	IsRoot         bool
+}
+
+type ProjectTaskDependencyReadiness struct {
+	DependentTaskID uuid.UUID
+	BlockerTaskID   uuid.UUID
+	BlockerStatus   string
+}
+
+type ProjectTaskCompletionContract struct {
+	ID                   uuid.UUID
+	TenantID             uuid.UUID
+	ProjectID            uuid.UUID
+	ExpectedOutputs      []any
+	HandoffContract      map[string]any
+	DigitalEmployeeRunID *uuid.UUID
+}
+
+type GetProjectTaskGraphRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	CoordinationJobID *uuid.UUID
+	Limit             int32
+	Offset            int32
 }
 
 type CreateExecutionSummaryRequest struct {

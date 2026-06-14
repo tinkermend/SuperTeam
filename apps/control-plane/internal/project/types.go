@@ -15,6 +15,7 @@ var (
 	ErrProjectConflict          = errors.New("project conflict")
 	ErrProjectArchived          = errors.New("project archived")
 	ErrProjectTaskForbidden     = errors.New("project task forbidden")
+	ErrProjectTaskGraphPending  = errors.New("project task graph pending implementation")
 	ErrInvalidProjectEvidence   = errors.New("invalid project evidence")
 	ErrInvalidProjectAcceptance = errors.New("invalid project acceptance")
 	ErrProjectArchiveBlocked    = errors.New("project archive blocked")
@@ -172,6 +173,16 @@ type ProjectTask struct {
 	DigitalEmployeeRunID      *uuid.UUID
 	RiskLevel                 *string
 	RequiresHumanApproval     bool
+	CoordinationJobID         *uuid.UUID
+	RouteDecisionID           *uuid.UUID
+	PlannedTaskKey            *string
+	TaskKind                  *string
+	StageIndex                *int32
+	ExpectedOutputs           []any
+	InputRequirements         map[string]any
+	HandoffContract           map[string]any
+	PlannerMetadata           map[string]any
+	BlockedByTaskIDs          []uuid.UUID
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
 }

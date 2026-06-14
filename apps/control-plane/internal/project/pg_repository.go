@@ -418,7 +418,7 @@ func (r *PgRepository) GetProjectTask(ctx context.Context, tenantID, projectTask
 	if err != nil {
 		return ProjectTask{}, err
 	}
-	return taskFromRecord(row), nil
+	return taskFromRecord(row)
 }
 
 func (r *PgRepository) GetProjectTaskRunRuntimeNodeID(ctx context.Context, tenantID, projectTaskID, runID uuid.UUID) (uuid.UUID, error) {
@@ -568,10 +568,31 @@ func (r *PgRepository) ListDemandLaunchRouteDecisions(ctx context.Context, tenan
 }
 
 func (r *PgRepository) CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error) {
+	expectedOutputs, err := jsonbArray(req.ExpectedOutputs, "expected_outputs")
+	if err != nil {
+		return ProjectTask{}, err
+	}
+	inputRequirements, err := jsonbObject(req.InputRequirements, "input_requirements")
+	if err != nil {
+		return ProjectTask{}, err
+	}
+	handoffContract, err := jsonbObject(req.HandoffContract, "handoff_contract")
+	if err != nil {
+		return ProjectTask{}, err
+	}
+	plannerMetadata, err := jsonbObject(req.PlannerMetadata, "planner_metadata")
+	if err != nil {
+		return ProjectTask{}, err
+	}
 	row, err := r.q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
 		TenantID:                  req.TenantID,
 		ProjectID:                 req.ProjectID,
 		DemandID:                  nullUUID(req.DemandID),
+		CoordinationJobID:         nullUUID(req.CoordinationJobID),
+		RouteDecisionID:           nullUUID(req.RouteDecisionID),
+		PlannedTaskKey:            textPtr(req.PlannedTaskKey),
+		TaskKind:                  textPtr(req.TaskKind),
+		StageIndex:                int4Ptr(req.StageIndex),
 		Title:                     req.Title,
 		Summary:                   textOrNull(req.Summary),
 		Status:                    req.Status,
@@ -580,11 +601,107 @@ func (r *PgRepository) CreateProjectTask(ctx context.Context, req CreateProjectT
 		DigitalEmployeeRunID:      nullUUID(req.DigitalEmployeeRunID),
 		RiskLevel:                 textOrNull(req.RiskLevel),
 		RequiresHumanApproval:     req.RequiresHumanApproval,
+		ExpectedOutputs:           expectedOutputs,
+		InputRequirements:         inputRequirements,
+		HandoffContract:           handoffContract,
+		PlannerMetadata:           plannerMetadata,
 	})
 	if err != nil {
 		return ProjectTask{}, err
 	}
-	return taskFromRecord(row), nil
+	return taskFromRecord(row)
+}
+
+func (r *PgRepository) CreateProjectTaskGraph(ctx context.Context, req CreateProjectTaskGraphRequest) (CreateProjectTaskGraphResult, error) {
+	return CreateProjectTaskGraphResult{}, ErrProjectTaskGraphPending
+}
+
+func (r *PgRepository) ListProjectTaskDependencies(ctx context.Context, tenantID, projectID uuid.UUID, dependentTaskIDs []uuid.UUID) ([]ProjectTaskDependency, error) {
+	rows, err := r.q.ListProjectTaskDependencies(ctx, queries.ListProjectTaskDependenciesParams{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		DependentTaskIds: dependentTaskIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return dependenciesFromRecords(rows), nil
+}
+
+func (r *PgRepository) ListDependentsOfTask(ctx context.Context, tenantID, projectID, blockerTaskID uuid.UUID) ([]uuid.UUID, error) {
+	return r.q.ListDependentsOfTask(ctx, queries.ListDependentsOfTaskParams{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		BlockerTaskID: blockerTaskID,
+	})
+}
+
+func (r *PgRepository) ListUnresolvedBlockersForTasks(ctx context.Context, tenantID, projectID uuid.UUID, dependentTaskIDs []uuid.UUID) ([]ProjectTaskDependencyReadiness, error) {
+	rows, err := r.q.ListUnresolvedBlockersForTasks(ctx, queries.ListUnresolvedBlockersForTasksParams{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		DependentTaskIds: dependentTaskIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	readiness := make([]ProjectTaskDependencyReadiness, 0, len(rows))
+	for _, row := range rows {
+		readiness = append(readiness, ProjectTaskDependencyReadiness{
+			DependentTaskID: row.DependentTaskID,
+			BlockerTaskID:   row.BlockerTaskID,
+			BlockerStatus:   row.BlockerStatus,
+		})
+	}
+	return readiness, nil
+}
+
+func (r *PgRepository) ListProjectTasksByCoordinationJob(ctx context.Context, tenantID, projectID, coordinationJobID uuid.UUID) ([]ProjectTask, error) {
+	rows, err := r.q.ListProjectTasksByCoordinationJob(ctx, queries.ListProjectTasksByCoordinationJobParams{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		CoordinationJobID: coordinationJobID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return tasksFromRecords(rows)
+}
+
+func (r *PgRepository) GetProjectTaskCompletionContract(ctx context.Context, tenantID, taskID uuid.UUID) (ProjectTaskCompletionContract, error) {
+	row, err := r.q.GetProjectTaskCompletionContract(ctx, queries.GetProjectTaskCompletionContractParams{TenantID: tenantID, ID: taskID})
+	if err != nil {
+		return ProjectTaskCompletionContract{}, projectRepositoryError(err)
+	}
+	return completionContractFromRecord(row)
+}
+
+func (r *PgRepository) GetCoordinationJobByTrigger(ctx context.Context, tenantID uuid.UUID, workflowID string, triggerEventID uuid.UUID, jobType string) (CoordinationJob, error) {
+	row, err := r.q.GetProjectCoordinationJobByTrigger(ctx, queries.GetProjectCoordinationJobByTriggerParams{
+		TenantID:       tenantID,
+		WorkflowID:     workflowID,
+		TriggerEventID: triggerEventID,
+		JobType:        jobType,
+	})
+	if err != nil {
+		return CoordinationJob{}, projectRepositoryError(err)
+	}
+	return coordinationJobFromRecord(row)
+}
+
+func (r *PgRepository) GetRouteDecisionByCoordinationJob(ctx context.Context, tenantID, coordinationJobID uuid.UUID) (RouteDecision, error) {
+	row, err := r.q.GetProjectRouteDecisionByCoordinationJob(ctx, queries.GetProjectRouteDecisionByCoordinationJobParams{
+		TenantID:          tenantID,
+		CoordinationJobID: coordinationJobID,
+	})
+	if err != nil {
+		return RouteDecision{}, projectRepositoryError(err)
+	}
+	return routeDecisionFromRecord(row)
+}
+
+func (r *PgRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (ProjectTaskGraph, error) {
+	return ProjectTaskGraph{}, ErrProjectTaskGraphPending
 }
 
 func (r *PgRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error) {
@@ -606,7 +723,7 @@ func (r *PgRepository) BindProjectTaskRun(ctx context.Context, req BindProjectTa
 		}
 		return ProjectTask{}, err
 	}
-	return taskFromRecord(row), nil
+	return taskFromRecord(row)
 }
 
 // bindProjectTaskRunConflict distinguishes a missing task from a real binding
@@ -619,7 +736,10 @@ func (r *PgRepository) bindProjectTaskRunConflict(ctx context.Context, req BindP
 		}
 		return ProjectTask{}, err
 	}
-	task := taskFromRecord(existing)
+	task, err := taskFromRecord(existing)
+	if err != nil {
+		return ProjectTask{}, err
+	}
 	if task.DigitalEmployeeRunID != nil && *task.DigitalEmployeeRunID == req.DigitalEmployeeRunID &&
 		task.RuntimeTaskID != nil && *task.RuntimeTaskID == req.RuntimeTaskID {
 		// Already bound to the same run and runtime task by a prior attempt; treat as idempotent success.
@@ -648,7 +768,7 @@ func (r *PgRepository) updateProjectTaskStatusWithQueries(ctx context.Context, q
 	if err != nil {
 		return ProjectTask{}, err
 	}
-	return taskFromRecord(row), nil
+	return taskFromRecord(row)
 }
 
 func (r *PgRepository) AssignProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, assignedDigitalEmployeeID, eventID *uuid.UUID) (ProjectTask, error) {
@@ -662,7 +782,7 @@ func (r *PgRepository) AssignProjectTask(ctx context.Context, tenantID, projectT
 	if err != nil {
 		return ProjectTask{}, err
 	}
-	return taskFromRecord(row), nil
+	return taskFromRecord(row)
 }
 
 func (r *PgRepository) CreateExecutionSummary(ctx context.Context, req CreateExecutionSummaryRequest) (ExecutionSummary, error) {
@@ -1365,7 +1485,23 @@ func memberFromRecord(row queries.ProjectMember) (ProjectMember, error) {
 	}, nil
 }
 
-func taskFromRecord(row queries.ProjectTask) ProjectTask {
+func taskFromRecord(row queries.ProjectTask) (ProjectTask, error) {
+	expectedOutputs, err := contractArrayFromJSON(row.ExpectedOutputs, "expected_outputs")
+	if err != nil {
+		return ProjectTask{}, err
+	}
+	inputRequirements, err := contractObjectFromJSON(row.InputRequirements, "input_requirements")
+	if err != nil {
+		return ProjectTask{}, err
+	}
+	handoffContract, err := contractObjectFromJSON(row.HandoffContract, "handoff_contract")
+	if err != nil {
+		return ProjectTask{}, err
+	}
+	plannerMetadata, err := contractObjectFromJSON(row.PlannerMetadata, "planner_metadata")
+	if err != nil {
+		return ProjectTask{}, err
+	}
 	return ProjectTask{
 		ID:                        row.ID,
 		TenantID:                  row.TenantID,
@@ -1379,9 +1515,49 @@ func taskFromRecord(row queries.ProjectTask) ProjectTask {
 		DigitalEmployeeRunID:      ptrUUID(row.DigitalEmployeeRunID),
 		RiskLevel:                 ptrText(row.RiskLevel),
 		RequiresHumanApproval:     row.RequiresHumanApproval,
+		CoordinationJobID:         ptrUUID(row.CoordinationJobID),
+		RouteDecisionID:           ptrUUID(row.RouteDecisionID),
+		PlannedTaskKey:            ptrText(row.PlannedTaskKey),
+		TaskKind:                  ptrText(row.TaskKind),
+		StageIndex:                int32PtrFromSQL(row.StageIndex),
+		ExpectedOutputs:           expectedOutputs,
+		InputRequirements:         inputRequirements,
+		HandoffContract:           handoffContract,
+		PlannerMetadata:           plannerMetadata,
+		BlockedByTaskIDs:          []uuid.UUID{},
 		CreatedAt:                 row.CreatedAt.Time,
 		UpdatedAt:                 row.UpdatedAt.Time,
+	}, nil
+}
+
+func dependencyFromRecord(row queries.ProjectTaskDependency) ProjectTaskDependency {
+	return ProjectTaskDependency{
+		ID:                row.ID,
+		TenantID:          row.TenantID,
+		ProjectID:         row.ProjectID,
+		CoordinationJobID: ptrUUID(row.CoordinationJobID),
+		DependentTaskID:   row.DependentTaskID,
+		BlockerTaskID:     row.BlockerTaskID,
 	}
+}
+
+func completionContractFromRecord(row queries.GetProjectTaskCompletionContractRow) (ProjectTaskCompletionContract, error) {
+	expectedOutputs, err := contractArrayFromJSON(row.ExpectedOutputs, "expected_outputs")
+	if err != nil {
+		return ProjectTaskCompletionContract{}, err
+	}
+	handoffContract, err := contractObjectFromJSON(row.HandoffContract, "handoff_contract")
+	if err != nil {
+		return ProjectTaskCompletionContract{}, err
+	}
+	return ProjectTaskCompletionContract{
+		ID:                   row.ID,
+		TenantID:             row.TenantID,
+		ProjectID:            row.ProjectID,
+		ExpectedOutputs:      expectedOutputs,
+		HandoffContract:      handoffContract,
+		DigitalEmployeeRunID: ptrUUID(row.DigitalEmployeeRunID),
+	}, nil
 }
 
 func eventFromRecord(row queries.ProjectEvent) (ProjectEvent, error) {
@@ -1851,9 +2027,21 @@ func membersFromRecords(rows []queries.ProjectMember) ([]ProjectMember, error) {
 func tasksFromRecords(rows []queries.ProjectTask) ([]ProjectTask, error) {
 	tasks := make([]ProjectTask, 0, len(rows))
 	for _, row := range rows {
-		tasks = append(tasks, taskFromRecord(row))
+		task, err := taskFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
 	}
 	return tasks, nil
+}
+
+func dependenciesFromRecords(rows []queries.ProjectTaskDependency) []ProjectTaskDependency {
+	dependencies := make([]ProjectTaskDependency, 0, len(rows))
+	for _, row := range rows {
+		dependencies = append(dependencies, dependencyFromRecord(row))
+	}
+	return dependencies
 }
 
 func eventsFromRecords(rows []queries.ProjectEvent) ([]ProjectEvent, error) {
@@ -2086,6 +2274,21 @@ func ptrInt8(value pgtype.Int8) *int64 {
 	return &n
 }
 
+func int4Ptr(value *int32) pgtype.Int4 {
+	if value == nil {
+		return pgtype.Int4{}
+	}
+	return pgtype.Int4{Int32: *value, Valid: true}
+}
+
+func int32PtrFromSQL(value pgtype.Int4) *int32 {
+	if !value.Valid {
+		return nil
+	}
+	v := value.Int32
+	return &v
+}
+
 func jsonbObject(value map[string]any, field string) ([]byte, error) {
 	if len(value) == 0 {
 		return []byte("{}"), nil
@@ -2148,6 +2351,20 @@ func anySliceFromJSON(raw []byte) ([]any, error) {
 	return values, nil
 }
 
+func contractArrayFromJSON(raw []byte, field string) ([]any, error) {
+	if len(raw) == 0 {
+		return []any{}, nil
+	}
+	var values []any
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, fmt.Errorf("%s: %w", field, err)
+	}
+	if values == nil {
+		return nil, fmt.Errorf("%s: json null is not a valid contract array", field)
+	}
+	return values, nil
+}
+
 func mapFromJSON(raw []byte) (map[string]any, error) {
 	if len(raw) == 0 {
 		return map[string]any{}, nil
@@ -2158,6 +2375,20 @@ func mapFromJSON(raw []byte) (map[string]any, error) {
 	}
 	if value == nil {
 		return map[string]any{}, nil
+	}
+	return value, nil
+}
+
+func contractObjectFromJSON(raw []byte, field string) (map[string]any, error) {
+	if len(raw) == 0 {
+		return map[string]any{}, nil
+	}
+	var value map[string]any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, fmt.Errorf("%s: %w", field, err)
+	}
+	if value == nil {
+		return nil, fmt.Errorf("%s: json null is not a valid contract object", field)
 	}
 	return value, nil
 }

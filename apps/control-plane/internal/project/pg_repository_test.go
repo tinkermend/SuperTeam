@@ -3,6 +3,8 @@ package project
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
@@ -95,7 +99,10 @@ func TestProjectRelatedMappersHandleJSONAndOptionalFields(t *testing.T) {
 
 	demandID := uuid.New()
 	employeeID := uuid.New()
-	task := taskFromRecord(queries.ProjectTask{
+	jobID := uuid.New()
+	routeID := uuid.New()
+	stage := int32(2)
+	task, err := taskFromRecord(queries.ProjectTask{
 		ID:                        uuid.New(),
 		TenantID:                  tenantID,
 		ProjectID:                 projectID,
@@ -106,15 +113,46 @@ func TestProjectRelatedMappersHandleJSONAndOptionalFields(t *testing.T) {
 		AssignedDigitalEmployeeID: uuid.NullUUID{UUID: employeeID, Valid: true},
 		RiskLevel:                 pgtype.Text{String: "medium", Valid: true},
 		RequiresHumanApproval:     true,
+		CoordinationJobID:         uuid.NullUUID{UUID: jobID, Valid: true},
+		RouteDecisionID:           uuid.NullUUID{UUID: routeID, Valid: true},
+		PlannedTaskKey:            pgtype.Text{String: "review_1", Valid: true},
+		TaskKind:                  pgtype.Text{String: "review", Valid: true},
+		StageIndex:                pgtype.Int4{Int32: stage, Valid: true},
+		ExpectedOutputs:           []byte(`["execution_summary","evidence_refs"]`),
+		InputRequirements:         []byte(`{"needs":["implementation_summary"]}`),
+		HandoffContract:           []byte(`{"required_refs":["evidence_refs"]}`),
+		PlannerMetadata:           []byte(`{"planner":"test"}`),
 		CreatedAt:                 pgtype.Timestamptz{Time: now, Valid: true},
 		UpdatedAt:                 pgtype.Timestamptz{Time: now, Valid: true},
 	})
+	if err != nil {
+		t.Fatalf("map task: %v", err)
+	}
 	if task.DemandID == nil || *task.DemandID != demandID {
 		t.Fatalf("expected demand id, got %#v", task.DemandID)
 	}
 	if task.AssignedDigitalEmployeeID == nil || *task.AssignedDigitalEmployeeID != employeeID || !task.RequiresHumanApproval {
 		t.Fatalf("unexpected task: %#v", task)
 	}
+	if task.CoordinationJobID == nil || *task.CoordinationJobID != jobID {
+		t.Fatalf("expected coordination job id, got %#v", task.CoordinationJobID)
+	}
+	if task.RouteDecisionID == nil || *task.RouteDecisionID != routeID {
+		t.Fatalf("expected route decision id, got %#v", task.RouteDecisionID)
+	}
+	if task.PlannedTaskKey == nil || *task.PlannedTaskKey != "review_1" {
+		t.Fatalf("expected planned task key, got %#v", task.PlannedTaskKey)
+	}
+	if task.TaskKind == nil || *task.TaskKind != "review" {
+		t.Fatalf("expected task kind, got %#v", task.TaskKind)
+	}
+	if task.StageIndex == nil || *task.StageIndex != stage {
+		t.Fatalf("expected stage index %d, got %#v", stage, task.StageIndex)
+	}
+	require.Equal(t, []any{"execution_summary", "evidence_refs"}, task.ExpectedOutputs)
+	require.Equal(t, []any{"implementation_summary"}, task.InputRequirements["needs"])
+	require.Equal(t, []any{"evidence_refs"}, task.HandoffContract["required_refs"])
+	require.Equal(t, "test", task.PlannerMetadata["planner"])
 
 	event, err := eventFromRecord(queries.ProjectEvent{
 		ID:             uuid.New(),
@@ -186,6 +224,160 @@ func TestProjectRelatedMappersHandleJSONAndOptionalFields(t *testing.T) {
 	if revision.RevisionNumber != 3 || revision.ConfigSnapshot["status"] != "running" {
 		t.Fatalf("unexpected revision: %#v", revision)
 	}
+}
+
+func TestProjectTaskContractMappersRejectWrongJSONShapes(t *testing.T) {
+	now := time.Date(2026, 6, 14, 10, 0, 0, 0, time.UTC)
+	tenantID := uuid.New()
+	projectID := uuid.New()
+
+	_, err := taskFromRecord(queries.ProjectTask{
+		ID:                        uuid.New(),
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "复核证据",
+		Status:                    "blocked",
+		RequiresHumanApproval:     true,
+		ExpectedOutputs:           []byte(`{"bad":true}`),
+		InputRequirements:         []byte(`{}`),
+		HandoffContract:           []byte(`{}`),
+		PlannerMetadata:           []byte(`{}`),
+		CreatedAt:                 pgtype.Timestamptz{Time: now, Valid: true},
+		UpdatedAt:                 pgtype.Timestamptz{Time: now, Valid: true},
+		AssignedDigitalEmployeeID: uuid.NullUUID{},
+	})
+	require.ErrorContains(t, err, "expected_outputs")
+
+	_, err = completionContractFromRecord(queries.GetProjectTaskCompletionContractRow{
+		ID:              uuid.New(),
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		ExpectedOutputs: []byte(`[]`),
+		HandoffContract: []byte(`["bad"]`),
+	})
+	require.ErrorContains(t, err, "handoff_contract")
+
+	for _, tc := range []struct {
+		name  string
+		field string
+		row   queries.ProjectTask
+	}{
+		{
+			name:  "task expected outputs null",
+			field: "expected_outputs",
+			row:   projectTaskContractShapeRow(tenantID, projectID, []byte("null"), []byte(`{}`), []byte(`{}`), []byte(`{}`)),
+		},
+		{
+			name:  "task input requirements null",
+			field: "input_requirements",
+			row:   projectTaskContractShapeRow(tenantID, projectID, []byte(`[]`), []byte("null"), []byte(`{}`), []byte(`{}`)),
+		},
+		{
+			name:  "task handoff contract null",
+			field: "handoff_contract",
+			row:   projectTaskContractShapeRow(tenantID, projectID, []byte(`[]`), []byte(`{}`), []byte("null"), []byte(`{}`)),
+		},
+		{
+			name:  "task planner metadata null",
+			field: "planner_metadata",
+			row:   projectTaskContractShapeRow(tenantID, projectID, []byte(`[]`), []byte(`{}`), []byte(`{}`), []byte("null")),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := taskFromRecord(tc.row)
+			require.ErrorContains(t, err, tc.field)
+		})
+	}
+
+	for _, tc := range []struct {
+		name            string
+		field           string
+		expectedOutputs []byte
+		handoffContract []byte
+	}{
+		{
+			name:            "completion expected outputs null",
+			field:           "expected_outputs",
+			expectedOutputs: []byte("null"),
+			handoffContract: []byte(`{}`),
+		},
+		{
+			name:            "completion handoff contract null",
+			field:           "handoff_contract",
+			expectedOutputs: []byte(`[]`),
+			handoffContract: []byte("null"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := completionContractFromRecord(queries.GetProjectTaskCompletionContractRow{
+				ID:              uuid.New(),
+				TenantID:        tenantID,
+				ProjectID:       projectID,
+				ExpectedOutputs: tc.expectedOutputs,
+				HandoffContract: tc.handoffContract,
+			})
+			require.ErrorContains(t, err, tc.field)
+		})
+	}
+}
+
+func projectTaskContractShapeRow(tenantID, projectID uuid.UUID, expectedOutputs, inputRequirements, handoffContract, plannerMetadata []byte) queries.ProjectTask {
+	now := time.Date(2026, 6, 14, 10, 0, 0, 0, time.UTC)
+	return queries.ProjectTask{
+		ID:                    uuid.New(),
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		Title:                 "复核证据",
+		Status:                "blocked",
+		RequiresHumanApproval: true,
+		ExpectedOutputs:       expectedOutputs,
+		InputRequirements:     inputRequirements,
+		HandoffContract:       handoffContract,
+		PlannerMetadata:       plannerMetadata,
+		CreatedAt:             pgtype.Timestamptz{Time: now, Valid: true},
+		UpdatedAt:             pgtype.Timestamptz{Time: now, Valid: true},
+	}
+}
+
+func TestCreateProjectTaskPersistsGraphContractFields(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	jobID := uuid.New()
+	routeID := uuid.New()
+	demandID := uuid.New()
+	employeeID := uuid.New()
+	stage := int32(2)
+
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		DemandID:                  &demandID,
+		Title:                     "复核证据",
+		Summary:                   "检查上游产物",
+		Status:                    "blocked",
+		AssignedDigitalEmployeeID: &employeeID,
+		CoordinationJobID:         &jobID,
+		RouteDecisionID:           &routeID,
+		PlannedTaskKey:            strPtr("review_1"),
+		TaskKind:                  strPtr("review"),
+		StageIndex:                &stage,
+		ExpectedOutputs:           []any{"execution_summary", "evidence_refs"},
+		InputRequirements:         map[string]any{"needs": []any{"implementation_summary"}},
+		HandoffContract:           map[string]any{"required_refs": []any{"evidence_refs"}},
+		PlannerMetadata:           map[string]any{"planner": "test"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, task.CoordinationJobID)
+	require.Equal(t, jobID, *task.CoordinationJobID)
+	require.NotNil(t, task.RouteDecisionID)
+	require.Equal(t, routeID, *task.RouteDecisionID)
+	require.Equal(t, "review_1", *task.PlannedTaskKey)
+	require.Equal(t, "review", *task.TaskKind)
+	require.Equal(t, stage, *task.StageIndex)
+	require.Equal(t, []any{"execution_summary", "evidence_refs"}, task.ExpectedOutputs)
+	require.Equal(t, []any{"implementation_summary"}, task.InputRequirements["needs"])
+	require.Equal(t, []any{"evidence_refs"}, task.HandoffContract["required_refs"])
+	require.Equal(t, "test", task.PlannerMetadata["planner"])
 }
 
 func TestProjectConfigSnapshotIncludesHumanOwner(t *testing.T) {
@@ -381,6 +573,91 @@ func numericFromString(t *testing.T, value string) pgtype.Numeric {
 		t.Fatalf("scan numeric %q: %v", value, err)
 	}
 	return numeric
+}
+
+func (r *memoryRepository) CreateProjectTaskGraph(ctx context.Context, req CreateProjectTaskGraphRequest) (CreateProjectTaskGraphResult, error) {
+	return CreateProjectTaskGraphResult{}, ErrProjectTaskGraphPending
+}
+
+func (r *memoryRepository) ListProjectTaskDependencies(ctx context.Context, tenantID, projectID uuid.UUID, dependentTaskIDs []uuid.UUID) ([]ProjectTaskDependency, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) ListDependentsOfTask(ctx context.Context, tenantID, projectID, blockerTaskID uuid.UUID) ([]uuid.UUID, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) ListUnresolvedBlockersForTasks(ctx context.Context, tenantID, projectID uuid.UUID, dependentTaskIDs []uuid.UUID) ([]ProjectTaskDependencyReadiness, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) ListProjectTasksByCoordinationJob(ctx context.Context, tenantID, projectID, coordinationJobID uuid.UUID) ([]ProjectTask, error) {
+	return nil, nil
+}
+
+func (r *memoryRepository) GetProjectTaskCompletionContract(ctx context.Context, tenantID, taskID uuid.UUID) (ProjectTaskCompletionContract, error) {
+	return ProjectTaskCompletionContract{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetCoordinationJobByTrigger(ctx context.Context, tenantID uuid.UUID, workflowID string, triggerEventID uuid.UUID, jobType string) (CoordinationJob, error) {
+	return CoordinationJob{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetRouteDecisionByCoordinationJob(ctx context.Context, tenantID, coordinationJobID uuid.UUID) (RouteDecision, error) {
+	return RouteDecision{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (ProjectTaskGraph, error) {
+	return ProjectTaskGraph{}, ErrProjectTaskGraphPending
+}
+
+func newProjectRepositoryTestStore(t *testing.T) (Repository, uuid.UUID) {
+	t.Helper()
+
+	databaseURL := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL"))
+	if databaseURL == "" {
+		t.Skip("set TEST_DATABASE_URL to run project repository integration test")
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	require.NoError(t, err)
+	require.NoError(t, pool.Ping(ctx))
+
+	tenantID := uuid.New()
+	t.Cleanup(func() {
+		for _, statement := range []string{
+			"DELETE FROM project_task_dependencies WHERE tenant_id = $1",
+			"DELETE FROM project_tasks WHERE tenant_id = $1",
+			"DELETE FROM project_route_decisions WHERE tenant_id = $1",
+			"DELETE FROM project_coordination_jobs WHERE tenant_id = $1",
+			"DELETE FROM project_demands WHERE tenant_id = $1",
+			"DELETE FROM project_events WHERE tenant_id = $1",
+			"DELETE FROM project_config_revisions WHERE tenant_id = $1",
+			"DELETE FROM project_members WHERE tenant_id = $1",
+			"DELETE FROM projects WHERE tenant_id = $1",
+		} {
+			_, _ = pool.Exec(context.Background(), statement, tenantID)
+		}
+		pool.Close()
+	})
+
+	return NewPgRepository(queries.New(pool), pool), tenantID
+}
+
+func createProjectFixture(t *testing.T, repo Repository, tenantID uuid.UUID) uuid.UUID {
+	t.Helper()
+
+	projectID := uuid.New()
+	_, err := repo.CreateProject(context.Background(), CreateProjectRequest{
+		TenantID:         tenantID,
+		ActorUserID:      uuid.New(),
+		Name:             "项目任务图测试",
+		Goal:             "验证任务图契约字段",
+		HumanOwnerUserID: uuid.New(),
+	}, projectID, "project-coordinator:"+projectID.String())
+	require.NoError(t, err)
+	return projectID
 }
 
 func (r *memoryRepository) CreateEvidenceRef(ctx context.Context, req CreateEvidenceRefRequest) (ProjectEvidenceRef, error) {
