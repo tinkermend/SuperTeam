@@ -206,6 +206,19 @@ pub struct RuntimeCommandEventWriteback {
     pub metadata: Option<HashMap<String, serde_json::Value>>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectTaskCompleteWriteback {
+    pub digital_employee_id: String,
+    pub conclusion: String,
+    pub evidence_refs: Vec<serde_json::Value>,
+    pub artifact_refs: Vec<serde_json::Value>,
+    pub confidence_factors: HashMap<String, serde_json::Value>,
+    pub uncertainty: String,
+    pub missing_information: Vec<serde_json::Value>,
+    pub recommended_next_action: String,
+    pub requires_human_review: bool,
+}
+
 impl<'de> Deserialize<'de> for RuntimeCommandType {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

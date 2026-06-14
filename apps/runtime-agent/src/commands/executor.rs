@@ -10,8 +10,8 @@ use crate::commands::registry::{ActiveRunLookup, RuntimeCommandRegistry, Runtime
 use crate::config::RuntimeConfig;
 use crate::controlplane::ControlPlaneClient;
 use crate::controlplane::models::{
-    EnsureInstanceCommand, RuntimeCommand, RuntimeCommandEventWriteback,
-    RuntimeCommandTerminalWriteback, RuntimeCommandType,
+    EnsureInstanceCommand, ProjectTaskCompleteWriteback, RuntimeCommand,
+    RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeCommandType,
 };
 use crate::events::ProviderEvent;
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
@@ -33,6 +33,15 @@ pub struct RuntimeCommandOutcome {
 struct RuntimeCommandWritebackSink {
     client: ControlPlaneClient,
     command_id: String,
+    project_task: Option<ProjectTaskWritebackContext>,
+}
+
+#[derive(Clone, Debug)]
+struct ProjectTaskWritebackContext {
+    project_task_id: String,
+    digital_employee_id: String,
+    expected_outputs: Vec<String>,
+    handoff_contract: serde_json::Value,
 }
 
 #[derive(Clone)]
@@ -191,6 +200,7 @@ impl RuntimeCommandExecutor {
             .map(|client| RuntimeCommandWritebackSink {
                 client: client.clone(),
                 command_id: payload.command_id.clone(),
+                project_task: project_task_writeback_context(&payload),
             });
         let provider_run = match provider.start(provider_request(&spec)).await {
             Ok(provider_run) => provider_run,
@@ -751,9 +761,30 @@ impl RuntimeCommandWritebackSink {
         self.client
             .complete_runtime_command(
                 &self.command_id,
-                &command_completed_terminal(summary, provider_session_id),
+                &command_completed_terminal(summary.clone(), provider_session_id.clone()),
             )
-            .await
+            .await?;
+        if let Some(project_task) = &self.project_task {
+            if let Err(error) = self
+                .client
+                .complete_project_task(
+                    &project_task.project_task_id,
+                    &project_task_complete_writeback(
+                        project_task,
+                        &self.command_id,
+                        summary.as_deref(),
+                        provider_session_id.as_deref(),
+                    ),
+                )
+                .await
+            {
+                eprintln!(
+                    "Project task writeback failed for command {} project_task {}: {}",
+                    self.command_id, project_task.project_task_id, error
+                );
+            }
+        }
+        Ok(())
     }
 
     async fn fail(&self, error_message: String) -> anyhow::Result<()> {
@@ -847,6 +878,248 @@ fn provider_session_state_patch(
     })
 }
 
+fn project_task_writeback_context(
+    payload: &RuntimeSessionCommandPayload,
+) -> Option<ProjectTaskWritebackContext> {
+    let metadata = payload.metadata.as_object()?;
+    if metadata
+        .get("source")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        != Some("project_task_dispatch")
+    {
+        return None;
+    }
+    let handoff_contract = metadata.get("handoff_contract")?.clone();
+    let completion_path = handoff_contract
+        .as_object()
+        .and_then(|contract| contract.get("completion_path"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)?;
+    if completion_path != "project_task_writeback" {
+        return None;
+    }
+    let project_task_id = metadata
+        .get("project_task_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let digital_employee_id = payload.digital_employee_id.trim();
+    if digital_employee_id.is_empty() {
+        return None;
+    }
+    Some(ProjectTaskWritebackContext {
+        project_task_id: project_task_id.to_string(),
+        digital_employee_id: digital_employee_id.to_string(),
+        expected_outputs: string_array_from_metadata(metadata.get("expected_outputs")),
+        handoff_contract,
+    })
+}
+
+fn string_array_from_metadata(value: Option<&serde_json::Value>) -> Vec<String> {
+    value
+        .and_then(serde_json::Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn project_task_complete_writeback(
+    context: &ProjectTaskWritebackContext,
+    command_id: &str,
+    summary: Option<&str>,
+    provider_session_id: Option<&str>,
+) -> ProjectTaskCompleteWriteback {
+    let parsed = parse_summary_json(summary);
+    let conclusion = parsed_conclusion(parsed.as_ref())
+        .or_else(|| trimmed_optional(summary))
+        .unwrap_or_else(|| "Provider run completed without a textual summary.".to_string());
+    let mut evidence_refs = parsed_array(parsed.as_ref(), "evidence_refs");
+    if evidence_refs.is_empty() {
+        evidence_refs.push(runtime_command_evidence_ref(
+            command_id,
+            provider_session_id,
+        ));
+    }
+    let artifact_refs = parsed_array(parsed.as_ref(), "artifact_refs");
+    let missing_information = parsed_array(parsed.as_ref(), "missing_information");
+    let recommended_next_action = parsed_string(parsed.as_ref(), "recommended_next_action")
+        .or_else(|| {
+            expected_output(context, "recommended_next_action")
+                .then(|| "Continue project coordination with the next ready task.".to_string())
+        })
+        .unwrap_or_default();
+    let mut confidence_factors = parsed_confidence_factors(parsed.as_ref());
+    confidence_factors.insert(
+        "source".to_string(),
+        serde_json::Value::String("runtime_agent_project_task_writeback".to_string()),
+    );
+    confidence_factors.insert(
+        "command_id".to_string(),
+        serde_json::Value::String(command_id.to_string()),
+    );
+    if let Some(provider_session_id) = provider_session_id {
+        confidence_factors.insert(
+            "provider_session_id".to_string(),
+            serde_json::Value::String(provider_session_id.to_string()),
+        );
+    }
+    if let Some(completion_path) = context
+        .handoff_contract
+        .as_object()
+        .and_then(|contract| contract.get("completion_path"))
+        .and_then(serde_json::Value::as_str)
+    {
+        confidence_factors.insert(
+            "completion_path".to_string(),
+            serde_json::Value::String(completion_path.to_string()),
+        );
+    }
+
+    ProjectTaskCompleteWriteback {
+        digital_employee_id: context.digital_employee_id.clone(),
+        conclusion,
+        evidence_refs,
+        artifact_refs,
+        confidence_factors,
+        uncertainty: parsed_string(parsed.as_ref(), "uncertainty").unwrap_or_default(),
+        missing_information,
+        recommended_next_action,
+        requires_human_review: parsed
+            .as_ref()
+            .and_then(|value| value.get("requires_human_review"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+    }
+}
+
+fn expected_output(context: &ProjectTaskWritebackContext, key: &str) -> bool {
+    context.expected_outputs.iter().any(|value| value == key)
+}
+
+fn parse_summary_json(summary: Option<&str>) -> Option<serde_json::Value> {
+    let text = summary?.trim();
+    if text.is_empty() {
+        return None;
+    }
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
+        if value.is_object() {
+            return Some(value);
+        }
+    }
+    let fenced = extract_fenced_json(text)?;
+    serde_json::from_str::<serde_json::Value>(&fenced)
+        .ok()
+        .filter(serde_json::Value::is_object)
+}
+
+fn extract_fenced_json(text: &str) -> Option<String> {
+    let start = text.find("```json").or_else(|| text.find("```"))?;
+    let after_start = &text[start..];
+    let first_newline = after_start.find('\n')?;
+    let content_start = start + first_newline + 1;
+    let rest = &text[content_start..];
+    let end = rest.find("```")?;
+    Some(rest[..end].trim().to_string())
+}
+
+fn parsed_conclusion(value: Option<&serde_json::Value>) -> Option<String> {
+    parsed_string(value, "conclusion").or_else(|| {
+        value
+            .and_then(|value| value.get("execution_summary"))
+            .and_then(|summary| {
+                summary
+                    .as_str()
+                    .and_then(|text| trimmed_optional(Some(text)))
+                    .or_else(|| {
+                        summary.as_object().and_then(|object| {
+                            ["summary", "description", "conclusion", "status"]
+                                .iter()
+                                .find_map(|key| {
+                                    object
+                                        .get(*key)
+                                        .and_then(serde_json::Value::as_str)
+                                        .and_then(|text| trimmed_optional(Some(text)))
+                                })
+                        })
+                    })
+                    .or_else(|| summary.is_object().then(|| summary.to_string()))
+            })
+    })
+}
+
+fn parsed_string(value: Option<&serde_json::Value>, key: &str) -> Option<String> {
+    value
+        .and_then(|value| value.get(key))
+        .and_then(serde_json::Value::as_str)
+        .and_then(|text| trimmed_optional(Some(text)))
+}
+
+fn parsed_array(value: Option<&serde_json::Value>, key: &str) -> Vec<serde_json::Value> {
+    value
+        .and_then(|value| value.get(key))
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn parsed_confidence_factors(
+    value: Option<&serde_json::Value>,
+) -> HashMap<String, serde_json::Value> {
+    let mut factors = HashMap::new();
+    if let Some(object) = value
+        .and_then(|value| value.get("confidence_factors"))
+        .and_then(serde_json::Value::as_object)
+    {
+        factors.extend(
+            object
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
+    }
+    if let Some(confidence) = value.and_then(|value| value.get("confidence")) {
+        factors.insert("confidence".to_string(), confidence.clone());
+    }
+    factors
+}
+
+fn trimmed_optional(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn runtime_command_evidence_ref(
+    command_id: &str,
+    provider_session_id: Option<&str>,
+) -> serde_json::Value {
+    let mut evidence = serde_json::Map::from_iter([
+        (
+            "type".to_string(),
+            serde_json::Value::String("runtime_command".to_string()),
+        ),
+        (
+            "ref".to_string(),
+            serde_json::Value::String(format!("runtime-command://{command_id}")),
+        ),
+    ]);
+    if let Some(provider_session_id) = provider_session_id {
+        evidence.insert(
+            "provider_session_id".to_string(),
+            serde_json::Value::String(provider_session_id.to_string()),
+        );
+    }
+    serde_json::Value::Object(evidence)
+}
+
 fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }
@@ -934,4 +1207,50 @@ fn non_empty_session_id(payload: &RuntimeSessionCommandPayload) -> Option<String
 fn reusable_provider_session(payload: &RuntimeSessionCommandPayload) -> bool {
     payload.session_policy.recoverable
         && payload.session_policy.mode != SessionPolicyMode::Ephemeral
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::payload::RuntimeSessionPolicy;
+    use serde_json::json;
+
+    fn project_task_session_payload(digital_employee_id: &str) -> RuntimeSessionCommandPayload {
+        RuntimeSessionCommandPayload {
+            command_id: "cmd-project-task".to_string(),
+            tenant_id: None,
+            team_id: None,
+            digital_employee_id: digital_employee_id.to_string(),
+            execution_instance_id: "22222222-2222-4222-8222-222222222222".to_string(),
+            runtime_node_id: None,
+            provider_type: "claude-code".to_string(),
+            agent_home_dir: Some("/tmp/runtime-agent-test".to_string()),
+            workspace_files: Vec::new(),
+            skills: Vec::new(),
+            mcp_servers: Vec::new(),
+            session_policy: RuntimeSessionPolicy {
+                mode: SessionPolicyMode::New,
+                provider_session_id: None,
+                recoverable: true,
+            },
+            prompt: Some("complete the task".to_string()),
+            input: None,
+            context_refs: Vec::new(),
+            artifact_refs: Vec::new(),
+            model: None,
+            metadata: json!({
+                "source": "project_task_dispatch",
+                "project_task_id": "55555555-5555-4555-8555-555555555555",
+                "expected_outputs": ["execution_summary", "evidence_refs", "recommended_next_action"],
+                "handoff_contract": {"completion_path": "project_task_writeback"}
+            }),
+        }
+    }
+
+    #[test]
+    fn project_task_writeback_context_requires_digital_employee_id() {
+        let payload = project_task_session_payload("   ");
+
+        assert!(project_task_writeback_context(&payload).is_none());
+    }
 }

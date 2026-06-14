@@ -23,6 +23,7 @@ const EXECUTION_INSTANCE_ID: &str = "22222222-2222-4222-8222-222222222222";
 const TENANT_ID: &str = "00000000-0000-4000-8000-000000000001";
 const TEAM_ID: &str = "33333333-3333-4333-8333-333333333333";
 const RUNTIME_NODE_ID: &str = "44444444-4444-4444-8444-444444444444";
+const PROJECT_TASK_ID: &str = "55555555-5555-4555-8555-555555555555";
 
 fn make_script(dir: &Path, name: &str, body: &str) -> PathBuf {
     let path = dir.join(name);
@@ -396,6 +397,131 @@ async fn serve_command_failures(capture: CommandFailureCapture) -> CommandWriteb
     CommandWritebackServer { addr, task }
 }
 
+#[derive(Clone, Default)]
+struct CommandCompletionCapture {
+    events: Arc<Mutex<Vec<CapturedWriteback>>>,
+    complete: Arc<Mutex<Option<CapturedWriteback>>>,
+    project_task_complete: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
+}
+
+#[derive(Clone, Debug)]
+struct CapturedProjectTaskWriteback {
+    project_task_id: String,
+    authorization: Option<String>,
+    node_id: Option<String>,
+    payload: Value,
+}
+
+async fn serve_command_completion_writebacks(
+    capture: CommandCompletionCapture,
+) -> CommandWritebackServer {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let addr = listener.local_addr().expect("local addr");
+    let app = Router::new()
+        .route(
+            "/api/v1/runtime/commands/{command_id}/complete",
+            post(capture_complete_writeback),
+        )
+        .route(
+            "/api/v1/runtime/commands/{command_id}/events",
+            post(capture_event_writeback),
+        )
+        .route(
+            "/api/v1/runtime/project-tasks/{project_task_id}/complete",
+            post(capture_project_task_complete_writeback),
+        )
+        .with_state(capture);
+    let task = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .await
+            .expect("serve completion writebacks");
+    });
+    CommandWritebackServer { addr, task }
+}
+
+async fn serve_failing_project_task_completion(
+    capture: CommandCompletionCapture,
+) -> CommandWritebackServer {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let addr = listener.local_addr().expect("local addr");
+    let app = Router::new()
+        .route(
+            "/api/v1/runtime/commands/{command_id}/complete",
+            post(capture_complete_writeback),
+        )
+        .route(
+            "/api/v1/runtime/commands/{command_id}/events",
+            post(capture_event_writeback),
+        )
+        .route(
+            "/api/v1/runtime/project-tasks/{project_task_id}/complete",
+            post(reject_project_task_complete_writeback),
+        )
+        .with_state(capture);
+    let task = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .await
+            .expect("serve failing project task writeback");
+    });
+    CommandWritebackServer { addr, task }
+}
+
+async fn capture_complete_writeback(
+    AxumPath(command_id): AxumPath<String>,
+    State(capture): State<CommandCompletionCapture>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    *capture.complete.lock().expect("complete lock") = Some(CapturedWriteback {
+        command_id,
+        authorization: header_value(&headers, "authorization"),
+        node_id: header_value(&headers, "x-node-id"),
+        payload,
+    });
+    StatusCode::ACCEPTED
+}
+
+async fn capture_event_writeback(
+    AxumPath(command_id): AxumPath<String>,
+    State(capture): State<CommandCompletionCapture>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    capture
+        .events
+        .lock()
+        .expect("events lock")
+        .push(CapturedWriteback {
+            command_id,
+            authorization: header_value(&headers, "authorization"),
+            node_id: header_value(&headers, "x-node-id"),
+            payload,
+        });
+    StatusCode::ACCEPTED
+}
+
+async fn capture_project_task_complete_writeback(
+    AxumPath(project_task_id): AxumPath<String>,
+    State(capture): State<CommandCompletionCapture>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    *capture
+        .project_task_complete
+        .lock()
+        .expect("project task complete lock") = Some(CapturedProjectTaskWriteback {
+        project_task_id,
+        authorization: header_value(&headers, "authorization"),
+        node_id: header_value(&headers, "x-node-id"),
+        payload,
+    });
+    StatusCode::ACCEPTED
+}
+
+async fn reject_project_task_complete_writeback() -> StatusCode {
+    StatusCode::INTERNAL_SERVER_ERROR
+}
+
 async fn serve_failing_command_failures() -> CommandWritebackServer {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let addr = listener.local_addr().expect("local addr");
@@ -440,11 +566,299 @@ async fn wait_for_writeback(slot: Arc<Mutex<Option<CapturedWriteback>>>) -> Capt
     panic!("runtime command writeback was not received");
 }
 
+async fn wait_for_project_task_writeback(
+    slot: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
+) -> CapturedProjectTaskWriteback {
+    for _ in 0..100 {
+        if let Some(writeback) = slot.lock().expect("project task writeback lock").clone() {
+            return writeback;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("project task complete writeback was not received");
+}
+
 fn header_value(headers: &HeaderMap, key: &str) -> Option<String> {
     headers
         .get(key)
         .and_then(|value| value.to_str().ok())
         .map(ToString::to_string)
+}
+
+#[tokio::test]
+async fn start_session_completes_project_task_when_metadata_requests_writeback() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude-project-task",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"system","session_id":"session-from-project-task"}'
+printf '%s\n' '{"type":"result","result":"provider produced the requested execution summary"}'
+"#,
+    );
+    let capture = CommandCompletionCapture::default();
+    let http_server = serve_command_completion_writebacks(capture.clone()).await;
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        "node-1",
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+    let home = prepare_employee_home(&temp);
+    let mut command = session_command_in_home(
+        &home,
+        "cmd-project-task",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("complete the project task"),
+        None,
+    );
+    command.payload["metadata"] = json!({
+        "source": "project_task_dispatch",
+        "project_task_id": PROJECT_TASK_ID,
+        "expected_outputs": ["execution_summary", "evidence_refs", "recommended_next_action"],
+        "input_requirements": {},
+        "handoff_contract": {"completion_path": "project_task_writeback"}
+    });
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("project task command accepted");
+    let run_id = outcome.run_id.expect("run id");
+    wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+
+    let command_complete = wait_for_writeback(capture.complete.clone()).await;
+    assert_eq!(command_complete.command_id, "cmd-project-task");
+    assert_eq!(
+        command_complete.authorization.as_deref(),
+        Some("Bearer session-token")
+    );
+
+    let project_complete =
+        wait_for_project_task_writeback(capture.project_task_complete.clone()).await;
+    assert_eq!(project_complete.project_task_id, PROJECT_TASK_ID);
+    assert_eq!(
+        project_complete.authorization.as_deref(),
+        Some("Bearer session-token")
+    );
+    assert_eq!(project_complete.node_id.as_deref(), Some("node-1"));
+    assert_eq!(
+        project_complete.payload["digital_employee_id"],
+        DIGITAL_EMPLOYEE_ID
+    );
+    assert_eq!(
+        project_complete.payload["conclusion"],
+        "provider produced the requested execution summary"
+    );
+    assert!(
+        project_complete
+            .payload
+            .get("evidence_refs")
+            .and_then(Value::as_array)
+            .is_some_and(|refs| !refs.is_empty())
+    );
+    assert!(
+        project_complete
+            .payload
+            .get("recommended_next_action")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+    );
+
+    http_server.task.abort();
+}
+
+#[tokio::test]
+async fn start_session_does_not_complete_project_task_without_dispatch_source() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude-non-project-task",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"system","session_id":"session-from-ordinary-command"}'
+printf '%s\n' '{"type":"result","result":"ordinary command completed"}'
+"#,
+    );
+    let capture = CommandCompletionCapture::default();
+    let http_server = serve_command_completion_writebacks(capture.clone()).await;
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        "node-1",
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+    let home = prepare_employee_home(&temp);
+    let mut command = session_command_in_home(
+        &home,
+        "cmd-ordinary",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("complete an ordinary command"),
+        None,
+    );
+    command.payload["metadata"] = json!({
+        "source": "manual",
+        "project_task_id": PROJECT_TASK_ID,
+        "handoff_contract": {"completion_path": "project_task_writeback"}
+    });
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("ordinary command accepted");
+    let run_id = outcome.run_id.expect("run id");
+    wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+
+    let command_complete = wait_for_writeback(capture.complete.clone()).await;
+    assert_eq!(command_complete.command_id, "cmd-ordinary");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(
+        capture
+            .project_task_complete
+            .lock()
+            .expect("project task complete lock")
+            .is_none(),
+        "ordinary command metadata must not trigger project task writeback"
+    );
+
+    http_server.task.abort();
+}
+
+#[tokio::test]
+async fn start_session_keeps_run_completed_when_project_task_writeback_fails() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude-project-task-writeback-fails",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"system","session_id":"session-project-task-writeback-fails"}'
+printf '%s\n' '{"type":"result","result":"provider finished before project task writeback failed"}'
+"#,
+    );
+    let capture = CommandCompletionCapture::default();
+    let http_server = serve_failing_project_task_completion(capture.clone()).await;
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        "node-1",
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+    let home = prepare_employee_home(&temp);
+    let mut command = session_command_in_home(
+        &home,
+        "cmd-project-task-writeback-fails",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("complete the project task"),
+        None,
+    );
+    command.payload["metadata"] = json!({
+        "source": "project_task_dispatch",
+        "project_task_id": PROJECT_TASK_ID,
+        "expected_outputs": ["execution_summary", "evidence_refs", "recommended_next_action"],
+        "handoff_contract": {"completion_path": "project_task_writeback"}
+    });
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("project task command accepted");
+    let run_id = outcome.run_id.expect("run id");
+    let snapshot = wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+
+    assert_eq!(snapshot.error, None);
+    let command_complete = wait_for_writeback(capture.complete.clone()).await;
+    assert_eq!(
+        command_complete.command_id,
+        "cmd-project-task-writeback-fails"
+    );
+
+    http_server.task.abort();
+}
+
+#[tokio::test]
+async fn start_session_preserves_structured_project_task_writeback_fields() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude-project-task-structured",
+        r#"#!/usr/bin/env bash
+cat <<'EOF'
+{"type":"system","session_id":"session-from-structured-project-task"}
+{"type":"result","result":"{\"execution_summary\":{\"summary\":\"structured task complete\"},\"evidence_refs\":[{\"type\":\"artifact\",\"ref\":\"artifact://evidence-one\"}],\"artifact_refs\":[{\"type\":\"file\",\"ref\":\"file://artifact-one\"}],\"confidence_factors\":{\"provider_confidence\":\"high\",\"score\":0.82},\"uncertainty\":\"low\",\"missing_information\":[{\"field\":\"none\"}],\"recommended_next_action\":\"ready for review\",\"requires_human_review\":true}"}
+EOF
+"#,
+    );
+    let capture = CommandCompletionCapture::default();
+    let http_server = serve_command_completion_writebacks(capture.clone()).await;
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        "node-1",
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+    let home = prepare_employee_home(&temp);
+    let mut command = session_command_in_home(
+        &home,
+        "cmd-project-task-structured",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("complete the project task"),
+        None,
+    );
+    command.payload["metadata"] = json!({
+        "source": "project_task_dispatch",
+        "project_task_id": PROJECT_TASK_ID,
+        "expected_outputs": ["execution_summary", "evidence_refs", "recommended_next_action"],
+        "handoff_contract": {"completion_path": "project_task_writeback"}
+    });
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("project task command accepted");
+    let run_id = outcome.run_id.expect("run id");
+    wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+
+    let project_complete =
+        wait_for_project_task_writeback(capture.project_task_complete.clone()).await;
+    assert_eq!(
+        project_complete.payload["conclusion"],
+        "structured task complete"
+    );
+    assert_eq!(
+        project_complete.payload["evidence_refs"][0]["ref"],
+        "artifact://evidence-one"
+    );
+    assert_eq!(
+        project_complete.payload["artifact_refs"][0]["ref"],
+        "file://artifact-one"
+    );
+    assert_eq!(
+        project_complete.payload["confidence_factors"]["provider_confidence"],
+        "high"
+    );
+    assert_eq!(
+        project_complete.payload["confidence_factors"]["score"],
+        0.82
+    );
+    assert_eq!(project_complete.payload["uncertainty"], "low");
+    assert_eq!(
+        project_complete.payload["missing_information"][0]["field"],
+        "none"
+    );
+    assert_eq!(
+        project_complete.payload["recommended_next_action"],
+        "ready for review"
+    );
+    assert_eq!(project_complete.payload["requires_human_review"], true);
+
+    http_server.task.abort();
 }
 
 #[tokio::test]
