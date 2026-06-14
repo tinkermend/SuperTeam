@@ -1134,7 +1134,289 @@ func (r *PgRepository) GetRouteDecisionByCoordinationJob(ctx context.Context, te
 }
 
 func (r *PgRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (ProjectTaskGraph, error) {
-	return ProjectTaskGraph{}, ErrProjectTaskGraphPending
+	graph := emptyProjectTaskGraph()
+	tasks, err := r.projectTaskGraphTasks(ctx, req)
+	if err != nil {
+		return graph, err
+	}
+	if len(tasks) == 0 {
+		return graph, nil
+	}
+	graph.Nodes = taskGraphNodes(tasks)
+	taskIDs := graphProjectTaskIDs(tasks)
+	dependencies, err := r.ListProjectTaskDependencies(ctx, req.TenantID, req.ProjectID, taskIDs)
+	if err != nil {
+		return graph, err
+	}
+	graph.Edges, err = r.projectTaskGraphEdges(ctx, req, tasks, dependencies)
+	if err != nil {
+		return graph, err
+	}
+	graph.Employees, err = r.projectTaskGraphEmployees(ctx, req.TenantID, req.ProjectID, tasks)
+	if err != nil {
+		return graph, err
+	}
+	graph.Runs, err = r.projectTaskGraphRuns(ctx, req.TenantID, tasks)
+	if err != nil {
+		return graph, err
+	}
+	summaries, err := r.ListExecutionSummaries(ctx, req.TenantID, req.ProjectID, 500, 0)
+	if err != nil {
+		return graph, err
+	}
+	graph.ExecutionSummaries = filterExecutionSummariesForTasks(summaries, taskIDs)
+	jobIDs := graphCoordinationJobIDs(req.CoordinationJobID, tasks)
+	graph.DecisionRequests, err = r.ListDemandLaunchDecisionRequests(ctx, req.TenantID, req.ProjectID, jobIDs, taskIDs, 200)
+	if err != nil {
+		return graph, err
+	}
+	graph.RecentEvents, err = r.projectTaskGraphEvents(ctx, req, taskIDs, decisionRequestIDs(graph.DecisionRequests))
+	if err != nil {
+		return graph, err
+	}
+	return graph, nil
+}
+
+func (r *PgRepository) projectTaskGraphTasks(ctx context.Context, req GetProjectTaskGraphRequest) ([]ProjectTask, error) {
+	var (
+		tasks []ProjectTask
+		err   error
+	)
+	switch {
+	case req.CoordinationJobID != nil:
+		tasks, err = r.ListProjectTasksByCoordinationJob(ctx, req.TenantID, req.ProjectID, *req.CoordinationJobID)
+	case req.DemandID != nil:
+		tasks, err = r.ListDemandLaunchProjectTasks(ctx, req.TenantID, req.ProjectID, *req.DemandID, req.Limit)
+	default:
+		tasks, err = r.ListProjectTasks(ctx, req.TenantID, req.ProjectID, nil, req.Limit, req.Offset)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if req.DemandID != nil && req.CoordinationJobID != nil {
+		tasks = filterTasksForDemand(tasks, *req.DemandID)
+	}
+	return tasks, nil
+}
+
+func (r *PgRepository) projectTaskGraphEdges(ctx context.Context, req GetProjectTaskGraphRequest, tasks []ProjectTask, dependencies []ProjectTaskDependency) ([]ProjectTaskGraphEdge, error) {
+	statusByTaskID := map[uuid.UUID]string{}
+	for _, task := range tasks {
+		statusByTaskID[task.ID] = task.Status
+	}
+	edges := make([]ProjectTaskGraphEdge, 0, len(dependencies))
+	for _, dependency := range dependencies {
+		status, ok := statusByTaskID[dependency.BlockerTaskID]
+		if !ok {
+			blocker, err := r.GetProjectTask(ctx, req.TenantID, dependency.BlockerTaskID)
+			if err != nil {
+				return nil, err
+			}
+			if blocker.ProjectID != req.ProjectID {
+				return nil, ErrProjectNotFound
+			}
+			status = blocker.Status
+			statusByTaskID[dependency.BlockerTaskID] = status
+		}
+		edges = append(edges, ProjectTaskGraphEdge{
+			DependentTaskID:   dependency.DependentTaskID,
+			BlockerTaskID:     dependency.BlockerTaskID,
+			CoordinationJobID: dependency.CoordinationJobID,
+			EdgeStatus:        status,
+		})
+	}
+	return edges, nil
+}
+
+func (r *PgRepository) projectTaskGraphEmployees(ctx context.Context, tenantID, projectID uuid.UUID, tasks []ProjectTask) ([]ProjectTaskGraphEmployee, error) {
+	assignedIDs := map[uuid.UUID]struct{}{}
+	for _, task := range tasks {
+		if task.AssignedDigitalEmployeeID != nil {
+			assignedIDs[*task.AssignedDigitalEmployeeID] = struct{}{}
+		}
+	}
+	if len(assignedIDs) == 0 {
+		return []ProjectTaskGraphEmployee{}, nil
+	}
+	members, err := r.ListProjectMembers(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	employees := make([]ProjectTaskGraphEmployee, 0, len(assignedIDs))
+	seen := map[uuid.UUID]struct{}{}
+	for _, member := range members {
+		if member.PrincipalType != PrincipalTypeDigitalEmployee {
+			continue
+		}
+		if _, needed := assignedIDs[member.PrincipalID]; !needed {
+			continue
+		}
+		if _, exists := seen[member.PrincipalID]; exists {
+			continue
+		}
+		displayName := ""
+		if member.DisplayNameSnapshot != nil {
+			displayName = *member.DisplayNameSnapshot
+		}
+		employees = append(employees, ProjectTaskGraphEmployee{
+			DigitalEmployeeID: member.PrincipalID,
+			DisplayName:       displayName,
+			ProjectRole:       member.ProjectRole,
+			Status:            member.Status,
+		})
+		seen[member.PrincipalID] = struct{}{}
+	}
+	return employees, nil
+}
+
+func (r *PgRepository) projectTaskGraphRuns(ctx context.Context, tenantID uuid.UUID, tasks []ProjectTask) ([]ProjectTaskGraphRun, error) {
+	runs := make([]ProjectTaskGraphRun, 0)
+	for _, task := range tasks {
+		if task.DigitalEmployeeRunID == nil {
+			continue
+		}
+		row, err := r.q.GetTaskRun(ctx, queries.GetTaskRunParams{ID: *task.DigitalEmployeeRunID, TenantID: nullUUID(&tenantID)})
+		if err != nil {
+			return nil, err
+		}
+		runtimeTaskID := task.RuntimeTaskID
+		if runtimeTaskID == nil {
+			id := row.TaskID
+			runtimeTaskID = &id
+		}
+		runs = append(runs, ProjectTaskGraphRun{
+			ProjectTaskID:        task.ID,
+			DigitalEmployeeRunID: task.DigitalEmployeeRunID,
+			RuntimeTaskID:        runtimeTaskID,
+			RuntimeNodeID:        ptrUUID(row.RuntimeNodeID),
+			RuntimeNodeSummary:   row.NodeID,
+			Status:               row.Status,
+			ProviderType:         textValue(row.ProviderType),
+		})
+	}
+	return runs, nil
+}
+
+func (r *PgRepository) projectTaskGraphEvents(ctx context.Context, req GetProjectTaskGraphRequest, taskIDs, decisionIDs []uuid.UUID) ([]ProjectEvent, error) {
+	if req.DemandID != nil {
+		return r.ListDemandLaunchEvents(ctx, req.TenantID, req.ProjectID, *req.DemandID, nil, taskIDs, decisionIDs, 100)
+	}
+	events, err := r.ListProjectEvents(ctx, req.TenantID, req.ProjectID, 100, 0)
+	if err != nil {
+		return nil, err
+	}
+	return filterEventsForTaskGraph(events, req.CoordinationJobID, taskIDs, decisionIDs), nil
+}
+
+func emptyProjectTaskGraph() ProjectTaskGraph {
+	return ProjectTaskGraph{
+		Nodes:              []ProjectTaskGraphNode{},
+		Edges:              []ProjectTaskGraphEdge{},
+		Employees:          []ProjectTaskGraphEmployee{},
+		Runs:               []ProjectTaskGraphRun{},
+		ExecutionSummaries: []ExecutionSummary{},
+		RecentEvents:       []ProjectEvent{},
+		DecisionRequests:   []DecisionRequest{},
+	}
+}
+
+func taskGraphNodes(tasks []ProjectTask) []ProjectTaskGraphNode {
+	nodes := make([]ProjectTaskGraphNode, 0, len(tasks))
+	for _, task := range tasks {
+		nodes = append(nodes, ProjectTaskGraphNode{Task: task})
+	}
+	return nodes
+}
+
+func graphCoordinationJobIDs(filter *uuid.UUID, tasks []ProjectTask) []uuid.UUID {
+	ids := make([]uuid.UUID, 0)
+	seen := map[uuid.UUID]struct{}{}
+	if filter != nil {
+		ids = append(ids, *filter)
+		seen[*filter] = struct{}{}
+	}
+	for _, task := range tasks {
+		if task.CoordinationJobID == nil {
+			continue
+		}
+		if _, exists := seen[*task.CoordinationJobID]; exists {
+			continue
+		}
+		ids = append(ids, *task.CoordinationJobID)
+		seen[*task.CoordinationJobID] = struct{}{}
+	}
+	return ids
+}
+
+func filterExecutionSummariesForTasks(summaries []ExecutionSummary, taskIDs []uuid.UUID) []ExecutionSummary {
+	needed := uuidSet(taskIDs)
+	filtered := make([]ExecutionSummary, 0)
+	for _, summary := range summaries {
+		if _, ok := needed[summary.ProjectTaskID]; ok {
+			filtered = append(filtered, summary)
+		}
+	}
+	return filtered
+}
+
+func filterEventsForTaskGraph(events []ProjectEvent, coordinationJobID *uuid.UUID, taskIDs, decisionIDs []uuid.UUID) []ProjectEvent {
+	taskSet := uuidStringSet(taskIDs)
+	decisionSet := uuidStringSet(decisionIDs)
+	var coordinationJob string
+	if coordinationJobID != nil {
+		coordinationJob = coordinationJobID.String()
+	}
+	filtered := make([]ProjectEvent, 0)
+	for _, event := range events {
+		if _, ok := taskSet[event.ActorID]; ok {
+			filtered = append(filtered, event)
+			continue
+		}
+		if event.ResourceID != nil {
+			if _, ok := taskSet[*event.ResourceID]; ok {
+				filtered = append(filtered, event)
+				continue
+			}
+			if _, ok := decisionSet[*event.ResourceID]; ok {
+				filtered = append(filtered, event)
+				continue
+			}
+		}
+		if rawTaskID, ok := event.Payload["project_task_id"].(string); ok {
+			if _, exists := taskSet[rawTaskID]; exists {
+				filtered = append(filtered, event)
+				continue
+			}
+		}
+		if rawDecisionID, ok := event.Payload["decision_request_id"].(string); ok {
+			if _, exists := decisionSet[rawDecisionID]; exists {
+				filtered = append(filtered, event)
+				continue
+			}
+		}
+		if coordinationJob != "" {
+			if rawJobID, ok := event.Payload["coordination_job_id"].(string); ok && rawJobID == coordinationJob {
+				filtered = append(filtered, event)
+			}
+		}
+	}
+	return filtered
+}
+
+func uuidSet(ids []uuid.UUID) map[uuid.UUID]struct{} {
+	set := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		set[id] = struct{}{}
+	}
+	return set
+}
+
+func uuidStringSet(ids []uuid.UUID) map[string]struct{} {
+	set := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		set[id.String()] = struct{}{}
+	}
+	return set
 }
 
 func (r *PgRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error) {

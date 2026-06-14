@@ -2615,16 +2615,86 @@ type ProjectStatusSummary struct {
 
 // ProjectTask defines model for ProjectTask.
 type ProjectTask struct {
-	AssignedDigitalEmployeeId *openapi_types.UUID `json:"assigned_digital_employee_id,omitempty"`
-	DemandId                  *openapi_types.UUID `json:"demand_id,omitempty"`
-	Id                        openapi_types.UUID  `json:"id"`
-	ProjectId                 openapi_types.UUID  `json:"project_id"`
-	RequiresHumanApproval     bool                `json:"requires_human_approval"`
-	RiskLevel                 *string             `json:"risk_level,omitempty"`
-	Status                    string              `json:"status"`
-	Summary                   *string             `json:"summary,omitempty"`
-	TenantId                  openapi_types.UUID  `json:"tenant_id"`
-	Title                     string              `json:"title"`
+	AssignedDigitalEmployeeId *openapi_types.UUID     `json:"assigned_digital_employee_id,omitempty"`
+	CoordinationJobId         *openapi_types.UUID     `json:"coordination_job_id,omitempty"`
+	DemandId                  *openapi_types.UUID     `json:"demand_id,omitempty"`
+	ExpectedOutputs           *[]interface{}          `json:"expected_outputs,omitempty"`
+	HandoffContract           *map[string]interface{} `json:"handoff_contract,omitempty"`
+	Id                        openapi_types.UUID      `json:"id"`
+	InputRequirements         *map[string]interface{} `json:"input_requirements,omitempty"`
+	PlannedTaskKey            *string                 `json:"planned_task_key,omitempty"`
+	PlannerMetadata           *map[string]interface{} `json:"planner_metadata,omitempty"`
+	ProjectId                 openapi_types.UUID      `json:"project_id"`
+	RequiresHumanApproval     bool                    `json:"requires_human_approval"`
+	RiskLevel                 *string                 `json:"risk_level,omitempty"`
+	RouteDecisionId           *openapi_types.UUID     `json:"route_decision_id,omitempty"`
+	StageIndex                *int32                  `json:"stage_index,omitempty"`
+	Status                    string                  `json:"status"`
+	Summary                   *string                 `json:"summary,omitempty"`
+	TaskKind                  *string                 `json:"task_kind,omitempty"`
+	TenantId                  openapi_types.UUID      `json:"tenant_id"`
+	Title                     string                  `json:"title"`
+}
+
+// ProjectTaskGraph defines model for ProjectTaskGraph.
+type ProjectTaskGraph struct {
+	DecisionRequests   []ProjectDecisionRequest   `json:"decision_requests"`
+	Edges              []ProjectTaskGraphEdge     `json:"edges"`
+	Employees          []ProjectTaskGraphEmployee `json:"employees"`
+	ExecutionSummaries []ProjectExecutionSummary  `json:"execution_summaries"`
+	Nodes              []ProjectTaskGraphNode     `json:"nodes"`
+	RecentEvents       []ProjectEvent             `json:"recent_events"`
+	Runs               []ProjectTaskGraphRun      `json:"runs"`
+}
+
+// ProjectTaskGraphEdge defines model for ProjectTaskGraphEdge.
+type ProjectTaskGraphEdge struct {
+	BlockerTaskId     openapi_types.UUID  `json:"blocker_task_id"`
+	CoordinationJobId *openapi_types.UUID `json:"coordination_job_id,omitempty"`
+	DependentTaskId   openapi_types.UUID  `json:"dependent_task_id"`
+	EdgeStatus        string              `json:"edge_status"`
+}
+
+// ProjectTaskGraphEmployee defines model for ProjectTaskGraphEmployee.
+type ProjectTaskGraphEmployee struct {
+	DigitalEmployeeId openapi_types.UUID `json:"digital_employee_id"`
+	DisplayName       string             `json:"display_name"`
+	ProjectRole       ProjectRole        `json:"project_role"`
+	Status            string             `json:"status"`
+}
+
+// ProjectTaskGraphNode defines model for ProjectTaskGraphNode.
+type ProjectTaskGraphNode struct {
+	AssignedDigitalEmployeeId *openapi_types.UUID    `json:"assigned_digital_employee_id,omitempty"`
+	CoordinationJobId         *openapi_types.UUID    `json:"coordination_job_id,omitempty"`
+	DemandId                  *openapi_types.UUID    `json:"demand_id,omitempty"`
+	ExpectedOutputs           []interface{}          `json:"expected_outputs"`
+	HandoffContract           map[string]interface{} `json:"handoff_contract"`
+	Id                        openapi_types.UUID     `json:"id"`
+	InputRequirements         map[string]interface{} `json:"input_requirements"`
+	PlannedTaskKey            *string                `json:"planned_task_key,omitempty"`
+	PlannerMetadata           map[string]interface{} `json:"planner_metadata"`
+	ProjectId                 openapi_types.UUID     `json:"project_id"`
+	RequiresHumanApproval     bool                   `json:"requires_human_approval"`
+	RiskLevel                 *string                `json:"risk_level,omitempty"`
+	RouteDecisionId           *openapi_types.UUID    `json:"route_decision_id,omitempty"`
+	StageIndex                *int32                 `json:"stage_index,omitempty"`
+	Status                    string                 `json:"status"`
+	Summary                   *string                `json:"summary,omitempty"`
+	TaskKind                  *string                `json:"task_kind,omitempty"`
+	TenantId                  openapi_types.UUID     `json:"tenant_id"`
+	Title                     string                 `json:"title"`
+}
+
+// ProjectTaskGraphRun defines model for ProjectTaskGraphRun.
+type ProjectTaskGraphRun struct {
+	DigitalEmployeeRunId *openapi_types.UUID `json:"digital_employee_run_id,omitempty"`
+	ProjectTaskId        openapi_types.UUID  `json:"project_task_id"`
+	ProviderType         string              `json:"provider_type"`
+	RuntimeNodeId        *openapi_types.UUID `json:"runtime_node_id,omitempty"`
+	RuntimeNodeSummary   string              `json:"runtime_node_summary"`
+	RuntimeTaskId        *openapi_types.UUID `json:"runtime_task_id,omitempty"`
+	Status               string              `json:"status"`
 }
 
 // ProjectTaskSummary defines model for ProjectTaskSummary.
@@ -3585,6 +3655,12 @@ type ListProjectReportsParams struct {
 type ListProjectRouteDecisionsParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// GetProjectTaskGraphParams defines parameters for GetProjectTaskGraph.
+type GetProjectTaskGraphParams struct {
+	CoordinationJobId *openapi_types.UUID `form:"coordination_job_id,omitempty" json:"coordination_job_id,omitempty"`
+	DemandId          *openapi_types.UUID `form:"demand_id,omitempty" json:"demand_id,omitempty"`
 }
 
 // ListProjectTasksParams defines parameters for ListProjectTasks.
@@ -4577,6 +4653,9 @@ type ServerInterface interface {
 	// List project route decisions
 	// (GET /api/v1/projects/{projectId}/route-decisions)
 	ListProjectRouteDecisions(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectRouteDecisionsParams)
+	// Get project task graph read model
+	// (GET /api/v1/projects/{projectId}/task-graph)
+	GetProjectTaskGraph(w http.ResponseWriter, r *http.Request, projectId ProjectId, params GetProjectTaskGraphParams)
 	// List project tasks
 	// (GET /api/v1/projects/{projectId}/tasks)
 	ListProjectTasks(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTasksParams)
@@ -5201,6 +5280,12 @@ func (_ Unimplemented) ListProjectReports(w http.ResponseWriter, r *http.Request
 // List project route decisions
 // (GET /api/v1/projects/{projectId}/route-decisions)
 func (_ Unimplemented) ListProjectRouteDecisions(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectRouteDecisionsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get project task graph read model
+// (GET /api/v1/projects/{projectId}/task-graph)
+func (_ Unimplemented) GetProjectTaskGraph(w http.ResponseWriter, r *http.Request, projectId ProjectId, params GetProjectTaskGraphParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8218,6 +8303,61 @@ func (siw *ServerInterfaceWrapper) ListProjectRouteDecisions(w http.ResponseWrit
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListProjectRouteDecisions(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectTaskGraph operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectTaskGraph(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetProjectTaskGraphParams
+
+	// ------------- Optional query parameter "coordination_job_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "coordination_job_id", r.URL.Query(), &params.CoordinationJobId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "coordination_job_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "coordination_job_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "demand_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "demand_id", r.URL.Query(), &params.DemandId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "demand_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "demand_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectTaskGraph(w, r, projectId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -11302,6 +11442,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/route-decisions", wrapper.ListProjectRouteDecisions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/task-graph", wrapper.GetProjectTaskGraph)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/tasks", wrapper.ListProjectTasks)

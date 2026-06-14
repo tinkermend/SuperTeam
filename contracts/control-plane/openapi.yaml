@@ -819,6 +819,33 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/task-graph:
+    get:
+      operationId: getProjectTaskGraph
+      summary: Get project task graph read model
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: coordination_job_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: demand_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Project task graph
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectTaskGraph"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/events:
     get:
       operationId: listProjectEvents
@@ -3978,6 +4005,195 @@ components:
           type: string
         requires_human_approval:
           type: boolean
+        coordination_job_id:
+          type: string
+          format: uuid
+        route_decision_id:
+          type: string
+          format: uuid
+        planned_task_key:
+          type: string
+        task_kind:
+          type: string
+        stage_index:
+          type: integer
+          format: int32
+        expected_outputs:
+          type: array
+          items: {}
+        input_requirements:
+          type: object
+          additionalProperties: true
+        handoff_contract:
+          type: object
+          additionalProperties: true
+        planner_metadata:
+          type: object
+          additionalProperties: true
+    ProjectTaskGraph:
+      type: object
+      required:
+        - nodes
+        - edges
+        - employees
+        - runs
+        - execution_summaries
+        - recent_events
+        - decision_requests
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectTaskGraphNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectTaskGraphEdge"
+        employees:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectTaskGraphEmployee"
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectTaskGraphRun"
+        execution_summaries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectExecutionSummary"
+        recent_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectEvent"
+        decision_requests:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectDecisionRequest"
+    ProjectTaskGraphNode:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - title
+        - status
+        - requires_human_approval
+        - expected_outputs
+        - input_requirements
+        - handoff_contract
+        - planner_metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        demand_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        summary:
+          type: string
+        status:
+          type: string
+        assigned_digital_employee_id:
+          type: string
+          format: uuid
+        risk_level:
+          type: string
+        requires_human_approval:
+          type: boolean
+        coordination_job_id:
+          type: string
+          format: uuid
+        route_decision_id:
+          type: string
+          format: uuid
+        planned_task_key:
+          type: string
+        task_kind:
+          type: string
+        stage_index:
+          type: integer
+          format: int32
+        expected_outputs:
+          type: array
+          items: {}
+        input_requirements:
+          type: object
+          additionalProperties: true
+        handoff_contract:
+          type: object
+          additionalProperties: true
+        planner_metadata:
+          type: object
+          additionalProperties: true
+    ProjectTaskGraphEdge:
+      type: object
+      required:
+        - dependent_task_id
+        - blocker_task_id
+        - edge_status
+      properties:
+        dependent_task_id:
+          type: string
+          format: uuid
+        blocker_task_id:
+          type: string
+          format: uuid
+        coordination_job_id:
+          type: string
+          format: uuid
+        edge_status:
+          type: string
+    ProjectTaskGraphEmployee:
+      type: object
+      required:
+        - digital_employee_id
+        - display_name
+        - project_role
+        - status
+      properties:
+        digital_employee_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        project_role:
+          $ref: "#/components/schemas/ProjectRole"
+        status:
+          type: string
+    ProjectTaskGraphRun:
+      type: object
+      required:
+        - project_task_id
+        - runtime_node_summary
+        - status
+        - provider_type
+      properties:
+        project_task_id:
+          type: string
+          format: uuid
+        digital_employee_run_id:
+          type: string
+          format: uuid
+        runtime_task_id:
+          type: string
+          format: uuid
+        runtime_node_id:
+          type: string
+          format: uuid
+        runtime_node_summary:
+          type: string
+        status:
+          type: string
+        provider_type:
+          type: string
     ProjectEvent:
       type: object
       required:

@@ -606,6 +606,18 @@ func (s *routeProjectService) ListProjectTasks(ctx context.Context, tenantID, pr
 	return nil, nil
 }
 
+func (s *routeProjectService) GetProjectTaskGraph(ctx context.Context, req project.GetProjectTaskGraphRequest) (*project.ProjectTaskGraph, error) {
+	return &project.ProjectTaskGraph{
+		Nodes:              []project.ProjectTaskGraphNode{},
+		Edges:              []project.ProjectTaskGraphEdge{},
+		Employees:          []project.ProjectTaskGraphEmployee{},
+		Runs:               []project.ProjectTaskGraphRun{},
+		ExecutionSummaries: []project.ExecutionSummary{},
+		RecentEvents:       []project.ProjectEvent{},
+		DecisionRequests:   []project.DecisionRequest{},
+	}, nil
+}
+
 func (s *routeProjectService) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.ProjectEvent, error) {
 	s.eventsTenantID = tenantID
 	s.eventsProjectID = projectID

@@ -27,6 +27,7 @@ type HandlerService interface {
 	SubmitDemand(ctx context.Context, req SubmitProjectDemandRequest) (*ProjectDemand, error)
 	ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error)
 	GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error)
+	GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (*ProjectTaskGraph, error)
 	GetOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error)
 	ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error)
 	ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error)
@@ -231,6 +232,36 @@ func (h *HTTPHandler) ListProjectTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, taskResponses(tasks))
+}
+
+func (h *HTTPHandler) GetProjectTaskGraph(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	req := GetProjectTaskGraphRequest{TenantID: tenantID, ProjectID: projectID}
+	if raw := r.URL.Query().Get("coordination_job_id"); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			http.Error(w, "invalid coordination_job_id", http.StatusBadRequest)
+			return
+		}
+		req.CoordinationJobID = &id
+	}
+	if raw := r.URL.Query().Get("demand_id"); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			http.Error(w, "invalid demand_id", http.StatusBadRequest)
+			return
+		}
+		req.DemandID = &id
+	}
+	graph, err := service.GetProjectTaskGraph(r.Context(), req)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, taskGraphResponseFromDomain(*graph))
 }
 
 func (h *HTTPHandler) ListProjectEvents(w http.ResponseWriter, r *http.Request) {
@@ -1194,16 +1225,81 @@ type projectMemberResponse struct {
 }
 
 type projectTaskResponse struct {
-	ID                        string  `json:"id"`
-	TenantID                  string  `json:"tenant_id"`
-	ProjectID                 string  `json:"project_id"`
-	DemandID                  *string `json:"demand_id,omitempty"`
-	Title                     string  `json:"title"`
-	Summary                   *string `json:"summary,omitempty"`
-	Status                    string  `json:"status"`
-	AssignedDigitalEmployeeID *string `json:"assigned_digital_employee_id,omitempty"`
-	RiskLevel                 *string `json:"risk_level,omitempty"`
-	RequiresHumanApproval     bool    `json:"requires_human_approval"`
+	ID                        string         `json:"id"`
+	TenantID                  string         `json:"tenant_id"`
+	ProjectID                 string         `json:"project_id"`
+	DemandID                  *string        `json:"demand_id,omitempty"`
+	Title                     string         `json:"title"`
+	Summary                   *string        `json:"summary,omitempty"`
+	Status                    string         `json:"status"`
+	AssignedDigitalEmployeeID *string        `json:"assigned_digital_employee_id,omitempty"`
+	RiskLevel                 *string        `json:"risk_level,omitempty"`
+	RequiresHumanApproval     bool           `json:"requires_human_approval"`
+	CoordinationJobID         *string        `json:"coordination_job_id,omitempty"`
+	RouteDecisionID           *string        `json:"route_decision_id,omitempty"`
+	PlannedTaskKey            *string        `json:"planned_task_key,omitempty"`
+	TaskKind                  *string        `json:"task_kind,omitempty"`
+	StageIndex                *int32         `json:"stage_index,omitempty"`
+	ExpectedOutputs           []any          `json:"expected_outputs"`
+	InputRequirements         map[string]any `json:"input_requirements"`
+	HandoffContract           map[string]any `json:"handoff_contract"`
+	PlannerMetadata           map[string]any `json:"planner_metadata"`
+}
+
+type projectTaskGraphResponse struct {
+	Nodes              []projectTaskGraphNodeResponse     `json:"nodes"`
+	Edges              []projectTaskGraphEdgeResponse     `json:"edges"`
+	Employees          []projectTaskGraphEmployeeResponse `json:"employees"`
+	Runs               []projectTaskGraphRunResponse      `json:"runs"`
+	ExecutionSummaries []executionSummaryResponse         `json:"execution_summaries"`
+	RecentEvents       []projectEventResponse             `json:"recent_events"`
+	DecisionRequests   []decisionRequestResponse          `json:"decision_requests"`
+}
+
+type projectTaskGraphNodeResponse struct {
+	ID                        string         `json:"id"`
+	TenantID                  string         `json:"tenant_id"`
+	ProjectID                 string         `json:"project_id"`
+	DemandID                  *string        `json:"demand_id,omitempty"`
+	Title                     string         `json:"title"`
+	Summary                   *string        `json:"summary,omitempty"`
+	Status                    string         `json:"status"`
+	AssignedDigitalEmployeeID *string        `json:"assigned_digital_employee_id,omitempty"`
+	RiskLevel                 *string        `json:"risk_level,omitempty"`
+	RequiresHumanApproval     bool           `json:"requires_human_approval"`
+	CoordinationJobID         *string        `json:"coordination_job_id,omitempty"`
+	RouteDecisionID           *string        `json:"route_decision_id,omitempty"`
+	PlannedTaskKey            *string        `json:"planned_task_key,omitempty"`
+	TaskKind                  *string        `json:"task_kind,omitempty"`
+	StageIndex                *int32         `json:"stage_index,omitempty"`
+	ExpectedOutputs           []any          `json:"expected_outputs"`
+	InputRequirements         map[string]any `json:"input_requirements"`
+	HandoffContract           map[string]any `json:"handoff_contract"`
+	PlannerMetadata           map[string]any `json:"planner_metadata"`
+}
+
+type projectTaskGraphEdgeResponse struct {
+	DependentTaskID   string  `json:"dependent_task_id"`
+	BlockerTaskID     string  `json:"blocker_task_id"`
+	CoordinationJobID *string `json:"coordination_job_id,omitempty"`
+	EdgeStatus        string  `json:"edge_status"`
+}
+
+type projectTaskGraphEmployeeResponse struct {
+	DigitalEmployeeID string      `json:"digital_employee_id"`
+	DisplayName       string      `json:"display_name"`
+	ProjectRole       ProjectRole `json:"project_role"`
+	Status            string      `json:"status"`
+}
+
+type projectTaskGraphRunResponse struct {
+	ProjectTaskID        string  `json:"project_task_id"`
+	DigitalEmployeeRunID *string `json:"digital_employee_run_id,omitempty"`
+	RuntimeTaskID        *string `json:"runtime_task_id,omitempty"`
+	RuntimeNodeID        *string `json:"runtime_node_id,omitempty"`
+	RuntimeNodeSummary   string  `json:"runtime_node_summary"`
+	Status               string  `json:"status"`
+	ProviderType         string  `json:"provider_type"`
 }
 
 type coordinationJobResponse struct {
@@ -1576,7 +1672,103 @@ func taskResponseFromDomain(task ProjectTask) projectTaskResponse {
 		AssignedDigitalEmployeeID: stringPtr(task.AssignedDigitalEmployeeID),
 		RiskLevel:                 task.RiskLevel,
 		RequiresHumanApproval:     task.RequiresHumanApproval,
+		CoordinationJobID:         stringPtr(task.CoordinationJobID),
+		RouteDecisionID:           stringPtr(task.RouteDecisionID),
+		PlannedTaskKey:            task.PlannedTaskKey,
+		TaskKind:                  task.TaskKind,
+		StageIndex:                task.StageIndex,
+		ExpectedOutputs:           sliceOrEmpty(task.ExpectedOutputs),
+		InputRequirements:         mapOrEmpty(task.InputRequirements),
+		HandoffContract:           mapOrEmpty(task.HandoffContract),
+		PlannerMetadata:           mapOrEmpty(task.PlannerMetadata),
 	}
+}
+
+func taskGraphResponseFromDomain(graph ProjectTaskGraph) projectTaskGraphResponse {
+	return projectTaskGraphResponse{
+		Nodes:              taskGraphNodeResponses(graph.Nodes),
+		Edges:              taskGraphEdgeResponses(graph.Edges),
+		Employees:          taskGraphEmployeeResponses(graph.Employees),
+		Runs:               taskGraphRunResponses(graph.Runs),
+		ExecutionSummaries: executionSummaryResponses(graph.ExecutionSummaries),
+		RecentEvents:       eventResponses(graph.RecentEvents),
+		DecisionRequests:   decisionRequestResponses(graph.DecisionRequests),
+	}
+}
+
+func taskGraphNodeResponses(nodes []ProjectTaskGraphNode) []projectTaskGraphNodeResponse {
+	responses := make([]projectTaskGraphNodeResponse, 0, len(nodes))
+	for _, node := range nodes {
+		responses = append(responses, taskGraphNodeResponseFromDomain(node))
+	}
+	return responses
+}
+
+func taskGraphNodeResponseFromDomain(node ProjectTaskGraphNode) projectTaskGraphNodeResponse {
+	task := node.Task
+	return projectTaskGraphNodeResponse{
+		ID:                        task.ID.String(),
+		TenantID:                  task.TenantID.String(),
+		ProjectID:                 task.ProjectID.String(),
+		DemandID:                  stringPtr(task.DemandID),
+		Title:                     task.Title,
+		Summary:                   task.Summary,
+		Status:                    task.Status,
+		AssignedDigitalEmployeeID: stringPtr(task.AssignedDigitalEmployeeID),
+		RiskLevel:                 task.RiskLevel,
+		RequiresHumanApproval:     task.RequiresHumanApproval,
+		CoordinationJobID:         stringPtr(task.CoordinationJobID),
+		RouteDecisionID:           stringPtr(task.RouteDecisionID),
+		PlannedTaskKey:            task.PlannedTaskKey,
+		TaskKind:                  task.TaskKind,
+		StageIndex:                task.StageIndex,
+		ExpectedOutputs:           sliceOrEmpty(task.ExpectedOutputs),
+		InputRequirements:         mapOrEmpty(task.InputRequirements),
+		HandoffContract:           mapOrEmpty(task.HandoffContract),
+		PlannerMetadata:           mapOrEmpty(task.PlannerMetadata),
+	}
+}
+
+func taskGraphEdgeResponses(edges []ProjectTaskGraphEdge) []projectTaskGraphEdgeResponse {
+	responses := make([]projectTaskGraphEdgeResponse, 0, len(edges))
+	for _, edge := range edges {
+		responses = append(responses, projectTaskGraphEdgeResponse{
+			DependentTaskID:   edge.DependentTaskID.String(),
+			BlockerTaskID:     edge.BlockerTaskID.String(),
+			CoordinationJobID: stringPtr(edge.CoordinationJobID),
+			EdgeStatus:        edge.EdgeStatus,
+		})
+	}
+	return responses
+}
+
+func taskGraphEmployeeResponses(employees []ProjectTaskGraphEmployee) []projectTaskGraphEmployeeResponse {
+	responses := make([]projectTaskGraphEmployeeResponse, 0, len(employees))
+	for _, employee := range employees {
+		responses = append(responses, projectTaskGraphEmployeeResponse{
+			DigitalEmployeeID: employee.DigitalEmployeeID.String(),
+			DisplayName:       employee.DisplayName,
+			ProjectRole:       employee.ProjectRole,
+			Status:            employee.Status,
+		})
+	}
+	return responses
+}
+
+func taskGraphRunResponses(runs []ProjectTaskGraphRun) []projectTaskGraphRunResponse {
+	responses := make([]projectTaskGraphRunResponse, 0, len(runs))
+	for _, run := range runs {
+		responses = append(responses, projectTaskGraphRunResponse{
+			ProjectTaskID:        run.ProjectTaskID.String(),
+			DigitalEmployeeRunID: stringPtr(run.DigitalEmployeeRunID),
+			RuntimeTaskID:        stringPtr(run.RuntimeTaskID),
+			RuntimeNodeID:        stringPtr(run.RuntimeNodeID),
+			RuntimeNodeSummary:   run.RuntimeNodeSummary,
+			Status:               run.Status,
+			ProviderType:         run.ProviderType,
+		})
+	}
+	return responses
 }
 
 func coordinationJobResponses(jobs []CoordinationJob) []coordinationJobResponse {

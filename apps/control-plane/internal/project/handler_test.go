@@ -355,6 +355,142 @@ func TestProjectHandlerGetsDemandLaunchDetail(t *testing.T) {
 	}
 }
 
+func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	taskID := uuid.New()
+	blockerID := uuid.New()
+	employeeID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	decisionID := uuid.New()
+	eventID := uuid.New()
+	stageIndex := int32(1)
+	service := &handlerTestService{
+		taskGraph: ProjectTaskGraph{
+			Nodes: []ProjectTaskGraphNode{{
+				Task: ProjectTask{
+					ID:                        taskID,
+					TenantID:                  tenantID,
+					ProjectID:                 projectID,
+					DemandID:                  &demandID,
+					Title:                     "分析需求",
+					Summary:                   strPtr("拆解任务图"),
+					Status:                    "blocked",
+					AssignedDigitalEmployeeID: &employeeID,
+					RiskLevel:                 strPtr("medium"),
+					RequiresHumanApproval:     true,
+					CoordinationJobID:         &jobID,
+					RouteDecisionID:           &routeID,
+					PlannedTaskKey:            strPtr("t2"),
+					TaskKind:                  strPtr("analysis"),
+					StageIndex:                &stageIndex,
+					ExpectedOutputs:           []any{"execution_summary"},
+					InputRequirements:         map[string]any{"scope": "demand"},
+					HandoffContract:           map[string]any{"required_refs": []any{"evidence"}},
+					PlannerMetadata:           map[string]any{"provider": "deepseek"},
+				},
+			}},
+			Edges: []ProjectTaskGraphEdge{{
+				DependentTaskID:   taskID,
+				BlockerTaskID:     blockerID,
+				CoordinationJobID: &jobID,
+				EdgeStatus:        "blocked",
+			}},
+			Employees: []ProjectTaskGraphEmployee{{
+				DigitalEmployeeID: employeeID,
+				DisplayName:       "执行员工",
+				ProjectRole:       ProjectRoleExecutor,
+				Status:            "active",
+			}},
+			Runs: []ProjectTaskGraphRun{{
+				ProjectTaskID:        taskID,
+				DigitalEmployeeRunID: &runID,
+				RuntimeTaskID:        &runtimeTaskID,
+				Status:               "assigned",
+				ProviderType:         "codex",
+			}},
+			ExecutionSummaries: []ExecutionSummary{{
+				ID:                uuid.New(),
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				ProjectTaskID:     taskID,
+				DigitalEmployeeID: employeeID,
+				Conclusion:        "已完成分析",
+				EvidenceRefs:      []any{"evidence"},
+				CreatedAt:         time.Now().UTC(),
+			}},
+			RecentEvents: []ProjectEvent{{
+				ID:             eventID,
+				TenantID:       tenantID,
+				ProjectID:      projectID,
+				SequenceNumber: 1,
+				EventType:      ProjectEventTaskCreated,
+				ActorType:      "project_coordinator",
+				ActorID:        taskID.String(),
+				Payload:        map[string]any{"project_task_id": taskID.String()},
+				CreatedAt:      time.Now().UTC(),
+			}},
+			DecisionRequests: []DecisionRequest{{
+				ID:                decisionID,
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				ApprovalRequestID: uuid.New(),
+				CoordinationJobID: &jobID,
+				ProjectTaskID:     &taskID,
+				TargetUserID:      actorID,
+				DecisionType:      "task_failure_recovery",
+				TitleSnapshot:     "任务失败需要恢复决策",
+				StatusSnapshot:    "pending",
+				CreatedAt:         time.Now().UTC(),
+				UpdatedAt:         time.Now().UTC(),
+			}},
+		},
+	}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/task-graph?coordination_job_id="+jobID.String(), nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetProjectTaskGraph(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected task graph 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.taskGraphReq.TenantID != tenantID || service.taskGraphReq.ProjectID != projectID || service.taskGraphReq.CoordinationJobID == nil || *service.taskGraphReq.CoordinationJobID != jobID {
+		t.Fatalf("unexpected graph request: %#v", service.taskGraphReq)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode task graph response: %v", err)
+	}
+	nodes := body["nodes"].([]any)
+	edges := body["edges"].([]any)
+	decisions := body["decision_requests"].([]any)
+	if len(nodes) != 1 || len(edges) != 1 || len(decisions) != 1 {
+		t.Fatalf("expected non-empty graph response, got %#v", body)
+	}
+	node := nodes[0].(map[string]any)
+	if node["id"] != taskID.String() || node["planned_task_key"] != "t2" || node["coordination_job_id"] != jobID.String() || node["task_kind"] != "analysis" {
+		t.Fatalf("unexpected node response: %#v", node)
+	}
+	if node["input_requirements"].(map[string]any)["scope"] != "demand" || node["planner_metadata"].(map[string]any)["provider"] != "deepseek" {
+		t.Fatalf("expected task graph contracts and metadata, got %#v", node)
+	}
+	edge := edges[0].(map[string]any)
+	if edge["dependent_task_id"] != taskID.String() || edge["blocker_task_id"] != blockerID.String() || edge["edge_status"] != "blocked" {
+		t.Fatalf("unexpected edge response: %#v", edge)
+	}
+	if len(body["employees"].([]any)) != 1 || len(body["runs"].([]any)) != 1 || len(body["execution_summaries"].([]any)) != 1 || len(body["recent_events"].([]any)) != 1 {
+		t.Fatalf("expected graph sidecars in response, got %#v", body)
+	}
+}
+
 func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{demandSignalErr: errors.New("temporal unavailable")}
@@ -560,6 +696,8 @@ type handlerTestService struct {
 	launchDetailTenantID   uuid.UUID
 	launchDetailDemandID   uuid.UUID
 	launchDetailProjectID  uuid.UUID
+	taskGraph              ProjectTaskGraph
+	taskGraphReq           GetProjectTaskGraphRequest
 }
 
 func (s *handlerTestService) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -684,6 +822,11 @@ func (s *handlerTestService) GetDemandLaunchDetail(ctx context.Context, tenantID
 		Project:      project,
 		ProjectTasks: []ProjectTask{{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, DemandID: &demandID, Title: "审查 PR", Status: "pending"}},
 	}, nil
+}
+
+func (s *handlerTestService) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (*ProjectTaskGraph, error) {
+	s.taskGraphReq = req
+	return &s.taskGraph, nil
 }
 
 func (s *handlerTestService) ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error) {

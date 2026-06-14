@@ -43,6 +43,8 @@ type ProjectTaskGraphRun struct {
 	ProjectTaskID        uuid.UUID
 	DigitalEmployeeRunID *uuid.UUID
 	RuntimeTaskID        *uuid.UUID
+	RuntimeNodeID        *uuid.UUID
+	RuntimeNodeSummary   string
 	Status               string
 	ProviderType         string
 }

@@ -919,6 +919,19 @@ func (s *Service) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID 
 	}, nil
 }
 
+func (s *Service) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (*ProjectTaskGraph, error) {
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	req.Limit, req.Offset = normalizePagination(req.Limit, req.Offset)
+	graph, err := s.repository.GetProjectTaskGraph(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	normalizeProjectTaskGraph(&graph)
+	return &graph, nil
+}
+
 func (s *Service) ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
@@ -1073,6 +1086,30 @@ func filterEventsForDemand(events []ProjectEvent, demand ProjectDemand, tasks []
 		}
 	}
 	return filtered
+}
+
+func normalizeProjectTaskGraph(graph *ProjectTaskGraph) {
+	if graph.Nodes == nil {
+		graph.Nodes = []ProjectTaskGraphNode{}
+	}
+	if graph.Edges == nil {
+		graph.Edges = []ProjectTaskGraphEdge{}
+	}
+	if graph.Employees == nil {
+		graph.Employees = []ProjectTaskGraphEmployee{}
+	}
+	if graph.Runs == nil {
+		graph.Runs = []ProjectTaskGraphRun{}
+	}
+	if graph.ExecutionSummaries == nil {
+		graph.ExecutionSummaries = []ExecutionSummary{}
+	}
+	if graph.RecentEvents == nil {
+		graph.RecentEvents = []ProjectEvent{}
+	}
+	if graph.DecisionRequests == nil {
+		graph.DecisionRequests = []DecisionRequest{}
+	}
 }
 
 func (s *Service) ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error) {

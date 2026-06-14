@@ -236,6 +236,7 @@ type GetProjectTaskGraphRequest struct {
 	TenantID          uuid.UUID
 	ProjectID         uuid.UUID
 	CoordinationJobID *uuid.UUID
+	DemandID          *uuid.UUID
 	Limit             int32
 	Offset            int32
 }
