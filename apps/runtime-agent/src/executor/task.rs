@@ -4,9 +4,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::RuntimeConfig;
 use crate::controlplane::{ControlPlaneClient, models::TaskStatus};
-use crate::providers::{
-    ProviderAdapter, ProviderRequest, claude::ClaudeProvider, opencode::OpenCodeProvider,
-};
+use crate::providers::{ProviderAdapter, ProviderRequest, catalog};
 
 use super::retry::push_event_with_retry;
 use super::workspace::{cleanup_run_workspace, create_run_workspace};
@@ -79,25 +77,8 @@ fn select_provider(
     provider_type: &str,
     config: &RuntimeConfig,
 ) -> Result<Box<dyn ProviderAdapter>> {
-    match provider_type {
-        "claude-code" => {
-            if !config.providers.claude_code.enabled {
-                anyhow::bail!("Claude Code provider is disabled");
-            }
-            Ok(Box::new(ClaudeProvider::new(
-                &config.providers.claude_code.binary_path,
-            )))
-        }
-        "opencode" => {
-            if !config.providers.opencode.enabled {
-                anyhow::bail!("OpenCode provider is disabled");
-            }
-            Ok(Box::new(OpenCodeProvider::new(
-                &config.providers.opencode.binary_path,
-            )))
-        }
-        _ => anyhow::bail!("Unsupported provider type: {}", provider_type),
-    }
+    catalog::select_provider(config, provider_type)
+        .map_err(|error| anyhow::anyhow!("Unsupported provider type: {provider_type}: {error}"))
 }
 
 fn extract_prompt(params: &serde_json::Value) -> Result<String> {
@@ -113,4 +94,44 @@ fn extract_model(params: &serde_json::Value) -> Option<String> {
         .get("model")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    fn runtime_config_with_codex(enabled: bool) -> RuntimeConfig {
+        let mut config = RuntimeConfig::default();
+        config.providers.claude_code.enabled = false;
+        config.providers.opencode.enabled = false;
+        config.providers.codex.enabled = enabled;
+        config.providers.codex.binary_path = PathBuf::from("codex-test");
+        config
+    }
+
+    #[test]
+    fn select_provider_uses_catalog_for_enabled_codex() {
+        let config = runtime_config_with_codex(true);
+
+        let provider = select_provider("codex", &config);
+
+        assert!(provider.is_ok());
+    }
+
+    #[test]
+    fn select_provider_preserves_catalog_error_for_disabled_codex() {
+        let config = runtime_config_with_codex(false);
+
+        let error = match select_provider("codex", &config) {
+            Ok(_) => panic!("disabled codex should fail"),
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "Unsupported provider type: codex: Codex provider is disabled"
+        );
+    }
 }

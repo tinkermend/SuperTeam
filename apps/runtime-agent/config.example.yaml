@@ -47,6 +47,10 @@ providers:
     enabled: false
     binary_path: opencode
     timeout: 3600
+  codex:
+    enabled: false
+    binary_path: codex
+    timeout: 3600
 
 logging:
   # 日志级别：trace | debug | info | warn | error

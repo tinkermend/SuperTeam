@@ -17,6 +17,7 @@ use tokio::task::JoinHandle;
 
 use crate::health::{ProviderHealth, ProviderHealthProbe, probe_provider_health};
 use crate::providers::claude::ClaudeProvider;
+use crate::providers::codex::CodexProvider;
 use crate::providers::opencode::OpenCodeProvider;
 use crate::providers::{ProviderAdapter, ProviderRequest};
 use crate::runs::{RunSpec, RunStatus, RuntimeRunStore};
@@ -27,6 +28,7 @@ pub struct RuntimeHttpConfig {
     pub run_log_dir: PathBuf,
     pub claude_bin: PathBuf,
     pub opencode_bin: PathBuf,
+    pub codex_bin: PathBuf,
 }
 
 #[derive(Clone)]
@@ -106,8 +108,12 @@ async fn providers(State(state): State<RuntimeHttpState>) -> Json<Vec<ProviderHe
         kind: "opencode".to_string(),
         bin_path: state.config.opencode_bin,
     });
-    let (claude, opencode) = tokio::join!(claude, opencode);
-    Json(vec![claude, opencode])
+    let codex = probe_provider_health(ProviderHealthProbe {
+        kind: "codex".to_string(),
+        bin_path: state.config.codex_bin,
+    });
+    let (claude, opencode, codex) = tokio::join!(claude, opencode, codex);
+    Json(vec![claude, opencode, codex])
 }
 
 #[derive(Debug, Deserialize)]
@@ -238,6 +244,10 @@ fn spawn_provider_run(state: RuntimeHttpState, run_id: String, spec: RunSpec) {
                 let provider = OpenCodeProvider::new(state.config.opencode_bin.clone());
                 run_provider_stream(state.runs.clone(), run_id.clone(), provider, spec).await
             }
+            "codex" => {
+                let provider = CodexProvider::new(state.config.codex_bin.clone());
+                run_provider_stream(state.runs.clone(), run_id.clone(), provider, spec).await
+            }
             _ => Err(anyhow::anyhow!(
                 "unsupported provider kind: {}",
                 spec.provider_kind
@@ -286,7 +296,7 @@ async fn run_provider_stream(
 }
 
 fn validate_run_spec(spec: &RunSpec) -> Result<(), ApiError> {
-    if spec.provider_kind != "claude" && spec.provider_kind != "opencode" {
+    if !matches!(spec.provider_kind.as_str(), "claude" | "opencode" | "codex") {
         return Err(ApiError::bad_request(format!(
             "unsupported provider kind: {}",
             spec.provider_kind

@@ -13,6 +13,7 @@ use crate::commands::payload::RuntimeWorkspaceFilePayload;
 pub enum ProviderHomeKind {
     ClaudeCode,
     OpenCode,
+    Codex,
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +41,7 @@ pub fn provider_home_kind(provider_type: &str) -> Result<ProviderHomeKind> {
     match provider_type {
         "claude-code" => Ok(ProviderHomeKind::ClaudeCode),
         "opencode" => Ok(ProviderHomeKind::OpenCode),
+        "codex" => Ok(ProviderHomeKind::Codex),
         _ => anyhow::bail!(
             "unsupported provider_type for workspace materialization: {provider_type}"
         ),
@@ -130,7 +132,10 @@ pub fn validate_workspace_path(path: &str) -> Result<String> {
         .next()
         .ok_or_else(|| anyhow::anyhow!("workspace file path must not be empty"))?;
     reject_component(first, path)?;
-    if matches!(first, ".claude" | ".opencode" | ".git" | ".superteam") {
+    if matches!(
+        first,
+        ".claude" | ".opencode" | ".codex" | ".git" | ".superteam"
+    ) {
         anyhow::bail!("workspace file path uses a reserved top-level directory: {path}");
     }
     for component in components {
@@ -390,6 +395,7 @@ fn provider_private_dir(provider_home: ProviderHomeKind) -> &'static str {
     match provider_home {
         ProviderHomeKind::ClaudeCode => ".claude",
         ProviderHomeKind::OpenCode => ".opencode",
+        ProviderHomeKind::Codex => ".codex",
     }
 }
 

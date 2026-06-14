@@ -15,8 +15,7 @@ use crate::controlplane::models::{
 };
 use crate::events::ProviderEvent;
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
-use crate::providers::claude::ClaudeProvider;
-use crate::providers::opencode::OpenCodeProvider;
+use crate::providers::catalog;
 use crate::providers::{ProviderAdapter, ProviderEventStream, ProviderRequest};
 use crate::runs::{RunEventRecord, RunSpec, RunStatus, RuntimeCommandRunContext, RuntimeRunStore};
 use crate::workspace_files::{
@@ -553,34 +552,8 @@ impl RuntimeCommandExecutor {
         command_id: &str,
         payload: &RuntimeSessionCommandPayload,
     ) -> anyhow::Result<Box<dyn ProviderAdapter>> {
-        match payload.provider_kind() {
-            "claude" => {
-                if !self.config.providers.claude_code.enabled {
-                    return Err(self.recorded_error(
-                        command_id,
-                        anyhow::anyhow!("Claude Code provider is disabled"),
-                    ));
-                }
-                Ok(Box::new(ClaudeProvider::new(
-                    self.config.providers.claude_code.binary_path.clone(),
-                )))
-            }
-            "opencode" => {
-                if !self.config.providers.opencode.enabled {
-                    return Err(self.recorded_error(
-                        command_id,
-                        anyhow::anyhow!("OpenCode provider is disabled"),
-                    ));
-                }
-                Ok(Box::new(OpenCodeProvider::new(
-                    self.config.providers.opencode.binary_path.clone(),
-                )))
-            }
-            _ => Err(self.recorded_error(
-                command_id,
-                anyhow::anyhow!("unsupported provider_type: {}", payload.provider_type),
-            )),
-        }
+        catalog::select_provider(&self.config, &payload.provider_type)
+            .map_err(|error| self.recorded_error(command_id, error))
     }
 
     fn spawn_provider_event_drain(
@@ -913,6 +886,9 @@ async fn drain_provider_events(
             _ => None,
         };
         let record = runs.record_event(&run_id, event).await?;
+        if is_terminal {
+            registry.record_run_finished(&run_id);
+        }
         if let Some(writeback) = &writeback {
             writeback
                 .record_event(&record, latest_provider_session_id.as_deref())
@@ -924,9 +900,6 @@ async fn drain_provider_events(
                     .complete(summary, latest_provider_session_id.clone())
                     .await?;
             }
-        }
-        if is_terminal {
-            registry.record_run_finished(&run_id);
         }
     }
     Ok(())

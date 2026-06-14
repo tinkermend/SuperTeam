@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-14 01:59：Runtime Agent 新增 Codex Provider 接入，包含 provider catalog 配置、Codex CLI JSONL adapter、`.codex` 工作区隔离、Runtime command/legacy task provider selection、capability 上报，以及 HTTP/CLI smoke 路径和回归测试覆盖。
 - 2026-06-13 22:24：Control Plane 消费 Runtime `sync_workspace_files` 终态回写，按 receipt 目标更新数字员工 workspace file sync 投影，成功记录 synced hash，失败记录错误信息，并避免误触发 provisioning 生命周期状态或清理逻辑。
 - 2026-06-13 03:01：Control Plane: 打通 ProjectTask 协调分派到 DigitalEmployeeRun 的执行桥接，成功分派先创建真实 run 再原子绑定 digital_employee_run_id/runtime_task_id（绑定先于事件，避免孤儿 run），重复分派与 Temporal 重试幂等；失败时按可重试性记录分派失败事件，终态失败标记为不可重试，单个任务分派失败不再中断同批其余任务。
 - 2026-06-12 21:20：新增“任务发起”一级入口，替换原主导航“任务中心”，支持按项目提交需求、自动或显式选择人类审核人，并提供任务发起详情页追踪协调 Job、路由决策、项目任务和人类决策请求等首版协调事实。
@@ -29,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-14 10:28：收紧 `AGENTS.md` 与 `$superteam-completion-check`，将前后端、跨层、Runtime/Provider、数据库/迁移和合并后的真实端到端验证提升为默认完成硬门禁；缺少服务、认证、Provider 或安全环境时必须标记阻塞，不能以“未做真实链路验证”作为完成说明。
 - 2026-06-13 11:48：优化任务发起页项目、审核人、优先级和风险级别字段展示，改为响应式参数条布局，减少宽屏两列布局造成的大空档并保持移动端自动换行。
 - 2026-06-13 11:45：优化任务发起页低高度与移动端自适应布局，将提交需求和保存草稿提升到首屏标题区可见位置，并固定侧边栏激活项在不同主题测试顺序下保持白色文字。
 - 2026-06-13 11:10：重构 Web 任务发起页为提交前需求工作台，收敛为需求、项目、审核人、优先级、风险级别和补充资料，右侧仅用编号说明提交后的动态编排顺序，避免提前展示编排状态或上下文边界配置。
@@ -130,6 +132,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- 2026-06-14 10:32：修复 Runtime command terminal event 与 active-run registry 清理之间的竞态，Provider turn 已完成后立即移除活跃 run，避免 `stop_session` 在短窗口内误取消已完成执行。
 - 2026-06-13 23:28：修复 Runtime Agent 数字员工工作目录初始化时 `CLAUDE.md` 被写成普通副本的问题，改为在 Unix 环境下生成指向 `AGENTS.md` 的兼容软链，并覆盖已有旧副本，保持 Claude Code 与 OpenCode 的工作目录只创建对应 Provider 配置目录。
 - 2026-06-13 13:21：修复数字员工详情页发起测试任务时被 stale 活跃运行卡住的问题；Control Plane 会根据终态 Runtime command receipt 回收仍显示为 queued/dispatching/running/cancelling 的旧 run，列表返回终态状态，新建 run 也可在同次请求内继续分派。
 - 2026-06-13 13:38：修复数字员工显示 Ready 但 Runtime 命令通道未连接时仍可发起测试任务的问题；Runtime overview 现在返回实时 command channel 连接状态，数字员工详情页会在通道断开时禁用开始任务并给出原因。

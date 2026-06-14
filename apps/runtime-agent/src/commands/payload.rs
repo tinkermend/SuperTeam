@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::controlplane::models::{RuntimeCommand, RuntimeCommandType};
+use crate::providers::catalog;
 
 fn null_as_empty_vec<'de, D>(d: D) -> std::result::Result<Vec<serde_json::Value>, D::Error>
 where
@@ -204,11 +205,7 @@ impl RuntimeSessionCommandPayload {
     }
 
     pub fn provider_kind(&self) -> &'static str {
-        match self.provider_type.as_str() {
-            "claude-code" => "claude",
-            "opencode" => "opencode",
-            _ => "unsupported",
-        }
+        catalog::provider_kind(&self.provider_type)
     }
 
     pub fn provider_prompt(&self) -> Option<String> {

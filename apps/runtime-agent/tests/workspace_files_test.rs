@@ -35,6 +35,7 @@ fn rejects_reserved_and_unsafe_workspace_paths() {
         "CLAUDE.md/anything",
         ".claude/settings.json",
         ".opencode/config.json",
+        ".codex/config.toml",
         ".git/config",
         ".superteam/state.json",
     ] {
@@ -64,6 +65,24 @@ fn materialize_workspace_accepts_empty_skills_and_mcp_contract() {
 
     assert_eq!(result.synced_files.len(), 1);
     assert!(home.join(".opencode").is_dir());
+}
+
+#[test]
+fn materialize_workspace_creates_codex_provider_dir() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("employee");
+    std::fs::create_dir_all(&home).unwrap();
+
+    let result = materialize_workspace(WorkspaceMaterializationPlan {
+        agent_home_dir: home.clone(),
+        provider_home: ProviderHomeKind::Codex,
+        files: vec![agents_file("# Contract\n")],
+    })
+    .unwrap();
+
+    assert_eq!(result.synced_files.len(), 1);
+    assert!(home.join(".codex").is_dir());
+    assert!(home.join("CLAUDE.md").exists());
 }
 
 #[test]

@@ -55,6 +55,7 @@ pub struct WorkspaceSection {
 pub struct ProvidersSection {
     pub claude_code: ProviderSection,
     pub opencode: ProviderSection,
+    pub codex: ProviderSection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +81,7 @@ pub struct RuntimeConfigOverrides {
     pub run_log_dir: Option<PathBuf>,
     pub claude_bin: Option<PathBuf>,
     pub opencode_bin: Option<PathBuf>,
+    pub codex_bin: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -134,6 +136,7 @@ struct FileWorkspaceSection {
 struct FileProvidersSection {
     claude_code: Option<FileProviderSection>,
     opencode: Option<FileProviderSection>,
+    codex: Option<FileProviderSection>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -193,6 +196,7 @@ impl RuntimeConfig {
             run_log_dir: self.runs.log_dir.clone(),
             claude_bin: self.providers.claude_code.binary_path.clone(),
             opencode_bin: self.providers.opencode.binary_path.clone(),
+            codex_bin: self.providers.codex.binary_path.clone(),
         }
     }
 
@@ -237,6 +241,9 @@ impl RuntimeConfig {
             }
             if let Some(opencode) = providers.opencode {
                 self.providers.opencode.apply_file(opencode);
+            }
+            if let Some(codex) = providers.codex {
+                self.providers.codex.apply_file(codex);
             }
         }
 
@@ -321,6 +328,15 @@ impl RuntimeConfig {
             "RUNTIME_AGENT_PROVIDER_OPENCODE_TIMEOUT" => {
                 self.providers.opencode.timeout = parse_env(key, value)?;
             }
+            "RUNTIME_AGENT_PROVIDER_CODEX_ENABLED" => {
+                self.providers.codex.enabled = parse_env(key, value)?;
+            }
+            "RUNTIME_AGENT_PROVIDER_CODEX_BINARY" => {
+                self.providers.codex.binary_path = PathBuf::from(value);
+            }
+            "RUNTIME_AGENT_PROVIDER_CODEX_TIMEOUT" => {
+                self.providers.codex.timeout = parse_env(key, value)?;
+            }
             "RUNTIME_AGENT_LOG_LEVEL" => self.logging.level = value.to_string(),
             "RUNTIME_AGENT_LOG_FORMAT" => self.logging.format = value.to_string(),
             "RUNTIME_AGENT_LOG_OUTPUT" => self.logging.output = value.to_string(),
@@ -345,6 +361,7 @@ impl RuntimeConfig {
             &mut self.providers.opencode.binary_path,
             overrides.opencode_bin,
         );
+        apply_path(&mut self.providers.codex.binary_path, overrides.codex_bin);
     }
 
     fn validate(&self) -> anyhow::Result<()> {
@@ -377,6 +394,9 @@ impl RuntimeConfig {
         }
         if self.providers.opencode.binary_path.as_os_str().is_empty() {
             anyhow::bail!("opencode binary path is required");
+        }
+        if self.providers.codex.binary_path.as_os_str().is_empty() {
+            anyhow::bail!("codex binary path is required");
         }
         if self.logging.level.trim().is_empty() {
             anyhow::bail!("log level is required");
@@ -415,6 +435,11 @@ impl Default for RuntimeConfig {
                 opencode: ProviderSection {
                     enabled: false,
                     binary_path: PathBuf::from("opencode"),
+                    timeout: 3600,
+                },
+                codex: ProviderSection {
+                    enabled: false,
+                    binary_path: PathBuf::from("codex"),
                     timeout: 3600,
                 },
             },

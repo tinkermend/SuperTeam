@@ -10,6 +10,7 @@ use superteam_runtime_agent::config::{RuntimeConfig, RuntimeConfigOverrides};
 use superteam_runtime_agent::daemon::RuntimeDaemon;
 use superteam_runtime_agent::events::ProviderEvent;
 use superteam_runtime_agent::providers::claude::ClaudeProvider;
+use superteam_runtime_agent::providers::codex::CodexProvider;
 use superteam_runtime_agent::providers::opencode::OpenCodeProvider;
 use superteam_runtime_agent::providers::{ProviderAdapter, ProviderRequest};
 
@@ -38,6 +39,9 @@ struct Args {
 
     #[arg(long)]
     opencode_bin: Option<PathBuf>,
+
+    #[arg(long)]
+    codex_bin: Option<PathBuf>,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -76,6 +80,7 @@ struct RunArgs {
 enum ProviderKind {
     Claude,
     Opencode,
+    Codex,
 }
 
 impl ProviderKind {
@@ -83,6 +88,7 @@ impl ProviderKind {
         match self {
             Self::Claude => "claude",
             Self::Opencode => "opencode",
+            Self::Codex => "codex",
         }
     }
 }
@@ -105,6 +111,7 @@ async fn main() -> anyhow::Result<()> {
             run_log_dir: args.run_log_dir,
             claude_bin: args.claude_bin,
             opencode_bin: args.opencode_bin,
+            codex_bin: args.codex_bin,
         },
     )?;
     let daemon = RuntimeDaemon::new(config);
@@ -138,6 +145,10 @@ async fn run_provider(args: RunArgs) -> anyhow::Result<()> {
         }
         ProviderKind::Opencode => {
             let provider = OpenCodeProvider::new(provider_bin);
+            stream_provider_events(&provider, request).await
+        }
+        ProviderKind::Codex => {
+            let provider = CodexProvider::new(provider_bin);
             stream_provider_events(&provider, request).await
         }
     }

@@ -61,6 +61,10 @@ providers:
     enabled: true
     binary_path: /usr/local/bin/file-opencode
     timeout: 180
+  codex:
+    enabled: true
+    binary_path: /usr/local/bin/file-codex
+    timeout: 240
 
 logging:
   level: debug
@@ -79,6 +83,10 @@ logging:
             (
                 "RUNTIME_AGENT_PROVIDER_CLAUDE_CODE_BINARY",
                 "/usr/local/bin/env-claude",
+            ),
+            (
+                "RUNTIME_AGENT_PROVIDER_CODEX_BINARY",
+                "/usr/local/bin/env-codex",
             ),
         ],
         Default::default(),
@@ -120,6 +128,12 @@ logging:
         std::path::PathBuf::from("/usr/local/bin/file-opencode")
     );
     assert_eq!(config.providers.opencode.timeout, 180);
+    assert!(config.providers.codex.enabled);
+    assert_eq!(
+        config.providers.codex.binary_path,
+        std::path::PathBuf::from("/usr/local/bin/env-codex")
+    );
+    assert_eq!(config.providers.codex.timeout, 240);
     assert_eq!(config.logging.level, "debug");
     assert_eq!(config.logging.format, "json");
     assert_eq!(config.logging.output, "file");
@@ -451,6 +465,100 @@ async fn daemon_connect_runtime_session_reports_capabilities_after_approved_hell
 }
 
 #[tokio::test]
+async fn runtime_daemon_reports_codex_provider_capability_when_enabled() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (request_tx, request_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let (mut hello_socket, _) = listener.accept().await.unwrap();
+        let hello_request = read_http_request(&mut hello_socket).await;
+        write_json_response(
+            &mut hello_socket,
+            serde_json::json!({
+                "enrollment": {
+                    "id": "11111111-1111-4111-8111-111111111111",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "bootstrap_key_id": "44444444-4444-4444-8444-444444444444",
+                    "status": "approved",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session": {
+                    "id": "55555555-5555-4555-8555-555555555555",
+                    "tenant_id": "22222222-2222-4222-8222-222222222222",
+                    "runtime_node_id": "33333333-3333-4333-8333-333333333333",
+                    "node_id": "node-1",
+                    "enrollment_id": "11111111-1111-4111-8111-111111111111",
+                    "expires_at": "2999-06-02T00:00:00Z",
+                    "last_seen_at": "2026-06-02T00:00:00Z",
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "updated_at": "2026-06-02T00:00:00Z"
+                },
+                "session_token": "session-token"
+            }),
+        )
+        .await;
+
+        let (mut capabilities_socket, _) = listener.accept().await.unwrap();
+        let capabilities_request = read_http_request(&mut capabilities_socket).await;
+        write_json_response(&mut capabilities_socket, serde_json::json!([])).await;
+
+        let _ = request_tx.send((hello_request, capabilities_request));
+    });
+
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let fake_codex = make_executable_script(
+        &temp,
+        "fake-codex",
+        r#"#!/usr/bin/env bash
+if [ "$1" = "--version" ]; then
+  printf '%s\n' 'codex-cli 0.137.0'
+fi
+"#,
+    );
+    let mut config = RuntimeConfig::new("node-1").expect("valid config");
+    config.runtime.control_plane_url = format!("http://{}", addr);
+    config.runtime.bootstrap_key = "bootstrap-key".to_string();
+    config.providers.claude_code.enabled = false;
+    config.providers.opencode.enabled = false;
+    config.providers.codex.enabled = true;
+    config.providers.codex.binary_path = fake_codex;
+
+    let daemon = RuntimeDaemon::new(config);
+    let handle = tokio::spawn(async move { daemon.run().await });
+
+    let (hello_request, capabilities_request) =
+        tokio::time::timeout(std::time::Duration::from_secs(2), request_rx)
+            .await
+            .expect("server should capture requests")
+            .expect("request pair");
+    handle.abort();
+
+    assert!(hello_request.contains(r#""supported_providers":["codex"]"#));
+    let (_, capabilities_body) = capabilities_request
+        .split_once("\r\n\r\n")
+        .expect("capabilities body");
+    let capabilities_body: serde_json::Value =
+        serde_json::from_str(capabilities_body).expect("capabilities json");
+    let capabilities = capabilities_body["capabilities"]
+        .as_array()
+        .expect("capabilities array");
+    let codex = capabilities
+        .iter()
+        .find(|capability| capability["capability_key"] == "codex")
+        .expect("codex capability");
+    assert_eq!(codex["provider_type"], serde_json::json!("codex"));
+    assert_eq!(codex["available"], serde_json::json!(true));
+    assert_eq!(
+        codex["provider_version"],
+        serde_json::json!("codex-cli 0.137.0")
+    );
+}
+
+#[tokio::test]
 async fn daemon_connect_runtime_session_does_not_start_renewal_when_capability_upsert_fails() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -562,6 +670,17 @@ async fn daemon_connect_runtime_session_does_not_start_renewal_when_capability_u
         !renew_attempted,
         "session renewal must not start before capability upsert succeeds"
     );
+}
+
+fn make_executable_script(dir: &tempfile::TempDir, name: &str, body: &str) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = dir.path().join(name);
+    std::fs::write(&path, body).expect("write fake provider script");
+    let mut permissions = std::fs::metadata(&path).expect("metadata").permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&path, permissions).expect("chmod fake provider script");
+    path
 }
 
 async fn read_http_request(socket: &mut TcpStream) -> String {
