@@ -484,6 +484,52 @@ func TestDualLayerCapabilityManagementMigration(t *testing.T) {
 	}
 }
 
+func TestProjectTaskDependenciesMigrationHasTenantFirstIndexes(t *testing.T) {
+	sql := migrationsSQL(t)
+	block := createTableBlock(t, sql, "project_task_dependencies")
+	for _, fragment := range []string{
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"tenant_id UUID NOT NULL",
+		"project_id UUID NOT NULL",
+		"dependent_task_id UUID NOT NULL",
+		"blocker_task_id UUID NOT NULL",
+	} {
+		if !strings.Contains(block, fragment) {
+			t.Fatalf("expected project_task_dependencies block to include %q, got:\n%s", fragment, block)
+		}
+	}
+	for _, fragment := range []string{
+		"uq_ptd_edge",
+		"idx_ptd_tenant_project_dependent",
+		"idx_ptd_blocker",
+		"idx_ptd_coordination_job",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("expected migration to include %q", fragment)
+		}
+	}
+}
+
+func TestProjectTasksMigrationAddsGraphContractColumns(t *testing.T) {
+	sql := migrationsSQL(t)
+	for _, fragment := range []string{
+		"ADD COLUMN coordination_job_id UUID",
+		"ADD COLUMN route_decision_id UUID",
+		"ADD COLUMN planned_task_key VARCHAR(100)",
+		"ADD COLUMN task_kind VARCHAR(100)",
+		"ADD COLUMN stage_index INTEGER",
+		"ADD COLUMN expected_outputs JSONB NOT NULL DEFAULT '[]'::jsonb",
+		"ADD COLUMN input_requirements JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"ADD COLUMN handoff_contract JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"ADD COLUMN planner_metadata JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"uq_project_tasks_coordination_planned_key",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("expected project task graph migration fragment %q", fragment)
+		}
+	}
+}
+
 func TestSkillManagementMigrationAddsSkillPackageTables(t *testing.T) {
 	body, err := os.ReadFile("migrations/009_skill_management.sql")
 	if err != nil {
@@ -765,6 +811,31 @@ func createTableBlock(t *testing.T, sql string, table string) string {
 		t.Fatalf("missing end of %s create table block", table)
 	}
 	return rest[:end]
+}
+
+func migrationsSQL(t *testing.T) string {
+	t.Helper()
+
+	entries, err := os.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("read migrations dir: %v", err)
+	}
+
+	var builder strings.Builder
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+
+		body, err := os.ReadFile("migrations/" + entry.Name())
+		if err != nil {
+			t.Fatalf("read migration %s: %v", entry.Name(), err)
+		}
+		builder.Write(body)
+		builder.WriteString("\n")
+	}
+
+	return builder.String()
 }
 
 func TestInitialSchemaMetadataAndComments(t *testing.T) {

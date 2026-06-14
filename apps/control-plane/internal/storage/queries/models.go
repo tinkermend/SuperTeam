@@ -1037,7 +1037,7 @@ type ProjectTask struct {
 	Title string `json:"title"`
 	// 项目任务摘要
 	Summary pgtype.Text `json:"summary"`
-	// 任务状态：pending, planned, assigned, running, waiting_human, completed, failed, cancelled
+	// 任务状态：pending, planned, blocked, assigned, running, waiting_human, completed, failed, cancelled
 	Status string `json:"status"`
 	// 当前分派的数字员工ID
 	AssignedDigitalEmployeeID uuid.NullUUID `json:"assigned_digital_employee_id"`
@@ -1055,6 +1055,42 @@ type ProjectTask struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 项目任务更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 创建该任务的项目协调作业ID，由应用层校验租户和项目范围
+	CoordinationJobID uuid.NullUUID `json:"coordination_job_id"`
+	// 创建该任务的路由决策ID，由应用层校验租户和项目范围
+	RouteDecisionID uuid.NullUUID `json:"route_decision_id"`
+	// Planner在同一协调图内生成的稳定任务键，用于幂等重放和图展示
+	PlannedTaskKey pgtype.Text `json:"planned_task_key"`
+	// 任务类型开放字符串，例如 analysis、implementation、review、test 或 summary，由应用层注册校验
+	TaskKind pgtype.Text `json:"task_kind"`
+	// 任务在规划图中的展示阶段序号，执行事实仍以依赖边为准
+	StageIndex pgtype.Int4 `json:"stage_index"`
+	// 任务级输出契约数组，用于完成前校验和下游交接
+	ExpectedOutputs []byte `json:"expected_outputs"`
+	// 任务输入要求JSON，描述执行该任务需要的上下文切片
+	InputRequirements []byte `json:"input_requirements"`
+	// 任务交接契约JSON，描述下游可消费的证据、工件、结论和引用要求
+	HandoffContract []byte `json:"handoff_contract"`
+	// Planner审计摘要JSON，不保存长prompt或模型原文
+	PlannerMetadata []byte `json:"planner_metadata"`
+}
+
+// 项目任务依赖边，记录一个任务被另一个任务完成结果阻塞的DAG关系
+type ProjectTaskDependency struct {
+	// 任务依赖边ID
+	ID uuid.UUID `json:"id"`
+	// 租户ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属项目ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 生成该依赖边的协调作业ID
+	CoordinationJobID uuid.NullUUID `json:"coordination_job_id"`
+	// 被阻塞的项目任务ID
+	DependentTaskID uuid.UUID `json:"dependent_task_id"`
+	// 必须先完成的前置项目任务ID
+	BlockerTaskID uuid.UUID `json:"blocker_task_id"`
+	// 依赖边创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // 项目任务转派请求表，保存数字员工发起的结构化转派事实

@@ -131,6 +131,11 @@ INSERT INTO project_tasks (
     tenant_id,
     project_id,
     demand_id,
+    coordination_job_id,
+    route_decision_id,
+    planned_task_key,
+    task_kind,
+    stage_index,
     title,
     summary,
     status,
@@ -138,11 +143,20 @@ INSERT INTO project_tasks (
     runtime_task_id,
     digital_employee_run_id,
     risk_level,
-    requires_human_approval
+    requires_human_approval,
+    expected_outputs,
+    input_requirements,
+    handoff_contract,
+    planner_metadata
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('project_id')::uuid,
     sqlc.narg('demand_id')::uuid,
+    sqlc.narg('coordination_job_id')::uuid,
+    sqlc.narg('route_decision_id')::uuid,
+    sqlc.narg('planned_task_key')::varchar,
+    sqlc.narg('task_kind')::varchar,
+    sqlc.narg('stage_index')::integer,
     sqlc.arg('title')::varchar,
     sqlc.narg('summary')::text,
     sqlc.arg('status')::varchar,
@@ -150,7 +164,11 @@ INSERT INTO project_tasks (
     sqlc.narg('runtime_task_id')::uuid,
     sqlc.narg('digital_employee_run_id')::uuid,
     sqlc.narg('risk_level')::varchar,
-    COALESCE(sqlc.arg('requires_human_approval')::boolean, false)
+    COALESCE(sqlc.arg('requires_human_approval')::boolean, false),
+    COALESCE(sqlc.narg('expected_outputs')::jsonb, '[]'::jsonb),
+    COALESCE(sqlc.narg('input_requirements')::jsonb, '{}'::jsonb),
+    COALESCE(sqlc.narg('handoff_contract')::jsonb, '{}'::jsonb),
+    COALESCE(sqlc.narg('planner_metadata')::jsonb, '{}'::jsonb)
 ) RETURNING *;
 
 -- name: GetLatestProjectEventSequence :one
@@ -349,6 +367,13 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit');
 
+-- name: GetProjectCoordinationJobByTrigger :one
+SELECT * FROM project_coordination_jobs
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND workflow_id = sqlc.arg('workflow_id')::varchar
+  AND trigger_event_id = sqlc.arg('trigger_event_id')::uuid
+  AND job_type = sqlc.arg('job_type')::varchar;
+
 -- name: CreateProjectRouteDecision :one
 INSERT INTO project_route_decisions (
     tenant_id,
@@ -392,6 +417,65 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND demand_id = sqlc.arg('demand_id')::uuid
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit');
+
+-- name: GetProjectRouteDecisionByCoordinationJob :one
+SELECT * FROM project_route_decisions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND coordination_job_id = sqlc.arg('coordination_job_id')::uuid;
+
+-- name: CreateProjectTaskDependency :one
+INSERT INTO project_task_dependencies (
+    tenant_id, project_id, coordination_job_id, dependent_task_id, blocker_task_id
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('project_id')::uuid,
+    sqlc.narg('coordination_job_id')::uuid,
+    sqlc.arg('dependent_task_id')::uuid,
+    sqlc.arg('blocker_task_id')::uuid
+) RETURNING *;
+
+-- name: ListProjectTaskDependencies :many
+SELECT * FROM project_task_dependencies
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND dependent_task_id = ANY(sqlc.arg('dependent_task_ids')::uuid[])
+ORDER BY created_at ASC;
+
+-- name: ListDependentsOfTask :many
+SELECT dependent_task_id
+FROM project_task_dependencies
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND blocker_task_id = sqlc.arg('blocker_task_id')::uuid
+ORDER BY created_at ASC;
+
+-- name: ListUnresolvedBlockersForTasks :many
+SELECT
+    d.dependent_task_id,
+    d.blocker_task_id,
+    b.status AS blocker_status
+FROM project_task_dependencies d
+JOIN project_tasks b
+  ON b.tenant_id = d.tenant_id
+ AND b.id = d.blocker_task_id
+WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND d.project_id = sqlc.arg('project_id')::uuid
+  AND d.dependent_task_id = ANY(sqlc.arg('dependent_task_ids')::uuid[])
+  AND b.status <> 'completed'
+ORDER BY d.dependent_task_id, d.created_at ASC;
+
+-- name: ListProjectTasksByCoordinationJob :many
+SELECT * FROM project_tasks
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND coordination_job_id = sqlc.arg('coordination_job_id')::uuid
+ORDER BY stage_index ASC NULLS LAST, created_at ASC;
+
+-- name: GetProjectTaskCompletionContract :one
+SELECT id, tenant_id, project_id, expected_outputs, handoff_contract, digital_employee_run_id
+FROM project_tasks
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid;
 
 -- name: UpdateProjectTaskStatus :one
 UPDATE project_tasks
