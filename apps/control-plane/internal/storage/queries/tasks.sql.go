@@ -1496,6 +1496,73 @@ func (q *Queries) ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]T
 	return items, nil
 }
 
+const ListTaskRunsByIDs = `-- name: ListTaskRunsByIDs :many
+SELECT id, tenant_id, task_id, node_id, runtime_node_id, provider_session_id, status, lease_expires_at, started_at, completed_at, finished_at, result, error_message, created_at, updated_at, command_id, digital_employee_id, execution_instance_id, idempotency_key, idempotency_fingerprint, timeout_sec, grace_sec, diagnostic, log_ref, raw_result_ref, work_products, session_state, error_code, error_family, exit_code, signal, timed_out, provider_type, provider_session_external_id FROM task_runs
+WHERE id = ANY($1::uuid[])
+  AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
+ORDER BY created_at DESC
+`
+
+type ListTaskRunsByIDsParams struct {
+	Ids      []uuid.UUID   `json:"ids"`
+	TenantID uuid.NullUUID `json:"tenant_id"`
+}
+
+func (q *Queries) ListTaskRunsByIDs(ctx context.Context, arg ListTaskRunsByIDsParams) ([]TaskRun, error) {
+	rows, err := q.db.Query(ctx, ListTaskRunsByIDs, arg.Ids, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskRun{}
+	for rows.Next() {
+		var i TaskRun
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.TaskID,
+			&i.NodeID,
+			&i.RuntimeNodeID,
+			&i.ProviderSessionID,
+			&i.Status,
+			&i.LeaseExpiresAt,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.FinishedAt,
+			&i.Result,
+			&i.ErrorMessage,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CommandID,
+			&i.DigitalEmployeeID,
+			&i.ExecutionInstanceID,
+			&i.IdempotencyKey,
+			&i.IdempotencyFingerprint,
+			&i.TimeoutSec,
+			&i.GraceSec,
+			&i.Diagnostic,
+			&i.LogRef,
+			&i.RawResultRef,
+			&i.WorkProducts,
+			&i.SessionState,
+			&i.ErrorCode,
+			&i.ErrorFamily,
+			&i.ExitCode,
+			&i.Signal,
+			&i.TimedOut,
+			&i.ProviderType,
+			&i.ProviderSessionExternalID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListTaskStateHistory = `-- name: ListTaskStateHistory :many
 SELECT id, tenant_id, task_id, from_status, to_status, changed_by, reason, created_at FROM task_state_history
 WHERE task_id = $1::uuid

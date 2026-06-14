@@ -1172,17 +1172,16 @@ func (r *PgRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTa
 	if err != nil {
 		return graph, err
 	}
-	summaries, err := r.ListExecutionSummaries(ctx, req.TenantID, req.ProjectID, 500, 0)
+	graph.ExecutionSummaries, err = r.listProjectExecutionSummariesByTaskIDs(ctx, req.TenantID, req.ProjectID, taskIDs)
 	if err != nil {
 		return graph, err
 	}
-	graph.ExecutionSummaries = filterExecutionSummariesForTasks(summaries, taskIDs)
 	jobIDs := graphCoordinationJobIDs(req.CoordinationJobID, tasks)
-	graph.DecisionRequests, err = r.ListDemandLaunchDecisionRequests(ctx, req.TenantID, req.ProjectID, jobIDs, taskIDs, 200)
+	graph.DecisionRequests, err = r.listProjectTaskGraphDecisionRequests(ctx, req.TenantID, req.ProjectID, jobIDs, taskIDs)
 	if err != nil {
 		return graph, err
 	}
-	graph.RecentEvents, err = r.projectTaskGraphEvents(ctx, req, taskIDs, decisionRequestIDs(graph.DecisionRequests))
+	graph.RecentEvents, err = r.projectTaskGraphEvents(ctx, req, jobIDs, taskIDs, decisionRequestIDs(graph.DecisionRequests))
 	if err != nil {
 		return graph, err
 	}
@@ -1282,42 +1281,36 @@ func (r *PgRepository) projectTaskGraphEmployees(ctx context.Context, tenantID, 
 }
 
 func (r *PgRepository) projectTaskGraphRuns(ctx context.Context, tenantID uuid.UUID, tasks []ProjectTask) ([]ProjectTaskGraphRun, error) {
-	runs := make([]ProjectTaskGraphRun, 0)
-	for _, task := range tasks {
-		if task.DigitalEmployeeRunID == nil {
-			continue
-		}
-		row, err := r.q.GetTaskRun(ctx, queries.GetTaskRunParams{ID: *task.DigitalEmployeeRunID, TenantID: nullUUID(&tenantID)})
-		if err != nil {
-			return nil, err
-		}
-		runtimeTaskID := task.RuntimeTaskID
-		if runtimeTaskID == nil {
-			id := row.TaskID
-			runtimeTaskID = &id
-		}
-		runs = append(runs, ProjectTaskGraphRun{
-			ProjectTaskID:        task.ID,
-			DigitalEmployeeRunID: task.DigitalEmployeeRunID,
-			RuntimeTaskID:        runtimeTaskID,
-			RuntimeNodeID:        ptrUUID(row.RuntimeNodeID),
-			RuntimeNodeSummary:   row.NodeID,
-			Status:               row.Status,
-			ProviderType:         textValue(row.ProviderType),
-		})
+	runIDs := graphDigitalEmployeeRunIDs(tasks)
+	if len(runIDs) == 0 {
+		return []ProjectTaskGraphRun{}, nil
 	}
-	return runs, nil
-}
-
-func (r *PgRepository) projectTaskGraphEvents(ctx context.Context, req GetProjectTaskGraphRequest, taskIDs, decisionIDs []uuid.UUID) ([]ProjectEvent, error) {
-	if req.DemandID != nil {
-		return r.ListDemandLaunchEvents(ctx, req.TenantID, req.ProjectID, *req.DemandID, nil, taskIDs, decisionIDs, 100)
-	}
-	events, err := r.ListProjectEvents(ctx, req.TenantID, req.ProjectID, 100, 0)
+	rows, err := r.q.ListTaskRunsByIDs(ctx, queries.ListTaskRunsByIDsParams{
+		Ids:      runIDs,
+		TenantID: nullUUID(&tenantID),
+	})
 	if err != nil {
 		return nil, err
 	}
-	return filterEventsForTaskGraph(events, req.CoordinationJobID, taskIDs, decisionIDs), nil
+	return projectTaskGraphRunsFromRows(tasks, rows)
+}
+
+func (r *PgRepository) projectTaskGraphEvents(ctx context.Context, req GetProjectTaskGraphRequest, jobIDs, taskIDs, decisionIDs []uuid.UUID) ([]ProjectEvent, error) {
+	if len(jobIDs) == 0 && len(taskIDs) == 0 && len(decisionIDs) == 0 {
+		return []ProjectEvent{}, nil
+	}
+	rows, err := r.q.ListProjectTaskGraphEvents(ctx, queries.ListProjectTaskGraphEventsParams{
+		TenantID:           req.TenantID,
+		ProjectID:          req.ProjectID,
+		CoordinationJobIds: uuidStrings(jobIDs),
+		ProjectTaskIds:     uuidStrings(taskIDs),
+		DecisionRequestIds: uuidStrings(decisionIDs),
+		Limit:              100,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return eventsFromRecords(rows)
 }
 
 func emptyProjectTaskGraph() ProjectTaskGraph {
@@ -1360,15 +1353,52 @@ func graphCoordinationJobIDs(filter *uuid.UUID, tasks []ProjectTask) []uuid.UUID
 	return ids
 }
 
-func filterExecutionSummariesForTasks(summaries []ExecutionSummary, taskIDs []uuid.UUID) []ExecutionSummary {
-	needed := uuidSet(taskIDs)
-	filtered := make([]ExecutionSummary, 0)
-	for _, summary := range summaries {
-		if _, ok := needed[summary.ProjectTaskID]; ok {
-			filtered = append(filtered, summary)
+func graphDigitalEmployeeRunIDs(tasks []ProjectTask) []uuid.UUID {
+	ids := make([]uuid.UUID, 0)
+	seen := map[uuid.UUID]struct{}{}
+	for _, task := range tasks {
+		if task.DigitalEmployeeRunID == nil {
+			continue
 		}
+		if _, exists := seen[*task.DigitalEmployeeRunID]; exists {
+			continue
+		}
+		ids = append(ids, *task.DigitalEmployeeRunID)
+		seen[*task.DigitalEmployeeRunID] = struct{}{}
 	}
-	return filtered
+	return ids
+}
+
+func projectTaskGraphRunsFromRows(tasks []ProjectTask, rows []queries.TaskRun) ([]ProjectTaskGraphRun, error) {
+	rowsByID := make(map[uuid.UUID]queries.TaskRun, len(rows))
+	for _, row := range rows {
+		rowsByID[row.ID] = row
+	}
+	runs := make([]ProjectTaskGraphRun, 0, len(rows))
+	for _, task := range tasks {
+		if task.DigitalEmployeeRunID == nil {
+			continue
+		}
+		row, ok := rowsByID[*task.DigitalEmployeeRunID]
+		if !ok {
+			return nil, ErrProjectNotFound
+		}
+		runtimeTaskID := task.RuntimeTaskID
+		if runtimeTaskID == nil {
+			id := row.TaskID
+			runtimeTaskID = &id
+		}
+		runs = append(runs, ProjectTaskGraphRun{
+			ProjectTaskID:        task.ID,
+			DigitalEmployeeRunID: task.DigitalEmployeeRunID,
+			RuntimeTaskID:        runtimeTaskID,
+			RuntimeNodeID:        ptrUUID(row.RuntimeNodeID),
+			RuntimeNodeSummary:   row.NodeID,
+			Status:               row.Status,
+			ProviderType:         textValue(row.ProviderType),
+		})
+	}
+	return runs, nil
 }
 
 func filterEventsForTaskGraph(events []ProjectEvent, coordinationJobID *uuid.UUID, taskIDs, decisionIDs []uuid.UUID) []ProjectEvent {
@@ -1380,6 +1410,10 @@ func filterEventsForTaskGraph(events []ProjectEvent, coordinationJobID *uuid.UUI
 	}
 	filtered := make([]ProjectEvent, 0)
 	for _, event := range events {
+		if coordinationJob != "" && event.ActorID == coordinationJob {
+			filtered = append(filtered, event)
+			continue
+		}
 		if _, ok := taskSet[event.ActorID]; ok {
 			filtered = append(filtered, event)
 			continue
@@ -1413,14 +1447,6 @@ func filterEventsForTaskGraph(events []ProjectEvent, coordinationJobID *uuid.UUI
 		}
 	}
 	return filtered
-}
-
-func uuidSet(ids []uuid.UUID) map[uuid.UUID]struct{} {
-	set := make(map[uuid.UUID]struct{}, len(ids))
-	for _, id := range ids {
-		set[id] = struct{}{}
-	}
-	return set
 }
 
 func uuidStringSet(ids []uuid.UUID) map[string]struct{} {
@@ -1561,6 +1587,21 @@ func (r *PgRepository) ListExecutionSummaries(ctx context.Context, tenantID, pro
 		ProjectID: projectID,
 		Limit:     limit,
 		Offset:    offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return executionSummariesFromRecords(rows)
+}
+
+func (r *PgRepository) listProjectExecutionSummariesByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ExecutionSummary, error) {
+	if len(taskIDs) == 0 {
+		return []ExecutionSummary{}, nil
+	}
+	rows, err := r.q.ListProjectExecutionSummariesByTaskIDs(ctx, queries.ListProjectExecutionSummariesByTaskIDsParams{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskIds: taskIDs,
 	})
 	if err != nil {
 		return nil, err
@@ -1742,6 +1783,22 @@ func (r *PgRepository) ListDemandLaunchDecisionRequests(ctx context.Context, ten
 		CoordinationJobIds: coordinationJobIDs,
 		ProjectTaskIds:     projectTaskIDs,
 		Limit:              limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return decisionRequestsFromRecords(rows)
+}
+
+func (r *PgRepository) listProjectTaskGraphDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, coordinationJobIDs, projectTaskIDs []uuid.UUID) ([]DecisionRequest, error) {
+	if len(coordinationJobIDs) == 0 && len(projectTaskIDs) == 0 {
+		return []DecisionRequest{}, nil
+	}
+	rows, err := r.q.ListProjectTaskGraphDecisionRequests(ctx, queries.ListProjectTaskGraphDecisionRequestsParams{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		CoordinationJobIds: coordinationJobIDs,
+		ProjectTaskIds:     projectTaskIDs,
 	})
 	if err != nil {
 		return nil, err

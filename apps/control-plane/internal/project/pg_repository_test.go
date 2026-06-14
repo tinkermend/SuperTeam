@@ -492,6 +492,146 @@ func TestProjectTaskGraphDemandReadReturnsAllTasks(t *testing.T) {
 	require.NotNil(t, graph.DecisionRequests)
 }
 
+func TestProjectTaskGraphReadReturnsGraphScopedSidecarsAfterUnrelatedRows(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	pgRepo := repo.(*PgRepository)
+	ctx := context.Background()
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	jobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	routeID := createRouteDecisionFixture(t, repo, tenantID, projectID, jobID, demandID)
+	req := createProjectTaskGraphFixtureRequest(tenantID, projectID, demandID, jobID, routeID)
+	result, err := repo.CreateProjectTaskGraph(ctx, req)
+	require.NoError(t, err)
+	graphTaskID := result.Tasks[0].ID
+	graphEmployeeID := req.Tasks[0].AssignedDigitalEmployeeID
+
+	graphSummary, err := repo.CreateExecutionSummary(ctx, CreateExecutionSummaryRequest{
+		TenantID:              tenantID,
+		ProjectID:             projectID,
+		ProjectTaskID:         graphTaskID,
+		DigitalEmployeeID:     graphEmployeeID,
+		Conclusion:            "graph summary",
+		EvidenceRefs:          []any{"graph-evidence"},
+		ArtifactRefs:          []any{},
+		ConfidenceFactors:     map[string]any{},
+		MissingInformation:    []any{},
+		RecommendedNextAction: "continue",
+	})
+	require.NoError(t, err)
+	graphDecision, err := repo.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		CoordinationJobID: &jobID,
+		ProjectTaskID:     &graphTaskID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "task_failure_recovery",
+		TitleSnapshot:     "graph decision",
+		StatusSnapshot:    "pending",
+	})
+	require.NoError(t, err)
+	graphEvent, err := repo.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventType: ProjectEventTaskDispatched,
+		ActorType: "workflow",
+		ActorID:   jobID.String(),
+		Summary:   "graph event",
+		Payload: map[string]any{
+			"coordination_job_id": jobID.String(),
+			"project_task_id":     graphTaskID.String(),
+		},
+	})
+	require.NoError(t, err)
+	runtimeTask, err := pgRepo.q.CreateTask(ctx, queries.CreateTaskParams{
+		TenantID:     nullUUID(&tenantID),
+		Title:        "runtime graph task",
+		Status:       "pending",
+		Priority:     1,
+		ProviderType: "codex",
+		Params:       []byte(`{}`),
+	})
+	require.NoError(t, err)
+	run, err := pgRepo.q.CreateTaskRun(ctx, queries.CreateTaskRunParams{
+		TenantID: nullUUID(&tenantID),
+		TaskID:   runtimeTask.ID,
+		NodeID:   "graph-node",
+		Status:   "running",
+	})
+	require.NoError(t, err)
+	_, err = repo.BindProjectTaskRun(ctx, BindProjectTaskRunRequest{
+		TenantID:             tenantID,
+		ProjectTaskID:        graphTaskID,
+		RuntimeTaskID:        runtimeTask.ID,
+		DigitalEmployeeRunID: run.ID,
+		CurrentStatuses:      []string{"planned"},
+	})
+	require.NoError(t, err)
+
+	unrelatedTask, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "unrelated",
+		Status:                    "completed",
+		AssignedDigitalEmployeeID: &graphEmployeeID,
+	})
+	require.NoError(t, err)
+	for i := 0; i < 501; i++ {
+		_, err = repo.CreateExecutionSummary(ctx, CreateExecutionSummaryRequest{
+			TenantID:              tenantID,
+			ProjectID:             projectID,
+			ProjectTaskID:         unrelatedTask.ID,
+			DigitalEmployeeID:     graphEmployeeID,
+			Conclusion:            fmt.Sprintf("unrelated summary %03d", i),
+			EvidenceRefs:          []any{},
+			ArtifactRefs:          []any{},
+			ConfidenceFactors:     map[string]any{},
+			MissingInformation:    []any{},
+			RecommendedNextAction: "none",
+		})
+		require.NoError(t, err)
+	}
+	for i := 0; i < 201; i++ {
+		_, err = repo.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			ApprovalRequestID: uuid.New(),
+			CoordinationJobID: &jobID,
+			ProjectTaskID:     &graphTaskID,
+			TargetUserID:      uuid.New(),
+			DecisionType:      "task_failure_recovery",
+			TitleSnapshot:     fmt.Sprintf("related decision %03d", i),
+			StatusSnapshot:    "pending",
+		})
+		require.NoError(t, err)
+	}
+	for i := 0; i < 101; i++ {
+		_, err = repo.AppendProjectEvent(ctx, AppendProjectEventRequest{
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			EventType: ProjectEventTaskDispatched,
+			ActorType: "workflow",
+			ActorID:   uuid.New().String(),
+			Summary:   fmt.Sprintf("unrelated event %03d", i),
+			Payload:   map[string]any{"project_task_id": uuid.New().String()},
+		})
+		require.NoError(t, err)
+	}
+
+	graph, err := repo.GetProjectTaskGraph(ctx, GetProjectTaskGraphRequest{
+		TenantID: tenantID, ProjectID: projectID, CoordinationJobID: &jobID,
+	})
+	require.NoError(t, err)
+	require.Contains(t, executionSummaryIDs(graph.ExecutionSummaries), graphSummary.ID)
+	require.Contains(t, decisionRequestIDs(graph.DecisionRequests), graphDecision.ID)
+	require.Contains(t, projectEventIDs(graph.RecentEvents), graphEvent.ID)
+	require.Len(t, graph.DecisionRequests, 202)
+	require.Len(t, graph.Runs, 1)
+	require.Equal(t, run.ID, *graph.Runs[0].DigitalEmployeeRunID)
+	require.Equal(t, runtimeTask.ID, *graph.Runs[0].RuntimeTaskID)
+}
+
 func TestCreateProjectTaskGraphIdempotentReplayReturnsExistingGraph(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)
@@ -652,6 +792,73 @@ func TestGraphTaskPayloadMatchesRequest(t *testing.T) {
 			require.False(t, graphTaskPayloadMatchesRequest(changedReq, changedPlanned, existing))
 		})
 	}
+}
+
+func TestFilterEventsForTaskGraphIncludesCoordinationJobActor(t *testing.T) {
+	jobID := uuid.New()
+	taskID := uuid.New()
+	decisionID := uuid.New()
+	jobActorEventID := uuid.New()
+	payloadEventID := uuid.New()
+	events := []ProjectEvent{
+		{ID: uuid.New(), ActorID: uuid.New().String(), Payload: map[string]any{}},
+		{ID: jobActorEventID, ActorID: jobID.String(), Payload: map[string]any{}},
+		{ID: payloadEventID, ActorID: uuid.New().String(), Payload: map[string]any{"coordination_job_id": jobID.String()}},
+	}
+
+	filtered := filterEventsForTaskGraph(events, &jobID, []uuid.UUID{taskID}, []uuid.UUID{decisionID})
+
+	require.Equal(t, []uuid.UUID{jobActorEventID, payloadEventID}, projectEventIDs(filtered))
+}
+
+func TestProjectTaskGraphRunsFromRowsMapsBoundRuns(t *testing.T) {
+	tenantID := uuid.New()
+	projectTaskID := uuid.New()
+	projectTaskWithRuntimeID := uuid.New()
+	runID := uuid.New()
+	runWithRuntimeID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeTaskFromRunID := uuid.New()
+	runtimeNodeID := uuid.New()
+	tasks := []ProjectTask{
+		{ID: projectTaskID, TenantID: tenantID, DigitalEmployeeRunID: &runID},
+		{ID: projectTaskWithRuntimeID, TenantID: tenantID, DigitalEmployeeRunID: &runWithRuntimeID, RuntimeTaskID: &runtimeTaskID},
+	}
+	rows := []queries.TaskRun{
+		{
+			ID:            runWithRuntimeID,
+			TenantID:      tenantID,
+			TaskID:        uuid.New(),
+			NodeID:        "explicit-runtime-task",
+			RuntimeNodeID: uuid.NullUUID{UUID: runtimeNodeID, Valid: true},
+			Status:        "running",
+			ProviderType:  pgtype.Text{String: "codex", Valid: true},
+		},
+		{
+			ID:           runID,
+			TenantID:     tenantID,
+			TaskID:       runtimeTaskFromRunID,
+			NodeID:       "runtime-task-from-run",
+			Status:       "completed",
+			ProviderType: pgtype.Text{String: "claude-code", Valid: true},
+		},
+	}
+
+	runs, err := projectTaskGraphRunsFromRows(tasks, rows)
+
+	require.NoError(t, err)
+	require.Len(t, runs, 2)
+	require.Equal(t, projectTaskID, runs[0].ProjectTaskID)
+	require.Equal(t, runID, *runs[0].DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskFromRunID, *runs[0].RuntimeTaskID)
+	require.Equal(t, "runtime-task-from-run", runs[0].RuntimeNodeSummary)
+	require.Equal(t, "completed", runs[0].Status)
+	require.Equal(t, "claude-code", runs[0].ProviderType)
+	require.Equal(t, projectTaskWithRuntimeID, runs[1].ProjectTaskID)
+	require.Equal(t, runWithRuntimeID, *runs[1].DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *runs[1].RuntimeTaskID)
+	require.Equal(t, runtimeNodeID, *runs[1].RuntimeNodeID)
+	require.Equal(t, "codex", runs[1].ProviderType)
 }
 
 func TestProjectConfigSnapshotIncludesHumanOwner(t *testing.T) {
@@ -901,8 +1108,12 @@ func newProjectRepositoryTestStore(t *testing.T) (Repository, uuid.UUID) {
 	tenantID := uuid.New()
 	t.Cleanup(func() {
 		for _, statement := range []string{
+			"DELETE FROM project_execution_summaries WHERE tenant_id = $1",
+			"DELETE FROM project_decision_requests WHERE tenant_id = $1",
 			"DELETE FROM project_task_dependencies WHERE tenant_id = $1",
 			"DELETE FROM project_tasks WHERE tenant_id = $1",
+			"DELETE FROM task_runs WHERE tenant_id = $1",
+			"DELETE FROM tasks WHERE tenant_id = $1",
 			"DELETE FROM project_route_decisions WHERE tenant_id = $1",
 			"DELETE FROM project_coordination_jobs WHERE tenant_id = $1",
 			"DELETE FROM project_demands WHERE tenant_id = $1",
@@ -1077,6 +1288,22 @@ func requireEventCount(t *testing.T, events []ProjectEvent, eventType ProjectEve
 		}
 	}
 	require.Equal(t, expected, count, "event type %s", eventType)
+}
+
+func executionSummaryIDs(summaries []ExecutionSummary) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(summaries))
+	for _, summary := range summaries {
+		ids = append(ids, summary.ID)
+	}
+	return ids
+}
+
+func projectEventIDs(events []ProjectEvent) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(events))
+	for _, event := range events {
+		ids = append(ids, event.ID)
+	}
+	return ids
 }
 
 func (r *memoryRepository) CreateEvidenceRef(ctx context.Context, req CreateEvidenceRefRequest) (ProjectEvidenceRef, error) {

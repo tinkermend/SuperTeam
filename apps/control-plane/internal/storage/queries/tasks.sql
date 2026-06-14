@@ -230,6 +230,12 @@ WHERE task_id = sqlc.arg('task_id')::uuid
   AND tenant_id = COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 ORDER BY created_at DESC;
 
+-- name: ListTaskRunsByIDs :many
+SELECT * FROM task_runs
+WHERE id = ANY(sqlc.arg('ids')::uuid[])
+  AND tenant_id = COALESCE(sqlc.narg('tenant_id')::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
+ORDER BY created_at DESC;
+
 -- name: GetLatestTaskRun :one
 SELECT * FROM task_runs
 WHERE task_id = sqlc.arg('task_id')::uuid

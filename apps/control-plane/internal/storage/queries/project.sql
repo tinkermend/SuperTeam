@@ -232,6 +232,22 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY sequence_number DESC
 LIMIT sqlc.arg('limit');
 
+-- name: ListProjectTaskGraphEvents :many
+SELECT * FROM project_events
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND (
+    actor_id = ANY(sqlc.arg('coordination_job_ids')::varchar[])
+    OR actor_id = ANY(sqlc.arg('project_task_ids')::varchar[])
+    OR resource_id = ANY(sqlc.arg('project_task_ids')::varchar[])
+    OR resource_id = ANY(sqlc.arg('decision_request_ids')::varchar[])
+    OR payload->>'coordination_job_id' = ANY(sqlc.arg('coordination_job_ids')::varchar[])
+    OR payload->>'project_task_id' = ANY(sqlc.arg('project_task_ids')::varchar[])
+    OR payload->>'decision_request_id' = ANY(sqlc.arg('decision_request_ids')::varchar[])
+  )
+ORDER BY sequence_number DESC
+LIMIT sqlc.arg('limit');
+
 -- name: GetProjectEvent :one
 SELECT * FROM project_events
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
@@ -616,6 +632,13 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: ListProjectExecutionSummariesByTaskIDs :many
+SELECT * FROM project_execution_summaries
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
+ORDER BY created_at DESC;
+
 -- name: CreateProjectTransferRequest :one
 INSERT INTO project_transfer_requests (
     tenant_id,
@@ -712,3 +735,13 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   )
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit');
+
+-- name: ListProjectTaskGraphDecisionRequests :many
+SELECT * FROM project_decision_requests
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND (
+    coordination_job_id = ANY(sqlc.arg('coordination_job_ids')::uuid[])
+    OR project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
+  )
+ORDER BY created_at DESC;

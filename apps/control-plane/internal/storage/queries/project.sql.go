@@ -2153,6 +2153,57 @@ func (q *Queries) ListProjectExecutionSummaries(ctx context.Context, arg ListPro
 	return items, nil
 }
 
+const ListProjectExecutionSummariesByTaskIDs = `-- name: ListProjectExecutionSummariesByTaskIDs :many
+SELECT id, tenant_id, project_id, project_task_id, digital_employee_id, conclusion, evidence_refs, artifact_refs, confidence_factors, uncertainty, missing_information, recommended_next_action, requires_human_review, transfer_request_id, created_event_id, created_at FROM project_execution_summaries
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND project_task_id = ANY($3::uuid[])
+ORDER BY created_at DESC
+`
+
+type ListProjectExecutionSummariesByTaskIDsParams struct {
+	TenantID       uuid.UUID   `json:"tenant_id"`
+	ProjectID      uuid.UUID   `json:"project_id"`
+	ProjectTaskIds []uuid.UUID `json:"project_task_ids"`
+}
+
+func (q *Queries) ListProjectExecutionSummariesByTaskIDs(ctx context.Context, arg ListProjectExecutionSummariesByTaskIDsParams) ([]ProjectExecutionSummary, error) {
+	rows, err := q.db.Query(ctx, ListProjectExecutionSummariesByTaskIDs, arg.TenantID, arg.ProjectID, arg.ProjectTaskIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectExecutionSummary{}
+	for rows.Next() {
+		var i ProjectExecutionSummary
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ProjectTaskID,
+			&i.DigitalEmployeeID,
+			&i.Conclusion,
+			&i.EvidenceRefs,
+			&i.ArtifactRefs,
+			&i.ConfidenceFactors,
+			&i.Uncertainty,
+			&i.MissingInformation,
+			&i.RecommendedNextAction,
+			&i.RequiresHumanReview,
+			&i.TransferRequestID,
+			&i.CreatedEventID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectMembers = `-- name: ListProjectMembers :many
 SELECT id, tenant_id, project_id, principal_type, principal_id, project_role, display_name_snapshot, status, settings, created_at, updated_at FROM project_members
 WHERE tenant_id = $1::uuid
@@ -2282,6 +2333,133 @@ func (q *Queries) ListProjectTaskDependencies(ctx context.Context, arg ListProje
 			&i.CoordinationJobID,
 			&i.DependentTaskID,
 			&i.BlockerTaskID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectTaskGraphDecisionRequests = `-- name: ListProjectTaskGraphDecisionRequests :many
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at FROM project_decision_requests
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND (
+    coordination_job_id = ANY($3::uuid[])
+    OR project_task_id = ANY($4::uuid[])
+  )
+ORDER BY created_at DESC
+`
+
+type ListProjectTaskGraphDecisionRequestsParams struct {
+	TenantID           uuid.UUID   `json:"tenant_id"`
+	ProjectID          uuid.UUID   `json:"project_id"`
+	CoordinationJobIds []uuid.UUID `json:"coordination_job_ids"`
+	ProjectTaskIds     []uuid.UUID `json:"project_task_ids"`
+}
+
+func (q *Queries) ListProjectTaskGraphDecisionRequests(ctx context.Context, arg ListProjectTaskGraphDecisionRequestsParams) ([]ProjectDecisionRequest, error) {
+	rows, err := q.db.Query(ctx, ListProjectTaskGraphDecisionRequests,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.CoordinationJobIds,
+		arg.ProjectTaskIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectDecisionRequest{}
+	for rows.Next() {
+		var i ProjectDecisionRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ApprovalRequestID,
+			&i.CoordinationJobID,
+			&i.ProjectTaskID,
+			&i.TargetUserID,
+			&i.DecisionType,
+			&i.TitleSnapshot,
+			&i.SummarySnapshot,
+			&i.RiskLevelSnapshot,
+			&i.StatusSnapshot,
+			&i.CreatedEventID,
+			&i.ResolvedEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectTaskGraphEvents = `-- name: ListProjectTaskGraphEvents :many
+SELECT id, tenant_id, project_id, sequence_number, event_type, actor_type, actor_id, resource_type, resource_id, summary, payload, created_at FROM project_events
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND (
+    actor_id = ANY($3::varchar[])
+    OR actor_id = ANY($4::varchar[])
+    OR resource_id = ANY($4::varchar[])
+    OR resource_id = ANY($5::varchar[])
+    OR payload->>'coordination_job_id' = ANY($3::varchar[])
+    OR payload->>'project_task_id' = ANY($4::varchar[])
+    OR payload->>'decision_request_id' = ANY($5::varchar[])
+  )
+ORDER BY sequence_number DESC
+LIMIT $6
+`
+
+type ListProjectTaskGraphEventsParams struct {
+	TenantID           uuid.UUID `json:"tenant_id"`
+	ProjectID          uuid.UUID `json:"project_id"`
+	CoordinationJobIds []string  `json:"coordination_job_ids"`
+	ProjectTaskIds     []string  `json:"project_task_ids"`
+	DecisionRequestIds []string  `json:"decision_request_ids"`
+	Limit              int32     `json:"limit"`
+}
+
+func (q *Queries) ListProjectTaskGraphEvents(ctx context.Context, arg ListProjectTaskGraphEventsParams) ([]ProjectEvent, error) {
+	rows, err := q.db.Query(ctx, ListProjectTaskGraphEvents,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.CoordinationJobIds,
+		arg.ProjectTaskIds,
+		arg.DecisionRequestIds,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectEvent{}
+	for rows.Next() {
+		var i ProjectEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.SequenceNumber,
+			&i.EventType,
+			&i.ActorType,
+			&i.ActorID,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Summary,
+			&i.Payload,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
