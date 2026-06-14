@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 	"github.com/superteam/control-plane/internal/approval"
 	"github.com/superteam/control-plane/internal/project"
 )
@@ -242,6 +243,91 @@ func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMeta
 	if !reflect.DeepEqual(secondTask.BlockedByKeys, []string{"investigate"}) {
 		t.Fatalf("expected second task to be blocked by key, got %#v", secondTask.BlockedByKeys)
 	}
+}
+
+func TestProjectStoreListDispatchableTasksFiltersBlockedTasksAndUnresolvedBlockers(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	demandID := uuid.New()
+	rootID := uuid.New()
+	pendingID := uuid.New()
+	blockedID := uuid.New()
+	plannedButBlockedID := uuid.New()
+	completedBlockerID := uuid.New()
+	readyDependentID := uuid.New()
+	unrelatedJobID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		tasks: []project.ProjectTask{
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, rootID, "planned"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, pendingID, "pending"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, blockedID, "blocked"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, plannedButBlockedID, "planned"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, completedBlockerID, "completed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, readyDependentID, "planned"),
+			projectStoreTask(tenantID, projectID, demandID, unrelatedJobID, routeID, uuid.New(), "planned"),
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, blockedID, rootID),
+			projectStoreDependency(tenantID, projectID, jobID, plannedButBlockedID, pendingID),
+			projectStoreDependency(tenantID, projectID, jobID, readyDependentID, completedBlockerID),
+		},
+	}
+	store := NewProjectStore(repo)
+
+	ids, err := store.ListDispatchableTasks(context.Background(), ListDispatchableTasksInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		CoordinationJobID: jobID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{rootID, pendingID, readyDependentID}, ids)
+}
+
+func TestProjectStoreResolveReadyDownstreamUpdatesOnlyUnblockedDependents(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	demandID := uuid.New()
+	completedTaskID := uuid.New()
+	readyDownstreamID := uuid.New()
+	blockedDownstreamID := uuid.New()
+	otherBlockerID := uuid.New()
+	alreadyPlannedID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		tasks: []project.ProjectTask{
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, completedTaskID, "completed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, readyDownstreamID, "blocked"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, blockedDownstreamID, "blocked"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, otherBlockerID, "assigned"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, alreadyPlannedID, "planned"),
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, readyDownstreamID, completedTaskID),
+			projectStoreDependency(tenantID, projectID, jobID, blockedDownstreamID, completedTaskID),
+			projectStoreDependency(tenantID, projectID, jobID, blockedDownstreamID, otherBlockerID),
+			projectStoreDependency(tenantID, projectID, jobID, alreadyPlannedID, completedTaskID),
+		},
+	}
+	store := NewProjectStore(repo)
+
+	ids, err := store.ResolveReadyDownstream(context.Background(), ResolveReadyDownstreamInput{
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		CompletedTaskID: completedTaskID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{readyDownstreamID}, ids)
+	require.Equal(t, "planned", repo.taskStatus(readyDownstreamID))
+	require.Equal(t, "blocked", repo.taskStatus(blockedDownstreamID))
+	require.Equal(t, "planned", repo.taskStatus(alreadyPlannedID))
+	require.Equal(t, []projectTaskStatusUpdateRecord{
+		{TenantID: tenantID, TaskID: readyDownstreamID, Status: "planned", CurrentStatuses: []string{"blocked"}},
+	}, repo.statusUpdates)
 }
 
 func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProjection(t *testing.T) {
@@ -763,10 +849,19 @@ type projectStoreMemoryRepository struct {
 	bindRequests             []project.BindProjectTaskRunRequest
 	bindErr                  error
 	events                   []project.ProjectEvent
+	taskDependencies         []project.ProjectTaskDependency
+	statusUpdates            []projectTaskStatusUpdateRecord
 	routeDecisionRequests    []project.CreateRouteDecisionRequest
 	projectTaskRequests      []project.CreateProjectTaskRequest
 	projectTaskGraphRequests []project.CreateProjectTaskGraphRequest
 	decisionRequests         []project.DecisionRequest
+}
+
+type projectTaskStatusUpdateRecord struct {
+	TenantID        uuid.UUID
+	TaskID          uuid.UUID
+	Status          string
+	CurrentStatuses []string
 }
 
 func (r *projectStoreMemoryRepository) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (project.Project, error) {
@@ -859,6 +954,34 @@ func (r *projectStoreMemoryRepository) CreateProjectTaskGraph(ctx context.Contex
 	for _, planned := range req.Tasks {
 		id := uuid.New()
 		keyToID[planned.Key] = id
+		demandID := req.DemandID
+		coordinationJobID := req.CoordinationJobID
+		routeDecisionID := req.RouteDecisionID
+		employeeID := planned.AssignedDigitalEmployeeID
+		taskKind := planned.TaskKind
+		r.tasks = append(r.tasks, project.ProjectTask{
+			ID:                        id,
+			TenantID:                  req.TenantID,
+			ProjectID:                 req.ProjectID,
+			DemandID:                  &demandID,
+			Title:                     planned.Title,
+			Summary:                   strPtr(planned.Summary),
+			Status:                    planned.Status,
+			AssignedDigitalEmployeeID: &employeeID,
+			RiskLevel:                 strPtr(planned.RiskLevel),
+			RequiresHumanApproval:     planned.RequiresHumanApproval,
+			CoordinationJobID:         &coordinationJobID,
+			RouteDecisionID:           &routeDecisionID,
+			PlannedTaskKey:            strPtr(planned.Key),
+			TaskKind:                  &taskKind,
+			StageIndex:                planned.StageIndex,
+			ExpectedOutputs:           planned.ExpectedOutputs,
+			InputRequirements:         planned.InputRequirements,
+			HandoffContract:           planned.HandoffContract,
+			PlannerMetadata:           planned.PlannerMetadata,
+			CreatedAt:                 time.Now().UTC(),
+			UpdatedAt:                 time.Now().UTC(),
+		})
 		result.Tasks = append(result.Tasks, project.ProjectTaskGraphTaskResult{
 			ID:             id,
 			PlannedTaskKey: planned.Key,
@@ -870,14 +993,16 @@ func (r *projectStoreMemoryRepository) CreateProjectTaskGraph(ctx context.Contex
 	for _, planned := range req.Tasks {
 		for _, blockerKey := range planned.BlockedByKeys {
 			result.Dependencies = append(result.Dependencies, project.ProjectTaskDependency{
-				ID:              uuid.New(),
-				TenantID:        req.TenantID,
-				ProjectID:       req.ProjectID,
-				DependentTaskID: keyToID[planned.Key],
-				BlockerTaskID:   keyToID[blockerKey],
+				ID:                uuid.New(),
+				TenantID:          req.TenantID,
+				ProjectID:         req.ProjectID,
+				CoordinationJobID: &req.CoordinationJobID,
+				DependentTaskID:   keyToID[planned.Key],
+				BlockerTaskID:     keyToID[blockerKey],
 			})
 		}
 	}
+	r.taskDependencies = append(r.taskDependencies, result.Dependencies...)
 	return result, nil
 }
 
@@ -915,6 +1040,61 @@ func (r *projectStoreMemoryRepository) BindProjectTaskRun(ctx context.Context, r
 	return project.ProjectTask{}, project.ErrProjectNotFound
 }
 
+func (r *projectStoreMemoryRepository) ListProjectTasksByCoordinationJob(ctx context.Context, tenantID, projectID, coordinationJobID uuid.UUID) ([]project.ProjectTask, error) {
+	tasks := make([]project.ProjectTask, 0, len(r.tasks))
+	for _, task := range r.tasks {
+		if task.TenantID == tenantID && task.ProjectID == projectID && task.CoordinationJobID != nil && *task.CoordinationJobID == coordinationJobID {
+			tasks = append(tasks, task)
+		}
+	}
+	return tasks, nil
+}
+
+func (r *projectStoreMemoryRepository) ListDependentsOfTask(ctx context.Context, tenantID, projectID, blockerTaskID uuid.UUID) ([]uuid.UUID, error) {
+	dependentIDs := make([]uuid.UUID, 0)
+	seen := map[uuid.UUID]struct{}{}
+	for _, dependency := range r.taskDependencies {
+		if dependency.TenantID != tenantID || dependency.ProjectID != projectID || dependency.BlockerTaskID != blockerTaskID {
+			continue
+		}
+		if _, exists := seen[dependency.DependentTaskID]; exists {
+			continue
+		}
+		seen[dependency.DependentTaskID] = struct{}{}
+		dependentIDs = append(dependentIDs, dependency.DependentTaskID)
+	}
+	return dependentIDs, nil
+}
+
+func (r *projectStoreMemoryRepository) ListUnresolvedBlockersForTasks(ctx context.Context, tenantID, projectID uuid.UUID, dependentTaskIDs []uuid.UUID) ([]project.ProjectTaskDependencyReadiness, error) {
+	requested := map[uuid.UUID]struct{}{}
+	for _, taskID := range dependentTaskIDs {
+		requested[taskID] = struct{}{}
+	}
+	readiness := make([]project.ProjectTaskDependencyReadiness, 0)
+	for _, dependency := range r.taskDependencies {
+		if dependency.TenantID != tenantID || dependency.ProjectID != projectID {
+			continue
+		}
+		if _, ok := requested[dependency.DependentTaskID]; !ok {
+			continue
+		}
+		blocker, err := r.GetProjectTask(ctx, tenantID, dependency.BlockerTaskID)
+		if err != nil {
+			return nil, err
+		}
+		if blocker.Status == "completed" {
+			continue
+		}
+		readiness = append(readiness, project.ProjectTaskDependencyReadiness{
+			DependentTaskID: dependency.DependentTaskID,
+			BlockerTaskID:   dependency.BlockerTaskID,
+			BlockerStatus:   blocker.Status,
+		})
+	}
+	return readiness, nil
+}
+
 func (r *projectStoreMemoryRepository) ProjectTaskEventExists(ctx context.Context, tenantID, projectID uuid.UUID, eventType project.ProjectEventType, actorID string) (bool, error) {
 	for _, event := range r.events {
 		if event.TenantID == tenantID && event.ProjectID == projectID && event.EventType == eventType && event.ActorID == actorID {
@@ -925,7 +1105,26 @@ func (r *projectStoreMemoryRepository) ProjectTaskEventExists(ctx context.Contex
 }
 
 func (r *projectStoreMemoryRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (project.ProjectTask, error) {
-	return project.ProjectTask{ID: projectTaskID, TenantID: tenantID, Status: status, UpdatedAt: time.Now().UTC()}, nil
+	r.statusUpdates = append(r.statusUpdates, projectTaskStatusUpdateRecord{TenantID: tenantID, TaskID: projectTaskID, Status: status, CurrentStatuses: append([]string(nil), currentStatuses...)})
+	allowed := map[string]struct{}{}
+	for _, currentStatus := range currentStatuses {
+		allowed[currentStatus] = struct{}{}
+	}
+	for i, task := range r.tasks {
+		if task.TenantID != tenantID || task.ID != projectTaskID {
+			continue
+		}
+		if len(allowed) > 0 {
+			if _, ok := allowed[task.Status]; !ok {
+				return project.ProjectTask{}, project.ErrProjectConflict
+			}
+		}
+		task.Status = status
+		task.UpdatedAt = time.Now().UTC()
+		r.tasks[i] = task
+		return task, nil
+	}
+	return project.ProjectTask{}, project.ErrProjectNotFound
 }
 
 func (r *projectStoreMemoryRepository) FinishCoordinationJob(ctx context.Context, req project.FinishCoordinationJobRequest) (project.CoordinationJob, error) {
@@ -1002,6 +1201,41 @@ func (f *projectTaskRunStarterFake) StartProjectTaskRun(ctx context.Context, req
 		return StartProjectTaskRunResult{}, f.err
 	}
 	return f.result, nil
+}
+
+func projectStoreTask(tenantID, projectID, demandID, coordinationJobID, routeDecisionID, taskID uuid.UUID, status string) project.ProjectTask {
+	return project.ProjectTask{
+		ID:                taskID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          &demandID,
+		Title:             "任务 " + taskID.String(),
+		Status:            status,
+		CoordinationJobID: &coordinationJobID,
+		RouteDecisionID:   &routeDecisionID,
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+	}
+}
+
+func projectStoreDependency(tenantID, projectID, coordinationJobID, dependentTaskID, blockerTaskID uuid.UUID) project.ProjectTaskDependency {
+	return project.ProjectTaskDependency{
+		ID:                uuid.New(),
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		CoordinationJobID: &coordinationJobID,
+		DependentTaskID:   dependentTaskID,
+		BlockerTaskID:     blockerTaskID,
+	}
+}
+
+func (r *projectStoreMemoryRepository) taskStatus(taskID uuid.UUID) string {
+	for _, task := range r.tasks {
+		if task.ID == taskID {
+			return task.Status
+		}
+	}
+	return ""
 }
 
 func strPtr(value string) *string {

@@ -190,6 +190,92 @@ func (s *ProjectStore) CreateProjectTasks(ctx context.Context, input CreateProje
 	return results, nil
 }
 
+func (s *ProjectStore) ListDispatchableTasks(ctx context.Context, input ListDispatchableTasksInput) ([]uuid.UUID, error) {
+	if s.repository == nil {
+		return nil, ErrActivityStoreRequired
+	}
+	tasks, err := s.repository.ListProjectTasksByCoordinationJob(ctx, input.TenantID, input.ProjectID, input.CoordinationJobID)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]project.ProjectTask, 0, len(tasks))
+	candidateIDs := make([]uuid.UUID, 0, len(tasks))
+	for _, task := range tasks {
+		if !projectTaskDispatchAllowed(task.Status) {
+			continue
+		}
+		candidates = append(candidates, task)
+		candidateIDs = append(candidateIDs, task.ID)
+	}
+	if len(candidates) == 0 {
+		return []uuid.UUID{}, nil
+	}
+	unresolved, err := s.repository.ListUnresolvedBlockersForTasks(ctx, input.TenantID, input.ProjectID, candidateIDs)
+	if err != nil {
+		return nil, err
+	}
+	blockedByTaskID := unresolvedBlockersByDependent(unresolved)
+	dispatchable := make([]uuid.UUID, 0, len(candidates))
+	for _, task := range candidates {
+		if _, blocked := blockedByTaskID[task.ID]; blocked {
+			continue
+		}
+		dispatchable = append(dispatchable, task.ID)
+	}
+	return dispatchable, nil
+}
+
+func (s *ProjectStore) ResolveReadyDownstream(ctx context.Context, input ResolveReadyDownstreamInput) ([]uuid.UUID, error) {
+	if s.repository == nil {
+		return nil, ErrActivityStoreRequired
+	}
+	dependentIDs, err := s.repository.ListDependentsOfTask(ctx, input.TenantID, input.ProjectID, input.CompletedTaskID)
+	if err != nil {
+		return nil, err
+	}
+	if len(dependentIDs) == 0 {
+		return []uuid.UUID{}, nil
+	}
+	unresolved, err := s.repository.ListUnresolvedBlockersForTasks(ctx, input.TenantID, input.ProjectID, dependentIDs)
+	if err != nil {
+		return nil, err
+	}
+	blockedByTaskID := unresolvedBlockersByDependent(unresolved)
+	readyIDs := make([]uuid.UUID, 0, len(dependentIDs))
+	for _, taskID := range dependentIDs {
+		if _, blocked := blockedByTaskID[taskID]; blocked {
+			continue
+		}
+		task, err := s.repository.GetProjectTask(ctx, input.TenantID, taskID)
+		if err != nil {
+			return nil, err
+		}
+		if task.ProjectID != input.ProjectID {
+			return nil, project.ErrProjectNotFound
+		}
+		if task.Status != "blocked" {
+			continue
+		}
+		updated, err := s.repository.UpdateProjectTaskStatus(ctx, input.TenantID, taskID, "planned", nil, []string{"blocked"})
+		if err != nil {
+			if errors.Is(err, project.ErrProjectConflict) {
+				continue
+			}
+			return nil, err
+		}
+		readyIDs = append(readyIDs, updated.ID)
+	}
+	return readyIDs, nil
+}
+
+func unresolvedBlockersByDependent(readiness []project.ProjectTaskDependencyReadiness) map[uuid.UUID]struct{} {
+	blocked := map[uuid.UUID]struct{}{}
+	for _, row := range readiness {
+		blocked[row.DependentTaskID] = struct{}{}
+	}
+	return blocked
+}
+
 func (s *ProjectStore) RequestRouteDecisionReview(ctx context.Context, input RequestRouteDecisionReviewInput) (DecisionRequestResult, error) {
 	if s.repository == nil || s.approvals == nil {
 		return DecisionRequestResult{}, ErrActivityStoreRequired

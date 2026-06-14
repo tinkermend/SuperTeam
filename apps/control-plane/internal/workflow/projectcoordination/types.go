@@ -101,6 +101,18 @@ type CreateProjectTasksInput struct {
 	Decision          RouteDecisionPlan
 }
 
+type ListDispatchableTasksInput struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	CoordinationJobID uuid.UUID
+}
+
+type ResolveReadyDownstreamInput struct {
+	TenantID        uuid.UUID
+	ProjectID       uuid.UUID
+	CompletedTaskID uuid.UUID
+}
+
 type RequestRouteDecisionReviewInput struct {
 	TenantID            uuid.UUID
 	ProjectID           uuid.UUID

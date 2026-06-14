@@ -49,7 +49,7 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 		selector.AddReceive(completedCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal EmployeeTaskCompleted
 			c.Receive(ctx, &signal)
-			workflowErr = appendSignalObservedEvent(ctx, input, "employee task completed")
+			workflowErr = handleEmployeeTaskCompleted(ctx, input, signal)
 		})
 		selector.AddReceive(failedCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal EmployeeTaskFailed
@@ -85,8 +85,7 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 type pendingRouteDecisionReview struct {
 	DecisionRequestID uuid.UUID
 	ProjectID         uuid.UUID
-	JobID             uuid.UUID
-	TaskIDs           []uuid.UUID
+	CoordinationJobID uuid.UUID
 	OutputEventIDs    []uuid.UUID
 }
 
@@ -149,6 +148,10 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 	for _, task := range tasks {
 		taskIDs = append(taskIDs, task.ID)
 	}
+	readyTaskIDs, err := listDispatchableTasks(ctx, input.TenantID, signal.ProjectID, job.ID)
+	if err != nil {
+		return nil, err
+	}
 	if decision.RequiresHumanReview {
 		var review DecisionRequestResult
 		if err := workflow.ExecuteActivity(ctx, (*Activities).RequestRouteDecisionReview, RequestRouteDecisionReviewInput{
@@ -166,12 +169,11 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 		return &pendingRouteDecisionReview{
 			DecisionRequestID: review.ID,
 			ProjectID:         signal.ProjectID,
-			JobID:             job.ID,
-			TaskIDs:           taskIDs,
+			CoordinationJobID: job.ID,
 			OutputEventIDs:    outputEventIDs,
 		}, nil
 	}
-	if err := dispatchProjectTasks(ctx, input.TenantID, signal.ProjectID, taskIDs); err != nil {
+	if err := dispatchProjectTasks(ctx, input.TenantID, signal.ProjectID, readyTaskIDs); err != nil {
 		return nil, err
 	}
 	return nil, finishCoordinationJob(ctx, input.TenantID, job.ID, "completed", outputEventIDs)
@@ -191,12 +193,51 @@ func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinator
 		if err := appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: pending.ProjectID}, "human route review rejected"); err != nil {
 			return err
 		}
-		return finishCoordinationJob(ctx, input.TenantID, pending.JobID, signal.Decision, outputEventIDs)
+		return finishCoordinationJob(ctx, input.TenantID, pending.CoordinationJobID, signal.Decision, outputEventIDs)
 	}
-	if err := dispatchProjectTasks(ctx, input.TenantID, pending.ProjectID, pending.TaskIDs); err != nil {
+	readyTaskIDs, err := listDispatchableTasks(ctx, input.TenantID, pending.ProjectID, pending.CoordinationJobID)
+	if err != nil {
 		return err
 	}
-	return finishCoordinationJob(ctx, input.TenantID, pending.JobID, "completed", outputEventIDs)
+	if err := dispatchProjectTasks(ctx, input.TenantID, pending.ProjectID, readyTaskIDs); err != nil {
+		return err
+	}
+	return finishCoordinationJob(ctx, input.TenantID, pending.CoordinationJobID, "completed", outputEventIDs)
+}
+
+func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorInput, signal EmployeeTaskCompleted) error {
+	if err := appendSignalObservedEvent(ctx, input, "employee task completed"); err != nil {
+		return err
+	}
+	readyTaskIDs, err := resolveReadyDownstream(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID)
+	if err != nil {
+		return err
+	}
+	return dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, readyTaskIDs)
+}
+
+func listDispatchableTasks(ctx workflow.Context, tenantID, projectID, coordinationJobID uuid.UUID) ([]uuid.UUID, error) {
+	var taskIDs []uuid.UUID
+	if err := workflow.ExecuteActivity(ctx, (*Activities).ListDispatchableTasks, ListDispatchableTasksInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		CoordinationJobID: coordinationJobID,
+	}).Get(ctx, &taskIDs); err != nil {
+		return nil, err
+	}
+	return taskIDs, nil
+}
+
+func resolveReadyDownstream(ctx workflow.Context, tenantID, projectID, completedTaskID uuid.UUID) ([]uuid.UUID, error) {
+	var taskIDs []uuid.UUID
+	if err := workflow.ExecuteActivity(ctx, (*Activities).ResolveReadyDownstream, ResolveReadyDownstreamInput{
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		CompletedTaskID: completedTaskID,
+	}).Get(ctx, &taskIDs); err != nil {
+		return nil, err
+	}
+	return taskIDs, nil
 }
 
 func dispatchProjectTasks(ctx workflow.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) error {

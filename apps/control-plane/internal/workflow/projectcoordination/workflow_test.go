@@ -35,6 +35,7 @@ func TestProjectCoordinatorHandlesDemandSubmitted(t *testing.T) {
 		taskID:        uuid.New(),
 		dispatchEvent: uuid.New(),
 	}
+	store.dispatchableTaskIDs = []uuid.UUID{store.taskID}
 	activities := NewActivities(store)
 	env.RegisterActivity(activities)
 	env.RegisterDelayedCallback(func() {
@@ -62,36 +63,36 @@ func TestProjectCoordinatorHandlesDemandSubmitted(t *testing.T) {
 		"LoadProjectCoordinationSnapshot",
 		"PersistRouteDecision",
 		"CreateProjectTasks",
+		"ListDispatchableTasks",
 		"DispatchProjectTask",
 		"FinishCoordinationJob",
 	}, store.calls)
 }
 
-func TestProjectCoordinatorPausesDispatchWhenRouteRequiresHumanReview(t *testing.T) {
+func TestProjectCoordinatorDispatchesOnlyRootTasks(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
 	executorID := uuid.New()
+	rootTaskID := uuid.New()
+	blockedTaskID := uuid.New()
 	store := &recordingActivityStore{
 		snapshot: CoordinationSnapshot{
 			ProjectID: uuid.New(),
 			Demand: DemandSnapshot{
 				ID:      uuid.New(),
-				Title:   "高风险发布",
-				Content: "触发高风险策略，需要负责人确认",
+				Title:   "并行任务图",
+				Content: "根任务完成后再处理下游",
 			},
 			DigitalEmployeePool: []ProjectMemberSnapshot{
 				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
 			},
-			CoordinationPolicy: map[string]any{
-				"require_human_review_for_new_demands": true,
-			},
 		},
-		jobID:             uuid.New(),
-		routeID:           uuid.New(),
-		routeEventID:      uuid.New(),
-		taskID:            uuid.New(),
-		decisionRequestID: uuid.New(),
-		dispatchEvent:     uuid.New(),
+		jobID:               uuid.New(),
+		routeID:             uuid.New(),
+		routeEventID:        uuid.New(),
+		taskIDs:             []uuid.UUID{rootTaskID, blockedTaskID},
+		dispatchableTaskIDs: []uuid.UUID{rootTaskID},
+		dispatchEvent:       uuid.New(),
 	}
 	activities := NewActivities(store)
 	env.RegisterActivity(activities)
@@ -120,15 +121,18 @@ func TestProjectCoordinatorPausesDispatchWhenRouteRequiresHumanReview(t *testing
 		"LoadProjectCoordinationSnapshot",
 		"PersistRouteDecision",
 		"CreateProjectTasks",
-		"RequestRouteDecisionReview",
+		"ListDispatchableTasks",
+		"DispatchProjectTask",
+		"FinishCoordinationJob",
 	}, store.calls)
+	require.Len(t, store.dispatchInputs, 1)
+	require.Equal(t, rootTaskID, store.dispatchInputs[0].TaskID)
 }
 
-func TestProjectCoordinatorDispatchesPendingTasksAfterHumanApproval(t *testing.T) {
+func TestProjectCoordinatorPausesDispatchWhenRouteRequiresHumanReview(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
 	executorID := uuid.New()
-	decisionRequestID := uuid.New()
 	store := &recordingActivityStore{
 		snapshot: CoordinationSnapshot{
 			ProjectID: uuid.New(),
@@ -148,8 +152,75 @@ func TestProjectCoordinatorDispatchesPendingTasksAfterHumanApproval(t *testing.T
 		routeID:           uuid.New(),
 		routeEventID:      uuid.New(),
 		taskID:            uuid.New(),
-		decisionRequestID: decisionRequestID,
+		decisionRequestID: uuid.New(),
 		dispatchEvent:     uuid.New(),
+	}
+	store.dispatchableTaskIDs = []uuid.UUID{store.taskID}
+	activities := NewActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:         store.snapshot.ProjectID,
+			DemandID:          store.snapshot.Demand.ID,
+			SubmittedByUserID: uuid.New(),
+			CreatedEventID:    uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  store.snapshot.ProjectID,
+		WorkflowID: "project-coordinator:" + store.snapshot.ProjectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{
+		"CreateCoordinationJob",
+		"LoadProjectCoordinationSnapshot",
+		"PersistRouteDecision",
+		"CreateProjectTasks",
+		"ListDispatchableTasks",
+		"RequestRouteDecisionReview",
+	}, store.calls)
+}
+
+func TestProjectCoordinatorDispatchesPendingTasksAfterHumanApproval(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	executorID := uuid.New()
+	decisionRequestID := uuid.New()
+	readyAfterApprovalID := uuid.New()
+	staleReadyID := uuid.New()
+	blockedTaskID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: uuid.New(),
+			Demand: DemandSnapshot{
+				ID:      uuid.New(),
+				Title:   "高风险发布",
+				Content: "触发高风险策略，需要负责人确认",
+			},
+			DigitalEmployeePool: []ProjectMemberSnapshot{
+				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
+			},
+			CoordinationPolicy: map[string]any{
+				"require_human_review_for_new_demands": true,
+			},
+		},
+		jobID:             uuid.New(),
+		routeID:           uuid.New(),
+		routeEventID:      uuid.New(),
+		taskIDs:           []uuid.UUID{staleReadyID, blockedTaskID},
+		decisionRequestID: decisionRequestID,
+		dispatchableTaskIDBatches: [][]uuid.UUID{
+			{staleReadyID},
+			{readyAfterApprovalID},
+		},
+		dispatchEvent: uuid.New(),
 	}
 	activities := NewActivities(store)
 	env.RegisterActivity(activities)
@@ -186,10 +257,92 @@ func TestProjectCoordinatorDispatchesPendingTasksAfterHumanApproval(t *testing.T
 		"LoadProjectCoordinationSnapshot",
 		"PersistRouteDecision",
 		"CreateProjectTasks",
+		"ListDispatchableTasks",
 		"RequestRouteDecisionReview",
+		"ListDispatchableTasks",
 		"DispatchProjectTask",
 		"FinishCoordinationJob",
 	}, store.calls)
+	require.Len(t, store.dispatchInputs, 1)
+	require.Equal(t, readyAfterApprovalID, store.dispatchInputs[0].TaskID)
+	require.Len(t, store.listDispatchableInputs, 2)
+	require.Equal(t, store.jobID, store.listDispatchableInputs[0].CoordinationJobID)
+	require.Equal(t, store.jobID, store.listDispatchableInputs[1].CoordinationJobID)
+}
+
+func TestProjectCoordinatorWakesDownstreamOnCompletion(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	executorID := uuid.New()
+	rootTaskID := uuid.New()
+	downstreamTaskID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: uuid.New(),
+			Demand: DemandSnapshot{
+				ID:      uuid.New(),
+				Title:   "任务图执行",
+				Content: "根任务完成后唤醒下游",
+			},
+			DigitalEmployeePool: []ProjectMemberSnapshot{
+				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
+			},
+		},
+		jobID:               uuid.New(),
+		routeID:             uuid.New(),
+		routeEventID:        uuid.New(),
+		taskIDs:             []uuid.UUID{rootTaskID, downstreamTaskID},
+		dispatchableTaskIDs: []uuid.UUID{rootTaskID},
+		readyDownstreamIDs:  []uuid.UUID{downstreamTaskID},
+		dispatchEvent:       uuid.New(),
+	}
+	activities := NewActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:         store.snapshot.ProjectID,
+			DemandID:          store.snapshot.Demand.ID,
+			SubmittedByUserID: uuid.New(),
+			CreatedEventID:    uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalEmployeeTaskCompleted, EmployeeTaskCompleted{
+			ProjectTaskID:      rootTaskID,
+			ExecutionSummaryID: uuid.New(),
+			CompletedEventID:   uuid.New(),
+		})
+	}, 5*time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  store.snapshot.ProjectID,
+		WorkflowID: "project-coordinator:" + store.snapshot.ProjectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{
+		"CreateCoordinationJob",
+		"LoadProjectCoordinationSnapshot",
+		"PersistRouteDecision",
+		"CreateProjectTasks",
+		"ListDispatchableTasks",
+		"DispatchProjectTask",
+		"FinishCoordinationJob",
+		"AppendProjectEvent",
+		"ResolveReadyDownstream",
+		"DispatchProjectTask",
+	}, store.calls)
+	require.Len(t, store.resolveReadyInputs, 1)
+	require.Equal(t, rootTaskID, store.resolveReadyInputs[0].CompletedTaskID)
+	require.Equal(t, []DispatchProjectTaskInput{
+		{TenantID: store.dispatchInputs[0].TenantID, ProjectID: store.snapshot.ProjectID, TaskID: rootTaskID},
+		{TenantID: store.dispatchInputs[0].TenantID, ProjectID: store.snapshot.ProjectID, TaskID: downstreamTaskID},
+	}, store.dispatchInputs)
 }
 
 func TestProjectCoordinatorReturnsUnrecordedDispatchFailure(t *testing.T) {
@@ -215,6 +368,7 @@ func TestProjectCoordinatorReturnsUnrecordedDispatchFailure(t *testing.T) {
 		dispatchEvent: uuid.New(),
 		dispatchErr:   errors.New("append dispatch failure event failed"),
 	}
+	store.dispatchableTaskIDs = []uuid.UUID{store.taskID}
 	activities := NewActivities(store)
 	env.RegisterActivity(activities)
 	env.RegisterDelayedCallback(func() {
@@ -260,6 +414,7 @@ func TestProjectCoordinatorContinuesAfterRecordedDispatchFailure(t *testing.T) {
 		dispatchEvent: uuid.New(),
 		dispatchErr:   &ProjectTaskDispatchError{FailureRecorded: true, Err: project.ErrInvalidProject},
 	}
+	store.dispatchableTaskIDs = []uuid.UUID{store.taskID}
 	activities := NewActivities(store)
 	env.RegisterActivity(activities)
 	env.RegisterDelayedCallback(func() {
@@ -317,9 +472,17 @@ type recordingActivityStore struct {
 	routeID           uuid.UUID
 	routeEventID      uuid.UUID
 	taskID            uuid.UUID
+	taskIDs           []uuid.UUID
 	decisionRequestID uuid.UUID
 	dispatchEvent     uuid.UUID
 	dispatchErr       error
+
+	dispatchableTaskIDs       []uuid.UUID
+	dispatchableTaskIDBatches [][]uuid.UUID
+	readyDownstreamIDs        []uuid.UUID
+	listDispatchableInputs    []ListDispatchableTasksInput
+	resolveReadyInputs        []ResolveReadyDownstreamInput
+	dispatchInputs            []DispatchProjectTaskInput
 }
 
 func (s *recordingActivityStore) LoadProjectCoordinationSnapshot(ctx context.Context, input LoadSnapshotInput) (CoordinationSnapshot, error) {
@@ -339,7 +502,32 @@ func (s *recordingActivityStore) PersistRouteDecision(ctx context.Context, input
 
 func (s *recordingActivityStore) CreateProjectTasks(ctx context.Context, input CreateProjectTasksInput) ([]ProjectTaskResult, error) {
 	s.calls = append(s.calls, "CreateProjectTasks")
-	return []ProjectTaskResult{{ID: s.taskID}}, nil
+	taskIDs := s.taskIDs
+	if len(taskIDs) == 0 {
+		taskIDs = []uuid.UUID{s.taskID}
+	}
+	results := make([]ProjectTaskResult, 0, len(taskIDs))
+	for _, taskID := range taskIDs {
+		results = append(results, ProjectTaskResult{ID: taskID})
+	}
+	return results, nil
+}
+
+func (s *recordingActivityStore) ListDispatchableTasks(ctx context.Context, input ListDispatchableTasksInput) ([]uuid.UUID, error) {
+	s.calls = append(s.calls, "ListDispatchableTasks")
+	s.listDispatchableInputs = append(s.listDispatchableInputs, input)
+	if len(s.dispatchableTaskIDBatches) > 0 {
+		result := s.dispatchableTaskIDBatches[0]
+		s.dispatchableTaskIDBatches = s.dispatchableTaskIDBatches[1:]
+		return result, nil
+	}
+	return s.dispatchableTaskIDs, nil
+}
+
+func (s *recordingActivityStore) ResolveReadyDownstream(ctx context.Context, input ResolveReadyDownstreamInput) ([]uuid.UUID, error) {
+	s.calls = append(s.calls, "ResolveReadyDownstream")
+	s.resolveReadyInputs = append(s.resolveReadyInputs, input)
+	return s.readyDownstreamIDs, nil
 }
 
 func (s *recordingActivityStore) RequestRouteDecisionReview(ctx context.Context, input RequestRouteDecisionReviewInput) (DecisionRequestResult, error) {
@@ -354,6 +542,7 @@ func (s *recordingActivityStore) AppendProjectEvent(ctx context.Context, input A
 
 func (s *recordingActivityStore) DispatchProjectTask(ctx context.Context, input DispatchProjectTaskInput) error {
 	s.calls = append(s.calls, "DispatchProjectTask")
+	s.dispatchInputs = append(s.dispatchInputs, input)
 	return s.dispatchErr
 }
 
