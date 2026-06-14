@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCreateProjectRequiresHumanOwnerAndCreatesEvents(t *testing.T) {
@@ -1299,6 +1300,262 @@ func TestCompleteProjectTaskWritesSummaryAndSignalsCoordinator(t *testing.T) {
 	}
 }
 
+func TestCompleteProjectTaskRejectsMissingRequiredEvidence(t *testing.T) {
+	service, repo, coordinator, task, runtimeNodeID := newProjectServiceWritebackFixture(t, ProjectTask{
+		ExpectedOutputs: []any{"execution_summary", "evidence_refs"},
+		HandoffContract: map[string]any{},
+	})
+
+	_, err := service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          task.TenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     task.ID,
+		DigitalEmployeeID: *task.AssignedDigitalEmployeeID,
+		Conclusion:        "完成",
+		EvidenceRefs:      nil,
+	})
+
+	require.ErrorIs(t, err, ErrInvalidProjectEvidence)
+	require.Equal(t, "assigned", repo.tasks[0].Status)
+	require.Len(t, repo.executionSummaries, 0)
+	require.Equal(t, 0, coordinator.completedSignals)
+	require.Equal(t, []ProjectEventType{ProjectEventTaskContractMissing}, repo.eventTypes)
+	require.Equal(t, task.ID.String(), repo.events[0].Payload["project_task_id"])
+	require.Equal(t, []any{"evidence_refs"}, repo.events[0].Payload["missing_outputs"])
+}
+
+func TestCompleteProjectTaskWithRequiredOutputsContractWritesSummaryAndSignalsCoordinator(t *testing.T) {
+	service, repo, coordinator, task, runtimeNodeID := newProjectServiceWritebackFixture(t, ProjectTask{
+		ExpectedOutputs: []any{"execution_summary", "evidence_refs", "artifact_refs", "recommended_next_action"},
+		HandoffContract: map[string]any{},
+	})
+
+	summary, err := service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:              task.TenantID,
+		RuntimeNodeID:         runtimeNodeID,
+		ProjectTaskID:         task.ID,
+		DigitalEmployeeID:     *task.AssignedDigitalEmployeeID,
+		Conclusion:            "完成",
+		EvidenceRefs:          []any{"evidence://report"},
+		ArtifactRefs:          []any{"artifact://patch"},
+		RecommendedNextAction: "提交验收",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, task.ID, summary.ProjectTaskID)
+	require.Equal(t, "completed", repo.tasks[0].Status)
+	require.Len(t, repo.executionSummaries, 1)
+	require.Equal(t, 1, coordinator.completedSignals)
+	require.Equal(t, []ProjectEventType{ProjectEventTaskCompleted}, repo.eventTypes)
+}
+
+func TestCompleteProjectTaskMissingInformationContractRequiresExplicitArray(t *testing.T) {
+	service, repo, coordinator, task, runtimeNodeID := newProjectServiceWritebackFixture(t, ProjectTask{
+		ExpectedOutputs: []any{"execution_summary", "missing_information"},
+		HandoffContract: map[string]any{},
+	})
+
+	_, err := service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          task.TenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     task.ID,
+		DigitalEmployeeID: *task.AssignedDigitalEmployeeID,
+		Conclusion:        "完成",
+	})
+
+	require.ErrorIs(t, err, ErrInvalidProjectEvidence)
+	require.Equal(t, []ProjectEventType{ProjectEventTaskContractMissing}, repo.eventTypes)
+	require.Equal(t, []any{"missing_information"}, repo.events[0].Payload["missing_outputs"])
+	require.Len(t, repo.executionSummaries, 0)
+	require.Equal(t, 0, coordinator.completedSignals)
+
+	repo.eventTypes = nil
+	repo.events = nil
+	summary, err := service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:            task.TenantID,
+		RuntimeNodeID:       runtimeNodeID,
+		ProjectTaskID:       task.ID,
+		DigitalEmployeeID:   *task.AssignedDigitalEmployeeID,
+		Conclusion:          "完成",
+		MissingInformation:  []any{},
+		ConfidenceFactors:   map[string]any{"contract": "explicit_empty_missing_information"},
+		RequiresHumanReview: false,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, task.ID, summary.ProjectTaskID)
+	require.Equal(t, []ProjectEventType{ProjectEventTaskCompleted}, repo.eventTypes)
+}
+
+func TestCompleteProjectTaskWorkProductsContractRequiresBoundRunProducts(t *testing.T) {
+	service, repo, coordinator, task, runtimeNodeID := newProjectServiceWritebackFixture(t, ProjectTask{
+		ExpectedOutputs: []any{"execution_summary", "work_products"},
+		HandoffContract: map[string]any{},
+	})
+
+	_, err := service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          task.TenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     task.ID,
+		DigitalEmployeeID: *task.AssignedDigitalEmployeeID,
+		Conclusion:        "完成",
+	})
+
+	require.ErrorIs(t, err, ErrInvalidProjectEvidence)
+	require.Equal(t, []ProjectEventType{ProjectEventTaskContractMissing}, repo.eventTypes)
+	require.Equal(t, []any{"work_products"}, repo.events[0].Payload["missing_outputs"])
+	require.Len(t, repo.executionSummaries, 0)
+	require.Equal(t, 0, coordinator.completedSignals)
+
+	repo.eventTypes = nil
+	repo.events = nil
+	repo.projectTaskRunWorkProducts[*task.DigitalEmployeeRunID] = []any{map[string]any{"ref": "wp://analysis", "title": "分析报告"}}
+	summary, err := service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          task.TenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     task.ID,
+		DigitalEmployeeID: *task.AssignedDigitalEmployeeID,
+		Conclusion:        "完成",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, task.ID, summary.ProjectTaskID)
+	require.Equal(t, []ProjectEventType{ProjectEventTaskCompleted}, repo.eventTypes)
+}
+
+func TestCompleteProjectTaskHandoffContractRequiredRefsMissingCustomRefFails(t *testing.T) {
+	service, repo, coordinator, task, runtimeNodeID := newProjectServiceWritebackFixture(t, ProjectTask{
+		ExpectedOutputs: []any{"execution_summary"},
+		HandoffContract: map[string]any{"required_refs": []any{"wp://analysis", "evidence://report"}},
+	})
+	repo.projectTaskRunWorkProducts[*task.DigitalEmployeeRunID] = []any{map[string]any{"ref": "wp://draft", "title": "草稿"}}
+
+	_, err := service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          task.TenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     task.ID,
+		DigitalEmployeeID: *task.AssignedDigitalEmployeeID,
+		Conclusion:        "完成",
+		EvidenceRefs:      []any{"evidence://report"},
+	})
+
+	require.ErrorIs(t, err, ErrInvalidProjectEvidence)
+	require.Len(t, repo.executionSummaries, 0)
+	require.Equal(t, 0, coordinator.completedSignals)
+	require.Equal(t, []ProjectEventType{ProjectEventTaskContractMissing}, repo.eventTypes)
+	require.Equal(t, []any{"wp://analysis"}, repo.events[0].Payload["missing_handoff_refs"])
+}
+
+func TestCompleteProjectTaskHandoffContractRequiredRefsMatchWorkProductFields(t *testing.T) {
+	service, repo, coordinator, task, runtimeNodeID := newProjectServiceWritebackFixture(t, ProjectTask{
+		ExpectedOutputs: []any{"execution_summary"},
+		HandoffContract: map[string]any{"required_refs": []any{"wp://analysis", "分析报告", "report"}},
+	})
+	repo.projectTaskRunWorkProducts[*task.DigitalEmployeeRunID] = []any{map[string]any{
+		"ref":   "wp://analysis",
+		"title": "分析报告",
+		"type":  "report",
+	}}
+
+	summary, err := service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          task.TenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     task.ID,
+		DigitalEmployeeID: *task.AssignedDigitalEmployeeID,
+		Conclusion:        "完成",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, task.ID, summary.ProjectTaskID)
+	require.Equal(t, "completed", repo.tasks[0].Status)
+	require.Len(t, repo.executionSummaries, 1)
+	require.Equal(t, 1, coordinator.completedSignals)
+	require.Equal(t, []ProjectEventType{ProjectEventTaskCompleted}, repo.eventTypes)
+}
+
+func TestCompleteProjectTaskContractMissingEventAppendFailureReturnsAppendError(t *testing.T) {
+	service, repo, coordinator, task, runtimeNodeID := newProjectServiceWritebackFixture(t, ProjectTask{
+		ExpectedOutputs: []any{"execution_summary", "evidence_refs"},
+		HandoffContract: map[string]any{},
+	})
+	appendErr := fmt.Errorf("event store unavailable")
+	repo.appendProjectEventErr = appendErr
+
+	_, err := service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          task.TenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     task.ID,
+		DigitalEmployeeID: *task.AssignedDigitalEmployeeID,
+		Conclusion:        "完成",
+	})
+
+	require.ErrorIs(t, err, appendErr)
+	require.Len(t, repo.executionSummaries, 0)
+	require.Equal(t, "assigned", repo.tasks[0].Status)
+	require.Equal(t, 0, coordinator.completedSignals)
+	require.Len(t, repo.eventTypes, 0)
+}
+
+func TestCompleteProjectTaskEmptyLegacyContractStillCompletes(t *testing.T) {
+	service, repo, coordinator, task, runtimeNodeID := newProjectServiceWritebackFixture(t, ProjectTask{})
+
+	summary, err := service.CompleteProjectTask(context.Background(), CompleteProjectTaskRequest{
+		TenantID:          task.TenantID,
+		RuntimeNodeID:     runtimeNodeID,
+		ProjectTaskID:     task.ID,
+		DigitalEmployeeID: *task.AssignedDigitalEmployeeID,
+		Conclusion:        "完成",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, task.ID, summary.ProjectTaskID)
+	require.Equal(t, "completed", repo.tasks[0].Status)
+	require.Len(t, repo.executionSummaries, 1)
+	require.Equal(t, 1, coordinator.completedSignals)
+	require.Equal(t, []ProjectEventType{ProjectEventTaskCompleted}, repo.eventTypes)
+}
+
+func newProjectServiceWritebackFixture(t *testing.T, taskOverrides ProjectTask) (*Service, *memoryRepository, *fakeCoordinatorSignalClient, ProjectTask, uuid.UUID) {
+	t.Helper()
+
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	taskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	task := ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "整理证据",
+		Status:                    "assigned",
+		AssignedDigitalEmployeeID: &employeeID,
+		ExpectedOutputs:           taskOverrides.ExpectedOutputs,
+		HandoffContract:           taskOverrides.HandoffContract,
+	}
+	if task.HandoffContract == nil {
+		task.HandoffContract = map[string]any{}
+	}
+	repo.tasks = append(repo.tasks, task)
+	bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+	task = repo.tasks[0]
+	return service, repo, coordinator, task, runtimeNodeID
+}
+
 func TestBindProjectTaskRunEnablesCompleteProjectTaskWriteback(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -2577,6 +2834,7 @@ type memoryRepository struct {
 	createTransferRequestErr   error
 	archiveProjectErr          error
 	projectTaskRunRuntimeNodes map[uuid.UUID]uuid.UUID
+	projectTaskRunWorkProducts map[uuid.UUID][]any
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -2584,6 +2842,7 @@ func newMemoryRepository() *memoryRepository {
 		projects:                   map[uuid.UUID]Project{},
 		members:                    map[uuid.UUID][]ProjectMember{},
 		projectTaskRunRuntimeNodes: map[uuid.UUID]uuid.UUID{},
+		projectTaskRunWorkProducts: map[uuid.UUID][]any{},
 	}
 }
 
@@ -2897,6 +3156,14 @@ func (r *memoryRepository) GetProjectTaskRunRuntimeNodeID(ctx context.Context, t
 		return uuid.Nil, ErrProjectNotFound
 	}
 	return runtimeNodeID, nil
+}
+
+func (r *memoryRepository) GetProjectTaskRunWorkProducts(ctx context.Context, tenantID, runID uuid.UUID) ([]any, error) {
+	workProducts, ok := r.projectTaskRunWorkProducts[runID]
+	if !ok {
+		return []any{}, nil
+	}
+	return workProducts, nil
 }
 
 func (r *memoryRepository) CreateCoordinationJob(ctx context.Context, req CreateCoordinationJobRequest) (CoordinationJob, error) {

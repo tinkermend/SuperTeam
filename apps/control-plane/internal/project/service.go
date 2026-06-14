@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -1099,6 +1100,17 @@ func (s *Service) CompleteProjectTask(ctx context.Context, req CompleteProjectTa
 	if err != nil {
 		return nil, err
 	}
+	runWorkProducts, err := s.projectTaskRunWorkProducts(ctx, req.TenantID, task)
+	if err != nil {
+		return nil, err
+	}
+	contract := validateProjectTaskCompletionContract(task, req, runWorkProducts)
+	if !contract.Satisfied() {
+		if err := s.appendProjectTaskContractMissingEvent(ctx, task, req, contract); err != nil {
+			return nil, err
+		}
+		return nil, ErrInvalidProjectEvidence
+	}
 	writebackRepository, err := s.projectTaskWritebackRepository()
 	if err != nil {
 		return nil, err
@@ -1153,6 +1165,182 @@ func (s *Service) CompleteProjectTask(ctx context.Context, req CompleteProjectTa
 		return nil, err
 	}
 	return &result.Summary, nil
+}
+
+type completionContractValidation struct {
+	MissingOutputs     []string
+	MissingHandoffRefs []string
+}
+
+func (v completionContractValidation) Satisfied() bool {
+	return len(v.MissingOutputs) == 0 && len(v.MissingHandoffRefs) == 0
+}
+
+func (s *Service) projectTaskRunWorkProducts(ctx context.Context, tenantID uuid.UUID, task ProjectTask) ([]any, error) {
+	if task.DigitalEmployeeRunID == nil {
+		return []any{}, nil
+	}
+	runRepository, ok := s.repository.(ProjectTaskRunWorkProductRepository)
+	if !ok {
+		return []any{}, nil
+	}
+	workProducts, err := runRepository.GetProjectTaskRunWorkProducts(ctx, tenantID, *task.DigitalEmployeeRunID)
+	if errors.Is(err, ErrProjectNotFound) {
+		return []any{}, nil
+	}
+	return workProducts, err
+}
+
+func validateProjectTaskCompletionContract(task ProjectTask, req CompleteProjectTaskRequest, runWorkProducts []any) completionContractValidation {
+	required := stringSetFromAny(task.ExpectedOutputs)
+	missingOutputs := make([]string, 0)
+	if required["execution_summary"] && strings.TrimSpace(req.Conclusion) == "" {
+		missingOutputs = append(missingOutputs, "execution_summary")
+	}
+	if required["evidence_refs"] && len(req.EvidenceRefs) == 0 {
+		missingOutputs = append(missingOutputs, "evidence_refs")
+	}
+	if required["artifact_refs"] && len(req.ArtifactRefs) == 0 {
+		missingOutputs = append(missingOutputs, "artifact_refs")
+	}
+	if required["recommended_next_action"] && strings.TrimSpace(req.RecommendedNextAction) == "" {
+		missingOutputs = append(missingOutputs, "recommended_next_action")
+	}
+	if required["missing_information"] && req.MissingInformation == nil {
+		missingOutputs = append(missingOutputs, "missing_information")
+	}
+	if required["work_products"] && len(runWorkProducts) == 0 {
+		missingOutputs = append(missingOutputs, "work_products")
+	}
+	return completionContractValidation{
+		MissingOutputs:     missingOutputs,
+		MissingHandoffRefs: missingRequiredHandoffRefs(task.HandoffContract, req, runWorkProducts),
+	}
+}
+
+func (s *Service) appendProjectTaskContractMissingEvent(ctx context.Context, task ProjectTask, req CompleteProjectTaskRequest, validation completionContractValidation) error {
+	payload := map[string]any{
+		"project_task_id": task.ID.String(),
+		"missing_outputs": stringsToAny(validation.MissingOutputs),
+	}
+	if len(validation.MissingHandoffRefs) > 0 {
+		payload["missing_handoff_refs"] = stringsToAny(validation.MissingHandoffRefs)
+	}
+	_, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    task.ProjectID,
+		EventType:    ProjectEventTaskContractMissing,
+		ActorType:    "digital_employee",
+		ActorID:      req.DigitalEmployeeID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务完成输出未满足交接契约",
+		Payload:      payload,
+	})
+	return err
+}
+
+func stringSetFromAny(values []any) map[string]bool {
+	result := map[string]bool{}
+	for _, value := range values {
+		text, ok := value.(string)
+		if !ok {
+			continue
+		}
+		text = strings.TrimSpace(text)
+		if text != "" {
+			result[text] = true
+		}
+	}
+	return result
+}
+
+func missingRequiredHandoffRefs(contract map[string]any, req CompleteProjectTaskRequest, runWorkProducts []any) []string {
+	requiredRefs := requiredHandoffRefs(contract)
+	if len(requiredRefs) == 0 {
+		return []string{}
+	}
+	available := referenceTokenSet(req.EvidenceRefs, req.ArtifactRefs, runWorkProducts)
+	missing := make([]string, 0)
+	for _, ref := range requiredRefs {
+		if !available[ref] {
+			missing = append(missing, ref)
+		}
+	}
+	return missing
+}
+
+func requiredHandoffRefs(contract map[string]any) []string {
+	raw, ok := contract["required_refs"]
+	if !ok {
+		return []string{}
+	}
+	switch refs := raw.(type) {
+	case []string:
+		return normalizedStringRefs(refs)
+	case []any:
+		result := make([]string, 0, len(refs))
+		for _, ref := range refs {
+			if text, ok := ref.(string); ok {
+				text = strings.TrimSpace(text)
+				if text != "" {
+					result = append(result, text)
+				}
+			}
+		}
+		return result
+	default:
+		return []string{}
+	}
+}
+
+func normalizedStringRefs(refs []string) []string {
+	result := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		ref = strings.TrimSpace(ref)
+		if ref != "" {
+			result = append(result, ref)
+		}
+	}
+	return result
+}
+
+func referenceTokenSet(groups ...[]any) map[string]bool {
+	tokens := map[string]bool{}
+	for _, group := range groups {
+		for _, value := range group {
+			addReferenceTokens(tokens, value)
+		}
+	}
+	return tokens
+}
+
+func addReferenceTokens(tokens map[string]bool, value any) {
+	switch typed := value.(type) {
+	case string:
+		addReferenceToken(tokens, typed)
+	case map[string]any:
+		for _, key := range []string{"ref", "id", "title", "type"} {
+			if text, ok := typed[key].(string); ok {
+				addReferenceToken(tokens, text)
+			}
+		}
+	}
+}
+
+func addReferenceToken(tokens map[string]bool, value string) {
+	value = strings.TrimSpace(value)
+	if value != "" {
+		tokens[value] = true
+	}
+}
+
+func stringsToAny(values []string) []any {
+	result := make([]any, 0, len(values))
+	for _, value := range values {
+		result = append(result, value)
+	}
+	return result
 }
 
 func (s *Service) FailProjectTask(ctx context.Context, req FailProjectTaskRequest) (*ProjectTask, error) {

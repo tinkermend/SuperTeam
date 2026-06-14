@@ -82,6 +82,7 @@ const (
 	ProjectEventTaskGraphPlanned        ProjectEventType = "project_task_graph.planned"
 	ProjectEventTaskDispatched          ProjectEventType = "project_task.dispatched"
 	ProjectEventTaskDispatchFailed      ProjectEventType = "project_task.dispatch_failed"
+	ProjectEventTaskContractMissing     ProjectEventType = "project_task.contract_missing"
 	ProjectEventTaskCompleted           ProjectEventType = "project_task.completed"
 	ProjectEventTaskFailed              ProjectEventType = "project_task.failed"
 	ProjectEventTransferRequested       ProjectEventType = "transfer.requested"

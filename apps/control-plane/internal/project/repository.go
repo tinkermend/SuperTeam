@@ -83,6 +83,10 @@ type ProjectTaskRuntimeBindingRepository interface {
 	GetProjectTaskRunRuntimeNodeID(ctx context.Context, tenantID, projectTaskID, runID uuid.UUID) (uuid.UUID, error)
 }
 
+type ProjectTaskRunWorkProductRepository interface {
+	GetProjectTaskRunWorkProducts(ctx context.Context, tenantID, runID uuid.UUID) ([]any, error)
+}
+
 type ProjectTaskWritebackRepository interface {
 	CompleteProjectTaskWriteback(ctx context.Context, req CompleteProjectTaskWritebackRequest) (ProjectTaskWritebackResult, error)
 	FailProjectTaskWriteback(ctx context.Context, req FailProjectTaskWritebackRequest) (ProjectTaskWritebackResult, error)

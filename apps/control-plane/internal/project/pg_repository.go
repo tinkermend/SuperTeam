@@ -437,6 +437,17 @@ func (r *PgRepository) GetProjectTaskRunRuntimeNodeID(ctx context.Context, tenan
 	return runtimeNodeID.UUID, nil
 }
 
+func (r *PgRepository) GetProjectTaskRunWorkProducts(ctx context.Context, tenantID, runID uuid.UUID) ([]any, error) {
+	run, err := r.q.GetTaskRun(ctx, queries.GetTaskRunParams{
+		ID:       runID,
+		TenantID: uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
+	})
+	if err != nil {
+		return nil, projectRepositoryError(err)
+	}
+	return anySliceFromJSON(run.WorkProducts)
+}
+
 func (r *PgRepository) CreateCoordinationJob(ctx context.Context, req CreateCoordinationJobRequest) (CoordinationJob, error) {
 	inputSnapshotRef, err := jsonbObject(req.InputSnapshotRef, "input_snapshot_ref")
 	if err != nil {
