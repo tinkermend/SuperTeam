@@ -130,6 +130,11 @@ type ApplyFailureRecoveryDecisionInput struct {
 	Payload           map[string]any
 }
 
+type FailureRecoveryAction struct {
+	Action               string
+	NewDigitalEmployeeID *uuid.UUID
+}
+
 type RequestRouteDecisionReviewInput struct {
 	TenantID            uuid.UUID
 	ProjectID           uuid.UUID

@@ -754,6 +754,41 @@ func (r *PgRepository) CreateProjectTaskGraph(ctx context.Context, req CreatePro
 	})
 }
 
+func (r *PgRepository) CreateProjectTaskDependency(ctx context.Context, req CreateProjectTaskDependencyRequest) (ProjectTaskDependency, error) {
+	row, err := r.q.CreateProjectTaskDependency(ctx, queries.CreateProjectTaskDependencyParams{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		CoordinationJobID: nullUUID(req.CoordinationJobID),
+		DependentTaskID:   req.DependentTaskID,
+		BlockerTaskID:     req.BlockerTaskID,
+	})
+	if err != nil {
+		return ProjectTaskDependency{}, err
+	}
+	return dependencyFromRecord(row), nil
+}
+
+func (r *PgRepository) RewireProjectTaskDependencies(ctx context.Context, req RewireProjectTaskDependenciesRequest) ([]ProjectTaskDependency, error) {
+	if len(req.DependentTaskIDs) == 0 {
+		return []ProjectTaskDependency{}, nil
+	}
+	rows, err := r.q.RewireProjectTaskDependencies(ctx, queries.RewireProjectTaskDependenciesParams{
+		TenantID:         req.TenantID,
+		ProjectID:        req.ProjectID,
+		OldBlockerTaskID: req.OldBlockerTaskID,
+		DependentTaskIds: req.DependentTaskIDs,
+		NewBlockerTaskID: req.NewBlockerTaskID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	dependencies := make([]ProjectTaskDependency, 0, len(rows))
+	for _, row := range rows {
+		dependencies = append(dependencies, dependencyFromRewireRow(row))
+	}
+	return dependencies, nil
+}
+
 func (r *PgRepository) ListProjectTaskDependencies(ctx context.Context, tenantID, projectID uuid.UUID, dependentTaskIDs []uuid.UUID) ([]ProjectTaskDependency, error) {
 	rows, err := r.q.ListProjectTaskDependencies(ctx, queries.ListProjectTaskDependenciesParams{
 		TenantID:         tenantID,
@@ -1929,6 +1964,17 @@ func taskFromRecord(row queries.ProjectTask) (ProjectTask, error) {
 }
 
 func dependencyFromRecord(row queries.ProjectTaskDependency) ProjectTaskDependency {
+	return ProjectTaskDependency{
+		ID:                row.ID,
+		TenantID:          row.TenantID,
+		ProjectID:         row.ProjectID,
+		CoordinationJobID: ptrUUID(row.CoordinationJobID),
+		DependentTaskID:   row.DependentTaskID,
+		BlockerTaskID:     row.BlockerTaskID,
+	}
+}
+
+func dependencyFromRewireRow(row queries.RewireProjectTaskDependenciesRow) ProjectTaskDependency {
 	return ProjectTaskDependency{
 		ID:                row.ID,
 		TenantID:          row.TenantID,

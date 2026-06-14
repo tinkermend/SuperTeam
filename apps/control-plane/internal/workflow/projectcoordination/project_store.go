@@ -18,6 +18,8 @@ type ProjectStore struct {
 	runStarter ProjectTaskRunStarter
 }
 
+const projectEventTaskCancelled = project.ProjectEventType("project_task.cancelled")
+
 func NewProjectStore(repository project.Repository) *ProjectStore {
 	return NewProjectStoreWithApprovals(repository, nil)
 }
@@ -28,6 +30,11 @@ type ApprovalCreator interface {
 
 type ProjectTaskRunStarter interface {
 	StartProjectTaskRun(ctx context.Context, req StartProjectTaskRunRequest) (StartProjectTaskRunResult, error)
+}
+
+type recoveryDependencyRepository interface {
+	CreateProjectTaskDependency(ctx context.Context, req project.CreateProjectTaskDependencyRequest) (project.ProjectTaskDependency, error)
+	RewireProjectTaskDependencies(ctx context.Context, req project.RewireProjectTaskDependenciesRequest) ([]project.ProjectTaskDependency, error)
 }
 
 func NewProjectStoreWithApprovals(repository project.Repository, approvals ApprovalCreator) *ProjectStore {
@@ -366,7 +373,309 @@ func (s *ProjectStore) ApplyFailureRecoveryDecision(ctx context.Context, input A
 	if decision.DecisionType != "task_failure_recovery" || decision.ProjectTaskID == nil {
 		return project.ErrInvalidProject
 	}
+	action, err := parseFailureRecoveryAction(input.Decision, input.Payload)
+	if err != nil {
+		return err
+	}
+	if action.Action == "needs_more_evidence" {
+		return nil
+	}
+	source, err := s.repository.GetProjectTask(ctx, input.TenantID, *decision.ProjectTaskID)
+	if err != nil {
+		return err
+	}
+	if source.ProjectID != input.ProjectID {
+		return project.ErrProjectNotFound
+	}
+	switch action.Action {
+	case "retry":
+		_, err := s.createRecoveryReplacementTask(ctx, input, decision, source, action)
+		return err
+	case "reassign":
+		if action.NewDigitalEmployeeID == nil {
+			return project.ErrInvalidProject
+		}
+		if err := s.validateActiveDigitalProjectMember(ctx, input.TenantID, input.ProjectID, *action.NewDigitalEmployeeID); err != nil {
+			return err
+		}
+		_, err := s.createRecoveryReplacementTask(ctx, input, decision, source, action)
+		return err
+	case "cancel_downstream":
+		return s.cancelFailureDownstream(ctx, input, source)
+	default:
+		return project.ErrInvalidProject
+	}
+}
+
+func parseFailureRecoveryAction(decision string, payload map[string]any) (FailureRecoveryAction, error) {
+	switch decision {
+	case "needs_more_evidence":
+		return FailureRecoveryAction{Action: "needs_more_evidence"}, nil
+	case "rejected":
+		return FailureRecoveryAction{Action: "cancel_downstream"}, nil
+	case "approved":
+		raw, _ := payload["recovery_action"].(string)
+		switch strings.TrimSpace(raw) {
+		case "retry", "cancel_downstream":
+			return FailureRecoveryAction{Action: strings.TrimSpace(raw)}, nil
+		case "reassign":
+			idText, _ := payload["new_digital_employee_id"].(string)
+			id, err := uuid.Parse(strings.TrimSpace(idText))
+			if err != nil {
+				return FailureRecoveryAction{}, project.ErrInvalidProject
+			}
+			return FailureRecoveryAction{Action: "reassign", NewDigitalEmployeeID: &id}, nil
+		default:
+			return FailureRecoveryAction{}, project.ErrInvalidProject
+		}
+	default:
+		return FailureRecoveryAction{}, project.ErrInvalidProject
+	}
+}
+
+func (s *ProjectStore) createRecoveryReplacementTask(ctx context.Context, input ApplyFailureRecoveryDecisionInput, decision project.DecisionRequest, source project.ProjectTask, action FailureRecoveryAction) (project.ProjectTask, error) {
+	assigneeID := source.AssignedDigitalEmployeeID
+	if action.NewDigitalEmployeeID != nil {
+		assigneeID = action.NewDigitalEmployeeID
+	}
+	if assigneeID == nil || source.DemandID == nil {
+		return project.ProjectTask{}, project.ErrInvalidProject
+	}
+	replacementKey := recoveryReplacementTaskKey(source)
+	sourceBlockers, err := s.repository.ListProjectTaskDependencies(ctx, input.TenantID, input.ProjectID, []uuid.UUID{source.ID})
+	if err != nil {
+		return project.ProjectTask{}, err
+	}
+	replacement, exists, err := s.findExistingRecoveryReplacement(ctx, input.TenantID, input.ProjectID, source, action, replacementKey)
+	if err != nil {
+		return project.ProjectTask{}, err
+	}
+	if !exists {
+		status, err := s.recoveryReplacementStatus(ctx, input.TenantID, input.ProjectID, sourceBlockers)
+		if err != nil {
+			return project.ProjectTask{}, err
+		}
+		replacement, err = s.repository.CreateProjectTask(ctx, project.CreateProjectTaskRequest{
+			TenantID:                  input.TenantID,
+			ProjectID:                 input.ProjectID,
+			DemandID:                  source.DemandID,
+			Title:                     recoveryReplacementTitle(source.Title),
+			Summary:                   stringPtrValue(source.Summary),
+			Status:                    status,
+			AssignedDigitalEmployeeID: assigneeID,
+			RiskLevel:                 stringPtrValue(source.RiskLevel),
+			RequiresHumanApproval:     source.RequiresHumanApproval,
+			CoordinationJobID:         source.CoordinationJobID,
+			RouteDecisionID:           source.RouteDecisionID,
+			PlannedTaskKey:            &replacementKey,
+			TaskKind:                  source.TaskKind,
+			StageIndex:                source.StageIndex,
+			ExpectedOutputs:           append([]any(nil), source.ExpectedOutputs...),
+			InputRequirements:         cloneAnyMap(source.InputRequirements),
+			HandoffContract:           cloneAnyMap(source.HandoffContract),
+			PlannerMetadata:           recoveryPlannerMetadata(source, decision.ID, action),
+		})
+		if err != nil {
+			existing, ok, findErr := s.findExistingRecoveryReplacement(ctx, input.TenantID, input.ProjectID, source, action, replacementKey)
+			if findErr != nil {
+				return project.ProjectTask{}, findErr
+			}
+			if !ok {
+				return project.ProjectTask{}, err
+			}
+			replacement = existing
+		}
+	}
+	if err := s.ensureRecoveryTaskCreatedEvent(ctx, input, decision.ID, source.ID, replacement.ID, action.Action); err != nil {
+		return project.ProjectTask{}, err
+	}
+	if err := s.ensureReplacementBlockerDependencies(ctx, input.TenantID, input.ProjectID, replacement.ID, sourceBlockers); err != nil {
+		return project.ProjectTask{}, err
+	}
+	if err := s.rewireRecoverableDependents(ctx, input.TenantID, input.ProjectID, source.ID, replacement.ID); err != nil {
+		return project.ProjectTask{}, err
+	}
+	return replacement, nil
+}
+
+func (s *ProjectStore) ensureRecoveryTaskCreatedEvent(ctx context.Context, input ApplyFailureRecoveryDecisionInput, decisionRequestID, sourceTaskID, replacementTaskID uuid.UUID, action string) error {
+	exists, err := s.repository.ProjectTaskEventExists(ctx, input.TenantID, input.ProjectID, project.ProjectEventTaskCreated, replacementTaskID.String())
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	_, err = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskCreated, replacementTaskID.String(), "恢复任务已创建", map[string]any{
+		"project_task_id":        replacementTaskID.String(),
+		"source_project_task_id": sourceTaskID.String(),
+		"decision_request_id":    decisionRequestID.String(),
+		"recovery_action":        action,
+	}))
+	return err
+}
+
+func (s *ProjectStore) findExistingRecoveryReplacement(ctx context.Context, tenantID, projectID uuid.UUID, source project.ProjectTask, action FailureRecoveryAction, replacementKey string) (project.ProjectTask, bool, error) {
+	if source.CoordinationJobID == nil {
+		return project.ProjectTask{}, false, nil
+	}
+	tasks, err := s.repository.ListProjectTasksByCoordinationJob(ctx, tenantID, projectID, *source.CoordinationJobID)
+	if err != nil {
+		return project.ProjectTask{}, false, err
+	}
+	for _, task := range tasks {
+		if task.PlannedTaskKey == nil || *task.PlannedTaskKey != replacementKey {
+			continue
+		}
+		if task.PlannerMetadata["source_task_id"] != source.ID.String() || task.PlannerMetadata["recovery_action"] != action.Action {
+			return project.ProjectTask{}, false, project.ErrProjectConflict
+		}
+		if action.NewDigitalEmployeeID != nil && (task.AssignedDigitalEmployeeID == nil || *task.AssignedDigitalEmployeeID != *action.NewDigitalEmployeeID) {
+			return project.ProjectTask{}, false, project.ErrProjectConflict
+		}
+		return task, true, nil
+	}
+	return project.ProjectTask{}, false, nil
+}
+
+func (s *ProjectStore) recoveryReplacementStatus(ctx context.Context, tenantID, projectID uuid.UUID, sourceBlockers []project.ProjectTaskDependency) (string, error) {
+	for _, dependency := range sourceBlockers {
+		blocker, err := s.repository.GetProjectTask(ctx, tenantID, dependency.BlockerTaskID)
+		if err != nil {
+			return "", err
+		}
+		if blocker.ProjectID != projectID {
+			return "", project.ErrProjectNotFound
+		}
+		if blocker.Status != "completed" {
+			return "blocked", nil
+		}
+	}
+	return "planned", nil
+}
+
+func (s *ProjectStore) ensureReplacementBlockerDependencies(ctx context.Context, tenantID, projectID, replacementID uuid.UUID, sourceBlockers []project.ProjectTaskDependency) error {
+	if len(sourceBlockers) == 0 {
+		return nil
+	}
+	dependencyRepository, ok := s.repository.(recoveryDependencyRepository)
+	if !ok {
+		return ErrActivityStoreRequired
+	}
+	existing, err := s.repository.ListProjectTaskDependencies(ctx, tenantID, projectID, []uuid.UUID{replacementID})
+	if err != nil {
+		return err
+	}
+	for _, sourceBlocker := range sourceBlockers {
+		if dependencyExists(existing, replacementID, sourceBlocker.BlockerTaskID) {
+			continue
+		}
+		if _, err := dependencyRepository.CreateProjectTaskDependency(ctx, project.CreateProjectTaskDependencyRequest{
+			TenantID:          tenantID,
+			ProjectID:         projectID,
+			CoordinationJobID: sourceBlocker.CoordinationJobID,
+			DependentTaskID:   replacementID,
+			BlockerTaskID:     sourceBlocker.BlockerTaskID,
+		}); err != nil {
+			refreshed, refreshErr := s.repository.ListProjectTaskDependencies(ctx, tenantID, projectID, []uuid.UUID{replacementID})
+			if refreshErr == nil && dependencyExists(refreshed, replacementID, sourceBlocker.BlockerTaskID) {
+				continue
+			}
+			return err
+		}
+	}
 	return nil
+}
+
+func (s *ProjectStore) rewireRecoverableDependents(ctx context.Context, tenantID, projectID, oldBlockerID, newBlockerID uuid.UUID) error {
+	dependentIDs, err := s.repository.ListDependentsOfTask(ctx, tenantID, projectID, oldBlockerID)
+	if err != nil {
+		return err
+	}
+	rewireIDs := make([]uuid.UUID, 0, len(dependentIDs))
+	for _, taskID := range dependentIDs {
+		task, err := s.repository.GetProjectTask(ctx, tenantID, taskID)
+		if err != nil {
+			return err
+		}
+		if task.ProjectID != projectID {
+			return project.ErrProjectNotFound
+		}
+		if projectTaskTerminalStatus(task.Status) {
+			continue
+		}
+		rewireIDs = append(rewireIDs, taskID)
+	}
+	if len(rewireIDs) == 0 {
+		return nil
+	}
+	dependencyRepository, ok := s.repository.(recoveryDependencyRepository)
+	if !ok {
+		return ErrActivityStoreRequired
+	}
+	_, err = dependencyRepository.RewireProjectTaskDependencies(ctx, project.RewireProjectTaskDependenciesRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		DependentTaskIDs: rewireIDs,
+		OldBlockerTaskID: oldBlockerID,
+		NewBlockerTaskID: newBlockerID,
+	})
+	return err
+}
+
+func (s *ProjectStore) cancelFailureDownstream(ctx context.Context, input ApplyFailureRecoveryDecisionInput, source project.ProjectTask) error {
+	downstreamIDs, err := s.recursiveDownstreamTaskIDs(ctx, input.TenantID, input.ProjectID, source.ID)
+	if err != nil {
+		return err
+	}
+	for _, taskID := range downstreamIDs {
+		task, err := s.repository.GetProjectTask(ctx, input.TenantID, taskID)
+		if err != nil {
+			return err
+		}
+		if task.ProjectID != input.ProjectID {
+			return project.ErrProjectNotFound
+		}
+		if !projectTaskCancellationAllowed(task.Status) {
+			continue
+		}
+		updated, err := s.repository.UpdateProjectTaskStatus(ctx, input.TenantID, taskID, "cancelled", nil, []string{"blocked", "planned", "pending"})
+		if err != nil {
+			if errors.Is(err, project.ErrProjectConflict) {
+				continue
+			}
+			return err
+		}
+		exists, err := s.repository.ProjectTaskEventExists(ctx, input.TenantID, input.ProjectID, projectEventTaskCancelled, updated.ID.String())
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+		if _, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, projectEventTaskCancelled, updated.ID.String(), "项目任务已取消", map[string]any{
+			"project_task_id":        updated.ID.String(),
+			"source_project_task_id": source.ID.String(),
+			"decision_request_id":    input.DecisionRequestID.String(),
+			"recovery_action":        "cancel_downstream",
+		})); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *ProjectStore) validateActiveDigitalProjectMember(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) error {
+	members, err := s.repository.ListProjectMembers(ctx, tenantID, projectID)
+	if err != nil {
+		return err
+	}
+	for _, member := range members {
+		if member.PrincipalType == project.PrincipalTypeDigitalEmployee && member.PrincipalID == digitalEmployeeID && member.Status == "active" {
+			return nil
+		}
+	}
+	return project.ErrInvalidProject
 }
 
 func (s *ProjectStore) recursiveDownstreamTaskIDs(ctx context.Context, tenantID, projectID, failedTaskID uuid.UUID) ([]uuid.UUID, error) {
@@ -399,6 +708,10 @@ func projectTaskTerminalStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+func projectTaskCancellationAllowed(status string) bool {
+	return status == "blocked" || status == "planned" || status == "pending"
 }
 
 func failureHoldCurrentStatuses() []string {
@@ -802,6 +1115,69 @@ func routeReviewContext(input RequestRouteDecisionReviewInput) map[string]any {
 		"reason":                        input.Decision.Reason,
 		"route_created_event_id":        input.RouteCreatedEventID.String(),
 	}
+}
+
+func recoveryReplacementTaskKey(source project.ProjectTask) string {
+	base := source.ID.String()
+	if source.PlannedTaskKey != nil && strings.TrimSpace(*source.PlannedTaskKey) != "" {
+		base = strings.TrimSpace(*source.PlannedTaskKey)
+	}
+	if strings.HasSuffix(base, "#1") {
+		base = strings.TrimSuffix(base, "#1")
+	}
+	key := base + "#2"
+	if len(key) <= 100 {
+		return key
+	}
+	return source.ID.String()[:8] + "#2"
+}
+
+func recoveryReplacementTitle(title string) string {
+	if strings.Contains(title, "重试") {
+		return title
+	}
+	return title + "（重试）"
+}
+
+func recoveryPlannerMetadata(source project.ProjectTask, decisionRequestID uuid.UUID, action FailureRecoveryAction) map[string]any {
+	metadata := cloneAnyMap(source.PlannerMetadata)
+	metadata["source_task_id"] = source.ID.String()
+	metadata["decision_request_id"] = decisionRequestID.String()
+	metadata["recovery_action"] = action.Action
+	if source.CoordinationJobID != nil {
+		metadata["parent_coordination_job_id"] = source.CoordinationJobID.String()
+	}
+	if action.NewDigitalEmployeeID != nil {
+		metadata["new_digital_employee_id"] = action.NewDigitalEmployeeID.String()
+	}
+	return metadata
+}
+
+func dependencyExists(dependencies []project.ProjectTaskDependency, dependentTaskID, blockerTaskID uuid.UUID) bool {
+	for _, dependency := range dependencies {
+		if dependency.DependentTaskID == dependentTaskID && dependency.BlockerTaskID == blockerTaskID {
+			return true
+		}
+	}
+	return false
+}
+
+func stringPtrValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func cloneAnyMap(values map[string]any) map[string]any {
+	if values == nil {
+		return map[string]any{}
+	}
+	cloned := make(map[string]any, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func failureRecoveryContext(input HoldDownstreamForFailureInput, downstreamTaskIDs []uuid.UUID) map[string]any {

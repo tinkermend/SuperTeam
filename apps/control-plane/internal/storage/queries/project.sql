@@ -441,6 +441,45 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND dependent_task_id = ANY(sqlc.arg('dependent_task_ids')::uuid[])
 ORDER BY created_at ASC;
 
+-- name: RewireProjectTaskDependencies :many
+WITH affected AS (
+    SELECT id, tenant_id, project_id, coordination_job_id, dependent_task_id
+    FROM project_task_dependencies
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND project_id = sqlc.arg('project_id')::uuid
+      AND blocker_task_id = sqlc.arg('old_blocker_task_id')::uuid
+      AND dependent_task_id = ANY(sqlc.arg('dependent_task_ids')::uuid[])
+),
+inserted AS (
+    INSERT INTO project_task_dependencies (
+        tenant_id, project_id, coordination_job_id, dependent_task_id, blocker_task_id
+    )
+    SELECT
+        tenant_id,
+        project_id,
+        coordination_job_id,
+        dependent_task_id,
+        sqlc.arg('new_blocker_task_id')::uuid
+    FROM affected
+    ON CONFLICT (tenant_id, dependent_task_id, blocker_task_id) DO NOTHING
+    RETURNING *
+),
+deleted AS (
+    DELETE FROM project_task_dependencies d
+    USING affected a
+    WHERE d.id = a.id
+    RETURNING d.*
+)
+SELECT * FROM inserted
+UNION ALL
+SELECT existing.*
+FROM project_task_dependencies existing
+JOIN affected a
+  ON existing.tenant_id = a.tenant_id
+ AND existing.dependent_task_id = a.dependent_task_id
+WHERE existing.blocker_task_id = sqlc.arg('new_blocker_task_id')::uuid
+ORDER BY created_at ASC;
+
 -- name: ListDependentsOfTask :many
 SELECT dependent_task_id
 FROM project_task_dependencies

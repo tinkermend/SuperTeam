@@ -193,6 +193,22 @@ type CreateProjectTaskGraphResult struct {
 	GraphEventID uuid.UUID
 }
 
+type CreateProjectTaskDependencyRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	CoordinationJobID *uuid.UUID
+	DependentTaskID   uuid.UUID
+	BlockerTaskID     uuid.UUID
+}
+
+type RewireProjectTaskDependenciesRequest struct {
+	TenantID         uuid.UUID
+	ProjectID        uuid.UUID
+	DependentTaskIDs []uuid.UUID
+	OldBlockerTaskID uuid.UUID
+	NewBlockerTaskID uuid.UUID
+}
+
 type ProjectTaskGraphTaskResult struct {
 	ID             uuid.UUID
 	PlannedTaskKey string

@@ -2686,6 +2686,98 @@ func (q *Queries) ResolveProjectDecisionRequest(ctx context.Context, arg Resolve
 	return i, err
 }
 
+const RewireProjectTaskDependencies = `-- name: RewireProjectTaskDependencies :many
+WITH affected AS (
+    SELECT id, tenant_id, project_id, coordination_job_id, dependent_task_id
+    FROM project_task_dependencies
+    WHERE tenant_id = $1::uuid
+      AND project_id = $2::uuid
+      AND blocker_task_id = $3::uuid
+      AND dependent_task_id = ANY($4::uuid[])
+),
+inserted AS (
+    INSERT INTO project_task_dependencies (
+        tenant_id, project_id, coordination_job_id, dependent_task_id, blocker_task_id
+    )
+    SELECT
+        tenant_id,
+        project_id,
+        coordination_job_id,
+        dependent_task_id,
+        $5::uuid
+    FROM affected
+    ON CONFLICT (tenant_id, dependent_task_id, blocker_task_id) DO NOTHING
+    RETURNING id, tenant_id, project_id, coordination_job_id, dependent_task_id, blocker_task_id, created_at
+),
+deleted AS (
+    DELETE FROM project_task_dependencies d
+    USING affected a
+    WHERE d.id = a.id
+    RETURNING d.id, d.tenant_id, d.project_id, d.coordination_job_id, d.dependent_task_id, d.blocker_task_id, d.created_at
+)
+SELECT id, tenant_id, project_id, coordination_job_id, dependent_task_id, blocker_task_id, created_at FROM inserted
+UNION ALL
+SELECT existing.id, existing.tenant_id, existing.project_id, existing.coordination_job_id, existing.dependent_task_id, existing.blocker_task_id, existing.created_at
+FROM project_task_dependencies existing
+JOIN affected a
+  ON existing.tenant_id = a.tenant_id
+ AND existing.dependent_task_id = a.dependent_task_id
+WHERE existing.blocker_task_id = $5::uuid
+ORDER BY created_at ASC
+`
+
+type RewireProjectTaskDependenciesParams struct {
+	TenantID         uuid.UUID   `json:"tenant_id"`
+	ProjectID        uuid.UUID   `json:"project_id"`
+	OldBlockerTaskID uuid.UUID   `json:"old_blocker_task_id"`
+	DependentTaskIds []uuid.UUID `json:"dependent_task_ids"`
+	NewBlockerTaskID uuid.UUID   `json:"new_blocker_task_id"`
+}
+
+type RewireProjectTaskDependenciesRow struct {
+	ID                uuid.UUID          `json:"id"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	ProjectID         uuid.UUID          `json:"project_id"`
+	CoordinationJobID uuid.NullUUID      `json:"coordination_job_id"`
+	DependentTaskID   uuid.UUID          `json:"dependent_task_id"`
+	BlockerTaskID     uuid.UUID          `json:"blocker_task_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) RewireProjectTaskDependencies(ctx context.Context, arg RewireProjectTaskDependenciesParams) ([]RewireProjectTaskDependenciesRow, error) {
+	rows, err := q.db.Query(ctx, RewireProjectTaskDependencies,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.OldBlockerTaskID,
+		arg.DependentTaskIds,
+		arg.NewBlockerTaskID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RewireProjectTaskDependenciesRow{}
+	for rows.Next() {
+		var i RewireProjectTaskDependenciesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.CoordinationJobID,
+			&i.DependentTaskID,
+			&i.BlockerTaskID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const UpdateProject = `-- name: UpdateProject :one
 UPDATE projects
 SET

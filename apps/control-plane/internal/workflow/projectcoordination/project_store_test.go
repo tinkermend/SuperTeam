@@ -591,6 +591,320 @@ func TestProjectStoreHoldDownstreamForFailureBlocksRecursiveDownstreamAndCreates
 	require.Equal(t, failedTaskID, *inbox.upserts[0].ProjectTaskID)
 }
 
+func TestParseFailureRecoveryAction(t *testing.T) {
+	newEmployeeID := uuid.New()
+	tests := []struct {
+		name      string
+		decision  string
+		payload   map[string]any
+		want      FailureRecoveryAction
+		wantError error
+	}{
+		{
+			name:     "needs more evidence does not mutate recovery graph",
+			decision: "needs_more_evidence",
+			want:     FailureRecoveryAction{Action: "needs_more_evidence"},
+		},
+		{
+			name:     "rejected cancels downstream",
+			decision: "rejected",
+			want:     FailureRecoveryAction{Action: "cancel_downstream"},
+		},
+		{
+			name:     "approved retry",
+			decision: "approved",
+			payload:  map[string]any{"recovery_action": "retry"},
+			want:     FailureRecoveryAction{Action: "retry"},
+		},
+		{
+			name:     "approved cancel downstream",
+			decision: "approved",
+			payload:  map[string]any{"recovery_action": "cancel_downstream"},
+			want:     FailureRecoveryAction{Action: "cancel_downstream"},
+		},
+		{
+			name:     "approved reassign",
+			decision: "approved",
+			payload: map[string]any{
+				"recovery_action":         "reassign",
+				"new_digital_employee_id": newEmployeeID.String(),
+			},
+			want: FailureRecoveryAction{Action: "reassign", NewDigitalEmployeeID: &newEmployeeID},
+		},
+		{
+			name:      "approved reassign requires employee id",
+			decision:  "approved",
+			payload:   map[string]any{"recovery_action": "reassign"},
+			wantError: project.ErrInvalidProject,
+		},
+		{
+			name:      "approved unknown action rejected",
+			decision:  "approved",
+			payload:   map[string]any{"recovery_action": "replace_subgraph"},
+			wantError: project.ErrInvalidProject,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseFailureRecoveryAction(tt.decision, tt.payload)
+			if tt.wantError != nil {
+				require.ErrorIs(t, err, tt.wantError)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want.Action, got.Action)
+			if tt.want.NewDigitalEmployeeID == nil {
+				require.Nil(t, got.NewDigitalEmployeeID)
+			} else {
+				require.NotNil(t, got.NewDigitalEmployeeID)
+				require.Equal(t, *tt.want.NewDigitalEmployeeID, *got.NewDigitalEmployeeID)
+			}
+		})
+	}
+}
+
+func TestApplyFailureRecoveryRetryCreatesAppendOnlySubgraph(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	failedTaskID := uuid.New()
+	downstreamID := uuid.New()
+	decisionID := uuid.New()
+	stageIndex := int32(1)
+	failedTaskIDPtr := failedTaskID
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		tasks: []project.ProjectTask{
+			{
+				ID:                        failedTaskID,
+				TenantID:                  tenantID,
+				ProjectID:                 projectID,
+				DemandID:                  &demandID,
+				Title:                     "分析问题",
+				Summary:                   strPtr("整理失败原因"),
+				Status:                    "failed",
+				AssignedDigitalEmployeeID: &employeeID,
+				RiskLevel:                 strPtr("high"),
+				RequiresHumanApproval:     true,
+				CoordinationJobID:         &jobID,
+				RouteDecisionID:           &routeID,
+				PlannedTaskKey:            strPtr("A#1"),
+				TaskKind:                  strPtr("analysis"),
+				StageIndex:                &stageIndex,
+				ExpectedOutputs:           []any{"execution_summary", "evidence_refs"},
+				InputRequirements:         map[string]any{"scope": "logs"},
+				HandoffContract:           map[string]any{"format": "markdown"},
+				PlannerMetadata:           map[string]any{"provider": "deepseek"},
+			},
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, downstreamID, "blocked"),
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, downstreamID, failedTaskID),
+		},
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			ProjectTaskID:  &failedTaskIDPtr,
+			DecisionType:   "task_failure_recovery",
+			StatusSnapshot: "pending",
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "approved",
+		Payload:           map[string]any{"recovery_action": "retry"},
+	})
+
+	require.NoError(t, err)
+	replacement := requireRecoveryReplacementTask(t, repo, failedTaskID)
+	require.NotEqual(t, failedTaskID, replacement.ID)
+	require.Contains(t, replacement.Title, "重试")
+	require.Equal(t, "planned", replacement.Status)
+	require.Equal(t, employeeID, *replacement.AssignedDigitalEmployeeID)
+	require.Equal(t, []any{"execution_summary", "evidence_refs"}, replacement.ExpectedOutputs)
+	require.Equal(t, map[string]any{"scope": "logs"}, replacement.InputRequirements)
+	require.Equal(t, map[string]any{"format": "markdown"}, replacement.HandoffContract)
+	require.Equal(t, "retry", replacement.PlannerMetadata["recovery_action"])
+	require.Equal(t, failedTaskID.String(), replacement.PlannerMetadata["source_task_id"])
+	require.Equal(t, jobID.String(), replacement.PlannerMetadata["parent_coordination_job_id"])
+	requireDependency(t, repo.taskDependencies, downstreamID, replacement.ID)
+	requireNoDependency(t, repo.taskDependencies, downstreamID, failedTaskID)
+
+	repo.setTaskStatus(replacement.ID, "completed")
+	ready, err := store.ResolveReadyDownstream(context.Background(), ResolveReadyDownstreamInput{
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		CompletedTaskID: replacement.ID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{downstreamID}, ready)
+	require.Equal(t, "planned", repo.taskStatus(downstreamID))
+
+	err = store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "approved",
+		Payload:           map[string]any{"recovery_action": "retry"},
+	})
+	require.NoError(t, err)
+	require.Len(t, recoveryReplacementTasks(repo, failedTaskID), 1)
+}
+
+func TestApplyFailureRecoveryReassignRequiresNewEmployee(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	originalEmployeeID := uuid.New()
+	newEmployeeID := uuid.New()
+	failedTaskID := uuid.New()
+	decisionID := uuid.New()
+	failedTaskIDPtr := failedTaskID
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		members: []project.ProjectMember{{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   newEmployeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+		tasks: []project.ProjectTask{{
+			ID:                        failedTaskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "修复问题",
+			Status:                    "failed",
+			AssignedDigitalEmployeeID: &originalEmployeeID,
+			CoordinationJobID:         &jobID,
+			RouteDecisionID:           &routeID,
+			PlannedTaskKey:            strPtr("repair"),
+			ExpectedOutputs:           []any{"execution_summary"},
+			InputRequirements:         map[string]any{},
+			HandoffContract:           map[string]any{},
+			PlannerMetadata:           map[string]any{},
+		}},
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			ProjectTaskID:  &failedTaskIDPtr,
+			DecisionType:   "task_failure_recovery",
+			StatusSnapshot: "pending",
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "approved",
+		Payload:           map[string]any{"recovery_action": "reassign"},
+	})
+	require.ErrorIs(t, err, project.ErrInvalidProject)
+	require.Len(t, repo.tasks, 1)
+
+	err = store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "approved",
+		Payload: map[string]any{
+			"recovery_action":         "reassign",
+			"new_digital_employee_id": newEmployeeID.String(),
+		},
+	})
+	require.NoError(t, err)
+	replacement := requireRecoveryReplacementTask(t, repo, failedTaskID)
+	require.Equal(t, "reassign", replacement.PlannerMetadata["recovery_action"])
+	require.Equal(t, newEmployeeID, *replacement.AssignedDigitalEmployeeID)
+}
+
+func TestApplyFailureRecoveryCancelDownstreamCancelsBlockedDependents(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	failedTaskID := uuid.New()
+	blockedID := uuid.New()
+	plannedID := uuid.New()
+	pendingID := uuid.New()
+	completedID := uuid.New()
+	failedDownstreamID := uuid.New()
+	cancelledID := uuid.New()
+	decisionID := uuid.New()
+	failedTaskIDPtr := failedTaskID
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		tasks: []project.ProjectTask{
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, failedTaskID, "failed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, blockedID, "blocked"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, plannedID, "planned"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, pendingID, "pending"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, completedID, "completed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, failedDownstreamID, "failed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, cancelledID, "cancelled"),
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, blockedID, failedTaskID),
+			projectStoreDependency(tenantID, projectID, jobID, plannedID, failedTaskID),
+			projectStoreDependency(tenantID, projectID, jobID, pendingID, blockedID),
+			projectStoreDependency(tenantID, projectID, jobID, completedID, failedTaskID),
+			projectStoreDependency(tenantID, projectID, jobID, failedDownstreamID, failedTaskID),
+			projectStoreDependency(tenantID, projectID, jobID, cancelledID, blockedID),
+		},
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			ProjectTaskID:  &failedTaskIDPtr,
+			DecisionType:   "task_failure_recovery",
+			StatusSnapshot: "pending",
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "rejected",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "cancelled", repo.taskStatus(blockedID))
+	require.Equal(t, "cancelled", repo.taskStatus(plannedID))
+	require.Equal(t, "cancelled", repo.taskStatus(pendingID))
+	require.Equal(t, "completed", repo.taskStatus(completedID))
+	require.Equal(t, "failed", repo.taskStatus(failedDownstreamID))
+	require.Equal(t, "cancelled", repo.taskStatus(cancelledID))
+	require.Len(t, eventsByType(repo.events, project.ProjectEventType("project_task.cancelled")), 3)
+
+	err = store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "rejected",
+	})
+	require.NoError(t, err)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventType("project_task.cancelled")), 3)
+}
+
 func TestProjectStoreDispatchProjectTaskStartsRunAndBindsTask(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -1084,6 +1398,70 @@ func (r *projectStoreMemoryRepository) CreateProjectTaskGraph(ctx context.Contex
 	return result, nil
 }
 
+func (r *projectStoreMemoryRepository) CreateProjectTaskDependency(ctx context.Context, req project.CreateProjectTaskDependencyRequest) (project.ProjectTaskDependency, error) {
+	for _, dependency := range r.taskDependencies {
+		if dependency.TenantID == req.TenantID && dependency.DependentTaskID == req.DependentTaskID && dependency.BlockerTaskID == req.BlockerTaskID {
+			return dependency, nil
+		}
+	}
+	dependency := project.ProjectTaskDependency{
+		ID:                uuid.New(),
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		CoordinationJobID: req.CoordinationJobID,
+		DependentTaskID:   req.DependentTaskID,
+		BlockerTaskID:     req.BlockerTaskID,
+	}
+	r.taskDependencies = append(r.taskDependencies, dependency)
+	return dependency, nil
+}
+
+func (r *projectStoreMemoryRepository) RewireProjectTaskDependencies(ctx context.Context, req project.RewireProjectTaskDependenciesRequest) ([]project.ProjectTaskDependency, error) {
+	requested := map[uuid.UUID]struct{}{}
+	for _, taskID := range req.DependentTaskIDs {
+		requested[taskID] = struct{}{}
+	}
+	rewired := make([]project.ProjectTaskDependency, 0)
+	for index := 0; index < len(r.taskDependencies); {
+		dependency := r.taskDependencies[index]
+		if dependency.TenantID != req.TenantID || dependency.ProjectID != req.ProjectID || dependency.BlockerTaskID != req.OldBlockerTaskID {
+			index++
+			continue
+		}
+		if _, ok := requested[dependency.DependentTaskID]; !ok {
+			index++
+			continue
+		}
+		if dependencyExists(r.taskDependencies, dependency.DependentTaskID, req.NewBlockerTaskID) {
+			r.taskDependencies = append(r.taskDependencies[:index], r.taskDependencies[index+1:]...)
+			continue
+		}
+		dependency.BlockerTaskID = req.NewBlockerTaskID
+		r.taskDependencies[index] = dependency
+		rewired = append(rewired, dependency)
+		index++
+	}
+	return rewired, nil
+}
+
+func (r *projectStoreMemoryRepository) ListProjectTaskDependencies(ctx context.Context, tenantID, projectID uuid.UUID, dependentTaskIDs []uuid.UUID) ([]project.ProjectTaskDependency, error) {
+	requested := map[uuid.UUID]struct{}{}
+	for _, taskID := range dependentTaskIDs {
+		requested[taskID] = struct{}{}
+	}
+	dependencies := make([]project.ProjectTaskDependency, 0)
+	for _, dependency := range r.taskDependencies {
+		if dependency.TenantID != tenantID || dependency.ProjectID != projectID {
+			continue
+		}
+		if _, ok := requested[dependency.DependentTaskID]; !ok {
+			continue
+		}
+		dependencies = append(dependencies, dependency)
+	}
+	return dependencies, nil
+}
+
 func (r *projectStoreMemoryRepository) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (project.ProjectTask, error) {
 	for _, task := range r.tasks {
 		if task.TenantID == tenantID && task.ID == projectTaskID {
@@ -1229,6 +1607,15 @@ func (r *projectStoreMemoryRepository) CreateDecisionRequest(ctx context.Context
 	return decision, nil
 }
 
+func (r *projectStoreMemoryRepository) GetDecisionRequest(ctx context.Context, tenantID, projectID, decisionRequestID uuid.UUID) (project.DecisionRequest, error) {
+	for _, decision := range r.decisionRequests {
+		if decision.ID == decisionRequestID && decision.TenantID == tenantID && decision.ProjectID == projectID {
+			return decision, nil
+		}
+	}
+	return project.DecisionRequest{}, project.ErrProjectNotFound
+}
+
 type projectStoreApprovalCreator struct {
 	approvalID uuid.UUID
 	last       approval.CreateRequestInput
@@ -1315,6 +1702,61 @@ func (r *projectStoreMemoryRepository) taskStatus(taskID uuid.UUID) string {
 		}
 	}
 	return ""
+}
+
+func (r *projectStoreMemoryRepository) setTaskStatus(taskID uuid.UUID, status string) {
+	for index, task := range r.tasks {
+		if task.ID == taskID {
+			r.tasks[index].Status = status
+			return
+		}
+	}
+}
+
+func recoveryReplacementTasks(repo *projectStoreMemoryRepository, sourceTaskID uuid.UUID) []project.ProjectTask {
+	tasks := make([]project.ProjectTask, 0)
+	for _, task := range repo.tasks {
+		if task.PlannerMetadata["source_task_id"] == sourceTaskID.String() {
+			tasks = append(tasks, task)
+		}
+	}
+	return tasks
+}
+
+func requireRecoveryReplacementTask(t *testing.T, repo *projectStoreMemoryRepository, sourceTaskID uuid.UUID) project.ProjectTask {
+	t.Helper()
+	tasks := recoveryReplacementTasks(repo, sourceTaskID)
+	require.Len(t, tasks, 1)
+	return tasks[0]
+}
+
+func requireDependency(t *testing.T, dependencies []project.ProjectTaskDependency, dependentTaskID, blockerTaskID uuid.UUID) {
+	t.Helper()
+	for _, dependency := range dependencies {
+		if dependency.DependentTaskID == dependentTaskID && dependency.BlockerTaskID == blockerTaskID {
+			return
+		}
+	}
+	t.Fatalf("expected dependency dependent=%s blocker=%s in %#v", dependentTaskID, blockerTaskID, dependencies)
+}
+
+func requireNoDependency(t *testing.T, dependencies []project.ProjectTaskDependency, dependentTaskID, blockerTaskID uuid.UUID) {
+	t.Helper()
+	for _, dependency := range dependencies {
+		if dependency.DependentTaskID == dependentTaskID && dependency.BlockerTaskID == blockerTaskID {
+			t.Fatalf("unexpected dependency dependent=%s blocker=%s in %#v", dependentTaskID, blockerTaskID, dependencies)
+		}
+	}
+}
+
+func eventsByType(events []project.ProjectEvent, eventType project.ProjectEventType) []project.ProjectEvent {
+	filtered := make([]project.ProjectEvent, 0)
+	for _, event := range events {
+		if event.EventType == eventType {
+			filtered = append(filtered, event)
+		}
+	}
+	return filtered
 }
 
 func strPtr(value string) *string {
