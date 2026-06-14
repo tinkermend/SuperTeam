@@ -149,36 +149,42 @@ func (s *ProjectStore) CreateProjectTasks(ctx context.Context, input CreateProje
 	if s.repository == nil {
 		return nil, ErrActivityStoreRequired
 	}
-	results := make([]ProjectTaskResult, 0, len(input.Decision.Tasks))
+	graphTasks := make([]project.ProjectTaskGraphCreateTask, 0, len(input.Decision.Tasks))
 	for _, plannedTask := range input.Decision.Tasks {
-		employeeID := plannedTask.SelectedEmployeeID
-		task, err := s.repository.CreateProjectTask(ctx, project.CreateProjectTaskRequest{
-			TenantID:                  input.TenantID,
-			ProjectID:                 input.ProjectID,
-			DemandID:                  &input.DemandID,
+		status := "planned"
+		if len(plannedTask.BlockedByKeys) > 0 {
+			status = "blocked"
+		}
+		graphTasks = append(graphTasks, project.ProjectTaskGraphCreateTask{
+			Key:                       plannedTask.Key,
 			Title:                     plannedTask.Title,
 			Summary:                   plannedTask.Summary,
-			Status:                    "planned",
-			AssignedDigitalEmployeeID: &employeeID,
+			Status:                    status,
+			AssignedDigitalEmployeeID: plannedTask.SelectedEmployeeID,
+			TaskKind:                  plannedTask.TaskKind,
+			StageIndex:                plannedTask.StageIndex,
 			RiskLevel:                 plannedTask.RiskLevel,
 			RequiresHumanApproval:     plannedTask.RequiresHumanApproval,
-			PlannedTaskKey:            stringPtrOrNil(plannedTask.Key),
-			TaskKind:                  stringPtrOrNil(plannedTask.TaskKind),
-			StageIndex:                int32PtrOrNil(plannedTask.StageIndex),
 			ExpectedOutputs:           stringsToAny(plannedTask.ExpectedOutputs),
 			InputRequirements:         plannedTask.InputRequirements,
 			HandoffContract:           plannedTask.HandoffContract,
 			PlannerMetadata:           input.Decision.PlannerMetadata,
+			BlockedByKeys:             plannedTask.BlockedByKeys,
 		})
-		if err != nil {
-			return nil, err
-		}
-		if _, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskCreated, task.ID.String(), "项目任务已创建", map[string]any{
-			"project_task_id": task.ID.String(),
-			"demand_id":       input.DemandID.String(),
-		})); err != nil {
-			return nil, err
-		}
+	}
+	graph, err := s.repository.CreateProjectTaskGraph(ctx, project.CreateProjectTaskGraphRequest{
+		TenantID:          input.TenantID,
+		ProjectID:         input.ProjectID,
+		DemandID:          input.DemandID,
+		CoordinationJobID: input.CoordinationJobID,
+		RouteDecisionID:   input.RouteDecisionID,
+		Tasks:             graphTasks,
+	})
+	if err != nil {
+		return nil, err
+	}
+	results := make([]ProjectTaskResult, 0, len(graph.Tasks))
+	for _, task := range graph.Tasks {
 		results = append(results, ProjectTaskResult{ID: task.ID})
 	}
 	return results, nil
@@ -551,21 +557,6 @@ func sortedMapKeys(values map[string]any) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-func stringPtrOrNil(value string) *string {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	return &value
-}
-
-func int32PtrOrNil(value *int32) *int32 {
-	if value == nil {
-		return nil
-	}
-	copied := *value
-	return &copied
 }
 
 func uuidStrings(values []uuid.UUID) []any {

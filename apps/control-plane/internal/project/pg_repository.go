@@ -1,6 +1,7 @@
 package project
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -568,6 +569,10 @@ func (r *PgRepository) ListDemandLaunchRouteDecisions(ctx context.Context, tenan
 }
 
 func (r *PgRepository) CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error) {
+	return r.createProjectTaskWithQueries(ctx, r.q, req)
+}
+
+func (r *PgRepository) createProjectTaskWithQueries(ctx context.Context, q *queries.Queries, req CreateProjectTaskRequest) (ProjectTask, error) {
 	expectedOutputs, err := jsonbArray(req.ExpectedOutputs, "expected_outputs")
 	if err != nil {
 		return ProjectTask{}, err
@@ -584,7 +589,7 @@ func (r *PgRepository) CreateProjectTask(ctx context.Context, req CreateProjectT
 	if err != nil {
 		return ProjectTask{}, err
 	}
-	row, err := r.q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
+	row, err := q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
 		TenantID:                  req.TenantID,
 		ProjectID:                 req.ProjectID,
 		DemandID:                  nullUUID(req.DemandID),
@@ -613,7 +618,129 @@ func (r *PgRepository) CreateProjectTask(ctx context.Context, req CreateProjectT
 }
 
 func (r *PgRepository) CreateProjectTaskGraph(ctx context.Context, req CreateProjectTaskGraphRequest) (CreateProjectTaskGraphResult, error) {
-	return CreateProjectTaskGraphResult{}, ErrProjectTaskGraphPending
+	return withProjectQueries(ctx, r, "project task graph create", func(q *queries.Queries) (CreateProjectTaskGraphResult, error) {
+		existing, err := r.listProjectTasksByCoordinationJobWithQueries(ctx, q, req.TenantID, req.ProjectID, req.CoordinationJobID)
+		if err != nil {
+			return CreateProjectTaskGraphResult{}, err
+		}
+		if len(existing) > 0 {
+			complete, err := r.graphComplete(ctx, q, req, existing)
+			if err != nil {
+				return CreateProjectTaskGraphResult{}, err
+			}
+			if !complete {
+				return CreateProjectTaskGraphResult{}, ErrProjectConflict
+			}
+			return r.graphResultFromExisting(ctx, q, req, existing)
+		}
+
+		keyToID := map[string]uuid.UUID{}
+		created := make([]ProjectTaskGraphTaskResult, 0, len(req.Tasks))
+		dependencies := make([]ProjectTaskDependency, 0)
+		for _, planned := range req.Tasks {
+			if planned.Key == "" {
+				return CreateProjectTaskGraphResult{}, ErrInvalidProject
+			}
+			if _, exists := keyToID[planned.Key]; exists {
+				return CreateProjectTaskGraphResult{}, ErrInvalidProject
+			}
+			employeeID := planned.AssignedDigitalEmployeeID
+			taskKind := planned.TaskKind
+			task, err := r.createProjectTaskWithQueries(ctx, q, CreateProjectTaskRequest{
+				TenantID:                  req.TenantID,
+				ProjectID:                 req.ProjectID,
+				DemandID:                  &req.DemandID,
+				Title:                     planned.Title,
+				Summary:                   planned.Summary,
+				Status:                    planned.Status,
+				AssignedDigitalEmployeeID: &employeeID,
+				RiskLevel:                 planned.RiskLevel,
+				RequiresHumanApproval:     planned.RequiresHumanApproval,
+				CoordinationJobID:         &req.CoordinationJobID,
+				RouteDecisionID:           &req.RouteDecisionID,
+				PlannedTaskKey:            &planned.Key,
+				TaskKind:                  &taskKind,
+				StageIndex:                planned.StageIndex,
+				ExpectedOutputs:           planned.ExpectedOutputs,
+				InputRequirements:         planned.InputRequirements,
+				HandoffContract:           planned.HandoffContract,
+				PlannerMetadata:           planned.PlannerMetadata,
+			})
+			if err != nil {
+				return CreateProjectTaskGraphResult{}, err
+			}
+			event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+				TenantID:     req.TenantID,
+				ProjectID:    req.ProjectID,
+				EventType:    ProjectEventTaskCreated,
+				ActorType:    "project_coordinator",
+				ActorID:      task.ID.String(),
+				ResourceType: strPtr("project_task"),
+				ResourceID:   strPtr(task.ID.String()),
+				Summary:      "项目任务已创建",
+				Payload: map[string]any{
+					"project_task_id":     task.ID.String(),
+					"demand_id":           req.DemandID.String(),
+					"coordination_job_id": req.CoordinationJobID.String(),
+					"planned_task_key":    planned.Key,
+				},
+			})
+			if err != nil {
+				return CreateProjectTaskGraphResult{}, err
+			}
+			keyToID[planned.Key] = task.ID
+			created = append(created, ProjectTaskGraphTaskResult{
+				ID:             task.ID,
+				PlannedTaskKey: planned.Key,
+				StageIndex:     planned.StageIndex,
+				CreatedEventID: event.ID,
+				IsRoot:         len(planned.BlockedByKeys) == 0,
+			})
+		}
+		for _, planned := range req.Tasks {
+			dependentTaskID, ok := keyToID[planned.Key]
+			if !ok {
+				return CreateProjectTaskGraphResult{}, ErrProjectConflict
+			}
+			for _, blockerKey := range planned.BlockedByKeys {
+				blockerTaskID, ok := keyToID[blockerKey]
+				if !ok {
+					return CreateProjectTaskGraphResult{}, ErrProjectConflict
+				}
+				edge, err := q.CreateProjectTaskDependency(ctx, queries.CreateProjectTaskDependencyParams{
+					TenantID:          req.TenantID,
+					ProjectID:         req.ProjectID,
+					CoordinationJobID: nullUUID(&req.CoordinationJobID),
+					DependentTaskID:   dependentTaskID,
+					BlockerTaskID:     blockerTaskID,
+				})
+				if err != nil {
+					return CreateProjectTaskGraphResult{}, err
+				}
+				dependencies = append(dependencies, dependencyFromRecord(edge))
+			}
+		}
+		graphEvent, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+			TenantID:     req.TenantID,
+			ProjectID:    req.ProjectID,
+			EventType:    ProjectEventTaskGraphPlanned,
+			ActorType:    "project_coordinator",
+			ActorID:      req.CoordinationJobID.String(),
+			ResourceType: strPtr("project_coordination_job"),
+			ResourceID:   strPtr(req.CoordinationJobID.String()),
+			Summary:      "项目任务图已规划",
+			Payload: map[string]any{
+				"coordination_job_id": req.CoordinationJobID.String(),
+				"route_decision_id":   req.RouteDecisionID.String(),
+				"task_count":          len(req.Tasks),
+				"dependency_count":    len(dependencies),
+			},
+		})
+		if err != nil {
+			return CreateProjectTaskGraphResult{}, err
+		}
+		return CreateProjectTaskGraphResult{Tasks: created, Dependencies: dependencies, GraphEventID: graphEvent.ID}, nil
+	})
 }
 
 func (r *PgRepository) ListProjectTaskDependencies(ctx context.Context, tenantID, projectID uuid.UUID, dependentTaskIDs []uuid.UUID) ([]ProjectTaskDependency, error) {
@@ -657,7 +784,11 @@ func (r *PgRepository) ListUnresolvedBlockersForTasks(ctx context.Context, tenan
 }
 
 func (r *PgRepository) ListProjectTasksByCoordinationJob(ctx context.Context, tenantID, projectID, coordinationJobID uuid.UUID) ([]ProjectTask, error) {
-	rows, err := r.q.ListProjectTasksByCoordinationJob(ctx, queries.ListProjectTasksByCoordinationJobParams{
+	return r.listProjectTasksByCoordinationJobWithQueries(ctx, r.q, tenantID, projectID, coordinationJobID)
+}
+
+func (r *PgRepository) listProjectTasksByCoordinationJobWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID, coordinationJobID uuid.UUID) ([]ProjectTask, error) {
+	rows, err := q.ListProjectTasksByCoordinationJob(ctx, queries.ListProjectTasksByCoordinationJobParams{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		CoordinationJobID: coordinationJobID,
@@ -666,6 +797,262 @@ func (r *PgRepository) ListProjectTasksByCoordinationJob(ctx context.Context, te
 		return nil, err
 	}
 	return tasksFromRecords(rows)
+}
+
+func (r *PgRepository) graphComplete(ctx context.Context, q *queries.Queries, req CreateProjectTaskGraphRequest, existing []ProjectTask) (bool, error) {
+	if len(existing) != len(req.Tasks) {
+		return false, nil
+	}
+	existingByKey, existingIDs, ok := existingGraphTasksByKey(req, existing)
+	if !ok {
+		return false, nil
+	}
+	for _, planned := range req.Tasks {
+		if !graphTaskPayloadMatchesRequest(req, planned, existingByKey[planned.Key]) {
+			return false, nil
+		}
+	}
+	dependencyRows, err := q.ListProjectTaskDependencies(ctx, queries.ListProjectTaskDependenciesParams{
+		TenantID:         req.TenantID,
+		ProjectID:        req.ProjectID,
+		DependentTaskIds: existingIDs,
+	})
+	if err != nil {
+		return false, err
+	}
+	if !dependencyRowsMatchRequest(req, existingByKey, dependenciesFromRecords(dependencyRows)) {
+		return false, nil
+	}
+	taskEventIDs, graphEventID, err := r.existingGraphEventIDs(ctx, q, req, existing)
+	if err != nil {
+		return false, err
+	}
+	return graphEventID != uuid.Nil && len(taskEventIDs) == len(existing), nil
+}
+
+func (r *PgRepository) graphResultFromExisting(ctx context.Context, q *queries.Queries, req CreateProjectTaskGraphRequest, existing []ProjectTask) (CreateProjectTaskGraphResult, error) {
+	dependentIDs := graphProjectTaskIDs(existing)
+	dependencyRows, err := q.ListProjectTaskDependencies(ctx, queries.ListProjectTaskDependenciesParams{
+		TenantID:         req.TenantID,
+		ProjectID:        req.ProjectID,
+		DependentTaskIds: dependentIDs,
+	})
+	if err != nil {
+		return CreateProjectTaskGraphResult{}, err
+	}
+	dependencies := dependenciesFromRecords(dependencyRows)
+	taskEventIDs, graphEventID, err := r.existingGraphEventIDs(ctx, q, req, existing)
+	if err != nil {
+		return CreateProjectTaskGraphResult{}, err
+	}
+	if graphEventID == uuid.Nil {
+		return CreateProjectTaskGraphResult{}, ErrProjectConflict
+	}
+	blockedTaskIDs := map[uuid.UUID]struct{}{}
+	for _, dependency := range dependencies {
+		blockedTaskIDs[dependency.DependentTaskID] = struct{}{}
+	}
+	results := make([]ProjectTaskGraphTaskResult, 0, len(existing))
+	for _, task := range existing {
+		if task.PlannedTaskKey == nil {
+			return CreateProjectTaskGraphResult{}, ErrProjectConflict
+		}
+		eventID := taskEventIDs[task.ID]
+		if eventID == uuid.Nil {
+			return CreateProjectTaskGraphResult{}, ErrProjectConflict
+		}
+		_, blocked := blockedTaskIDs[task.ID]
+		results = append(results, ProjectTaskGraphTaskResult{
+			ID:             task.ID,
+			PlannedTaskKey: *task.PlannedTaskKey,
+			StageIndex:     task.StageIndex,
+			CreatedEventID: eventID,
+			IsRoot:         !blocked,
+		})
+	}
+	return CreateProjectTaskGraphResult{Tasks: results, Dependencies: dependencies, GraphEventID: graphEventID}, nil
+}
+
+func existingGraphTasksByKey(req CreateProjectTaskGraphRequest, existing []ProjectTask) (map[string]ProjectTask, []uuid.UUID, bool) {
+	existingByKey := make(map[string]ProjectTask, len(existing))
+	existingIDs := make([]uuid.UUID, 0, len(existing))
+	for _, task := range existing {
+		if task.TenantID != req.TenantID || task.ProjectID != req.ProjectID {
+			return nil, nil, false
+		}
+		if task.DemandID == nil || *task.DemandID != req.DemandID ||
+			task.CoordinationJobID == nil || *task.CoordinationJobID != req.CoordinationJobID ||
+			task.RouteDecisionID == nil || *task.RouteDecisionID != req.RouteDecisionID ||
+			task.PlannedTaskKey == nil || *task.PlannedTaskKey == "" {
+			return nil, nil, false
+		}
+		if _, exists := existingByKey[*task.PlannedTaskKey]; exists {
+			return nil, nil, false
+		}
+		existingByKey[*task.PlannedTaskKey] = task
+		existingIDs = append(existingIDs, task.ID)
+	}
+	for _, planned := range req.Tasks {
+		if _, exists := existingByKey[planned.Key]; !exists {
+			return nil, nil, false
+		}
+	}
+	return existingByKey, existingIDs, true
+}
+
+func graphTaskPayloadMatchesRequest(req CreateProjectTaskGraphRequest, planned ProjectTaskGraphCreateTask, existing ProjectTask) bool {
+	if existing.TenantID != req.TenantID || existing.ProjectID != req.ProjectID {
+		return false
+	}
+	if existing.DemandID == nil || *existing.DemandID != req.DemandID ||
+		existing.CoordinationJobID == nil || *existing.CoordinationJobID != req.CoordinationJobID ||
+		existing.RouteDecisionID == nil || *existing.RouteDecisionID != req.RouteDecisionID {
+		return false
+	}
+	if existing.PlannedTaskKey == nil || *existing.PlannedTaskKey != planned.Key {
+		return false
+	}
+	if existing.Title != planned.Title ||
+		!storedTextMatches(existing.Summary, planned.Summary) ||
+		existing.Status != planned.Status ||
+		!storedUUIDMatches(existing.AssignedDigitalEmployeeID, planned.AssignedDigitalEmployeeID) ||
+		!storedTextMatches(existing.TaskKind, planned.TaskKind) ||
+		!storedInt32Matches(existing.StageIndex, planned.StageIndex) ||
+		!storedTextMatches(existing.RiskLevel, planned.RiskLevel) ||
+		existing.RequiresHumanApproval != planned.RequiresHumanApproval {
+		return false
+	}
+	return storedJSONPayloadMatches(existing.ExpectedOutputs, plannedExpectedOutputs(planned.ExpectedOutputs)) &&
+		storedJSONPayloadMatches(existing.InputRequirements, plannedObjectPayload(planned.InputRequirements)) &&
+		storedJSONPayloadMatches(existing.HandoffContract, plannedObjectPayload(planned.HandoffContract)) &&
+		storedJSONPayloadMatches(existing.PlannerMetadata, plannedObjectPayload(planned.PlannerMetadata))
+}
+
+func storedTextMatches(existing *string, planned string) bool {
+	if planned == "" {
+		return existing == nil
+	}
+	return existing != nil && *existing == planned
+}
+
+func storedUUIDMatches(existing *uuid.UUID, planned uuid.UUID) bool {
+	if planned == uuid.Nil {
+		return existing == nil
+	}
+	return existing != nil && *existing == planned
+}
+
+func storedInt32Matches(existing, planned *int32) bool {
+	if existing == nil || planned == nil {
+		return existing == nil && planned == nil
+	}
+	return *existing == *planned
+}
+
+func plannedExpectedOutputs(values []any) []any {
+	if values == nil {
+		return []any{}
+	}
+	return values
+}
+
+func plannedObjectPayload(value map[string]any) map[string]any {
+	if value == nil {
+		return map[string]any{}
+	}
+	return value
+}
+
+func storedJSONPayloadMatches(existing, planned any) bool {
+	existingJSON, existingErr := json.Marshal(existing)
+	plannedJSON, plannedErr := json.Marshal(planned)
+	return existingErr == nil && plannedErr == nil && bytes.Equal(existingJSON, plannedJSON)
+}
+
+func dependencyRowsMatchRequest(req CreateProjectTaskGraphRequest, existingByKey map[string]ProjectTask, dependencies []ProjectTaskDependency) bool {
+	expectedEdges := map[string]struct{}{}
+	for _, planned := range req.Tasks {
+		dependent, ok := existingByKey[planned.Key]
+		if !ok {
+			return false
+		}
+		for _, blockerKey := range planned.BlockedByKeys {
+			blocker, ok := existingByKey[blockerKey]
+			if !ok {
+				return false
+			}
+			expectedEdges[dependencyKey(dependent.ID, blocker.ID)] = struct{}{}
+		}
+	}
+	if len(expectedEdges) != len(dependencies) {
+		return false
+	}
+	for _, dependency := range dependencies {
+		if _, ok := expectedEdges[dependencyKey(dependency.DependentTaskID, dependency.BlockerTaskID)]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func dependencyKey(dependentTaskID, blockerTaskID uuid.UUID) string {
+	return dependentTaskID.String() + ":" + blockerTaskID.String()
+}
+
+func graphProjectTaskIDs(tasks []ProjectTask) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.ID)
+	}
+	return ids
+}
+
+func (r *PgRepository) existingGraphEventIDs(ctx context.Context, q *queries.Queries, req CreateProjectTaskGraphRequest, existing []ProjectTask) (map[uuid.UUID]uuid.UUID, uuid.UUID, error) {
+	rows, err := q.ListProjectEvents(ctx, queries.ListProjectEventsParams{
+		TenantID:  req.TenantID,
+		ProjectID: req.ProjectID,
+		Limit:     1000,
+		Offset:    0,
+	})
+	if err != nil {
+		return nil, uuid.Nil, err
+	}
+	events, err := eventsFromRecords(rows)
+	if err != nil {
+		return nil, uuid.Nil, err
+	}
+	neededTasks := map[string]uuid.UUID{}
+	for _, task := range existing {
+		neededTasks[task.ID.String()] = task.ID
+	}
+	taskEventIDs := map[uuid.UUID]uuid.UUID{}
+	graphEventID := uuid.Nil
+	for _, event := range events {
+		switch event.EventType {
+		case ProjectEventTaskCreated:
+			taskID, ok := neededTasks[event.ActorID]
+			if !ok {
+				if payloadTaskID, ok := event.Payload["project_task_id"].(string); ok {
+					taskID, ok = neededTasks[payloadTaskID]
+				}
+			}
+			if ok && taskEventIDs[taskID] == uuid.Nil {
+				taskEventIDs[taskID] = event.ID
+			}
+		case ProjectEventTaskGraphPlanned:
+			if graphEventID != uuid.Nil {
+				continue
+			}
+			if event.ActorID == req.CoordinationJobID.String() {
+				graphEventID = event.ID
+				continue
+			}
+			if payloadJobID, ok := event.Payload["coordination_job_id"].(string); ok && payloadJobID == req.CoordinationJobID.String() {
+				graphEventID = event.ID
+			}
+		}
+	}
+	return taskEventIDs, graphEventID, nil
 }
 
 func (r *PgRepository) GetProjectTaskCompletionContract(ctx context.Context, tenantID, taskID uuid.UUID) (ProjectTaskCompletionContract, error) {

@@ -93,10 +93,12 @@ type PersistRouteDecisionInput struct {
 }
 
 type CreateProjectTasksInput struct {
-	TenantID  uuid.UUID
-	ProjectID uuid.UUID
-	DemandID  uuid.UUID
-	Decision  RouteDecisionPlan
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DemandID          uuid.UUID
+	CoordinationJobID uuid.UUID
+	RouteDecisionID   uuid.UUID
+	Decision          RouteDecisionPlan
 }
 
 type RequestRouteDecisionReviewInput struct {

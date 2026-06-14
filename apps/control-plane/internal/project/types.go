@@ -79,6 +79,7 @@ const (
 	ProjectEventCoordinationJobCreated  ProjectEventType = "coordination_job.created"
 	ProjectEventRouteDecisionCreated    ProjectEventType = "route_decision.created"
 	ProjectEventTaskCreated             ProjectEventType = "project_task.created"
+	ProjectEventTaskGraphPlanned        ProjectEventType = "project_task_graph.planned"
 	ProjectEventTaskDispatched          ProjectEventType = "project_task.dispatched"
 	ProjectEventTaskDispatchFailed      ProjectEventType = "project_task.dispatch_failed"
 	ProjectEventTaskCompleted           ProjectEventType = "project_task.completed"

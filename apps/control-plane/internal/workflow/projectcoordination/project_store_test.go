@@ -152,6 +152,8 @@ func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMeta
 	tenantID := uuid.New()
 	projectID := uuid.New()
 	demandID := uuid.New()
+	jobID := uuid.New()
+	routeDecisionID := uuid.New()
 	firstEmployeeID := uuid.New()
 	secondEmployeeID := uuid.New()
 	stageZero := int32(0)
@@ -160,9 +162,11 @@ func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMeta
 	store := NewProjectStore(repo)
 
 	results, err := store.CreateProjectTasks(context.Background(), CreateProjectTasksInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		DemandID:  demandID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeDecisionID,
 		Decision: RouteDecisionPlan{
 			Reason:          "创建图任务",
 			PlannerMetadata: map[string]any{"planner": "heuristic"},
@@ -199,24 +203,31 @@ func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMeta
 	if err != nil {
 		t.Fatalf("create project tasks: %v", err)
 	}
-	if len(results) != 2 || len(repo.tasks) != 2 || len(repo.projectTaskRequests) != 2 {
-		t.Fatalf("expected two created tasks, results=%#v tasks=%#v requests=%#v", results, repo.tasks, repo.projectTaskRequests)
+	if len(results) != 2 || len(repo.projectTaskGraphRequests) != 1 || len(repo.projectTaskRequests) != 0 {
+		t.Fatalf("expected graph task creation, results=%#v graphRequests=%#v flatRequests=%#v", results, repo.projectTaskGraphRequests, repo.projectTaskRequests)
+	}
+	graphReq := repo.projectTaskGraphRequests[0]
+	if graphReq.TenantID != tenantID || graphReq.ProjectID != projectID || graphReq.DemandID != demandID || graphReq.CoordinationJobID != jobID || graphReq.RouteDecisionID != routeDecisionID {
+		t.Fatalf("unexpected graph request identity: %#v", graphReq)
+	}
+	if len(graphReq.Tasks) != 2 {
+		t.Fatalf("expected two graph tasks, got %#v", graphReq.Tasks)
 	}
 
-	firstTask := repo.tasks[0]
-	if firstTask.Title != "调查问题" || firstTask.Summary == nil || *firstTask.Summary != "整理日志" {
+	firstTask := graphReq.Tasks[0]
+	if firstTask.Title != "调查问题" || firstTask.Summary != "整理日志" || firstTask.Status != "planned" {
 		t.Fatalf("unexpected first task title/summary: %#v", firstTask)
 	}
-	if firstTask.AssignedDigitalEmployeeID == nil || *firstTask.AssignedDigitalEmployeeID != firstEmployeeID {
+	if firstTask.AssignedDigitalEmployeeID != firstEmployeeID {
 		t.Fatalf("unexpected first task assignee: %#v", firstTask.AssignedDigitalEmployeeID)
 	}
-	if firstTask.PlannedTaskKey == nil || *firstTask.PlannedTaskKey != "investigate" || firstTask.TaskKind == nil || *firstTask.TaskKind != "investigation" {
+	if firstTask.Key != "investigate" || firstTask.TaskKind != "investigation" {
 		t.Fatalf("expected graph task identity fields, got %#v", firstTask)
 	}
 	if firstTask.StageIndex == nil || *firstTask.StageIndex != stageZero {
 		t.Fatalf("expected stage index, got %#v", firstTask.StageIndex)
 	}
-	if firstTask.RiskLevel == nil || *firstTask.RiskLevel != "medium" || !firstTask.RequiresHumanApproval {
+	if firstTask.RiskLevel != "medium" || !firstTask.RequiresHumanApproval {
 		t.Fatalf("unexpected risk/approval fields: %#v", firstTask)
 	}
 	assertAnyStrings(t, firstTask.ExpectedOutputs, []string{"execution_summary", "evidence_refs"})
@@ -224,12 +235,12 @@ func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMeta
 		t.Fatalf("expected graph metadata on first task, got %#v", firstTask)
 	}
 
-	secondTask := repo.tasks[1]
-	if secondTask.PlannedTaskKey == nil || *secondTask.PlannedTaskKey != "repair" || secondTask.RequiresHumanApproval {
+	secondTask := graphReq.Tasks[1]
+	if secondTask.Key != "repair" || secondTask.Status != "blocked" || secondTask.RequiresHumanApproval {
 		t.Fatalf("unexpected second task fields: %#v", secondTask)
 	}
-	if len(secondTask.BlockedByTaskIDs) != 0 {
-		t.Fatalf("Task 4 should not persist dependency edges, got %#v", secondTask.BlockedByTaskIDs)
+	if !reflect.DeepEqual(secondTask.BlockedByKeys, []string{"investigate"}) {
+		t.Fatalf("expected second task to be blocked by key, got %#v", secondTask.BlockedByKeys)
 	}
 }
 
@@ -749,12 +760,13 @@ type projectStoreMemoryRepository struct {
 	tasks         []project.ProjectTask
 	approvalID    uuid.UUID
 
-	bindRequests          []project.BindProjectTaskRunRequest
-	bindErr               error
-	events                []project.ProjectEvent
-	routeDecisionRequests []project.CreateRouteDecisionRequest
-	projectTaskRequests   []project.CreateProjectTaskRequest
-	decisionRequests      []project.DecisionRequest
+	bindRequests             []project.BindProjectTaskRunRequest
+	bindErr                  error
+	events                   []project.ProjectEvent
+	routeDecisionRequests    []project.CreateRouteDecisionRequest
+	projectTaskRequests      []project.CreateProjectTaskRequest
+	projectTaskGraphRequests []project.CreateProjectTaskGraphRequest
+	decisionRequests         []project.DecisionRequest
 }
 
 func (r *projectStoreMemoryRepository) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (project.Project, error) {
@@ -834,6 +846,39 @@ func (r *projectStoreMemoryRepository) CreateProjectTask(ctx context.Context, re
 	}
 	r.tasks = append(r.tasks, task)
 	return task, nil
+}
+
+func (r *projectStoreMemoryRepository) CreateProjectTaskGraph(ctx context.Context, req project.CreateProjectTaskGraphRequest) (project.CreateProjectTaskGraphResult, error) {
+	r.projectTaskGraphRequests = append(r.projectTaskGraphRequests, req)
+	result := project.CreateProjectTaskGraphResult{
+		Tasks:        make([]project.ProjectTaskGraphTaskResult, 0, len(req.Tasks)),
+		Dependencies: []project.ProjectTaskDependency{},
+		GraphEventID: uuid.New(),
+	}
+	keyToID := map[string]uuid.UUID{}
+	for _, planned := range req.Tasks {
+		id := uuid.New()
+		keyToID[planned.Key] = id
+		result.Tasks = append(result.Tasks, project.ProjectTaskGraphTaskResult{
+			ID:             id,
+			PlannedTaskKey: planned.Key,
+			StageIndex:     planned.StageIndex,
+			CreatedEventID: uuid.New(),
+			IsRoot:         len(planned.BlockedByKeys) == 0,
+		})
+	}
+	for _, planned := range req.Tasks {
+		for _, blockerKey := range planned.BlockedByKeys {
+			result.Dependencies = append(result.Dependencies, project.ProjectTaskDependency{
+				ID:              uuid.New(),
+				TenantID:        req.TenantID,
+				ProjectID:       req.ProjectID,
+				DependentTaskID: keyToID[planned.Key],
+				BlockerTaskID:   keyToID[blockerKey],
+			})
+		}
+	}
+	return result, nil
 }
 
 func (r *projectStoreMemoryRepository) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (project.ProjectTask, error) {

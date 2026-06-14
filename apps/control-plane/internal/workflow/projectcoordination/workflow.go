@@ -134,10 +134,12 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 
 	var tasks []ProjectTaskResult
 	if err := workflow.ExecuteActivity(ctx, (*Activities).CreateProjectTasks, CreateProjectTasksInput{
-		TenantID:  input.TenantID,
-		ProjectID: signal.ProjectID,
-		DemandID:  signal.DemandID,
-		Decision:  decision,
+		TenantID:          input.TenantID,
+		ProjectID:         signal.ProjectID,
+		DemandID:          signal.DemandID,
+		CoordinationJobID: job.ID,
+		RouteDecisionID:   route.ID,
+		Decision:          decision,
 	}).Get(ctx, &tasks); err != nil {
 		return nil, err
 	}

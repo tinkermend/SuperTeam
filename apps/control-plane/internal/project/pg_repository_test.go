@@ -380,6 +380,224 @@ func TestCreateProjectTaskPersistsGraphContractFields(t *testing.T) {
 	require.Equal(t, "test", task.PlannerMetadata["planner"])
 }
 
+func TestCreateProjectTaskGraphCreatesTasksEdgesAndEvents(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	jobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	routeID := createRouteDecisionFixture(t, repo, tenantID, projectID, jobID, demandID)
+	employeeID := uuid.New()
+	stageZero := int32(0)
+	stageOne := int32(1)
+
+	result, err := repo.CreateProjectTaskGraph(context.Background(), CreateProjectTaskGraphRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		Tasks: []ProjectTaskGraphCreateTask{
+			{Key: "t1", Title: "分析", Summary: "分析", Status: "planned", AssignedDigitalEmployeeID: employeeID, ExpectedOutputs: []any{"execution_summary"}, InputRequirements: map[string]any{}, HandoffContract: map[string]any{}, PlannerMetadata: map[string]any{"planner": "test"}, StageIndex: &stageZero, TaskKind: "analysis", RiskLevel: "medium"},
+			{Key: "t2", Title: "复核", Summary: "复核", Status: "blocked", AssignedDigitalEmployeeID: employeeID, ExpectedOutputs: []any{"execution_summary"}, InputRequirements: map[string]any{}, HandoffContract: map[string]any{}, PlannerMetadata: map[string]any{"planner": "test"}, StageIndex: &stageOne, TaskKind: "review", RiskLevel: "normal", BlockedByKeys: []string{"t1"}},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, result.Tasks, 2)
+	require.Len(t, result.Dependencies, 1)
+	require.NotEqual(t, uuid.Nil, result.GraphEventID)
+	require.Equal(t, "t1", result.Tasks[0].PlannedTaskKey)
+	require.True(t, result.Tasks[0].IsRoot)
+	require.Equal(t, "t2", result.Tasks[1].PlannedTaskKey)
+	require.False(t, result.Tasks[1].IsRoot)
+	require.Equal(t, result.Tasks[1].ID, result.Dependencies[0].DependentTaskID)
+	require.Equal(t, result.Tasks[0].ID, result.Dependencies[0].BlockerTaskID)
+
+	tasks, err := repo.ListProjectTasksByCoordinationJob(context.Background(), tenantID, projectID, jobID)
+	require.NoError(t, err)
+	require.Len(t, tasks, 2)
+	require.Equal(t, "planned", tasks[0].Status)
+	require.Equal(t, "blocked", tasks[1].Status)
+	require.Equal(t, "t1", *tasks[0].PlannedTaskKey)
+	require.Equal(t, "t2", *tasks[1].PlannedTaskKey)
+	require.Equal(t, routeID, *tasks[0].RouteDecisionID)
+	require.Equal(t, demandID, *tasks[0].DemandID)
+	require.Equal(t, []any{"execution_summary"}, tasks[0].ExpectedOutputs)
+
+	dependencies, err := repo.ListProjectTaskDependencies(context.Background(), tenantID, projectID, []uuid.UUID{tasks[1].ID})
+	require.NoError(t, err)
+	require.Len(t, dependencies, 1)
+	require.Equal(t, tasks[1].ID, dependencies[0].DependentTaskID)
+	require.Equal(t, tasks[0].ID, dependencies[0].BlockerTaskID)
+
+	events, err := repo.ListProjectEvents(context.Background(), tenantID, projectID, 20, 0)
+	require.NoError(t, err)
+	requireEventCount(t, events, ProjectEventTaskCreated, 2)
+	requireEventCount(t, events, ProjectEventTaskGraphPlanned, 1)
+}
+
+func TestCreateProjectTaskGraphIdempotentReplayReturnsExistingGraph(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	jobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	routeID := createRouteDecisionFixture(t, repo, tenantID, projectID, jobID, demandID)
+	req := createProjectTaskGraphFixtureRequest(tenantID, projectID, demandID, jobID, routeID)
+
+	first, err := repo.CreateProjectTaskGraph(context.Background(), req)
+	require.NoError(t, err)
+
+	second, err := repo.CreateProjectTaskGraph(context.Background(), req)
+	require.NoError(t, err)
+
+	require.Equal(t, first.GraphEventID, second.GraphEventID)
+	require.Equal(t, first.Tasks, second.Tasks)
+	require.Equal(t, first.Dependencies, second.Dependencies)
+
+	tasks, err := repo.ListProjectTasksByCoordinationJob(context.Background(), tenantID, projectID, jobID)
+	require.NoError(t, err)
+	require.Len(t, tasks, 2)
+	events, err := repo.ListProjectEvents(context.Background(), tenantID, projectID, 20, 0)
+	require.NoError(t, err)
+	requireEventCount(t, events, ProjectEventTaskCreated, 2)
+	requireEventCount(t, events, ProjectEventTaskGraphPlanned, 1)
+}
+
+func TestCreateProjectTaskGraphReplayWithChangedPayloadConflicts(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	jobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	routeID := createRouteDecisionFixture(t, repo, tenantID, projectID, jobID, demandID)
+	req := createProjectTaskGraphFixtureRequest(tenantID, projectID, demandID, jobID, routeID)
+
+	_, err := repo.CreateProjectTaskGraph(context.Background(), req)
+	require.NoError(t, err)
+
+	changed := req
+	changed.Tasks = append([]ProjectTaskGraphCreateTask(nil), req.Tasks...)
+	changed.Tasks[0].Title = "变更后的分析"
+	changed.Tasks[0].InputRequirements = map[string]any{"scope": "changed"}
+
+	_, err = repo.CreateProjectTaskGraph(context.Background(), changed)
+
+	require.ErrorIs(t, err, ErrProjectConflict)
+	tasks, listErr := repo.ListProjectTasksByCoordinationJob(context.Background(), tenantID, projectID, jobID)
+	require.NoError(t, listErr)
+	require.Len(t, tasks, 2)
+	events, listEventsErr := repo.ListProjectEvents(context.Background(), tenantID, projectID, 20, 0)
+	require.NoError(t, listEventsErr)
+	requireEventCount(t, events, ProjectEventTaskCreated, 2)
+	requireEventCount(t, events, ProjectEventTaskGraphPlanned, 1)
+}
+
+func TestCreateProjectTaskGraphPartialGraphConflict(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	jobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	routeID := createRouteDecisionFixture(t, repo, tenantID, projectID, jobID, demandID)
+	req := createProjectTaskGraphFixtureRequest(tenantID, projectID, demandID, jobID, routeID)
+	employeeID := req.Tasks[0].AssignedDigitalEmployeeID
+	_, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		DemandID:                  &demandID,
+		CoordinationJobID:         &jobID,
+		RouteDecisionID:           &routeID,
+		PlannedTaskKey:            strPtr("t1"),
+		Title:                     "分析",
+		Summary:                   "分析",
+		Status:                    "planned",
+		AssignedDigitalEmployeeID: &employeeID,
+		ExpectedOutputs:           []any{"execution_summary"},
+		InputRequirements:         map[string]any{},
+		HandoffContract:           map[string]any{},
+		PlannerMetadata:           map[string]any{"planner": "test"},
+	})
+	require.NoError(t, err)
+
+	_, err = repo.CreateProjectTaskGraph(context.Background(), req)
+
+	require.ErrorIs(t, err, ErrProjectConflict)
+	tasks, listErr := repo.ListProjectTasksByCoordinationJob(context.Background(), tenantID, projectID, jobID)
+	require.NoError(t, listErr)
+	require.Len(t, tasks, 1)
+}
+
+func TestGraphTaskPayloadMatchesRequest(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	req := createProjectTaskGraphFixtureRequest(tenantID, projectID, demandID, jobID, routeID)
+	planned := req.Tasks[0]
+	existing := projectTaskFromGraphRequestForTest(req, planned)
+
+	require.True(t, graphTaskPayloadMatchesRequest(req, planned, existing))
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*CreateProjectTaskGraphRequest, *ProjectTaskGraphCreateTask)
+	}{
+		{name: "demand id", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			req.DemandID = uuid.New()
+		}},
+		{name: "coordination job id", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			req.CoordinationJobID = uuid.New()
+		}},
+		{name: "route decision id", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			req.RouteDecisionID = uuid.New()
+		}},
+		{name: "title", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			planned.Title = "changed"
+		}},
+		{name: "summary", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			planned.Summary = "changed"
+		}},
+		{name: "status", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			planned.Status = "blocked"
+		}},
+		{name: "assignee", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			planned.AssignedDigitalEmployeeID = uuid.New()
+		}},
+		{name: "task kind", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			planned.TaskKind = "changed"
+		}},
+		{name: "stage index", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			changed := int32(99)
+			planned.StageIndex = &changed
+		}},
+		{name: "risk level", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			planned.RiskLevel = "high"
+		}},
+		{name: "approval", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			planned.RequiresHumanApproval = !planned.RequiresHumanApproval
+		}},
+		{name: "expected outputs", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			planned.ExpectedOutputs = []any{"changed"}
+		}},
+		{name: "input requirements", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			planned.InputRequirements = map[string]any{"scope": "changed"}
+		}},
+		{name: "handoff contract", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			planned.HandoffContract = map[string]any{"format": "changed"}
+		}},
+		{name: "planner metadata", mutate: func(req *CreateProjectTaskGraphRequest, planned *ProjectTaskGraphCreateTask) {
+			planned.PlannerMetadata = map[string]any{"planner": "changed"}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			changedReq := req
+			changedPlanned := planned
+			tc.mutate(&changedReq, &changedPlanned)
+
+			require.False(t, graphTaskPayloadMatchesRequest(changedReq, changedPlanned, existing))
+		})
+	}
+}
+
 func TestProjectConfigSnapshotIncludesHumanOwner(t *testing.T) {
 	ownerID := uuid.New()
 	leaderID := uuid.New()
@@ -658,6 +876,151 @@ func createProjectFixture(t *testing.T, repo Repository, tenantID uuid.UUID) uui
 	}, projectID, "project-coordinator:"+projectID.String())
 	require.NoError(t, err)
 	return projectID
+}
+
+func createDemandFixture(t *testing.T, repo Repository, tenantID, projectID uuid.UUID) uuid.UUID {
+	t.Helper()
+
+	event, err := repo.AppendProjectEvent(context.Background(), AppendProjectEventRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventType: ProjectEventDemandSubmitted,
+		ActorType: "human_user",
+		ActorID:   uuid.New().String(),
+		Summary:   "需求已提交",
+		Payload:   map[string]any{"title": "验证任务图"},
+	})
+	require.NoError(t, err)
+	demand, err := repo.CreateProjectDemand(context.Background(), SubmitProjectDemandRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		SubmittedByUserID: uuid.New(),
+		Title:             "验证任务图",
+		Content:           "验证任务节点和依赖边",
+		SourceType:        DemandSourceManual,
+	}, ProjectDemandStatusRecorded, &event.ID)
+	require.NoError(t, err)
+	return demand.ID
+}
+
+func createCoordinationJobFixture(t *testing.T, repo Repository, tenantID, projectID uuid.UUID) uuid.UUID {
+	t.Helper()
+
+	job, err := repo.CreateCoordinationJob(context.Background(), CreateCoordinationJobRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		WorkflowID:       "project-coordinator:" + projectID.String(),
+		TriggerEventID:   nil,
+		JobType:          "demand_launch",
+		Status:           "running",
+		InputSnapshotRef: map[string]any{"mode": "test"},
+	})
+	require.NoError(t, err)
+	return job.ID
+}
+
+func createRouteDecisionFixture(t *testing.T, repo Repository, tenantID, projectID, jobID, demandID uuid.UUID) uuid.UUID {
+	t.Helper()
+
+	route, err := repo.CreateRouteDecision(context.Background(), CreateRouteDecisionRequest{
+		TenantID:                    tenantID,
+		ProjectID:                   projectID,
+		CoordinationJobID:           jobID,
+		DemandID:                    &demandID,
+		CandidateDigitalEmployeeIDs: []uuid.UUID{uuid.New()},
+		SelectedDigitalEmployeeIDs:  []uuid.UUID{uuid.New()},
+		Reason:                      "测试任务图",
+		InputRequirements:           map[string]any{"mode": "test"},
+		ExpectedOutputs:             []any{"execution_summary"},
+		BudgetEstimate:              map[string]any{"mode": "test"},
+		RequiresHumanReview:         false,
+	})
+	require.NoError(t, err)
+	return route.ID
+}
+
+func createProjectTaskGraphFixtureRequest(tenantID, projectID, demandID, jobID, routeID uuid.UUID) CreateProjectTaskGraphRequest {
+	employeeID := uuid.New()
+	stageZero := int32(0)
+	stageOne := int32(1)
+	return CreateProjectTaskGraphRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		Tasks: []ProjectTaskGraphCreateTask{
+			{
+				Key:                       "t1",
+				Title:                     "分析",
+				Summary:                   "分析",
+				Status:                    "planned",
+				AssignedDigitalEmployeeID: employeeID,
+				TaskKind:                  "analysis",
+				StageIndex:                &stageZero,
+				RiskLevel:                 "medium",
+				ExpectedOutputs:           []any{"execution_summary"},
+				InputRequirements:         map[string]any{},
+				HandoffContract:           map[string]any{},
+				PlannerMetadata:           map[string]any{"planner": "test"},
+			},
+			{
+				Key:                       "t2",
+				Title:                     "复核",
+				Summary:                   "复核",
+				Status:                    "blocked",
+				AssignedDigitalEmployeeID: employeeID,
+				TaskKind:                  "review",
+				StageIndex:                &stageOne,
+				RiskLevel:                 "normal",
+				ExpectedOutputs:           []any{"execution_summary"},
+				InputRequirements:         map[string]any{},
+				HandoffContract:           map[string]any{},
+				PlannerMetadata:           map[string]any{"planner": "test"},
+				BlockedByKeys:             []string{"t1"},
+			},
+		},
+	}
+}
+
+func projectTaskFromGraphRequestForTest(req CreateProjectTaskGraphRequest, planned ProjectTaskGraphCreateTask) ProjectTask {
+	demandID := req.DemandID
+	jobID := req.CoordinationJobID
+	routeID := req.RouteDecisionID
+	employeeID := planned.AssignedDigitalEmployeeID
+	return ProjectTask{
+		ID:                        uuid.New(),
+		TenantID:                  req.TenantID,
+		ProjectID:                 req.ProjectID,
+		DemandID:                  &demandID,
+		Title:                     planned.Title,
+		Summary:                   strPtr(planned.Summary),
+		Status:                    planned.Status,
+		AssignedDigitalEmployeeID: &employeeID,
+		RiskLevel:                 strPtr(planned.RiskLevel),
+		RequiresHumanApproval:     planned.RequiresHumanApproval,
+		CoordinationJobID:         &jobID,
+		RouteDecisionID:           &routeID,
+		PlannedTaskKey:            strPtr(planned.Key),
+		TaskKind:                  strPtr(planned.TaskKind),
+		StageIndex:                planned.StageIndex,
+		ExpectedOutputs:           planned.ExpectedOutputs,
+		InputRequirements:         planned.InputRequirements,
+		HandoffContract:           planned.HandoffContract,
+		PlannerMetadata:           planned.PlannerMetadata,
+	}
+}
+
+func requireEventCount(t *testing.T, events []ProjectEvent, eventType ProjectEventType, expected int) {
+	t.Helper()
+
+	count := 0
+	for _, event := range events {
+		if event.EventType == eventType {
+			count++
+		}
+	}
+	require.Equal(t, expected, count, "event type %s", eventType)
 }
 
 func (r *memoryRepository) CreateEvidenceRef(ctx context.Context, req CreateEvidenceRefRequest) (ProjectEvidenceRef, error) {
