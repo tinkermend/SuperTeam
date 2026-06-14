@@ -254,6 +254,30 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND id = sqlc.arg('id')::uuid;
 
+-- name: GetProjectEventByTypeAndActor :one
+SELECT * FROM project_events
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND event_type = sqlc.arg('event_type')::varchar
+  AND actor_id = sqlc.arg('actor_id')::varchar
+ORDER BY sequence_number DESC
+LIMIT 1;
+
+-- name: ListProjectTaskGraphReplayEvents :many
+SELECT * FROM project_events
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND event_type = ANY(sqlc.arg('event_types')::varchar[])
+  AND (
+    actor_id = sqlc.arg('coordination_job_id')::varchar
+    OR actor_id = ANY(sqlc.arg('project_task_ids')::varchar[])
+    OR resource_id = sqlc.arg('coordination_job_id')::varchar
+    OR resource_id = ANY(sqlc.arg('project_task_ids')::varchar[])
+    OR payload->>'coordination_job_id' = sqlc.arg('coordination_job_id')::varchar
+    OR payload->>'project_task_id' = ANY(sqlc.arg('project_task_ids')::varchar[])
+  )
+ORDER BY sequence_number DESC;
+
 -- name: CreateProjectDemand :one
 INSERT INTO project_demands (
     tenant_id,

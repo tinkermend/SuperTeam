@@ -149,6 +149,72 @@ func TestProjectStorePersistRouteDecisionAggregatesGraphFields(t *testing.T) {
 	assertPayloadStrings(t, firstSummary["input_requirement_keys"], []string{"demand_id", "prompt"})
 }
 
+func TestProjectStoreCreateCoordinationJobIsIdempotentForSameTrigger(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	workflowID := "project-coordinator:" + projectID.String()
+	triggerEventID := uuid.New()
+	repo := &projectStoreMemoryRepository{}
+	store := NewProjectStore(repo)
+	input := CreateCoordinationJobInput{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		WorkflowID:     workflowID,
+		TriggerEventID: triggerEventID,
+		JobType:        "demand_route",
+	}
+
+	first, err := store.CreateCoordinationJob(context.Background(), input)
+	require.NoError(t, err)
+	second, err := store.CreateCoordinationJob(context.Background(), input)
+	require.NoError(t, err)
+
+	require.Equal(t, first.ID, second.ID)
+	createdEvents := eventsByType(repo.events, project.ProjectEventCoordinationJobCreated)
+	require.Len(t, createdEvents, 1)
+	require.Equal(t, first.ID.String(), createdEvents[0].ActorID)
+}
+
+func TestProjectStorePersistRouteDecisionIsIdempotentForSameJob(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	jobID := uuid.New()
+	demandID := uuid.New()
+	employeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{}
+	store := NewProjectStore(repo)
+	input := PersistRouteDecisionInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		JobID:     jobID,
+		DemandID:  demandID,
+		Decision: RouteDecisionPlan{
+			Reason: "same job replay",
+			Tasks: []PlannedTask{{
+				Key:                "t1",
+				Title:              "分析",
+				Summary:            "分析需求",
+				SelectedEmployeeID: employeeID,
+				ExpectedOutputs:    []string{"execution_summary"},
+				InputRequirements:  map[string]any{},
+				HandoffContract:    map[string]any{},
+			}},
+		},
+	}
+
+	first, err := store.PersistRouteDecision(context.Background(), input)
+	require.NoError(t, err)
+	second, err := store.PersistRouteDecision(context.Background(), input)
+	require.NoError(t, err)
+
+	require.Equal(t, first.ID, second.ID)
+	require.Equal(t, first.CreatedEventID, second.CreatedEventID)
+	require.Len(t, repo.routeDecisionRequests, 1)
+	createdEvents := eventsByType(repo.events, project.ProjectEventRouteDecisionCreated)
+	require.Len(t, createdEvents, 1)
+	require.Equal(t, jobID.String(), createdEvents[0].ActorID)
+}
+
 func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMetadata(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -715,7 +781,7 @@ func TestApplyFailureRecoveryRetryCreatesAppendOnlySubgraph(t *testing.T) {
 	}
 	store := NewProjectStore(repo)
 
-	err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+	result, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DecisionRequestID: decisionID,
@@ -726,6 +792,7 @@ func TestApplyFailureRecoveryRetryCreatesAppendOnlySubgraph(t *testing.T) {
 	require.NoError(t, err)
 	replacement := requireRecoveryReplacementTask(t, repo, failedTaskID)
 	require.NotEqual(t, failedTaskID, replacement.ID)
+	require.Equal(t, []uuid.UUID{replacement.ID}, result.ReadyTaskIDs)
 	require.Contains(t, replacement.Title, "重试")
 	require.Equal(t, "planned", replacement.Status)
 	require.Equal(t, employeeID, *replacement.AssignedDigitalEmployeeID)
@@ -748,7 +815,7 @@ func TestApplyFailureRecoveryRetryCreatesAppendOnlySubgraph(t *testing.T) {
 	require.Equal(t, []uuid.UUID{downstreamID}, ready)
 	require.Equal(t, "planned", repo.taskStatus(downstreamID))
 
-	err = store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+	secondResult, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DecisionRequestID: decisionID,
@@ -756,7 +823,68 @@ func TestApplyFailureRecoveryRetryCreatesAppendOnlySubgraph(t *testing.T) {
 		Payload:           map[string]any{"recovery_action": "retry"},
 	})
 	require.NoError(t, err)
+	require.Empty(t, secondResult.ReadyTaskIDs)
 	require.Len(t, recoveryReplacementTasks(repo, failedTaskID), 1)
+}
+
+func TestApplyFailureRecoveryRetryReturnsNoReadyIDsWhenReplacementBlocked(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	failedTaskID := uuid.New()
+	blockerID := uuid.New()
+	decisionID := uuid.New()
+	failedTaskIDPtr := failedTaskID
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		tasks: []project.ProjectTask{
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, blockerID, "planned"),
+			{
+				ID:                        failedTaskID,
+				TenantID:                  tenantID,
+				ProjectID:                 projectID,
+				DemandID:                  &demandID,
+				Title:                     "分析问题",
+				Status:                    "failed",
+				AssignedDigitalEmployeeID: &employeeID,
+				CoordinationJobID:         &jobID,
+				RouteDecisionID:           &routeID,
+				PlannedTaskKey:            strPtr("A#1"),
+				ExpectedOutputs:           []any{"execution_summary"},
+				InputRequirements:         map[string]any{},
+				HandoffContract:           map[string]any{},
+				PlannerMetadata:           map[string]any{},
+			},
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, failedTaskID, blockerID),
+		},
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			ProjectTaskID:  &failedTaskIDPtr,
+			DecisionType:   "task_failure_recovery",
+			StatusSnapshot: "pending",
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	result, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "approved",
+		Payload:           map[string]any{"recovery_action": "retry"},
+	})
+
+	require.NoError(t, err)
+	replacement := requireRecoveryReplacementTask(t, repo, failedTaskID)
+	require.Equal(t, "blocked", replacement.Status)
+	require.Empty(t, result.ReadyTaskIDs)
 }
 
 func TestApplyFailureRecoveryReassignRequiresNewEmployee(t *testing.T) {
@@ -808,7 +936,7 @@ func TestApplyFailureRecoveryReassignRequiresNewEmployee(t *testing.T) {
 	}
 	store := NewProjectStore(repo)
 
-	err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+	_, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DecisionRequestID: decisionID,
@@ -818,7 +946,7 @@ func TestApplyFailureRecoveryReassignRequiresNewEmployee(t *testing.T) {
 	require.ErrorIs(t, err, project.ErrInvalidProject)
 	require.Len(t, repo.tasks, 1)
 
-	err = store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+	result, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DecisionRequestID: decisionID,
@@ -830,6 +958,7 @@ func TestApplyFailureRecoveryReassignRequiresNewEmployee(t *testing.T) {
 	})
 	require.NoError(t, err)
 	replacement := requireRecoveryReplacementTask(t, repo, failedTaskID)
+	require.Equal(t, []uuid.UUID{replacement.ID}, result.ReadyTaskIDs)
 	require.Equal(t, "reassign", replacement.PlannerMetadata["recovery_action"])
 	require.Equal(t, newEmployeeID, *replacement.AssignedDigitalEmployeeID)
 }
@@ -871,7 +1000,7 @@ func TestApplyFailureRecoveryRetryRejectsNilCoordinationJob(t *testing.T) {
 	}
 	store := NewProjectStore(repo)
 
-	err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+	_, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DecisionRequestID: decisionID,
@@ -931,7 +1060,7 @@ func TestApplyFailureRecoveryReassignRejectsNilCoordinationJob(t *testing.T) {
 	}
 	store := NewProjectStore(repo)
 
-	err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+	_, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DecisionRequestID: decisionID,
@@ -992,7 +1121,7 @@ func TestApplyFailureRecoveryCancelDownstreamCancelsBlockedDependents(t *testing
 	}
 	store := NewProjectStore(repo)
 
-	err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+	_, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DecisionRequestID: decisionID,
@@ -1008,7 +1137,7 @@ func TestApplyFailureRecoveryCancelDownstreamCancelsBlockedDependents(t *testing
 	require.Equal(t, "cancelled", repo.taskStatus(cancelledID))
 	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskCancelled), 4)
 
-	err = store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+	_, err = store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DecisionRequestID: decisionID,
@@ -1056,18 +1185,18 @@ func TestApplyFailureRecoveryCancelDownstreamRepairsMissingAuditEventOnRetry(t *
 		Decision:          "rejected",
 	}
 
-	err := store.ApplyFailureRecoveryDecision(context.Background(), input)
+	_, err := store.ApplyFailureRecoveryDecision(context.Background(), input)
 	require.ErrorIs(t, err, eventErr)
 	require.Equal(t, "cancelled", repo.taskStatus(blockedID))
 	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskCancelled))
 
 	repo.appendProjectEventErr = nil
-	err = store.ApplyFailureRecoveryDecision(context.Background(), input)
+	_, err = store.ApplyFailureRecoveryDecision(context.Background(), input)
 	require.NoError(t, err)
 	require.Equal(t, "cancelled", repo.taskStatus(blockedID))
 	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskCancelled), 1)
 
-	err = store.ApplyFailureRecoveryDecision(context.Background(), input)
+	_, err = store.ApplyFailureRecoveryDecision(context.Background(), input)
 	require.NoError(t, err)
 	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskCancelled), 1)
 }
@@ -1100,6 +1229,9 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndBindsTask(t *testing.T) {
 			Summary:                   strPtr("输出证据清单"),
 			Status:                    "planned",
 			AssignedDigitalEmployeeID: &employeeID,
+			ExpectedOutputs:           []any{"execution_summary", "evidence_refs"},
+			InputRequirements:         map[string]any{"required_context": []any{"test_report", "rollback_plan"}},
+			HandoffContract:           map[string]any{"required_refs": []any{"test_report"}},
 		}},
 	}
 	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
@@ -1124,6 +1256,13 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndBindsTask(t *testing.T) {
 	if !strings.Contains(req.Prompt, "需要确认测试报告") || !strings.Contains(req.Prompt, taskID.String()) {
 		t.Fatalf("expected prompt to include demand content and task id, got %q", req.Prompt)
 	}
+	require.Contains(t, req.Prompt, "expected_outputs")
+	require.Contains(t, req.Prompt, "input_requirements")
+	require.Contains(t, req.Prompt, "handoff_contract")
+	require.Contains(t, req.Prompt, "test_report")
+	require.Equal(t, []any{"execution_summary", "evidence_refs"}, req.Metadata["expected_outputs"])
+	require.Equal(t, map[string]any{"required_context": []any{"test_report", "rollback_plan"}}, req.Metadata["input_requirements"])
+	require.Equal(t, map[string]any{"required_refs": []any{"test_report"}}, req.Metadata["handoff_contract"])
 	if len(repo.bindRequests) != 1 || repo.bindRequests[0].DigitalEmployeeRunID != runID || repo.bindRequests[0].RuntimeTaskID != runtimeTaskID {
 		t.Fatalf("expected bind request, got %#v", repo.bindRequests)
 	}
@@ -1409,6 +1548,8 @@ type projectStoreMemoryRepository struct {
 	bindErr                  error
 	appendProjectEventErr    error
 	events                   []project.ProjectEvent
+	coordinationJobs         []project.CoordinationJob
+	routeDecisions           []project.RouteDecision
 	taskDependencies         []project.ProjectTaskDependency
 	statusUpdates            []projectTaskStatusUpdateRecord
 	routeDecisionRequests    []project.CreateRouteDecisionRequest
@@ -1449,7 +1590,34 @@ func (r *projectStoreMemoryRepository) ListProjectMembers(ctx context.Context, t
 }
 
 func (r *projectStoreMemoryRepository) CreateCoordinationJob(ctx context.Context, req project.CreateCoordinationJobRequest) (project.CoordinationJob, error) {
-	return project.CoordinationJob{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, WorkflowID: req.WorkflowID, Status: req.Status, CreatedAt: time.Now().UTC()}, nil
+	if req.TriggerEventID != nil {
+		existing, err := r.GetCoordinationJobByTrigger(ctx, req.TenantID, req.WorkflowID, *req.TriggerEventID, req.JobType)
+		if err == nil {
+			return existing, nil
+		}
+	}
+	job := project.CoordinationJob{
+		ID:               uuid.New(),
+		TenantID:         req.TenantID,
+		ProjectID:        req.ProjectID,
+		WorkflowID:       req.WorkflowID,
+		TriggerEventID:   req.TriggerEventID,
+		JobType:          req.JobType,
+		Status:           req.Status,
+		InputSnapshotRef: req.InputSnapshotRef,
+		CreatedAt:        time.Now().UTC(),
+	}
+	r.coordinationJobs = append(r.coordinationJobs, job)
+	return job, nil
+}
+
+func (r *projectStoreMemoryRepository) GetCoordinationJobByTrigger(ctx context.Context, tenantID uuid.UUID, workflowID string, triggerEventID uuid.UUID, jobType string) (project.CoordinationJob, error) {
+	for _, job := range r.coordinationJobs {
+		if job.TenantID == tenantID && job.WorkflowID == workflowID && job.TriggerEventID != nil && *job.TriggerEventID == triggerEventID && job.JobType == jobType {
+			return job, nil
+		}
+	}
+	return project.CoordinationJob{}, project.ErrProjectNotFound
 }
 
 func (r *projectStoreMemoryRepository) AppendProjectEvent(ctx context.Context, req project.AppendProjectEventRequest) (project.ProjectEvent, error) {
@@ -1461,9 +1629,49 @@ func (r *projectStoreMemoryRepository) AppendProjectEvent(ctx context.Context, r
 	return event, nil
 }
 
+func (r *projectStoreMemoryRepository) GetProjectEventByTypeAndActor(ctx context.Context, tenantID, projectID uuid.UUID, eventType project.ProjectEventType, actorID string) (project.ProjectEvent, error) {
+	for i := len(r.events) - 1; i >= 0; i-- {
+		event := r.events[i]
+		if event.TenantID == tenantID && event.ProjectID == projectID && event.EventType == eventType && event.ActorID == actorID {
+			return event, nil
+		}
+	}
+	return project.ProjectEvent{}, project.ErrProjectNotFound
+}
+
 func (r *projectStoreMemoryRepository) CreateRouteDecision(ctx context.Context, req project.CreateRouteDecisionRequest) (project.RouteDecision, error) {
+	existing, err := r.GetRouteDecisionByCoordinationJob(ctx, req.TenantID, req.CoordinationJobID)
+	if err == nil {
+		return existing, nil
+	}
 	r.routeDecisionRequests = append(r.routeDecisionRequests, req)
-	return project.RouteDecision{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, CoordinationJobID: req.CoordinationJobID, DemandID: req.DemandID, CreatedEventID: req.CreatedEventID, CreatedAt: time.Now().UTC()}, nil
+	decision := project.RouteDecision{
+		ID:                          uuid.New(),
+		TenantID:                    req.TenantID,
+		ProjectID:                   req.ProjectID,
+		CoordinationJobID:           req.CoordinationJobID,
+		DemandID:                    req.DemandID,
+		CandidateDigitalEmployeeIDs: req.CandidateDigitalEmployeeIDs,
+		SelectedDigitalEmployeeIDs:  req.SelectedDigitalEmployeeIDs,
+		Reason:                      req.Reason,
+		InputRequirements:           req.InputRequirements,
+		ExpectedOutputs:             req.ExpectedOutputs,
+		BudgetEstimate:              req.BudgetEstimate,
+		RequiresHumanReview:         req.RequiresHumanReview,
+		CreatedEventID:              req.CreatedEventID,
+		CreatedAt:                   time.Now().UTC(),
+	}
+	r.routeDecisions = append(r.routeDecisions, decision)
+	return decision, nil
+}
+
+func (r *projectStoreMemoryRepository) GetRouteDecisionByCoordinationJob(ctx context.Context, tenantID, coordinationJobID uuid.UUID) (project.RouteDecision, error) {
+	for _, decision := range r.routeDecisions {
+		if decision.TenantID == tenantID && decision.CoordinationJobID == coordinationJobID {
+			return decision, nil
+		}
+	}
+	return project.RouteDecision{}, project.ErrProjectNotFound
 }
 
 func (r *projectStoreMemoryRepository) CreateProjectTask(ctx context.Context, req project.CreateProjectTaskRequest) (project.ProjectTask, error) {

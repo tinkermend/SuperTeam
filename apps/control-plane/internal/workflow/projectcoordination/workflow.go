@@ -196,7 +196,11 @@ func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinator
 	}
 	if pending, ok := pendingFailureRecoveries[signal.DecisionRequestID.String()]; ok {
 		delete(pendingFailureRecoveries, signal.DecisionRequestID.String())
-		return applyFailureRecoveryDecision(ctx, input.TenantID, pending.ProjectID, signal)
+		readyTaskIDs, err := applyFailureRecoveryDecision(ctx, input.TenantID, pending.ProjectID, signal)
+		if err != nil {
+			return err
+		}
+		return dispatchProjectTasks(ctx, input.TenantID, pending.ProjectID, readyTaskIDs)
 	}
 	return appendSignalObservedEvent(ctx, input, "human decision submitted")
 }
@@ -256,14 +260,18 @@ func handleEmployeeTaskFailed(ctx workflow.Context, input ProjectCoordinatorInpu
 	}, nil
 }
 
-func applyFailureRecoveryDecision(ctx workflow.Context, tenantID, projectID uuid.UUID, signal HumanDecisionSubmitted) error {
-	return workflow.ExecuteActivity(ctx, (*Activities).ApplyFailureRecoveryDecision, ApplyFailureRecoveryDecisionInput{
+func applyFailureRecoveryDecision(ctx workflow.Context, tenantID, projectID uuid.UUID, signal HumanDecisionSubmitted) ([]uuid.UUID, error) {
+	var result ApplyFailureRecoveryDecisionResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).ApplyFailureRecoveryDecision, ApplyFailureRecoveryDecisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DecisionRequestID: signal.DecisionRequestID,
 		Decision:          signal.Decision,
 		Payload:           signal.Payload,
-	}).Get(ctx, nil)
+	}).Get(ctx, &result); err != nil {
+		return nil, err
+	}
+	return result.ReadyTaskIDs, nil
 }
 
 func listDispatchableTasks(ctx workflow.Context, tenantID, projectID, coordinationJobID uuid.UUID) ([]uuid.UUID, error) {

@@ -2,6 +2,7 @@ package projectcoordination
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
@@ -111,7 +112,12 @@ func (s *ProjectStore) CreateCoordinationJob(ctx context.Context, input CreateCo
 	if err != nil {
 		return CoordinationJobResult{}, err
 	}
-	if _, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventCoordinationJobCreated, input.WorkflowID, "协调作业已创建", map[string]any{"coordination_job_id": job.ID.String()})); err != nil {
+	if _, err := s.ensureCoordinatorProjectEvent(ctx, input.TenantID, input.ProjectID, project.ProjectEventCoordinationJobCreated, job.ID.String(), "协调作业已创建", map[string]any{
+		"coordination_job_id": job.ID.String(),
+		"workflow_id":         input.WorkflowID,
+		"trigger_event_id":    input.TriggerEventID.String(),
+		"job_type":            input.JobType,
+	}); err != nil {
 		return CoordinationJobResult{}, err
 	}
 	return CoordinationJobResult{ID: job.ID}, nil
@@ -121,10 +127,18 @@ func (s *ProjectStore) PersistRouteDecision(ctx context.Context, input PersistRo
 	if s.repository == nil {
 		return RouteDecisionResult{}, ErrActivityStoreRequired
 	}
-	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventRouteDecisionCreated, input.JobID.String(), "路由决策已生成", map[string]any{
-		"coordination_job_id": input.JobID.String(),
-		"demand_id":           input.DemandID.String(),
-	}))
+	existing, err := s.repository.GetRouteDecisionByCoordinationJob(ctx, input.TenantID, input.JobID)
+	if err == nil {
+		event, eventErr := s.ensureRouteDecisionCreatedEvent(ctx, input)
+		if eventErr != nil {
+			return RouteDecisionResult{}, eventErr
+		}
+		return RouteDecisionResult{ID: existing.ID, CreatedEventID: event.ID}, nil
+	}
+	if !errors.Is(err, project.ErrProjectNotFound) {
+		return RouteDecisionResult{}, err
+	}
+	event, err := s.ensureRouteDecisionCreatedEvent(ctx, input)
 	if err != nil {
 		return RouteDecisionResult{}, err
 	}
@@ -145,9 +159,20 @@ func (s *ProjectStore) PersistRouteDecision(ctx context.Context, input PersistRo
 		CreatedEventID:              &event.ID,
 	})
 	if err != nil {
+		existing, existingErr := s.repository.GetRouteDecisionByCoordinationJob(ctx, input.TenantID, input.JobID)
+		if existingErr == nil {
+			return RouteDecisionResult{ID: existing.ID, CreatedEventID: event.ID}, nil
+		}
 		return RouteDecisionResult{}, err
 	}
 	return RouteDecisionResult{ID: decision.ID, CreatedEventID: event.ID}, nil
+}
+
+func (s *ProjectStore) ensureRouteDecisionCreatedEvent(ctx context.Context, input PersistRouteDecisionInput) (project.ProjectEvent, error) {
+	return s.ensureCoordinatorProjectEvent(ctx, input.TenantID, input.ProjectID, project.ProjectEventRouteDecisionCreated, input.JobID.String(), "路由决策已生成", map[string]any{
+		"coordination_job_id": input.JobID.String(),
+		"demand_id":           input.DemandID.String(),
+	})
 }
 
 func (s *ProjectStore) CreateProjectTasks(ctx context.Context, input CreateProjectTasksInput) ([]ProjectTaskResult, error) {
@@ -360,48 +385,57 @@ func (s *ProjectStore) HoldDownstreamForFailure(ctx context.Context, input HoldD
 	return DecisionRequestResult{ID: decision.ID}, nil
 }
 
-func (s *ProjectStore) ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) error {
+func (s *ProjectStore) ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) (ApplyFailureRecoveryDecisionResult, error) {
 	if s.repository == nil {
-		return ErrActivityStoreRequired
+		return ApplyFailureRecoveryDecisionResult{}, ErrActivityStoreRequired
 	}
 	decision, err := s.repository.GetDecisionRequest(ctx, input.TenantID, input.ProjectID, input.DecisionRequestID)
 	if err != nil {
-		return err
+		return ApplyFailureRecoveryDecisionResult{}, err
 	}
 	if decision.DecisionType != "task_failure_recovery" || decision.ProjectTaskID == nil {
-		return project.ErrInvalidProject
+		return ApplyFailureRecoveryDecisionResult{}, project.ErrInvalidProject
 	}
 	action, err := parseFailureRecoveryAction(input.Decision, input.Payload)
 	if err != nil {
-		return err
+		return ApplyFailureRecoveryDecisionResult{}, err
 	}
 	if action.Action == "needs_more_evidence" {
-		return nil
+		return ApplyFailureRecoveryDecisionResult{ReadyTaskIDs: []uuid.UUID{}}, nil
 	}
 	source, err := s.repository.GetProjectTask(ctx, input.TenantID, *decision.ProjectTaskID)
 	if err != nil {
-		return err
+		return ApplyFailureRecoveryDecisionResult{}, err
 	}
 	if source.ProjectID != input.ProjectID {
-		return project.ErrProjectNotFound
+		return ApplyFailureRecoveryDecisionResult{}, project.ErrProjectNotFound
 	}
 	switch action.Action {
 	case "retry":
-		_, err := s.createRecoveryReplacementTask(ctx, input, decision, source, action)
-		return err
+		replacement, err := s.createRecoveryReplacementTask(ctx, input, decision, source, action)
+		if err != nil {
+			return ApplyFailureRecoveryDecisionResult{}, err
+		}
+		return s.recoveryReplacementReadyResult(ctx, input.TenantID, input.ProjectID, replacement)
 	case "reassign":
 		if action.NewDigitalEmployeeID == nil {
-			return project.ErrInvalidProject
+			return ApplyFailureRecoveryDecisionResult{}, project.ErrInvalidProject
 		}
 		if err := s.validateActiveDigitalProjectMember(ctx, input.TenantID, input.ProjectID, *action.NewDigitalEmployeeID); err != nil {
-			return err
+			return ApplyFailureRecoveryDecisionResult{}, err
 		}
-		_, err := s.createRecoveryReplacementTask(ctx, input, decision, source, action)
-		return err
+		replacement, err := s.createRecoveryReplacementTask(ctx, input, decision, source, action)
+		if err != nil {
+			return ApplyFailureRecoveryDecisionResult{}, err
+		}
+		return s.recoveryReplacementReadyResult(ctx, input.TenantID, input.ProjectID, replacement)
 	case "cancel_downstream":
-		return s.cancelFailureDownstream(ctx, input, source)
+		if err := s.cancelFailureDownstream(ctx, input, source); err != nil {
+			return ApplyFailureRecoveryDecisionResult{}, err
+		}
+		return ApplyFailureRecoveryDecisionResult{ReadyTaskIDs: []uuid.UUID{}}, nil
 	default:
-		return project.ErrInvalidProject
+		return ApplyFailureRecoveryDecisionResult{}, project.ErrInvalidProject
 	}
 }
 
@@ -534,6 +568,22 @@ func (s *ProjectStore) findExistingRecoveryReplacement(ctx context.Context, tena
 		return task, true, nil
 	}
 	return project.ProjectTask{}, false, nil
+}
+
+func (s *ProjectStore) recoveryReplacementReadyResult(ctx context.Context, tenantID, projectID uuid.UUID, replacement project.ProjectTask) (ApplyFailureRecoveryDecisionResult, error) {
+	result := ApplyFailureRecoveryDecisionResult{ReadyTaskIDs: []uuid.UUID{}}
+	if !projectTaskDispatchAllowed(replacement.Status) {
+		return result, nil
+	}
+	blockers, err := s.repository.ListUnresolvedBlockersForTasks(ctx, tenantID, projectID, []uuid.UUID{replacement.ID})
+	if err != nil {
+		return ApplyFailureRecoveryDecisionResult{}, err
+	}
+	if len(blockers) > 0 {
+		return result, nil
+	}
+	result.ReadyTaskIDs = append(result.ReadyTaskIDs, replacement.ID)
+	return result, nil
 }
 
 func (s *ProjectStore) recoveryReplacementStatus(ctx context.Context, tenantID, projectID uuid.UUID, sourceBlockers []project.ProjectTaskDependency) (string, error) {
@@ -822,6 +872,17 @@ func (s *ProjectStore) AppendProjectEvent(ctx context.Context, input AppendProje
 	return ProjectEventResult{ID: event.ID}, nil
 }
 
+func (s *ProjectStore) ensureCoordinatorProjectEvent(ctx context.Context, tenantID, projectID uuid.UUID, eventType project.ProjectEventType, actorID, summary string, payload map[string]any) (project.ProjectEvent, error) {
+	existing, err := s.repository.GetProjectEventByTypeAndActor(ctx, tenantID, projectID, eventType, actorID)
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, project.ErrProjectNotFound) {
+		return project.ProjectEvent{}, err
+	}
+	return s.repository.AppendProjectEvent(ctx, coordinatorEvent(tenantID, projectID, eventType, actorID, summary, payload))
+}
+
 func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchProjectTaskInput) error {
 	if s.repository == nil || s.runStarter == nil {
 		return ErrActivityStoreRequired
@@ -873,11 +934,14 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		Prompt:            projectTaskRunPrompt(projectRecord, demand, task),
 		IdempotencyKey:    projectTaskDispatchIdempotencyKey(task.ID),
 		Metadata: map[string]any{
-			"source":          "project_task_dispatch",
-			"actor_type":      "project_coordinator",
-			"project_id":      input.ProjectID.String(),
-			"demand_id":       demand.ID.String(),
-			"project_task_id": task.ID.String(),
+			"source":             "project_task_dispatch",
+			"actor_type":         "project_coordinator",
+			"project_id":         input.ProjectID.String(),
+			"demand_id":          demand.ID.String(),
+			"project_task_id":    task.ID.String(),
+			"expected_outputs":   append([]any(nil), task.ExpectedOutputs...),
+			"input_requirements": cloneAnyMap(task.InputRequirements),
+			"handoff_contract":   cloneAnyMap(task.HandoffContract),
 		},
 	})
 	if err != nil {
@@ -937,7 +1001,21 @@ func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectD
 		"需求内容: " + content + "\n" +
 		"任务标题: " + task.Title + "\n" +
 		"任务摘要: " + summary + "\n" +
+		"expected_outputs: " + taskContractJSON(task.ExpectedOutputs) + "\n" +
+		"input_requirements: " + taskContractJSON(task.InputRequirements) + "\n" +
+		"handoff_contract: " + taskContractJSON(task.HandoffContract) + "\n" +
 		"请按项目任务要求执行，并在完成后通过项目任务回写端点提交结论、证据、工件引用和不确定性。"
+}
+
+func taskContractJSON(value any) string {
+	if value == nil {
+		return "null"
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }
 
 func dispatchFailurePayload(task project.ProjectTask, err error, retryable bool) map[string]any {

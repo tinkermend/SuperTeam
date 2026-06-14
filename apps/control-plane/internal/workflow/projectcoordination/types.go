@@ -130,6 +130,10 @@ type ApplyFailureRecoveryDecisionInput struct {
 	Payload           map[string]any
 }
 
+type ApplyFailureRecoveryDecisionResult struct {
+	ReadyTaskIDs []uuid.UUID
+}
+
 type FailureRecoveryAction struct {
 	Action               string
 	NewDigitalEmployeeID *uuid.UUID

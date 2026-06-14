@@ -1393,6 +1393,48 @@ func (q *Queries) GetProjectEvent(ctx context.Context, arg GetProjectEventParams
 	return i, err
 }
 
+const GetProjectEventByTypeAndActor = `-- name: GetProjectEventByTypeAndActor :one
+SELECT id, tenant_id, project_id, sequence_number, event_type, actor_type, actor_id, resource_type, resource_id, summary, payload, created_at FROM project_events
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND event_type = $3::varchar
+  AND actor_id = $4::varchar
+ORDER BY sequence_number DESC
+LIMIT 1
+`
+
+type GetProjectEventByTypeAndActorParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	EventType string    `json:"event_type"`
+	ActorID   string    `json:"actor_id"`
+}
+
+func (q *Queries) GetProjectEventByTypeAndActor(ctx context.Context, arg GetProjectEventByTypeAndActorParams) (ProjectEvent, error) {
+	row := q.db.QueryRow(ctx, GetProjectEventByTypeAndActor,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.EventType,
+		arg.ActorID,
+	)
+	var i ProjectEvent
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.SequenceNumber,
+		&i.EventType,
+		&i.ActorType,
+		&i.ActorID,
+		&i.ResourceType,
+		&i.ResourceID,
+		&i.Summary,
+		&i.Payload,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const GetProjectRouteDecisionByCoordinationJob = `-- name: GetProjectRouteDecisionByCoordinationJob :one
 SELECT id, tenant_id, project_id, coordination_job_id, demand_id, candidate_digital_employee_ids, selected_digital_employee_ids, reason, input_requirements, expected_outputs, budget_estimate, requires_human_review, created_event_id, created_at FROM project_route_decisions
 WHERE tenant_id = $1::uuid
@@ -2440,6 +2482,69 @@ func (q *Queries) ListProjectTaskGraphEvents(ctx context.Context, arg ListProjec
 		arg.ProjectTaskIds,
 		arg.DecisionRequestIds,
 		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectEvent{}
+	for rows.Next() {
+		var i ProjectEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.SequenceNumber,
+			&i.EventType,
+			&i.ActorType,
+			&i.ActorID,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Summary,
+			&i.Payload,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectTaskGraphReplayEvents = `-- name: ListProjectTaskGraphReplayEvents :many
+SELECT id, tenant_id, project_id, sequence_number, event_type, actor_type, actor_id, resource_type, resource_id, summary, payload, created_at FROM project_events
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND event_type = ANY($3::varchar[])
+  AND (
+    actor_id = $4::varchar
+    OR actor_id = ANY($5::varchar[])
+    OR resource_id = $4::varchar
+    OR resource_id = ANY($5::varchar[])
+    OR payload->>'coordination_job_id' = $4::varchar
+    OR payload->>'project_task_id' = ANY($5::varchar[])
+  )
+ORDER BY sequence_number DESC
+`
+
+type ListProjectTaskGraphReplayEventsParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	ProjectID         uuid.UUID `json:"project_id"`
+	EventTypes        []string  `json:"event_types"`
+	CoordinationJobID string    `json:"coordination_job_id"`
+	ProjectTaskIds    []string  `json:"project_task_ids"`
+}
+
+func (q *Queries) ListProjectTaskGraphReplayEvents(ctx context.Context, arg ListProjectTaskGraphReplayEventsParams) ([]ProjectEvent, error) {
+	rows, err := q.db.Query(ctx, ListProjectTaskGraphReplayEvents,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.EventTypes,
+		arg.CoordinationJobID,
+		arg.ProjectTaskIds,
 	)
 	if err != nil {
 		return nil, err

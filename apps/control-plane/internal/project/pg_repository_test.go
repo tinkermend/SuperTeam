@@ -632,6 +632,59 @@ func TestProjectTaskGraphReadReturnsGraphScopedSidecarsAfterUnrelatedRows(t *tes
 	require.Equal(t, runtimeTask.ID, *graph.Runs[0].RuntimeTaskID)
 }
 
+func TestCreateCoordinationJobIdempotentReplayReturnsExisting(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	triggerEventID := uuid.New()
+	req := CreateCoordinationJobRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		WorkflowID:       "project-coordinator:" + projectID.String(),
+		TriggerEventID:   &triggerEventID,
+		JobType:          "demand_route",
+		Status:           "running",
+		InputSnapshotRef: map[string]any{"trigger_event_id": triggerEventID.String()},
+	}
+
+	first, err := repo.CreateCoordinationJob(context.Background(), req)
+	require.NoError(t, err)
+	second, err := repo.CreateCoordinationJob(context.Background(), req)
+	require.NoError(t, err)
+
+	require.Equal(t, first.ID, second.ID)
+	require.Equal(t, first.WorkflowID, second.WorkflowID)
+}
+
+func TestCreateRouteDecisionIdempotentReplayReturnsExisting(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	jobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	eventID := uuid.New()
+	req := CreateRouteDecisionRequest{
+		TenantID:                    tenantID,
+		ProjectID:                   projectID,
+		CoordinationJobID:           jobID,
+		DemandID:                    &demandID,
+		CandidateDigitalEmployeeIDs: []uuid.UUID{uuid.New()},
+		SelectedDigitalEmployeeIDs:  []uuid.UUID{uuid.New()},
+		Reason:                      "idempotent route",
+		InputRequirements:           map[string]any{"mode": "test"},
+		ExpectedOutputs:             []any{"execution_summary"},
+		BudgetEstimate:              map[string]any{"mode": "test"},
+		RequiresHumanReview:         true,
+		CreatedEventID:              &eventID,
+	}
+
+	first, err := repo.CreateRouteDecision(context.Background(), req)
+	require.NoError(t, err)
+	second, err := repo.CreateRouteDecision(context.Background(), req)
+	require.NoError(t, err)
+
+	require.Equal(t, first.ID, second.ID)
+	require.Equal(t, first.CoordinationJobID, second.CoordinationJobID)
+}
+
 func TestCreateProjectTaskGraphIdempotentReplayReturnsExistingGraph(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)
@@ -657,6 +710,37 @@ func TestCreateProjectTaskGraphIdempotentReplayReturnsExistingGraph(t *testing.T
 	require.NoError(t, err)
 	requireEventCount(t, events, ProjectEventTaskCreated, 2)
 	requireEventCount(t, events, ProjectEventTaskGraphPlanned, 1)
+}
+
+func TestCreateProjectTaskGraphReplayFindsEventsAfterProjectEventChurn(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	jobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	routeID := createRouteDecisionFixture(t, repo, tenantID, projectID, jobID, demandID)
+	req := createProjectTaskGraphFixtureRequest(tenantID, projectID, demandID, jobID, routeID)
+
+	first, err := repo.CreateProjectTaskGraph(context.Background(), req)
+	require.NoError(t, err)
+	for i := 0; i < 1001; i++ {
+		_, err = repo.AppendProjectEvent(context.Background(), AppendProjectEventRequest{
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			EventType: ProjectEventTaskDispatched,
+			ActorType: "workflow",
+			ActorID:   uuid.New().String(),
+			Summary:   fmt.Sprintf("unrelated event %04d", i),
+			Payload:   map[string]any{"project_task_id": uuid.New().String()},
+		})
+		require.NoError(t, err)
+	}
+
+	second, err := repo.CreateProjectTaskGraph(context.Background(), req)
+	require.NoError(t, err)
+
+	require.Equal(t, first.GraphEventID, second.GraphEventID)
+	require.Equal(t, first.Tasks, second.Tasks)
+	require.Equal(t, first.Dependencies, second.Dependencies)
 }
 
 func TestCreateProjectTaskGraphReplayWithChangedPayloadConflicts(t *testing.T) {

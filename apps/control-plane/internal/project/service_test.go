@@ -3216,6 +3216,16 @@ func (r *memoryRepository) GetProjectEvent(ctx context.Context, tenantID, projec
 	return ProjectEvent{}, ErrProjectNotFound
 }
 
+func (r *memoryRepository) GetProjectEventByTypeAndActor(ctx context.Context, tenantID, projectID uuid.UUID, eventType ProjectEventType, actorID string) (ProjectEvent, error) {
+	for i := len(r.events) - 1; i >= 0; i-- {
+		event := r.events[i]
+		if event.TenantID == tenantID && event.ProjectID == projectID && event.EventType == eventType && event.ActorID == actorID {
+			return event, nil
+		}
+	}
+	return ProjectEvent{}, ErrProjectNotFound
+}
+
 func (r *memoryRepository) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error) {
 	r.lastEventsLimit = limit
 	r.lastEventsOffset = offset

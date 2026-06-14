@@ -398,10 +398,12 @@ func TestProjectCoordinatorRoutesHumanDecisionToFailureRecovery(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	projectID := uuid.New()
 	failedTaskID := uuid.New()
+	replacementTaskID := uuid.New()
 	decisionRequestID := uuid.New()
 	store := &recordingActivityStore{
 		snapshot:                  CoordinationSnapshot{ProjectID: projectID},
 		failureRecoveryDecisionID: decisionRequestID,
+		failureRecoveryResult:     ApplyFailureRecoveryDecisionResult{ReadyTaskIDs: []uuid.UUID{replacementTaskID}},
 		dispatchEvent:             uuid.New(),
 	}
 	activities := NewActivities(store)
@@ -439,8 +441,13 @@ func TestProjectCoordinatorRoutesHumanDecisionToFailureRecovery(t *testing.T) {
 		"AppendProjectEvent",
 		"HoldDownstreamForFailure",
 		"ApplyFailureRecoveryDecision",
+		"DispatchProjectTask",
 	}, store.calls)
-	require.Empty(t, store.dispatchInputs)
+	require.Equal(t, []DispatchProjectTaskInput{{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		TaskID:    replacementTaskID,
+	}}, store.dispatchInputs)
 	require.Len(t, store.applyFailureRecoveryInputs, 1)
 	require.Equal(t, ApplyFailureRecoveryDecisionInput{
 		TenantID:          tenantID,
@@ -587,6 +594,7 @@ type recordingActivityStore struct {
 	dispatchableTaskIDs        []uuid.UUID
 	dispatchableTaskIDBatches  [][]uuid.UUID
 	readyDownstreamIDs         []uuid.UUID
+	failureRecoveryResult      ApplyFailureRecoveryDecisionResult
 	listDispatchableInputs     []ListDispatchableTasksInput
 	resolveReadyInputs         []ResolveReadyDownstreamInput
 	holdFailureInputs          []HoldDownstreamForFailureInput
@@ -650,10 +658,10 @@ func (s *recordingActivityStore) HoldDownstreamForFailure(ctx context.Context, i
 	return DecisionRequestResult{ID: s.failureRecoveryDecisionID}, nil
 }
 
-func (s *recordingActivityStore) ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) error {
+func (s *recordingActivityStore) ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) (ApplyFailureRecoveryDecisionResult, error) {
 	s.calls = append(s.calls, "ApplyFailureRecoveryDecision")
 	s.applyFailureRecoveryInputs = append(s.applyFailureRecoveryInputs, input)
-	return nil
+	return s.failureRecoveryResult, nil
 }
 
 func (s *recordingActivityStore) AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error) {

@@ -314,6 +314,19 @@ func (r *PgRepository) GetProjectEvent(ctx context.Context, tenantID, projectID,
 	return eventFromRecord(row)
 }
 
+func (r *PgRepository) GetProjectEventByTypeAndActor(ctx context.Context, tenantID, projectID uuid.UUID, eventType ProjectEventType, actorID string) (ProjectEvent, error) {
+	row, err := r.q.GetProjectEventByTypeAndActor(ctx, queries.GetProjectEventByTypeAndActorParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventType: string(eventType),
+		ActorID:   actorID,
+	})
+	if err != nil {
+		return ProjectEvent{}, projectRepositoryError(err)
+	}
+	return eventFromRecord(row)
+}
+
 func (r *PgRepository) CreateProjectDemand(ctx context.Context, req SubmitProjectDemandRequest, status ProjectDemandStatus, createdEventID *uuid.UUID) (ProjectDemand, error) {
 	sourceRefs, err := jsonbObject(req.SourceRefs, "source_refs")
 	if err != nil {
@@ -461,6 +474,15 @@ func (r *PgRepository) GetProjectTaskRunWorkProducts(ctx context.Context, tenant
 }
 
 func (r *PgRepository) CreateCoordinationJob(ctx context.Context, req CreateCoordinationJobRequest) (CoordinationJob, error) {
+	if req.TriggerEventID != nil {
+		existing, err := r.GetCoordinationJobByTrigger(ctx, req.TenantID, req.WorkflowID, *req.TriggerEventID, req.JobType)
+		if err == nil {
+			return existing, nil
+		}
+		if !errors.Is(err, ErrProjectNotFound) {
+			return CoordinationJob{}, err
+		}
+	}
 	inputSnapshotRef, err := jsonbObject(req.InputSnapshotRef, "input_snapshot_ref")
 	if err != nil {
 		return CoordinationJob{}, err
@@ -475,6 +497,9 @@ func (r *PgRepository) CreateCoordinationJob(ctx context.Context, req CreateCoor
 		InputSnapshotRef: inputSnapshotRef,
 	})
 	if err != nil {
+		if req.TriggerEventID != nil && isPGUniqueConstraint(err, "uq_project_coordination_jobs_trigger") {
+			return r.GetCoordinationJobByTrigger(ctx, req.TenantID, req.WorkflowID, *req.TriggerEventID, req.JobType)
+		}
 		return CoordinationJob{}, err
 	}
 	return coordinationJobFromRecord(row)
@@ -525,6 +550,13 @@ func (r *PgRepository) ListDemandLaunchCoordinationJobs(ctx context.Context, ten
 }
 
 func (r *PgRepository) CreateRouteDecision(ctx context.Context, req CreateRouteDecisionRequest) (RouteDecision, error) {
+	existing, err := r.GetRouteDecisionByCoordinationJob(ctx, req.TenantID, req.CoordinationJobID)
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, ErrProjectNotFound) {
+		return RouteDecision{}, err
+	}
 	candidateIDs, err := jsonbUUIDSlice(req.CandidateDigitalEmployeeIDs, "candidate_digital_employee_ids")
 	if err != nil {
 		return RouteDecision{}, err
@@ -560,6 +592,9 @@ func (r *PgRepository) CreateRouteDecision(ctx context.Context, req CreateRouteD
 		CreatedEventID:              nullUUID(req.CreatedEventID),
 	})
 	if err != nil {
+		if isPGUniqueConstraint(err, "uq_project_route_decisions_job") {
+			return r.GetRouteDecisionByCoordinationJob(ctx, req.TenantID, req.CoordinationJobID)
+		}
 		return RouteDecision{}, err
 	}
 	return routeDecisionFromRecord(row)
@@ -1066,11 +1101,13 @@ func graphProjectTaskIDs(tasks []ProjectTask) []uuid.UUID {
 }
 
 func (r *PgRepository) existingGraphEventIDs(ctx context.Context, q *queries.Queries, req CreateProjectTaskGraphRequest, existing []ProjectTask) (map[uuid.UUID]uuid.UUID, uuid.UUID, error) {
-	rows, err := q.ListProjectEvents(ctx, queries.ListProjectEventsParams{
-		TenantID:  req.TenantID,
-		ProjectID: req.ProjectID,
-		Limit:     1000,
-		Offset:    0,
+	taskIDs := graphProjectTaskIDs(existing)
+	rows, err := q.ListProjectTaskGraphReplayEvents(ctx, queries.ListProjectTaskGraphReplayEventsParams{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		EventTypes:        []string{string(ProjectEventTaskCreated), string(ProjectEventTaskGraphPlanned)},
+		CoordinationJobID: req.CoordinationJobID.String(),
+		ProjectTaskIds:    uuidStrings(taskIDs),
 	})
 	if err != nil {
 		return nil, uuid.Nil, err
@@ -3319,15 +3356,16 @@ func projectConfigSnapshot(project Project) map[string]any {
 }
 
 func isProjectEventSequenceConflict(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) &&
-		pgErr.Code == "23505" &&
-		pgErr.ConstraintName == "uq_project_events_project_sequence"
+	return isPGUniqueConstraint(err, "uq_project_events_project_sequence")
 }
 
 func isProjectConfigRevisionConflict(err error) bool {
+	return isPGUniqueConstraint(err, "uq_project_config_revisions_project_rev")
+}
+
+func isPGUniqueConstraint(err error, constraintName string) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) &&
 		pgErr.Code == "23505" &&
-		pgErr.ConstraintName == "uq_project_config_revisions_project_rev"
+		pgErr.ConstraintName == constraintName
 }
