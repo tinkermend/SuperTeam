@@ -491,6 +491,27 @@ func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
 	}
 }
 
+func TestGetProjectTaskGraphRejectsMissingFilter(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/task-graph", nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetProjectTaskGraph(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected missing graph filter to return 400, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.taskGraphCalls != 0 {
+		t.Fatalf("expected missing graph filter not to call service, got %d calls", service.taskGraphCalls)
+	}
+}
+
 func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{demandSignalErr: errors.New("temporal unavailable")}
@@ -698,6 +719,7 @@ type handlerTestService struct {
 	launchDetailProjectID  uuid.UUID
 	taskGraph              ProjectTaskGraph
 	taskGraphReq           GetProjectTaskGraphRequest
+	taskGraphCalls         int
 }
 
 func (s *handlerTestService) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -825,6 +847,7 @@ func (s *handlerTestService) GetDemandLaunchDetail(ctx context.Context, tenantID
 }
 
 func (s *handlerTestService) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (*ProjectTaskGraph, error) {
+	s.taskGraphCalls++
 	s.taskGraphReq = req
 	return &s.taskGraph, nil
 }

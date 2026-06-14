@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -434,6 +435,61 @@ func TestCreateProjectTaskGraphCreatesTasksEdgesAndEvents(t *testing.T) {
 	require.NoError(t, err)
 	requireEventCount(t, events, ProjectEventTaskCreated, 2)
 	requireEventCount(t, events, ProjectEventTaskGraphPlanned, 1)
+}
+
+func TestProjectTaskGraphDemandReadReturnsAllTasks(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	jobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	routeID := createRouteDecisionFixture(t, repo, tenantID, projectID, jobID, demandID)
+	employeeID := uuid.New()
+	tasks := make([]ProjectTaskGraphCreateTask, 0, 55)
+	for i := 0; i < 55; i++ {
+		stage := int32(i)
+		key := fmt.Sprintf("t%d", i+1)
+		planned := ProjectTaskGraphCreateTask{
+			Key:                       key,
+			Title:                     fmt.Sprintf("任务 %02d", i+1),
+			Summary:                   "完整需求图",
+			Status:                    "planned",
+			AssignedDigitalEmployeeID: employeeID,
+			TaskKind:                  "analysis",
+			StageIndex:                &stage,
+			RiskLevel:                 "medium",
+			ExpectedOutputs:           []any{"execution_summary"},
+			InputRequirements:         map[string]any{},
+			HandoffContract:           map[string]any{},
+			PlannerMetadata:           map[string]any{"planner": "test"},
+		}
+		if i > 0 {
+			planned.Status = "blocked"
+			planned.BlockedByKeys = []string{fmt.Sprintf("t%d", i)}
+		}
+		tasks = append(tasks, planned)
+	}
+
+	_, err := repo.CreateProjectTaskGraph(context.Background(), CreateProjectTaskGraphRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		Tasks:             tasks,
+	})
+	require.NoError(t, err)
+
+	graph, err := repo.GetProjectTaskGraph(context.Background(), GetProjectTaskGraphRequest{
+		TenantID: tenantID, ProjectID: projectID, DemandID: &demandID,
+	})
+	require.NoError(t, err)
+	require.Len(t, graph.Nodes, 55)
+	require.Len(t, graph.Edges, 54)
+	require.NotNil(t, graph.Employees)
+	require.NotNil(t, graph.Runs)
+	require.NotNil(t, graph.ExecutionSummaries)
+	require.NotNil(t, graph.RecentEvents)
+	require.NotNil(t, graph.DecisionRequests)
 }
 
 func TestCreateProjectTaskGraphIdempotentReplayReturnsExistingGraph(t *testing.T) {

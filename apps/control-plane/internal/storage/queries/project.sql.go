@@ -2421,6 +2421,65 @@ func (q *Queries) ListProjectTasksByCoordinationJob(ctx context.Context, arg Lis
 	return items, nil
 }
 
+const ListProjectTasksByDemand = `-- name: ListProjectTasksByDemand :many
+SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata FROM project_tasks
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND demand_id = $3::uuid
+ORDER BY stage_index ASC NULLS LAST, created_at ASC
+`
+
+type ListProjectTasksByDemandParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	DemandID  uuid.UUID `json:"demand_id"`
+}
+
+func (q *Queries) ListProjectTasksByDemand(ctx context.Context, arg ListProjectTasksByDemandParams) ([]ProjectTask, error) {
+	rows, err := q.db.Query(ctx, ListProjectTasksByDemand, arg.TenantID, arg.ProjectID, arg.DemandID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectTask{}
+	for rows.Next() {
+		var i ProjectTask
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.DemandID,
+			&i.Title,
+			&i.Summary,
+			&i.Status,
+			&i.AssignedDigitalEmployeeID,
+			&i.RuntimeTaskID,
+			&i.DigitalEmployeeRunID,
+			&i.RiskLevel,
+			&i.RequiresHumanApproval,
+			&i.LatestEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CoordinationJobID,
+			&i.RouteDecisionID,
+			&i.PlannedTaskKey,
+			&i.TaskKind,
+			&i.StageIndex,
+			&i.ExpectedOutputs,
+			&i.InputRequirements,
+			&i.HandoffContract,
+			&i.PlannerMetadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectTransferRequests = `-- name: ListProjectTransferRequests :many
 SELECT id, tenant_id, project_id, project_task_id, requested_by_digital_employee_id, reason, suggested_employee_type, suggested_digital_employee_ids, missing_context_refs, status, created_event_id, created_at, updated_at FROM project_transfer_requests
 WHERE tenant_id = $1::uuid

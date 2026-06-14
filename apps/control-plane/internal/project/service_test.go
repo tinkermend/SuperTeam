@@ -256,6 +256,44 @@ func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 	}
 }
 
+func TestGetProjectTaskGraphRequiresFilterAndDoesNotApplyHiddenLimit(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo := &taskGraphLimitRepository{memoryRepository: newMemoryRepository()}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = service.GetProjectTaskGraph(context.Background(), GetProjectTaskGraphRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected missing graph filter to be invalid, got %v", err)
+	}
+	if repo.calls != 0 {
+		t.Fatalf("expected invalid graph request not to call repository, got %d calls", repo.calls)
+	}
+
+	graph, err := service.GetProjectTaskGraph(context.Background(), GetProjectTaskGraphRequest{
+		TenantID: tenantID, ProjectID: projectID, DemandID: &demandID,
+	})
+	if err != nil {
+		t.Fatalf("get graph: %v", err)
+	}
+	if len(graph.Nodes) != 55 {
+		t.Fatalf("expected complete demand graph, got %d nodes", len(graph.Nodes))
+	}
+	if graph.Edges == nil || graph.Employees == nil || graph.Runs == nil || graph.ExecutionSummaries == nil || graph.RecentEvents == nil || graph.DecisionRequests == nil {
+		t.Fatalf("expected non-nil graph sidecar slices: %#v", graph)
+	}
+	if repo.lastReq.Limit != 0 || repo.lastReq.Offset != 0 {
+		t.Fatalf("expected graph service not to apply hidden pagination, got limit=%d offset=%d", repo.lastReq.Limit, repo.lastReq.Offset)
+	}
+}
+
 func TestSubmitDemandPersistsDefaultReviewerPreference(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -2908,6 +2946,12 @@ type memoryRepository struct {
 	projectTaskRunWorkProducts map[uuid.UUID][]any
 }
 
+type taskGraphLimitRepository struct {
+	*memoryRepository
+	calls   int
+	lastReq GetProjectTaskGraphRequest
+}
+
 func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{
 		projects:                   map[uuid.UUID]Project{},
@@ -2915,6 +2959,36 @@ func newMemoryRepository() *memoryRepository {
 		projectTaskRunRuntimeNodes: map[uuid.UUID]uuid.UUID{},
 		projectTaskRunWorkProducts: map[uuid.UUID][]any{},
 	}
+}
+
+func (r *taskGraphLimitRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (ProjectTaskGraph, error) {
+	r.calls++
+	r.lastReq = req
+	count := 55
+	if req.Limit > 0 && int(req.Limit) < count {
+		count = int(req.Limit)
+	}
+	nodes := make([]ProjectTaskGraphNode, 0, count)
+	for i := 0; i < count; i++ {
+		nodes = append(nodes, ProjectTaskGraphNode{
+			Task: ProjectTask{
+				ID:        uuid.New(),
+				TenantID:  req.TenantID,
+				ProjectID: req.ProjectID,
+				Title:     fmt.Sprintf("graph task %02d", i+1),
+				Status:    "planned",
+			},
+		})
+	}
+	return ProjectTaskGraph{
+		Nodes:              nodes,
+		Edges:              []ProjectTaskGraphEdge{},
+		Employees:          []ProjectTaskGraphEmployee{},
+		Runs:               []ProjectTaskGraphRun{},
+		ExecutionSummaries: []ExecutionSummary{},
+		RecentEvents:       []ProjectEvent{},
+		DecisionRequests:   []DecisionRequest{},
+	}, nil
 }
 
 func cloneProjects(projects map[uuid.UUID]Project) map[uuid.UUID]Project {

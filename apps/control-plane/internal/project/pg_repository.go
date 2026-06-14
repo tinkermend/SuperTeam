@@ -232,6 +232,18 @@ func (r *PgRepository) ListDemandLaunchProjectTasks(ctx context.Context, tenantI
 	return tasksFromRecords(rows)
 }
 
+func (r *PgRepository) listProjectTasksByDemand(ctx context.Context, tenantID, projectID, demandID uuid.UUID) ([]ProjectTask, error) {
+	rows, err := r.q.ListProjectTasksByDemand(ctx, queries.ListProjectTasksByDemandParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return tasksFromRecords(rows)
+}
+
 func (r *PgRepository) AppendProjectEvent(ctx context.Context, event AppendProjectEventRequest) (ProjectEvent, error) {
 	return r.appendProjectEventWithQueries(ctx, r.q, event)
 }
@@ -1186,9 +1198,9 @@ func (r *PgRepository) projectTaskGraphTasks(ctx context.Context, req GetProject
 	case req.CoordinationJobID != nil:
 		tasks, err = r.ListProjectTasksByCoordinationJob(ctx, req.TenantID, req.ProjectID, *req.CoordinationJobID)
 	case req.DemandID != nil:
-		tasks, err = r.ListDemandLaunchProjectTasks(ctx, req.TenantID, req.ProjectID, *req.DemandID, req.Limit)
+		tasks, err = r.listProjectTasksByDemand(ctx, req.TenantID, req.ProjectID, *req.DemandID)
 	default:
-		tasks, err = r.ListProjectTasks(ctx, req.TenantID, req.ProjectID, nil, req.Limit, req.Offset)
+		err = ErrInvalidProject
 	}
 	if err != nil {
 		return nil, err

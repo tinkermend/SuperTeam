@@ -920,10 +920,9 @@ func (s *Service) GetDemandLaunchDetail(ctx context.Context, tenantID, demandID 
 }
 
 func (s *Service) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (*ProjectTaskGraph, error) {
-	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil {
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || (req.CoordinationJobID == nil && req.DemandID == nil) {
 		return nil, ErrInvalidProject
 	}
-	req.Limit, req.Offset = normalizePagination(req.Limit, req.Offset)
 	graph, err := s.repository.GetProjectTaskGraph(ctx, req)
 	if err != nil {
 		return nil, err

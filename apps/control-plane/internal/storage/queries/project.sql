@@ -126,6 +126,13 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY updated_at DESC
 LIMIT sqlc.arg('limit');
 
+-- name: ListProjectTasksByDemand :many
+SELECT * FROM project_tasks
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND demand_id = sqlc.arg('demand_id')::uuid
+ORDER BY stage_index ASC NULLS LAST, created_at ASC;
+
 -- name: CreateProjectTask :one
 INSERT INTO project_tasks (
     tenant_id,

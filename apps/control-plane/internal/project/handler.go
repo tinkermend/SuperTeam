@@ -256,6 +256,10 @@ func (h *HTTPHandler) GetProjectTaskGraph(w http.ResponseWriter, r *http.Request
 		}
 		req.DemandID = &id
 	}
+	if req.CoordinationJobID == nil && req.DemandID == nil {
+		writeHandlerError(w, ErrInvalidProject)
+		return
+	}
 	graph, err := service.GetProjectTaskGraph(r.Context(), req)
 	if err != nil {
 		writeHandlerError(w, err)
