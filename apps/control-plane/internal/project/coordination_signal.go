@@ -115,6 +115,7 @@ type HumanDecisionSubmittedSignal struct {
 	ApprovalRequestID uuid.UUID
 	DecisionRequestID uuid.UUID
 	Decision          string
+	Payload           map[string]any
 	ResolvedEventID   uuid.UUID
 	WorkflowID        string
 }

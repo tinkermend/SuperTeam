@@ -268,6 +268,143 @@ func (s *ProjectStore) ResolveReadyDownstream(ctx context.Context, input Resolve
 	return readyIDs, nil
 }
 
+func (s *ProjectStore) HoldDownstreamForFailure(ctx context.Context, input HoldDownstreamForFailureInput) (DecisionRequestResult, error) {
+	if s.repository == nil || s.approvals == nil {
+		return DecisionRequestResult{}, ErrActivityStoreRequired
+	}
+	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	failedTask, err := s.repository.GetProjectTask(ctx, input.TenantID, input.FailedTaskID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if failedTask.ProjectID != input.ProjectID {
+		return DecisionRequestResult{}, project.ErrProjectNotFound
+	}
+	downstreamIDs, err := s.recursiveDownstreamTaskIDs(ctx, input.TenantID, input.ProjectID, input.FailedTaskID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	for _, taskID := range downstreamIDs {
+		task, err := s.repository.GetProjectTask(ctx, input.TenantID, taskID)
+		if err != nil {
+			return DecisionRequestResult{}, err
+		}
+		if task.ProjectID != input.ProjectID {
+			return DecisionRequestResult{}, project.ErrProjectNotFound
+		}
+		if projectTaskTerminalStatus(task.Status) || task.Status == "blocked" {
+			continue
+		}
+		if _, err := s.repository.UpdateProjectTaskStatus(ctx, input.TenantID, taskID, "blocked", nil, failureHoldCurrentStatuses()); err != nil {
+			if errors.Is(err, project.ErrProjectConflict) {
+				continue
+			}
+			return DecisionRequestResult{}, err
+		}
+	}
+	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
+		TenantID:       input.TenantID,
+		ResourceType:   "project_task",
+		ResourceID:     input.FailedTaskID,
+		RequesterType:  "project_coordinator",
+		TargetUserID:   projectRecord.HumanOwnerUserID,
+		DecisionType:   "task_failure_recovery",
+		Title:          "处理项目任务失败",
+		Summary:        input.FailureSummary,
+		RiskLevel:      "high",
+		Options:        []any{"approved", "rejected", "needs_more_evidence"},
+		ContextPayload: failureRecoveryContext(input, downstreamIDs),
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, input.FailedTaskID.String(), "项目任务失败需要恢复决策", map[string]any{
+		"approval_request_id": approvalRequest.ID.String(),
+		"project_task_id":     input.FailedTaskID.String(),
+		"failed_event_id":     input.FailedEventID.String(),
+		"target_user_id":      projectRecord.HumanOwnerUserID.String(),
+	}))
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	failedTaskID := input.FailedTaskID
+	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
+		TenantID:          input.TenantID,
+		ProjectID:         input.ProjectID,
+		ApprovalRequestID: approvalRequest.ID,
+		ProjectTaskID:     &failedTaskID,
+		TargetUserID:      projectRecord.HumanOwnerUserID,
+		DecisionType:      "task_failure_recovery",
+		TitleSnapshot:     "处理项目任务失败",
+		SummarySnapshot:   input.FailureSummary,
+		RiskLevelSnapshot: "high",
+		StatusSnapshot:    "pending",
+		CreatedEventID:    &event.ID,
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if s.inbox != nil {
+		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+			return DecisionRequestResult{}, err
+		}
+	}
+	return DecisionRequestResult{ID: decision.ID}, nil
+}
+
+func (s *ProjectStore) ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) error {
+	if s.repository == nil {
+		return ErrActivityStoreRequired
+	}
+	decision, err := s.repository.GetDecisionRequest(ctx, input.TenantID, input.ProjectID, input.DecisionRequestID)
+	if err != nil {
+		return err
+	}
+	if decision.DecisionType != "task_failure_recovery" || decision.ProjectTaskID == nil {
+		return project.ErrInvalidProject
+	}
+	return nil
+}
+
+func (s *ProjectStore) recursiveDownstreamTaskIDs(ctx context.Context, tenantID, projectID, failedTaskID uuid.UUID) ([]uuid.UUID, error) {
+	seen := map[uuid.UUID]struct{}{failedTaskID: {}}
+	queue := []uuid.UUID{failedTaskID}
+	result := make([]uuid.UUID, 0)
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		dependents, err := s.repository.ListDependentsOfTask(ctx, tenantID, projectID, current)
+		if err != nil {
+			return nil, err
+		}
+		for _, dependentID := range dependents {
+			if _, exists := seen[dependentID]; exists {
+				continue
+			}
+			seen[dependentID] = struct{}{}
+			result = append(result, dependentID)
+			queue = append(queue, dependentID)
+		}
+	}
+	return result, nil
+}
+
+func projectTaskTerminalStatus(status string) bool {
+	switch status {
+	case "completed", "failed", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+func failureHoldCurrentStatuses() []string {
+	return []string{"planned", "pending", "assigned", "running", "waiting_human"}
+}
+
 func unresolvedBlockersByDependent(readiness []project.ProjectTaskDependencyReadiness) map[uuid.UUID]struct{} {
 	blocked := map[uuid.UUID]struct{}{}
 	for _, row := range readiness {
@@ -664,6 +801,16 @@ func routeReviewContext(input RequestRouteDecisionReviewInput) map[string]any {
 		"selected_digital_employee_ids": uuidStrings(aggregated.SelectedDigitalEmployeeIDs),
 		"reason":                        input.Decision.Reason,
 		"route_created_event_id":        input.RouteCreatedEventID.String(),
+	}
+}
+
+func failureRecoveryContext(input HoldDownstreamForFailureInput, downstreamTaskIDs []uuid.UUID) map[string]any {
+	return map[string]any{
+		"project_id":          input.ProjectID.String(),
+		"failed_task_id":      input.FailedTaskID.String(),
+		"failed_event_id":     input.FailedEventID.String(),
+		"failure_summary":     input.FailureSummary,
+		"downstream_task_ids": uuidStrings(downstreamTaskIDs),
 	}
 }
 

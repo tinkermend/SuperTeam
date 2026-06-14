@@ -2384,8 +2384,79 @@ func TestResolveDecisionUsesApprovalAndSignalsCoordinator(t *testing.T) {
 	if approvals.calls != 1 || approvals.last.ApprovalRequestID != approvalID || approvals.last.Decision != "approved" {
 		t.Fatalf("expected approval resolver call, got count=%d last=%#v", approvals.calls, approvals.last)
 	}
+	if approvals.last.Payload["source"] != "console" {
+		t.Fatalf("expected approval payload to be preserved, got %#v", approvals.last.Payload)
+	}
 	if coordinator.decisionSignals != 1 || coordinator.lastDecision.DecisionRequestID != decisionID || coordinator.lastDecision.ResolvedEventID == uuid.Nil {
 		t.Fatalf("expected decision signal, got count=%d signal=%#v", coordinator.decisionSignals, coordinator.lastDecision)
+	}
+	if coordinator.lastDecision.Payload["source"] != "console" {
+		t.Fatalf("expected decision signal payload to be preserved, got %#v", coordinator.lastDecision.Payload)
+	}
+}
+
+func TestRetryWorkflowSignalReplaysHumanDecisionPayload(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	approvalID := uuid.New()
+	decisionID := uuid.New()
+	resolvedEventID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       ownerID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	failedEvent, err := repo.AppendProjectEvent(context.Background(), AppendProjectEventRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventType: ProjectEventWorkflowSignaled,
+		ActorType: "control_plane",
+		ActorID:   "project_service",
+		Summary:   "Workflow signal 状态已记录",
+		Payload: map[string]any{
+			"signal_name":         "HumanDecisionSubmitted",
+			"status":              "failed",
+			"retryable":           true,
+			"approval_request_id": approvalID.String(),
+			"decision_request_id": decisionID.String(),
+			"resolved_event_id":   resolvedEventID.String(),
+			"decision":            "approved",
+			"payload":             map[string]any{"recovery_action": "retry"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("seed failed workflow signal: %v", err)
+	}
+
+	event, err := service.RetryWorkflowSignal(context.Background(), RetryWorkflowSignalRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventID:   failedEvent.ID,
+		ActorID:   ownerID,
+	})
+
+	if err != nil {
+		t.Fatalf("retry human decision workflow signal: %v", err)
+	}
+	if coordinator.decisionSignals != 1 || coordinator.lastDecision.DecisionRequestID != decisionID || coordinator.lastDecision.ResolvedEventID != resolvedEventID {
+		t.Fatalf("expected human decision signal replay, count=%d signal=%#v", coordinator.decisionSignals, coordinator.lastDecision)
+	}
+	if coordinator.lastDecision.Payload["recovery_action"] != "retry" {
+		t.Fatalf("expected human decision payload replay, got %#v", coordinator.lastDecision.Payload)
+	}
+	if event.EventType != ProjectEventWorkflowSignaled || event.Payload["status"] != "sent" || event.Payload["retry_of_event_id"] != failedEvent.ID.String() {
+		t.Fatalf("unexpected retry event: %#v", event)
 	}
 }
 

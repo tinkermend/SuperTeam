@@ -345,6 +345,112 @@ func TestProjectCoordinatorWakesDownstreamOnCompletion(t *testing.T) {
 	}, store.dispatchInputs)
 }
 
+func TestProjectCoordinatorRequestsFailureRecoveryWhenTaskFails(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	failedTaskID := uuid.New()
+	failedEventID := uuid.New()
+	decisionRequestID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot:                  CoordinationSnapshot{ProjectID: projectID},
+		failureRecoveryDecisionID: decisionRequestID,
+		dispatchEvent:             uuid.New(),
+	}
+	activities := NewActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalEmployeeTaskFailed, EmployeeTaskFailed{
+			ProjectTaskID:  failedTaskID,
+			FailureSummary: "runtime execution failed",
+			FailedEventID:  failedEventID,
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	tenantID := uuid.New()
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   tenantID,
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{
+		"AppendProjectEvent",
+		"HoldDownstreamForFailure",
+	}, store.calls)
+	require.Len(t, store.holdFailureInputs, 1)
+	require.Equal(t, HoldDownstreamForFailureInput{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		FailedTaskID:   failedTaskID,
+		FailureSummary: "runtime execution failed",
+		FailedEventID:  failedEventID,
+	}, store.holdFailureInputs[0])
+}
+
+func TestProjectCoordinatorRoutesHumanDecisionToFailureRecovery(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	failedTaskID := uuid.New()
+	decisionRequestID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot:                  CoordinationSnapshot{ProjectID: projectID},
+		failureRecoveryDecisionID: decisionRequestID,
+		dispatchEvent:             uuid.New(),
+	}
+	activities := NewActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalEmployeeTaskFailed, EmployeeTaskFailed{
+			ProjectTaskID:  failedTaskID,
+			FailureSummary: "runtime execution failed",
+			FailedEventID:  uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID: uuid.New(),
+			DecisionRequestID: decisionRequestID,
+			Decision:          "approved",
+			Payload:           map[string]any{"recovery_action": "retry"},
+			ResolvedEventID:   uuid.New(),
+		})
+	}, 5*time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	tenantID := uuid.New()
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   tenantID,
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{
+		"AppendProjectEvent",
+		"HoldDownstreamForFailure",
+		"ApplyFailureRecoveryDecision",
+	}, store.calls)
+	require.Empty(t, store.dispatchInputs)
+	require.Len(t, store.applyFailureRecoveryInputs, 1)
+	require.Equal(t, ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionRequestID,
+		Decision:          "approved",
+		Payload:           map[string]any{"recovery_action": "retry"},
+	}, store.applyFailureRecoveryInputs[0])
+}
+
 func TestProjectCoordinatorReturnsUnrecordedDispatchFailure(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
@@ -466,23 +572,26 @@ func TestActivitiesDispatchProjectTaskKeepsTransientErrorRetryable(t *testing.T)
 }
 
 type recordingActivityStore struct {
-	calls             []string
-	snapshot          CoordinationSnapshot
-	jobID             uuid.UUID
-	routeID           uuid.UUID
-	routeEventID      uuid.UUID
-	taskID            uuid.UUID
-	taskIDs           []uuid.UUID
-	decisionRequestID uuid.UUID
-	dispatchEvent     uuid.UUID
-	dispatchErr       error
+	calls                     []string
+	snapshot                  CoordinationSnapshot
+	jobID                     uuid.UUID
+	routeID                   uuid.UUID
+	routeEventID              uuid.UUID
+	taskID                    uuid.UUID
+	taskIDs                   []uuid.UUID
+	decisionRequestID         uuid.UUID
+	failureRecoveryDecisionID uuid.UUID
+	dispatchEvent             uuid.UUID
+	dispatchErr               error
 
-	dispatchableTaskIDs       []uuid.UUID
-	dispatchableTaskIDBatches [][]uuid.UUID
-	readyDownstreamIDs        []uuid.UUID
-	listDispatchableInputs    []ListDispatchableTasksInput
-	resolveReadyInputs        []ResolveReadyDownstreamInput
-	dispatchInputs            []DispatchProjectTaskInput
+	dispatchableTaskIDs        []uuid.UUID
+	dispatchableTaskIDBatches  [][]uuid.UUID
+	readyDownstreamIDs         []uuid.UUID
+	listDispatchableInputs     []ListDispatchableTasksInput
+	resolveReadyInputs         []ResolveReadyDownstreamInput
+	holdFailureInputs          []HoldDownstreamForFailureInput
+	applyFailureRecoveryInputs []ApplyFailureRecoveryDecisionInput
+	dispatchInputs             []DispatchProjectTaskInput
 }
 
 func (s *recordingActivityStore) LoadProjectCoordinationSnapshot(ctx context.Context, input LoadSnapshotInput) (CoordinationSnapshot, error) {
@@ -533,6 +642,18 @@ func (s *recordingActivityStore) ResolveReadyDownstream(ctx context.Context, inp
 func (s *recordingActivityStore) RequestRouteDecisionReview(ctx context.Context, input RequestRouteDecisionReviewInput) (DecisionRequestResult, error) {
 	s.calls = append(s.calls, "RequestRouteDecisionReview")
 	return DecisionRequestResult{ID: s.decisionRequestID}, nil
+}
+
+func (s *recordingActivityStore) HoldDownstreamForFailure(ctx context.Context, input HoldDownstreamForFailureInput) (DecisionRequestResult, error) {
+	s.calls = append(s.calls, "HoldDownstreamForFailure")
+	s.holdFailureInputs = append(s.holdFailureInputs, input)
+	return DecisionRequestResult{ID: s.failureRecoveryDecisionID}, nil
+}
+
+func (s *recordingActivityStore) ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) error {
+	s.calls = append(s.calls, "ApplyFailureRecoveryDecision")
+	s.applyFailureRecoveryInputs = append(s.applyFailureRecoveryInputs, input)
+	return nil
 }
 
 func (s *recordingActivityStore) AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error) {

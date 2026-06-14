@@ -65,6 +65,7 @@ type HumanDecisionSubmitted struct {
 	ApprovalRequestID uuid.UUID
 	DecisionRequestID uuid.UUID
 	Decision          string
+	Payload           map[string]any
 	ResolvedEventID   uuid.UUID
 }
 
@@ -111,6 +112,22 @@ type ResolveReadyDownstreamInput struct {
 	TenantID        uuid.UUID
 	ProjectID       uuid.UUID
 	CompletedTaskID uuid.UUID
+}
+
+type HoldDownstreamForFailureInput struct {
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	FailedTaskID   uuid.UUID
+	FailureSummary string
+	FailedEventID  uuid.UUID
+}
+
+type ApplyFailureRecoveryDecisionInput struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DecisionRequestID uuid.UUID
+	Decision          string
+	Payload           map[string]any
 }
 
 type RequestRouteDecisionReviewInput struct {

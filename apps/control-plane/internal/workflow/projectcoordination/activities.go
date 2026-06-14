@@ -22,6 +22,8 @@ type ActivityStore interface {
 	CreateProjectTasks(ctx context.Context, input CreateProjectTasksInput) ([]ProjectTaskResult, error)
 	ListDispatchableTasks(ctx context.Context, input ListDispatchableTasksInput) ([]uuid.UUID, error)
 	ResolveReadyDownstream(ctx context.Context, input ResolveReadyDownstreamInput) ([]uuid.UUID, error)
+	HoldDownstreamForFailure(ctx context.Context, input HoldDownstreamForFailureInput) (DecisionRequestResult, error)
+	ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) error
 	RequestRouteDecisionReview(ctx context.Context, input RequestRouteDecisionReviewInput) (DecisionRequestResult, error)
 	AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error)
 	DispatchProjectTask(ctx context.Context, input DispatchProjectTaskInput) error
@@ -91,6 +93,20 @@ func (a *Activities) ResolveReadyDownstream(ctx context.Context, input ResolveRe
 		return nil, ErrActivityStoreRequired
 	}
 	return a.store.ResolveReadyDownstream(ctx, input)
+}
+
+func (a *Activities) HoldDownstreamForFailure(ctx context.Context, input HoldDownstreamForFailureInput) (DecisionRequestResult, error) {
+	if a.store == nil {
+		return DecisionRequestResult{}, ErrActivityStoreRequired
+	}
+	return a.store.HoldDownstreamForFailure(ctx, input)
+}
+
+func (a *Activities) ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) error {
+	if a.store == nil {
+		return ErrActivityStoreRequired
+	}
+	return a.store.ApplyFailureRecoveryDecision(ctx, input)
 }
 
 func (a *Activities) RequestRouteDecisionReview(ctx context.Context, input RequestRouteDecisionReviewInput) (DecisionRequestResult, error) {

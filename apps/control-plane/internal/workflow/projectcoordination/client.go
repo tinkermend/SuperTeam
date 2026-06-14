@@ -89,6 +89,7 @@ func (c *SignalClient) SignalHumanDecisionSubmitted(ctx context.Context, signal 
 		ApprovalRequestID: signal.ApprovalRequestID,
 		DecisionRequestID: signal.DecisionRequestID,
 		Decision:          signal.Decision,
+		Payload:           signal.Payload,
 		ResolvedEventID:   signal.ResolvedEventID,
 	})
 }

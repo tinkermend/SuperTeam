@@ -1490,7 +1490,7 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 		ResourceType: strPtr("decision_request"),
 		ResourceID:   strPtr(req.DecisionRequestID.String()),
 		Summary:      "人类决策已提交",
-		Payload:      map[string]any{"decision": req.Decision, "comment": req.Comment},
+		Payload:      map[string]any{"decision": req.Decision, "comment": req.Comment, "payload": mapOrEmptyAny(req.Payload)},
 	})
 	if err != nil {
 		return nil, err
@@ -1516,6 +1516,7 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 		ApprovalRequestID: decision.ApprovalRequestID,
 		DecisionRequestID: req.DecisionRequestID,
 		Decision:          req.Decision,
+		Payload:           mapOrEmptyAny(req.Payload),
 		ResolvedEventID:   event.ID,
 		WorkflowID:        projectRecord.CoordinationWorkflowID,
 	}); err != nil {
@@ -1524,6 +1525,7 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 			"decision_request_id": req.DecisionRequestID.String(),
 			"resolved_event_id":   event.ID.String(),
 			"decision":            req.Decision,
+			"payload":             mapOrEmptyAny(req.Payload),
 		})
 		return nil, err
 	}
@@ -1702,6 +1704,7 @@ func (s *Service) retryWorkflowSignal(ctx context.Context, projectRecord Project
 			ApprovalRequestID: approvalRequestID,
 			DecisionRequestID: decisionRequestID,
 			Decision:          decision,
+			Payload:           mapFromPayload(payload, "payload"),
 			ResolvedEventID:   resolvedEventID,
 			WorkflowID:        projectRecord.CoordinationWorkflowID,
 		})
@@ -1909,6 +1912,14 @@ func uuidSliceFromPayload(payload map[string]any, key string) []uuid.UUID {
 	default:
 		return nil
 	}
+}
+
+func mapFromPayload(payload map[string]any, key string) map[string]any {
+	value, ok := payload[key].(map[string]any)
+	if !ok {
+		return map[string]any{}
+	}
+	return value
 }
 
 func cloneMap(value map[string]any) map[string]any {

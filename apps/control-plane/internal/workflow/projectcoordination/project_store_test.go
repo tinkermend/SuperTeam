@@ -513,6 +513,84 @@ func TestProjectStoreRequestRouteDecisionReviewTargetsDemandReviewerPreference(t
 	}
 }
 
+func TestProjectStoreHoldDownstreamForFailureBlocksRecursiveDownstreamAndCreatesDecision(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	demandID := uuid.New()
+	failedTaskID := uuid.New()
+	firstDownstreamID := uuid.New()
+	secondDownstreamID := uuid.New()
+	completedDownstreamID := uuid.New()
+	cancelledDownstreamID := uuid.New()
+	approvalID := uuid.New()
+	failedEventID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			HumanOwnerUserID: ownerID,
+		},
+		tasks: []project.ProjectTask{
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, failedTaskID, "failed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, firstDownstreamID, "planned"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, secondDownstreamID, "pending"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, completedDownstreamID, "completed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, cancelledDownstreamID, "cancelled"),
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, firstDownstreamID, failedTaskID),
+			projectStoreDependency(tenantID, projectID, jobID, completedDownstreamID, failedTaskID),
+			projectStoreDependency(tenantID, projectID, jobID, secondDownstreamID, firstDownstreamID),
+			projectStoreDependency(tenantID, projectID, jobID, cancelledDownstreamID, firstDownstreamID),
+		},
+		approvalID: approvalID,
+	}
+	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
+	inbox := &projectStoreDecisionInboxProjector{}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, inbox)
+
+	result, err := store.HoldDownstreamForFailure(context.Background(), HoldDownstreamForFailureInput{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		FailedTaskID:   failedTaskID,
+		FailureSummary: "runtime execution failed",
+		FailedEventID:  failedEventID,
+	})
+
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, result.ID)
+	require.Equal(t, "blocked", repo.taskStatus(firstDownstreamID))
+	require.Equal(t, "blocked", repo.taskStatus(secondDownstreamID))
+	require.Equal(t, "completed", repo.taskStatus(completedDownstreamID))
+	require.Equal(t, "cancelled", repo.taskStatus(cancelledDownstreamID))
+	require.Equal(t, []projectTaskStatusUpdateRecord{
+		{TenantID: tenantID, TaskID: firstDownstreamID, Status: "blocked", CurrentStatuses: []string{"planned", "pending", "assigned", "running", "waiting_human"}},
+		{TenantID: tenantID, TaskID: secondDownstreamID, Status: "blocked", CurrentStatuses: []string{"planned", "pending", "assigned", "running", "waiting_human"}},
+	}, repo.statusUpdates)
+	require.Equal(t, ownerID, approvals.last.TargetUserID)
+	require.Equal(t, failedTaskID, approvals.last.ResourceID)
+	require.Equal(t, "task_failure_recovery", approvals.last.DecisionType)
+	require.Equal(t, "runtime execution failed", approvals.last.ContextPayload["failure_summary"])
+	require.Equal(t, projectID.String(), approvals.last.ContextPayload["project_id"])
+	require.Equal(t, failedTaskID.String(), approvals.last.ContextPayload["failed_task_id"])
+	require.Len(t, repo.events, 1)
+	require.Equal(t, project.ProjectEventDecisionRequested, repo.events[0].EventType)
+	require.Len(t, repo.decisionRequests, 1)
+	decision := repo.decisionRequests[0]
+	require.Equal(t, approvalID, decision.ApprovalRequestID)
+	require.Equal(t, ownerID, decision.TargetUserID)
+	require.Equal(t, "task_failure_recovery", decision.DecisionType)
+	require.Equal(t, "pending", decision.StatusSnapshot)
+	require.NotNil(t, decision.ProjectTaskID)
+	require.Equal(t, failedTaskID, *decision.ProjectTaskID)
+	require.Len(t, inbox.upserts, 1)
+	require.Equal(t, decision.ID, inbox.upserts[0].ID)
+	require.Equal(t, failedTaskID, *inbox.upserts[0].ProjectTaskID)
+}
+
 func TestProjectStoreDispatchProjectTaskStartsRunAndBindsTask(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -1138,6 +1216,7 @@ func (r *projectStoreMemoryRepository) CreateDecisionRequest(ctx context.Context
 		ProjectID:         req.ProjectID,
 		ApprovalRequestID: req.ApprovalRequestID,
 		CoordinationJobID: req.CoordinationJobID,
+		ProjectTaskID:     req.ProjectTaskID,
 		TargetUserID:      req.TargetUserID,
 		DecisionType:      req.DecisionType,
 		TitleSnapshot:     req.TitleSnapshot,
