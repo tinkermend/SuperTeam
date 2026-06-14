@@ -18,8 +18,6 @@ type ProjectStore struct {
 	runStarter ProjectTaskRunStarter
 }
 
-const projectEventTaskCancelled = project.ProjectEventType("project_task.cancelled")
-
 func NewProjectStore(repository project.Repository) *ProjectStore {
 	return NewProjectStoreWithApprovals(repository, nil)
 }
@@ -438,7 +436,7 @@ func (s *ProjectStore) createRecoveryReplacementTask(ctx context.Context, input 
 	if action.NewDigitalEmployeeID != nil {
 		assigneeID = action.NewDigitalEmployeeID
 	}
-	if assigneeID == nil || source.DemandID == nil {
+	if assigneeID == nil || source.DemandID == nil || source.CoordinationJobID == nil {
 		return project.ProjectTask{}, project.ErrInvalidProject
 	}
 	replacementKey := recoveryReplacementTaskKey(source)
@@ -636,6 +634,12 @@ func (s *ProjectStore) cancelFailureDownstream(ctx context.Context, input ApplyF
 		if task.ProjectID != input.ProjectID {
 			return project.ErrProjectNotFound
 		}
+		if task.Status == "cancelled" {
+			if err := s.ensureProjectTaskCancelledEvent(ctx, input, source.ID, task.ID); err != nil {
+				return err
+			}
+			continue
+		}
 		if !projectTaskCancellationAllowed(task.Status) {
 			continue
 		}
@@ -646,23 +650,28 @@ func (s *ProjectStore) cancelFailureDownstream(ctx context.Context, input ApplyF
 			}
 			return err
 		}
-		exists, err := s.repository.ProjectTaskEventExists(ctx, input.TenantID, input.ProjectID, projectEventTaskCancelled, updated.ID.String())
-		if err != nil {
-			return err
-		}
-		if exists {
-			continue
-		}
-		if _, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, projectEventTaskCancelled, updated.ID.String(), "项目任务已取消", map[string]any{
-			"project_task_id":        updated.ID.String(),
-			"source_project_task_id": source.ID.String(),
-			"decision_request_id":    input.DecisionRequestID.String(),
-			"recovery_action":        "cancel_downstream",
-		})); err != nil {
+		if err := s.ensureProjectTaskCancelledEvent(ctx, input, source.ID, updated.ID); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (s *ProjectStore) ensureProjectTaskCancelledEvent(ctx context.Context, input ApplyFailureRecoveryDecisionInput, sourceTaskID, cancelledTaskID uuid.UUID) error {
+	exists, err := s.repository.ProjectTaskEventExists(ctx, input.TenantID, input.ProjectID, project.ProjectEventTaskCancelled, cancelledTaskID.String())
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	_, err = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskCancelled, cancelledTaskID.String(), "项目任务已取消", map[string]any{
+		"project_task_id":        cancelledTaskID.String(),
+		"source_project_task_id": sourceTaskID.String(),
+		"decision_request_id":    input.DecisionRequestID.String(),
+		"recovery_action":        "cancel_downstream",
+	}))
+	return err
 }
 
 func (s *ProjectStore) validateActiveDigitalProjectMember(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) error {
