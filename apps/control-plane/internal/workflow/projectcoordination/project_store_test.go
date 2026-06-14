@@ -3,6 +3,7 @@ package projectcoordination
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +62,177 @@ func TestProjectStoreSnapshotIncludesOnlyActiveDigitalExecutorsAndReviewers(t *t
 	}
 }
 
+func TestProjectStorePersistRouteDecisionAggregatesGraphFields(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	jobID := uuid.New()
+	demandID := uuid.New()
+	firstEmployeeID := uuid.New()
+	secondEmployeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{}
+	store := NewProjectStore(repo)
+
+	_, err := store.PersistRouteDecision(context.Background(), PersistRouteDecisionInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		JobID:     jobID,
+		DemandID:  demandID,
+		Decision: RouteDecisionPlan{
+			Reason:              "分派并行调查和修复",
+			RequiresHumanReview: true,
+			BudgetEstimate:      map[string]any{"mode": "policy_default"},
+			Tasks: []PlannedTask{
+				{
+					Key:                "investigate",
+					Title:              "调查问题",
+					Summary:            "整理日志和复现路径",
+					SelectedEmployeeID: firstEmployeeID,
+					ExpectedOutputs:    []string{"execution_summary", "evidence_refs"},
+					InputRequirements: map[string]any{
+						"demand_id": demandID.String(),
+						"prompt":    strings.Repeat("long prompt ", 20),
+					},
+					HandoffContract: map[string]any{"format": "markdown"},
+				},
+				{
+					Key:                "repair",
+					Title:              "修复问题",
+					Summary:            "根据调查结论实施修复",
+					SelectedEmployeeID: secondEmployeeID,
+					ExpectedOutputs:    []string{"execution_summary", "recommended_next_action"},
+					InputRequirements:  map[string]any{"demand_id": demandID.String()},
+					HandoffContract:    map[string]any{"format": "patch"},
+					BlockedByKeys:      []string{"investigate"},
+				},
+				{
+					Key:                "verify",
+					Title:              "验证修复",
+					Summary:            "复跑回归检查",
+					SelectedEmployeeID: firstEmployeeID,
+					ExpectedOutputs:    []string{"evidence_refs"},
+					InputRequirements:  map[string]any{"demand_id": demandID.String()},
+					HandoffContract:    map[string]any{"format": "report"},
+					BlockedByKeys:      []string{"repair"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("persist route decision: %v", err)
+	}
+	if len(repo.routeDecisionRequests) != 1 {
+		t.Fatalf("expected one route decision request, got %d", len(repo.routeDecisionRequests))
+	}
+	req := repo.routeDecisionRequests[0]
+	assertUUIDs(t, req.SelectedDigitalEmployeeIDs, []uuid.UUID{firstEmployeeID, secondEmployeeID})
+	assertUUIDs(t, req.CandidateDigitalEmployeeIDs, []uuid.UUID{firstEmployeeID, secondEmployeeID})
+	assertAnyStrings(t, req.ExpectedOutputs, []string{"execution_summary", "evidence_refs", "recommended_next_action"})
+	if req.Reason != "分派并行调查和修复" || !req.RequiresHumanReview || req.BudgetEstimate["mode"] != "policy_default" {
+		t.Fatalf("unexpected route decision fields: %#v", req)
+	}
+
+	taskSummaries, ok := req.InputRequirements["tasks"].([]any)
+	if !ok || len(taskSummaries) != 3 {
+		t.Fatalf("expected aggregated task summaries, got %#v", req.InputRequirements)
+	}
+	firstSummary, ok := taskSummaries[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected task summary map, got %#v", taskSummaries[0])
+	}
+	if firstSummary["key"] != "investigate" || firstSummary["selected_digital_employee_id"] != firstEmployeeID.String() {
+		t.Fatalf("unexpected first task summary: %#v", firstSummary)
+	}
+	if _, storesRawInputs := firstSummary["input_requirements"]; storesRawInputs {
+		t.Fatalf("route-level input summary must not store raw task input requirements: %#v", firstSummary)
+	}
+	assertPayloadStrings(t, firstSummary["input_requirement_keys"], []string{"demand_id", "prompt"})
+}
+
+func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMetadata(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	firstEmployeeID := uuid.New()
+	secondEmployeeID := uuid.New()
+	stageZero := int32(0)
+	stageOne := int32(1)
+	repo := &projectStoreMemoryRepository{}
+	store := NewProjectStore(repo)
+
+	results, err := store.CreateProjectTasks(context.Background(), CreateProjectTasksInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
+		Decision: RouteDecisionPlan{
+			Reason:          "创建图任务",
+			PlannerMetadata: map[string]any{"planner": "heuristic"},
+			Tasks: []PlannedTask{
+				{
+					Key:                   "investigate",
+					Title:                 "调查问题",
+					Summary:               "整理日志",
+					SelectedEmployeeID:    firstEmployeeID,
+					TaskKind:              "investigation",
+					StageIndex:            &stageZero,
+					RiskLevel:             "medium",
+					RequiresHumanApproval: true,
+					ExpectedOutputs:       []string{"execution_summary", "evidence_refs"},
+					InputRequirements:     map[string]any{"scope": "logs"},
+					HandoffContract:       map[string]any{"format": "markdown"},
+				},
+				{
+					Key:                "repair",
+					Title:              "修复问题",
+					Summary:            "实施补丁",
+					SelectedEmployeeID: secondEmployeeID,
+					TaskKind:           "implementation",
+					StageIndex:         &stageOne,
+					RiskLevel:          "high",
+					ExpectedOutputs:    []string{"recommended_next_action"},
+					InputRequirements:  map[string]any{"scope": "patch"},
+					HandoffContract:    map[string]any{"format": "diff"},
+					BlockedByKeys:      []string{"investigate"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create project tasks: %v", err)
+	}
+	if len(results) != 2 || len(repo.tasks) != 2 || len(repo.projectTaskRequests) != 2 {
+		t.Fatalf("expected two created tasks, results=%#v tasks=%#v requests=%#v", results, repo.tasks, repo.projectTaskRequests)
+	}
+
+	firstTask := repo.tasks[0]
+	if firstTask.Title != "调查问题" || firstTask.Summary == nil || *firstTask.Summary != "整理日志" {
+		t.Fatalf("unexpected first task title/summary: %#v", firstTask)
+	}
+	if firstTask.AssignedDigitalEmployeeID == nil || *firstTask.AssignedDigitalEmployeeID != firstEmployeeID {
+		t.Fatalf("unexpected first task assignee: %#v", firstTask.AssignedDigitalEmployeeID)
+	}
+	if firstTask.PlannedTaskKey == nil || *firstTask.PlannedTaskKey != "investigate" || firstTask.TaskKind == nil || *firstTask.TaskKind != "investigation" {
+		t.Fatalf("expected graph task identity fields, got %#v", firstTask)
+	}
+	if firstTask.StageIndex == nil || *firstTask.StageIndex != stageZero {
+		t.Fatalf("expected stage index, got %#v", firstTask.StageIndex)
+	}
+	if firstTask.RiskLevel == nil || *firstTask.RiskLevel != "medium" || !firstTask.RequiresHumanApproval {
+		t.Fatalf("unexpected risk/approval fields: %#v", firstTask)
+	}
+	assertAnyStrings(t, firstTask.ExpectedOutputs, []string{"execution_summary", "evidence_refs"})
+	if firstTask.InputRequirements["scope"] != "logs" || firstTask.HandoffContract["format"] != "markdown" || firstTask.PlannerMetadata["planner"] != "heuristic" {
+		t.Fatalf("expected graph metadata on first task, got %#v", firstTask)
+	}
+
+	secondTask := repo.tasks[1]
+	if secondTask.PlannedTaskKey == nil || *secondTask.PlannedTaskKey != "repair" || secondTask.RequiresHumanApproval {
+		t.Fatalf("unexpected second task fields: %#v", secondTask)
+	}
+	if len(secondTask.BlockedByTaskIDs) != 0 {
+		t.Fatalf("Task 4 should not persist dependency edges, got %#v", secondTask.BlockedByTaskIDs)
+	}
+}
+
 func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProjection(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -96,8 +268,16 @@ func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProject
 		DemandID:          demandID,
 		RouteDecisionID:   routeID,
 		Decision: RouteDecisionPlan{
-			SelectedDigitalEmployeeIDs: []uuid.UUID{employeeID},
-			Reason:                     "高风险需求需要负责人确认",
+			Reason: "高风险需求需要负责人确认",
+			Tasks: []PlannedTask{{
+				Key:                "review",
+				Title:              "复核风险",
+				Summary:            "确认高风险需求",
+				SelectedEmployeeID: employeeID,
+				ExpectedOutputs:    []string{"execution_summary"},
+				InputRequirements:  map[string]any{},
+				HandoffContract:    map[string]any{},
+			}},
 		},
 		ProjectTaskIDs:      []uuid.UUID{taskID},
 		RouteCreatedEventID: uuid.New(),
@@ -114,6 +294,7 @@ func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProject
 	if approvals.last.ContextPayload["project_id"] != projectID.String() {
 		t.Fatalf("expected project context payload, got %#v", approvals.last.ContextPayload)
 	}
+	assertPayloadStrings(t, approvals.last.ContextPayload["selected_digital_employee_ids"], []string{employeeID.String()})
 	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventDecisionRequested {
 		t.Fatalf("expected decision requested event, got %#v", repo.events)
 	}
@@ -158,8 +339,16 @@ func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProject
 		DemandID:          demandID,
 		RouteDecisionID:   routeID,
 		Decision: RouteDecisionPlan{
-			SelectedDigitalEmployeeIDs: []uuid.UUID{employeeID},
-			Reason:                     "高风险需求需要负责人确认",
+			Reason: "高风险需求需要负责人确认",
+			Tasks: []PlannedTask{{
+				Key:                "review",
+				Title:              "复核风险",
+				Summary:            "确认高风险需求",
+				SelectedEmployeeID: employeeID,
+				ExpectedOutputs:    []string{"execution_summary"},
+				InputRequirements:  map[string]any{},
+				HandoffContract:    map[string]any{},
+			}},
 		},
 		ProjectTaskIDs:      []uuid.UUID{taskID},
 		RouteCreatedEventID: uuid.New(),
@@ -560,10 +749,12 @@ type projectStoreMemoryRepository struct {
 	tasks         []project.ProjectTask
 	approvalID    uuid.UUID
 
-	bindRequests     []project.BindProjectTaskRunRequest
-	bindErr          error
-	events           []project.ProjectEvent
-	decisionRequests []project.DecisionRequest
+	bindRequests          []project.BindProjectTaskRunRequest
+	bindErr               error
+	events                []project.ProjectEvent
+	routeDecisionRequests []project.CreateRouteDecisionRequest
+	projectTaskRequests   []project.CreateProjectTaskRequest
+	decisionRequests      []project.DecisionRequest
 }
 
 func (r *projectStoreMemoryRepository) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (project.Project, error) {
@@ -601,11 +792,48 @@ func (r *projectStoreMemoryRepository) AppendProjectEvent(ctx context.Context, r
 }
 
 func (r *projectStoreMemoryRepository) CreateRouteDecision(ctx context.Context, req project.CreateRouteDecisionRequest) (project.RouteDecision, error) {
+	r.routeDecisionRequests = append(r.routeDecisionRequests, req)
 	return project.RouteDecision{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, CoordinationJobID: req.CoordinationJobID, DemandID: req.DemandID, CreatedEventID: req.CreatedEventID, CreatedAt: time.Now().UTC()}, nil
 }
 
 func (r *projectStoreMemoryRepository) CreateProjectTask(ctx context.Context, req project.CreateProjectTaskRequest) (project.ProjectTask, error) {
-	return project.ProjectTask{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, DemandID: req.DemandID, Status: req.Status, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, nil
+	r.projectTaskRequests = append(r.projectTaskRequests, req)
+	var summary *string
+	if req.Summary != "" {
+		summary = strPtr(req.Summary)
+	}
+	var riskLevel *string
+	if req.RiskLevel != "" {
+		riskLevel = strPtr(req.RiskLevel)
+	}
+	task := project.ProjectTask{
+		ID:                        uuid.New(),
+		TenantID:                  req.TenantID,
+		ProjectID:                 req.ProjectID,
+		DemandID:                  req.DemandID,
+		Title:                     req.Title,
+		Summary:                   summary,
+		Status:                    req.Status,
+		AssignedDigitalEmployeeID: req.AssignedDigitalEmployeeID,
+		RuntimeTaskID:             req.RuntimeTaskID,
+		DigitalEmployeeRunID:      req.DigitalEmployeeRunID,
+		RiskLevel:                 riskLevel,
+		RequiresHumanApproval:     req.RequiresHumanApproval,
+		CoordinationJobID:         req.CoordinationJobID,
+		RouteDecisionID:           req.RouteDecisionID,
+		PlannedTaskKey:            req.PlannedTaskKey,
+		TaskKind:                  req.TaskKind,
+		StageIndex:                req.StageIndex,
+		ExpectedOutputs:           req.ExpectedOutputs,
+		InputRequirements:         req.InputRequirements,
+		HandoffContract:           req.HandoffContract,
+		PlannerMetadata:           req.PlannerMetadata,
+		BlockedByTaskIDs:          req.BlockedByTaskIDs,
+		CreatedAt:                 time.Now().UTC(),
+		UpdatedAt:                 time.Now().UTC(),
+	}
+	r.tasks = append(r.tasks, task)
+	return task, nil
 }
 
 func (r *projectStoreMemoryRepository) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (project.ProjectTask, error) {
@@ -733,4 +961,35 @@ func (f *projectTaskRunStarterFake) StartProjectTaskRun(ctx context.Context, req
 
 func strPtr(value string) *string {
 	return &value
+}
+
+func assertUUIDs(t *testing.T, got []uuid.UUID, want []uuid.UUID) {
+	t.Helper()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected uuid list: got %#v want %#v", got, want)
+	}
+}
+
+func assertAnyStrings(t *testing.T, got []any, want []string) {
+	t.Helper()
+	if !reflect.DeepEqual(anyStrings(got), want) {
+		t.Fatalf("unexpected string list: got %#v want %#v", got, want)
+	}
+}
+
+func assertPayloadStrings(t *testing.T, value any, want []string) {
+	t.Helper()
+	got, ok := value.([]any)
+	if !ok {
+		t.Fatalf("expected []any payload, got %#v", value)
+	}
+	assertAnyStrings(t, got, want)
+}
+
+func anyStrings(values []any) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, value.(string))
+	}
+	return result
 }

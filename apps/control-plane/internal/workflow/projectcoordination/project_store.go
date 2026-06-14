@@ -3,6 +3,8 @@ package projectcoordination
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/approval"
@@ -122,16 +124,17 @@ func (s *ProjectStore) PersistRouteDecision(ctx context.Context, input PersistRo
 		return RouteDecisionResult{}, err
 	}
 	demandID := input.DemandID
+	aggregated := aggregateRouteDecisionFields(input.Decision)
 	decision, err := s.repository.CreateRouteDecision(ctx, project.CreateRouteDecisionRequest{
 		TenantID:                    input.TenantID,
 		ProjectID:                   input.ProjectID,
 		CoordinationJobID:           input.JobID,
 		DemandID:                    &demandID,
-		CandidateDigitalEmployeeIDs: input.Decision.CandidateDigitalEmployeeIDs,
-		SelectedDigitalEmployeeIDs:  input.Decision.SelectedDigitalEmployeeIDs,
+		CandidateDigitalEmployeeIDs: aggregated.CandidateDigitalEmployeeIDs,
+		SelectedDigitalEmployeeIDs:  aggregated.SelectedDigitalEmployeeIDs,
 		Reason:                      input.Decision.Reason,
-		InputRequirements:           input.Decision.InputRequirements,
-		ExpectedOutputs:             stringsToAny(input.Decision.ExpectedOutputs),
+		InputRequirements:           aggregated.InputRequirements,
+		ExpectedOutputs:             stringsToAny(aggregated.ExpectedOutputs),
 		BudgetEstimate:              input.Decision.BudgetEstimate,
 		RequiresHumanReview:         input.Decision.RequiresHumanReview,
 		CreatedEventID:              &event.ID,
@@ -146,17 +149,26 @@ func (s *ProjectStore) CreateProjectTasks(ctx context.Context, input CreateProje
 	if s.repository == nil {
 		return nil, ErrActivityStoreRequired
 	}
-	results := make([]ProjectTaskResult, 0, len(input.Decision.SelectedDigitalEmployeeIDs))
-	for _, employeeID := range input.Decision.SelectedDigitalEmployeeIDs {
+	results := make([]ProjectTaskResult, 0, len(input.Decision.Tasks))
+	for _, plannedTask := range input.Decision.Tasks {
+		employeeID := plannedTask.SelectedEmployeeID
 		task, err := s.repository.CreateProjectTask(ctx, project.CreateProjectTaskRequest{
 			TenantID:                  input.TenantID,
 			ProjectID:                 input.ProjectID,
 			DemandID:                  &input.DemandID,
-			Title:                     input.Decision.TaskTitle,
-			Summary:                   input.Decision.TaskSummary,
+			Title:                     plannedTask.Title,
+			Summary:                   plannedTask.Summary,
 			Status:                    "planned",
 			AssignedDigitalEmployeeID: &employeeID,
-			RequiresHumanApproval:     input.Decision.RequiresHumanReview,
+			RiskLevel:                 plannedTask.RiskLevel,
+			RequiresHumanApproval:     plannedTask.RequiresHumanApproval,
+			PlannedTaskKey:            stringPtrOrNil(plannedTask.Key),
+			TaskKind:                  stringPtrOrNil(plannedTask.TaskKind),
+			StageIndex:                int32PtrOrNil(plannedTask.StageIndex),
+			ExpectedOutputs:           stringsToAny(plannedTask.ExpectedOutputs),
+			InputRequirements:         plannedTask.InputRequirements,
+			HandoffContract:           plannedTask.HandoffContract,
+			PlannerMetadata:           input.Decision.PlannerMetadata,
 		})
 		if err != nil {
 			return nil, err
@@ -465,6 +477,97 @@ func stringsToAny(values []string) []any {
 	return result
 }
 
+type routeDecisionAggregate struct {
+	CandidateDigitalEmployeeIDs []uuid.UUID
+	SelectedDigitalEmployeeIDs  []uuid.UUID
+	ExpectedOutputs             []string
+	InputRequirements           map[string]any
+}
+
+func aggregateRouteDecisionFields(plan RouteDecisionPlan) routeDecisionAggregate {
+	selected := make([]uuid.UUID, 0, len(plan.Tasks))
+	seenEmployees := map[uuid.UUID]struct{}{}
+	expectedOutputs := make([]string, 0)
+	seenOutputs := map[string]struct{}{}
+	taskSummaries := make([]any, 0, len(plan.Tasks))
+	for _, task := range plan.Tasks {
+		if task.SelectedEmployeeID != uuid.Nil {
+			if _, seen := seenEmployees[task.SelectedEmployeeID]; !seen {
+				seenEmployees[task.SelectedEmployeeID] = struct{}{}
+				selected = append(selected, task.SelectedEmployeeID)
+			}
+		}
+		for _, output := range task.ExpectedOutputs {
+			output = strings.TrimSpace(output)
+			if output == "" {
+				continue
+			}
+			if _, seen := seenOutputs[output]; seen {
+				continue
+			}
+			seenOutputs[output] = struct{}{}
+			expectedOutputs = append(expectedOutputs, output)
+		}
+		taskSummaries = append(taskSummaries, aggregateTaskInputSummary(task))
+	}
+	return routeDecisionAggregate{
+		CandidateDigitalEmployeeIDs: selected,
+		SelectedDigitalEmployeeIDs:  selected,
+		ExpectedOutputs:             expectedOutputs,
+		InputRequirements:           map[string]any{"tasks": taskSummaries},
+	}
+}
+
+func aggregateTaskInputSummary(task PlannedTask) map[string]any {
+	summary := map[string]any{
+		"key":                          task.Key,
+		"title":                        task.Title,
+		"selected_digital_employee_id": task.SelectedEmployeeID.String(),
+		"expected_outputs":             stringsToAny(task.ExpectedOutputs),
+		"input_requirement_keys":       stringsToAny(sortedMapKeys(task.InputRequirements)),
+	}
+	if task.TaskKind != "" {
+		summary["task_kind"] = task.TaskKind
+	}
+	if task.StageIndex != nil {
+		summary["stage_index"] = *task.StageIndex
+	}
+	if task.RiskLevel != "" {
+		summary["risk_level"] = task.RiskLevel
+	}
+	if task.RequiresHumanApproval {
+		summary["requires_human_approval"] = true
+	}
+	if len(task.BlockedByKeys) > 0 {
+		summary["blocked_by_keys"] = stringsToAny(task.BlockedByKeys)
+	}
+	return summary
+}
+
+func sortedMapKeys(values map[string]any) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func stringPtrOrNil(value string) *string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return &value
+}
+
+func int32PtrOrNil(value *int32) *int32 {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
+}
+
 func uuidStrings(values []uuid.UUID) []any {
 	result := make([]any, 0, len(values))
 	for _, value := range values {
@@ -474,13 +577,14 @@ func uuidStrings(values []uuid.UUID) []any {
 }
 
 func routeReviewContext(input RequestRouteDecisionReviewInput) map[string]any {
+	aggregated := aggregateRouteDecisionFields(input.Decision)
 	return map[string]any{
 		"project_id":                    input.ProjectID.String(),
 		"demand_id":                     input.DemandID.String(),
 		"coordination_job_id":           input.CoordinationJobID.String(),
 		"route_decision_id":             input.RouteDecisionID.String(),
 		"project_task_ids":              uuidStrings(input.ProjectTaskIDs),
-		"selected_digital_employee_ids": uuidStrings(input.Decision.SelectedDigitalEmployeeIDs),
+		"selected_digital_employee_ids": uuidStrings(aggregated.SelectedDigitalEmployeeIDs),
 		"reason":                        input.Decision.Reason,
 		"route_created_event_id":        input.RouteCreatedEventID.String(),
 	}

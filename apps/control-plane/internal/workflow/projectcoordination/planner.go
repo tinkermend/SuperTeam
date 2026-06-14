@@ -1,6 +1,7 @@
 package projectcoordination
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -30,65 +31,88 @@ type ProjectMemberSnapshot struct {
 	DisplayName string
 }
 
-type RouteDecisionPlan struct {
-	CandidateDigitalEmployeeIDs []uuid.UUID
-	SelectedDigitalEmployeeIDs  []uuid.UUID
-	Reason                      string
-	InputRequirements           map[string]any
-	ExpectedOutputs             []string
-	BudgetEstimate              map[string]any
-	RequiresHumanReview         bool
-	TaskTitle                   string
-	TaskSummary                 string
+type RoutePlanner interface {
+	Plan(ctx context.Context, snapshot CoordinationSnapshot) (RouteDecisionPlan, error)
 }
 
-func PlanDemandRoute(snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
+type RouteDecisionPlan struct {
+	Reason              string
+	RequiresHumanReview bool
+	BudgetEstimate      map[string]any
+	TemplateKey         string
+	PlannerMetadata     map[string]any
+	Tasks               []PlannedTask
+}
+
+type PlannedTask struct {
+	Key                   string
+	Title                 string
+	Summary               string
+	SelectedEmployeeID    uuid.UUID
+	TaskKind              string
+	StageIndex            *int32
+	RiskLevel             string
+	RequiresHumanApproval bool
+	ExpectedOutputs       []string
+	InputRequirements     map[string]any
+	HandoffContract       map[string]any
+	BlockedByKeys         []string
+}
+
+type HeuristicRoutePlanner struct{}
+
+func (HeuristicRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
+	_ = ctx
 	candidates := activeExecutorIDs(snapshot.DigitalEmployeePool)
 	if len(candidates) == 0 {
 		return RouteDecisionPlan{}, ErrInvalidRouteDecision
 	}
-	selected := []uuid.UUID{candidates[0]}
 	title := strings.TrimSpace(snapshot.Demand.Title)
 	if title == "" {
 		title = "处理项目需求"
 	}
+	summary := strings.TrimSpace(snapshot.Demand.Content)
+	if summary == "" {
+		summary = title
+	}
+	requiresHumanReview := highRiskPolicyEnabled(snapshot.CoordinationPolicy)
+	stageIndex := int32(0)
+	expectedOutputs := []string{"execution_summary", "evidence_refs", "recommended_next_action"}
 	decision := RouteDecisionPlan{
-		CandidateDigitalEmployeeIDs: candidates,
-		SelectedDigitalEmployeeIDs:  selected,
-		Reason:                      "选择项目数字员工池中的 active executor 作为第一执行人",
-		InputRequirements: map[string]any{
-			"demand_id": snapshot.Demand.ID.String(),
-			"title":     title,
-			"content":   snapshot.Demand.Content,
-		},
-		ExpectedOutputs:     []string{"execution_summary", "evidence_refs", "recommended_next_action"},
+		Reason:              "选择项目数字员工池中的 active executor 作为第一执行人",
+		RequiresHumanReview: requiresHumanReview,
 		BudgetEstimate:      map[string]any{"mode": "policy_default"},
-		RequiresHumanReview: highRiskPolicyEnabled(snapshot.CoordinationPolicy),
-		TaskTitle:           title,
-		TaskSummary:         snapshot.Demand.Content,
+		TemplateKey:         "heuristic.single_task",
+		PlannerMetadata: map[string]any{
+			"planner":  "heuristic_route_planner",
+			"strategy": "first_active_executor",
+		},
+		Tasks: []PlannedTask{{
+			Key:                   "execute_demand",
+			Title:                 title,
+			Summary:               summary,
+			SelectedEmployeeID:    candidates[0],
+			TaskKind:              "execution",
+			StageIndex:            &stageIndex,
+			RiskLevel:             "normal",
+			RequiresHumanApproval: requiresHumanReview,
+			ExpectedOutputs:       expectedOutputs,
+			InputRequirements: map[string]any{
+				"demand_id": snapshot.Demand.ID.String(),
+				"title":     title,
+				"content":   snapshot.Demand.Content,
+			},
+			HandoffContract: map[string]any{
+				"expected_outputs": stringsToAny(expectedOutputs),
+				"completion_path":  "project_task_writeback",
+			},
+		}},
 	}
 	return decision, ValidateRouteDecision(decision, candidates)
 }
 
-func ValidateRouteDecision(decision RouteDecisionPlan, poolIDs []uuid.UUID) error {
-	if strings.TrimSpace(decision.Reason) == "" || len(decision.SelectedDigitalEmployeeIDs) == 0 || len(decision.ExpectedOutputs) == 0 {
-		return ErrInvalidRouteDecision
-	}
-	pool := map[uuid.UUID]struct{}{}
-	for _, id := range poolIDs {
-		if id != uuid.Nil {
-			pool[id] = struct{}{}
-		}
-	}
-	for _, id := range decision.SelectedDigitalEmployeeIDs {
-		if id == uuid.Nil {
-			return ErrInvalidRouteDecision
-		}
-		if _, ok := pool[id]; !ok {
-			return ErrInvalidRouteDecision
-		}
-	}
-	return nil
+func PlanDemandRoute(snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
+	return HeuristicRoutePlanner{}.Plan(context.Background(), snapshot)
 }
 
 func activeExecutorIDs(members []ProjectMemberSnapshot) []uuid.UUID {
