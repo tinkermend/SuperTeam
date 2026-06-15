@@ -1004,7 +1004,8 @@ func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectD
 		"expected_outputs: " + taskContractJSON(task.ExpectedOutputs) + "\n" +
 		"input_requirements: " + taskContractJSON(task.InputRequirements) + "\n" +
 		"handoff_contract: " + taskContractJSON(task.HandoffContract) + "\n" +
-		"请按项目任务要求执行，并在完成后通过项目任务回写端点提交结论、证据、工件引用和不确定性。"
+		"请按项目任务要求执行，并直接输出结论、证据、工件引用和不确定性。" +
+		"你只需要给出最终答案；Runtime Agent 会在本轮结束后记录该答案。"
 }
 
 func taskContractJSON(value any) string {

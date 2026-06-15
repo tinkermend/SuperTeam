@@ -1256,6 +1256,9 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndBindsTask(t *testing.T) {
 	if !strings.Contains(req.Prompt, "需要确认测试报告") || !strings.Contains(req.Prompt, taskID.String()) {
 		t.Fatalf("expected prompt to include demand content and task id, got %q", req.Prompt)
 	}
+	require.NotContains(t, req.Prompt, "回写")
+	require.NotContains(t, strings.ToLower(req.Prompt), "writeback")
+	require.Contains(t, req.Prompt, "Runtime Agent")
 	require.Contains(t, req.Prompt, "expected_outputs")
 	require.Contains(t, req.Prompt, "input_requirements")
 	require.Contains(t, req.Prompt, "handoff_contract")

@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 use futures::StreamExt;
 
 use crate::commands::payload::{
-    RuntimeProvisionInstanceCommandPayload, RuntimeSessionCommandPayload, SessionPolicyMode,
+    RuntimeProvisionInstanceCommandPayload, RuntimeSessionCommandPayload,
+    RuntimeStopSessionCommandPayload, SessionPolicyMode,
 };
 use crate::commands::registry::{ActiveRunLookup, RuntimeCommandRegistry, RuntimeRunBinding};
 use crate::config::RuntimeConfig;
@@ -119,16 +120,24 @@ impl RuntimeCommandExecutor {
             None => {
                 let error = self
                     .recorded_error(&command.id, anyhow::anyhow!("prompt or input is required"));
-                self.write_session_failure(&payload.command_id, project_task.as_ref(), error.to_string())
-                    .await?;
+                self.write_session_failure(
+                    &payload.command_id,
+                    project_task.as_ref(),
+                    error.to_string(),
+                )
+                .await?;
                 return Err(error);
             }
         };
         let session_id = match self.input_session_id(&command, &payload) {
             Ok(session_id) => session_id,
             Err(error) => {
-                self.write_session_failure(&payload.command_id, project_task.as_ref(), error.to_string())
-                    .await?;
+                self.write_session_failure(
+                    &payload.command_id,
+                    project_task.as_ref(),
+                    error.to_string(),
+                )
+                .await?;
                 return Err(error);
             }
         };
@@ -136,8 +145,12 @@ impl RuntimeCommandExecutor {
         let provider = match self.select_provider(&command.id, &payload) {
             Ok(provider) => provider,
             Err(error) => {
-                self.write_session_failure(&payload.command_id, project_task.as_ref(), error.to_string())
-                    .await?;
+                self.write_session_failure(
+                    &payload.command_id,
+                    project_task.as_ref(),
+                    error.to_string(),
+                )
+                .await?;
                 return Err(error);
             }
         };
@@ -149,7 +162,7 @@ impl RuntimeCommandExecutor {
                     project_task.as_ref(),
                     error.to_string(),
                 )
-                    .await?;
+                .await?;
                 return Err(error);
             }
         };
@@ -260,6 +273,43 @@ impl RuntimeCommandExecutor {
         &self,
         command: RuntimeCommand,
     ) -> anyhow::Result<RuntimeCommandOutcome> {
+        if let Ok(payload) = RuntimeStopSessionCommandPayload::from_command(&command) {
+            let start_command_id = payload.start_command_id();
+            let run_id = self
+                .registry
+                .active_run_for_command(start_command_id)
+                .ok_or_else(|| {
+                    self.recorded_error(
+                        &command.id,
+                        anyhow::anyhow!("no active run found for stop_session command"),
+                    )
+                })?;
+            let reason = payload
+                .reason
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("stop_session command received")
+                .to_string();
+
+            self.runs.cancel_run(&run_id, Some(reason.clone())).await?;
+            if let Some(control_plane) = &self.control_plane {
+                control_plane
+                    .cancel_runtime_command(
+                        start_command_id,
+                        &command_cancelled_terminal(Some(reason)),
+                    )
+                    .await?;
+            }
+            self.registry.record_run_finished(&run_id);
+
+            return Ok(RuntimeCommandOutcome {
+                command_id: payload.command_id,
+                accepted: true,
+                run_id: Some(run_id),
+            });
+        }
+
         let payload = self.parse_session_payload(&command)?;
         let provider_session_id = non_empty_session_id(&payload);
         let run_id = self
@@ -791,6 +841,22 @@ fn command_failed_terminal(error_message: String) -> RuntimeCommandTerminalWrite
     }
 }
 
+fn command_cancelled_terminal(reason: Option<String>) -> RuntimeCommandTerminalWriteback {
+    RuntimeCommandTerminalWriteback {
+        status: "cancelled".to_string(),
+        summary: reason,
+        result: None,
+        diagnostic: None,
+        provider_session_external_id: None,
+        session_state_patch: None,
+        log_ref: None,
+        raw_result_ref: None,
+        error_message: None,
+        error_code: None,
+        error_family: None,
+    }
+}
+
 impl RuntimeCommandWritebackSink {
     async fn record_event(
         &self,
@@ -853,7 +919,10 @@ impl RuntimeCommandWritebackSink {
 
     async fn fail(&self, error_message: String) -> anyhow::Result<()> {
         self.client
-            .fail_runtime_command(&self.command_id, &command_failed_terminal(error_message.clone()))
+            .fail_runtime_command(
+                &self.command_id,
+                &command_failed_terminal(error_message.clone()),
+            )
             .await?;
         self.fail_project_task(&error_message).await
     }

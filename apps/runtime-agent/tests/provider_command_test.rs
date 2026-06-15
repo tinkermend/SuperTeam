@@ -49,6 +49,22 @@ fn claude_continue_uses_resume_session_id() {
 }
 
 #[test]
+fn claude_uses_runtime_governed_non_interactive_permissions() {
+    let provider = ClaudeProvider::new("claude");
+    let command = provider.build_command(&request(None, false));
+    let args: Vec<_> = command
+        .as_std()
+        .get_args()
+        .map(|arg| arg.to_string_lossy().to_string())
+        .collect();
+
+    assert!(
+        args.windows(2)
+            .any(|window| window == ["--permission-mode", "bypassPermissions"])
+    );
+}
+
+#[test]
 fn opencode_continue_uses_session_flag() {
     let provider = OpenCodeProvider::new("opencode");
     let command = provider.build_command(&request(Some("oc-session"), true));

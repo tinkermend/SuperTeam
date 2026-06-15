@@ -75,6 +75,54 @@ func TestPlanDemandRouteRequiresHumanReviewWhenPolicySaysSo(t *testing.T) {
 	}
 }
 
+func TestPlanDemandRouteCanFanOutToAllActiveExecutorsWithoutHumanReview(t *testing.T) {
+	firstEmployeeID := uuid.New()
+	secondEmployeeID := uuid.New()
+	reviewerID := uuid.New()
+	decision, err := PlanDemandRoute(CoordinationSnapshot{
+		ProjectID: uuid.New(),
+		Demand: DemandSnapshot{
+			ID:      uuid.New(),
+			Title:   "并行验证任务链",
+			Content: "请多个数字员工分别执行独立检查，并汇总各自结论。",
+		},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			{PrincipalID: firstEmployeeID, ProjectRole: "executor", Status: "active", DisplayName: "执行员工 A"},
+			{PrincipalID: secondEmployeeID, ProjectRole: "executor", Status: "active", DisplayName: "执行员工 B"},
+			{PrincipalID: reviewerID, ProjectRole: "reviewer", Status: "active", DisplayName: "复核员工"},
+		},
+		CoordinationPolicy: map[string]any{"dispatch_all_active_executors": true},
+	})
+	if err != nil {
+		t.Fatalf("plan demand route: %v", err)
+	}
+	if decision.RequiresHumanReview {
+		t.Fatal("fanout smoke route should not require human review unless policy explicitly asks for it")
+	}
+	if len(decision.Tasks) != 2 {
+		t.Fatalf("expected one task per active executor, got %#v", decision.Tasks)
+	}
+	selected := map[uuid.UUID]bool{}
+	for _, task := range decision.Tasks {
+		selected[task.SelectedEmployeeID] = true
+		if task.RequiresHumanApproval {
+			t.Fatalf("fanout task should not require human approval: %#v", task)
+		}
+		if len(task.BlockedByKeys) != 0 {
+			t.Fatalf("fanout tasks should be independently dispatchable, got blockers %#v", task.BlockedByKeys)
+		}
+		if task.HandoffContract["completion_path"] != "project_task_writeback" {
+			t.Fatalf("expected runtime project task writeback contract, got %#v", task.HandoffContract)
+		}
+	}
+	if !selected[firstEmployeeID] || !selected[secondEmployeeID] || selected[reviewerID] {
+		t.Fatalf("unexpected selected employees: %#v", selected)
+	}
+	if decision.PlannerMetadata["strategy"] != "all_active_executors" {
+		t.Fatalf("expected fanout planner metadata, got %#v", decision.PlannerMetadata)
+	}
+}
+
 func TestValidateRouteDecisionRejectsOutOfPoolSelection(t *testing.T) {
 	poolID := uuid.New()
 	decision := RouteDecisionPlan{

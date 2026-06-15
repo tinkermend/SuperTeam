@@ -26,6 +26,10 @@ describe('UserAuthForm', () => {
   it('shows validation messages when submitting empty form', async () => {
     const screen = await render(<UserAuthForm />)
 
+    await expect
+      .element(screen.getByPlaceholder('请输入账号'))
+      .toBeVisible()
+
     await userEvent.click(screen.getByRole('button', { name: /^登录$/i }))
 
     await expect.element(screen.getByText('请输入用户名。')).toBeVisible()

@@ -78,6 +78,48 @@ func (HeuristicRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSnap
 	requiresHumanReview := highRiskPolicyEnabled(snapshot.CoordinationPolicy)
 	stageIndex := int32(0)
 	expectedOutputs := []string{"execution_summary", "evidence_refs", "recommended_next_action"}
+	if multiExecutorFanoutEnabled(snapshot.CoordinationPolicy) && len(candidates) > 1 {
+		tasks := make([]PlannedTask, 0, len(candidates))
+		for index, candidateID := range candidates {
+			taskStageIndex := stageIndex
+			key := "execute_demand_" + uuidShort(candidateID)
+			tasks = append(tasks, PlannedTask{
+				Key:                   key,
+				Title:                 title,
+				Summary:               summary,
+				SelectedEmployeeID:    candidateID,
+				TaskKind:              "execution",
+				StageIndex:            &taskStageIndex,
+				RiskLevel:             "normal",
+				RequiresHumanApproval: requiresHumanReview,
+				ExpectedOutputs:       expectedOutputs,
+				InputRequirements: map[string]any{
+					"demand_id":               snapshot.Demand.ID.String(),
+					"title":                   title,
+					"content":                 snapshot.Demand.Content,
+					"fanout_index":            index,
+					"selected_employee_id":    candidateID.String(),
+					"selected_employee_count": len(candidates),
+				},
+				HandoffContract: map[string]any{
+					"expected_outputs": stringsToAny(expectedOutputs),
+					"completion_path":  "project_task_writeback",
+				},
+			})
+		}
+		decision := RouteDecisionPlan{
+			Reason:              "按协调策略将需求分派给项目数字员工池中的所有 active executor",
+			RequiresHumanReview: requiresHumanReview,
+			BudgetEstimate:      map[string]any{"mode": "policy_default", "task_count": len(tasks)},
+			TemplateKey:         "heuristic.multi_executor_fanout",
+			PlannerMetadata: map[string]any{
+				"planner":  "heuristic_route_planner",
+				"strategy": "all_active_executors",
+			},
+			Tasks: tasks,
+		}
+		return decision, ValidateRouteDecision(decision, candidates)
+	}
 	decision := RouteDecisionPlan{
 		Reason:              "选择项目数字员工池中的 active executor 作为第一执行人",
 		RequiresHumanReview: requiresHumanReview,
@@ -128,4 +170,21 @@ func activeExecutorIDs(members []ProjectMemberSnapshot) []uuid.UUID {
 func highRiskPolicyEnabled(policy map[string]any) bool {
 	value, ok := policy["require_human_review_for_new_demands"].(bool)
 	return ok && value
+}
+
+func multiExecutorFanoutEnabled(policy map[string]any) bool {
+	value, ok := policy["dispatch_all_active_executors"].(bool)
+	if ok && value {
+		return true
+	}
+	strategy, ok := policy["fallback_planner_strategy"].(string)
+	return ok && strategy == "all_active_executors"
+}
+
+func uuidShort(id uuid.UUID) string {
+	text := strings.ReplaceAll(id.String(), "-", "")
+	if len(text) > 12 {
+		return text[:12]
+	}
+	return text
 }

@@ -26,6 +26,7 @@ impl ClaudeProvider {
         command.arg("--output-format").arg("stream-json");
         command.arg("--verbose");
         command.arg("--include-partial-messages");
+        command.arg("--permission-mode").arg("bypassPermissions");
         if request.continue_session {
             if let Some(session_id) = &request.session_id {
                 command.arg("--resume").arg(session_id);

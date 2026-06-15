@@ -444,6 +444,25 @@ async fn serve_command_completion_writebacks(
     CommandWritebackServer { addr, task }
 }
 
+async fn serve_command_cancel_writebacks(
+    capture: CommandCompletionCapture,
+) -> CommandWritebackServer {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let addr = listener.local_addr().expect("local addr");
+    let app = Router::new()
+        .route(
+            "/api/v1/runtime/commands/{command_id}/cancelled",
+            post(capture_complete_writeback),
+        )
+        .with_state(capture);
+    let task = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .await
+            .expect("serve cancel writebacks");
+    });
+    CommandWritebackServer { addr, task }
+}
+
 async fn serve_failing_project_task_completion(
     capture: CommandCompletionCapture,
 ) -> CommandWritebackServer {
@@ -1514,6 +1533,129 @@ sleep 5
     assert_eq!(stop.run_id.as_deref(), Some(started_run_id.as_str()));
     let snapshot = wait_for_status(&executor.runs(), &started_run_id, RunStatus::Cancelled).await;
     assert_eq!(snapshot.status, RunStatus::Cancelled);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn stop_session_accepts_control_plane_lightweight_payload() {
+    let temp = TempDir::new().expect("tempdir");
+    let marker_file = temp.path().join("lightweight-stop-marker.txt");
+    let fake_claude = make_script(
+        temp.path(),
+        "lightweight-stop-claude",
+        &format!(
+            r#"#!/usr/bin/env bash
+sleep 0.25
+printf '%s\n' marker > {}
+sleep 5
+"#,
+            shell_quote(&marker_file)
+        ),
+    );
+    let executor = configure_runtime(&temp, fake_claude);
+    let home = prepare_employee_home(&temp);
+
+    let start = executor
+        .handle_command(session_command_in_home(
+            &home,
+            "cmd-start-lightweight-stop",
+            RuntimeCommandType::StartSession,
+            "new",
+            None,
+            Some("start work that will be stopped by control plane payload"),
+            None,
+        ))
+        .await
+        .expect("start_session accepted");
+    let started_run_id = start.run_id.expect("started run id");
+
+    let stop = executor
+        .handle_command(RuntimeCommand {
+            id: "cmd-stop-lightweight".to_string(),
+            command_type: RuntimeCommandType::StopSession,
+            payload: json!({
+                "provider_run_protocol": "provider-run/v1",
+                "run_id": "77777777-7777-4777-8777-777777777777",
+                "task_id": "88888888-8888-4888-8888-888888888888",
+                "command_id": "cmd-stop-lightweight",
+                "start_command_id": "cmd-start-lightweight-stop",
+                "reason": "test cleanup",
+                "grace_sec": null
+            }),
+        })
+        .await
+        .expect("stop_session accepted");
+
+    assert_eq!(stop.run_id.as_deref(), Some(started_run_id.as_str()));
+    wait_for_status(&executor.runs(), &started_run_id, RunStatus::Cancelled).await;
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert!(
+        !marker_file.exists(),
+        "lightweight stop_session did not kill provider process"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn lightweight_stop_session_writes_cancelled_terminal_for_start_command() {
+    let temp = TempDir::new().expect("tempdir");
+    let capture = CommandCompletionCapture::default();
+    let server = serve_command_cancel_writebacks(capture.clone()).await;
+    let fake_claude = make_script(
+        temp.path(),
+        "cancel-writeback-claude",
+        r#"#!/usr/bin/env bash
+sleep 5
+"#,
+    );
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", server.addr),
+        "session-token",
+        "node-1",
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+    let home = prepare_employee_home(&temp);
+
+    let start = executor
+        .handle_command(session_command_in_home(
+            &home,
+            "cmd-start-cancel-writeback",
+            RuntimeCommandType::StartSession,
+            "new",
+            None,
+            Some("start work that will be cancelled"),
+            None,
+        ))
+        .await
+        .expect("start_session accepted");
+    let started_run_id = start.run_id.expect("started run id");
+
+    executor
+        .handle_command(RuntimeCommand {
+            id: "cmd-stop-cancel-writeback".to_string(),
+            command_type: RuntimeCommandType::StopSession,
+            payload: json!({
+                "provider_run_protocol": "provider-run/v1",
+                "run_id": "77777777-7777-4777-8777-777777777777",
+                "task_id": "88888888-8888-4888-8888-888888888888",
+                "command_id": "cmd-stop-cancel-writeback",
+                "start_command_id": "cmd-start-cancel-writeback",
+                "reason": "operator cancelled",
+                "grace_sec": null
+            }),
+        })
+        .await
+        .expect("stop_session accepted");
+
+    wait_for_status(&executor.runs(), &started_run_id, RunStatus::Cancelled).await;
+    let cancel = wait_for_writeback(capture.complete.clone()).await;
+    assert_eq!(cancel.command_id, "cmd-start-cancel-writeback");
+    assert_eq!(cancel.payload["status"], "cancelled");
+    assert_eq!(cancel.payload["summary"], "operator cancelled");
+    assert_eq!(
+        cancel.authorization.as_deref(),
+        Some("Bearer session-token")
+    );
+    assert_eq!(cancel.node_id.as_deref(), Some("node-1"));
+    server.task.abort();
 }
 
 #[tokio::test(flavor = "current_thread")]

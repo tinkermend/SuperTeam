@@ -153,6 +153,15 @@ impl RuntimeCommandRegistry {
         state.command_runs.get(command_id).cloned()
     }
 
+    pub fn active_run_for_command(&self, command_id: &str) -> Option<String> {
+        let state = self
+            .state
+            .lock()
+            .expect("runtime command registry poisoned");
+        let run_id = state.command_runs.get(command_id)?;
+        state.is_active_run(run_id).then(|| run_id.clone())
+    }
+
     pub fn latest_provider_session(
         &self,
         execution_instance_id: &str,

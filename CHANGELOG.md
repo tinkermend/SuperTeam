@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 2026-06-16 00:11：调整“炬枢平台 / 新炬网络”品牌展示，放大认证后 Shell 左上角品牌 mark 与文字，并取消登录页品牌图的背景混合模式，改用原色透明 PNG、轻量光晕和对比度增强提升可读性。
+- 2026-06-15 23:32：登录页与认证后 Shell 品牌替换为“炬枢平台 / 新炬网络”，新增 gpt-image2 生成后重排并透明化处理的登录横幅和主展示图，登录页使用品牌图融入背景，侧栏左上角使用图片 mark 搭配可读品牌文字。
 - 2026-06-14 10:28：收紧 `AGENTS.md` 与 `$superteam-completion-check`，将前后端、跨层、Runtime/Provider、数据库/迁移和合并后的真实端到端验证提升为默认完成硬门禁；缺少服务、认证、Provider 或安全环境时必须标记阻塞，不能以“未做真实链路验证”作为完成说明。
 - 2026-06-13 11:48：优化任务发起页项目、审核人、优先级和风险级别字段展示，改为响应式参数条布局，减少宽屏两列布局造成的大空档并保持移动端自动换行。
 - 2026-06-13 11:45：优化任务发起页低高度与移动端自适应布局，将提交需求和保存草稿提升到首屏标题区可见位置，并固定侧边栏激活项在不同主题测试顺序下保持白色文字。
@@ -134,6 +136,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- 2026-06-15 22:47：修复项目需求到多数字员工执行闭环：heuristic planner 可按策略 fan-out 到所有 active executor 且不触发人工审核，ProjectTask 提示不再暴露内部写回机制，Runtime Agent 支持 Control Plane 轻量 `stop_session` payload 取消活跃 run 并回写 cancelled 终态，Claude Code Provider 默认使用 Runtime 治理的非交互权限模式，避免真实执行链路卡在人类审批或 Provider 权限提示。
 - 2026-06-15 18:24：修复项目任务发起到 task-graph 的真实链路：提交需求和 workflow signal 重试前会幂等确保 Temporal 项目协调 workflow 存在，DeepSeek planner 请求增加短超时并在外部 planner 超时后回退到 heuristic，避免 `PlanDemandRoute` activity 被 30 秒 StartToClose timeout 打断而无法持久化任务图。
 - 2026-06-14 10:32：修复 Runtime command terminal event 与 active-run registry 清理之间的竞态，Provider turn 已完成后立即移除活跃 run，避免 `stop_session` 在短窗口内误取消已完成执行。
 - 2026-06-13 23:28：修复 Runtime Agent 数字员工工作目录初始化时 `CLAUDE.md` 被写成普通副本的问题，改为在 Unix 环境下生成指向 `AGENTS.md` 的兼容软链，并覆盖已有旧副本，保持 Claude Code 与 OpenCode 的工作目录只创建对应 Provider 配置目录。

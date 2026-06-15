@@ -4,9 +4,10 @@ use std::time::Duration;
 
 use super::models::{
     EnrollHelloRequest, EnrollHelloResponse, HeartbeatRequest, HeartbeatResponse,
-    ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, RegisterNodeRequest, RegisterNodeResponse,
-    RuntimeCapabilitiesRequest, RuntimeCapabilityInput, RuntimeCapabilityResponse,
-    RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeSessionResponse, Task,
+    ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, RegisterNodeRequest,
+    RegisterNodeResponse, RuntimeCapabilitiesRequest, RuntimeCapabilityInput,
+    RuntimeCapabilityResponse, RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback,
+    RuntimeSessionResponse, Task,
 };
 
 /// Control Plane HTTP client
@@ -413,6 +414,32 @@ impl ControlPlaneClient {
         Ok(())
     }
 
+    pub async fn cancel_runtime_command(
+        &self,
+        command_id: &str,
+        terminal: &RuntimeCommandTerminalWriteback,
+    ) -> Result<()> {
+        let url = self.runtime_command_cancelled_url(command_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
+            .json(terminal)
+            .send()
+            .await
+            .context("Failed to cancel runtime command")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Cancel runtime command failed with {}: {}", status, body);
+        }
+
+        Ok(())
+    }
+
     pub async fn complete_project_task(
         &self,
         project_task_id: &str,
@@ -563,6 +590,13 @@ impl ControlPlaneClient {
     fn runtime_command_fail_url(&self, command_id: &str) -> String {
         format!(
             "{}/api/v1/runtime/commands/{}/fail",
+            self.base_url, command_id
+        )
+    }
+
+    fn runtime_command_cancelled_url(&self, command_id: &str) -> String {
+        format!(
+            "{}/api/v1/runtime/commands/{}/cancelled",
             self.base_url, command_id
         )
     }

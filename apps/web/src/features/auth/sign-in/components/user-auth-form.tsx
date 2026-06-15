@@ -75,7 +75,7 @@ export function UserAuthForm({
               <FormControl>
                 <Input
                   className='h-12 rounded-full px-5'
-                  placeholder='admin'
+                  placeholder='请输入账号'
                   {...field}
                 />
               </FormControl>

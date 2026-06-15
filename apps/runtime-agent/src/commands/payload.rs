@@ -175,6 +175,58 @@ pub struct RuntimeSessionCommandPayload {
     pub metadata: serde_json::Value,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeStopSessionCommandPayload {
+    pub command_id: String,
+    #[serde(default)]
+    pub start_command_id: Option<String>,
+    #[serde(default)]
+    pub run_id: Option<String>,
+    #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub grace_sec: Option<i32>,
+}
+
+impl RuntimeStopSessionCommandPayload {
+    pub fn from_command(command: &RuntimeCommand) -> Result<Self> {
+        if !matches!(command.command_type, RuntimeCommandType::StopSession) {
+            anyhow::bail!(
+                "runtime command type is not stop_session: {:?}",
+                command.command_type
+            );
+        }
+        if !command.payload.is_object() {
+            anyhow::bail!("runtime stop command payload must be an object");
+        }
+        let payload: Self = serde_json::from_value(command.payload.clone())
+            .context("invalid runtime stop session command payload")?;
+        if payload.command_id != command.id {
+            anyhow::bail!("command_id does not match runtime command id");
+        }
+        if payload
+            .start_command_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_none()
+        {
+            anyhow::bail!("start_command_id is required");
+        }
+        Ok(payload)
+    }
+
+    pub fn start_command_id(&self) -> &str {
+        self.start_command_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .expect("validated start_command_id")
+    }
+}
+
 impl RuntimeSessionCommandPayload {
     pub fn from_command(command: &RuntimeCommand) -> Result<Self> {
         if !matches!(
