@@ -55,6 +55,41 @@ export type ProjectDemandStatus =
   | "recorded"
   | "planning_pending"
   | "cancelled";
+export type WorkflowInstanceStatus =
+  | "planning"
+  | "running"
+  | "waiting_human"
+  | "failed"
+  | "completed"
+  | "cancelled"
+  | "unknown";
+export type WorkflowInstanceProgress = {
+  total_nodes: number;
+  completed_nodes: number;
+  running_nodes: number;
+  blocked_nodes: number;
+  waiting_human_nodes: number;
+};
+export type WorkflowInstanceCurrentBlocker = {
+  type: string;
+  title: string;
+  resource_id?: string;
+};
+export type WorkflowInstanceSummary = {
+  demand_id: string;
+  project_id: string;
+  project_name: string;
+  title: string;
+  submitted_by_user_id: string;
+  submitted_by_display_name: string;
+  status: WorkflowInstanceStatus;
+  status_reason: string;
+  created_at: string;
+  updated_at: string;
+  selected_coordination_job_id?: string;
+  progress: WorkflowInstanceProgress;
+  current_blocker?: WorkflowInstanceCurrentBlocker;
+};
 export type ProjectEvidenceVerificationStatus =
   | "submitted"
   | "linked"
@@ -127,6 +162,56 @@ export type ProjectTask = {
   assigned_digital_employee_id?: string;
   risk_level?: string;
   requires_human_approval: boolean;
+  coordination_job_id?: string;
+  route_decision_id?: string;
+  planned_task_key?: string;
+  task_kind?: string;
+  stage_index?: number;
+  expected_outputs?: unknown[];
+  input_requirements?: Record<string, unknown>;
+  handoff_contract?: Record<string, unknown>;
+  planner_metadata?: Record<string, unknown>;
+};
+
+export type ProjectTaskGraphNode = ProjectTask & {
+  expected_outputs: unknown[];
+  input_requirements: Record<string, unknown>;
+  handoff_contract: Record<string, unknown>;
+  planner_metadata: Record<string, unknown>;
+};
+
+export type ProjectTaskGraphEdge = {
+  dependent_task_id: string;
+  blocker_task_id: string;
+  coordination_job_id?: string;
+  edge_status: string;
+};
+
+export type ProjectTaskGraphEmployee = {
+  digital_employee_id: string;
+  display_name: string;
+  project_role: ProjectRole;
+  status: string;
+};
+
+export type ProjectTaskGraphRun = {
+  project_task_id: string;
+  digital_employee_run_id?: string;
+  runtime_task_id?: string;
+  runtime_node_id?: string;
+  runtime_node_summary: string;
+  status: string;
+  provider_type: string;
+};
+
+export type ProjectTaskGraph = {
+  nodes: ProjectTaskGraphNode[];
+  edges: ProjectTaskGraphEdge[];
+  employees: ProjectTaskGraphEmployee[];
+  runs: ProjectTaskGraphRun[];
+  execution_summaries: ProjectExecutionSummary[];
+  recent_events: ProjectEvent[];
+  decision_requests: ProjectDecisionRequest[];
 };
 
 export type ProjectEvent = {
@@ -517,10 +602,23 @@ export type ListProjectsFilters = {
   offset?: number;
 };
 
+export type ListWorkflowInstancesFilters = {
+  q?: string;
+  projectId?: string;
+  status?: WorkflowInstanceStatus;
+  limit?: number;
+  offset?: number;
+};
+
 export type ListProjectTasksFilters = {
   status?: string;
   limit?: number;
   offset?: number;
+};
+
+export type GetProjectTaskGraphFilters = {
+  demandId?: string;
+  coordinationJobId?: string;
 };
 
 export type PaginationFilters = {
@@ -636,6 +734,30 @@ function projectListPath(filters: ListProjectsFilters = {}): string {
   return query ? `/api/v1/projects?${query}` : "/api/v1/projects";
 }
 
+function workflowInstancesPath(filters: ListWorkflowInstancesFilters = {}): string {
+  const params = new URLSearchParams();
+  const q = filters.q?.trim();
+  if (q) {
+    params.set("q", q);
+  }
+  if (filters.projectId) {
+    params.set("project_id", filters.projectId);
+  }
+  if (filters.status) {
+    params.set("status", filters.status);
+  }
+  if (filters.limit !== undefined) {
+    params.set("limit", String(filters.limit));
+  }
+  if (filters.offset !== undefined) {
+    params.set("offset", String(filters.offset));
+  }
+  const query = params.toString();
+  return query
+    ? `/api/v1/workflow-instances?${query}`
+    : "/api/v1/workflow-instances";
+}
+
 function paginationQuery(filters: PaginationFilters = {}): string {
   const params = new URLSearchParams();
   if (filters.limit !== undefined) {
@@ -673,11 +795,34 @@ function taskQuery(filters: ListProjectTasksFilters = {}): string {
   return query ? `?${query}` : "";
 }
 
+function taskGraphQuery(filters: GetProjectTaskGraphFilters = {}): string {
+  const params = new URLSearchParams();
+  if (filters.demandId) {
+    params.set("demand_id", filters.demandId);
+  }
+  if (filters.coordinationJobId) {
+    params.set("coordination_job_id", filters.coordinationJobId);
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 export function listProjects(
   options: ApiClientOptions,
   filters: ListProjectsFilters = {},
 ): Promise<Project[]> {
   return getJson<Project[]>(options, projectListPath(filters), "projects");
+}
+
+export function listWorkflowInstances(
+  options: ApiClientOptions,
+  filters: ListWorkflowInstancesFilters = {},
+): Promise<WorkflowInstanceSummary[]> {
+  return getJson<WorkflowInstanceSummary[]>(
+    options,
+    workflowInstancesPath(filters),
+    "workflow instances",
+  );
 }
 
 export function createProject(
@@ -791,6 +936,18 @@ export function listProjectTasks(
     options,
     projectPath(projectId, `/tasks${taskQuery(filters)}`),
     "project tasks",
+  );
+}
+
+export function getProjectTaskGraph(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: GetProjectTaskGraphFilters = {},
+): Promise<ProjectTaskGraph> {
+  return getJson<ProjectTaskGraph>(
+    options,
+    projectPath(projectId, `/task-graph${taskGraphQuery(filters)}`),
+    "project task graph",
   );
 }
 

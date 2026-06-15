@@ -9,14 +9,16 @@ import {
   getProjectConfigRevision,
   getProjectDemandLaunchDetail,
   getProjectOverview,
+  getProjectTaskGraph,
   listProjectConfigRevisions,
   listProjectEvidence,
   listProjectRouteDecisions,
+  listWorkflowInstances,
   patchProjectEvidence,
   replaceProjectMembers,
   resolveProjectDecision,
   submitProjectDemand,
-} from "./projects";
+} from "@/lib/api/projects";
 
 const project = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -319,6 +321,64 @@ describe("project API", () => {
         headers: { accept: "application/json" },
         method: "GET",
       },
+    );
+  });
+
+  it("lists workflow instances with encoded filters", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify([]), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      listWorkflowInstances(
+        { baseUrl: "http://control-plane.local", fetcher },
+        {
+          limit: 25,
+          offset: 5,
+          projectId: "project 1/primary",
+          q: "支付 巡检",
+          status: "running",
+        },
+      ),
+    ).resolves.toEqual([]);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/workflow-instances?q=%E6%94%AF%E4%BB%98+%E5%B7%A1%E6%A3%80&project_id=project+1%2Fprimary&status=running&limit=25&offset=5",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("gets project task graph by demand id", async () => {
+    const graph = {
+      nodes: [],
+      edges: [],
+      employees: [],
+      runs: [],
+      execution_summaries: [],
+      recent_events: [],
+      decision_requests: [],
+    };
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(graph), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      getProjectTaskGraph(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+        { demandId: "demand 1/primary" },
+      ),
+    ).resolves.toEqual(graph);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/task-graph?demand_id=demand+1%2Fprimary",
+      expect.objectContaining({ method: "GET" }),
     );
   });
 
