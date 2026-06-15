@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-16 00:09：Control Plane 新增 Workflow Instances read model API，基于项目需求事实返回当前 Console 用户可见的工作流实例摘要、进度、状态优先级和协调作业引用，并补齐 sqlc、HTTP route 与 OpenAPI 契约。
 - 2026-06-14 22:08：项目协调底座新增 DAG 规划与任务图执行能力，包含 DeepSeek/OpenAI-compatible planner 配置、ProjectTask 图与依赖持久化、ready 节点分派、完成契约校验、失败恢复决策、任务图 read model，以及 Runtime Agent 对 ProjectTask completion writeback 的真实执行桥接。
 - 2026-06-14 01:59：Runtime Agent 新增 Codex Provider 接入，包含 provider catalog 配置、Codex CLI JSONL adapter、`.codex` 工作区隔离、Runtime command/legacy task provider selection、capability 上报，以及 HTTP/CLI smoke 路径和回归测试覆盖。
 - 2026-06-13 22:24：Control Plane 消费 Runtime `sync_workspace_files` 终态回写，按 receipt 目标更新数字员工 workspace file sync 投影，成功记录 synced hash，失败记录错误信息，并避免误触发 provisioning 生命周期状态或清理逻辑。
