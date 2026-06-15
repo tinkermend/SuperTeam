@@ -616,10 +616,9 @@ export type ListProjectTasksFilters = {
   offset?: number;
 };
 
-export type GetProjectTaskGraphFilters = {
-  demandId?: string;
-  coordinationJobId?: string;
-};
+export type GetProjectTaskGraphFilters =
+  | { demandId: string; coordinationJobId?: string }
+  | { coordinationJobId: string; demandId?: string };
 
 export type PaginationFilters = {
   limit?: number;
@@ -795,7 +794,7 @@ function taskQuery(filters: ListProjectTasksFilters = {}): string {
   return query ? `?${query}` : "";
 }
 
-function taskGraphQuery(filters: GetProjectTaskGraphFilters = {}): string {
+function taskGraphQuery(filters: GetProjectTaskGraphFilters): string {
   const params = new URLSearchParams();
   if (filters.demandId) {
     params.set("demand_id", filters.demandId);
@@ -942,7 +941,7 @@ export function listProjectTasks(
 export function getProjectTaskGraph(
   options: ApiClientOptions,
   projectId: string,
-  filters: GetProjectTaskGraphFilters = {},
+  filters: GetProjectTaskGraphFilters,
 ): Promise<ProjectTaskGraph> {
   return getJson<ProjectTaskGraph>(
     options,
