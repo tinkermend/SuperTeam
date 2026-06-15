@@ -10,7 +10,7 @@ use crate::commands::registry::{ActiveRunLookup, RuntimeCommandRegistry, Runtime
 use crate::config::RuntimeConfig;
 use crate::controlplane::ControlPlaneClient;
 use crate::controlplane::models::{
-    EnsureInstanceCommand, ProjectTaskCompleteWriteback, RuntimeCommand,
+    EnsureInstanceCommand, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, RuntimeCommand,
     RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeCommandType,
 };
 use crate::events::ProviderEvent;
@@ -113,12 +113,13 @@ impl RuntimeCommandExecutor {
                 return Err(error);
             }
         };
+        let project_task = project_task_writeback_context(&payload);
         let prompt = match payload.provider_prompt() {
             Some(prompt) => prompt,
             None => {
                 let error = self
                     .recorded_error(&command.id, anyhow::anyhow!("prompt or input is required"));
-                self.write_command_failure(&command.id, error.to_string())
+                self.write_session_failure(&payload.command_id, project_task.as_ref(), error.to_string())
                     .await?;
                 return Err(error);
             }
@@ -126,7 +127,7 @@ impl RuntimeCommandExecutor {
         let session_id = match self.input_session_id(&command, &payload) {
             Ok(session_id) => session_id,
             Err(error) => {
-                self.write_command_failure(&command.id, error.to_string())
+                self.write_session_failure(&payload.command_id, project_task.as_ref(), error.to_string())
                     .await?;
                 return Err(error);
             }
@@ -135,7 +136,7 @@ impl RuntimeCommandExecutor {
         let provider = match self.select_provider(&command.id, &payload) {
             Ok(provider) => provider,
             Err(error) => {
-                self.write_command_failure(&command.id, error.to_string())
+                self.write_session_failure(&payload.command_id, project_task.as_ref(), error.to_string())
                     .await?;
                 return Err(error);
             }
@@ -143,7 +144,11 @@ impl RuntimeCommandExecutor {
         let workspace_path = match self.ensure_command_instance(&command.id, &payload) {
             Ok(workspace_path) => workspace_path,
             Err(error) => {
-                self.write_workspace_sync_failure(&command.id, error.to_string())
+                self.write_session_workspace_sync_failure(
+                    &payload.command_id,
+                    project_task.as_ref(),
+                    error.to_string(),
+                )
                     .await?;
                 return Err(error);
             }
@@ -200,7 +205,7 @@ impl RuntimeCommandExecutor {
             .map(|client| RuntimeCommandWritebackSink {
                 client: client.clone(),
                 command_id: payload.command_id.clone(),
-                project_task: project_task_writeback_context(&payload),
+                project_task: project_task.clone(),
             });
         let provider_run = match provider.start(provider_request(&spec)).await {
             Ok(provider_run) => provider_run,
@@ -463,6 +468,53 @@ impl RuntimeCommandExecutor {
             control_plane
                 .fail_runtime_command(command_id, &command_failed_terminal(error_message))
                 .await?;
+        }
+        Ok(())
+    }
+
+    async fn write_session_failure(
+        &self,
+        command_id: &str,
+        project_task: Option<&ProjectTaskWritebackContext>,
+        error_message: String,
+    ) -> anyhow::Result<()> {
+        if let Some(control_plane) = &self.control_plane {
+            control_plane
+                .fail_runtime_command(command_id, &command_failed_terminal(error_message.clone()))
+                .await?;
+            if let Some(project_task) = project_task {
+                control_plane
+                    .fail_project_task(
+                        &project_task.project_task_id,
+                        &project_task_fail_writeback(project_task, &error_message),
+                    )
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn write_session_workspace_sync_failure(
+        &self,
+        command_id: &str,
+        project_task: Option<&ProjectTaskWritebackContext>,
+        error_message: String,
+    ) -> anyhow::Result<()> {
+        if let Some(control_plane) = &self.control_plane {
+            control_plane
+                .fail_runtime_command(
+                    command_id,
+                    &workspace_sync_failed_terminal(error_message.clone()),
+                )
+                .await?;
+            if let Some(project_task) = project_task {
+                control_plane
+                    .fail_project_task(
+                        &project_task.project_task_id,
+                        &project_task_fail_writeback(project_task, &error_message),
+                    )
+                    .await?;
+            }
         }
         Ok(())
     }
@@ -787,10 +839,23 @@ impl RuntimeCommandWritebackSink {
         Ok(())
     }
 
+    async fn fail_project_task(&self, error_message: &str) -> anyhow::Result<()> {
+        if let Some(project_task) = &self.project_task {
+            self.client
+                .fail_project_task(
+                    &project_task.project_task_id,
+                    &project_task_fail_writeback(project_task, error_message),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
     async fn fail(&self, error_message: String) -> anyhow::Result<()> {
         self.client
-            .fail_runtime_command(&self.command_id, &command_failed_terminal(error_message))
-            .await
+            .fail_runtime_command(&self.command_id, &command_failed_terminal(error_message.clone()))
+            .await?;
+        self.fail_project_task(&error_message).await
     }
 }
 
@@ -1118,6 +1183,16 @@ fn runtime_command_evidence_ref(
         );
     }
     serde_json::Value::Object(evidence)
+}
+
+fn project_task_fail_writeback(
+    context: &ProjectTaskWritebackContext,
+    error_message: &str,
+) -> ProjectTaskFailWriteback {
+    ProjectTaskFailWriteback {
+        digital_employee_id: context.digital_employee_id.clone(),
+        failure_summary: error_message.trim().to_string(),
+    }
 }
 
 fn path_to_string(path: &Path) -> String {

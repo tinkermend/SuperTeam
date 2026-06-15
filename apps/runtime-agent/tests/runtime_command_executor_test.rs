@@ -367,6 +367,7 @@ fn assert_tokens_in_order(args: &str, first: &str, second: &str) {
 #[derive(Clone, Default)]
 struct CommandFailureCapture {
     fail: Arc<Mutex<Option<CapturedWriteback>>>,
+    project_task_fail: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -389,6 +390,10 @@ async fn serve_command_failures(capture: CommandFailureCapture) -> CommandWriteb
         .route(
             "/api/v1/runtime/commands/{command_id}/fail",
             post(capture_fail_writeback),
+        )
+        .route(
+            "/api/v1/runtime/project-tasks/{project_task_id}/fail",
+            post(capture_project_task_fail_writeback),
         )
         .with_state(capture);
     let task = tokio::spawn(async move {
@@ -545,6 +550,24 @@ async fn capture_fail_writeback(
 ) -> StatusCode {
     *capture.fail.lock().expect("fail lock") = Some(CapturedWriteback {
         command_id,
+        authorization: header_value(&headers, "authorization"),
+        node_id: header_value(&headers, "x-node-id"),
+        payload,
+    });
+    StatusCode::ACCEPTED
+}
+
+async fn capture_project_task_fail_writeback(
+    AxumPath(project_task_id): AxumPath<String>,
+    State(capture): State<CommandFailureCapture>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    *capture
+        .project_task_fail
+        .lock()
+        .expect("project task fail lock") = Some(CapturedProjectTaskWriteback {
+        project_task_id,
         authorization: header_value(&headers, "authorization"),
         node_id: header_value(&headers, "x-node-id"),
         payload,
@@ -1110,6 +1133,97 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
     assert_eq!(failed.payload["status"], "failed");
     assert_eq!(failed.payload["error_code"], "workspace_sync_failed");
     assert_eq!(failed.payload["error_family"], "workspace_materialization");
+    assert!(
+        !marker_file.exists(),
+        "provider started after workspace failure"
+    );
+
+    http_server.task.abort();
+}
+
+#[tokio::test]
+async fn project_task_workspace_sync_failure_also_fails_project_task_writeback() {
+    let temp = tempfile::tempdir().unwrap();
+    let capture = CommandFailureCapture::default();
+    let http_server = serve_command_failures(capture.clone()).await;
+    let marker_file = temp.path().join("provider-ran.txt");
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude-should-not-run-project-task",
+        &format!(
+            r#"#!/usr/bin/env bash
+printf '%s\n' ran > {}
+printf '%s\n' '{{"type":"result","result":"done"}}'
+"#,
+            shell_quote(&marker_file)
+        ),
+    );
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        "node-1",
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+
+    let home = temp
+        .path()
+        .join("workspaces")
+        .join("teams")
+        .join(TEAM_ID)
+        .join("employees")
+        .join(DIGITAL_EMPLOYEE_ID);
+    std::fs::create_dir_all(&home).unwrap();
+
+    let content = "# Project Task Execution Contract\n";
+    let mut command = session_command_in_home(
+        &home,
+        "cmd-project-task-bad-workspace",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("complete the project task"),
+        None,
+    );
+    command.payload["workspace_files"] =
+        json!([workspace_file_with_hash(content, "not-the-content-hash")]);
+    command.payload["metadata"] = json!({
+        "source": "project_task_dispatch",
+        "project_task_id": PROJECT_TASK_ID,
+        "expected_outputs": ["execution_summary", "evidence_refs"],
+        "handoff_contract": {"completion_path": "project_task_writeback"}
+    });
+
+    let error = executor
+        .handle_command(command)
+        .await
+        .expect_err("bad workspace file hash should reject before provider start");
+    assert!(
+        error.to_string().contains("content_hash mismatch"),
+        "unexpected error: {error}"
+    );
+
+    let failed = wait_for_writeback(capture.fail.clone()).await;
+    assert_eq!(failed.command_id, "cmd-project-task-bad-workspace");
+
+    let project_task_failed =
+        wait_for_project_task_writeback(capture.project_task_fail.clone()).await;
+    assert_eq!(project_task_failed.project_task_id, PROJECT_TASK_ID);
+    assert_eq!(
+        project_task_failed.authorization.as_deref(),
+        Some("Bearer session-token")
+    );
+    assert_eq!(project_task_failed.node_id.as_deref(), Some("node-1"));
+    assert_eq!(
+        project_task_failed.payload["digital_employee_id"],
+        DIGITAL_EMPLOYEE_ID
+    );
+    assert!(
+        project_task_failed
+            .payload
+            .get("failure_summary")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.contains("content_hash mismatch"))
+    );
     assert!(
         !marker_file.exists(),
         "provider started after workspace failure"

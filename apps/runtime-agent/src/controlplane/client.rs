@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use super::models::{
     EnrollHelloRequest, EnrollHelloResponse, HeartbeatRequest, HeartbeatResponse,
-    ProjectTaskCompleteWriteback, RegisterNodeRequest, RegisterNodeResponse,
+    ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, RegisterNodeRequest, RegisterNodeResponse,
     RuntimeCapabilitiesRequest, RuntimeCapabilityInput, RuntimeCapabilityResponse,
     RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeSessionResponse, Task,
 };
@@ -439,6 +439,32 @@ impl ControlPlaneClient {
         Ok(())
     }
 
+    pub async fn fail_project_task(
+        &self,
+        project_task_id: &str,
+        writeback: &ProjectTaskFailWriteback,
+    ) -> Result<()> {
+        let url = self.project_task_fail_url(project_task_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
+            .json(writeback)
+            .send()
+            .await
+            .context("Failed to fail project task")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Fail project task failed with {}: {}", status, body);
+        }
+
+        Ok(())
+    }
+
     /// Renew task lease
     pub async fn renew_lease(&self, task_id: i64) -> Result<()> {
         let url = self.task_lease_url(task_id);
@@ -548,6 +574,13 @@ impl ControlPlaneClient {
         )
     }
 
+    fn project_task_fail_url(&self, project_task_id: &str) -> String {
+        format!(
+            "{}/api/v1/runtime/project-tasks/{}/fail",
+            self.base_url, project_task_id
+        )
+    }
+
     fn task_lease_url(&self, task_id: i64) -> String {
         format!("{}/api/v1/runtime/tasks/{}/lease", self.base_url, task_id)
     }
@@ -616,6 +649,10 @@ mod tests {
         assert_eq!(
             client.project_task_complete_url("project-task-1"),
             "http://localhost:8080/api/v1/runtime/project-tasks/project-task-1/complete"
+        );
+        assert_eq!(
+            client.project_task_fail_url("project-task-1"),
+            "http://localhost:8080/api/v1/runtime/project-tasks/project-task-1/fail"
         );
         assert_eq!(
             client.task_lease_url(1),

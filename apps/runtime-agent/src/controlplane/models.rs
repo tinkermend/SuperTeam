@@ -219,6 +219,12 @@ pub struct ProjectTaskCompleteWriteback {
     pub requires_human_review: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectTaskFailWriteback {
+    pub digital_employee_id: String,
+    pub failure_summary: String,
+}
+
 impl<'de> Deserialize<'de> for RuntimeCommandType {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
