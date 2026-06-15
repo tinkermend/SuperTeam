@@ -114,6 +114,10 @@ func (r *PgRepository) ListProjects(ctx context.Context, req ListProjectsRequest
 	return projectsFromRecords(rows)
 }
 
+func (r *PgRepository) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
+	return []WorkflowInstanceSummary{}, nil
+}
+
 func (r *PgRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (Project, error) {
 	coordinationPolicy, err := jsonbObjectOrNull(req.CoordinationPolicy, "coordination_policy")
 	if err != nil {

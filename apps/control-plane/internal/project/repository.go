@@ -10,6 +10,7 @@ type Repository interface {
 	CreateProject(ctx context.Context, req CreateProjectRequest, projectID uuid.UUID, workflowID string) (Project, error)
 	GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)
 	ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error)
+	ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error)
 	UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (Project, error)
 	ArchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)
 	ReplaceProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error)

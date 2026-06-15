@@ -294,6 +294,73 @@ func TestGetProjectTaskGraphRequiresFilterAndDoesNotApplyHiddenLimit(t *testing.
 	}
 }
 
+func TestListWorkflowInstancesNormalizesPaginationAndStatusPriority(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo := &workflowInstanceServiceRepository{
+		memoryRepository: newMemoryRepository(),
+		items: []WorkflowInstanceSummary{{
+			DemandID:          demandID,
+			ProjectID:         projectID,
+			ProjectName:       "支付巡检",
+			Title:             "定位支付成功率下降",
+			SubmittedByUserID: actorID,
+			Status:            WorkflowInstanceStatusUnknown,
+			Progress: WorkflowInstanceProgress{
+				TotalNodes:        3,
+				CompletedNodes:    1,
+				RunningNodes:      1,
+				BlockedNodes:      1,
+				WaitingHumanNodes: 1,
+			},
+		}},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	items, err := service.ListWorkflowInstances(context.Background(), ListWorkflowInstancesRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorID,
+		Limit:       0,
+		Offset:      -4,
+	})
+	if err != nil {
+		t.Fatalf("list workflow instances: %v", err)
+	}
+	if repo.lastReq.Limit != 20 || repo.lastReq.Offset != 0 {
+		t.Fatalf("expected normalized pagination, got limit=%d offset=%d", repo.lastReq.Limit, repo.lastReq.Offset)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one workflow instance, got %#v", items)
+	}
+	if items[0].Status != WorkflowInstanceStatusWaitingHuman {
+		t.Fatalf("expected waiting_human to outrank running and planning, got %#v", items[0])
+	}
+}
+
+func TestListWorkflowInstancesRejectsMissingActor(t *testing.T) {
+	tenantID := uuid.New()
+	repo := &workflowInstanceServiceRepository{memoryRepository: newMemoryRepository()}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = service.ListWorkflowInstances(context.Background(), ListWorkflowInstancesRequest{
+		TenantID: tenantID,
+	})
+	if !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("expected invalid project error, got %v", err)
+	}
+	if repo.calls != 0 {
+		t.Fatalf("expected invalid request not to call repository, got %d calls", repo.calls)
+	}
+}
+
 func TestSubmitDemandPersistsDefaultReviewerPreference(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -2958,6 +3025,13 @@ type taskGraphLimitRepository struct {
 	lastReq GetProjectTaskGraphRequest
 }
 
+type workflowInstanceServiceRepository struct {
+	*memoryRepository
+	calls   int
+	lastReq ListWorkflowInstancesRequest
+	items   []WorkflowInstanceSummary
+}
+
 func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{
 		projects:                   map[uuid.UUID]Project{},
@@ -2995,6 +3069,16 @@ func (r *taskGraphLimitRepository) GetProjectTaskGraph(ctx context.Context, req 
 		RecentEvents:       []ProjectEvent{},
 		DecisionRequests:   []DecisionRequest{},
 	}, nil
+}
+
+func (r *workflowInstanceServiceRepository) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
+	r.calls++
+	r.lastReq = req
+	return append([]WorkflowInstanceSummary(nil), r.items...), nil
+}
+
+func (r *memoryRepository) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
+	return []WorkflowInstanceSummary{}, nil
 }
 
 func cloneProjects(projects map[uuid.UUID]Project) map[uuid.UUID]Project {

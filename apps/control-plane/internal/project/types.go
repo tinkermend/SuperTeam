@@ -128,6 +128,58 @@ const (
 	ProjectDemandStatusCancelled       ProjectDemandStatus = "cancelled"
 )
 
+type WorkflowInstanceStatus string
+
+const (
+	WorkflowInstanceStatusPlanning     WorkflowInstanceStatus = "planning"
+	WorkflowInstanceStatusRunning      WorkflowInstanceStatus = "running"
+	WorkflowInstanceStatusWaitingHuman WorkflowInstanceStatus = "waiting_human"
+	WorkflowInstanceStatusFailed       WorkflowInstanceStatus = "failed"
+	WorkflowInstanceStatusCompleted    WorkflowInstanceStatus = "completed"
+	WorkflowInstanceStatusCancelled    WorkflowInstanceStatus = "cancelled"
+	WorkflowInstanceStatusUnknown      WorkflowInstanceStatus = "unknown"
+)
+
+type ListWorkflowInstancesRequest struct {
+	TenantID    uuid.UUID
+	ActorUserID uuid.UUID
+	Query       string
+	ProjectID   *uuid.UUID
+	Status      *WorkflowInstanceStatus
+	Limit       int32
+	Offset      int32
+}
+
+type WorkflowInstanceProgress struct {
+	TotalNodes        int32
+	CompletedNodes    int32
+	RunningNodes      int32
+	BlockedNodes      int32
+	WaitingHumanNodes int32
+}
+
+type WorkflowInstanceCurrentBlocker struct {
+	Type       string
+	Title      string
+	ResourceID *uuid.UUID
+}
+
+type WorkflowInstanceSummary struct {
+	DemandID                  uuid.UUID
+	ProjectID                 uuid.UUID
+	ProjectName               string
+	Title                     string
+	SubmittedByUserID         uuid.UUID
+	SubmittedByDisplayName    string
+	Status                    WorkflowInstanceStatus
+	StatusReason              string
+	CreatedAt                 time.Time
+	UpdatedAt                 time.Time
+	SelectedCoordinationJobID *uuid.UUID
+	Progress                  WorkflowInstanceProgress
+	CurrentBlocker            *WorkflowInstanceCurrentBlocker
+}
+
 type Project struct {
 	ID                     uuid.UUID
 	TenantID               uuid.UUID

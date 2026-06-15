@@ -127,6 +127,31 @@ func (s *Service) ListProjects(ctx context.Context, req ListProjectsRequest) ([]
 	return s.repository.ListProjects(ctx, req)
 }
 
+func (s *Service) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
+	if req.TenantID == uuid.Nil || req.ActorUserID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	req.Query = strings.TrimSpace(req.Query)
+	req.Limit, req.Offset = normalizeWorkflowInstancePagination(req.Limit, req.Offset)
+	items, err := s.repository.ListWorkflowInstances(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i].Status = normalizeWorkflowInstanceStatus(items[i])
+	}
+	if req.Status != nil {
+		filtered := make([]WorkflowInstanceSummary, 0, len(items))
+		for _, item := range items {
+			if item.Status == *req.Status {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
+	return items, nil
+}
+
 func (s *Service) UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (*Project, error) {
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ActorUserID == uuid.Nil {
 		return nil, ErrInvalidProject
@@ -2164,6 +2189,42 @@ func normalizePagination(limit, offset int32) (int32, int32) {
 		offset = 0
 	}
 	return limit, offset
+}
+
+func normalizeWorkflowInstancePagination(limit, offset int32) (int32, int32) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
+}
+
+func normalizeWorkflowInstanceStatus(item WorkflowInstanceSummary) WorkflowInstanceStatus {
+	switch item.Status {
+	case WorkflowInstanceStatusFailed, WorkflowInstanceStatusCancelled:
+		return item.Status
+	}
+	if item.Progress.WaitingHumanNodes > 0 {
+		return WorkflowInstanceStatusWaitingHuman
+	}
+	if item.Progress.RunningNodes > 0 {
+		return WorkflowInstanceStatusRunning
+	}
+	if item.Progress.TotalNodes == 0 {
+		return WorkflowInstanceStatusPlanning
+	}
+	if item.Progress.CompletedNodes == item.Progress.TotalNodes {
+		return WorkflowInstanceStatusCompleted
+	}
+	if item.Status != "" {
+		return item.Status
+	}
+	return WorkflowInstanceStatusUnknown
 }
 
 func strPtr(value string) *string {
