@@ -292,4 +292,27 @@ describe("WorkflowView", () => {
       });
     });
   });
+
+  it("replace-navigates stale demand ids without fetching the first visible demand detail", async () => {
+    mocks.navigate.mockClear();
+    const fetcher = createWorkflowFetcher();
+
+    await renderWorkflowView({ demandId: "missing-demand", fetcher });
+
+    await vi.waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        params: { demandId: "demand-running" },
+        replace: true,
+        to: "/workflows/$demandId",
+      });
+    });
+
+    const requestedUrls = (
+      fetcher as unknown as { mock: { calls: [RequestInfo | URL, RequestInit?][] } }
+    ).mock.calls.map(([input]) => String(input));
+
+    expect(requestedUrls).not.toContain(
+      "http://control-plane.local/api/v1/project-demands/demand-running/launch-detail",
+    );
+  });
 });

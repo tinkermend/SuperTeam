@@ -35,33 +35,43 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
     refetchInterval: 5000,
   });
   const instances = listQuery.data ?? [];
-  const selected =
-    instances.find((instance) => instance.demand_id === demandId) ?? instances[0];
+  const routeSelected = demandId
+    ? instances.find((instance) => instance.demand_id === demandId)
+    : undefined;
+  const fallbackSelected = !demandId ? instances[0] : undefined;
+  const selected = routeSelected ?? fallbackSelected;
   const selectedDemandId = selected?.demand_id;
+  const fallbackDemandId = instances[0]?.demand_id;
 
   useEffect(() => {
-    if (demandId || !selectedDemandId) {
+    if (!fallbackDemandId) {
+      return;
+    }
+
+    if (demandId && routeSelected) {
       return;
     }
 
     void navigate({
-      params: { demandId: selectedDemandId },
+      params: { demandId: fallbackDemandId },
       replace: true,
       to: "/workflows/$demandId",
     });
-  }, [demandId, navigate, selectedDemandId]);
+  }, [demandId, fallbackDemandId, navigate, routeSelected]);
 
   const detailQuery = useQuery({
     enabled: Boolean(selectedDemandId),
     placeholderData: keepPreviousData,
     queryFn: () => getProjectDemandLaunchDetail(apiOptions, selectedDemandId ?? ""),
     queryKey: ["workflow-detail", apiBaseUrl, selectedDemandId],
+    refetchInterval: 5000,
   });
   const currentDetail =
     detailQuery.data?.demand.id === selectedDemandId ? detailQuery.data : undefined;
 
   const graphQuery = useQuery({
     enabled: Boolean(currentDetail?.project.id && selectedDemandId),
+    placeholderData: keepPreviousData,
     queryFn: () =>
       getProjectTaskGraph(apiOptions, currentDetail?.project.id ?? "", {
         demandId: selectedDemandId ?? "",
