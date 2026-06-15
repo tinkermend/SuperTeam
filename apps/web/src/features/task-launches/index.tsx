@@ -74,7 +74,7 @@ export function TaskLaunchView({ apiBaseUrl, fetcher }: TaskLaunchViewProps) {
     onSuccess: (demand) =>
       navigate({
         params: { demandId: demand.id },
-        to: "/task-launches/$demandId",
+        to: "/workflows/$demandId",
       }),
   });
 

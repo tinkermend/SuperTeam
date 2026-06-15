@@ -501,7 +501,7 @@ describe("TaskLaunchView", () => {
     await vi.waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
         params: { demandId: "demand-1" },
-        to: "/task-launches/$demandId",
+        to: "/workflows/$demandId",
       });
     });
   });
@@ -529,7 +529,7 @@ describe("TaskLaunchView", () => {
     await vi.waitFor(() => {
       expect(mocks.navigate).toHaveBeenCalledWith({
         params: { demandId: "demand-2" },
-        to: "/task-launches/$demandId",
+        to: "/workflows/$demandId",
       });
     });
   });
