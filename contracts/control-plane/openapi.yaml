@@ -627,6 +627,40 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/RuntimeCapability"
+  /api/v1/workflow-instances:
+    get:
+      operationId: listWorkflowInstances
+      summary: List visible workflow instances
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/WorkflowInstanceStatus"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Visible workflow instances
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowInstanceSummary"
+        "400":
+          $ref: "#/components/responses/Error"
   /api/v1/projects:
     get:
       operationId: listProjects
@@ -3845,6 +3879,100 @@ components:
         - recorded
         - planning_pending
         - cancelled
+    WorkflowInstanceStatus:
+      type: string
+      enum:
+        - planning
+        - running
+        - waiting_human
+        - failed
+        - completed
+        - cancelled
+        - unknown
+    WorkflowInstanceProgress:
+      type: object
+      required:
+        - total_nodes
+        - completed_nodes
+        - running_nodes
+        - blocked_nodes
+        - waiting_human_nodes
+      properties:
+        total_nodes:
+          type: integer
+          format: int32
+        completed_nodes:
+          type: integer
+          format: int32
+        running_nodes:
+          type: integer
+          format: int32
+        blocked_nodes:
+          type: integer
+          format: int32
+        waiting_human_nodes:
+          type: integer
+          format: int32
+    WorkflowInstanceCurrentBlocker:
+      type: object
+      required:
+        - type
+        - title
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        resource_id:
+          type: string
+          format: uuid
+    WorkflowInstanceSummary:
+      type: object
+      required:
+        - demand_id
+        - project_id
+        - project_name
+        - title
+        - submitted_by_user_id
+        - submitted_by_display_name
+        - status
+        - status_reason
+        - created_at
+        - updated_at
+        - progress
+      properties:
+        demand_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        project_name:
+          type: string
+        title:
+          type: string
+        submitted_by_user_id:
+          type: string
+          format: uuid
+        submitted_by_display_name:
+          type: string
+        status:
+          $ref: "#/components/schemas/WorkflowInstanceStatus"
+        status_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        selected_coordination_job_id:
+          type: string
+          format: uuid
+        progress:
+          $ref: "#/components/schemas/WorkflowInstanceProgress"
+        current_blocker:
+          $ref: "#/components/schemas/WorkflowInstanceCurrentBlocker"
     ProjectEvidenceVerificationStatus:
       type: string
       enum:

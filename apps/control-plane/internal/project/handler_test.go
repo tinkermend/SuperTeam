@@ -137,6 +137,57 @@ func TestProjectHandlerDemandResponseIncludesNullReviewerWhenAbsent(t *testing.T
 	}
 }
 
+func TestListWorkflowInstancesReturnsSummaries(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	demandID := uuid.New()
+	projectID := uuid.New()
+	jobID := uuid.New()
+	service := &handlerTestService{
+		workflowInstances: []WorkflowInstanceSummary{{
+			DemandID:                  demandID,
+			ProjectID:                 projectID,
+			ProjectName:               "生产巡检",
+			Title:                     "支付成功率下降",
+			SubmittedByUserID:         actorID,
+			SubmittedByDisplayName:    "张晓明",
+			Status:                    WorkflowInstanceStatusRunning,
+			StatusReason:              "任务执行中",
+			CreatedAt:                 time.Now().UTC(),
+			UpdatedAt:                 time.Now().UTC(),
+			SelectedCoordinationJobID: &jobID,
+			Progress:                  WorkflowInstanceProgress{TotalNodes: 2, RunningNodes: 1},
+		}},
+	}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workflow-instances?status=running&limit=10&q=支付", nil)
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.ListWorkflowInstances(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected workflow instances 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.workflowInstancesReq.TenantID != tenantID || service.workflowInstancesReq.ActorUserID != actorID || service.workflowInstancesReq.Query != "支付" || service.workflowInstancesReq.Limit != 10 {
+		t.Fatalf("unexpected workflow instance request: %#v", service.workflowInstancesReq)
+	}
+	if service.workflowInstancesReq.Status == nil || *service.workflowInstancesReq.Status != WorkflowInstanceStatusRunning {
+		t.Fatalf("expected running status filter, got %#v", service.workflowInstancesReq.Status)
+	}
+	var body []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body) != 1 || body[0]["demand_id"] != demandID.String() || body[0]["status"] != "running" {
+		t.Fatalf("unexpected workflow instance body: %#v", body)
+	}
+	progress := body[0]["progress"].(map[string]any)
+	if progress["total_nodes"].(float64) != 2 || progress["running_nodes"].(float64) != 1 {
+		t.Fatalf("unexpected progress: %#v", progress)
+	}
+}
+
 func TestProjectHandlerGetConfigUsesCurrentOverview(t *testing.T) {
 	projectID := uuid.New()
 	service := &handlerTestService{}
@@ -701,6 +752,8 @@ type handlerTestService struct {
 	createReq              CreateProjectRequest
 	submitDemandReq        SubmitProjectDemandRequest
 	submitDemandErr        error
+	workflowInstances      []WorkflowInstanceSummary
+	workflowInstancesReq   ListWorkflowInstancesRequest
 	createEvidenceReq      CreateEvidenceRefServiceRequest
 	patchEvidenceReq       PatchEvidenceRequest
 	patchEvidenceErr       error
@@ -737,6 +790,11 @@ func (s *handlerTestService) GetProject(ctx context.Context, tenantID, projectID
 
 func (s *handlerTestService) ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error) {
 	return []Project{testProject(req.TenantID, uuid.New(), uuid.New())}, nil
+}
+
+func (s *handlerTestService) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
+	s.workflowInstancesReq = req
+	return s.workflowInstances, nil
 }
 
 func (s *handlerTestService) UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (*Project, error) {

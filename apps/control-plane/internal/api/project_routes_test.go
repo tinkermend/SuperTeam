@@ -77,6 +77,17 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 		t.Fatalf("expected list request to use console tenant and query filters, got %#v", service.listReq)
 	}
 
+	workflowReq := httptest.NewRequest(http.MethodGet, "/api/v1/workflow-instances?status=running&limit=9&q=支付", nil)
+	workflowReq.AddCookie(cookie)
+	workflowResp := httptest.NewRecorder()
+	server.ServeHTTP(workflowResp, workflowReq)
+	if workflowResp.Code != http.StatusOK {
+		t.Fatalf("expected workflow instances route to succeed, got %d: %s", workflowResp.Code, workflowResp.Body.String())
+	}
+	if service.workflowInstancesReq.TenantID != expectedTenantID || service.workflowInstancesReq.ActorUserID != user.ID || service.workflowInstancesReq.Query != "支付" || service.workflowInstancesReq.Limit != 9 {
+		t.Fatalf("expected workflow instances context/query from route, got %#v", service.workflowInstancesReq)
+	}
+
 	overviewReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/overview", nil)
 	overviewReq.AddCookie(cookie)
 	overviewResp := httptest.NewRecorder()
@@ -526,6 +537,7 @@ type routeProjectService struct {
 	projectID                 uuid.UUID
 	createReq                 project.CreateProjectRequest
 	listReq                   project.ListProjectsRequest
+	workflowInstancesReq      project.ListWorkflowInstancesRequest
 	overviewTenantID          uuid.UUID
 	overviewProjectID         uuid.UUID
 	overviewCalls             int
@@ -578,6 +590,11 @@ func (s *routeProjectService) GetProject(ctx context.Context, tenantID, projectI
 func (s *routeProjectService) ListProjects(ctx context.Context, req project.ListProjectsRequest) ([]project.Project, error) {
 	s.listReq = req
 	return []project.Project{routeProject(req.TenantID, s.ensureProjectID(), uuid.New())}, nil
+}
+
+func (s *routeProjectService) ListWorkflowInstances(ctx context.Context, req project.ListWorkflowInstancesRequest) ([]project.WorkflowInstanceSummary, error) {
+	s.workflowInstancesReq = req
+	return []project.WorkflowInstanceSummary{}, nil
 }
 
 func (s *routeProjectService) UpdateProjectConfig(ctx context.Context, req project.UpdateProjectConfigRequest) (*project.Project, error) {

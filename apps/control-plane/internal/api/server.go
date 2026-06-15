@@ -219,6 +219,7 @@ func (s *Server) registerRoutes() {
 		if s.projectHandler != nil {
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/workflow-instances", s.projectHandler.ListWorkflowInstances)
 				r.Get("/projects", s.projectHandler.ListProjects)
 				r.Post("/projects", s.projectHandler.CreateProject)
 				r.Get("/projects/{projectId}", s.projectHandler.GetProject)

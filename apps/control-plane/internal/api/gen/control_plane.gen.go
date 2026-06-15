@@ -1263,6 +1263,39 @@ func (e TeamUserAvatarStyle) Valid() bool {
 	}
 }
 
+// Defines values for WorkflowInstanceStatus.
+const (
+	WorkflowInstanceStatusCancelled    WorkflowInstanceStatus = "cancelled"
+	WorkflowInstanceStatusCompleted    WorkflowInstanceStatus = "completed"
+	WorkflowInstanceStatusFailed       WorkflowInstanceStatus = "failed"
+	WorkflowInstanceStatusPlanning     WorkflowInstanceStatus = "planning"
+	WorkflowInstanceStatusRunning      WorkflowInstanceStatus = "running"
+	WorkflowInstanceStatusUnknown      WorkflowInstanceStatus = "unknown"
+	WorkflowInstanceStatusWaitingHuman WorkflowInstanceStatus = "waiting_human"
+)
+
+// Valid indicates whether the value is a known member of the WorkflowInstanceStatus enum.
+func (e WorkflowInstanceStatus) Valid() bool {
+	switch e {
+	case WorkflowInstanceStatusCancelled:
+		return true
+	case WorkflowInstanceStatusCompleted:
+		return true
+	case WorkflowInstanceStatusFailed:
+		return true
+	case WorkflowInstanceStatusPlanning:
+		return true
+	case WorkflowInstanceStatusRunning:
+		return true
+	case WorkflowInstanceStatusUnknown:
+		return true
+	case WorkflowInstanceStatusWaitingHuman:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListAuditEventsParamsResourceType.
 const (
 	ListAuditEventsParamsResourceTypeProject ListAuditEventsParamsResourceType = "project"
@@ -1298,19 +1331,19 @@ func (e ListInboxItemsParamsView) Valid() bool {
 
 // Defines values for ListInboxItemsParamsStatus.
 const (
-	Cancelled ListInboxItemsParamsStatus = "cancelled"
-	Open      ListInboxItemsParamsStatus = "open"
-	Resolved  ListInboxItemsParamsStatus = "resolved"
+	ListInboxItemsParamsStatusCancelled ListInboxItemsParamsStatus = "cancelled"
+	ListInboxItemsParamsStatusOpen      ListInboxItemsParamsStatus = "open"
+	ListInboxItemsParamsStatusResolved  ListInboxItemsParamsStatus = "resolved"
 )
 
 // Valid indicates whether the value is a known member of the ListInboxItemsParamsStatus enum.
 func (e ListInboxItemsParamsStatus) Valid() bool {
 	switch e {
-	case Cancelled:
+	case ListInboxItemsParamsStatusCancelled:
 		return true
-	case Open:
+	case ListInboxItemsParamsStatusOpen:
 		return true
-	case Resolved:
+	case ListInboxItemsParamsStatusResolved:
 		return true
 	default:
 		return false
@@ -3398,6 +3431,42 @@ type UserCredential struct {
 	UserId         openapi_types.UUID `json:"user_id"`
 }
 
+// WorkflowInstanceCurrentBlocker defines model for WorkflowInstanceCurrentBlocker.
+type WorkflowInstanceCurrentBlocker struct {
+	ResourceId *openapi_types.UUID `json:"resource_id,omitempty"`
+	Title      string              `json:"title"`
+	Type       string              `json:"type"`
+}
+
+// WorkflowInstanceProgress defines model for WorkflowInstanceProgress.
+type WorkflowInstanceProgress struct {
+	BlockedNodes      int32 `json:"blocked_nodes"`
+	CompletedNodes    int32 `json:"completed_nodes"`
+	RunningNodes      int32 `json:"running_nodes"`
+	TotalNodes        int32 `json:"total_nodes"`
+	WaitingHumanNodes int32 `json:"waiting_human_nodes"`
+}
+
+// WorkflowInstanceStatus defines model for WorkflowInstanceStatus.
+type WorkflowInstanceStatus string
+
+// WorkflowInstanceSummary defines model for WorkflowInstanceSummary.
+type WorkflowInstanceSummary struct {
+	CreatedAt                 time.Time                       `json:"created_at"`
+	CurrentBlocker            *WorkflowInstanceCurrentBlocker `json:"current_blocker,omitempty"`
+	DemandId                  openapi_types.UUID              `json:"demand_id"`
+	Progress                  WorkflowInstanceProgress        `json:"progress"`
+	ProjectId                 openapi_types.UUID              `json:"project_id"`
+	ProjectName               string                          `json:"project_name"`
+	SelectedCoordinationJobId *openapi_types.UUID             `json:"selected_coordination_job_id,omitempty"`
+	Status                    WorkflowInstanceStatus          `json:"status"`
+	StatusReason              string                          `json:"status_reason"`
+	SubmittedByDisplayName    string                          `json:"submitted_by_display_name"`
+	SubmittedByUserId         openapi_types.UUID              `json:"submitted_by_user_id"`
+	Title                     string                          `json:"title"`
+	UpdatedAt                 time.Time                       `json:"updated_at"`
+}
+
 // WorkspaceFile defines model for WorkspaceFile.
 type WorkspaceFile struct {
 	ChangeNote        *string            `json:"change_note,omitempty"`
@@ -3827,6 +3896,15 @@ type BindTeamSkillJSONBody struct {
 // ListUserCredentialsParams defines parameters for ListUserCredentials.
 type ListUserCredentialsParams struct {
 	CredentialType *CredentialType `form:"credential_type,omitempty" json:"credential_type,omitempty"`
+}
+
+// ListWorkflowInstancesParams defines parameters for ListWorkflowInstances.
+type ListWorkflowInstancesParams struct {
+	Q         *string                 `form:"q,omitempty" json:"q,omitempty"`
+	ProjectId *openapi_types.UUID     `form:"project_id,omitempty" json:"project_id,omitempty"`
+	Status    *WorkflowInstanceStatus `form:"status,omitempty" json:"status,omitempty"`
+	Limit     *Limit                  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset    *Offset                 `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // CreateDigitalEmployeeJSONRequestBody defines body for CreateDigitalEmployee for application/json ContentType.
@@ -4878,6 +4956,9 @@ type ServerInterface interface {
 	// Create a user credential
 	// (POST /api/v1/user-credentials)
 	CreateUserCredential(w http.ResponseWriter, r *http.Request)
+	// List visible workflow instances
+	// (GET /api/v1/workflow-instances)
+	ListWorkflowInstances(w http.ResponseWriter, r *http.Request, params ListWorkflowInstancesParams)
 	// Read Control Plane health
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -5730,6 +5811,12 @@ func (_ Unimplemented) ListUserCredentials(w http.ResponseWriter, r *http.Reques
 // Create a user credential
 // (POST /api/v1/user-credentials)
 func (_ Unimplemented) CreateUserCredential(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List visible workflow instances
+// (GET /api/v1/workflow-instances)
+func (_ Unimplemented) ListWorkflowInstances(w http.ResponseWriter, r *http.Request, params ListWorkflowInstancesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -11118,6 +11205,91 @@ func (siw *ServerInterfaceWrapper) CreateUserCredential(w http.ResponseWriter, r
 	handler.ServeHTTP(w, r)
 }
 
+// ListWorkflowInstances operation middleware
+func (siw *ServerInterfaceWrapper) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListWorkflowInstancesParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "project_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project_id", r.URL.Query(), &params.ProjectId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListWorkflowInstances(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
@@ -11667,6 +11839,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/user-credentials", wrapper.CreateUserCredential)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/workflow-instances", wrapper.ListWorkflowInstances)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/health", wrapper.GetHealth)

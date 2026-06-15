@@ -17,6 +17,7 @@ type HandlerService interface {
 	CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error)
 	GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (*Project, error)
 	ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error)
+	ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error)
 	UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (*Project, error)
 	ArchiveProject(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) (*Project, error)
 	ReplaceProjectMembers(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error)
@@ -93,6 +94,46 @@ func (h *HTTPHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, projectResponses(projects))
+}
+
+func (h *HTTPHandler) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, ok := consoleIdentity(w, r)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	limit, offset, ok := paginationFromRequest(w, r)
+	if !ok {
+		return
+	}
+	req := ListWorkflowInstancesRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorID,
+		Query:       r.URL.Query().Get("q"),
+		Limit:       limit,
+		Offset:      offset,
+	}
+	if raw := r.URL.Query().Get("project_id"); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			http.Error(w, "invalid project_id", http.StatusBadRequest)
+			return
+		}
+		req.ProjectID = &id
+	}
+	if raw := r.URL.Query().Get("status"); raw != "" {
+		status := WorkflowInstanceStatus(raw)
+		req.Status = &status
+	}
+	items, err := service.ListWorkflowInstances(r.Context(), req)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, workflowInstanceResponses(items))
 }
 
 func (h *HTTPHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
@@ -1216,6 +1257,36 @@ type createProjectResponse struct {
 	Members []projectMemberResponse `json:"members"`
 }
 
+type workflowInstanceResponse struct {
+	DemandID                  string                                  `json:"demand_id"`
+	ProjectID                 string                                  `json:"project_id"`
+	ProjectName               string                                  `json:"project_name"`
+	Title                     string                                  `json:"title"`
+	SubmittedByUserID         string                                  `json:"submitted_by_user_id"`
+	SubmittedByDisplayName    string                                  `json:"submitted_by_display_name"`
+	Status                    string                                  `json:"status"`
+	StatusReason              string                                  `json:"status_reason"`
+	CreatedAt                 time.Time                               `json:"created_at"`
+	UpdatedAt                 time.Time                               `json:"updated_at"`
+	SelectedCoordinationJobID *string                                 `json:"selected_coordination_job_id,omitempty"`
+	Progress                  workflowInstanceProgressResponse        `json:"progress"`
+	CurrentBlocker            *workflowInstanceCurrentBlockerResponse `json:"current_blocker,omitempty"`
+}
+
+type workflowInstanceProgressResponse struct {
+	TotalNodes        int32 `json:"total_nodes"`
+	CompletedNodes    int32 `json:"completed_nodes"`
+	RunningNodes      int32 `json:"running_nodes"`
+	BlockedNodes      int32 `json:"blocked_nodes"`
+	WaitingHumanNodes int32 `json:"waiting_human_nodes"`
+}
+
+type workflowInstanceCurrentBlockerResponse struct {
+	Type       string  `json:"type"`
+	Title      string  `json:"title"`
+	ResourceID *string `json:"resource_id,omitempty"`
+}
+
 type projectMemberResponse struct {
 	ID                  string         `json:"id"`
 	TenantID            string         `json:"tenant_id"`
@@ -1635,6 +1706,56 @@ func projectResponseFromDomain(project Project) projectResponse {
 		ArchivedAt:             timePtr(project.ArchivedAt),
 		CreatedAt:              timeValue(project.CreatedAt),
 		UpdatedAt:              timeValue(project.UpdatedAt),
+	}
+}
+
+func workflowInstanceResponses(items []WorkflowInstanceSummary) []workflowInstanceResponse {
+	responses := make([]workflowInstanceResponse, 0, len(items))
+	for _, item := range items {
+		responses = append(responses, workflowInstanceResponseFromDomain(item))
+	}
+	return responses
+}
+
+func workflowInstanceResponseFromDomain(item WorkflowInstanceSummary) workflowInstanceResponse {
+	var jobID *string
+	if item.SelectedCoordinationJobID != nil {
+		value := item.SelectedCoordinationJobID.String()
+		jobID = &value
+	}
+	var blocker *workflowInstanceCurrentBlockerResponse
+	if item.CurrentBlocker != nil {
+		var resourceID *string
+		if item.CurrentBlocker.ResourceID != nil {
+			value := item.CurrentBlocker.ResourceID.String()
+			resourceID = &value
+		}
+		blocker = &workflowInstanceCurrentBlockerResponse{
+			Type:       item.CurrentBlocker.Type,
+			Title:      item.CurrentBlocker.Title,
+			ResourceID: resourceID,
+		}
+	}
+	return workflowInstanceResponse{
+		DemandID:                  item.DemandID.String(),
+		ProjectID:                 item.ProjectID.String(),
+		ProjectName:               item.ProjectName,
+		Title:                     item.Title,
+		SubmittedByUserID:         item.SubmittedByUserID.String(),
+		SubmittedByDisplayName:    item.SubmittedByDisplayName,
+		Status:                    string(item.Status),
+		StatusReason:              item.StatusReason,
+		CreatedAt:                 item.CreatedAt,
+		UpdatedAt:                 item.UpdatedAt,
+		SelectedCoordinationJobID: jobID,
+		Progress: workflowInstanceProgressResponse{
+			TotalNodes:        item.Progress.TotalNodes,
+			CompletedNodes:    item.Progress.CompletedNodes,
+			RunningNodes:      item.Progress.RunningNodes,
+			BlockedNodes:      item.Progress.BlockedNodes,
+			WaitingHumanNodes: item.Progress.WaitingHumanNodes,
+		},
+		CurrentBlocker: blocker,
 	}
 }
 
