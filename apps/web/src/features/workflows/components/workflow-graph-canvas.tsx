@@ -45,7 +45,7 @@ export function WorkflowGraphCanvas({
   );
 
   return (
-    <div className="h-[620px] min-h-[420px] overflow-hidden rounded-xl border bg-[linear-gradient(180deg,rgba(248,251,255,0.95),rgba(255,255,255,0.9))]">
+    <div className="h-[620px] min-h-[420px] w-full min-w-0 overflow-hidden rounded-xl border bg-[linear-gradient(180deg,rgba(248,251,255,0.95),rgba(255,255,255,0.9))]">
       <ReactFlow
         edges={elements.edges}
         fitView

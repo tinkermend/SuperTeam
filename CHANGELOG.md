@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-16 03:43：Web 流程编排详情页新增只读 `@xyflow/react` ProjectTask DAG，可从真实 task graph read model 渲染任务节点、依赖、人工决策附件、Runtime run 和执行结果，并提供节点详情检查器。
 - 2026-06-16 00:09：Control Plane 新增 Workflow Instances read model API，基于项目需求事实返回当前 Console 用户可见的工作流实例摘要、进度、状态优先级和协调作业引用，并补齐 sqlc、HTTP route 与 OpenAPI 契约。
 - 2026-06-14 22:08：项目协调底座新增 DAG 规划与任务图执行能力，包含 DeepSeek/OpenAI-compatible planner 配置、ProjectTask 图与依赖持久化、ready 节点分派、完成契约校验、失败恢复决策、任务图 read model，以及 Runtime Agent 对 ProjectTask completion writeback 的真实执行桥接。
 - 2026-06-14 01:59：Runtime Agent 新增 Codex Provider 接入，包含 provider catalog 配置、Codex CLI JSONL adapter、`.codex` 工作区隔离、Runtime command/legacy task provider selection、capability 上报，以及 HTTP/CLI smoke 路径和回归测试覆盖。

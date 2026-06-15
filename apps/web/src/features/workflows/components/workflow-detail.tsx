@@ -75,8 +75,8 @@ export function WorkflowDetail({
       : "任务正在规划";
 
   return (
-    <div className="grid items-start gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-      <LiquidCard className="rounded-xl p-4">
+    <div className="grid min-w-0 items-start gap-4 2xl:grid-cols-[320px_minmax(0,1fr)]">
+      <LiquidCard className="min-w-0 rounded-xl p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-medium text-muted-foreground">需求摘要</p>
@@ -107,7 +107,7 @@ export function WorkflowDetail({
         </Button>
       </LiquidCard>
 
-      <LiquidCard className="rounded-xl">
+      <LiquidCard className="@container/workflow-graph min-w-0 rounded-xl">
         <div className="flex items-start justify-between gap-3 border-b p-4">
           <div className="flex min-w-0 items-center gap-3">
             <SemanticIconTile tone={isGraphReady ? "info" : "warning"} size="sm">
@@ -130,7 +130,7 @@ export function WorkflowDetail({
         </div>
 
         {isGraphReady && graph ? (
-          <div className="mt-4 grid gap-4 p-4 pt-0 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="mt-4 grid min-w-0 gap-4 p-4 pt-0 @[820px]/workflow-graph:grid-cols-[minmax(420px,1fr)_320px]">
             <WorkflowGraphCanvas
               graph={graph}
               onSelectedNodeChange={setSelectedNodeId}

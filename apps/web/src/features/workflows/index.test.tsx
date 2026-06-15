@@ -349,6 +349,33 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByText("PR 审查")).toBeVisible();
   });
 
+  it("keeps nested graph layouts stacked until the graph column has room", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        graph: makeGraph([makeGraphNode("task-1", "服务健康巡检", "assigned")]),
+      }),
+    });
+
+    await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
+
+    const canvasElement = screen.getByTestId("workflow-canvas").element();
+    const graphShell = canvasElement.parentElement;
+    const graphAndInspectorGrid = graphShell?.parentElement;
+    const detailMainCard = graphAndInspectorGrid?.parentElement;
+    const detailRootGrid = detailMainCard?.parentElement;
+
+    expect(graphShell?.className).toContain("w-full");
+    expect(graphShell?.className).toContain("min-w-0");
+    expect(detailMainCard?.className).toContain("@container/workflow-graph");
+    expect(graphAndInspectorGrid?.className).not.toContain("xl:grid-cols");
+    expect(graphAndInspectorGrid?.className).not.toContain("min-[");
+    expect(graphAndInspectorGrid?.className).toContain(
+      "@[820px]/workflow-graph:grid-cols",
+    );
+    expect(detailRootGrid?.className).not.toContain("lg:grid-cols");
+    expect(detailRootGrid?.className).toContain("2xl:grid-cols");
+  });
+
   it("does not render a previous demand graph under the current demand detail", async () => {
     const screen = await renderWorkflowView({
       demandId: "demand-pr",
