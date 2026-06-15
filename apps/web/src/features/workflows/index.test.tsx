@@ -1,13 +1,21 @@
-import { forwardRef, type AnchorHTMLAttributes, type ReactNode } from "react";
+import {
+  forwardRef,
+  type AnchorHTMLAttributes,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { WorkflowView } from "@/features/workflows";
 import type {
+  ProjectDecisionRequest,
+  ProjectExecutionSummary,
   Project,
   ProjectDemandLaunchDetail,
   ProjectTaskGraph,
   ProjectTaskGraphNode,
+  ProjectTaskGraphRun,
   WorkflowInstanceSummary,
 } from "@/lib/api/projects";
 
@@ -30,6 +38,44 @@ vi.mock("@/components/search", () => ({
 vi.mock("@/components/theme-switch", () => ({
   ThemeSwitch: () => <button type="button">Toggle theme</button>,
 }));
+
+vi.mock("@xyflow/react", () => {
+  type MockNode = {
+    data?: {
+      title?: string;
+    };
+    id: string;
+    parentId?: string;
+  };
+
+  type MockReactFlowProps = {
+    children?: ReactNode;
+    nodes?: MockNode[];
+    onNodeClick?: (event: MouseEvent<HTMLButtonElement>, node: MockNode) => void;
+    onPaneClick?: () => void;
+  };
+
+  return {
+    Background: () => null,
+    Controls: () => null,
+    Handle: () => null,
+    MiniMap: () => null,
+    Position: { Bottom: "bottom", Top: "top" },
+    ReactFlow: ({ children, nodes = [], onNodeClick, onPaneClick }: MockReactFlowProps) => (
+      <div data-testid="workflow-canvas">
+        <button onClick={onPaneClick} type="button">
+          canvas pane
+        </button>
+        {nodes.map((node) => (
+          <button key={node.id} onClick={(event) => onNodeClick?.(event, node)} type="button">
+            {node.data?.title ?? node.id}
+          </button>
+        ))}
+        {children}
+      </div>
+    ),
+  };
+});
 
 vi.mock("@tanstack/react-router", () => {
   type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
@@ -159,15 +205,19 @@ function makeLaunchDetail(
   };
 }
 
-function makeGraph(nodes: ProjectTaskGraphNode[] = []): ProjectTaskGraph {
+function makeGraph(
+  nodes: ProjectTaskGraphNode[] = [],
+  overrides: Partial<ProjectTaskGraph> = {},
+): ProjectTaskGraph {
   return {
-    decision_requests: [],
+    decision_requests: overrides.decision_requests ?? [],
     edges: [],
     employees: [],
-    execution_summaries: [],
+    execution_summaries: overrides.execution_summaries ?? [],
     nodes,
     recent_events: [],
-    runs: [],
+    runs: overrides.runs ?? [],
+    ...overrides,
   };
 }
 
@@ -175,6 +225,7 @@ function makeGraphNode(
   id: string,
   title: string,
   status = "running",
+  overrides: Partial<ProjectTaskGraphNode> = {},
 ): ProjectTaskGraphNode {
   return {
     expected_outputs: [],
@@ -187,11 +238,13 @@ function makeGraphNode(
     status,
     tenant_id: "tenant-1",
     title,
+    ...overrides,
   };
 }
 
 function createWorkflowFetcher({
   graph = makeGraph(),
+  graphsByDemandId,
   instances = [
     makeWorkflowInstance("demand-running"),
     makeWorkflowInstance("demand-pr", {
@@ -211,6 +264,7 @@ function createWorkflowFetcher({
   ],
 }: {
   graph?: ProjectTaskGraph;
+  graphsByDemandId?: Record<string, ProjectTaskGraph>;
   instances?: WorkflowInstanceSummary[];
 } = {}) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -228,9 +282,21 @@ function createWorkflowFetcher({
       return jsonResponse(makeLaunchDetail("demand-running"));
     }
 
+    if (
+      url.pathname === "/api/v1/project-demands/demand-pr/launch-detail" &&
+      method === "GET"
+    ) {
+      return jsonResponse(makeLaunchDetail("demand-pr", {
+        demand: {
+          ...makeLaunchDetail("demand-pr").demand,
+          title: "PR 审查",
+        },
+      }));
+    }
+
     if (url.pathname === "/api/v1/projects/project-1/task-graph" && method === "GET") {
-      expect(url.searchParams.get("demand_id")).toBe("demand-running");
-      return jsonResponse(graph);
+      const demandId = url.searchParams.get("demand_id");
+      return jsonResponse(graphsByDemandId?.[demandId ?? ""] ?? graph);
     }
 
     return jsonResponse({ error: `unhandled ${url.pathname}` }, 404);
@@ -272,12 +338,149 @@ describe("WorkflowView", () => {
   it("renders selected demand task and other visible instances when graph has nodes", async () => {
     const screen = await renderWorkflowView({
       fetcher: createWorkflowFetcher({
-        graph: makeGraph([makeGraphNode("task-1", "服务健康巡检")]),
+        graph: makeGraph([makeGraphNode("task-1", "服务健康巡检", "assigned")]),
       }),
     });
 
-    await expect.element(screen.getByText("服务健康巡检")).toBeVisible();
+    await expect.element(screen.getByText("服务健康巡检").first()).toBeVisible();
+    await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
+    await expect.element(screen.getByText("节点详情")).toBeVisible();
+    await expect.element(screen.getByText("assigned")).toBeVisible();
     await expect.element(screen.getByText("PR 审查")).toBeVisible();
+  });
+
+  it("does not render a previous demand graph under the current demand detail", async () => {
+    const screen = await renderWorkflowView({
+      demandId: "demand-pr",
+      fetcher: createWorkflowFetcher({
+        graphsByDemandId: {
+          "demand-pr": makeGraph([
+            makeGraphNode("task-stale", "上一需求任务", "assigned", {
+              demand_id: "demand-running",
+            }),
+          ]),
+        },
+      }),
+    });
+
+    await expect.element(screen.getByText("PR 审查").first()).toBeVisible();
+    await expect.element(screen.getByText("任务正在规划")).toBeVisible();
+    await expect.element(screen.getByText("上一需求任务")).not.toBeInTheDocument();
+  });
+
+  it("updates the inspector on task selection and resets pane clicks to the initial task", async () => {
+    const graph = makeGraph(
+      [
+        makeGraphNode("task-failed", "失败任务", "failed", {
+          expected_outputs: ["失败报告"],
+        }),
+        makeGraphNode("task-assigned", "巡检任务", "assigned", {
+          expected_outputs: ["巡检报告"],
+        }),
+      ],
+      {
+        execution_summaries: [
+          {
+            artifact_refs: [],
+            confidence_factors: {},
+            conclusion: "失败任务结论",
+            digital_employee_id: "employee-1",
+            evidence_refs: [],
+            id: "summary-failed",
+            missing_information: [],
+            project_id: "project-1",
+            project_task_id: "task-failed",
+            requires_human_review: false,
+            tenant_id: "tenant-1",
+          } satisfies ProjectExecutionSummary,
+          {
+            artifact_refs: [],
+            confidence_factors: {},
+            conclusion: "巡检任务结论",
+            digital_employee_id: "employee-2",
+            evidence_refs: [],
+            id: "summary-assigned",
+            missing_information: [],
+            project_id: "project-1",
+            project_task_id: "task-assigned",
+            requires_human_review: false,
+            tenant_id: "tenant-1",
+          } satisfies ProjectExecutionSummary,
+        ],
+        runs: [
+          {
+            project_task_id: "task-failed",
+            provider_type: "codex",
+            runtime_node_summary: "runtime-a",
+            runtime_task_id: "runtime-task-failed",
+            status: "failed",
+          } satisfies ProjectTaskGraphRun,
+          {
+            project_task_id: "task-assigned",
+            provider_type: "codex",
+            runtime_node_summary: "runtime-b",
+            runtime_task_id: "runtime-task-assigned",
+            status: "queued",
+          } satisfies ProjectTaskGraphRun,
+        ],
+      },
+    );
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({ graph }),
+    });
+
+    await expect.element(screen.getByRole("heading", { name: "失败任务" })).toBeVisible();
+    await expect.element(screen.getByText("failed").first()).toBeVisible();
+    await expect.element(screen.getByText("失败报告")).toBeVisible();
+    await expect.element(screen.getByText("failed · codex · runtime-a")).toBeVisible();
+
+    await screen.getByRole("button", { name: "巡检任务" }).click();
+
+    await expect.element(screen.getByRole("heading", { name: "巡检任务" })).toBeVisible();
+    await expect.element(screen.getByText("assigned").first()).toBeVisible();
+    await expect.element(screen.getByText("巡检报告")).toBeVisible();
+    await expect.element(screen.getByText("queued · codex · runtime-b")).toBeVisible();
+
+    await screen.getByRole("button", { name: "canvas pane" }).click();
+
+    await expect.element(screen.getByRole("heading", { name: "失败任务" })).toBeVisible();
+    await expect.element(screen.getByText("失败报告")).toBeVisible();
+  });
+
+  it("keeps the parent task selected when a decision attachment node is clicked", async () => {
+    const graph = makeGraph(
+      [
+        makeGraphNode("task-review", "待审批任务", "waiting_human", {
+          expected_outputs: ["审批结果"],
+        }),
+      ],
+      {
+        decision_requests: [
+          {
+            approval_request_id: "approval-1",
+            decision_type: "human_approval",
+            id: "decision-1",
+            project_id: "project-1",
+            project_task_id: "task-review",
+            status_snapshot: "pending",
+            target_user_id: "owner-1",
+            tenant_id: "tenant-1",
+            title_snapshot: "确认上线风险",
+          } satisfies ProjectDecisionRequest,
+        ],
+      },
+    );
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({ graph }),
+    });
+
+    await expect.element(screen.getByRole("heading", { name: "待审批任务" })).toBeVisible();
+
+    await screen.getByRole("button", { name: "确认上线风险" }).click();
+
+    await expect.element(screen.getByRole("heading", { name: "待审批任务" })).toBeVisible();
+    await expect.element(screen.getByText("选择节点查看详情")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("审批结果")).toBeVisible();
   });
 
   it("navigates to the first visible instance when no demand id is provided", async () => {

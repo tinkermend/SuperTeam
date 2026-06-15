@@ -1,14 +1,17 @@
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { FolderKanban, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { LiquidCard, SemanticIconTile, StatusBadge, type Tone } from "@/components/superteam";
+import { LiquidCard, SemanticIconTile, StatusBadge } from "@/components/superteam";
 import type {
   ProjectDemandLaunchDetail,
   ProjectTaskGraph,
-  ProjectTaskGraphNode,
   WorkflowInstanceSummary,
 } from "@/lib/api/projects";
+import { selectInitialWorkflowNodeId, taskNodeId } from "../workflow-graph-adapter";
 import { workflowStatusLabel, workflowStatusTone } from "../workflow-status";
+import { WorkflowGraphCanvas } from "./workflow-graph-canvas";
+import { WorkflowNodeInspector } from "./workflow-node-inspector";
 
 type WorkflowDetailProps = {
   detail?: ProjectDemandLaunchDetail;
@@ -23,6 +26,30 @@ export function WorkflowDetail({
   instance,
   isError,
 }: WorkflowDetailProps) {
+  const initialSelectedNodeId = useMemo(
+    () => (graph?.nodes.length ? selectInitialWorkflowNodeId(graph) : undefined),
+    [graph],
+  );
+  const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(
+    initialSelectedNodeId,
+  );
+
+  useEffect(() => {
+    setSelectedNodeId((current) => {
+      if (!graph?.nodes.length) return undefined;
+      if (current && graph.nodes.some((node) => taskNodeId(node.id) === current)) {
+        return current;
+      }
+
+      return initialSelectedNodeId;
+    });
+  }, [graph, initialSelectedNodeId]);
+
+  const selectedTask = useMemo(
+    () => graph?.nodes.find((node) => taskNodeId(node.id) === selectedNodeId),
+    [graph, selectedNodeId],
+  );
+
   if (isError) {
     return (
       <LiquidCard className="rounded-xl p-6 text-sm text-destructive">
@@ -102,11 +129,14 @@ export function WorkflowDetail({
           </StatusBadge>
         </div>
 
-        {isGraphReady ? (
-          <div className="divide-y">
-            {nodes.slice(0, 4).map((node) => (
-              <TaskNodeRow key={node.id} node={node} />
-            ))}
+        {isGraphReady && graph ? (
+          <div className="mt-4 grid gap-4 p-4 pt-0 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <WorkflowGraphCanvas
+              graph={graph}
+              onSelectedNodeChange={setSelectedNodeId}
+              selectedNodeId={selectedNodeId}
+            />
+            <WorkflowNodeInspector graph={graph} selectedTask={selectedTask} />
           </div>
         ) : (
           <div className="p-5 text-sm leading-6 text-muted-foreground">
@@ -125,35 +155,4 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
       <span className="min-w-0 truncate font-medium text-foreground">{value}</span>
     </div>
   );
-}
-
-function TaskNodeRow({ node }: { node: ProjectTaskGraphNode }) {
-  return (
-    <div className="flex min-w-0 items-start justify-between gap-3 p-4">
-      <div className="min-w-0">
-        <p className="line-clamp-2 text-sm font-medium">{node.title}</p>
-        {node.summary ? (
-          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{node.summary}</p>
-        ) : null}
-      </div>
-      <StatusBadge tone={taskStatusTone(node.status)}>{node.status}</StatusBadge>
-    </div>
-  );
-}
-
-function taskStatusTone(status: string): Tone {
-  if (["completed", "accepted", "approved", "done", "success"].includes(status)) {
-    return "success";
-  }
-  if (["failed", "rejected", "cancelled", "blocked"].includes(status)) {
-    return "danger";
-  }
-  if (["pending", "waiting", "planning", "planning_pending", "waiting_human"].includes(status)) {
-    return "warning";
-  }
-  if (["dispatchable", "running", "in_progress"].includes(status)) {
-    return "info";
-  }
-
-  return "neutral";
 }

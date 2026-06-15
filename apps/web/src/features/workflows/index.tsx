@@ -9,6 +9,7 @@ import {
   getProjectDemandLaunchDetail,
   getProjectTaskGraph,
   listWorkflowInstances,
+  type ProjectTaskGraph,
 } from "@/lib/api/projects";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 
@@ -79,6 +80,7 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
     queryKey: ["workflow-task-graph", apiBaseUrl, currentDetail?.project.id, selectedDemandId],
     refetchInterval: 5000,
   });
+  const currentGraph = currentTaskGraph(graphQuery.data, selectedDemandId);
 
   return (
     <WorkflowShell>
@@ -89,11 +91,26 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
         />
         <WorkflowDetail
           detail={currentDetail}
-          graph={graphQuery.data}
+          graph={currentGraph}
           instance={selected}
           isError={listQuery.isError || detailQuery.isError || graphQuery.isError}
         />
       </div>
     </WorkflowShell>
   );
+}
+
+function currentTaskGraph(
+  graph: ProjectTaskGraph | undefined,
+  selectedDemandId: string | undefined,
+): ProjectTaskGraph | undefined {
+  if (!graph) return undefined;
+  if (graph.nodes.length === 0) return graph;
+  if (!selectedDemandId) return undefined;
+
+  return graph.nodes.every(
+    (node) => !node.demand_id || node.demand_id === selectedDemandId,
+  )
+    ? graph
+    : undefined;
 }
