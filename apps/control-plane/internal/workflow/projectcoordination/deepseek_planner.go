@@ -14,17 +14,22 @@ import (
 	"github.com/google/uuid"
 )
 
-var ErrPlannerUnavailable = errors.New("route planner unavailable")
+var (
+	ErrPlannerUnavailable    = errors.New("route planner unavailable")
+	ErrPlannerRequestTimeout = errors.New("route planner request timeout")
+)
 
 const maxDeepSeekChatCompletionResponseBytes = 1 << 20
+const defaultDeepSeekRequestTimeout = 20 * time.Second
 
 type DeepSeekPlannerConfig struct {
-	APIKey      string
-	BaseURL     string
-	Model       string
-	MaxTokens   int
-	Temperature float64
-	MaxAttempts int
+	APIKey         string
+	BaseURL        string
+	Model          string
+	MaxTokens      int
+	Temperature    float64
+	MaxAttempts    int
+	RequestTimeout time.Duration
 }
 
 type DeepSeekChatRequest struct {
@@ -50,7 +55,7 @@ func NewDeepSeekRoutePlanner(cfg DeepSeekPlannerConfig, clients ...chatCompletio
 		client = clients[0]
 	}
 	if client == nil {
-		client = newDeepSeekHTTPChatCompletionClient(cfg.BaseURL, cfg.APIKey)
+		client = newDeepSeekHTTPChatCompletionClient(cfg.BaseURL, cfg.APIKey, deepSeekRequestTimeout(cfg.RequestTimeout))
 	}
 	return &DeepSeekRoutePlanner{cfg: cfg, client: client}
 }
@@ -71,16 +76,23 @@ func (p *DeepSeekRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSn
 		if err := ctx.Err(); err != nil {
 			return RouteDecisionPlan{}, err
 		}
-		content, err := p.client.CreateChatCompletion(ctx, DeepSeekChatRequest{
+		requestCtx, cancel := p.requestContext(ctx)
+		content, err := p.client.CreateChatCompletion(requestCtx, DeepSeekChatRequest{
 			Model:       p.cfg.Model,
 			System:      buildPlannerSystemPrompt(),
 			User:        buildPlannerUserPrompt(snapshot),
 			MaxTokens:   p.cfg.MaxTokens,
 			Temperature: p.cfg.Temperature,
 		})
+		cancel()
 		if err != nil {
-			if contextErr := terminalContextError(ctx, err); contextErr != nil {
+			contextErr, terminal := plannerContextError(ctx, requestCtx, err)
+			if terminal {
 				return RouteDecisionPlan{}, contextErr
+			}
+			if contextErr != nil {
+				lastErr = contextErr
+				break
 			}
 			lastErr = err
 			continue
@@ -90,7 +102,7 @@ func (p *DeepSeekRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSn
 		}
 		plan, err := decodePlannerJSON(content)
 		if err != nil {
-			if contextErr := terminalContextError(ctx, err); contextErr != nil {
+			if contextErr := terminalContextError(ctx); contextErr != nil {
 				return RouteDecisionPlan{}, contextErr
 			}
 			lastErr = err
@@ -98,7 +110,7 @@ func (p *DeepSeekRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSn
 		}
 		pool := activeExecutorIDs(snapshot.DigitalEmployeePool)
 		if err := ValidateRouteDecisionGraph(plan, pool, GraphValidationPolicy{MaxTasks: 12}); err != nil {
-			if contextErr := terminalContextError(ctx, err); contextErr != nil {
+			if contextErr := terminalContextError(ctx); contextErr != nil {
 				return RouteDecisionPlan{}, contextErr
 			}
 			lastErr = err
@@ -112,18 +124,40 @@ func (p *DeepSeekRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSn
 	return RouteDecisionPlan{}, lastErr
 }
 
+func (p *DeepSeekRoutePlanner) requestContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	timeout := deepSeekRequestTimeout(p.cfg.RequestTimeout)
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func deepSeekRequestTimeout(timeout time.Duration) time.Duration {
+	if timeout == 0 {
+		return defaultDeepSeekRequestTimeout
+	}
+	if timeout < 0 {
+		return 0
+	}
+	return timeout
+}
+
 type deepSeekHTTPChatCompletionClient struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
 }
 
-func newDeepSeekHTTPChatCompletionClient(baseURL, apiKey string) *deepSeekHTTPChatCompletionClient {
+func newDeepSeekHTTPChatCompletionClient(baseURL, apiKey string, requestTimeout ...time.Duration) *deepSeekHTTPChatCompletionClient {
+	timeout := defaultDeepSeekRequestTimeout
+	if len(requestTimeout) > 0 {
+		timeout = requestTimeout[0]
+	}
 	return &deepSeekHTTPChatCompletionClient{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		apiKey:  strings.TrimSpace(apiKey),
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: timeout,
 		},
 	}
 }
@@ -416,12 +450,26 @@ func readLimitedSuccessBody(body io.Reader) ([]byte, error) {
 	return responseBody, nil
 }
 
-func terminalContextError(ctx context.Context, err error) error {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
+func terminalContextError(ctx context.Context) error {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return ctxErr
 	}
 	return nil
+}
+
+func plannerContextError(parentCtx, requestCtx context.Context, err error) (error, bool) {
+	if parentErr := terminalContextError(parentCtx); parentErr != nil {
+		return parentErr, true
+	}
+	if errors.Is(err, context.DeadlineExceeded) && errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("%w: %w", ErrPlannerRequestTimeout, err), false
+	}
+	var timeoutErr interface{ Timeout() bool }
+	if errors.As(err, &timeoutErr) && timeoutErr.Timeout() {
+		return fmt.Errorf("%w: %w", ErrPlannerRequestTimeout, err), false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err, false
+	}
+	return nil, false
 }

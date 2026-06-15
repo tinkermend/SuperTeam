@@ -133,6 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- 2026-06-15 18:24：修复项目任务发起到 task-graph 的真实链路：提交需求和 workflow signal 重试前会幂等确保 Temporal 项目协调 workflow 存在，DeepSeek planner 请求增加短超时并在外部 planner 超时后回退到 heuristic，避免 `PlanDemandRoute` activity 被 30 秒 StartToClose timeout 打断而无法持久化任务图。
 - 2026-06-14 10:32：修复 Runtime command terminal event 与 active-run registry 清理之间的竞态，Provider turn 已完成后立即移除活跃 run，避免 `stop_session` 在短窗口内误取消已完成执行。
 - 2026-06-13 23:28：修复 Runtime Agent 数字员工工作目录初始化时 `CLAUDE.md` 被写成普通副本的问题，改为在 Unix 环境下生成指向 `AGENTS.md` 的兼容软链，并覆盖已有旧副本，保持 Claude Code 与 OpenCode 的工作目录只创建对应 Provider 配置目录。
 - 2026-06-13 13:21：修复数字员工详情页发起测试任务时被 stale 活跃运行卡住的问题；Control Plane 会根据终态 Runtime command receipt 回收仍显示为 queued/dispatching/running/cancelling 的旧 run，列表返回终态状态，新建 run 也可在同次请求内继续分派。

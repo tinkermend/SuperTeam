@@ -755,6 +755,13 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 		return nil, err
 	}
 	demand.ReviewerPreference = preference
+	if err := s.ensureProjectCoordinator(ctx, project); err != nil {
+		_ = s.appendWorkflowSignalEvent(ctx, req.TenantID, req.ProjectID, "DemandSubmitted", "failed", err, map[string]any{
+			"demand_id":        demand.ID.String(),
+			"created_event_id": event.ID.String(),
+		})
+		return nil, err
+	}
 	if err := s.coordinator.SignalDemandSubmitted(ctx, DemandSubmittedSignal{
 		TenantID:          req.TenantID,
 		ProjectID:         req.ProjectID,
@@ -1589,6 +1596,12 @@ func (s *Service) RetryWorkflowSignal(ctx context.Context, req RetryWorkflowSign
 	if err != nil {
 		return nil, err
 	}
+	if err := s.ensureProjectCoordinator(ctx, projectRecord); err != nil {
+		retryPayload := cloneMap(event.Payload)
+		retryPayload["retry_of_event_id"] = req.EventID.String()
+		_ = s.appendWorkflowSignalEvent(ctx, req.TenantID, req.ProjectID, signalName, "failed", err, retryPayload)
+		return nil, err
+	}
 	if err := s.retryWorkflowSignal(ctx, projectRecord, signalName, event.Payload); err != nil {
 		retryPayload := cloneMap(event.Payload)
 		retryPayload["retry_of_event_id"] = req.EventID.String()
@@ -1613,6 +1626,14 @@ func (s *Service) RetryWorkflowSignal(ctx context.Context, req RetryWorkflowSign
 		return nil, err
 	}
 	return &retryEvent, nil
+}
+
+func (s *Service) ensureProjectCoordinator(ctx context.Context, projectRecord Project) error {
+	return s.coordinator.EnsureProjectCoordinator(ctx, ProjectCoordinatorSignal{
+		TenantID:   projectRecord.TenantID,
+		ProjectID:  projectRecord.ID,
+		WorkflowID: projectRecord.CoordinationWorkflowID,
+	})
 }
 
 func (s *Service) retryWorkflowSignal(ctx context.Context, projectRecord Project, signalName string, payload map[string]any) error {

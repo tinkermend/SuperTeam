@@ -61,7 +61,7 @@ func (a *Activities) PlanDemandRoute(ctx context.Context, snapshot CoordinationS
 	if err == nil {
 		return plan, nil
 	}
-	if contextErr := terminalContextError(ctx, err); contextErr != nil {
+	if contextErr := terminalContextError(ctx); contextErr != nil {
 		return RouteDecisionPlan{}, contextErr
 	}
 	return HeuristicRoutePlanner{}.Plan(ctx, snapshot)

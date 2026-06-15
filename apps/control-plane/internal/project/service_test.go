@@ -1174,6 +1174,9 @@ func TestSubmitDemandSignalsProjectCoordinatorInV1(t *testing.T) {
 	if coordinator.demandSignals != 1 {
 		t.Fatalf("expected one DemandSubmitted signal, got %d", coordinator.demandSignals)
 	}
+	if coordinator.ensureSignals != 1 {
+		t.Fatalf("expected coordinator to be ensured before demand signal, got %d", coordinator.ensureSignals)
+	}
 	if coordinator.lastDemand.DemandID != demand.ID || coordinator.lastDemand.CreatedEventID == uuid.Nil {
 		t.Fatalf("unexpected demand signal: %#v", coordinator.lastDemand)
 	}
@@ -1270,6 +1273,9 @@ func TestRetryWorkflowSignalReplaysFailedDemandSignal(t *testing.T) {
 	}
 	if coordinator.demandSignals != 2 || coordinator.lastDemand.DemandID != repo.demands[0].ID || coordinator.lastDemand.CreatedEventID != *repo.demands[0].CreatedEventID {
 		t.Fatalf("expected demand signal replay, count=%d signal=%#v demand=%#v", coordinator.demandSignals, coordinator.lastDemand, repo.demands[0])
+	}
+	if coordinator.ensureSignals != 2 {
+		t.Fatalf("expected coordinator ensure before initial and retried demand signals, got %d", coordinator.ensureSignals)
 	}
 	if event.EventType != ProjectEventWorkflowSignaled || event.Payload["signal_name"] != "DemandSubmitted" || event.Payload["status"] != "sent" || event.Payload["retry_of_event_id"] != failedEvent.ID.String() {
 		t.Fatalf("unexpected retry event: %#v", event)

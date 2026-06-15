@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -368,7 +369,55 @@ func TestActivitiesPlanDemandRouteFallsBackToHeuristicPlanner(t *testing.T) {
 	require.Equal(t, "heuristic.single_task", plan.TemplateKey)
 }
 
-func TestActivitiesPlanDemandRouteDoesNotFallBackOnContextDone(t *testing.T) {
+func TestActivitiesPlanDemandRouteFallsBackWhenPlannerDeadlineExpires(t *testing.T) {
+	employeeID := uuid.New()
+	activities := NewActivities(nil, failingRoutePlanner{err: context.DeadlineExceeded})
+
+	plan, err := activities.PlanDemandRoute(context.Background(), CoordinationSnapshot{
+		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, plan.Tasks, 1)
+	require.Equal(t, employeeID, plan.Tasks[0].SelectedEmployeeID)
+	require.Equal(t, "heuristic.single_task", plan.TemplateKey)
+}
+
+func TestDeepSeekRoutePlannerTimesOutRequestBeforeActivityDeadline(t *testing.T) {
+	employeeID := uuid.New()
+	client := &blockingChatCompletionClient{}
+	planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+		APIKey:         "test-key",
+		BaseURL:        "https://api.deepseek.com",
+		Model:          "deepseek-chat",
+		MaxAttempts:    3,
+		RequestTimeout: 10 * time.Millisecond,
+	}, client)
+
+	started := time.Now()
+	_, err := planner.Plan(context.Background(), CoordinationSnapshot{
+		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+		},
+	})
+
+	require.ErrorIs(t, err, ErrPlannerRequestTimeout)
+	require.Equal(t, int32(1), client.calls.Load())
+	require.Less(t, time.Since(started), time.Second)
+}
+
+func TestPlannerContextErrorClassifiesHTTPTimeoutAsPlannerTimeout(t *testing.T) {
+	err, terminal := plannerContextError(context.Background(), context.Background(), timeoutTestError{})
+
+	require.False(t, terminal)
+	require.ErrorIs(t, err, ErrPlannerRequestTimeout)
+}
+
+func TestActivitiesPlanDemandRouteDoesNotFallBackWhenActivityContextDone(t *testing.T) {
 	employeeID := uuid.New()
 	for _, tc := range []struct {
 		name string
@@ -379,8 +428,16 @@ func TestActivitiesPlanDemandRouteDoesNotFallBackOnContextDone(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			activities := NewActivities(nil, failingRoutePlanner{err: tc.err})
+			ctx, cancel := context.WithCancel(context.Background())
+			if errors.Is(tc.err, context.DeadlineExceeded) {
+				ctx, cancel = context.WithTimeout(context.Background(), time.Nanosecond)
+				<-ctx.Done()
+			} else {
+				cancel()
+			}
+			defer cancel()
 
-			plan, err := activities.PlanDemandRoute(context.Background(), CoordinationSnapshot{
+			plan, err := activities.PlanDemandRoute(ctx, CoordinationSnapshot{
 				Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
 				DigitalEmployeePool: []ProjectMemberSnapshot{
 					{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
@@ -415,6 +472,27 @@ func (f *countingChatCompletionClient) CreateChatCompletion(ctx context.Context,
 	_ = req
 	f.calls.Add(1)
 	return f.content, f.err
+}
+
+type blockingChatCompletionClient struct {
+	calls atomic.Int32
+}
+
+func (f *blockingChatCompletionClient) CreateChatCompletion(ctx context.Context, req DeepSeekChatRequest) (string, error) {
+	_ = req
+	f.calls.Add(1)
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+type timeoutTestError struct{}
+
+func (timeoutTestError) Error() string {
+	return "client timeout"
+}
+
+func (timeoutTestError) Timeout() bool {
+	return true
 }
 
 type capturingChatCompletionClient struct {
