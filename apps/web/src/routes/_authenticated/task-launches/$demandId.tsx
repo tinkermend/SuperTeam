@@ -1,11 +1,21 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { TaskLaunchDetailPage } from "@/features/task-launches";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 export const Route = createFileRoute("/_authenticated/task-launches/$demandId")({
-  component: TaskLaunchDetailRoute,
+  component: TaskLaunchDetailRedirectRoute,
 });
 
-function TaskLaunchDetailRoute() {
+function TaskLaunchDetailRedirectRoute() {
   const { demandId } = Route.useParams();
-  return <TaskLaunchDetailPage demandId={demandId} />;
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    void navigate({
+      params: { demandId },
+      replace: true,
+      to: "/workflows/$demandId",
+    });
+  }, [demandId, navigate]);
+
+  return <div className="text-sm text-muted-foreground">正在打开流程编排</div>;
 }
