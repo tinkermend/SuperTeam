@@ -2931,6 +2931,228 @@ func (q *Queries) ListUnresolvedBlockersForTasks(ctx context.Context, arg ListUn
 	return items, nil
 }
 
+const ListWorkflowInstances = `-- name: ListWorkflowInstances :many
+WITH visible_demands AS (
+    SELECT
+        d.id AS demand_id,
+        d.project_id,
+        p.name AS project_name,
+        d.title,
+        d.submitted_by_user_id,
+        d.status AS demand_status,
+        d.created_at,
+        d.source_refs,
+        COALESCE(d.updated_at, d.created_at) AS demand_updated_at
+    FROM project_demands d
+    JOIN projects p ON p.tenant_id = d.tenant_id AND p.id = d.project_id
+    WHERE d.tenant_id = $3::uuid
+      AND ($4::uuid IS NULL OR d.project_id = $4::uuid)
+      AND (
+        $5::text IS NULL
+        OR d.title ILIKE '%' || $5::text || '%'
+        OR COALESCE(d.content, '') ILIKE '%' || $5::text || '%'
+        OR p.name ILIKE '%' || $5::text || '%'
+      )
+      AND (
+        p.human_owner_user_id = $6::uuid
+        OR p.leader_user_id = $6::uuid
+        OR p.acceptance_user_id = $6::uuid
+        OR EXISTS (
+          SELECT 1
+          FROM project_members pm
+          WHERE pm.tenant_id = p.tenant_id
+            AND pm.project_id = p.id
+            AND pm.principal_type = 'human_user'
+            AND pm.principal_id = $6::uuid
+            AND pm.status = 'active'
+        )
+      )
+),
+task_counts AS (
+    SELECT
+        tenant_id,
+        project_id,
+        demand_id,
+        COUNT(*)::int AS total_nodes,
+        COUNT(*) FILTER (WHERE status IN ('completed', 'done', 'success'))::int AS completed_nodes,
+        COUNT(*) FILTER (WHERE status IN ('assigned', 'running', 'in_progress'))::int AS running_nodes,
+        COUNT(*) FILTER (WHERE status IN ('blocked'))::int AS blocked_nodes,
+        COUNT(*) FILTER (WHERE requires_human_approval OR status IN ('waiting_human', 'pending_review'))::int AS waiting_human_nodes,
+        COUNT(*) FILTER (WHERE status IN ('failed'))::int AS failed_nodes,
+        COUNT(*) FILTER (WHERE status IN ('cancelled'))::int AS cancelled_nodes,
+        MAX(updated_at) AS task_updated_at
+    FROM project_tasks
+    WHERE tenant_id = $3::uuid
+      AND demand_id IS NOT NULL
+    GROUP BY tenant_id, project_id, demand_id
+),
+decision_counts AS (
+    SELECT
+        dr.tenant_id,
+        dr.project_id,
+        COALESCE(pt.demand_id, rd.demand_id) AS demand_id,
+        COUNT(*) FILTER (WHERE dr.status_snapshot IN ('pending', 'requested'))::int AS pending_decisions,
+        MAX(dr.updated_at) AS decision_updated_at
+    FROM project_decision_requests dr
+    LEFT JOIN project_tasks pt
+      ON pt.tenant_id = dr.tenant_id
+     AND pt.project_id = dr.project_id
+     AND pt.id = dr.project_task_id
+    LEFT JOIN project_route_decisions rd
+      ON rd.tenant_id = dr.tenant_id
+     AND rd.project_id = dr.project_id
+     AND rd.coordination_job_id = dr.coordination_job_id
+    WHERE dr.tenant_id = $3::uuid
+      AND COALESCE(pt.demand_id, rd.demand_id) IS NOT NULL
+    GROUP BY dr.tenant_id, dr.project_id, COALESCE(pt.demand_id, rd.demand_id)
+),
+latest_jobs AS (
+    SELECT DISTINCT ON (j.tenant_id, j.project_id, rd.demand_id)
+        j.tenant_id,
+        j.project_id,
+        rd.demand_id,
+        j.id AS selected_coordination_job_id,
+        GREATEST(COALESCE(j.finished_at, j.started_at), j.started_at, j.created_at) AS job_updated_at
+    FROM project_coordination_jobs j
+    JOIN project_route_decisions rd
+      ON rd.tenant_id = j.tenant_id
+     AND rd.project_id = j.project_id
+     AND rd.coordination_job_id = j.id
+    WHERE j.tenant_id = $3::uuid
+      AND rd.demand_id IS NOT NULL
+    ORDER BY j.tenant_id, j.project_id, rd.demand_id, j.created_at DESC
+)
+SELECT
+    vd.demand_id,
+    vd.project_id,
+    vd.project_name,
+    vd.title,
+    vd.submitted_by_user_id,
+    COALESCE(NULLIF(vd.source_refs->>'submitted_by_display_name', ''), vd.submitted_by_user_id::text)::text AS submitted_by_display_name,
+    CASE
+      WHEN COALESCE(tc.cancelled_nodes, 0) > 0 OR vd.demand_status = 'cancelled' THEN 'cancelled'
+      WHEN COALESCE(tc.failed_nodes, 0) > 0 THEN 'failed'
+      WHEN COALESCE(dc.pending_decisions, 0) > 0 OR COALESCE(tc.waiting_human_nodes, 0) > 0 THEN 'waiting_human'
+      WHEN COALESCE(tc.running_nodes, 0) > 0 THEN 'running'
+      WHEN COALESCE(tc.total_nodes, 0) = 0 THEN 'planning'
+      WHEN tc.completed_nodes = tc.total_nodes THEN 'completed'
+      ELSE 'unknown'
+    END::text AS status,
+    CASE
+      WHEN COALESCE(dc.pending_decisions, 0) > 0 THEN '等待人工决策'
+      WHEN COALESCE(tc.failed_nodes, 0) > 0 THEN '存在失败任务'
+      WHEN COALESCE(tc.running_nodes, 0) > 0 THEN '任务执行中'
+      WHEN COALESCE(tc.total_nodes, 0) = 0 THEN '任务正在规划'
+      ELSE ''
+    END::text AS status_reason,
+    vd.created_at,
+    GREATEST(
+      vd.demand_updated_at,
+      COALESCE(tc.task_updated_at, vd.demand_updated_at),
+      COALESCE(dc.decision_updated_at, vd.demand_updated_at),
+      COALESCE(lj.job_updated_at, vd.demand_updated_at)
+    )::timestamptz AS updated_at,
+    lj.selected_coordination_job_id,
+    COALESCE(tc.total_nodes, 0)::int AS total_nodes,
+    COALESCE(tc.completed_nodes, 0)::int AS completed_nodes,
+    COALESCE(tc.running_nodes, 0)::int AS running_nodes,
+    COALESCE(tc.blocked_nodes, 0)::int AS blocked_nodes,
+    (COALESCE(tc.waiting_human_nodes, 0) + COALESCE(dc.pending_decisions, 0))::int AS waiting_human_nodes
+FROM visible_demands vd
+LEFT JOIN task_counts tc
+  ON tc.project_id = vd.project_id
+ AND tc.demand_id = vd.demand_id
+LEFT JOIN decision_counts dc
+  ON dc.project_id = vd.project_id
+ AND dc.demand_id = vd.demand_id
+LEFT JOIN latest_jobs lj
+  ON lj.project_id = vd.project_id
+ AND lj.demand_id = vd.demand_id
+ORDER BY
+    CASE
+      WHEN COALESCE(tc.total_nodes, 0) = 0 THEN 1
+      WHEN COALESCE(tc.running_nodes, 0) > 0 THEN 2
+      WHEN COALESCE(dc.pending_decisions, 0) > 0 OR COALESCE(tc.waiting_human_nodes, 0) > 0 THEN 3
+      WHEN COALESCE(tc.failed_nodes, 0) > 0 THEN 4
+      WHEN tc.completed_nodes = tc.total_nodes THEN 5
+      ELSE 6
+    END ASC,
+    updated_at DESC
+LIMIT $2 OFFSET $1
+`
+
+type ListWorkflowInstancesParams struct {
+	Offset      int32         `json:"offset"`
+	Limit       int32         `json:"limit"`
+	TenantID    uuid.UUID     `json:"tenant_id"`
+	ProjectID   uuid.NullUUID `json:"project_id"`
+	Q           pgtype.Text   `json:"q"`
+	ActorUserID uuid.UUID     `json:"actor_user_id"`
+}
+
+type ListWorkflowInstancesRow struct {
+	DemandID                  uuid.UUID          `json:"demand_id"`
+	ProjectID                 uuid.UUID          `json:"project_id"`
+	ProjectName               string             `json:"project_name"`
+	Title                     string             `json:"title"`
+	SubmittedByUserID         uuid.UUID          `json:"submitted_by_user_id"`
+	SubmittedByDisplayName    string             `json:"submitted_by_display_name"`
+	Status                    string             `json:"status"`
+	StatusReason              string             `json:"status_reason"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+	SelectedCoordinationJobID uuid.NullUUID      `json:"selected_coordination_job_id"`
+	TotalNodes                int32              `json:"total_nodes"`
+	CompletedNodes            int32              `json:"completed_nodes"`
+	RunningNodes              int32              `json:"running_nodes"`
+	BlockedNodes              int32              `json:"blocked_nodes"`
+	WaitingHumanNodes         int32              `json:"waiting_human_nodes"`
+}
+
+func (q *Queries) ListWorkflowInstances(ctx context.Context, arg ListWorkflowInstancesParams) ([]ListWorkflowInstancesRow, error) {
+	rows, err := q.db.Query(ctx, ListWorkflowInstances,
+		arg.Offset,
+		arg.Limit,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.Q,
+		arg.ActorUserID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWorkflowInstancesRow{}
+	for rows.Next() {
+		var i ListWorkflowInstancesRow
+		if err := rows.Scan(
+			&i.DemandID,
+			&i.ProjectID,
+			&i.ProjectName,
+			&i.Title,
+			&i.SubmittedByUserID,
+			&i.SubmittedByDisplayName,
+			&i.Status,
+			&i.StatusReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.SelectedCoordinationJobID,
+			&i.TotalNodes,
+			&i.CompletedNodes,
+			&i.RunningNodes,
+			&i.BlockedNodes,
+			&i.WaitingHumanNodes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ProjectTaskEventExists = `-- name: ProjectTaskEventExists :one
 SELECT EXISTS (
     SELECT 1 FROM project_events

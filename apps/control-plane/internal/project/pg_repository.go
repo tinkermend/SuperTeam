@@ -115,7 +115,41 @@ func (r *PgRepository) ListProjects(ctx context.Context, req ListProjectsRequest
 }
 
 func (r *PgRepository) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
-	return []WorkflowInstanceSummary{}, nil
+	rows, err := r.q.ListWorkflowInstances(ctx, queries.ListWorkflowInstancesParams{
+		TenantID:    req.TenantID,
+		ActorUserID: req.ActorUserID,
+		ProjectID:   nullUUID(req.ProjectID),
+		Q:           textOrNull(req.Query),
+		Limit:       req.Limit,
+		Offset:      req.Offset,
+	})
+	if err != nil {
+		return nil, projectRepositoryError(err)
+	}
+	items := make([]WorkflowInstanceSummary, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, WorkflowInstanceSummary{
+			DemandID:                  row.DemandID,
+			ProjectID:                 row.ProjectID,
+			ProjectName:               row.ProjectName,
+			Title:                     row.Title,
+			SubmittedByUserID:         row.SubmittedByUserID,
+			SubmittedByDisplayName:    row.SubmittedByDisplayName,
+			Status:                    WorkflowInstanceStatus(row.Status),
+			StatusReason:              row.StatusReason,
+			CreatedAt:                 row.CreatedAt.Time,
+			UpdatedAt:                 row.UpdatedAt.Time,
+			SelectedCoordinationJobID: ptrUUID(row.SelectedCoordinationJobID),
+			Progress: WorkflowInstanceProgress{
+				TotalNodes:        row.TotalNodes,
+				CompletedNodes:    row.CompletedNodes,
+				RunningNodes:      row.RunningNodes,
+				BlockedNodes:      row.BlockedNodes,
+				WaitingHumanNodes: row.WaitingHumanNodes,
+			},
+		})
+	}
+	return items, nil
 }
 
 func (r *PgRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (Project, error) {

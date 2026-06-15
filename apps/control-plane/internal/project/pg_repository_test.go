@@ -492,6 +492,63 @@ func TestProjectTaskGraphDemandReadReturnsAllTasks(t *testing.T) {
 	require.NotNil(t, graph.DecisionRequests)
 }
 
+func TestListWorkflowInstancesFiltersVisibleDemandsAndSortsRunningFirst(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	ctx := context.Background()
+	visibleProjectID := createProjectFixture(t, repo, tenantID)
+	hiddenProjectID := createProjectFixture(t, repo, tenantID)
+	actorID := uuid.New()
+	visibleDemandID := createDemandFixture(t, repo, tenantID, visibleProjectID)
+	hiddenDemandID := createDemandFixture(t, repo, tenantID, hiddenProjectID)
+	jobID := createCoordinationJobFixture(t, repo, tenantID, visibleProjectID)
+	routeID := createRouteDecisionFixture(t, repo, tenantID, visibleProjectID, jobID, visibleDemandID)
+	employeeID := uuid.New()
+	stage := int32(1)
+
+	_, err := repo.ReplaceProjectMembers(ctx, tenantID, visibleProjectID, []ProjectMemberInput{{
+		PrincipalType:       PrincipalTypeHumanUser,
+		PrincipalID:         actorID,
+		ProjectRole:         ProjectRoleObserver,
+		DisplayNameSnapshot: "观察者",
+	}})
+	require.NoError(t, err)
+	_, err = repo.CreateProjectTaskGraph(ctx, CreateProjectTaskGraphRequest{
+		TenantID:          tenantID,
+		ProjectID:         visibleProjectID,
+		DemandID:          visibleDemandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		Tasks: []ProjectTaskGraphCreateTask{{
+			Key:                       "root",
+			Title:                     "定位问题",
+			Status:                    "assigned",
+			AssignedDigitalEmployeeID: employeeID,
+			TaskKind:                  "analysis",
+			StageIndex:                &stage,
+			RiskLevel:                 "medium",
+			ExpectedOutputs:           []any{"summary"},
+			InputRequirements:         map[string]any{},
+			HandoffContract:           map[string]any{},
+			PlannerMetadata:           map[string]any{},
+		}},
+	})
+	require.NoError(t, err)
+
+	items, err := repo.ListWorkflowInstances(ctx, ListWorkflowInstancesRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorID,
+		Limit:       20,
+	})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, visibleDemandID, items[0].DemandID)
+	require.NotEqual(t, hiddenDemandID, items[0].DemandID)
+	require.Equal(t, int32(1), items[0].Progress.TotalNodes)
+	require.Equal(t, int32(1), items[0].Progress.RunningNodes)
+	require.Equal(t, WorkflowInstanceStatusRunning, items[0].Status)
+	require.Equal(t, &jobID, items[0].SelectedCoordinationJobID)
+}
+
 func TestProjectTaskGraphReadReturnsGraphScopedSidecarsAfterUnrelatedRows(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	pgRepo := repo.(*PgRepository)
