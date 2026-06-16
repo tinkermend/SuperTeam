@@ -61,13 +61,23 @@ export type UserProjectTeamSummary = {
   current_revision?: number | null;
   digital_employee_count: number;
   governance_status: string;
-  human_owners: UserSummary[];
+  human_owners: UserProjectTeamOwner[];
   id: string;
   name: string;
   pending_draft_count: number;
   risk_summary: string;
   slug: string;
   status: string;
+};
+
+export type UserProjectTeamOwner = {
+  avatar: UserAvatar;
+  avatar_asset_id?: string | null;
+  display_name?: string | null;
+  email?: string | null;
+  id: string;
+  status: string;
+  username: string;
 };
 
 export type UserProjectTeamScope = {

@@ -429,7 +429,21 @@ describe("auth api client", () => {
             team: {
               digital_employee_count: 3,
               governance_status: "ready",
-              human_owners: [],
+              human_owners: [
+                {
+                  id: operatorUserId,
+                  username: "operator",
+                  display_name: null,
+                  email: null,
+                  status: "active",
+                  avatar: {
+                    provider: "dicebear",
+                    style: "adventurer",
+                    seed: "operator-avatar",
+                  },
+                  avatar_asset_id: null,
+                },
+              ],
               id: teamId,
               name: "交付团队",
               pending_draft_count: 1,
@@ -464,7 +478,21 @@ describe("auth api client", () => {
           team: {
             digital_employee_count: 3,
             governance_status: "ready",
-            human_owners: [],
+            human_owners: [
+              {
+                id: operatorUserId,
+                username: "operator",
+                display_name: null,
+                email: null,
+                status: "active",
+                avatar: {
+                  provider: "dicebear",
+                  style: "adventurer",
+                  seed: "operator-avatar",
+                },
+                avatar_asset_id: null,
+              },
+            ],
             id: teamId,
             name: "交付团队",
             pending_draft_count: 1,
@@ -505,7 +533,21 @@ describe("auth api client", () => {
             team: {
               digital_employee_count: 3,
               governance_status: "ready",
-              human_owners: [],
+              human_owners: [
+                {
+                  id: operatorUserId,
+                  username: "operator",
+                  display_name: null,
+                  email: null,
+                  status: "active",
+                  avatar: {
+                    provider: "dicebear",
+                    style: "adventurer",
+                    seed: "operator-avatar",
+                  },
+                  avatar_asset_id: null,
+                },
+              ],
               id: teamId,
               name: "交付团队",
               pending_draft_count: 1,
