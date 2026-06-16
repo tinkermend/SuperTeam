@@ -150,9 +150,12 @@ type ChangeCurrentUserPasswordRequest struct {
 
 // CreateUserRequest defines model for CreateUserRequest.
 type CreateUserRequest struct {
-	Avatar   *UserAvatar `json:"avatar,omitempty"`
-	Password string      `json:"password"`
-	Username string      `json:"username"`
+	Avatar            *UserAvatar          `json:"avatar,omitempty"`
+	AvatarAssetId     string               `json:"avatar_asset_id"`
+	DisplayName       string               `json:"display_name"`
+	Password          string               `json:"password"`
+	SelectableTeamIds []openapi_types.UUID `json:"selectable_team_ids"`
+	Username          string               `json:"username"`
 }
 
 // CurrentUserResponse defines model for CurrentUserResponse.
@@ -196,6 +199,11 @@ type LoginResponse struct {
 	User UserSummary `json:"user"`
 }
 
+// ReplaceUserProjectTeamScopesRequest defines model for ReplaceUserProjectTeamScopesRequest.
+type ReplaceUserProjectTeamScopesRequest struct {
+	TeamIds []openapi_types.UUID `json:"team_ids"`
+}
+
 // ResetUserPasswordRequest defines model for ResetUserPasswordRequest.
 type ResetUserPasswordRequest struct {
 	Password string `json:"password"`
@@ -235,6 +243,50 @@ type UserListResponse struct {
 	Items []UserSummary `json:"items"`
 }
 
+// UserProjectTeamOwner defines model for UserProjectTeamOwner.
+type UserProjectTeamOwner struct {
+	Avatar        UserAvatar         `json:"avatar"`
+	AvatarAssetId *string            `json:"avatar_asset_id,omitempty"`
+	DisplayName   *string            `json:"display_name,omitempty"`
+	Email         *string            `json:"email,omitempty"`
+	Id            openapi_types.UUID `json:"id"`
+	Status        string             `json:"status"`
+	Username      string             `json:"username"`
+}
+
+// UserProjectTeamScope defines model for UserProjectTeamScope.
+type UserProjectTeamScope struct {
+	CreatedAt       time.Time              `json:"created_at"`
+	GrantedByUserId *openapi_types.UUID    `json:"granted_by_user_id,omitempty"`
+	Id              openapi_types.UUID     `json:"id"`
+	RevokedAt       *time.Time             `json:"revoked_at,omitempty"`
+	Status          string                 `json:"status"`
+	Team            UserProjectTeamSummary `json:"team"`
+	TeamId          openapi_types.UUID     `json:"team_id"`
+	TenantId        openapi_types.UUID     `json:"tenant_id"`
+	UpdatedAt       time.Time              `json:"updated_at"`
+	UserId          openapi_types.UUID     `json:"user_id"`
+}
+
+// UserProjectTeamScopeListResponse defines model for UserProjectTeamScopeListResponse.
+type UserProjectTeamScopeListResponse struct {
+	Items []UserProjectTeamScope `json:"items"`
+}
+
+// UserProjectTeamSummary defines model for UserProjectTeamSummary.
+type UserProjectTeamSummary struct {
+	CurrentRevision      *int32                 `json:"current_revision,omitempty"`
+	DigitalEmployeeCount int32                  `json:"digital_employee_count"`
+	GovernanceStatus     string                 `json:"governance_status"`
+	HumanOwners          []UserProjectTeamOwner `json:"human_owners"`
+	Id                   openapi_types.UUID     `json:"id"`
+	Name                 string                 `json:"name"`
+	PendingDraftCount    int32                  `json:"pending_draft_count"`
+	RiskSummary          string                 `json:"risk_summary"`
+	Slug                 string                 `json:"slug"`
+	Status               string                 `json:"status"`
+}
+
 // UserResponse defines model for UserResponse.
 type UserResponse struct {
 	User UserSummary `json:"user"`
@@ -242,12 +294,13 @@ type UserResponse struct {
 
 // UserSummary defines model for UserSummary.
 type UserSummary struct {
-	Avatar      UserAvatar         `json:"avatar"`
-	DisplayName *string            `json:"display_name,omitempty"`
-	Email       *string            `json:"email,omitempty"`
-	Id          openapi_types.UUID `json:"id"`
-	Status      UserSummaryStatus  `json:"status"`
-	Username    string             `json:"username"`
+	Avatar        UserAvatar         `json:"avatar"`
+	AvatarAssetId *string            `json:"avatar_asset_id,omitempty"`
+	DisplayName   *string            `json:"display_name,omitempty"`
+	Email         *string            `json:"email,omitempty"`
+	Id            openapi_types.UUID `json:"id"`
+	Status        UserSummaryStatus  `json:"status"`
+	Username      string             `json:"username"`
 }
 
 // UserSummaryStatus defines model for UserSummary.Status.
@@ -307,6 +360,9 @@ type LoginJSONRequestBody LoginJSONBody
 // CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
 type CreateUserJSONRequestBody = CreateUserRequest
 
+// ReplaceUserProjectTeamScopesJSONRequestBody defines body for ReplaceUserProjectTeamScopes for application/json ContentType.
+type ReplaceUserProjectTeamScopesJSONRequestBody = ReplaceUserProjectTeamScopesRequest
+
 // ResetUserPasswordJSONRequestBody defines body for ResetUserPassword for application/json ContentType.
 type ResetUserPasswordJSONRequestBody = ResetUserPasswordRequest
 
@@ -342,6 +398,12 @@ type ServerInterface interface {
 	// 创建平台用户
 	// (POST /api/auth/users)
 	CreateUser(w http.ResponseWriter, r *http.Request)
+	// 查询用户可选择的项目团队范围
+	// (GET /api/auth/users/{id}/project-team-scopes)
+	ListUserProjectTeamScopes(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// 替换用户可选择的项目团队范围
+	// (PUT /api/auth/users/{id}/project-team-scopes)
+	ReplaceUserProjectTeamScopes(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 	// 重置平台用户密码
 	// (POST /api/auth/users/{id}/reset-password)
 	ResetUserPassword(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
@@ -405,6 +467,18 @@ func (_ Unimplemented) ListUsers(w http.ResponseWriter, r *http.Request, params 
 // 创建平台用户
 // (POST /api/auth/users)
 func (_ Unimplemented) CreateUser(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 查询用户可选择的项目团队范围
+// (GET /api/auth/users/{id}/project-team-scopes)
+func (_ Unimplemented) ListUserProjectTeamScopes(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 替换用户可选择的项目团队范围
+// (PUT /api/auth/users/{id}/project-team-scopes)
+func (_ Unimplemented) ReplaceUserProjectTeamScopes(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -725,6 +799,70 @@ func (siw *ServerInterfaceWrapper) CreateUser(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// ListUserProjectTeamScopes operation middleware
+func (siw *ServerInterfaceWrapper) ListUserProjectTeamScopes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUserProjectTeamScopes(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceUserProjectTeamScopes operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceUserProjectTeamScopes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceUserProjectTeamScopes(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ResetUserPassword operation middleware
 func (siw *ServerInterfaceWrapper) ResetUserPassword(w http.ResponseWriter, r *http.Request) {
 
@@ -928,6 +1066,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/auth/users", wrapper.CreateUser)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/auth/users/{id}/project-team-scopes", wrapper.ListUserProjectTeamScopes)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/auth/users/{id}/project-team-scopes", wrapper.ReplaceUserProjectTeamScopes)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/auth/users/{id}/reset-password", wrapper.ResetUserPassword)

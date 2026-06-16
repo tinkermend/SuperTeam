@@ -17,6 +17,7 @@ type mockRepo struct {
 	sessions            map[string]*Session
 	loginLogs           []LoginLog
 	operationLogs       []mockOperationLog
+	scopeTeamIDs        map[uuid.UUID][]uuid.UUID
 	lastListUsersFilter ListUsersFilter
 	lastLoginLogFilter  ListLoginLogsFilter
 }
@@ -29,6 +30,7 @@ func newMockRepo() *mockRepo {
 		sessions:      make(map[string]*Session),
 		loginLogs:     []LoginLog{},
 		operationLogs: []mockOperationLog{},
+		scopeTeamIDs:  make(map[uuid.UUID][]uuid.UUID),
 	}
 }
 
@@ -42,17 +44,20 @@ type mockOperationLog struct {
 	Result       string
 }
 
-func (m *mockRepo) CreateUser(ctx context.Context, username, passwordHash string, avatar UserAvatarConfig) (*User, error) {
+func (m *mockRepo) CreateUser(ctx context.Context, input CreateUserRecordInput) (*User, error) {
 	user := &User{
-		ID:           uuid.New(),
-		Username:     username,
-		PasswordHash: passwordHash,
-		Status:       "active",
-		Avatar:       avatar,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		ID:            uuid.New(),
+		Username:      input.Username,
+		DisplayName:   input.DisplayName,
+		Email:         input.Email,
+		PasswordHash:  input.PasswordHash,
+		Status:        "active",
+		Avatar:        defaultUserAvatarConfig(input.Username),
+		AvatarAssetID: input.AvatarAssetID,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
 	}
-	m.users[username] = user
+	m.users[input.Username] = user
 	m.usersByID[user.ID] = user
 	return user, nil
 }
@@ -205,6 +210,69 @@ func (m *mockRepo) CreateOperationLog(ctx context.Context, params CreateOperatio
 	return nil
 }
 
+func (m *mockRepo) ReplaceUserProjectTeamScopes(ctx context.Context, tenantID, userID, grantedByUserID uuid.UUID, teamIDs []uuid.UUID) ([]UserProjectTeamScopeSummary, error) {
+	copied := append([]uuid.UUID(nil), teamIDs...)
+	m.scopeTeamIDs[userID] = copied
+	scopes := make([]UserProjectTeamScopeSummary, 0, len(copied))
+	now := time.Now()
+	for _, teamID := range copied {
+		scopes = append(scopes, UserProjectTeamScopeSummary{
+			ID:              uuid.New(),
+			TenantID:        tenantID,
+			UserID:          userID,
+			TeamID:          teamID,
+			Status:          "active",
+			GrantedByUserID: &grantedByUserID,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+			Team: UserProjectTeamScopeTeamSummary{
+				ID:               teamID,
+				Slug:             "team-" + teamID.String()[:8],
+				Name:             "Team " + teamID.String()[:8],
+				Status:           "active",
+				GovernanceStatus: "not_configured",
+				HumanOwners:      []UserProjectTeamScopeOwnerSummary{},
+			},
+		})
+	}
+	return scopes, nil
+}
+
+func (m *mockRepo) ListUserProjectTeamScopes(ctx context.Context, tenantID, userID uuid.UUID) ([]UserProjectTeamScopeSummary, error) {
+	teamIDs := m.scopeTeamIDs[userID]
+	scopes := make([]UserProjectTeamScopeSummary, 0, len(teamIDs))
+	now := time.Now()
+	for _, teamID := range teamIDs {
+		scopes = append(scopes, UserProjectTeamScopeSummary{
+			ID:        uuid.New(),
+			TenantID:  tenantID,
+			UserID:    userID,
+			TeamID:    teamID,
+			Status:    "active",
+			CreatedAt: now,
+			UpdatedAt: now,
+			Team: UserProjectTeamScopeTeamSummary{
+				ID:               teamID,
+				Slug:             "team-" + teamID.String()[:8],
+				Name:             "Team " + teamID.String()[:8],
+				Status:           "active",
+				GovernanceStatus: "not_configured",
+				HumanOwners:      []UserProjectTeamScopeOwnerSummary{},
+			},
+		})
+	}
+	return scopes, nil
+}
+
+func (m *mockRepo) CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error) {
+	for _, scopedTeamID := range m.scopeTeamIDs[userID] {
+		if scopedTeamID == teamID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func TestNewService(t *testing.T) {
 	if _, err := NewService(nil); err == nil {
 		t.Fatal("expected error with nil repo")
@@ -288,13 +356,12 @@ func TestCreateManagedUserRecordsOperationLog(t *testing.T) {
 	}
 
 	created, err := svc.CreateManagedUser(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, CreateManagedUserInput{
-		Username: "operator",
-		Password: "secret",
-		Avatar: UserAvatarConfig{
-			Provider: "dicebear",
-			Style:    "adventurer",
-			Seed:     "operator-avatar",
-		},
+		Username:          "operator",
+		DisplayName:       "Operator",
+		Password:          "secret",
+		AvatarAssetID:     "engineer-m-01",
+		SelectableTeamIDs: []uuid.UUID{uuid.New()},
+		TenantID:          uuid.MustParse(DefaultTenantID),
 	})
 	if err != nil {
 		t.Fatalf("create managed user: %v", err)
@@ -302,8 +369,8 @@ func TestCreateManagedUserRecordsOperationLog(t *testing.T) {
 	if created.Username != "operator" || created.Status != UserStatusActive {
 		t.Fatalf("unexpected created user: %#v", created)
 	}
-	if created.Avatar.Provider != "dicebear" || created.Avatar.Style != "adventurer" || created.Avatar.Seed != "operator-avatar" {
-		t.Fatalf("expected created user avatar to be preserved, got %#v", created.Avatar)
+	if created.DisplayName != "Operator" || created.AvatarAssetID != "engineer-m-01" {
+		t.Fatalf("expected created user display name and avatar asset to be preserved, got %#v", created)
 	}
 	if len(repo.operationLogs) != 1 {
 		t.Fatalf("expected operation log, got %d", len(repo.operationLogs))
@@ -317,7 +384,56 @@ func TestCreateManagedUserRecordsOperationLog(t *testing.T) {
 	}
 }
 
-func TestCreateManagedUserDefaultsAvatarSeed(t *testing.T) {
+func TestCreateManagedUserPersistsDisplayNameAvatarAssetAndScopes(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	actor, err := svc.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	teamA := uuid.New()
+	teamB := uuid.New()
+
+	created, err := svc.CreateManagedUser(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, CreateManagedUserInput{
+		Username:          "zhoumin",
+		DisplayName:       "周敏",
+		Password:          "secret",
+		AvatarAssetID:     "engineer-f-01",
+		SelectableTeamIDs: []uuid.UUID{teamA, teamB},
+		TenantID:          uuid.MustParse(DefaultTenantID),
+	})
+	if err != nil {
+		t.Fatalf("create managed user: %v", err)
+	}
+	if created.DisplayName != "周敏" || created.AvatarAssetID != "engineer-f-01" {
+		t.Fatalf("expected display name and avatar asset, got %#v", created)
+	}
+	if got := repo.scopeTeamIDs[created.ID]; len(got) != 2 || got[0] != teamA || got[1] != teamB {
+		t.Fatalf("expected scope team ids to be persisted, got %#v", got)
+	}
+}
+
+func TestCreateManagedUserRequiresSelectableTeams(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	actor, err := svc.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+
+	_, err = svc.CreateManagedUser(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, CreateManagedUserInput{
+		Username:      "empty-scope",
+		DisplayName:   "空范围",
+		Password:      "secret",
+		AvatarAssetID: "engineer-f-01",
+		TenantID:      uuid.MustParse(DefaultTenantID),
+	})
+	if !errors.Is(err, ErrInvalidManagedUserInput) {
+		t.Fatalf("expected invalid managed user input, got %v", err)
+	}
+}
+
+func TestCreateManagedUserNormalizesAvatarAssetID(t *testing.T) {
 	repo := newMockRepo()
 	svc, _ := NewService(repo)
 	actor, err := svc.CreateUser(context.Background(), "admin", "admin")
@@ -326,14 +442,18 @@ func TestCreateManagedUserDefaultsAvatarSeed(t *testing.T) {
 	}
 
 	created, err := svc.CreateManagedUser(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, CreateManagedUserInput{
-		Username: "reviewer",
-		Password: "secret",
+		Username:          "reviewer",
+		DisplayName:       "Reviewer",
+		Password:          "secret",
+		AvatarAssetID:     " ENGINEER-F-01 ",
+		SelectableTeamIDs: []uuid.UUID{uuid.New()},
+		TenantID:          uuid.MustParse(DefaultTenantID),
 	})
 	if err != nil {
 		t.Fatalf("create managed user: %v", err)
 	}
-	if created.Avatar.Provider != "dicebear" || created.Avatar.Style != "adventurer" || created.Avatar.Seed != "user:reviewer" {
-		t.Fatalf("expected deterministic default avatar, got %#v", created.Avatar)
+	if created.AvatarAssetID != "engineer-f-01" {
+		t.Fatalf("expected normalized avatar asset id, got %#v", created)
 	}
 }
 

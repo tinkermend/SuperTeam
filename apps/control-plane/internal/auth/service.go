@@ -7,13 +7,22 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/avatar"
 	"golang.org/x/crypto/bcrypt"
 )
 
 const DefaultTenantID = "00000000-0000-0000-0000-000000000001"
 
+type CreateUserRecordInput struct {
+	Username      string
+	DisplayName   string
+	Email         string
+	PasswordHash  string
+	AvatarAssetID string
+}
+
 type Repository interface {
-	CreateUser(ctx context.Context, username, passwordHash string, avatar UserAvatarConfig) (*User, error)
+	CreateUser(ctx context.Context, input CreateUserRecordInput) (*User, error)
 	ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error)
 	GetUserByUsername(ctx context.Context, username string) (*User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (*User, error)
@@ -29,6 +38,9 @@ type Repository interface {
 	CreateLoginLog(ctx context.Context, params CreateLoginLogParams) error
 	ListLoginLogs(ctx context.Context, filter ListLoginLogsFilter) ([]LoginLog, error)
 	CreateOperationLog(ctx context.Context, params CreateOperationLogParams) error
+	ReplaceUserProjectTeamScopes(ctx context.Context, tenantID, userID, grantedByUserID uuid.UUID, teamIDs []uuid.UUID) ([]UserProjectTeamScopeSummary, error)
+	ListUserProjectTeamScopes(ctx context.Context, tenantID, userID uuid.UUID) ([]UserProjectTeamScopeSummary, error)
+	CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error)
 }
 
 type Service struct {
@@ -53,7 +65,10 @@ func (s *Service) CreateUser(ctx context.Context, username, password string) (*U
 	if err != nil {
 		return nil, err
 	}
-	return s.repo.CreateUser(ctx, username, string(hash), defaultUserAvatarConfig(username))
+	return s.repo.CreateUser(ctx, CreateUserRecordInput{
+		Username:     strings.TrimSpace(username),
+		PasswordHash: string(hash),
+	})
 }
 
 func (s *Service) ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error) {
@@ -68,17 +83,47 @@ func (s *Service) ListUsers(ctx context.Context, filter ListUsersFilter) ([]*Use
 }
 
 func (s *Service) CreateManagedUser(ctx context.Context, actor Actor, input CreateManagedUserInput) (*User, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return nil, err
-	}
-	user, err := s.repo.CreateUser(ctx, input.Username, string(hash), normalizeUserAvatarConfig(input.Username, input.Avatar))
+	input, err := normalizeManagedUserInput(input)
 	if err != nil {
 		_ = s.recordUserOperation(ctx, actor, uuid.Nil, OperationActionUserCreate, OperationResultFailed)
 		return nil, err
 	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	user, err := s.repo.CreateUser(ctx, CreateUserRecordInput{
+		Username:      input.Username,
+		DisplayName:   input.DisplayName,
+		PasswordHash:  string(hash),
+		AvatarAssetID: input.AvatarAssetID,
+	})
+	if err != nil {
+		_ = s.recordUserOperation(ctx, actor, uuid.Nil, OperationActionUserCreate, OperationResultFailed)
+		return nil, err
+	}
+	if _, err := s.repo.ReplaceUserProjectTeamScopes(ctx, input.TenantID, user.ID, actor.UserID, input.SelectableTeamIDs); err != nil {
+		_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserCreate, OperationResultFailed)
+		return nil, err
+	}
 	_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserCreate, OperationResultSucceeded)
 	return user, nil
+}
+
+func normalizeManagedUserInput(input CreateManagedUserInput) (CreateManagedUserInput, error) {
+	input.Username = strings.TrimSpace(input.Username)
+	input.DisplayName = strings.TrimSpace(input.DisplayName)
+	input.AvatarAssetID = strings.ToLower(strings.TrimSpace(input.AvatarAssetID))
+	if input.TenantID == uuid.Nil {
+		input.TenantID = uuid.MustParse(DefaultTenantID)
+	}
+	if input.Username == "" || input.DisplayName == "" || input.Password == "" || input.AvatarAssetID == "" || len(input.SelectableTeamIDs) == 0 {
+		return input, ErrInvalidManagedUserInput
+	}
+	if _, ok := avatar.BuiltInAssetByID(input.AvatarAssetID); !ok {
+		return input, ErrInvalidManagedUserInput
+	}
+	return input, nil
 }
 
 func normalizeUserAvatarConfig(username string, avatar UserAvatarConfig) UserAvatarConfig {
@@ -127,6 +172,30 @@ func (s *Service) ResetManagedUserPassword(ctx context.Context, actor Actor, use
 	}
 	_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserResetPassword, OperationResultSucceeded)
 	return user, nil
+}
+
+func (s *Service) ListUserProjectTeamScopes(ctx context.Context, tenantID, userID uuid.UUID) ([]UserProjectTeamScopeSummary, error) {
+	if tenantID == uuid.Nil {
+		tenantID = uuid.MustParse(DefaultTenantID)
+	}
+	return s.repo.ListUserProjectTeamScopes(ctx, tenantID, userID)
+}
+
+func (s *Service) ReplaceUserProjectTeamScopes(ctx context.Context, actor Actor, tenantID, userID uuid.UUID, teamIDs []uuid.UUID) ([]UserProjectTeamScopeSummary, error) {
+	if tenantID == uuid.Nil {
+		tenantID = uuid.MustParse(DefaultTenantID)
+	}
+	if len(teamIDs) == 0 {
+		return nil, ErrInvalidManagedUserInput
+	}
+	return s.repo.ReplaceUserProjectTeamScopes(ctx, tenantID, userID, actor.UserID, teamIDs)
+}
+
+func (s *Service) CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error) {
+	if tenantID == uuid.Nil {
+		tenantID = uuid.MustParse(DefaultTenantID)
+	}
+	return s.repo.CanUseTeamForProject(ctx, tenantID, userID, teamID)
 }
 
 func (s *Service) UpdateCurrentUserProfile(ctx context.Context, actor Actor, input UpdateUserProfileInput) (*User, error) {

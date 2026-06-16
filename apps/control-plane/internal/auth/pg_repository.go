@@ -19,15 +19,28 @@ func NewPgRepository(q *queries.Queries) Repository {
 	return &PgRepository{q: q}
 }
 
-func (r *PgRepository) CreateUser(ctx context.Context, username, passwordHash string, avatar UserAvatarConfig) (*User, error) {
+func (r *PgRepository) CreateUser(ctx context.Context, input CreateUserRecordInput) (*User, error) {
+	avatar := normalizeUserAvatarConfig(input.Username, UserAvatarConfig{})
 	avatarOptions, err := json.Marshal(avatar.Options)
 	if err != nil {
 		return nil, err
 	}
 	user, err := r.q.CreateUser(ctx, queries.CreateUserParams{
-		Username:     username,
-		PasswordHash: passwordHash,
+		Username: input.Username,
+		DisplayName: pgtype.Text{
+			String: input.DisplayName,
+			Valid:  input.DisplayName != "",
+		},
+		Email: pgtype.Text{
+			String: input.Email,
+			Valid:  input.Email != "",
+		},
+		PasswordHash: input.PasswordHash,
 		Status:       UserStatusActive,
+		AvatarAssetID: pgtype.Text{
+			String: input.AvatarAssetID,
+			Valid:  input.AvatarAssetID != "",
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -152,15 +165,16 @@ func toDomainUser(user queries.AuthUser) *User {
 		Options:  userAvatarOptions(user.AvatarOptions),
 	})
 	return &User{
-		ID:           user.ID,
-		Username:     user.Username,
-		DisplayName:  user.DisplayName.String,
-		Email:        user.Email.String,
-		PasswordHash: user.PasswordHash,
-		Status:       user.Status,
-		Avatar:       avatar,
-		CreatedAt:    user.CreatedAt.Time,
-		UpdatedAt:    user.UpdatedAt.Time,
+		ID:            user.ID,
+		Username:      user.Username,
+		DisplayName:   user.DisplayName.String,
+		Email:         user.Email.String,
+		PasswordHash:  user.PasswordHash,
+		Status:        user.Status,
+		Avatar:        avatar,
+		AvatarAssetID: user.AvatarAssetID.String,
+		CreatedAt:     user.CreatedAt.Time,
+		UpdatedAt:     user.UpdatedAt.Time,
 	}
 }
 
@@ -329,11 +343,144 @@ func (r *PgRepository) CreateOperationLog(ctx context.Context, params CreateOper
 	return err
 }
 
+func (r *PgRepository) ReplaceUserProjectTeamScopes(ctx context.Context, tenantID, userID, grantedByUserID uuid.UUID, teamIDs []uuid.UUID) ([]UserProjectTeamScopeSummary, error) {
+	if err := r.q.RevokeUserProjectTeamScopes(ctx, queries.RevokeUserProjectTeamScopesParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		TeamIds:  teamIDs,
+	}); err != nil {
+		return nil, err
+	}
+	for _, teamID := range teamIDs {
+		if _, err := r.q.UpsertUserProjectTeamScope(ctx, queries.UpsertUserProjectTeamScopeParams{
+			TenantID: tenantID,
+			UserID:   userID,
+			TeamID:   teamID,
+			GrantedByUserID: uuid.NullUUID{
+				UUID:  grantedByUserID,
+				Valid: grantedByUserID != uuid.Nil,
+			},
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return r.ListUserProjectTeamScopes(ctx, tenantID, userID)
+}
+
+func (r *PgRepository) ListUserProjectTeamScopes(ctx context.Context, tenantID, userID uuid.UUID) ([]UserProjectTeamScopeSummary, error) {
+	rows, err := r.q.ListUserProjectTeamScopeSummaries(ctx, queries.ListUserProjectTeamScopeSummariesParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]UserProjectTeamScopeSummary, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, toDomainUserProjectTeamScopeSummary(row))
+	}
+	return items, nil
+}
+
+func (r *PgRepository) CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error) {
+	return r.q.UserHasActiveProjectTeamScope(ctx, queries.UserHasActiveProjectTeamScopeParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		TeamID:   teamID,
+	})
+}
+
 func nullUUID(value *uuid.UUID) uuid.NullUUID {
 	if value == nil {
 		return uuid.NullUUID{}
 	}
 	return uuid.NullUUID{UUID: *value, Valid: true}
+}
+
+func toDomainUserProjectTeamScopeSummary(row queries.ListUserProjectTeamScopeSummariesRow) UserProjectTeamScopeSummary {
+	return UserProjectTeamScopeSummary{
+		ID:              row.ID,
+		TenantID:        row.TenantID,
+		UserID:          row.UserID,
+		TeamID:          row.TeamID,
+		Status:          row.Status,
+		GrantedByUserID: uuidPtr(row.GrantedByUserID),
+		RevokedAt:       timePtr(row.RevokedAt),
+		CreatedAt:       row.CreatedAt.Time,
+		UpdatedAt:       row.UpdatedAt.Time,
+		Team: UserProjectTeamScopeTeamSummary{
+			ID:                   row.TeamID,
+			Slug:                 row.Slug,
+			Name:                 row.Name,
+			Status:               row.TeamStatus,
+			DigitalEmployeeCount: row.DigitalEmployeeCount,
+			CurrentRevision:      int32Ptr(row.CurrentRevision),
+			PendingDraftCount:    row.PendingDraftCount,
+			GovernanceStatus:     row.GovernanceStatus,
+			RiskSummary:          row.RiskSummary,
+			HumanOwners:          userProjectTeamOwners(row.HumanOwners),
+		},
+	}
+}
+
+func userProjectTeamOwners(raw []byte) []UserProjectTeamScopeOwnerSummary {
+	if len(raw) == 0 {
+		return []UserProjectTeamScopeOwnerSummary{}
+	}
+	var rows []struct {
+		ID             uuid.UUID      `json:"id"`
+		Username       string         `json:"username"`
+		DisplayName    string         `json:"display_name"`
+		Email          string         `json:"email"`
+		Status         string         `json:"status"`
+		AvatarProvider string         `json:"avatar_provider"`
+		AvatarStyle    string         `json:"avatar_style"`
+		AvatarSeed     string         `json:"avatar_seed"`
+		AvatarOptions  map[string]any `json:"avatar_options"`
+		AvatarAssetID  string         `json:"avatar_asset_id"`
+	}
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return []UserProjectTeamScopeOwnerSummary{}
+	}
+	owners := make([]UserProjectTeamScopeOwnerSummary, 0, len(rows))
+	for _, row := range rows {
+		owners = append(owners, UserProjectTeamScopeOwnerSummary{
+			ID:          row.ID,
+			Username:    row.Username,
+			DisplayName: row.DisplayName,
+			Email:       row.Email,
+			Status:      row.Status,
+			Avatar: normalizeUserAvatarConfig(row.Username, UserAvatarConfig{
+				Provider: row.AvatarProvider,
+				Style:    row.AvatarStyle,
+				Seed:     row.AvatarSeed,
+				Options:  row.AvatarOptions,
+			}),
+			AvatarAssetID: row.AvatarAssetID,
+		})
+	}
+	return owners
+}
+
+func uuidPtr(value uuid.NullUUID) *uuid.UUID {
+	if !value.Valid {
+		return nil
+	}
+	return &value.UUID
+}
+
+func timePtr(value pgtype.Timestamptz) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	return &value.Time
+}
+
+func int32Ptr(value pgtype.Int4) *int32 {
+	if !value.Valid {
+		return nil
+	}
+	return &value.Int32
 }
 
 func toDomainLoginLog(log queries.WebLoginLog) LoginLog {

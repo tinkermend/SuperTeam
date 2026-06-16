@@ -1,23 +1,27 @@
 package auth
 
 import (
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 )
 
+var ErrInvalidManagedUserInput = errors.New("invalid managed user input")
+
 // User 用户模型
 type User struct {
-	ID           uuid.UUID        `db:"id"`
-	Username     string           `db:"username"`
-	DisplayName  string           `db:"display_name"`
-	Email        string           `db:"email"`
-	PasswordHash string           `db:"password_hash"`
-	Status       string           `db:"status"`
-	Avatar       UserAvatarConfig `db:"-"`
-	CreatedAt    time.Time        `db:"created_at"`
-	UpdatedAt    time.Time        `db:"updated_at"`
-	LastLoginAt  *time.Time       `db:"last_login_at"`
+	ID            uuid.UUID        `db:"id"`
+	Username      string           `db:"username"`
+	DisplayName   string           `db:"display_name"`
+	Email         string           `db:"email"`
+	PasswordHash  string           `db:"password_hash"`
+	Status        string           `db:"status"`
+	Avatar        UserAvatarConfig `db:"-"`
+	AvatarAssetID string           `db:"avatar_asset_id"`
+	CreatedAt     time.Time        `db:"created_at"`
+	UpdatedAt     time.Time        `db:"updated_at"`
+	LastLoginAt   *time.Time       `db:"last_login_at"`
 }
 
 // UserAvatarConfig 表示平台用户头像生成配置。当前只支持 DiceBear，但保留结构化扩展字段。
@@ -92,9 +96,51 @@ type ListUsersFilter struct {
 
 // CreateManagedUserInput 创建平台用户的输入。
 type CreateManagedUserInput struct {
-	Username string
-	Password string
-	Avatar   UserAvatarConfig
+	TenantID          uuid.UUID
+	Username          string
+	DisplayName       string
+	Password          string
+	AvatarAssetID     string
+	SelectableTeamIDs []uuid.UUID
+}
+
+// UserProjectTeamScopeSummary 表示人类用户创建项目时可选择的团队授权范围。
+type UserProjectTeamScopeSummary struct {
+	ID              uuid.UUID
+	TenantID        uuid.UUID
+	UserID          uuid.UUID
+	TeamID          uuid.UUID
+	Status          string
+	GrantedByUserID *uuid.UUID
+	RevokedAt       *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	Team            UserProjectTeamScopeTeamSummary
+}
+
+// UserProjectTeamScopeTeamSummary 表示授权范围中的团队摘要和治理状态。
+type UserProjectTeamScopeTeamSummary struct {
+	ID                   uuid.UUID
+	Slug                 string
+	Name                 string
+	Status               string
+	DigitalEmployeeCount int32
+	CurrentRevision      *int32
+	PendingDraftCount    int32
+	GovernanceStatus     string
+	RiskSummary          string
+	HumanOwners          []UserProjectTeamScopeOwnerSummary
+}
+
+// UserProjectTeamScopeOwnerSummary 表示团队固定人类负责人摘要。
+type UserProjectTeamScopeOwnerSummary struct {
+	ID            uuid.UUID
+	Username      string
+	DisplayName   string
+	Email         string
+	Status        string
+	Avatar        UserAvatarConfig
+	AvatarAssetID string
 }
 
 // UpdateUserProfileInput 更新当前登录用户自服务资料的输入。

@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -71,6 +72,96 @@ func TestHTTPHandlerChangesCurrentUserPassword(t *testing.T) {
 	}
 	if _, err := svc.AuthenticateUser(request.Context(), "operator", "new-secret"); err != nil {
 		t.Fatalf("new password should authenticate: %v", err)
+	}
+}
+
+func TestHTTPHandlerCreatesManagedUserWithSelectableTeams(t *testing.T) {
+	_, _, handler, token := newAuthenticatedHandler(t)
+	teamA := uuid.New()
+	teamB := uuid.New()
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/users", bytes.NewBufferString(fmt.Sprintf(`{
+		"username":"zhoumin",
+		"display_name":"周敏",
+		"password":"secret",
+		"avatar_asset_id":"engineer-f-01",
+		"selectable_team_ids":["%s","%s"]
+	}`, teamA, teamB)))
+	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+	recorder := httptest.NewRecorder()
+
+	handler.CreateUser(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response UserResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.User.DisplayName == nil || *response.User.DisplayName != "周敏" {
+		t.Fatalf("expected display name in response, got %#v", response.User)
+	}
+	if response.User.AvatarAssetId == nil || *response.User.AvatarAssetId != "engineer-f-01" {
+		t.Fatalf("expected avatar asset id in response, got %#v", response.User)
+	}
+}
+
+func TestHTTPHandlerListsUserProjectTeamScopes(t *testing.T) {
+	repo, svc, handler, token := newAuthenticatedHandler(t)
+	target, err := svc.CreateUser(t.Context(), "scope-target", "secret")
+	if err != nil {
+		t.Fatalf("create target user: %v", err)
+	}
+	teamA := uuid.New()
+	teamB := uuid.New()
+	repo.scopeTeamIDs[target.ID] = []uuid.UUID{teamA, teamB}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/users/"+target.ID.String()+"/project-team-scopes", nil)
+	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+	recorder := httptest.NewRecorder()
+
+	handler.ListUserProjectTeamScopes(recorder, request, openapiUUID(target.ID))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response UserProjectTeamScopeListResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Items) != 2 || uuid.UUID(response.Items[0].TeamId) != teamA || uuid.UUID(response.Items[1].TeamId) != teamB {
+		t.Fatalf("expected listed scopes for both teams, got %#v", response.Items)
+	}
+}
+
+func TestHTTPHandlerReplacesUserProjectTeamScopes(t *testing.T) {
+	repo, svc, handler, token := newAuthenticatedHandler(t)
+	target, err := svc.CreateUser(t.Context(), "replace-target", "secret")
+	if err != nil {
+		t.Fatalf("create target user: %v", err)
+	}
+	teamA := uuid.New()
+	teamB := uuid.New()
+	request := httptest.NewRequest(http.MethodPut, "/api/auth/users/"+target.ID.String()+"/project-team-scopes", bytes.NewBufferString(fmt.Sprintf(`{
+		"team_ids":["%s","%s"]
+	}`, teamA, teamB)))
+	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+	recorder := httptest.NewRecorder()
+
+	handler.ReplaceUserProjectTeamScopes(recorder, request, openapiUUID(target.ID))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if got := repo.scopeTeamIDs[target.ID]; len(got) != 2 || got[0] != teamA || got[1] != teamB {
+		t.Fatalf("expected replacement scopes to be persisted, got %#v", got)
+	}
+	var response UserProjectTeamScopeListResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Items) != 2 {
+		t.Fatalf("expected response scopes, got %#v", response.Items)
 	}
 }
 

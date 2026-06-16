@@ -221,15 +221,52 @@ func (h *HTTPHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := h.service.CreateManagedUser(r.Context(), toActor(actorUser), CreateManagedUserInput{
-		Username: body.Username,
-		Password: body.Password,
-		Avatar:   userAvatarFromGenerated(body.Avatar),
+		TenantID:          uuid.MustParse(DefaultTenantID),
+		Username:          body.Username,
+		DisplayName:       body.DisplayName,
+		Password:          body.Password,
+		AvatarAssetID:     body.AvatarAssetId,
+		SelectableTeamIDs: uuidSliceFromOpenAPI(body.SelectableTeamIds),
 	})
+	if err != nil {
+		h.writeManagedUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, UserResponse{User: toGeneratedUserSummary(user)})
+}
+
+func (h *HTTPHandler) ListUserProjectTeamScopes(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	if _, _, err := h.currentSessionUser(r); err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+
+	scopes, err := h.service.ListUserProjectTeamScopes(r.Context(), uuid.MustParse(DefaultTenantID), uuid.UUID(id))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	writeJSON(w, http.StatusCreated, UserResponse{User: toGeneratedUserSummary(user)})
+	writeJSON(w, http.StatusOK, UserProjectTeamScopeListResponse{Items: toGeneratedUserProjectTeamScopes(scopes)})
+}
+
+func (h *HTTPHandler) ReplaceUserProjectTeamScopes(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	_, actorUser, err := h.currentSessionUser(r)
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+
+	var body ReplaceUserProjectTeamScopesJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	scopes, err := h.service.ReplaceUserProjectTeamScopes(r.Context(), toActor(actorUser), uuid.MustParse(DefaultTenantID), uuid.UUID(id), uuidSliceFromOpenAPI(body.TeamIds))
+	if err != nil {
+		h.writeManagedUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, UserProjectTeamScopeListResponse{Items: toGeneratedUserProjectTeamScopes(scopes)})
 }
 
 func (h *HTTPHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
@@ -314,6 +351,14 @@ func (h *HTTPHandler) writeAuthError(w http.ResponseWriter, err error) {
 	}
 }
 
+func (h *HTTPHandler) writeManagedUserError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrInvalidManagedUserInput) {
+		writeError(w, http.StatusBadRequest, "invalid managed user input")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "internal server error")
+}
+
 func toGeneratedLoginLogRecord(log LoginLog) LoginLogRecord {
 	return LoginLogRecord{
 		ClientIp:      optionalString(log.ClientIP),
@@ -331,13 +376,68 @@ func toGeneratedLoginLogRecord(log LoginLog) LoginLogRecord {
 
 func toGeneratedUserSummary(user *User) UserSummary {
 	return UserSummary{
-		Avatar:      toGeneratedUserAvatar(user.Avatar),
-		DisplayName: optionalString(user.DisplayName),
-		Email:       optionalString(user.Email),
-		Id:          openapiUUID(user.ID),
-		Status:      UserSummaryStatus(user.Status),
-		Username:    user.Username,
+		Avatar:        toGeneratedUserAvatar(user.Avatar),
+		AvatarAssetId: optionalString(user.AvatarAssetID),
+		DisplayName:   optionalString(user.DisplayName),
+		Email:         optionalString(user.Email),
+		Id:            openapiUUID(user.ID),
+		Status:        UserSummaryStatus(user.Status),
+		Username:      user.Username,
 	}
+}
+
+func toGeneratedUserProjectTeamScopes(scopes []UserProjectTeamScopeSummary) []UserProjectTeamScope {
+	items := make([]UserProjectTeamScope, 0, len(scopes))
+	for _, scope := range scopes {
+		items = append(items, toGeneratedUserProjectTeamScope(scope))
+	}
+	return items
+}
+
+func toGeneratedUserProjectTeamScope(scope UserProjectTeamScopeSummary) UserProjectTeamScope {
+	return UserProjectTeamScope{
+		CreatedAt:       scope.CreatedAt,
+		GrantedByUserId: optionalOpenAPIUUID(scope.GrantedByUserID),
+		Id:              openapiUUID(scope.ID),
+		RevokedAt:       scope.RevokedAt,
+		Status:          scope.Status,
+		Team:            toGeneratedUserProjectTeamSummary(scope.Team),
+		TeamId:          openapiUUID(scope.TeamID),
+		TenantId:        openapiUUID(scope.TenantID),
+		UpdatedAt:       scope.UpdatedAt,
+		UserId:          openapiUUID(scope.UserID),
+	}
+}
+
+func toGeneratedUserProjectTeamSummary(team UserProjectTeamScopeTeamSummary) UserProjectTeamSummary {
+	return UserProjectTeamSummary{
+		CurrentRevision:      team.CurrentRevision,
+		DigitalEmployeeCount: team.DigitalEmployeeCount,
+		GovernanceStatus:     team.GovernanceStatus,
+		HumanOwners:          toGeneratedUserProjectTeamOwners(team.HumanOwners),
+		Id:                   openapiUUID(team.ID),
+		Name:                 team.Name,
+		PendingDraftCount:    team.PendingDraftCount,
+		RiskSummary:          team.RiskSummary,
+		Slug:                 team.Slug,
+		Status:               team.Status,
+	}
+}
+
+func toGeneratedUserProjectTeamOwners(owners []UserProjectTeamScopeOwnerSummary) []UserProjectTeamOwner {
+	items := make([]UserProjectTeamOwner, 0, len(owners))
+	for _, owner := range owners {
+		items = append(items, UserProjectTeamOwner{
+			Avatar:        toGeneratedUserAvatar(owner.Avatar),
+			AvatarAssetId: optionalString(owner.AvatarAssetID),
+			DisplayName:   optionalString(owner.DisplayName),
+			Email:         optionalString(owner.Email),
+			Id:            openapiUUID(owner.ID),
+			Status:        owner.Status,
+			Username:      owner.Username,
+		})
+	}
+	return items
 }
 
 func toGeneratedUserAvatar(avatar UserAvatarConfig) UserAvatar {
@@ -379,6 +479,14 @@ func optionalOpenAPIUUID(value *uuid.UUID) *openapi_types.UUID {
 	}
 	id := openapiUUID(*value)
 	return &id
+}
+
+func uuidSliceFromOpenAPI(values []openapi_types.UUID) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(values))
+	for _, value := range values {
+		ids = append(ids, uuid.UUID(value))
+	}
+	return ids
 }
 
 func optionalString(value string) *string {

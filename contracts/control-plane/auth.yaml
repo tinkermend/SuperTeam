@@ -325,6 +325,62 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/auth/users/{id}/project-team-scopes:
+    get:
+      summary: 查询用户可选择的项目团队范围
+      operationId: listUserProjectTeamScopes
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProjectTeamScopeListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      summary: 替换用户可选择的项目团队范围
+      operationId: replaceUserProjectTeamScopes
+      tags:
+        - Auth
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceUserProjectTeamScopesRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProjectTeamScopeListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/auth/users/{id}/reset-password:
     post:
       summary: 重置平台用户密码
@@ -407,9 +463,13 @@ components:
 
     CreateUserRequest:
       type: object
-      required: [username, password]
+      required: [username, display_name, password, avatar_asset_id, selectable_team_ids]
       properties:
         username:
+          type: string
+          minLength: 1
+          maxLength: 255
+        display_name:
           type: string
           minLength: 1
           maxLength: 255
@@ -419,6 +479,27 @@ components:
           minLength: 1
         avatar:
           $ref: '#/components/schemas/UserAvatar'
+        avatar_asset_id:
+          type: string
+          minLength: 1
+          maxLength: 100
+        selectable_team_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+
+    ReplaceUserProjectTeamScopesRequest:
+      type: object
+      required: [team_ids]
+      properties:
+        team_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
 
     UpdateUserStatusRequest:
       type: object
@@ -519,6 +600,108 @@ components:
           enum: [active, disabled]
         avatar:
           $ref: '#/components/schemas/UserAvatar'
+        avatar_asset_id:
+          type: string
+          nullable: true
+
+    UserProjectTeamScopeListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserProjectTeamScope'
+
+    UserProjectTeamScope:
+      type: object
+      required: [id, tenant_id, user_id, team_id, status, created_at, updated_at, team]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        granted_by_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        team:
+          $ref: '#/components/schemas/UserProjectTeamSummary'
+
+    UserProjectTeamSummary:
+      type: object
+      required: [id, slug, name, status, digital_employee_count, pending_draft_count, governance_status, risk_summary, human_owners]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        digital_employee_count:
+          type: integer
+          format: int32
+        current_revision:
+          type: integer
+          format: int32
+          nullable: true
+        pending_draft_count:
+          type: integer
+          format: int32
+        governance_status:
+          type: string
+        risk_summary:
+          type: string
+        human_owners:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserProjectTeamOwner'
+
+    UserProjectTeamOwner:
+      type: object
+      required: [id, username, status, avatar]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        display_name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        status:
+          type: string
+        avatar:
+          $ref: '#/components/schemas/UserAvatar'
+        avatar_asset_id:
+          type: string
+          nullable: true
 
     UserAvatar:
       type: object
