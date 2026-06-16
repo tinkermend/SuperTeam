@@ -4,6 +4,7 @@ import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { Users } from "@/features/users";
+import { CreateUserDrawer } from "@/features/users/components/create-user-drawer";
 
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
@@ -648,6 +649,104 @@ describe("Users", () => {
     await userEvent.fill(screen.getByLabelText("密码"), "secret-pass");
     await userEvent.click(screen.getByRole("button", { name: "选择头像 工程师头像 F03" }));
     await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
+  });
+
+  it("blocks retained avatar and team choices while create drawer queries refetch", async () => {
+    const avatarDeferred = createDeferredResponse();
+    const teamsDeferred = createDeferredResponse();
+    let mode: "loading" | "ready" = "ready";
+    const submit = vi.fn();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = new URL(String(input));
+
+      if (url.pathname === "/api/v1/digital-employee-avatar-assets") {
+        if (mode === "loading") {
+          return avatarDeferred.promise;
+        }
+
+        return jsonResponse([
+          {
+            age_range: "27",
+            gender: "female",
+            id: "engineer-f-03",
+            image_url: "/images/digital-employee-avatars/engineer-f-03.webp",
+            label: "工程师头像 F03",
+            license: "internal_product_asset",
+            source: "test",
+            status: "active",
+            style: "photorealistic_2d",
+            thumbnail_url: "/images/digital-employee-avatars/engineer-f-03-256.webp",
+          },
+        ]);
+      }
+
+      if (url.pathname === "/api/v1/teams") {
+        if (mode === "loading") {
+          return teamsDeferred.promise;
+        }
+
+        return jsonResponse([
+          {
+            capability_count: 2,
+            current_revision: 3,
+            digital_employee_count: 4,
+            governance_status: "active",
+            human_owner_user_ids: ["user-1"],
+            id: "team-ops",
+            member_count: 8,
+            name: "平台运营",
+            pending_draft_count: 0,
+            risk_summary: "低风险",
+            slug: "ops",
+            status: "active",
+            tenant_id: "tenant-1",
+          },
+        ]);
+      }
+
+      return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
+        headers: { "content-type": "application/json" },
+        status: 404,
+      });
+    });
+    const queryClient = createQueryClient();
+    const screen = await render(
+      <QueryClientProvider client={queryClient}>
+        <CreateUserDrawer
+          apiBaseUrl="http://127.0.0.1:8081"
+          fetcher={fetcher}
+          onOpenChange={() => undefined}
+          onSubmit={submit}
+          open
+        />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.fill(screen.getByLabelText("用户名"), "new-operator");
+    await userEvent.fill(screen.getByLabelText("名称"), "新管理员");
+    await userEvent.fill(screen.getByLabelText("密码"), "secret-pass");
+    await userEvent.click(screen.getByRole("button", { name: "选择头像 工程师头像 F03" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "平台运营" }));
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).not.toBeDisabled();
+
+    mode = "loading";
+    void queryClient.invalidateQueries({ queryKey: ["users", "create"] });
+
+    await expect.element(screen.getByText("加载头像中")).toBeInTheDocument();
+    await expect.element(screen.getByText("加载可选团队中")).toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "选择头像 工程师头像 F03" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("checkbox", { name: "平台运营" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
+    expect(submit).not.toHaveBeenCalled();
+    expect(
+      fetcher.mock.calls.some(([input, init]) => {
+        const url = new URL(String(input));
+        return url.pathname === "/api/auth/users" && init?.method === "POST";
+      }),
+    ).toBe(false);
+
+    avatarDeferred.resolve(jsonResponse([]));
+    teamsDeferred.resolve(jsonResponse([]));
   });
 
   it("renders selected user selectable team scopes", async () => {

@@ -75,18 +75,27 @@ export function CreateUserDrawer({
   });
   const avatarAssets = avatarAssetsQuery.data ?? [];
   const teams = teamsQuery.data ?? [];
+  const avatarAssetsHasError = Boolean(avatarAssetsQuery.error);
+  const teamsHasError = Boolean(teamsQuery.error);
+  const avatarAssetsReady =
+    avatarAssetsQuery.isSuccess &&
+    !avatarAssetsQuery.isFetching &&
+    !avatarAssetsHasError &&
+    avatarAssets.length > 0;
+  const teamsReady = teamsQuery.isSuccess && !teamsQuery.isFetching && !teamsHasError && teams.length > 0;
+  const currentAvatarAssets = avatarAssetsReady ? avatarAssets : [];
+  const currentTeams = teamsReady ? teams : [];
   const selectedTeamIdsAreCurrent =
     draft.selectable_team_ids.length > 0 &&
-    draft.selectable_team_ids.every((teamId) => teams.some((team) => team.id === teamId));
+    draft.selectable_team_ids.every((teamId) => currentTeams.some((team) => team.id === teamId));
   const canSubmit = Boolean(
     draft.username.trim() &&
       draft.display_name.trim() &&
       draft.password.trim() &&
       draft.avatar_asset_id.trim() &&
-      avatarAssets.some((asset) => asset.id === draft.avatar_asset_id) &&
-      !teamsQuery.isLoading &&
-      !teamsQuery.isError &&
-      teams.length > 0 &&
+      avatarAssetsReady &&
+      currentAvatarAssets.some((asset) => asset.id === draft.avatar_asset_id) &&
+      teamsReady &&
       selectedTeamIdsAreCurrent,
   );
 
@@ -163,9 +172,9 @@ export function CreateUserDrawer({
               </div>
 
               <AvatarSelection
-                assets={avatarAssets}
-                isError={avatarAssetsQuery.isError}
-                isLoading={avatarAssetsQuery.isLoading}
+                assets={currentAvatarAssets}
+                isError={avatarAssetsHasError}
+                isLoading={avatarAssetsQuery.isLoading || avatarAssetsQuery.isFetching}
                 onSelect={(avatarAssetId) => setDraft({ ...draft, avatar_asset_id: avatarAssetId })}
                 selectedAssetId={draft.avatar_asset_id}
               />
@@ -177,29 +186,29 @@ export function CreateUserDrawer({
                     已选 {draft.selectable_team_ids.length}
                   </span>
                 </div>
-                {teamsQuery.isLoading ? (
+                {teamsQuery.isLoading || teamsQuery.isFetching ? (
                   <p className="text-sm text-muted-foreground">加载可选团队中</p>
                 ) : null}
-                {teamsQuery.isError ? (
+                {teamsHasError ? (
                   <Alert variant="destructive">
                     <ShieldAlert />
                     <AlertTitle>可选团队加载失败</AlertTitle>
                     <AlertDescription>请检查团队服务后重试。</AlertDescription>
                   </Alert>
                 ) : null}
-                {!teamsQuery.isLoading && !teamsQuery.isError && teams.length === 0 ? (
+                {!teamsQuery.isLoading && !teamsQuery.isFetching && !teamsHasError && teams.length === 0 ? (
                   <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
                     暂无可选团队。
                   </p>
                 ) : null}
-                {teams.length > 0 ? (
+                {currentTeams.length > 0 ? (
                   <SelectableTeamList
                     disabled={isSubmitting}
                     onChange={(selectableTeamIds) =>
                       setDraft({ ...draft, selectable_team_ids: selectableTeamIds })
                     }
                     selectedTeamIds={draft.selectable_team_ids}
-                    teams={teams}
+                    teams={currentTeams}
                   />
                 ) : null}
               </section>
