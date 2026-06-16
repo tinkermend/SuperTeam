@@ -150,7 +150,6 @@ type ChangeCurrentUserPasswordRequest struct {
 
 // CreateUserRequest defines model for CreateUserRequest.
 type CreateUserRequest struct {
-	Avatar            *UserAvatar          `json:"avatar,omitempty"`
 	AvatarAssetId     string               `json:"avatar_asset_id"`
 	DisplayName       string               `json:"display_name"`
 	Password          string               `json:"password"`

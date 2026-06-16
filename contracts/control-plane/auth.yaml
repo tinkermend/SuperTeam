@@ -485,8 +485,6 @@ components:
           type: string
           format: password
           minLength: 1
-        avatar:
-          $ref: '#/components/schemas/UserAvatar'
         avatar_asset_id:
           type: string
           minLength: 1

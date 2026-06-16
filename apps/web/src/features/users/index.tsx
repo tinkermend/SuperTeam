@@ -270,7 +270,7 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
                 <LiquidPill className="py-1 text-xs">用户 360</LiquidPill>
               </div>
               <p className="text-sm text-muted-foreground">
-                平台人类用户、账号状态、团队角色、登录审计与权限诊断。
+                平台人类用户、账号状态、可选团队、登录审计与权限诊断。
               </p>
             </div>
           </div>
@@ -284,7 +284,7 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
           <UserMetric icon={<CheckCircle2 />} label="活跃用户" tone="success" value={stats.active} />
           <UserMetric icon={<Ban />} label="禁用用户" tone="danger" value={stats.disabled} />
           <UserMetric icon={<ShieldCheck />} label="控制台访问" tone="decision" value={stats.consoleAccess} />
-          <UserMetric icon={<KeyRound />} label="租户级角色" tone="artifact" value={stats.tenantRoles} />
+          <UserMetric icon={<KeyRound />} label="成员身份" tone="artifact" value={stats.tenantRoles} />
           <UserMetric icon={<ShieldAlert />} label="近期拒绝" tone="warning" value={deniedDecisions.length} />
         </div>
 
@@ -691,7 +691,7 @@ function MembershipTable({
             <AlertDescription>权限中心成员视图暂不可用。</AlertDescription>
           </Alert>
         ) : memberships.length === 0 ? (
-          <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">暂无租户或团队角色。</p>
+          <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">暂无团队或成员身份记录。</p>
         ) : (
           <div className="overflow-x-auto">
             <Table>
@@ -930,7 +930,7 @@ function UserDiagnosticsRail({
             <p className="mt-1 text-xl font-semibold">{allowRate}</p>
           </div>
           <InfoRow label="账号状态" value={user ? formatUserStatus(user.status) : "-"} />
-          <InfoRow label="角色数量" value={String(member?.memberships.length ?? 0)} />
+          <InfoRow label="成员身份数量" value={String(member?.memberships.length ?? 0)} />
           <InfoRow label="最近拒绝" value={member?.recent_denied_reason ?? "暂无"} />
         </CardContent>
       </Card>
@@ -974,7 +974,7 @@ function UserDiagnosticsRail({
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm">
           <Recommendation icon={<KeyRound />} text="定期轮换密码或接入 SSO 后迁移认证策略。" />
-          <Recommendation icon={<UsersRound />} text="团队角色变更优先在团队管理中走审批链路。" />
+          <Recommendation icon={<UsersRound />} text="团队可选范围变更优先在团队管理中走审批链路。" />
           <Recommendation icon={<Clock3 />} text="导出最近 30 天登录与拒绝记录，供审计复核。" />
           <Button asChild className="mt-2" variant="outline">
             <Link to="/permissions">
