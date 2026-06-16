@@ -449,6 +449,11 @@ describe("Users", () => {
     await expect.element(screen.getByTestId("users-overview-basic-card")).toBeInTheDocument();
     await expect.element(screen.getByTestId("users-overview-permission-card")).toBeInTheDocument();
     await expect.element(screen.getByTestId("users-overview-timeline-card")).toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "可选团队" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "团队与角色" })).not.toBeInTheDocument();
+    await expect.element(screen.getByText("成员身份记录")).toBeInTheDocument();
+    await expect.element(screen.getByText("团队与角色")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("所属团队 & 角色")).not.toBeInTheDocument();
     await expect.element(screen.getByRole("heading", { name: "平台管理员" })).toBeInTheDocument();
     await expect.element(screen.getByText("用户 360")).toBeInTheDocument();
     await expect.element(screen.getByText("operator@example.com").first()).toBeInTheDocument();

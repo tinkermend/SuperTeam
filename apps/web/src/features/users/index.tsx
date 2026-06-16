@@ -573,7 +573,6 @@ function SelectedUserWorkspace({
           <LiquidTabsList>
             <LiquidTabsTrigger value="overview">概览</LiquidTabsTrigger>
             <LiquidTabsTrigger value="selectable-teams">可选团队</LiquidTabsTrigger>
-            <LiquidTabsTrigger value="roles">团队与角色</LiquidTabsTrigger>
             <LiquidTabsTrigger value="sessions">登录与会话</LiquidTabsTrigger>
             <LiquidTabsTrigger value="audit">审计记录</LiquidTabsTrigger>
           </LiquidTabsList>
@@ -608,9 +607,6 @@ function SelectedUserWorkspace({
           isLoading={projectTeamScopesLoading}
           scopes={projectTeamScopes}
         />
-      </TabsContent>
-      <TabsContent value="roles">
-        <MembershipTable error={authzMembersError} member={member} />
       </TabsContent>
       <TabsContent value="sessions">
         <LoginLogTable error={loginLogsError} logs={loginLogs} />
@@ -684,8 +680,8 @@ function MembershipTable({
   return (
     <Card className="min-w-0 rounded-md">
       <CardHeader>
-        <CardTitle className="text-base">所属团队 & 角色</CardTitle>
-        <CardDescription>深度角色调整仍通过团队管理页完成。</CardDescription>
+        <CardTitle className="text-base">成员身份记录</CardTitle>
+        <CardDescription>只读审计视图，角色调整仍通过团队管理页完成。</CardDescription>
       </CardHeader>
       <CardContent>
         {error ? (
