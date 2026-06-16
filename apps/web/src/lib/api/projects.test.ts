@@ -19,6 +19,10 @@ import {
   resolveProjectDecision,
   submitProjectDemand,
 } from "@/lib/api/projects";
+import type {
+  ProjectTaskGraph,
+  WorkflowInstanceSummary,
+} from "@/lib/api/projects";
 
 const project = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -351,16 +355,131 @@ describe("project API", () => {
     );
   });
 
+  it("lists workflow instances with optional read model fields", async () => {
+    const workflowInstances = [
+      {
+        demand_id: "55555555-5555-4555-8555-555555555555",
+        project_id: "11111111-1111-4111-8111-111111111111",
+        project_name: "客户接入",
+        title: "完成接入验收",
+        submitted_by_user_id: "33333333-3333-4333-8333-333333333333",
+        submitted_by_display_name: "负责人",
+        status: "waiting_human",
+        status_reason: "等待负责人决策",
+        created_at: "2026-06-16T01:00:00Z",
+        updated_at: "2026-06-16T01:10:00Z",
+        selected_coordination_job_id: "66666666-6666-4666-8666-666666666666",
+        progress: {
+          total_nodes: 3,
+          completed_nodes: 1,
+          running_nodes: 1,
+          blocked_nodes: 0,
+          waiting_human_nodes: 1,
+          planned_nodes: 1,
+          failed_nodes: 0,
+          cancelled_nodes: 0,
+        },
+        current_blocker: {
+          type: "decision_request",
+          title: "确认上线窗口",
+          resource_id: "77777777-7777-4777-8777-777777777777",
+        },
+        priority: {
+          value: "p1",
+          label: "P1",
+          source: "policy",
+        },
+        risk: {
+          level: "high",
+          label: "高风险",
+          source: "task_graph",
+        },
+        sla: {
+          remaining_seconds: 1500,
+          breached: false,
+          label: "25 分钟",
+          source: "sla_policy",
+        },
+        recent_event: {
+          event_type: "decision.requested",
+          summary: "需要负责人确认",
+          occurred_at: "2026-06-16T01:09:00Z",
+        },
+      },
+    ] satisfies WorkflowInstanceSummary[];
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify(workflowInstances), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    const result = await listWorkflowInstances({
+      baseUrl: "http://control-plane.local",
+      fetcher,
+    });
+
+    expect(result[0]?.priority?.label).toBe("P1");
+    expect(result[0]?.risk?.level).toBe("high");
+    expect(result[0]?.sla?.remaining_seconds).toBe(1500);
+    expect(result[0]?.recent_event?.event_type).toBe("decision.requested");
+    expect(result[0]?.progress.planned_nodes).toBe(1);
+    expect(result[0]?.progress.failed_nodes).toBe(0);
+    expect(result[0]?.progress.cancelled_nodes).toBe(0);
+    expect(result[0]?.current_blocker?.type).toBe("decision_request");
+    expect(result[0]?.current_blocker?.title).toBe("确认上线窗口");
+    expect(result[0]?.current_blocker?.resource_id).toBe(
+      "77777777-7777-4777-8777-777777777777",
+    );
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/workflow-instances",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("gets project task graph by demand id", async () => {
     const graph = {
-      nodes: [],
+      nodes: [
+        {
+          id: "88888888-8888-4888-8888-888888888888",
+          tenant_id: "22222222-2222-4222-8222-222222222222",
+          project_id: "11111111-1111-4111-8111-111111111111",
+          demand_id: "55555555-5555-4555-8555-555555555555",
+          title: "确认上线窗口",
+          status: "waiting_human",
+          status_reason: "等待负责人决策",
+          updated_at: "2026-06-16T01:10:00Z",
+          requires_human_approval: true,
+          stage_index: 1,
+          expected_outputs: ["decision"],
+          input_requirements: { approval: true },
+          handoff_contract: { receiver: "human_owner" },
+          planner_metadata: { source: "workflow_read_model" },
+          current_blocker: {
+            type: "decision_request",
+            title: "确认上线窗口",
+            resource_id: "77777777-7777-4777-8777-777777777777",
+          },
+        },
+      ],
       edges: [],
       employees: [],
       runs: [],
       execution_summaries: [],
       recent_events: [],
       decision_requests: [],
-    };
+      stage_summaries: [
+        {
+          stage_index: 1,
+          title: "验收",
+          total_nodes: 2,
+          completed_nodes: 1,
+          running_nodes: 0,
+          waiting_human_nodes: 1,
+          blocked_nodes: 0,
+        },
+      ],
+    } satisfies ProjectTaskGraph;
     const fetcher = vi.fn(async () =>
       new Response(JSON.stringify(graph), {
         headers: { "content-type": "application/json" },
@@ -368,13 +487,29 @@ describe("project API", () => {
       }),
     );
 
-    await expect(
-      getProjectTaskGraph(
-        { baseUrl: "http://control-plane.local", fetcher },
-        "project 1/primary",
-        { demandId: "demand 1/primary" },
-      ),
-    ).resolves.toEqual(graph);
+    const result = await getProjectTaskGraph(
+      { baseUrl: "http://control-plane.local", fetcher },
+      "project 1/primary",
+      { demandId: "demand 1/primary" },
+    );
+
+    expect(result).toEqual(graph);
+    expect(result.stage_summaries?.[0]).toMatchObject({
+      stage_index: 1,
+      title: "验收",
+      total_nodes: 2,
+      completed_nodes: 1,
+      running_nodes: 0,
+      waiting_human_nodes: 1,
+      blocked_nodes: 0,
+    });
+    expect(result.nodes[0]?.status_reason).toBe("等待负责人决策");
+    expect(result.nodes[0]?.updated_at).toBe("2026-06-16T01:10:00Z");
+    expect(result.nodes[0]?.current_blocker?.type).toBe("decision_request");
+    expect(result.nodes[0]?.current_blocker?.title).toBe("确认上线窗口");
+    expect(result.nodes[0]?.current_blocker?.resource_id).toBe(
+      "77777777-7777-4777-8777-777777777777",
+    );
 
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/projects/project%201%2Fprimary/task-graph?demand_id=demand+1%2Fprimary",
