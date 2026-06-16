@@ -56,6 +56,64 @@ func TestCreateProjectRequiresHumanOwnerAndCreatesEvents(t *testing.T) {
 	}
 }
 
+func TestCreateProjectRejectsUnauthorizedTeamScope(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	teamID := uuid.New()
+
+	_, err = service.CreateProject(context.Background(), CreateProjectRequest{
+		TenantID:         tenantID,
+		TeamID:           &teamID,
+		ActorUserID:      actorID,
+		Name:             "未授权团队项目",
+		Goal:             "验证团队授权边界",
+		HumanOwnerUserID: ownerID,
+	})
+	if !errors.Is(err, ErrUnauthorizedProjectTeamScope) {
+		t.Fatalf("expected unauthorized team scope error, got %v", err)
+	}
+}
+
+func TestCreateProjectAllowsAuthorizedTeamScope(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	teamID := uuid.New()
+	repo.authorizeProjectTeamScope(tenantID, actorID, teamID)
+
+	created, err := service.CreateProject(context.Background(), CreateProjectRequest{
+		TenantID:         tenantID,
+		TeamID:           &teamID,
+		ActorUserID:      actorID,
+		Name:             "授权团队项目",
+		Goal:             "验证授权通过",
+		HumanOwnerUserID: ownerID,
+		Members: []ProjectMemberInput{{
+			PrincipalType:       PrincipalTypeTeam,
+			PrincipalID:         teamID,
+			ProjectRole:         ProjectRoleObserver,
+			DisplayNameSnapshot: "研发团队",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if created.Project.TeamID == nil || *created.Project.TeamID != teamID {
+		t.Fatalf("expected team id %s, got %#v", teamID, created.Project.TeamID)
+	}
+}
+
 func TestCreateProjectRequiresMandatoryFields(t *testing.T) {
 	service, err := NewService(newMemoryRepository())
 	if err != nil {
@@ -3002,6 +3060,7 @@ type memoryRepository struct {
 	budgetLedger       []ProjectBudgetLedgerEntry
 	acceptanceRecords  []ProjectAcceptanceRecord
 	archiveSnapshots   []ProjectArchiveSnapshot
+	projectTeamScopes  map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool
 	lastListProjects   ListProjectsRequest
 	lastTasksLimit     int32
 	lastTasksOffset    int32
@@ -3036,9 +3095,27 @@ func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{
 		projects:                   map[uuid.UUID]Project{},
 		members:                    map[uuid.UUID][]ProjectMember{},
+		projectTeamScopes:          map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool{},
 		projectTaskRunRuntimeNodes: map[uuid.UUID]uuid.UUID{},
 		projectTaskRunWorkProducts: map[uuid.UUID][]any{},
 	}
+}
+
+func (r *memoryRepository) authorizeProjectTeamScope(tenantID, userID, teamID uuid.UUID) {
+	if r.projectTeamScopes == nil {
+		r.projectTeamScopes = map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool{}
+	}
+	if r.projectTeamScopes[tenantID] == nil {
+		r.projectTeamScopes[tenantID] = map[uuid.UUID]map[uuid.UUID]bool{}
+	}
+	if r.projectTeamScopes[tenantID][userID] == nil {
+		r.projectTeamScopes[tenantID][userID] = map[uuid.UUID]bool{}
+	}
+	r.projectTeamScopes[tenantID][userID][teamID] = true
+}
+
+func (r *memoryRepository) CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error) {
+	return r.projectTeamScopes[tenantID][userID][teamID], nil
 }
 
 func (r *taskGraphLimitRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (ProjectTaskGraph, error) {

@@ -15,10 +15,15 @@ type Service struct {
 	approvals             ApprovalResolver
 	inbox                 DecisionInboxProjector
 	archiveArtifactLocker ArchiveArtifactLocker
+	teamScopeAuthorizer   ProjectTeamScopeAuthorizer
 }
 
 type latestConfigRevisionRepository interface {
 	GetLatestConfigRevision(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectConfigRevision, error)
+}
+
+type ProjectTeamScopeAuthorizer interface {
+	CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error)
 }
 
 type ApprovalResolver interface {
@@ -52,7 +57,15 @@ func NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repository 
 	if coordinator == nil {
 		coordinator = NoopCoordinatorSignalClient{}
 	}
-	return &Service{repository: repository, coordinator: coordinator, approvals: approvals, inbox: inbox, archiveArtifactLocker: locker}, nil
+	teamScopeAuthorizer, _ := repository.(ProjectTeamScopeAuthorizer)
+	return &Service{
+		repository:            repository,
+		coordinator:           coordinator,
+		approvals:             approvals,
+		inbox:                 inbox,
+		archiveArtifactLocker: locker,
+		teamScopeAuthorizer:   teamScopeAuthorizer,
+	}, nil
 }
 
 func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -62,6 +75,9 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 		return nil, ErrInvalidProject
 	}
 	if err := validateMembers(req.Members); err != nil {
+		return nil, err
+	}
+	if err := s.validateProjectTeamScopes(ctx, req); err != nil {
 		return nil, err
 	}
 
@@ -106,6 +122,34 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 	}
 
 	return &CreateProjectResult{Project: project, Members: members}, nil
+}
+
+func (s *Service) validateProjectTeamScopes(ctx context.Context, req CreateProjectRequest) error {
+	teamIDs := make(map[uuid.UUID]struct{})
+	if req.TeamID != nil && *req.TeamID != uuid.Nil {
+		teamIDs[*req.TeamID] = struct{}{}
+	}
+	for _, member := range req.Members {
+		if member.PrincipalType == PrincipalTypeTeam && member.PrincipalID != uuid.Nil {
+			teamIDs[member.PrincipalID] = struct{}{}
+		}
+	}
+	if len(teamIDs) == 0 {
+		return nil
+	}
+	if s.teamScopeAuthorizer == nil {
+		return ErrUnauthorizedProjectTeamScope
+	}
+	for teamID := range teamIDs {
+		allowed, err := s.teamScopeAuthorizer.CanUseTeamForProject(ctx, req.TenantID, req.ActorUserID, teamID)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return ErrUnauthorizedProjectTeamScope
+		}
+	}
+	return nil
 }
 
 func (s *Service) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (*Project, error) {

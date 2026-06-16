@@ -1091,6 +1091,8 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrProjectNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
+	case errors.Is(err, ErrUnauthorizedProjectTeamScope):
+		http.Error(w, "当前用户无权使用该团队创建项目。", http.StatusForbidden)
 	case errors.Is(err, ErrProjectTaskForbidden):
 		http.Error(w, "project task forbidden", http.StatusForbidden)
 	case errors.Is(err, ErrProjectArchived), errors.Is(err, ErrProjectArchiveBlocked):

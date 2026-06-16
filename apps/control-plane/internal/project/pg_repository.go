@@ -152,6 +152,14 @@ func (r *PgRepository) ListWorkflowInstances(ctx context.Context, req ListWorkfl
 	return items, nil
 }
 
+func (r *PgRepository) CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error) {
+	return r.q.UserHasActiveProjectTeamScope(ctx, queries.UserHasActiveProjectTeamScopeParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		TeamID:   teamID,
+	})
+}
+
 func (r *PgRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (Project, error) {
 	coordinationPolicy, err := jsonbObjectOrNull(req.CoordinationPolicy, "coordination_policy")
 	if err != nil {

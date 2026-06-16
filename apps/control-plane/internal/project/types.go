@@ -9,16 +9,17 @@ import (
 )
 
 var (
-	ErrInvalidProject           = errors.New("invalid project")
-	ErrInvalidProjectMember     = errors.New("invalid project member")
-	ErrProjectNotFound          = errors.New("project not found")
-	ErrProjectConflict          = errors.New("project conflict")
-	ErrProjectArchived          = errors.New("project archived")
-	ErrProjectTaskForbidden     = errors.New("project task forbidden")
-	ErrProjectTaskGraphPending  = errors.New("project task graph pending implementation")
-	ErrInvalidProjectEvidence   = errors.New("invalid project evidence")
-	ErrInvalidProjectAcceptance = errors.New("invalid project acceptance")
-	ErrProjectArchiveBlocked    = errors.New("project archive blocked")
+	ErrInvalidProject               = errors.New("invalid project")
+	ErrInvalidProjectMember         = errors.New("invalid project member")
+	ErrProjectNotFound              = errors.New("project not found")
+	ErrProjectConflict              = errors.New("project conflict")
+	ErrProjectArchived              = errors.New("project archived")
+	ErrProjectTaskForbidden         = errors.New("project task forbidden")
+	ErrProjectTaskGraphPending      = errors.New("project task graph pending implementation")
+	ErrInvalidProjectEvidence       = errors.New("invalid project evidence")
+	ErrInvalidProjectAcceptance     = errors.New("invalid project acceptance")
+	ErrProjectArchiveBlocked        = errors.New("project archive blocked")
+	ErrUnauthorizedProjectTeamScope = errors.New("unauthorized project team scope")
 )
 
 type ProjectStatus string

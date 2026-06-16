@@ -48,6 +48,29 @@ func TestProjectHandlerRejectsInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerMapsUnauthorizedTeamScope(t *testing.T) {
+	service := &handlerTestService{createErr: ErrUnauthorizedProjectTeamScope}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{
+		"name":"未授权团队项目",
+		"goal":"验证团队授权边界",
+		"human_owner_user_id":"`+uuid.New().String()+`",
+		"team_id":"`+uuid.New().String()+`"
+	}`))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, uuid.New()))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, uuid.New()))
+	resp := httptest.NewRecorder()
+
+	handler.CreateProject(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected unauthorized team scope to return 403, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "当前用户无权使用该团队创建项目。") {
+		t.Fatalf("expected forbidden message in body, got %q", resp.Body.String())
+	}
+}
+
 func TestProjectHandlerMapsArchivedConflict(t *testing.T) {
 	projectID := uuid.New()
 	service := &handlerTestService{submitDemandErr: ErrProjectArchived}
@@ -750,6 +773,7 @@ func withRuntimeContext(req *http.Request, tenantID, runtimeNodeID uuid.UUID) *h
 
 type handlerTestService struct {
 	createReq              CreateProjectRequest
+	createErr              error
 	submitDemandReq        SubmitProjectDemandRequest
 	submitDemandErr        error
 	workflowInstances      []WorkflowInstanceSummary
@@ -777,6 +801,9 @@ type handlerTestService struct {
 
 func (s *handlerTestService) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
 	s.createReq = req
+	if s.createErr != nil {
+		return nil, s.createErr
+	}
 	project := testProject(req.TenantID, uuid.New(), req.HumanOwnerUserID)
 	project.Name = req.Name
 	project.Goal = req.Goal
