@@ -1323,6 +1323,9 @@ func TestProjectStoreDispatchProjectTaskBindingEnablesRuntimeWriteback(t *testin
 	if repo.tasks[0].RuntimeTaskID == nil || *repo.tasks[0].RuntimeTaskID != runtimeTaskID {
 		t.Fatalf("expected runtime task binding, got %#v", repo.tasks[0].RuntimeTaskID)
 	}
+	if repo.demand.Status != project.ProjectDemandStatusExecuting {
+		t.Fatalf("expected demand advanced to executing after dispatch, got %s", repo.demand.Status)
+	}
 }
 
 func TestProjectStoreDispatchProjectTaskRunStartFailureKeepsTaskPlanned(t *testing.T) {
@@ -1580,6 +1583,14 @@ func (r *projectStoreMemoryRepository) GetProjectDemand(ctx context.Context, ten
 		return r.demand, nil
 	}
 	return project.ProjectDemand{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) AdvanceProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID, target project.ProjectDemandStatus) error {
+	if r.demand.TenantID == tenantID && r.demand.ID == demandID &&
+		project.ProjectDemandStatusCanAdvance(r.demand.Status, target) {
+		r.demand.Status = target
+	}
+	return nil
 }
 
 func (r *projectStoreMemoryRepository) ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]project.ProjectMember, error) {

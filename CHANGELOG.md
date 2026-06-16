@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 2026-06-16 21:06：补齐项目需求生命周期收口，`project_demands.status` 新增 planned/executing/completed/failed 终态，并在任务图规划（planned）、任务分派（executing）、全部项目任务完成或失败（completed/failed）的写回点按前向守卫推进，与项目事件序列共用 per-project 咨询锁避免并发回退；新增 `UpdateProjectDemandStatus`/`CountProjectTaskStatusesByDemand` sqlc 查询、OpenAPI 枚举与迁移注释，并以真实 Postgres 集成测试验证需求从 planning_pending 走到 executing 再到 completed，修复需求恒显示“规划中”的状态失真。
 - 2026-06-16 03:43：Web 流程编排详情页新增只读 `@xyflow/react` ProjectTask DAG，可从真实 task graph read model 渲染任务节点、依赖、人工决策附件、Runtime run 和执行结果，并提供节点详情检查器。
 - 2026-06-16 00:09：Control Plane 新增 Workflow Instances read model API，基于项目需求事实返回当前 Console 用户可见的工作流实例摘要、进度、状态优先级和协调作业引用，并补齐 sqlc、HTTP route 与 OpenAPI 契约。
 - 2026-06-14 22:08：项目协调底座新增 DAG 规划与任务图执行能力，包含 DeepSeek/OpenAI-compatible planner 配置、ProjectTask 图与依赖持久化、ready 节点分派、完成契约校验、失败恢复决策、任务图 read model，以及 Runtime Agent 对 ProjectTask completion writeback 的真实执行桥接。

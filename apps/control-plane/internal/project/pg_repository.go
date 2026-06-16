@@ -841,6 +841,9 @@ func (r *PgRepository) CreateProjectTaskGraph(ctx context.Context, req CreatePro
 		if err != nil {
 			return CreateProjectTaskGraphResult{}, err
 		}
+		if err := r.advanceProjectDemandStatusWithQueries(ctx, q, req.TenantID, req.ProjectID, req.DemandID, ProjectDemandStatusPlanned); err != nil {
+			return CreateProjectTaskGraphResult{}, err
+		}
 		return CreateProjectTaskGraphResult{Tasks: created, Dependencies: dependencies, GraphEventID: graphEvent.ID}, nil
 	})
 }
@@ -1169,12 +1172,7 @@ func (r *PgRepository) existingGraphEventIDs(ctx context.Context, q *queries.Que
 	for _, event := range events {
 		switch event.EventType {
 		case ProjectEventTaskCreated:
-			taskID, ok := neededTasks[event.ActorID]
-			if !ok {
-				if payloadTaskID, ok := event.Payload["project_task_id"].(string); ok {
-					taskID, ok = neededTasks[payloadTaskID]
-				}
-			}
+			taskID, ok := graphTaskCreatedEventTaskID(event, neededTasks)
 			if ok && taskEventIDs[taskID] == uuid.Nil {
 				taskEventIDs[taskID] = event.ID
 			}
@@ -1192,6 +1190,18 @@ func (r *PgRepository) existingGraphEventIDs(ctx context.Context, q *queries.Que
 		}
 	}
 	return taskEventIDs, graphEventID, nil
+}
+
+func graphTaskCreatedEventTaskID(event ProjectEvent, neededTasks map[string]uuid.UUID) (uuid.UUID, bool) {
+	if taskID, ok := neededTasks[event.ActorID]; ok {
+		return taskID, true
+	}
+	payloadTaskID, ok := event.Payload["project_task_id"].(string)
+	if !ok {
+		return uuid.Nil, false
+	}
+	taskID, ok := neededTasks[payloadTaskID]
+	return taskID, ok
 }
 
 func (r *PgRepository) GetProjectTaskCompletionContract(ctx context.Context, tenantID, taskID uuid.UUID) (ProjectTaskCompletionContract, error) {
@@ -1713,6 +1723,11 @@ func (r *PgRepository) CompleteProjectTaskWriteback(ctx context.Context, req Com
 		if err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
+		if req.Task.DemandID != nil {
+			if err := r.recomputeProjectDemandStatusWithQueries(ctx, q, req.Task.TenantID, req.Task.ProjectID, *req.Task.DemandID); err != nil {
+				return ProjectTaskWritebackResult{}, err
+			}
+		}
 		return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary}, nil
 	})
 }
@@ -1730,8 +1745,78 @@ func (r *PgRepository) FailProjectTaskWriteback(ctx context.Context, req FailPro
 		if err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
+		if req.Task.DemandID != nil {
+			if err := r.recomputeProjectDemandStatusWithQueries(ctx, q, req.Task.TenantID, req.Task.ProjectID, *req.Task.DemandID); err != nil {
+				return ProjectTaskWritebackResult{}, err
+			}
+		}
 		return ProjectTaskWritebackResult{Task: task, Event: event}, nil
 	})
+}
+
+// advanceProjectDemandStatusWithQueries moves a demand forward in its lifecycle,
+// guarded so status never regresses. It shares the per-project advisory lock with
+// project event appends so concurrent task writebacks serialize their demand updates.
+func (r *PgRepository) advanceProjectDemandStatusWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID, demandID uuid.UUID, target ProjectDemandStatus) error {
+	if demandID == uuid.Nil {
+		return nil
+	}
+	if err := q.LockProjectEventSequence(ctx, queries.LockProjectEventSequenceParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	}); err != nil {
+		return err
+	}
+	current, err := q.GetProjectDemand(ctx, queries.GetProjectDemandParams{TenantID: tenantID, ID: demandID})
+	if err != nil {
+		return err
+	}
+	if !ProjectDemandStatusCanAdvance(ProjectDemandStatus(current.Status), target) {
+		return nil
+	}
+	_, err = q.UpdateProjectDemandStatus(ctx, queries.UpdateProjectDemandStatusParams{
+		Status:   string(target),
+		TenantID: tenantID,
+		ID:       demandID,
+	})
+	return err
+}
+
+// recomputeProjectDemandStatusWithQueries derives a demand's lifecycle status from
+// its project tasks: completed when all tasks finished cleanly, failed when all
+// terminal with at least one failure, otherwise executing while work remains.
+func (r *PgRepository) recomputeProjectDemandStatusWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID, demandID uuid.UUID) error {
+	if demandID == uuid.Nil {
+		return nil
+	}
+	counts, err := q.CountProjectTaskStatusesByDemand(ctx, queries.CountProjectTaskStatusesByDemandParams{
+		TenantID: tenantID,
+		DemandID: demandID,
+	})
+	if err != nil {
+		return err
+	}
+	if counts.Total == 0 {
+		return nil
+	}
+	target := ProjectDemandStatusExecuting
+	if counts.Active == 0 {
+		if counts.Failed > 0 {
+			target = ProjectDemandStatusFailed
+		} else {
+			target = ProjectDemandStatusCompleted
+		}
+	}
+	return r.advanceProjectDemandStatusWithQueries(ctx, q, tenantID, projectID, demandID, target)
+}
+
+// AdvanceProjectDemandStatus advances a demand's lifecycle status from outside a
+// shared writeback transaction (e.g. at dispatch time). Forward-only and idempotent.
+func (r *PgRepository) AdvanceProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID, target ProjectDemandStatus) error {
+	_, err := withProjectQueries(ctx, r, "advance project demand status", func(q *queries.Queries) (struct{}, error) {
+		return struct{}{}, r.advanceProjectDemandStatusWithQueries(ctx, q, tenantID, projectID, demandID, target)
+	})
+	return err
 }
 
 func (r *PgRepository) RequestProjectTaskTransferWriteback(ctx context.Context, req RequestProjectTaskTransferWritebackRequest) (ProjectTaskTransferWritebackResult, error) {

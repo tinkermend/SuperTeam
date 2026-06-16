@@ -3386,6 +3386,18 @@ func (r *memoryRepository) GetProjectDemand(ctx context.Context, tenantID, deman
 	return ProjectDemand{}, ErrProjectNotFound
 }
 
+func (r *memoryRepository) AdvanceProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID, target ProjectDemandStatus) error {
+	for i := range r.demands {
+		if r.demands[i].ID == demandID && r.demands[i].TenantID == tenantID {
+			if ProjectDemandStatusCanAdvance(r.demands[i].Status, target) {
+				r.demands[i].Status = target
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
 func (r *memoryRepository) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTask, error) {
 	for _, task := range r.tasks {
 		if task.ID == projectTaskID && task.TenantID == tenantID {

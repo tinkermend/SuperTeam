@@ -125,8 +125,34 @@ const (
 	ProjectDemandStatusSubmitted       ProjectDemandStatus = "submitted"
 	ProjectDemandStatusRecorded        ProjectDemandStatus = "recorded"
 	ProjectDemandStatusPlanningPending ProjectDemandStatus = "planning_pending"
+	ProjectDemandStatusPlanned         ProjectDemandStatus = "planned"
+	ProjectDemandStatusExecuting       ProjectDemandStatus = "executing"
+	ProjectDemandStatusCompleted       ProjectDemandStatus = "completed"
+	ProjectDemandStatusFailed          ProjectDemandStatus = "failed"
 	ProjectDemandStatusCancelled       ProjectDemandStatus = "cancelled"
 )
+
+// projectDemandStatusRank orders demand lifecycle states so status can only be
+// advanced forward. Terminal states share the highest rank; intake states share 0.
+func projectDemandStatusRank(status ProjectDemandStatus) int {
+	switch status {
+	case ProjectDemandStatusPlanned:
+		return 1
+	case ProjectDemandStatusExecuting:
+		return 2
+	case ProjectDemandStatusCompleted, ProjectDemandStatusFailed, ProjectDemandStatusCancelled:
+		return 3
+	default:
+		// submitted / recorded / planning_pending and any unknown intake state
+		return 0
+	}
+}
+
+// ProjectDemandStatusCanAdvance reports whether a demand may move from current to
+// next without regressing its lifecycle. Equal ranks are not re-applied.
+func ProjectDemandStatusCanAdvance(current, next ProjectDemandStatus) bool {
+	return projectDemandStatusRank(next) > projectDemandStatusRank(current)
+}
 
 type WorkflowInstanceStatus string
 

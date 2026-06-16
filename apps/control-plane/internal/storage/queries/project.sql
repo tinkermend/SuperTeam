@@ -503,6 +503,24 @@ SELECT * FROM project_demands
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid;
 
+-- name: UpdateProjectDemandStatus :one
+UPDATE project_demands
+SET status = sqlc.arg('status')::varchar,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+RETURNING *;
+
+-- name: CountProjectTaskStatusesByDemand :one
+SELECT
+    COUNT(*)::bigint AS total,
+    COUNT(*) FILTER (WHERE status = 'completed')::bigint AS completed,
+    COUNT(*) FILTER (WHERE status = 'failed')::bigint AS failed,
+    COUNT(*) FILTER (WHERE status NOT IN ('completed', 'failed', 'cancelled'))::bigint AS active
+FROM project_tasks
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND demand_id = sqlc.arg('demand_id')::uuid;
+
 -- name: GetProjectTask :one
 SELECT * FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid

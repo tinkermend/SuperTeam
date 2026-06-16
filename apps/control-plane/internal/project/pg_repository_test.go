@@ -550,6 +550,77 @@ func TestListWorkflowInstancesFiltersVisibleDemandsAndSortsRunningFirst(t *testi
 	require.Equal(t, &jobID, items[0].SelectedCoordinationJobID)
 }
 
+func TestCompleteProjectTaskWritebackAdvancesDemandLifecycle(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	writebacks := repo.(ProjectTaskWritebackRepository)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+
+	tasks := make([]ProjectTask, 0, 2)
+	for index := 0; index < 2; index++ {
+		employeeID := uuid.New()
+		task, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     fmt.Sprintf("需求任务 %02d", index+1),
+			Status:                    "assigned",
+			AssignedDigitalEmployeeID: &employeeID,
+			ExpectedOutputs:           []any{"execution_summary"},
+			InputRequirements:         map[string]any{},
+			HandoffContract:           map[string]any{},
+			PlannerMetadata:           map[string]any{},
+		})
+		require.NoError(t, err)
+		tasks = append(tasks, task)
+	}
+
+	completeTask := func(task ProjectTask) {
+		employeeID := *task.AssignedDigitalEmployeeID
+		_, err := writebacks.CompleteProjectTaskWriteback(ctx, CompleteProjectTaskWritebackRequest{
+			Task: task,
+			Summary: CreateExecutionSummaryRequest{
+				TenantID:              tenantID,
+				ProjectID:             projectID,
+				ProjectTaskID:         task.ID,
+				DigitalEmployeeID:     employeeID,
+				Conclusion:            "完成写回成功",
+				EvidenceRefs:          []any{task.ID.String()},
+				ArtifactRefs:          []any{},
+				ConfidenceFactors:     map[string]any{},
+				MissingInformation:    []any{},
+				RecommendedNextAction: "继续协调",
+			},
+			Event: AppendProjectEventRequest{
+				TenantID:     tenantID,
+				ProjectID:    projectID,
+				EventType:    ProjectEventTaskCompleted,
+				ActorType:    "digital_employee",
+				ActorID:      employeeID.String(),
+				ResourceType: strPtr("project_task"),
+				ResourceID:   strPtr(task.ID.String()),
+				Summary:      "项目任务已完成",
+				Payload:      map[string]any{"project_task_id": task.ID.String()},
+			},
+			AllowedCurrentStatuses: []string{"assigned", "running"},
+		})
+		require.NoError(t, err)
+	}
+
+	completeTask(tasks[0])
+	demand, err := repo.GetProjectDemand(ctx, tenantID, demandID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectDemandStatusExecuting, demand.Status, "demand should be executing while a sibling task remains active")
+
+	completeTask(tasks[1])
+	demand, err = repo.GetProjectDemand(ctx, tenantID, demandID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectDemandStatusCompleted, demand.Status, "demand should be completed once all tasks finish")
+}
+
 func TestCompleteProjectTaskWritebackSerializesConcurrentProjectEvents(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	writebacks := repo.(ProjectTaskWritebackRepository)
@@ -886,6 +957,72 @@ func TestCreateProjectTaskGraphReplayFindsEventsAfterProjectEventChurn(t *testin
 	require.Equal(t, first.GraphEventID, second.GraphEventID)
 	require.Equal(t, first.Tasks, second.Tasks)
 	require.Equal(t, first.Dependencies, second.Dependencies)
+}
+
+func TestCreateProjectTaskGraphReplayFindsTaskCreatedEventsByPayloadTaskID(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	pgRepo := repo.(*PgRepository)
+	pool, ok := pgRepo.db.(*pgxpool.Pool)
+	require.True(t, ok, "project repository test store should use pgxpool")
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	jobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	routeID := createRouteDecisionFixture(t, repo, tenantID, projectID, jobID, demandID)
+	req := createProjectTaskGraphFixtureRequest(tenantID, projectID, demandID, jobID, routeID)
+
+	first, err := repo.CreateProjectTaskGraph(context.Background(), req)
+	require.NoError(t, err)
+	_, err = pool.Exec(
+		context.Background(),
+		`DELETE FROM project_events WHERE tenant_id = $1 AND project_id = $2 AND event_type = $3`,
+		tenantID,
+		projectID,
+		string(ProjectEventTaskCreated),
+	)
+	require.NoError(t, err)
+	replacementEventIDs := map[uuid.UUID]uuid.UUID{}
+	for _, task := range first.Tasks {
+		event, err := repo.AppendProjectEvent(context.Background(), AppendProjectEventRequest{
+			TenantID:     tenantID,
+			ProjectID:    projectID,
+			EventType:    ProjectEventTaskCreated,
+			ActorType:    "project_coordinator",
+			ActorID:      uuid.New().String(),
+			ResourceType: strPtr("project_task"),
+			ResourceID:   strPtr(uuid.New().String()),
+			Summary:      "payload-only task created event",
+			Payload: map[string]any{
+				"project_task_id":     task.ID.String(),
+				"coordination_job_id": jobID.String(),
+			},
+		})
+		require.NoError(t, err)
+		replacementEventIDs[task.ID] = event.ID
+	}
+
+	second, err := repo.CreateProjectTaskGraph(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, first.GraphEventID, second.GraphEventID)
+	require.Equal(t, first.Dependencies, second.Dependencies)
+	for _, task := range second.Tasks {
+		require.Equal(t, replacementEventIDs[task.ID], task.CreatedEventID)
+	}
+}
+
+func TestGraphTaskCreatedEventTaskIDFallsBackToPayloadTaskID(t *testing.T) {
+	taskID := uuid.New()
+	unrelatedActorID := uuid.New().String()
+	event := ProjectEvent{
+		EventType: ProjectEventTaskCreated,
+		ActorID:   unrelatedActorID,
+		Payload:   map[string]any{"project_task_id": taskID.String()},
+	}
+	neededTasks := map[string]uuid.UUID{taskID.String(): taskID}
+
+	matchedTaskID, ok := graphTaskCreatedEventTaskID(event, neededTasks)
+
+	require.True(t, ok)
+	require.Equal(t, taskID, matchedTaskID)
 }
 
 func TestCreateProjectTaskGraphReplayWithChangedPayloadConflicts(t *testing.T) {

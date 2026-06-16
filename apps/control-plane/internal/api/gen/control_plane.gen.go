@@ -627,6 +627,10 @@ func (e ProjectDemandSourceType) Valid() bool {
 // Defines values for ProjectDemandStatus.
 const (
 	ProjectDemandStatusCancelled       ProjectDemandStatus = "cancelled"
+	ProjectDemandStatusCompleted       ProjectDemandStatus = "completed"
+	ProjectDemandStatusExecuting       ProjectDemandStatus = "executing"
+	ProjectDemandStatusFailed          ProjectDemandStatus = "failed"
+	ProjectDemandStatusPlanned         ProjectDemandStatus = "planned"
 	ProjectDemandStatusPlanningPending ProjectDemandStatus = "planning_pending"
 	ProjectDemandStatusRecorded        ProjectDemandStatus = "recorded"
 	ProjectDemandStatusSubmitted       ProjectDemandStatus = "submitted"
@@ -636,6 +640,14 @@ const (
 func (e ProjectDemandStatus) Valid() bool {
 	switch e {
 	case ProjectDemandStatusCancelled:
+		return true
+	case ProjectDemandStatusCompleted:
+		return true
+	case ProjectDemandStatusExecuting:
+		return true
+	case ProjectDemandStatusFailed:
+		return true
+	case ProjectDemandStatusPlanned:
 		return true
 	case ProjectDemandStatusPlanningPending:
 		return true

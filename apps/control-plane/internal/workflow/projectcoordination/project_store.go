@@ -956,7 +956,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 	}); err != nil {
 		return s.recordDispatchFailure(ctx, input.TenantID, input.ProjectID, task, err)
 	}
-	_, err = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskDispatched, input.TaskID.String(), "项目任务已分派", map[string]any{
+	if _, err = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskDispatched, input.TaskID.String(), "项目任务已分派", map[string]any{
 		"project_task_id":         input.TaskID.String(),
 		"digital_employee_id":     task.AssignedDigitalEmployeeID.String(),
 		"digital_employee_run_id": run.RunID.String(),
@@ -965,8 +965,10 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		"node_id":                 run.NodeID,
 		"dispatch_actor_type":     "project_coordinator",
 		"dispatch_user_id":        projectRecord.HumanOwnerUserID.String(),
-	}))
-	return err
+	})); err != nil {
+		return err
+	}
+	return s.repository.AdvanceProjectDemandStatus(ctx, input.TenantID, input.ProjectID, demand.ID, project.ProjectDemandStatusExecuting)
 }
 
 func (s *ProjectStore) recordDispatchFailure(ctx context.Context, tenantID, projectID uuid.UUID, task project.ProjectTask, dispatchErr error) error {

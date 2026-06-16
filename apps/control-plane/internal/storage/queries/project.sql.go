@@ -183,6 +183,41 @@ func (q *Queries) BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRun
 	return i, err
 }
 
+const CountProjectTaskStatusesByDemand = `-- name: CountProjectTaskStatusesByDemand :one
+SELECT
+    COUNT(*)::bigint AS total,
+    COUNT(*) FILTER (WHERE status = 'completed')::bigint AS completed,
+    COUNT(*) FILTER (WHERE status = 'failed')::bigint AS failed,
+    COUNT(*) FILTER (WHERE status NOT IN ('completed', 'failed', 'cancelled'))::bigint AS active
+FROM project_tasks
+WHERE tenant_id = $1::uuid
+  AND demand_id = $2::uuid
+`
+
+type CountProjectTaskStatusesByDemandParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	DemandID uuid.UUID `json:"demand_id"`
+}
+
+type CountProjectTaskStatusesByDemandRow struct {
+	Total     int64 `json:"total"`
+	Completed int64 `json:"completed"`
+	Failed    int64 `json:"failed"`
+	Active    int64 `json:"active"`
+}
+
+func (q *Queries) CountProjectTaskStatusesByDemand(ctx context.Context, arg CountProjectTaskStatusesByDemandParams) (CountProjectTaskStatusesByDemandRow, error) {
+	row := q.db.QueryRow(ctx, CountProjectTaskStatusesByDemand, arg.TenantID, arg.DemandID)
+	var i CountProjectTaskStatusesByDemandRow
+	err := row.Scan(
+		&i.Total,
+		&i.Completed,
+		&i.Failed,
+		&i.Active,
+	)
+	return i, err
+}
+
 const CreateProject = `-- name: CreateProject :one
 INSERT INTO projects (
     id,
@@ -3424,6 +3459,44 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.ApprovalPolicy,
 		&i.EvidencePolicy,
 		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const UpdateProjectDemandStatus = `-- name: UpdateProjectDemandStatus :one
+UPDATE project_demands
+SET status = $1::varchar,
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND id = $3::uuid
+RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at
+`
+
+type UpdateProjectDemandStatusParams struct {
+	Status   string    `json:"status"`
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) UpdateProjectDemandStatus(ctx context.Context, arg UpdateProjectDemandStatusParams) (ProjectDemand, error) {
+	row := q.db.QueryRow(ctx, UpdateProjectDemandStatus, arg.Status, arg.TenantID, arg.ID)
+	var i ProjectDemand
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.SubmittedByUserID,
+		&i.Title,
+		&i.Content,
+		&i.SourceType,
+		&i.SourceRefs,
+		&i.Attachments,
+		&i.Priority,
+		&i.RiskLevel,
+		&i.Status,
+		&i.CreatedEventID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

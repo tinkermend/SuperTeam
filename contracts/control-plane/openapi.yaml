@@ -3878,6 +3878,10 @@ components:
         - submitted
         - recorded
         - planning_pending
+        - planned
+        - executing
+        - completed
+        - failed
         - cancelled
     WorkflowInstanceStatus:
       type: string
