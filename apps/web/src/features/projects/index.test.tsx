@@ -6,6 +6,12 @@ import { render } from "vitest-browser-react";
 import { ProjectsView } from "@/features/projects";
 import type { Project } from "@/lib/api/projects";
 
+const CURRENT_USER_ID = "current-user-1";
+const TEAM_AUTHORIZED_ID = "team-authorized-1";
+const TEAM_REVIEW_ID = "team-review-1";
+const TEAM_REVOKED_ID = "team-revoked-1";
+const TEAM_DISABLED_ID = "team-disabled-1";
+
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
 }));
@@ -77,8 +83,119 @@ function makeProject(id: string, name: string, status: Project["status"] = "runn
   };
 }
 
+function makeDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, reject, resolve };
+}
+
+function userProjectTeamScopesResponse() {
+  return {
+    items: [
+      {
+        created_at: "2026-06-04T02:28:13Z",
+        granted_by_user_id: "admin-user-1",
+        id: "scope-authorized-1",
+        revoked_at: null,
+        status: "active",
+        team: {
+          current_revision: 2,
+          digital_employee_count: 4,
+          governance_status: "active",
+          human_owners: [],
+          id: TEAM_AUTHORIZED_ID,
+          name: "平台运营",
+          pending_draft_count: 0,
+          risk_summary: "低风险",
+          slug: "ops",
+          status: "active",
+        },
+        team_id: TEAM_AUTHORIZED_ID,
+        tenant_id: "tenant-1",
+        updated_at: "2026-06-04T02:28:13Z",
+        user_id: CURRENT_USER_ID,
+      },
+      {
+        created_at: "2026-06-04T02:28:13Z",
+        granted_by_user_id: "admin-user-1",
+        id: "scope-review-1",
+        revoked_at: null,
+        status: "active",
+        team: {
+          current_revision: 1,
+          digital_employee_count: 2,
+          governance_status: "active",
+          human_owners: [],
+          id: TEAM_REVIEW_ID,
+          name: "风控审查",
+          pending_draft_count: 0,
+          risk_summary: "中风险",
+          slug: "review",
+          status: "active",
+        },
+        team_id: TEAM_REVIEW_ID,
+        tenant_id: "tenant-1",
+        updated_at: "2026-06-04T02:28:13Z",
+        user_id: CURRENT_USER_ID,
+      },
+      {
+        created_at: "2026-06-04T02:28:13Z",
+        granted_by_user_id: "admin-user-1",
+        id: "scope-revoked-1",
+        revoked_at: "2026-06-05T02:28:13Z",
+        status: "revoked",
+        team: {
+          current_revision: 1,
+          digital_employee_count: 1,
+          governance_status: "active",
+          human_owners: [],
+          id: TEAM_REVOKED_ID,
+          name: "已撤销团队",
+          pending_draft_count: 0,
+          risk_summary: "低风险",
+          slug: "revoked",
+          status: "active",
+        },
+        team_id: TEAM_REVOKED_ID,
+        tenant_id: "tenant-1",
+        updated_at: "2026-06-05T02:28:13Z",
+        user_id: CURRENT_USER_ID,
+      },
+      {
+        created_at: "2026-06-04T02:28:13Z",
+        granted_by_user_id: "admin-user-1",
+        id: "scope-disabled-1",
+        revoked_at: null,
+        status: "active",
+        team: {
+          current_revision: 1,
+          digital_employee_count: 1,
+          governance_status: "active",
+          human_owners: [],
+          id: TEAM_DISABLED_ID,
+          name: "停用团队",
+          pending_draft_count: 0,
+          risk_summary: "低风险",
+          slug: "disabled",
+          status: "disabled",
+        },
+        team_id: TEAM_DISABLED_ID,
+        tenant_id: "tenant-1",
+        updated_at: "2026-06-04T02:28:13Z",
+        user_id: CURRENT_USER_ID,
+      },
+    ],
+  };
+}
+
 function createProjectFetcher(
   options: {
+    projectTeamScopesDeferred?: ReturnType<typeof makeDeferred<Response>>;
+    projectTeamScopesStatus?: "default" | "empty" | "error" | "loading";
     project2OverviewGate?: Promise<void>;
     slowFilteredList?: boolean;
   } = {},
@@ -91,6 +208,36 @@ function createProjectFetcher(
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
+
+    if (url.pathname === "/api/auth/me" && method === "GET") {
+      return jsonResponse({
+        user: {
+          avatar: { provider: "dicebear", seed: "current-user", style: "adventurer" },
+          avatar_asset_id: null,
+          display_name: "当前用户",
+          email: "current@example.com",
+          id: CURRENT_USER_ID,
+          status: "active",
+          username: "current-user",
+        },
+      });
+    }
+
+    if (
+      url.pathname === `/api/auth/users/${CURRENT_USER_ID}/project-team-scopes` &&
+      method === "GET"
+    ) {
+      if (options.projectTeamScopesStatus === "loading" && options.projectTeamScopesDeferred) {
+        return options.projectTeamScopesDeferred.promise;
+      }
+      if (options.projectTeamScopesStatus === "error") {
+        return jsonResponse({ error: "scope load failed" }, 500);
+      }
+      if (options.projectTeamScopesStatus === "empty") {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse(userProjectTeamScopesResponse());
+    }
 
     if (url.pathname === "/api/v1/projects" && method === "GET") {
       const q = url.searchParams.get("q") ?? "";
@@ -748,14 +895,43 @@ describe("ProjectsView", () => {
     });
   });
 
-  it("creates a project with human leader and acceptance roles", async () => {
+  it("fetches current user and authorized project teams when opening the create drawer", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+
+    await expect.element(screen.getByLabelText("可选团队")).toBeInTheDocument();
+    await expect.element(screen.getByRole("option", { name: "平台运营" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("option", { name: "风控审查" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("option", { name: "已撤销团队" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("option", { name: "停用团队" })).not.toBeInTheDocument();
+
+    await vi.waitFor(() => {
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          return String(url).endsWith("/api/auth/me") && init?.method === "GET";
+        }),
+      ).toBe(true);
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          return (
+            String(url).endsWith(`/api/auth/users/${CURRENT_USER_ID}/project-team-scopes`) &&
+            init?.method === "GET"
+          );
+        }),
+      ).toBe(true);
+    });
+  });
+
+  it("creates a project with a selected authorized team and the current user as owner", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
     await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
     await userEvent.fill(screen.getByLabelText("项目名称"), "客户验收推进");
     await userEvent.fill(screen.getByLabelText("目标"), "完成客户验收闭环");
-    await userEvent.fill(screen.getByLabelText("人类 Owner 用户 ID"), "owner-user-id");
+    await userEvent.selectOptions(screen.getByLabelText("可选团队"), TEAM_REVIEW_ID);
     await userEvent.fill(screen.getByLabelText("Leader 用户 ID"), "leader-user-id");
     await userEvent.fill(screen.getByLabelText("验收人用户 ID"), "acceptance-user-id");
     await userEvent.click(screen.getByRole("button", { name: "创建项目" }));
@@ -767,11 +943,52 @@ describe("ProjectsView", () => {
       expect(postCall).toBeTruthy();
       expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
         acceptance_user_id: "acceptance-user-id",
-        human_owner_user_id: "owner-user-id",
+        human_owner_user_id: CURRENT_USER_ID,
         leader_user_id: "leader-user-id",
         name: "客户验收推进",
+        team_id: TEAM_REVIEW_ID,
       });
     });
+  });
+
+  it("shows an empty state and disables project creation when no teams are selectable", async () => {
+    const fetcher = createProjectFetcher({ projectTeamScopesStatus: "empty" });
+    const screen = await renderProjects(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    await userEvent.fill(screen.getByLabelText("项目名称"), "客户验收推进");
+    await userEvent.fill(screen.getByLabelText("目标"), "完成客户验收闭环");
+
+    await expect.element(screen.getByText("暂无可选团队")).toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "创建项目" })).toBeDisabled();
+  });
+
+  it("keeps project creation disabled while selectable teams are loading", async () => {
+    const deferred = makeDeferred<Response>();
+    const fetcher = createProjectFetcher({
+      projectTeamScopesDeferred: deferred,
+      projectTeamScopesStatus: "loading",
+    });
+    const screen = await renderProjects(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+
+    try {
+      await expect.element(screen.getByText("正在加载可选团队...")).toBeInTheDocument();
+      await expect.element(screen.getByRole("button", { name: "创建项目" })).toBeDisabled();
+    } finally {
+      deferred.resolve(jsonResponse(userProjectTeamScopesResponse()));
+    }
+  });
+
+  it("keeps project creation disabled when selectable teams fail to load", async () => {
+    const fetcher = createProjectFetcher({ projectTeamScopesStatus: "error" });
+    const screen = await renderProjects(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+
+    await expect.element(screen.getByText("加载可选团队失败")).toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "创建项目" })).toBeDisabled();
   });
 
   it("submits a demand to the current project", async () => {

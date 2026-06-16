@@ -7,6 +7,11 @@ import {
 } from "@tanstack/react-query";
 import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
+  getCurrentUser,
+  listUserProjectTeamScopes,
+  type UserProjectTeamScope,
+} from "@/lib/api";
+import {
   archiveProject,
   createProject,
   createProjectAcceptance,
@@ -158,6 +163,30 @@ export function ProjectsView({
       ? selectedProjectQuery.data
       : undefined);
   const effectiveProjectId = selectedProjectId;
+
+  const currentUserQuery = useQuery({
+    enabled: createOpen,
+    queryKey: ["auth", "current-user", "project-create"],
+    queryFn: () => getCurrentUser(apiOptions),
+  });
+  const currentUserId = currentUserQuery.data?.user.id;
+
+  const projectTeamScopesQuery = useQuery({
+    enabled: createOpen && Boolean(currentUserId),
+    queryKey: ["auth", "users", currentUserId, "project-team-scopes", "project-create"],
+    queryFn: () => listUserProjectTeamScopes(apiOptions, currentUserId as string),
+  });
+
+  const availableProjectTeamScopes = useMemo<UserProjectTeamScope[]>(
+    () =>
+      (projectTeamScopesQuery.data?.items ?? []).filter(
+        (scope) =>
+          scope.status === "active" &&
+          !scope.revoked_at &&
+          scope.team.status === "active",
+      ),
+    [projectTeamScopesQuery.data?.items],
+  );
 
   useEffect(() => {
     if (routeProjectId || projects.length === 0) {
@@ -581,9 +610,15 @@ export function ProjectsView({
         </div>
       ) : null}
       <CreateProjectDrawer
+        availableTeams={availableProjectTeamScopes}
+        currentUserError={currentUserQuery.error?.message}
+        currentUserId={currentUserId}
+        isCurrentUserLoading={currentUserQuery.isLoading}
         isSubmitting={createMutation.isPending}
+        isTeamsLoading={projectTeamScopesQuery.isLoading}
         open={createOpen}
         submitError={createMutation.error?.message}
+        teamsError={projectTeamScopesQuery.error?.message}
         onOpenChange={setCreateOpen}
         onSubmit={(input) => createMutation.mutate(input)}
       />
