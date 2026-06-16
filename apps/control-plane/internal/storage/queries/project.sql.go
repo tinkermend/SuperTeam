@@ -3153,6 +3153,20 @@ func (q *Queries) ListWorkflowInstances(ctx context.Context, arg ListWorkflowIns
 	return items, nil
 }
 
+const LockProjectEventSequence = `-- name: LockProjectEventSequence :exec
+SELECT pg_advisory_xact_lock(hashtextextended(($1::uuid)::text || ':' || ($2::uuid)::text, 0))
+`
+
+type LockProjectEventSequenceParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) LockProjectEventSequence(ctx context.Context, arg LockProjectEventSequenceParams) error {
+	_, err := q.db.Exec(ctx, LockProjectEventSequence, arg.TenantID, arg.ProjectID)
+	return err
+}
+
 const ProjectTaskEventExists = `-- name: ProjectTaskEventExists :one
 SELECT EXISTS (
     SELECT 1 FROM project_events

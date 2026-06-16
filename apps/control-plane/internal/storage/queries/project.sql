@@ -333,6 +333,9 @@ FROM project_events
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid;
 
+-- name: LockProjectEventSequence :exec
+SELECT pg_advisory_xact_lock(hashtextextended((sqlc.arg('tenant_id')::uuid)::text || ':' || (sqlc.arg('project_id')::uuid)::text, 0));
+
 -- name: CreateProjectEvent :one
 INSERT INTO project_events (
     tenant_id,

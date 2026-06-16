@@ -291,6 +291,12 @@ func (r *PgRepository) appendProjectEventWithQueries(ctx context.Context, q *que
 	if err != nil {
 		return ProjectEvent{}, err
 	}
+	if err := q.LockProjectEventSequence(ctx, queries.LockProjectEventSequenceParams{
+		TenantID:  event.TenantID,
+		ProjectID: event.ProjectID,
+	}); err != nil {
+		return ProjectEvent{}, err
+	}
 	var lastErr error
 	for attempt := 0; attempt < maxProjectEventAppendAttempts; attempt++ {
 		latest, err := q.GetLatestProjectEventSequence(ctx, queries.GetLatestProjectEventSequenceParams{TenantID: event.TenantID, ProjectID: event.ProjectID})

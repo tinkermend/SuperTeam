@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -547,6 +548,93 @@ func TestListWorkflowInstancesFiltersVisibleDemandsAndSortsRunningFirst(t *testi
 	require.Equal(t, int32(1), items[0].Progress.RunningNodes)
 	require.Equal(t, WorkflowInstanceStatusRunning, items[0].Status)
 	require.Equal(t, &jobID, items[0].SelectedCoordinationJobID)
+}
+
+func TestCompleteProjectTaskWritebackSerializesConcurrentProjectEvents(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	writebacks := repo.(ProjectTaskWritebackRepository)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	projectID := createProjectFixture(t, repo, tenantID)
+	const taskCount = 8
+	tasks := make([]ProjectTask, 0, taskCount)
+	for index := 0; index < taskCount; index++ {
+		employeeID := uuid.New()
+		task, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			Title:                     fmt.Sprintf("并发完成任务 %02d", index+1),
+			Status:                    "assigned",
+			AssignedDigitalEmployeeID: &employeeID,
+			ExpectedOutputs:           []any{"execution_summary"},
+			InputRequirements:         map[string]any{},
+			HandoffContract:           map[string]any{},
+			PlannerMetadata:           map[string]any{},
+		})
+		require.NoError(t, err)
+		tasks = append(tasks, task)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, taskCount)
+	var wg sync.WaitGroup
+	for _, task := range tasks {
+		task := task
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			employeeID := *task.AssignedDigitalEmployeeID
+			_, err := writebacks.CompleteProjectTaskWriteback(ctx, CompleteProjectTaskWritebackRequest{
+				Task: task,
+				Summary: CreateExecutionSummaryRequest{
+					TenantID:              tenantID,
+					ProjectID:             projectID,
+					ProjectTaskID:         task.ID,
+					DigitalEmployeeID:     employeeID,
+					Conclusion:            "并发完成写回成功",
+					EvidenceRefs:          []any{task.ID.String()},
+					ArtifactRefs:          []any{},
+					ConfidenceFactors:     map[string]any{"source": "concurrent-writeback-test"},
+					MissingInformation:    []any{},
+					RecommendedNextAction: "继续协调",
+				},
+				Event: AppendProjectEventRequest{
+					TenantID:     tenantID,
+					ProjectID:    projectID,
+					EventType:    ProjectEventTaskCompleted,
+					ActorType:    "digital_employee",
+					ActorID:      employeeID.String(),
+					ResourceType: strPtr("project_task"),
+					ResourceID:   strPtr(task.ID.String()),
+					Summary:      "项目任务已完成",
+					Payload: map[string]any{
+						"project_task_id": task.ID.String(),
+					},
+				},
+				AllowedCurrentStatuses: []string{"assigned", "running"},
+			})
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	completed := "completed"
+	completedTasks, err := repo.ListProjectTasks(ctx, tenantID, projectID, &completed, 50, 0)
+	require.NoError(t, err)
+	require.Len(t, completedTasks, taskCount)
+	summaries, err := repo.ListExecutionSummaries(ctx, tenantID, projectID, 50, 0)
+	require.NoError(t, err)
+	require.Len(t, summaries, taskCount)
+	events, err := repo.ListProjectEvents(ctx, tenantID, projectID, 100, 0)
+	require.NoError(t, err)
+	requireEventCount(t, events, ProjectEventTaskCompleted, taskCount)
 }
 
 func TestProjectTaskGraphReadReturnsGraphScopedSidecarsAfterUnrelatedRows(t *testing.T) {

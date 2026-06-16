@@ -2,6 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { FolderKanban, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { LiquidCard, SemanticIconTile, StatusBadge } from "@/components/superteam";
 import type {
   ProjectDemandLaunchDetail,
@@ -33,6 +40,7 @@ export function WorkflowDetail({
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(
     initialSelectedNodeId,
   );
+  const [isNodeDialogOpen, setIsNodeDialogOpen] = useState(false);
 
   useEffect(() => {
     setSelectedNodeId((current) => {
@@ -49,6 +57,12 @@ export function WorkflowDetail({
     () => graph?.nodes.find((node) => taskNodeId(node.id) === selectedNodeId),
     [graph, selectedNodeId],
   );
+
+  useEffect(() => {
+    if (!selectedTask) {
+      setIsNodeDialogOpen(false);
+    }
+  }, [selectedTask]);
 
   if (isError) {
     return (
@@ -75,39 +89,10 @@ export function WorkflowDetail({
       : "任务正在规划";
 
   return (
-    <div className="grid min-w-0 items-start gap-4 2xl:grid-cols-[320px_minmax(0,1fr)]">
-      <LiquidCard className="min-w-0 rounded-xl p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-muted-foreground">需求摘要</p>
-            <h2 className="mt-1 line-clamp-2 text-lg font-semibold tracking-normal">
-              {detail.demand.title}
-            </h2>
-          </div>
-          <StatusBadge tone={workflowStatusTone(instance.status)}>
-            {workflowStatusLabel(instance.status)}
-          </StatusBadge>
-        </div>
+    <div className="min-w-0">
+      <LiquidCard className="@container/workflow-graph min-w-0 overflow-hidden rounded-xl">
+        <DemandSummaryBar detail={detail} instance={instance} />
 
-        <p className="mt-3 line-clamp-5 text-sm leading-6 text-muted-foreground">
-          {detail.demand.content || "暂无需求正文"}
-        </p>
-
-        <div className="mt-4 grid gap-2 border-y py-3 text-sm">
-          <SummaryRow label="项目" value={detail.project.name} />
-          <SummaryRow label="流程" value={instance.demand_id} />
-          <SummaryRow label="进度" value={`${instance.progress.completed_nodes}/${instance.progress.total_nodes} 已完成`} />
-        </div>
-
-        <Button asChild className="mt-4 w-full justify-start" variant="outline">
-          <Link params={{ projectId: detail.project.id }} to="/projects/$projectId">
-            <FolderKanban className="size-4" />
-            打开项目
-          </Link>
-        </Button>
-      </LiquidCard>
-
-      <LiquidCard className="@container/workflow-graph min-w-0 rounded-xl">
         <div className="flex items-start justify-between gap-3 border-b p-4">
           <div className="flex min-w-0 items-center gap-3">
             <SemanticIconTile tone={isGraphReady ? "info" : "warning"} size="sm">
@@ -130,13 +115,22 @@ export function WorkflowDetail({
         </div>
 
         {isGraphReady && graph ? (
-          <div className="mt-4 grid min-w-0 gap-4 p-4 pt-0 @[820px]/workflow-graph:grid-cols-[minmax(420px,1fr)_320px]">
+          <div className="mt-4 min-w-0 p-4 pt-0">
             <WorkflowGraphCanvas
               graph={graph}
+              onNodeOpen={(nodeId) => {
+                setSelectedNodeId(nodeId);
+                setIsNodeDialogOpen(true);
+              }}
               onSelectedNodeChange={setSelectedNodeId}
               selectedNodeId={selectedNodeId}
             />
-            <WorkflowNodeInspector graph={graph} selectedTask={selectedTask} />
+            <NodeDetailDialog
+              graph={graph}
+              open={isNodeDialogOpen}
+              selectedTask={selectedTask}
+              onOpenChange={setIsNodeDialogOpen}
+            />
           </div>
         ) : (
           <div className="p-5 text-sm leading-6 text-muted-foreground">
@@ -148,11 +142,76 @@ export function WorkflowDetail({
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function NodeDetailDialog({
+  graph,
+  onOpenChange,
+  open,
+  selectedTask,
+}: {
+  graph: ProjectTaskGraph;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  selectedTask: ProjectTaskGraph["nodes"][number] | undefined;
+}) {
   return (
-    <div className="grid grid-cols-[56px_minmax(0,1fr)] gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="min-w-0 truncate font-medium text-foreground">{value}</span>
+    <Dialog open={open && Boolean(selectedTask)} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-glass-strong-bg)] sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>节点详情</DialogTitle>
+          <DialogDescription>
+            查看当前流程节点的输入、输出、运行记录和人工决策。
+          </DialogDescription>
+        </DialogHeader>
+        <WorkflowNodeInspector
+          graph={graph}
+          selectedTask={selectedTask}
+          variant="dialog"
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DemandSummaryBar({
+  detail,
+  instance,
+}: {
+  detail: ProjectDemandLaunchDetail;
+  instance: WorkflowInstanceSummary;
+}) {
+  return (
+    <div className="border-b bg-white/75 px-4 py-3 backdrop-blur">
+      <div className="flex flex-col gap-3 @lg/workflow-graph:flex-row @lg/workflow-graph:items-start @lg/workflow-graph:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="text-xs font-medium text-muted-foreground">需求摘要</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {detail.project.name}
+            </p>
+          </div>
+          <h2 className="mt-1 line-clamp-2 text-base font-semibold leading-6 tracking-normal">
+            {detail.demand.title}
+          </h2>
+          <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
+            {detail.demand.content || "暂无需求正文"}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 flex-wrap items-center gap-2 @lg/workflow-graph:justify-end">
+          <StatusBadge tone={workflowStatusTone(instance.status)}>
+            {workflowStatusLabel(instance.status)}
+          </StatusBadge>
+          <StatusBadge tone="neutral">
+            已完成 {instance.progress.completed_nodes}/{instance.progress.total_nodes}
+          </StatusBadge>
+          <Button asChild size="sm" variant="outline">
+            <Link params={{ projectId: detail.project.id }} to="/projects/$projectId">
+              <FolderKanban className="size-4" />
+              打开项目
+            </Link>
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

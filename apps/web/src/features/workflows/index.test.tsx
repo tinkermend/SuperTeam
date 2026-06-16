@@ -5,6 +5,7 @@ import {
   type ReactNode,
 } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { WorkflowView } from "@/features/workflows";
@@ -344,9 +345,27 @@ describe("WorkflowView", () => {
 
     await expect.element(screen.getByText("服务健康巡检").first()).toBeVisible();
     await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
-    await expect.element(screen.getByText("节点详情")).toBeVisible();
-    await expect.element(screen.getByText("assigned")).toBeVisible();
+    await expect.element(screen.getByText("节点详情")).not.toBeInTheDocument();
     await expect.element(screen.getByText("PR 审查")).toBeVisible();
+  });
+
+  it("renders the demand summary in the graph surface above the canvas", async () => {
+    const screen = await renderWorkflowView({
+      fetcher: createWorkflowFetcher({
+        graph: makeGraph([makeGraphNode("task-1", "服务健康巡检", "assigned")]),
+      }),
+    });
+
+    await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
+
+    const canvasElement = screen.getByTestId("workflow-canvas").element();
+    const graphShell = canvasElement.parentElement;
+    const graphAndInspectorGrid = graphShell?.parentElement;
+    const detailMainCard = graphAndInspectorGrid?.parentElement;
+
+    expect(detailMainCard?.textContent).toContain("需求摘要");
+    expect(detailMainCard?.textContent).toContain("支付成功率下降");
+    expect(detailMainCard?.textContent).toContain("生产支付链路成功率持续下降，需要定位并恢复。");
   });
 
   it("keeps nested graph layouts stacked until the graph column has room", async () => {
@@ -369,11 +388,12 @@ describe("WorkflowView", () => {
     expect(detailMainCard?.className).toContain("@container/workflow-graph");
     expect(graphAndInspectorGrid?.className).not.toContain("xl:grid-cols");
     expect(graphAndInspectorGrid?.className).not.toContain("min-[");
-    expect(graphAndInspectorGrid?.className).toContain(
+    expect(graphAndInspectorGrid?.className).not.toContain(
       "@[820px]/workflow-graph:grid-cols",
     );
     expect(detailRootGrid?.className).not.toContain("lg:grid-cols");
-    expect(detailRootGrid?.className).toContain("2xl:grid-cols");
+    expect(detailRootGrid?.className).not.toContain("2xl:grid-cols");
+    expect(detailRootGrid?.className).toContain("min-w-0");
   });
 
   it("does not render a previous demand graph under the current demand detail", async () => {
@@ -395,7 +415,7 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByText("上一需求任务")).not.toBeInTheDocument();
   });
 
-  it("updates the inspector on task selection and resets pane clicks to the initial task", async () => {
+  it("opens node details in a dialog when a task card is clicked", async () => {
     const graph = makeGraph(
       [
         makeGraphNode("task-failed", "失败任务", "failed", {
@@ -456,25 +476,19 @@ describe("WorkflowView", () => {
       fetcher: createWorkflowFetcher({ graph }),
     });
 
-    await expect.element(screen.getByRole("heading", { name: "失败任务" })).toBeVisible();
-    await expect.element(screen.getByText("failed").first()).toBeVisible();
-    await expect.element(screen.getByText("失败报告")).toBeVisible();
-    await expect.element(screen.getByText("failed · codex · runtime-a")).toBeVisible();
+    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
+    await expect.element(screen.getByText("失败报告")).not.toBeInTheDocument();
 
-    await screen.getByRole("button", { name: "巡检任务" }).click();
+    await userEvent.click(screen.getByRole("button", { name: "巡检任务" }));
 
+    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "巡检任务" })).toBeVisible();
     await expect.element(screen.getByText("assigned").first()).toBeVisible();
     await expect.element(screen.getByText("巡检报告")).toBeVisible();
     await expect.element(screen.getByText("queued · codex · runtime-b")).toBeVisible();
-
-    await screen.getByRole("button", { name: "canvas pane" }).click();
-
-    await expect.element(screen.getByRole("heading", { name: "失败任务" })).toBeVisible();
-    await expect.element(screen.getByText("失败报告")).toBeVisible();
   });
 
-  it("keeps the parent task selected when a decision attachment node is clicked", async () => {
+  it("opens the parent task details when a decision attachment node is clicked", async () => {
     const graph = makeGraph(
       [
         makeGraphNode("task-review", "待审批任务", "waiting_human", {
@@ -501,12 +515,12 @@ describe("WorkflowView", () => {
       fetcher: createWorkflowFetcher({ graph }),
     });
 
-    await expect.element(screen.getByRole("heading", { name: "待审批任务" })).toBeVisible();
+    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
 
-    await screen.getByRole("button", { name: "确认上线风险" }).click();
+    await userEvent.click(screen.getByRole("button", { name: "确认上线风险" }));
 
+    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "待审批任务" })).toBeVisible();
-    await expect.element(screen.getByText("选择节点查看详情")).not.toBeInTheDocument();
     await expect.element(screen.getByText("审批结果")).toBeVisible();
   });
 

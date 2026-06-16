@@ -22,12 +22,14 @@ const nodeTypes = {
 
 type WorkflowGraphCanvasProps = {
   graph: ProjectTaskGraph;
+  onNodeOpen: (nodeId: string) => void;
   onSelectedNodeChange: (nodeId: string | undefined) => void;
   selectedNodeId: string | undefined;
 };
 
 export function WorkflowGraphCanvas({
   graph,
+  onNodeOpen,
   onSelectedNodeChange,
   selectedNodeId,
 }: WorkflowGraphCanvasProps) {
@@ -55,7 +57,11 @@ export function WorkflowGraphCanvas({
         nodes={nodes}
         nodesConnectable={false}
         nodesDraggable={false}
-        onNodeClick={(_, node) => onSelectedNodeChange(node.parentId ?? node.id)}
+        onNodeClick={(_, node) => {
+          const selectedId = node.parentId ?? node.id;
+          onSelectedNodeChange(selectedId);
+          onNodeOpen(selectedId);
+        }}
         onPaneClick={() => onSelectedNodeChange(selectInitialWorkflowNodeId(graph))}
         proOptions={{ hideAttribution: true }}
       >

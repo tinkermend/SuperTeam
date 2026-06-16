@@ -258,6 +258,7 @@ type Querier interface {
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error)
 	ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error)
 	ListWorkflowInstances(ctx context.Context, arg ListWorkflowInstancesParams) ([]ListWorkflowInstancesRow, error)
+	LockProjectEventSequence(ctx context.Context, arg LockProjectEventSequenceParams) error
 	ProjectTaskEventExists(ctx context.Context, arg ProjectTaskEventExistsParams) (bool, error)
 	RejectRuntimeEnrollment(ctx context.Context, arg RejectRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	RejectTenantTeamConfigRevision(ctx context.Context, arg RejectTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)

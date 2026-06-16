@@ -8,13 +8,23 @@ import type { ProjectTaskGraph, ProjectTaskGraphNode } from "@/lib/api/projects"
 type WorkflowNodeInspectorProps = {
   graph: ProjectTaskGraph;
   selectedTask: ProjectTaskGraphNode | undefined;
+  variant?: "card" | "dialog";
 };
 
 export function WorkflowNodeInspector({
   graph,
   selectedTask,
+  variant = "card",
 }: WorkflowNodeInspectorProps) {
   if (!selectedTask) {
+    if (variant === "dialog") {
+      return (
+        <div className="rounded-xl border bg-background/70 p-5 text-sm text-muted-foreground">
+          选择节点查看详情
+        </div>
+      );
+    }
+
     return (
       <LiquidCard className="flex min-h-[420px] items-center justify-center rounded-xl p-5 text-sm text-muted-foreground">
         选择节点查看详情
@@ -30,8 +40,8 @@ export function WorkflowNodeInspector({
     (item) => item.project_task_id === selectedTask.id,
   );
 
-  return (
-    <LiquidCard className="min-h-[420px] rounded-xl p-4">
+  const content = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-medium text-muted-foreground">节点详情</p>
@@ -90,6 +100,20 @@ export function WorkflowNodeInspector({
           }
         />
       </div>
+    </>
+  );
+
+  if (variant === "dialog") {
+    return (
+      <div className="rounded-xl border bg-background/70 p-4">
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <LiquidCard className="min-h-[420px] rounded-xl p-4">
+      {content}
     </LiquidCard>
   );
 }
