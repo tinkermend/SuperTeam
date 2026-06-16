@@ -182,12 +182,41 @@ type WorkflowInstanceProgress struct {
 	RunningNodes      int32
 	BlockedNodes      int32
 	WaitingHumanNodes int32
+	PlannedNodes      int32
+	FailedNodes       int32
+	CancelledNodes    int32
 }
 
 type WorkflowInstanceCurrentBlocker struct {
 	Type       string
 	Title      string
 	ResourceID *uuid.UUID
+}
+
+type WorkflowInstancePriority struct {
+	Value  string
+	Label  string
+	Source string
+}
+
+type WorkflowInstanceRisk struct {
+	Level  string
+	Label  string
+	Source string
+}
+
+type WorkflowInstanceSLA struct {
+	DueAt            *time.Time
+	RemainingSeconds *int32
+	Breached         bool
+	Label            string
+	Source           string
+}
+
+type WorkflowInstanceRecentEvent struct {
+	EventType  string
+	Summary    string
+	OccurredAt time.Time
 }
 
 type WorkflowInstanceSummary struct {
@@ -204,6 +233,10 @@ type WorkflowInstanceSummary struct {
 	SelectedCoordinationJobID *uuid.UUID
 	Progress                  WorkflowInstanceProgress
 	CurrentBlocker            *WorkflowInstanceCurrentBlocker
+	Priority                  *WorkflowInstancePriority
+	Risk                      *WorkflowInstanceRisk
+	SLA                       *WorkflowInstanceSLA
+	RecentEvent               *WorkflowInstanceRecentEvent
 }
 
 type Project struct {
