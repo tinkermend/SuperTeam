@@ -67,16 +67,25 @@ import {
   listAuthzDecisions,
   listAuthzMembers,
   listLoginLogs,
+  createUser,
+  listUserProjectTeamScopes,
   listUsers,
   resetUserPassword,
   updateUserStatus,
   type AuthzDecisionRecord,
   type AuthzMemberRecord,
+  type CreateUserRequest,
   type LoginLogRecord,
+  type UserListResponse,
+  type UserProjectTeamScope,
   type UserSummary,
 } from "@/lib/api";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
+import {
+  CreateUserDrawer,
+  type CreateUserDraft,
+} from "./components/create-user-drawer";
 
 const apiBaseUrl = resolveControlPlaneUrl();
 
@@ -105,11 +114,6 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const [resetPasswordValue, setResetPasswordValue] = useState("");
   const [createUserOpen, setCreateUserOpen] = useState(false);
-  const [createDraft, setCreateDraft] = useState({
-    avatarSeed: "",
-    password: "",
-    username: "",
-  });
   const apiOptions = useMemo(
     () => ({
       baseUrl: apiBaseUrl,
@@ -177,6 +181,11 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
       }),
     queryKey: ["users", "authz-denied-decisions", selectedUser?.id],
   });
+  const projectTeamScopesQuery = useQuery({
+    enabled: Boolean(selectedUser?.id),
+    queryFn: () => listUserProjectTeamScopes(apiOptions, selectedUser?.id ?? ""),
+    queryKey: ["users", "project-team-scopes", selectedUser?.id],
+  });
   const deniedDecisions = deniedDecisionsQuery.data?.items ?? [];
   const stats = getUserStats(users, authzMembersQuery.data?.items ?? []);
 
@@ -209,8 +218,35 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
     },
   });
   const createUserMutation = useMutation({
-    mutationFn: async (_input: { avatarSeed: string; password: string; username: string }) => {
-      throw new Error("新建用户需要先选择内置头像和可选团队，请等待新版创建流程。");
+    mutationFn: (input: CreateUserDraft) => {
+      const payload: CreateUserRequest = {
+        username: input.username,
+        display_name: input.display_name,
+        password: input.password,
+        avatar_asset_id: input.avatar_asset_id,
+        selectable_team_ids: input.selectable_team_ids,
+      };
+      return createUser(apiOptions, payload);
+    },
+    onSuccess: (response) => {
+      queryClient.setQueriesData<UserListResponse>(
+        { queryKey: ["users", "management"] },
+        (current) => {
+          if (!current) {
+            return current;
+          }
+          const existing = current.items.some((user) => user.id === response.user.id);
+          return {
+            ...current,
+            items: existing
+              ? current.items.map((user) => (user.id === response.user.id ? response.user : user))
+              : [response.user, ...current.items],
+          };
+        },
+      );
+      setSelectedUserId(response.user.id);
+      setCreateUserOpen(false);
+      invalidateUserWorkspace();
     },
   });
 
@@ -282,6 +318,9 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
                     userId: selectedUser.id,
                   })
                 }
+                projectTeamScopes={projectTeamScopesQuery.data?.items ?? []}
+                projectTeamScopesError={projectTeamScopesQuery.isError}
+                projectTeamScopesLoading={projectTeamScopesQuery.isLoading}
                 user={selectedIdentity}
               />
             ) : (
@@ -318,14 +357,14 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
             username={selectedUser.username}
           />
         ) : null}
-        <CreateUserDialog
-          draft={createDraft}
-          error={createUserMutation.error}
-          isOpen={createUserOpen}
-          isPending={createUserMutation.isPending}
-          onDraftChange={setCreateDraft}
+        <CreateUserDrawer
+          apiBaseUrl={apiBaseUrl}
+          fetcher={fetcher}
+          isSubmitting={createUserMutation.isPending}
           onOpenChange={setCreateUserOpen}
-          onSubmit={() => createUserMutation.mutate(createDraft)}
+          onSubmit={(draft) => createUserMutation.mutate(draft)}
+          open={createUserOpen}
+          submitError={createUserMutation.error instanceof Error ? createUserMutation.error.message : undefined}
         />
       </Main>
     </>
@@ -431,6 +470,9 @@ function UserListRail({
                   showSecondary
                   user={{
                     avatar: user.avatar,
+                    avatar_asset_id: user.avatar_asset_id,
+                    display_name: user.display_name,
+                    email: user.email,
                     id: user.id,
                     status: user.status,
                     username: user.username,
@@ -458,6 +500,9 @@ function SelectedUserWorkspace({
   member,
   onResetPassword,
   onToggleStatus,
+  projectTeamScopes,
+  projectTeamScopesError,
+  projectTeamScopesLoading,
   user,
 }: {
   authzMembersError: boolean;
@@ -469,6 +514,9 @@ function SelectedUserWorkspace({
   member?: AuthzMemberRecord;
   onResetPassword: () => void;
   onToggleStatus: () => void;
+  projectTeamScopes: UserProjectTeamScope[];
+  projectTeamScopesError: boolean;
+  projectTeamScopesLoading: boolean;
   user: UserIdentityData;
 }) {
   const label = getUserIdentityLabel(user);
@@ -522,6 +570,7 @@ function SelectedUserWorkspace({
           <Separator />
           <LiquidTabsList>
             <LiquidTabsTrigger value="overview">概览</LiquidTabsTrigger>
+            <LiquidTabsTrigger value="selectable-teams">可选团队</LiquidTabsTrigger>
             <LiquidTabsTrigger value="roles">团队与角色</LiquidTabsTrigger>
             <LiquidTabsTrigger value="sessions">登录与会话</LiquidTabsTrigger>
             <LiquidTabsTrigger value="audit">审计记录</LiquidTabsTrigger>
@@ -550,6 +599,13 @@ function SelectedUserWorkspace({
             <LoginLogTable error={loginLogsError} logs={loginLogs} />
           </div>
         </div>
+      </TabsContent>
+      <TabsContent value="selectable-teams">
+        <SelectableTeamScopesCard
+          error={projectTeamScopesError}
+          isLoading={projectTeamScopesLoading}
+          scopes={projectTeamScopes}
+        />
       </TabsContent>
       <TabsContent value="roles">
         <MembershipTable error={authzMembersError} member={member} />
@@ -662,6 +718,64 @@ function MembershipTable({
             </Table>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SelectableTeamScopesCard({
+  error,
+  isLoading,
+  scopes,
+}: {
+  error: boolean;
+  isLoading: boolean;
+  scopes: UserProjectTeamScope[];
+}) {
+  return (
+    <Card className="min-w-0 rounded-md">
+      <CardHeader>
+        <CardTitle className="text-base">可选团队</CardTitle>
+        <CardDescription>当前用户创建或协作项目时可选择的团队范围。</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? <p className="text-sm text-muted-foreground">加载可选团队中</p> : null}
+        {error ? (
+          <Alert variant="destructive">
+            <ShieldAlert />
+            <AlertTitle>可选团队加载失败</AlertTitle>
+            <AlertDescription>请检查用户团队范围接口。</AlertDescription>
+          </Alert>
+        ) : null}
+        {!isLoading && !error && scopes.length === 0 ? (
+          <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+            暂无可选团队。
+          </p>
+        ) : null}
+        {scopes.length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {scopes.map((scope) => (
+              <div className="min-w-0 rounded-md border bg-background/70 p-3" key={scope.id}>
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{scope.team.name}</p>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                      {scope.team.slug} / {scope.team.governance_status}
+                    </p>
+                  </div>
+                  <StatusBadge tone={scope.status === "active" ? "success" : "neutral"}>
+                    {scope.status}
+                  </StatusBadge>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                  <span>员工 {scope.team.digital_employee_count}</span>
+                  <span>草稿 {scope.team.pending_draft_count}</span>
+                  <span className="col-span-2 truncate">{scope.team.risk_summary}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -945,83 +1059,6 @@ function ResetPasswordDialog({
   );
 }
 
-function CreateUserDialog({
-  draft,
-  error,
-  isOpen,
-  isPending,
-  onDraftChange,
-  onOpenChange,
-  onSubmit,
-}: {
-  draft: { avatarSeed: string; password: string; username: string };
-  error: unknown;
-  isOpen: boolean;
-  isPending: boolean;
-  onDraftChange: (draft: { avatarSeed: string; password: string; username: string }) => void;
-  onOpenChange: (open: boolean) => void;
-  onSubmit: () => void;
-}) {
-  return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>新建用户</DialogTitle>
-          <DialogDescription>创建平台人类用户。团队归属和高权限角色请在团队管理中审批分配。</DialogDescription>
-        </DialogHeader>
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onSubmit();
-          }}
-        >
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="create-username">用户名</Label>
-            <Input
-              id="create-username"
-              onChange={(event) => onDraftChange({ ...draft, username: event.target.value })}
-              placeholder="operator"
-              required
-              value={draft.username}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="create-password">临时密码</Label>
-            <Input
-              id="create-password"
-              minLength={4}
-              onChange={(event) => onDraftChange({ ...draft, password: event.target.value })}
-              placeholder="输入临时密码"
-              required
-              type="password"
-              value={draft.password}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="create-avatar-seed">头像种子</Label>
-            <Input
-              id="create-avatar-seed"
-              onChange={(event) => onDraftChange({ ...draft, avatarSeed: event.target.value })}
-              placeholder="默认使用用户名"
-              value={draft.avatarSeed}
-            />
-          </div>
-          {error instanceof Error ? <p className="text-sm text-destructive">{error.message}</p> : null}
-          <DialogFooter>
-            <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
-              取消
-            </Button>
-            <Button disabled={isPending || draft.username.trim().length === 0 || draft.password.length < 4} type="submit">
-              创建用户
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function UserMetric({
   icon,
   label,
@@ -1061,8 +1098,8 @@ function mergeUserIdentity(user: UserSummary, member?: AuthzMemberRecord): UserI
   return {
     avatar: user.avatar,
     avatar_asset_id: user.avatar_asset_id,
-    display_name: member?.display_name ?? undefined,
-    email: member?.email ?? undefined,
+    display_name: member?.display_name ?? user.display_name ?? undefined,
+    email: member?.email ?? user.email ?? undefined,
     id: user.id,
     status: member?.account_status ?? user.status,
     username: member?.username ?? user.username,
