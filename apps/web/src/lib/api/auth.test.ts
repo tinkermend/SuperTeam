@@ -365,6 +365,7 @@ describe("auth api client", () => {
           id: operatorUserId,
           username: "operator",
           display_name: "值班负责人",
+          email: null,
           avatar_asset_id: "engineer-f-03",
           status: "active",
           avatar: {
@@ -391,6 +392,7 @@ describe("auth api client", () => {
       user: {
         avatar_asset_id: "engineer-f-03",
         display_name: "值班负责人",
+        email: null,
       },
     });
 
@@ -423,7 +425,8 @@ describe("auth api client", () => {
             user_id: userId,
             team_id: teamId,
             status: "active",
-            granted_by_user_id: operatorUserId,
+            granted_by_user_id: null,
+            revoked_at: null,
             created_at: "2026-06-17T02:00:00Z",
             updated_at: "2026-06-17T02:30:00Z",
             team: {
@@ -472,7 +475,8 @@ describe("auth api client", () => {
           user_id: userId,
           team_id: teamId,
           status: "active",
-          granted_by_user_id: operatorUserId,
+          granted_by_user_id: null,
+          revoked_at: null,
           created_at: "2026-06-17T02:00:00Z",
           updated_at: "2026-06-17T02:30:00Z",
           team: {
@@ -528,6 +532,8 @@ describe("auth api client", () => {
             user_id: userId,
             team_id: teamId,
             status: "active",
+            granted_by_user_id: null,
+            revoked_at: null,
             created_at: "2026-06-17T02:00:00Z",
             updated_at: "2026-06-17T02:30:00Z",
             team: {
@@ -574,6 +580,8 @@ describe("auth api client", () => {
     ).resolves.toMatchObject({
       items: [
         {
+          granted_by_user_id: null,
+          revoked_at: null,
           team_id: teamId,
           team: {
             name: "交付团队",

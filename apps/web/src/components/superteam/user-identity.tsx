@@ -14,9 +14,9 @@ export type UserAvatarDescriptor = {
 
 export type UserIdentityData = {
   avatar?: UserAvatarDescriptor;
-  avatar_asset_id?: string;
-  display_name?: string;
-  email?: string;
+  avatar_asset_id?: string | null;
+  display_name?: string | null;
+  email?: string | null;
   id: string;
   status: "active" | "disabled" | string;
   username?: string;

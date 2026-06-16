@@ -5,9 +5,9 @@ export { ApiRequestError };
 
 export type UserSummary = {
   avatar: UserAvatar;
-  avatar_asset_id?: string;
-  display_name?: string;
-  email?: string;
+  avatar_asset_id?: string | null;
+  display_name?: string | null;
+  email?: string | null;
   id: string;
   status: "active" | "disabled";
   username: string;
@@ -82,9 +82,9 @@ export type UserProjectTeamOwner = {
 
 export type UserProjectTeamScope = {
   created_at: string;
-  granted_by_user_id?: string;
+  granted_by_user_id?: string | null;
   id: string;
-  revoked_at?: string;
+  revoked_at?: string | null;
   status: string;
   team: UserProjectTeamSummary;
   team_id: string;
