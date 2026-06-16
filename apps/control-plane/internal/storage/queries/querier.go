@@ -256,6 +256,7 @@ type Querier interface {
 	ListTopDeniedAuthzActionsSince(ctx context.Context, arg ListTopDeniedAuthzActionsSinceParams) ([]ListTopDeniedAuthzActionsSinceRow, error)
 	ListUnresolvedBlockersForTasks(ctx context.Context, arg ListUnresolvedBlockersForTasksParams) ([]ListUnresolvedBlockersForTasksRow, error)
 	ListUserCredentials(ctx context.Context, arg ListUserCredentialsParams) ([]UserCredential, error)
+	ListUserProjectTeamScopeSummaries(ctx context.Context, arg ListUserProjectTeamScopeSummariesParams) ([]ListUserProjectTeamScopeSummariesRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error)
 	ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error)
 	ListWorkflowInstances(ctx context.Context, arg ListWorkflowInstancesParams) ([]ListWorkflowInstancesRow, error)
@@ -270,6 +271,7 @@ type Querier interface {
 	RevokeRuntimeBootstrapKey(ctx context.Context, arg RevokeRuntimeBootstrapKeyParams) (RuntimeBootstrapKey, error)
 	RevokeRuntimeEnrollment(ctx context.Context, arg RevokeRuntimeEnrollmentParams) (RevokeRuntimeEnrollmentRow, error)
 	RevokeRuntimeSession(ctx context.Context, arg RevokeRuntimeSessionParams) (RuntimeSession, error)
+	RevokeUserProjectTeamScopes(ctx context.Context, arg RevokeUserProjectTeamScopesParams) error
 	RewireProjectTaskDependencies(ctx context.Context, arg RewireProjectTaskDependenciesParams) ([]RewireProjectTaskDependenciesRow, error)
 	RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNodeCoversTaskScopeParams) (bool, error)
 	SetTenantTeamStatus(ctx context.Context, arg SetTenantTeamStatusParams) (TenantTeam, error)
@@ -307,6 +309,8 @@ type Querier interface {
 	UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntimeCapabilityParams) (RuntimeCapability, error)
 	UpsertRuntimeEnrollment(ctx context.Context, arg UpsertRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	UpsertRuntimeNodeForTenant(ctx context.Context, arg UpsertRuntimeNodeForTenantParams) (RuntimeNode, error)
+	UpsertUserProjectTeamScope(ctx context.Context, arg UpsertUserProjectTeamScopeParams) (UserProjectTeamScope, error)
+	UserHasActiveProjectTeamScope(ctx context.Context, arg UserHasActiveProjectTeamScopeParams) (bool, error)
 	ValidateRuntimeToken(ctx context.Context, arg ValidateRuntimeTokenParams) (AuthRuntimeToken, error)
 }
 

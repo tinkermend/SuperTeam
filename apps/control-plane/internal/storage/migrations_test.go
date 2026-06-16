@@ -798,6 +798,44 @@ func TestProjectManagementV2GovernanceArchiveMigration(t *testing.T) {
 	}
 }
 
+func TestUserProjectTeamScopesMigration(t *testing.T) {
+	body, err := os.ReadFile("migrations/021_user_project_team_scopes.sql")
+	if err != nil {
+		t.Fatalf("read user project team scopes migration: %v", err)
+	}
+	sql := string(body)
+	block := createTableBlock(t, sql, "user_project_team_scopes")
+
+	for _, expected := range []string{
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"tenant_id UUID NOT NULL",
+		"user_id UUID NOT NULL",
+		"team_id UUID NOT NULL",
+		"status VARCHAR(50) NOT NULL DEFAULT 'active'",
+		"granted_by_user_id UUID",
+		"revoked_at TIMESTAMPTZ",
+		"CREATE UNIQUE INDEX uq_user_project_team_scopes_active",
+		"CREATE INDEX idx_user_project_team_scopes_tenant_user_status",
+		"CREATE INDEX idx_user_project_team_scopes_tenant_team_status",
+		"COMMENT ON TABLE user_project_team_scopes IS",
+		"COMMENT ON COLUMN user_project_team_scopes.team_id IS",
+	} {
+		if !strings.Contains(sql, expected) && !strings.Contains(block, expected) {
+			t.Fatalf("expected user project team scope migration to contain %q", expected)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"BIGSERIAL",
+		"tenant_team_members",
+		"tenant_members",
+	} {
+		if strings.Contains(block, forbidden) {
+			t.Fatalf("user_project_team_scopes must not contain %q", forbidden)
+		}
+	}
+}
+
 func createTableBlock(t *testing.T, sql string, table string) string {
 	t.Helper()
 	startMarker := "CREATE TABLE " + table + " ("

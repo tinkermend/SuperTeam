@@ -106,22 +106,25 @@ INSERT INTO auth_users (
     display_name,
     email,
     password_hash,
-    status
+    status,
+    avatar_asset_id
 ) VALUES (
     $1::varchar,
     $2::varchar,
     $3::varchar,
     $4::varchar,
-    $5::varchar
-) RETURNING id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options
+    $5::varchar,
+    $6::varchar
+) RETURNING id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options, avatar_asset_id
 `
 
 type CreateUserParams struct {
-	Username     string      `json:"username"`
-	DisplayName  pgtype.Text `json:"display_name"`
-	Email        pgtype.Text `json:"email"`
-	PasswordHash string      `json:"password_hash"`
-	Status       string      `json:"status"`
+	Username      string      `json:"username"`
+	DisplayName   pgtype.Text `json:"display_name"`
+	Email         pgtype.Text `json:"email"`
+	PasswordHash  string      `json:"password_hash"`
+	Status        string      `json:"status"`
+	AvatarAssetID pgtype.Text `json:"avatar_asset_id"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error) {
@@ -131,6 +134,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (AuthUse
 		arg.Email,
 		arg.PasswordHash,
 		arg.Status,
+		arg.AvatarAssetID,
 	)
 	var i AuthUser
 	err := row.Scan(
@@ -149,6 +153,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (AuthUse
 		&i.AvatarStyle,
 		&i.AvatarSeed,
 		&i.AvatarOptions,
+		&i.AvatarAssetID,
 	)
 	return i, err
 }
@@ -273,7 +278,7 @@ func (q *Queries) GetSessionByTokenHash(ctx context.Context, tokenHash string) (
 }
 
 const GetUser = `-- name: GetUser :one
-SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options FROM auth_users
+SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options, avatar_asset_id FROM auth_users
 WHERE id = $1
 `
 
@@ -296,12 +301,13 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (AuthUser, error) {
 		&i.AvatarStyle,
 		&i.AvatarSeed,
 		&i.AvatarOptions,
+		&i.AvatarAssetID,
 	)
 	return i, err
 }
 
 const GetUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options FROM auth_users
+SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options, avatar_asset_id FROM auth_users
 WHERE email = $1
 `
 
@@ -324,12 +330,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email pgtype.Text) (AuthUs
 		&i.AvatarStyle,
 		&i.AvatarSeed,
 		&i.AvatarOptions,
+		&i.AvatarAssetID,
 	)
 	return i, err
 }
 
 const GetUserByID = `-- name: GetUserByID :one
-SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options FROM auth_users
+SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options, avatar_asset_id FROM auth_users
 WHERE id = $1
 `
 
@@ -352,12 +359,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (AuthUser, erro
 		&i.AvatarStyle,
 		&i.AvatarSeed,
 		&i.AvatarOptions,
+		&i.AvatarAssetID,
 	)
 	return i, err
 }
 
 const GetUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options FROM auth_users
+SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options, avatar_asset_id FROM auth_users
 WHERE username = $1
 `
 
@@ -380,6 +388,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (AuthU
 		&i.AvatarStyle,
 		&i.AvatarSeed,
 		&i.AvatarOptions,
+		&i.AvatarAssetID,
 	)
 	return i, err
 }
@@ -425,7 +434,7 @@ func (q *Queries) ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensPa
 }
 
 const ListUsers = `-- name: ListUsers :many
-SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options FROM auth_users
+SELECT id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options, avatar_asset_id FROM auth_users
 WHERE deleted_at IS NULL
   AND ($1::varchar IS NULL OR status = $1::varchar)
   AND (
@@ -475,6 +484,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUse
 			&i.AvatarStyle,
 			&i.AvatarSeed,
 			&i.AvatarOptions,
+			&i.AvatarAssetID,
 		); err != nil {
 			return nil, err
 		}
@@ -529,7 +539,7 @@ SET
     END,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options
+RETURNING id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options, avatar_asset_id
 `
 
 type UpdateUserParams struct {
@@ -563,6 +573,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (AuthUse
 		&i.AvatarStyle,
 		&i.AvatarSeed,
 		&i.AvatarOptions,
+		&i.AvatarAssetID,
 	)
 	return i, err
 }
@@ -576,7 +587,7 @@ SET
     avatar_options = $4::jsonb,
     updated_at = NOW()
 WHERE id = $5::uuid
-RETURNING id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options
+RETURNING id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options, avatar_asset_id
 `
 
 type UpdateUserAvatarParams struct {
@@ -612,6 +623,7 @@ func (q *Queries) UpdateUserAvatar(ctx context.Context, arg UpdateUserAvatarPara
 		&i.AvatarStyle,
 		&i.AvatarSeed,
 		&i.AvatarOptions,
+		&i.AvatarAssetID,
 	)
 	return i, err
 }
@@ -620,7 +632,7 @@ const UpdateUserPassword = `-- name: UpdateUserPassword :one
 UPDATE auth_users
 SET password_hash = $1::varchar, updated_at = NOW()
 WHERE id = $2
-RETURNING id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options
+RETURNING id, username, display_name, email, password_hash, status, last_login_at, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options, avatar_asset_id
 `
 
 type UpdateUserPasswordParams struct {
@@ -647,6 +659,7 @@ func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPassword
 		&i.AvatarStyle,
 		&i.AvatarSeed,
 		&i.AvatarOptions,
+		&i.AvatarAssetID,
 	)
 	return i, err
 }

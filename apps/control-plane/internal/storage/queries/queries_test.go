@@ -132,7 +132,18 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		return err
 	}
 	if runtimeEventsMigrated {
-		return nil
+		userProjectTeamScopesMigrated, err := schemaHasTable(ctx, conn, "user_project_team_scopes")
+		if err != nil {
+			return err
+		}
+		if userProjectTeamScopesMigrated {
+			return nil
+		}
+		files, err := migrationSQLFiles()
+		if err != nil {
+			return err
+		}
+		return applyMigrationFiles(ctx, conn, migrationFilesFrom(files, "021_user_project_team_scopes.sql"))
 	}
 
 	runLoopMigrated, err := schemaHasTable(ctx, conn, "runtime_command_receipts")
@@ -145,22 +156,30 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		return err
 	}
 
-	// 发现所有迁移文件
-	migrationsDir := filepath.Join("..", "migrations")
-	files, err := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
+	files, err := migrationSQLFiles()
 	if err != nil {
 		return err
 	}
-
-	// 按文件名排序
-	sort.Strings(files)
 	files = migrationFilesForSchemaState(files, migrationSchemaState{
 		baseMigrated:          baseMigrated,
 		runLoopMigrated:       runLoopMigrated,
 		runtimeEventsMigrated: runtimeEventsMigrated,
 	})
 
-	// 执行每个迁移文件
+	return applyMigrationFiles(ctx, conn, files)
+}
+
+func migrationSQLFiles() ([]string, error) {
+	migrationsDir := filepath.Join("..", "migrations")
+	files, err := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func applyMigrationFiles(ctx context.Context, conn *pgx.Conn, files []string) error {
 	for _, file := range files {
 		content, err := os.ReadFile(file)
 		if err != nil {
@@ -270,6 +289,7 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 			runtime_leases,
 			task_runs,
 			tasks,
+			user_project_team_scopes,
 			auth_sessions,
 			auth_runtime_tokens,
 			runtime_node_scopes,
@@ -400,6 +420,59 @@ func seedTestTeamConfigRevision(t *testing.T, db *pgxpool.Pool, tenantID, teamID
 	})
 	require.NoError(t, err)
 	return revision
+}
+
+func TestUserProjectTeamScopesQueriesReplaceAndList(t *testing.T) {
+	db := newQueriesTestDB(t)
+	ctx := context.Background()
+	q := queries.New(db)
+	tenantID := seedTestTenant(t, db)
+	userID := seedTestAuthUser(t, db, "scope-user")
+	adminID := seedTestAuthUser(t, db, "scope-admin")
+	teamID := seedTestTeam(t, db, tenantID, "dev-scope", "研发团队")
+
+	_, err := q.UpsertUserProjectTeamScope(ctx, queries.UpsertUserProjectTeamScopeParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		TeamID:   teamID,
+		GrantedByUserID: uuid.NullUUID{
+			UUID:  adminID,
+			Valid: true,
+		},
+	})
+	require.NoError(t, err)
+
+	scopes, err := q.ListUserProjectTeamScopeSummaries(ctx, queries.ListUserProjectTeamScopeSummariesParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	require.NoError(t, err)
+	require.Len(t, scopes, 1)
+	require.Equal(t, teamID, scopes[0].TeamID)
+	require.Equal(t, "研发团队", scopes[0].Name)
+
+	allowed, err := q.UserHasActiveProjectTeamScope(ctx, queries.UserHasActiveProjectTeamScopeParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		TeamID:   teamID,
+	})
+	require.NoError(t, err)
+	require.True(t, allowed)
+
+	err = q.RevokeUserProjectTeamScopes(ctx, queries.RevokeUserProjectTeamScopesParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		TeamIds:  []uuid.UUID{},
+	})
+	require.NoError(t, err)
+
+	allowed, err = q.UserHasActiveProjectTeamScope(ctx, queries.UserHasActiveProjectTeamScopeParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		TeamID:   teamID,
+	})
+	require.NoError(t, err)
+	require.False(t, allowed)
 }
 
 func TestTeamConfigAndDigitalEmployeeEffectiveConfigQueries(t *testing.T) {

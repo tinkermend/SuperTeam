@@ -4,13 +4,15 @@ INSERT INTO auth_users (
     display_name,
     email,
     password_hash,
-    status
+    status,
+    avatar_asset_id
 ) VALUES (
     sqlc.arg('username')::varchar,
     sqlc.narg('display_name')::varchar,
     sqlc.narg('email')::varchar,
     sqlc.arg('password_hash')::varchar,
-    sqlc.arg('status')::varchar
+    sqlc.arg('status')::varchar,
+    sqlc.narg('avatar_asset_id')::varchar
 ) RETURNING *;
 
 -- name: UpdateUserAvatar :one

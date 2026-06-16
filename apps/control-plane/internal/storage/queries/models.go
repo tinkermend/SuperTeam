@@ -197,6 +197,8 @@ type AuthUser struct {
 	AvatarSeed pgtype.Text `json:"avatar_seed"`
 	// 用户头像生成选项 JSON，保留颜色、配件等后续扩展配置
 	AvatarOptions []byte `json:"avatar_options"`
+	// 人类用户选择的内置头像资产 ID；创建用户流程以该字段作为头像事实来源
+	AvatarAssetID pgtype.Text `json:"avatar_asset_id"`
 }
 
 // 数字员工业务身份表
@@ -821,7 +823,7 @@ type ProjectDemand struct {
 	Priority pgtype.Text `json:"priority"`
 	// 需求风险等级，由应用层和策略校验
 	RiskLevel pgtype.Text `json:"risk_level"`
-	// 需求状态：submitted, recorded, planning_pending, cancelled
+	// 需求状态：submitted, recorded, planning_pending, planned, executing, completed, failed, cancelled
 	Status string `json:"status"`
 	// 创建该需求时产生的项目事件ID
 	CreatedEventID uuid.NullUUID `json:"created_event_id"`
@@ -2020,6 +2022,28 @@ type UserCredential struct {
 	// 凭据创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 凭据更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 人类用户创建项目时可选择的团队授权范围
+type UserProjectTeamScope struct {
+	// 授权记录 UUID
+	ID uuid.UUID `json:"id"`
+	// 租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 被授权的人类用户 ID
+	UserID uuid.UUID `json:"user_id"`
+	// 用户创建项目时可选择的团队 ID
+	TeamID uuid.UUID `json:"team_id"`
+	// 授权状态：active 表示可用，revoked 表示已撤销
+	Status string `json:"status"`
+	// 授予或最后替换该授权范围的管理员用户 ID
+	GrantedByUserID uuid.NullUUID `json:"granted_by_user_id"`
+	// 授权撤销时间
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+	// 授权创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 授权最后更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
