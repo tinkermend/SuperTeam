@@ -367,6 +367,7 @@ fn assert_tokens_in_order(args: &str, first: &str, second: &str) {
 #[derive(Clone, Default)]
 struct CommandFailureCapture {
     fail: Arc<Mutex<Option<CapturedWriteback>>>,
+    cancelled: Arc<Mutex<Option<CapturedWriteback>>>,
     project_task_fail: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
 }
 
@@ -390,6 +391,10 @@ async fn serve_command_failures(capture: CommandFailureCapture) -> CommandWriteb
         .route(
             "/api/v1/runtime/commands/{command_id}/fail",
             post(capture_fail_writeback),
+        )
+        .route(
+            "/api/v1/runtime/commands/{command_id}/cancelled",
+            post(capture_cancelled_writeback),
         )
         .route(
             "/api/v1/runtime/project-tasks/{project_task_id}/fail",
@@ -568,6 +573,21 @@ async fn capture_fail_writeback(
     Json(payload): Json<Value>,
 ) -> StatusCode {
     *capture.fail.lock().expect("fail lock") = Some(CapturedWriteback {
+        command_id,
+        authorization: header_value(&headers, "authorization"),
+        node_id: header_value(&headers, "x-node-id"),
+        payload,
+    });
+    StatusCode::ACCEPTED
+}
+
+async fn capture_cancelled_writeback(
+    AxumPath(command_id): AxumPath<String>,
+    State(capture): State<CommandFailureCapture>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    *capture.cancelled.lock().expect("cancelled lock") = Some(CapturedWriteback {
         command_id,
         authorization: header_value(&headers, "authorization"),
         node_id: header_value(&headers, "x-node-id"),
@@ -1655,6 +1675,88 @@ sleep 5
         Some("Bearer session-token")
     );
     assert_eq!(cancel.node_id.as_deref(), Some("node-1"));
+    server.task.abort();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn stop_session_for_project_task_dispatch_also_fails_project_task_writeback() {
+    let temp = TempDir::new().expect("tempdir");
+    let capture = CommandFailureCapture::default();
+    let server = serve_command_failures(capture.clone()).await;
+    let fake_claude = make_script(
+        temp.path(),
+        "project-task-stop-claude",
+        r#"#!/usr/bin/env bash
+sleep 5
+"#,
+    );
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", server.addr),
+        "session-token",
+        "node-1",
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+    let home = prepare_employee_home(&temp);
+
+    let mut start = session_command_in_home(
+        &home,
+        "cmd-start-project-task-stop",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("start work that will be cancelled"),
+        None,
+    );
+    start.payload["metadata"] = json!({
+        "source": "project_task_dispatch",
+        "project_task_id": PROJECT_TASK_ID,
+        "expected_outputs": ["execution_summary"],
+        "handoff_contract": {"completion_path": "project_task_writeback"}
+    });
+    let start = executor
+        .handle_command(start)
+        .await
+        .expect("start_session accepted");
+    let started_run_id = start.run_id.expect("started run id");
+
+    executor
+        .handle_command(RuntimeCommand {
+            id: "cmd-stop-project-task-stop".to_string(),
+            command_type: RuntimeCommandType::StopSession,
+            payload: json!({
+                "provider_run_protocol": "provider-run/v1",
+                "run_id": "77777777-7777-4777-8777-777777777777",
+                "task_id": "88888888-8888-4888-8888-888888888888",
+                "command_id": "cmd-stop-project-task-stop",
+                "start_command_id": "cmd-start-project-task-stop",
+                "reason": "operator cancelled",
+                "grace_sec": null
+            }),
+        })
+        .await
+        .expect("stop_session accepted");
+
+    wait_for_status(&executor.runs(), &started_run_id, RunStatus::Cancelled).await;
+    let cancel = wait_for_writeback(capture.cancelled.clone()).await;
+    assert_eq!(cancel.command_id, "cmd-start-project-task-stop");
+    assert_eq!(cancel.payload["status"], "cancelled");
+
+    let project_task_failed =
+        wait_for_project_task_writeback(capture.project_task_fail.clone()).await;
+    assert_eq!(project_task_failed.project_task_id, PROJECT_TASK_ID);
+    assert_eq!(
+        project_task_failed.authorization.as_deref(),
+        Some("Bearer session-token")
+    );
+    assert_eq!(project_task_failed.node_id.as_deref(), Some("node-1"));
+    assert_eq!(
+        project_task_failed.payload["digital_employee_id"],
+        DIGITAL_EMPLOYEE_ID
+    );
+    assert_eq!(
+        project_task_failed.payload["failure_summary"],
+        "operator cancelled"
+    );
     server.task.abort();
 }
 

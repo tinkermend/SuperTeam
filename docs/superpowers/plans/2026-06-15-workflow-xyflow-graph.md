@@ -20,6 +20,8 @@ Implement this subplan against:
 
 This subplan assumes `/workflows/$demandId` already loads workflow instances, launch detail, and task graph data.
 
+**Hard prerequisite — cannot compile standalone:** `ProjectTaskGraph`, `ProjectTaskGraphNode`, `ProjectTaskGraphEdge`, `ProjectTaskGraphEmployee`, and `ProjectTaskGraphRun` are introduced by `2026-06-15-workflow-shell-and-list.md` and are **not** present in `apps/web/src/lib/api/projects.ts` until that plan lands. This plan's adapter and tests (`import type { ProjectTaskGraph, ProjectTaskGraphNode }`) will not compile until the shell-and-list plan is merged. The node field shapes (`stage_index`, `expected_outputs`, `input_requirements`, `handoff_contract`, `planner_metadata`, `risk_level`, `summary`, …) must match both that plan's types and what the Control Plane `task-graph` endpoint actually returns. Execute in order: read-model → shell-and-list → xyflow.
+
 ## File Structure
 
 Modify:
@@ -70,7 +72,22 @@ Expected output contains:
 xyflow ok
 ```
 
-- [ ] **Step 3: Commit dependency slice**
+- [ ] **Step 3: Confirm xyflow major version and node typing**
+
+Run:
+
+```bash
+corepack pnpm --filter @superteam/web list @xyflow/react
+```
+
+Expected: record the installed `@xyflow/react` major version. `@xyflow/react` v12 changed `NodeProps` to be generic over the **Node type**, not the data type:
+
+- v12: custom node props are `NodeProps<Node<YourData>>`, and `Node<YourData>` requires `YourData` to satisfy xyflow's `ElementData` constraint.
+- v11: `NodeProps<YourData>` was correct.
+
+If v12 is installed, the node components below must use `NodeProps<Node<WorkflowTaskNodeData>>` / `NodeProps<Node<WorkflowAttachmentNodeData>>` instead of `NodeProps<WorkflowTaskNodeData>`. The unit tests mock `@xyflow/react`, so only `pnpm typecheck`/`build` enforce this — fix it before Task 5.
+
+- [ ] **Step 4: Commit dependency slice**
 
 Run:
 
@@ -325,11 +342,16 @@ export function buildWorkflowGraphElements(graph: ProjectTaskGraph): WorkflowGra
 export function selectInitialWorkflowNodeId(graph: ProjectTaskGraph): string | undefined {
   const priority = ["failed", "blocked", "waiting_human", "pending", "assigned", "running", "in_progress"];
   for (const status of priority) {
-    const task = graph.nodes.find((node) => node.status === status || pendingDecisionsByTask(graph.decision_requests).has(node.id));
+    const task = graph.nodes.find((node) => node.status === status);
     if (task) {
       return taskNodeId(task.id);
     }
   }
+  // No status-priority match: fall back to the first node. Do NOT fold pending
+  // decisions into this loop — that clause was status-independent and made any task
+  // with a pending decision win on the first ("failed") iteration, defeating both
+  // the priority order and the first-node fallback. Pending decisions are surfaced
+  // as attachment nodes on their task instead.
   return graph.nodes[0] ? taskNodeId(graph.nodes[0].id) : undefined;
 }
 
@@ -455,7 +477,7 @@ Create `apps/web/src/features/workflows/components/workflow-task-node.tsx`:
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Bot, ShieldCheck } from "lucide-react";
 import { StatusBadge } from "@/components/superteam";
-import type { WorkflowTaskNodeData } from "../workflow-graph-adapter";
+import type { WorkflowAttachmentNodeData, WorkflowTaskNodeData } from "../workflow-graph-adapter";
 import { taskStatusTone } from "./workflow-node-inspector";
 
 export function WorkflowTaskNode({ data, selected }: NodeProps<WorkflowTaskNodeData>) {
@@ -485,6 +507,25 @@ export function WorkflowTaskNode({ data, selected }: NodeProps<WorkflowTaskNodeD
             人工确认
           </span>
         ) : null}
+      </div>
+      <Handle type="source" position={Position.Bottom} />
+    </div>
+  );
+}
+
+export function WorkflowAttachmentNode({ data, selected }: NodeProps<WorkflowAttachmentNodeData>) {
+  return (
+    <div className={[
+      "w-[240px] rounded-lg border bg-background p-2 shadow-sm",
+      selected ? "border-primary ring-2 ring-primary/20" : "border-amber-300",
+    ].join(" ")}>
+      <Handle type="target" position={Position.Top} />
+      <div className="flex items-start gap-2">
+        <ShieldCheck className="mt-0.5 size-3.5 text-amber-600" />
+        <div className="min-w-0">
+          <p className="line-clamp-2 text-xs font-medium">{data.title}</p>
+          <p className="text-[10px] text-muted-foreground">{data.status}</p>
+        </div>
       </div>
       <Handle type="source" position={Position.Bottom} />
     </div>
@@ -590,6 +631,8 @@ function objectSummary(value: Record<string, unknown>): string {
 Create `apps/web/src/features/workflows/components/workflow-graph-canvas.tsx`:
 
 ```tsx
+// Requires @xyflow/react to be installed (Task 1). This specifier is NOT covered by the
+// vi.mock("@xyflow/react") in tests, so the package must be present before tests run.
 import "@xyflow/react/dist/style.css";
 import { Background, Controls, MiniMap, ReactFlow } from "@xyflow/react";
 import { useMemo } from "react";
@@ -598,7 +641,7 @@ import {
   buildWorkflowGraphElements,
   selectInitialWorkflowNodeId,
 } from "../workflow-graph-adapter";
-import { WorkflowTaskNode } from "./workflow-task-node";
+import { WorkflowAttachmentNode, WorkflowTaskNode } from "./workflow-task-node";
 
 type WorkflowGraphCanvasProps = {
   graph: ProjectTaskGraph;
@@ -608,6 +651,7 @@ type WorkflowGraphCanvasProps = {
 
 const nodeTypes = {
   workflowTask: WorkflowTaskNode,
+  workflowAttachment: WorkflowAttachmentNode,
 };
 
 export function WorkflowGraphCanvas({
@@ -629,7 +673,7 @@ export function WorkflowGraphCanvas({
         nodeTypes={nodeTypes}
         nodes={nodes}
         onNodeClick={(_, node) => onSelectedNodeChange(node.id)}
-        onPaneClick={() => onSelectedNodeChange(selectInitialWorkflowNodeId(graph))}
+        onPaneClick={() => onSelectedNodeChange(undefined)}
       >
         <Background />
         <Controls />
@@ -903,7 +947,9 @@ Expected: all commands exit 0.
 Run:
 
 ```bash
-git add CHANGELOG.md apps/web apps/control-plane contracts pnpm-lock.yaml
+# This plan only touches apps/web (+ dependency lock). Do not stage control-plane/ or
+# contracts/ here — those come from the read-model plan and should already be committed.
+git add CHANGELOG.md apps/web pnpm-lock.yaml
 git commit -m "feat: add workflow orchestration graph"
 ```
 

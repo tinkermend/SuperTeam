@@ -284,6 +284,17 @@ impl RuntimeCommandExecutor {
                         anyhow::anyhow!("no active run found for stop_session command"),
                     )
                 })?;
+            let project_task = self
+                .runs
+                .get_run(&run_id)
+                .await
+                .and_then(|snapshot| snapshot.command_context)
+                .and_then(|context| {
+                    project_task_writeback_context_from_metadata(
+                        &context.metadata,
+                        &context.digital_employee_id,
+                    )
+                });
             let reason = payload
                 .reason
                 .as_deref()
@@ -300,6 +311,13 @@ impl RuntimeCommandExecutor {
                         &command_cancelled_terminal(Some(reason)),
                     )
                     .await?;
+                RuntimeCommandWritebackSink {
+                    client: control_plane.clone(),
+                    command_id: start_command_id.to_string(),
+                    project_task,
+                }
+                .fail_project_task("operator cancelled")
+                .await?;
             }
             self.registry.record_run_finished(&run_id);
 
@@ -1015,11 +1033,15 @@ fn provider_session_state_patch(
 fn project_task_writeback_context(
     payload: &RuntimeSessionCommandPayload,
 ) -> Option<ProjectTaskWritebackContext> {
-    let metadata = payload.metadata.as_object()?;
-    if metadata
-        .get("source")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
+    project_task_writeback_context_from_metadata(&payload.metadata, &payload.digital_employee_id)
+}
+
+fn project_task_writeback_context_from_metadata(
+    metadata: &serde_json::Value,
+    digital_employee_id: &str,
+) -> Option<ProjectTaskWritebackContext> {
+    let metadata = metadata.as_object()?;
+    if metadata.get("source").and_then(serde_json::Value::as_str).map(str::trim)
         != Some("project_task_dispatch")
     {
         return None;
@@ -1038,7 +1060,7 @@ fn project_task_writeback_context(
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())?;
-    let digital_employee_id = payload.digital_employee_id.trim();
+    let digital_employee_id = digital_employee_id.trim();
     if digital_employee_id.is_empty() {
         return None;
     }
