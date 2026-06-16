@@ -78,6 +78,27 @@ describe("UserIdentity", () => {
     await expect.element(screen.getByAltText("默认头像用户 的头像")).toHaveAttribute("src", expect.stringContaining("data:image/svg+xml"));
   });
 
+  it("renders nullable backend identity fields with username and DiceBear fallback", async () => {
+    const screen = await render(
+      <UserIdentity
+        showSecondary
+        user={{
+          avatar: { provider: "dicebear", seed: "user:nullable", style: "adventurer" },
+          avatar_asset_id: null,
+          display_name: null,
+          email: null,
+          id: "user-nullable",
+          status: "active",
+          username: "nullable-user",
+        }}
+      />,
+    );
+
+    await expect.element(screen.getByText("nullable-user")).toBeInTheDocument();
+    await expect.element(screen.getByText("user-nullable")).toBeInTheDocument();
+    await expect.element(screen.getByAltText("nullable-user 的头像")).toHaveAttribute("src", expect.stringContaining("data:image/svg+xml"));
+  });
+
   it("falls back to username and initials without avatar", () => {
     expect(
       getUserIdentityLabel({
