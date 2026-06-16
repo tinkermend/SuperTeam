@@ -836,6 +836,22 @@ func TestUserProjectTeamScopesMigration(t *testing.T) {
 	}
 }
 
+func TestUserProjectTeamScopesQueriesAreNilSafeAndTenantScoped(t *testing.T) {
+	body, err := os.ReadFile("queries/user_project_team_scopes.sql")
+	if err != nil {
+		t.Fatalf("read user project team scopes queries: %v", err)
+	}
+	sql := string(body)
+
+	if !strings.Contains(sql, "ANY(COALESCE(sqlc.arg('team_ids')::uuid[], ARRAY[]::uuid[]))") {
+		t.Fatal("RevokeUserProjectTeamScopes must treat nil team_ids as an empty UUID array")
+	}
+
+	if count := strings.Count(sql, "tenant_id = sqlc.arg('tenant_id')::uuid"); count < 5 {
+		t.Fatalf("expected tenant-scoped aggregate CTEs plus final filters, got %d tenant filters", count)
+	}
+}
+
 func createTableBlock(t *testing.T, sql string, table string) string {
 	t.Helper()
 	startMarker := "CREATE TABLE " + table + " ("

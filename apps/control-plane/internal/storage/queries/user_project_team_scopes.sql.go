@@ -20,21 +20,24 @@ WITH current_config AS (
     revision_number,
     approval_policy
   FROM tenant_team_config_revisions
-  WHERE status = 'active'
+  WHERE tenant_id = $1::uuid
+    AND status = 'active'
     AND archived_at IS NULL
   ORDER BY tenant_id, team_id, revision_number DESC
 ),
 draft_counts AS (
   SELECT tenant_id, team_id, COUNT(*)::integer AS pending_draft_count
   FROM tenant_team_config_revisions
-  WHERE status = 'draft'
+  WHERE tenant_id = $1::uuid
+    AND status = 'draft'
     AND archived_at IS NULL
   GROUP BY tenant_id, team_id
 ),
 employee_counts AS (
   SELECT tenant_id, team_id, COUNT(*)::integer AS digital_employee_count
   FROM digital_employees
-  WHERE deleted_at IS NULL
+  WHERE tenant_id = $1::uuid
+    AND deleted_at IS NULL
   GROUP BY tenant_id, team_id
 )
 SELECT
@@ -162,7 +165,7 @@ SET status = 'revoked',
 WHERE tenant_id = $1::uuid
   AND user_id = $2::uuid
   AND status = 'active'
-  AND NOT (team_id = ANY($3::uuid[]))
+  AND NOT (team_id = ANY(COALESCE($3::uuid[], ARRAY[]::uuid[])))
 `
 
 type RevokeUserProjectTeamScopesParams struct {
