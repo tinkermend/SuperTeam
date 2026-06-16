@@ -55,9 +55,14 @@ vi.mock("@tanstack/react-router", () => {
   return { Link };
 });
 
-function createQueryClient() {
+function createQueryClient(options: { staleTime?: number } = {}) {
   return new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: options.staleTime,
+      },
+    },
   });
 }
 
@@ -750,9 +755,13 @@ function fetchCalls(fetcher: typeof fetch) {
   ).mock.calls;
 }
 
-async function renderProjects(fetcher: typeof fetch, routeProjectId?: string) {
+async function renderProjects(
+  fetcher: typeof fetch,
+  routeProjectId?: string,
+  queryClient = createQueryClient(),
+) {
   return await render(
-    <QueryClientProvider client={createQueryClient()}>
+    <QueryClientProvider client={queryClient}>
       <ProjectsView
         apiBaseUrl="http://control-plane.test"
         fetcher={fetcher}
@@ -931,6 +940,55 @@ describe("ProjectsView", () => {
         }),
       ).toBe(true);
     });
+  });
+
+  it("refetches cached authorization and blocks stale team submit while scopes refresh", async () => {
+    const deferred = makeDeferred<Response>();
+    const fetcher = createProjectFetcher({
+      projectTeamScopesDeferred: deferred,
+      projectTeamScopesStatus: "loading",
+    });
+    const queryClient = createQueryClient({ staleTime: 10_000 });
+    queryClient.setQueryData(["auth", "current-user", "project-create"], {
+      user: {
+        avatar: { provider: "dicebear", seed: "current-user", style: "adventurer" },
+        avatar_asset_id: null,
+        display_name: "当前用户",
+        email: "current@example.com",
+        id: CURRENT_USER_ID,
+        status: "active",
+        username: "current-user",
+      },
+    });
+    queryClient.setQueryData(
+      ["auth", "users", CURRENT_USER_ID, "project-team-scopes", "project-create"],
+      userProjectTeamScopesResponse(),
+    );
+    const screen = await renderProjects(fetcher, undefined, queryClient);
+
+    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    await userEvent.fill(screen.getByLabelText("项目名称"), "缓存授权项目");
+    await userEvent.fill(screen.getByLabelText("目标"), "等待授权范围刷新后才能提交");
+
+    try {
+      await expect.element(screen.getByText("正在加载可选团队...")).toBeInTheDocument();
+      await expect.element(screen.getByRole("button", { name: "创建项目" })).toBeDisabled();
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          return (
+            String(url).endsWith(`/api/auth/users/${CURRENT_USER_ID}/project-team-scopes`) &&
+            init?.method === "GET"
+          );
+        }),
+      ).toBe(true);
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          return String(url).endsWith("/api/v1/projects") && init?.method === "POST";
+        }),
+      ).toBe(false);
+    } finally {
+      deferred.resolve(jsonResponse(userProjectTeamScopesResponse()));
+    }
   });
 
   it("creates a project with a selected authorized team and the current user as owner", async () => {

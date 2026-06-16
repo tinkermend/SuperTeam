@@ -168,6 +168,8 @@ export function ProjectsView({
     enabled: createOpen,
     queryKey: ["auth", "current-user", "project-create"],
     queryFn: () => getCurrentUser(apiOptions),
+    refetchOnMount: "always",
+    staleTime: 0,
   });
   const currentUserId = currentUserQuery.data?.user.id;
 
@@ -175,6 +177,8 @@ export function ProjectsView({
     enabled: createOpen && Boolean(currentUserId),
     queryKey: ["auth", "users", currentUserId, "project-team-scopes", "project-create"],
     queryFn: () => listUserProjectTeamScopes(apiOptions, currentUserId as string),
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const availableProjectTeamScopes = useMemo<UserProjectTeamScope[]>(
@@ -613,9 +617,9 @@ export function ProjectsView({
         availableTeams={availableProjectTeamScopes}
         currentUserError={currentUserQuery.error?.message}
         currentUserId={currentUserId}
-        isCurrentUserLoading={currentUserQuery.isLoading}
+        isCurrentUserLoading={currentUserQuery.isFetching}
         isSubmitting={createMutation.isPending}
-        isTeamsLoading={projectTeamScopesQuery.isLoading}
+        isTeamsLoading={projectTeamScopesQuery.isFetching}
         open={createOpen}
         submitError={createMutation.error?.message}
         teamsError={projectTeamScopesQuery.error?.message}
