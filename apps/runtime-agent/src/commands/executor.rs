@@ -37,6 +37,57 @@ struct RuntimeCommandWritebackSink {
     project_task: Option<ProjectTaskWritebackContext>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProviderTerminalCompletion {
+    summary: Option<String>,
+    provider_session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ProviderTerminalWritebackAction {
+    Fail(String),
+}
+
+#[derive(Debug, Default)]
+struct ProviderTerminalWritebackState {
+    pending_completion: Option<ProviderTerminalCompletion>,
+    failed: bool,
+}
+
+impl ProviderTerminalWritebackState {
+    fn observe_event(
+        &mut self,
+        event: &ProviderEvent,
+        provider_session_id: Option<&str>,
+    ) -> Option<ProviderTerminalWritebackAction> {
+        match event {
+            ProviderEvent::TurnCompleted { summary } => {
+                if !self.failed {
+                    self.pending_completion = Some(ProviderTerminalCompletion {
+                        summary: summary.clone(),
+                        provider_session_id: provider_session_id.map(ToString::to_string),
+                    });
+                }
+                None
+            }
+            ProviderEvent::TurnError { message } => {
+                self.failed = true;
+                self.pending_completion = None;
+                Some(ProviderTerminalWritebackAction::Fail(message.clone()))
+            }
+            _ => None,
+        }
+    }
+
+    fn finish_successful_stream(self) -> Option<ProviderTerminalCompletion> {
+        if self.failed {
+            None
+        } else {
+            self.pending_completion
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct ProjectTaskWritebackContext {
     project_task_id: String,
@@ -1041,7 +1092,10 @@ fn project_task_writeback_context_from_metadata(
     digital_employee_id: &str,
 ) -> Option<ProjectTaskWritebackContext> {
     let metadata = metadata.as_object()?;
-    if metadata.get("source").and_then(serde_json::Value::as_str).map(str::trim)
+    if metadata
+        .get("source")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
         != Some("project_task_dispatch")
     {
         return None;
@@ -1299,6 +1353,7 @@ async fn drain_provider_events(
     writeback: Option<RuntimeCommandWritebackSink>,
 ) -> anyhow::Result<()> {
     let mut latest_provider_session_id: Option<String> = None;
+    let mut terminal_writeback = ProviderTerminalWritebackState::default();
     while let Some(event) = events.next().await {
         let event = event?;
         if let ProviderEvent::SessionStarted { session_id, .. } = &event {
@@ -1316,14 +1371,8 @@ async fn drain_provider_events(
             event,
             ProviderEvent::TurnCompleted { .. } | ProviderEvent::TurnError { .. }
         );
-        let summary = match &event {
-            ProviderEvent::TurnCompleted { summary } => summary.clone(),
-            _ => None,
-        };
-        let failure = match &event {
-            ProviderEvent::TurnError { message } => Some(message.clone()),
-            _ => None,
-        };
+        let writeback_action =
+            terminal_writeback.observe_event(&event, latest_provider_session_id.as_deref());
         let record = runs.record_event(&run_id, event).await?;
         if is_terminal {
             registry.record_run_finished(&run_id);
@@ -1332,14 +1381,21 @@ async fn drain_provider_events(
             writeback
                 .record_event(&record, latest_provider_session_id.as_deref())
                 .await?;
-            if let Some(message) = failure {
-                writeback.fail(message).await?;
-            } else if is_terminal {
-                writeback
-                    .complete(summary, latest_provider_session_id.clone())
-                    .await?;
+            if let Some(action) = writeback_action {
+                match action {
+                    ProviderTerminalWritebackAction::Fail(message) => {
+                        writeback.fail(message).await?;
+                    }
+                }
             }
         }
+    }
+    if let (Some(writeback), Some(completion)) =
+        (&writeback, terminal_writeback.finish_successful_stream())
+    {
+        writeback
+            .complete(completion.summary, completion.provider_session_id)
+            .await?;
     }
     Ok(())
 }
@@ -1418,5 +1474,60 @@ mod tests {
         let payload = project_task_session_payload("   ");
 
         assert!(project_task_writeback_context(&payload).is_none());
+    }
+
+    #[test]
+    fn provider_terminal_writeback_defers_completion_until_stream_finishes() {
+        let mut state = ProviderTerminalWritebackState::default();
+
+        let action = state.observe_event(
+            &ProviderEvent::TurnCompleted {
+                summary: Some("looks successful".to_string()),
+            },
+            Some("provider-session-1"),
+        );
+
+        assert!(action.is_none());
+        let completion = state
+            .finish_successful_stream()
+            .expect("completion should be emitted after the stream finishes successfully");
+        assert_eq!(completion.summary.as_deref(), Some("looks successful"));
+        assert_eq!(
+            completion.provider_session_id.as_deref(),
+            Some("provider-session-1")
+        );
+    }
+
+    #[test]
+    fn provider_terminal_writeback_prefers_later_failure_over_prior_completion() {
+        let mut state = ProviderTerminalWritebackState::default();
+
+        assert!(
+            state
+                .observe_event(
+                    &ProviderEvent::TurnCompleted {
+                        summary: Some("API Error: 529 provider overloaded".to_string()),
+                    },
+                    Some("provider-session-1"),
+                )
+                .is_none()
+        );
+        let action = state.observe_event(
+            &ProviderEvent::TurnError {
+                message: "claude exited with status 1".to_string(),
+            },
+            Some("provider-session-1"),
+        );
+
+        match action {
+            Some(ProviderTerminalWritebackAction::Fail(message)) => {
+                assert_eq!(message, "claude exited with status 1");
+            }
+            other => panic!("expected fail action, got {other:?}"),
+        }
+        assert!(
+            state.finish_successful_stream().is_none(),
+            "a failed stream must not emit a deferred completion"
+        );
     }
 }

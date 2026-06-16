@@ -411,7 +411,9 @@ async fn serve_command_failures(capture: CommandFailureCapture) -> CommandWriteb
 struct CommandCompletionCapture {
     events: Arc<Mutex<Vec<CapturedWriteback>>>,
     complete: Arc<Mutex<Option<CapturedWriteback>>>,
+    fail: Arc<Mutex<Option<CapturedWriteback>>>,
     project_task_complete: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
+    project_task_fail: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -433,12 +435,20 @@ async fn serve_command_completion_writebacks(
             post(capture_complete_writeback),
         )
         .route(
+            "/api/v1/runtime/commands/{command_id}/fail",
+            post(capture_completion_fail_writeback),
+        )
+        .route(
             "/api/v1/runtime/commands/{command_id}/events",
             post(capture_event_writeback),
         )
         .route(
             "/api/v1/runtime/project-tasks/{project_task_id}/complete",
             post(capture_project_task_complete_writeback),
+        )
+        .route(
+            "/api/v1/runtime/project-tasks/{project_task_id}/fail",
+            post(capture_completion_project_task_fail_writeback),
         )
         .with_state(capture);
     let task = tokio::spawn(async move {
@@ -510,6 +520,21 @@ async fn capture_complete_writeback(
     StatusCode::ACCEPTED
 }
 
+async fn capture_completion_fail_writeback(
+    AxumPath(command_id): AxumPath<String>,
+    State(capture): State<CommandCompletionCapture>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    *capture.fail.lock().expect("fail lock") = Some(CapturedWriteback {
+        command_id,
+        authorization: header_value(&headers, "authorization"),
+        node_id: header_value(&headers, "x-node-id"),
+        payload,
+    });
+    StatusCode::ACCEPTED
+}
+
 async fn capture_event_writeback(
     AxumPath(command_id): AxumPath<String>,
     State(capture): State<CommandCompletionCapture>,
@@ -526,6 +551,24 @@ async fn capture_event_writeback(
             node_id: header_value(&headers, "x-node-id"),
             payload,
         });
+    StatusCode::ACCEPTED
+}
+
+async fn capture_completion_project_task_fail_writeback(
+    AxumPath(project_task_id): AxumPath<String>,
+    State(capture): State<CommandCompletionCapture>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    *capture
+        .project_task_fail
+        .lock()
+        .expect("project task fail lock") = Some(CapturedProjectTaskWriteback {
+        project_task_id,
+        authorization: header_value(&headers, "authorization"),
+        node_id: header_value(&headers, "x-node-id"),
+        payload,
+    });
     StatusCode::ACCEPTED
 }
 
@@ -727,6 +770,90 @@ printf '%s\n' '{"type":"result","result":"provider produced the requested execut
             .get("recommended_next_action")
             .and_then(Value::as_str)
             .is_some_and(|value| !value.trim().is_empty())
+    );
+
+    http_server.task.abort();
+}
+
+#[tokio::test]
+async fn provider_failure_after_result_fails_project_task_without_prior_completion() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude-project-task-provider-failure",
+        r#"#!/usr/bin/env bash
+printf '%s\n' '{"type":"system","session_id":"session-provider-failure"}'
+printf '%s\n' '{"type":"result","result":"API Error: 529 provider overloaded"}'
+exit 1
+"#,
+    );
+    let capture = CommandCompletionCapture::default();
+    let http_server = serve_command_completion_writebacks(capture.clone()).await;
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        "node-1",
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+    let home = prepare_employee_home(&temp);
+    let mut command = session_command_in_home(
+        &home,
+        "cmd-project-task-provider-failure",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("complete the project task"),
+        None,
+    );
+    command.payload["metadata"] = json!({
+        "source": "project_task_dispatch",
+        "project_task_id": PROJECT_TASK_ID,
+        "expected_outputs": ["execution_summary", "evidence_refs", "recommended_next_action"],
+        "handoff_contract": {"completion_path": "project_task_writeback"}
+    });
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("project task command accepted");
+    let run_id = outcome.run_id.expect("run id");
+    let snapshot = wait_for_status(&executor.runs(), &run_id, RunStatus::Failed).await;
+    assert!(
+        snapshot
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("claude exited with status 1")),
+        "expected provider exit failure, got {:?}",
+        snapshot.error
+    );
+
+    let command_fail = wait_for_writeback(capture.fail.clone()).await;
+    assert_eq!(command_fail.command_id, "cmd-project-task-provider-failure");
+    assert_eq!(command_fail.payload["status"], "failed");
+
+    let project_fail = wait_for_project_task_writeback(capture.project_task_fail.clone()).await;
+    assert_eq!(project_fail.project_task_id, PROJECT_TASK_ID);
+    assert_eq!(
+        project_fail.payload["digital_employee_id"],
+        DIGITAL_EMPLOYEE_ID
+    );
+    assert_eq!(
+        project_fail.payload["failure_summary"],
+        "claude exited with status 1"
+    );
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(
+        capture.complete.lock().expect("complete lock").is_none(),
+        "provider failure must not complete the runtime command first"
+    );
+    assert!(
+        capture
+            .project_task_complete
+            .lock()
+            .expect("project task complete lock")
+            .is_none(),
+        "provider failure must not complete the project task first"
     );
 
     http_server.task.abort();
