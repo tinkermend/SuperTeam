@@ -57,7 +57,42 @@ function jsonResponse(body: unknown) {
   });
 }
 
-function createUsersFetcher() {
+function createDeferredResponse() {
+  let resolve!: (value: Response) => void;
+  const promise = new Promise<Response>((nextResolve) => {
+    resolve = nextResolve;
+  });
+
+  return { promise, resolve };
+}
+
+type CreateUsersFetcherOptions = {
+  avatarAssetsStatus?: "empty" | "error" | "ok";
+  projectTeamScopesDeferred?: ReturnType<typeof createDeferredResponse>;
+  projectTeamScopesStatus?: "empty" | "error" | "loading" | "ok";
+};
+
+function createUsersFetcher({
+  avatarAssetsStatus = "ok",
+  projectTeamScopesDeferred,
+  projectTeamScopesStatus = "ok",
+}: CreateUsersFetcherOptions = {}) {
+  let createdUser:
+    | {
+        avatar: {
+          provider: "dicebear";
+          seed: string;
+          style: "adventurer";
+        };
+        avatar_asset_id: string;
+        display_name: string;
+        email: null;
+        id: string;
+        status: "active";
+        username: string;
+      }
+    | undefined;
+
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -92,31 +127,49 @@ function createUsersFetcher() {
           },
         },
       ];
+      const visibleUsers = createdUser ? [createdUser, ...users] : users;
 
       return jsonResponse({
-        items: status ? users.filter((user) => user.status === status) : users,
+        items: status ? visibleUsers.filter((user) => user.status === status) : visibleUsers,
       });
     }
 
     if (url.pathname === "/api/auth/users" && method === "POST") {
-      return jsonResponse({
-        user: {
-          avatar: {
-            provider: "dicebear",
-            style: "adventurer",
-            seed: "new-operator",
-          },
-          avatar_asset_id: "engineer-f-03",
-          display_name: "新管理员",
-          email: null,
-          id: "user-3",
-          status: "active",
-          username: "new-operator",
+      createdUser = {
+        avatar: {
+          provider: "dicebear",
+          style: "adventurer",
+          seed: "new-operator",
         },
+        avatar_asset_id: "engineer-f-03",
+        display_name: "新管理员",
+        email: null,
+        id: "user-3",
+        status: "active",
+        username: "new-operator",
+      };
+
+      return jsonResponse({
+        user: createdUser,
       });
     }
 
     if (url.pathname === "/api/auth/users/user-1/project-team-scopes" && method === "GET") {
+      if (projectTeamScopesStatus === "loading" && projectTeamScopesDeferred) {
+        return projectTeamScopesDeferred.promise;
+      }
+
+      if (projectTeamScopesStatus === "error") {
+        return new Response(JSON.stringify({ error: "scope load failed" }), {
+          headers: { "content-type": "application/json" },
+          status: 500,
+        });
+      }
+
+      if (projectTeamScopesStatus === "empty") {
+        return jsonResponse({ items: [] });
+      }
+
       return jsonResponse({
         items: [
           {
@@ -169,7 +222,22 @@ function createUsersFetcher() {
       });
     }
 
+    if (url.pathname === "/api/auth/users/user-3/project-team-scopes" && method === "GET") {
+      return jsonResponse({ items: [] });
+    }
+
     if (url.pathname === "/api/v1/digital-employee-avatar-assets" && method === "GET") {
+      if (avatarAssetsStatus === "error") {
+        return new Response(JSON.stringify({ error: "avatar assets failed" }), {
+          headers: { "content-type": "application/json" },
+          status: 500,
+        });
+      }
+
+      if (avatarAssetsStatus === "empty") {
+        return jsonResponse([]);
+      }
+
       return jsonResponse([
         {
           age_range: "27",
@@ -397,6 +465,7 @@ describe("Users", () => {
     await expect.element(screen.getByText("MFA")).not.toBeInTheDocument();
     await expect.element(screen.getByText("团队归属")).not.toBeInTheDocument();
     await expect.element(screen.getByText("可调用团队员工池")).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
 
     expect(fetcher).toHaveBeenCalledWith(
       expect.stringContaining("/api/v1/digital-employee-avatar-assets"),
@@ -417,11 +486,17 @@ describe("Users", () => {
 
     await expect.element(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "新建用户" }));
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
     await userEvent.fill(screen.getByLabelText("用户名"), "new-operator");
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
     await userEvent.fill(screen.getByLabelText("名称"), "新管理员");
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
     await userEvent.fill(screen.getByLabelText("密码"), "secret-pass");
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "选择头像 工程师头像 F03" }));
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
     await userEvent.click(screen.getByRole("checkbox", { name: "平台运营" }));
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).not.toBeDisabled();
     await userEvent.click(screen.getByRole("checkbox", { name: "风控审查" }));
     await userEvent.click(screen.getByRole("button", { name: "创建用户" }));
 
@@ -437,6 +512,58 @@ describe("Users", () => {
       selectable_team_ids: ["team-ops", "team-risk"],
       username: "new-operator",
     });
+    await expect.element(screen.getByLabelText("用户名")).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "新管理员" })).toBeInTheDocument();
+    expect(
+      fetcher.mock.calls.filter(([input, init]) => {
+        const url = new URL(String(input));
+        return url.pathname === "/api/auth/users" && (init?.method ?? "GET") === "GET";
+      }).length,
+    ).toBeGreaterThan(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "新建用户" }));
+    await expect.element(screen.getByLabelText("用户名")).toHaveValue("");
+    await expect.element(screen.getByLabelText("名称")).toHaveValue("");
+    await expect.element(screen.getByLabelText("密码")).toHaveValue("");
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
+  });
+
+  it("keeps user creation disabled when avatar assets fail", async () => {
+    const errorFetcher = createUsersFetcher({ avatarAssetsStatus: "error" });
+    vi.stubGlobal("fetch", errorFetcher);
+
+    const errorScreen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Users />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(errorScreen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
+    await userEvent.click(errorScreen.getByRole("button", { name: "新建用户" }));
+    await expect.element(errorScreen.getByText("头像加载失败")).toBeInTheDocument();
+    await expect.element(errorScreen.getByText("工程师头像 F03")).not.toBeInTheDocument();
+    await userEvent.fill(errorScreen.getByLabelText("用户名"), "new-operator");
+    await userEvent.fill(errorScreen.getByLabelText("名称"), "新管理员");
+    await userEvent.fill(errorScreen.getByLabelText("密码"), "secret-pass");
+    await userEvent.click(errorScreen.getByRole("checkbox", { name: "平台运营" }));
+    await expect.element(errorScreen.getByRole("button", { name: "创建用户" })).toBeDisabled();
+  });
+
+  it("keeps user creation disabled when avatar assets are empty", async () => {
+    const emptyFetcher = createUsersFetcher({ avatarAssetsStatus: "empty" });
+    vi.stubGlobal("fetch", emptyFetcher);
+
+    const emptyScreen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Users />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(emptyScreen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
+    await userEvent.click(emptyScreen.getByRole("button", { name: "新建用户" }));
+    await expect.element(emptyScreen.getByText("暂无可选头像")).toBeInTheDocument();
+    await expect.element(emptyScreen.getByText("工程师头像 F03")).not.toBeInTheDocument();
+    await expect.element(emptyScreen.getByRole("button", { name: "创建用户" })).toBeDisabled();
   });
 
   it("renders selected user selectable team scopes", async () => {
@@ -460,5 +587,56 @@ describe("Users", () => {
       expect.stringContaining("/api/auth/users/user-1/project-team-scopes"),
       expect.any(Object),
     );
+  });
+
+  it("renders selected user selectable team scope loading state", async () => {
+    const deferred = createDeferredResponse();
+    const fetcher = createUsersFetcher({
+      projectTeamScopesDeferred: deferred,
+      projectTeamScopesStatus: "loading",
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Users />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "平台管理员" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "可选团队" }));
+    await expect.element(screen.getByText("加载可选团队中")).toBeInTheDocument();
+    deferred.resolve(jsonResponse({ items: [] }));
+  });
+
+  it("renders selected user selectable team scope error state", async () => {
+    const fetcher = createUsersFetcher({ projectTeamScopesStatus: "error" });
+    vi.stubGlobal("fetch", fetcher);
+
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Users />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "平台管理员" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "可选团队" }));
+    await expect.element(screen.getByText("可选团队加载失败")).toBeInTheDocument();
+    await expect.element(screen.getByText("请检查用户团队范围接口。")).toBeInTheDocument();
+  });
+
+  it("renders selected user selectable team scope empty state", async () => {
+    const fetcher = createUsersFetcher({ projectTeamScopesStatus: "empty" });
+    vi.stubGlobal("fetch", fetcher);
+
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Users />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "平台管理员" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "可选团队" }));
+    await expect.element(screen.getByText("暂无可选团队。")).toBeInTheDocument();
   });
 });

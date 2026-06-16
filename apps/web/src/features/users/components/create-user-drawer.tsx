@@ -12,7 +12,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { BUILT_IN_AVATAR_ASSETS } from "@/lib/avatar-assets";
 import {
   listDigitalEmployeeAvatarAssets,
   listTeamSummaries,
@@ -74,23 +73,14 @@ export function CreateUserDrawer({
     queryFn: () => listTeamSummaries(apiOptions),
     queryKey: ["users", "create", "teams"],
   });
-  const avatarAssets = useMemo(() => {
-    if (avatarAssetsQuery.data && avatarAssetsQuery.data.length > 0) {
-      return avatarAssetsQuery.data;
-    }
-
-    if (avatarAssetsQuery.isLoading) {
-      return [];
-    }
-
-    return BUILT_IN_AVATAR_ASSETS;
-  }, [avatarAssetsQuery.data, avatarAssetsQuery.isLoading]);
+  const avatarAssets = avatarAssetsQuery.data ?? [];
   const teams = teamsQuery.data ?? [];
   const canSubmit = Boolean(
     draft.username.trim() &&
       draft.display_name.trim() &&
       draft.password.trim() &&
       draft.avatar_asset_id.trim() &&
+      avatarAssets.some((asset) => asset.id === draft.avatar_asset_id) &&
       draft.selectable_team_ids.length > 0,
   );
 
@@ -170,10 +160,6 @@ export function CreateUserDrawer({
                 assets={avatarAssets}
                 isError={avatarAssetsQuery.isError}
                 isLoading={avatarAssetsQuery.isLoading}
-                isUsingFallback={
-                  !avatarAssetsQuery.isLoading &&
-                  (avatarAssetsQuery.isError || (avatarAssetsQuery.data?.length ?? 0) === 0)
-                }
                 onSelect={(avatarAssetId) => setDraft({ ...draft, avatar_asset_id: avatarAssetId })}
                 selectedAssetId={draft.avatar_asset_id}
               />
@@ -233,14 +219,12 @@ function AvatarSelection({
   assets,
   isError,
   isLoading,
-  isUsingFallback,
   onSelect,
   selectedAssetId,
 }: {
   assets: DigitalEmployeeAvatarAsset[];
   isError: boolean;
   isLoading: boolean;
-  isUsingFallback: boolean;
   onSelect: (value: string) => void;
   selectedAssetId: string;
 }) {
@@ -248,10 +232,12 @@ function AvatarSelection({
     <fieldset className="rounded-md border p-3">
       <legend className="px-1 text-sm font-medium">头像</legend>
       {isLoading ? <p className="mt-3 text-sm text-muted-foreground">加载头像中</p> : null}
-      {isUsingFallback ? (
-        <p className={cn("mt-3 text-sm", isError ? "text-destructive" : "text-muted-foreground")}>
-          {isError ? "头像接口加载失败，已使用内置头像库。" : "头像接口暂无资产，已使用内置头像库。"}
-        </p>
+      {isError ? (
+        <Alert className="mt-3" variant="destructive">
+          <ShieldAlert />
+          <AlertTitle>头像加载失败</AlertTitle>
+          <AlertDescription>请检查头像资产接口后重试。</AlertDescription>
+        </Alert>
       ) : null}
       <div className="mt-3 flex flex-wrap gap-3">
         {assets.map((asset) => {
@@ -273,7 +259,7 @@ function AvatarSelection({
           );
         })}
       </div>
-      {!isLoading && assets.length === 0 ? (
+      {!isLoading && !isError && assets.length === 0 ? (
         <p className="mt-2 text-sm text-muted-foreground">暂无可选头像</p>
       ) : null}
     </fieldset>
