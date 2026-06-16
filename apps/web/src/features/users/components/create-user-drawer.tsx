@@ -75,13 +75,19 @@ export function CreateUserDrawer({
   });
   const avatarAssets = avatarAssetsQuery.data ?? [];
   const teams = teamsQuery.data ?? [];
+  const selectedTeamIdsAreCurrent =
+    draft.selectable_team_ids.length > 0 &&
+    draft.selectable_team_ids.every((teamId) => teams.some((team) => team.id === teamId));
   const canSubmit = Boolean(
     draft.username.trim() &&
       draft.display_name.trim() &&
       draft.password.trim() &&
       draft.avatar_asset_id.trim() &&
       avatarAssets.some((asset) => asset.id === draft.avatar_asset_id) &&
-      draft.selectable_team_ids.length > 0,
+      !teamsQuery.isLoading &&
+      !teamsQuery.isError &&
+      teams.length > 0 &&
+      selectedTeamIdsAreCurrent,
   );
 
   const resetDraft = useCallback(() => {

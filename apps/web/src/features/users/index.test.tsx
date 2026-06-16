@@ -70,12 +70,16 @@ type CreateUsersFetcherOptions = {
   avatarAssetsStatus?: "empty" | "error" | "ok";
   projectTeamScopesDeferred?: ReturnType<typeof createDeferredResponse>;
   projectTeamScopesStatus?: "empty" | "error" | "loading" | "ok";
+  teamsDeferred?: ReturnType<typeof createDeferredResponse>;
+  teamsStatus?: "empty" | "error" | "loading" | "ok";
 };
 
 function createUsersFetcher({
   avatarAssetsStatus = "ok",
   projectTeamScopesDeferred,
   projectTeamScopesStatus = "ok",
+  teamsDeferred,
+  teamsStatus = "ok",
 }: CreateUsersFetcherOptions = {}) {
   let createdUser:
     | {
@@ -267,6 +271,21 @@ function createUsersFetcher({
     }
 
     if (url.pathname === "/api/v1/teams" && method === "GET") {
+      if (teamsStatus === "loading" && teamsDeferred) {
+        return teamsDeferred.promise;
+      }
+
+      if (teamsStatus === "error") {
+        return new Response(JSON.stringify({ error: "teams failed" }), {
+          headers: { "content-type": "application/json" },
+          status: 500,
+        });
+      }
+
+      if (teamsStatus === "empty") {
+        return jsonResponse([]);
+      }
+
       return jsonResponse([
         {
           capability_count: 2,
@@ -564,6 +583,71 @@ describe("Users", () => {
     await expect.element(emptyScreen.getByText("暂无可选头像")).toBeInTheDocument();
     await expect.element(emptyScreen.getByText("工程师头像 F03")).not.toBeInTheDocument();
     await expect.element(emptyScreen.getByRole("button", { name: "创建用户" })).toBeDisabled();
+  });
+
+  it("keeps user creation disabled while selectable teams are loading", async () => {
+    const deferred = createDeferredResponse();
+    const fetcher = createUsersFetcher({
+      teamsDeferred: deferred,
+      teamsStatus: "loading",
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Users />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "新建用户" }));
+    await expect.element(screen.getByText("加载可选团队中")).toBeInTheDocument();
+    await userEvent.fill(screen.getByLabelText("用户名"), "new-operator");
+    await userEvent.fill(screen.getByLabelText("名称"), "新管理员");
+    await userEvent.fill(screen.getByLabelText("密码"), "secret-pass");
+    await userEvent.click(screen.getByRole("button", { name: "选择头像 工程师头像 F03" }));
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
+    deferred.resolve(jsonResponse([]));
+  });
+
+  it("keeps user creation disabled when selectable teams fail", async () => {
+    const fetcher = createUsersFetcher({ teamsStatus: "error" });
+    vi.stubGlobal("fetch", fetcher);
+
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Users />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "新建用户" }));
+    await expect.element(screen.getByText("可选团队加载失败")).toBeInTheDocument();
+    await userEvent.fill(screen.getByLabelText("用户名"), "new-operator");
+    await userEvent.fill(screen.getByLabelText("名称"), "新管理员");
+    await userEvent.fill(screen.getByLabelText("密码"), "secret-pass");
+    await userEvent.click(screen.getByRole("button", { name: "选择头像 工程师头像 F03" }));
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
+  });
+
+  it("keeps user creation disabled when selectable teams are empty", async () => {
+    const fetcher = createUsersFetcher({ teamsStatus: "empty" });
+    vi.stubGlobal("fetch", fetcher);
+
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Users />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "新建用户" }));
+    await expect.element(screen.getByText("暂无可选团队。")).toBeInTheDocument();
+    await userEvent.fill(screen.getByLabelText("用户名"), "new-operator");
+    await userEvent.fill(screen.getByLabelText("名称"), "新管理员");
+    await userEvent.fill(screen.getByLabelText("密码"), "secret-pass");
+    await userEvent.click(screen.getByRole("button", { name: "选择头像 工程师头像 F03" }));
+    await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
   });
 
   it("renders selected user selectable team scopes", async () => {
