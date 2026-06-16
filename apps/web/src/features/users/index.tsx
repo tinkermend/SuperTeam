@@ -76,7 +76,6 @@ import {
   type AuthzMemberRecord,
   type CreateUserRequest,
   type LoginLogRecord,
-  type UserListResponse,
   type UserProjectTeamScope,
   type UserSummary,
 } from "@/lib/api";
@@ -200,13 +199,13 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
     }
   }, [selectedUserId, users]);
 
-  const invalidateUserWorkspace = () => {
-    void queryClient.invalidateQueries({ queryKey: ["users"] });
-  };
+  const invalidateUserWorkspace = () => queryClient.invalidateQueries({ queryKey: ["users"] });
   const statusMutation = useMutation({
     mutationFn: (input: { status: UserSummary["status"]; userId: string }) =>
       updateUserStatus(apiOptions, input.userId, input.status),
-    onSuccess: invalidateUserWorkspace,
+    onSuccess: () => {
+      void invalidateUserWorkspace();
+    },
   });
   const resetPasswordMutation = useMutation({
     mutationFn: (input: { password: string; userId: string }) =>
@@ -214,7 +213,7 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
     onSuccess: () => {
       setResetPasswordOpen(false);
       setResetPasswordValue("");
-      invalidateUserWorkspace();
+      void invalidateUserWorkspace();
     },
   });
   const createUserMutation = useMutation({
@@ -228,27 +227,17 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
       };
       return createUser(apiOptions, payload);
     },
-    onSuccess: (response) => {
-      queryClient.setQueriesData<UserListResponse>(
-        { queryKey: ["users", "management"] },
-        (current) => {
-          if (!current) {
-            return current;
-          }
-          const existing = current.items.some((user) => user.id === response.user.id);
-          return {
-            ...current,
-            items: existing
-              ? current.items.map((user) => (user.id === response.user.id ? response.user : user))
-              : [response.user, ...current.items],
-          };
-        },
-      );
-      setSelectedUserId(response.user.id);
+    onSuccess: async (response) => {
       setCreateUserOpen(false);
-      invalidateUserWorkspace();
+      await invalidateUserWorkspace();
+      setSelectedUserId(response.user.id);
     },
   });
+
+  const handleCreateUserOpenChange = (open: boolean) => {
+    createUserMutation.reset();
+    setCreateUserOpen(open);
+  };
 
   return (
     <>
@@ -272,7 +261,7 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
               </p>
             </div>
           </div>
-          <Button onClick={() => setCreateUserOpen(true)} type="button">
+          <Button onClick={() => handleCreateUserOpenChange(true)} type="button">
             <UserPlus data-icon="inline-start" />
             新建用户
           </Button>
@@ -361,7 +350,7 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
           apiBaseUrl={apiBaseUrl}
           fetcher={fetcher}
           isSubmitting={createUserMutation.isPending}
-          onOpenChange={setCreateUserOpen}
+          onOpenChange={handleCreateUserOpenChange}
           onSubmit={(draft) => createUserMutation.mutate(draft)}
           open={createUserOpen}
           submitError={createUserMutation.error instanceof Error ? createUserMutation.error.message : undefined}

@@ -58,6 +58,10 @@ function jsonResponse(body: unknown) {
   });
 }
 
+const TEAM_OPS_ID = "11111111-1111-4111-8111-111111111111";
+const TEAM_RISK_ID = "22222222-2222-4222-8222-222222222222";
+const TEAM_DISABLED_ID = "33333333-3333-4333-8333-333333333333";
+
 function createDeferredResponse() {
   let resolve!: (value: Response) => void;
   const promise = new Promise<Response>((nextResolve) => {
@@ -188,14 +192,14 @@ function createUsersFetcher({
               digital_employee_count: 4,
               governance_status: "active",
               human_owners: [],
-              id: "team-ops",
+              id: TEAM_OPS_ID,
               name: "平台运营",
               pending_draft_count: 0,
               risk_summary: "低风险",
               slug: "ops",
               status: "active",
             },
-            team_id: "team-ops",
+            team_id: TEAM_OPS_ID,
             tenant_id: "tenant-1",
             updated_at: "2026-06-04T02:28:13Z",
             user_id: "user-1",
@@ -211,14 +215,14 @@ function createUsersFetcher({
               digital_employee_count: 2,
               governance_status: "draft_pending",
               human_owners: [],
-              id: "team-risk",
+              id: TEAM_RISK_ID,
               name: "风控审查",
               pending_draft_count: 1,
               risk_summary: "需审批",
               slug: "risk",
               status: "active",
             },
-            team_id: "team-risk",
+            team_id: TEAM_RISK_ID,
             tenant_id: "tenant-1",
             updated_at: "2026-06-04T02:28:13Z",
             user_id: "user-1",
@@ -294,7 +298,7 @@ function createUsersFetcher({
           digital_employee_count: 4,
           governance_status: "active",
           human_owner_user_ids: ["user-1"],
-          id: "team-ops",
+          id: TEAM_OPS_ID,
           member_count: 8,
           name: "平台运营",
           pending_draft_count: 0,
@@ -309,13 +313,28 @@ function createUsersFetcher({
           digital_employee_count: 2,
           governance_status: "draft_pending",
           human_owner_user_ids: ["user-1"],
-          id: "team-risk",
+          id: TEAM_RISK_ID,
           member_count: 5,
           name: "风控审查",
           pending_draft_count: 1,
           risk_summary: "需审批",
           slug: "risk",
           status: "active",
+          tenant_id: "tenant-1",
+        },
+        {
+          capability_count: 0,
+          current_revision: 1,
+          digital_employee_count: 0,
+          governance_status: "active",
+          human_owner_user_ids: ["user-1"],
+          id: TEAM_DISABLED_ID,
+          member_count: 1,
+          name: "停用团队",
+          pending_draft_count: 0,
+          risk_summary: "不可选",
+          slug: "disabled",
+          status: "disabled",
           tenant_id: "tenant-1",
         },
       ]);
@@ -343,7 +362,7 @@ function createUsersFetcher({
               },
               {
                 tenant_id: "tenant-1",
-                team_id: "team-ops",
+                team_id: TEAM_OPS_ID,
                 principal_type: "user",
                 principal_id: "user-1",
                 role: "admin",
@@ -385,7 +404,7 @@ function createUsersFetcher({
             action: "team.member.change_role",
             result: "failed",
             resource_type: "team",
-            resource_id: "team-ops",
+            resource_id: TEAM_OPS_ID,
             reason: "requires privileged role approval",
             actor_type: "user",
             actor_id: "user-1",
@@ -479,6 +498,7 @@ describe("Users", () => {
     await expect.element(screen.getByText("选择可选团队", { exact: true })).toBeInTheDocument();
     await expect.element(screen.getByText("平台运营")).toBeInTheDocument();
     await expect.element(screen.getByText("风控审查")).toBeInTheDocument();
+    await expect.element(screen.getByText("停用团队")).not.toBeInTheDocument();
 
     await expect.element(screen.getByText("头像种子")).not.toBeInTheDocument();
     await expect.element(screen.getByText("发送邀请链接")).not.toBeInTheDocument();
@@ -491,7 +511,7 @@ describe("Users", () => {
       expect.stringContaining("/api/v1/digital-employee-avatar-assets"),
       expect.any(Object),
     );
-    expect(fetcher).toHaveBeenCalledWith(expect.stringContaining("/api/v1/teams"), expect.any(Object));
+    expect(fetcher).toHaveBeenCalledWith(expect.stringContaining("/api/v1/teams?status=active"), expect.any(Object));
   });
 
   it("creates a human user with avatar asset and multiple selectable teams", async () => {
@@ -529,7 +549,7 @@ describe("Users", () => {
       avatar_asset_id: "engineer-f-03",
       display_name: "新管理员",
       password: "secret-pass",
-      selectable_team_ids: ["team-ops", "team-risk"],
+      selectable_team_ids: [TEAM_OPS_ID, TEAM_RISK_ID],
       username: "new-operator",
     });
     await expect.element(screen.getByLabelText("用户名")).not.toBeInTheDocument();
@@ -692,7 +712,7 @@ describe("Users", () => {
             digital_employee_count: 4,
             governance_status: "active",
             human_owner_user_ids: ["user-1"],
-            id: "team-ops",
+            id: TEAM_OPS_ID,
             member_count: 8,
             name: "平台运营",
             pending_draft_count: 0,

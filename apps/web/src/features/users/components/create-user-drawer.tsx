@@ -70,11 +70,12 @@ export function CreateUserDrawer({
   });
   const teamsQuery = useQuery({
     enabled: open,
-    queryFn: () => listTeamSummaries(apiOptions),
+    queryFn: () => listTeamSummaries(apiOptions, { status: "active" }),
     queryKey: ["users", "create", "teams"],
   });
   const avatarAssets = avatarAssetsQuery.data ?? [];
   const teams = teamsQuery.data ?? [];
+  const activeTeams = teams.filter((team) => team.status === "active");
   const avatarAssetsHasError = Boolean(avatarAssetsQuery.error);
   const teamsHasError = Boolean(teamsQuery.error);
   const avatarAssetsReady =
@@ -82,9 +83,9 @@ export function CreateUserDrawer({
     !avatarAssetsQuery.isFetching &&
     !avatarAssetsHasError &&
     avatarAssets.length > 0;
-  const teamsReady = teamsQuery.isSuccess && !teamsQuery.isFetching && !teamsHasError && teams.length > 0;
+  const teamsReady = teamsQuery.isSuccess && !teamsQuery.isFetching && !teamsHasError && activeTeams.length > 0;
   const currentAvatarAssets = avatarAssetsReady ? avatarAssets : [];
-  const currentTeams = teamsReady ? teams : [];
+  const currentTeams = teamsReady ? activeTeams : [];
   const selectedTeamIdsAreCurrent =
     draft.selectable_team_ids.length > 0 &&
     draft.selectable_team_ids.every((teamId) => currentTeams.some((team) => team.id === teamId));
@@ -196,7 +197,7 @@ export function CreateUserDrawer({
                     <AlertDescription>请检查团队服务后重试。</AlertDescription>
                   </Alert>
                 ) : null}
-                {!teamsQuery.isLoading && !teamsQuery.isFetching && !teamsHasError && teams.length === 0 ? (
+                {!teamsQuery.isLoading && !teamsQuery.isFetching && !teamsHasError && activeTeams.length === 0 ? (
                   <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
                     暂无可选团队。
                   </p>
