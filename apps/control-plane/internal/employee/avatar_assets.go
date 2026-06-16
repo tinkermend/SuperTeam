@@ -1,12 +1,9 @@
 package employee
 
-import "strings"
+import (
+	"strings"
 
-const (
-	avatarStylePhotorealistic2D = "photorealistic_2d"
-	avatarSourceInternalPack    = "ai_generated_internal_pack"
-	avatarLicenseInternalAsset  = "internal_product_asset"
-	avatarStatusActive          = "active"
+	"github.com/superteam/control-plane/internal/avatar"
 )
 
 type DigitalEmployeeAvatarAsset struct {
@@ -22,43 +19,21 @@ type DigitalEmployeeAvatarAsset struct {
 	Status       string `json:"status"`
 }
 
-var builtInDigitalEmployeeAvatarAssets = []DigitalEmployeeAvatarAsset{
-	avatarAsset("engineer-m-01", "工程师头像 M01", "male", "24"),
-	avatarAsset("engineer-m-02", "工程师头像 M02", "male", "31"),
-	avatarAsset("engineer-m-03", "工程师头像 M03", "male", "28"),
-	avatarAsset("engineer-m-04", "工程师头像 M04", "male", "38"),
-	avatarAsset("engineer-m-05", "工程师头像 M05", "male", "35"),
-	avatarAsset("engineer-m-06", "工程师头像 M06", "male", "29"),
-	avatarAsset("engineer-m-07", "工程师头像 M07", "male", "22"),
-	avatarAsset("engineer-m-08", "工程师头像 M08", "male", "33"),
-	avatarAsset("engineer-m-09", "工程师头像 M09", "male", "27"),
-	avatarAsset("engineer-m-10", "工程师头像 M10", "male", "40"),
-	avatarAsset("engineer-f-01", "工程师头像 F01", "female", "23"),
-	avatarAsset("engineer-f-02", "工程师头像 F02", "female", "30"),
-	avatarAsset("engineer-f-03", "工程师头像 F03", "female", "27"),
-	avatarAsset("engineer-f-04", "工程师头像 F04", "female", "34"),
-	avatarAsset("engineer-f-05", "工程师头像 F05", "female", "37"),
-	avatarAsset("engineer-f-06", "工程师头像 F06", "female", "32"),
-	avatarAsset("engineer-f-07", "工程师头像 F07", "female", "21"),
-	avatarAsset("engineer-f-08", "工程师头像 F08", "female", "39"),
-	avatarAsset("engineer-f-09", "工程师头像 F09", "female", "26"),
-	avatarAsset("engineer-f-10", "工程师头像 F10", "female", "29"),
-}
-
 func ListDigitalEmployeeAvatarAssets() []DigitalEmployeeAvatarAsset {
-	assets := make([]DigitalEmployeeAvatarAsset, len(builtInDigitalEmployeeAvatarAssets))
-	copy(assets, builtInDigitalEmployeeAvatarAssets)
+	sharedAssets := avatar.ListBuiltInAssets()
+	assets := make([]DigitalEmployeeAvatarAsset, 0, len(sharedAssets))
+	for _, asset := range sharedAssets {
+		assets = append(assets, digitalEmployeeAvatarAssetFromShared(asset))
+	}
 	return assets
 }
 
 func DigitalEmployeeAvatarAssetByID(id string) (DigitalEmployeeAvatarAsset, bool) {
-	normalized := normalizeAvatarAssetID(id)
-	for _, asset := range builtInDigitalEmployeeAvatarAssets {
-		if asset.ID == normalized && asset.Status == avatarStatusActive {
-			return asset, true
-		}
+	asset, ok := avatar.BuiltInAssetByID(id)
+	if !ok {
+		return DigitalEmployeeAvatarAsset{}, false
 	}
-	return DigitalEmployeeAvatarAsset{}, false
+	return digitalEmployeeAvatarAssetFromShared(asset), true
 }
 
 func avatarAssetFromEmployeeMetadata(metadata map[string]any) *DigitalEmployeeAvatarAsset {
@@ -100,21 +75,21 @@ func metadataWithAvatarAsset(metadata map[string]any, asset DigitalEmployeeAvata
 	return next
 }
 
-func normalizeAvatarAssetID(id string) string {
-	return strings.ToLower(strings.TrimSpace(id))
+func digitalEmployeeAvatarAssetFromShared(asset avatar.Asset) DigitalEmployeeAvatarAsset {
+	return DigitalEmployeeAvatarAsset{
+		ID:           asset.ID,
+		Label:        asset.Label,
+		Gender:       asset.Gender,
+		AgeRange:     asset.AgeRange,
+		Style:        asset.Style,
+		ImageURL:     asset.ImageURL,
+		ThumbnailURL: asset.ThumbnailURL,
+		Source:       asset.Source,
+		License:      asset.License,
+		Status:       asset.Status,
+	}
 }
 
-func avatarAsset(id, label, gender, ageRange string) DigitalEmployeeAvatarAsset {
-	return DigitalEmployeeAvatarAsset{
-		ID:           id,
-		Label:        label,
-		Gender:       gender,
-		AgeRange:     ageRange,
-		Style:        avatarStylePhotorealistic2D,
-		ImageURL:     "/images/digital-employee-avatars/" + id + ".webp",
-		ThumbnailURL: "/images/digital-employee-avatars/" + id + "-256.webp",
-		Source:       avatarSourceInternalPack,
-		License:      avatarLicenseInternalAsset,
-		Status:       avatarStatusActive,
-	}
+func normalizeAvatarAssetID(id string) string {
+	return strings.ToLower(strings.TrimSpace(id))
 }
