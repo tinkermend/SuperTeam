@@ -58,7 +58,8 @@ func TestCreateProjectRequiresHumanOwnerAndCreatesEvents(t *testing.T) {
 
 func TestCreateProjectRejectsUnauthorizedTeamScope(t *testing.T) {
 	repo := newMemoryRepository()
-	service, err := NewService(repo)
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -78,6 +79,7 @@ func TestCreateProjectRejectsUnauthorizedTeamScope(t *testing.T) {
 	if !errors.Is(err, ErrUnauthorizedProjectTeamScope) {
 		t.Fatalf("expected unauthorized team scope error, got %v", err)
 	}
+	assertNoCreateProjectSideEffects(t, repo, coordinator)
 }
 
 func TestCreateProjectAllowsAuthorizedTeamScope(t *testing.T) {
@@ -111,6 +113,102 @@ func TestCreateProjectAllowsAuthorizedTeamScope(t *testing.T) {
 	}
 	if created.Project.TeamID == nil || *created.Project.TeamID != teamID {
 		t.Fatalf("expected team id %s, got %#v", teamID, created.Project.TeamID)
+	}
+}
+
+func TestCreateProjectRejectsUnauthorizedMemberOnlyTeamScope(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	teamID := uuid.New()
+
+	_, err = service.CreateProject(context.Background(), CreateProjectRequest{
+		TenantID:         tenantID,
+		ActorUserID:      actorID,
+		Name:             "未授权团队成员项目",
+		Goal:             "验证成员团队授权边界",
+		HumanOwnerUserID: ownerID,
+		Members: []ProjectMemberInput{{
+			PrincipalType:       PrincipalTypeTeam,
+			PrincipalID:         teamID,
+			ProjectRole:         ProjectRoleObserver,
+			DisplayNameSnapshot: "研发团队",
+		}},
+	})
+	if !errors.Is(err, ErrUnauthorizedProjectTeamScope) {
+		t.Fatalf("expected unauthorized team scope error, got %v", err)
+	}
+	assertNoCreateProjectSideEffects(t, repo, coordinator)
+}
+
+func TestCreateProjectAllowsAuthorizedMemberOnlyTeamScope(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	teamID := uuid.New()
+	repo.authorizeProjectTeamScope(tenantID, actorID, teamID)
+
+	created, err := service.CreateProject(context.Background(), CreateProjectRequest{
+		TenantID:         tenantID,
+		ActorUserID:      actorID,
+		Name:             "授权团队成员项目",
+		Goal:             "验证成员团队授权通过",
+		HumanOwnerUserID: ownerID,
+		Members: []ProjectMemberInput{{
+			PrincipalType:       PrincipalTypeTeam,
+			PrincipalID:         teamID,
+			ProjectRole:         ProjectRoleObserver,
+			DisplayNameSnapshot: "研发团队",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if created.Project.TeamID != nil {
+		t.Fatalf("expected no top-level team id, got %#v", created.Project.TeamID)
+	}
+}
+
+func TestCreateProjectWithoutTeamScopeSucceedsWithoutAuthorizer(t *testing.T) {
+	backing := newMemoryRepository()
+	service, err := NewService(&repositoryWithoutProjectTeamScopeAuthorizer{Repository: backing})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	employeeID := uuid.New()
+
+	created, err := service.CreateProject(context.Background(), CreateProjectRequest{
+		TenantID:         tenantID,
+		ActorUserID:      actorID,
+		Name:             "无团队项目",
+		Goal:             "验证无团队路径不要求授权器",
+		HumanOwnerUserID: ownerID,
+		Members: []ProjectMemberInput{{
+			PrincipalType:       PrincipalTypeDigitalEmployee,
+			PrincipalID:         employeeID,
+			ProjectRole:         ProjectRoleExecutor,
+			DisplayNameSnapshot: "后端执行 A",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if created.Project.TeamID != nil {
+		t.Fatalf("expected no team id, got %#v", created.Project.TeamID)
 	}
 }
 
@@ -3078,6 +3176,10 @@ type memoryRepository struct {
 	projectTaskRunWorkProducts map[uuid.UUID][]any
 }
 
+type repositoryWithoutProjectTeamScopeAuthorizer struct {
+	Repository
+}
+
 type taskGraphLimitRepository struct {
 	*memoryRepository
 	calls   int
@@ -3116,6 +3218,13 @@ func (r *memoryRepository) authorizeProjectTeamScope(tenantID, userID, teamID uu
 
 func (r *memoryRepository) CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error) {
 	return r.projectTeamScopes[tenantID][userID][teamID], nil
+}
+
+func assertNoCreateProjectSideEffects(t *testing.T, repo *memoryRepository, coordinator *fakeCoordinatorSignalClient) {
+	t.Helper()
+	if len(repo.projects) != 0 || len(repo.members) != 0 || len(repo.events) != 0 || len(repo.eventTypes) != 0 || coordinator.ensureSignals != 0 {
+		t.Fatalf("expected rejection before side effects, projects=%d members=%d events=%d eventTypes=%#v ensureSignals=%d", len(repo.projects), len(repo.members), len(repo.events), repo.eventTypes, coordinator.ensureSignals)
+	}
 }
 
 func (r *taskGraphLimitRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (ProjectTaskGraph, error) {

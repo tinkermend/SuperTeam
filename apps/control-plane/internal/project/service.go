@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -126,12 +127,23 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 
 func (s *Service) validateProjectTeamScopes(ctx context.Context, req CreateProjectRequest) error {
 	teamIDs := make(map[uuid.UUID]struct{})
+	orderedTeamIDs := make([]uuid.UUID, 0)
+	addTeamID := func(teamID uuid.UUID) {
+		if teamID == uuid.Nil {
+			return
+		}
+		if _, ok := teamIDs[teamID]; ok {
+			return
+		}
+		teamIDs[teamID] = struct{}{}
+		orderedTeamIDs = append(orderedTeamIDs, teamID)
+	}
 	if req.TeamID != nil && *req.TeamID != uuid.Nil {
-		teamIDs[*req.TeamID] = struct{}{}
+		addTeamID(*req.TeamID)
 	}
 	for _, member := range req.Members {
 		if member.PrincipalType == PrincipalTypeTeam && member.PrincipalID != uuid.Nil {
-			teamIDs[member.PrincipalID] = struct{}{}
+			addTeamID(member.PrincipalID)
 		}
 	}
 	if len(teamIDs) == 0 {
@@ -140,7 +152,10 @@ func (s *Service) validateProjectTeamScopes(ctx context.Context, req CreateProje
 	if s.teamScopeAuthorizer == nil {
 		return ErrUnauthorizedProjectTeamScope
 	}
-	for teamID := range teamIDs {
+	sort.Slice(orderedTeamIDs, func(i, j int) bool {
+		return orderedTeamIDs[i].String() < orderedTeamIDs[j].String()
+	})
+	for _, teamID := range orderedTeamIDs {
 		allowed, err := s.teamScopeAuthorizer.CanUseTeamForProject(ctx, req.TenantID, req.ActorUserID, teamID)
 		if err != nil {
 			return err
