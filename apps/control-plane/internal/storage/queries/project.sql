@@ -61,6 +61,10 @@ WITH visible_demands AS (
         d.status AS demand_status,
         d.created_at,
         d.source_refs,
+        regexp_match(
+          NULLIF(d.source_refs->>'sla_due_at', ''),
+          '^([0-9]{4})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(?:[ T]([01][0-9]|2[0-3]):([0-5][0-9])(?::([0-5][0-9]))?)?$'
+        ) AS sla_due_at_parts,
         COALESCE(d.updated_at, d.created_at) AS demand_updated_at
     FROM project_demands d
     JOIN projects p ON p.tenant_id = d.tenant_id AND p.id = d.project_id
@@ -87,6 +91,35 @@ WITH visible_demands AS (
         )
       )
 ),
+demand_read_model AS (
+    SELECT
+        vd.*,
+        CASE
+          WHEN vd.sla_due_at_parts IS NOT NULL
+           AND vd.sla_due_at_parts[1]::int BETWEEN 1 AND 9999
+           AND vd.sla_due_at_parts[3]::int <= CASE
+             WHEN vd.sla_due_at_parts[2]::int IN (1, 3, 5, 7, 8, 10, 12) THEN 31
+             WHEN vd.sla_due_at_parts[2]::int IN (4, 6, 9, 11) THEN 30
+             WHEN vd.sla_due_at_parts[2]::int = 2
+              AND (
+                vd.sla_due_at_parts[1]::int % 400 = 0
+                OR (vd.sla_due_at_parts[1]::int % 4 = 0 AND vd.sla_due_at_parts[1]::int % 100 <> 0)
+              ) THEN 29
+             ELSE 28
+           END
+          THEN make_timestamptz(
+            vd.sla_due_at_parts[1]::int,
+            vd.sla_due_at_parts[2]::int,
+            vd.sla_due_at_parts[3]::int,
+            COALESCE(vd.sla_due_at_parts[4]::int, 0),
+            COALESCE(vd.sla_due_at_parts[5]::int, 0),
+            COALESCE(vd.sla_due_at_parts[6]::double precision, 0),
+            'UTC'
+          )
+          ELSE NULL
+        END AS safe_sla_due_at
+    FROM visible_demands vd
+),
 task_counts AS (
     SELECT
         tenant_id,
@@ -97,8 +130,10 @@ task_counts AS (
         COUNT(*) FILTER (WHERE status IN ('assigned', 'running', 'in_progress'))::int AS running_nodes,
         COUNT(*) FILTER (WHERE status IN ('blocked'))::int AS blocked_nodes,
         COUNT(*) FILTER (WHERE requires_human_approval OR status IN ('waiting_human', 'pending_review'))::int AS waiting_human_nodes,
+        COUNT(*) FILTER (WHERE status IN ('planned', 'pending'))::int AS planned_nodes,
         COUNT(*) FILTER (WHERE status IN ('failed'))::int AS failed_nodes,
         COUNT(*) FILTER (WHERE status IN ('cancelled'))::int AS cancelled_nodes,
+        MAX(NULLIF(risk_level, '')) FILTER (WHERE status NOT IN ('completed', 'done', 'success', 'cancelled')) AS active_risk_level,
         MAX(updated_at) AS task_updated_at
     FROM project_tasks
     WHERE tenant_id = sqlc.arg('tenant_id')::uuid
@@ -140,6 +175,95 @@ latest_jobs AS (
     WHERE j.tenant_id = sqlc.arg('tenant_id')::uuid
       AND rd.demand_id IS NOT NULL
     ORDER BY j.tenant_id, j.project_id, rd.demand_id, j.created_at DESC
+),
+latest_events AS (
+    SELECT DISTINCT ON (e.tenant_id, e.project_id, demand_id)
+        e.tenant_id,
+        e.project_id,
+        demand_id,
+        e.event_type,
+        COALESCE(NULLIF(e.summary, ''), e.event_type)::text AS event_summary,
+        e.created_at AS event_occurred_at
+    FROM (
+        SELECT
+            pe.*,
+            COALESCE(
+                CASE
+                  WHEN NULLIF(pe.payload->>'demand_id', '') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+                  THEN NULLIF(pe.payload->>'demand_id', '')::uuid
+                  ELSE NULL
+                END,
+                pt.demand_id,
+                rd.demand_id
+            ) AS demand_id
+        FROM project_events pe
+        LEFT JOIN project_tasks pt
+          ON pt.tenant_id = pe.tenant_id
+         AND pt.project_id = pe.project_id
+         AND pt.id::text = pe.resource_id
+        LEFT JOIN project_route_decisions rd
+          ON rd.tenant_id = pe.tenant_id
+         AND rd.project_id = pe.project_id
+         AND rd.coordination_job_id::text = pe.resource_id
+        WHERE pe.tenant_id = sqlc.arg('tenant_id')::uuid
+    ) e
+    WHERE demand_id IS NOT NULL
+    ORDER BY e.tenant_id, e.project_id, demand_id, e.created_at DESC
+),
+decision_blockers AS (
+    SELECT DISTINCT ON (item.tenant_id, item.project_id, item.demand_id)
+        item.tenant_id,
+        item.project_id,
+        item.demand_id,
+        'decision_request'::text AS blocker_type,
+        item.title_snapshot::text AS blocker_title,
+        item.id AS blocker_resource_id,
+        item.updated_at AS blocker_updated_at
+    FROM (
+        SELECT
+            dr.*,
+            COALESCE(pt.demand_id, rd.demand_id) AS demand_id
+        FROM project_decision_requests dr
+        LEFT JOIN project_tasks pt
+          ON pt.tenant_id = dr.tenant_id
+         AND pt.project_id = dr.project_id
+         AND pt.id = dr.project_task_id
+        LEFT JOIN project_route_decisions rd
+          ON rd.tenant_id = dr.tenant_id
+         AND rd.project_id = dr.project_id
+         AND rd.coordination_job_id = dr.coordination_job_id
+        WHERE dr.tenant_id = sqlc.arg('tenant_id')::uuid
+          AND dr.status_snapshot IN ('pending', 'requested')
+    ) item
+    WHERE item.demand_id IS NOT NULL
+    ORDER BY item.tenant_id, item.project_id, item.demand_id, item.updated_at DESC, item.id DESC
+),
+task_blockers AS (
+    SELECT DISTINCT ON (tenant_id, project_id, demand_id)
+        tenant_id,
+        project_id,
+        demand_id,
+        'project_task'::text AS blocker_type,
+        title::text AS blocker_title,
+        id AS blocker_resource_id,
+        updated_at AS blocker_updated_at
+    FROM project_tasks
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND demand_id IS NOT NULL
+      AND (
+        requires_human_approval
+        OR status IN ('waiting_human', 'pending_review', 'failed', 'blocked')
+      )
+    ORDER BY
+        tenant_id,
+        project_id,
+        demand_id,
+        CASE
+          WHEN requires_human_approval OR status IN ('waiting_human', 'pending_review') THEN 1
+          ELSE 2
+        END ASC,
+        updated_at DESC,
+        id DESC
 )
 SELECT
     vd.demand_id,
@@ -149,18 +273,20 @@ SELECT
     vd.submitted_by_user_id,
     COALESCE(NULLIF(vd.source_refs->>'submitted_by_display_name', ''), vd.submitted_by_user_id::text)::text AS submitted_by_display_name,
     CASE
-      WHEN COALESCE(tc.cancelled_nodes, 0) > 0 OR vd.demand_status = 'cancelled' THEN 'cancelled'
-      WHEN COALESCE(tc.failed_nodes, 0) > 0 THEN 'failed'
       WHEN COALESCE(dc.pending_decisions, 0) > 0 OR COALESCE(tc.waiting_human_nodes, 0) > 0 THEN 'waiting_human'
+      WHEN COALESCE(tc.failed_nodes, 0) > 0 THEN 'failed'
       WHEN COALESCE(tc.running_nodes, 0) > 0 THEN 'running'
+      WHEN COALESCE(tc.cancelled_nodes, 0) > 0 OR vd.demand_status = 'cancelled' THEN 'cancelled'
       WHEN COALESCE(tc.total_nodes, 0) = 0 THEN 'planning'
       WHEN tc.completed_nodes = tc.total_nodes THEN 'completed'
       ELSE 'unknown'
     END::text AS status,
     CASE
       WHEN COALESCE(dc.pending_decisions, 0) > 0 THEN '等待人工决策'
+      WHEN COALESCE(tc.waiting_human_nodes, 0) > 0 THEN '等待人工处理'
       WHEN COALESCE(tc.failed_nodes, 0) > 0 THEN '存在失败任务'
       WHEN COALESCE(tc.running_nodes, 0) > 0 THEN '任务执行中'
+      WHEN COALESCE(tc.cancelled_nodes, 0) > 0 OR vd.demand_status = 'cancelled' THEN '已取消'
       WHEN COALESCE(tc.total_nodes, 0) = 0 THEN '任务正在规划'
       ELSE ''
     END::text AS status_reason,
@@ -176,8 +302,54 @@ SELECT
     COALESCE(tc.completed_nodes, 0)::int AS completed_nodes,
     COALESCE(tc.running_nodes, 0)::int AS running_nodes,
     COALESCE(tc.blocked_nodes, 0)::int AS blocked_nodes,
-    (COALESCE(tc.waiting_human_nodes, 0) + COALESCE(dc.pending_decisions, 0))::int AS waiting_human_nodes
-FROM visible_demands vd
+    (COALESCE(tc.waiting_human_nodes, 0) + COALESCE(dc.pending_decisions, 0))::int AS waiting_human_nodes,
+    COALESCE(tc.planned_nodes, 0)::int AS planned_nodes,
+    COALESCE(tc.failed_nodes, 0)::int AS failed_nodes,
+    COALESCE(tc.cancelled_nodes, 0)::int AS cancelled_nodes,
+    COALESCE(NULLIF(vd.source_refs->>'priority', ''), NULLIF(vd.source_refs->>'severity', ''), '')::text AS priority_value,
+    COALESCE(CASE
+      WHEN COALESCE(NULLIF(vd.source_refs->>'priority', ''), NULLIF(vd.source_refs->>'severity', '')) IS NULL THEN NULL
+      ELSE UPPER(COALESCE(NULLIF(vd.source_refs->>'priority', ''), NULLIF(vd.source_refs->>'severity', '')))
+    END, '')::text AS priority_label,
+    COALESCE(CASE
+      WHEN NULLIF(vd.source_refs->>'priority', '') IS NOT NULL THEN 'source_refs.priority'
+      WHEN NULLIF(vd.source_refs->>'severity', '') IS NOT NULL THEN 'source_refs.severity'
+      ELSE NULL
+    END, '')::text AS priority_source,
+    COALESCE(NULLIF(tc.active_risk_level, ''), '')::text AS risk_level,
+    COALESCE(CASE
+      WHEN NULLIF(tc.active_risk_level, '') IS NULL THEN NULL
+      ELSE NULLIF(tc.active_risk_level, '')
+    END, '')::text AS risk_label,
+    COALESCE(CASE
+      WHEN NULLIF(tc.active_risk_level, '') IS NULL THEN NULL
+      ELSE 'project_tasks.risk_level'
+    END, '')::text AS risk_source,
+    vd.safe_sla_due_at::timestamptz AS sla_due_at,
+    COALESCE(CASE
+      WHEN vd.safe_sla_due_at IS NULL THEN NULL
+      ELSE LEAST(GREATEST(EXTRACT(EPOCH FROM (vd.safe_sla_due_at - NOW())), 0), 2147483647)::int
+    END, 0)::int AS sla_remaining_seconds,
+    COALESCE(CASE
+      WHEN vd.safe_sla_due_at IS NULL THEN NULL
+      ELSE (vd.safe_sla_due_at < NOW())
+    END, false)::boolean AS sla_breached,
+    COALESCE(CASE
+      WHEN vd.safe_sla_due_at IS NULL THEN NULL
+      WHEN vd.safe_sla_due_at < NOW() THEN '已超时'
+      ELSE 'SLA 生效'
+    END, '')::text AS sla_label,
+    COALESCE(CASE
+      WHEN vd.safe_sla_due_at IS NULL THEN NULL
+      ELSE 'source_refs.sla_due_at'
+    END, '')::text AS sla_source,
+    COALESCE(le.event_type, '')::text AS recent_event_type,
+    COALESCE(le.event_summary, '')::text AS recent_event_summary,
+    le.event_occurred_at::timestamptz AS recent_event_occurred_at,
+    COALESCE(db.blocker_type, tb.blocker_type, '')::text AS current_blocker_type,
+    COALESCE(db.blocker_title, tb.blocker_title, '')::text AS current_blocker_title,
+    COALESCE(db.blocker_resource_id, tb.blocker_resource_id, '00000000-0000-0000-0000-000000000000'::uuid) AS current_blocker_resource_id
+FROM demand_read_model vd
 LEFT JOIN task_counts tc
   ON tc.project_id = vd.project_id
  AND tc.demand_id = vd.demand_id
@@ -187,14 +359,23 @@ LEFT JOIN decision_counts dc
 LEFT JOIN latest_jobs lj
   ON lj.project_id = vd.project_id
  AND lj.demand_id = vd.demand_id
+LEFT JOIN latest_events le
+  ON le.project_id = vd.project_id
+ AND le.demand_id = vd.demand_id
+LEFT JOIN decision_blockers db
+  ON db.project_id = vd.project_id
+ AND db.demand_id = vd.demand_id
+LEFT JOIN task_blockers tb
+  ON tb.project_id = vd.project_id
+ AND tb.demand_id = vd.demand_id
 ORDER BY
     CASE
-      WHEN COALESCE(tc.total_nodes, 0) = 0 THEN 1
-      WHEN COALESCE(tc.running_nodes, 0) > 0 THEN 2
-      WHEN COALESCE(dc.pending_decisions, 0) > 0 OR COALESCE(tc.waiting_human_nodes, 0) > 0 THEN 3
-      WHEN COALESCE(tc.failed_nodes, 0) > 0 THEN 4
+      WHEN COALESCE(dc.pending_decisions, 0) > 0 OR COALESCE(tc.waiting_human_nodes, 0) > 0 THEN 1
+      WHEN COALESCE(tc.failed_nodes, 0) > 0 THEN 2
+      WHEN COALESCE(tc.running_nodes, 0) > 0 THEN 3
+      WHEN COALESCE(tc.cancelled_nodes, 0) > 0 OR vd.demand_status = 'cancelled' THEN 6
       WHEN tc.completed_nodes = tc.total_nodes THEN 5
-      ELSE 6
+      ELSE 4
     END ASC,
     updated_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');

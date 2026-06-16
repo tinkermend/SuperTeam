@@ -143,6 +143,8 @@ func TestListWorkflowInstancesReturnsSummaries(t *testing.T) {
 	demandID := uuid.New()
 	projectID := uuid.New()
 	jobID := uuid.New()
+	remaining := int32(600)
+	dueAt := time.Now().UTC().Add(10 * time.Minute)
 	service := &handlerTestService{
 		workflowInstances: []WorkflowInstanceSummary{{
 			DemandID:                  demandID,
@@ -156,7 +158,23 @@ func TestListWorkflowInstancesReturnsSummaries(t *testing.T) {
 			CreatedAt:                 time.Now().UTC(),
 			UpdatedAt:                 time.Now().UTC(),
 			SelectedCoordinationJobID: &jobID,
-			Progress:                  WorkflowInstanceProgress{TotalNodes: 2, RunningNodes: 1},
+			Progress: WorkflowInstanceProgress{
+				TotalNodes:   2,
+				RunningNodes: 1,
+				PlannedNodes: 1,
+			},
+			CurrentBlocker: &WorkflowInstanceCurrentBlocker{
+				Type:  "task",
+				Title: "等待数据库巡检",
+			},
+			Priority: &WorkflowInstancePriority{Value: "p1", Label: "P1", Source: "source_refs.priority"},
+			Risk:     &WorkflowInstanceRisk{Level: "high", Label: "高风险", Source: "project_tasks.risk_level"},
+			SLA:      &WorkflowInstanceSLA{DueAt: &dueAt, RemainingSeconds: &remaining, Breached: false, Label: "剩余 10 分钟", Source: "source_refs.sla_due_at"},
+			RecentEvent: &WorkflowInstanceRecentEvent{
+				EventType:  string(ProjectEventDecisionRequested),
+				Summary:    "已创建恢复决策请求",
+				OccurredAt: time.Now().UTC(),
+			},
 		}},
 	}
 	handler := NewHandler(service)
@@ -185,6 +203,21 @@ func TestListWorkflowInstancesReturnsSummaries(t *testing.T) {
 	progress := body[0]["progress"].(map[string]any)
 	if progress["total_nodes"].(float64) != 2 || progress["running_nodes"].(float64) != 1 {
 		t.Fatalf("unexpected progress: %#v", progress)
+	}
+	if body[0]["priority"].(map[string]any)["label"] != "P1" {
+		t.Fatalf("expected priority in response: %#v", body[0])
+	}
+	if body[0]["risk"].(map[string]any)["level"] != "high" {
+		t.Fatalf("expected risk in response: %#v", body[0])
+	}
+	if body[0]["sla"].(map[string]any)["label"] != "剩余 10 分钟" {
+		t.Fatalf("expected sla in response: %#v", body[0])
+	}
+	if body[0]["recent_event"].(map[string]any)["event_type"] != string(ProjectEventDecisionRequested) {
+		t.Fatalf("expected recent event in response: %#v", body[0])
+	}
+	if progress["planned_nodes"].(float64) != 1 {
+		t.Fatalf("expected planned_nodes in progress: %#v", progress)
 	}
 }
 
@@ -444,7 +477,22 @@ func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
 					InputRequirements:         map[string]any{"scope": "demand"},
 					HandoffContract:           map[string]any{"required_refs": []any{"evidence"}},
 					PlannerMetadata:           map[string]any{"provider": "deepseek"},
+					UpdatedAt:                 time.Now().UTC(),
 				},
+				StatusReason: "等待上游任务完成",
+				CurrentBlocker: &WorkflowInstanceCurrentBlocker{
+					Type:       "project_task",
+					Title:      "等待数据库巡检",
+					ResourceID: &blockerID,
+				},
+			}},
+			StageSummaries: []ProjectTaskGraphStageSummary{{
+				StageIndex:     1,
+				Title:          "第 1 阶段",
+				TotalNodes:     1,
+				BlockedNodes:   1,
+				RunningNodes:   0,
+				CompletedNodes: 0,
 			}},
 			Edges: []ProjectTaskGraphEdge{{
 				DependentTaskID:   taskID,
@@ -532,6 +580,16 @@ func TestGetProjectTaskGraphReturnsNodesEdgesAndDecisions(t *testing.T) {
 	}
 	if node["input_requirements"].(map[string]any)["scope"] != "demand" || node["planner_metadata"].(map[string]any)["provider"] != "deepseek" {
 		t.Fatalf("expected task graph contracts and metadata, got %#v", node)
+	}
+	if node["status_reason"] != "等待上游任务完成" {
+		t.Fatalf("expected status reason on graph node: %#v", node)
+	}
+	if node["current_blocker"].(map[string]any)["title"] != "等待数据库巡检" {
+		t.Fatalf("expected current blocker on graph node: %#v", node)
+	}
+	stageSummaries := body["stage_summaries"].([]any)
+	if len(stageSummaries) != 1 || stageSummaries[0].(map[string]any)["title"] != "第 1 阶段" {
+		t.Fatalf("expected stage summaries in graph response: %#v", body)
 	}
 	edge := edges[0].(map[string]any)
 	if edge["dependent_task_id"] != taskID.String() || edge["blocker_task_id"] != blockerID.String() || edge["edge_status"] != "blocked" {

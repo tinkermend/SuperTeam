@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -146,10 +147,87 @@ func (r *PgRepository) ListWorkflowInstances(ctx context.Context, req ListWorkfl
 				RunningNodes:      row.RunningNodes,
 				BlockedNodes:      row.BlockedNodes,
 				WaitingHumanNodes: row.WaitingHumanNodes,
+				PlannedNodes:      row.PlannedNodes,
+				FailedNodes:       row.FailedNodes,
+				CancelledNodes:    row.CancelledNodes,
 			},
+			Priority: workflowPriorityFromRow(row.PriorityValue, row.PriorityLabel, row.PrioritySource),
+			Risk:     workflowRiskFromRow(row.RiskLevel, row.RiskLabel, row.RiskSource),
+			SLA:      workflowSLAFromRow(row.SlaDueAt, row.SlaRemainingSeconds, row.SlaBreached, row.SlaLabel, row.SlaSource),
+			CurrentBlocker: workflowCurrentBlockerFromRow(
+				row.CurrentBlockerType,
+				row.CurrentBlockerTitle,
+				row.CurrentBlockerResourceID,
+			),
+			RecentEvent: workflowRecentEventFromRow(
+				row.RecentEventType,
+				row.RecentEventSummary,
+				row.RecentEventOccurredAt,
+			),
 		})
 	}
 	return items, nil
+}
+
+func workflowPriorityFromRow(value, label, source string) *WorkflowInstancePriority {
+	if value == "" {
+		return nil
+	}
+	return &WorkflowInstancePriority{Value: value, Label: stringValueOr(label, value), Source: stringValueOr(source, "unknown")}
+}
+
+func workflowRiskFromRow(level, label, source string) *WorkflowInstanceRisk {
+	if level == "" {
+		return nil
+	}
+	return &WorkflowInstanceRisk{Level: level, Label: stringValueOr(label, level), Source: stringValueOr(source, "unknown")}
+}
+
+func workflowSLAFromRow(dueAt pgtype.Timestamptz, remaining int32, breached bool, label, source string) *WorkflowInstanceSLA {
+	if !dueAt.Valid && remaining == 0 && label == "" {
+		return nil
+	}
+	var due *time.Time
+	if dueAt.Valid {
+		due = &dueAt.Time
+	}
+	seconds := remaining
+	return &WorkflowInstanceSLA{
+		DueAt:            due,
+		RemainingSeconds: &seconds,
+		Breached:         breached,
+		Label:            label,
+		Source:           stringValueOr(source, "unknown"),
+	}
+}
+
+func workflowCurrentBlockerFromRow(blockerType, title string, resourceID uuid.UUID) *WorkflowInstanceCurrentBlocker {
+	if blockerType == "" || resourceID == uuid.Nil {
+		return nil
+	}
+	return &WorkflowInstanceCurrentBlocker{
+		Type:       blockerType,
+		Title:      stringValueOr(title, blockerType),
+		ResourceID: &resourceID,
+	}
+}
+
+func workflowRecentEventFromRow(eventType, summary string, occurredAt pgtype.Timestamptz) *WorkflowInstanceRecentEvent {
+	if eventType == "" || !occurredAt.Valid {
+		return nil
+	}
+	return &WorkflowInstanceRecentEvent{
+		EventType:  eventType,
+		Summary:    stringValueOr(summary, eventType),
+		OccurredAt: occurredAt.Time,
+	}
+}
+
+func stringValueOr(value, fallback string) string {
+	if value != "" {
+		return value
+	}
+	return fallback
 }
 
 func (r *PgRepository) UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (Project, error) {
@@ -1272,6 +1350,8 @@ func (r *PgRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTa
 	if err != nil {
 		return graph, err
 	}
+	graph.Nodes = enrichProjectTaskGraphNodes(graph.Nodes, graph.DecisionRequests)
+	graph.StageSummaries = buildProjectTaskGraphStageSummaries(graph.Nodes)
 	graph.RecentEvents, err = r.projectTaskGraphEvents(ctx, req, jobIDs, taskIDs, decisionRequestIDs(graph.DecisionRequests))
 	if err != nil {
 		return graph, err
@@ -1419,9 +1499,85 @@ func emptyProjectTaskGraph() ProjectTaskGraph {
 func taskGraphNodes(tasks []ProjectTask) []ProjectTaskGraphNode {
 	nodes := make([]ProjectTaskGraphNode, 0, len(tasks))
 	for _, task := range tasks {
-		nodes = append(nodes, ProjectTaskGraphNode{Task: task})
+		updatedAt := task.UpdatedAt
+		nodes = append(nodes, ProjectTaskGraphNode{
+			Task:           task,
+			StatusReason:   projectTaskStatusReason(task.Status),
+			UpdatedAt:      &updatedAt,
+			CurrentBlocker: projectTaskCurrentBlocker(task),
+		})
 	}
 	return nodes
+}
+
+func enrichProjectTaskGraphNodes(nodes []ProjectTaskGraphNode, decisions []DecisionRequest) []ProjectTaskGraphNode {
+	latestDecisionByTaskID := map[uuid.UUID]DecisionRequest{}
+	for _, decision := range decisions {
+		if decision.ProjectTaskID == nil || !isPendingDecisionStatus(decision.StatusSnapshot) {
+			continue
+		}
+		current, ok := latestDecisionByTaskID[*decision.ProjectTaskID]
+		if !ok || decision.UpdatedAt.After(current.UpdatedAt) {
+			latestDecisionByTaskID[*decision.ProjectTaskID] = decision
+		}
+	}
+	for index, node := range nodes {
+		decision, ok := latestDecisionByTaskID[node.Task.ID]
+		if !ok {
+			continue
+		}
+		nodes[index].StatusReason = "等待人工决策"
+		nodes[index].CurrentBlocker = &WorkflowInstanceCurrentBlocker{
+			Type:       "decision_request",
+			Title:      stringValueOr(decision.TitleSnapshot, "等待人工决策"),
+			ResourceID: &decision.ID,
+		}
+	}
+	return nodes
+}
+
+func projectTaskStatusReason(status string) string {
+	switch strings.ToLower(status) {
+	case "failed":
+		return "任务失败"
+	case "blocked":
+		return "任务受阻"
+	case "waiting_human", "pending_review":
+		return "等待人工决策"
+	case "assigned", "running", "in_progress":
+		return "任务执行中"
+	case "planned", "pending":
+		return "任务待执行"
+	case "completed", "done", "success":
+		return "任务已完成"
+	case "cancelled":
+		return "任务已取消"
+	default:
+		return ""
+	}
+}
+
+func projectTaskCurrentBlocker(task ProjectTask) *WorkflowInstanceCurrentBlocker {
+	switch strings.ToLower(task.Status) {
+	case "failed", "blocked":
+		taskID := task.ID
+		return &WorkflowInstanceCurrentBlocker{
+			Type:       "project_task",
+			Title:      task.Title,
+			ResourceID: &taskID,
+		}
+	default:
+		return nil
+	}
+}
+
+func isPendingDecisionStatus(status string) bool {
+	switch strings.ToLower(status) {
+	case "pending", "requested":
+		return true
+	default:
+		return false
+	}
 }
 
 func graphCoordinationJobIDs(filter *uuid.UUID, tasks []ProjectTask) []uuid.UUID {

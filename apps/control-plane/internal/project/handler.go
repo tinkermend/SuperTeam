@@ -1271,6 +1271,10 @@ type workflowInstanceResponse struct {
 	SelectedCoordinationJobID *string                                 `json:"selected_coordination_job_id,omitempty"`
 	Progress                  workflowInstanceProgressResponse        `json:"progress"`
 	CurrentBlocker            *workflowInstanceCurrentBlockerResponse `json:"current_blocker,omitempty"`
+	Priority                  *workflowInstancePriorityResponse       `json:"priority,omitempty"`
+	Risk                      *workflowInstanceRiskResponse           `json:"risk,omitempty"`
+	SLA                       *workflowInstanceSLAResponse            `json:"sla,omitempty"`
+	RecentEvent               *workflowInstanceRecentEventResponse    `json:"recent_event,omitempty"`
 }
 
 type workflowInstanceProgressResponse struct {
@@ -1279,12 +1283,41 @@ type workflowInstanceProgressResponse struct {
 	RunningNodes      int32 `json:"running_nodes"`
 	BlockedNodes      int32 `json:"blocked_nodes"`
 	WaitingHumanNodes int32 `json:"waiting_human_nodes"`
+	PlannedNodes      int32 `json:"planned_nodes,omitempty"`
+	FailedNodes       int32 `json:"failed_nodes,omitempty"`
+	CancelledNodes    int32 `json:"cancelled_nodes,omitempty"`
 }
 
 type workflowInstanceCurrentBlockerResponse struct {
 	Type       string  `json:"type"`
 	Title      string  `json:"title"`
 	ResourceID *string `json:"resource_id,omitempty"`
+}
+
+type workflowInstancePriorityResponse struct {
+	Value  string `json:"value"`
+	Label  string `json:"label"`
+	Source string `json:"source"`
+}
+
+type workflowInstanceRiskResponse struct {
+	Level  string `json:"level"`
+	Label  string `json:"label"`
+	Source string `json:"source"`
+}
+
+type workflowInstanceSLAResponse struct {
+	DueAt            *string `json:"due_at,omitempty"`
+	RemainingSeconds *int32  `json:"remaining_seconds,omitempty"`
+	Breached         bool    `json:"breached"`
+	Label            string  `json:"label"`
+	Source           string  `json:"source"`
+}
+
+type workflowInstanceRecentEventResponse struct {
+	EventType  string `json:"event_type"`
+	Summary    string `json:"summary"`
+	OccurredAt string `json:"occurred_at"`
 }
 
 type projectMemberResponse struct {
@@ -1322,35 +1355,49 @@ type projectTaskResponse struct {
 }
 
 type projectTaskGraphResponse struct {
-	Nodes              []projectTaskGraphNodeResponse     `json:"nodes"`
-	Edges              []projectTaskGraphEdgeResponse     `json:"edges"`
-	Employees          []projectTaskGraphEmployeeResponse `json:"employees"`
-	Runs               []projectTaskGraphRunResponse      `json:"runs"`
-	ExecutionSummaries []executionSummaryResponse         `json:"execution_summaries"`
-	RecentEvents       []projectEventResponse             `json:"recent_events"`
-	DecisionRequests   []decisionRequestResponse          `json:"decision_requests"`
+	Nodes              []projectTaskGraphNodeResponse         `json:"nodes"`
+	Edges              []projectTaskGraphEdgeResponse         `json:"edges"`
+	Employees          []projectTaskGraphEmployeeResponse     `json:"employees"`
+	Runs               []projectTaskGraphRunResponse          `json:"runs"`
+	ExecutionSummaries []executionSummaryResponse             `json:"execution_summaries"`
+	RecentEvents       []projectEventResponse                 `json:"recent_events"`
+	DecisionRequests   []decisionRequestResponse              `json:"decision_requests"`
+	StageSummaries     []projectTaskGraphStageSummaryResponse `json:"stage_summaries,omitempty"`
 }
 
 type projectTaskGraphNodeResponse struct {
-	ID                        string         `json:"id"`
-	TenantID                  string         `json:"tenant_id"`
-	ProjectID                 string         `json:"project_id"`
-	DemandID                  *string        `json:"demand_id,omitempty"`
-	Title                     string         `json:"title"`
-	Summary                   *string        `json:"summary,omitempty"`
-	Status                    string         `json:"status"`
-	AssignedDigitalEmployeeID *string        `json:"assigned_digital_employee_id,omitempty"`
-	RiskLevel                 *string        `json:"risk_level,omitempty"`
-	RequiresHumanApproval     bool           `json:"requires_human_approval"`
-	CoordinationJobID         *string        `json:"coordination_job_id,omitempty"`
-	RouteDecisionID           *string        `json:"route_decision_id,omitempty"`
-	PlannedTaskKey            *string        `json:"planned_task_key,omitempty"`
-	TaskKind                  *string        `json:"task_kind,omitempty"`
-	StageIndex                *int32         `json:"stage_index,omitempty"`
-	ExpectedOutputs           []any          `json:"expected_outputs"`
-	InputRequirements         map[string]any `json:"input_requirements"`
-	HandoffContract           map[string]any `json:"handoff_contract"`
-	PlannerMetadata           map[string]any `json:"planner_metadata"`
+	ID                        string                                  `json:"id"`
+	TenantID                  string                                  `json:"tenant_id"`
+	ProjectID                 string                                  `json:"project_id"`
+	DemandID                  *string                                 `json:"demand_id,omitempty"`
+	Title                     string                                  `json:"title"`
+	Summary                   *string                                 `json:"summary,omitempty"`
+	Status                    string                                  `json:"status"`
+	AssignedDigitalEmployeeID *string                                 `json:"assigned_digital_employee_id,omitempty"`
+	RiskLevel                 *string                                 `json:"risk_level,omitempty"`
+	RequiresHumanApproval     bool                                    `json:"requires_human_approval"`
+	CoordinationJobID         *string                                 `json:"coordination_job_id,omitempty"`
+	RouteDecisionID           *string                                 `json:"route_decision_id,omitempty"`
+	PlannedTaskKey            *string                                 `json:"planned_task_key,omitempty"`
+	TaskKind                  *string                                 `json:"task_kind,omitempty"`
+	StageIndex                *int32                                  `json:"stage_index,omitempty"`
+	ExpectedOutputs           []any                                   `json:"expected_outputs"`
+	InputRequirements         map[string]any                          `json:"input_requirements"`
+	HandoffContract           map[string]any                          `json:"handoff_contract"`
+	PlannerMetadata           map[string]any                          `json:"planner_metadata"`
+	StatusReason              string                                  `json:"status_reason,omitempty"`
+	UpdatedAt                 string                                  `json:"updated_at,omitempty"`
+	CurrentBlocker            *workflowInstanceCurrentBlockerResponse `json:"current_blocker,omitempty"`
+}
+
+type projectTaskGraphStageSummaryResponse struct {
+	StageIndex        int32  `json:"stage_index"`
+	Title             string `json:"title"`
+	TotalNodes        int32  `json:"total_nodes"`
+	CompletedNodes    int32  `json:"completed_nodes"`
+	RunningNodes      int32  `json:"running_nodes"`
+	WaitingHumanNodes int32  `json:"waiting_human_nodes"`
+	BlockedNodes      int32  `json:"blocked_nodes"`
 }
 
 type projectTaskGraphEdgeResponse struct {
@@ -1723,19 +1770,6 @@ func workflowInstanceResponseFromDomain(item WorkflowInstanceSummary) workflowIn
 		value := item.SelectedCoordinationJobID.String()
 		jobID = &value
 	}
-	var blocker *workflowInstanceCurrentBlockerResponse
-	if item.CurrentBlocker != nil {
-		var resourceID *string
-		if item.CurrentBlocker.ResourceID != nil {
-			value := item.CurrentBlocker.ResourceID.String()
-			resourceID = &value
-		}
-		blocker = &workflowInstanceCurrentBlockerResponse{
-			Type:       item.CurrentBlocker.Type,
-			Title:      item.CurrentBlocker.Title,
-			ResourceID: resourceID,
-		}
-	}
 	return workflowInstanceResponse{
 		DemandID:                  item.DemandID.String(),
 		ProjectID:                 item.ProjectID.String(),
@@ -1754,8 +1788,74 @@ func workflowInstanceResponseFromDomain(item WorkflowInstanceSummary) workflowIn
 			RunningNodes:      item.Progress.RunningNodes,
 			BlockedNodes:      item.Progress.BlockedNodes,
 			WaitingHumanNodes: item.Progress.WaitingHumanNodes,
+			PlannedNodes:      item.Progress.PlannedNodes,
+			FailedNodes:       item.Progress.FailedNodes,
+			CancelledNodes:    item.Progress.CancelledNodes,
 		},
-		CurrentBlocker: blocker,
+		CurrentBlocker: workflowBlockerResponse(item.CurrentBlocker),
+		Priority:       workflowPriorityResponse(item.Priority),
+		Risk:           workflowRiskResponse(item.Risk),
+		SLA:            workflowSLAResponse(item.SLA),
+		RecentEvent:    workflowRecentEventResponse(item.RecentEvent),
+	}
+}
+
+func workflowBlockerResponse(blocker *WorkflowInstanceCurrentBlocker) *workflowInstanceCurrentBlockerResponse {
+	if blocker == nil {
+		return nil
+	}
+	var resourceID *string
+	if blocker.ResourceID != nil {
+		value := blocker.ResourceID.String()
+		resourceID = &value
+	}
+	return &workflowInstanceCurrentBlockerResponse{
+		Type:       blocker.Type,
+		Title:      blocker.Title,
+		ResourceID: resourceID,
+	}
+}
+
+func workflowPriorityResponse(priority *WorkflowInstancePriority) *workflowInstancePriorityResponse {
+	if priority == nil {
+		return nil
+	}
+	return &workflowInstancePriorityResponse{Value: priority.Value, Label: priority.Label, Source: priority.Source}
+}
+
+func workflowRiskResponse(risk *WorkflowInstanceRisk) *workflowInstanceRiskResponse {
+	if risk == nil {
+		return nil
+	}
+	return &workflowInstanceRiskResponse{Level: risk.Level, Label: risk.Label, Source: risk.Source}
+}
+
+func workflowSLAResponse(sla *WorkflowInstanceSLA) *workflowInstanceSLAResponse {
+	if sla == nil {
+		return nil
+	}
+	var due *string
+	if sla.DueAt != nil {
+		value := sla.DueAt.Format(time.RFC3339)
+		due = &value
+	}
+	return &workflowInstanceSLAResponse{
+		DueAt:            due,
+		RemainingSeconds: sla.RemainingSeconds,
+		Breached:         sla.Breached,
+		Label:            sla.Label,
+		Source:           sla.Source,
+	}
+}
+
+func workflowRecentEventResponse(event *WorkflowInstanceRecentEvent) *workflowInstanceRecentEventResponse {
+	if event == nil {
+		return nil
+	}
+	return &workflowInstanceRecentEventResponse{
+		EventType:  event.EventType,
+		Summary:    event.Summary,
+		OccurredAt: event.OccurredAt.Format(time.RFC3339),
 	}
 }
 
@@ -1818,7 +1918,24 @@ func taskGraphResponseFromDomain(graph ProjectTaskGraph) projectTaskGraphRespons
 		ExecutionSummaries: executionSummaryResponses(graph.ExecutionSummaries),
 		RecentEvents:       eventResponses(graph.RecentEvents),
 		DecisionRequests:   decisionRequestResponses(graph.DecisionRequests),
+		StageSummaries:     taskGraphStageSummaryResponses(graph.StageSummaries),
 	}
+}
+
+func taskGraphStageSummaryResponses(items []ProjectTaskGraphStageSummary) []projectTaskGraphStageSummaryResponse {
+	responses := make([]projectTaskGraphStageSummaryResponse, 0, len(items))
+	for _, item := range items {
+		responses = append(responses, projectTaskGraphStageSummaryResponse{
+			StageIndex:        item.StageIndex,
+			Title:             item.Title,
+			TotalNodes:        item.TotalNodes,
+			CompletedNodes:    item.CompletedNodes,
+			RunningNodes:      item.RunningNodes,
+			WaitingHumanNodes: item.WaitingHumanNodes,
+			BlockedNodes:      item.BlockedNodes,
+		})
+	}
+	return responses
 }
 
 func taskGraphNodeResponses(nodes []ProjectTaskGraphNode) []projectTaskGraphNodeResponse {
@@ -1831,6 +1948,12 @@ func taskGraphNodeResponses(nodes []ProjectTaskGraphNode) []projectTaskGraphNode
 
 func taskGraphNodeResponseFromDomain(node ProjectTaskGraphNode) projectTaskGraphNodeResponse {
 	task := node.Task
+	updatedAt := ""
+	if node.UpdatedAt != nil {
+		updatedAt = node.UpdatedAt.Format(time.RFC3339)
+	} else if !task.UpdatedAt.IsZero() {
+		updatedAt = task.UpdatedAt.Format(time.RFC3339)
+	}
 	return projectTaskGraphNodeResponse{
 		ID:                        task.ID.String(),
 		TenantID:                  task.TenantID.String(),
@@ -1851,6 +1974,9 @@ func taskGraphNodeResponseFromDomain(node ProjectTaskGraphNode) projectTaskGraph
 		InputRequirements:         mapOrEmpty(task.InputRequirements),
 		HandoffContract:           mapOrEmpty(task.HandoffContract),
 		PlannerMetadata:           mapOrEmpty(task.PlannerMetadata),
+		StatusReason:              node.StatusReason,
+		UpdatedAt:                 updatedAt,
+		CurrentBlocker:            workflowBlockerResponse(node.CurrentBlocker),
 	}
 }
 

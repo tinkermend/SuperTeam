@@ -534,6 +534,20 @@ func TestListWorkflowInstancesFiltersVisibleDemandsAndSortsRunningFirst(t *testi
 		}},
 	})
 	require.NoError(t, err)
+	_, err = repo.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     tenantID,
+		ProjectID:    visibleProjectID,
+		EventType:    ProjectEventDecisionRequested,
+		ActorType:    "project_coordinator",
+		ActorID:      "project-coordinator:" + visibleProjectID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(visibleDemandID.String()),
+		Summary:      "已创建恢复决策请求",
+		Payload: map[string]any{
+			"demand_id": visibleDemandID.String(),
+		},
+	})
+	require.NoError(t, err)
 
 	items, err := repo.ListWorkflowInstances(ctx, ListWorkflowInstancesRequest{
 		TenantID:    tenantID,
@@ -548,6 +562,359 @@ func TestListWorkflowInstancesFiltersVisibleDemandsAndSortsRunningFirst(t *testi
 	require.Equal(t, int32(1), items[0].Progress.RunningNodes)
 	require.Equal(t, WorkflowInstanceStatusRunning, items[0].Status)
 	require.Equal(t, &jobID, items[0].SelectedCoordinationJobID)
+	require.NotNil(t, items[0].Risk)
+	require.Equal(t, "medium", items[0].Risk.Level)
+	require.Equal(t, "project_tasks.risk_level", items[0].Risk.Source)
+	require.Equal(t, int32(0), items[0].Progress.FailedNodes)
+	require.Equal(t, int32(0), items[0].Progress.CancelledNodes)
+	require.NotNil(t, items[0].RecentEvent)
+	require.Equal(t, string(ProjectEventDecisionRequested), items[0].RecentEvent.EventType)
+	require.Equal(t, "已创建恢复决策请求", items[0].RecentEvent.Summary)
+}
+
+func TestListWorkflowInstancesOrdersAttentionBeforePagination(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	ctx := context.Background()
+	projectID := createProjectFixture(t, repo, tenantID)
+	actorID := uuid.New()
+	waitingDemandID := createDemandFixture(t, repo, tenantID, projectID)
+	failedDemandID := createDemandFixture(t, repo, tenantID, projectID)
+	cancelledFailedDemandID := createDemandFixtureWithStatusAndSourceRefs(t, repo, tenantID, projectID, ProjectDemandStatusCancelled, nil)
+	cancelledDemandID := createDemandFixtureWithStatusAndSourceRefs(t, repo, tenantID, projectID, ProjectDemandStatusCancelled, nil)
+	runningDemandID := createDemandFixture(t, repo, tenantID, projectID)
+	planningDemandID := createDemandFixture(t, repo, tenantID, projectID)
+	completedDemandID := createDemandFixture(t, repo, tenantID, projectID)
+	waitingJobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	waitingRouteID := createRouteDecisionFixture(t, repo, tenantID, projectID, waitingJobID, waitingDemandID)
+	failedJobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	failedRouteID := createRouteDecisionFixture(t, repo, tenantID, projectID, failedJobID, failedDemandID)
+	cancelledFailedJobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	cancelledFailedRouteID := createRouteDecisionFixture(t, repo, tenantID, projectID, cancelledFailedJobID, cancelledFailedDemandID)
+	runningJobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	runningRouteID := createRouteDecisionFixture(t, repo, tenantID, projectID, runningJobID, runningDemandID)
+	completedJobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	completedRouteID := createRouteDecisionFixture(t, repo, tenantID, projectID, completedJobID, completedDemandID)
+	employeeID := uuid.New()
+	stage := int32(1)
+
+	_, err := repo.ReplaceProjectMembers(ctx, tenantID, projectID, []ProjectMemberInput{{
+		PrincipalType:       PrincipalTypeHumanUser,
+		PrincipalID:         actorID,
+		ProjectRole:         ProjectRoleObserver,
+		DisplayNameSnapshot: "观察者",
+	}})
+	require.NoError(t, err)
+	waitingGraph, err := repo.CreateProjectTaskGraph(ctx, CreateProjectTaskGraphRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          waitingDemandID,
+		CoordinationJobID: waitingJobID,
+		RouteDecisionID:   waitingRouteID,
+		Tasks: []ProjectTaskGraphCreateTask{{
+			Key:                       "waiting",
+			Title:                     "等待人工确认",
+			Status:                    "blocked",
+			AssignedDigitalEmployeeID: employeeID,
+			TaskKind:                  "analysis",
+			StageIndex:                &stage,
+			RequiresHumanApproval:     true,
+			ExpectedOutputs:           []any{"summary"},
+			InputRequirements:         map[string]any{},
+			HandoffContract:           map[string]any{},
+			PlannerMetadata:           map[string]any{},
+		}},
+	})
+	require.NoError(t, err)
+	waitingTaskID := waitingGraph.Tasks[0].ID
+	decisionRequest, err := repo.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		CoordinationJobID: &waitingJobID,
+		ProjectTaskID:     &waitingTaskID,
+		TargetUserID:      actorID,
+		DecisionType:      "task_failure_recovery",
+		TitleSnapshot:     "等待人工恢复决策",
+		StatusSnapshot:    "pending",
+	})
+	require.NoError(t, err)
+	_, err = repo.CreateProjectTaskGraph(ctx, CreateProjectTaskGraphRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          failedDemandID,
+		CoordinationJobID: failedJobID,
+		RouteDecisionID:   failedRouteID,
+		Tasks: []ProjectTaskGraphCreateTask{{
+			Key:                       "failed",
+			Title:                     "执行失败",
+			Status:                    "failed",
+			AssignedDigitalEmployeeID: employeeID,
+			TaskKind:                  "analysis",
+			StageIndex:                &stage,
+			ExpectedOutputs:           []any{"summary"},
+			InputRequirements:         map[string]any{},
+			HandoffContract:           map[string]any{},
+			PlannerMetadata:           map[string]any{},
+		}},
+	})
+	require.NoError(t, err)
+	_, err = repo.CreateProjectTaskGraph(ctx, CreateProjectTaskGraphRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          cancelledFailedDemandID,
+		CoordinationJobID: cancelledFailedJobID,
+		RouteDecisionID:   cancelledFailedRouteID,
+		Tasks: []ProjectTaskGraphCreateTask{{
+			Key:                       "cancelled-failed",
+			Title:                     "已取消但存在失败",
+			Status:                    "failed",
+			AssignedDigitalEmployeeID: employeeID,
+			TaskKind:                  "analysis",
+			StageIndex:                &stage,
+			ExpectedOutputs:           []any{"summary"},
+			InputRequirements:         map[string]any{},
+			HandoffContract:           map[string]any{},
+			PlannerMetadata:           map[string]any{},
+		}},
+	})
+	require.NoError(t, err)
+	_, err = repo.CreateProjectTaskGraph(ctx, CreateProjectTaskGraphRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          runningDemandID,
+		CoordinationJobID: runningJobID,
+		RouteDecisionID:   runningRouteID,
+		Tasks: []ProjectTaskGraphCreateTask{{
+			Key:                       "running",
+			Title:                     "执行巡检",
+			Status:                    "running",
+			AssignedDigitalEmployeeID: employeeID,
+			TaskKind:                  "analysis",
+			StageIndex:                &stage,
+			ExpectedOutputs:           []any{"summary"},
+			InputRequirements:         map[string]any{},
+			HandoffContract:           map[string]any{},
+			PlannerMetadata:           map[string]any{},
+		}},
+	})
+	require.NoError(t, err)
+	_, err = repo.CreateProjectTaskGraph(ctx, CreateProjectTaskGraphRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          completedDemandID,
+		CoordinationJobID: completedJobID,
+		RouteDecisionID:   completedRouteID,
+		Tasks: []ProjectTaskGraphCreateTask{{
+			Key:                       "completed",
+			Title:                     "执行完成",
+			Status:                    "completed",
+			AssignedDigitalEmployeeID: employeeID,
+			TaskKind:                  "analysis",
+			StageIndex:                &stage,
+			ExpectedOutputs:           []any{"summary"},
+			InputRequirements:         map[string]any{},
+			HandoffContract:           map[string]any{},
+			PlannerMetadata:           map[string]any{},
+		}},
+	})
+	require.NoError(t, err)
+
+	items, err := repo.ListWorkflowInstances(ctx, ListWorkflowInstancesRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorID,
+		Limit:       1,
+	})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, waitingDemandID, items[0].DemandID)
+	require.NotEqual(t, planningDemandID, items[0].DemandID)
+	require.NotEqual(t, runningDemandID, items[0].DemandID)
+	require.Equal(t, WorkflowInstanceStatusWaitingHuman, items[0].Status)
+	require.NotNil(t, items[0].CurrentBlocker)
+	require.Equal(t, "decision_request", items[0].CurrentBlocker.Type)
+	require.Equal(t, "等待人工恢复决策", items[0].CurrentBlocker.Title)
+	require.Equal(t, decisionRequest.ID, *items[0].CurrentBlocker.ResourceID)
+
+	items, err = repo.ListWorkflowInstances(ctx, ListWorkflowInstancesRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorID,
+		Limit:       1,
+		Offset:      1,
+	})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, failedDemandID, items[0].DemandID)
+	require.NotEqual(t, planningDemandID, items[0].DemandID)
+	require.NotEqual(t, runningDemandID, items[0].DemandID)
+	require.Equal(t, WorkflowInstanceStatusFailed, items[0].Status)
+	require.NotNil(t, items[0].CurrentBlocker)
+	require.Equal(t, "project_task", items[0].CurrentBlocker.Type)
+
+	items, err = repo.ListWorkflowInstances(ctx, ListWorkflowInstancesRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorID,
+		Limit:       10,
+	})
+	require.NoError(t, err)
+	itemsByDemandID := make(map[uuid.UUID]WorkflowInstanceSummary, len(items))
+	for _, item := range items {
+		itemsByDemandID[item.DemandID] = item
+	}
+	require.Equal(t, WorkflowInstanceStatusFailed, itemsByDemandID[cancelledFailedDemandID].Status)
+	require.Equal(t, WorkflowInstanceStatusCancelled, itemsByDemandID[cancelledDemandID].Status)
+
+	items, err = repo.ListWorkflowInstances(ctx, ListWorkflowInstancesRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorID,
+		Limit:       1,
+		Offset:      4,
+	})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, planningDemandID, items[0].DemandID)
+	require.Equal(t, WorkflowInstanceStatusPlanning, items[0].Status)
+
+	items, err = repo.ListWorkflowInstances(ctx, ListWorkflowInstancesRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorID,
+		Limit:       1,
+		Offset:      5,
+	})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, completedDemandID, items[0].DemandID)
+	require.Equal(t, WorkflowInstanceStatusCompleted, items[0].Status)
+
+	items, err = repo.ListWorkflowInstances(ctx, ListWorkflowInstancesRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorID,
+		Limit:       1,
+		Offset:      6,
+	})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, cancelledDemandID, items[0].DemandID)
+	require.Equal(t, WorkflowInstanceStatusCancelled, items[0].Status)
+}
+
+func TestListWorkflowInstancesUsesTaskHumanBlockerWithoutDecisionRequest(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	ctx := context.Background()
+	projectID := createProjectFixture(t, repo, tenantID)
+	actorID := uuid.New()
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	jobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	routeID := createRouteDecisionFixture(t, repo, tenantID, projectID, jobID, demandID)
+	employeeID := uuid.New()
+	stage := int32(1)
+
+	_, err := repo.ReplaceProjectMembers(ctx, tenantID, projectID, []ProjectMemberInput{{
+		PrincipalType:       PrincipalTypeHumanUser,
+		PrincipalID:         actorID,
+		ProjectRole:         ProjectRoleObserver,
+		DisplayNameSnapshot: "观察者",
+	}})
+	require.NoError(t, err)
+	graph, err := repo.CreateProjectTaskGraph(ctx, CreateProjectTaskGraphRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeID,
+		Tasks: []ProjectTaskGraphCreateTask{{
+			Key:                       "human-review",
+			Title:                     "等待人工复核",
+			Status:                    "pending_review",
+			AssignedDigitalEmployeeID: employeeID,
+			TaskKind:                  "review",
+			StageIndex:                &stage,
+			ExpectedOutputs:           []any{"summary"},
+			InputRequirements:         map[string]any{},
+			HandoffContract:           map[string]any{},
+			PlannerMetadata:           map[string]any{},
+		}},
+	})
+	require.NoError(t, err)
+
+	items, err := repo.ListWorkflowInstances(ctx, ListWorkflowInstancesRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorID,
+		Limit:       20,
+	})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, WorkflowInstanceStatusWaitingHuman, items[0].Status)
+	require.NotEmpty(t, items[0].StatusReason)
+	require.NotNil(t, items[0].CurrentBlocker)
+	require.Equal(t, "project_task", items[0].CurrentBlocker.Type)
+	require.Equal(t, "等待人工复核", items[0].CurrentBlocker.Title)
+	require.Equal(t, graph.Tasks[0].ID, *items[0].CurrentBlocker.ResourceID)
+}
+
+func TestListWorkflowInstancesIgnoresMalformedDemandMetadata(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	ctx := context.Background()
+	projectID := createProjectFixture(t, repo, tenantID)
+	actorID := uuid.New()
+	demandIDs := []uuid.UUID{
+		createDemandFixtureWithSourceRefs(t, repo, tenantID, projectID, map[string]any{
+			"sla_due_at": "not-a-timestamp",
+		}),
+		createDemandFixtureWithSourceRefs(t, repo, tenantID, projectID, map[string]any{
+			"sla_due_at": "2026-02-31",
+		}),
+		createDemandFixtureWithSourceRefs(t, repo, tenantID, projectID, map[string]any{
+			"sla_due_at": "2026-99-99",
+		}),
+		createDemandFixtureWithSourceRefs(t, repo, tenantID, projectID, map[string]any{
+			"sla_due_at": "2026-06-16T10:00:00+08:00",
+		}),
+	}
+	farFutureDemandID := createDemandFixtureWithSourceRefs(t, repo, tenantID, projectID, map[string]any{
+		"sla_due_at": "9999-12-31",
+	})
+
+	_, err := repo.ReplaceProjectMembers(ctx, tenantID, projectID, []ProjectMemberInput{{
+		PrincipalType:       PrincipalTypeHumanUser,
+		PrincipalID:         actorID,
+		ProjectRole:         ProjectRoleObserver,
+		DisplayNameSnapshot: "观察者",
+	}})
+	require.NoError(t, err)
+	_, err = repo.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventType: ProjectEventDecisionRequested,
+		ActorType: "project_coordinator",
+		ActorID:   "project-coordinator:" + projectID.String(),
+		Summary:   "坏 demand id 元数据",
+		Payload: map[string]any{
+			"demand_id": "not-a-uuid",
+		},
+	})
+	require.NoError(t, err)
+
+	items, err := repo.ListWorkflowInstances(ctx, ListWorkflowInstancesRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorID,
+		Limit:       20,
+	})
+	require.NoError(t, err)
+	require.Len(t, items, len(demandIDs)+1)
+	itemsByDemandID := make(map[uuid.UUID]WorkflowInstanceSummary, len(items))
+	for _, item := range items {
+		itemsByDemandID[item.DemandID] = item
+	}
+	for _, demandID := range demandIDs {
+		item, ok := itemsByDemandID[demandID]
+		require.True(t, ok, "missing demand %s in workflow instances", demandID)
+		require.Nil(t, item.SLA)
+	}
+	farFutureItem, ok := itemsByDemandID[farFutureDemandID]
+	require.True(t, ok, "missing far-future demand %s in workflow instances", farFutureDemandID)
+	require.NotNil(t, farFutureItem.SLA)
+	require.NotNil(t, farFutureItem.SLA.RemainingSeconds)
+	require.Equal(t, int32(2147483647), *farFutureItem.SLA.RemainingSeconds)
 }
 
 func TestCompleteProjectTaskWritebackAdvancesDemandLifecycle(t *testing.T) {
@@ -846,6 +1213,22 @@ func TestProjectTaskGraphReadReturnsGraphScopedSidecarsAfterUnrelatedRows(t *tes
 	require.Len(t, graph.Runs, 1)
 	require.Equal(t, run.ID, *graph.Runs[0].DigitalEmployeeRunID)
 	require.Equal(t, runtimeTask.ID, *graph.Runs[0].RuntimeTaskID)
+	require.NotEmpty(t, graph.StageSummaries)
+	require.Equal(t, int32(2), graph.StageSummaries[0].TotalNodes+graph.StageSummaries[1].TotalNodes)
+	nodesByTaskID := make(map[uuid.UUID]ProjectTaskGraphNode, len(graph.Nodes))
+	for _, node := range graph.Nodes {
+		nodesByTaskID[node.Task.ID] = node
+	}
+	graphNode := nodesByTaskID[graphTaskID]
+	require.Equal(t, "等待人工决策", graphNode.StatusReason)
+	require.NotNil(t, graphNode.UpdatedAt)
+	require.NotNil(t, graphNode.CurrentBlocker)
+	require.Equal(t, "decision_request", graphNode.CurrentBlocker.Type)
+	require.Equal(t, graphDecision.ID, *graphNode.CurrentBlocker.ResourceID)
+	blockedNode := nodesByTaskID[result.Tasks[1].ID]
+	require.Equal(t, "任务受阻", blockedNode.StatusReason)
+	require.NotNil(t, blockedNode.CurrentBlocker)
+	require.Equal(t, "project_task", blockedNode.CurrentBlocker.Type)
 }
 
 func TestCreateCoordinationJobIdempotentReplayReturnsExisting(t *testing.T) {
@@ -1513,6 +1896,16 @@ func createProjectFixture(t *testing.T, repo Repository, tenantID uuid.UUID) uui
 
 func createDemandFixture(t *testing.T, repo Repository, tenantID, projectID uuid.UUID) uuid.UUID {
 	t.Helper()
+	return createDemandFixtureWithSourceRefs(t, repo, tenantID, projectID, nil)
+}
+
+func createDemandFixtureWithSourceRefs(t *testing.T, repo Repository, tenantID, projectID uuid.UUID, sourceRefs map[string]any) uuid.UUID {
+	t.Helper()
+	return createDemandFixtureWithStatusAndSourceRefs(t, repo, tenantID, projectID, ProjectDemandStatusRecorded, sourceRefs)
+}
+
+func createDemandFixtureWithStatusAndSourceRefs(t *testing.T, repo Repository, tenantID, projectID uuid.UUID, status ProjectDemandStatus, sourceRefs map[string]any) uuid.UUID {
+	t.Helper()
 
 	event, err := repo.AppendProjectEvent(context.Background(), AppendProjectEventRequest{
 		TenantID:  tenantID,
@@ -1531,7 +1924,8 @@ func createDemandFixture(t *testing.T, repo Repository, tenantID, projectID uuid
 		Title:             "验证任务图",
 		Content:           "验证任务节点和依赖边",
 		SourceType:        DemandSourceManual,
-	}, ProjectDemandStatusRecorded, &event.ID)
+		SourceRefs:        sourceRefs,
+	}, status, &event.ID)
 	require.NoError(t, err)
 	return demand.ID
 }
