@@ -99,17 +99,20 @@ type UsersViewProps = {
   fetcher?: typeof fetch;
 };
 
+const defaultUserFilters: UserManagementFilters = {
+  q: "",
+  status: "all",
+};
+
 export function Users() {
   return <UsersView />;
 }
 
 export function UsersView({ fetcher }: UsersViewProps = {}) {
   const queryClient = useQueryClient();
-  const [filters, setFilters] = useState<UserManagementFilters>({
-    q: "",
-    status: "all",
-  });
+  const [filters, setFilters] = useState<UserManagementFilters>(defaultUserFilters);
   const [selectedUserId, setSelectedUserId] = useState<string>();
+  const [pendingCreatedUserId, setPendingCreatedUserId] = useState<string>();
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const [resetPasswordValue, setResetPasswordValue] = useState("");
   const [createUserOpen, setCreateUserOpen] = useState(false);
@@ -189,6 +192,14 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
   const stats = getUserStats(users, authzMembersQuery.data?.items ?? []);
 
   useEffect(() => {
+    if (pendingCreatedUserId) {
+      if (users.some((user) => user.id === pendingCreatedUserId)) {
+        setSelectedUserId(pendingCreatedUserId);
+        setPendingCreatedUserId(undefined);
+      }
+      return;
+    }
+
     if (users.length === 0) {
       setSelectedUserId(undefined);
       return;
@@ -197,7 +208,7 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
     if (!selectedUserId || !users.some((user) => user.id === selectedUserId)) {
       setSelectedUserId(users[0].id);
     }
-  }, [selectedUserId, users]);
+  }, [pendingCreatedUserId, selectedUserId, users]);
 
   const invalidateUserWorkspace = () => queryClient.invalidateQueries({ queryKey: ["users"] });
   const statusMutation = useMutation({
@@ -229,8 +240,10 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
     },
     onSuccess: async (response) => {
       setCreateUserOpen(false);
-      await invalidateUserWorkspace();
+      setFilters(defaultUserFilters);
+      setPendingCreatedUserId(response.user.id);
       setSelectedUserId(response.user.id);
+      await invalidateUserWorkspace();
     },
   });
 

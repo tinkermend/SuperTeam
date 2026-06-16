@@ -568,6 +568,49 @@ describe("Users", () => {
     await expect.element(screen.getByRole("button", { name: "创建用户" })).toBeDisabled();
   });
 
+  it("resets filters and selects a newly created active user from a disabled-only view", async () => {
+    const fetcher = createUsersFetcher();
+    vi.stubGlobal("fetch", fetcher);
+
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Users />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { exact: true, name: "禁用" }));
+    await expect.element(screen.getByRole("heading", { name: "审计员" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { exact: true, name: "禁用" })).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(screen.getByRole("button", { name: "新建用户" }));
+    await userEvent.fill(screen.getByLabelText("用户名"), "new-operator");
+    await userEvent.fill(screen.getByLabelText("名称"), "新管理员");
+    await userEvent.fill(screen.getByLabelText("密码"), "secret-pass");
+    await userEvent.click(screen.getByRole("button", { name: "选择头像 工程师头像 F03" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "平台运营" }));
+    await userEvent.click(screen.getByRole("button", { name: "创建用户" }));
+
+    await expect.element(screen.getByRole("heading", { name: "新管理员" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { exact: true, name: "全部" })).toHaveAttribute("aria-pressed", "true");
+
+    const postCallIndex = fetcher.mock.calls.findIndex(([input, init]) => {
+      const url = new URL(String(input));
+      return url.pathname === "/api/auth/users" && init?.method === "POST";
+    });
+    expect(postCallIndex).toBeGreaterThan(-1);
+    expect(
+      fetcher.mock.calls.slice(postCallIndex + 1).some(([input, init]) => {
+        const url = new URL(String(input));
+        return (
+          url.pathname === "/api/auth/users" &&
+          (init?.method ?? "GET") === "GET" &&
+          !url.searchParams.has("status")
+        );
+      }),
+    ).toBe(true);
+  });
+
   it("keeps user creation disabled when avatar assets fail", async () => {
     const errorFetcher = createUsersFetcher({ avatarAssetsStatus: "error" });
     vi.stubGlobal("fetch", errorFetcher);
