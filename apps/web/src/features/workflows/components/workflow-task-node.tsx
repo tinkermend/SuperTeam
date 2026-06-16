@@ -30,9 +30,9 @@ export function WorkflowTaskNode({
       />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="line-clamp-2 text-sm font-semibold tracking-normal">
+          <p className="line-clamp-2 text-sm font-semibold tracking-normal">
             {data.title}
-          </h3>
+          </p>
           <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
             {data.summary || "暂无任务摘要"}
           </p>
@@ -47,6 +47,18 @@ export function WorkflowTaskNode({
           <Bot className="size-3.5 shrink-0 text-[color:var(--superteam-info)]" />
           <span className="truncate">{data.employeeName || "未分配"}</span>
         </span>
+        {data.riskLevel ? (
+          <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background/70 px-2.5 py-1 text-xs text-[color:var(--superteam-danger)]">
+            <ShieldCheck className="size-3.5 shrink-0" />
+            <span className="truncate">风险 {data.riskLevel}</span>
+          </span>
+        ) : null}
+        {data.runStatus ? (
+          <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background/70 px-2.5 py-1 text-xs text-[color:var(--superteam-info)]">
+            <Bot className="size-3.5 shrink-0" />
+            <span className="truncate">Run {data.runStatus}</span>
+          </span>
+        ) : null}
         {showHumanApproval ? (
           <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background/70 px-2.5 py-1 text-xs text-[color:var(--superteam-decision)]">
             <ShieldCheck className="size-3.5 shrink-0" />
