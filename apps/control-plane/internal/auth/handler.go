@@ -214,6 +214,9 @@ func (h *HTTPHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		h.writeAuthError(w, err)
 		return
 	}
+	if !h.authorizeUserProjectTeamScope(w, r, actorUser, authz.ActionUserProjectTeamScopeManage, "user create with project team scope manage") {
+		return
+	}
 
 	var body CreateUserJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

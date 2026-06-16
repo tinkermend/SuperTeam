@@ -108,6 +108,41 @@ func TestHTTPHandlerCreatesManagedUserWithSelectableTeams(t *testing.T) {
 	}
 }
 
+func TestHTTPHandlerDeniedCreateUserWithSelectableTeamsDoesNotCreateUserOrScopes(t *testing.T) {
+	repo, svc, _, token := newAuthenticatedHandler(t)
+	authorizer := &recordingAuthorizer{allowed: false}
+	handler := NewHandler(svc, authorizer)
+	teamID := uuid.New()
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/users", bytes.NewBufferString(fmt.Sprintf(`{
+		"username":"denied-create",
+		"display_name":"Denied Create",
+		"password":"secret",
+		"avatar_asset_id":"engineer-f-01",
+		"selectable_team_ids":["%s"]
+	}`, teamID)))
+	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+	recorder := httptest.NewRecorder()
+
+	handler.CreateUser(recorder, request)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if _, ok := repo.users["denied-create"]; ok {
+		t.Fatalf("expected denied create not to persist user, got %#v", repo.users["denied-create"])
+	}
+	for userID, teamIDs := range repo.scopeTeamIDs {
+		t.Fatalf("expected denied create not to persist scopes, got %s => %#v", userID, teamIDs)
+	}
+	if len(authorizer.checks) != 1 {
+		t.Fatalf("expected one authz check, got %#v", authorizer.checks)
+	}
+	check := authorizer.checks[0]
+	if check.Action != authz.ActionUserProjectTeamScopeManage || check.Resource.Type != authz.ResourceTenant || check.Resource.ID != DefaultTenantID {
+		t.Fatalf("unexpected authz check: %#v", check)
+	}
+}
+
 func TestHTTPHandlerListsUserProjectTeamScopes(t *testing.T) {
 	repo, svc, handler, token := newAuthenticatedHandler(t)
 	target, err := svc.CreateUser(t.Context(), "scope-target", "secret")

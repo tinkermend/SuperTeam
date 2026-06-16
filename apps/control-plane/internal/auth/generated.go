@@ -312,6 +312,9 @@ type BadRequest = ErrorResponse
 // Forbidden defines model for Forbidden.
 type Forbidden = ErrorResponse
 
+// NotFound defines model for NotFound.
+type NotFound = ErrorResponse
+
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = ErrorResponse
 

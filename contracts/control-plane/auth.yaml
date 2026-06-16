@@ -291,6 +291,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/auth/users/{id}/status:
     patch:
@@ -349,6 +351,8 @@ paths:
                 $ref: '#/components/schemas/UserProjectTeamScopeListResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     put:
       summary: 替换用户可选择的项目团队范围
       operationId: replaceUserProjectTeamScopes
@@ -380,6 +384,10 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/auth/users/{id}/reset-password:
     post:
@@ -744,7 +752,13 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     Forbidden:
-      description: 账号已被禁用
+      description: 无权限访问
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: 资源不存在
       content:
         application/json:
           schema:
