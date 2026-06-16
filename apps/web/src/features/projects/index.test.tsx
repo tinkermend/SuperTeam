@@ -194,6 +194,8 @@ function userProjectTeamScopesResponse() {
 
 function createProjectFetcher(
   options: {
+    currentUserDeferred?: ReturnType<typeof makeDeferred<Response>>;
+    currentUserStatus?: "default" | "error" | "loading";
     projectTeamScopesDeferred?: ReturnType<typeof makeDeferred<Response>>;
     projectTeamScopesStatus?: "default" | "empty" | "error" | "loading";
     project2OverviewGate?: Promise<void>;
@@ -210,6 +212,12 @@ function createProjectFetcher(
     const method = init?.method ?? "GET";
 
     if (url.pathname === "/api/auth/me" && method === "GET") {
+      if (options.currentUserStatus === "loading" && options.currentUserDeferred) {
+        return options.currentUserDeferred.promise;
+      }
+      if (options.currentUserStatus === "error") {
+        return jsonResponse({ error: "current user load failed" }, 500);
+      }
       return jsonResponse({
         user: {
           avatar: { provider: "dicebear", seed: "current-user", style: "adventurer" },
@@ -960,6 +968,44 @@ describe("ProjectsView", () => {
     await userEvent.fill(screen.getByLabelText("目标"), "完成客户验收闭环");
 
     await expect.element(screen.getByText("暂无可选团队")).toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "创建项目" })).toBeDisabled();
+  });
+
+  it("keeps project creation disabled while the current user is loading", async () => {
+    const deferred = makeDeferred<Response>();
+    const fetcher = createProjectFetcher({
+      currentUserDeferred: deferred,
+      currentUserStatus: "loading",
+    });
+    const screen = await renderProjects(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+
+    try {
+      await expect.element(screen.getByText("正在加载可选团队...")).toBeInTheDocument();
+      await expect.element(screen.getByRole("button", { name: "创建项目" })).toBeDisabled();
+    } finally {
+      deferred.resolve(jsonResponse({
+        user: {
+          avatar: { provider: "dicebear", seed: "current-user", style: "adventurer" },
+          avatar_asset_id: null,
+          display_name: "当前用户",
+          email: "current@example.com",
+          id: CURRENT_USER_ID,
+          status: "active",
+          username: "current-user",
+        },
+      }));
+    }
+  });
+
+  it("keeps project creation disabled when the current user fails to load", async () => {
+    const fetcher = createProjectFetcher({ currentUserStatus: "error" });
+    const screen = await renderProjects(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+
+    await expect.element(screen.getByText("加载当前用户失败")).toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "创建项目" })).toBeDisabled();
   });
 
