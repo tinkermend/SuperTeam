@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/authz"
 )
 
 func TestHTTPHandlerUpdatesCurrentUserProfile(t *testing.T) {
@@ -134,6 +136,35 @@ func TestHTTPHandlerListsUserProjectTeamScopes(t *testing.T) {
 	}
 }
 
+func TestHTTPHandlerDeniedListUserProjectTeamScopesDoesNotReadScopes(t *testing.T) {
+	repo, svc, _, token := newAuthenticatedHandler(t)
+	target, err := svc.CreateUser(t.Context(), "denied-list-target", "secret")
+	if err != nil {
+		t.Fatalf("create target user: %v", err)
+	}
+	teamID := uuid.New()
+	repo.scopeTeamIDs[target.ID] = []uuid.UUID{teamID}
+	authorizer := &recordingAuthorizer{allowed: false}
+	handler := NewHandler(svc, authorizer)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/users/"+target.ID.String()+"/project-team-scopes", nil)
+	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+	recorder := httptest.NewRecorder()
+
+	handler.ListUserProjectTeamScopes(recorder, request, openapiUUID(target.ID))
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if len(authorizer.checks) != 1 {
+		t.Fatalf("expected one authz check, got %#v", authorizer.checks)
+	}
+	check := authorizer.checks[0]
+	if check.Action != authz.ActionUserProjectTeamScopeRead || check.Resource.Type != authz.ResourceTenant || check.Resource.ID != DefaultTenantID {
+		t.Fatalf("unexpected authz check: %#v", check)
+	}
+}
+
 func TestHTTPHandlerReplacesUserProjectTeamScopes(t *testing.T) {
 	repo, svc, handler, token := newAuthenticatedHandler(t)
 	target, err := svc.CreateUser(t.Context(), "replace-target", "secret")
@@ -162,6 +193,57 @@ func TestHTTPHandlerReplacesUserProjectTeamScopes(t *testing.T) {
 	}
 	if len(response.Items) != 2 {
 		t.Fatalf("expected response scopes, got %#v", response.Items)
+	}
+}
+
+func TestHTTPHandlerDeniedReplaceUserProjectTeamScopesDoesNotMutateScopes(t *testing.T) {
+	repo, svc, _, token := newAuthenticatedHandler(t)
+	target, err := svc.CreateUser(t.Context(), "denied-replace-target", "secret")
+	if err != nil {
+		t.Fatalf("create target user: %v", err)
+	}
+	existingTeamID := uuid.New()
+	repo.scopeTeamIDs[target.ID] = []uuid.UUID{existingTeamID}
+	authorizer := &recordingAuthorizer{allowed: false}
+	handler := NewHandler(svc, authorizer)
+	newTeamID := uuid.New()
+	request := httptest.NewRequest(http.MethodPut, "/api/auth/users/"+target.ID.String()+"/project-team-scopes", bytes.NewBufferString(fmt.Sprintf(`{
+		"team_ids":["%s"]
+	}`, newTeamID)))
+	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+	recorder := httptest.NewRecorder()
+
+	handler.ReplaceUserProjectTeamScopes(recorder, request, openapiUUID(target.ID))
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if got := repo.scopeTeamIDs[target.ID]; len(got) != 1 || got[0] != existingTeamID {
+		t.Fatalf("expected scopes not to be mutated, got %#v", got)
+	}
+	if len(authorizer.checks) != 1 {
+		t.Fatalf("expected one authz check, got %#v", authorizer.checks)
+	}
+	check := authorizer.checks[0]
+	if check.Action != authz.ActionUserProjectTeamScopeManage || check.Resource.Type != authz.ResourceTenant || check.Resource.ID != DefaultTenantID {
+		t.Fatalf("unexpected authz check: %#v", check)
+	}
+}
+
+func TestHTTPHandlerReplaceUserProjectTeamScopesMissingTargetUserReturnsNotFound(t *testing.T) {
+	_, _, handler, token := newAuthenticatedHandler(t)
+	missingUserID := uuid.New()
+	teamID := uuid.New()
+	request := httptest.NewRequest(http.MethodPut, "/api/auth/users/"+missingUserID.String()+"/project-team-scopes", bytes.NewBufferString(fmt.Sprintf(`{
+		"team_ids":["%s"]
+	}`, teamID)))
+	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+	recorder := httptest.NewRecorder()
+
+	handler.ReplaceUserProjectTeamScopes(recorder, request, openapiUUID(missingUserID))
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -247,4 +329,21 @@ func newAuthenticatedHandler(t *testing.T) (*mockRepo, *Service, *HTTPHandler, s
 
 func ptrInt32(value int32) *int32 {
 	return &value
+}
+
+type recordingAuthorizer struct {
+	allowed bool
+	err     error
+	checks  []authz.CheckRequest
+}
+
+func (a *recordingAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (authz.Decision, error) {
+	a.checks = append(a.checks, req)
+	if a.err != nil {
+		return authz.Decision{}, a.err
+	}
+	if a.allowed {
+		return authz.Decision{Allowed: true, Reason: authz.ReasonAllowed, MatchedRule: "test.allow"}, nil
+	}
+	return authz.Decision{Allowed: false, Reason: authz.ReasonNoMembership, RequiresAudit: true}, nil
 }

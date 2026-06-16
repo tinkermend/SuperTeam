@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,11 +13,40 @@ import (
 )
 
 type PgRepository struct {
-	q *queries.Queries
+	q    *queries.Queries
+	db   authTransactionBeginner
+	inTx bool
 }
 
-func NewPgRepository(q *queries.Queries) Repository {
-	return &PgRepository{q: q}
+type authTransactionBeginner interface {
+	Begin(context.Context) (pgx.Tx, error)
+}
+
+func NewPgRepository(q *queries.Queries, db ...authTransactionBeginner) Repository {
+	var beginner authTransactionBeginner
+	if len(db) > 0 {
+		beginner = db[0]
+	}
+	return &PgRepository{q: q, db: beginner}
+}
+
+func (r *PgRepository) WithTransaction(ctx context.Context, fn func(Repository) error) error {
+	if r.db == nil || r.inTx {
+		return fn(r)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin auth transaction: %w", err)
+	}
+	txRepo := &PgRepository{q: r.q.WithTx(tx), inTx: true}
+	if err := fn(txRepo); err != nil {
+		_ = tx.Rollback(ctx)
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit auth transaction: %w", err)
+	}
+	return nil
 }
 
 func (r *PgRepository) CreateUser(ctx context.Context, input CreateUserRecordInput) (*User, error) {
@@ -344,6 +374,22 @@ func (r *PgRepository) CreateOperationLog(ctx context.Context, params CreateOper
 }
 
 func (r *PgRepository) ReplaceUserProjectTeamScopes(ctx context.Context, tenantID, userID, grantedByUserID uuid.UUID, teamIDs []uuid.UUID) ([]UserProjectTeamScopeSummary, error) {
+	if r.db != nil && !r.inTx {
+		var scopes []UserProjectTeamScopeSummary
+		err := r.WithTransaction(ctx, func(repo Repository) error {
+			replaced, err := repo.ReplaceUserProjectTeamScopes(ctx, tenantID, userID, grantedByUserID, teamIDs)
+			if err != nil {
+				return err
+			}
+			scopes = replaced
+			return nil
+		})
+		return scopes, err
+	}
+	return r.replaceUserProjectTeamScopes(ctx, tenantID, userID, grantedByUserID, teamIDs)
+}
+
+func (r *PgRepository) replaceUserProjectTeamScopes(ctx context.Context, tenantID, userID, grantedByUserID uuid.UUID, teamIDs []uuid.UUID) ([]UserProjectTeamScopeSummary, error) {
 	if err := r.q.RevokeUserProjectTeamScopes(ctx, queries.RevokeUserProjectTeamScopesParams{
 		TenantID: tenantID,
 		UserID:   userID,
@@ -365,6 +411,34 @@ func (r *PgRepository) ReplaceUserProjectTeamScopes(ctx context.Context, tenantI
 		}
 	}
 	return r.ListUserProjectTeamScopes(ctx, tenantID, userID)
+}
+
+func (r *PgRepository) EnsureActiveUser(ctx context.Context, userID uuid.UUID) error {
+	exists, err := r.q.ActiveAuthUserExists(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrManagedUserNotFound
+	}
+	return nil
+}
+
+func (r *PgRepository) ValidateActiveTenantTeamIDs(ctx context.Context, tenantID uuid.UUID, teamIDs []uuid.UUID) error {
+	if len(teamIDs) == 0 {
+		return ErrInvalidManagedUserInput
+	}
+	count, err := r.q.CountActiveTenantTeamsByIDs(ctx, queries.CountActiveTenantTeamsByIDsParams{
+		TenantID: tenantID,
+		TeamIds:  teamIDs,
+	})
+	if err != nil {
+		return err
+	}
+	if count != int32(len(teamIDs)) {
+		return ErrInvalidManagedUserInput
+	}
+	return nil
 }
 
 func (r *PgRepository) ListUserProjectTeamScopes(ctx context.Context, tenantID, userID uuid.UUID) ([]UserProjectTeamScopeSummary, error) {

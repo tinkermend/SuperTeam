@@ -1849,6 +1849,10 @@ func newRouteAuthRepo() *routeAuthRepo {
 	}
 }
 
+func (r *routeAuthRepo) WithTransaction(ctx context.Context, fn func(auth.Repository) error) error {
+	return fn(r)
+}
+
 func (r *routeAuthRepo) CreateUser(ctx context.Context, input auth.CreateUserRecordInput) (*auth.User, error) {
 	user := &auth.User{
 		ID:            uuid.New(),
@@ -2047,6 +2051,26 @@ func (r *routeAuthRepo) CanUseTeamForProject(ctx context.Context, tenantID, user
 		}
 	}
 	return false, nil
+}
+
+func (r *routeAuthRepo) EnsureActiveUser(ctx context.Context, userID uuid.UUID) error {
+	user, ok := r.usersByID[userID]
+	if !ok || user.Status != auth.UserStatusActive {
+		return auth.ErrManagedUserNotFound
+	}
+	return nil
+}
+
+func (r *routeAuthRepo) ValidateActiveTenantTeamIDs(ctx context.Context, tenantID uuid.UUID, teamIDs []uuid.UUID) error {
+	if len(teamIDs) == 0 {
+		return auth.ErrInvalidManagedUserInput
+	}
+	for _, teamID := range teamIDs {
+		if teamID == uuid.Nil {
+			return auth.ErrInvalidManagedUserInput
+		}
+	}
+	return nil
 }
 
 func routeLogin(t *testing.T, server *Server, username, password string) *http.Cookie {

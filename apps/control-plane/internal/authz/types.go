@@ -32,6 +32,9 @@ const (
 	ActionRuntimeScopeManage = "runtime_scope.manage"
 	ActionAuthzCenterRead    = "authz_center.read"
 
+	ActionUserProjectTeamScopeRead   = "user.project_team_scope.read"
+	ActionUserProjectTeamScopeManage = "user.project_team_scope.manage"
+
 	ActionEmployeeCreate         = "employee.create"
 	ActionEmployeeRead           = "employee.read"
 	ActionEmployeeStatusUpdate   = "employee.status.update"

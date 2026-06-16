@@ -22,6 +22,7 @@ type CreateUserRecordInput struct {
 }
 
 type Repository interface {
+	WithTransaction(ctx context.Context, fn func(Repository) error) error
 	CreateUser(ctx context.Context, input CreateUserRecordInput) (*User, error)
 	ListUsers(ctx context.Context, filter ListUsersFilter) ([]*User, error)
 	GetUserByUsername(ctx context.Context, username string) (*User, error)
@@ -41,6 +42,8 @@ type Repository interface {
 	ReplaceUserProjectTeamScopes(ctx context.Context, tenantID, userID, grantedByUserID uuid.UUID, teamIDs []uuid.UUID) ([]UserProjectTeamScopeSummary, error)
 	ListUserProjectTeamScopes(ctx context.Context, tenantID, userID uuid.UUID) ([]UserProjectTeamScopeSummary, error)
 	CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error)
+	EnsureActiveUser(ctx context.Context, userID uuid.UUID) error
+	ValidateActiveTenantTeamIDs(ctx context.Context, tenantID uuid.UUID, teamIDs []uuid.UUID) error
 }
 
 type Service struct {
@@ -92,18 +95,28 @@ func (s *Service) CreateManagedUser(ctx context.Context, actor Actor, input Crea
 	if err != nil {
 		return nil, err
 	}
-	user, err := s.repo.CreateUser(ctx, CreateUserRecordInput{
-		Username:      input.Username,
-		DisplayName:   input.DisplayName,
-		PasswordHash:  string(hash),
-		AvatarAssetID: input.AvatarAssetID,
+	var user *User
+	err = s.repo.WithTransaction(ctx, func(repo Repository) error {
+		if err := repo.ValidateActiveTenantTeamIDs(ctx, input.TenantID, input.SelectableTeamIDs); err != nil {
+			return err
+		}
+		created, err := repo.CreateUser(ctx, CreateUserRecordInput{
+			Username:      input.Username,
+			DisplayName:   input.DisplayName,
+			PasswordHash:  string(hash),
+			AvatarAssetID: input.AvatarAssetID,
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := repo.ReplaceUserProjectTeamScopes(ctx, input.TenantID, created.ID, actor.UserID, input.SelectableTeamIDs); err != nil {
+			return err
+		}
+		user = created
+		return nil
 	})
 	if err != nil {
 		_ = s.recordUserOperation(ctx, actor, uuid.Nil, OperationActionUserCreate, OperationResultFailed)
-		return nil, err
-	}
-	if _, err := s.repo.ReplaceUserProjectTeamScopes(ctx, input.TenantID, user.ID, actor.UserID, input.SelectableTeamIDs); err != nil {
-		_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserCreate, OperationResultFailed)
 		return nil, err
 	}
 	_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserCreate, OperationResultSucceeded)
@@ -120,10 +133,37 @@ func normalizeManagedUserInput(input CreateManagedUserInput) (CreateManagedUserI
 	if input.Username == "" || input.DisplayName == "" || input.Password == "" || input.AvatarAssetID == "" || len(input.SelectableTeamIDs) == 0 {
 		return input, ErrInvalidManagedUserInput
 	}
+	teamIDs, err := normalizeProjectTeamScopeIDs(input.SelectableTeamIDs)
+	if err != nil {
+		return input, err
+	}
+	input.SelectableTeamIDs = teamIDs
 	if _, ok := avatar.BuiltInAssetByID(input.AvatarAssetID); !ok {
 		return input, ErrInvalidManagedUserInput
 	}
 	return input, nil
+}
+
+func normalizeProjectTeamScopeIDs(teamIDs []uuid.UUID) ([]uuid.UUID, error) {
+	if len(teamIDs) == 0 {
+		return nil, ErrInvalidManagedUserInput
+	}
+	seen := make(map[uuid.UUID]bool, len(teamIDs))
+	normalized := make([]uuid.UUID, 0, len(teamIDs))
+	for _, teamID := range teamIDs {
+		if teamID == uuid.Nil {
+			return nil, ErrInvalidManagedUserInput
+		}
+		if seen[teamID] {
+			continue
+		}
+		seen[teamID] = true
+		normalized = append(normalized, teamID)
+	}
+	if len(normalized) == 0 {
+		return nil, ErrInvalidManagedUserInput
+	}
+	return normalized, nil
 }
 
 func normalizeUserAvatarConfig(username string, avatar UserAvatarConfig) UserAvatarConfig {
@@ -185,10 +225,20 @@ func (s *Service) ReplaceUserProjectTeamScopes(ctx context.Context, actor Actor,
 	if tenantID == uuid.Nil {
 		tenantID = uuid.MustParse(DefaultTenantID)
 	}
-	if len(teamIDs) == 0 {
+	if userID == uuid.Nil {
+		return nil, ErrManagedUserNotFound
+	}
+	normalizedTeamIDs, err := normalizeProjectTeamScopeIDs(teamIDs)
+	if err != nil {
 		return nil, ErrInvalidManagedUserInput
 	}
-	return s.repo.ReplaceUserProjectTeamScopes(ctx, tenantID, userID, actor.UserID, teamIDs)
+	if err := s.repo.EnsureActiveUser(ctx, userID); err != nil {
+		return nil, err
+	}
+	if err := s.repo.ValidateActiveTenantTeamIDs(ctx, tenantID, normalizedTeamIDs); err != nil {
+		return nil, err
+	}
+	return s.repo.ReplaceUserProjectTeamScopes(ctx, tenantID, userID, actor.UserID, normalizedTeamIDs)
 }
 
 func (s *Service) CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error) {

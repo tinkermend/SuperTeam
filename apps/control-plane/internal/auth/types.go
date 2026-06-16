@@ -7,7 +7,10 @@ import (
 	"github.com/google/uuid"
 )
 
-var ErrInvalidManagedUserInput = errors.New("invalid managed user input")
+var (
+	ErrInvalidManagedUserInput = errors.New("invalid managed user input")
+	ErrManagedUserNotFound     = errors.New("managed user not found")
+)
 
 // User 用户模型
 type User struct {

@@ -326,7 +326,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	capabilityService := capability.NewService(capabilityRepository, credentialSealer)
 
-	authRepository := auth.NewPgRepository(q)
+	authRepository := auth.NewPgRepository(q, stores.Postgres)
 	authService, err := auth.NewService(authRepository)
 	if err != nil {
 		return nil, err

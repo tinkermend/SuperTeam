@@ -236,8 +236,12 @@ func (h *HTTPHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) ListUserProjectTeamScopes(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
-	if _, _, err := h.currentSessionUser(r); err != nil {
+	_, actorUser, err := h.currentSessionUser(r)
+	if err != nil {
 		h.writeAuthError(w, err)
+		return
+	}
+	if !h.authorizeUserProjectTeamScope(w, r, actorUser, authz.ActionUserProjectTeamScopeRead, "user project team scope read") {
 		return
 	}
 
@@ -255,6 +259,9 @@ func (h *HTTPHandler) ReplaceUserProjectTeamScopes(w http.ResponseWriter, r *htt
 		h.writeAuthError(w, err)
 		return
 	}
+	if !h.authorizeUserProjectTeamScope(w, r, actorUser, authz.ActionUserProjectTeamScopeManage, "user project team scope manage") {
+		return
+	}
 
 	var body ReplaceUserProjectTeamScopesJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -267,6 +274,35 @@ func (h *HTTPHandler) ReplaceUserProjectTeamScopes(w http.ResponseWriter, r *htt
 		return
 	}
 	writeJSON(w, http.StatusOK, UserProjectTeamScopeListResponse{Items: toGeneratedUserProjectTeamScopes(scopes)})
+}
+
+func (h *HTTPHandler) authorizeUserProjectTeamScope(w http.ResponseWriter, r *http.Request, actorUser *User, action, auditReason string) bool {
+	if h.authorizer == nil {
+		return true
+	}
+	tenantID := uuid.MustParse(DefaultTenantID)
+	decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
+		Actor: authz.ActorRef{
+			Type: authz.ActorUser,
+			ID:   actorUser.ID.String(),
+		},
+		Action: action,
+		Resource: authz.ResourceRef{
+			Type: authz.ResourceTenant,
+			ID:   tenantID.String(),
+		},
+		TenantID:    tenantID,
+		AuditReason: auditReason,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return false
+	}
+	if !decision.Allowed {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return false
+	}
+	return true
 }
 
 func (h *HTTPHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
@@ -354,6 +390,10 @@ func (h *HTTPHandler) writeAuthError(w http.ResponseWriter, err error) {
 func (h *HTTPHandler) writeManagedUserError(w http.ResponseWriter, err error) {
 	if errors.Is(err, ErrInvalidManagedUserInput) {
 		writeError(w, http.StatusBadRequest, "invalid managed user input")
+		return
+	}
+	if errors.Is(err, ErrManagedUserNotFound) {
+		writeError(w, http.StatusNotFound, "managed user not found")
 		return
 	}
 	writeError(w, http.StatusInternalServerError, "internal server error")

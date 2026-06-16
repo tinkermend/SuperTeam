@@ -12,6 +12,44 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const ActiveAuthUserExists = `-- name: ActiveAuthUserExists :one
+SELECT EXISTS (
+    SELECT 1
+    FROM auth_users
+    WHERE id = $1::uuid
+      AND status = 'active'
+      AND deleted_at IS NULL
+)::boolean AS exists
+`
+
+func (q *Queries) ActiveAuthUserExists(ctx context.Context, id uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, ActiveAuthUserExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const CountActiveTenantTeamsByIDs = `-- name: CountActiveTenantTeamsByIDs :one
+SELECT COUNT(DISTINCT id)::integer AS count
+FROM tenant_teams
+WHERE tenant_id = $1::uuid
+  AND id = ANY($2::uuid[])
+  AND status = 'active'
+  AND deleted_at IS NULL
+`
+
+type CountActiveTenantTeamsByIDsParams struct {
+	TenantID uuid.UUID   `json:"tenant_id"`
+	TeamIds  []uuid.UUID `json:"team_ids"`
+}
+
+func (q *Queries) CountActiveTenantTeamsByIDs(ctx context.Context, arg CountActiveTenantTeamsByIDsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, CountActiveTenantTeamsByIDs, arg.TenantID, arg.TeamIds)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const CreateRuntimeToken = `-- name: CreateRuntimeToken :one
 INSERT INTO auth_runtime_tokens (
     node_id,

@@ -15,6 +15,7 @@ type Querier interface {
 	AbortProvisionedDigitalEmployee(ctx context.Context, arg AbortProvisionedDigitalEmployeeParams) error
 	ActivateDigitalEmployeeWorkspaceFileRevision(ctx context.Context, arg ActivateDigitalEmployeeWorkspaceFileRevisionParams) (DigitalEmployeeWorkspaceFile, error)
 	ActivateTenantTeamConfigRevision(ctx context.Context, arg ActivateTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
+	ActiveAuthUserExists(ctx context.Context, id uuid.UUID) (bool, error)
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (TenantMember, error)
 	AddTeamOwnerMembership(ctx context.Context, arg AddTeamOwnerMembershipParams) (TenantMember, error)
 	ApproveRuntimeEnrollment(ctx context.Context, arg ApproveRuntimeEnrollmentParams) (RuntimeEnrollment, error)
@@ -26,6 +27,7 @@ type Querier interface {
 	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
 	CountActiveArtifactRetentionHolds(ctx context.Context, arg CountActiveArtifactRetentionHoldsParams) (int32, error)
 	CountActiveProviderSessionsForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
+	CountActiveTenantTeamsByIDs(ctx context.Context, arg CountActiveTenantTeamsByIDsParams) (int32, error)
 	CountAuditEvents(ctx context.Context, arg CountAuditEventsParams) (int64, error)
 	CountAuthzDecisionsSince(ctx context.Context, arg CountAuthzDecisionsSinceParams) (CountAuthzDecisionsSinceRow, error)
 	CountBlockedRuntimeEventsSince(ctx context.Context, arg CountBlockedRuntimeEventsSinceParams) (int64, error)

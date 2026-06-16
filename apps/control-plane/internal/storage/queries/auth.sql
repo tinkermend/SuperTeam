@@ -129,6 +129,23 @@ RETURNING *;
 SELECT * FROM auth_users
 WHERE id = $1;
 
+-- name: ActiveAuthUserExists :one
+SELECT EXISTS (
+    SELECT 1
+    FROM auth_users
+    WHERE id = sqlc.arg('id')::uuid
+      AND status = 'active'
+      AND deleted_at IS NULL
+)::boolean AS exists;
+
+-- name: CountActiveTenantTeamsByIDs :one
+SELECT COUNT(DISTINCT id)::integer AS count
+FROM tenant_teams
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = ANY(sqlc.arg('team_ids')::uuid[])
+  AND status = 'active'
+  AND deleted_at IS NULL;
+
 -- name: CreateSession :one
 INSERT INTO auth_sessions (
     user_id,

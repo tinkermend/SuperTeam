@@ -18,19 +18,22 @@ type mockRepo struct {
 	loginLogs           []LoginLog
 	operationLogs       []mockOperationLog
 	scopeTeamIDs        map[uuid.UUID][]uuid.UUID
+	invalidTeamIDs      map[uuid.UUID]bool
+	failScopeReplace    error
 	lastListUsersFilter ListUsersFilter
 	lastLoginLogFilter  ListLoginLogsFilter
 }
 
 func newMockRepo() *mockRepo {
 	return &mockRepo{
-		users:         make(map[string]*User),
-		usersByID:     make(map[uuid.UUID]*User),
-		runtimeTokens: make(map[string]*RuntimeToken),
-		sessions:      make(map[string]*Session),
-		loginLogs:     []LoginLog{},
-		operationLogs: []mockOperationLog{},
-		scopeTeamIDs:  make(map[uuid.UUID][]uuid.UUID),
+		users:          make(map[string]*User),
+		usersByID:      make(map[uuid.UUID]*User),
+		runtimeTokens:  make(map[string]*RuntimeToken),
+		sessions:       make(map[string]*Session),
+		loginLogs:      []LoginLog{},
+		operationLogs:  []mockOperationLog{},
+		scopeTeamIDs:   make(map[uuid.UUID][]uuid.UUID),
+		invalidTeamIDs: make(map[uuid.UUID]bool),
 	}
 }
 
@@ -42,6 +45,30 @@ type mockOperationLog struct {
 	ResourceID   string
 	Action       string
 	Result       string
+}
+
+func (m *mockRepo) WithTransaction(ctx context.Context, fn func(Repository) error) error {
+	users := make(map[string]*User, len(m.users))
+	for key, value := range m.users {
+		copied := *value
+		users[key] = &copied
+	}
+	usersByID := make(map[uuid.UUID]*User, len(m.usersByID))
+	for key, value := range m.usersByID {
+		copied := *value
+		usersByID[key] = &copied
+	}
+	scopeTeamIDs := make(map[uuid.UUID][]uuid.UUID, len(m.scopeTeamIDs))
+	for key, value := range m.scopeTeamIDs {
+		scopeTeamIDs[key] = append([]uuid.UUID(nil), value...)
+	}
+	if err := fn(m); err != nil {
+		m.users = users
+		m.usersByID = usersByID
+		m.scopeTeamIDs = scopeTeamIDs
+		return err
+	}
+	return nil
 }
 
 func (m *mockRepo) CreateUser(ctx context.Context, input CreateUserRecordInput) (*User, error) {
@@ -211,6 +238,9 @@ func (m *mockRepo) CreateOperationLog(ctx context.Context, params CreateOperatio
 }
 
 func (m *mockRepo) ReplaceUserProjectTeamScopes(ctx context.Context, tenantID, userID, grantedByUserID uuid.UUID, teamIDs []uuid.UUID) ([]UserProjectTeamScopeSummary, error) {
+	if m.failScopeReplace != nil {
+		return nil, m.failScopeReplace
+	}
 	copied := append([]uuid.UUID(nil), teamIDs...)
 	m.scopeTeamIDs[userID] = copied
 	scopes := make([]UserProjectTeamScopeSummary, 0, len(copied))
@@ -271,6 +301,26 @@ func (m *mockRepo) CanUseTeamForProject(ctx context.Context, tenantID, userID, t
 		}
 	}
 	return false, nil
+}
+
+func (m *mockRepo) EnsureActiveUser(ctx context.Context, userID uuid.UUID) error {
+	user, ok := m.usersByID[userID]
+	if !ok || user.Status != UserStatusActive {
+		return ErrManagedUserNotFound
+	}
+	return nil
+}
+
+func (m *mockRepo) ValidateActiveTenantTeamIDs(ctx context.Context, tenantID uuid.UUID, teamIDs []uuid.UUID) error {
+	if len(teamIDs) == 0 {
+		return ErrInvalidManagedUserInput
+	}
+	for _, teamID := range teamIDs {
+		if teamID == uuid.Nil || m.invalidTeamIDs[teamID] {
+			return ErrInvalidManagedUserInput
+		}
+	}
+	return nil
 }
 
 func TestNewService(t *testing.T) {
@@ -413,6 +463,31 @@ func TestCreateManagedUserPersistsDisplayNameAvatarAssetAndScopes(t *testing.T) 
 	}
 }
 
+func TestCreateManagedUserRollsBackCreatedUserWhenScopeReplacementFails(t *testing.T) {
+	repo := newMockRepo()
+	repo.failScopeReplace = errors.New("scope replace failed")
+	svc, _ := NewService(repo)
+	actor, err := svc.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+
+	_, err = svc.CreateManagedUser(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, CreateManagedUserInput{
+		Username:          "rollback-user",
+		DisplayName:       "Rollback User",
+		Password:          "secret",
+		AvatarAssetID:     "engineer-f-01",
+		SelectableTeamIDs: []uuid.UUID{uuid.New()},
+		TenantID:          uuid.MustParse(DefaultTenantID),
+	})
+	if err == nil {
+		t.Fatal("expected create managed user to fail")
+	}
+	if _, ok := repo.users["rollback-user"]; ok {
+		t.Fatalf("expected user creation to be rolled back, got %#v", repo.users["rollback-user"])
+	}
+}
+
 func TestCreateManagedUserRequiresSelectableTeams(t *testing.T) {
 	repo := newMockRepo()
 	svc, _ := NewService(repo)
@@ -430,6 +505,40 @@ func TestCreateManagedUserRequiresSelectableTeams(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidManagedUserInput) {
 		t.Fatalf("expected invalid managed user input, got %v", err)
+	}
+}
+
+func TestReplaceUserProjectTeamScopesRejectsNilOrInvalidTeamIDs(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	actor, err := svc.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	target, err := svc.CreateUser(context.Background(), "target", "secret")
+	if err != nil {
+		t.Fatalf("create target: %v", err)
+	}
+	tenantID := uuid.MustParse(DefaultTenantID)
+	invalidTeamID := uuid.New()
+	repo.invalidTeamIDs[invalidTeamID] = true
+
+	for _, tt := range []struct {
+		name    string
+		teamIDs []uuid.UUID
+	}{
+		{name: "nil team id", teamIDs: []uuid.UUID{uuid.Nil}},
+		{name: "invalid team id", teamIDs: []uuid.UUID{invalidTeamID}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := svc.ReplaceUserProjectTeamScopes(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, tenantID, target.ID, tt.teamIDs)
+			if !errors.Is(err, ErrInvalidManagedUserInput) {
+				t.Fatalf("expected invalid managed user input, got %v", err)
+			}
+			if got := repo.scopeTeamIDs[target.ID]; len(got) != 0 {
+				t.Fatalf("expected scopes not to be mutated, got %#v", got)
+			}
+		})
 	}
 }
 

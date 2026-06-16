@@ -67,6 +67,12 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 			break
 		}
 		decision, err = a.checkTenantAdminAccess(ctx, req)
+	case ActionUserProjectTeamScopeRead, ActionUserProjectTeamScopeManage:
+		if !resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) {
+			decision = deny(ReasonInvalidResource)
+			break
+		}
+		decision, err = a.checkTenantAdminAccess(ctx, req)
 	case ActionEmployeeCreate:
 		if !resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) {
 			decision = deny(ReasonInvalidResource)
