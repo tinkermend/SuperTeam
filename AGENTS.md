@@ -18,6 +18,10 @@ SuperTeam 目标是把 AI 执行能力、流程状态调度、人类审批、上
 
 - 技术栈以当前 workspace、契约和构建脚本为准；不得在没有明确共识时引入替代主栈的并行框架或重复基础设施。
 
+## 项目启停
+
+- 当前整个项目启停已经封装到脚本 scripts/dev-services.sh 支持参数`start`,`status`,`restart`,`stop`
+
 ## 数据库设计规则
 
 - 数据库表设计、字段类型、UUID-first、租户/团队、索引、迁移、sqlc 与 OpenAPI 规则统一遵循根目录 `DATABASE_DESIGN.md`。
@@ -48,6 +52,7 @@ SuperTeam 目标是把 AI 执行能力、流程状态调度、人类审批、上
 ## 开发规则
 
 - 不要盲目猜测；如果存在无法从本地上下文确认且会影响架构或业务判断的不确定点，先与人类沟通。
+- 如果需要web仿真测试请使用 codex chrome plugs 调用进行测试
 - 前端页面、布局或样式变更前必须阅读 `DESIGN.md`。
 - 每次功能、修复、合并或跨层联调任务收尾前，必须使用项目内 skill `$superteam-completion-check`（`.codex/skills/superteam-completion-check/SKILL.md`）做完成前检查；不得把 mock、组件测试、单元测试或构建通过表述为真实链路已验证。
 - 真实端到端验证是功能、修复、合并、前后端联调、Runtime/Provider 接入、数据库/迁移变更以及任何声称“功能可用”任务的默认完成条件。验证必须让当前代码通过真实 Web、Control Plane、数据库、Runtime、Provider 或对应真实服务路径运行；不能只停留在 mock、单元测试、组件测试、构建或代码审查。

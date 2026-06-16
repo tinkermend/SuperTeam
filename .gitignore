@@ -109,6 +109,9 @@ temp/
 !.codex/skills/
 !.codex/skills/**
 skills-lock.json
+apps/*/fix_*.py
+apps/*/scratch_*.go
+apps/control-plane/server
 
 # Local/private notes and sensitive documents.
 doc/
