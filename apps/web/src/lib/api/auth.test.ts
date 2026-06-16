@@ -5,9 +5,11 @@ import {
   getCurrentUser,
   listCurrentUserLoginLogs,
   listLoginLogs,
+  listUserProjectTeamScopes,
   listUsers,
   login,
   logout,
+  replaceUserProjectTeamScopes,
   resetUserPassword,
   updateCurrentUserPassword,
   updateCurrentUserProfile,
@@ -374,6 +376,157 @@ describe("auth api client", () => {
       },
       method: "POST",
     });
+  });
+
+  it("creates users with identity assets and selectable teams unchanged", async () => {
+    const teamId = "55555555-5555-4555-8555-555555555555";
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        user: {
+          id: operatorUserId,
+          username: "operator",
+          display_name: "值班负责人",
+          avatar_asset_id: "engineer-f-03",
+          status: "active",
+          avatar: {
+            provider: "dicebear",
+            style: "adventurer",
+            seed: "operator-avatar",
+          },
+        },
+      }),
+    );
+
+    await expect(
+      createUser(
+        { baseUrl: "http://control-plane.local", fetcher },
+        {
+          username: "operator",
+          display_name: "值班负责人",
+          password: "secret",
+          avatar_asset_id: "engineer-f-03",
+          selectable_team_ids: [teamId],
+        },
+      ),
+    ).resolves.toMatchObject({
+      user: {
+        avatar_asset_id: "engineer-f-03",
+        display_name: "值班负责人",
+      },
+    });
+
+    expect(fetcher).toHaveBeenCalledWith("http://control-plane.local/api/auth/users", {
+      body: JSON.stringify({
+        username: "operator",
+        display_name: "值班负责人",
+        password: "secret",
+        avatar_asset_id: "engineer-f-03",
+        selectable_team_ids: [teamId],
+      }),
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+  });
+
+  it("lists user project team scopes with cookie credentials", async () => {
+    const teamId = "55555555-5555-4555-8555-555555555555";
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        items: [
+          {
+            team_id: teamId,
+            team_name: "交付团队",
+            team_slug: "delivery",
+            team_status: "active",
+            authorized_at: "2026-06-17T02:00:00Z",
+            authorized_by_user_id: operatorUserId,
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      listUserProjectTeamScopes(
+        {
+          baseUrl: "http://control-plane.local/",
+          fetcher,
+        },
+        userId,
+      ),
+    ).resolves.toMatchObject({
+      items: [
+        {
+          team_id: teamId,
+          team_name: "交付团队",
+          team_slug: "delivery",
+          team_status: "active",
+          authorized_at: "2026-06-17T02:00:00Z",
+          authorized_by_user_id: operatorUserId,
+        },
+      ],
+    });
+
+    expect(fetcher).toHaveBeenCalledWith(
+      `http://control-plane.local/api/auth/users/${userId}/project-team-scopes`,
+      {
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+        },
+        method: "GET",
+      },
+    );
+  });
+
+  it("replaces user project team scopes with cookie credentials", async () => {
+    const teamId = "55555555-5555-4555-8555-555555555555";
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        items: [
+          {
+            team_id: teamId,
+            team_name: "交付团队",
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      replaceUserProjectTeamScopes(
+        {
+          baseUrl: "http://control-plane.local/",
+          fetcher,
+        },
+        userId,
+        {
+          team_ids: [teamId],
+        },
+      ),
+    ).resolves.toMatchObject({
+      items: [
+        {
+          team_id: teamId,
+          team_name: "交付团队",
+        },
+      ],
+    });
+
+    expect(fetcher).toHaveBeenCalledWith(
+      `http://control-plane.local/api/auth/users/${userId}/project-team-scopes`,
+      {
+        body: JSON.stringify({ team_ids: [teamId] }),
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        method: "PUT",
+      },
+    );
   });
 
   it("updates current user profile and password with cookie credentials", async () => {

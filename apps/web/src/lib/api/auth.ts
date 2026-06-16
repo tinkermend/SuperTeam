@@ -5,6 +5,7 @@ export { ApiRequestError };
 
 export type UserSummary = {
   avatar: UserAvatar;
+  avatar_asset_id?: string;
   display_name?: string;
   email?: string;
   id: string;
@@ -49,8 +50,50 @@ export type ListUsersOptions = ApiClientOptions & {
 
 export type CreateUserRequest = {
   avatar?: UserAvatar;
+  avatar_asset_id?: string;
+  display_name?: string;
   password: string;
+  selectable_team_ids?: string[];
   username: string;
+};
+
+export type UserProjectTeamSummary = {
+  current_revision?: number;
+  digital_employee_count?: number;
+  governance_status?: string;
+  human_owners?: UserSummary[];
+  id: string;
+  name: string;
+  pending_draft_count?: number;
+  risk_summary?: string;
+  slug?: string;
+  status?: string;
+};
+
+export type UserProjectTeamScope = {
+  authorized_at?: string;
+  authorized_by_user_id?: string;
+  created_at?: string;
+  granted_by_user_id?: string;
+  id?: string;
+  revoked_at?: string;
+  status?: string;
+  team?: UserProjectTeamSummary;
+  team_id: string;
+  team_name?: string;
+  team_slug?: string;
+  team_status?: string;
+  tenant_id?: string;
+  updated_at?: string;
+  user_id?: string;
+};
+
+export type UserProjectTeamScopeListResponse = {
+  items: UserProjectTeamScope[];
+};
+
+export type ReplaceUserProjectTeamScopesRequest = {
+  team_ids: string[];
 };
 
 export type LoginLogEventType = "login_succeeded" | "login_failed" | "logout_succeeded";
@@ -217,6 +260,41 @@ export async function createUser(options: ApiClientOptions, input: CreateUserReq
   });
 
   return parseJson<UserResponse>(response, "auth create user");
+}
+
+export async function listUserProjectTeamScopes(
+  options: ApiClientOptions,
+  userID: string,
+): Promise<UserProjectTeamScopeListResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/auth/users/${userID}/project-team-scopes`), {
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+    },
+    method: "GET",
+  });
+
+  return parseJson<UserProjectTeamScopeListResponse>(response, "auth user project team scopes");
+}
+
+export async function replaceUserProjectTeamScopes(
+  options: ApiClientOptions,
+  userID: string,
+  input: ReplaceUserProjectTeamScopesRequest,
+): Promise<UserProjectTeamScopeListResponse> {
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/auth/users/${userID}/project-team-scopes`), {
+    body: JSON.stringify(input),
+    credentials: "include",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    method: "PUT",
+  });
+
+  return parseJson<UserProjectTeamScopeListResponse>(response, "auth replace user project team scopes");
 }
 
 export async function updateCurrentUserProfile(
