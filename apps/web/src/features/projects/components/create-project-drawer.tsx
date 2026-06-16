@@ -175,7 +175,10 @@ export function CreateProjectDrawer({
                 </option>
               ))}
             </select>
-            {isLoadingAuthorization ? (
+            {isCurrentUserLoading ? (
+              <p className="text-sm text-muted-foreground">正在加载当前用户...</p>
+            ) : null}
+            {!isCurrentUserLoading && isTeamsLoading ? (
               <p className="text-sm text-muted-foreground">正在加载可选团队...</p>
             ) : null}
             {!isLoadingAuthorization && authorizationError ? (

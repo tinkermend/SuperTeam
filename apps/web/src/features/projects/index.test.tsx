@@ -11,6 +11,7 @@ const TEAM_AUTHORIZED_ID = "team-authorized-1";
 const TEAM_REVIEW_ID = "team-review-1";
 const TEAM_REVOKED_ID = "team-revoked-1";
 const TEAM_DISABLED_ID = "team-disabled-1";
+const TEAM_UNAUTHORIZED_ID = "team-unauthorized-1";
 
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => <header>{children}</header>,
@@ -959,6 +960,35 @@ describe("ProjectsView", () => {
     });
   });
 
+  it("does not submit a project when the selected team is not authorized", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    await expect.element(screen.getByLabelText("可选团队")).toBeInTheDocument();
+
+    const teamSelect = document.querySelector(
+      'select[aria-label="可选团队"]',
+    ) as HTMLSelectElement | null;
+    expect(teamSelect).toBeTruthy();
+
+    const unauthorizedOption = document.createElement("option");
+    unauthorizedOption.value = TEAM_UNAUTHORIZED_ID;
+    unauthorizedOption.textContent = "未授权团队";
+    teamSelect?.append(unauthorizedOption);
+
+    await userEvent.fill(screen.getByLabelText("项目名称"), "越权团队项目");
+    await userEvent.fill(screen.getByLabelText("目标"), "尝试提交未授权团队");
+    await userEvent.selectOptions(screen.getByLabelText("可选团队"), TEAM_UNAUTHORIZED_ID);
+
+    await expect.element(screen.getByRole("button", { name: "创建项目" })).toBeDisabled();
+    expect(
+      fetchCalls(fetcher).some(([url, init]) => {
+        return String(url).endsWith("/api/v1/projects") && init?.method === "POST";
+      }),
+    ).toBe(false);
+  });
+
   it("shows an empty state and disables project creation when no teams are selectable", async () => {
     const fetcher = createProjectFetcher({ projectTeamScopesStatus: "empty" });
     const screen = await renderProjects(fetcher);
@@ -982,7 +1012,7 @@ describe("ProjectsView", () => {
     await userEvent.click(screen.getByRole("button", { name: "新建项目" }));
 
     try {
-      await expect.element(screen.getByText("正在加载可选团队...")).toBeInTheDocument();
+      await expect.element(screen.getByText("正在加载当前用户...")).toBeInTheDocument();
       await expect.element(screen.getByRole("button", { name: "创建项目" })).toBeDisabled();
     } finally {
       deferred.resolve(jsonResponse({
