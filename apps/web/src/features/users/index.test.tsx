@@ -61,6 +61,16 @@ function jsonResponse(body: unknown) {
 const TEAM_OPS_ID = "11111111-1111-4111-8111-111111111111";
 const TEAM_RISK_ID = "22222222-2222-4222-8222-222222222222";
 const TEAM_DISABLED_ID = "33333333-3333-4333-8333-333333333333";
+const USER_OPERATOR_ID = "44444444-4444-4444-8444-444444444444";
+const USER_AUDITOR_ID = "55555555-5555-4555-8555-555555555555";
+const USER_CREATED_ID = "66666666-6666-4666-8666-666666666666";
+const USER_ADMIN_ID = "77777777-7777-4777-8777-777777777777";
+const TENANT_ID = "88888888-8888-4888-8888-888888888888";
+const SCOPE_OPS_ID = "99999999-9999-4999-8999-999999999999";
+const SCOPE_RISK_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const LOGIN_EVENT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const SESSION_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const AUTHZ_DECISION_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
 function createDeferredResponse() {
   let resolve!: (value: Response) => void;
@@ -113,7 +123,7 @@ function createUsersFetcher({
           avatar_asset_id: "engineer-f-03",
           display_name: "平台管理员",
           email: "operator@example.com",
-          id: "user-1",
+          id: USER_OPERATOR_ID,
           username: "operator",
           status: "active",
           avatar: {
@@ -126,7 +136,7 @@ function createUsersFetcher({
           avatar_asset_id: "engineer-m-02",
           display_name: "审计员",
           email: "auditor@example.com",
-          id: "user-2",
+          id: USER_AUDITOR_ID,
           username: "auditor",
           status: "disabled",
           avatar: {
@@ -153,7 +163,7 @@ function createUsersFetcher({
         avatar_asset_id: "engineer-f-03",
         display_name: "新管理员",
         email: null,
-        id: "user-3",
+        id: USER_CREATED_ID,
         status: "active",
         username: "new-operator",
       };
@@ -163,7 +173,7 @@ function createUsersFetcher({
       });
     }
 
-    if (url.pathname === "/api/auth/users/user-1/project-team-scopes" && method === "GET") {
+    if (url.pathname === `/api/auth/users/${USER_OPERATOR_ID}/project-team-scopes` && method === "GET") {
       if (projectTeamScopesStatus === "loading" && projectTeamScopesDeferred) {
         return projectTeamScopesDeferred.promise;
       }
@@ -183,8 +193,8 @@ function createUsersFetcher({
         items: [
           {
             created_at: "2026-06-04T02:28:13Z",
-            granted_by_user_id: "admin-1",
-            id: "scope-1",
+            granted_by_user_id: USER_ADMIN_ID,
+            id: SCOPE_OPS_ID,
             revoked_at: null,
             status: "active",
             team: {
@@ -200,14 +210,14 @@ function createUsersFetcher({
               status: "active",
             },
             team_id: TEAM_OPS_ID,
-            tenant_id: "tenant-1",
+            tenant_id: TENANT_ID,
             updated_at: "2026-06-04T02:28:13Z",
-            user_id: "user-1",
+            user_id: USER_OPERATOR_ID,
           },
           {
             created_at: "2026-06-04T02:28:13Z",
-            granted_by_user_id: "admin-1",
-            id: "scope-2",
+            granted_by_user_id: USER_ADMIN_ID,
+            id: SCOPE_RISK_ID,
             revoked_at: null,
             status: "active",
             team: {
@@ -223,15 +233,15 @@ function createUsersFetcher({
               status: "active",
             },
             team_id: TEAM_RISK_ID,
-            tenant_id: "tenant-1",
+            tenant_id: TENANT_ID,
             updated_at: "2026-06-04T02:28:13Z",
-            user_id: "user-1",
+            user_id: USER_OPERATOR_ID,
           },
         ],
       });
     }
 
-    if (url.pathname === "/api/auth/users/user-3/project-team-scopes" && method === "GET") {
+    if (url.pathname === `/api/auth/users/${USER_CREATED_ID}/project-team-scopes` && method === "GET") {
       return jsonResponse({ items: [] });
     }
 
@@ -297,7 +307,7 @@ function createUsersFetcher({
           current_revision: 3,
           digital_employee_count: 4,
           governance_status: "active",
-          human_owner_user_ids: ["user-1"],
+          human_owner_user_ids: [USER_OPERATOR_ID],
           id: TEAM_OPS_ID,
           member_count: 8,
           name: "平台运营",
@@ -305,14 +315,14 @@ function createUsersFetcher({
           risk_summary: "低风险",
           slug: "ops",
           status: "active",
-          tenant_id: "tenant-1",
+          tenant_id: TENANT_ID,
         },
         {
           capability_count: 1,
           current_revision: 1,
           digital_employee_count: 2,
           governance_status: "draft_pending",
-          human_owner_user_ids: ["user-1"],
+          human_owner_user_ids: [USER_OPERATOR_ID],
           id: TEAM_RISK_ID,
           member_count: 5,
           name: "风控审查",
@@ -320,14 +330,14 @@ function createUsersFetcher({
           risk_summary: "需审批",
           slug: "risk",
           status: "active",
-          tenant_id: "tenant-1",
+          tenant_id: TENANT_ID,
         },
         {
           capability_count: 0,
           current_revision: 1,
           digital_employee_count: 0,
           governance_status: "active",
-          human_owner_user_ids: ["user-1"],
+          human_owner_user_ids: [USER_OPERATOR_ID],
           id: TEAM_DISABLED_ID,
           member_count: 1,
           name: "停用团队",
@@ -335,7 +345,7 @@ function createUsersFetcher({
           risk_summary: "不可选",
           slug: "disabled",
           status: "disabled",
-          tenant_id: "tenant-1",
+          tenant_id: TENANT_ID,
         },
       ]);
     }
@@ -344,7 +354,7 @@ function createUsersFetcher({
       return jsonResponse({
         items: [
           {
-            user_id: "user-1",
+            user_id: USER_OPERATOR_ID,
             username: "operator",
             display_name: "平台管理员",
             email: "operator@example.com",
@@ -353,18 +363,18 @@ function createUsersFetcher({
             recent_denied_reason: "team.member.change_role requires privileged role approval",
             memberships: [
               {
-                tenant_id: "tenant-1",
+                tenant_id: TENANT_ID,
                 team_id: null,
                 principal_type: "user",
-                principal_id: "user-1",
+                principal_id: USER_OPERATOR_ID,
                 role: "owner",
                 status: "active",
               },
               {
-                tenant_id: "tenant-1",
+                tenant_id: TENANT_ID,
                 team_id: TEAM_OPS_ID,
                 principal_type: "user",
-                principal_id: "user-1",
+                principal_id: USER_OPERATOR_ID,
                 role: "admin",
                 status: "active",
               },
@@ -378,11 +388,11 @@ function createUsersFetcher({
       return jsonResponse({
         items: [
           {
-            id: "login-1",
+            id: LOGIN_EVENT_ID,
             event_type: "login_succeeded",
-            user_id: "user-1",
+            user_id: USER_OPERATOR_ID,
             username: "operator",
-            session_id: "session-1",
+            session_id: SESSION_ID,
             client_ip: "127.0.0.1",
             user_agent: "Chrome 125 / macOS",
             result: "succeeded",
@@ -396,9 +406,9 @@ function createUsersFetcher({
       return jsonResponse({
         items: [
           {
-            id: "decision-1",
-            tenant_id: "tenant-1",
-            user_id: "user-1",
+            id: AUTHZ_DECISION_ID,
+            tenant_id: TENANT_ID,
+            user_id: USER_OPERATOR_ID,
             username: "operator",
             module: "team",
             action: "team.member.change_role",
@@ -407,7 +417,7 @@ function createUsersFetcher({
             resource_id: TEAM_OPS_ID,
             reason: "requires privileged role approval",
             actor_type: "user",
-            actor_id: "user-1",
+            actor_id: USER_OPERATOR_ID,
             created_at: "2026-06-04T01:44:00Z",
           },
         ],
@@ -453,11 +463,11 @@ describe("Users", () => {
     expect(fetcher).toHaveBeenCalledWith(expect.stringContaining("/api/auth/users?limit=50&offset=0"), expect.any(Object));
     expect(fetcher).toHaveBeenCalledWith(expect.stringContaining("/api/authz/members?limit=100&offset=0"), expect.any(Object));
     expect(fetcher).toHaveBeenCalledWith(
-      expect.stringContaining("/api/authz/decisions?result=failed&actor_type=user&actor_id=user-1&limit=8&offset=0"),
+      expect.stringContaining(`/api/authz/decisions?result=failed&actor_type=user&actor_id=${USER_OPERATOR_ID}&limit=8&offset=0`),
       expect.any(Object),
     );
     expect(fetcher).toHaveBeenCalledWith(
-      expect.stringContaining("/api/auth/users/user-1/project-team-scopes"),
+      expect.stringContaining(`/api/auth/users/${USER_OPERATOR_ID}/project-team-scopes`),
       expect.any(Object),
     );
   });
@@ -754,7 +764,7 @@ describe("Users", () => {
             current_revision: 3,
             digital_employee_count: 4,
             governance_status: "active",
-            human_owner_user_ids: ["user-1"],
+            human_owner_user_ids: [USER_OPERATOR_ID],
             id: TEAM_OPS_ID,
             member_count: 8,
             name: "平台运营",
@@ -762,7 +772,7 @@ describe("Users", () => {
             risk_summary: "低风险",
             slug: "ops",
             status: "active",
-            tenant_id: "tenant-1",
+            tenant_id: TENANT_ID,
           },
         ]);
       }
@@ -830,7 +840,7 @@ describe("Users", () => {
     await expect.element(screen.getByText("平台运营")).toBeInTheDocument();
     await expect.element(screen.getByText("风控审查")).toBeInTheDocument();
     expect(fetcher).toHaveBeenCalledWith(
-      expect.stringContaining("/api/auth/users/user-1/project-team-scopes"),
+      expect.stringContaining(`/api/auth/users/${USER_OPERATOR_ID}/project-team-scopes`),
       expect.any(Object),
     );
   });
