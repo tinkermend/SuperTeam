@@ -217,7 +217,10 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
           seed: input.avatarSeed.trim() || input.username.trim(),
           style: "adventurer",
         },
+        avatar_asset_id: input.avatarSeed.trim() || "engineer-m-01",
+        display_name: input.username.trim(),
         password: input.password,
+        selectable_team_ids: [],
         username: input.username.trim(),
       }),
     onSuccess: (response) => {
@@ -1074,6 +1077,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 function mergeUserIdentity(user: UserSummary, member?: AuthzMemberRecord): UserIdentityData {
   return {
     avatar: user.avatar,
+    avatar_asset_id: user.avatar_asset_id,
     display_name: member?.display_name ?? undefined,
     email: member?.email ?? undefined,
     id: user.id,

@@ -310,7 +310,7 @@ describe("auth api client", () => {
     );
   });
 
-  it("creates and manages users with cookie credentials", async () => {
+  it("manages users with cookie credentials", async () => {
     const fetcher = vi.fn(async () =>
       new Response(
         JSON.stringify({
@@ -334,31 +334,10 @@ describe("auth api client", () => {
       ),
     );
 
-    await createUser(
-      { baseUrl: "http://control-plane.local/", fetcher },
-      {
-        username: "operator",
-        password: "secret",
-        avatar: { provider: "dicebear", style: "adventurer", seed: "operator-avatar" },
-      },
-    );
     await updateUserStatus({ baseUrl: "http://control-plane.local/", fetcher }, operatorUserId, "disabled");
     await resetUserPassword({ baseUrl: "http://control-plane.local/", fetcher }, operatorUserId, "new-secret");
 
-    expect(fetcher).toHaveBeenNthCalledWith(1, "http://control-plane.local/api/auth/users", {
-      body: JSON.stringify({
-        username: "operator",
-        password: "secret",
-        avatar: { provider: "dicebear", style: "adventurer", seed: "operator-avatar" },
-      }),
-      credentials: "include",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-      },
-      method: "POST",
-    });
-    expect(fetcher).toHaveBeenNthCalledWith(2, `http://control-plane.local/api/auth/users/${operatorUserId}/status`, {
+    expect(fetcher).toHaveBeenNthCalledWith(1, `http://control-plane.local/api/auth/users/${operatorUserId}/status`, {
       body: JSON.stringify({ status: "disabled" }),
       credentials: "include",
       headers: {
@@ -367,7 +346,7 @@ describe("auth api client", () => {
       },
       method: "PATCH",
     });
-    expect(fetcher).toHaveBeenNthCalledWith(3, `http://control-plane.local/api/auth/users/${operatorUserId}/reset-password`, {
+    expect(fetcher).toHaveBeenNthCalledWith(2, `http://control-plane.local/api/auth/users/${operatorUserId}/reset-password`, {
       body: JSON.stringify({ password: "new-secret" }),
       credentials: "include",
       headers: {
@@ -433,17 +412,26 @@ describe("auth api client", () => {
   });
 
   it("lists user project team scopes with cookie credentials", async () => {
+    const scopedUserID = "user/id with space";
     const teamId = "55555555-5555-4555-8555-555555555555";
     const fetcher = vi.fn(async () =>
       jsonResponse({
         items: [
           {
+            id: "66666666-6666-4666-8666-666666666666",
+            tenant_id: "77777777-7777-4777-8777-777777777777",
+            user_id: userId,
             team_id: teamId,
-            team_name: "交付团队",
-            team_slug: "delivery",
-            team_status: "active",
-            authorized_at: "2026-06-17T02:00:00Z",
-            authorized_by_user_id: operatorUserId,
+            status: "active",
+            granted_by_user_id: operatorUserId,
+            created_at: "2026-06-17T02:00:00Z",
+            updated_at: "2026-06-17T02:30:00Z",
+            team: {
+              id: teamId,
+              name: "交付团队",
+              slug: "delivery",
+              status: "active",
+            },
           },
         ],
       }),
@@ -455,23 +443,31 @@ describe("auth api client", () => {
           baseUrl: "http://control-plane.local/",
           fetcher,
         },
-        userId,
+        scopedUserID,
       ),
     ).resolves.toMatchObject({
       items: [
         {
+          id: "66666666-6666-4666-8666-666666666666",
+          tenant_id: "77777777-7777-4777-8777-777777777777",
+          user_id: userId,
           team_id: teamId,
-          team_name: "交付团队",
-          team_slug: "delivery",
-          team_status: "active",
-          authorized_at: "2026-06-17T02:00:00Z",
-          authorized_by_user_id: operatorUserId,
+          status: "active",
+          granted_by_user_id: operatorUserId,
+          created_at: "2026-06-17T02:00:00Z",
+          updated_at: "2026-06-17T02:30:00Z",
+          team: {
+            id: teamId,
+            name: "交付团队",
+            slug: "delivery",
+            status: "active",
+          },
         },
       ],
     });
 
     expect(fetcher).toHaveBeenCalledWith(
-      `http://control-plane.local/api/auth/users/${userId}/project-team-scopes`,
+      "http://control-plane.local/api/auth/users/user%2Fid%20with%20space/project-team-scopes",
       {
         credentials: "include",
         headers: {
@@ -483,13 +479,25 @@ describe("auth api client", () => {
   });
 
   it("replaces user project team scopes with cookie credentials", async () => {
+    const scopedUserID = "user/id with space";
     const teamId = "55555555-5555-4555-8555-555555555555";
     const fetcher = vi.fn(async () =>
       jsonResponse({
         items: [
           {
+            id: "66666666-6666-4666-8666-666666666666",
+            tenant_id: "77777777-7777-4777-8777-777777777777",
+            user_id: userId,
             team_id: teamId,
-            team_name: "交付团队",
+            status: "active",
+            created_at: "2026-06-17T02:00:00Z",
+            updated_at: "2026-06-17T02:30:00Z",
+            team: {
+              id: teamId,
+              name: "交付团队",
+              slug: "delivery",
+              status: "active",
+            },
           },
         ],
       }),
@@ -501,7 +509,7 @@ describe("auth api client", () => {
           baseUrl: "http://control-plane.local/",
           fetcher,
         },
-        userId,
+        scopedUserID,
         {
           team_ids: [teamId],
         },
@@ -510,13 +518,15 @@ describe("auth api client", () => {
       items: [
         {
           team_id: teamId,
-          team_name: "交付团队",
+          team: {
+            name: "交付团队",
+          },
         },
       ],
     });
 
     expect(fetcher).toHaveBeenCalledWith(
-      `http://control-plane.local/api/auth/users/${userId}/project-team-scopes`,
+      "http://control-plane.local/api/auth/users/user%2Fid%20with%20space/project-team-scopes",
       {
         body: JSON.stringify({ team_ids: [teamId] }),
         credentials: "include",

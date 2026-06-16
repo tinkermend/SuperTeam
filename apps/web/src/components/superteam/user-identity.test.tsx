@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
-import { UserIdentity, buildUserAvatarDataUri, getUserIdentityLabel } from "./user-identity";
+import { UserIdentity, UserIdentityAvatar, buildUserAvatarDataUri, getUserIdentityLabel } from "./user-identity";
 
 describe("UserIdentity", () => {
   it("renders display name, email and avatar image", async () => {
@@ -39,6 +39,43 @@ describe("UserIdentity", () => {
 
     await expect.element(screen.getByText("许越")).toBeInTheDocument();
     await expect.element(screen.getByAltText("许越 的头像")).toBeInTheDocument();
+  });
+
+  it("prefers shared avatar asset thumbnail over DiceBear avatar", async () => {
+    const screen = await render(
+      <UserIdentityAvatar
+        user={{
+          avatar: { provider: "dicebear", seed: "user:asset-fallback", style: "adventurer" },
+          avatar_asset_id: "engineer-f-03",
+          display_name: "头像用户",
+          id: "user-asset",
+          status: "active",
+          username: "asset-user",
+        }}
+      />,
+    );
+
+    await expect.element(screen.getByAltText("头像用户 的头像")).toHaveAttribute(
+      "src",
+      "/images/digital-employee-avatars/engineer-f-03-256.webp",
+    );
+  });
+
+  it("falls back to DiceBear when shared avatar asset is unavailable", async () => {
+    const screen = await render(
+      <UserIdentityAvatar
+        user={{
+          avatar: { provider: "dicebear", seed: "user:dicebear-fallback", style: "adventurer" },
+          avatar_asset_id: "unknown-asset",
+          display_name: "默认头像用户",
+          id: "user-dicebear",
+          status: "active",
+          username: "dicebear-user",
+        }}
+      />,
+    );
+
+    await expect.element(screen.getByAltText("默认头像用户 的头像")).toHaveAttribute("src", expect.stringContaining("data:image/svg+xml"));
   });
 
   it("falls back to username and initials without avatar", () => {

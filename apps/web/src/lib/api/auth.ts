@@ -50,10 +50,10 @@ export type ListUsersOptions = ApiClientOptions & {
 
 export type CreateUserRequest = {
   avatar?: UserAvatar;
-  avatar_asset_id?: string;
-  display_name?: string;
+  avatar_asset_id: string;
+  display_name: string;
   password: string;
-  selectable_team_ids?: string[];
+  selectable_team_ids: string[];
   username: string;
 };
 
@@ -71,21 +71,16 @@ export type UserProjectTeamSummary = {
 };
 
 export type UserProjectTeamScope = {
-  authorized_at?: string;
-  authorized_by_user_id?: string;
-  created_at?: string;
+  created_at: string;
   granted_by_user_id?: string;
-  id?: string;
+  id: string;
   revoked_at?: string;
   status?: string;
-  team?: UserProjectTeamSummary;
+  team: UserProjectTeamSummary;
   team_id: string;
-  team_name?: string;
-  team_slug?: string;
-  team_status?: string;
-  tenant_id?: string;
-  updated_at?: string;
-  user_id?: string;
+  tenant_id: string;
+  updated_at: string;
+  user_id: string;
 };
 
 export type UserProjectTeamScopeListResponse = {
@@ -267,7 +262,8 @@ export async function listUserProjectTeamScopes(
   userID: string,
 ): Promise<UserProjectTeamScopeListResponse> {
   const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/auth/users/${userID}/project-team-scopes`), {
+  const encodedUserID = encodeURIComponent(userID);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/auth/users/${encodedUserID}/project-team-scopes`), {
     credentials: "include",
     headers: {
       accept: "application/json",
@@ -284,7 +280,8 @@ export async function replaceUserProjectTeamScopes(
   input: ReplaceUserProjectTeamScopesRequest,
 ): Promise<UserProjectTeamScopeListResponse> {
   const fetcher = options.fetcher ?? fetch;
-  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/auth/users/${userID}/project-team-scopes`), {
+  const encodedUserID = encodeURIComponent(userID);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/auth/users/${encodedUserID}/project-team-scopes`), {
     body: JSON.stringify(input),
     credentials: "include",
     headers: {
