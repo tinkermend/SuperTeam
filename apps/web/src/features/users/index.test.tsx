@@ -225,4 +225,29 @@ describe("Users", () => {
     await expect.element(screen.getByRole("heading", { name: "auditor" })).toBeInTheDocument();
     expect(fetcher).toHaveBeenCalledWith(expect.stringContaining("/api/auth/users?status=disabled&limit=50&offset=0"), expect.any(Object));
   });
+
+  it("does not submit the legacy create-user dialog without required avatar asset and teams", async () => {
+    const fetcher = createUsersFetcher();
+    vi.stubGlobal("fetch", fetcher);
+
+    const screen = await render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Users />
+      </QueryClientProvider>,
+    );
+
+    await expect.element(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "新建用户" }));
+    await userEvent.fill(screen.getByLabelText("用户名"), "new-operator");
+    await userEvent.fill(screen.getByLabelText("临时密码"), "secret");
+    await userEvent.click(screen.getByRole("button", { name: "创建用户" }));
+
+    await expect.element(screen.getByText("新建用户需要先选择内置头像和可选团队，请等待新版创建流程。")).toBeInTheDocument();
+    expect(
+      fetcher.mock.calls.some(([input, init]) => {
+        const url = new URL(String(input));
+        return url.pathname === "/api/auth/users" && init?.method === "POST";
+      }),
+    ).toBe(false);
+  });
 });

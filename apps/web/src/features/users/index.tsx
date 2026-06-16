@@ -64,7 +64,6 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
-  createUser,
   listAuthzDecisions,
   listAuthzMembers,
   listLoginLogs,
@@ -210,24 +209,8 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
     },
   });
   const createUserMutation = useMutation({
-    mutationFn: (input: { avatarSeed: string; password: string; username: string }) =>
-      createUser(apiOptions, {
-        avatar: {
-          provider: "dicebear",
-          seed: input.avatarSeed.trim() || input.username.trim(),
-          style: "adventurer",
-        },
-        avatar_asset_id: input.avatarSeed.trim() || "engineer-m-01",
-        display_name: input.username.trim(),
-        password: input.password,
-        selectable_team_ids: [],
-        username: input.username.trim(),
-      }),
-    onSuccess: (response) => {
-      setCreateUserOpen(false);
-      setCreateDraft({ avatarSeed: "", password: "", username: "" });
-      setSelectedUserId(response.user.id);
-      invalidateUserWorkspace();
+    mutationFn: async (_input: { avatarSeed: string; password: string; username: string }) => {
+      throw new Error("新建用户需要先选择内置头像和可选团队，请等待新版创建流程。");
     },
   });
 

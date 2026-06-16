@@ -58,16 +58,16 @@ export type CreateUserRequest = {
 };
 
 export type UserProjectTeamSummary = {
-  current_revision?: number;
-  digital_employee_count?: number;
-  governance_status?: string;
-  human_owners?: UserSummary[];
+  current_revision?: number | null;
+  digital_employee_count: number;
+  governance_status: string;
+  human_owners: UserSummary[];
   id: string;
   name: string;
-  pending_draft_count?: number;
-  risk_summary?: string;
-  slug?: string;
-  status?: string;
+  pending_draft_count: number;
+  risk_summary: string;
+  slug: string;
+  status: string;
 };
 
 export type UserProjectTeamScope = {
@@ -75,7 +75,7 @@ export type UserProjectTeamScope = {
   granted_by_user_id?: string;
   id: string;
   revoked_at?: string;
-  status?: string;
+  status: string;
   team: UserProjectTeamSummary;
   team_id: string;
   tenant_id: string;
