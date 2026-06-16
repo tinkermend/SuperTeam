@@ -829,7 +829,8 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	}
 	cookie := loginResp.Result().Cookies()[0]
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/auth/users", strings.NewReader(`{"username":"operator","password":"secret","avatar":{"provider":"dicebear","style":"adventurer","seed":"operator-avatar"}}`))
+	teamID := uuid.New()
+	createReq := httptest.NewRequest(http.MethodPost, "/api/auth/users", strings.NewReader(`{"username":"operator","display_name":"Operator","password":"secret","avatar_asset_id":"engineer-m-01","selectable_team_ids":["`+teamID.String()+`"]}`))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.AddCookie(cookie)
 	createResp := httptest.NewRecorder()
@@ -839,12 +840,9 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	}
 	var createBody struct {
 		User struct {
-			ID     string `json:"id"`
-			Avatar struct {
-				Provider string `json:"provider"`
-				Style    string `json:"style"`
-				Seed     string `json:"seed"`
-			} `json:"avatar"`
+			ID            string `json:"id"`
+			DisplayName   string `json:"display_name"`
+			AvatarAssetID string `json:"avatar_asset_id"`
 		} `json:"user"`
 	}
 	if err := json.NewDecoder(createResp.Body).Decode(&createBody); err != nil {
@@ -854,8 +852,11 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected created user ID to be UUID, got %q: %v", createBody.User.ID, err)
 	}
-	if createBody.User.Avatar.Provider != "dicebear" || createBody.User.Avatar.Style != "adventurer" || createBody.User.Avatar.Seed != "operator-avatar" {
-		t.Fatalf("expected created user avatar to round-trip, got %#v", createBody.User.Avatar)
+	if createBody.User.DisplayName != "Operator" || createBody.User.AvatarAssetID != "engineer-m-01" {
+		t.Fatalf("expected created user display name and avatar asset to round-trip, got %#v", createBody.User)
+	}
+	if got := authRepo.scopeTeamIDs[operatorID]; len(got) != 1 || got[0] != teamID {
+		t.Fatalf("expected selectable team scope to be stored, got %#v", got)
 	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/auth/users?q=operator&status=active&limit=10&offset=0", nil)
@@ -867,13 +868,9 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	}
 	var listBody struct {
 		Items []struct {
-			Username string `json:"username"`
-			Status   string `json:"status"`
-			Avatar   struct {
-				Provider string `json:"provider"`
-				Style    string `json:"style"`
-				Seed     string `json:"seed"`
-			} `json:"avatar"`
+			Username      string `json:"username"`
+			Status        string `json:"status"`
+			AvatarAssetID string `json:"avatar_asset_id"`
 		} `json:"items"`
 	}
 	if err := json.NewDecoder(listResp.Body).Decode(&listBody); err != nil {
@@ -885,8 +882,8 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	if len(listBody.Items) != 1 || listBody.Items[0].Username != "operator" {
 		t.Fatalf("expected only operator user, got %#v", listBody.Items)
 	}
-	if listBody.Items[0].Avatar.Seed != "operator-avatar" {
-		t.Fatalf("expected listed user avatar seed to be preserved, got %#v", listBody.Items[0].Avatar)
+	if listBody.Items[0].AvatarAssetID != "engineer-m-01" {
+		t.Fatalf("expected listed user avatar asset to be preserved, got %#v", listBody.Items[0])
 	}
 
 	statusReq := httptest.NewRequest(http.MethodPatch, "/api/auth/users/"+operatorID.String()+"/status", strings.NewReader(`{"status":"disabled"}`))
@@ -1837,6 +1834,7 @@ type routeAuthRepo struct {
 	sessions            map[string]*auth.Session
 	loginLogs           []auth.LoginLog
 	operationLogs       []auth.CreateOperationLogParams
+	scopeTeamIDs        map[uuid.UUID][]uuid.UUID
 	lastListUsersFilter auth.ListUsersFilter
 }
 
@@ -1847,12 +1845,22 @@ func newRouteAuthRepo() *routeAuthRepo {
 		sessions:      map[string]*auth.Session{},
 		loginLogs:     []auth.LoginLog{},
 		operationLogs: []auth.CreateOperationLogParams{},
+		scopeTeamIDs:  map[uuid.UUID][]uuid.UUID{},
 	}
 }
 
-func (r *routeAuthRepo) CreateUser(ctx context.Context, username, passwordHash string, avatar auth.UserAvatarConfig) (*auth.User, error) {
-	user := &auth.User{ID: uuid.New(), Username: username, PasswordHash: passwordHash, Status: "active", Avatar: avatar}
-	r.users[username] = user
+func (r *routeAuthRepo) CreateUser(ctx context.Context, input auth.CreateUserRecordInput) (*auth.User, error) {
+	user := &auth.User{
+		ID:            uuid.New(),
+		Username:      input.Username,
+		DisplayName:   input.DisplayName,
+		Email:         input.Email,
+		PasswordHash:  input.PasswordHash,
+		Status:        "active",
+		Avatar:        auth.UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:" + input.Username, Options: map[string]any{}},
+		AvatarAssetID: input.AvatarAssetID,
+	}
+	r.users[input.Username] = user
 	r.usersByID[user.ID] = user
 	return user, nil
 }
@@ -1999,6 +2007,46 @@ func (r *routeAuthRepo) ListLoginLogs(ctx context.Context, filter auth.ListLogin
 func (r *routeAuthRepo) CreateOperationLog(ctx context.Context, params auth.CreateOperationLogParams) error {
 	r.operationLogs = append(r.operationLogs, params)
 	return nil
+}
+
+func (r *routeAuthRepo) ReplaceUserProjectTeamScopes(ctx context.Context, tenantID, userID, grantedByUserID uuid.UUID, teamIDs []uuid.UUID) ([]auth.UserProjectTeamScopeSummary, error) {
+	r.scopeTeamIDs[userID] = append([]uuid.UUID(nil), teamIDs...)
+	return r.ListUserProjectTeamScopes(ctx, tenantID, userID)
+}
+
+func (r *routeAuthRepo) ListUserProjectTeamScopes(ctx context.Context, tenantID, userID uuid.UUID) ([]auth.UserProjectTeamScopeSummary, error) {
+	teamIDs := r.scopeTeamIDs[userID]
+	scopes := make([]auth.UserProjectTeamScopeSummary, 0, len(teamIDs))
+	now := time.Now().UTC()
+	for _, teamID := range teamIDs {
+		scopes = append(scopes, auth.UserProjectTeamScopeSummary{
+			ID:        uuid.New(),
+			TenantID:  tenantID,
+			UserID:    userID,
+			TeamID:    teamID,
+			Status:    "active",
+			CreatedAt: now,
+			UpdatedAt: now,
+			Team: auth.UserProjectTeamScopeTeamSummary{
+				ID:               teamID,
+				Slug:             "team-" + teamID.String()[:8],
+				Name:             "Team " + teamID.String()[:8],
+				Status:           "active",
+				GovernanceStatus: "not_configured",
+				HumanOwners:      []auth.UserProjectTeamScopeOwnerSummary{},
+			},
+		})
+	}
+	return scopes, nil
+}
+
+func (r *routeAuthRepo) CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error) {
+	for _, scopedTeamID := range r.scopeTeamIDs[userID] {
+		if scopedTeamID == teamID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func routeLogin(t *testing.T, server *Server, username, password string) *http.Cookie {
