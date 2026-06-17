@@ -12,16 +12,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  listDigitalEmployeeAvatarAssets,
-  listTeamSummaries,
-  type DigitalEmployeeAvatarAsset,
-} from "@/lib/api";
+import { buildUserAvatarDataUri } from "@/components/superteam/user-identity";
+import { listTeamSummaries, type UserAvatar } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { HUMAN_AVATAR_PRESETS, type HumanAvatarPreset } from "../human-avatar-presets";
 import { SelectableTeamList } from "./selectable-team-list";
 
 export type CreateUserDraft = {
-  avatar_asset_id: string;
+  avatar: UserAvatar;
   display_name: string;
   password: string;
   selectable_team_ids: string[];
@@ -38,8 +36,12 @@ type CreateUserDrawerProps = {
   submitError?: string;
 };
 
-const emptyDraft: CreateUserDraft = {
-  avatar_asset_id: "",
+type CreateUserDraftState = Omit<CreateUserDraft, "avatar"> & {
+  avatar: UserAvatar | null;
+};
+
+const emptyDraft: CreateUserDraftState = {
+  avatar: null,
   display_name: "",
   password: "",
   selectable_team_ids: [],
@@ -55,7 +57,7 @@ export function CreateUserDrawer({
   open,
   submitError,
 }: CreateUserDrawerProps) {
-  const [draft, setDraft] = useState<CreateUserDraft>(emptyDraft);
+  const [draft, setDraft] = useState<CreateUserDraftState>(emptyDraft);
   const apiOptions = useMemo(
     () => ({
       baseUrl: apiBaseUrl,
@@ -63,28 +65,15 @@ export function CreateUserDrawer({
     }),
     [apiBaseUrl, fetcher],
   );
-  const avatarAssetsQuery = useQuery({
-    enabled: open,
-    queryFn: () => listDigitalEmployeeAvatarAssets(apiOptions),
-    queryKey: ["users", "create", "avatar-assets"],
-  });
   const teamsQuery = useQuery({
     enabled: open,
     queryFn: () => listTeamSummaries(apiOptions, { status: "active" }),
     queryKey: ["users", "create", "teams"],
   });
-  const avatarAssets = avatarAssetsQuery.data ?? [];
   const teams = teamsQuery.data ?? [];
   const activeTeams = teams.filter((team) => team.status === "active");
-  const avatarAssetsHasError = Boolean(avatarAssetsQuery.error);
   const teamsHasError = Boolean(teamsQuery.error);
-  const avatarAssetsReady =
-    avatarAssetsQuery.isSuccess &&
-    !avatarAssetsQuery.isFetching &&
-    !avatarAssetsHasError &&
-    avatarAssets.length > 0;
   const teamsReady = teamsQuery.isSuccess && !teamsQuery.isFetching && !teamsHasError && activeTeams.length > 0;
-  const currentAvatarAssets = avatarAssetsReady ? avatarAssets : [];
   const currentTeams = teamsReady ? activeTeams : [];
   const selectedTeamIdsAreCurrent =
     draft.selectable_team_ids.length > 0 &&
@@ -93,9 +82,7 @@ export function CreateUserDrawer({
     draft.username.trim() &&
       draft.display_name.trim() &&
       draft.password.trim() &&
-      draft.avatar_asset_id.trim() &&
-      avatarAssetsReady &&
-      currentAvatarAssets.some((asset) => asset.id === draft.avatar_asset_id) &&
+      draft.avatar &&
       teamsReady &&
       selectedTeamIdsAreCurrent,
   );
@@ -128,9 +115,10 @@ export function CreateUserDrawer({
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(event) => {
             event.preventDefault();
-            if (canSubmit && !isSubmitting) {
+            const selectedAvatar = draft.avatar;
+            if (canSubmit && !isSubmitting && selectedAvatar) {
               onSubmit({
-                avatar_asset_id: draft.avatar_asset_id,
+                avatar: selectedAvatar,
                 display_name: draft.display_name.trim(),
                 password: draft.password,
                 selectable_team_ids: draft.selectable_team_ids,
@@ -173,11 +161,11 @@ export function CreateUserDrawer({
               </div>
 
               <AvatarSelection
-                assets={currentAvatarAssets}
-                isError={avatarAssetsHasError}
-                isLoading={avatarAssetsQuery.isLoading || avatarAssetsQuery.isFetching}
-                onSelect={(avatarAssetId) => setDraft({ ...draft, avatar_asset_id: avatarAssetId })}
-                selectedAssetId={draft.avatar_asset_id}
+                disabled={isSubmitting}
+                onSelect={(avatar) => setDraft({ ...draft, avatar })}
+                presets={HUMAN_AVATAR_PRESETS}
+                previewUsername={draft.username.trim() || draft.display_name.trim()}
+                selectedAvatar={draft.avatar}
               />
 
               <section className="rounded-md border p-3">
@@ -232,52 +220,50 @@ export function CreateUserDrawer({
 }
 
 function AvatarSelection({
-  assets,
-  isError,
-  isLoading,
+  disabled,
   onSelect,
-  selectedAssetId,
+  presets,
+  previewUsername,
+  selectedAvatar,
 }: {
-  assets: DigitalEmployeeAvatarAsset[];
-  isError: boolean;
-  isLoading: boolean;
-  onSelect: (value: string) => void;
-  selectedAssetId: string;
+  disabled: boolean;
+  onSelect: (value: UserAvatar) => void;
+  presets: HumanAvatarPreset[];
+  previewUsername: string;
+  selectedAvatar: UserAvatar | null;
 }) {
   return (
     <fieldset className="rounded-md border p-3">
       <legend className="px-1 text-sm font-medium">头像</legend>
-      {isLoading ? <p className="mt-3 text-sm text-muted-foreground">加载头像中</p> : null}
-      {isError ? (
-        <Alert className="mt-3" variant="destructive">
-          <ShieldAlert />
-          <AlertTitle>头像加载失败</AlertTitle>
-          <AlertDescription>请检查头像资产接口后重试。</AlertDescription>
-        </Alert>
-      ) : null}
-      <div className="mt-3 flex flex-wrap gap-3">
-        {assets.map((asset) => {
-          const selected = asset.id === selectedAssetId;
+      <div className="mt-3 flex flex-wrap gap-2.5">
+        {presets.map((preset) => {
+          const selected =
+            selectedAvatar?.provider === preset.avatar.provider &&
+            selectedAvatar.style === preset.avatar.style &&
+            selectedAvatar.seed === preset.avatar.seed;
+          const src = buildUserAvatarDataUri(preset.avatar, previewUsername || preset.avatar.seed);
           return (
             <button
-              aria-label={`选择头像 ${asset.label}`}
+              aria-label={`选择头像 ${preset.label}`}
               aria-pressed={selected}
               className={cn(
-                "flex size-20 shrink-0 items-center justify-center rounded-full border bg-muted p-0.5 transition",
+                "flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-muted transition",
                 selected ? "border-primary ring-2 ring-primary/30" : "hover:border-primary/60",
               )}
-              key={asset.id}
-              onClick={() => onSelect(asset.id)}
+              disabled={disabled}
+              key={preset.id}
+              onClick={() => onSelect(preset.avatar)}
               type="button"
             >
-              <img alt={asset.label} className="size-full rounded-full object-cover" src={asset.thumbnail_url} />
+              <img
+                alt={preset.label}
+                className="size-full scale-125 rounded-full object-cover"
+                src={src}
+              />
             </button>
           );
         })}
       </div>
-      {!isLoading && !isError && assets.length === 0 ? (
-        <p className="mt-2 text-sm text-muted-foreground">暂无可选头像</p>
-      ) : null}
     </fieldset>
   );
 }

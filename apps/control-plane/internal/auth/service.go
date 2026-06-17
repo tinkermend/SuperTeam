@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/superteam/control-plane/internal/avatar"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -18,6 +17,7 @@ type CreateUserRecordInput struct {
 	DisplayName   string
 	Email         string
 	PasswordHash  string
+	Avatar        UserAvatarConfig
 	AvatarAssetID string
 }
 
@@ -101,10 +101,10 @@ func (s *Service) CreateManagedUser(ctx context.Context, actor Actor, input Crea
 			return err
 		}
 		created, err := repo.CreateUser(ctx, CreateUserRecordInput{
-			Username:      input.Username,
-			DisplayName:   input.DisplayName,
-			PasswordHash:  string(hash),
-			AvatarAssetID: input.AvatarAssetID,
+			Username:     input.Username,
+			DisplayName:  input.DisplayName,
+			PasswordHash: string(hash),
+			Avatar:       input.Avatar,
 		})
 		if err != nil {
 			return err
@@ -130,18 +130,27 @@ func normalizeManagedUserInput(input CreateManagedUserInput) (CreateManagedUserI
 	if input.TenantID == uuid.Nil {
 		input.TenantID = uuid.MustParse(DefaultTenantID)
 	}
-	if input.Username == "" || input.DisplayName == "" || input.Password == "" || input.AvatarAssetID == "" || len(input.SelectableTeamIDs) == 0 {
+	if input.Username == "" ||
+		input.DisplayName == "" ||
+		input.Password == "" ||
+		input.AvatarAssetID != "" ||
+		!isExplicitSupportedUserAvatar(input.Avatar) ||
+		len(input.SelectableTeamIDs) == 0 {
 		return input, ErrInvalidManagedUserInput
 	}
+	input.Avatar = normalizeUserAvatarConfig(input.Username, input.Avatar)
 	teamIDs, err := normalizeProjectTeamScopeIDs(input.SelectableTeamIDs)
 	if err != nil {
 		return input, err
 	}
 	input.SelectableTeamIDs = teamIDs
-	if _, ok := avatar.BuiltInAssetByID(input.AvatarAssetID); !ok {
-		return input, ErrInvalidManagedUserInput
-	}
 	return input, nil
+}
+
+func isExplicitSupportedUserAvatar(avatar UserAvatarConfig) bool {
+	return strings.TrimSpace(avatar.Provider) == "dicebear" &&
+		strings.TrimSpace(avatar.Style) == "adventurer" &&
+		strings.TrimSpace(avatar.Seed) != ""
 }
 
 func normalizeProjectTeamScopeIDs(teamIDs []uuid.UUID) ([]uuid.UUID, error) {
@@ -167,6 +176,9 @@ func normalizeProjectTeamScopeIDs(teamIDs []uuid.UUID) ([]uuid.UUID, error) {
 }
 
 func normalizeUserAvatarConfig(username string, avatar UserAvatarConfig) UserAvatarConfig {
+	avatar.Provider = strings.TrimSpace(avatar.Provider)
+	avatar.Style = strings.TrimSpace(avatar.Style)
+	avatar.Seed = strings.TrimSpace(avatar.Seed)
 	if avatar.Provider == "" {
 		avatar.Provider = "dicebear"
 	}

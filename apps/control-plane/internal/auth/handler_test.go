@@ -85,7 +85,7 @@ func TestHTTPHandlerCreatesManagedUserWithSelectableTeams(t *testing.T) {
 		"username":"zhoumin",
 		"display_name":"周敏",
 		"password":"secret",
-		"avatar_asset_id":"engineer-f-01",
+		"avatar":{"provider":"dicebear","style":"adventurer","seed":"user:zhoumin"},
 		"selectable_team_ids":["%s","%s"]
 	}`, teamA, teamB)))
 	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
@@ -103,8 +103,8 @@ func TestHTTPHandlerCreatesManagedUserWithSelectableTeams(t *testing.T) {
 	if response.User.DisplayName == nil || *response.User.DisplayName != "周敏" {
 		t.Fatalf("expected display name in response, got %#v", response.User)
 	}
-	if response.User.AvatarAssetId == nil || *response.User.AvatarAssetId != "engineer-f-01" {
-		t.Fatalf("expected avatar asset id in response, got %#v", response.User)
+	if response.User.Avatar.Seed != "user:zhoumin" {
+		t.Fatalf("expected human avatar config in response, got %#v", response.User)
 	}
 }
 
@@ -117,7 +117,7 @@ func TestHTTPHandlerDeniedCreateUserWithSelectableTeamsDoesNotCreateUserOrScopes
 		"username":"denied-create",
 		"display_name":"Denied Create",
 		"password":"secret",
-		"avatar_asset_id":"engineer-f-01",
+		"avatar":{"provider":"dicebear","style":"adventurer","seed":"user:denied-create"},
 		"selectable_team_ids":["%s"]
 	}`, teamID)))
 	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})

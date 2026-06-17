@@ -50,7 +50,7 @@ func (r *PgRepository) WithTransaction(ctx context.Context, fn func(Repository) 
 }
 
 func (r *PgRepository) CreateUser(ctx context.Context, input CreateUserRecordInput) (*User, error) {
-	avatar := normalizeUserAvatarConfig(input.Username, UserAvatarConfig{})
+	avatar := normalizeUserAvatarConfig(input.Username, input.Avatar)
 	avatarOptions, err := json.Marshal(avatar.Options)
 	if err != nil {
 		return nil, err

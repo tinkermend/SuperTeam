@@ -233,7 +233,7 @@ export function UsersView({ fetcher }: UsersViewProps = {}) {
         username: input.username,
         display_name: input.display_name,
         password: input.password,
-        avatar_asset_id: input.avatar_asset_id,
+        avatar: input.avatar,
         selectable_team_ids: input.selectable_team_ids,
       };
       return createUser(apiOptions, payload);

@@ -126,6 +126,10 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 }
 
 func (s *Service) validateProjectTeamScopes(ctx context.Context, req CreateProjectRequest) error {
+	return s.validateProjectTeamScopeAccess(ctx, req.TenantID, req.ActorUserID, req.TeamID, req.Members)
+}
+
+func (s *Service) validateProjectTeamScopeAccess(ctx context.Context, tenantID, actorUserID uuid.UUID, projectTeamID *uuid.UUID, members []ProjectMemberInput) error {
 	teamIDs := make(map[uuid.UUID]struct{})
 	orderedTeamIDs := make([]uuid.UUID, 0)
 	addTeamID := func(teamID uuid.UUID) {
@@ -138,10 +142,10 @@ func (s *Service) validateProjectTeamScopes(ctx context.Context, req CreateProje
 		teamIDs[teamID] = struct{}{}
 		orderedTeamIDs = append(orderedTeamIDs, teamID)
 	}
-	if req.TeamID != nil && *req.TeamID != uuid.Nil {
-		addTeamID(*req.TeamID)
+	if projectTeamID != nil && *projectTeamID != uuid.Nil {
+		addTeamID(*projectTeamID)
 	}
-	for _, member := range req.Members {
+	for _, member := range members {
 		if member.PrincipalType == PrincipalTypeTeam && member.PrincipalID != uuid.Nil {
 			addTeamID(member.PrincipalID)
 		}
@@ -156,7 +160,7 @@ func (s *Service) validateProjectTeamScopes(ctx context.Context, req CreateProje
 		return orderedTeamIDs[i].String() < orderedTeamIDs[j].String()
 	})
 	for _, teamID := range orderedTeamIDs {
-		allowed, err := s.teamScopeAuthorizer.CanUseTeamForProject(ctx, req.TenantID, req.ActorUserID, teamID)
+		allowed, err := s.teamScopeAuthorizer.CanUseTeamForProject(ctx, tenantID, actorUserID, teamID)
 		if err != nil {
 			return err
 		}
@@ -230,6 +234,9 @@ func (s *Service) UpdateProjectConfig(ctx context.Context, req UpdateProjectConf
 	}
 	if req.Members != nil {
 		if err := validateMembers(*req.Members); err != nil {
+			return nil, err
+		}
+		if err := s.validateProjectTeamScopeAccess(ctx, req.TenantID, req.ActorUserID, nil, *req.Members); err != nil {
 			return nil, err
 		}
 	}

@@ -49,8 +49,7 @@ export type ListUsersOptions = ApiClientOptions & {
 };
 
 export type CreateUserRequest = {
-  avatar?: UserAvatar;
-  avatar_asset_id: string;
+  avatar: UserAvatar;
   display_name: string;
   password: string;
   selectable_team_ids: string[];

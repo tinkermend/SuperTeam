@@ -357,8 +357,13 @@ describe("auth api client", () => {
     });
   });
 
-  it("creates users with identity assets and selectable teams unchanged", async () => {
+  it("creates users with human avatar config and selectable teams unchanged", async () => {
     const teamId = "55555555-5555-4555-8555-555555555555";
+    const avatar = {
+      provider: "dicebear" as const,
+      style: "adventurer" as const,
+      seed: "user:zhoumin",
+    };
     const fetcher = vi.fn(async () =>
       jsonResponse({
         user: {
@@ -366,13 +371,9 @@ describe("auth api client", () => {
           username: "operator",
           display_name: "值班负责人",
           email: null,
-          avatar_asset_id: "engineer-f-03",
+          avatar_asset_id: null,
           status: "active",
-          avatar: {
-            provider: "dicebear",
-            style: "adventurer",
-            seed: "operator-avatar",
-          },
+          avatar,
         },
       }),
     );
@@ -384,13 +385,14 @@ describe("auth api client", () => {
           username: "operator",
           display_name: "值班负责人",
           password: "secret",
-          avatar_asset_id: "engineer-f-03",
+          avatar,
           selectable_team_ids: [teamId],
         },
       ),
     ).resolves.toMatchObject({
       user: {
-        avatar_asset_id: "engineer-f-03",
+        avatar,
+        avatar_asset_id: null,
         display_name: "值班负责人",
         email: null,
       },
@@ -401,7 +403,7 @@ describe("auth api client", () => {
         username: "operator",
         display_name: "值班负责人",
         password: "secret",
-        avatar_asset_id: "engineer-f-03",
+        avatar,
         selectable_team_ids: [teamId],
       }),
       credentials: "include",

@@ -830,7 +830,7 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	cookie := loginResp.Result().Cookies()[0]
 
 	teamID := uuid.New()
-	createReq := httptest.NewRequest(http.MethodPost, "/api/auth/users", strings.NewReader(`{"username":"operator","display_name":"Operator","password":"secret","avatar_asset_id":"engineer-m-01","selectable_team_ids":["`+teamID.String()+`"]}`))
+	createReq := httptest.NewRequest(http.MethodPost, "/api/auth/users", strings.NewReader(`{"username":"operator","display_name":"Operator","password":"secret","avatar":{"provider":"dicebear","style":"adventurer","seed":"user:operator"},"selectable_team_ids":["`+teamID.String()+`"]}`))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.AddCookie(cookie)
 	createResp := httptest.NewRecorder()
@@ -840,9 +840,9 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	}
 	var createBody struct {
 		User struct {
-			ID            string `json:"id"`
-			DisplayName   string `json:"display_name"`
-			AvatarAssetID string `json:"avatar_asset_id"`
+			ID          string                `json:"id"`
+			DisplayName string                `json:"display_name"`
+			Avatar      auth.UserAvatarConfig `json:"avatar"`
 		} `json:"user"`
 	}
 	if err := json.NewDecoder(createResp.Body).Decode(&createBody); err != nil {
@@ -852,8 +852,8 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected created user ID to be UUID, got %q: %v", createBody.User.ID, err)
 	}
-	if createBody.User.DisplayName != "Operator" || createBody.User.AvatarAssetID != "engineer-m-01" {
-		t.Fatalf("expected created user display name and avatar asset to round-trip, got %#v", createBody.User)
+	if createBody.User.DisplayName != "Operator" || createBody.User.Avatar.Seed != "user:operator" {
+		t.Fatalf("expected created user display name and human avatar to round-trip, got %#v", createBody.User)
 	}
 	if got := authRepo.scopeTeamIDs[operatorID]; len(got) != 1 || got[0] != teamID {
 		t.Fatalf("expected selectable team scope to be stored, got %#v", got)
@@ -868,9 +868,9 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	}
 	var listBody struct {
 		Items []struct {
-			Username      string `json:"username"`
-			Status        string `json:"status"`
-			AvatarAssetID string `json:"avatar_asset_id"`
+			Username string                `json:"username"`
+			Status   string                `json:"status"`
+			Avatar   auth.UserAvatarConfig `json:"avatar"`
 		} `json:"items"`
 	}
 	if err := json.NewDecoder(listResp.Body).Decode(&listBody); err != nil {
@@ -882,8 +882,8 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	if len(listBody.Items) != 1 || listBody.Items[0].Username != "operator" {
 		t.Fatalf("expected only operator user, got %#v", listBody.Items)
 	}
-	if listBody.Items[0].AvatarAssetID != "engineer-m-01" {
-		t.Fatalf("expected listed user avatar asset to be preserved, got %#v", listBody.Items[0])
+	if listBody.Items[0].Avatar.Seed != "user:operator" {
+		t.Fatalf("expected listed user human avatar to be preserved, got %#v", listBody.Items[0])
 	}
 
 	statusReq := httptest.NewRequest(http.MethodPatch, "/api/auth/users/"+operatorID.String()+"/status", strings.NewReader(`{"status":"disabled"}`))
@@ -1854,6 +1854,19 @@ func (r *routeAuthRepo) WithTransaction(ctx context.Context, fn func(auth.Reposi
 }
 
 func (r *routeAuthRepo) CreateUser(ctx context.Context, input auth.CreateUserRecordInput) (*auth.User, error) {
+	avatar := input.Avatar
+	if avatar.Provider == "" {
+		avatar.Provider = "dicebear"
+	}
+	if avatar.Style == "" {
+		avatar.Style = "adventurer"
+	}
+	if avatar.Seed == "" {
+		avatar.Seed = "user:" + input.Username
+	}
+	if avatar.Options == nil {
+		avatar.Options = map[string]any{}
+	}
 	user := &auth.User{
 		ID:            uuid.New(),
 		Username:      input.Username,
@@ -1861,7 +1874,7 @@ func (r *routeAuthRepo) CreateUser(ctx context.Context, input auth.CreateUserRec
 		Email:         input.Email,
 		PasswordHash:  input.PasswordHash,
 		Status:        "active",
-		Avatar:        auth.UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:" + input.Username, Options: map[string]any{}},
+		Avatar:        avatar,
 		AvatarAssetID: input.AvatarAssetID,
 	}
 	r.users[input.Username] = user

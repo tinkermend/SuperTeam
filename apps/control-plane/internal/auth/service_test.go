@@ -79,7 +79,7 @@ func (m *mockRepo) CreateUser(ctx context.Context, input CreateUserRecordInput) 
 		Email:         input.Email,
 		PasswordHash:  input.PasswordHash,
 		Status:        "active",
-		Avatar:        defaultUserAvatarConfig(input.Username),
+		Avatar:        normalizeUserAvatarConfig(input.Username, input.Avatar),
 		AvatarAssetID: input.AvatarAssetID,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
@@ -409,7 +409,7 @@ func TestCreateManagedUserRecordsOperationLog(t *testing.T) {
 		Username:          "operator",
 		DisplayName:       "Operator",
 		Password:          "secret",
-		AvatarAssetID:     "engineer-m-01",
+		Avatar:            UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:operator"},
 		SelectableTeamIDs: []uuid.UUID{uuid.New()},
 		TenantID:          uuid.MustParse(DefaultTenantID),
 	})
@@ -419,8 +419,8 @@ func TestCreateManagedUserRecordsOperationLog(t *testing.T) {
 	if created.Username != "operator" || created.Status != UserStatusActive {
 		t.Fatalf("unexpected created user: %#v", created)
 	}
-	if created.DisplayName != "Operator" || created.AvatarAssetID != "engineer-m-01" {
-		t.Fatalf("expected created user display name and avatar asset to be preserved, got %#v", created)
+	if created.DisplayName != "Operator" || created.Avatar.Seed != "user:operator" || created.AvatarAssetID != "" {
+		t.Fatalf("expected created user display name and human avatar to be preserved, got %#v", created)
 	}
 	if len(repo.operationLogs) != 1 {
 		t.Fatalf("expected operation log, got %d", len(repo.operationLogs))
@@ -434,7 +434,7 @@ func TestCreateManagedUserRecordsOperationLog(t *testing.T) {
 	}
 }
 
-func TestCreateManagedUserPersistsDisplayNameAvatarAssetAndScopes(t *testing.T) {
+func TestCreateManagedUserPersistsDisplayNameHumanAvatarAndScopes(t *testing.T) {
 	repo := newMockRepo()
 	svc, _ := NewService(repo)
 	actor, err := svc.CreateUser(context.Background(), "admin", "admin")
@@ -448,15 +448,15 @@ func TestCreateManagedUserPersistsDisplayNameAvatarAssetAndScopes(t *testing.T) 
 		Username:          "zhoumin",
 		DisplayName:       "周敏",
 		Password:          "secret",
-		AvatarAssetID:     "engineer-f-01",
+		Avatar:            UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:zhoumin"},
 		SelectableTeamIDs: []uuid.UUID{teamA, teamB},
 		TenantID:          uuid.MustParse(DefaultTenantID),
 	})
 	if err != nil {
 		t.Fatalf("create managed user: %v", err)
 	}
-	if created.DisplayName != "周敏" || created.AvatarAssetID != "engineer-f-01" {
-		t.Fatalf("expected display name and avatar asset, got %#v", created)
+	if created.DisplayName != "周敏" || created.Avatar.Seed != "user:zhoumin" || created.AvatarAssetID != "" {
+		t.Fatalf("expected display name and human avatar, got %#v", created)
 	}
 	if got := repo.scopeTeamIDs[created.ID]; len(got) != 2 || got[0] != teamA || got[1] != teamB {
 		t.Fatalf("expected scope team ids to be persisted, got %#v", got)
@@ -476,7 +476,7 @@ func TestCreateManagedUserRollsBackCreatedUserWhenScopeReplacementFails(t *testi
 		Username:          "rollback-user",
 		DisplayName:       "Rollback User",
 		Password:          "secret",
-		AvatarAssetID:     "engineer-f-01",
+		Avatar:            UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:rollback-user"},
 		SelectableTeamIDs: []uuid.UUID{uuid.New()},
 		TenantID:          uuid.MustParse(DefaultTenantID),
 	})
@@ -497,11 +497,11 @@ func TestCreateManagedUserRequiresSelectableTeams(t *testing.T) {
 	}
 
 	_, err = svc.CreateManagedUser(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, CreateManagedUserInput{
-		Username:      "empty-scope",
-		DisplayName:   "空范围",
-		Password:      "secret",
-		AvatarAssetID: "engineer-f-01",
-		TenantID:      uuid.MustParse(DefaultTenantID),
+		Username:    "empty-scope",
+		DisplayName: "空范围",
+		Password:    "secret",
+		Avatar:      UserAvatarConfig{Provider: "dicebear", Style: "adventurer", Seed: "user:empty-scope"},
+		TenantID:    uuid.MustParse(DefaultTenantID),
 	})
 	if !errors.Is(err, ErrInvalidManagedUserInput) {
 		t.Fatalf("expected invalid managed user input, got %v", err)
@@ -542,7 +542,7 @@ func TestReplaceUserProjectTeamScopesRejectsNilOrInvalidTeamIDs(t *testing.T) {
 	}
 }
 
-func TestCreateManagedUserNormalizesAvatarAssetID(t *testing.T) {
+func TestCreateManagedUserRejectsDigitalEmployeeAvatarAssetOnly(t *testing.T) {
 	repo := newMockRepo()
 	svc, _ := NewService(repo)
 	actor, err := svc.CreateUser(context.Background(), "admin", "admin")
@@ -550,7 +550,7 @@ func TestCreateManagedUserNormalizesAvatarAssetID(t *testing.T) {
 		t.Fatalf("create actor: %v", err)
 	}
 
-	created, err := svc.CreateManagedUser(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, CreateManagedUserInput{
+	_, err = svc.CreateManagedUser(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, CreateManagedUserInput{
 		Username:          "reviewer",
 		DisplayName:       "Reviewer",
 		Password:          "secret",
@@ -558,11 +558,8 @@ func TestCreateManagedUserNormalizesAvatarAssetID(t *testing.T) {
 		SelectableTeamIDs: []uuid.UUID{uuid.New()},
 		TenantID:          uuid.MustParse(DefaultTenantID),
 	})
-	if err != nil {
-		t.Fatalf("create managed user: %v", err)
-	}
-	if created.AvatarAssetID != "engineer-f-01" {
-		t.Fatalf("expected normalized avatar asset id, got %#v", created)
+	if !errors.Is(err, ErrInvalidManagedUserInput) {
+		t.Fatalf("expected invalid managed user input for digital employee avatar asset, got %v", err)
 	}
 }
 

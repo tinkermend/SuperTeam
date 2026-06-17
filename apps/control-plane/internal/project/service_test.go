@@ -3055,6 +3055,55 @@ func TestUpdateProjectConfigWithoutMembersPreservesExistingMembers(t *testing.T)
 	}
 }
 
+func TestUpdateProjectConfigRejectsUnauthorizedTeamMembers(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	projectID := uuid.New()
+	tenantID := uuid.New()
+	actorUserID := uuid.New()
+	allowedTeamID := uuid.New()
+	unauthorizedTeamID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "旧项目",
+		Goal:             "旧目标",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: actorUserID,
+	}
+	repo.members[projectID] = []ProjectMember{{
+		ID:            uuid.New(),
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		PrincipalType: PrincipalTypeTeam,
+		PrincipalID:   allowedTeamID,
+		ProjectRole:   ProjectRoleObserver,
+		Status:        "active",
+	}}
+	repo.authorizeProjectTeamScope(tenantID, actorUserID, allowedTeamID)
+
+	updatedMembers := []ProjectMemberInput{{
+		PrincipalType: PrincipalTypeTeam,
+		PrincipalID:   unauthorizedTeamID,
+		ProjectRole:   ProjectRoleObserver,
+	}}
+	_, err = service.UpdateProjectConfig(context.Background(), UpdateProjectConfigRequest{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
+		ActorUserID: actorUserID,
+		Members:     &updatedMembers,
+	})
+	if !errors.Is(err, ErrUnauthorizedProjectTeamScope) {
+		t.Fatalf("expected unauthorized team scope, got %v", err)
+	}
+	if got := repo.members[projectID][0].PrincipalID; got != allowedTeamID {
+		t.Fatalf("expected existing members unchanged, got %s", got)
+	}
+}
+
 func TestReplaceProjectMembersRequiresActorAndRecordsEvent(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)

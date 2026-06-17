@@ -103,6 +103,7 @@ type CreateManagedUserInput struct {
 	Username          string
 	DisplayName       string
 	Password          string
+	Avatar            UserAvatarConfig
 	AvatarAssetID     string
 	SelectableTeamIDs []uuid.UUID
 }

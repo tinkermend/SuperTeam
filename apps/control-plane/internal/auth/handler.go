@@ -228,7 +228,7 @@ func (h *HTTPHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		Username:          body.Username,
 		DisplayName:       body.DisplayName,
 		Password:          body.Password,
-		AvatarAssetID:     body.AvatarAssetId,
+		Avatar:            userAvatarFromGenerated(&body.Avatar),
 		SelectableTeamIDs: uuidSliceFromOpenAPI(body.SelectableTeamIds),
 	})
 	if err != nil {
