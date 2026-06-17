@@ -2,13 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { FolderKanban, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { LiquidCard, SemanticIconTile, StatusBadge } from "@/components/superteam";
 import type {
   ProjectDemandLaunchDetail,
@@ -40,7 +33,6 @@ export function WorkflowDetail({
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(
     initialSelectedNodeId,
   );
-  const [isNodeDialogOpen, setIsNodeDialogOpen] = useState(false);
 
   useEffect(() => {
     setSelectedNodeId((current) => {
@@ -57,12 +49,6 @@ export function WorkflowDetail({
     () => graph?.nodes.find((node) => taskNodeId(node.id) === selectedNodeId),
     [graph, selectedNodeId],
   );
-
-  useEffect(() => {
-    if (!selectedTask) {
-      setIsNodeDialogOpen(false);
-    }
-  }, [selectedTask]);
 
   if (isError) {
     return (
@@ -115,21 +101,17 @@ export function WorkflowDetail({
         </div>
 
         {isGraphReady && graph ? (
-          <div className="mt-4 min-w-0 p-4 pt-0">
+          <div className="grid min-w-0 gap-4 p-4 @5xl/workflow-graph:grid-cols-[minmax(0,1fr)_360px]">
             <WorkflowGraphCanvas
               graph={graph}
-              onNodeOpen={(nodeId) => {
-                setSelectedNodeId(nodeId);
-                setIsNodeDialogOpen(true);
-              }}
+              onNodeOpen={setSelectedNodeId}
               onSelectedNodeChange={setSelectedNodeId}
               selectedNodeId={selectedNodeId}
             />
-            <NodeDetailDialog
+            <WorkflowNodeInspector
               graph={graph}
-              open={isNodeDialogOpen}
               selectedTask={selectedTask}
-              onOpenChange={setIsNodeDialogOpen}
+              variant="card"
             />
           </div>
         ) : (
@@ -139,36 +121,6 @@ export function WorkflowDetail({
         )}
       </LiquidCard>
     </div>
-  );
-}
-
-function NodeDetailDialog({
-  graph,
-  onOpenChange,
-  open,
-  selectedTask,
-}: {
-  graph: ProjectTaskGraph;
-  onOpenChange: (open: boolean) => void;
-  open: boolean;
-  selectedTask: ProjectTaskGraph["nodes"][number] | undefined;
-}) {
-  return (
-    <Dialog open={open && Boolean(selectedTask)} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto border-[color:var(--superteam-glass-border)] bg-[color:var(--superteam-glass-strong-bg)] sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>节点详情</DialogTitle>
-          <DialogDescription>
-            查看当前流程节点的输入、输出、运行记录和人工决策。
-          </DialogDescription>
-        </DialogHeader>
-        <WorkflowNodeInspector
-          graph={graph}
-          selectedTask={selectedTask}
-          variant="dialog"
-        />
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -203,6 +155,17 @@ function DemandSummaryBar({
           </StatusBadge>
           <StatusBadge tone="neutral">
             已完成 {instance.progress.completed_nodes}/{instance.progress.total_nodes}
+          </StatusBadge>
+          <StatusBadge tone={instance.progress.running_nodes > 0 ? "info" : "neutral"}>
+            运行中 {instance.progress.running_nodes}
+          </StatusBadge>
+          <StatusBadge
+            tone={instance.progress.waiting_human_nodes > 0 ? "warning" : "neutral"}
+          >
+            等待人工 {instance.progress.waiting_human_nodes}
+          </StatusBadge>
+          <StatusBadge tone={instance.progress.blocked_nodes > 0 ? "danger" : "neutral"}>
+            阻塞 {instance.progress.blocked_nodes}
           </StatusBadge>
           <Button asChild size="sm" variant="outline">
             <Link params={{ projectId: detail.project.id }} to="/projects/$projectId">

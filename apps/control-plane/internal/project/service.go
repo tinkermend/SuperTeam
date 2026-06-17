@@ -203,6 +203,14 @@ func (s *Service) ListWorkflowInstances(ctx context.Context, req ListWorkflowIns
 	for i := range items {
 		items[i].Status = normalizeWorkflowInstanceStatus(items[i])
 	}
+	sort.SliceStable(items, func(i, j int) bool {
+		leftRank := workflowInstanceAttentionRank(items[i].Status)
+		rightRank := workflowInstanceAttentionRank(items[j].Status)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		return items[i].UpdatedAt.After(items[j].UpdatedAt)
+	})
 	if req.Status != nil {
 		filtered := make([]WorkflowInstanceSummary, 0, len(items))
 		for _, item := range items {
@@ -1206,6 +1214,67 @@ func normalizeProjectTaskGraph(graph *ProjectTaskGraph) {
 	}
 	if graph.DecisionRequests == nil {
 		graph.DecisionRequests = []DecisionRequest{}
+	}
+	if graph.StageSummaries == nil {
+		graph.StageSummaries = buildProjectTaskGraphStageSummaries(graph.Nodes)
+	}
+}
+
+func buildProjectTaskGraphStageSummaries(nodes []ProjectTaskGraphNode) []ProjectTaskGraphStageSummary {
+	type mutableSummary struct {
+		summary ProjectTaskGraphStageSummary
+	}
+	byStage := map[int32]*mutableSummary{}
+	for _, node := range nodes {
+		stage := int32(-1)
+		if node.Task.StageIndex != nil {
+			stage = *node.Task.StageIndex
+		}
+		entry := byStage[stage]
+		if entry == nil {
+			title := "未分阶段"
+			if stage >= 0 {
+				title = fmt.Sprintf("第 %d 阶段", stage)
+			}
+			entry = &mutableSummary{summary: ProjectTaskGraphStageSummary{StageIndex: stage, Title: title}}
+			byStage[stage] = entry
+		}
+		entry.summary.TotalNodes++
+		switch normalizeTaskStatusForSummary(node.Task.Status) {
+		case "completed":
+			entry.summary.CompletedNodes++
+		case "running":
+			entry.summary.RunningNodes++
+		case "waiting_human":
+			entry.summary.WaitingHumanNodes++
+		case "blocked":
+			entry.summary.BlockedNodes++
+		}
+	}
+	stages := make([]int, 0, len(byStage))
+	for stage := range byStage {
+		stages = append(stages, int(stage))
+	}
+	sort.Ints(stages)
+	result := make([]ProjectTaskGraphStageSummary, 0, len(stages))
+	for _, stage := range stages {
+		result = append(result, byStage[int32(stage)].summary)
+	}
+	return result
+}
+
+func normalizeTaskStatusForSummary(status string) string {
+	switch strings.ToLower(status) {
+	case "completed", "done", "success":
+		return "completed"
+	case "assigned", "running", "in_progress":
+		return "running"
+	case "waiting_human", "pending_review":
+		return "waiting_human"
+	case "blocked":
+		return "blocked"
+	default:
+		return "other"
 	}
 }
 
@@ -2291,6 +2360,27 @@ func normalizeWorkflowInstanceStatus(item WorkflowInstanceSummary) WorkflowInsta
 		return item.Status
 	}
 	return WorkflowInstanceStatusUnknown
+}
+
+func workflowInstanceAttentionRank(status WorkflowInstanceStatus) int {
+	switch status {
+	case WorkflowInstanceStatusWaitingHuman:
+		return 0
+	case WorkflowInstanceStatusFailed:
+		return 1
+	case WorkflowInstanceStatusRunning:
+		return 2
+	case WorkflowInstanceStatusPlanning:
+		return 3
+	case WorkflowInstanceStatusUnknown:
+		return 4
+	case WorkflowInstanceStatusCompleted:
+		return 5
+	case WorkflowInstanceStatusCancelled:
+		return 6
+	default:
+		return 7
+	}
 }
 
 func strPtr(value string) *string {

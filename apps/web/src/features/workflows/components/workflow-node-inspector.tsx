@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { LiquidCard, StatusBadge, type Tone } from "@/components/superteam";
+import { StatusBadge, type Tone } from "@/components/superteam";
 import type { ProjectTaskGraph, ProjectTaskGraphNode } from "@/lib/api/projects";
 
 type WorkflowNodeInspectorProps = {
@@ -26,9 +26,9 @@ export function WorkflowNodeInspector({
     }
 
     return (
-      <LiquidCard className="flex min-h-[420px] items-center justify-center rounded-xl p-5 text-sm text-muted-foreground">
+      <div className="flex min-h-[420px] items-center justify-center rounded-xl border bg-background/70 p-5 text-sm text-muted-foreground">
         选择节点查看详情
-      </LiquidCard>
+      </div>
     );
   }
 
@@ -39,6 +39,7 @@ export function WorkflowNodeInspector({
   const decisions = graph.decision_requests.filter(
     (item) => item.project_task_id === selectedTask.id,
   );
+  const ownerName = employeeNameForTask(graph, selectedTask);
 
   const content = (
     <>
@@ -55,13 +56,19 @@ export function WorkflowNodeInspector({
       </div>
 
       <div className="mt-4 divide-y text-sm">
+        <InspectorRow label="负责人" value={ownerName} />
+        <InspectorRow label="阻塞" value={formatBlocker(selectedTask)} />
         <InspectorRow label="输入" value={formatValue(selectedTask.input_requirements)} />
         <InspectorRow label="输出" value={formatValue(selectedTask.expected_outputs)} />
+        <InspectorRow
+          label="交接契约"
+          value={formatValue(selectedTask.handoff_contract)}
+        />
         <InspectorRow
           action={
             run?.runtime_task_id ? (
               <Button asChild size="sm" variant="outline">
-                <Link to="/runtime">
+                <Link aria-label={`查看${selectedTask.title} Runtime`} to="/runtime">
                   <ExternalLink className="size-3.5" />
                   Runtime
                 </Link>
@@ -85,7 +92,7 @@ export function WorkflowNodeInspector({
           action={
             decisions.length > 0 ? (
               <Button asChild size="sm" variant="outline">
-                <Link to="/approvals">
+                <Link aria-label={`查看${selectedTask.title}审批`} to="/approvals">
                   <ExternalLink className="size-3.5" />
                   审批
                 </Link>
@@ -112,9 +119,22 @@ export function WorkflowNodeInspector({
   }
 
   return (
-    <LiquidCard className="min-h-[420px] rounded-xl p-4">
+    <div className="min-h-[420px] rounded-xl border bg-background/70 p-4">
       {content}
-    </LiquidCard>
+    </div>
+  );
+}
+
+export function employeeNameForTask(
+  graph: ProjectTaskGraph,
+  task: ProjectTaskGraphNode,
+): string {
+  if (!task.assigned_digital_employee_id) return "未分配";
+
+  return (
+    graph.employees.find(
+      (employee) => employee.digital_employee_id === task.assigned_digital_employee_id,
+    )?.display_name ?? "未分配"
   );
 }
 
@@ -139,6 +159,18 @@ export function taskStatusTone(status: string): Tone {
   }
 
   return "neutral";
+}
+
+function formatBlocker(task: ProjectTaskGraphNode): string {
+  if (!task.current_blocker) return "暂无阻塞";
+
+  return [
+    task.current_blocker.title,
+    task.current_blocker.type,
+    task.current_blocker.resource_id,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function InspectorRow({

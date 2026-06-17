@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
 import { WorkflowDetail } from "./components/workflow-detail";
+import { WorkflowEntrance } from "./components/workflow-entrance";
 import { WorkflowInstanceList } from "./components/workflow-instance-list";
 import { WorkflowShell } from "./components/workflow-shell";
 import type { ApiClientOptions } from "@/lib/api/client";
@@ -39,17 +40,16 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
   const routeSelected = demandId
     ? instances.find((instance) => instance.demand_id === demandId)
     : undefined;
-  const fallbackSelected = !demandId ? instances[0] : undefined;
-  const selected = routeSelected ?? fallbackSelected;
+  const selected = routeSelected;
   const selectedDemandId = selected?.demand_id;
   const fallbackDemandId = instances[0]?.demand_id;
 
   useEffect(() => {
-    if (!fallbackDemandId) {
+    if (!demandId || !fallbackDemandId || !listQuery.isSuccess) {
       return;
     }
 
-    if (demandId && routeSelected) {
+    if (routeSelected) {
       return;
     }
 
@@ -58,7 +58,7 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
       replace: true,
       to: "/workflows/$demandId",
     });
-  }, [demandId, fallbackDemandId, navigate, routeSelected]);
+  }, [demandId, fallbackDemandId, listQuery.isSuccess, navigate, routeSelected]);
 
   const detailQuery = useQuery({
     enabled: Boolean(selectedDemandId),
@@ -81,6 +81,18 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
     refetchInterval: 5000,
   });
   const currentGraph = currentTaskGraph(graphQuery.data, selectedDemandId);
+
+  if (!demandId) {
+    return (
+      <WorkflowShell>
+        <WorkflowEntrance
+          instances={instances}
+          isError={listQuery.isError}
+          isLoading={listQuery.isLoading}
+        />
+      </WorkflowShell>
+    );
+  }
 
   return (
     <WorkflowShell>

@@ -424,8 +424,8 @@ describe("Users", () => {
 
     const avatar = screen.getByAltText("平台管理员 的头像").first();
     await expect.element(avatar).toBeInTheDocument();
-    await expect.element(avatar).toHaveAttribute("src", expect.stringContaining("data:image/svg+xml"));
-    await expect.element(avatar).not.toHaveAttribute("src", expect.stringContaining("/images/digital-employee-avatars/"));
+    await expect.element(avatar).toHaveAttribute("src", "/images/digital-employee-avatars/engineer-f-03-256.webp");
+    await expect.element(avatar).not.toHaveAttribute("src", expect.stringContaining("data:image/svg+xml"));
     expect(fetcher).toHaveBeenCalledWith(expect.stringContaining("/api/auth/users?limit=50&offset=0"), expect.any(Object));
     expect(fetcher).toHaveBeenCalledWith(expect.stringContaining("/api/authz/members?limit=100&offset=0"), expect.any(Object));
     expect(fetcher).toHaveBeenCalledWith(

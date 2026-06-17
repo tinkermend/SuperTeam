@@ -2683,13 +2683,14 @@ type ProjectTask struct {
 
 // ProjectTaskGraph defines model for ProjectTaskGraph.
 type ProjectTaskGraph struct {
-	DecisionRequests   []ProjectDecisionRequest   `json:"decision_requests"`
-	Edges              []ProjectTaskGraphEdge     `json:"edges"`
-	Employees          []ProjectTaskGraphEmployee `json:"employees"`
-	ExecutionSummaries []ProjectExecutionSummary  `json:"execution_summaries"`
-	Nodes              []ProjectTaskGraphNode     `json:"nodes"`
-	RecentEvents       []ProjectEvent             `json:"recent_events"`
-	Runs               []ProjectTaskGraphRun      `json:"runs"`
+	DecisionRequests   []ProjectDecisionRequest        `json:"decision_requests"`
+	Edges              []ProjectTaskGraphEdge          `json:"edges"`
+	Employees          []ProjectTaskGraphEmployee      `json:"employees"`
+	ExecutionSummaries []ProjectExecutionSummary       `json:"execution_summaries"`
+	Nodes              []ProjectTaskGraphNode          `json:"nodes"`
+	RecentEvents       []ProjectEvent                  `json:"recent_events"`
+	Runs               []ProjectTaskGraphRun           `json:"runs"`
+	StageSummaries     *[]ProjectTaskGraphStageSummary `json:"stage_summaries,omitempty"`
 }
 
 // ProjectTaskGraphEdge defines model for ProjectTaskGraphEdge.
@@ -2710,25 +2711,28 @@ type ProjectTaskGraphEmployee struct {
 
 // ProjectTaskGraphNode defines model for ProjectTaskGraphNode.
 type ProjectTaskGraphNode struct {
-	AssignedDigitalEmployeeId *openapi_types.UUID    `json:"assigned_digital_employee_id,omitempty"`
-	CoordinationJobId         *openapi_types.UUID    `json:"coordination_job_id,omitempty"`
-	DemandId                  *openapi_types.UUID    `json:"demand_id,omitempty"`
-	ExpectedOutputs           []interface{}          `json:"expected_outputs"`
-	HandoffContract           map[string]interface{} `json:"handoff_contract"`
-	Id                        openapi_types.UUID     `json:"id"`
-	InputRequirements         map[string]interface{} `json:"input_requirements"`
-	PlannedTaskKey            *string                `json:"planned_task_key,omitempty"`
-	PlannerMetadata           map[string]interface{} `json:"planner_metadata"`
-	ProjectId                 openapi_types.UUID     `json:"project_id"`
-	RequiresHumanApproval     bool                   `json:"requires_human_approval"`
-	RiskLevel                 *string                `json:"risk_level,omitempty"`
-	RouteDecisionId           *openapi_types.UUID    `json:"route_decision_id,omitempty"`
-	StageIndex                *int32                 `json:"stage_index,omitempty"`
-	Status                    string                 `json:"status"`
-	Summary                   *string                `json:"summary,omitempty"`
-	TaskKind                  *string                `json:"task_kind,omitempty"`
-	TenantId                  openapi_types.UUID     `json:"tenant_id"`
-	Title                     string                 `json:"title"`
+	AssignedDigitalEmployeeId *openapi_types.UUID             `json:"assigned_digital_employee_id,omitempty"`
+	CoordinationJobId         *openapi_types.UUID             `json:"coordination_job_id,omitempty"`
+	CurrentBlocker            *WorkflowInstanceCurrentBlocker `json:"current_blocker,omitempty"`
+	DemandId                  *openapi_types.UUID             `json:"demand_id,omitempty"`
+	ExpectedOutputs           []interface{}                   `json:"expected_outputs"`
+	HandoffContract           map[string]interface{}          `json:"handoff_contract"`
+	Id                        openapi_types.UUID              `json:"id"`
+	InputRequirements         map[string]interface{}          `json:"input_requirements"`
+	PlannedTaskKey            *string                         `json:"planned_task_key,omitempty"`
+	PlannerMetadata           map[string]interface{}          `json:"planner_metadata"`
+	ProjectId                 openapi_types.UUID              `json:"project_id"`
+	RequiresHumanApproval     bool                            `json:"requires_human_approval"`
+	RiskLevel                 *string                         `json:"risk_level,omitempty"`
+	RouteDecisionId           *openapi_types.UUID             `json:"route_decision_id,omitempty"`
+	StageIndex                *int32                          `json:"stage_index,omitempty"`
+	Status                    string                          `json:"status"`
+	StatusReason              *string                         `json:"status_reason,omitempty"`
+	Summary                   *string                         `json:"summary,omitempty"`
+	TaskKind                  *string                         `json:"task_kind,omitempty"`
+	TenantId                  openapi_types.UUID              `json:"tenant_id"`
+	Title                     string                          `json:"title"`
+	UpdatedAt                 *time.Time                      `json:"updated_at,omitempty"`
 }
 
 // ProjectTaskGraphRun defines model for ProjectTaskGraphRun.
@@ -2740,6 +2744,17 @@ type ProjectTaskGraphRun struct {
 	RuntimeNodeSummary   string              `json:"runtime_node_summary"`
 	RuntimeTaskId        *openapi_types.UUID `json:"runtime_task_id,omitempty"`
 	Status               string              `json:"status"`
+}
+
+// ProjectTaskGraphStageSummary defines model for ProjectTaskGraphStageSummary.
+type ProjectTaskGraphStageSummary struct {
+	BlockedNodes      int32  `json:"blocked_nodes"`
+	CompletedNodes    int32  `json:"completed_nodes"`
+	RunningNodes      int32  `json:"running_nodes"`
+	StageIndex        int32  `json:"stage_index"`
+	Title             string `json:"title"`
+	TotalNodes        int32  `json:"total_nodes"`
+	WaitingHumanNodes int32  `json:"waiting_human_nodes"`
 }
 
 // ProjectTaskSummary defines model for ProjectTaskSummary.
@@ -3450,13 +3465,46 @@ type WorkflowInstanceCurrentBlocker struct {
 	Type       string              `json:"type"`
 }
 
+// WorkflowInstancePriority defines model for WorkflowInstancePriority.
+type WorkflowInstancePriority struct {
+	Label  string `json:"label"`
+	Source string `json:"source"`
+	Value  string `json:"value"`
+}
+
 // WorkflowInstanceProgress defines model for WorkflowInstanceProgress.
 type WorkflowInstanceProgress struct {
-	BlockedNodes      int32 `json:"blocked_nodes"`
-	CompletedNodes    int32 `json:"completed_nodes"`
-	RunningNodes      int32 `json:"running_nodes"`
-	TotalNodes        int32 `json:"total_nodes"`
-	WaitingHumanNodes int32 `json:"waiting_human_nodes"`
+	BlockedNodes      int32  `json:"blocked_nodes"`
+	CancelledNodes    *int32 `json:"cancelled_nodes,omitempty"`
+	CompletedNodes    int32  `json:"completed_nodes"`
+	FailedNodes       *int32 `json:"failed_nodes,omitempty"`
+	PlannedNodes      *int32 `json:"planned_nodes,omitempty"`
+	RunningNodes      int32  `json:"running_nodes"`
+	TotalNodes        int32  `json:"total_nodes"`
+	WaitingHumanNodes int32  `json:"waiting_human_nodes"`
+}
+
+// WorkflowInstanceRecentEvent defines model for WorkflowInstanceRecentEvent.
+type WorkflowInstanceRecentEvent struct {
+	EventType  string    `json:"event_type"`
+	OccurredAt time.Time `json:"occurred_at"`
+	Summary    string    `json:"summary"`
+}
+
+// WorkflowInstanceRisk defines model for WorkflowInstanceRisk.
+type WorkflowInstanceRisk struct {
+	Label  string `json:"label"`
+	Level  string `json:"level"`
+	Source string `json:"source"`
+}
+
+// WorkflowInstanceSLA defines model for WorkflowInstanceSLA.
+type WorkflowInstanceSLA struct {
+	Breached         bool       `json:"breached"`
+	DueAt            *time.Time `json:"due_at,omitempty"`
+	Label            string     `json:"label"`
+	RemainingSeconds *int32     `json:"remaining_seconds,omitempty"`
+	Source           string     `json:"source"`
 }
 
 // WorkflowInstanceStatus defines model for WorkflowInstanceStatus.
@@ -3467,10 +3515,14 @@ type WorkflowInstanceSummary struct {
 	CreatedAt                 time.Time                       `json:"created_at"`
 	CurrentBlocker            *WorkflowInstanceCurrentBlocker `json:"current_blocker,omitempty"`
 	DemandId                  openapi_types.UUID              `json:"demand_id"`
+	Priority                  *WorkflowInstancePriority       `json:"priority,omitempty"`
 	Progress                  WorkflowInstanceProgress        `json:"progress"`
 	ProjectId                 openapi_types.UUID              `json:"project_id"`
 	ProjectName               string                          `json:"project_name"`
+	RecentEvent               *WorkflowInstanceRecentEvent    `json:"recent_event,omitempty"`
+	Risk                      *WorkflowInstanceRisk           `json:"risk,omitempty"`
 	SelectedCoordinationJobId *openapi_types.UUID             `json:"selected_coordination_job_id,omitempty"`
+	Sla                       *WorkflowInstanceSLA            `json:"sla,omitempty"`
 	Status                    WorkflowInstanceStatus          `json:"status"`
 	StatusReason              string                          `json:"status_reason"`
 	SubmittedByDisplayName    string                          `json:"submitted_by_display_name"`

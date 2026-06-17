@@ -450,6 +450,44 @@ func TestGetProjectTaskGraphRequiresFilterAndDoesNotApplyHiddenLimit(t *testing.
 	}
 }
 
+func TestGetProjectTaskGraphBuildsStageSummariesWhenRepositoryOmitsThem(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	stageOne := int32(1)
+	stageTwo := int32(2)
+	repo := &taskGraphLimitRepository{
+		memoryRepository: newMemoryRepository(),
+		graph: ProjectTaskGraph{
+			Nodes: []ProjectTaskGraphNode{
+				{Task: ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, Title: "入口", Status: "completed", StageIndex: &stageOne}},
+				{Task: ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, Title: "巡检", Status: "running", StageIndex: &stageTwo}},
+				{Task: ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, Title: "审批", Status: "waiting_human", StageIndex: &stageTwo, RequiresHumanApproval: true}},
+			},
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	graph, err := service.GetProjectTaskGraph(context.Background(), GetProjectTaskGraphRequest{
+		TenantID: tenantID, ProjectID: projectID, DemandID: &demandID,
+	})
+	if err != nil {
+		t.Fatalf("get graph: %v", err)
+	}
+	if len(graph.StageSummaries) != 2 {
+		t.Fatalf("expected two stage summaries, got %#v", graph.StageSummaries)
+	}
+	if graph.StageSummaries[0].StageIndex != 1 || graph.StageSummaries[0].CompletedNodes != 1 {
+		t.Fatalf("unexpected first stage summary: %#v", graph.StageSummaries[0])
+	}
+	if graph.StageSummaries[1].StageIndex != 2 || graph.StageSummaries[1].RunningNodes != 1 || graph.StageSummaries[1].WaitingHumanNodes != 1 {
+		t.Fatalf("unexpected second stage summary: %#v", graph.StageSummaries[1])
+	}
+}
+
 func TestListWorkflowInstancesNormalizesPaginationAndStatusPriority(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()
@@ -514,6 +552,125 @@ func TestListWorkflowInstancesRejectsMissingActor(t *testing.T) {
 	}
 	if repo.calls != 0 {
 		t.Fatalf("expected invalid request not to call repository, got %d calls", repo.calls)
+	}
+}
+
+func TestListWorkflowInstancesKeepsOptionalReadModelFieldsAndSortsAttentionFirst(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	waitingDemandID := uuid.New()
+	runningDemandID := uuid.New()
+	completedDemandID := uuid.New()
+	dueAt := time.Now().UTC().Add(15 * time.Minute)
+	remaining := int32(900)
+	repo := &workflowInstanceServiceRepository{
+		memoryRepository: newMemoryRepository(),
+		items: []WorkflowInstanceSummary{
+			{
+				DemandID:          completedDemandID,
+				ProjectID:         uuid.New(),
+				ProjectName:       "归档项目",
+				Title:             "复盘归档",
+				SubmittedByUserID: actorID,
+				Status:            WorkflowInstanceStatusCompleted,
+				UpdatedAt:         time.Now().UTC().Add(-2 * time.Minute),
+				Progress: WorkflowInstanceProgress{
+					TotalNodes:     2,
+					CompletedNodes: 2,
+				},
+			},
+			{
+				DemandID:          runningDemandID,
+				ProjectID:         uuid.New(),
+				ProjectName:       "运行项目",
+				Title:             "服务巡检",
+				SubmittedByUserID: actorID,
+				Status:            WorkflowInstanceStatusRunning,
+				UpdatedAt:         time.Now().UTC().Add(-1 * time.Minute),
+				Progress: WorkflowInstanceProgress{
+					TotalNodes:   3,
+					RunningNodes: 1,
+				},
+			},
+			{
+				DemandID:          waitingDemandID,
+				ProjectID:         uuid.New(),
+				ProjectName:       "支付项目",
+				Title:             "支付成功率下降",
+				SubmittedByUserID: actorID,
+				Status:            WorkflowInstanceStatusUnknown,
+				UpdatedAt:         time.Now().UTC().Add(-3 * time.Minute),
+				Progress: WorkflowInstanceProgress{
+					TotalNodes:        5,
+					CompletedNodes:    2,
+					RunningNodes:      1,
+					BlockedNodes:      1,
+					WaitingHumanNodes: 1,
+					PlannedNodes:      1,
+					FailedNodes:       0,
+					CancelledNodes:    0,
+				},
+				CurrentBlocker: &WorkflowInstanceCurrentBlocker{
+					Type:  "decision_request",
+					Title: "等待人工审批回滚方案",
+				},
+				Priority: &WorkflowInstancePriority{
+					Value:  "p1",
+					Label:  "P1",
+					Source: "source_refs.priority",
+				},
+				Risk: &WorkflowInstanceRisk{
+					Level:  "high",
+					Label:  "高风险",
+					Source: "project_tasks.risk_level",
+				},
+				SLA: &WorkflowInstanceSLA{
+					DueAt:            &dueAt,
+					RemainingSeconds: &remaining,
+					Breached:         false,
+					Label:            "剩余 15 分钟",
+					Source:           "source_refs.sla_due_at",
+				},
+				RecentEvent: &WorkflowInstanceRecentEvent{
+					EventType:  string(ProjectEventDecisionRequested),
+					Summary:    "已创建恢复决策请求",
+					OccurredAt: time.Now().UTC().Add(-30 * time.Second),
+				},
+			},
+		},
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	items, err := service.ListWorkflowInstances(context.Background(), ListWorkflowInstancesRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorID,
+	})
+	if err != nil {
+		t.Fatalf("list workflow instances: %v", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("expected three workflow instances, got %#v", items)
+	}
+	if items[0].DemandID != waitingDemandID {
+		t.Fatalf("expected waiting-human workflow first, got %#v", items)
+	}
+	if items[0].Status != WorkflowInstanceStatusWaitingHuman {
+		t.Fatalf("expected waiting_human status, got %s", items[0].Status)
+	}
+	if items[0].Priority == nil || items[0].Priority.Label != "P1" {
+		t.Fatalf("expected priority field to survive service normalization: %#v", items[0].Priority)
+	}
+	if items[0].Risk == nil || items[0].Risk.Level != "high" {
+		t.Fatalf("expected risk field to survive service normalization: %#v", items[0].Risk)
+	}
+	if items[0].SLA == nil || items[0].SLA.RemainingSeconds == nil || *items[0].SLA.RemainingSeconds != 900 {
+		t.Fatalf("expected SLA field to survive service normalization: %#v", items[0].SLA)
+	}
+	if items[0].RecentEvent == nil || items[0].RecentEvent.EventType != string(ProjectEventDecisionRequested) {
+		t.Fatalf("expected recent event field to survive service normalization: %#v", items[0].RecentEvent)
 	}
 }
 
@@ -3233,6 +3390,7 @@ type taskGraphLimitRepository struct {
 	*memoryRepository
 	calls   int
 	lastReq GetProjectTaskGraphRequest
+	graph   ProjectTaskGraph
 }
 
 type workflowInstanceServiceRepository struct {
@@ -3279,6 +3437,9 @@ func assertNoCreateProjectSideEffects(t *testing.T, repo *memoryRepository, coor
 func (r *taskGraphLimitRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (ProjectTaskGraph, error) {
 	r.calls++
 	r.lastReq = req
+	if r.graph.Nodes != nil {
+		return r.graph, nil
+	}
 	count := 55
 	if req.Limit > 0 && int(req.Limit) < count {
 		count = int(req.Limit)
@@ -3303,6 +3464,7 @@ func (r *taskGraphLimitRepository) GetProjectTaskGraph(ctx context.Context, req 
 		ExecutionSummaries: []ExecutionSummary{},
 		RecentEvents:       []ProjectEvent{},
 		DecisionRequests:   []DecisionRequest{},
+		StageSummaries:     []ProjectTaskGraphStageSummary{},
 	}, nil
 }
 

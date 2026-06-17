@@ -1,6 +1,10 @@
 package project
 
-import "github.com/google/uuid"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type ProjectTaskDependency struct {
 	ID                uuid.UUID
@@ -19,10 +23,14 @@ type ProjectTaskGraph struct {
 	ExecutionSummaries []ExecutionSummary
 	RecentEvents       []ProjectEvent
 	DecisionRequests   []DecisionRequest
+	StageSummaries     []ProjectTaskGraphStageSummary
 }
 
 type ProjectTaskGraphNode struct {
-	Task ProjectTask
+	Task           ProjectTask
+	StatusReason   string
+	UpdatedAt      *time.Time
+	CurrentBlocker *WorkflowInstanceCurrentBlocker
 }
 
 type ProjectTaskGraphEdge struct {
@@ -47,4 +55,14 @@ type ProjectTaskGraphRun struct {
 	RuntimeNodeSummary   string
 	Status               string
 	ProviderType         string
+}
+
+type ProjectTaskGraphStageSummary struct {
+	StageIndex        int32
+	Title             string
+	TotalNodes        int32
+	CompletedNodes    int32
+	RunningNodes      int32
+	WaitingHumanNodes int32
+	BlockedNodes      int32
 }

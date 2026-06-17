@@ -154,6 +154,32 @@ describe("workflow graph adapter", () => {
     expect(unstagedNode?.position.x).toBe(stageOneNode?.position.x);
   });
 
+  it("groups same-stage tasks in the same x column and keeps stage 1 before stage 2", () => {
+    const graph = makeGraph();
+    graph.nodes = [
+      makeTask("task-stage-2", "planned", { stage_index: 2 }),
+      makeTask("task-stage-1-a", "planned", { stage_index: 1 }),
+      makeTask("task-stage-1-b", "planned", { stage_index: 1 }),
+    ];
+
+    const result = buildWorkflowGraphElements(graph);
+    const stageTwoNode = result.nodes.find((node) => node.id === "task:task-stage-2");
+    const stageOneFirstNode = result.nodes.find(
+      (node) => node.id === "task:task-stage-1-a",
+    );
+    const stageOneSecondNode = result.nodes.find(
+      (node) => node.id === "task:task-stage-1-b",
+    );
+
+    expect(stageTwoNode).toBeDefined();
+    expect(stageOneFirstNode).toBeDefined();
+    expect(stageOneSecondNode).toBeDefined();
+    expect(stageOneFirstNode?.position.x).toBe(stageOneSecondNode?.position.x);
+    expect(stageTwoNode?.position.x).toBeGreaterThan(
+      stageOneFirstNode?.position.x ?? 0,
+    );
+  });
+
   it("skips decision attachments when the parent task is missing", () => {
     const graph = makeGraph();
     graph.decision_requests.push({
@@ -304,7 +330,11 @@ describe("workflow graph adapter", () => {
   });
 });
 
-function makeTask(id: string, status: string): ProjectTaskGraph["nodes"][number] {
+function makeTask(
+  id: string,
+  status: string,
+  overrides: Partial<ProjectTaskGraph["nodes"][number]> = {},
+): ProjectTaskGraph["nodes"][number] {
   return {
     id,
     tenant_id: "tenant-1",
@@ -318,6 +348,7 @@ function makeTask(id: string, status: string): ProjectTaskGraph["nodes"][number]
     input_requirements: {},
     handoff_contract: {},
     planner_metadata: {},
+    ...overrides,
   };
 }
 

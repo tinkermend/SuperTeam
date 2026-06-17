@@ -78,7 +78,7 @@ export function buildWorkflowGraphElements(graph: ProjectTaskGraph): WorkflowGra
       id: taskNodeId(task.id),
       type: "workflowTask",
       position: {
-        x: Math.max(stage - stageRange.min, 0) * STAGE_X,
+        x: stageColumnX(stage, stageRange),
         y: row * ROW_Y,
       },
       data: {
@@ -183,6 +183,10 @@ function knownStageRange(nodes: ProjectTaskGraphNode[]): { min: number; max: num
   if (!Number.isFinite(min) || !Number.isFinite(max)) return { min: 0, max: 0 };
 
   return { min, max };
+}
+
+function stageColumnX(stage: number, stageRange: { min: number; max: number }): number {
+  return Math.max(stage - stageRange.min, 0) * STAGE_X;
 }
 
 function finiteStage(stage: number | undefined): number | undefined {

@@ -3919,6 +3919,15 @@ components:
         waiting_human_nodes:
           type: integer
           format: int32
+        planned_nodes:
+          type: integer
+          format: int32
+        failed_nodes:
+          type: integer
+          format: int32
+        cancelled_nodes:
+          type: integer
+          format: int32
     WorkflowInstanceCurrentBlocker:
       type: object
       required:
@@ -3932,6 +3941,65 @@ components:
         resource_id:
           type: string
           format: uuid
+    WorkflowInstancePriority:
+      type: object
+      required:
+        - value
+        - label
+        - source
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+        source:
+          type: string
+    WorkflowInstanceRisk:
+      type: object
+      required:
+        - level
+        - label
+        - source
+      properties:
+        level:
+          type: string
+        label:
+          type: string
+        source:
+          type: string
+    WorkflowInstanceSLA:
+      type: object
+      required:
+        - breached
+        - label
+        - source
+      properties:
+        due_at:
+          type: string
+          format: date-time
+        remaining_seconds:
+          type: integer
+          format: int32
+        breached:
+          type: boolean
+        label:
+          type: string
+        source:
+          type: string
+    WorkflowInstanceRecentEvent:
+      type: object
+      required:
+        - event_type
+        - summary
+        - occurred_at
+      properties:
+        event_type:
+          type: string
+        summary:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
     WorkflowInstanceSummary:
       type: object
       required:
@@ -3979,6 +4047,14 @@ components:
           $ref: "#/components/schemas/WorkflowInstanceProgress"
         current_blocker:
           $ref: "#/components/schemas/WorkflowInstanceCurrentBlocker"
+        priority:
+          $ref: "#/components/schemas/WorkflowInstancePriority"
+        risk:
+          $ref: "#/components/schemas/WorkflowInstanceRisk"
+        sla:
+          $ref: "#/components/schemas/WorkflowInstanceSLA"
+        recent_event:
+          $ref: "#/components/schemas/WorkflowInstanceRecentEvent"
     ProjectEvidenceVerificationStatus:
       type: string
       enum:
@@ -4203,6 +4279,41 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProjectDecisionRequest"
+        stage_summaries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectTaskGraphStageSummary"
+    ProjectTaskGraphStageSummary:
+      type: object
+      required:
+        - stage_index
+        - title
+        - total_nodes
+        - completed_nodes
+        - running_nodes
+        - waiting_human_nodes
+        - blocked_nodes
+      properties:
+        stage_index:
+          type: integer
+          format: int32
+        title:
+          type: string
+        total_nodes:
+          type: integer
+          format: int32
+        completed_nodes:
+          type: integer
+          format: int32
+        running_nodes:
+          type: integer
+          format: int32
+        waiting_human_nodes:
+          type: integer
+          format: int32
+        blocked_nodes:
+          type: integer
+          format: int32
     ProjectTaskGraphNode:
       type: object
       required:
@@ -4235,6 +4346,13 @@ components:
           type: string
         status:
           type: string
+        status_reason:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        current_blocker:
+          $ref: "#/components/schemas/WorkflowInstanceCurrentBlocker"
         assigned_digital_employee_id:
           type: string
           format: uuid

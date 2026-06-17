@@ -327,13 +327,77 @@ async function renderWorkflowView(options: {
   );
 }
 
-describe("WorkflowView", () => {
-  it("renders visible workflow instances and selected planning detail", async () => {
-    const screen = await renderWorkflowView();
+function requestedUrls(fetcher: typeof fetch): string[] {
+  return (
+    fetcher as unknown as { mock: { calls: [RequestInfo | URL, RequestInit?][] } }
+  ).mock.calls.map(([input]) => String(input));
+}
 
-    await expect.element(screen.getByText("支付成功率下降").first()).toBeVisible();
+describe("WorkflowView", () => {
+  it("renders workflow entrance with visible workflow instances", async () => {
+    const fetcher = createWorkflowFetcher();
+    const screen = await renderWorkflowView({ demandId: undefined, fetcher });
+
+    await expect.element(screen.getByRole("heading", { name: "流程编排" })).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: /支付成功率下降/ })).toBeVisible();
     await expect.element(screen.getByText("支付项目").first()).toBeVisible();
-    await expect.element(screen.getByText("任务正在规划")).toBeVisible();
+    await expect.element(screen.getByText("等待协调线程生成任务")).toBeVisible();
+    await expect.element(screen.getByText("任务正在规划")).not.toBeInTheDocument();
+    await expect.element(screen.getByTestId("workflow-canvas")).not.toBeInTheDocument();
+
+    const urls = requestedUrls(fetcher);
+    expect(urls).toEqual([
+      "http://control-plane.local/api/v1/workflow-instances?limit=50&offset=0",
+    ]);
+    expect(urls.some((url) => url.includes("/project-demands/"))).toBe(false);
+    expect(urls.some((url) => url.includes("/task-graph"))).toBe(false);
+  });
+
+  it("shows optional SLA priority and risk on workflow cards only when present", async () => {
+    const screen = await renderWorkflowView({
+      demandId: undefined,
+      fetcher: createWorkflowFetcher({
+        instances: [
+          makeWorkflowInstance("demand-running", {
+            priority: {
+              label: "P1",
+              source: "project_profile",
+              value: "p1",
+            },
+            risk: {
+              label: "高风险",
+              level: "high",
+              source: "risk_policy",
+            },
+            sla: {
+              breached: false,
+              label: "剩余 18 分钟",
+              remaining_seconds: 1080,
+              source: "sla_policy",
+            },
+          }),
+          makeWorkflowInstance("demand-pr", {
+            demand_id: "demand-pr",
+            project_name: "代码审查项目",
+            status: "running",
+            status_reason: "",
+            title: "PR 审查",
+          }),
+        ],
+      }),
+    });
+
+    await expect.element(screen.getByText("P1")).toBeVisible();
+    await expect.element(screen.getByText("高风险")).toBeVisible();
+    await expect.element(screen.getByText("剩余 18 分钟")).toBeVisible();
+
+    const paymentLink = screen.getByRole("link", { name: /支付成功率下降/ }).element();
+    expect(paymentLink.textContent).toContain("P1");
+    expect(paymentLink.textContent).toContain("高风险");
+    expect(paymentLink.textContent).toContain("剩余 18 分钟");
+
+    const prLink = screen.getByRole("link", { name: /PR 审查/ }).element();
+    expect(prLink.textContent).not.toContain("P1");
   });
 
   it("renders selected demand task and other visible instances when graph has nodes", async () => {
@@ -345,7 +409,7 @@ describe("WorkflowView", () => {
 
     await expect.element(screen.getByText("服务健康巡检").first()).toBeVisible();
     await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
-    await expect.element(screen.getByText("节点详情")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("节点详情")).toBeVisible();
     await expect.element(screen.getByText("PR 审查")).toBeVisible();
   });
 
@@ -386,6 +450,9 @@ describe("WorkflowView", () => {
     expect(graphShell?.className).toContain("w-full");
     expect(graphShell?.className).toContain("min-w-0");
     expect(detailMainCard?.className).toContain("@container/workflow-graph");
+    expect(graphAndInspectorGrid?.className).toContain(
+      "@5xl/workflow-graph:grid-cols-[minmax(0,1fr)_360px]",
+    );
     expect(graphAndInspectorGrid?.className).not.toContain("xl:grid-cols");
     expect(graphAndInspectorGrid?.className).not.toContain("min-[");
     expect(graphAndInspectorGrid?.className).not.toContain(
@@ -415,7 +482,7 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByText("上一需求任务")).not.toBeInTheDocument();
   });
 
-  it("opens node details in a dialog when a task card is clicked", async () => {
+  it("updates the right inspector when a task card is clicked", async () => {
     const graph = makeGraph(
       [
         makeGraphNode("task-failed", "失败任务", "failed", {
@@ -477,20 +544,23 @@ describe("WorkflowView", () => {
     });
 
     await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
-    await expect.element(screen.getByText("失败报告")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("失败报告")).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: "巡检任务" }));
 
-    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).toBeVisible();
+    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("heading", { name: "巡检任务" })).toBeVisible();
-    await expect.element(screen.getByText("assigned").first()).toBeVisible();
     await expect.element(screen.getByText("巡检报告")).toBeVisible();
     await expect.element(screen.getByText("queued · codex · runtime-b")).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "查看巡检任务 Runtime" })).toBeVisible();
   });
 
-  it("opens the parent task details when a decision attachment node is clicked", async () => {
+  it("updates the inspector to the parent task when a decision attachment node is clicked", async () => {
     const graph = makeGraph(
       [
+        makeGraphNode("task-failed", "失败任务", "failed", {
+          expected_outputs: ["失败报告"],
+        }),
         makeGraphNode("task-review", "待审批任务", "waiting_human", {
           expected_outputs: ["审批结果"],
         }),
@@ -519,22 +589,23 @@ describe("WorkflowView", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "确认上线风险" }));
 
-    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).toBeVisible();
+    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("heading", { name: "待审批任务" })).toBeVisible();
     await expect.element(screen.getByText("审批结果")).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "查看待审批任务审批" })).toBeVisible();
   });
 
-  it("navigates to the first visible instance when no demand id is provided", async () => {
+  it("does not navigate to the first visible instance when no demand id is provided", async () => {
     mocks.navigate.mockClear();
-    await renderWorkflowView({ demandId: undefined });
+    const fetcher = createWorkflowFetcher();
+    const screen = await renderWorkflowView({ demandId: undefined, fetcher });
 
-    await vi.waitFor(() => {
-      expect(mocks.navigate).toHaveBeenCalledWith({
-        params: { demandId: "demand-running" },
-        replace: true,
-        to: "/workflows/$demandId",
-      });
-    });
+    await expect.element(screen.getByRole("link", { name: /支付成功率下降/ })).toBeVisible();
+    expect(requestedUrls(fetcher)).toEqual([
+      "http://control-plane.local/api/v1/workflow-instances?limit=50&offset=0",
+    ]);
+
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it("replace-navigates stale demand ids without fetching the first visible demand detail", async () => {
@@ -551,11 +622,7 @@ describe("WorkflowView", () => {
       });
     });
 
-    const requestedUrls = (
-      fetcher as unknown as { mock: { calls: [RequestInfo | URL, RequestInit?][] } }
-    ).mock.calls.map(([input]) => String(input));
-
-    expect(requestedUrls).not.toContain(
+    expect(requestedUrls(fetcher)).not.toContain(
       "http://control-plane.local/api/v1/project-demands/demand-running/launch-detail",
     );
   });

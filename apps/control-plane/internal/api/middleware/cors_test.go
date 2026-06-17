@@ -43,3 +43,25 @@ func TestCORSRejectsUnknownCredentialedOrigins(t *testing.T) {
 		t.Fatalf("expected unknown origin to be rejected, got %q", rr.Header().Get("Access-Control-Allow-Origin"))
 	}
 }
+
+func TestCORSAllowsConfiguredDevOrigins(t *testing.T) {
+	t.Setenv("CONTROL_PLANE_CORS_ALLOWED_ORIGINS", " http://127.0.0.1:3100, http://localhost:3100 ")
+	handler := CORS()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/auth/login", nil)
+	req.Header.Set("Origin", "http://127.0.0.1:3100")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	req.Header.Set("Access-Control-Request-Headers", "content-type")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Header().Get("Access-Control-Allow-Origin") != "http://127.0.0.1:3100" {
+		t.Fatalf("expected configured web console origin, got %q", rr.Header().Get("Access-Control-Allow-Origin"))
+	}
+	if rr.Header().Get("Access-Control-Allow-Credentials") != "true" {
+		t.Fatalf("expected credentialed CORS response, got %q", rr.Header().Get("Access-Control-Allow-Credentials"))
+	}
+}

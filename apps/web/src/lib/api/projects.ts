@@ -69,11 +69,36 @@ export type WorkflowInstanceProgress = {
   running_nodes: number;
   blocked_nodes: number;
   waiting_human_nodes: number;
+  planned_nodes?: number;
+  failed_nodes?: number;
+  cancelled_nodes?: number;
 };
 export type WorkflowInstanceCurrentBlocker = {
   type: string;
   title: string;
   resource_id?: string;
+};
+export type WorkflowInstancePriority = {
+  value: string;
+  label: string;
+  source: string;
+};
+export type WorkflowInstanceRisk = {
+  level: string;
+  label: string;
+  source: string;
+};
+export type WorkflowInstanceSLA = {
+  due_at?: string;
+  remaining_seconds?: number;
+  breached: boolean;
+  label: string;
+  source: string;
+};
+export type WorkflowInstanceRecentEvent = {
+  event_type: string;
+  summary: string;
+  occurred_at: string;
 };
 export type WorkflowInstanceSummary = {
   demand_id: string;
@@ -89,6 +114,10 @@ export type WorkflowInstanceSummary = {
   selected_coordination_job_id?: string;
   progress: WorkflowInstanceProgress;
   current_blocker?: WorkflowInstanceCurrentBlocker;
+  priority?: WorkflowInstancePriority;
+  risk?: WorkflowInstanceRisk;
+  sla?: WorkflowInstanceSLA;
+  recent_event?: WorkflowInstanceRecentEvent;
 };
 export type ProjectEvidenceVerificationStatus =
   | "submitted"
@@ -178,6 +207,9 @@ export type ProjectTaskGraphNode = ProjectTask & {
   input_requirements: Record<string, unknown>;
   handoff_contract: Record<string, unknown>;
   planner_metadata: Record<string, unknown>;
+  status_reason?: string;
+  updated_at?: string;
+  current_blocker?: WorkflowInstanceCurrentBlocker;
 };
 
 export type ProjectTaskGraphEdge = {
@@ -204,6 +236,16 @@ export type ProjectTaskGraphRun = {
   provider_type: string;
 };
 
+export type ProjectTaskGraphStageSummary = {
+  stage_index: number;
+  title: string;
+  total_nodes: number;
+  completed_nodes: number;
+  running_nodes: number;
+  waiting_human_nodes: number;
+  blocked_nodes: number;
+};
+
 export type ProjectTaskGraph = {
   nodes: ProjectTaskGraphNode[];
   edges: ProjectTaskGraphEdge[];
@@ -212,6 +254,7 @@ export type ProjectTaskGraph = {
   execution_summaries: ProjectExecutionSummary[];
   recent_events: ProjectEvent[];
   decision_requests: ProjectDecisionRequest[];
+  stage_summaries?: ProjectTaskGraphStageSummary[];
 };
 
 export type ProjectEvent = {

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { createAvatar } from "@dicebear/core";
 import * as adventurer from "@dicebear/adventurer";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { avatarAssetById } from "@/lib/avatar-assets";
 import { cn } from "@/lib/utils";
 
 export type UserAvatarDescriptor = {
@@ -59,8 +60,12 @@ type UserIdentityAvatarProps = {
 export function UserIdentityAvatar({ className, user }: UserIdentityAvatarProps) {
   const label = getUserIdentityLabel(user);
   const avatarSrc = useMemo(() => {
+    const avatarAsset = avatarAssetById(user.avatar_asset_id);
+    if (avatarAsset?.thumbnail_url) {
+      return avatarAsset.thumbnail_url;
+    }
     return user.avatar ? buildUserAvatarDataUri(user.avatar, user.username || label.primary) : "";
-  }, [label.primary, user.avatar, user.username]);
+  }, [label.primary, user.avatar, user.avatar_asset_id, user.username]);
 
   return (
     <Avatar className={cn("size-9 border border-border bg-background", className)}>
