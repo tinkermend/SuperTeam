@@ -89,6 +89,21 @@ func TestOverviewItemsSQLExcludesDeletedTaskEvents(t *testing.T) {
 	require.Contains(t, normalizedSQL, "JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id AND t.deleted_at IS NULL")
 }
 
+func TestEmployeeOverviewSQLCarriesOperationalStatusFacts(t *testing.T) {
+	sql := queries.ListDigitalEmployeeOverviewItems
+
+	require.Contains(t, sql, "employee_operational_facts")
+	require.Contains(t, sql, "pending_employee_decisions")
+	require.Contains(t, sql, "project_acceptance")
+	require.Contains(t, sql, "latest_run_error_family")
+	require.Contains(t, sql, "latest_run_error_code")
+	require.Contains(t, sql, "operational_has_employee_scoped_human_blocker")
+	require.Contains(t, sql, "operational_has_project_acceptance_blocker")
+	require.Contains(t, sql, "task_failure_recovery")
+	require.Contains(t, sql, "route_review")
+	require.NotContains(t, sql, "<> 'project_acceptance'")
+}
+
 func TestOverviewFiltersFromQueryMapsStableLabels(t *testing.T) {
 	filters := overviewFiltersFromQuery([]queries.ListDigitalEmployeeOverviewFilterOptionsRow{
 		{FilterType: "status", Value: "active", Label: "active"},
@@ -197,6 +212,122 @@ func TestOverviewItemFromQueryMapsWorkbenchBudgetAndEvents(t *testing.T) {
 	require.NotNil(t, item.RecentEvents[0].OccurredAt)
 }
 
+func TestOverviewItemFromQueryMapsOperationalState(t *testing.T) {
+	row := baseOverviewItemRow()
+	row.OperationalHasEmployeeScopedHumanBlocker = true
+	row.OperationalHasProjectAcceptanceBlocker = true
+	row.OperationalHasQueuedWork = true
+
+	item := overviewItemFromQuery(row)
+
+	require.Equal(t, WorkbenchStatusReady, item.WorkbenchStatus)
+	assertDigitalEmployeeOperationalState(t, item.OperationalState, DigitalEmployeeOperationalStatusWaitingHuman, false, []DigitalEmployeeOperationalReason{
+		{Code: "approval_blocked", Message: "等待人工确认后继续执行"},
+	})
+}
+
+func TestOverviewItemFromQueryDoesNotMapProjectAcceptanceToEmployeeWaiting(t *testing.T) {
+	row := baseOverviewItemRow()
+	row.OperationalHasProjectAcceptanceBlocker = true
+
+	item := overviewItemFromQuery(row)
+
+	assertDigitalEmployeeOperationalState(t, item.OperationalState, DigitalEmployeeOperationalStatusIdle, true, []DigitalEmployeeOperationalReason{})
+}
+
+func TestOverviewItemFromQueryMapsRunStatusFacts(t *testing.T) {
+	tests := []struct {
+		name       string
+		runStatus  string
+		wantStatus DigitalEmployeeOperationalStatus
+	}{
+		{name: "dispatching latest run is queued", runStatus: string(OverviewRunStatusDispatching), wantStatus: DigitalEmployeeOperationalStatusQueued},
+		{name: "cancelling latest run is working", runStatus: string(OverviewRunStatusCancelling), wantStatus: DigitalEmployeeOperationalStatusWorking},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			row := baseOverviewItemRow()
+			row.LatestRunStatus = tt.runStatus
+
+			item := overviewItemFromQuery(row)
+
+			assertDigitalEmployeeOperationalState(t, item.OperationalState, tt.wantStatus, true, []DigitalEmployeeOperationalReason{})
+		})
+	}
+}
+
+func TestOverviewItemFromQueryMapsLatestProviderFailure(t *testing.T) {
+	row := baseOverviewItemRow()
+	row.LatestRunStatus = string(OverviewRunStatusFailed)
+	row.LatestRunErrorFamily = "provider_timeout"
+
+	item := overviewItemFromQuery(row)
+
+	assertDigitalEmployeeOperationalState(t, item.OperationalState, DigitalEmployeeOperationalStatusError, false, []DigitalEmployeeOperationalReason{
+		{Code: "provider_failure", Message: "Provider 执行失败或不可用"},
+	})
+}
+
+func TestOverviewItemFromQueryMapsLatestTaskFailure(t *testing.T) {
+	tests := []struct {
+		name        string
+		errorFamily string
+	}{
+		{name: "empty error family"},
+		{name: "other error family", errorFamily: "task_contract"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			row := baseOverviewItemRow()
+			row.LatestRunStatus = string(OverviewRunStatusFailed)
+			row.LatestRunErrorFamily = tt.errorFamily
+
+			item := overviewItemFromQuery(row)
+
+			assertDigitalEmployeeOperationalState(t, item.OperationalState, DigitalEmployeeOperationalStatusError, false, []DigitalEmployeeOperationalReason{
+				{Code: "task_failed", Message: "任务失败，等待恢复策略或后续处理"},
+			})
+		})
+	}
+}
+
+func TestOverviewItemFromQueryMapsConfigurationBeforeUnavailable(t *testing.T) {
+	row := baseOverviewItemRow()
+	row.ExecutionInstanceID = uuid.NullUUID{}
+	row.ExecutionStatus = string(OverviewExecutionStatusMissing)
+	row.RuntimeNodeID = uuid.NullUUID{}
+	row.NodeID = ""
+	row.ProviderType = ""
+	row.RuntimeStatus = "offline"
+	row.AgentHomeDirAvailable = false
+
+	item := overviewItemFromQuery(row)
+
+	require.Equal(t, WorkbenchStatusPendingBinding, item.WorkbenchStatus)
+	assertDigitalEmployeeOperationalState(t, item.OperationalState, DigitalEmployeeOperationalStatusNeedsConfiguration, false, []DigitalEmployeeOperationalReason{
+		{Code: "configuration_missing", Message: "缺少执行所需配置"},
+	})
+}
+
+func TestOverviewOperationalStatusCountsFromStatesInitializesMap(t *testing.T) {
+	counts := overviewOperationalStatusCountsFromStates([]DigitalEmployeeOperationalState{
+		{Status: DigitalEmployeeOperationalStatusIdle},
+		{Status: DigitalEmployeeOperationalStatusIdle},
+		{Status: DigitalEmployeeOperationalStatusError},
+	})
+
+	require.Equal(t, map[DigitalEmployeeOperationalStatus]int32{
+		DigitalEmployeeOperationalStatusIdle:  2,
+		DigitalEmployeeOperationalStatusError: 1,
+	}, counts)
+
+	emptyCounts := overviewOperationalStatusCountsFromStates(nil)
+	require.NotNil(t, emptyCounts)
+	require.Empty(t, emptyCounts)
+}
+
 func normalizeSQL(value string) string {
 	return strings.Join(strings.Fields(value), " ")
 }
@@ -223,49 +354,57 @@ func baseOverviewItemRow() queries.ListDigitalEmployeeOverviewItemsRow {
 	effectiveConfigID := uuid.New()
 
 	return queries.ListDigitalEmployeeOverviewItemsRow{
-		ID:                     employeeID,
-		TenantID:               tenantID,
-		TeamID:                 uuid.NullUUID{UUID: teamID, Valid: true},
-		TeamName:               "平台团队",
-		OwnerUserID:            ownerUserID,
-		OwnerDisplayName:       "Owner",
-		EmployeeType:           "backend_engineer",
-		Name:                   "后端执行员",
-		Role:                   "backend_engineer",
-		Description:            pgtype.Text{String: "负责后端任务", Valid: true},
-		Status:                 "active",
-		RiskLevel:              "medium",
-		ExecutionInstanceID:    uuid.NullUUID{UUID: executionInstanceID, Valid: true},
-		ExecutionStatus:        "ready",
-		RuntimeNodeID:          uuid.NullUUID{UUID: runtimeNodeID, Valid: true},
-		NodeID:                 "runtime-1",
-		RuntimeName:            "Runtime 1",
-		RuntimeStatus:          "online",
-		ProviderType:           "codex",
-		ProviderAvailable:      true,
-		ProviderStatus:         "healthy",
-		HealthStatus:           "healthy",
-		AgentHomeDirAvailable:  true,
-		LatestRunID:            uuid.NullUUID{UUID: runID, Valid: true},
-		LatestRunTaskID:        uuid.NullUUID{UUID: taskID, Valid: true},
-		LatestRunStatus:        "completed",
-		LatestRunTitle:         "执行任务",
-		LatestRunStartedAt:     pgtype.Timestamptz{},
-		LatestRunFinishedAt:    pgtype.Timestamptz{},
-		LatestRunUpdatedAt:     pgtype.Timestamptz{},
-		LatestRunDurationSec:   "15",
-		LatestRunTokenUsage:    "1600",
-		EffectiveConfigID:      uuid.NullUUID{UUID: effectiveConfigID, Valid: true},
-		GovernanceStatus:       "approved",
-		DailyTokenLimitText:    "10000",
-		TeamRevisionNumber:     pgtype.Int4{Int32: 2, Valid: true},
-		EmployeeRevisionNumber: pgtype.Int4{Int32: 3, Valid: true},
-		SkillsCount:            4,
-		McpServersCount:        2,
-		ConstitutionRef:        "constitution://team/backend",
-		TodayBudgetUsageTokens: 2500,
-		BudgetUsageTokens30d:   pgtype.Int4{Int32: 1600, Valid: true},
-		BudgetRunCount30d:      3,
-		RecentEventsJson:       []byte(`[{"label":"命令已下发","status":"running","occurred_at":"2026-06-08T01:00:00Z"},{"label":"Provider 输出中","status":"running","occurred_at":"2026-06-08T00:59:00Z"}]`),
+		ID:                                       employeeID,
+		TenantID:                                 tenantID,
+		TeamID:                                   uuid.NullUUID{UUID: teamID, Valid: true},
+		TeamName:                                 "平台团队",
+		OwnerUserID:                              ownerUserID,
+		OwnerDisplayName:                         "Owner",
+		EmployeeType:                             "backend_engineer",
+		Name:                                     "后端执行员",
+		Role:                                     "backend_engineer",
+		Description:                              pgtype.Text{String: "负责后端任务", Valid: true},
+		Status:                                   "active",
+		RiskLevel:                                "medium",
+		ExecutionInstanceID:                      uuid.NullUUID{UUID: executionInstanceID, Valid: true},
+		ExecutionStatus:                          "ready",
+		RuntimeNodeID:                            uuid.NullUUID{UUID: runtimeNodeID, Valid: true},
+		NodeID:                                   "runtime-1",
+		RuntimeName:                              "Runtime 1",
+		RuntimeStatus:                            "online",
+		ProviderType:                             "codex",
+		ProviderAvailable:                        true,
+		ProviderStatus:                           "healthy",
+		HealthStatus:                             "healthy",
+		AgentHomeDirAvailable:                    true,
+		LatestRunID:                              uuid.NullUUID{UUID: runID, Valid: true},
+		LatestRunTaskID:                          uuid.NullUUID{UUID: taskID, Valid: true},
+		LatestRunStatus:                          "completed",
+		LatestRunTitle:                           "执行任务",
+		LatestRunStartedAt:                       pgtype.Timestamptz{},
+		LatestRunFinishedAt:                      pgtype.Timestamptz{},
+		LatestRunUpdatedAt:                       pgtype.Timestamptz{},
+		LatestRunDurationSec:                     "15",
+		LatestRunTokenUsage:                      "1600",
+		LatestRunErrorFamily:                     "",
+		LatestRunErrorCode:                       "",
+		EffectiveConfigID:                        uuid.NullUUID{UUID: effectiveConfigID, Valid: true},
+		GovernanceStatus:                         "approved",
+		DailyTokenLimitText:                      "10000",
+		TeamRevisionNumber:                       pgtype.Int4{Int32: 2, Valid: true},
+		EmployeeRevisionNumber:                   pgtype.Int4{Int32: 3, Valid: true},
+		SkillsCount:                              4,
+		McpServersCount:                          2,
+		ConstitutionRef:                          "constitution://team/backend",
+		TodayBudgetUsageTokens:                   2500,
+		BudgetUsageTokens30d:                     pgtype.Int4{Int32: 1600, Valid: true},
+		BudgetRunCount30d:                        3,
+		OperationalHasEmployeeScopedHumanBlocker: false,
+		OperationalHasProjectAcceptanceBlocker:   false,
+		OperationalHasQueuedWork:                 false,
+		OperationalHasWorkingTask:                false,
+		OperationalHasActiveWork:                 false,
+		OperationalHasTaskFailure:                false,
+		RecentEventsJson:                         []byte(`[{"label":"命令已下发","status":"running","occurred_at":"2026-06-08T01:00:00Z"},{"label":"Provider 输出中","status":"running","occurred_at":"2026-06-08T00:59:00Z"}]`),
 	}
 }

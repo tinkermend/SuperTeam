@@ -611,6 +611,26 @@ func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDi
 		return nil, err
 	}
 
+	operationalFactRows, err := r.q.ListDigitalEmployeeOverviewOperationalFacts(ctx, queries.ListDigitalEmployeeOverviewOperationalFactsParams{
+		TenantID:        req.TenantID,
+		Q:               summaryParams.Q,
+		TeamID:          summaryParams.TeamID,
+		Status:          summaryParams.Status,
+		EmployeeType:    summaryParams.EmployeeType,
+		ProviderType:    summaryParams.ProviderType,
+		RuntimeNodeID:   summaryParams.RuntimeNodeID,
+		RiskLevel:       summaryParams.RiskLevel,
+		ExecutionStatus: summaryParams.ExecutionStatus,
+		RunStatus:       summaryParams.RunStatus,
+	})
+	if err != nil {
+		return nil, err
+	}
+	operationalStates := make([]DigitalEmployeeOperationalState, 0, len(operationalFactRows))
+	for _, row := range operationalFactRows {
+		operationalStates = append(operationalStates, overviewOperationalStateFromFactsRow(row))
+	}
+
 	itemRows, err := r.q.ListDigitalEmployeeOverviewItems(ctx, queries.ListDigitalEmployeeOverviewItemsParams{
 		TenantID:        req.TenantID,
 		Q:               summaryParams.Q,
@@ -650,6 +670,7 @@ func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDi
 			PendingRuntimeBindingCount: summary.PendingRuntimeBindingCount,
 			PendingConfigApprovalCount: summary.PendingConfigApprovalCount,
 			FailedRecentRunCount:       summary.FailedRecentRunCount,
+			OperationalStatusCounts:    overviewOperationalStatusCountsFromStates(operationalStates),
 		},
 		QueueSummary: DigitalEmployeeOverviewQueueSummary{
 			PendingRuntimeBindingCount: summary.PendingRuntimeBindingCount,
@@ -693,7 +714,7 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) Digi
 	dailyTokenLimit := int32PtrFromJSONString(row.DailyTokenLimitText)
 	usagePercent := overviewUsagePercent(row.TodayBudgetUsageTokens, dailyTokenLimit)
 	recentEvents := recentEventsFromJSON(row.RecentEventsJson)
-	workbenchStatus := overviewWorkbenchStatus(overviewWorkbenchStatusInput{
+	workbenchInput := overviewWorkbenchStatusInput{
 		IdentityStatus:        DigitalEmployeeStatus(row.Status),
 		ExecutionStatus:       executionStatus,
 		RuntimeStatus:         row.RuntimeStatus,
@@ -707,6 +728,15 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) Digi
 		AgentHomeDirAvailable: row.AgentHomeDirAvailable,
 		GovernanceStatus:      row.GovernanceStatus,
 		RunStatus:             latestRunStatus,
+	}
+	workbenchStatus := overviewWorkbenchStatus(workbenchInput)
+	operationalState := overviewOperationalStateFromInput(workbenchInput, workbenchStatus, latestRunStatus, row.LatestRunErrorFamily, overviewOperationalFacts{
+		HasEmployeeScopedHumanBlocker: row.OperationalHasEmployeeScopedHumanBlocker,
+		HasProjectAcceptanceBlocker:   row.OperationalHasProjectAcceptanceBlocker,
+		HasQueuedWork:                 row.OperationalHasQueuedWork,
+		HasWorkingTask:                row.OperationalHasWorkingTask,
+		HasActiveWork:                 row.OperationalHasActiveWork,
+		HasTaskFailure:                row.OperationalHasTaskFailure,
 	})
 
 	var latestRun *DigitalEmployeeLatestRunSummary
@@ -780,9 +810,76 @@ func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) Digi
 			Currency:          "USD",
 			Source:            overviewBudgetSource(row.BudgetRunCount30d, budgetUsageValue),
 		},
-		WorkbenchStatus: workbenchStatus,
-		RecentEvents:    recentEvents,
+		WorkbenchStatus:  workbenchStatus,
+		OperationalState: operationalState,
+		RecentEvents:     recentEvents,
 	}
+}
+
+type overviewOperationalFacts struct {
+	HasEmployeeScopedHumanBlocker bool
+	HasProjectAcceptanceBlocker   bool
+	HasQueuedWork                 bool
+	HasWorkingTask                bool
+	HasActiveWork                 bool
+	HasTaskFailure                bool
+}
+
+func overviewOperationalStateFromFactsRow(row queries.ListDigitalEmployeeOverviewOperationalFactsRow) DigitalEmployeeOperationalState {
+	latestRunStatus := overviewRunStatus(row.LatestRunStatus)
+	workbenchInput := overviewWorkbenchStatusInput{
+		IdentityStatus:        DigitalEmployeeStatus(row.Status),
+		ExecutionStatus:       overviewExecutionStatus(row.ExecutionStatus),
+		RuntimeStatus:         row.RuntimeStatus,
+		RuntimeDisabled:       row.RuntimeDisabledAt.Valid,
+		RuntimeArchived:       row.RuntimeArchivedAt.Valid,
+		NodeID:                row.NodeID,
+		ProviderType:          row.ProviderType,
+		ProviderAvailable:     row.ProviderAvailable,
+		ProviderStatus:        row.ProviderStatus,
+		HealthStatus:          row.HealthStatus,
+		AgentHomeDirAvailable: row.AgentHomeDirAvailable,
+		GovernanceStatus:      row.GovernanceStatus,
+		RunStatus:             latestRunStatus,
+	}
+	return overviewOperationalStateFromInput(workbenchInput, overviewWorkbenchStatus(workbenchInput), latestRunStatus, row.LatestRunErrorFamily, overviewOperationalFacts{
+		HasEmployeeScopedHumanBlocker: row.OperationalHasEmployeeScopedHumanBlocker,
+		HasProjectAcceptanceBlocker:   row.OperationalHasProjectAcceptanceBlocker,
+		HasQueuedWork:                 row.OperationalHasQueuedWork,
+		HasWorkingTask:                row.OperationalHasWorkingTask,
+		HasActiveWork:                 row.OperationalHasActiveWork,
+		HasTaskFailure:                row.OperationalHasTaskFailure,
+	})
+}
+
+func overviewOperationalStateFromInput(workbenchInput overviewWorkbenchStatusInput, workbenchStatus WorkbenchStatus, latestRunStatus OverviewRunStatus, latestRunErrorFamily string, facts overviewOperationalFacts) DigitalEmployeeOperationalState {
+	baseDispatchReady := overviewOperationalDispatchReady(workbenchInput)
+	hasRunQueued := latestRunStatus == OverviewRunStatusQueued || latestRunStatus == OverviewRunStatusDispatching
+	hasRunWorking := latestRunStatus == OverviewRunStatusRunning || latestRunStatus == OverviewRunStatusCancelling
+	hasRunFailed := latestRunStatus == OverviewRunStatusFailed || latestRunStatus == OverviewRunStatusTimedOut
+	latestRunErrorFamily = strings.TrimSpace(latestRunErrorFamily)
+	hasRunProviderFailure := hasRunFailed && (latestRunErrorFamily == "dispatch_failed" || latestRunErrorFamily == "provider" || strings.HasPrefix(latestRunErrorFamily, "provider_"))
+
+	return ResolveDigitalEmployeeOperationalState(DigitalEmployeeOperationalInput{
+		DispatchReady:                 baseDispatchReady,
+		ConfigurationMissing:          !baseDispatchReady && workbenchStatus == WorkbenchStatusPendingBinding,
+		RuntimeUnavailable:            workbenchInput.RuntimeDisabled || workbenchInput.RuntimeArchived || strings.TrimSpace(workbenchInput.RuntimeStatus) != "online",
+		HasProviderFailure:            hasRunProviderFailure,
+		HasTaskFailure:                facts.HasTaskFailure || (hasRunFailed && !hasRunProviderFailure),
+		HasActiveWork:                 facts.HasActiveWork || hasRunQueued || hasRunWorking,
+		HasWorkingRun:                 facts.HasWorkingTask || hasRunWorking,
+		HasQueuedWork:                 facts.HasQueuedWork || hasRunQueued,
+		HasEmployeeScopedHumanBlocker: facts.HasEmployeeScopedHumanBlocker,
+		HasProjectAcceptanceBlocker:   facts.HasProjectAcceptanceBlocker,
+	})
+}
+
+func overviewOperationalStatusCountsFromStates(states []DigitalEmployeeOperationalState) map[DigitalEmployeeOperationalStatus]int32 {
+	counts := make(map[DigitalEmployeeOperationalStatus]int32)
+	for _, state := range states {
+		counts[state.Status]++
+	}
+	return counts
 }
 
 func avatarAssetFromOverviewMetadata(metadata []byte) *DigitalEmployeeAvatarAsset {
@@ -1053,6 +1150,11 @@ func overviewWorkbenchStatus(input overviewWorkbenchStatusInput) WorkbenchStatus
 		return WorkbenchStatusError
 	}
 	return WorkbenchStatusReady
+}
+
+func overviewOperationalDispatchReady(input overviewWorkbenchStatusInput) bool {
+	input.RunStatus = OverviewRunStatusNone
+	return overviewWorkbenchStatus(input) == WorkbenchStatusReady
 }
 
 func overviewUsagePercent(today int32, limit *int32) *int32 {

@@ -522,6 +522,7 @@ type DigitalEmployeeOverviewSummary struct {
 	PendingRuntimeBindingCount int32
 	PendingConfigApprovalCount int32
 	FailedRecentRunCount       int32
+	OperationalStatusCounts    map[DigitalEmployeeOperationalStatus]int32
 }
 
 type DigitalEmployeeOverviewQueueSummary struct {
@@ -537,6 +538,7 @@ type DigitalEmployeeOverviewItem struct {
 	GovernanceSummary DigitalEmployeeGovernanceSummary
 	BudgetSummary     DigitalEmployeeBudgetSummary
 	WorkbenchStatus   WorkbenchStatus
+	OperationalState  DigitalEmployeeOperationalState
 	RecentEvents      []DigitalEmployeeRecentEventSummary
 }
 

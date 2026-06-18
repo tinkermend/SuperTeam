@@ -1294,6 +1294,8 @@ latest_runs AS (
         tr.updated_at,
         tr.result,
         tr.error_message,
+        tr.error_family,
+        tr.error_code,
         tr.created_at
     FROM task_runs tr
     JOIN overview_args args ON args.tenant_id = tr.tenant_id
@@ -1409,6 +1411,59 @@ skill_counts AS (
     WHERE sab.status = 'enabled'
     GROUP BY sab.tenant_id, sab.digital_employee_id
 ),
+pending_employee_decisions AS (
+    SELECT
+        pt.tenant_id,
+        pt.assigned_digital_employee_id AS digital_employee_id,
+        count(*) FILTER (
+            WHERE pdr.decision_type IN ('task_failure_recovery', 'route_review')
+        ) > 0 AS has_employee_scoped_human_blocker,
+        count(*) FILTER (
+            WHERE pdr.decision_type = 'project_acceptance'
+        ) > 0 AS has_project_acceptance_blocker
+    FROM project_decision_requests pdr
+    JOIN project_tasks pt
+      ON pt.tenant_id = pdr.tenant_id
+     AND pt.id = pdr.project_task_id
+    JOIN overview_args args ON args.tenant_id = pt.tenant_id
+    WHERE pt.assigned_digital_employee_id IS NOT NULL
+      AND pdr.status_snapshot IN ('pending', 'requested')
+    GROUP BY pt.tenant_id, pt.assigned_digital_employee_id
+),
+employee_operational_facts AS (
+    SELECT
+        de.tenant_id,
+        de.id AS digital_employee_id,
+        (
+            coalesce(ped.has_employee_scoped_human_blocker, false)
+            OR count(pt.id) FILTER (
+                WHERE pt.requires_human_approval
+                   OR pt.status IN ('waiting_human', 'pending_review')
+            ) > 0
+        ) AS operational_has_employee_scoped_human_blocker,
+        coalesce(ped.has_project_acceptance_blocker, false) AS operational_has_project_acceptance_blocker,
+        count(pt.id) FILTER (WHERE pt.status IN ('pending', 'planned', 'blocked', 'assigned')) > 0 AS operational_has_queued_work,
+        count(pt.id) FILTER (WHERE pt.status IN ('running', 'in_progress')) > 0 AS operational_has_working_task,
+        count(pt.id) FILTER (
+            WHERE pt.requires_human_approval
+               OR pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review')
+        ) > 0 AS operational_has_active_work,
+        count(pt.id) FILTER (WHERE pt.status = 'failed') > 0 AS operational_has_task_failure
+    FROM digital_employees de
+    JOIN overview_args args ON args.tenant_id = de.tenant_id
+    LEFT JOIN project_tasks pt
+      ON pt.tenant_id = de.tenant_id
+     AND pt.assigned_digital_employee_id = de.id
+    LEFT JOIN pending_employee_decisions ped
+      ON ped.tenant_id = de.tenant_id
+     AND ped.digital_employee_id = de.id
+    WHERE de.deleted_at IS NULL
+    GROUP BY
+        de.tenant_id,
+        de.id,
+        ped.has_employee_scoped_human_blocker,
+        ped.has_project_acceptance_blocker
+),
 overview_rows AS (
     SELECT
         de.id,
@@ -1451,6 +1506,8 @@ overview_rows AS (
         END)::text, '')::text AS latest_run_duration_sec,
         COALESCE(lr.result #>> '{usage,total_tokens}', lr.result ->> 'total_tokens', '')::text AS latest_run_token_usage,
         lr.error_message AS latest_run_error_message,
+        COALESCE(lr.error_family, '')::text AS latest_run_error_family,
+        COALESCE(lr.error_code, '')::text AS latest_run_error_code,
         ec.effective_config_id,
         COALESCE(gc.status, 'missing')::text AS governance_status,
         COALESCE(ec.daily_token_limit_text, '')::text AS daily_token_limit_text,
@@ -1462,6 +1519,12 @@ overview_rows AS (
         COALESCE(tbu.today_budget_usage_tokens, 0)::integer AS today_budget_usage_tokens,
         br.budget_usage_tokens_30d,
         COALESCE(br.budget_run_count_30d, 0)::integer AS budget_run_count_30d,
+        coalesce(eof.operational_has_employee_scoped_human_blocker, false)::boolean AS operational_has_employee_scoped_human_blocker,
+        coalesce(eof.operational_has_project_acceptance_blocker, false)::boolean AS operational_has_project_acceptance_blocker,
+        coalesce(eof.operational_has_queued_work, false)::boolean AS operational_has_queued_work,
+        coalesce(eof.operational_has_working_task, false)::boolean AS operational_has_working_task,
+        coalesce(eof.operational_has_active_work, false)::boolean AS operational_has_active_work,
+        coalesce(eof.operational_has_task_failure, false)::boolean AS operational_has_task_failure,
         de.created_at,
         de.updated_at
     FROM digital_employees de
@@ -1502,11 +1565,14 @@ overview_rows AS (
     LEFT JOIN skill_counts sc
       ON sc.tenant_id = de.tenant_id
      AND sc.digital_employee_id = de.id
+    LEFT JOIN employee_operational_facts eof
+      ON eof.tenant_id = de.tenant_id
+     AND eof.digital_employee_id = de.id
     WHERE de.tenant_id = args.tenant_id
       AND de.deleted_at IS NULL
 ),
 filtered_rows AS (
-    SELECT overview_rows.id, overview_rows.tenant_id, overview_rows.team_id, overview_rows.team_name, overview_rows.owner_user_id, overview_rows.owner_display_name, overview_rows.employee_type, overview_rows.name, overview_rows.role, overview_rows.description, overview_rows.status, overview_rows.risk_level, overview_rows.metadata, overview_rows.execution_instance_id, overview_rows.execution_status, overview_rows.runtime_node_id, overview_rows.node_id, overview_rows.runtime_name, overview_rows.runtime_status, overview_rows.runtime_disabled_at, overview_rows.runtime_archived_at, overview_rows.provider_type, overview_rows.provider_available, overview_rows.provider_status, overview_rows.health_status, overview_rows.agent_home_dir_available, overview_rows.latest_run_id, overview_rows.latest_run_task_id, overview_rows.latest_run_status, overview_rows.latest_run_title, overview_rows.latest_run_started_at, overview_rows.latest_run_finished_at, overview_rows.latest_run_updated_at, overview_rows.latest_run_duration_sec, overview_rows.latest_run_token_usage, overview_rows.latest_run_error_message, overview_rows.effective_config_id, overview_rows.governance_status, overview_rows.daily_token_limit_text, overview_rows.team_revision_number, overview_rows.employee_revision_number, overview_rows.skills_count, overview_rows.mcp_servers_count, overview_rows.constitution_ref, overview_rows.today_budget_usage_tokens, overview_rows.budget_usage_tokens_30d, overview_rows.budget_run_count_30d, overview_rows.created_at, overview_rows.updated_at
+    SELECT overview_rows.id, overview_rows.tenant_id, overview_rows.team_id, overview_rows.team_name, overview_rows.owner_user_id, overview_rows.owner_display_name, overview_rows.employee_type, overview_rows.name, overview_rows.role, overview_rows.description, overview_rows.status, overview_rows.risk_level, overview_rows.metadata, overview_rows.execution_instance_id, overview_rows.execution_status, overview_rows.runtime_node_id, overview_rows.node_id, overview_rows.runtime_name, overview_rows.runtime_status, overview_rows.runtime_disabled_at, overview_rows.runtime_archived_at, overview_rows.provider_type, overview_rows.provider_available, overview_rows.provider_status, overview_rows.health_status, overview_rows.agent_home_dir_available, overview_rows.latest_run_id, overview_rows.latest_run_task_id, overview_rows.latest_run_status, overview_rows.latest_run_title, overview_rows.latest_run_started_at, overview_rows.latest_run_finished_at, overview_rows.latest_run_updated_at, overview_rows.latest_run_duration_sec, overview_rows.latest_run_token_usage, overview_rows.latest_run_error_message, overview_rows.latest_run_error_family, overview_rows.latest_run_error_code, overview_rows.effective_config_id, overview_rows.governance_status, overview_rows.daily_token_limit_text, overview_rows.team_revision_number, overview_rows.employee_revision_number, overview_rows.skills_count, overview_rows.mcp_servers_count, overview_rows.constitution_ref, overview_rows.today_budget_usage_tokens, overview_rows.budget_usage_tokens_30d, overview_rows.budget_run_count_30d, overview_rows.operational_has_employee_scoped_human_blocker, overview_rows.operational_has_project_acceptance_blocker, overview_rows.operational_has_queued_work, overview_rows.operational_has_working_task, overview_rows.operational_has_active_work, overview_rows.operational_has_task_failure, overview_rows.created_at, overview_rows.updated_at
     FROM overview_rows
     CROSS JOIN overview_args args
     WHERE (
@@ -1525,7 +1591,7 @@ filtered_rows AS (
       AND (args.run_status IS NULL OR overview_rows.latest_run_status = args.run_status)
 ),
 paged_rows AS (
-    SELECT id, tenant_id, team_id, team_name, owner_user_id, owner_display_name, employee_type, name, role, description, status, risk_level, metadata, execution_instance_id, execution_status, runtime_node_id, node_id, runtime_name, runtime_status, runtime_disabled_at, runtime_archived_at, provider_type, provider_available, provider_status, health_status, agent_home_dir_available, latest_run_id, latest_run_task_id, latest_run_status, latest_run_title, latest_run_started_at, latest_run_finished_at, latest_run_updated_at, latest_run_duration_sec, latest_run_token_usage, latest_run_error_message, effective_config_id, governance_status, daily_token_limit_text, team_revision_number, employee_revision_number, skills_count, mcp_servers_count, constitution_ref, today_budget_usage_tokens, budget_usage_tokens_30d, budget_run_count_30d, created_at, updated_at
+    SELECT id, tenant_id, team_id, team_name, owner_user_id, owner_display_name, employee_type, name, role, description, status, risk_level, metadata, execution_instance_id, execution_status, runtime_node_id, node_id, runtime_name, runtime_status, runtime_disabled_at, runtime_archived_at, provider_type, provider_available, provider_status, health_status, agent_home_dir_available, latest_run_id, latest_run_task_id, latest_run_status, latest_run_title, latest_run_started_at, latest_run_finished_at, latest_run_updated_at, latest_run_duration_sec, latest_run_token_usage, latest_run_error_message, latest_run_error_family, latest_run_error_code, effective_config_id, governance_status, daily_token_limit_text, team_revision_number, employee_revision_number, skills_count, mcp_servers_count, constitution_ref, today_budget_usage_tokens, budget_usage_tokens_30d, budget_run_count_30d, operational_has_employee_scoped_human_blocker, operational_has_project_acceptance_blocker, operational_has_queued_work, operational_has_working_task, operational_has_active_work, operational_has_task_failure, created_at, updated_at
     FROM filtered_rows
     ORDER BY created_at DESC, id
     LIMIT (SELECT limit_value FROM overview_args)
@@ -1616,6 +1682,8 @@ SELECT
     pr.latest_run_duration_sec,
     pr.latest_run_token_usage,
     pr.latest_run_error_message,
+    pr.latest_run_error_family,
+    pr.latest_run_error_code,
     pr.effective_config_id,
     pr.governance_status,
     pr.daily_token_limit_text,
@@ -1627,6 +1695,12 @@ SELECT
     pr.today_budget_usage_tokens,
     pr.budget_usage_tokens_30d,
     pr.budget_run_count_30d,
+    pr.operational_has_employee_scoped_human_blocker,
+    pr.operational_has_project_acceptance_blocker,
+    pr.operational_has_queued_work,
+    pr.operational_has_working_task,
+    pr.operational_has_active_work,
+    pr.operational_has_task_failure,
     COALESCE(re.recent_events_json, '[]'::jsonb) AS recent_events_json
 FROM paged_rows pr
 LEFT JOIN recent_events re
@@ -1651,54 +1725,62 @@ type ListDigitalEmployeeOverviewItemsParams struct {
 }
 
 type ListDigitalEmployeeOverviewItemsRow struct {
-	ID                     uuid.UUID          `json:"id"`
-	TenantID               uuid.UUID          `json:"tenant_id"`
-	TeamID                 uuid.NullUUID      `json:"team_id"`
-	TeamName               string             `json:"team_name"`
-	OwnerUserID            uuid.UUID          `json:"owner_user_id"`
-	OwnerDisplayName       string             `json:"owner_display_name"`
-	EmployeeType           string             `json:"employee_type"`
-	Name                   string             `json:"name"`
-	Role                   string             `json:"role"`
-	Description            pgtype.Text        `json:"description"`
-	Status                 string             `json:"status"`
-	RiskLevel              string             `json:"risk_level"`
-	Metadata               []byte             `json:"metadata"`
-	ExecutionInstanceID    uuid.NullUUID      `json:"execution_instance_id"`
-	ExecutionStatus        string             `json:"execution_status"`
-	RuntimeNodeID          uuid.NullUUID      `json:"runtime_node_id"`
-	NodeID                 string             `json:"node_id"`
-	RuntimeName            string             `json:"runtime_name"`
-	RuntimeStatus          string             `json:"runtime_status"`
-	RuntimeDisabledAt      pgtype.Timestamptz `json:"runtime_disabled_at"`
-	RuntimeArchivedAt      pgtype.Timestamptz `json:"runtime_archived_at"`
-	ProviderType           string             `json:"provider_type"`
-	ProviderAvailable      bool               `json:"provider_available"`
-	ProviderStatus         string             `json:"provider_status"`
-	HealthStatus           string             `json:"health_status"`
-	AgentHomeDirAvailable  bool               `json:"agent_home_dir_available"`
-	LatestRunID            uuid.NullUUID      `json:"latest_run_id"`
-	LatestRunTaskID        uuid.NullUUID      `json:"latest_run_task_id"`
-	LatestRunStatus        string             `json:"latest_run_status"`
-	LatestRunTitle         string             `json:"latest_run_title"`
-	LatestRunStartedAt     pgtype.Timestamptz `json:"latest_run_started_at"`
-	LatestRunFinishedAt    pgtype.Timestamptz `json:"latest_run_finished_at"`
-	LatestRunUpdatedAt     pgtype.Timestamptz `json:"latest_run_updated_at"`
-	LatestRunDurationSec   string             `json:"latest_run_duration_sec"`
-	LatestRunTokenUsage    string             `json:"latest_run_token_usage"`
-	LatestRunErrorMessage  pgtype.Text        `json:"latest_run_error_message"`
-	EffectiveConfigID      uuid.NullUUID      `json:"effective_config_id"`
-	GovernanceStatus       string             `json:"governance_status"`
-	DailyTokenLimitText    string             `json:"daily_token_limit_text"`
-	TeamRevisionNumber     pgtype.Int4        `json:"team_revision_number"`
-	EmployeeRevisionNumber pgtype.Int4        `json:"employee_revision_number"`
-	SkillsCount            int32              `json:"skills_count"`
-	McpServersCount        int32              `json:"mcp_servers_count"`
-	ConstitutionRef        string             `json:"constitution_ref"`
-	TodayBudgetUsageTokens int32              `json:"today_budget_usage_tokens"`
-	BudgetUsageTokens30d   pgtype.Int4        `json:"budget_usage_tokens_30d"`
-	BudgetRunCount30d      int32              `json:"budget_run_count_30d"`
-	RecentEventsJson       []byte             `json:"recent_events_json"`
+	ID                                       uuid.UUID          `json:"id"`
+	TenantID                                 uuid.UUID          `json:"tenant_id"`
+	TeamID                                   uuid.NullUUID      `json:"team_id"`
+	TeamName                                 string             `json:"team_name"`
+	OwnerUserID                              uuid.UUID          `json:"owner_user_id"`
+	OwnerDisplayName                         string             `json:"owner_display_name"`
+	EmployeeType                             string             `json:"employee_type"`
+	Name                                     string             `json:"name"`
+	Role                                     string             `json:"role"`
+	Description                              pgtype.Text        `json:"description"`
+	Status                                   string             `json:"status"`
+	RiskLevel                                string             `json:"risk_level"`
+	Metadata                                 []byte             `json:"metadata"`
+	ExecutionInstanceID                      uuid.NullUUID      `json:"execution_instance_id"`
+	ExecutionStatus                          string             `json:"execution_status"`
+	RuntimeNodeID                            uuid.NullUUID      `json:"runtime_node_id"`
+	NodeID                                   string             `json:"node_id"`
+	RuntimeName                              string             `json:"runtime_name"`
+	RuntimeStatus                            string             `json:"runtime_status"`
+	RuntimeDisabledAt                        pgtype.Timestamptz `json:"runtime_disabled_at"`
+	RuntimeArchivedAt                        pgtype.Timestamptz `json:"runtime_archived_at"`
+	ProviderType                             string             `json:"provider_type"`
+	ProviderAvailable                        bool               `json:"provider_available"`
+	ProviderStatus                           string             `json:"provider_status"`
+	HealthStatus                             string             `json:"health_status"`
+	AgentHomeDirAvailable                    bool               `json:"agent_home_dir_available"`
+	LatestRunID                              uuid.NullUUID      `json:"latest_run_id"`
+	LatestRunTaskID                          uuid.NullUUID      `json:"latest_run_task_id"`
+	LatestRunStatus                          string             `json:"latest_run_status"`
+	LatestRunTitle                           string             `json:"latest_run_title"`
+	LatestRunStartedAt                       pgtype.Timestamptz `json:"latest_run_started_at"`
+	LatestRunFinishedAt                      pgtype.Timestamptz `json:"latest_run_finished_at"`
+	LatestRunUpdatedAt                       pgtype.Timestamptz `json:"latest_run_updated_at"`
+	LatestRunDurationSec                     string             `json:"latest_run_duration_sec"`
+	LatestRunTokenUsage                      string             `json:"latest_run_token_usage"`
+	LatestRunErrorMessage                    pgtype.Text        `json:"latest_run_error_message"`
+	LatestRunErrorFamily                     string             `json:"latest_run_error_family"`
+	LatestRunErrorCode                       string             `json:"latest_run_error_code"`
+	EffectiveConfigID                        uuid.NullUUID      `json:"effective_config_id"`
+	GovernanceStatus                         string             `json:"governance_status"`
+	DailyTokenLimitText                      string             `json:"daily_token_limit_text"`
+	TeamRevisionNumber                       pgtype.Int4        `json:"team_revision_number"`
+	EmployeeRevisionNumber                   pgtype.Int4        `json:"employee_revision_number"`
+	SkillsCount                              int32              `json:"skills_count"`
+	McpServersCount                          int32              `json:"mcp_servers_count"`
+	ConstitutionRef                          string             `json:"constitution_ref"`
+	TodayBudgetUsageTokens                   int32              `json:"today_budget_usage_tokens"`
+	BudgetUsageTokens30d                     pgtype.Int4        `json:"budget_usage_tokens_30d"`
+	BudgetRunCount30d                        int32              `json:"budget_run_count_30d"`
+	OperationalHasEmployeeScopedHumanBlocker bool               `json:"operational_has_employee_scoped_human_blocker"`
+	OperationalHasProjectAcceptanceBlocker   bool               `json:"operational_has_project_acceptance_blocker"`
+	OperationalHasQueuedWork                 bool               `json:"operational_has_queued_work"`
+	OperationalHasWorkingTask                bool               `json:"operational_has_working_task"`
+	OperationalHasActiveWork                 bool               `json:"operational_has_active_work"`
+	OperationalHasTaskFailure                bool               `json:"operational_has_task_failure"`
+	RecentEventsJson                         []byte             `json:"recent_events_json"`
 }
 
 func (q *Queries) ListDigitalEmployeeOverviewItems(ctx context.Context, arg ListDigitalEmployeeOverviewItemsParams) ([]ListDigitalEmployeeOverviewItemsRow, error) {
@@ -1760,6 +1842,8 @@ func (q *Queries) ListDigitalEmployeeOverviewItems(ctx context.Context, arg List
 			&i.LatestRunDurationSec,
 			&i.LatestRunTokenUsage,
 			&i.LatestRunErrorMessage,
+			&i.LatestRunErrorFamily,
+			&i.LatestRunErrorCode,
 			&i.EffectiveConfigID,
 			&i.GovernanceStatus,
 			&i.DailyTokenLimitText,
@@ -1771,7 +1855,335 @@ func (q *Queries) ListDigitalEmployeeOverviewItems(ctx context.Context, arg List
 			&i.TodayBudgetUsageTokens,
 			&i.BudgetUsageTokens30d,
 			&i.BudgetRunCount30d,
+			&i.OperationalHasEmployeeScopedHumanBlocker,
+			&i.OperationalHasProjectAcceptanceBlocker,
+			&i.OperationalHasQueuedWork,
+			&i.OperationalHasWorkingTask,
+			&i.OperationalHasActiveWork,
+			&i.OperationalHasTaskFailure,
 			&i.RecentEventsJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListDigitalEmployeeOverviewOperationalFacts = `-- name: ListDigitalEmployeeOverviewOperationalFacts :many
+WITH overview_args AS (
+    SELECT
+        $1::uuid AS tenant_id,
+        NULLIF(BTRIM($2::text), '') AS q,
+        $3::uuid AS team_id,
+        NULLIF(BTRIM($4::text), '') AS status,
+        NULLIF(BTRIM($5::text), '') AS employee_type,
+        NULLIF(BTRIM($6::text), '') AS provider_type,
+        $7::uuid AS runtime_node_id,
+        NULLIF(BTRIM($8::text), '') AS risk_level,
+        NULLIF(BTRIM($9::text), '') AS execution_status,
+        NULLIF(BTRIM($10::text), '') AS run_status
+),
+provider_capabilities AS (
+    SELECT DISTINCT ON (rc.tenant_id, rc.runtime_node_id, rc.provider_type)
+        rc.tenant_id,
+        rc.runtime_node_id,
+        rc.provider_type,
+        rc.status,
+        rc.health_status,
+        rc.available
+    FROM runtime_capabilities rc
+    JOIN overview_args args ON args.tenant_id = rc.tenant_id
+    WHERE rc.capability_type = 'provider'
+      AND rc.disabled_at IS NULL
+      AND rc.archived_at IS NULL
+    ORDER BY rc.tenant_id, rc.runtime_node_id, rc.provider_type, rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
+),
+latest_runs AS (
+    SELECT DISTINCT ON (tr.tenant_id, tr.digital_employee_id)
+        tr.tenant_id,
+        tr.digital_employee_id,
+        tr.status,
+        tr.error_family,
+        tr.error_code
+    FROM task_runs tr
+    JOIN overview_args args ON args.tenant_id = tr.tenant_id
+    JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+    WHERE tr.digital_employee_id IS NOT NULL
+      AND t.deleted_at IS NULL
+    ORDER BY tr.tenant_id, tr.digital_employee_id, tr.updated_at DESC, tr.created_at DESC
+),
+effective_configs AS (
+    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
+        ec.tenant_id,
+        ec.digital_employee_id,
+        ec.id AS effective_config_id,
+        ec.status
+    FROM digital_employee_effective_configs ec
+    JOIN overview_args args ON args.tenant_id = ec.tenant_id
+    WHERE ec.status = 'approved'
+      AND ec.revoked_at IS NULL
+    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
+),
+governance_configs AS (
+    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
+        ec.tenant_id,
+        ec.digital_employee_id,
+        ec.status
+    FROM digital_employee_effective_configs ec
+    JOIN overview_args args ON args.tenant_id = ec.tenant_id
+    WHERE ec.revoked_at IS NULL
+    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
+),
+pending_employee_decisions AS (
+    SELECT
+        pt.tenant_id,
+        pt.assigned_digital_employee_id AS digital_employee_id,
+        count(*) FILTER (
+            WHERE pdr.decision_type IN ('task_failure_recovery', 'route_review')
+        ) > 0 AS has_employee_scoped_human_blocker,
+        count(*) FILTER (
+            WHERE pdr.decision_type = 'project_acceptance'
+        ) > 0 AS has_project_acceptance_blocker
+    FROM project_decision_requests pdr
+    JOIN project_tasks pt
+      ON pt.tenant_id = pdr.tenant_id
+     AND pt.id = pdr.project_task_id
+    JOIN overview_args args ON args.tenant_id = pt.tenant_id
+    WHERE pt.assigned_digital_employee_id IS NOT NULL
+      AND pdr.status_snapshot IN ('pending', 'requested')
+    GROUP BY pt.tenant_id, pt.assigned_digital_employee_id
+),
+employee_operational_facts AS (
+    SELECT
+        de.tenant_id,
+        de.id AS digital_employee_id,
+        (
+            coalesce(ped.has_employee_scoped_human_blocker, false)
+            OR count(pt.id) FILTER (
+                WHERE pt.requires_human_approval
+                   OR pt.status IN ('waiting_human', 'pending_review')
+            ) > 0
+        ) AS operational_has_employee_scoped_human_blocker,
+        coalesce(ped.has_project_acceptance_blocker, false) AS operational_has_project_acceptance_blocker,
+        count(pt.id) FILTER (WHERE pt.status IN ('pending', 'planned', 'blocked', 'assigned')) > 0 AS operational_has_queued_work,
+        count(pt.id) FILTER (WHERE pt.status IN ('running', 'in_progress')) > 0 AS operational_has_working_task,
+        count(pt.id) FILTER (
+            WHERE pt.requires_human_approval
+               OR pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review')
+        ) > 0 AS operational_has_active_work,
+        count(pt.id) FILTER (WHERE pt.status = 'failed') > 0 AS operational_has_task_failure
+    FROM digital_employees de
+    JOIN overview_args args ON args.tenant_id = de.tenant_id
+    LEFT JOIN project_tasks pt
+      ON pt.tenant_id = de.tenant_id
+     AND pt.assigned_digital_employee_id = de.id
+    LEFT JOIN pending_employee_decisions ped
+      ON ped.tenant_id = de.tenant_id
+     AND ped.digital_employee_id = de.id
+    WHERE de.deleted_at IS NULL
+    GROUP BY
+        de.tenant_id,
+        de.id,
+        ped.has_employee_scoped_human_blocker,
+        ped.has_project_acceptance_blocker
+),
+overview_rows AS (
+    SELECT
+        de.id,
+        de.name,
+        de.role,
+        de.description,
+        de.team_id,
+        de.status,
+        de.employee_type,
+        de.risk_level,
+        COALESCE(dei.status, 'missing')::text AS execution_status,
+        dei.runtime_node_id,
+        COALESCE(rn.node_id, '')::text AS node_id,
+        COALESCE(rn.status, '')::text AS runtime_status,
+        rn.disabled_at AS runtime_disabled_at,
+        rn.archived_at AS runtime_archived_at,
+        COALESCE(dei.provider_type, '')::text AS provider_type,
+        (NULLIF(BTRIM(COALESCE(dei.agent_home_dir, '')), '') IS NOT NULL)::boolean AS agent_home_dir_available,
+        COALESCE(pc.available, false)::boolean AS provider_available,
+        COALESCE(pc.status, '')::text AS provider_status,
+        COALESCE(pc.health_status, '')::text AS health_status,
+        COALESCE(lr.status, 'none')::text AS latest_run_status,
+        COALESCE(lr.error_family, '')::text AS latest_run_error_family,
+        COALESCE(lr.error_code, '')::text AS latest_run_error_code,
+        ec.effective_config_id,
+        COALESCE(gc.status, 'missing')::text AS governance_status,
+        coalesce(eof.operational_has_employee_scoped_human_blocker, false)::boolean AS operational_has_employee_scoped_human_blocker,
+        coalesce(eof.operational_has_project_acceptance_blocker, false)::boolean AS operational_has_project_acceptance_blocker,
+        coalesce(eof.operational_has_queued_work, false)::boolean AS operational_has_queued_work,
+        coalesce(eof.operational_has_working_task, false)::boolean AS operational_has_working_task,
+        coalesce(eof.operational_has_active_work, false)::boolean AS operational_has_active_work,
+        coalesce(eof.operational_has_task_failure, false)::boolean AS operational_has_task_failure
+    FROM digital_employees de
+    CROSS JOIN overview_args args
+    LEFT JOIN digital_employee_execution_instances dei
+     ON dei.tenant_id = de.tenant_id
+     AND dei.digital_employee_id = de.id
+     AND dei.deleted_at IS NULL
+    LEFT JOIN runtime_nodes rn
+      ON rn.id = dei.runtime_node_id
+     AND rn.tenant_id = dei.tenant_id
+    LEFT JOIN provider_capabilities pc
+      ON pc.tenant_id = dei.tenant_id
+     AND pc.runtime_node_id = dei.runtime_node_id
+     AND pc.provider_type = dei.provider_type
+    LEFT JOIN latest_runs lr
+      ON lr.tenant_id = de.tenant_id
+     AND lr.digital_employee_id = de.id
+    LEFT JOIN effective_configs ec
+      ON ec.tenant_id = de.tenant_id
+     AND ec.digital_employee_id = de.id
+    LEFT JOIN governance_configs gc
+      ON gc.tenant_id = de.tenant_id
+     AND gc.digital_employee_id = de.id
+    LEFT JOIN employee_operational_facts eof
+      ON eof.tenant_id = de.tenant_id
+     AND eof.digital_employee_id = de.id
+    WHERE de.tenant_id = args.tenant_id
+      AND de.deleted_at IS NULL
+),
+filtered_rows AS (
+    SELECT overview_rows.id, overview_rows.name, overview_rows.role, overview_rows.description, overview_rows.team_id, overview_rows.status, overview_rows.employee_type, overview_rows.risk_level, overview_rows.execution_status, overview_rows.runtime_node_id, overview_rows.node_id, overview_rows.runtime_status, overview_rows.runtime_disabled_at, overview_rows.runtime_archived_at, overview_rows.provider_type, overview_rows.agent_home_dir_available, overview_rows.provider_available, overview_rows.provider_status, overview_rows.health_status, overview_rows.latest_run_status, overview_rows.latest_run_error_family, overview_rows.latest_run_error_code, overview_rows.effective_config_id, overview_rows.governance_status, overview_rows.operational_has_employee_scoped_human_blocker, overview_rows.operational_has_project_acceptance_blocker, overview_rows.operational_has_queued_work, overview_rows.operational_has_working_task, overview_rows.operational_has_active_work, overview_rows.operational_has_task_failure
+    FROM overview_rows
+    CROSS JOIN overview_args args
+    WHERE (
+        args.q IS NULL
+        OR overview_rows.name ILIKE '%' || args.q || '%'
+        OR overview_rows.role ILIKE '%' || args.q || '%'
+        OR overview_rows.description ILIKE '%' || args.q || '%'
+    )
+      AND (args.team_id IS NULL OR overview_rows.team_id = args.team_id)
+      AND (args.status IS NULL OR overview_rows.status = args.status)
+      AND (args.employee_type IS NULL OR overview_rows.employee_type = args.employee_type)
+      AND (args.provider_type IS NULL OR overview_rows.provider_type = args.provider_type)
+      AND (args.runtime_node_id IS NULL OR overview_rows.runtime_node_id = args.runtime_node_id)
+      AND (args.risk_level IS NULL OR overview_rows.risk_level = args.risk_level)
+      AND (args.execution_status IS NULL OR overview_rows.execution_status = args.execution_status)
+      AND (args.run_status IS NULL OR overview_rows.latest_run_status = args.run_status)
+)
+SELECT
+    id,
+    status,
+    execution_status,
+    runtime_node_id,
+    node_id,
+    runtime_status,
+    runtime_disabled_at,
+    runtime_archived_at,
+    provider_type,
+    provider_available,
+    provider_status,
+    health_status,
+    agent_home_dir_available,
+    latest_run_status,
+    latest_run_error_family,
+    latest_run_error_code,
+    effective_config_id,
+    governance_status,
+    operational_has_employee_scoped_human_blocker,
+    operational_has_project_acceptance_blocker,
+    operational_has_queued_work,
+    operational_has_working_task,
+    operational_has_active_work,
+    operational_has_task_failure
+FROM filtered_rows
+ORDER BY id
+`
+
+type ListDigitalEmployeeOverviewOperationalFactsParams struct {
+	TenantID        uuid.UUID     `json:"tenant_id"`
+	Q               pgtype.Text   `json:"q"`
+	TeamID          uuid.NullUUID `json:"team_id"`
+	Status          pgtype.Text   `json:"status"`
+	EmployeeType    pgtype.Text   `json:"employee_type"`
+	ProviderType    pgtype.Text   `json:"provider_type"`
+	RuntimeNodeID   uuid.NullUUID `json:"runtime_node_id"`
+	RiskLevel       pgtype.Text   `json:"risk_level"`
+	ExecutionStatus pgtype.Text   `json:"execution_status"`
+	RunStatus       pgtype.Text   `json:"run_status"`
+}
+
+type ListDigitalEmployeeOverviewOperationalFactsRow struct {
+	ID                                       uuid.UUID          `json:"id"`
+	Status                                   string             `json:"status"`
+	ExecutionStatus                          string             `json:"execution_status"`
+	RuntimeNodeID                            uuid.NullUUID      `json:"runtime_node_id"`
+	NodeID                                   string             `json:"node_id"`
+	RuntimeStatus                            string             `json:"runtime_status"`
+	RuntimeDisabledAt                        pgtype.Timestamptz `json:"runtime_disabled_at"`
+	RuntimeArchivedAt                        pgtype.Timestamptz `json:"runtime_archived_at"`
+	ProviderType                             string             `json:"provider_type"`
+	ProviderAvailable                        bool               `json:"provider_available"`
+	ProviderStatus                           string             `json:"provider_status"`
+	HealthStatus                             string             `json:"health_status"`
+	AgentHomeDirAvailable                    bool               `json:"agent_home_dir_available"`
+	LatestRunStatus                          string             `json:"latest_run_status"`
+	LatestRunErrorFamily                     string             `json:"latest_run_error_family"`
+	LatestRunErrorCode                       string             `json:"latest_run_error_code"`
+	EffectiveConfigID                        uuid.NullUUID      `json:"effective_config_id"`
+	GovernanceStatus                         string             `json:"governance_status"`
+	OperationalHasEmployeeScopedHumanBlocker bool               `json:"operational_has_employee_scoped_human_blocker"`
+	OperationalHasProjectAcceptanceBlocker   bool               `json:"operational_has_project_acceptance_blocker"`
+	OperationalHasQueuedWork                 bool               `json:"operational_has_queued_work"`
+	OperationalHasWorkingTask                bool               `json:"operational_has_working_task"`
+	OperationalHasActiveWork                 bool               `json:"operational_has_active_work"`
+	OperationalHasTaskFailure                bool               `json:"operational_has_task_failure"`
+}
+
+func (q *Queries) ListDigitalEmployeeOverviewOperationalFacts(ctx context.Context, arg ListDigitalEmployeeOverviewOperationalFactsParams) ([]ListDigitalEmployeeOverviewOperationalFactsRow, error) {
+	rows, err := q.db.Query(ctx, ListDigitalEmployeeOverviewOperationalFacts,
+		arg.TenantID,
+		arg.Q,
+		arg.TeamID,
+		arg.Status,
+		arg.EmployeeType,
+		arg.ProviderType,
+		arg.RuntimeNodeID,
+		arg.RiskLevel,
+		arg.ExecutionStatus,
+		arg.RunStatus,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDigitalEmployeeOverviewOperationalFactsRow{}
+	for rows.Next() {
+		var i ListDigitalEmployeeOverviewOperationalFactsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.ExecutionStatus,
+			&i.RuntimeNodeID,
+			&i.NodeID,
+			&i.RuntimeStatus,
+			&i.RuntimeDisabledAt,
+			&i.RuntimeArchivedAt,
+			&i.ProviderType,
+			&i.ProviderAvailable,
+			&i.ProviderStatus,
+			&i.HealthStatus,
+			&i.AgentHomeDirAvailable,
+			&i.LatestRunStatus,
+			&i.LatestRunErrorFamily,
+			&i.LatestRunErrorCode,
+			&i.EffectiveConfigID,
+			&i.GovernanceStatus,
+			&i.OperationalHasEmployeeScopedHumanBlocker,
+			&i.OperationalHasProjectAcceptanceBlocker,
+			&i.OperationalHasQueuedWork,
+			&i.OperationalHasWorkingTask,
+			&i.OperationalHasActiveWork,
+			&i.OperationalHasTaskFailure,
 		); err != nil {
 			return nil, err
 		}

@@ -930,6 +930,8 @@ latest_runs AS (
         tr.updated_at,
         tr.result,
         tr.error_message,
+        tr.error_family,
+        tr.error_code,
         tr.created_at
     FROM task_runs tr
     JOIN overview_args args ON args.tenant_id = tr.tenant_id
@@ -1045,6 +1047,59 @@ skill_counts AS (
     WHERE sab.status = 'enabled'
     GROUP BY sab.tenant_id, sab.digital_employee_id
 ),
+pending_employee_decisions AS (
+    SELECT
+        pt.tenant_id,
+        pt.assigned_digital_employee_id AS digital_employee_id,
+        count(*) FILTER (
+            WHERE pdr.decision_type IN ('task_failure_recovery', 'route_review')
+        ) > 0 AS has_employee_scoped_human_blocker,
+        count(*) FILTER (
+            WHERE pdr.decision_type = 'project_acceptance'
+        ) > 0 AS has_project_acceptance_blocker
+    FROM project_decision_requests pdr
+    JOIN project_tasks pt
+      ON pt.tenant_id = pdr.tenant_id
+     AND pt.id = pdr.project_task_id
+    JOIN overview_args args ON args.tenant_id = pt.tenant_id
+    WHERE pt.assigned_digital_employee_id IS NOT NULL
+      AND pdr.status_snapshot IN ('pending', 'requested')
+    GROUP BY pt.tenant_id, pt.assigned_digital_employee_id
+),
+employee_operational_facts AS (
+    SELECT
+        de.tenant_id,
+        de.id AS digital_employee_id,
+        (
+            coalesce(ped.has_employee_scoped_human_blocker, false)
+            OR count(pt.id) FILTER (
+                WHERE pt.requires_human_approval
+                   OR pt.status IN ('waiting_human', 'pending_review')
+            ) > 0
+        ) AS operational_has_employee_scoped_human_blocker,
+        coalesce(ped.has_project_acceptance_blocker, false) AS operational_has_project_acceptance_blocker,
+        count(pt.id) FILTER (WHERE pt.status IN ('pending', 'planned', 'blocked', 'assigned')) > 0 AS operational_has_queued_work,
+        count(pt.id) FILTER (WHERE pt.status IN ('running', 'in_progress')) > 0 AS operational_has_working_task,
+        count(pt.id) FILTER (
+            WHERE pt.requires_human_approval
+               OR pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review')
+        ) > 0 AS operational_has_active_work,
+        count(pt.id) FILTER (WHERE pt.status = 'failed') > 0 AS operational_has_task_failure
+    FROM digital_employees de
+    JOIN overview_args args ON args.tenant_id = de.tenant_id
+    LEFT JOIN project_tasks pt
+      ON pt.tenant_id = de.tenant_id
+     AND pt.assigned_digital_employee_id = de.id
+    LEFT JOIN pending_employee_decisions ped
+      ON ped.tenant_id = de.tenant_id
+     AND ped.digital_employee_id = de.id
+    WHERE de.deleted_at IS NULL
+    GROUP BY
+        de.tenant_id,
+        de.id,
+        ped.has_employee_scoped_human_blocker,
+        ped.has_project_acceptance_blocker
+),
 overview_rows AS (
     SELECT
         de.id,
@@ -1087,6 +1142,8 @@ overview_rows AS (
         END)::text, '')::text AS latest_run_duration_sec,
         COALESCE(lr.result #>> '{usage,total_tokens}', lr.result ->> 'total_tokens', '')::text AS latest_run_token_usage,
         lr.error_message AS latest_run_error_message,
+        COALESCE(lr.error_family, '')::text AS latest_run_error_family,
+        COALESCE(lr.error_code, '')::text AS latest_run_error_code,
         ec.effective_config_id,
         COALESCE(gc.status, 'missing')::text AS governance_status,
         COALESCE(ec.daily_token_limit_text, '')::text AS daily_token_limit_text,
@@ -1098,6 +1155,12 @@ overview_rows AS (
         COALESCE(tbu.today_budget_usage_tokens, 0)::integer AS today_budget_usage_tokens,
         br.budget_usage_tokens_30d,
         COALESCE(br.budget_run_count_30d, 0)::integer AS budget_run_count_30d,
+        coalesce(eof.operational_has_employee_scoped_human_blocker, false)::boolean AS operational_has_employee_scoped_human_blocker,
+        coalesce(eof.operational_has_project_acceptance_blocker, false)::boolean AS operational_has_project_acceptance_blocker,
+        coalesce(eof.operational_has_queued_work, false)::boolean AS operational_has_queued_work,
+        coalesce(eof.operational_has_working_task, false)::boolean AS operational_has_working_task,
+        coalesce(eof.operational_has_active_work, false)::boolean AS operational_has_active_work,
+        coalesce(eof.operational_has_task_failure, false)::boolean AS operational_has_task_failure,
         de.created_at,
         de.updated_at
     FROM digital_employees de
@@ -1138,6 +1201,9 @@ overview_rows AS (
     LEFT JOIN skill_counts sc
       ON sc.tenant_id = de.tenant_id
      AND sc.digital_employee_id = de.id
+    LEFT JOIN employee_operational_facts eof
+      ON eof.tenant_id = de.tenant_id
+     AND eof.digital_employee_id = de.id
     WHERE de.tenant_id = args.tenant_id
       AND de.deleted_at IS NULL
 ),
@@ -1252,6 +1318,8 @@ SELECT
     pr.latest_run_duration_sec,
     pr.latest_run_token_usage,
     pr.latest_run_error_message,
+    pr.latest_run_error_family,
+    pr.latest_run_error_code,
     pr.effective_config_id,
     pr.governance_status,
     pr.daily_token_limit_text,
@@ -1263,12 +1331,243 @@ SELECT
     pr.today_budget_usage_tokens,
     pr.budget_usage_tokens_30d,
     pr.budget_run_count_30d,
+    pr.operational_has_employee_scoped_human_blocker,
+    pr.operational_has_project_acceptance_blocker,
+    pr.operational_has_queued_work,
+    pr.operational_has_working_task,
+    pr.operational_has_active_work,
+    pr.operational_has_task_failure,
     COALESCE(re.recent_events_json, '[]'::jsonb) AS recent_events_json
 FROM paged_rows pr
 LEFT JOIN recent_events re
   ON re.tenant_id = pr.tenant_id
  AND re.digital_employee_id = pr.id
 ORDER BY pr.created_at DESC, pr.id;
+
+-- name: ListDigitalEmployeeOverviewOperationalFacts :many
+WITH overview_args AS (
+    SELECT
+        sqlc.arg('tenant_id')::uuid AS tenant_id,
+        NULLIF(BTRIM(sqlc.narg('q')::text), '') AS q,
+        sqlc.narg('team_id')::uuid AS team_id,
+        NULLIF(BTRIM(sqlc.narg('status')::text), '') AS status,
+        NULLIF(BTRIM(sqlc.narg('employee_type')::text), '') AS employee_type,
+        NULLIF(BTRIM(sqlc.narg('provider_type')::text), '') AS provider_type,
+        sqlc.narg('runtime_node_id')::uuid AS runtime_node_id,
+        NULLIF(BTRIM(sqlc.narg('risk_level')::text), '') AS risk_level,
+        NULLIF(BTRIM(sqlc.narg('execution_status')::text), '') AS execution_status,
+        NULLIF(BTRIM(sqlc.narg('run_status')::text), '') AS run_status
+),
+provider_capabilities AS (
+    SELECT DISTINCT ON (rc.tenant_id, rc.runtime_node_id, rc.provider_type)
+        rc.tenant_id,
+        rc.runtime_node_id,
+        rc.provider_type,
+        rc.status,
+        rc.health_status,
+        rc.available
+    FROM runtime_capabilities rc
+    JOIN overview_args args ON args.tenant_id = rc.tenant_id
+    WHERE rc.capability_type = 'provider'
+      AND rc.disabled_at IS NULL
+      AND rc.archived_at IS NULL
+    ORDER BY rc.tenant_id, rc.runtime_node_id, rc.provider_type, rc.last_seen_at DESC NULLS LAST, rc.updated_at DESC
+),
+latest_runs AS (
+    SELECT DISTINCT ON (tr.tenant_id, tr.digital_employee_id)
+        tr.tenant_id,
+        tr.digital_employee_id,
+        tr.status,
+        tr.error_family,
+        tr.error_code
+    FROM task_runs tr
+    JOIN overview_args args ON args.tenant_id = tr.tenant_id
+    JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+    WHERE tr.digital_employee_id IS NOT NULL
+      AND t.deleted_at IS NULL
+    ORDER BY tr.tenant_id, tr.digital_employee_id, tr.updated_at DESC, tr.created_at DESC
+),
+effective_configs AS (
+    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
+        ec.tenant_id,
+        ec.digital_employee_id,
+        ec.id AS effective_config_id,
+        ec.status
+    FROM digital_employee_effective_configs ec
+    JOIN overview_args args ON args.tenant_id = ec.tenant_id
+    WHERE ec.status = 'approved'
+      AND ec.revoked_at IS NULL
+    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
+),
+governance_configs AS (
+    SELECT DISTINCT ON (ec.tenant_id, ec.digital_employee_id)
+        ec.tenant_id,
+        ec.digital_employee_id,
+        ec.status
+    FROM digital_employee_effective_configs ec
+    JOIN overview_args args ON args.tenant_id = ec.tenant_id
+    WHERE ec.revoked_at IS NULL
+    ORDER BY ec.tenant_id, ec.digital_employee_id, ec.created_at DESC, ec.updated_at DESC
+),
+pending_employee_decisions AS (
+    SELECT
+        pt.tenant_id,
+        pt.assigned_digital_employee_id AS digital_employee_id,
+        count(*) FILTER (
+            WHERE pdr.decision_type IN ('task_failure_recovery', 'route_review')
+        ) > 0 AS has_employee_scoped_human_blocker,
+        count(*) FILTER (
+            WHERE pdr.decision_type = 'project_acceptance'
+        ) > 0 AS has_project_acceptance_blocker
+    FROM project_decision_requests pdr
+    JOIN project_tasks pt
+      ON pt.tenant_id = pdr.tenant_id
+     AND pt.id = pdr.project_task_id
+    JOIN overview_args args ON args.tenant_id = pt.tenant_id
+    WHERE pt.assigned_digital_employee_id IS NOT NULL
+      AND pdr.status_snapshot IN ('pending', 'requested')
+    GROUP BY pt.tenant_id, pt.assigned_digital_employee_id
+),
+employee_operational_facts AS (
+    SELECT
+        de.tenant_id,
+        de.id AS digital_employee_id,
+        (
+            coalesce(ped.has_employee_scoped_human_blocker, false)
+            OR count(pt.id) FILTER (
+                WHERE pt.requires_human_approval
+                   OR pt.status IN ('waiting_human', 'pending_review')
+            ) > 0
+        ) AS operational_has_employee_scoped_human_blocker,
+        coalesce(ped.has_project_acceptance_blocker, false) AS operational_has_project_acceptance_blocker,
+        count(pt.id) FILTER (WHERE pt.status IN ('pending', 'planned', 'blocked', 'assigned')) > 0 AS operational_has_queued_work,
+        count(pt.id) FILTER (WHERE pt.status IN ('running', 'in_progress')) > 0 AS operational_has_working_task,
+        count(pt.id) FILTER (
+            WHERE pt.requires_human_approval
+               OR pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review')
+        ) > 0 AS operational_has_active_work,
+        count(pt.id) FILTER (WHERE pt.status = 'failed') > 0 AS operational_has_task_failure
+    FROM digital_employees de
+    JOIN overview_args args ON args.tenant_id = de.tenant_id
+    LEFT JOIN project_tasks pt
+      ON pt.tenant_id = de.tenant_id
+     AND pt.assigned_digital_employee_id = de.id
+    LEFT JOIN pending_employee_decisions ped
+      ON ped.tenant_id = de.tenant_id
+     AND ped.digital_employee_id = de.id
+    WHERE de.deleted_at IS NULL
+    GROUP BY
+        de.tenant_id,
+        de.id,
+        ped.has_employee_scoped_human_blocker,
+        ped.has_project_acceptance_blocker
+),
+overview_rows AS (
+    SELECT
+        de.id,
+        de.name,
+        de.role,
+        de.description,
+        de.team_id,
+        de.status,
+        de.employee_type,
+        de.risk_level,
+        COALESCE(dei.status, 'missing')::text AS execution_status,
+        dei.runtime_node_id,
+        COALESCE(rn.node_id, '')::text AS node_id,
+        COALESCE(rn.status, '')::text AS runtime_status,
+        rn.disabled_at AS runtime_disabled_at,
+        rn.archived_at AS runtime_archived_at,
+        COALESCE(dei.provider_type, '')::text AS provider_type,
+        (NULLIF(BTRIM(COALESCE(dei.agent_home_dir, '')), '') IS NOT NULL)::boolean AS agent_home_dir_available,
+        COALESCE(pc.available, false)::boolean AS provider_available,
+        COALESCE(pc.status, '')::text AS provider_status,
+        COALESCE(pc.health_status, '')::text AS health_status,
+        COALESCE(lr.status, 'none')::text AS latest_run_status,
+        COALESCE(lr.error_family, '')::text AS latest_run_error_family,
+        COALESCE(lr.error_code, '')::text AS latest_run_error_code,
+        ec.effective_config_id,
+        COALESCE(gc.status, 'missing')::text AS governance_status,
+        coalesce(eof.operational_has_employee_scoped_human_blocker, false)::boolean AS operational_has_employee_scoped_human_blocker,
+        coalesce(eof.operational_has_project_acceptance_blocker, false)::boolean AS operational_has_project_acceptance_blocker,
+        coalesce(eof.operational_has_queued_work, false)::boolean AS operational_has_queued_work,
+        coalesce(eof.operational_has_working_task, false)::boolean AS operational_has_working_task,
+        coalesce(eof.operational_has_active_work, false)::boolean AS operational_has_active_work,
+        coalesce(eof.operational_has_task_failure, false)::boolean AS operational_has_task_failure
+    FROM digital_employees de
+    CROSS JOIN overview_args args
+    LEFT JOIN digital_employee_execution_instances dei
+     ON dei.tenant_id = de.tenant_id
+     AND dei.digital_employee_id = de.id
+     AND dei.deleted_at IS NULL
+    LEFT JOIN runtime_nodes rn
+      ON rn.id = dei.runtime_node_id
+     AND rn.tenant_id = dei.tenant_id
+    LEFT JOIN provider_capabilities pc
+      ON pc.tenant_id = dei.tenant_id
+     AND pc.runtime_node_id = dei.runtime_node_id
+     AND pc.provider_type = dei.provider_type
+    LEFT JOIN latest_runs lr
+      ON lr.tenant_id = de.tenant_id
+     AND lr.digital_employee_id = de.id
+    LEFT JOIN effective_configs ec
+      ON ec.tenant_id = de.tenant_id
+     AND ec.digital_employee_id = de.id
+    LEFT JOIN governance_configs gc
+      ON gc.tenant_id = de.tenant_id
+     AND gc.digital_employee_id = de.id
+    LEFT JOIN employee_operational_facts eof
+      ON eof.tenant_id = de.tenant_id
+     AND eof.digital_employee_id = de.id
+    WHERE de.tenant_id = args.tenant_id
+      AND de.deleted_at IS NULL
+),
+filtered_rows AS (
+    SELECT overview_rows.*
+    FROM overview_rows
+    CROSS JOIN overview_args args
+    WHERE (
+        args.q IS NULL
+        OR overview_rows.name ILIKE '%' || args.q || '%'
+        OR overview_rows.role ILIKE '%' || args.q || '%'
+        OR overview_rows.description ILIKE '%' || args.q || '%'
+    )
+      AND (args.team_id IS NULL OR overview_rows.team_id = args.team_id)
+      AND (args.status IS NULL OR overview_rows.status = args.status)
+      AND (args.employee_type IS NULL OR overview_rows.employee_type = args.employee_type)
+      AND (args.provider_type IS NULL OR overview_rows.provider_type = args.provider_type)
+      AND (args.runtime_node_id IS NULL OR overview_rows.runtime_node_id = args.runtime_node_id)
+      AND (args.risk_level IS NULL OR overview_rows.risk_level = args.risk_level)
+      AND (args.execution_status IS NULL OR overview_rows.execution_status = args.execution_status)
+      AND (args.run_status IS NULL OR overview_rows.latest_run_status = args.run_status)
+)
+SELECT
+    id,
+    status,
+    execution_status,
+    runtime_node_id,
+    node_id,
+    runtime_status,
+    runtime_disabled_at,
+    runtime_archived_at,
+    provider_type,
+    provider_available,
+    provider_status,
+    health_status,
+    agent_home_dir_available,
+    latest_run_status,
+    latest_run_error_family,
+    latest_run_error_code,
+    effective_config_id,
+    governance_status,
+    operational_has_employee_scoped_human_blocker,
+    operational_has_project_acceptance_blocker,
+    operational_has_queued_work,
+    operational_has_working_task,
+    operational_has_active_work,
+    operational_has_task_failure
+FROM filtered_rows
+ORDER BY id;
 
 -- name: ListDigitalEmployeeOverviewFilterOptions :many
 WITH overview_args AS (
@@ -1398,4 +1697,3 @@ SELECT
 FROM digital_employee_runtime_readiness
 WHERE tenant_id = sqlc.arg('tenant_id')
   AND digital_employee_id = ANY(sqlc.arg('digital_employee_ids')::uuid[]);
-
