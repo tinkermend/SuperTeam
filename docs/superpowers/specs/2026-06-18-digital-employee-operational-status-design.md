@@ -19,6 +19,7 @@ The Console needs a single operator-facing status for a digital employee, but th
 - Distinguish current execution failures from configuration or availability problems.
 - Make "idle" mean the employee can accept work now, not merely "has no active run".
 - Preserve root-cause reasons when a higher-priority state, such as human confirmation, becomes the next action.
+- Reuse the same reason vocabulary for project-level waiting states such as project acceptance without incorrectly assigning that blocker to every employee.
 
 ## Non-Goals
 
@@ -88,6 +89,12 @@ waiting_human > error > working > queued > unavailable > needs_configuration > i
 
 This priority is based on the next required operator action. A task failure that has already created a human recovery decision is shown as `waiting_human`, while the failure remains visible in `reasons`.
 
+## Scope Rules
+
+Operational status is employee-scoped by default. A human decision affects an employee's main status only when it is attached to that employee's current or queued work, or when it blocks a task assigned to that employee.
+
+Project-level decisions, such as final project acceptance, should use the same reason vocabulary on project and workflow surfaces, but they must not automatically mark every project employee as `waiting_human`. In employee overview, a project-level acceptance request is only supporting context unless the UI is explicitly showing that employee inside the blocked project scope.
+
 ## Status Definitions
 
 ### waiting_human
@@ -100,6 +107,7 @@ Sources include:
 - pending project decision requests,
 - route review gates,
 - task failure recovery decisions,
+- project acceptance reviews when shown in project or workflow context,
 - evidence or contract-missing cases that require human input.
 
 This status does not by itself mark a run or task terminal.
@@ -186,6 +194,9 @@ Required conditions:
 | --- | --- | --- | --- |
 | Pending approval, decision, recovery request, or evidence request | `waiting_human` | `approval_pending`, `decision_pending`, `recovery_required`, `evidence_required` | Keep underlying run or task state unless the owning workflow changes it. |
 | Task failed and created human recovery decision | `waiting_human` | `task_failed`, `recovery_required` | Main status follows next action; failure stays in reasons. |
+| Project enters final human acceptance review | `waiting_human` on project/workflow surfaces | `project_acceptance_pending` | Project moves to `acceptance`, creates `decision_type=project_acceptance`, and waits for human decision. Do not apply this as every employee's primary status. |
+| Project acceptance approved | not an employee status | `project_accepted` | Acceptance record status becomes `accepted`; project archives. |
+| Project acceptance rejected or needs more evidence | not an employee status | `project_rejected`, `project_needs_more_evidence` | Acceptance record captures the outcome; project reopens to `running` for rework or evidence. |
 | Run is `running` | `working` | `run_running` | Keep run and task non-terminal. |
 | Run is `cancelling` | `working` | `run_cancelling` | Wait for Runtime terminal writeback. |
 | Run is `queued` or `dispatching` | `queued` | `run_queued`, `run_dispatching` | Execution chain has started but Provider has not truly run. |
@@ -220,6 +231,8 @@ Employee detail APIs should return the same `operational_state` object. The deta
 
 Project task graphs should continue displaying raw task and run status for graph nodes. Employee chips, inspectors, and assignment panels should reuse operational reason codes when they describe an employee's dispatchability or blocker.
 
+Project-level blockers should also use the reason vocabulary. For example, a pending `project_acceptance` decision is shown as `waiting_human` with `project_acceptance_pending` on the project or workflow instance, while employee overview remains based on employee-scoped work and dispatchability.
+
 ## Data Sources
 
 The resolver reads:
@@ -227,12 +240,14 @@ The resolver reads:
 - `digital_employees`
 - `digital_employee_effective_configs`
 - `digital_employee_execution_instances`
+- `projects`
 - `runtime_nodes`
 - `runtime_capabilities`
 - `task_runs`
 - `project_tasks`
 - approval request records
 - project decision projections
+- latest project acceptance records when evaluating project or workflow context
 
 It should prefer current non-terminal work over latest historical run. A latest failed run does not permanently keep an otherwise healthy and newly idle employee in `error` if there is no current failed work or unresolved recovery action.
 
@@ -255,6 +270,8 @@ Required cases:
 
 - pending approval, pending decision, recovery request, and evidence request each produce `waiting_human`;
 - task failure plus recovery decision produces `waiting_human` with `task_failed` reason;
+- pending `project_acceptance` produces `waiting_human` on project and workflow surfaces with `project_acceptance_pending`, but does not mark unrelated or idle employee overview rows as `waiting_human`;
+- project acceptance decisions map human `approved` to acceptance record status `accepted`, and `rejected` / `needs_more_evidence` reopen the project to `running`;
 - run `running` and `cancelling` produce `working`;
 - project task `planned` or `assigned` and run `queued` or `dispatching` produce `queued`;
 - Runtime offline with no work produces `unavailable`;
@@ -278,9 +295,11 @@ Before claiming the implementation complete, verify these states through the run
 2. A selected `planned` or `assigned` project task shows `queued`.
 3. A running Runtime/Provider execution shows `working`.
 4. A pending approval or decision shows `waiting_human`.
-5. An unrecoverable Provider failure shows `error`.
-6. Runtime offline with no active work shows `unavailable`.
-7. Runtime offline during active work shows `error` with `runtime_offline` and `execution_untrusted`.
-8. Fixing Runtime, Provider, or config allows the status to move back to `idle`, `queued`, or `working` without stale reasons.
+5. A pending final project acceptance review shows `waiting_human` on the project or workflow surface with `project_acceptance_pending`, without changing every project employee's overview status.
+6. An accepted project acceptance decision archives the project; rejected or needs-more-evidence decisions reopen it to `running`.
+7. An unrecoverable Provider failure shows `error`.
+8. Runtime offline with no active work shows `unavailable`.
+9. Runtime offline during active work shows `error` with `runtime_offline` and `execution_untrusted`.
+10. Fixing Runtime, Provider, or config allows the status to move back to `idle`, `queued`, or `working` without stale reasons.
 
 Mock tests, component tests, and build checks are not enough to call this feature complete. The final verification must include the real Control Plane API and, for execution-path states, the Runtime/Provider chain or a clearly stated blocker.
