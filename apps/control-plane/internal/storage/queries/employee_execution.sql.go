@@ -1437,7 +1437,10 @@ employee_operational_facts AS (
         (
             coalesce(ped.has_employee_scoped_human_blocker, false)
             OR count(pt.id) FILTER (
-                WHERE pt.requires_human_approval
+                WHERE (
+                    pt.requires_human_approval
+                    AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')
+                )
                    OR pt.status IN ('waiting_human', 'pending_review')
             ) > 0
         ) AS operational_has_employee_scoped_human_blocker,
@@ -1445,7 +1448,10 @@ employee_operational_facts AS (
         count(pt.id) FILTER (WHERE pt.status IN ('pending', 'planned', 'blocked', 'assigned')) > 0 AS operational_has_queued_work,
         count(pt.id) FILTER (WHERE pt.status IN ('running', 'in_progress')) > 0 AS operational_has_working_task,
         count(pt.id) FILTER (
-            WHERE pt.requires_human_approval
+            WHERE (
+                pt.requires_human_approval
+                AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')
+            )
                OR pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review')
         ) > 0 AS operational_has_active_work,
         count(pt.id) FILTER (WHERE pt.status = 'failed') > 0 AS operational_has_task_failure
@@ -1964,7 +1970,10 @@ employee_operational_facts AS (
         (
             coalesce(ped.has_employee_scoped_human_blocker, false)
             OR count(pt.id) FILTER (
-                WHERE pt.requires_human_approval
+                WHERE (
+                    pt.requires_human_approval
+                    AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')
+                )
                    OR pt.status IN ('waiting_human', 'pending_review')
             ) > 0
         ) AS operational_has_employee_scoped_human_blocker,
@@ -1972,7 +1981,10 @@ employee_operational_facts AS (
         count(pt.id) FILTER (WHERE pt.status IN ('pending', 'planned', 'blocked', 'assigned')) > 0 AS operational_has_queued_work,
         count(pt.id) FILTER (WHERE pt.status IN ('running', 'in_progress')) > 0 AS operational_has_working_task,
         count(pt.id) FILTER (
-            WHERE pt.requires_human_approval
+            WHERE (
+                pt.requires_human_approval
+                AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')
+            )
                OR pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review')
         ) > 0 AS operational_has_active_work,
         count(pt.id) FILTER (WHERE pt.status = 'failed') > 0 AS operational_has_task_failure

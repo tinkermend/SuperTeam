@@ -90,18 +90,45 @@ func TestOverviewItemsSQLExcludesDeletedTaskEvents(t *testing.T) {
 }
 
 func TestEmployeeOverviewSQLCarriesOperationalStatusFacts(t *testing.T) {
-	sql := queries.ListDigitalEmployeeOverviewItems
+	for name, sql := range map[string]string{
+		"items":             queries.ListDigitalEmployeeOverviewItems,
+		"operational_facts": queries.ListDigitalEmployeeOverviewOperationalFacts,
+	} {
+		t.Run(name, func(t *testing.T) {
+			assertEmployeeOverviewOperationalFactsSQL(t, sql)
+		})
+	}
+}
 
-	require.Contains(t, sql, "employee_operational_facts")
-	require.Contains(t, sql, "pending_employee_decisions")
-	require.Contains(t, sql, "project_acceptance")
-	require.Contains(t, sql, "latest_run_error_family")
-	require.Contains(t, sql, "latest_run_error_code")
-	require.Contains(t, sql, "operational_has_employee_scoped_human_blocker")
-	require.Contains(t, sql, "operational_has_project_acceptance_blocker")
-	require.Contains(t, sql, "task_failure_recovery")
-	require.Contains(t, sql, "route_review")
-	require.NotContains(t, sql, "<> 'project_acceptance'")
+func TestOverviewOperationalFactsSQL(t *testing.T) {
+	normalizedSQL := normalizeSQL(queries.ListDigitalEmployeeOverviewOperationalFacts)
+
+	for _, expected := range []string{
+		"AS q",
+		"AS team_id",
+		"AS status",
+		"AS employee_type",
+		"AS provider_type",
+		"AS runtime_node_id",
+		"AS risk_level",
+		"AS execution_status",
+		"AS run_status",
+		"args.q IS NULL",
+		"args.team_id IS NULL",
+		"args.status IS NULL",
+		"args.employee_type IS NULL",
+		"args.provider_type IS NULL",
+		"args.runtime_node_id IS NULL",
+		"args.risk_level IS NULL",
+		"args.execution_status IS NULL",
+		"args.run_status IS NULL",
+	} {
+		require.Contains(t, normalizedSQL, expected)
+	}
+
+	upperSQL := strings.ToUpper(normalizedSQL)
+	require.NotContains(t, upperSQL, " LIMIT ")
+	require.NotContains(t, upperSQL, " OFFSET ")
 }
 
 func TestOverviewFiltersFromQueryMapsStableLabels(t *testing.T) {
@@ -330,6 +357,35 @@ func TestOverviewOperationalStatusCountsFromStatesInitializesMap(t *testing.T) {
 
 func normalizeSQL(value string) string {
 	return strings.Join(strings.Fields(value), " ")
+}
+
+func assertEmployeeOverviewOperationalFactsSQL(t *testing.T, sql string) {
+	t.Helper()
+
+	normalizedSQL := normalizeSQL(sql)
+	terminalGuard := "pt.requires_human_approval AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')"
+
+	for _, expected := range []string{
+		"employee_operational_facts",
+		"pending_employee_decisions",
+		"project_acceptance",
+		"latest_run_error_family",
+		"latest_run_error_code",
+		"operational_has_employee_scoped_human_blocker",
+		"operational_has_project_acceptance_blocker",
+		"task_failure_recovery",
+		"route_review",
+		terminalGuard,
+		"completed",
+		"done",
+		"success",
+		"cancelled",
+		"failed",
+	} {
+		require.Contains(t, normalizedSQL, expected)
+	}
+	require.NotContains(t, sql, "<> 'project_acceptance'")
+	require.Equal(t, 2, strings.Count(normalizedSQL, terminalGuard))
 }
 
 func summaryAggregateExpression(t *testing.T, normalizedSQL, alias string) string {
