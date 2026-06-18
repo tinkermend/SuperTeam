@@ -1064,6 +1064,7 @@ pending_employee_decisions AS (
     JOIN overview_args args ON args.tenant_id = pt.tenant_id
     WHERE pt.assigned_digital_employee_id IS NOT NULL
       AND pdr.status_snapshot IN ('pending', 'requested')
+      AND pdr.decision_type IN ('task_failure_recovery', 'route_review', 'project_acceptance')
     GROUP BY pt.tenant_id, pt.assigned_digital_employee_id
 ),
 employee_operational_facts AS (
@@ -1096,6 +1097,13 @@ employee_operational_facts AS (
     LEFT JOIN project_tasks pt
       ON pt.tenant_id = de.tenant_id
      AND pt.assigned_digital_employee_id = de.id
+     AND (
+         pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review', 'failed')
+         OR (
+             pt.requires_human_approval
+             AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')
+         )
+     )
     LEFT JOIN pending_employee_decisions ped
       ON ped.tenant_id = de.tenant_id
      AND ped.digital_employee_id = de.id
@@ -1432,6 +1440,7 @@ pending_employee_decisions AS (
     JOIN overview_args args ON args.tenant_id = pt.tenant_id
     WHERE pt.assigned_digital_employee_id IS NOT NULL
       AND pdr.status_snapshot IN ('pending', 'requested')
+      AND pdr.decision_type IN ('task_failure_recovery', 'route_review', 'project_acceptance')
     GROUP BY pt.tenant_id, pt.assigned_digital_employee_id
 ),
 employee_operational_facts AS (
@@ -1464,6 +1473,13 @@ employee_operational_facts AS (
     LEFT JOIN project_tasks pt
       ON pt.tenant_id = de.tenant_id
      AND pt.assigned_digital_employee_id = de.id
+     AND (
+         pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review', 'failed')
+         OR (
+             pt.requires_human_approval
+             AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')
+         )
+     )
     LEFT JOIN pending_employee_decisions ped
       ON ped.tenant_id = de.tenant_id
      AND ped.digital_employee_id = de.id
