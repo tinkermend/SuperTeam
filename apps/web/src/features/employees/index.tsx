@@ -81,6 +81,26 @@ const operationalStatusTone: Record<DigitalEmployeeOperationalStatus, Tone> = {
   needs_configuration: "neutral",
 };
 
+type OperationalStatusPresentation = {
+  label: string;
+  tone: Tone;
+};
+
+function operationalStatusPresentation(status?: string): OperationalStatusPresentation {
+  if (isKnownOperationalStatus(status)) {
+    return {
+      label: operationalStatusLabel[status],
+      tone: operationalStatusTone[status],
+    };
+  }
+
+  return { label: "状态未知", tone: "neutral" };
+}
+
+function isKnownOperationalStatus(status?: string): status is DigitalEmployeeOperationalStatus {
+  return typeof status === "string" && Object.prototype.hasOwnProperty.call(operationalStatusLabel, status);
+}
+
 export function EmployeesPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
 
@@ -443,6 +463,7 @@ function EmployeeWorkbenchCard({
 }) {
   const identity = item.identity_summary;
   const avatarAsset = overviewAvatarAsset(item);
+  const operationalStatus = operationalStatusPresentation(item.operational_state?.status);
 
   return (
     <article
@@ -476,9 +497,7 @@ function EmployeeWorkbenchCard({
               </p>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-2">
-              <StatusBadge tone={operationalStatusTone[item.operational_state.status]}>
-                {operationalStatusLabel[item.operational_state.status]}
-              </StatusBadge>
+              <StatusBadge tone={operationalStatus.tone}>{operationalStatus.label}</StatusBadge>
             </div>
           </div>
         </div>
@@ -571,6 +590,7 @@ function QueueRow({
 function SelectedEmployeePanel({ item }: { item: DigitalEmployeeOverviewItem }) {
   const identity = item.identity_summary;
   const avatarAsset = overviewAvatarAsset(item);
+  const operationalStatus = operationalStatusPresentation(item.operational_state?.status);
 
   return (
     <div className="flex flex-col gap-4">
@@ -582,9 +602,7 @@ function SelectedEmployeePanel({ item }: { item: DigitalEmployeeOverviewItem }) 
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <p className="truncate font-semibold">{identity.name}</p>
-            <StatusBadge tone={operationalStatusTone[item.operational_state.status]}>
-              {operationalStatusLabel[item.operational_state.status]}
-            </StatusBadge>
+            <StatusBadge tone={operationalStatus.tone}>{operationalStatus.label}</StatusBadge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {identity.employee_type_label || identity.role} · {identity.team_name || "未分组"}

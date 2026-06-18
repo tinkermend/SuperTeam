@@ -41,6 +41,7 @@ type EmployeesFetcherOptions = {
   delayMs?: number;
   includeUnboundEmployee?: boolean;
   latestRunStatus?: string;
+  omitOperationalState?: boolean;
   operationalStatus?: string;
   projectAcceptancePendingOnly?: boolean;
   totalCount?: number;
@@ -50,6 +51,7 @@ function createEmployeesFetcher({
   delayMs = 0,
   includeUnboundEmployee = false,
   latestRunStatus = "completed",
+  omitOperationalState = false,
   operationalStatus = "idle",
   projectAcceptancePendingOnly = false,
   totalCount = 18,
@@ -203,6 +205,11 @@ function createEmployeesFetcher({
           status: "none",
         },
       };
+      const items = includeUnboundEmployee ? [readyItem, unboundItem] : [readyItem];
+      const responseItems = omitOperationalState
+        ? items.map(({ operational_state: _operationalState, ...item }) => item)
+        : items;
+
       return new Response(
         JSON.stringify({
           queue_summary: {
@@ -231,7 +238,7 @@ function createEmployeesFetcher({
               needs_configuration: includeUnboundEmployee || operationalStatus === "needs_configuration" ? 1 : 0,
             },
           },
-          items: includeUnboundEmployee ? [readyItem, unboundItem] : [readyItem],
+          items: responseItems,
           filters: {
             teams: [{ value: "team-1", label: "产品组" }],
             employee_types: [{ value: "requirements_analyst", label: "需求分析" }],
@@ -267,6 +274,10 @@ function createEmployeesFetcher({
   return fetcher;
 }
 
+function employeeArticle(screen: Awaited<ReturnType<typeof renderEmployeesView>>, name: string) {
+  return screen.getByRole("article", { name: `员工 ${name}` });
+}
+
 function fetchCalls(fetcher: typeof fetch) {
   return (
     fetcher as unknown as {
@@ -287,6 +298,7 @@ describe("EmployeesView", () => {
   it("renders the digital employee workbench overview", async () => {
     const fetcher = createEmployeesFetcher();
     const screen = await renderEmployeesView(fetcher);
+    const readyArticle = employeeArticle(screen, "需求分析员工");
 
     await expect.element(screen.getByRole("heading", { name: "数字员工" })).toBeVisible();
     await expect.element(screen.getByText("就绪").first()).toBeVisible();
@@ -294,7 +306,8 @@ describe("EmployeesView", () => {
     await expect.element(screen.getByText("异常").first()).toBeVisible();
     await expect.element(screen.getByText("配置待审批")).toBeVisible();
     await expect.element(screen.getByText("运行失败").first()).toBeVisible();
-    await expect.element(screen.getByText("需求分析员工").first()).toBeVisible();
+    await expect.element(readyArticle).toBeVisible();
+    expect(readyArticle.element().textContent).toContain("工作台：就绪");
     await expect.element(screen.getByAltText("需求分析员工 的头像").first()).toHaveAttribute(
       "src",
       "/images/digital-employee-avatars/engineer-f-01-256.webp",
@@ -325,15 +338,19 @@ describe("EmployeesView", () => {
 
   it("renders unbound employees as waiting for runtime binding", async () => {
     const screen = await renderEmployeesView(createEmployeesFetcher({ includeUnboundEmployee: true }));
+    const unboundArticle = employeeArticle(screen, "待绑定员工");
 
-    await expect.element(screen.getByText("待绑定员工")).toBeVisible();
-    await expect.element(screen.getByText("等待绑定 Runtime Agent")).toBeVisible();
+    await expect.element(unboundArticle).toBeVisible();
+    expect(unboundArticle.element().textContent).toContain("工作台：待绑定");
+    expect(unboundArticle.element().textContent).toContain("等待绑定 Runtime Agent");
   });
 
   it("renders waiting-human operational status from the API state", async () => {
     const screen = await renderEmployeesView(createEmployeesFetcher({ operationalStatus: "waiting_human" }));
+    const readyArticle = employeeArticle(screen, "需求分析员工");
 
-    await expect.element(screen.getByText("待人工确认").first()).toBeVisible();
+    await expect.element(readyArticle).toBeVisible();
+    expect(readyArticle.element().textContent).toContain("待人工确认");
   });
 
   it("does not infer waiting-human status from project acceptance pending semantics", async () => {
@@ -343,10 +360,23 @@ describe("EmployeesView", () => {
         projectAcceptancePendingOnly: true,
       }),
     );
+    const readyArticle = employeeArticle(screen, "需求分析员工");
 
     await expect.element(screen.getByText("项目验收待处理")).toBeVisible();
-    await expect.element(screen.getByText("空闲").first()).toBeVisible();
-    await expect.element(screen.getByText("待人工确认")).not.toBeInTheDocument();
+    await expect.element(readyArticle).toBeVisible();
+    expect(readyArticle.element().textContent).toContain("空闲");
+    expect(readyArticle.element().textContent).not.toContain("待人工确认");
+  });
+
+  it.each([
+    ["unknown", createEmployeesFetcher({ operationalStatus: "stale_backend_status" })],
+    ["missing", createEmployeesFetcher({ omitOperationalState: true })],
+  ])("renders an unknown status fallback for %s operational state", async (_caseName, fetcher) => {
+    const screen = await renderEmployeesView(fetcher);
+    const readyArticle = employeeArticle(screen, "需求分析员工");
+
+    await expect.element(readyArticle).toBeVisible();
+    expect(readyArticle.element().textContent).toContain("状态未知");
   });
 
   it("selects employees from the card surface without visible selection text", async () => {
