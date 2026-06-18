@@ -45,7 +45,7 @@
 
 ## Task 1: Add Domain Resolver Tests First
 
-- [ ] Create `apps/control-plane/internal/employee/operational_status_test.go`.
+- [x] Create `apps/control-plane/internal/employee/operational_status_test.go`.
 
 Use these core cases:
 
@@ -159,7 +159,7 @@ func TestResolveDigitalEmployeeOperationalStateDoesNotProjectProjectAcceptance(t
 }
 ```
 
-- [ ] Run the focused test and confirm it fails before implementation:
+- [x] Run the focused test and confirm it fails before implementation:
 
 ```bash
 go test ./apps/control-plane/internal/employee -run 'TestResolveDigitalEmployeeOperationalState' -count=1
@@ -176,7 +176,7 @@ undefined: ResolveDigitalEmployeeOperationalState
 
 ## Task 2: Implement Domain Types And Resolver
 
-- [ ] Add `apps/control-plane/internal/employee/operational_status.go`.
+- [x] Add `apps/control-plane/internal/employee/operational_status.go`.
 
 Use this priority order:
 
@@ -300,7 +300,7 @@ func ResolveDigitalEmployeeOperationalState(input DigitalEmployeeOperationalInpu
 }
 ```
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 go test ./apps/control-plane/internal/employee -run 'TestResolveDigitalEmployeeOperationalState' -count=1
@@ -312,7 +312,7 @@ Expected output:
 ok  	github.com/superteam/superteam/apps/control-plane/internal/employee
 ```
 
-- [ ] Commit this isolated resolver change:
+- [x] Commit this isolated resolver change:
 
 ```bash
 git add apps/control-plane/internal/employee/operational_status.go apps/control-plane/internal/employee/operational_status_test.go
@@ -323,7 +323,7 @@ git commit -m "feat(control-plane): add employee operational status resolver"
 
 ## Task 3: Extend Employee Overview SQL Facts
 
-- [ ] Add SQL coverage in `apps/control-plane/internal/employee/pg_repository_test.go` before changing SQL.
+- [x] Add SQL coverage in `apps/control-plane/internal/employee/pg_repository_test.go` before changing SQL.
 
 Add a string-level regression test near existing overview SQL tests:
 
@@ -340,7 +340,7 @@ func TestEmployeeOverviewSQLCarriesOperationalStatusFacts(t *testing.T) {
 }
 ```
 
-- [ ] Run and confirm the test fails:
+- [x] Run and confirm the test fails:
 
 ```bash
 go test ./apps/control-plane/internal/employee -run 'TestEmployeeOverviewSQLCarriesOperationalStatusFacts' -count=1
@@ -352,7 +352,7 @@ Expected failing signal:
 does not contain "employee_operational_facts"
 ```
 
-- [ ] Update `apps/control-plane/internal/storage/queries/employee_execution.sql`.
+- [x] Update `apps/control-plane/internal/storage/queries/employee_execution.sql`.
 
 Add read-model facts to both `GetDigitalEmployeeOverviewSummary` and `ListDigitalEmployeeOverviewItems` query pipelines. The exact names below must be used so repository tests and generated fields are stable.
 
@@ -428,7 +428,7 @@ coalesce(eof.operational_has_active_work, false)::boolean AS operational_has_act
 coalesce(eof.operational_has_task_failure, false)::boolean AS operational_has_task_failure
 ```
 
-- [ ] Regenerate sqlc:
+- [x] Regenerate sqlc:
 
 ```bash
 make -C apps/control-plane generate-sqlc
@@ -436,7 +436,7 @@ make -C apps/control-plane generate-sqlc
 
 Expected output includes regenerated query code and exits with status `0`.
 
-- [ ] Run the SQL coverage test:
+- [x] Run the SQL coverage test:
 
 ```bash
 go test ./apps/control-plane/internal/employee -run 'TestEmployeeOverviewSQLCarriesOperationalStatusFacts' -count=1
@@ -452,7 +452,7 @@ ok  	github.com/superteam/superteam/apps/control-plane/internal/employee
 
 ## Task 4: Map SQL Facts Into Overview Domain
 
-- [ ] Update `apps/control-plane/internal/employee/types.go`.
+- [x] Update `apps/control-plane/internal/employee/types.go`.
 
 Add to `DigitalEmployeeOverviewSummary`:
 
@@ -474,7 +474,7 @@ Add to `DigitalEmployeeOverviewItem`:
 OperationalState DigitalEmployeeOperationalState
 ```
 
-- [ ] Update `apps/control-plane/internal/employee/pg_repository.go`.
+- [x] Update `apps/control-plane/internal/employee/pg_repository.go`.
 
 In `overviewItemFromQuery`, build the resolver input from generated row fields:
 
@@ -502,7 +502,7 @@ operationalState := ResolveDigitalEmployeeOperationalState(DigitalEmployeeOperat
 
 Add `overviewOperationalDispatchReady` as the same readiness predicate as `overviewWorkbenchStatus`, but without treating latest terminal run failure as a permanent readiness failure. Keep `workbench_status` unchanged for compatibility.
 
-- [ ] Add helper tests in `pg_repository_test.go`:
+- [x] Add helper tests in `pg_repository_test.go`:
 
 ```go
 func TestOverviewItemFromQueryMapsOperationalState(t *testing.T) {
@@ -542,7 +542,7 @@ func TestOverviewItemFromQueryMapsRunStatusFacts(t *testing.T) {
 }
 ```
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 go test ./apps/control-plane/internal/employee -run 'TestOverviewItemFromQuery.*Operational|TestResolveDigitalEmployeeOperationalState' -count=1
@@ -554,7 +554,7 @@ Expected output:
 ok  	github.com/superteam/superteam/apps/control-plane/internal/employee
 ```
 
-- [ ] Commit SQL and repository mapping:
+- [x] Commit SQL and repository mapping:
 
 ```bash
 git add apps/control-plane/internal/storage/queries/employee_execution.sql apps/control-plane/internal/storage/queries/employee_execution.sql.go apps/control-plane/internal/employee/types.go apps/control-plane/internal/employee/pg_repository.go apps/control-plane/internal/employee/pg_repository_test.go
@@ -565,7 +565,7 @@ git commit -m "feat(control-plane): derive employee operational overview state"
 
 ## Task 5: Expose API And OpenAPI Contract
 
-- [ ] Update `apps/control-plane/internal/employee/handler.go`.
+- [x] Update `apps/control-plane/internal/employee/handler.go`.
 
 Add response structs:
 
@@ -594,9 +594,9 @@ Add to item response:
 OperationalState digitalEmployeeOperationalStateResponse `json:"operational_state"`
 ```
 
-- [ ] Update mapping functions so empty reason arrays serialize as `[]`, not `null`.
+- [x] Update mapping functions so empty reason arrays serialize as `[]`, not `null`.
 
-- [ ] Update `contracts/control-plane/openapi.yaml`.
+- [x] Update `contracts/control-plane/openapi.yaml`.
 
 Add schemas:
 
@@ -655,9 +655,9 @@ operational_state:
   $ref: '#/components/schemas/DigitalEmployeeOperationalState'
 ```
 
-- [ ] Update `apps/control-plane/internal/api/employee_routes_test.go` to assert `operational_state.status` and `summary.operational_status_counts`.
+- [x] Update `apps/control-plane/internal/api/employee_routes_test.go` to assert `operational_state.status` and `summary.operational_status_counts`.
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 corepack pnpm generate:control-plane
@@ -672,7 +672,7 @@ contracts verified
 ok  	github.com/superteam/superteam/apps/control-plane/internal/api
 ```
 
-- [ ] Commit API and contract changes:
+- [x] Commit API and contract changes:
 
 ```bash
 git add contracts/control-plane/openapi.yaml apps/control-plane/internal/employee/handler.go apps/control-plane/internal/api/employee_routes_test.go
