@@ -36,6 +36,7 @@ import {
 } from "@/components/superteam";
 import {
   getDigitalEmployeeOverview,
+  type DigitalEmployeeOperationalStatus,
   type DigitalEmployeeOverview,
   type DigitalEmployeeOverviewFilters,
   type DigitalEmployeeOverviewItem,
@@ -59,6 +60,26 @@ const DEFAULT_PAGE_SIZE = 12;
 const PAGE_SIZE_OPTIONS = [12, 24, 48];
 
 type FilterKey = Exclude<keyof DigitalEmployeeOverviewFilters, "limit" | "offset">;
+
+const operationalStatusLabel: Record<DigitalEmployeeOperationalStatus, string> = {
+  working: "工作中",
+  idle: "空闲",
+  queued: "排队",
+  waiting_human: "待人工确认",
+  error: "异常",
+  unavailable: "不可用",
+  needs_configuration: "待配置",
+};
+
+const operationalStatusTone: Record<DigitalEmployeeOperationalStatus, Tone> = {
+  working: "info",
+  idle: "success",
+  queued: "warning",
+  waiting_human: "warning",
+  error: "danger",
+  unavailable: "neutral",
+  needs_configuration: "neutral",
+};
 
 export function EmployeesPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
@@ -455,15 +476,18 @@ function EmployeeWorkbenchCard({
               </p>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-2">
-              <StatusBadge tone={workbenchTone(item.workbench_status)}>
-                {workbenchStatusLabel(item.workbench_status)}
+              <StatusBadge tone={operationalStatusTone[item.operational_state.status]}>
+                {operationalStatusLabel[item.operational_state.status]}
               </StatusBadge>
             </div>
           </div>
         </div>
       </div>
       <div className="mt-4 flex flex-col gap-3 text-sm">
-        <div className="border-t pt-3 font-medium text-foreground">{runtimeProviderLine(item)}</div>
+        <div className="border-t pt-3">
+          <p className="font-medium text-foreground">{runtimeProviderLine(item)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">工作台：{workbenchStatusLabel(item.workbench_status)}</p>
+        </div>
         <div>
           <p className="text-xs text-muted-foreground">最近运行</p>
           <p className={cn("mt-1 font-medium", latestRunToneClass(item.latest_run_summary?.status))}>
@@ -558,11 +582,14 @@ function SelectedEmployeePanel({ item }: { item: DigitalEmployeeOverviewItem }) 
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <p className="truncate font-semibold">{identity.name}</p>
-            <StatusBadge tone={workbenchTone(item.workbench_status)}>{workbenchStatusLabel(item.workbench_status)}</StatusBadge>
+            <StatusBadge tone={operationalStatusTone[item.operational_state.status]}>
+              {operationalStatusLabel[item.operational_state.status]}
+            </StatusBadge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {identity.employee_type_label || identity.role} · {identity.team_name || "未分组"}
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">工作台：{workbenchStatusLabel(item.workbench_status)}</p>
         </div>
       </div>
       <div className="flex flex-col gap-1 text-sm">
@@ -700,10 +727,6 @@ function formatNumber(value: number | undefined | null) {
 
 function workbenchStatusLabel(status: DigitalEmployeeWorkbenchStatus) {
   return status === "ready" ? "就绪" : status === "pending_binding" ? "待绑定" : "异常";
-}
-
-function workbenchTone(status: DigitalEmployeeWorkbenchStatus): Tone {
-  return status === "ready" ? "success" : status === "pending_binding" ? "warning" : "danger";
 }
 
 function runtimeProviderLine(item: DigitalEmployeeOverviewItem) {

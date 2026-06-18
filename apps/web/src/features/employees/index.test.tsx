@@ -41,6 +41,8 @@ type EmployeesFetcherOptions = {
   delayMs?: number;
   includeUnboundEmployee?: boolean;
   latestRunStatus?: string;
+  operationalStatus?: string;
+  projectAcceptancePendingOnly?: boolean;
   totalCount?: number;
 };
 
@@ -48,6 +50,8 @@ function createEmployeesFetcher({
   delayMs = 0,
   includeUnboundEmployee = false,
   latestRunStatus = "completed",
+  operationalStatus = "idle",
+  projectAcceptancePendingOnly = false,
   totalCount = 18,
 }: EmployeesFetcherOptions = {}) {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -63,13 +67,29 @@ function createEmployeesFetcher({
       const pageNumber = Math.floor(offset / Math.max(limit, 1)) + 1;
       const readyItem = {
         workbench_status: "ready",
-        recent_events: [
-          {
-            label: "命令已下发",
-            status: "dispatching",
-            occurred_at: twoMinutesAgo,
-          },
-        ],
+        operational_state: {
+          status: operationalStatus,
+          reasons:
+            operationalStatus === "waiting_human"
+              ? [{ code: "approval_blocked", message: "等待人工确认后继续执行" }]
+              : [],
+          can_dispatch: operationalStatus === "idle",
+        },
+        recent_events: projectAcceptancePendingOnly
+          ? [
+              {
+                label: "项目验收待处理",
+                status: "project_acceptance",
+                occurred_at: twoMinutesAgo,
+              },
+            ]
+          : [
+              {
+                label: "命令已下发",
+                status: "dispatching",
+                occurred_at: twoMinutesAgo,
+              },
+            ],
         identity_summary: {
           id:
             offset === 0
@@ -148,6 +168,11 @@ function createEmployeesFetcher({
       const unboundItem = {
         ...readyItem,
         workbench_status: "pending_binding",
+        operational_state: {
+          status: "needs_configuration",
+          reasons: [{ code: "runtime_binding_missing", message: "等待绑定 Runtime Agent" }],
+          can_dispatch: false,
+        },
         recent_events: [],
         identity_summary: {
           ...readyItem.identity_summary,
@@ -196,6 +221,15 @@ function createEmployeesFetcher({
             pending_runtime_binding_count: 2,
             pending_config_approval_count: 4,
             failed_recent_run_count: 1,
+            operational_status_counts: {
+              working: operationalStatus === "working" ? 1 : 0,
+              idle: operationalStatus === "idle" ? 1 : 0,
+              queued: operationalStatus === "queued" ? 1 : 0,
+              waiting_human: operationalStatus === "waiting_human" ? 1 : 0,
+              error: operationalStatus === "error" ? 1 : 0,
+              unavailable: operationalStatus === "unavailable" ? 1 : 0,
+              needs_configuration: includeUnboundEmployee || operationalStatus === "needs_configuration" ? 1 : 0,
+            },
           },
           items: includeUnboundEmployee ? [readyItem, unboundItem] : [readyItem],
           filters: {
@@ -294,6 +328,25 @@ describe("EmployeesView", () => {
 
     await expect.element(screen.getByText("待绑定员工")).toBeVisible();
     await expect.element(screen.getByText("等待绑定 Runtime Agent")).toBeVisible();
+  });
+
+  it("renders waiting-human operational status from the API state", async () => {
+    const screen = await renderEmployeesView(createEmployeesFetcher({ operationalStatus: "waiting_human" }));
+
+    await expect.element(screen.getByText("待人工确认").first()).toBeVisible();
+  });
+
+  it("does not infer waiting-human status from project acceptance pending semantics", async () => {
+    const screen = await renderEmployeesView(
+      createEmployeesFetcher({
+        operationalStatus: "idle",
+        projectAcceptancePendingOnly: true,
+      }),
+    );
+
+    await expect.element(screen.getByText("项目验收待处理")).toBeVisible();
+    await expect.element(screen.getByText("空闲").first()).toBeVisible();
+    await expect.element(screen.getByText("待人工确认")).not.toBeInTheDocument();
   });
 
   it("selects employees from the card surface without visible selection text", async () => {

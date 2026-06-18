@@ -125,6 +125,15 @@ describe("digital employee API", () => {
         pending_runtime_binding_count: 2,
         pending_config_approval_count: 0,
         failed_recent_run_count: 0,
+        operational_status_counts: {
+          working: 1,
+          idle: 0,
+          queued: 0,
+          waiting_human: 0,
+          error: 0,
+          unavailable: 0,
+          needs_configuration: 0,
+        },
       },
       queue_summary: {
         pending_runtime_binding_count: 2,
@@ -191,6 +200,11 @@ describe("digital employee API", () => {
             limit_exceeded: false,
           },
           workbench_status: "ready",
+          operational_state: {
+            status: "working",
+            reasons: [{ code: "active_run", message: "员工正在执行任务" }],
+            can_dispatch: false,
+          },
           recent_events: [
             {
               label: "命令已下发",
@@ -247,7 +261,13 @@ describe("digital employee API", () => {
       expect.objectContaining({ credentials: "include", method: "GET" }),
     );
     expect(overview.queue_summary.pending_runtime_binding_count).toBe(2);
+    expect(overview.summary.operational_status_counts.working).toBe(1);
     expect(overview.items[0].workbench_status).toBe("ready");
+    expect(overview.items[0].operational_state).toEqual({
+      status: "working",
+      reasons: [{ code: "active_run", message: "员工正在执行任务" }],
+      can_dispatch: false,
+    });
     expect(overview.items[0].recent_events[0].label).toBe("命令已下发");
     expect(overview.items[0].budget_summary.daily_token_limit).toBe(10000);
   });

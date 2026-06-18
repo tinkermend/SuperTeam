@@ -241,6 +241,26 @@ export type DigitalEmployeeWorkbenchStatus =
   | "pending_binding"
   | "error";
 
+export type DigitalEmployeeOperationalStatus =
+  | "working"
+  | "idle"
+  | "queued"
+  | "waiting_human"
+  | "error"
+  | "unavailable"
+  | "needs_configuration";
+
+export type DigitalEmployeeOperationalReason = {
+  code: string;
+  message: string;
+};
+
+export type DigitalEmployeeOperationalState = {
+  status: DigitalEmployeeOperationalStatus;
+  reasons: DigitalEmployeeOperationalReason[];
+  can_dispatch: boolean;
+};
+
 export type DigitalEmployeeRecentEventSummary = {
   label: string;
   status: string;
@@ -264,6 +284,7 @@ export type DigitalEmployeeOverview = {
     pending_runtime_binding_count: number;
     pending_config_approval_count: number;
     failed_recent_run_count: number;
+    operational_status_counts: Partial<Record<DigitalEmployeeOperationalStatus, number>>;
   };
   queue_summary: {
     pending_runtime_binding_count: number;
@@ -290,6 +311,7 @@ export type DigitalEmployeeOverview = {
 
 export type DigitalEmployeeOverviewItem = {
   workbench_status: DigitalEmployeeWorkbenchStatus;
+  operational_state: DigitalEmployeeOperationalState;
   recent_events: DigitalEmployeeRecentEventSummary[];
   identity_summary: {
     id: string;
