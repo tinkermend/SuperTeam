@@ -767,7 +767,7 @@ git commit -m "feat(web): show employee operational status"
 
 ## Task 7: Full Verification And Real Smoke
 
-- [ ] Run repository checks:
+- [x] Run repository checks:
 
 ```bash
 corepack pnpm verify:control-plane
@@ -785,7 +785,7 @@ verify:contracts exits 0
 git diff --check exits 0
 ```
 
-- [ ] Check live services:
+- [x] Check live services:
 
 ```bash
 scripts/dev-services.sh status
@@ -798,7 +798,7 @@ scripts/dev-services.sh restart
 scripts/dev-services.sh status
 ```
 
-- [ ] Run a real Control Plane API smoke against the employee overview endpoint using the local development auth pattern already used by existing route smoke scripts. Confirm the JSON contains:
+- [x] Run a real Control Plane API smoke against the employee overview endpoint using the local development auth pattern already used by existing route smoke scripts. Confirm the JSON contains:
 
 ```json
 {
@@ -819,9 +819,9 @@ scripts/dev-services.sh status
 
 The exact status can vary with seeded data. The required proof is that the field is present, comes from the real Control Plane, and is not a mock response.
 
-- [ ] If the real smoke cannot run because authentication, seeded data, Runtime, or database state is missing, report the missing dependency as a blocker instead of claiming end-to-end completion.
+- [x] If the real smoke cannot run because authentication, seeded data, Runtime, or database state is missing, report the missing dependency as a blocker instead of claiming end-to-end completion.
 
-- [ ] Before final completion, run the project completion gate:
+- [x] Before final completion, run the project completion gate:
 
 ```bash
 cat .codex/skills/superteam-completion-check/SKILL.md
@@ -833,19 +833,19 @@ Follow every required check in that skill, then report which checks passed and w
 
 ## Self-Review Checklist
 
-- [ ] Employee `waiting_human` only comes from employee/task/run scoped human decisions.
-- [ ] `project_acceptance` pending is visible at project/workflow level but does not make every employee `waiting_human`.
-- [ ] Runtime offline maps to `error` when active or queued employee work exists; otherwise it maps to `unavailable`.
-- [ ] An unconfigured employee with no online runtime maps to `needs_configuration`, not `unavailable` (config precedence verified by a both-true test case).
-- [ ] Task working/queued/waiting-human/failed status sets match `project.sql` (incl. `in_progress`, `pending_review`, `requires_human_approval`).
-- [ ] Only `task_failure_recovery` and `route_review` pending decisions (status `pending`/`requested`) count as employee-scoped human blockers.
-- [ ] Provider failure maps to `error` after the retry policy has exposed a current failed/unavailable fact.
-- [ ] Task failure maps to `error` until a human recovery decision exists; then it maps to `waiting_human`.
-- [ ] `cancelling` or equivalent active run state maps to `working`.
-- [ ] `workbench_status` remains in the API for backward compatibility.
-- [ ] OpenAPI, Go response structs, TypeScript API types, and Web rendering agree on field names.
-- [ ] Summary counts are based on the full filtered result set, not only the current page, and are produced by running the Go resolver over the full-set facts query (priority logic not duplicated in SQL).
-- [ ] Tests cover priority order and project acceptance non-projection.
+- [x] Employee `waiting_human` only comes from employee/task/run scoped human decisions.
+- [x] `project_acceptance` pending is visible at project/workflow level but does not make every employee `waiting_human`.
+- [x] Runtime offline maps to `error` when active or queued employee work exists; otherwise it maps to `unavailable`.
+- [x] An unconfigured employee with no online runtime maps to `needs_configuration`, not `unavailable` (config precedence verified by a both-true test case).
+- [x] Task working/queued/waiting-human/failed status sets match `project.sql` (incl. `in_progress`, `pending_review`, `requires_human_approval`).
+- [x] Only `task_failure_recovery` and `route_review` pending decisions (status `pending`/`requested`) count as employee-scoped human blockers.
+- [x] Provider failure maps to `error` after the retry policy has exposed a current failed/unavailable fact.
+- [x] Task failure maps to `error` until a human recovery decision exists; then it maps to `waiting_human`.
+- [x] `cancelling` or equivalent active run state maps to `working`.
+- [x] `workbench_status` remains in the API for backward compatibility.
+- [x] OpenAPI, Go response structs, TypeScript API types, and Web rendering agree on field names.
+- [x] Summary counts are based on the full filtered result set, not only the current page, and are produced by running the Go resolver over the full-set facts query (priority logic not duplicated in SQL).
+- [x] Tests cover priority order and project acceptance non-projection.
 
 ---
 
