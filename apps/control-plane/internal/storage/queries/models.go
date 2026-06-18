@@ -385,6 +385,13 @@ type DigitalEmployeeMcpBinding struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 数字员工 runtime 就绪读视图,is_runtime_ready 与 overview runnable 判定一致,供协调器执行人选择过滤
+type DigitalEmployeeRuntimeReadiness struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	IsRuntimeReady    bool      `json:"is_runtime_ready"`
+}
+
 // 数字员工工作目录受控文件身份表
 type DigitalEmployeeWorkspaceFile struct {
 	// 受控文件主键 UUID

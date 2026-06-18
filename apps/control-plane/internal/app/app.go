@@ -132,6 +132,14 @@ func (a projectTaskRunStarterAdapter) StartProjectTaskRun(ctx context.Context, r
 	}, nil
 }
 
+type digitalEmployeeReadinessAdapter struct {
+	repository employee.Repository
+}
+
+func (a digitalEmployeeReadinessAdapter) AreRuntimeReady(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
+	return a.repository.AreRuntimeReady(ctx, tenantID, employeeIDs)
+}
+
 func runStartRetryable(err error) bool {
 	switch {
 	case errors.Is(err, employee.ErrInvalidInput):
@@ -292,7 +300,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			approvalService,
 			decisionProjector,
 			projectTaskRunStarterAdapter{runService: runService},
-		)
+		).WithDigitalEmployeeReadiness(digitalEmployeeReadinessAdapter{repository: employeeRepository})
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore, routePlannerFromConfig(cfg.Planner))
 		coordinationWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
 	}

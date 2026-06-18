@@ -137,14 +137,6 @@ func TestDeepSeekRoutePlannerRejectsMissingRequiredTaskMaps(t *testing.T) {
 			name: "null handoff contract",
 			task: fmt.Sprintf(`{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":null}`, employeeID.String()),
 		},
-		{
-			name: "wrong shape input requirements",
-			task: fmt.Sprintf(`{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":[],"handoff_contract":{}}`, employeeID.String()),
-		},
-		{
-			name: "wrong shape handoff contract",
-			task: fmt.Sprintf(`{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":"bad"}`, employeeID.String()),
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := &countingChatCompletionClient{content: fmt.Sprintf(`{
@@ -170,6 +162,35 @@ func TestDeepSeekRoutePlannerRejectsMissingRequiredTaskMaps(t *testing.T) {
 			require.Equal(t, int32(2), client.calls.Load())
 		})
 	}
+}
+
+func TestDeepSeekRoutePlannerNormalizesNonObjectRequirementMaps(t *testing.T) {
+	// Reasoning models sometimes emit input_requirements/handoff_contract as an array
+	// or scalar; the planner normalizes these into objects instead of rejecting the plan.
+	employeeID := uuid.New()
+	client := &countingChatCompletionClient{content: fmt.Sprintf(`{
+		"reason":"split demand",
+		"requires_human_review":false,
+		"tasks":[{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":["a","b"],"handoff_contract":"none"}]
+	}`, employeeID.String())}
+	planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://api.deepseek.com",
+		Model:       "deepseek-chat",
+		MaxAttempts: 2,
+	}, client)
+
+	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
+		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, plan.Tasks, 1)
+	require.Equal(t, []any{"a", "b"}, plan.Tasks[0].InputRequirements["items"])
+	require.Equal(t, "none", plan.Tasks[0].HandoffContract["value"])
 }
 
 func TestDeepSeekRoutePlannerDoesNotRetryContextDone(t *testing.T) {
@@ -352,38 +373,47 @@ func TestSanitizePlannerMetadataRemovesPromptAndRawVariants(t *testing.T) {
 	require.NotContains(t, metadata, "systemPrompt")
 }
 
-func TestActivitiesPlanDemandRouteFallsBackToHeuristicPlanner(t *testing.T) {
-	employeeID := uuid.New()
+func TestActivitiesPlanDemandRouteSurfacesPlannerErrorWithoutFallback(t *testing.T) {
+	// Planning is reasoning-only: there is no non-reasoning fallback, so a planner
+	// error must surface instead of degrading to a heuristic fan-out.
 	activities := NewActivities(nil, failingRoutePlanner{err: errors.New("planner failed")})
 
 	plan, err := activities.PlanDemandRoute(context.Background(), CoordinationSnapshot{
 		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
 		DigitalEmployeePool: []ProjectMemberSnapshot{
-			{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+			{PrincipalID: uuid.New(), ProjectRole: "executor", Status: "active"},
 		},
 	})
 
-	require.NoError(t, err)
-	require.Len(t, plan.Tasks, 1)
-	require.Equal(t, employeeID, plan.Tasks[0].SelectedEmployeeID)
-	require.Equal(t, "heuristic.single_task", plan.TemplateKey)
+	require.Error(t, err)
+	require.Empty(t, plan.Tasks)
 }
 
-func TestActivitiesPlanDemandRouteFallsBackWhenPlannerDeadlineExpires(t *testing.T) {
-	employeeID := uuid.New()
+func TestActivitiesPlanDemandRouteRequiresConfiguredPlanner(t *testing.T) {
+	activities := NewActivities(nil)
+
+	_, err := activities.PlanDemandRoute(context.Background(), CoordinationSnapshot{
+		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			{PrincipalID: uuid.New(), ProjectRole: "executor", Status: "active"},
+		},
+	})
+
+	require.ErrorIs(t, err, ErrRoutePlannerRequired)
+}
+
+func TestActivitiesPlanDemandRouteSurfacesDeadlineWithoutFallback(t *testing.T) {
 	activities := NewActivities(nil, failingRoutePlanner{err: context.DeadlineExceeded})
 
 	plan, err := activities.PlanDemandRoute(context.Background(), CoordinationSnapshot{
 		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
 		DigitalEmployeePool: []ProjectMemberSnapshot{
-			{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+			{PrincipalID: uuid.New(), ProjectRole: "executor", Status: "active"},
 		},
 	})
 
-	require.NoError(t, err)
-	require.Len(t, plan.Tasks, 1)
-	require.Equal(t, employeeID, plan.Tasks[0].SelectedEmployeeID)
-	require.Equal(t, "heuristic.single_task", plan.TemplateKey)
+	require.Error(t, err)
+	require.Empty(t, plan.Tasks)
 }
 
 func TestDeepSeekRoutePlannerTimesOutRequestBeforeActivityDeadline(t *testing.T) {

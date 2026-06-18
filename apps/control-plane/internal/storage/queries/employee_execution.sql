@@ -1390,3 +1390,12 @@ FROM (
     WHERE NULLIF(run_status, '') IS NOT NULL
 ) options
 ORDER BY filter_type, label, value;
+
+-- name: AreEmployeesRuntimeReady :many
+SELECT
+    digital_employee_id,
+    is_runtime_ready
+FROM digital_employee_runtime_readiness
+WHERE tenant_id = sqlc.arg('tenant_id')
+  AND digital_employee_id = ANY(sqlc.arg('digital_employee_ids')::uuid[]);
+

@@ -666,6 +666,27 @@ func (r *PgRepository) GetDigitalEmployeeOverview(ctx context.Context, req GetDi
 	}, nil
 }
 
+// AreRuntimeReady reports which of the given digital employees are runtime-ready,
+// using the digital_employee_runtime_readiness view whose predicate matches the
+// overview "runnable" classification exactly.
+func (r *PgRepository) AreRuntimeReady(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
+	if len(employeeIDs) == 0 {
+		return map[uuid.UUID]bool{}, nil
+	}
+	rows, err := r.q.AreEmployeesRuntimeReady(ctx, queries.AreEmployeesRuntimeReadyParams{
+		TenantID:           tenantID,
+		DigitalEmployeeIds: employeeIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	ready := make(map[uuid.UUID]bool, len(rows))
+	for _, row := range rows {
+		ready[row.DigitalEmployeeID] = row.IsRuntimeReady
+	}
+	return ready, nil
+}
+
 func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) DigitalEmployeeOverviewItem {
 	executionStatus := overviewExecutionStatus(row.ExecutionStatus)
 	latestRunStatus := overviewRunStatus(row.LatestRunStatus)

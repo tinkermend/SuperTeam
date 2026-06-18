@@ -61,3 +61,15 @@ type PlannedTask struct {
 	HandoffContract       map[string]any
 	BlockedByKeys         []string
 }
+
+// activeExecutorIDs returns the active executor members of a coordination snapshot's
+// digital-employee pool. Shared by the reasoning planner and the test double.
+func activeExecutorIDs(members []ProjectMemberSnapshot) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(members))
+	for _, member := range members {
+		if member.PrincipalID != uuid.Nil && member.ProjectRole == "executor" && member.Status == "active" {
+			ids = append(ids, member.PrincipalID)
+		}
+	}
+	return ids
+}

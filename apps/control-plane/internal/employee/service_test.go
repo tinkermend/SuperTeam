@@ -2188,6 +2188,14 @@ func (r *memoryRepository) GetDigitalEmployeeOverview(_ context.Context, req Get
 	}, nil
 }
 
+func (r *memoryRepository) AreRuntimeReady(_ context.Context, _ uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
+	ready := make(map[uuid.UUID]bool, len(employeeIDs))
+	for _, id := range employeeIDs {
+		ready[id] = true
+	}
+	return ready, nil
+}
+
 func (r *memoryRepository) EnsureTeamExists(_ context.Context, tenantID, teamID uuid.UUID) error {
 	teamTenantID, ok := r.teams[teamID]
 	if !ok || teamTenantID != tenantID {

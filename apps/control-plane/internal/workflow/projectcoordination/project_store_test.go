@@ -1265,7 +1265,7 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndBindsTask(t *testing.T) {
 	require.Contains(t, req.Prompt, "test_report")
 	require.Equal(t, []any{"execution_summary", "evidence_refs"}, req.Metadata["expected_outputs"])
 	require.Equal(t, map[string]any{"required_context": []any{"test_report", "rollback_plan"}}, req.Metadata["input_requirements"])
-	require.Equal(t, map[string]any{"required_refs": []any{"test_report"}}, req.Metadata["handoff_contract"])
+	require.Equal(t, map[string]any{"completion_path": "project_task_writeback", "required_refs": []any{"test_report"}}, req.Metadata["handoff_contract"])
 	if len(repo.bindRequests) != 1 || repo.bindRequests[0].DigitalEmployeeRunID != runID || repo.bindRequests[0].RuntimeTaskID != runtimeTaskID {
 		t.Fatalf("expected bind request, got %#v", repo.bindRequests)
 	}
