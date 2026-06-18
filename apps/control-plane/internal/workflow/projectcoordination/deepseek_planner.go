@@ -338,7 +338,7 @@ func (t *plannerTask) UnmarshalJSON(data []byte) error {
 		StageIndex            *int32          `json:"stage_index"`
 		RiskLevel             string          `json:"risk_level"`
 		RequiresHumanApproval bool            `json:"requires_human_approval"`
-		ExpectedOutputs       []string        `json:"expected_outputs"`
+		ExpectedOutputs       json.RawMessage `json:"expected_outputs"`
 		InputRequirements     json.RawMessage `json:"input_requirements"`
 		HandoffContract       json.RawMessage `json:"handoff_contract"`
 		BlockedByKeys         []string        `json:"blocked_by_keys"`
@@ -364,10 +364,32 @@ func (t *plannerTask) UnmarshalJSON(data []byte) error {
 		StageIndex:            raw.StageIndex,
 		RiskLevel:             raw.RiskLevel,
 		RequiresHumanApproval: raw.RequiresHumanApproval,
-		ExpectedOutputs:       raw.ExpectedOutputs,
+		ExpectedOutputs:       decodePlannerStringArray(raw.ExpectedOutputs),
 		InputRequirements:     inputRequirements,
 		HandoffContract:       handoffContract,
 		BlockedByKeys:         raw.BlockedByKeys,
+	}
+	return nil
+}
+
+// decodePlannerStringArray coerces a planner string-array field (expected_outputs,
+// blocked_by_keys) into []string. Reasoning models sometimes emit a single string or a
+// non-string scalar instead of an array; a scalar/string is wrapped as a one-element
+// slice so a valid plan is not rejected on shape alone.
+func decodePlannerStringArray(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err == nil {
+		return values
+	}
+	var single string
+	if err := json.Unmarshal(raw, &single); err == nil {
+		if trimmed := strings.TrimSpace(single); trimmed != "" {
+			return []string{trimmed}
+		}
+		return nil
 	}
 	return nil
 }

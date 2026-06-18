@@ -572,7 +572,7 @@ func TestProjectStoreApplyProjectAcceptanceDecisionAcceptArchivesRejectReopens(t
 		}
 		store := NewProjectStore(repo)
 		err := store.ApplyProjectAcceptanceDecision(context.Background(), ApplyProjectAcceptanceDecisionInput{
-			TenantID: tenantID, ProjectID: projectID, DecisionRequestID: decisionRequestID, Decision: "accepted",
+			TenantID: tenantID, ProjectID: projectID, DecisionRequestID: decisionRequestID, Decision: "approved",
 		})
 		require.NoError(t, err)
 		require.Equal(t, project.ProjectStatusArchived, repo.projectRecord.Status)

@@ -936,7 +936,7 @@ func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input
 		Title:         "验收项目交付",
 		Summary:       "项目全部需求已完成,请确认验收",
 		RiskLevel:     "high",
-		Options:       []any{"accepted", "rejected", "needs_more_evidence"},
+		Options:       []any{"approved", "rejected", "needs_more_evidence"},
 	})
 	if err != nil {
 		return DecisionRequestResult{}, err
@@ -983,16 +983,18 @@ func (s *ProjectStore) ApplyProjectAcceptanceDecision(ctx context.Context, input
 	if err != nil {
 		return err
 	}
-	accepted := strings.EqualFold(strings.TrimSpace(input.Decision), "accepted")
+	// Human decisions use the platform vocabulary approved/rejected/needs_more_evidence
+	// (see validHumanDecision); an approved decision maps to an accepted acceptance record.
+	approved := strings.EqualFold(strings.TrimSpace(input.Decision), "approved")
 	status := "rejected"
-	if accepted {
+	if approved {
 		status = "accepted"
 	} else if strings.EqualFold(strings.TrimSpace(input.Decision), "needs_more_evidence") {
 		status = "needs_more_evidence"
 	}
 	conclusion := acceptanceConclusion(input.Payload, status)
 	acceptedBy := projectRecord.HumanOwnerUserID
-	if accepted {
+	if approved {
 		if _, err := s.repository.ArchiveProject(ctx, input.TenantID, input.ProjectID); err != nil {
 			return err
 		}
