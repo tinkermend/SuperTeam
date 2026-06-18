@@ -893,6 +893,159 @@ func (s *ProjectStore) RequestRouteDecisionReview(ctx context.Context, input Req
 	return DecisionRequestResult{ID: decision.ID}, nil
 }
 
+// IsProjectAcceptanceReady reports whether every demand of the project has reached a
+// terminal state, i.e. the project is ready for human acceptance.
+func (s *ProjectStore) IsProjectAcceptanceReady(ctx context.Context, input IsProjectAcceptanceReadyInput) (bool, error) {
+	if s.repository == nil {
+		return false, ErrActivityStoreRequired
+	}
+	return s.repository.AreAllProjectDemandsTerminal(ctx, input.TenantID, input.ProjectID)
+}
+
+// RequestProjectAcceptanceReview moves the project into the acceptance state and opens a
+// human-decision item (approval + decision request + inbox) for the human owner. It is
+// idempotent: the running→acceptance status transition is the guard — if the project is
+// no longer running (already pending/terminal acceptance), it returns a zero result and
+// the caller must not record a new pending handle.
+func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input RequestProjectAcceptanceReviewInput) (DecisionRequestResult, error) {
+	if s.repository == nil || s.approvals == nil {
+		return DecisionRequestResult{}, ErrActivityStoreRequired
+	}
+	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if _, err := s.repository.TransitionProjectStatus(ctx, input.TenantID, input.ProjectID, []string{string(project.ProjectStatusRunning)}, string(project.ProjectStatusAcceptance)); err != nil {
+		if errors.Is(err, project.ErrProjectNotFound) {
+			// Already in acceptance/terminal: a review is already pending or resolved.
+			return DecisionRequestResult{}, nil
+		}
+		return DecisionRequestResult{}, err
+	}
+	targetUserID := projectRecord.HumanOwnerUserID
+	if projectRecord.AcceptanceUserID != nil && *projectRecord.AcceptanceUserID != uuid.Nil {
+		targetUserID = *projectRecord.AcceptanceUserID
+	}
+	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
+		TenantID:      input.TenantID,
+		ResourceType:  "project",
+		ResourceID:    input.ProjectID,
+		RequesterType: "project_coordinator",
+		TargetUserID:  targetUserID,
+		DecisionType:  "project_acceptance",
+		Title:         "验收项目交付",
+		Summary:       "项目全部需求已完成,请确认验收",
+		RiskLevel:     "high",
+		Options:       []any{"accepted", "rejected", "needs_more_evidence"},
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, input.ProjectID.String(), "项目进入待验收,等待人类确认", map[string]any{
+		"approval_request_id": approvalRequest.ID.String(),
+		"project_id":          input.ProjectID.String(),
+		"target_user_id":      targetUserID.String(),
+	}))
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
+		TenantID:          input.TenantID,
+		ProjectID:         input.ProjectID,
+		ApprovalRequestID: approvalRequest.ID,
+		TargetUserID:      targetUserID,
+		DecisionType:      "project_acceptance",
+		TitleSnapshot:     "验收项目交付",
+		SummarySnapshot:   "项目全部需求已完成,请确认验收",
+		RiskLevelSnapshot: "high",
+		StatusSnapshot:    "pending",
+		CreatedEventID:    &event.ID,
+	})
+	if err != nil {
+		return DecisionRequestResult{}, err
+	}
+	if s.inbox != nil {
+		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
+			return DecisionRequestResult{}, err
+		}
+	}
+	return DecisionRequestResult{ID: decision.ID}, nil
+}
+
+// ApplyProjectAcceptanceDecision closes the acceptance loop: accept archives the project
+// (and records an accepted acceptance conclusion); reject / needs_more_evidence reopens it
+// to running for rework. The decision's conclusion, if provided in the payload, is recorded.
+func (s *ProjectStore) ApplyProjectAcceptanceDecision(ctx context.Context, input ApplyProjectAcceptanceDecisionInput) error {
+	if s.repository == nil {
+		return ErrActivityStoreRequired
+	}
+	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
+		return err
+	}
+	accepted := strings.EqualFold(strings.TrimSpace(input.Decision), "accepted")
+	status := "rejected"
+	if accepted {
+		status = "accepted"
+	} else if strings.EqualFold(strings.TrimSpace(input.Decision), "needs_more_evidence") {
+		status = "needs_more_evidence"
+	}
+	conclusion := acceptanceConclusion(input.Payload, status)
+	acceptedBy := projectRecord.HumanOwnerUserID
+	if accepted {
+		if _, err := s.repository.ArchiveProject(ctx, input.TenantID, input.ProjectID); err != nil {
+			return err
+		}
+	} else {
+		if _, err := s.repository.TransitionProjectStatus(ctx, input.TenantID, input.ProjectID, []string{string(project.ProjectStatusAcceptance)}, string(project.ProjectStatusRunning)); err != nil && !errors.Is(err, project.ErrProjectNotFound) {
+			return err
+		}
+	}
+	_, err = s.repository.CreateAcceptanceRecordWithEvent(ctx, project.CreateAcceptanceRecordWithEventRequest{
+		Event: coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventAcceptanceSubmitted, input.DecisionRequestID.String(), acceptanceSummary(status), map[string]any{
+			"decision_request_id": input.DecisionRequestID.String(),
+			"decision":            status,
+		}),
+		Acceptance: project.CreateAcceptanceRecordRequest{
+			TenantID:         input.TenantID,
+			ProjectID:        input.ProjectID,
+			AcceptedByUserID: acceptedBy,
+			Status:           status,
+			Conclusion:       conclusion,
+		},
+	})
+	return err
+}
+
+func acceptanceConclusion(payload map[string]any, status string) string {
+	if payload != nil {
+		if text, ok := payload["conclusion"].(string); ok {
+			if trimmed := strings.TrimSpace(text); trimmed != "" {
+				return trimmed
+			}
+		}
+	}
+	switch status {
+	case "accepted":
+		return "项目交付已通过验收"
+	case "needs_more_evidence":
+		return "验收未通过,需要补充证据后重新交付"
+	default:
+		return "验收未通过,项目退回返工"
+	}
+}
+
+func acceptanceSummary(status string) string {
+	switch status {
+	case "accepted":
+		return "项目验收通过,已归档"
+	case "needs_more_evidence":
+		return "项目验收需补充证据,已退回"
+	default:
+		return "项目验收未通过,已退回返工"
+	}
+}
+
 func (s *ProjectStore) routeReviewTargetUserID(ctx context.Context, input RequestRouteDecisionReviewInput, projectRecord project.Project) (uuid.UUID, error) {
 	demand, err := s.repository.GetProjectDemand(ctx, input.TenantID, input.DemandID)
 	if err != nil {

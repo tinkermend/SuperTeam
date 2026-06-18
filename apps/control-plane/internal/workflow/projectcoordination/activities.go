@@ -24,6 +24,9 @@ type ActivityStore interface {
 	CreateProjectTasks(ctx context.Context, input CreateProjectTasksInput) ([]ProjectTaskResult, error)
 	ListDispatchableTasks(ctx context.Context, input ListDispatchableTasksInput) ([]uuid.UUID, error)
 	ResolveReadyDownstream(ctx context.Context, input ResolveReadyDownstreamInput) ([]uuid.UUID, error)
+	IsProjectAcceptanceReady(ctx context.Context, input IsProjectAcceptanceReadyInput) (bool, error)
+	RequestProjectAcceptanceReview(ctx context.Context, input RequestProjectAcceptanceReviewInput) (DecisionRequestResult, error)
+	ApplyProjectAcceptanceDecision(ctx context.Context, input ApplyProjectAcceptanceDecisionInput) error
 	HoldDownstreamForFailure(ctx context.Context, input HoldDownstreamForFailureInput) (DecisionRequestResult, error)
 	ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) (ApplyFailureRecoveryDecisionResult, error)
 	RequestRouteDecisionReview(ctx context.Context, input RequestRouteDecisionReviewInput) (DecisionRequestResult, error)
@@ -87,6 +90,27 @@ func (a *Activities) ResolveReadyDownstream(ctx context.Context, input ResolveRe
 		return nil, ErrActivityStoreRequired
 	}
 	return a.store.ResolveReadyDownstream(ctx, input)
+}
+
+func (a *Activities) IsProjectAcceptanceReady(ctx context.Context, input IsProjectAcceptanceReadyInput) (bool, error) {
+	if a.store == nil {
+		return false, ErrActivityStoreRequired
+	}
+	return a.store.IsProjectAcceptanceReady(ctx, input)
+}
+
+func (a *Activities) RequestProjectAcceptanceReview(ctx context.Context, input RequestProjectAcceptanceReviewInput) (DecisionRequestResult, error) {
+	if a.store == nil {
+		return DecisionRequestResult{}, ErrActivityStoreRequired
+	}
+	return a.store.RequestProjectAcceptanceReview(ctx, input)
+}
+
+func (a *Activities) ApplyProjectAcceptanceDecision(ctx context.Context, input ApplyProjectAcceptanceDecisionInput) error {
+	if a.store == nil {
+		return ErrActivityStoreRequired
+	}
+	return a.store.ApplyProjectAcceptanceDecision(ctx, input)
 }
 
 func (a *Activities) HoldDownstreamForFailure(ctx context.Context, input HoldDownstreamForFailureInput) (DecisionRequestResult, error) {

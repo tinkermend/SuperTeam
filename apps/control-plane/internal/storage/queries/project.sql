@@ -408,6 +408,28 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid
 RETURNING *;
 
+-- name: TransitionProjectStatus :one
+-- Forward-guarded project status transition: only applied when the current status
+-- is in from_statuses. No matching row (wrong current status) yields no rows so the
+-- caller can treat it as an idempotent no-op via ErrNoRows.
+UPDATE projects
+SET status = sqlc.arg('to_status')::varchar,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = ANY(sqlc.arg('from_statuses')::varchar[])
+RETURNING *;
+
+-- name: CountProjectDemandsByTerminality :one
+-- Aggregates a project's demands into total / non-terminal counts so the coordinator
+-- can decide whether the whole project is ready for human acceptance.
+SELECT
+    COUNT(*)::integer AS total_count,
+    COUNT(*) FILTER (WHERE status NOT IN ('completed', 'failed', 'cancelled'))::integer AS non_terminal_count
+FROM project_demands
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid;
+
 -- name: ReplaceProjectMembersDelete :exec
 DELETE FROM project_members
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid

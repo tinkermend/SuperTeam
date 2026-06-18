@@ -183,6 +183,34 @@ func (q *Queries) BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRun
 	return i, err
 }
 
+const CountProjectDemandsByTerminality = `-- name: CountProjectDemandsByTerminality :one
+SELECT
+    COUNT(*)::integer AS total_count,
+    COUNT(*) FILTER (WHERE status NOT IN ('completed', 'failed', 'cancelled'))::integer AS non_terminal_count
+FROM project_demands
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+`
+
+type CountProjectDemandsByTerminalityParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+type CountProjectDemandsByTerminalityRow struct {
+	TotalCount       int32 `json:"total_count"`
+	NonTerminalCount int32 `json:"non_terminal_count"`
+}
+
+// Aggregates a project's demands into total / non-terminal counts so the coordinator
+// can decide whether the whole project is ready for human acceptance.
+func (q *Queries) CountProjectDemandsByTerminality(ctx context.Context, arg CountProjectDemandsByTerminalityParams) (CountProjectDemandsByTerminalityRow, error) {
+	row := q.db.QueryRow(ctx, CountProjectDemandsByTerminality, arg.TenantID, arg.ProjectID)
+	var i CountProjectDemandsByTerminalityRow
+	err := row.Scan(&i.TotalCount, &i.NonTerminalCount)
+	return i, err
+}
+
 const CountProjectTaskStatusesByDemand = `-- name: CountProjectTaskStatusesByDemand :one
 SELECT
     COUNT(*)::bigint AS total,
@@ -3610,6 +3638,57 @@ func (q *Queries) RewireProjectTaskDependencies(ctx context.Context, arg RewireP
 		return nil, err
 	}
 	return items, nil
+}
+
+const TransitionProjectStatus = `-- name: TransitionProjectStatus :one
+UPDATE projects
+SET status = $1::varchar,
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND id = $3::uuid
+  AND status = ANY($4::varchar[])
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, leader_user_id, acceptance_user_id, coordination_workflow_id, coordination_status, coordination_policy, approval_policy, evidence_policy, archived_at, created_at, updated_at
+`
+
+type TransitionProjectStatusParams struct {
+	ToStatus     string    `json:"to_status"`
+	TenantID     uuid.UUID `json:"tenant_id"`
+	ID           uuid.UUID `json:"id"`
+	FromStatuses []string  `json:"from_statuses"`
+}
+
+// Forward-guarded project status transition: only applied when the current status
+// is in from_statuses. No matching row (wrong current status) yields no rows so the
+// caller can treat it as an idempotent no-op via ErrNoRows.
+func (q *Queries) TransitionProjectStatus(ctx context.Context, arg TransitionProjectStatusParams) (Project, error) {
+	row := q.db.QueryRow(ctx, TransitionProjectStatus,
+		arg.ToStatus,
+		arg.TenantID,
+		arg.ID,
+		arg.FromStatuses,
+	)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.Name,
+		&i.Description,
+		&i.Goal,
+		&i.Status,
+		&i.HumanOwnerUserID,
+		&i.LeaderUserID,
+		&i.AcceptanceUserID,
+		&i.CoordinationWorkflowID,
+		&i.CoordinationStatus,
+		&i.CoordinationPolicy,
+		&i.ApprovalPolicy,
+		&i.EvidencePolicy,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const UpdateProject = `-- name: UpdateProject :one

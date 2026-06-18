@@ -282,6 +282,38 @@ func (r *PgRepository) archiveProjectWithQueries(ctx context.Context, q *queries
 	return projectFromRecord(row)
 }
 
+// TransitionProjectStatus moves a project's status forward only when its current
+// status is in fromStatuses. If the guard does not match (e.g. already in the target
+// status), it returns ErrProjectNotFound so callers can treat it as an idempotent no-op.
+func (r *PgRepository) TransitionProjectStatus(ctx context.Context, tenantID, projectID uuid.UUID, fromStatuses []string, toStatus string) (Project, error) {
+	row, err := r.q.TransitionProjectStatus(ctx, queries.TransitionProjectStatusParams{
+		TenantID:     tenantID,
+		ID:           projectID,
+		FromStatuses: fromStatuses,
+		ToStatus:     toStatus,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Project{}, ErrProjectNotFound
+		}
+		return Project{}, err
+	}
+	return projectFromRecord(row)
+}
+
+// AreAllProjectDemandsTerminal reports whether a project has at least one demand and
+// every one of its demands is in a terminal state (completed/failed/cancelled).
+func (r *PgRepository) AreAllProjectDemandsTerminal(ctx context.Context, tenantID, projectID uuid.UUID) (bool, error) {
+	counts, err := r.q.CountProjectDemandsByTerminality(ctx, queries.CountProjectDemandsByTerminalityParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return false, err
+	}
+	return counts.TotalCount > 0 && counts.NonTerminalCount == 0, nil
+}
+
 func (r *PgRepository) ReplaceProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {
 	created, err := withProjectQueries(ctx, r, "project members", func(q *queries.Queries) ([]ProjectMember, error) {
 		return r.replaceProjectMembersWithQueries(ctx, q, tenantID, projectID, members)

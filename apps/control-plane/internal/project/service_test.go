@@ -3661,6 +3661,39 @@ func (r *memoryRepository) ArchiveProject(ctx context.Context, tenantID, project
 	return project, nil
 }
 
+func (r *memoryRepository) TransitionProjectStatus(ctx context.Context, tenantID, projectID uuid.UUID, fromStatuses []string, toStatus string) (Project, error) {
+	project, ok := r.projects[projectID]
+	if !ok || project.TenantID != tenantID {
+		return Project{}, ErrProjectNotFound
+	}
+	for _, from := range fromStatuses {
+		if project.Status == ProjectStatus(from) {
+			project.Status = ProjectStatus(toStatus)
+			r.projects[projectID] = project
+			return project, nil
+		}
+	}
+	return Project{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) AreAllProjectDemandsTerminal(ctx context.Context, tenantID, projectID uuid.UUID) (bool, error) {
+	terminal := map[ProjectDemandStatus]bool{
+		ProjectDemandStatusCompleted: true,
+		ProjectDemandStatusFailed:    true,
+		ProjectDemandStatusCancelled: true,
+	}
+	count := 0
+	for _, demand := range r.demands {
+		if demand.TenantID == tenantID && demand.ProjectID == projectID {
+			count++
+			if !terminal[demand.Status] {
+				return false, nil
+			}
+		}
+	}
+	return count > 0, nil
+}
+
 func (r *memoryRepository) ReplaceProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {
 	project, ok := r.projects[projectID]
 	if !ok || project.TenantID != tenantID {

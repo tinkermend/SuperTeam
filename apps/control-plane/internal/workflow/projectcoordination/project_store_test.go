@@ -520,6 +520,81 @@ func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProject
 	}
 }
 
+func TestProjectStoreRequestProjectAcceptanceReviewTransitionsAndIsIdempotent(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	approvalID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			Status:           project.ProjectStatusRunning,
+			HumanOwnerUserID: ownerID,
+		},
+		approvalID: approvalID,
+	}
+	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
+	inbox := &projectStoreDecisionInboxProjector{}
+	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, inbox)
+
+	result, err := store.RequestProjectAcceptanceReview(context.Background(), RequestProjectAcceptanceReviewInput{
+		TenantID: tenantID, ProjectID: projectID,
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, result.ID)
+	require.Equal(t, project.ProjectStatusAcceptance, repo.projectRecord.Status)
+	require.NotEmpty(t, repo.decisionRequests)
+	require.Equal(t, "project_acceptance", repo.decisionRequests[0].DecisionType)
+	require.Equal(t, ownerID, repo.decisionRequests[0].TargetUserID)
+	require.Len(t, inbox.upserts, 1)
+
+	// Second call: project is no longer running (already in acceptance) -> idempotent no-op.
+	repo.decisionRequests = nil
+	inbox.upserts = nil
+	repeat, err := store.RequestProjectAcceptanceReview(context.Background(), RequestProjectAcceptanceReviewInput{
+		TenantID: tenantID, ProjectID: projectID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uuid.Nil, repeat.ID)
+	require.Empty(t, repo.decisionRequests, "idempotent review must not create a second decision request")
+}
+
+func TestProjectStoreApplyProjectAcceptanceDecisionAcceptArchivesRejectReopens(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	decisionRequestID := uuid.New()
+
+	t.Run("accepted archives project", func(t *testing.T) {
+		repo := &projectStoreMemoryRepository{
+			projectRecord: project.Project{ID: projectID, TenantID: tenantID, Status: project.ProjectStatusAcceptance, HumanOwnerUserID: ownerID},
+		}
+		store := NewProjectStore(repo)
+		err := store.ApplyProjectAcceptanceDecision(context.Background(), ApplyProjectAcceptanceDecisionInput{
+			TenantID: tenantID, ProjectID: projectID, DecisionRequestID: decisionRequestID, Decision: "accepted",
+		})
+		require.NoError(t, err)
+		require.Equal(t, project.ProjectStatusArchived, repo.projectRecord.Status)
+		require.Len(t, repo.acceptanceRecords, 1)
+		require.Equal(t, "accepted", repo.acceptanceRecords[0].Status)
+	})
+
+	t.Run("rejected reopens to running", func(t *testing.T) {
+		repo := &projectStoreMemoryRepository{
+			projectRecord: project.Project{ID: projectID, TenantID: tenantID, Status: project.ProjectStatusAcceptance, HumanOwnerUserID: ownerID},
+		}
+		store := NewProjectStore(repo)
+		err := store.ApplyProjectAcceptanceDecision(context.Background(), ApplyProjectAcceptanceDecisionInput{
+			TenantID: tenantID, ProjectID: projectID, DecisionRequestID: decisionRequestID, Decision: "rejected",
+		})
+		require.NoError(t, err)
+		require.Equal(t, project.ProjectStatusRunning, repo.projectRecord.Status)
+		require.Len(t, repo.acceptanceRecords, 1)
+		require.Equal(t, "rejected", repo.acceptanceRecords[0].Status)
+	})
+}
+
 func TestProjectStoreRequestRouteDecisionReviewTargetsDemandReviewerPreference(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -1562,6 +1637,9 @@ type projectStoreMemoryRepository struct {
 	projectTaskRequests      []project.CreateProjectTaskRequest
 	projectTaskGraphRequests []project.CreateProjectTaskGraphRequest
 	decisionRequests         []project.DecisionRequest
+
+	acceptanceReady   bool
+	acceptanceRecords []project.ProjectAcceptanceRecord
 }
 
 type projectTaskStatusUpdateRecord struct {
@@ -1576,6 +1654,47 @@ func (r *projectStoreMemoryRepository) GetProject(ctx context.Context, tenantID,
 		return r.projectRecord, nil
 	}
 	return project.Project{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) TransitionProjectStatus(ctx context.Context, tenantID, projectID uuid.UUID, fromStatuses []string, toStatus string) (project.Project, error) {
+	if r.projectRecord.TenantID != tenantID || r.projectRecord.ID != projectID {
+		return project.Project{}, project.ErrProjectNotFound
+	}
+	for _, from := range fromStatuses {
+		if string(r.projectRecord.Status) == from {
+			r.projectRecord.Status = project.ProjectStatus(toStatus)
+			return r.projectRecord, nil
+		}
+	}
+	return project.Project{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) AreAllProjectDemandsTerminal(ctx context.Context, tenantID, projectID uuid.UUID) (bool, error) {
+	return r.acceptanceReady, nil
+}
+
+func (r *projectStoreMemoryRepository) ArchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (project.Project, error) {
+	if r.projectRecord.TenantID != tenantID || r.projectRecord.ID != projectID {
+		return project.Project{}, project.ErrProjectNotFound
+	}
+	r.projectRecord.Status = project.ProjectStatusArchived
+	return r.projectRecord, nil
+}
+
+func (r *projectStoreMemoryRepository) CreateAcceptanceRecordWithEvent(ctx context.Context, req project.CreateAcceptanceRecordWithEventRequest) (project.ProjectAcceptanceRecordWriteResult, error) {
+	event := project.ProjectEvent{ID: uuid.New(), TenantID: req.Event.TenantID, ProjectID: req.Event.ProjectID, EventType: req.Event.EventType}
+	r.events = append(r.events, event)
+	record := project.ProjectAcceptanceRecord{
+		ID:             uuid.New(),
+		TenantID:       req.Acceptance.TenantID,
+		ProjectID:      req.Acceptance.ProjectID,
+		AcceptedByUserID: req.Acceptance.AcceptedByUserID,
+		Status:         req.Acceptance.Status,
+		Conclusion:     req.Acceptance.Conclusion,
+		CreatedEventID: &event.ID,
+	}
+	r.acceptanceRecords = append(r.acceptanceRecords, record)
+	return project.ProjectAcceptanceRecordWriteResult{Event: event, Acceptance: record}, nil
 }
 
 func (r *projectStoreMemoryRepository) GetProjectDemand(ctx context.Context, tenantID, demandID uuid.UUID) (project.ProjectDemand, error) {

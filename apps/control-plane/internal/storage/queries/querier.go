@@ -35,6 +35,9 @@ type Querier interface {
 	CountHighRiskInboxItems(ctx context.Context, arg CountHighRiskInboxItemsParams) (int64, error)
 	CountInboxItems(ctx context.Context, arg CountInboxItemsParams) (int64, error)
 	CountOnlineRuntimeNodesForTenant(ctx context.Context, arg CountOnlineRuntimeNodesForTenantParams) (int64, error)
+	// Aggregates a project's demands into total / non-terminal counts so the coordinator
+	// can decide whether the whole project is ready for human acceptance.
+	CountProjectDemandsByTerminality(ctx context.Context, arg CountProjectDemandsByTerminalityParams) (CountProjectDemandsByTerminalityRow, error)
 	CountProjectTaskStatusesByDemand(ctx context.Context, arg CountProjectTaskStatusesByDemandParams) (CountProjectTaskStatusesByDemandRow, error)
 	CountRuntimeEnrollmentsForTenant(ctx context.Context, arg CountRuntimeEnrollmentsForTenantParams) (int64, error)
 	CountRuntimeNodesForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
@@ -279,6 +282,10 @@ type Querier interface {
 	RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNodeCoversTaskScopeParams) (bool, error)
 	SetTenantTeamStatus(ctx context.Context, arg SetTenantTeamStatusParams) (TenantTeam, error)
 	TouchRuntimeSessionLastSeen(ctx context.Context, arg TouchRuntimeSessionLastSeenParams) (RuntimeSession, error)
+	// Forward-guarded project status transition: only applied when the current status
+	// is in from_statuses. No matching row (wrong current status) yields no rows so the
+	// caller can treat it as an idempotent no-op via ErrNoRows.
+	TransitionProjectStatus(ctx context.Context, arg TransitionProjectStatusParams) (Project, error)
 	UpdateDigitalEmployeeExecutionInstanceStatus(ctx context.Context, arg UpdateDigitalEmployeeExecutionInstanceStatusParams) (DigitalEmployeeExecutionInstance, error)
 	UpdateDigitalEmployeeRunStatus(ctx context.Context, arg UpdateDigitalEmployeeRunStatusParams) (TaskRun, error)
 	UpdateDigitalEmployeeStatus(ctx context.Context, arg UpdateDigitalEmployeeStatusParams) (DigitalEmployee, error)

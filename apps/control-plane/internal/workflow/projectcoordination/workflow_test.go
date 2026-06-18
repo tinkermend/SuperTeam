@@ -345,6 +345,74 @@ func TestProjectCoordinatorWakesDownstreamOnCompletion(t *testing.T) {
 	}, store.dispatchInputs)
 }
 
+func TestProjectCoordinatorRequestsAcceptanceReviewAndAppliesDecision(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	executorID := uuid.New()
+	rootTaskID := uuid.New()
+	acceptanceID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: uuid.New(),
+			Demand:    DemandSnapshot{ID: uuid.New(), Title: "验收触发", Content: "全部完成后进入验收"},
+			DigitalEmployeePool: []ProjectMemberSnapshot{
+				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
+			},
+		},
+		jobID:                       uuid.New(),
+		routeID:                     uuid.New(),
+		routeEventID:                uuid.New(),
+		taskIDs:                     []uuid.UUID{rootTaskID},
+		dispatchableTaskIDs:         []uuid.UUID{rootTaskID},
+		readyDownstreamIDs:          nil,
+		dispatchEvent:               uuid.New(),
+		acceptanceReady:             true,
+		acceptanceDecisionRequestID: acceptanceID,
+	}
+	activities := NewActivities(store, HeuristicRoutePlanner{})
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
+			ProjectID:         store.snapshot.ProjectID,
+			DemandID:          store.snapshot.Demand.ID,
+			SubmittedByUserID: uuid.New(),
+			CreatedEventID:    uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalEmployeeTaskCompleted, EmployeeTaskCompleted{
+			ProjectTaskID:      rootTaskID,
+			ExecutionSummaryID: uuid.New(),
+			CompletedEventID:   uuid.New(),
+		})
+	}, 5*time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			DecisionRequestID: acceptanceID,
+			Decision:          "accepted",
+			ResolvedEventID:   uuid.New(),
+		})
+	}, 10*time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 15*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  store.snapshot.ProjectID,
+		WorkflowID: "project-coordinator:" + store.snapshot.ProjectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Contains(t, store.calls, "IsProjectAcceptanceReady")
+	require.Contains(t, store.calls, "RequestProjectAcceptanceReview")
+	require.Len(t, store.acceptanceReviewInputs, 1)
+	require.Equal(t, store.snapshot.ProjectID, store.acceptanceReviewInputs[0].ProjectID)
+	require.Len(t, store.applyAcceptanceInputs, 1)
+	require.Equal(t, "accepted", store.applyAcceptanceInputs[0].Decision)
+}
+
 func TestProjectCoordinatorRequestsFailureRecoveryWhenTaskFails(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
@@ -597,6 +665,11 @@ type recordingActivityStore struct {
 	failureRecoveryResult      ApplyFailureRecoveryDecisionResult
 	listDispatchableInputs     []ListDispatchableTasksInput
 	resolveReadyInputs         []ResolveReadyDownstreamInput
+	acceptanceReady            bool
+	acceptanceDecisionRequestID uuid.UUID
+	acceptanceReviewInputs     []RequestProjectAcceptanceReviewInput
+	applyAcceptanceInputs      []ApplyProjectAcceptanceDecisionInput
+	applyAcceptanceErr         error
 	holdFailureInputs          []HoldDownstreamForFailureInput
 	applyFailureRecoveryInputs []ApplyFailureRecoveryDecisionInput
 	dispatchInputs             []DispatchProjectTaskInput
@@ -645,6 +718,23 @@ func (s *recordingActivityStore) ResolveReadyDownstream(ctx context.Context, inp
 	s.calls = append(s.calls, "ResolveReadyDownstream")
 	s.resolveReadyInputs = append(s.resolveReadyInputs, input)
 	return s.readyDownstreamIDs, nil
+}
+
+func (s *recordingActivityStore) IsProjectAcceptanceReady(ctx context.Context, input IsProjectAcceptanceReadyInput) (bool, error) {
+	s.calls = append(s.calls, "IsProjectAcceptanceReady")
+	return s.acceptanceReady, nil
+}
+
+func (s *recordingActivityStore) RequestProjectAcceptanceReview(ctx context.Context, input RequestProjectAcceptanceReviewInput) (DecisionRequestResult, error) {
+	s.calls = append(s.calls, "RequestProjectAcceptanceReview")
+	s.acceptanceReviewInputs = append(s.acceptanceReviewInputs, input)
+	return DecisionRequestResult{ID: s.acceptanceDecisionRequestID}, nil
+}
+
+func (s *recordingActivityStore) ApplyProjectAcceptanceDecision(ctx context.Context, input ApplyProjectAcceptanceDecisionInput) error {
+	s.calls = append(s.calls, "ApplyProjectAcceptanceDecision")
+	s.applyAcceptanceInputs = append(s.applyAcceptanceInputs, input)
+	return s.applyAcceptanceErr
 }
 
 func (s *recordingActivityStore) RequestRouteDecisionReview(ctx context.Context, input RequestRouteDecisionReviewInput) (DecisionRequestResult, error) {

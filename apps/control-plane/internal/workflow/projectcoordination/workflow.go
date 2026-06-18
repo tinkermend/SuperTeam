@@ -27,6 +27,7 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 	shutdownCh := workflow.GetSignalChannel(ctx, SignalShutdown)
 	pendingReviews := map[string]pendingRouteDecisionReview{}
 	pendingFailureRecoveries := map[string]pendingTaskFailureRecovery{}
+	pendingAcceptance := map[string]pendingProjectAcceptance{}
 
 	for {
 		selector := workflow.NewSelector(ctx)
@@ -54,7 +55,11 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 		selector.AddReceive(completedCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal EmployeeTaskCompleted
 			c.Receive(ctx, &signal)
-			workflowErr = handleEmployeeTaskCompleted(ctx, input, signal)
+			var pending *pendingProjectAcceptance
+			pending, workflowErr = handleEmployeeTaskCompleted(ctx, input, signal)
+			if workflowErr == nil && pending != nil {
+				pendingAcceptance[pending.DecisionRequestID.String()] = *pending
+			}
 		})
 		selector.AddReceive(failedCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal EmployeeTaskFailed
@@ -73,7 +78,7 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 		selector.AddReceive(humanCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal HumanDecisionSubmitted
 			c.Receive(ctx, &signal)
-			workflowErr = handleHumanDecisionSubmitted(ctx, input, signal, pendingReviews, pendingFailureRecoveries)
+			workflowErr = handleHumanDecisionSubmitted(ctx, input, signal, pendingReviews, pendingFailureRecoveries, pendingAcceptance)
 		})
 		selector.AddReceive(shutdownCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal ShutdownSignal
@@ -99,6 +104,11 @@ type pendingRouteDecisionReview struct {
 }
 
 type pendingTaskFailureRecovery struct {
+	DecisionRequestID uuid.UUID
+	ProjectID         uuid.UUID
+}
+
+type pendingProjectAcceptance struct {
 	DecisionRequestID uuid.UUID
 	ProjectID         uuid.UUID
 }
@@ -193,7 +203,7 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 	return nil, finishCoordinationJob(ctx, input.TenantID, job.ID, "completed", outputEventIDs)
 }
 
-func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, pendingReviews map[string]pendingRouteDecisionReview, pendingFailureRecoveries map[string]pendingTaskFailureRecovery) error {
+func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, pendingReviews map[string]pendingRouteDecisionReview, pendingFailureRecoveries map[string]pendingTaskFailureRecovery, pendingAcceptance map[string]pendingProjectAcceptance) error {
 	if pending, ok := pendingReviews[signal.DecisionRequestID.String()]; ok {
 		delete(pendingReviews, signal.DecisionRequestID.String())
 		return handleRouteReviewDecision(ctx, input, signal, pending)
@@ -205,6 +215,10 @@ func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinator
 			return err
 		}
 		return dispatchProjectTasks(ctx, input.TenantID, pending.ProjectID, readyTaskIDs)
+	}
+	if pending, ok := pendingAcceptance[signal.DecisionRequestID.String()]; ok {
+		delete(pendingAcceptance, signal.DecisionRequestID.String())
+		return applyProjectAcceptanceDecision(ctx, input.TenantID, pending.ProjectID, signal)
 	}
 	return appendSignalObservedEvent(ctx, input, "human decision submitted")
 }
@@ -230,15 +244,40 @@ func handleRouteReviewDecision(ctx workflow.Context, input ProjectCoordinatorInp
 	return finishCoordinationJob(ctx, input.TenantID, pending.CoordinationJobID, "completed", outputEventIDs)
 }
 
-func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorInput, signal EmployeeTaskCompleted) error {
+func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorInput, signal EmployeeTaskCompleted) (*pendingProjectAcceptance, error) {
 	if err := appendSignalObservedEvent(ctx, input, "employee task completed"); err != nil {
-		return err
+		return nil, err
 	}
 	readyTaskIDs, err := resolveReadyDownstream(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, readyTaskIDs)
+	if err := dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, readyTaskIDs); err != nil {
+		return nil, err
+	}
+	// No further downstream to dispatch from this completion; if the whole project is
+	// now terminal, open a human acceptance review. Idempotent on the store side.
+	if len(readyTaskIDs) == 0 {
+		ready, err := isProjectAcceptanceReady(ctx, input.TenantID, input.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		if !ready {
+			return nil, nil
+		}
+		decision, err := requestProjectAcceptanceReview(ctx, input.TenantID, input.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		if decision.ID == uuid.Nil {
+			return nil, nil
+		}
+		return &pendingProjectAcceptance{
+			DecisionRequestID: decision.ID,
+			ProjectID:         input.ProjectID,
+		}, nil
+	}
+	return nil, nil
 }
 
 func handleEmployeeTaskFailed(ctx workflow.Context, input ProjectCoordinatorInput, signal EmployeeTaskFailed) (*pendingTaskFailureRecovery, error) {
@@ -276,6 +315,38 @@ func applyFailureRecoveryDecision(ctx workflow.Context, tenantID, projectID uuid
 		return nil, err
 	}
 	return result.ReadyTaskIDs, nil
+}
+
+func isProjectAcceptanceReady(ctx workflow.Context, tenantID, projectID uuid.UUID) (bool, error) {
+	var ready bool
+	if err := workflow.ExecuteActivity(ctx, (*Activities).IsProjectAcceptanceReady, IsProjectAcceptanceReadyInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	}).Get(ctx, &ready); err != nil {
+		return false, err
+	}
+	return ready, nil
+}
+
+func requestProjectAcceptanceReview(ctx workflow.Context, tenantID, projectID uuid.UUID) (DecisionRequestResult, error) {
+	var decision DecisionRequestResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).RequestProjectAcceptanceReview, RequestProjectAcceptanceReviewInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	}).Get(ctx, &decision); err != nil {
+		return DecisionRequestResult{}, err
+	}
+	return decision, nil
+}
+
+func applyProjectAcceptanceDecision(ctx workflow.Context, tenantID, projectID uuid.UUID, signal HumanDecisionSubmitted) error {
+	return workflow.ExecuteActivity(ctx, (*Activities).ApplyProjectAcceptanceDecision, ApplyProjectAcceptanceDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: signal.DecisionRequestID,
+		Decision:          signal.Decision,
+		Payload:           signal.Payload,
+	}).Get(ctx, nil)
 }
 
 func listDispatchableTasks(ctx workflow.Context, tenantID, projectID, coordinationJobID uuid.UUID) ([]uuid.UUID, error) {

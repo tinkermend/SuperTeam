@@ -114,6 +114,24 @@ type ResolveReadyDownstreamInput struct {
 	CompletedTaskID uuid.UUID
 }
 
+type IsProjectAcceptanceReadyInput struct {
+	TenantID  uuid.UUID
+	ProjectID uuid.UUID
+}
+
+type RequestProjectAcceptanceReviewInput struct {
+	TenantID  uuid.UUID
+	ProjectID uuid.UUID
+}
+
+type ApplyProjectAcceptanceDecisionInput struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DecisionRequestID uuid.UUID
+	Decision          string
+	Payload           map[string]any
+}
+
 type HoldDownstreamForFailureInput struct {
 	TenantID       uuid.UUID
 	ProjectID      uuid.UUID
