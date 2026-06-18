@@ -10,7 +10,6 @@ import "@xyflow/react/dist/style.css";
 import type { ProjectTaskGraph } from "@/lib/api/projects";
 import {
   buildWorkflowGraphElements,
-  selectInitialWorkflowNodeId,
   type WorkflowGraphElements,
 } from "../workflow-graph-adapter";
 import { WorkflowAttachmentNode, WorkflowTaskNode } from "./workflow-task-node";
@@ -62,7 +61,7 @@ export function WorkflowGraphCanvas({
           onSelectedNodeChange(selectedId);
           onNodeOpen(selectedId);
         }}
-        onPaneClick={() => onSelectedNodeChange(selectInitialWorkflowNodeId(graph))}
+        onPaneClick={() => onSelectedNodeChange(undefined)}
         proOptions={{ hideAttribution: true }}
       >
         <Background />

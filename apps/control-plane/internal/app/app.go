@@ -449,17 +449,15 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 }
 
 func routePlannerFromConfig(cfg config.PlannerConfig) projectcoordination.RoutePlanner {
-	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
-	case "", "deepseek":
-		return projectcoordination.NewDeepSeekRoutePlanner(projectcoordination.DeepSeekPlannerConfig{
-			APIKey:      cfg.APIKey,
-			BaseURL:     cfg.BaseURL,
-			Model:       cfg.Model,
-			MaxTokens:   cfg.MaxTokens,
-			Temperature: cfg.Temperature,
-			MaxAttempts: cfg.MaxAttempts,
-		})
-	default:
-		return projectcoordination.HeuristicRoutePlanner{}
-	}
+	// Planning is reasoning-model only; there is no non-reasoning fallback, so any
+	// configured provider resolves to the reasoning planner. Misconfiguration then
+	// surfaces as a planning error instead of a silent heuristic fan-out.
+	return projectcoordination.NewDeepSeekRoutePlanner(projectcoordination.DeepSeekPlannerConfig{
+		APIKey:      cfg.APIKey,
+		BaseURL:     cfg.BaseURL,
+		Model:       cfg.Model,
+		MaxTokens:   cfg.MaxTokens,
+		Temperature: cfg.Temperature,
+		MaxAttempts: cfg.MaxAttempts,
+	})
 }

@@ -10,7 +10,11 @@ import (
 
 func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorInput) error {
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 30 * time.Second,
+		// Sized for the reasoning-model planner activity (PlanDemandRoute), which can
+		// run well over a minute; it must exceed the planner's request timeout so the
+		// HTTP call, not the activity, owns the deadline. Other activities finish fast,
+		// so this is only a ceiling, not added latency.
+		StartToCloseTimeout: 180 * time.Second,
 		RetryPolicy:         defaultRetryPolicy(),
 	})
 	demandCh := workflow.GetSignalChannel(ctx, SignalDemandSubmitted)

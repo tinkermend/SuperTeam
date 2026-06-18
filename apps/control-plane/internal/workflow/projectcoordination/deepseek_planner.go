@@ -20,7 +20,10 @@ var (
 )
 
 const maxDeepSeekChatCompletionResponseBytes = 1 << 20
-const defaultDeepSeekRequestTimeout = 20 * time.Second
+// defaultDeepSeekRequestTimeout is generous because the planner targets a reasoning
+// model, whose chain-of-thought on a full project planning prompt routinely takes far
+// longer than a non-reasoning completion before it emits the final JSON content.
+const defaultDeepSeekRequestTimeout = 120 * time.Second
 
 type DeepSeekPlannerConfig struct {
 	APIKey         string

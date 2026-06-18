@@ -2,13 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { FolderKanban, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { LiquidCard, SemanticIconTile, StatusBadge } from "@/components/superteam";
 import type {
   ProjectDemandLaunchDetail,
   ProjectTaskGraph,
   WorkflowInstanceSummary,
 } from "@/lib/api/projects";
-import { selectInitialWorkflowNodeId, taskNodeId } from "../workflow-graph-adapter";
+import { taskNodeId } from "../workflow-graph-adapter";
 import { workflowStatusLabel, workflowStatusTone } from "../workflow-status";
 import { WorkflowGraphCanvas } from "./workflow-graph-canvas";
 import { WorkflowNodeInspector } from "./workflow-node-inspector";
@@ -26,13 +33,7 @@ export function WorkflowDetail({
   instance,
   isError,
 }: WorkflowDetailProps) {
-  const initialSelectedNodeId = useMemo(
-    () => (graph?.nodes.length ? selectInitialWorkflowNodeId(graph) : undefined),
-    [graph],
-  );
-  const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(
-    initialSelectedNodeId,
-  );
+  const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
 
   useEffect(() => {
     setSelectedNodeId((current) => {
@@ -41,14 +42,16 @@ export function WorkflowDetail({
         return current;
       }
 
-      return initialSelectedNodeId;
+      return undefined;
     });
-  }, [graph, initialSelectedNodeId]);
+  }, [graph]);
 
   const selectedTask = useMemo(
     () => graph?.nodes.find((node) => taskNodeId(node.id) === selectedNodeId),
     [graph, selectedNodeId],
   );
+
+  const isInspectorOpen = Boolean(selectedNodeId && selectedTask);
 
   if (isError) {
     return (
@@ -101,17 +104,12 @@ export function WorkflowDetail({
         </div>
 
         {isGraphReady && graph ? (
-          <div className="grid min-w-0 gap-4 p-4 @5xl/workflow-graph:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="min-w-0 p-4">
             <WorkflowGraphCanvas
               graph={graph}
               onNodeOpen={setSelectedNodeId}
               onSelectedNodeChange={setSelectedNodeId}
               selectedNodeId={selectedNodeId}
-            />
-            <WorkflowNodeInspector
-              graph={graph}
-              selectedTask={selectedTask}
-              variant="card"
             />
           </div>
         ) : (
@@ -120,6 +118,33 @@ export function WorkflowDetail({
           </div>
         )}
       </LiquidCard>
+
+      {isGraphReady && graph ? (
+        <Dialog
+          onOpenChange={(open) => {
+            if (!open) setSelectedNodeId(undefined);
+          }}
+          open={isInspectorOpen}
+        >
+          <DialogContent className="flex max-h-[85vh] w-full flex-col gap-0 p-0 sm:max-w-xl">
+            <DialogHeader className="shrink-0 border-b px-5 py-4">
+              <DialogTitle className="text-base font-semibold tracking-normal">
+                节点详情
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                查看任务节点的负责人、阻塞、输入输出与执行结果
+              </DialogDescription>
+            </DialogHeader>
+            <div className="min-h-0 overflow-y-auto px-5 py-4">
+              <WorkflowNodeInspector
+                graph={graph}
+                selectedTask={selectedTask}
+                variant="dialog"
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 }

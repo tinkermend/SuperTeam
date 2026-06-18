@@ -1662,6 +1662,41 @@ func TestRetryWorkflowSignalReplaysFailedDemandSignal(t *testing.T) {
 	}
 }
 
+func TestParseEvidenceRefElement(t *testing.T) {
+	if _, ok := parseEvidenceRefElement(map[string]any{"summary": "no ref"}); ok {
+		t.Fatalf("expected element without source ref to be skipped")
+	}
+	if _, ok := parseEvidenceRefElement(42); ok {
+		t.Fatalf("expected non string/map element to be skipped")
+	}
+	strParsed, ok := parseEvidenceRefElement("s3://bucket/report.md")
+	if !ok || strParsed.SourceRef != "s3://bucket/report.md" || strParsed.Title != "s3://bucket/report.md" ||
+		strParsed.EvidenceType != "execution_evidence" || strParsed.SourceType != "runtime_output" {
+		t.Fatalf("unexpected string parse: %#v ok=%v", strParsed, ok)
+	}
+	mapParsed, ok := parseEvidenceRefElement(map[string]any{
+		"ref": "doc-1", "title": "需求摘要文档", "summary": "v1.0", "type": "document", "source_type": "workspace_file",
+	})
+	if !ok || mapParsed.SourceRef != "doc-1" || mapParsed.Title != "需求摘要文档" || mapParsed.Summary != "v1.0" ||
+		mapParsed.EvidenceType != "document" || mapParsed.SourceType != "workspace_file" {
+		t.Fatalf("unexpected map parse: %#v ok=%v", mapParsed, ok)
+	}
+}
+
+func TestParseArtifactRefElement(t *testing.T) {
+	if _, ok := parseArtifactRefElement(map[string]any{"title": "no ref"}); ok {
+		t.Fatalf("expected element without object ref to be skipped")
+	}
+	strParsed, ok := parseArtifactRefElement("artifact-1")
+	if !ok || strParsed.ObjectRef != "artifact-1" || strParsed.Title != "artifact-1" || strParsed.ArtifactType != "execution_artifact" {
+		t.Fatalf("unexpected string parse: %#v ok=%v", strParsed, ok)
+	}
+	mapParsed, ok := parseArtifactRefElement(map[string]any{"id": "plan-0.1", "title": "任务计划草案", "type": "plan", "content_type": "text/markdown"})
+	if !ok || mapParsed.ObjectRef != "plan-0.1" || mapParsed.Title != "任务计划草案" || mapParsed.ArtifactType != "plan" || mapParsed.ContentType != "text/markdown" {
+		t.Fatalf("unexpected map parse: %#v ok=%v", mapParsed, ok)
+	}
+}
+
 func TestCompleteProjectTaskWritesSummaryAndSignalsCoordinator(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -1719,8 +1754,11 @@ func TestCompleteProjectTaskWritesSummaryAndSignalsCoordinator(t *testing.T) {
 	if coordinator.completedSignals != 1 || coordinator.lastCompleted.ExecutionSummaryID != summary.ID {
 		t.Fatalf("expected completed signal for summary, got count=%d signal=%#v", coordinator.completedSignals, coordinator.lastCompleted)
 	}
-	if repo.eventTypes[len(repo.eventTypes)-1] != ProjectEventTaskCompleted {
-		t.Fatalf("expected completed event, got %#v", repo.eventTypes)
+	if countProjectEvents(repo.eventTypes, ProjectEventTaskCompleted) != 1 {
+		t.Fatalf("expected one completed event, got %#v", repo.eventTypes)
+	}
+	if countProjectEvents(repo.eventTypes, ProjectEventEvidenceLinked) != 1 || countProjectEvents(repo.eventTypes, ProjectEventArtifactLinked) != 1 {
+		t.Fatalf("expected evidence+artifact materialization events, got %#v", repo.eventTypes)
 	}
 }
 
@@ -1770,7 +1808,7 @@ func TestCompleteProjectTaskWithRequiredOutputsContractWritesSummaryAndSignalsCo
 	require.Equal(t, "completed", repo.tasks[0].Status)
 	require.Len(t, repo.executionSummaries, 1)
 	require.Equal(t, 1, coordinator.completedSignals)
-	require.Equal(t, []ProjectEventType{ProjectEventTaskCompleted}, repo.eventTypes)
+	require.Equal(t, ProjectEventTaskCompleted, repo.eventTypes[0])
 }
 
 func TestCompleteProjectTaskMissingInformationContractRequiresExplicitArray(t *testing.T) {
@@ -1808,7 +1846,7 @@ func TestCompleteProjectTaskMissingInformationContractRequiresExplicitArray(t *t
 
 	require.NoError(t, err)
 	require.Equal(t, task.ID, summary.ProjectTaskID)
-	require.Equal(t, []ProjectEventType{ProjectEventTaskCompleted}, repo.eventTypes)
+	require.Equal(t, ProjectEventTaskCompleted, repo.eventTypes[0])
 }
 
 func TestCompleteProjectTaskWorkProductsContractRequiresBoundRunProducts(t *testing.T) {
@@ -1844,7 +1882,7 @@ func TestCompleteProjectTaskWorkProductsContractRequiresBoundRunProducts(t *test
 
 	require.NoError(t, err)
 	require.Equal(t, task.ID, summary.ProjectTaskID)
-	require.Equal(t, []ProjectEventType{ProjectEventTaskCompleted}, repo.eventTypes)
+	require.Equal(t, ProjectEventTaskCompleted, repo.eventTypes[0])
 }
 
 func TestCompleteProjectTaskHandoffContractRequiredRefsMissingCustomRefFails(t *testing.T) {
@@ -1894,7 +1932,7 @@ func TestCompleteProjectTaskHandoffContractRequiredRefsMatchWorkProductFields(t 
 	require.Equal(t, "completed", repo.tasks[0].Status)
 	require.Len(t, repo.executionSummaries, 1)
 	require.Equal(t, 1, coordinator.completedSignals)
-	require.Equal(t, []ProjectEventType{ProjectEventTaskCompleted}, repo.eventTypes)
+	require.Equal(t, ProjectEventTaskCompleted, repo.eventTypes[0])
 }
 
 func TestCompleteProjectTaskContractMissingEventAppendFailureReturnsAppendError(t *testing.T) {
@@ -1936,7 +1974,7 @@ func TestCompleteProjectTaskEmptyLegacyContractStillCompletes(t *testing.T) {
 	require.Equal(t, "completed", repo.tasks[0].Status)
 	require.Len(t, repo.executionSummaries, 1)
 	require.Equal(t, 1, coordinator.completedSignals)
-	require.Equal(t, []ProjectEventType{ProjectEventTaskCompleted}, repo.eventTypes)
+	require.Equal(t, ProjectEventTaskCompleted, repo.eventTypes[0])
 }
 
 func newProjectServiceWritebackFixture(t *testing.T, taskOverrides ProjectTask) (*Service, *memoryRepository, *fakeCoordinatorSignalClient, ProjectTask, uuid.UUID) {

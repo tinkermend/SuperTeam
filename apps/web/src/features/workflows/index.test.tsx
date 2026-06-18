@@ -400,7 +400,7 @@ describe("WorkflowView", () => {
     expect(prLink.textContent).not.toContain("P1");
   });
 
-  it("renders selected demand task and other visible instances when graph has nodes", async () => {
+  it("renders the selected demand task graph full width without a sidebar list", async () => {
     const screen = await renderWorkflowView({
       fetcher: createWorkflowFetcher({
         graph: makeGraph([makeGraphNode("task-1", "服务健康巡检", "assigned")]),
@@ -409,8 +409,12 @@ describe("WorkflowView", () => {
 
     await expect.element(screen.getByText("服务健康巡检").first()).toBeVisible();
     await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
-    await expect.element(screen.getByText("节点详情")).toBeVisible();
-    await expect.element(screen.getByText("PR 审查")).toBeVisible();
+
+    // 节点详情仅在点击节点后以弹窗形式出现，进入页面时不预选、不渲染固定卡片
+    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
+
+    // 流程实例侧栏已废弃，"PR 审查" 不再作为详情页条目出现
+    await expect.element(screen.getByText("PR 审查")).not.toBeInTheDocument();
   });
 
   it("renders the demand summary in the graph surface above the canvas", async () => {
@@ -432,7 +436,7 @@ describe("WorkflowView", () => {
     expect(detailMainCard?.textContent).toContain("生产支付链路成功率持续下降，需要定位并恢复。");
   });
 
-  it("keeps nested graph layouts stacked until the graph column has room", async () => {
+  it("renders the canvas full width without a fixed inspector column", async () => {
     const screen = await renderWorkflowView({
       fetcher: createWorkflowFetcher({
         graph: makeGraph([makeGraphNode("task-1", "服务健康巡检", "assigned")]),
@@ -441,26 +445,15 @@ describe("WorkflowView", () => {
 
     await expect.element(screen.getByTestId("workflow-canvas")).toBeVisible();
 
-    const canvasElement = screen.getByTestId("workflow-canvas").element();
-    const graphShell = canvasElement.parentElement;
-    const graphAndInspectorGrid = graphShell?.parentElement;
-    const detailMainCard = graphAndInspectorGrid?.parentElement;
-    const detailRootGrid = detailMainCard?.parentElement;
+    // 整个流程详情根节点不再使用「图 + 检查器」双列 grid，
+    // 也不再使用任何固定检查器列宽
+    const root = screen.getByTestId("workflow-canvas").element().closest(".min-w-0");
+    const detailHtml = document.body.innerHTML;
 
-    expect(graphShell?.className).toContain("w-full");
-    expect(graphShell?.className).toContain("min-w-0");
-    expect(detailMainCard?.className).toContain("@container/workflow-graph");
-    expect(graphAndInspectorGrid?.className).toContain(
-      "@5xl/workflow-graph:grid-cols-[minmax(0,1fr)_360px]",
-    );
-    expect(graphAndInspectorGrid?.className).not.toContain("xl:grid-cols");
-    expect(graphAndInspectorGrid?.className).not.toContain("min-[");
-    expect(graphAndInspectorGrid?.className).not.toContain(
-      "@[820px]/workflow-graph:grid-cols",
-    );
-    expect(detailRootGrid?.className).not.toContain("lg:grid-cols");
-    expect(detailRootGrid?.className).not.toContain("2xl:grid-cols");
-    expect(detailRootGrid?.className).toContain("min-w-0");
+    expect(detailHtml).not.toContain("@5xl/workflow-graph:grid-cols-[minmax(0,1fr)_360px]");
+    expect(detailHtml).not.toContain("xl:grid-cols-[360px_minmax(0,1fr)]");
+    // 容器宽度仍受 min-w-0 约束，保证画布可缩放
+    expect(root).not.toBeNull();
   });
 
   it("does not render a previous demand graph under the current demand detail", async () => {
@@ -482,7 +475,7 @@ describe("WorkflowView", () => {
     await expect.element(screen.getByText("上一需求任务")).not.toBeInTheDocument();
   });
 
-  it("updates the right inspector when a task card is clicked", async () => {
+  it("opens a centered dialog with node details when a task node is clicked", async () => {
     const graph = makeGraph(
       [
         makeGraphNode("task-failed", "失败任务", "failed", {
@@ -543,16 +536,24 @@ describe("WorkflowView", () => {
       fetcher: createWorkflowFetcher({ graph }),
     });
 
+    // 进入页面时不预选节点，节点详情弹窗不出现，也不会泄露其他节点内容
     await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
-    await expect.element(screen.getByText("失败报告")).toBeVisible();
+    await expect.element(screen.getByText("失败报告")).not.toBeInTheDocument();
+    await expect.element(screen.getByText("巡检报告")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "巡检任务" }));
 
-    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
+    // 点击节点后弹出居中弹窗，展示该节点详情
+    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "巡检任务" })).toBeVisible();
     await expect.element(screen.getByText("巡检报告")).toBeVisible();
     await expect.element(screen.getByText("queued · codex · runtime-b")).toBeVisible();
     await expect.element(screen.getByRole("link", { name: "查看巡检任务 Runtime" })).toBeVisible();
+
+    // 通过弹窗关闭按钮收起弹窗
+    await userEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
   });
 
   it("updates the inspector to the parent task when a decision attachment node is clicked", async () => {
@@ -589,7 +590,8 @@ describe("WorkflowView", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "确认上线风险" }));
 
-    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).not.toBeInTheDocument();
+    // 点击决策附件节点后弹出居中弹窗，并解析到其父任务「待审批任务」
+    await expect.element(screen.getByRole("dialog", { name: "节点详情" })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "待审批任务" })).toBeVisible();
     await expect.element(screen.getByText("审批结果")).toBeVisible();
     await expect.element(screen.getByRole("link", { name: "查看待审批任务审批" })).toBeVisible();

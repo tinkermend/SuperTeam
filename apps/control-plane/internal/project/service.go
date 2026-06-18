@@ -1352,6 +1352,15 @@ func (s *Service) CompleteProjectTask(ctx context.Context, req CompleteProjectTa
 	if err != nil {
 		return nil, err
 	}
+	// Materialize the task's structured evidence/artifacts into the project read
+	// models so /evidence and /artifacts surface them. Best-effort: a materialization
+	// failure must not roll back an already-completed task, so it is audited, not returned.
+	if err := s.materializeTaskCompletionEvidence(ctx, task, req, result.Summary.ID); err != nil {
+		_ = s.appendWorkflowSignalEvent(ctx, req.TenantID, task.ProjectID, "EvidenceMaterialization", "failed", err, map[string]any{
+			"project_task_id":      task.ID.String(),
+			"execution_summary_id": result.Summary.ID.String(),
+		})
+	}
 	if err := s.coordinator.SignalEmployeeTaskCompleted(ctx, EmployeeTaskCompletedSignal{
 		TenantID:           req.TenantID,
 		ProjectID:          task.ProjectID,
@@ -1368,6 +1377,165 @@ func (s *Service) CompleteProjectTask(ctx context.Context, req CompleteProjectTa
 		return nil, err
 	}
 	return &result.Summary, nil
+}
+
+type parsedEvidenceRef struct {
+	EvidenceType string
+	Title        string
+	Summary      string
+	SourceType   string
+	SourceRef    string
+}
+
+type parsedArtifactRef struct {
+	ArtifactType string
+	Title        string
+	ObjectRef    string
+	ContentType  string
+	Checksum     string
+}
+
+// materializeTaskCompletionEvidence turns the structured evidence_refs/artifact_refs a
+// digital employee returns on completion into ProjectEvidenceRef / ProjectArtifactRef
+// read-model rows, reusing the same create paths as the manual evidence/artifact APIs.
+// Re-completion is blocked by the writeback status guard, so this runs once per task.
+// Returns the first error encountered; the caller treats it as best-effort.
+func (s *Service) materializeTaskCompletionEvidence(ctx context.Context, task ProjectTask, req CompleteProjectTaskRequest, summaryID uuid.UUID) error {
+	var firstErr error
+	record := func(err error) {
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	for _, raw := range req.ArtifactRefs {
+		parsed, ok := parseArtifactRefElement(raw)
+		if !ok {
+			continue
+		}
+		artifact, err := s.repository.CreateArtifactRef(ctx, CreateArtifactRefRequest{
+			TenantID:        req.TenantID,
+			ProjectID:       task.ProjectID,
+			ProjectTaskID:   &task.ID,
+			ArtifactType:    parsed.ArtifactType,
+			Title:           parsed.Title,
+			ObjectRef:       parsed.ObjectRef,
+			ContentType:     parsed.ContentType,
+			Checksum:        parsed.Checksum,
+			RetentionStatus: "pending",
+		})
+		if err != nil {
+			record(err)
+			continue
+		}
+		_, err = s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+			TenantID:     req.TenantID,
+			ProjectID:    task.ProjectID,
+			EventType:    ProjectEventArtifactLinked,
+			ActorType:    "digital_employee",
+			ActorID:      req.DigitalEmployeeID.String(),
+			ResourceType: strPtr("project_artifact_ref"),
+			ResourceID:   strPtr(artifact.ID.String()),
+			Summary:      "项目工件已关联",
+			Payload: map[string]any{
+				"artifact_type":   parsed.ArtifactType,
+				"title":           parsed.Title,
+				"project_task_id": task.ID.String(),
+			},
+		})
+		record(err)
+	}
+	submittedBy := req.DigitalEmployeeID
+	for _, raw := range req.EvidenceRefs {
+		parsed, ok := parseEvidenceRefElement(raw)
+		if !ok {
+			continue
+		}
+		_, err := s.CreateEvidenceRef(ctx, CreateEvidenceRefServiceRequest{
+			TenantID:           req.TenantID,
+			ProjectID:          task.ProjectID,
+			ActorType:          "digital_employee",
+			ActorID:            req.DigitalEmployeeID,
+			ProjectTaskID:      &task.ID,
+			RouteDecisionID:    task.RouteDecisionID,
+			ExecutionSummaryID: &summaryID,
+			EvidenceType:       parsed.EvidenceType,
+			Title:              parsed.Title,
+			Summary:            parsed.Summary,
+			SourceType:         parsed.SourceType,
+			SourceRef:          parsed.SourceRef,
+			SubmittedByType:    "digital_employee",
+			SubmittedByID:      &submittedBy,
+		})
+		record(err)
+	}
+	return firstErr
+}
+
+// parseEvidenceRefElement maps a completion evidence_ref element into a parsedEvidenceRef.
+// Elements are either a plain string ref or a map[string]any with ref/id/title/type keys
+// (matching addReferenceTokens). ok is false when no usable source ref is present.
+func parseEvidenceRefElement(value any) (parsedEvidenceRef, bool) {
+	parsed := parsedEvidenceRef{EvidenceType: "execution_evidence", SourceType: "runtime_output"}
+	switch typed := value.(type) {
+	case string:
+		parsed.SourceRef = strings.TrimSpace(typed)
+	case map[string]any:
+		parsed.SourceRef = firstRefString(typed, "source_ref", "ref", "id")
+		parsed.Title = firstRefString(typed, "title")
+		parsed.Summary = firstRefString(typed, "summary")
+		if t := firstRefString(typed, "evidence_type", "type"); t != "" {
+			parsed.EvidenceType = t
+		}
+		if st := firstRefString(typed, "source_type"); st != "" {
+			parsed.SourceType = st
+		}
+	default:
+		return parsedEvidenceRef{}, false
+	}
+	if parsed.SourceRef == "" {
+		return parsedEvidenceRef{}, false
+	}
+	if parsed.Title == "" {
+		parsed.Title = parsed.SourceRef
+	}
+	return parsed, true
+}
+
+// parseArtifactRefElement maps a completion artifact_ref element into a parsedArtifactRef.
+func parseArtifactRefElement(value any) (parsedArtifactRef, bool) {
+	parsed := parsedArtifactRef{ArtifactType: "execution_artifact"}
+	switch typed := value.(type) {
+	case string:
+		parsed.ObjectRef = strings.TrimSpace(typed)
+	case map[string]any:
+		parsed.ObjectRef = firstRefString(typed, "object_ref", "ref", "id")
+		parsed.Title = firstRefString(typed, "title")
+		parsed.ContentType = firstRefString(typed, "content_type")
+		parsed.Checksum = firstRefString(typed, "checksum")
+		if t := firstRefString(typed, "artifact_type", "type"); t != "" {
+			parsed.ArtifactType = t
+		}
+	default:
+		return parsedArtifactRef{}, false
+	}
+	if parsed.ObjectRef == "" {
+		return parsedArtifactRef{}, false
+	}
+	if parsed.Title == "" {
+		parsed.Title = parsed.ObjectRef
+	}
+	return parsed, true
+}
+
+func firstRefString(m map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if text, ok := m[key].(string); ok {
+			if trimmed := strings.TrimSpace(text); trimmed != "" {
+				return trimmed
+			}
+		}
+	}
+	return ""
 }
 
 type completionContractValidation struct {

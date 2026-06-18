@@ -36,7 +36,7 @@ func TestProjectCoordinatorHandlesDemandSubmitted(t *testing.T) {
 		dispatchEvent: uuid.New(),
 	}
 	store.dispatchableTaskIDs = []uuid.UUID{store.taskID}
-	activities := NewActivities(store)
+	activities := NewActivities(store, HeuristicRoutePlanner{})
 	env.RegisterActivity(activities)
 	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
@@ -94,7 +94,7 @@ func TestProjectCoordinatorDispatchesOnlyRootTasks(t *testing.T) {
 		dispatchableTaskIDs: []uuid.UUID{rootTaskID},
 		dispatchEvent:       uuid.New(),
 	}
-	activities := NewActivities(store)
+	activities := NewActivities(store, HeuristicRoutePlanner{})
 	env.RegisterActivity(activities)
 	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
@@ -156,7 +156,7 @@ func TestProjectCoordinatorPausesDispatchWhenRouteRequiresHumanReview(t *testing
 		dispatchEvent:     uuid.New(),
 	}
 	store.dispatchableTaskIDs = []uuid.UUID{store.taskID}
-	activities := NewActivities(store)
+	activities := NewActivities(store, HeuristicRoutePlanner{})
 	env.RegisterActivity(activities)
 	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
@@ -222,7 +222,7 @@ func TestProjectCoordinatorDispatchesPendingTasksAfterHumanApproval(t *testing.T
 		},
 		dispatchEvent: uuid.New(),
 	}
-	activities := NewActivities(store)
+	activities := NewActivities(store, HeuristicRoutePlanner{})
 	env.RegisterActivity(activities)
 	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
@@ -296,7 +296,7 @@ func TestProjectCoordinatorWakesDownstreamOnCompletion(t *testing.T) {
 		readyDownstreamIDs:  []uuid.UUID{downstreamTaskID},
 		dispatchEvent:       uuid.New(),
 	}
-	activities := NewActivities(store)
+	activities := NewActivities(store, HeuristicRoutePlanner{})
 	env.RegisterActivity(activities)
 	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
@@ -357,7 +357,7 @@ func TestProjectCoordinatorRequestsFailureRecoveryWhenTaskFails(t *testing.T) {
 		failureRecoveryDecisionID: decisionRequestID,
 		dispatchEvent:             uuid.New(),
 	}
-	activities := NewActivities(store)
+	activities := NewActivities(store, HeuristicRoutePlanner{})
 	env.RegisterActivity(activities)
 	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow(SignalEmployeeTaskFailed, EmployeeTaskFailed{
@@ -406,7 +406,7 @@ func TestProjectCoordinatorRoutesHumanDecisionToFailureRecovery(t *testing.T) {
 		failureRecoveryResult:     ApplyFailureRecoveryDecisionResult{ReadyTaskIDs: []uuid.UUID{replacementTaskID}},
 		dispatchEvent:             uuid.New(),
 	}
-	activities := NewActivities(store)
+	activities := NewActivities(store, HeuristicRoutePlanner{})
 	env.RegisterActivity(activities)
 	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow(SignalEmployeeTaskFailed, EmployeeTaskFailed{
@@ -482,7 +482,7 @@ func TestProjectCoordinatorReturnsUnrecordedDispatchFailure(t *testing.T) {
 		dispatchErr:   errors.New("append dispatch failure event failed"),
 	}
 	store.dispatchableTaskIDs = []uuid.UUID{store.taskID}
-	activities := NewActivities(store)
+	activities := NewActivities(store, HeuristicRoutePlanner{})
 	env.RegisterActivity(activities)
 	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
@@ -528,7 +528,7 @@ func TestProjectCoordinatorContinuesAfterRecordedDispatchFailure(t *testing.T) {
 		dispatchErr:   &ProjectTaskDispatchError{FailureRecorded: true, Err: project.ErrInvalidProject},
 	}
 	store.dispatchableTaskIDs = []uuid.UUID{store.taskID}
-	activities := NewActivities(store)
+	activities := NewActivities(store, HeuristicRoutePlanner{})
 	env.RegisterActivity(activities)
 	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow(SignalDemandSubmitted, DemandSubmitted{
@@ -555,7 +555,7 @@ func TestProjectCoordinatorContinuesAfterRecordedDispatchFailure(t *testing.T) {
 
 func TestActivitiesDispatchProjectTaskWrapsTerminalErrorAsNonRetryable(t *testing.T) {
 	store := &recordingActivityStore{dispatchErr: &ProjectTaskDispatchError{FailureRecorded: true, Err: project.ErrInvalidProject}}
-	activities := NewActivities(store)
+	activities := NewActivities(store, HeuristicRoutePlanner{})
 	err := activities.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: uuid.New(), ProjectID: uuid.New(), TaskID: uuid.New()})
 	var appErr *temporal.ApplicationError
 	if !errors.As(err, &appErr) || !appErr.NonRetryable() {
@@ -567,7 +567,7 @@ func TestActivitiesDispatchProjectTaskWrapsTerminalErrorAsNonRetryable(t *testin
 
 func TestActivitiesDispatchProjectTaskKeepsTransientErrorRetryable(t *testing.T) {
 	store := &recordingActivityStore{dispatchErr: errors.New("db timeout")}
-	activities := NewActivities(store)
+	activities := NewActivities(store, HeuristicRoutePlanner{})
 	err := activities.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: uuid.New(), ProjectID: uuid.New(), TaskID: uuid.New()})
 	if err == nil {
 		t.Fatal("expected error")

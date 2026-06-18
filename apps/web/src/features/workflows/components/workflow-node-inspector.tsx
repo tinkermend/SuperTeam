@@ -14,22 +14,9 @@ type WorkflowNodeInspectorProps = {
 export function WorkflowNodeInspector({
   graph,
   selectedTask,
-  variant = "card",
 }: WorkflowNodeInspectorProps) {
   if (!selectedTask) {
-    if (variant === "dialog") {
-      return (
-        <div className="rounded-xl border bg-background/70 p-5 text-sm text-muted-foreground">
-          选择节点查看详情
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex min-h-[420px] items-center justify-center rounded-xl border bg-background/70 p-5 text-sm text-muted-foreground">
-        选择节点查看详情
-      </div>
-    );
+    return null;
   }
 
   const run = graph.runs.find((item) => item.project_task_id === selectedTask.id);
@@ -41,21 +28,18 @@ export function WorkflowNodeInspector({
   );
   const ownerName = employeeNameForTask(graph, selectedTask);
 
-  const content = (
+  return (
     <>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-muted-foreground">节点详情</p>
-          <h3 className="mt-1 line-clamp-2 text-base font-semibold tracking-normal">
-            {selectedTask.title}
-          </h3>
-        </div>
-        <StatusBadge tone={taskStatusTone(selectedTask.status)}>
+        <h3 className="line-clamp-3 text-base font-semibold leading-6 tracking-normal">
+          {selectedTask.title}
+        </h3>
+        <StatusBadge className="shrink-0" tone={taskStatusTone(selectedTask.status)}>
           {selectedTask.status}
         </StatusBadge>
       </div>
 
-      <div className="mt-4 divide-y text-sm">
+      <div className="mt-2 divide-y text-sm">
         <InspectorRow label="负责人" value={ownerName} />
         <InspectorRow label="阻塞" value={formatBlocker(selectedTask)} />
         <InspectorRow label="输入" value={formatValue(selectedTask.input_requirements)} />
@@ -108,20 +92,6 @@ export function WorkflowNodeInspector({
         />
       </div>
     </>
-  );
-
-  if (variant === "dialog") {
-    return (
-      <div className="rounded-xl border bg-background/70 p-4">
-        {content}
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-[420px] rounded-xl border bg-background/70 p-4">
-      {content}
-    </div>
   );
 }
 
@@ -188,7 +158,9 @@ function InspectorRow({
         <span className="text-xs font-medium text-muted-foreground">{label}</span>
         {action}
       </div>
-      <p className="min-w-0 break-words text-sm leading-6 text-foreground">{value}</p>
+      <p className="min-w-0 whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+        {value}
+      </p>
     </div>
   );
 }

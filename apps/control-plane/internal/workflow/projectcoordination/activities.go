@@ -10,6 +10,8 @@ import (
 
 var ErrActivityStoreRequired = errors.New("project coordination activity store is required")
 
+var ErrRoutePlannerRequired = errors.New("project coordination route planner is required")
+
 type Activities struct {
 	store   ActivityStore
 	planner RoutePlanner
@@ -31,7 +33,7 @@ type ActivityStore interface {
 }
 
 func NewActivities(store ActivityStore, planner ...RoutePlanner) *Activities {
-	selected := RoutePlanner(HeuristicRoutePlanner{})
+	var selected RoutePlanner
 	if len(planner) > 0 && planner[0] != nil {
 		selected = planner[0]
 	}
@@ -53,18 +55,10 @@ func (a *Activities) CreateCoordinationJob(ctx context.Context, input CreateCoor
 }
 
 func (a *Activities) PlanDemandRoute(ctx context.Context, snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
-	planner := a.planner
-	if planner == nil {
-		planner = HeuristicRoutePlanner{}
+	if a.planner == nil {
+		return RouteDecisionPlan{}, ErrRoutePlannerRequired
 	}
-	plan, err := planner.Plan(ctx, snapshot)
-	if err == nil {
-		return plan, nil
-	}
-	if contextErr := terminalContextError(ctx); contextErr != nil {
-		return RouteDecisionPlan{}, contextErr
-	}
-	return HeuristicRoutePlanner{}.Plan(ctx, snapshot)
+	return a.planner.Plan(ctx, snapshot)
 }
 
 func (a *Activities) PersistRouteDecision(ctx context.Context, input PersistRouteDecisionInput) (RouteDecisionResult, error) {

@@ -3,7 +3,6 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
 import { WorkflowDetail } from "./components/workflow-detail";
 import { WorkflowEntrance } from "./components/workflow-entrance";
-import { WorkflowInstanceList } from "./components/workflow-instance-list";
 import { WorkflowShell } from "./components/workflow-shell";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
@@ -96,18 +95,12 @@ export function WorkflowView({ apiBaseUrl, demandId, fetcher }: WorkflowViewProp
 
   return (
     <WorkflowShell>
-      <div className="grid items-start gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <WorkflowInstanceList
-          instances={instances}
-          selectedDemandId={selectedDemandId}
-        />
-        <WorkflowDetail
-          detail={currentDetail}
-          graph={currentGraph}
-          instance={selected}
-          isError={listQuery.isError || detailQuery.isError || graphQuery.isError}
-        />
-      </div>
+      <WorkflowDetail
+        detail={currentDetail}
+        graph={currentGraph}
+        instance={selected}
+        isError={listQuery.isError || detailQuery.isError || graphQuery.isError}
+      />
     </WorkflowShell>
   );
 }
