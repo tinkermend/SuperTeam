@@ -17,6 +17,38 @@ type ProjectStore struct {
 	approvals  ApprovalCreator
 	inbox      project.DecisionInboxProjector
 	runStarter ProjectTaskRunStarter
+	readiness  DigitalEmployeeReadinessChecker
+}
+
+// WithDigitalEmployeeReadiness attaches a runtime-readiness checker used to filter the
+// coordinator's executor pool to runtime-ready digital employees.
+func (s *ProjectStore) WithDigitalEmployeeReadiness(checker DigitalEmployeeReadinessChecker) *ProjectStore {
+	s.readiness = checker
+	return s
+}
+
+// runtimeReadyEmployeeIDs returns the set of runtime-ready digital-employee principal IDs
+// among the given members. A nil/empty result means "do not filter" (no checker attached,
+// no digital-employee candidates, or a checker error) so behavior stays backward-compatible.
+func (s *ProjectStore) runtimeReadyEmployeeIDs(ctx context.Context, tenantID uuid.UUID, members []project.ProjectMember) map[uuid.UUID]bool {
+	if s.readiness == nil {
+		return nil
+	}
+	ids := make([]uuid.UUID, 0, len(members))
+	for _, member := range members {
+		if member.PrincipalType == project.PrincipalTypeDigitalEmployee && member.PrincipalID != uuid.Nil {
+			ids = append(ids, member.PrincipalID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	ready, err := s.readiness.AreRuntimeReady(ctx, tenantID, ids)
+	if err != nil {
+		// Fail open: a readiness lookup error must not block planning.
+		return nil
+	}
+	return ready
 }
 
 func NewProjectStore(repository project.Repository) *ProjectStore {
@@ -29,6 +61,14 @@ type ApprovalCreator interface {
 
 type ProjectTaskRunStarter interface {
 	StartProjectTaskRun(ctx context.Context, req StartProjectTaskRunRequest) (StartProjectTaskRunResult, error)
+}
+
+// DigitalEmployeeReadinessChecker reports which digital employees are runtime-ready
+// (bound to a healthy online runtime with an approved effective config). The coordinator
+// uses it to filter its executor pool so the reasoning planner only proposes employees
+// that can actually run, instead of stranding tasks on unbound ones.
+type DigitalEmployeeReadinessChecker interface {
+	AreRuntimeReady(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error)
 }
 
 type recoveryDependencyRepository interface {
@@ -65,8 +105,14 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 		return CoordinationSnapshot{}, err
 	}
 	pool := make([]ProjectMemberSnapshot, 0, len(members))
+	readyEmployees := s.runtimeReadyEmployeeIDs(ctx, input.TenantID, members)
 	for _, member := range members {
 		if member.PrincipalType != project.PrincipalTypeDigitalEmployee || member.Status != "active" || !isRoutableDigitalProjectRole(member.ProjectRole) {
+			continue
+		}
+		// Only runtime-ready digital employees are eligible executors; filtering here keeps
+		// the reasoning planner from selecting employees whose runs cannot start.
+		if readyEmployees != nil && !readyEmployees[member.PrincipalID] {
 			continue
 		}
 		displayName := ""
@@ -941,7 +987,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 			"project_task_id":    task.ID.String(),
 			"expected_outputs":   append([]any(nil), task.ExpectedOutputs...),
 			"input_requirements": cloneAnyMap(task.InputRequirements),
-			"handoff_contract":   cloneAnyMap(task.HandoffContract),
+			"handoff_contract":   projectTaskDispatchHandoffContract(task.HandoffContract),
 		},
 	})
 	if err != nil {
@@ -1267,6 +1313,16 @@ func cloneAnyMap(values map[string]any) map[string]any {
 	for key, value := range values {
 		cloned[key] = value
 	}
+	return cloned
+}
+
+// projectTaskDispatchHandoffContract clones a task's handoff contract and forces
+// completion_path to "project_task_writeback". The runtime agent gates project-task
+// completion writeback on this exact value; the planner does not always emit it, so
+// the control-plane enforces it at dispatch to guarantee the run completes the task.
+func projectTaskDispatchHandoffContract(contract map[string]any) map[string]any {
+	cloned := cloneAnyMap(contract)
+	cloned["completion_path"] = "project_task_writeback"
 	return cloned
 }
 

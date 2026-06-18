@@ -108,16 +108,6 @@ func PlanDemandRoute(snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
 	return HeuristicRoutePlanner{}.Plan(context.Background(), snapshot)
 }
 
-func activeExecutorIDs(members []ProjectMemberSnapshot) []uuid.UUID {
-	ids := make([]uuid.UUID, 0, len(members))
-	for _, member := range members {
-		if member.PrincipalID != uuid.Nil && member.ProjectRole == "executor" && member.Status == "active" {
-			ids = append(ids, member.PrincipalID)
-		}
-	}
-	return ids
-}
-
 func highRiskPolicyEnabled(policy map[string]any) bool {
 	value, ok := policy["require_human_review_for_new_demands"].(bool)
 	return ok && value

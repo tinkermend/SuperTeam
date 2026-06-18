@@ -22,6 +22,7 @@ type Querier interface {
 	ApproveRuntimeEnrollmentWithNode(ctx context.Context, arg ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollment, error)
 	ArchiveActiveTenantTeamConfigRevision(ctx context.Context, arg ArchiveActiveTenantTeamConfigRevisionParams) ([]TenantTeamConfigRevision, error)
 	ArchiveProject(ctx context.Context, arg ArchiveProjectParams) (Project, error)
+	AreEmployeesRuntimeReady(ctx context.Context, arg AreEmployeesRuntimeReadyParams) ([]AreEmployeesRuntimeReadyRow, error)
 	AssignProjectTask(ctx context.Context, arg AssignProjectTaskParams) (ProjectTask, error)
 	BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRunParams) (ProjectTask, error)
 	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)

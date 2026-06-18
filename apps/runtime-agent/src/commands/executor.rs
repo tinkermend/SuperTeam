@@ -1100,13 +1100,21 @@ fn project_task_writeback_context_from_metadata(
     {
         return None;
     }
-    let handoff_contract = metadata.get("handoff_contract")?.clone();
+    let handoff_contract = metadata
+        .get("handoff_contract")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
     let completion_path = handoff_contract
         .as_object()
         .and_then(|contract| contract.get("completion_path"))
         .and_then(serde_json::Value::as_str)
-        .map(str::trim)?;
-    if completion_path != "project_task_writeback" {
+        .map(str::trim)
+        .unwrap_or("");
+    // A project_task_dispatch run with a project_task_id completes the project task via
+    // writeback. The control-plane normally sets handoff_contract.completion_path to
+    // "project_task_writeback"; when it is omitted we default to the same behavior so the
+    // task still closes. An explicit non-matching value is respected (no writeback).
+    if !completion_path.is_empty() && completion_path != "project_task_writeback" {
         return None;
     }
     let project_task_id = metadata
@@ -1474,6 +1482,33 @@ mod tests {
         let payload = project_task_session_payload("   ");
 
         assert!(project_task_writeback_context(&payload).is_none());
+    }
+
+    #[test]
+    fn project_task_writeback_context_defaults_completion_path_when_omitted() {
+        // The control-plane normally sets completion_path; the agent falls back to the
+        // writeback path for a project_task_dispatch run when it is omitted.
+        let mut payload = project_task_session_payload("emp-1");
+        payload.metadata = json!({
+            "source": "project_task_dispatch",
+            "project_task_id": "55555555-5555-4555-8555-555555555555",
+            "handoff_contract": {}
+        });
+        let context = project_task_writeback_context(&payload)
+            .expect("writeback context should default to project_task_writeback");
+        assert_eq!(
+            context.project_task_id,
+            "55555555-5555-4555-8555-555555555555"
+        );
+
+        // An explicit non-matching completion_path is still respected (no writeback).
+        let mut other = project_task_session_payload("emp-1");
+        other.metadata = json!({
+            "source": "project_task_dispatch",
+            "project_task_id": "55555555-5555-4555-8555-555555555555",
+            "handoff_contract": {"completion_path": "manual_review"}
+        });
+        assert!(project_task_writeback_context(&other).is_none());
     }
 
     #[test]

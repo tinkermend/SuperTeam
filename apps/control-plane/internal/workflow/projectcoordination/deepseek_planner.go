@@ -372,18 +372,28 @@ func (t *plannerTask) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// decodeRequiredPlannerObject coerces a planner task field into map[string]any.
+// Reasoning models sometimes emit input_requirements / handoff_contract as a JSON
+// array or scalar rather than the object the schema asks for; normalizing here keeps
+// a valid plan from being rejected on shape alone. An object is kept as-is; an array
+// is wrapped as {"items": [...]}; any other scalar becomes {"value": ...}.
 func decodeRequiredPlannerObject(raw json.RawMessage, field string) (map[string]any, error) {
 	if len(raw) == 0 || string(bytes.TrimSpace(raw)) == "null" {
 		return nil, fmt.Errorf("planner task %s must be a JSON object", field)
 	}
 	var object map[string]any
-	if err := json.Unmarshal(raw, &object); err != nil {
-		return nil, fmt.Errorf("planner task %s must be a JSON object: %w", field, err)
+	if err := json.Unmarshal(raw, &object); err == nil && object != nil {
+		return object, nil
 	}
-	if object == nil {
-		return nil, fmt.Errorf("planner task %s must be a JSON object", field)
+	var array []any
+	if err := json.Unmarshal(raw, &array); err == nil {
+		return map[string]any{"items": array}, nil
 	}
-	return object, nil
+	var scalar any
+	if err := json.Unmarshal(raw, &scalar); err == nil && scalar != nil {
+		return map[string]any{"value": scalar}, nil
+	}
+	return nil, fmt.Errorf("planner task %s must be a JSON object", field)
 }
 
 func nonNilMap(value map[string]any) map[string]any {

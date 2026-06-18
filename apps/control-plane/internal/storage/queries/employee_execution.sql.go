@@ -132,6 +132,45 @@ func (q *Queries) AbortProvisionedDigitalEmployee(ctx context.Context, arg Abort
 	return err
 }
 
+const AreEmployeesRuntimeReady = `-- name: AreEmployeesRuntimeReady :many
+SELECT
+    digital_employee_id,
+    is_runtime_ready
+FROM digital_employee_runtime_readiness
+WHERE tenant_id = $1
+  AND digital_employee_id = ANY($2::uuid[])
+`
+
+type AreEmployeesRuntimeReadyParams struct {
+	TenantID           uuid.UUID   `json:"tenant_id"`
+	DigitalEmployeeIds []uuid.UUID `json:"digital_employee_ids"`
+}
+
+type AreEmployeesRuntimeReadyRow struct {
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	IsRuntimeReady    bool      `json:"is_runtime_ready"`
+}
+
+func (q *Queries) AreEmployeesRuntimeReady(ctx context.Context, arg AreEmployeesRuntimeReadyParams) ([]AreEmployeesRuntimeReadyRow, error) {
+	rows, err := q.db.Query(ctx, AreEmployeesRuntimeReady, arg.TenantID, arg.DigitalEmployeeIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AreEmployeesRuntimeReadyRow{}
+	for rows.Next() {
+		var i AreEmployeesRuntimeReadyRow
+		if err := rows.Scan(&i.DigitalEmployeeID, &i.IsRuntimeReady); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const CreateDigitalEmployee = `-- name: CreateDigitalEmployee :one
 INSERT INTO digital_employees (
     tenant_id,
