@@ -38,6 +38,8 @@
   - Render operational status as the primary visible badge.
 - `apps/web/src/features/employees/index.test.tsx`
   - Assert status labels and project-acceptance non-projection.
+- `apps/web/src/lib/api/employees.test.ts`
+  - Add/extend TS type-shape tests for the operational status fields (created if absent).
 
 ---
 
@@ -118,6 +120,15 @@ func TestResolveDigitalEmployeeOperationalStatePriority(t *testing.T) {
 			want: DigitalEmployeeOperationalStatusNeedsConfiguration,
 		},
 		{
+			name: "missing configuration wins over offline runtime",
+			input: DigitalEmployeeOperationalInput{
+				ConfigurationMissing: true,
+				RuntimeUnavailable:   true,
+				DispatchReady:        false,
+			},
+			want: DigitalEmployeeOperationalStatusNeedsConfiguration,
+		},
+		{
 			name: "dispatchable employee without active facts is idle",
 			input: DigitalEmployeeOperationalInput{
 				DispatchReady: true,
@@ -173,9 +184,11 @@ Use this priority order:
 2. `error`
 3. `working`
 4. `queued`
-5. `unavailable`
-6. `needs_configuration`
+5. `needs_configuration`
+6. `unavailable`
 7. `idle`
+
+Order rationale: `needs_configuration` must outrank `unavailable`. A freshly created, unbound employee usually has BOTH no provider binding (`ConfigurationMissing`) AND no online runtime (`RuntimeUnavailable`); the actionable state for the operator is "go configure it", so configuration must win over a generic offline-runtime state. (The earlier draft had `unavailable` ahead of `needs_configuration`, which made unconfigured employees render "不可用" instead of "待配置" in the real mapping even though the isolated unit test passed.)
 
 The resolver must treat `HasProjectAcceptanceBlocker` as project context only. It may appear in the input for explicit guard coverage, but it must not make the employee state `waiting_human`.
 
@@ -258,19 +271,19 @@ func ResolveDigitalEmployeeOperationalState(input DigitalEmployeeOperationalInpu
 		state.Status = DigitalEmployeeOperationalStatusWorking
 	case input.HasQueuedWork:
 		state.Status = DigitalEmployeeOperationalStatusQueued
-	case input.RuntimeUnavailable:
-		state.Status = DigitalEmployeeOperationalStatusUnavailable
-		state.CanDispatch = false
-		state.Reasons = append(state.Reasons, DigitalEmployeeOperationalReason{
-			Code:    "runtime_offline",
-			Message: "Runtime 当前不可用",
-		})
 	case input.ConfigurationMissing:
 		state.Status = DigitalEmployeeOperationalStatusNeedsConfiguration
 		state.CanDispatch = false
 		state.Reasons = append(state.Reasons, DigitalEmployeeOperationalReason{
 			Code:    "configuration_missing",
 			Message: "缺少执行所需配置",
+		})
+	case input.RuntimeUnavailable:
+		state.Status = DigitalEmployeeOperationalStatusUnavailable
+		state.CanDispatch = false
+		state.Reasons = append(state.Reasons, DigitalEmployeeOperationalReason{
+			Code:    "runtime_offline",
+			Message: "Runtime 当前不可用",
 		})
 	case input.DispatchReady:
 		state.Status = DigitalEmployeeOperationalStatusIdle
@@ -341,14 +354,18 @@ does not contain "employee_operational_facts"
 
 - [ ] Update `apps/control-plane/internal/storage/queries/employee_execution.sql`.
 
-Add read-model facts to both `GetDigitalEmployeeOverviewSummary` and `ListDigitalEmployeeOverviewItems` query pipelines. The exact names below must be used so repository tests and generated fields are stable:
+Add read-model facts to both `GetDigitalEmployeeOverviewSummary` and `ListDigitalEmployeeOverviewItems` query pipelines. The exact names below must be used so repository tests and generated fields are stable.
+
+Status-vocabulary alignment (authoritative source: `apps/control-plane/internal/storage/queries/project.sql` aggregate filters): "working" = `('running', 'in_progress')`; "queued" = `('pending', 'planned', 'blocked', 'assigned')`; "waiting human" = `requires_human_approval OR status IN ('waiting_human', 'pending_review')`; "failed" = `('failed')`. Keep these in sync with `project.sql`; do not invent a narrower task-status set here.
+
+Decision-type scope: only `task_failure_recovery` and `route_review` are employee-execution-scoped human blockers (both are tied to an assigned task). `project_acceptance` is project-level and must never flip employee state to `waiting_human`. Use an explicit allowlist rather than `<> 'project_acceptance'` so future decision types are not silently projected onto employees.
 
 ```sql
 pending_employee_decisions AS (
     SELECT
         pt.assigned_digital_employee_id AS digital_employee_id,
         count(*) FILTER (
-            WHERE pdr.decision_type <> 'project_acceptance'
+            WHERE pdr.decision_type IN ('task_failure_recovery', 'route_review')
         ) > 0 AS has_employee_scoped_human_blocker,
         count(*) FILTER (
             WHERE pdr.decision_type = 'project_acceptance'
@@ -358,7 +375,7 @@ pending_employee_decisions AS (
       ON pt.tenant_id = pdr.tenant_id
      AND pt.id = pdr.project_task_id
     WHERE pt.assigned_digital_employee_id IS NOT NULL
-      AND pdr.status_snapshot = 'pending'
+      AND pdr.status_snapshot IN ('pending', 'requested')
     GROUP BY pt.assigned_digital_employee_id
 ),
 employee_operational_facts AS (
@@ -366,12 +383,18 @@ employee_operational_facts AS (
         de.id AS digital_employee_id,
         (
             coalesce(ped.has_employee_scoped_human_blocker, false)
-            OR count(pt.id) FILTER (WHERE pt.status = 'waiting_human') > 0
+            OR count(pt.id) FILTER (
+                WHERE pt.requires_human_approval
+                   OR pt.status IN ('waiting_human', 'pending_review')
+            ) > 0
         ) AS operational_has_employee_scoped_human_blocker,
         coalesce(ped.has_project_acceptance_blocker, false) AS operational_has_project_acceptance_blocker,
         count(pt.id) FILTER (WHERE pt.status IN ('pending', 'planned', 'blocked', 'assigned')) > 0 AS operational_has_queued_work,
-        count(pt.id) FILTER (WHERE pt.status = 'running') > 0 AS operational_has_working_task,
-        count(pt.id) FILTER (WHERE pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'waiting_human')) > 0 AS operational_has_active_work,
+        count(pt.id) FILTER (WHERE pt.status IN ('running', 'in_progress')) > 0 AS operational_has_working_task,
+        count(pt.id) FILTER (
+            WHERE pt.requires_human_approval
+               OR pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review')
+        ) > 0 AS operational_has_active_work,
         count(pt.id) FILTER (WHERE pt.status = 'failed') > 0 AS operational_has_task_failure
     FROM digital_employees de
     LEFT JOIN project_tasks pt
@@ -436,6 +459,14 @@ Add to `DigitalEmployeeOverviewSummary`:
 ```go
 OperationalStatusCounts map[DigitalEmployeeOperationalStatus]int32
 ```
+
+**Summary counts must cover the full filtered result set, not the current page, and must not duplicate the priority logic in SQL.** `ResolveDigitalEmployeeOperationalState` is the single source of truth for the 7-level priority; re-encoding it in `GetDigitalEmployeeOverviewSummary` SQL would drift from the Go resolver. Instead:
+
+- Add (or reuse) an unpaginated facts query that returns the same operational-fact columns produced for items, applying the same filters (`q`, `team_id`, `status`, `employee_type`, `provider_type`, `runtime_node_id`, `risk_level`, `execution_status`, `run_status`) but no `LIMIT`/`OFFSET`. The `employee_operational_facts` / `pending_employee_decisions` CTEs added above are shared by both queries.
+- In the repository, run `ResolveDigitalEmployeeOperationalState` over every row of that full-set result, tally `OperationalStatusCounts[state.Status]++`, and attach the map to the summary.
+- The paginated `ListDigitalEmployeeOverviewItems` query continues to drive per-item `OperationalState` for the visible page only.
+
+Initialize `OperationalStatusCounts` to a non-nil map so the JSON serializes as `{}` (not `null`) when empty.
 
 Add to `DigitalEmployeeOverviewItem`:
 
@@ -713,8 +744,10 @@ Render `item.operational_state.status` as the primary badge. Keep `workbench_sta
 - [ ] Run:
 
 ```bash
-corepack pnpm --dir apps/web test --run src/features/employees/index.test.tsx src/lib/api/employees.test.ts
+corepack pnpm --filter @superteam/web test -- --run src/features/employees/index.test.tsx src/lib/api/employees.test.ts
 ```
+
+(The repo's `verify:web` uses `--filter @superteam/web`; keep this focused run consistent with that convention.)
 
 Expected output:
 
@@ -803,12 +836,15 @@ Follow every required check in that skill, then report which checks passed and w
 - [ ] Employee `waiting_human` only comes from employee/task/run scoped human decisions.
 - [ ] `project_acceptance` pending is visible at project/workflow level but does not make every employee `waiting_human`.
 - [ ] Runtime offline maps to `error` when active or queued employee work exists; otherwise it maps to `unavailable`.
+- [ ] An unconfigured employee with no online runtime maps to `needs_configuration`, not `unavailable` (config precedence verified by a both-true test case).
+- [ ] Task working/queued/waiting-human/failed status sets match `project.sql` (incl. `in_progress`, `pending_review`, `requires_human_approval`).
+- [ ] Only `task_failure_recovery` and `route_review` pending decisions (status `pending`/`requested`) count as employee-scoped human blockers.
 - [ ] Provider failure maps to `error` after the retry policy has exposed a current failed/unavailable fact.
 - [ ] Task failure maps to `error` until a human recovery decision exists; then it maps to `waiting_human`.
 - [ ] `cancelling` or equivalent active run state maps to `working`.
 - [ ] `workbench_status` remains in the API for backward compatibility.
 - [ ] OpenAPI, Go response structs, TypeScript API types, and Web rendering agree on field names.
-- [ ] Summary counts are based on the full filtered result set, not only the current page.
+- [ ] Summary counts are based on the full filtered result set, not only the current page, and are produced by running the Go resolver over the full-set facts query (priority logic not duplicated in SQL).
 - [ ] Tests cover priority order and project acceptance non-projection.
 
 ---
