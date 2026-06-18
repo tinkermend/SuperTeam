@@ -683,7 +683,7 @@ git commit -m "feat(api): expose digital employee operational state"
 
 ## Task 6: Render Operational Status In Web Employee Overview
 
-- [ ] Update `apps/web/src/lib/api/employees.ts`.
+- [x] Update `apps/web/src/lib/api/employees.ts`.
 
 Add:
 
@@ -711,7 +711,7 @@ export interface DigitalEmployeeOperationalState {
 
 Add `operational_status_counts` to the overview summary type and `operational_state` to each item type.
 
-- [ ] Update `apps/web/src/features/employees/index.tsx`.
+- [x] Update `apps/web/src/features/employees/index.tsx`.
 
 Add label and tone maps:
 
@@ -739,9 +739,9 @@ const operationalStatusTone: Record<DigitalEmployeeOperationalStatus, StatusTone
 
 Render `item.operational_state.status` as the primary badge. Keep `workbench_status` as a secondary compatibility line where the current UI already shows binding/runtime/provider hints.
 
-- [ ] Update web tests so a mocked overview item with `operational_state.status = "waiting_human"` renders `待人工确认`, and an item with only project acceptance pending still renders `空闲`.
+- [x] Update web tests so a mocked overview item with `operational_state.status = "waiting_human"` renders `待人工确认`, and an item with only project acceptance pending still renders `空闲`.
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 corepack pnpm --filter @superteam/web test -- --run src/features/employees/index.test.tsx src/lib/api/employees.test.ts
@@ -756,7 +756,7 @@ Test Files  2 passed
 Tests       passed
 ```
 
-- [ ] Commit web changes:
+- [x] Commit web changes:
 
 ```bash
 git add apps/web/src/lib/api/employees.ts apps/web/src/features/employees/index.tsx apps/web/src/features/employees/index.test.tsx apps/web/src/lib/api/employees.test.ts
