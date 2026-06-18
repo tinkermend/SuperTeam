@@ -33,7 +33,8 @@ type DigitalEmployeeOperationalInput struct {
 	HasWorkingRun                 bool
 	HasQueuedWork                 bool
 	HasEmployeeScopedHumanBlocker bool
-	HasProjectAcceptanceBlocker   bool
+	// HasProjectAcceptanceBlocker is carried only as an explicit guard fact; it must not affect employee-level waiting_human.
+	HasProjectAcceptanceBlocker bool
 }
 
 func ResolveDigitalEmployeeOperationalState(input DigitalEmployeeOperationalInput) DigitalEmployeeOperationalState {
@@ -100,6 +101,9 @@ func resolveDigitalEmployeeOperationalErrorReasons(input DigitalEmployeeOperatio
 }
 
 func newDigitalEmployeeOperationalState(input DigitalEmployeeOperationalInput, status DigitalEmployeeOperationalStatus, reasons []DigitalEmployeeOperationalReason) DigitalEmployeeOperationalState {
+	if reasons == nil {
+		reasons = []DigitalEmployeeOperationalReason{}
+	}
 	return DigitalEmployeeOperationalState{
 		Status:      status,
 		Reasons:     reasons,
@@ -112,7 +116,7 @@ func canDispatchDigitalEmployeeOperationalState(input DigitalEmployeeOperational
 		return false
 	}
 	switch status {
-	case DigitalEmployeeOperationalStatusIdle, DigitalEmployeeOperationalStatusQueued:
+	case DigitalEmployeeOperationalStatusIdle, DigitalEmployeeOperationalStatusQueued, DigitalEmployeeOperationalStatusWorking:
 		return true
 	default:
 		return false
