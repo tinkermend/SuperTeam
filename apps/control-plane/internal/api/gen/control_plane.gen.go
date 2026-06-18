@@ -273,6 +273,39 @@ func (e DigitalEmployeeExecutionInstanceStatus) Valid() bool {
 	}
 }
 
+// Defines values for DigitalEmployeeOperationalStatus.
+const (
+	DigitalEmployeeOperationalStatusError              DigitalEmployeeOperationalStatus = "error"
+	DigitalEmployeeOperationalStatusIdle               DigitalEmployeeOperationalStatus = "idle"
+	DigitalEmployeeOperationalStatusNeedsConfiguration DigitalEmployeeOperationalStatus = "needs_configuration"
+	DigitalEmployeeOperationalStatusQueued             DigitalEmployeeOperationalStatus = "queued"
+	DigitalEmployeeOperationalStatusUnavailable        DigitalEmployeeOperationalStatus = "unavailable"
+	DigitalEmployeeOperationalStatusWaitingHuman       DigitalEmployeeOperationalStatus = "waiting_human"
+	DigitalEmployeeOperationalStatusWorking            DigitalEmployeeOperationalStatus = "working"
+)
+
+// Valid indicates whether the value is a known member of the DigitalEmployeeOperationalStatus enum.
+func (e DigitalEmployeeOperationalStatus) Valid() bool {
+	switch e {
+	case DigitalEmployeeOperationalStatusError:
+		return true
+	case DigitalEmployeeOperationalStatusIdle:
+		return true
+	case DigitalEmployeeOperationalStatusNeedsConfiguration:
+		return true
+	case DigitalEmployeeOperationalStatusQueued:
+		return true
+	case DigitalEmployeeOperationalStatusUnavailable:
+		return true
+	case DigitalEmployeeOperationalStatusWaitingHuman:
+		return true
+	case DigitalEmployeeOperationalStatusWorking:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DigitalEmployeeOverviewExecutionStatus.
 const (
 	DigitalEmployeeOverviewExecutionStatusActive       DigitalEmployeeOverviewExecutionStatus = "active"
@@ -407,19 +440,19 @@ func (e DigitalEmployeeStatus) Valid() bool {
 
 // Defines values for DigitalEmployeeWorkbenchStatus.
 const (
-	Error          DigitalEmployeeWorkbenchStatus = "error"
-	PendingBinding DigitalEmployeeWorkbenchStatus = "pending_binding"
-	Ready          DigitalEmployeeWorkbenchStatus = "ready"
+	DigitalEmployeeWorkbenchStatusError          DigitalEmployeeWorkbenchStatus = "error"
+	DigitalEmployeeWorkbenchStatusPendingBinding DigitalEmployeeWorkbenchStatus = "pending_binding"
+	DigitalEmployeeWorkbenchStatusReady          DigitalEmployeeWorkbenchStatus = "ready"
 )
 
 // Valid indicates whether the value is a known member of the DigitalEmployeeWorkbenchStatus enum.
 func (e DigitalEmployeeWorkbenchStatus) Valid() bool {
 	switch e {
-	case Error:
+	case DigitalEmployeeWorkbenchStatusError:
 		return true
-	case PendingBinding:
+	case DigitalEmployeeWorkbenchStatusPendingBinding:
 		return true
-	case Ready:
+	case DigitalEmployeeWorkbenchStatusReady:
 		return true
 	default:
 		return false
@@ -1899,6 +1932,22 @@ type DigitalEmployeeLatestRunSummary struct {
 	UpdatedAt    *time.Time                       `json:"updated_at,omitempty"`
 }
 
+// DigitalEmployeeOperationalReason defines model for DigitalEmployeeOperationalReason.
+type DigitalEmployeeOperationalReason struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// DigitalEmployeeOperationalState defines model for DigitalEmployeeOperationalState.
+type DigitalEmployeeOperationalState struct {
+	CanDispatch bool                               `json:"can_dispatch"`
+	Reasons     []DigitalEmployeeOperationalReason `json:"reasons"`
+	Status      DigitalEmployeeOperationalStatus   `json:"status"`
+}
+
+// DigitalEmployeeOperationalStatus defines model for DigitalEmployeeOperationalStatus.
+type DigitalEmployeeOperationalStatus string
+
 // DigitalEmployeeOverview defines model for DigitalEmployeeOverview.
 type DigitalEmployeeOverview struct {
 	Filters      DigitalEmployeeOverviewFilters      `json:"filters"`
@@ -1930,6 +1979,7 @@ type DigitalEmployeeOverviewItem struct {
 	GovernanceSummary DigitalEmployeeGovernanceSummary    `json:"governance_summary"`
 	IdentitySummary   DigitalEmployeeIdentitySummary      `json:"identity_summary"`
 	LatestRunSummary  *DigitalEmployeeLatestRunSummary    `json:"latest_run_summary,omitempty"`
+	OperationalState  DigitalEmployeeOperationalState     `json:"operational_state"`
 	RecentEvents      []DigitalEmployeeRecentEventSummary `json:"recent_events"`
 	WorkbenchStatus   DigitalEmployeeWorkbenchStatus      `json:"workbench_status"`
 }
@@ -1946,16 +1996,17 @@ type DigitalEmployeeOverviewRunStatus string
 
 // DigitalEmployeeOverviewSummary defines model for DigitalEmployeeOverviewSummary.
 type DigitalEmployeeOverviewSummary struct {
-	ErrorCount                 int32 `json:"error_count"`
-	FailedRecentRunCount       int32 `json:"failed_recent_run_count"`
-	HighRiskCount              int32 `json:"high_risk_count"`
-	PendingConfigApprovalCount int32 `json:"pending_config_approval_count"`
-	PendingRuntimeBindingCount int32 `json:"pending_runtime_binding_count"`
-	ReadyCount                 int32 `json:"ready_count"`
-	RunnableCount              int32 `json:"runnable_count"`
-	RunningCount               int32 `json:"running_count"`
-	TotalCount                 int32 `json:"total_count"`
-	WaitingRuntimeCount        int32 `json:"waiting_runtime_count"`
+	ErrorCount                 int32            `json:"error_count"`
+	FailedRecentRunCount       int32            `json:"failed_recent_run_count"`
+	HighRiskCount              int32            `json:"high_risk_count"`
+	OperationalStatusCounts    map[string]int32 `json:"operational_status_counts"`
+	PendingConfigApprovalCount int32            `json:"pending_config_approval_count"`
+	PendingRuntimeBindingCount int32            `json:"pending_runtime_binding_count"`
+	ReadyCount                 int32            `json:"ready_count"`
+	RunnableCount              int32            `json:"runnable_count"`
+	RunningCount               int32            `json:"running_count"`
+	TotalCount                 int32            `json:"total_count"`
+	WaitingRuntimeCount        int32            `json:"waiting_runtime_count"`
 }
 
 // DigitalEmployeePolicyDefaults defines model for DigitalEmployeePolicyDefaults.

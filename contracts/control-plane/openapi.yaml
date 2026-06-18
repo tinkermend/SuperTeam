@@ -6716,6 +6716,41 @@ components:
         - failed
         - cancelled
         - timed_out
+    DigitalEmployeeOperationalStatus:
+      type: string
+      enum:
+        - working
+        - idle
+        - queued
+        - waiting_human
+        - error
+        - unavailable
+        - needs_configuration
+    DigitalEmployeeOperationalReason:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    DigitalEmployeeOperationalState:
+      type: object
+      required:
+        - status
+        - reasons
+        - can_dispatch
+      properties:
+        status:
+          $ref: "#/components/schemas/DigitalEmployeeOperationalStatus"
+        reasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/DigitalEmployeeOperationalReason"
+        can_dispatch:
+          type: boolean
     DigitalEmployeeOverview:
       type: object
       required:
@@ -6750,6 +6785,7 @@ components:
         - pending_runtime_binding_count
         - pending_config_approval_count
         - failed_recent_run_count
+        - operational_status_counts
       properties:
         total_count:
           type: integer
@@ -6781,6 +6817,11 @@ components:
         failed_recent_run_count:
           type: integer
           format: int32
+        operational_status_counts:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int32
     DigitalEmployeeOverviewQueueSummary:
       type: object
       required:
@@ -6805,6 +6846,7 @@ components:
         - governance_summary
         - budget_summary
         - workbench_status
+        - operational_state
         - recent_events
       properties:
         identity_summary:
@@ -6821,6 +6863,8 @@ components:
           $ref: "#/components/schemas/DigitalEmployeeBudgetSummary"
         workbench_status:
           $ref: "#/components/schemas/DigitalEmployeeWorkbenchStatus"
+        operational_state:
+          $ref: "#/components/schemas/DigitalEmployeeOperationalState"
         recent_events:
           type: array
           items:

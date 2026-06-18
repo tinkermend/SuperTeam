@@ -395,7 +395,7 @@ func TestEmployeeMCPRoutesUseConsoleAuthAndCapabilityActions(t *testing.T) {
 	}
 }
 
-func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
+func TestEmployeeRoutesDigitalEmployeeOverviewUsesConsoleTenantAndFilters(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
 		t.Fatalf("create auth service: %v", err)
@@ -443,16 +443,17 @@ func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 
 	var body struct {
 		Summary struct {
-			TotalCount                 int32 `json:"total_count"`
-			RunnableCount              int32 `json:"runnable_count"`
-			RunningCount               int32 `json:"running_count"`
-			WaitingRuntimeCount        int32 `json:"waiting_runtime_count"`
-			ErrorCount                 int32 `json:"error_count"`
-			HighRiskCount              int32 `json:"high_risk_count"`
-			ReadyCount                 int32 `json:"ready_count"`
-			PendingRuntimeBindingCount int32 `json:"pending_runtime_binding_count"`
-			PendingConfigApprovalCount int32 `json:"pending_config_approval_count"`
-			FailedRecentRunCount       int32 `json:"failed_recent_run_count"`
+			TotalCount                 int32            `json:"total_count"`
+			RunnableCount              int32            `json:"runnable_count"`
+			RunningCount               int32            `json:"running_count"`
+			WaitingRuntimeCount        int32            `json:"waiting_runtime_count"`
+			ErrorCount                 int32            `json:"error_count"`
+			HighRiskCount              int32            `json:"high_risk_count"`
+			ReadyCount                 int32            `json:"ready_count"`
+			PendingRuntimeBindingCount int32            `json:"pending_runtime_binding_count"`
+			PendingConfigApprovalCount int32            `json:"pending_config_approval_count"`
+			FailedRecentRunCount       int32            `json:"failed_recent_run_count"`
+			OperationalStatusCounts    map[string]int32 `json:"operational_status_counts"`
 		} `json:"summary"`
 		QueueSummary struct {
 			PendingRuntimeBindingCount int32 `json:"pending_runtime_binding_count"`
@@ -492,8 +493,16 @@ func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 				CostAmount30d     *float64 `json:"cost_amount_30d"`
 				Source            string   `json:"source"`
 			} `json:"budget_summary"`
-			WorkbenchStatus string `json:"workbench_status"`
-			RecentEvents    []struct {
+			WorkbenchStatus  string `json:"workbench_status"`
+			OperationalState struct {
+				Status  string `json:"status"`
+				Reasons []struct {
+					Code    string `json:"code"`
+					Message string `json:"message"`
+				} `json:"reasons"`
+				CanDispatch bool `json:"can_dispatch"`
+			} `json:"operational_state"`
+			RecentEvents []struct {
 				Label      string  `json:"label"`
 				Status     string  `json:"status"`
 				OccurredAt *string `json:"occurred_at"`
@@ -539,6 +548,9 @@ func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 		body.Summary.FailedRecentRunCount != 0 {
 		t.Fatalf("unexpected workbench summary: %#v", body.Summary)
 	}
+	if body.Summary.OperationalStatusCounts == nil || body.Summary.OperationalStatusCounts["idle"] < 1 {
+		t.Fatalf("expected operational status counts with idle count, got %#v", body.Summary.OperationalStatusCounts)
+	}
 	if body.QueueSummary.PendingRuntimeBindingCount != 0 || body.QueueSummary.StaleConfigCount != 0 || body.QueueSummary.FailedRecentRunCount != 0 {
 		t.Fatalf("unexpected queue summary: %#v", body.QueueSummary)
 	}
@@ -547,6 +559,12 @@ func TestDigitalEmployeeOverviewRouteUsesConsoleTenantAndFilters(t *testing.T) {
 	}
 	if body.Items[0].WorkbenchStatus != "ready" {
 		t.Fatalf("expected ready workbench status, got %#v", body.Items[0].WorkbenchStatus)
+	}
+	if body.Items[0].OperationalState.Status != "idle" || !body.Items[0].OperationalState.CanDispatch {
+		t.Fatalf("expected idle dispatchable operational state, got %#v", body.Items[0].OperationalState)
+	}
+	if body.Items[0].OperationalState.Reasons == nil || len(body.Items[0].OperationalState.Reasons) != 0 {
+		t.Fatalf("expected operational state reasons to be an empty JSON array, got %#v", body.Items[0].OperationalState.Reasons)
 	}
 	if len(body.Items[0].RecentEvents) != 3 || body.Items[0].RecentEvents[0].Label != "命令已下发" {
 		t.Fatalf("expected recent events, got %#v", body.Items[0].RecentEvents)
@@ -1764,7 +1782,7 @@ func routeEmployeeOverview(req employee.GetDigitalEmployeeOverviewRequest) *empl
 	finishedAt := now.Add(10 * time.Minute)
 	costAmount := 12.34
 	return &employee.DigitalEmployeeOverview{
-		Summary:      employee.DigitalEmployeeOverviewSummary{TotalCount: 1, RunnableCount: 1, RunningCount: 1, WaitingRuntimeCount: 0, ErrorCount: 0, HighRiskCount: 0, ReadyCount: 1, PendingRuntimeBindingCount: 0, PendingConfigApprovalCount: 0, FailedRecentRunCount: 0},
+		Summary:      employee.DigitalEmployeeOverviewSummary{TotalCount: 1, RunnableCount: 1, RunningCount: 1, WaitingRuntimeCount: 0, ErrorCount: 0, HighRiskCount: 0, ReadyCount: 1, PendingRuntimeBindingCount: 0, PendingConfigApprovalCount: 0, FailedRecentRunCount: 0, OperationalStatusCounts: map[employee.DigitalEmployeeOperationalStatus]int32{employee.DigitalEmployeeOperationalStatusIdle: 1}},
 		QueueSummary: employee.DigitalEmployeeOverviewQueueSummary{PendingRuntimeBindingCount: 0, StaleConfigCount: 0, FailedRecentRunCount: 0},
 		Items: []employee.DigitalEmployeeOverviewItem{{
 			IdentitySummary:   employee.DigitalEmployeeIdentitySummary{ID: employeeID, TenantID: req.TenantID, TeamID: &teamID, TeamName: "产品组", OwnerUserID: ownerID, OwnerDisplayName: "王佩", EmployeeType: "requirements_analyst", EmployeeTypeLabel: "需求分析", Name: "需求分析员工", Role: "requirements_analyst", Description: stringPtr("负责需求拆解和交付风险识别"), Status: employee.DigitalEmployeeStatusActive, RiskLevel: "medium"},
@@ -1773,6 +1791,7 @@ func routeEmployeeOverview(req employee.GetDigitalEmployeeOverviewRequest) *empl
 			GovernanceSummary: employee.DigitalEmployeeGovernanceSummary{EffectiveConfigID: &effectiveConfigID, Status: "approved", TeamRevisionNumber: int32Ptr(3), EmployeeRevisionNumber: int32Ptr(1), SkillsCount: 8, MCPServersCount: 3, ConstitutionRef: "effective-config://88888888-8888-4888-8888-888888888888/constitution"},
 			BudgetSummary:     employee.DigitalEmployeeBudgetSummary{DailyTokenLimit: int32Ptr(10000), UsageTokensToday: 2500, UsagePercentToday: int32Ptr(25), LimitExceeded: false, UsageTokens30d: int32Ptr(16000), RunCount30d: 12, CostAmount30d: &costAmount, Currency: "USD", Source: "run_usage_projection"},
 			WorkbenchStatus:   employee.WorkbenchStatusReady,
+			OperationalState:  employee.DigitalEmployeeOperationalState{Status: employee.DigitalEmployeeOperationalStatusIdle, Reasons: []employee.DigitalEmployeeOperationalReason{}, CanDispatch: true},
 			RecentEvents: []employee.DigitalEmployeeRecentEventSummary{
 				{Label: "命令已下发", Status: "running", OccurredAt: &now},
 				{Label: "Provider 输出中", Status: "running", OccurredAt: &now},

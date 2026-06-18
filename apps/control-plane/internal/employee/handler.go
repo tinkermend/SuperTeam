@@ -677,16 +677,17 @@ type digitalEmployeeOverviewResponse struct {
 }
 
 type digitalEmployeeOverviewSummaryResponse struct {
-	TotalCount                 int32 `json:"total_count"`
-	RunnableCount              int32 `json:"runnable_count"`
-	RunningCount               int32 `json:"running_count"`
-	WaitingRuntimeCount        int32 `json:"waiting_runtime_count"`
-	ErrorCount                 int32 `json:"error_count"`
-	HighRiskCount              int32 `json:"high_risk_count"`
-	ReadyCount                 int32 `json:"ready_count"`
-	PendingRuntimeBindingCount int32 `json:"pending_runtime_binding_count"`
-	PendingConfigApprovalCount int32 `json:"pending_config_approval_count"`
-	FailedRecentRunCount       int32 `json:"failed_recent_run_count"`
+	TotalCount                 int32            `json:"total_count"`
+	RunnableCount              int32            `json:"runnable_count"`
+	RunningCount               int32            `json:"running_count"`
+	WaitingRuntimeCount        int32            `json:"waiting_runtime_count"`
+	ErrorCount                 int32            `json:"error_count"`
+	HighRiskCount              int32            `json:"high_risk_count"`
+	ReadyCount                 int32            `json:"ready_count"`
+	PendingRuntimeBindingCount int32            `json:"pending_runtime_binding_count"`
+	PendingConfigApprovalCount int32            `json:"pending_config_approval_count"`
+	FailedRecentRunCount       int32            `json:"failed_recent_run_count"`
+	OperationalStatusCounts    map[string]int32 `json:"operational_status_counts"`
 }
 
 type digitalEmployeeOverviewQueueSummaryResponse struct {
@@ -702,7 +703,19 @@ type digitalEmployeeOverviewItemResponse struct {
 	GovernanceSummary digitalEmployeeGovernanceSummaryResponse    `json:"governance_summary"`
 	BudgetSummary     digitalEmployeeBudgetSummaryResponse        `json:"budget_summary"`
 	WorkbenchStatus   WorkbenchStatus                             `json:"workbench_status"`
+	OperationalState  digitalEmployeeOperationalStateResponse     `json:"operational_state"`
 	RecentEvents      []digitalEmployeeRecentEventSummaryResponse `json:"recent_events"`
+}
+
+type digitalEmployeeOperationalReasonResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type digitalEmployeeOperationalStateResponse struct {
+	Status      string                                     `json:"status"`
+	Reasons     []digitalEmployeeOperationalReasonResponse `json:"reasons"`
+	CanDispatch bool                                       `json:"can_dispatch"`
 }
 
 type digitalEmployeeIdentitySummaryResponse struct {
@@ -1062,6 +1075,9 @@ func workspaceFileResponseFromDomain(file WorkspaceFile) workspaceFileResponse {
 func overviewResponseFromDomain(overview *DigitalEmployeeOverview) digitalEmployeeOverviewResponse {
 	if overview == nil {
 		return digitalEmployeeOverviewResponse{
+			Summary: digitalEmployeeOverviewSummaryResponse{
+				OperationalStatusCounts: operationalStatusCountsResponseFromDomain(nil),
+			},
 			Items:   []digitalEmployeeOverviewItemResponse{},
 			Filters: overviewFiltersResponseFromDomain(DigitalEmployeeOverviewFilters{}),
 		}
@@ -1078,6 +1094,7 @@ func overviewResponseFromDomain(overview *DigitalEmployeeOverview) digitalEmploy
 			PendingRuntimeBindingCount: overview.Summary.PendingRuntimeBindingCount,
 			PendingConfigApprovalCount: overview.Summary.PendingConfigApprovalCount,
 			FailedRecentRunCount:       overview.Summary.FailedRecentRunCount,
+			OperationalStatusCounts:    operationalStatusCountsResponseFromDomain(overview.Summary.OperationalStatusCounts),
 		},
 		QueueSummary: digitalEmployeeOverviewQueueSummaryResponse{
 			PendingRuntimeBindingCount: overview.QueueSummary.PendingRuntimeBindingCount,
@@ -1100,7 +1117,35 @@ func overviewItemResponses(items []DigitalEmployeeOverviewItem) []digitalEmploye
 			GovernanceSummary: governanceSummaryResponseFromDomain(item.GovernanceSummary),
 			BudgetSummary:     budgetSummaryResponseFromDomain(item.BudgetSummary),
 			WorkbenchStatus:   item.WorkbenchStatus,
+			OperationalState:  operationalStateResponseFromDomain(item.OperationalState),
 			RecentEvents:      recentEventSummaryResponses(item.RecentEvents),
+		})
+	}
+	return responses
+}
+
+func operationalStatusCountsResponseFromDomain(counts map[DigitalEmployeeOperationalStatus]int32) map[string]int32 {
+	response := make(map[string]int32, len(counts))
+	for status, count := range counts {
+		response[string(status)] = count
+	}
+	return response
+}
+
+func operationalStateResponseFromDomain(state DigitalEmployeeOperationalState) digitalEmployeeOperationalStateResponse {
+	return digitalEmployeeOperationalStateResponse{
+		Status:      string(state.Status),
+		Reasons:     operationalReasonResponsesFromDomain(state.Reasons),
+		CanDispatch: state.CanDispatch,
+	}
+}
+
+func operationalReasonResponsesFromDomain(reasons []DigitalEmployeeOperationalReason) []digitalEmployeeOperationalReasonResponse {
+	responses := make([]digitalEmployeeOperationalReasonResponse, 0, len(reasons))
+	for _, reason := range reasons {
+		responses = append(responses, digitalEmployeeOperationalReasonResponse{
+			Code:    reason.Code,
+			Message: reason.Message,
 		})
 	}
 	return responses
