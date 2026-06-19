@@ -366,6 +366,8 @@ func assertEmployeeOverviewOperationalFactsSQL(t *testing.T, sql string) {
 	terminalGuard := "pt.requires_human_approval AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')"
 	decisionTypeWhereAllowlist := "AND pdr.decision_type IN ('task_failure_recovery', 'route_review', 'project_acceptance')"
 	joinStatusNarrowing := "AND ( pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review', 'failed') OR ( pt.requires_human_approval AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed') ) )"
+	queuedTaskStatusNarrowing := "count(pt.id) FILTER (WHERE pt.status IN ('planned', 'assigned')) > 0 AS operational_has_queued_work"
+	queuedTaskStatusBroadening := "count(pt.id) FILTER (WHERE pt.status IN ('pending', 'planned', 'blocked', 'assigned')) > 0 AS operational_has_queued_work"
 
 	for _, expected := range []string{
 		"employee_operational_facts",
@@ -380,6 +382,7 @@ func assertEmployeeOverviewOperationalFactsSQL(t *testing.T, sql string) {
 		terminalGuard,
 		decisionTypeWhereAllowlist,
 		joinStatusNarrowing,
+		queuedTaskStatusNarrowing,
 		"completed",
 		"done",
 		"success",
@@ -388,6 +391,7 @@ func assertEmployeeOverviewOperationalFactsSQL(t *testing.T, sql string) {
 	} {
 		require.Contains(t, normalizedSQL, expected)
 	}
+	require.NotContains(t, normalizedSQL, queuedTaskStatusBroadening)
 	require.NotContains(t, sql, "<> 'project_acceptance'")
 	require.Equal(t, 3, strings.Count(normalizedSQL, terminalGuard))
 }

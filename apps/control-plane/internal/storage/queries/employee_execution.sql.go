@@ -1446,7 +1446,7 @@ employee_operational_facts AS (
             ) > 0
         ) AS operational_has_employee_scoped_human_blocker,
         coalesce(ped.has_project_acceptance_blocker, false) AS operational_has_project_acceptance_blocker,
-        count(pt.id) FILTER (WHERE pt.status IN ('pending', 'planned', 'blocked', 'assigned')) > 0 AS operational_has_queued_work,
+        count(pt.id) FILTER (WHERE pt.status IN ('planned', 'assigned')) > 0 AS operational_has_queued_work,
         count(pt.id) FILTER (WHERE pt.status IN ('running', 'in_progress')) > 0 AS operational_has_working_task,
         count(pt.id) FILTER (
             WHERE (
@@ -1987,7 +1987,7 @@ employee_operational_facts AS (
             ) > 0
         ) AS operational_has_employee_scoped_human_blocker,
         coalesce(ped.has_project_acceptance_blocker, false) AS operational_has_project_acceptance_blocker,
-        count(pt.id) FILTER (WHERE pt.status IN ('pending', 'planned', 'blocked', 'assigned')) > 0 AS operational_has_queued_work,
+        count(pt.id) FILTER (WHERE pt.status IN ('planned', 'assigned')) > 0 AS operational_has_queued_work,
         count(pt.id) FILTER (WHERE pt.status IN ('running', 'in_progress')) > 0 AS operational_has_working_task,
         count(pt.id) FILTER (
             WHERE (

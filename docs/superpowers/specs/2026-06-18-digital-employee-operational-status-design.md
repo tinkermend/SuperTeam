@@ -148,6 +148,8 @@ Sources include:
 - run `queued`,
 - run `dispatching`.
 
+Project task `pending` is still intake or pre-dispatch bookkeeping and must not mark the employee as `queued`. Project task `blocked` is dependency or governance blockage and should surface through project/workflow blocked context, `waiting_human`, or `error` when a higher-priority employee-scoped fact exists, not through the employee-level `queued` badge.
+
 Details should distinguish "待分派" from "已下发", but the employee-level main status is `queued`.
 
 ### unavailable

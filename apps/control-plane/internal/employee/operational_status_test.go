@@ -49,7 +49,7 @@ func TestResolveDigitalEmployeeOperationalStatePriority(t *testing.T) {
 			wantStatus:      DigitalEmployeeOperationalStatusError,
 			wantCanDispatch: false,
 			wantReasons: []DigitalEmployeeOperationalReason{
-				{Code: "runtime_offline_with_work", Message: "Runtime 离线，已有执行或排队任务受影响"},
+				{Code: "runtime_offline_with_work", Message: "Runtime 离线，已有任务受影响"},
 			},
 		},
 		{
@@ -76,7 +76,7 @@ func TestResolveDigitalEmployeeOperationalStatePriority(t *testing.T) {
 			wantStatus:      DigitalEmployeeOperationalStatusError,
 			wantCanDispatch: false,
 			wantReasons: []DigitalEmployeeOperationalReason{
-				{Code: "runtime_offline_with_work", Message: "Runtime 离线，已有执行或排队任务受影响"},
+				{Code: "runtime_offline_with_work", Message: "Runtime 离线，已有任务受影响"},
 				{Code: "provider_failure", Message: "Provider 执行失败或不可用"},
 				{Code: "task_failed", Message: "任务失败，等待恢复策略或后续处理"},
 			},

@@ -82,7 +82,7 @@ func resolveDigitalEmployeeOperationalErrorReasons(input DigitalEmployeeOperatio
 	if input.RuntimeUnavailable && (input.HasActiveWork || input.HasWorkingRun || input.HasQueuedWork) {
 		reasons = append(reasons, DigitalEmployeeOperationalReason{
 			Code:    "runtime_offline_with_work",
-			Message: "Runtime 离线，已有执行或排队任务受影响",
+			Message: "Runtime 离线，已有任务受影响",
 		})
 	}
 	if input.HasProviderFailure {
