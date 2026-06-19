@@ -1046,7 +1046,7 @@ type ProjectTask struct {
 	Title string `json:"title"`
 	// 项目任务摘要
 	Summary pgtype.Text `json:"summary"`
-	// 任务状态：pending, planned, blocked, assigned, running, waiting_human, completed, failed, cancelled
+	// 任务状态：pending, planned, queued, assigned, blocked, running, waiting_human, completed, failed, cancelled；queued 表示已分派并等待 Runtime 真正启动。
 	Status string `json:"status"`
 	// 当前分派的数字员工ID
 	AssignedDigitalEmployeeID uuid.NullUUID `json:"assigned_digital_employee_id"`
@@ -1082,6 +1082,88 @@ type ProjectTask struct {
 	HandoffContract []byte `json:"handoff_contract"`
 	// Planner审计摘要JSON，不保存长prompt或模型原文
 	PlannerMetadata []byte `json:"planner_metadata"`
+	// 当前项目任务执行尝试ID，指向当前 queued、running 或 waiting_human 尝试。
+	CurrentAttemptID uuid.NullUUID `json:"current_attempt_id"`
+	// 生成该任务的已接受计划版本ID。
+	AcceptedPlanRevisionID uuid.NullUUID `json:"accepted_plan_revision_id"`
+	// 计划分解幂等声明键，用于同一计划分解重复写入去重。
+	DecompositionClaimKey pgtype.Text `json:"decomposition_claim_key"`
+	// 任务执行尝试次数。
+	AttemptCount int32 `json:"attempt_count"`
+	// 任务允许的最大执行尝试次数。
+	MaxAttempts pgtype.Int4 `json:"max_attempts"`
+	// 任务下次可重试时间。
+	RetryNotBefore pgtype.Timestamptz `json:"retry_not_before"`
+	// 任务等待人类或外部条件的原因。
+	WaitingReason pgtype.Text `json:"waiting_reason"`
+	// 任务等待的人类决策或请求ID。
+	WaitingRequestID uuid.NullUUID `json:"waiting_request_id"`
+	// 任务进入终态的原因。
+	TerminalReason pgtype.Text `json:"terminal_reason"`
+	// 任务进入终态时写入的项目事件ID。
+	TerminalEventID uuid.NullUUID `json:"terminal_event_id"`
+	// 取消任务的主体类型或来源。
+	CancelledBy pgtype.Text `json:"cancelled_by"`
+	// 标记任务失败的主体类型或来源。
+	FailedBy pgtype.Text `json:"failed_by"`
+	// 任务状态最近一次变化时间。
+	StatusChangedAt pgtype.Timestamptz `json:"status_changed_at"`
+}
+
+// 项目任务执行尝试表，记录项目任务调度、租约、重试和终态回写。
+type ProjectTaskAttempt struct {
+	// 执行尝试主键ID。
+	ID uuid.UUID `json:"id"`
+	// 执行尝试所属租户ID。
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 执行尝试所属项目任务ID。
+	ProjectTaskID uuid.UUID `json:"project_task_id"`
+	// 尝试序号，从 1 开始递增。
+	AttemptNo int32 `json:"attempt_no"`
+	// 尝试状态：queued, running, succeeded, failed, cancelled, lost, timed_out, waiting_human。
+	Status string `json:"status"`
+	// 执行尝试关联的数字员工运行ID。
+	DigitalEmployeeRunID uuid.NullUUID `json:"digital_employee_run_id"`
+	// 执行尝试关联的 Runtime 任务ID。
+	RuntimeTaskID uuid.NullUUID `json:"runtime_task_id"`
+	// 执行尝试所在 Runtime 节点ID。
+	RuntimeNodeID uuid.NullUUID `json:"runtime_node_id"`
+	// 执行尝试关联的 Provider 会话ID。
+	ProviderSessionID pgtype.Text `json:"provider_session_id"`
+	// 执行上下文包 JSON，保存下发给 Runtime 的任务上下文切片。
+	ExecutionContextPacket []byte `json:"execution_context_packet"`
+	// 执行上下文包版本。
+	ExecutionContextPacketVersion string `json:"execution_context_packet_version"`
+	// Runtime 租约令牌。
+	LeaseToken string `json:"lease_token"`
+	// Runtime 租约过期时间。
+	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
+	// Runtime 租约最近续约时间。
+	RenewedAt pgtype.Timestamptz `json:"renewed_at"`
+	// 执行尝试被判定丢失的时间。
+	LostAt pgtype.Timestamptz `json:"lost_at"`
+	// 执行尝试开始时间。
+	StartedAt pgtype.Timestamptz `json:"started_at"`
+	// 执行尝试结束时间。
+	FinishedAt pgtype.Timestamptz `json:"finished_at"`
+	// 执行尝试超时时间。
+	TimeoutAt pgtype.Timestamptz `json:"timeout_at"`
+	// 执行失败后是否允许重试。
+	Retryable pgtype.Bool `json:"retryable"`
+	// 执行失败分类。
+	FailureFamily pgtype.Text `json:"failure_family"`
+	// 执行失败说明。
+	FailureMessage pgtype.Text `json:"failure_message"`
+	// 执行尝试创建幂等键。
+	IdempotencyKey string `json:"idempotency_key"`
+	// 执行尝试创建时写入的项目事件ID。
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// 执行尝试进入终态时写入的项目事件ID。
+	TerminalEventID uuid.NullUUID `json:"terminal_event_id"`
+	// 执行尝试创建时间。
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 执行尝试最近更新时间。
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 // 项目任务依赖边，记录一个任务被另一个任务完成结果阻塞的DAG关系

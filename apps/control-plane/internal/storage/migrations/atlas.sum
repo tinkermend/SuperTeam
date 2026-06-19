@@ -1,4 +1,4 @@
-h1:4TlPcrYvWzdch6EgFqvYUwrQx/ENW/LJhZhKRQRpnhY=
+h1:CoYczHT0I8YV94VaFQ87ionmbr3QSxfKJTeYoyfNZQ4=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -22,4 +22,4 @@ h1:4TlPcrYvWzdch6EgFqvYUwrQx/ENW/LJhZhKRQRpnhY=
 021_user_project_team_scopes.sql h1:XO0BnAZKk35EtSjT6nIEBGO7ZMYlUMtsSlAZ4nBfjXU=
 022_digital_employee_runtime_readiness_view.sql h1:mwsmO89G1jE8S6mlqRPQwtxXKj4sY094i12KUrtbkrU=
 023_employee_operational_status_indexes.sql h1:Cizm0iOcvPYTBPpQXbSYtgV1Hqcznd41mppxWqePQRA=
-024_project_task_attempts.sql h1:NaxNkF9ESNYerKnoiFlMrSZxocfkCcMLUhtp4OTuSZA=
+024_project_task_attempts.sql h1:6U8L7VI56qwB0y1co49lM+M9q2h4NdEDY4YbNVqAyNc=

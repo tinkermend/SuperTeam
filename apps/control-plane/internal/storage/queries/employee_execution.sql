@@ -1082,14 +1082,14 @@ employee_operational_facts AS (
             ) > 0
         ) AS operational_has_employee_scoped_human_blocker,
         coalesce(ped.has_project_acceptance_blocker, false) AS operational_has_project_acceptance_blocker,
-        count(pt.id) FILTER (WHERE pt.status IN ('planned', 'assigned')) > 0 AS operational_has_queued_work,
+        count(pt.id) FILTER (WHERE pt.status IN ('planned', 'queued', 'assigned')) > 0 AS operational_has_queued_work,
         count(pt.id) FILTER (WHERE pt.status IN ('running', 'in_progress')) > 0 AS operational_has_working_task,
         count(pt.id) FILTER (
             WHERE (
                 pt.requires_human_approval
                 AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')
             )
-               OR pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review')
+               OR pt.status IN ('pending', 'planned', 'queued', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review')
         ) > 0 AS operational_has_active_work,
         count(pt.id) FILTER (WHERE pt.status = 'failed') > 0 AS operational_has_task_failure
     FROM digital_employees de
@@ -1098,7 +1098,7 @@ employee_operational_facts AS (
       ON pt.tenant_id = de.tenant_id
      AND pt.assigned_digital_employee_id = de.id
      AND (
-         pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review', 'failed')
+         pt.status IN ('pending', 'planned', 'queued', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review', 'failed')
          OR (
              pt.requires_human_approval
              AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')
@@ -1458,14 +1458,14 @@ employee_operational_facts AS (
             ) > 0
         ) AS operational_has_employee_scoped_human_blocker,
         coalesce(ped.has_project_acceptance_blocker, false) AS operational_has_project_acceptance_blocker,
-        count(pt.id) FILTER (WHERE pt.status IN ('planned', 'assigned')) > 0 AS operational_has_queued_work,
+        count(pt.id) FILTER (WHERE pt.status IN ('planned', 'queued', 'assigned')) > 0 AS operational_has_queued_work,
         count(pt.id) FILTER (WHERE pt.status IN ('running', 'in_progress')) > 0 AS operational_has_working_task,
         count(pt.id) FILTER (
             WHERE (
                 pt.requires_human_approval
                 AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')
             )
-               OR pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review')
+               OR pt.status IN ('pending', 'planned', 'queued', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review')
         ) > 0 AS operational_has_active_work,
         count(pt.id) FILTER (WHERE pt.status = 'failed') > 0 AS operational_has_task_failure
     FROM digital_employees de
@@ -1474,7 +1474,7 @@ employee_operational_facts AS (
       ON pt.tenant_id = de.tenant_id
      AND pt.assigned_digital_employee_id = de.id
      AND (
-         pt.status IN ('pending', 'planned', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review', 'failed')
+         pt.status IN ('pending', 'planned', 'queued', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review', 'failed')
          OR (
              pt.requires_human_approval
              AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')

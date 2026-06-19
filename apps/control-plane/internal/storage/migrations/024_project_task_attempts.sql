@@ -86,7 +86,7 @@ CREATE UNIQUE INDEX uq_project_tasks_accepted_plan_decomposition
       AND demand_id IS NOT NULL
       AND planned_task_key IS NOT NULL;
 
-COMMENT ON COLUMN project_tasks.status IS '任务状态：planned, queued, running, waiting_human, completed, failed, cancelled。';
+COMMENT ON COLUMN project_tasks.status IS '任务状态：pending, planned, queued, assigned, blocked, running, waiting_human, completed, failed, cancelled；queued 表示已分派并等待 Runtime 真正启动。';
 COMMENT ON COLUMN project_tasks.current_attempt_id IS '当前项目任务执行尝试ID，指向当前 queued、running 或 waiting_human 尝试。';
 COMMENT ON COLUMN project_tasks.accepted_plan_revision_id IS '生成该任务的已接受计划版本ID。';
 COMMENT ON COLUMN project_tasks.decomposition_claim_key IS '计划分解幂等声明键，用于同一计划分解重复写入去重。';

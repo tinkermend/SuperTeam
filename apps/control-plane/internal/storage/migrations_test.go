@@ -623,7 +623,7 @@ func TestProjectTasksDurableClosureColumns(t *testing.T) {
 func TestProjectTaskDurableClosureMigrationComments(t *testing.T) {
 	sql := migrationsSQL(t)
 	for _, fragment := range []string{
-		"任务状态：planned, queued, running, waiting_human, completed, failed, cancelled",
+		"任务状态：pending, planned, queued, assigned, blocked, running, waiting_human, completed, failed, cancelled；queued 表示已分派并等待 Runtime 真正启动。",
 		"当前项目任务执行尝试ID",
 		"生成该任务的已接受计划版本ID",
 		"计划分解幂等声明键",
