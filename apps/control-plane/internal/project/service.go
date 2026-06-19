@@ -2213,7 +2213,7 @@ func (s *Service) taskAndProjectForWriteback(ctx context.Context, tenantID, runt
 
 func projectTaskAcceptsRuntimeWriteback(status string) bool {
 	switch status {
-	case "assigned", "running":
+	case "assigned", "queued", "running":
 		return true
 	default:
 		return false
@@ -2221,7 +2221,7 @@ func projectTaskAcceptsRuntimeWriteback(status string) bool {
 }
 
 func runtimeWritebackProjectTaskStatuses() []string {
-	return []string{"assigned", "running"}
+	return []string{"assigned", "queued", "running"}
 }
 
 func (s *Service) projectTaskWritebackRepository() (ProjectTaskWritebackRepository, error) {

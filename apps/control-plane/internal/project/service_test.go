@@ -56,6 +56,11 @@ func TestCreateProjectRequiresHumanOwnerAndCreatesEvents(t *testing.T) {
 	}
 }
 
+func TestRuntimeWritebackProjectTaskStatusesIncludeQueued(t *testing.T) {
+	require.ElementsMatch(t, []string{"assigned", "queued", "running"}, runtimeWritebackProjectTaskStatuses())
+	require.True(t, projectTaskAcceptsRuntimeWriteback("queued"))
+}
+
 func TestCreateProjectRejectsUnauthorizedTeamScope(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
