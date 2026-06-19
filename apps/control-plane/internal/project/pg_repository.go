@@ -982,7 +982,40 @@ func (r *PgRepository) GetCurrentProjectTaskAttempt(ctx context.Context, tenantI
 }
 
 func (r *PgRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req DecomposeAcceptedPlanRevisionRequest) (DecomposeAcceptedPlanRevisionResult, error) {
-	return DecomposeAcceptedPlanRevisionResult{}, ErrProjectTaskGraphPending
+	req.DecompositionClaimKey = strings.TrimSpace(req.DecompositionClaimKey)
+	if err := validateDecomposeAcceptedPlanRevisionRequest(req); err != nil {
+		return DecomposeAcceptedPlanRevisionResult{}, err
+	}
+	graphReq := graphRequestFromAcceptedPlanRevisionRequest(req)
+	return withProjectQueries(ctx, r, "accepted plan revision decompose", func(q *queries.Queries) (DecomposeAcceptedPlanRevisionResult, error) {
+		existing, err := r.listProjectTasksByAcceptedPlanRevisionWithQueries(ctx, q, req.TenantID, req.ProjectID, req.DemandID, req.AcceptedPlanRevisionID)
+		if err != nil {
+			return DecomposeAcceptedPlanRevisionResult{}, err
+		}
+		if len(existing) > 0 {
+			originReq, complete, err := r.acceptedPlanGraphComplete(ctx, q, req, existing)
+			if err != nil {
+				return DecomposeAcceptedPlanRevisionResult{}, err
+			}
+			if !complete {
+				return DecomposeAcceptedPlanRevisionResult{}, ErrProjectConflict
+			}
+			graph, err := r.graphResultFromExisting(ctx, q, originReq, existing)
+			if err != nil {
+				return DecomposeAcceptedPlanRevisionResult{}, err
+			}
+			return DecomposeAcceptedPlanRevisionResult{Tasks: existing, Dependencies: graph.Dependencies, Replayed: true}, nil
+		}
+
+		created, err := r.createProjectTaskGraphWithQueries(ctx, q, graphReq, projectTaskGraphWriteOptions{
+			AcceptedPlanRevisionID: &req.AcceptedPlanRevisionID,
+			DecompositionClaimKey:  &req.DecompositionClaimKey,
+		})
+		if err != nil {
+			return DecomposeAcceptedPlanRevisionResult{}, err
+		}
+		return DecomposeAcceptedPlanRevisionResult{Tasks: created.Tasks, Dependencies: created.Graph.Dependencies, Replayed: false}, nil
+	})
 }
 
 func (r *PgRepository) createProjectTaskWithQueries(ctx context.Context, q *queries.Queries, req CreateProjectTaskRequest) (ProjectTask, error) {
@@ -1011,6 +1044,8 @@ func (r *PgRepository) createProjectTaskWithQueries(ctx context.Context, q *quer
 		PlannedTaskKey:            textPtr(req.PlannedTaskKey),
 		TaskKind:                  textPtr(req.TaskKind),
 		StageIndex:                int4Ptr(req.StageIndex),
+		AcceptedPlanRevisionID:    nullUUID(req.AcceptedPlanRevisionID),
+		DecompositionClaimKey:     textPtr(req.DecompositionClaimKey),
 		Title:                     req.Title,
 		Summary:                   textOrNull(req.Summary),
 		Status:                    req.Status,
@@ -1047,116 +1082,139 @@ func (r *PgRepository) CreateProjectTaskGraph(ctx context.Context, req CreatePro
 			return r.graphResultFromExisting(ctx, q, req, existing)
 		}
 
-		keyToID := map[string]uuid.UUID{}
-		created := make([]ProjectTaskGraphTaskResult, 0, len(req.Tasks))
-		dependencies := make([]ProjectTaskDependency, 0)
-		for _, planned := range req.Tasks {
-			if planned.Key == "" {
-				return CreateProjectTaskGraphResult{}, ErrInvalidProject
-			}
-			if _, exists := keyToID[planned.Key]; exists {
-				return CreateProjectTaskGraphResult{}, ErrInvalidProject
-			}
-			employeeID := planned.AssignedDigitalEmployeeID
-			taskKind := planned.TaskKind
-			task, err := r.createProjectTaskWithQueries(ctx, q, CreateProjectTaskRequest{
-				TenantID:                  req.TenantID,
-				ProjectID:                 req.ProjectID,
-				DemandID:                  &req.DemandID,
-				Title:                     planned.Title,
-				Summary:                   planned.Summary,
-				Status:                    planned.Status,
-				AssignedDigitalEmployeeID: &employeeID,
-				RiskLevel:                 planned.RiskLevel,
-				RequiresHumanApproval:     planned.RequiresHumanApproval,
-				CoordinationJobID:         &req.CoordinationJobID,
-				RouteDecisionID:           &req.RouteDecisionID,
-				PlannedTaskKey:            &planned.Key,
-				TaskKind:                  &taskKind,
-				StageIndex:                planned.StageIndex,
-				ExpectedOutputs:           planned.ExpectedOutputs,
-				InputRequirements:         planned.InputRequirements,
-				HandoffContract:           planned.HandoffContract,
-				PlannerMetadata:           planned.PlannerMetadata,
-			})
-			if err != nil {
-				return CreateProjectTaskGraphResult{}, err
-			}
-			event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
-				TenantID:     req.TenantID,
-				ProjectID:    req.ProjectID,
-				EventType:    ProjectEventTaskCreated,
-				ActorType:    "project_coordinator",
-				ActorID:      task.ID.String(),
-				ResourceType: strPtr("project_task"),
-				ResourceID:   strPtr(task.ID.String()),
-				Summary:      "项目任务已创建",
-				Payload: map[string]any{
-					"project_task_id":     task.ID.String(),
-					"demand_id":           req.DemandID.String(),
-					"coordination_job_id": req.CoordinationJobID.String(),
-					"planned_task_key":    planned.Key,
-				},
-			})
-			if err != nil {
-				return CreateProjectTaskGraphResult{}, err
-			}
-			keyToID[planned.Key] = task.ID
-			created = append(created, ProjectTaskGraphTaskResult{
-				ID:             task.ID,
-				PlannedTaskKey: planned.Key,
-				StageIndex:     planned.StageIndex,
-				CreatedEventID: event.ID,
-				IsRoot:         len(planned.BlockedByKeys) == 0,
-			})
-		}
-		for _, planned := range req.Tasks {
-			dependentTaskID, ok := keyToID[planned.Key]
-			if !ok {
-				return CreateProjectTaskGraphResult{}, ErrProjectConflict
-			}
-			for _, blockerKey := range planned.BlockedByKeys {
-				blockerTaskID, ok := keyToID[blockerKey]
-				if !ok {
-					return CreateProjectTaskGraphResult{}, ErrProjectConflict
-				}
-				edge, err := q.CreateProjectTaskDependency(ctx, queries.CreateProjectTaskDependencyParams{
-					TenantID:          req.TenantID,
-					ProjectID:         req.ProjectID,
-					CoordinationJobID: nullUUID(&req.CoordinationJobID),
-					DependentTaskID:   dependentTaskID,
-					BlockerTaskID:     blockerTaskID,
-				})
-				if err != nil {
-					return CreateProjectTaskGraphResult{}, err
-				}
-				dependencies = append(dependencies, dependencyFromRecord(edge))
-			}
-		}
-		graphEvent, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
-			TenantID:     req.TenantID,
-			ProjectID:    req.ProjectID,
-			EventType:    ProjectEventTaskGraphPlanned,
-			ActorType:    "project_coordinator",
-			ActorID:      req.CoordinationJobID.String(),
-			ResourceType: strPtr("project_coordination_job"),
-			ResourceID:   strPtr(req.CoordinationJobID.String()),
-			Summary:      "项目任务图已规划",
-			Payload: map[string]any{
-				"coordination_job_id": req.CoordinationJobID.String(),
-				"route_decision_id":   req.RouteDecisionID.String(),
-				"task_count":          len(req.Tasks),
-				"dependency_count":    len(dependencies),
-			},
-		})
+		created, err := r.createProjectTaskGraphWithQueries(ctx, q, req, projectTaskGraphWriteOptions{})
 		if err != nil {
 			return CreateProjectTaskGraphResult{}, err
 		}
-		if err := r.advanceProjectDemandStatusWithQueries(ctx, q, req.TenantID, req.ProjectID, req.DemandID, ProjectDemandStatusPlanned); err != nil {
-			return CreateProjectTaskGraphResult{}, err
-		}
-		return CreateProjectTaskGraphResult{Tasks: created, Dependencies: dependencies, GraphEventID: graphEvent.ID}, nil
+		return created.Graph, nil
 	})
+}
+
+type projectTaskGraphWriteOptions struct {
+	AcceptedPlanRevisionID *uuid.UUID
+	DecompositionClaimKey  *string
+}
+
+type projectTaskGraphWriteResult struct {
+	Graph CreateProjectTaskGraphResult
+	Tasks []ProjectTask
+}
+
+func (r *PgRepository) createProjectTaskGraphWithQueries(ctx context.Context, q *queries.Queries, req CreateProjectTaskGraphRequest, opts projectTaskGraphWriteOptions) (projectTaskGraphWriteResult, error) {
+	keyToID := map[string]uuid.UUID{}
+	created := make([]ProjectTaskGraphTaskResult, 0, len(req.Tasks))
+	createdTasks := make([]ProjectTask, 0, len(req.Tasks))
+	dependencies := make([]ProjectTaskDependency, 0)
+	for _, planned := range req.Tasks {
+		if strings.TrimSpace(planned.Key) == "" {
+			return projectTaskGraphWriteResult{}, ErrInvalidProject
+		}
+		if _, exists := keyToID[planned.Key]; exists {
+			return projectTaskGraphWriteResult{}, ErrInvalidProject
+		}
+		employeeID := planned.AssignedDigitalEmployeeID
+		taskKind := planned.TaskKind
+		task, err := r.createProjectTaskWithQueries(ctx, q, CreateProjectTaskRequest{
+			TenantID:                  req.TenantID,
+			ProjectID:                 req.ProjectID,
+			DemandID:                  &req.DemandID,
+			Title:                     planned.Title,
+			Summary:                   planned.Summary,
+			Status:                    planned.Status,
+			AssignedDigitalEmployeeID: &employeeID,
+			RiskLevel:                 planned.RiskLevel,
+			RequiresHumanApproval:     planned.RequiresHumanApproval,
+			CoordinationJobID:         &req.CoordinationJobID,
+			RouteDecisionID:           &req.RouteDecisionID,
+			PlannedTaskKey:            &planned.Key,
+			TaskKind:                  &taskKind,
+			StageIndex:                planned.StageIndex,
+			AcceptedPlanRevisionID:    opts.AcceptedPlanRevisionID,
+			DecompositionClaimKey:     opts.DecompositionClaimKey,
+			ExpectedOutputs:           planned.ExpectedOutputs,
+			InputRequirements:         planned.InputRequirements,
+			HandoffContract:           planned.HandoffContract,
+			PlannerMetadata:           planned.PlannerMetadata,
+		})
+		if err != nil {
+			return projectTaskGraphWriteResult{}, err
+		}
+		event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+			TenantID:     req.TenantID,
+			ProjectID:    req.ProjectID,
+			EventType:    ProjectEventTaskCreated,
+			ActorType:    "project_coordinator",
+			ActorID:      task.ID.String(),
+			ResourceType: strPtr("project_task"),
+			ResourceID:   strPtr(task.ID.String()),
+			Summary:      "项目任务已创建",
+			Payload: map[string]any{
+				"project_task_id":     task.ID.String(),
+				"demand_id":           req.DemandID.String(),
+				"coordination_job_id": req.CoordinationJobID.String(),
+				"planned_task_key":    planned.Key,
+			},
+		})
+		if err != nil {
+			return projectTaskGraphWriteResult{}, err
+		}
+		keyToID[planned.Key] = task.ID
+		createdTasks = append(createdTasks, task)
+		created = append(created, ProjectTaskGraphTaskResult{
+			ID:             task.ID,
+			PlannedTaskKey: planned.Key,
+			StageIndex:     planned.StageIndex,
+			CreatedEventID: event.ID,
+			IsRoot:         len(planned.BlockedByKeys) == 0,
+		})
+	}
+	for _, planned := range req.Tasks {
+		dependentTaskID, ok := keyToID[planned.Key]
+		if !ok {
+			return projectTaskGraphWriteResult{}, ErrProjectConflict
+		}
+		for _, blockerKey := range planned.BlockedByKeys {
+			blockerTaskID, ok := keyToID[blockerKey]
+			if !ok {
+				return projectTaskGraphWriteResult{}, ErrProjectConflict
+			}
+			edge, err := q.CreateProjectTaskDependency(ctx, queries.CreateProjectTaskDependencyParams{
+				TenantID:          req.TenantID,
+				ProjectID:         req.ProjectID,
+				CoordinationJobID: nullUUID(&req.CoordinationJobID),
+				DependentTaskID:   dependentTaskID,
+				BlockerTaskID:     blockerTaskID,
+			})
+			if err != nil {
+				return projectTaskGraphWriteResult{}, err
+			}
+			dependencies = append(dependencies, dependencyFromRecord(edge))
+		}
+	}
+	graphEvent, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    req.ProjectID,
+		EventType:    ProjectEventTaskGraphPlanned,
+		ActorType:    "project_coordinator",
+		ActorID:      req.CoordinationJobID.String(),
+		ResourceType: strPtr("project_coordination_job"),
+		ResourceID:   strPtr(req.CoordinationJobID.String()),
+		Summary:      "项目任务图已规划",
+		Payload: map[string]any{
+			"coordination_job_id": req.CoordinationJobID.String(),
+			"route_decision_id":   req.RouteDecisionID.String(),
+			"task_count":          len(req.Tasks),
+			"dependency_count":    len(dependencies),
+		},
+	})
+	if err != nil {
+		return projectTaskGraphWriteResult{}, err
+	}
+	if err := r.advanceProjectDemandStatusWithQueries(ctx, q, req.TenantID, req.ProjectID, req.DemandID, ProjectDemandStatusPlanned); err != nil {
+		return projectTaskGraphWriteResult{}, err
+	}
+	graph := CreateProjectTaskGraphResult{Tasks: created, Dependencies: dependencies, GraphEventID: graphEvent.ID}
+	return projectTaskGraphWriteResult{Graph: graph, Tasks: createdTasks}, nil
 }
 
 func (r *PgRepository) CreateProjectTaskDependency(ctx context.Context, req CreateProjectTaskDependencyRequest) (ProjectTaskDependency, error) {
@@ -1250,6 +1308,49 @@ func (r *PgRepository) listProjectTasksByCoordinationJobWithQueries(ctx context.
 	return tasksFromRecords(rows)
 }
 
+func (r *PgRepository) listProjectTasksByAcceptedPlanRevisionWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID, demandID, acceptedPlanRevisionID uuid.UUID) ([]ProjectTask, error) {
+	rows, err := q.ListProjectTasksByAcceptedPlanRevision(ctx, queries.ListProjectTasksByAcceptedPlanRevisionParams{
+		TenantID:               tenantID,
+		ProjectID:              projectID,
+		DemandID:               demandID,
+		AcceptedPlanRevisionID: acceptedPlanRevisionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return tasksFromRecords(rows)
+}
+
+func validateDecomposeAcceptedPlanRevisionRequest(req DecomposeAcceptedPlanRevisionRequest) error {
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.DemandID == uuid.Nil ||
+		req.CoordinationJobID == uuid.Nil || req.RouteDecisionID == uuid.Nil ||
+		req.AcceptedPlanRevisionID == uuid.Nil || req.DecompositionClaimKey == "" || len(req.Tasks) == 0 {
+		return ErrInvalidProject
+	}
+	keys := map[string]struct{}{}
+	for _, task := range req.Tasks {
+		if strings.TrimSpace(task.Key) == "" {
+			return ErrInvalidProject
+		}
+		if _, exists := keys[task.Key]; exists {
+			return ErrInvalidProject
+		}
+		keys[task.Key] = struct{}{}
+	}
+	return nil
+}
+
+func graphRequestFromAcceptedPlanRevisionRequest(req DecomposeAcceptedPlanRevisionRequest) CreateProjectTaskGraphRequest {
+	return CreateProjectTaskGraphRequest{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		DemandID:          req.DemandID,
+		CoordinationJobID: req.CoordinationJobID,
+		RouteDecisionID:   req.RouteDecisionID,
+		Tasks:             req.Tasks,
+	}
+}
+
 func (r *PgRepository) graphComplete(ctx context.Context, q *queries.Queries, req CreateProjectTaskGraphRequest, existing []ProjectTask) (bool, error) {
 	if len(existing) != len(req.Tasks) {
 		return false, nil
@@ -1279,6 +1380,45 @@ func (r *PgRepository) graphComplete(ctx context.Context, q *queries.Queries, re
 		return false, err
 	}
 	return graphEventID != uuid.Nil && len(taskEventIDs) == len(existing), nil
+}
+
+func (r *PgRepository) acceptedPlanGraphComplete(ctx context.Context, q *queries.Queries, req DecomposeAcceptedPlanRevisionRequest, existing []ProjectTask) (CreateProjectTaskGraphRequest, bool, error) {
+	if len(existing) != len(req.Tasks) {
+		return CreateProjectTaskGraphRequest{}, false, nil
+	}
+	existingByKey, existingIDs, originJobID, originRouteID, ok := acceptedPlanGraphTasksByKey(req, existing)
+	if !ok {
+		return CreateProjectTaskGraphRequest{}, false, nil
+	}
+	graphReq := CreateProjectTaskGraphRequest{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		DemandID:          req.DemandID,
+		CoordinationJobID: originJobID,
+		RouteDecisionID:   originRouteID,
+		Tasks:             req.Tasks,
+	}
+	for _, planned := range req.Tasks {
+		if !acceptedPlanTaskPayloadMatchesRequest(req, planned, existingByKey[planned.Key]) {
+			return graphReq, false, nil
+		}
+	}
+	dependencyRows, err := q.ListProjectTaskDependencies(ctx, queries.ListProjectTaskDependenciesParams{
+		TenantID:         req.TenantID,
+		ProjectID:        req.ProjectID,
+		DependentTaskIds: existingIDs,
+	})
+	if err != nil {
+		return graphReq, false, err
+	}
+	if !dependencyRowsMatchRequest(graphReq, existingByKey, dependenciesFromRecords(dependencyRows)) {
+		return graphReq, false, nil
+	}
+	taskEventIDs, graphEventID, err := r.existingGraphEventIDs(ctx, q, graphReq, existing)
+	if err != nil {
+		return graphReq, false, err
+	}
+	return graphReq, graphEventID != uuid.Nil && len(taskEventIDs) == len(existing), nil
 }
 
 func (r *PgRepository) graphResultFromExisting(ctx context.Context, q *queries.Queries, req CreateProjectTaskGraphRequest, existing []ProjectTask) (CreateProjectTaskGraphResult, error) {
@@ -1351,6 +1491,43 @@ func existingGraphTasksByKey(req CreateProjectTaskGraphRequest, existing []Proje
 	return existingByKey, existingIDs, true
 }
 
+func acceptedPlanGraphTasksByKey(req DecomposeAcceptedPlanRevisionRequest, existing []ProjectTask) (map[string]ProjectTask, []uuid.UUID, uuid.UUID, uuid.UUID, bool) {
+	existingByKey := make(map[string]ProjectTask, len(existing))
+	existingIDs := make([]uuid.UUID, 0, len(existing))
+	originJobID := uuid.Nil
+	originRouteID := uuid.Nil
+	for _, task := range existing {
+		if task.TenantID != req.TenantID || task.ProjectID != req.ProjectID {
+			return nil, nil, uuid.Nil, uuid.Nil, false
+		}
+		if task.DemandID == nil || *task.DemandID != req.DemandID ||
+			task.AcceptedPlanRevisionID == nil || *task.AcceptedPlanRevisionID != req.AcceptedPlanRevisionID ||
+			task.DecompositionClaimKey == nil || *task.DecompositionClaimKey != req.DecompositionClaimKey ||
+			task.CoordinationJobID == nil || task.RouteDecisionID == nil ||
+			task.PlannedTaskKey == nil || *task.PlannedTaskKey == "" {
+			return nil, nil, uuid.Nil, uuid.Nil, false
+		}
+		if originJobID == uuid.Nil {
+			originJobID = *task.CoordinationJobID
+			originRouteID = *task.RouteDecisionID
+		}
+		if *task.CoordinationJobID != originJobID || *task.RouteDecisionID != originRouteID {
+			return nil, nil, uuid.Nil, uuid.Nil, false
+		}
+		if _, exists := existingByKey[*task.PlannedTaskKey]; exists {
+			return nil, nil, uuid.Nil, uuid.Nil, false
+		}
+		existingByKey[*task.PlannedTaskKey] = task
+		existingIDs = append(existingIDs, task.ID)
+	}
+	for _, planned := range req.Tasks {
+		if _, exists := existingByKey[planned.Key]; !exists {
+			return nil, nil, uuid.Nil, uuid.Nil, false
+		}
+	}
+	return existingByKey, existingIDs, originJobID, originRouteID, true
+}
+
 func graphTaskPayloadMatchesRequest(req CreateProjectTaskGraphRequest, planned ProjectTaskGraphCreateTask, existing ProjectTask) bool {
 	if existing.TenantID != req.TenantID || existing.ProjectID != req.ProjectID {
 		return false
@@ -1358,6 +1535,32 @@ func graphTaskPayloadMatchesRequest(req CreateProjectTaskGraphRequest, planned P
 	if existing.DemandID == nil || *existing.DemandID != req.DemandID ||
 		existing.CoordinationJobID == nil || *existing.CoordinationJobID != req.CoordinationJobID ||
 		existing.RouteDecisionID == nil || *existing.RouteDecisionID != req.RouteDecisionID {
+		return false
+	}
+	if existing.PlannedTaskKey == nil || *existing.PlannedTaskKey != planned.Key {
+		return false
+	}
+	if existing.Title != planned.Title ||
+		!storedTextMatches(existing.Summary, planned.Summary) ||
+		existing.Status != planned.Status ||
+		!storedUUIDMatches(existing.AssignedDigitalEmployeeID, planned.AssignedDigitalEmployeeID) ||
+		!storedTextMatches(existing.TaskKind, planned.TaskKind) ||
+		!storedInt32Matches(existing.StageIndex, planned.StageIndex) ||
+		!storedTextMatches(existing.RiskLevel, planned.RiskLevel) ||
+		existing.RequiresHumanApproval != planned.RequiresHumanApproval {
+		return false
+	}
+	return storedJSONPayloadMatches(existing.ExpectedOutputs, plannedExpectedOutputs(planned.ExpectedOutputs)) &&
+		storedJSONPayloadMatches(existing.InputRequirements, plannedObjectPayload(planned.InputRequirements)) &&
+		storedJSONPayloadMatches(existing.HandoffContract, plannedObjectPayload(planned.HandoffContract)) &&
+		storedJSONPayloadMatches(existing.PlannerMetadata, plannedObjectPayload(planned.PlannerMetadata))
+}
+
+func acceptedPlanTaskPayloadMatchesRequest(req DecomposeAcceptedPlanRevisionRequest, planned ProjectTaskGraphCreateTask, existing ProjectTask) bool {
+	if existing.TenantID != req.TenantID || existing.ProjectID != req.ProjectID {
+		return false
+	}
+	if existing.DemandID == nil || *existing.DemandID != req.DemandID {
 		return false
 	}
 	if existing.PlannedTaskKey == nil || *existing.PlannedTaskKey != planned.Key {

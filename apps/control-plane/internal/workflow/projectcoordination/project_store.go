@@ -225,12 +225,17 @@ func (s *ProjectStore) CreateProjectTasks(ctx context.Context, input CreateProje
 	if s.repository == nil {
 		return nil, ErrActivityStoreRequired
 	}
+	acceptedPlanRevisionID := acceptedPlanRevisionIDForRouteDecision(input)
+	decompositionClaimKey := acceptedPlanRevisionDecompositionClaimKey(input, acceptedPlanRevisionID)
 	graphTasks := make([]project.ProjectTaskGraphCreateTask, 0, len(input.Decision.Tasks))
 	for _, plannedTask := range input.Decision.Tasks {
 		status := "planned"
 		if len(plannedTask.BlockedByKeys) > 0 {
 			status = "blocked"
 		}
+		plannerMetadata := cloneAnyMap(input.Decision.PlannerMetadata)
+		plannerMetadata["accepted_plan_revision_id"] = acceptedPlanRevisionID.String()
+		plannerMetadata["decomposition_claim_key"] = decompositionClaimKey
 		graphTasks = append(graphTasks, project.ProjectTaskGraphCreateTask{
 			Key:                       plannedTask.Key,
 			Title:                     plannedTask.Title,
@@ -244,23 +249,25 @@ func (s *ProjectStore) CreateProjectTasks(ctx context.Context, input CreateProje
 			ExpectedOutputs:           stringsToAny(plannedTask.ExpectedOutputs),
 			InputRequirements:         plannedTask.InputRequirements,
 			HandoffContract:           plannedTask.HandoffContract,
-			PlannerMetadata:           input.Decision.PlannerMetadata,
+			PlannerMetadata:           plannerMetadata,
 			BlockedByKeys:             plannedTask.BlockedByKeys,
 		})
 	}
-	graph, err := s.repository.CreateProjectTaskGraph(ctx, project.CreateProjectTaskGraphRequest{
-		TenantID:          input.TenantID,
-		ProjectID:         input.ProjectID,
-		DemandID:          input.DemandID,
-		CoordinationJobID: input.CoordinationJobID,
-		RouteDecisionID:   input.RouteDecisionID,
-		Tasks:             graphTasks,
+	decomposition, err := s.repository.DecomposeAcceptedPlanRevision(ctx, project.DecomposeAcceptedPlanRevisionRequest{
+		TenantID:               input.TenantID,
+		ProjectID:              input.ProjectID,
+		DemandID:               input.DemandID,
+		CoordinationJobID:      input.CoordinationJobID,
+		RouteDecisionID:        input.RouteDecisionID,
+		AcceptedPlanRevisionID: acceptedPlanRevisionID,
+		DecompositionClaimKey:  decompositionClaimKey,
+		Tasks:                  graphTasks,
 	})
 	if err != nil {
 		return nil, err
 	}
-	results := make([]ProjectTaskResult, 0, len(graph.Tasks))
-	for _, task := range graph.Tasks {
+	results := make([]ProjectTaskResult, 0, len(decomposition.Tasks))
+	for _, task := range decomposition.Tasks {
 		results = append(results, ProjectTaskResult{ID: task.ID})
 	}
 	return results, nil
@@ -1206,6 +1213,26 @@ func projectTaskDispatchAllowed(status string) bool {
 
 func projectTaskDispatchIdempotencyKey(taskID uuid.UUID) string {
 	return "project-task:" + taskID.String()
+}
+
+func acceptedPlanRevisionIDForRouteDecision(input CreateProjectTasksInput) uuid.UUID {
+	if input.RouteDecisionID != uuid.Nil {
+		return input.RouteDecisionID
+	}
+	if input.CoordinationJobID != uuid.Nil {
+		return input.CoordinationJobID
+	}
+	if input.DemandID != uuid.Nil {
+		return input.DemandID
+	}
+	if input.ProjectID != uuid.Nil {
+		return input.ProjectID
+	}
+	return input.TenantID
+}
+
+func acceptedPlanRevisionDecompositionClaimKey(input CreateProjectTasksInput, acceptedPlanRevisionID uuid.UUID) string {
+	return "project-plan-decomposition:" + input.TenantID.String() + ":" + input.ProjectID.String() + ":" + input.DemandID.String() + ":" + acceptedPlanRevisionID.String()
 }
 
 func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectDemand, task project.ProjectTask) string {

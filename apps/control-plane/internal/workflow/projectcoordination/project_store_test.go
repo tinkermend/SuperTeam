@@ -227,6 +227,7 @@ func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMeta
 	stageOne := int32(1)
 	repo := &projectStoreMemoryRepository{}
 	store := NewProjectStore(repo)
+	plannerMetadata := map[string]any{"planner": "heuristic"}
 
 	results, err := store.CreateProjectTasks(context.Background(), CreateProjectTasksInput{
 		TenantID:          tenantID,
@@ -236,7 +237,7 @@ func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMeta
 		RouteDecisionID:   routeDecisionID,
 		Decision: RouteDecisionPlan{
 			Reason:          "创建图任务",
-			PlannerMetadata: map[string]any{"planner": "heuristic"},
+			PlannerMetadata: plannerMetadata,
 			Tasks: []PlannedTask{
 				{
 					Key:                   "investigate",
@@ -270,18 +271,20 @@ func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMeta
 	if err != nil {
 		t.Fatalf("create project tasks: %v", err)
 	}
-	if len(results) != 2 || len(repo.projectTaskGraphRequests) != 1 || len(repo.projectTaskRequests) != 0 {
-		t.Fatalf("expected graph task creation, results=%#v graphRequests=%#v flatRequests=%#v", results, repo.projectTaskGraphRequests, repo.projectTaskRequests)
+	if len(results) != 2 || len(repo.decomposeAcceptedPlanRevisionRequests) != 1 || len(repo.projectTaskGraphRequests) != 0 || len(repo.projectTaskRequests) != 0 {
+		t.Fatalf("expected accepted plan decomposition, results=%#v decomposeRequests=%#v graphRequests=%#v flatRequests=%#v", results, repo.decomposeAcceptedPlanRevisionRequests, repo.projectTaskGraphRequests, repo.projectTaskRequests)
 	}
-	graphReq := repo.projectTaskGraphRequests[0]
-	if graphReq.TenantID != tenantID || graphReq.ProjectID != projectID || graphReq.DemandID != demandID || graphReq.CoordinationJobID != jobID || graphReq.RouteDecisionID != routeDecisionID {
-		t.Fatalf("unexpected graph request identity: %#v", graphReq)
+	decomposeReq := repo.decomposeAcceptedPlanRevisionRequests[0]
+	if decomposeReq.TenantID != tenantID || decomposeReq.ProjectID != projectID || decomposeReq.DemandID != demandID || decomposeReq.CoordinationJobID != jobID || decomposeReq.RouteDecisionID != routeDecisionID {
+		t.Fatalf("unexpected decompose request identity: %#v", decomposeReq)
 	}
-	if len(graphReq.Tasks) != 2 {
-		t.Fatalf("expected two graph tasks, got %#v", graphReq.Tasks)
+	require.Equal(t, routeDecisionID, decomposeReq.AcceptedPlanRevisionID)
+	require.Equal(t, "project-plan-decomposition:"+tenantID.String()+":"+projectID.String()+":"+demandID.String()+":"+routeDecisionID.String(), decomposeReq.DecompositionClaimKey)
+	if len(decomposeReq.Tasks) != 2 {
+		t.Fatalf("expected two graph tasks, got %#v", decomposeReq.Tasks)
 	}
 
-	firstTask := graphReq.Tasks[0]
+	firstTask := decomposeReq.Tasks[0]
 	if firstTask.Title != "调查问题" || firstTask.Summary != "整理日志" || firstTask.Status != "planned" {
 		t.Fatalf("unexpected first task title/summary: %#v", firstTask)
 	}
@@ -298,17 +301,70 @@ func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMeta
 		t.Fatalf("unexpected risk/approval fields: %#v", firstTask)
 	}
 	assertAnyStrings(t, firstTask.ExpectedOutputs, []string{"execution_summary", "evidence_refs"})
-	if firstTask.InputRequirements["scope"] != "logs" || firstTask.HandoffContract["format"] != "markdown" || firstTask.PlannerMetadata["planner"] != "heuristic" {
+	if firstTask.InputRequirements["scope"] != "logs" || firstTask.HandoffContract["format"] != "markdown" || firstTask.PlannerMetadata["planner"] != "heuristic" ||
+		firstTask.PlannerMetadata["accepted_plan_revision_id"] != routeDecisionID.String() ||
+		firstTask.PlannerMetadata["decomposition_claim_key"] != decomposeReq.DecompositionClaimKey {
 		t.Fatalf("expected graph metadata on first task, got %#v", firstTask)
 	}
+	require.Equal(t, map[string]any{"planner": "heuristic"}, plannerMetadata)
 
-	secondTask := graphReq.Tasks[1]
+	secondTask := decomposeReq.Tasks[1]
 	if secondTask.Key != "repair" || secondTask.Status != "blocked" || secondTask.RequiresHumanApproval {
 		t.Fatalf("unexpected second task fields: %#v", secondTask)
 	}
 	if !reflect.DeepEqual(secondTask.BlockedByKeys, []string{"investigate"}) {
 		t.Fatalf("expected second task to be blocked by key, got %#v", secondTask.BlockedByKeys)
 	}
+}
+
+func TestProjectStoreCreateProjectTasksReplaysAcceptedPlanRevision(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeDecisionID := uuid.New()
+	employeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{}
+	store := NewProjectStore(repo)
+	input := CreateProjectTasksInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: jobID,
+		RouteDecisionID:   routeDecisionID,
+		Decision: RouteDecisionPlan{
+			PlannerMetadata: map[string]any{"planner": "heuristic"},
+			Tasks: []PlannedTask{
+				{
+					Key:                "investigate",
+					Title:              "调查问题",
+					Summary:            "整理日志",
+					SelectedEmployeeID: employeeID,
+					TaskKind:           "investigation",
+				},
+				{
+					Key:                "repair",
+					Title:              "修复问题",
+					Summary:            "实施补丁",
+					SelectedEmployeeID: employeeID,
+					TaskKind:           "implementation",
+					BlockedByKeys:      []string{"investigate"},
+				},
+			},
+		},
+	}
+
+	first, err := store.CreateProjectTasks(context.Background(), input)
+	require.NoError(t, err)
+	second, err := store.CreateProjectTasks(context.Background(), input)
+	require.NoError(t, err)
+
+	require.Equal(t, first, second)
+	require.Len(t, repo.decomposeAcceptedPlanRevisionRequests, 2)
+	require.Empty(t, repo.projectTaskGraphRequests)
+	require.Len(t, repo.tasks, 2)
+	require.Len(t, repo.taskDependencies, 1)
+	require.Empty(t, repo.events)
 }
 
 func TestProjectStoreListDispatchableTasksFiltersBlockedTasksAndUnresolvedBlockers(t *testing.T) {
@@ -1863,22 +1919,23 @@ type projectStoreMemoryRepository struct {
 	tasks         []project.ProjectTask
 	approvalID    uuid.UUID
 
-	bindRequests             []project.BindProjectTaskRunRequest
-	queueRequests            []project.QueueProjectTaskRequest
-	projectTaskAttempts      []project.ProjectTaskAttempt
-	bindErr                  error
-	advanceDemandErr         error
-	advanceDemandCalls       int
-	appendProjectEventErr    error
-	events                   []project.ProjectEvent
-	coordinationJobs         []project.CoordinationJob
-	routeDecisions           []project.RouteDecision
-	taskDependencies         []project.ProjectTaskDependency
-	statusUpdates            []projectTaskStatusUpdateRecord
-	routeDecisionRequests    []project.CreateRouteDecisionRequest
-	projectTaskRequests      []project.CreateProjectTaskRequest
-	projectTaskGraphRequests []project.CreateProjectTaskGraphRequest
-	decisionRequests         []project.DecisionRequest
+	bindRequests                          []project.BindProjectTaskRunRequest
+	queueRequests                         []project.QueueProjectTaskRequest
+	projectTaskAttempts                   []project.ProjectTaskAttempt
+	bindErr                               error
+	advanceDemandErr                      error
+	advanceDemandCalls                    int
+	appendProjectEventErr                 error
+	events                                []project.ProjectEvent
+	coordinationJobs                      []project.CoordinationJob
+	routeDecisions                        []project.RouteDecision
+	taskDependencies                      []project.ProjectTaskDependency
+	statusUpdates                         []projectTaskStatusUpdateRecord
+	routeDecisionRequests                 []project.CreateRouteDecisionRequest
+	projectTaskRequests                   []project.CreateProjectTaskRequest
+	projectTaskGraphRequests              []project.CreateProjectTaskGraphRequest
+	decomposeAcceptedPlanRevisionRequests []project.DecomposeAcceptedPlanRevisionRequest
+	decisionRequests                      []project.DecisionRequest
 
 	acceptanceReady   bool
 	acceptanceRecords []project.ProjectAcceptanceRecord
@@ -2081,6 +2138,8 @@ func (r *projectStoreMemoryRepository) CreateProjectTask(ctx context.Context, re
 		PlannedTaskKey:            req.PlannedTaskKey,
 		TaskKind:                  req.TaskKind,
 		StageIndex:                req.StageIndex,
+		AcceptedPlanRevisionID:    req.AcceptedPlanRevisionID,
+		DecompositionClaimKey:     req.DecompositionClaimKey,
 		ExpectedOutputs:           req.ExpectedOutputs,
 		InputRequirements:         req.InputRequirements,
 		HandoffContract:           req.HandoffContract,
@@ -2095,6 +2154,76 @@ func (r *projectStoreMemoryRepository) CreateProjectTask(ctx context.Context, re
 
 func (r *projectStoreMemoryRepository) CreateProjectTaskGraph(ctx context.Context, req project.CreateProjectTaskGraphRequest) (project.CreateProjectTaskGraphResult, error) {
 	r.projectTaskGraphRequests = append(r.projectTaskGraphRequests, req)
+	return r.createProjectTaskGraphInMemory(req, nil, nil)
+}
+
+func (r *projectStoreMemoryRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req project.DecomposeAcceptedPlanRevisionRequest) (project.DecomposeAcceptedPlanRevisionResult, error) {
+	r.decomposeAcceptedPlanRevisionRequests = append(r.decomposeAcceptedPlanRevisionRequests, req)
+	existing := make([]project.ProjectTask, 0)
+	for _, task := range r.tasks {
+		if task.TenantID != req.TenantID || task.ProjectID != req.ProjectID || task.DemandID == nil || *task.DemandID != req.DemandID ||
+			task.AcceptedPlanRevisionID == nil || *task.AcceptedPlanRevisionID != req.AcceptedPlanRevisionID {
+			continue
+		}
+		if task.DecompositionClaimKey == nil || *task.DecompositionClaimKey != req.DecompositionClaimKey {
+			return project.DecomposeAcceptedPlanRevisionResult{}, project.ErrProjectConflict
+		}
+		existing = append(existing, task)
+	}
+	if len(existing) > 0 {
+		if len(existing) != len(req.Tasks) {
+			return project.DecomposeAcceptedPlanRevisionResult{}, project.ErrProjectConflict
+		}
+		existingByKey := map[string]project.ProjectTask{}
+		existingIDs := map[uuid.UUID]struct{}{}
+		for _, task := range existing {
+			if task.PlannedTaskKey == nil {
+				return project.DecomposeAcceptedPlanRevisionResult{}, project.ErrProjectConflict
+			}
+			existingByKey[*task.PlannedTaskKey] = task
+			existingIDs[task.ID] = struct{}{}
+		}
+		for _, planned := range req.Tasks {
+			task, ok := existingByKey[planned.Key]
+			if !ok || task.Title != planned.Title || task.Status != planned.Status {
+				return project.DecomposeAcceptedPlanRevisionResult{}, project.ErrProjectConflict
+			}
+		}
+		dependencies := make([]project.ProjectTaskDependency, 0)
+		for _, dependency := range r.taskDependencies {
+			if dependency.TenantID != req.TenantID || dependency.ProjectID != req.ProjectID {
+				continue
+			}
+			if _, ok := existingIDs[dependency.DependentTaskID]; ok {
+				dependencies = append(dependencies, dependency)
+			}
+		}
+		return project.DecomposeAcceptedPlanRevisionResult{Tasks: existing, Dependencies: dependencies, Replayed: true}, nil
+	}
+	graph, err := r.createProjectTaskGraphInMemory(project.CreateProjectTaskGraphRequest{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		DemandID:          req.DemandID,
+		CoordinationJobID: req.CoordinationJobID,
+		RouteDecisionID:   req.RouteDecisionID,
+		Tasks:             req.Tasks,
+	}, &req.AcceptedPlanRevisionID, &req.DecompositionClaimKey)
+	if err != nil {
+		return project.DecomposeAcceptedPlanRevisionResult{}, err
+	}
+	tasks := make([]project.ProjectTask, 0, len(graph.Tasks))
+	for _, created := range graph.Tasks {
+		for _, task := range r.tasks {
+			if task.ID == created.ID {
+				tasks = append(tasks, task)
+				break
+			}
+		}
+	}
+	return project.DecomposeAcceptedPlanRevisionResult{Tasks: tasks, Dependencies: graph.Dependencies}, nil
+}
+
+func (r *projectStoreMemoryRepository) createProjectTaskGraphInMemory(req project.CreateProjectTaskGraphRequest, acceptedPlanRevisionID *uuid.UUID, decompositionClaimKey *string) (project.CreateProjectTaskGraphResult, error) {
 	result := project.CreateProjectTaskGraphResult{
 		Tasks:        make([]project.ProjectTaskGraphTaskResult, 0, len(req.Tasks)),
 		Dependencies: []project.ProjectTaskDependency{},
@@ -2125,6 +2254,8 @@ func (r *projectStoreMemoryRepository) CreateProjectTaskGraph(ctx context.Contex
 			PlannedTaskKey:            strPtr(planned.Key),
 			TaskKind:                  &taskKind,
 			StageIndex:                planned.StageIndex,
+			AcceptedPlanRevisionID:    acceptedPlanRevisionID,
+			DecompositionClaimKey:     decompositionClaimKey,
 			ExpectedOutputs:           planned.ExpectedOutputs,
 			InputRequirements:         planned.InputRequirements,
 			HandoffContract:           planned.HandoffContract,

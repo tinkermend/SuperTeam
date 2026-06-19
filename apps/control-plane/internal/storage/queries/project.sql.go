@@ -962,6 +962,8 @@ INSERT INTO project_tasks (
     planned_task_key,
     task_kind,
     stage_index,
+    accepted_plan_revision_id,
+    decomposition_claim_key,
     title,
     summary,
     status,
@@ -983,18 +985,20 @@ INSERT INTO project_tasks (
     $6::varchar,
     $7::varchar,
     $8::integer,
-    $9::varchar,
-    $10::text,
+    $9::uuid,
+    $10::varchar,
     $11::varchar,
-    $12::uuid,
-    $13::uuid,
+    $12::text,
+    $13::varchar,
     $14::uuid,
-    $15::varchar,
-    COALESCE($16::boolean, false),
-    COALESCE($17::jsonb, '[]'::jsonb),
-    COALESCE($18::jsonb, '{}'::jsonb),
-    COALESCE($19::jsonb, '{}'::jsonb),
-    COALESCE($20::jsonb, '{}'::jsonb)
+    $15::uuid,
+    $16::uuid,
+    $17::varchar,
+    COALESCE($18::boolean, false),
+    COALESCE($19::jsonb, '[]'::jsonb),
+    COALESCE($20::jsonb, '{}'::jsonb),
+    COALESCE($21::jsonb, '{}'::jsonb),
+    COALESCE($22::jsonb, '{}'::jsonb)
 ) RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at
 `
 
@@ -1007,6 +1011,8 @@ type CreateProjectTaskParams struct {
 	PlannedTaskKey            pgtype.Text   `json:"planned_task_key"`
 	TaskKind                  pgtype.Text   `json:"task_kind"`
 	StageIndex                pgtype.Int4   `json:"stage_index"`
+	AcceptedPlanRevisionID    uuid.NullUUID `json:"accepted_plan_revision_id"`
+	DecompositionClaimKey     pgtype.Text   `json:"decomposition_claim_key"`
 	Title                     string        `json:"title"`
 	Summary                   pgtype.Text   `json:"summary"`
 	Status                    string        `json:"status"`
@@ -1031,6 +1037,8 @@ func (q *Queries) CreateProjectTask(ctx context.Context, arg CreateProjectTaskPa
 		arg.PlannedTaskKey,
 		arg.TaskKind,
 		arg.StageIndex,
+		arg.AcceptedPlanRevisionID,
+		arg.DecompositionClaimKey,
 		arg.Title,
 		arg.Summary,
 		arg.Status,
@@ -2966,6 +2974,85 @@ func (q *Queries) ListProjectTasks(ctx context.Context, arg ListProjectTasksPara
 		arg.Status,
 		arg.Offset,
 		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectTask{}
+	for rows.Next() {
+		var i ProjectTask
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.DemandID,
+			&i.Title,
+			&i.Summary,
+			&i.Status,
+			&i.AssignedDigitalEmployeeID,
+			&i.RuntimeTaskID,
+			&i.DigitalEmployeeRunID,
+			&i.RiskLevel,
+			&i.RequiresHumanApproval,
+			&i.LatestEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CoordinationJobID,
+			&i.RouteDecisionID,
+			&i.PlannedTaskKey,
+			&i.TaskKind,
+			&i.StageIndex,
+			&i.ExpectedOutputs,
+			&i.InputRequirements,
+			&i.HandoffContract,
+			&i.PlannerMetadata,
+			&i.CurrentAttemptID,
+			&i.AcceptedPlanRevisionID,
+			&i.DecompositionClaimKey,
+			&i.AttemptCount,
+			&i.MaxAttempts,
+			&i.RetryNotBefore,
+			&i.WaitingReason,
+			&i.WaitingRequestID,
+			&i.TerminalReason,
+			&i.TerminalEventID,
+			&i.CancelledBy,
+			&i.FailedBy,
+			&i.StatusChangedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectTasksByAcceptedPlanRevision = `-- name: ListProjectTasksByAcceptedPlanRevision :many
+SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at FROM project_tasks
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND demand_id = $3::uuid
+  AND accepted_plan_revision_id = $4::uuid
+ORDER BY stage_index ASC NULLS LAST, created_at ASC
+`
+
+type ListProjectTasksByAcceptedPlanRevisionParams struct {
+	TenantID               uuid.UUID `json:"tenant_id"`
+	ProjectID              uuid.UUID `json:"project_id"`
+	DemandID               uuid.UUID `json:"demand_id"`
+	AcceptedPlanRevisionID uuid.UUID `json:"accepted_plan_revision_id"`
+}
+
+func (q *Queries) ListProjectTasksByAcceptedPlanRevision(ctx context.Context, arg ListProjectTasksByAcceptedPlanRevisionParams) ([]ProjectTask, error) {
+	rows, err := q.db.Query(ctx, ListProjectTasksByAcceptedPlanRevision,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.DemandID,
+		arg.AcceptedPlanRevisionID,
 	)
 	if err != nil {
 		return nil, err

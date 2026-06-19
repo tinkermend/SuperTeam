@@ -234,6 +234,7 @@ type Querier interface {
 	ListProjectTaskGraphEvents(ctx context.Context, arg ListProjectTaskGraphEventsParams) ([]ProjectEvent, error)
 	ListProjectTaskGraphReplayEvents(ctx context.Context, arg ListProjectTaskGraphReplayEventsParams) ([]ProjectEvent, error)
 	ListProjectTasks(ctx context.Context, arg ListProjectTasksParams) ([]ProjectTask, error)
+	ListProjectTasksByAcceptedPlanRevision(ctx context.Context, arg ListProjectTasksByAcceptedPlanRevisionParams) ([]ProjectTask, error)
 	ListProjectTasksByCoordinationJob(ctx context.Context, arg ListProjectTasksByCoordinationJobParams) ([]ProjectTask, error)
 	ListProjectTasksByDemand(ctx context.Context, arg ListProjectTasksByDemandParams) ([]ProjectTask, error)
 	ListProjectTransferRequests(ctx context.Context, arg ListProjectTransferRequestsParams) ([]ProjectTransferRequest, error)

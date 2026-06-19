@@ -1361,6 +1361,104 @@ func TestCreateProjectTaskGraphIdempotentReplayReturnsExistingGraph(t *testing.T
 	requireEventCount(t, events, ProjectEventTaskGraphPlanned, 1)
 }
 
+func TestDecomposeAcceptedPlanRevisionIsIdempotent(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	jobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	routeID := createRouteDecisionFixture(t, repo, tenantID, projectID, jobID, demandID)
+	revisionID := uuid.New()
+	claimKey := "project-plan-decomposition:" + tenantID.String() + ":" + projectID.String() + ":" + demandID.String() + ":" + revisionID.String()
+	req := createDecomposeAcceptedPlanRevisionFixtureRequest(tenantID, projectID, demandID, jobID, routeID, revisionID, claimKey)
+
+	first, err := repo.DecomposeAcceptedPlanRevision(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, first.Replayed)
+	require.Len(t, first.Tasks, 2)
+	require.Len(t, first.Dependencies, 1)
+	for _, task := range first.Tasks {
+		require.NotNil(t, task.AcceptedPlanRevisionID)
+		require.Equal(t, revisionID, *task.AcceptedPlanRevisionID)
+		require.NotNil(t, task.DecompositionClaimKey)
+		require.Equal(t, claimKey, *task.DecompositionClaimKey)
+		require.Equal(t, revisionID.String(), task.PlannerMetadata["accepted_plan_revision_id"])
+	}
+
+	second, err := repo.DecomposeAcceptedPlanRevision(context.Background(), req)
+	require.NoError(t, err)
+	require.True(t, second.Replayed)
+	require.Equal(t, first.Tasks, second.Tasks)
+	require.Equal(t, first.Dependencies, second.Dependencies)
+
+	events, err := repo.ListProjectEvents(context.Background(), tenantID, projectID, 20, 0)
+	require.NoError(t, err)
+	requireEventCount(t, events, ProjectEventTaskCreated, 2)
+	requireEventCount(t, events, ProjectEventTaskGraphPlanned, 1)
+}
+
+func TestDecomposeAcceptedPlanRevisionReplaysAcrossCoordinationJobs(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	firstJobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	firstRouteID := createRouteDecisionFixture(t, repo, tenantID, projectID, firstJobID, demandID)
+	secondJobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	secondRouteID := createRouteDecisionFixture(t, repo, tenantID, projectID, secondJobID, demandID)
+	revisionID := uuid.New()
+	claimKey := "project-plan-decomposition:" + tenantID.String() + ":" + projectID.String() + ":" + demandID.String() + ":" + revisionID.String()
+	req := createDecomposeAcceptedPlanRevisionFixtureRequest(tenantID, projectID, demandID, firstJobID, firstRouteID, revisionID, claimKey)
+
+	first, err := repo.DecomposeAcceptedPlanRevision(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, first.Replayed)
+
+	replayReq := req
+	replayReq.CoordinationJobID = secondJobID
+	replayReq.RouteDecisionID = secondRouteID
+	second, err := repo.DecomposeAcceptedPlanRevision(context.Background(), replayReq)
+	require.NoError(t, err)
+	require.True(t, second.Replayed)
+	require.Equal(t, first.Tasks, second.Tasks)
+	require.Equal(t, first.Dependencies, second.Dependencies)
+
+	for _, task := range second.Tasks {
+		require.NotNil(t, task.CoordinationJobID)
+		require.Equal(t, firstJobID, *task.CoordinationJobID)
+		require.NotNil(t, task.RouteDecisionID)
+		require.Equal(t, firstRouteID, *task.RouteDecisionID)
+	}
+	events, err := repo.ListProjectEvents(context.Background(), tenantID, projectID, 20, 0)
+	require.NoError(t, err)
+	requireEventCount(t, events, ProjectEventTaskCreated, 2)
+	requireEventCount(t, events, ProjectEventTaskGraphPlanned, 1)
+}
+
+func TestDecomposeAcceptedPlanRevisionRejectsChangedPayload(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixture(t, repo, tenantID, projectID)
+	jobID := createCoordinationJobFixture(t, repo, tenantID, projectID)
+	routeID := createRouteDecisionFixture(t, repo, tenantID, projectID, jobID, demandID)
+	revisionID := uuid.New()
+	claimKey := "project-plan-decomposition:" + tenantID.String() + ":" + projectID.String() + ":" + demandID.String() + ":" + revisionID.String()
+	req := createDecomposeAcceptedPlanRevisionFixtureRequest(tenantID, projectID, demandID, jobID, routeID, revisionID, claimKey)
+	_, err := repo.DecomposeAcceptedPlanRevision(context.Background(), req)
+	require.NoError(t, err)
+
+	changed := req
+	changed.Tasks = append([]ProjectTaskGraphCreateTask(nil), req.Tasks...)
+	changed.Tasks[0].Title = "变更后的分析"
+	changed.Tasks[0].InputRequirements = map[string]any{"scope": "changed"}
+
+	_, err = repo.DecomposeAcceptedPlanRevision(context.Background(), changed)
+	require.ErrorIs(t, err, ErrProjectConflict)
+
+	events, listEventsErr := repo.ListProjectEvents(context.Background(), tenantID, projectID, 20, 0)
+	require.NoError(t, listEventsErr)
+	requireEventCount(t, events, ProjectEventTaskCreated, 2)
+	requireEventCount(t, events, ProjectEventTaskGraphPlanned, 1)
+}
+
 func TestCreateProjectTaskGraphReplayFindsEventsAfterProjectEventChurn(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)
@@ -2057,6 +2155,28 @@ func createProjectTaskGraphFixtureRequest(tenantID, projectID, demandID, jobID, 
 				BlockedByKeys:             []string{"t1"},
 			},
 		},
+	}
+}
+
+func createDecomposeAcceptedPlanRevisionFixtureRequest(tenantID, projectID, demandID, jobID, routeID, revisionID uuid.UUID, claimKey string) DecomposeAcceptedPlanRevisionRequest {
+	graphReq := createProjectTaskGraphFixtureRequest(tenantID, projectID, demandID, jobID, routeID)
+	for i := range graphReq.Tasks {
+		metadata := map[string]any{}
+		for key, value := range graphReq.Tasks[i].PlannerMetadata {
+			metadata[key] = value
+		}
+		metadata["accepted_plan_revision_id"] = revisionID.String()
+		graphReq.Tasks[i].PlannerMetadata = metadata
+	}
+	return DecomposeAcceptedPlanRevisionRequest{
+		TenantID:               tenantID,
+		ProjectID:              projectID,
+		DemandID:               demandID,
+		CoordinationJobID:      jobID,
+		RouteDecisionID:        routeID,
+		AcceptedPlanRevisionID: revisionID,
+		DecompositionClaimKey:  claimKey,
+		Tasks:                  graphReq.Tasks,
 	}
 }
 

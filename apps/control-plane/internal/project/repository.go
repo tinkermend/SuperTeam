@@ -163,6 +163,8 @@ type CreateProjectTaskRequest struct {
 	PlannedTaskKey            *string
 	TaskKind                  *string
 	StageIndex                *int32
+	AcceptedPlanRevisionID    *uuid.UUID
+	DecompositionClaimKey     *string
 	ExpectedOutputs           []any
 	InputRequirements         map[string]any
 	HandoffContract           map[string]any

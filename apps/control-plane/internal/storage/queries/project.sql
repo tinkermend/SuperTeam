@@ -495,6 +495,8 @@ INSERT INTO project_tasks (
     planned_task_key,
     task_kind,
     stage_index,
+    accepted_plan_revision_id,
+    decomposition_claim_key,
     title,
     summary,
     status,
@@ -516,6 +518,8 @@ INSERT INTO project_tasks (
     sqlc.narg('planned_task_key')::varchar,
     sqlc.narg('task_kind')::varchar,
     sqlc.narg('stage_index')::integer,
+    sqlc.narg('accepted_plan_revision_id')::uuid,
+    sqlc.narg('decomposition_claim_key')::varchar,
     sqlc.arg('title')::varchar,
     sqlc.narg('summary')::text,
     sqlc.arg('status')::varchar,
@@ -928,6 +932,14 @@ SELECT * FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND coordination_job_id = sqlc.arg('coordination_job_id')::uuid
+ORDER BY stage_index ASC NULLS LAST, created_at ASC;
+
+-- name: ListProjectTasksByAcceptedPlanRevision :many
+SELECT * FROM project_tasks
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND demand_id = sqlc.arg('demand_id')::uuid
+  AND accepted_plan_revision_id = sqlc.arg('accepted_plan_revision_id')::uuid
 ORDER BY stage_index ASC NULLS LAST, created_at ASC;
 
 -- name: GetProjectTaskCompletionContract :one
