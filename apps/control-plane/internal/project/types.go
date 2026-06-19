@@ -298,8 +298,106 @@ type ProjectTask struct {
 	HandoffContract           map[string]any
 	PlannerMetadata           map[string]any
 	BlockedByTaskIDs          []uuid.UUID
+	CurrentAttemptID          *uuid.UUID
+	AcceptedPlanRevisionID    *uuid.UUID
+	DecompositionClaimKey     *string
+	AttemptCount              int32
+	MaxAttempts               *int32
+	RetryNotBefore            *time.Time
+	WaitingReason             *string
+	WaitingRequestID          *uuid.UUID
+	TerminalReason            *string
+	TerminalEventID           *uuid.UUID
+	CancelledBy               *string
+	FailedBy                  *string
+	StatusChangedAt           time.Time
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
+}
+
+const (
+	ProjectTaskStatusPlanned      = "planned"
+	ProjectTaskStatusQueued       = "queued"
+	ProjectTaskStatusRunning      = "running"
+	ProjectTaskStatusWaitingHuman = "waiting_human"
+	ProjectTaskStatusCompleted    = "completed"
+	ProjectTaskStatusFailed       = "failed"
+	ProjectTaskStatusCancelled    = "cancelled"
+)
+
+const (
+	ProjectTaskAttemptStatusQueued       = "queued"
+	ProjectTaskAttemptStatusRunning      = "running"
+	ProjectTaskAttemptStatusSucceeded    = "succeeded"
+	ProjectTaskAttemptStatusFailed       = "failed"
+	ProjectTaskAttemptStatusCancelled    = "cancelled"
+	ProjectTaskAttemptStatusLost         = "lost"
+	ProjectTaskAttemptStatusTimedOut     = "timed_out"
+	ProjectTaskAttemptStatusWaitingHuman = "waiting_human"
+)
+
+type ProjectTaskAttempt struct {
+	ID                            uuid.UUID
+	TenantID                      uuid.UUID
+	ProjectTaskID                 uuid.UUID
+	AttemptNo                     int32
+	Status                        string
+	DigitalEmployeeRunID          *uuid.UUID
+	RuntimeTaskID                 *uuid.UUID
+	RuntimeNodeID                 *uuid.UUID
+	ProviderSessionID             *string
+	ExecutionContextPacket        map[string]any
+	ExecutionContextPacketVersion string
+	LeaseToken                    string
+	LeaseExpiresAt                *time.Time
+	RenewedAt                     *time.Time
+	LostAt                        *time.Time
+	StartedAt                     *time.Time
+	FinishedAt                    *time.Time
+	TimeoutAt                     *time.Time
+	Retryable                     *bool
+	FailureFamily                 *string
+	FailureMessage                *string
+	IdempotencyKey                string
+	CreatedEventID                *uuid.UUID
+	TerminalEventID               *uuid.UUID
+	CreatedAt                     time.Time
+	UpdatedAt                     time.Time
+}
+
+type QueueProjectTaskRequest struct {
+	TenantID                      uuid.UUID
+	ProjectID                     uuid.UUID
+	ProjectTaskID                 uuid.UUID
+	DigitalEmployeeID             uuid.UUID
+	IdempotencyKey                string
+	LeaseToken                    string
+	LeaseExpiresAt                *time.Time
+	ExecutionContextPacket        map[string]any
+	ExecutionContextPacketVersion string
+}
+
+type QueueProjectTaskResult struct {
+	Task    ProjectTask
+	Attempt ProjectTaskAttempt
+	Event   ProjectEvent
+}
+
+type DecomposeAcceptedPlanRevisionRequest struct {
+	TenantID               uuid.UUID
+	ProjectID              uuid.UUID
+	DemandID               uuid.UUID
+	CoordinationJobID      uuid.UUID
+	RouteDecisionID        uuid.UUID
+	AcceptedPlanRevisionID uuid.UUID
+	DecompositionClaimKey  string
+	Tasks                  []ProjectTaskGraphCreateTask
+}
+
+type DecomposeAcceptedPlanRevisionResult struct {
+	Tasks        []ProjectTask
+	Dependencies []ProjectTaskDependency
+	Replayed     bool
 }
 
 type BindProjectTaskRunRequest struct {

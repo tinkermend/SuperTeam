@@ -1087,6 +1087,102 @@ func (q *Queries) CreateProjectTask(ctx context.Context, arg CreateProjectTaskPa
 	return i, err
 }
 
+const CreateProjectTaskAttempt = `-- name: CreateProjectTaskAttempt :one
+INSERT INTO project_task_attempts (
+    tenant_id,
+    project_task_id,
+    attempt_no,
+    status,
+    digital_employee_run_id,
+    runtime_task_id,
+    runtime_node_id,
+    execution_context_packet,
+    execution_context_packet_version,
+    lease_token,
+    lease_expires_at,
+    idempotency_key,
+    created_event_id
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::integer,
+    $4::varchar,
+    $5::uuid,
+    $6::uuid,
+    $7::uuid,
+    $8::jsonb,
+    $9::varchar,
+    $10::varchar,
+    $11::timestamptz,
+    $12::varchar,
+    $13::uuid
+) RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at
+`
+
+type CreateProjectTaskAttemptParams struct {
+	TenantID                      uuid.UUID          `json:"tenant_id"`
+	ProjectTaskID                 uuid.UUID          `json:"project_task_id"`
+	AttemptNo                     int32              `json:"attempt_no"`
+	Status                        string             `json:"status"`
+	DigitalEmployeeRunID          uuid.NullUUID      `json:"digital_employee_run_id"`
+	RuntimeTaskID                 uuid.NullUUID      `json:"runtime_task_id"`
+	RuntimeNodeID                 uuid.NullUUID      `json:"runtime_node_id"`
+	ExecutionContextPacket        []byte             `json:"execution_context_packet"`
+	ExecutionContextPacketVersion string             `json:"execution_context_packet_version"`
+	LeaseToken                    string             `json:"lease_token"`
+	LeaseExpiresAt                pgtype.Timestamptz `json:"lease_expires_at"`
+	IdempotencyKey                string             `json:"idempotency_key"`
+	CreatedEventID                uuid.NullUUID      `json:"created_event_id"`
+}
+
+func (q *Queries) CreateProjectTaskAttempt(ctx context.Context, arg CreateProjectTaskAttemptParams) (ProjectTaskAttempt, error) {
+	row := q.db.QueryRow(ctx, CreateProjectTaskAttempt,
+		arg.TenantID,
+		arg.ProjectTaskID,
+		arg.AttemptNo,
+		arg.Status,
+		arg.DigitalEmployeeRunID,
+		arg.RuntimeTaskID,
+		arg.RuntimeNodeID,
+		arg.ExecutionContextPacket,
+		arg.ExecutionContextPacketVersion,
+		arg.LeaseToken,
+		arg.LeaseExpiresAt,
+		arg.IdempotencyKey,
+		arg.CreatedEventID,
+	)
+	var i ProjectTaskAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectTaskID,
+		&i.AttemptNo,
+		&i.Status,
+		&i.DigitalEmployeeRunID,
+		&i.RuntimeTaskID,
+		&i.RuntimeNodeID,
+		&i.ProviderSessionID,
+		&i.ExecutionContextPacket,
+		&i.ExecutionContextPacketVersion,
+		&i.LeaseToken,
+		&i.LeaseExpiresAt,
+		&i.RenewedAt,
+		&i.LostAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.TimeoutAt,
+		&i.Retryable,
+		&i.FailureFamily,
+		&i.FailureMessage,
+		&i.IdempotencyKey,
+		&i.CreatedEventID,
+		&i.TerminalEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const CreateProjectTaskDependency = `-- name: CreateProjectTaskDependency :one
 INSERT INTO project_task_dependencies (
     tenant_id, project_id, coordination_job_id, dependent_task_id, blocker_task_id
@@ -1237,6 +1333,53 @@ func (q *Queries) FinishProjectCoordinationJob(ctx context.Context, arg FinishPr
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const GetCurrentProjectTaskAttempt = `-- name: GetCurrentProjectTaskAttempt :one
+SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.lost_at, pta.started_at, pta.finished_at, pta.timeout_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at
+FROM project_task_attempts pta
+JOIN project_tasks pt ON pt.current_attempt_id = pta.id
+WHERE pt.tenant_id = $1::uuid
+  AND pt.id = $2::uuid
+`
+
+type GetCurrentProjectTaskAttemptParams struct {
+	TenantID      uuid.UUID `json:"tenant_id"`
+	ProjectTaskID uuid.UUID `json:"project_task_id"`
+}
+
+func (q *Queries) GetCurrentProjectTaskAttempt(ctx context.Context, arg GetCurrentProjectTaskAttemptParams) (ProjectTaskAttempt, error) {
+	row := q.db.QueryRow(ctx, GetCurrentProjectTaskAttempt, arg.TenantID, arg.ProjectTaskID)
+	var i ProjectTaskAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectTaskID,
+		&i.AttemptNo,
+		&i.Status,
+		&i.DigitalEmployeeRunID,
+		&i.RuntimeTaskID,
+		&i.RuntimeNodeID,
+		&i.ProviderSessionID,
+		&i.ExecutionContextPacket,
+		&i.ExecutionContextPacketVersion,
+		&i.LeaseToken,
+		&i.LeaseExpiresAt,
+		&i.RenewedAt,
+		&i.LostAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.TimeoutAt,
+		&i.Retryable,
+		&i.FailureFamily,
+		&i.FailureMessage,
+		&i.IdempotencyKey,
+		&i.CreatedEventID,
+		&i.TerminalEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1622,6 +1765,96 @@ func (q *Queries) GetProjectTask(ctx context.Context, arg GetProjectTaskParams) 
 		&i.CancelledBy,
 		&i.FailedBy,
 		&i.StatusChangedAt,
+	)
+	return i, err
+}
+
+const GetProjectTaskAttempt = `-- name: GetProjectTaskAttempt :one
+SELECT id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at FROM project_task_attempts
+WHERE tenant_id = $1::uuid
+  AND id = $2::uuid
+`
+
+type GetProjectTaskAttemptParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) GetProjectTaskAttempt(ctx context.Context, arg GetProjectTaskAttemptParams) (ProjectTaskAttempt, error) {
+	row := q.db.QueryRow(ctx, GetProjectTaskAttempt, arg.TenantID, arg.ID)
+	var i ProjectTaskAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectTaskID,
+		&i.AttemptNo,
+		&i.Status,
+		&i.DigitalEmployeeRunID,
+		&i.RuntimeTaskID,
+		&i.RuntimeNodeID,
+		&i.ProviderSessionID,
+		&i.ExecutionContextPacket,
+		&i.ExecutionContextPacketVersion,
+		&i.LeaseToken,
+		&i.LeaseExpiresAt,
+		&i.RenewedAt,
+		&i.LostAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.TimeoutAt,
+		&i.Retryable,
+		&i.FailureFamily,
+		&i.FailureMessage,
+		&i.IdempotencyKey,
+		&i.CreatedEventID,
+		&i.TerminalEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const GetProjectTaskAttemptByIdempotencyKey = `-- name: GetProjectTaskAttemptByIdempotencyKey :one
+SELECT id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at FROM project_task_attempts
+WHERE tenant_id = $1::uuid
+  AND idempotency_key = $2::varchar
+`
+
+type GetProjectTaskAttemptByIdempotencyKeyParams struct {
+	TenantID       uuid.UUID `json:"tenant_id"`
+	IdempotencyKey string    `json:"idempotency_key"`
+}
+
+func (q *Queries) GetProjectTaskAttemptByIdempotencyKey(ctx context.Context, arg GetProjectTaskAttemptByIdempotencyKeyParams) (ProjectTaskAttempt, error) {
+	row := q.db.QueryRow(ctx, GetProjectTaskAttemptByIdempotencyKey, arg.TenantID, arg.IdempotencyKey)
+	var i ProjectTaskAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectTaskID,
+		&i.AttemptNo,
+		&i.Status,
+		&i.DigitalEmployeeRunID,
+		&i.RuntimeTaskID,
+		&i.RuntimeNodeID,
+		&i.ProviderSessionID,
+		&i.ExecutionContextPacket,
+		&i.ExecutionContextPacketVersion,
+		&i.LeaseToken,
+		&i.LeaseExpiresAt,
+		&i.RenewedAt,
+		&i.LostAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.TimeoutAt,
+		&i.Retryable,
+		&i.FailureFamily,
+		&i.FailureMessage,
+		&i.IdempotencyKey,
+		&i.CreatedEventID,
+		&i.TerminalEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -3555,6 +3788,65 @@ func (q *Queries) LockProjectEventSequence(ctx context.Context, arg LockProjectE
 	return err
 }
 
+const LockProjectTaskForQueue = `-- name: LockProjectTaskForQueue :one
+SELECT id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at FROM project_tasks
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND id = $3::uuid
+FOR UPDATE
+`
+
+type LockProjectTaskForQueueParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	ID        uuid.UUID `json:"id"`
+}
+
+func (q *Queries) LockProjectTaskForQueue(ctx context.Context, arg LockProjectTaskForQueueParams) (ProjectTask, error) {
+	row := q.db.QueryRow(ctx, LockProjectTaskForQueue, arg.TenantID, arg.ProjectID, arg.ID)
+	var i ProjectTask
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Title,
+		&i.Summary,
+		&i.Status,
+		&i.AssignedDigitalEmployeeID,
+		&i.RuntimeTaskID,
+		&i.DigitalEmployeeRunID,
+		&i.RiskLevel,
+		&i.RequiresHumanApproval,
+		&i.LatestEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.PlannedTaskKey,
+		&i.TaskKind,
+		&i.StageIndex,
+		&i.ExpectedOutputs,
+		&i.InputRequirements,
+		&i.HandoffContract,
+		&i.PlannerMetadata,
+		&i.CurrentAttemptID,
+		&i.AcceptedPlanRevisionID,
+		&i.DecompositionClaimKey,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.RetryNotBefore,
+		&i.WaitingReason,
+		&i.WaitingRequestID,
+		&i.TerminalReason,
+		&i.TerminalEventID,
+		&i.CancelledBy,
+		&i.FailedBy,
+		&i.StatusChangedAt,
+	)
+	return i, err
+}
+
 const ProjectTaskEventExists = `-- name: ProjectTaskEventExists :one
 SELECT EXISTS (
     SELECT 1 FROM project_events
@@ -3582,6 +3874,83 @@ func (q *Queries) ProjectTaskEventExists(ctx context.Context, arg ProjectTaskEve
 	var event_exists bool
 	err := row.Scan(&event_exists)
 	return event_exists, err
+}
+
+const QueueProjectTask = `-- name: QueueProjectTask :one
+UPDATE project_tasks
+SET status = 'queued',
+    current_attempt_id = $1::uuid,
+    attempt_count = attempt_count + 1,
+    retry_not_before = NULL,
+    waiting_reason = NULL,
+    waiting_request_id = NULL,
+    latest_event_id = COALESCE($2::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = $3::uuid
+  AND project_id = $4::uuid
+  AND id = $5::uuid
+  AND status IN ('planned', 'waiting_human')
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at
+`
+
+type QueueProjectTaskParams struct {
+	CurrentAttemptID uuid.UUID     `json:"current_attempt_id"`
+	LatestEventID    uuid.NullUUID `json:"latest_event_id"`
+	TenantID         uuid.UUID     `json:"tenant_id"`
+	ProjectID        uuid.UUID     `json:"project_id"`
+	ID               uuid.UUID     `json:"id"`
+}
+
+func (q *Queries) QueueProjectTask(ctx context.Context, arg QueueProjectTaskParams) (ProjectTask, error) {
+	row := q.db.QueryRow(ctx, QueueProjectTask,
+		arg.CurrentAttemptID,
+		arg.LatestEventID,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var i ProjectTask
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Title,
+		&i.Summary,
+		&i.Status,
+		&i.AssignedDigitalEmployeeID,
+		&i.RuntimeTaskID,
+		&i.DigitalEmployeeRunID,
+		&i.RiskLevel,
+		&i.RequiresHumanApproval,
+		&i.LatestEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.PlannedTaskKey,
+		&i.TaskKind,
+		&i.StageIndex,
+		&i.ExpectedOutputs,
+		&i.InputRequirements,
+		&i.HandoffContract,
+		&i.PlannerMetadata,
+		&i.CurrentAttemptID,
+		&i.AcceptedPlanRevisionID,
+		&i.DecompositionClaimKey,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.RetryNotBefore,
+		&i.WaitingReason,
+		&i.WaitingRequestID,
+		&i.TerminalReason,
+		&i.TerminalEventID,
+		&i.CancelledBy,
+		&i.FailedBy,
+		&i.StatusChangedAt,
+	)
+	return i, err
 }
 
 const ReplaceProjectMembersDelete = `-- name: ReplaceProjectMembersDelete :exec

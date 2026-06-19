@@ -190,6 +190,24 @@ func (s *Service) ListProjects(ctx context.Context, req ListProjectsRequest) ([]
 	return s.repository.ListProjects(ctx, req)
 }
 
+func (s *Service) QueueProjectTask(ctx context.Context, req QueueProjectTaskRequest) (QueueProjectTaskResult, error) {
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ProjectTaskID == uuid.Nil || req.DigitalEmployeeID == uuid.Nil {
+		return QueueProjectTaskResult{}, ErrInvalidProject
+	}
+	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	req.LeaseToken = strings.TrimSpace(req.LeaseToken)
+	if req.IdempotencyKey == "" || req.LeaseToken == "" {
+		return QueueProjectTaskResult{}, ErrInvalidProject
+	}
+	if req.ExecutionContextPacket == nil {
+		req.ExecutionContextPacket = map[string]any{}
+	}
+	if strings.TrimSpace(req.ExecutionContextPacketVersion) == "" {
+		req.ExecutionContextPacketVersion = "v1"
+	}
+	return s.repository.QueueProjectTaskWithAttempt(ctx, req)
+}
+
 func (s *Service) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
 	if req.TenantID == uuid.Nil || req.ActorUserID == uuid.Nil {
 		return nil, ErrInvalidProject

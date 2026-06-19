@@ -936,6 +936,78 @@ FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid;
 
+-- name: CreateProjectTaskAttempt :one
+INSERT INTO project_task_attempts (
+    tenant_id,
+    project_task_id,
+    attempt_no,
+    status,
+    digital_employee_run_id,
+    runtime_task_id,
+    runtime_node_id,
+    execution_context_packet,
+    execution_context_packet_version,
+    lease_token,
+    lease_expires_at,
+    idempotency_key,
+    created_event_id
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('project_task_id')::uuid,
+    sqlc.arg('attempt_no')::integer,
+    sqlc.arg('status')::varchar,
+    sqlc.narg('digital_employee_run_id')::uuid,
+    sqlc.narg('runtime_task_id')::uuid,
+    sqlc.narg('runtime_node_id')::uuid,
+    sqlc.arg('execution_context_packet')::jsonb,
+    sqlc.arg('execution_context_packet_version')::varchar,
+    sqlc.arg('lease_token')::varchar,
+    sqlc.narg('lease_expires_at')::timestamptz,
+    sqlc.arg('idempotency_key')::varchar,
+    sqlc.narg('created_event_id')::uuid
+) RETURNING *;
+
+-- name: GetProjectTaskAttempt :one
+SELECT * FROM project_task_attempts
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid;
+
+-- name: GetProjectTaskAttemptByIdempotencyKey :one
+SELECT * FROM project_task_attempts
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND idempotency_key = sqlc.arg('idempotency_key')::varchar;
+
+-- name: GetCurrentProjectTaskAttempt :one
+SELECT pta.*
+FROM project_task_attempts pta
+JOIN project_tasks pt ON pt.current_attempt_id = pta.id
+WHERE pt.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pt.id = sqlc.arg('project_task_id')::uuid;
+
+-- name: LockProjectTaskForQueue :one
+SELECT * FROM project_tasks
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+FOR UPDATE;
+
+-- name: QueueProjectTask :one
+UPDATE project_tasks
+SET status = 'queued',
+    current_attempt_id = sqlc.arg('current_attempt_id')::uuid,
+    attempt_count = attempt_count + 1,
+    retry_not_before = NULL,
+    waiting_reason = NULL,
+    waiting_request_id = NULL,
+    latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status IN ('planned', 'waiting_human')
+RETURNING *;
+
 -- name: UpdateProjectTaskStatus :one
 UPDATE project_tasks
 SET status = sqlc.arg('status')::varchar,

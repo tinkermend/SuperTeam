@@ -382,6 +382,38 @@ func TestCreateProjectTaskPersistsGraphContractFields(t *testing.T) {
 	require.Equal(t, "test", task.PlannerMetadata["planner"])
 }
 
+func TestQueueProjectTaskWithAttemptMovesPlannedTaskToQueued(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证状态机",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+
+	result, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:                      tenantID,
+		ProjectID:                     projectID,
+		ProjectTaskID:                 task.ID,
+		DigitalEmployeeID:             employeeID,
+		IdempotencyKey:                "project-task:" + task.ID.String() + ":attempt:1:queue",
+		LeaseToken:                    "lease-token-1",
+		ExecutionContextPacket:        map[string]any{"task_title": task.Title},
+		ExecutionContextPacketVersion: "v1",
+	})
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusQueued, result.Task.Status)
+	require.Equal(t, result.Attempt.ID, *result.Task.CurrentAttemptID)
+	require.Equal(t, int32(1), result.Attempt.AttemptNo)
+	require.Equal(t, ProjectTaskAttemptStatusQueued, result.Attempt.Status)
+	require.Equal(t, "lease-token-1", result.Attempt.LeaseToken)
+	require.Equal(t, "v1", result.Attempt.ExecutionContextPacketVersion)
+}
+
 func TestCreateProjectTaskGraphCreatesTasksEdgesAndEvents(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)

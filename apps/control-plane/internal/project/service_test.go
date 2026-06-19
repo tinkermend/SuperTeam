@@ -61,6 +61,175 @@ func TestRuntimeWritebackProjectTaskStatusesIncludeQueued(t *testing.T) {
 	require.True(t, projectTaskAcceptsRuntimeWriteback("queued"))
 }
 
+func TestQueueProjectTaskCreatesAttemptAndMovesTaskToQueued(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "实现幂等写回",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+		CreatedAt:                 time.Now().UTC(),
+		UpdatedAt:                 time.Now().UTC(),
+	})
+
+	result, err := service.QueueProjectTask(context.Background(), QueueProjectTaskRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		IdempotencyKey:    "project-task:" + taskID.String() + ":attempt:1:queue",
+		LeaseToken:        "lease-token-1",
+	})
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusQueued, result.Task.Status)
+	require.NotNil(t, result.Task.CurrentAttemptID)
+	require.Equal(t, int32(1), result.Attempt.AttemptNo)
+	require.Equal(t, ProjectTaskAttemptStatusQueued, result.Attempt.Status)
+	require.Equal(t, "lease-token-1", result.Attempt.LeaseToken)
+}
+
+func TestQueueProjectTaskReplaysIdempotencyKey(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证幂等重放",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+		CreatedAt:                 time.Now().UTC(),
+		UpdatedAt:                 time.Now().UTC(),
+	})
+	req := QueueProjectTaskRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ProjectTaskID:     taskID,
+		DigitalEmployeeID: employeeID,
+		IdempotencyKey:    "project-task:" + taskID.String() + ":attempt:1:queue",
+		LeaseToken:        "lease-token-1",
+	}
+
+	first, err := service.QueueProjectTask(context.Background(), req)
+	require.NoError(t, err)
+	second, err := service.QueueProjectTask(context.Background(), req)
+	require.NoError(t, err)
+
+	require.Equal(t, first.Attempt.ID, second.Attempt.ID)
+	require.Equal(t, first.Task.CurrentAttemptID, second.Task.CurrentAttemptID)
+	require.Equal(t, ProjectTaskStatusQueued, second.Task.Status)
+	require.Len(t, repo.events, 1)
+	require.Len(t, repo.projectTaskAttempts, 1)
+}
+
+func TestQueueProjectTaskRejectsIdempotencyKeyForDifferentTask(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	employeeID := uuid.New()
+	firstTaskID := uuid.New()
+	secondTaskID := uuid.New()
+	repo.tasks = append(repo.tasks,
+		ProjectTask{
+			ID:                        firstTaskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			Title:                     "首次排队任务",
+			Status:                    ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			CreatedAt:                 time.Now().UTC(),
+			UpdatedAt:                 time.Now().UTC(),
+		},
+		ProjectTask{
+			ID:                        secondTaskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			Title:                     "冲突排队任务",
+			Status:                    ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			CreatedAt:                 time.Now().UTC(),
+			UpdatedAt:                 time.Now().UTC(),
+		},
+	)
+	idempotencyKey := "project-task:" + firstTaskID.String() + ":attempt:1:queue"
+	_, err = service.QueueProjectTask(context.Background(), QueueProjectTaskRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ProjectTaskID:     firstTaskID,
+		DigitalEmployeeID: employeeID,
+		IdempotencyKey:    idempotencyKey,
+		LeaseToken:        "lease-token-1",
+	})
+	require.NoError(t, err)
+
+	_, err = service.QueueProjectTask(context.Background(), QueueProjectTaskRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ProjectTaskID:     secondTaskID,
+		DigitalEmployeeID: employeeID,
+		IdempotencyKey:    idempotencyKey,
+		LeaseToken:        "lease-token-2",
+	})
+	require.ErrorIs(t, err, ErrProjectConflict)
+	require.Len(t, repo.events, 1)
+	require.Len(t, repo.projectTaskAttempts, 1)
+}
+
+func TestQueueProjectTaskRejectsInvalidCurrentStatus(t *testing.T) {
+	for _, status := range []string{ProjectTaskStatusRunning, ProjectTaskStatusCompleted} {
+		t.Run(status, func(t *testing.T) {
+			repo := newMemoryRepository()
+			service, err := NewService(repo)
+			require.NoError(t, err)
+
+			tenantID := uuid.New()
+			projectID := uuid.New()
+			taskID := uuid.New()
+			employeeID := uuid.New()
+			repo.tasks = append(repo.tasks, ProjectTask{
+				ID:                        taskID,
+				TenantID:                  tenantID,
+				ProjectID:                 projectID,
+				Title:                     "状态冲突任务",
+				Status:                    status,
+				AssignedDigitalEmployeeID: &employeeID,
+				CreatedAt:                 time.Now().UTC(),
+				UpdatedAt:                 time.Now().UTC(),
+			})
+
+			_, err = service.QueueProjectTask(context.Background(), QueueProjectTaskRequest{
+				TenantID:          tenantID,
+				ProjectID:         projectID,
+				ProjectTaskID:     taskID,
+				DigitalEmployeeID: employeeID,
+				IdempotencyKey:    "project-task:" + taskID.String() + ":attempt:1:queue",
+				LeaseToken:        "lease-token-1",
+			})
+			require.ErrorIs(t, err, ErrProjectConflict)
+			require.Empty(t, repo.events)
+			require.Empty(t, repo.projectTaskAttempts)
+		})
+	}
+}
+
 func TestCreateProjectRejectsUnauthorizedTeamScope(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -3389,32 +3558,33 @@ func TestListPaginationIsNormalized(t *testing.T) {
 }
 
 type memoryRepository struct {
-	projects           map[uuid.UUID]Project
-	members            map[uuid.UUID][]ProjectMember
-	tasks              []ProjectTask
-	events             []ProjectEvent
-	eventTypes         []ProjectEventType
-	demands            []ProjectDemand
-	revisions          []ProjectConfigRevision
-	coordinationJobs   []CoordinationJob
-	routeDecisions     []RouteDecision
-	executionSummaries []ExecutionSummary
-	transferRequests   []TransferRequest
-	decisionRequests   []DecisionRequest
-	evidenceRefs       []ProjectEvidenceRef
-	artifactRefs       []ProjectArtifactRef
-	reportRefs         []ProjectReportRef
-	budgetLedger       []ProjectBudgetLedgerEntry
-	acceptanceRecords  []ProjectAcceptanceRecord
-	archiveSnapshots   []ProjectArchiveSnapshot
-	projectTeamScopes  map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool
-	lastListProjects   ListProjectsRequest
-	lastTasksLimit     int32
-	lastTasksOffset    int32
-	lastEventsLimit    int32
-	lastEventsOffset   int32
-	lastDemandsLimit   int32
-	lastDemandsOffset  int32
+	projects            map[uuid.UUID]Project
+	members             map[uuid.UUID][]ProjectMember
+	tasks               []ProjectTask
+	projectTaskAttempts []ProjectTaskAttempt
+	events              []ProjectEvent
+	eventTypes          []ProjectEventType
+	demands             []ProjectDemand
+	revisions           []ProjectConfigRevision
+	coordinationJobs    []CoordinationJob
+	routeDecisions      []RouteDecision
+	executionSummaries  []ExecutionSummary
+	transferRequests    []TransferRequest
+	decisionRequests    []DecisionRequest
+	evidenceRefs        []ProjectEvidenceRef
+	artifactRefs        []ProjectArtifactRef
+	reportRefs          []ProjectReportRef
+	budgetLedger        []ProjectBudgetLedgerEntry
+	acceptanceRecords   []ProjectAcceptanceRecord
+	archiveSnapshots    []ProjectArchiveSnapshot
+	projectTeamScopes   map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool
+	lastListProjects    ListProjectsRequest
+	lastTasksLimit      int32
+	lastTasksOffset     int32
+	lastEventsLimit     int32
+	lastEventsOffset    int32
+	lastDemandsLimit    int32
+	lastDemandsOffset   int32
 
 	taskStatusBeforeUpdate     *string
 	appendProjectEventErr      error
@@ -3534,6 +3704,13 @@ func strPtrOrNil(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func nonEmptyString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func paginateTestSlice[T any](items []T, limit, offset int32) []T {
@@ -4033,6 +4210,133 @@ func (r *memoryRepository) ListDemandLaunchProjectTasks(ctx context.Context, ten
 		return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
 	})
 	return paginateTestSlice(filtered, limit, 0), nil
+}
+
+func (r *memoryRepository) createProjectTaskAttempt(req QueueProjectTaskRequest, attemptNo int32, eventID *uuid.UUID) ProjectTaskAttempt {
+	version := nonEmptyString(req.ExecutionContextPacketVersion, "v1")
+	packet := req.ExecutionContextPacket
+	if packet == nil {
+		packet = map[string]any{}
+	}
+	attempt := ProjectTaskAttempt{
+		ID:                            uuid.New(),
+		TenantID:                      req.TenantID,
+		ProjectTaskID:                 req.ProjectTaskID,
+		AttemptNo:                     attemptNo,
+		Status:                        ProjectTaskAttemptStatusQueued,
+		ExecutionContextPacket:        packet,
+		ExecutionContextPacketVersion: version,
+		LeaseToken:                    req.LeaseToken,
+		LeaseExpiresAt:                req.LeaseExpiresAt,
+		IdempotencyKey:                req.IdempotencyKey,
+		CreatedEventID:                eventID,
+		CreatedAt:                     time.Now().UTC(),
+		UpdatedAt:                     time.Now().UTC(),
+	}
+	r.projectTaskAttempts = append(r.projectTaskAttempts, attempt)
+	return attempt
+}
+
+func (r *memoryRepository) replayQueueProjectTaskAttempt(ctx context.Context, req QueueProjectTaskRequest) (QueueProjectTaskResult, bool, error) {
+	for _, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID != req.TenantID || attempt.IdempotencyKey != req.IdempotencyKey {
+			continue
+		}
+		if attempt.ProjectTaskID != req.ProjectTaskID {
+			return QueueProjectTaskResult{}, true, ErrProjectConflict
+		}
+		task, err := r.GetProjectTask(ctx, req.TenantID, req.ProjectTaskID)
+		if err != nil {
+			return QueueProjectTaskResult{}, true, err
+		}
+		if task.ProjectID != req.ProjectID {
+			return QueueProjectTaskResult{}, true, ErrProjectNotFound
+		}
+		var event ProjectEvent
+		if attempt.CreatedEventID != nil {
+			for _, candidate := range r.events {
+				if candidate.TenantID == req.TenantID && candidate.ProjectID == req.ProjectID && candidate.ID == *attempt.CreatedEventID {
+					event = candidate
+					break
+				}
+			}
+		}
+		return QueueProjectTaskResult{Task: task, Attempt: attempt, Event: event}, true, nil
+	}
+	return QueueProjectTaskResult{}, false, nil
+}
+
+func (r *memoryRepository) QueueProjectTaskWithAttempt(ctx context.Context, req QueueProjectTaskRequest) (QueueProjectTaskResult, error) {
+	if result, replayed, err := r.replayQueueProjectTaskAttempt(ctx, req); replayed || err != nil {
+		return result, err
+	}
+	for index, task := range r.tasks {
+		if task.TenantID != req.TenantID || task.ProjectID != req.ProjectID || task.ID != req.ProjectTaskID {
+			continue
+		}
+		if task.Status != ProjectTaskStatusPlanned && task.Status != ProjectTaskStatusWaitingHuman {
+			return QueueProjectTaskResult{}, ErrProjectConflict
+		}
+		if task.AssignedDigitalEmployeeID != nil && *task.AssignedDigitalEmployeeID != req.DigitalEmployeeID {
+			return QueueProjectTaskResult{}, ErrProjectTaskForbidden
+		}
+		event, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
+			TenantID:     req.TenantID,
+			ProjectID:    req.ProjectID,
+			EventType:    ProjectEventTaskDispatched,
+			ActorType:    "digital_employee",
+			ActorID:      req.DigitalEmployeeID.String(),
+			ResourceType: strPtr("project_task"),
+			ResourceID:   strPtr(req.ProjectTaskID.String()),
+			Summary:      "项目任务已排队",
+			Payload: map[string]any{
+				"project_task_id":     req.ProjectTaskID.String(),
+				"digital_employee_id": req.DigitalEmployeeID.String(),
+				"attempt_no":          task.AttemptCount + 1,
+				"idempotency_key":     req.IdempotencyKey,
+			},
+		})
+		if err != nil {
+			return QueueProjectTaskResult{}, err
+		}
+		attempt := r.createProjectTaskAttempt(req, task.AttemptCount+1, &event.ID)
+		now := time.Now().UTC()
+		task.Status = ProjectTaskStatusQueued
+		task.CurrentAttemptID = &attempt.ID
+		task.AttemptCount++
+		task.RetryNotBefore = nil
+		task.WaitingReason = nil
+		task.WaitingRequestID = nil
+		task.StatusChangedAt = now
+		task.UpdatedAt = now
+		r.tasks[index] = task
+		return QueueProjectTaskResult{Task: task, Attempt: attempt, Event: event}, nil
+	}
+	return QueueProjectTaskResult{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetProjectTaskAttempt(ctx context.Context, tenantID, attemptID uuid.UUID) (ProjectTaskAttempt, error) {
+	for _, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID == tenantID && attempt.ID == attemptID {
+			return attempt, nil
+		}
+	}
+	return ProjectTaskAttempt{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetCurrentProjectTaskAttempt(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTaskAttempt, error) {
+	task, err := r.GetProjectTask(ctx, tenantID, projectTaskID)
+	if err != nil {
+		return ProjectTaskAttempt{}, err
+	}
+	if task.CurrentAttemptID == nil {
+		return ProjectTaskAttempt{}, ErrProjectNotFound
+	}
+	return r.GetProjectTaskAttempt(ctx, tenantID, *task.CurrentAttemptID)
+}
+
+func (r *memoryRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req DecomposeAcceptedPlanRevisionRequest) (DecomposeAcceptedPlanRevisionResult, error) {
+	return DecomposeAcceptedPlanRevisionResult{}, ErrProjectTaskGraphPending
 }
 
 func (r *memoryRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error) {

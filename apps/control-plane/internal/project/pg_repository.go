@@ -602,9 +602,13 @@ func (r *PgRepository) GetProjectDemand(ctx context.Context, tenantID, demandID 
 }
 
 func (r *PgRepository) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTask, error) {
-	row, err := r.q.GetProjectTask(ctx, queries.GetProjectTaskParams{TenantID: tenantID, ID: projectTaskID})
+	return r.getProjectTaskWithQueries(ctx, r.q, tenantID, projectTaskID)
+}
+
+func (r *PgRepository) getProjectTaskWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectTaskID uuid.UUID) (ProjectTask, error) {
+	row, err := q.GetProjectTask(ctx, queries.GetProjectTaskParams{TenantID: tenantID, ID: projectTaskID})
 	if err != nil {
-		return ProjectTask{}, err
+		return ProjectTask{}, projectRepositoryError(err)
 	}
 	return taskFromRecord(row)
 }
@@ -790,6 +794,172 @@ func (r *PgRepository) ListDemandLaunchRouteDecisions(ctx context.Context, tenan
 
 func (r *PgRepository) CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error) {
 	return r.createProjectTaskWithQueries(ctx, r.q, req)
+}
+
+func (r *PgRepository) createProjectTaskAttemptWithQueries(ctx context.Context, q *queries.Queries, req QueueProjectTaskRequest, attemptNo int32, eventID *uuid.UUID) (ProjectTaskAttempt, error) {
+	packet, err := jsonbObject(req.ExecutionContextPacket, "execution_context_packet")
+	if err != nil {
+		return ProjectTaskAttempt{}, err
+	}
+	version := strings.TrimSpace(req.ExecutionContextPacketVersion)
+	if version == "" {
+		version = "v1"
+	}
+	row, err := q.CreateProjectTaskAttempt(ctx, queries.CreateProjectTaskAttemptParams{
+		TenantID:                      req.TenantID,
+		ProjectTaskID:                 req.ProjectTaskID,
+		AttemptNo:                     attemptNo,
+		Status:                        ProjectTaskAttemptStatusQueued,
+		ExecutionContextPacket:        packet,
+		ExecutionContextPacketVersion: version,
+		LeaseToken:                    req.LeaseToken,
+		LeaseExpiresAt:                timestamptzPtr(req.LeaseExpiresAt),
+		IdempotencyKey:                req.IdempotencyKey,
+		CreatedEventID:                nullUUID(eventID),
+	})
+	if err != nil {
+		return ProjectTaskAttempt{}, err
+	}
+	return projectTaskAttemptFromRecord(row)
+}
+
+func (r *PgRepository) replayQueueProjectTaskAttemptWithQueries(ctx context.Context, q *queries.Queries, req QueueProjectTaskRequest) (QueueProjectTaskResult, bool, error) {
+	row, err := q.GetProjectTaskAttemptByIdempotencyKey(ctx, queries.GetProjectTaskAttemptByIdempotencyKeyParams{
+		TenantID:       req.TenantID,
+		IdempotencyKey: req.IdempotencyKey,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return QueueProjectTaskResult{}, false, nil
+		}
+		return QueueProjectTaskResult{}, false, err
+	}
+	attempt, err := projectTaskAttemptFromRecord(row)
+	if err != nil {
+		return QueueProjectTaskResult{}, true, err
+	}
+	if attempt.ProjectTaskID != req.ProjectTaskID {
+		return QueueProjectTaskResult{}, true, ErrProjectConflict
+	}
+	task, err := r.getProjectTaskWithQueries(ctx, q, req.TenantID, req.ProjectTaskID)
+	if err != nil {
+		return QueueProjectTaskResult{}, true, err
+	}
+	if task.ProjectID != req.ProjectID {
+		return QueueProjectTaskResult{}, true, ErrProjectNotFound
+	}
+	var event ProjectEvent
+	if attempt.CreatedEventID != nil {
+		eventRow, err := q.GetProjectEvent(ctx, queries.GetProjectEventParams{
+			TenantID:  req.TenantID,
+			ProjectID: req.ProjectID,
+			ID:        *attempt.CreatedEventID,
+		})
+		if err != nil {
+			return QueueProjectTaskResult{}, true, err
+		}
+		event, err = eventFromRecord(eventRow)
+		if err != nil {
+			return QueueProjectTaskResult{}, true, err
+		}
+	}
+	return QueueProjectTaskResult{Task: task, Attempt: attempt, Event: event}, true, nil
+}
+
+func (r *PgRepository) QueueProjectTaskWithAttempt(ctx context.Context, req QueueProjectTaskRequest) (QueueProjectTaskResult, error) {
+	return withProjectQueries(ctx, r, "project task queue", func(q *queries.Queries) (QueueProjectTaskResult, error) {
+		if result, replayed, err := r.replayQueueProjectTaskAttemptWithQueries(ctx, q, req); replayed || err != nil {
+			return result, err
+		}
+		row, err := q.LockProjectTaskForQueue(ctx, queries.LockProjectTaskForQueueParams{
+			TenantID:  req.TenantID,
+			ProjectID: req.ProjectID,
+			ID:        req.ProjectTaskID,
+		})
+		if err != nil {
+			return QueueProjectTaskResult{}, projectRepositoryError(err)
+		}
+		task, err := taskFromRecord(row)
+		if err != nil {
+			return QueueProjectTaskResult{}, err
+		}
+		if result, replayed, err := r.replayQueueProjectTaskAttemptWithQueries(ctx, q, req); replayed || err != nil {
+			return result, err
+		}
+		if task.Status != ProjectTaskStatusPlanned && task.Status != ProjectTaskStatusWaitingHuman {
+			return QueueProjectTaskResult{}, ErrProjectConflict
+		}
+		if task.AssignedDigitalEmployeeID != nil && *task.AssignedDigitalEmployeeID != req.DigitalEmployeeID {
+			return QueueProjectTaskResult{}, ErrProjectTaskForbidden
+		}
+		if req.ExecutionContextPacket == nil {
+			req.ExecutionContextPacket = map[string]any{}
+		}
+		if strings.TrimSpace(req.ExecutionContextPacketVersion) == "" {
+			req.ExecutionContextPacketVersion = "v1"
+		}
+		attemptNo := task.AttemptCount + 1
+
+		event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+			TenantID:     req.TenantID,
+			ProjectID:    req.ProjectID,
+			EventType:    ProjectEventTaskDispatched,
+			ActorType:    "digital_employee",
+			ActorID:      req.DigitalEmployeeID.String(),
+			ResourceType: strPtr("project_task"),
+			ResourceID:   strPtr(req.ProjectTaskID.String()),
+			Summary:      "项目任务已排队",
+			Payload: map[string]any{
+				"project_task_id":      req.ProjectTaskID.String(),
+				"digital_employee_id":  req.DigitalEmployeeID.String(),
+				"attempt_no":           attemptNo,
+				"idempotency_key":      req.IdempotencyKey,
+				"lease_expires_at_set": req.LeaseExpiresAt != nil,
+			},
+		})
+		if err != nil {
+			return QueueProjectTaskResult{}, err
+		}
+		attempt, err := r.createProjectTaskAttemptWithQueries(ctx, q, req, attemptNo, &event.ID)
+		if err != nil {
+			return QueueProjectTaskResult{}, err
+		}
+		queued, err := q.QueueProjectTask(ctx, queries.QueueProjectTaskParams{
+			CurrentAttemptID: attempt.ID,
+			LatestEventID:    uuid.NullUUID{UUID: event.ID, Valid: true},
+			TenantID:         req.TenantID,
+			ProjectID:        req.ProjectID,
+			ID:               req.ProjectTaskID,
+		})
+		if err != nil {
+			return QueueProjectTaskResult{}, projectRepositoryError(err)
+		}
+		mappedTask, err := taskFromRecord(queued)
+		if err != nil {
+			return QueueProjectTaskResult{}, err
+		}
+		return QueueProjectTaskResult{Task: mappedTask, Attempt: attempt, Event: event}, nil
+	})
+}
+
+func (r *PgRepository) GetProjectTaskAttempt(ctx context.Context, tenantID, attemptID uuid.UUID) (ProjectTaskAttempt, error) {
+	row, err := r.q.GetProjectTaskAttempt(ctx, queries.GetProjectTaskAttemptParams{TenantID: tenantID, ID: attemptID})
+	if err != nil {
+		return ProjectTaskAttempt{}, projectRepositoryError(err)
+	}
+	return projectTaskAttemptFromRecord(row)
+}
+
+func (r *PgRepository) GetCurrentProjectTaskAttempt(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTaskAttempt, error) {
+	row, err := r.q.GetCurrentProjectTaskAttempt(ctx, queries.GetCurrentProjectTaskAttemptParams{TenantID: tenantID, ProjectTaskID: projectTaskID})
+	if err != nil {
+		return ProjectTaskAttempt{}, projectRepositoryError(err)
+	}
+	return projectTaskAttemptFromRecord(row)
+}
+
+func (r *PgRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req DecomposeAcceptedPlanRevisionRequest) (DecomposeAcceptedPlanRevisionResult, error) {
+	return DecomposeAcceptedPlanRevisionResult{}, ErrProjectTaskGraphPending
 }
 
 func (r *PgRepository) createProjectTaskWithQueries(ctx context.Context, q *queries.Queries, req CreateProjectTaskRequest) (ProjectTask, error) {
@@ -2671,8 +2841,56 @@ func taskFromRecord(row queries.ProjectTask) (ProjectTask, error) {
 		HandoffContract:           handoffContract,
 		PlannerMetadata:           plannerMetadata,
 		BlockedByTaskIDs:          []uuid.UUID{},
+		CurrentAttemptID:          ptrUUID(row.CurrentAttemptID),
+		AcceptedPlanRevisionID:    ptrUUID(row.AcceptedPlanRevisionID),
+		DecompositionClaimKey:     ptrText(row.DecompositionClaimKey),
+		AttemptCount:              row.AttemptCount,
+		MaxAttempts:               int32PtrFromSQL(row.MaxAttempts),
+		RetryNotBefore:            ptrTime(row.RetryNotBefore),
+		WaitingReason:             ptrText(row.WaitingReason),
+		WaitingRequestID:          ptrUUID(row.WaitingRequestID),
+		TerminalReason:            ptrText(row.TerminalReason),
+		TerminalEventID:           ptrUUID(row.TerminalEventID),
+		CancelledBy:               ptrText(row.CancelledBy),
+		FailedBy:                  ptrText(row.FailedBy),
+		StatusChangedAt:           row.StatusChangedAt.Time,
 		CreatedAt:                 row.CreatedAt.Time,
 		UpdatedAt:                 row.UpdatedAt.Time,
+	}, nil
+}
+
+func projectTaskAttemptFromRecord(row queries.ProjectTaskAttempt) (ProjectTaskAttempt, error) {
+	packet, err := mapFromJSON(row.ExecutionContextPacket)
+	if err != nil {
+		return ProjectTaskAttempt{}, fmt.Errorf("execution_context_packet: %w", err)
+	}
+	return ProjectTaskAttempt{
+		ID:                            row.ID,
+		TenantID:                      row.TenantID,
+		ProjectTaskID:                 row.ProjectTaskID,
+		AttemptNo:                     row.AttemptNo,
+		Status:                        row.Status,
+		DigitalEmployeeRunID:          ptrUUID(row.DigitalEmployeeRunID),
+		RuntimeTaskID:                 ptrUUID(row.RuntimeTaskID),
+		RuntimeNodeID:                 ptrUUID(row.RuntimeNodeID),
+		ProviderSessionID:             ptrText(row.ProviderSessionID),
+		ExecutionContextPacket:        packet,
+		ExecutionContextPacketVersion: row.ExecutionContextPacketVersion,
+		LeaseToken:                    row.LeaseToken,
+		LeaseExpiresAt:                ptrTime(row.LeaseExpiresAt),
+		RenewedAt:                     ptrTime(row.RenewedAt),
+		LostAt:                        ptrTime(row.LostAt),
+		StartedAt:                     ptrTime(row.StartedAt),
+		FinishedAt:                    ptrTime(row.FinishedAt),
+		TimeoutAt:                     ptrTime(row.TimeoutAt),
+		Retryable:                     ptrBool(row.Retryable),
+		FailureFamily:                 ptrText(row.FailureFamily),
+		FailureMessage:                ptrText(row.FailureMessage),
+		IdempotencyKey:                row.IdempotencyKey,
+		CreatedEventID:                ptrUUID(row.CreatedEventID),
+		TerminalEventID:               ptrUUID(row.TerminalEventID),
+		CreatedAt:                     row.CreatedAt.Time,
+		UpdatedAt:                     row.UpdatedAt.Time,
 	}, nil
 }
 
@@ -3414,6 +3632,21 @@ func ptrTime(value pgtype.Timestamptz) *time.Time {
 	}
 	t := value.Time
 	return &t
+}
+
+func timestamptzPtr(value *time.Time) pgtype.Timestamptz {
+	if value == nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: *value, Valid: true}
+}
+
+func ptrBool(value pgtype.Bool) *bool {
+	if !value.Valid {
+		return nil
+	}
+	b := value.Bool
+	return &b
 }
 
 func int8Ptr(value *int64) pgtype.Int8 {
