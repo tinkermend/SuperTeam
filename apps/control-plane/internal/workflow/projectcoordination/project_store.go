@@ -922,6 +922,9 @@ func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input
 		}
 		return DecisionRequestResult{}, err
 	}
+	rollbackToRunning := func() {
+		_, _ = s.repository.TransitionProjectStatus(ctx, input.TenantID, input.ProjectID, []string{string(project.ProjectStatusAcceptance)}, string(project.ProjectStatusRunning))
+	}
 	targetUserID := projectRecord.HumanOwnerUserID
 	if projectRecord.AcceptanceUserID != nil && *projectRecord.AcceptanceUserID != uuid.Nil {
 		targetUserID = *projectRecord.AcceptanceUserID
@@ -939,6 +942,7 @@ func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input
 		Options:       []any{"approved", "rejected", "needs_more_evidence"},
 	})
 	if err != nil {
+		rollbackToRunning()
 		return DecisionRequestResult{}, err
 	}
 	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, input.ProjectID.String(), "项目进入待验收,等待人类确认", map[string]any{
@@ -947,6 +951,7 @@ func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input
 		"target_user_id":      targetUserID.String(),
 	}))
 	if err != nil {
+		rollbackToRunning()
 		return DecisionRequestResult{}, err
 	}
 	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{

@@ -560,6 +560,33 @@ func TestProjectStoreRequestProjectAcceptanceReviewTransitionsAndIsIdempotent(t 
 	require.Empty(t, repo.decisionRequests, "idempotent review must not create a second decision request")
 }
 
+func TestProjectStoreRequestProjectAcceptanceReviewRollsBackStatusWhenApprovalCreationFails(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	approvalErr := errors.New("approval service unavailable")
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			Status:           project.ProjectStatusRunning,
+			HumanOwnerUserID: ownerID,
+		},
+	}
+	approvals := &projectStoreApprovalCreator{err: approvalErr}
+	store := NewProjectStoreWithApprovals(repo, approvals)
+
+	result, err := store.RequestProjectAcceptanceReview(context.Background(), RequestProjectAcceptanceReviewInput{
+		TenantID: tenantID,
+		ProjectID: projectID,
+	})
+
+	require.ErrorIs(t, err, approvalErr)
+	require.Equal(t, uuid.Nil, result.ID)
+	require.Equal(t, project.ProjectStatusRunning, repo.projectRecord.Status)
+	require.Empty(t, repo.decisionRequests)
+}
+
 func TestProjectStoreApplyProjectAcceptanceDecisionAcceptArchivesRejectReopens(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -2131,10 +2158,14 @@ func (r *projectStoreMemoryRepository) GetDecisionRequest(ctx context.Context, t
 type projectStoreApprovalCreator struct {
 	approvalID uuid.UUID
 	last       approval.CreateRequestInput
+	err        error
 }
 
 func (c *projectStoreApprovalCreator) CreateRequest(ctx context.Context, input approval.CreateRequestInput) (*approval.ApprovalRequest, error) {
 	c.last = input
+	if c.err != nil {
+		return nil, c.err
+	}
 	id := c.approvalID
 	if id == uuid.Nil {
 		id = uuid.New()

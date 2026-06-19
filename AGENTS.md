@@ -17,10 +17,12 @@ SuperTeam 目标是把 AI 执行能力、流程状态调度、人类审批、上
 ## 主栈边界
 
 - 技术栈以当前 workspace、契约和构建脚本为准；不得在没有明确共识时引入替代主栈的并行框架或重复基础设施。
+- 根级 Node/验证命令以 `package.json` 为准，优先通过 `corepack pnpm <script>` 运行；文档或自动化中不要记录未在仓库脚本、Makefile 或 helper script 中确认过的命令。
 
 ## 项目启停
 
 - 当前整个项目启停已经封装到脚本 scripts/dev-services.sh 支持参数`start`,`status`,`restart`,`stop`
+- 本地联调前后先用 `scripts/dev-services.sh status` 确认 Temporal、Control Plane、Web、Runtime Agent 实际状态；代码变更后优先用 `scripts/dev-services.sh restart <service>` 做定向重启，脚本只管理它自己写入 pid 文件的进程。
 
 ## 数据库设计规则
 
