@@ -27,6 +27,10 @@ ProjectTask 已经成为项目协调链路中的业务任务载体。当前主�
   - 同一任务契约仍成立时，在同一个 ProjectTask 下创建新 attempt。
   - 任务契约不成立、换计划、换业务路径时，旧 task 终态化并追加新的 `planned` task 或恢复子图。
 - 将 `waiting_human` 建成一等暂停状态，用于人类补充上下文、审批、授权、澄清或判断是否重新规划。
+- 引入 accepted plan revision 的精确一次分解，防止计划确认、重试或重放重复生成 ProjectTask。
+- 将“数字员工完成”和“协调者/人类接受”分离，高风险任务必须通过验收门后才解锁下游。
+- 建立 ProjectTask liveness projection，直接回答每个任务下一步靠什么推进。
+- 标准化 execution context packet，让 Runtime/Provider 获得版本化、可审计、范围明确的执行输入。
 - 让 Runtime 写回只认 attempt，消除旧 project-task 直写 API 的长期兼容分支。
 
 ## 3. 非目标
@@ -36,6 +40,8 @@ ProjectTask 已经成为项目协调链路中的业务任务载体。当前主�
 - 不把数字员工之间的自由聊天作为协作机制；协作必须落在结构化 task、attempt、event、decision/request 和 artifact 上。
 - 不在本设计中实现完整前端交互，只定义状态、契约和验证要求。
 - 不把 workflow memory 作为任务事实源；Temporal Workflow 只驱动协调，持久事实落在数据库和 project events。
+- 不把计划结构、阶段树或父子关系当作调度依赖；真正阻塞执行的关系必须是显式 dependency/blocker 事实。
+- 不允许数字员工绕过 Policy、人类审批和 Control Plane 校验自由创建子任务。
 
 ## 4. 已确认决策
 
@@ -76,6 +82,33 @@ Runtime/Provider 暂态问题在同一个 ProjectTask 下创建新 attempt。需
 
 新 Runtime Agent 只调用 attempt endpoints。旧 project-task 写回路径不保留兼容分支，避免长期双状态源。
 
+### 4.6 accepted plan revision 精确一次分解
+
+计划可以多次生成、修改和确认，但只有被接受的 plan revision 可以分解成 ProjectTask。分解必须有唯一 claim，避免工作流重试、人类重复确认或服务重启后重复创建任务。
+
+建议 claim key：
+
+`project-plan-decomposition:{tenant_id}:{project_id}:{demand_id}:{accepted_plan_revision_id}`
+
+同一个 accepted plan revision 的分解必须幂等：已创建过同一组 task 时返回既有结果；payload 不一致时返回冲突，不能静默追加重复任务。
+
+### 4.7 完成与接受分离
+
+数字员工 attempt 成功只表示“候选结果已产出”，不一定表示业务任务已完成。对高风险、需人类验收、依赖解锁影响大的任务，attempt `succeeded` 后应进入 `waiting_human`，`waiting_reason='acceptance_required'`。
+
+验收通过后，ProjectTask 才进入 `completed`，并解锁下游依赖。验收驳回后，处理结果必须是同 task 新 attempt、`cancelled + replan`、`cancelled` 或 `failed`。
+
+不新增 `completed_pending_acceptance` 状态，避免扩大 ProjectTask 主状态集合；验收门归入 `waiting_human` 的 typed request。
+
+### 4.8 DAG 与 Loop 模式
+
+协调计划需要显式声明 `plan_mode = dag | loop`。
+
+- `dag`：任务图可以一次性展开，依赖满足后调度 ready task。
+- `loop`：用于修复-验收-返工、持续观察、多轮研究等场景。Loop 不预展开成无限 DAG；每一轮仍然落成 append-only ProjectTask、attempt、event 和恢复决策。
+
+无论计划模式如何，事实源都必须是 Control Plane 持久化对象，不是聊天记录、计划文本或 agent 临时记忆。
+
 ## 5. 架构边界
 
 `project_tasks` 是任务契约和当前业务状态源，保存稳定任务事实：
@@ -84,6 +117,7 @@ Runtime/Provider 暂态问题在同一个 ProjectTask 下创建新 attempt。需
 - 当前 status；
 - 当前 assignee；
 - 当前 active attempt；
+- accepted plan revision 和分解来源；
 - 重试策略和等待人类原因；
 - 终态原因和终态事件。
 
@@ -94,6 +128,7 @@ Runtime/Provider 暂态问题在同一个 ProjectTask 下创建新 attempt。需
 - lease token、过期时间、续租时间、丢失时间；
 - started/finished/timeout 时间；
 - Provider session；
+- execution context packet 版本和快照；
 - 失败分类、是否可重试、幂等键、终态事件。
 
 `project_events` 是审计和读模型驱动流，记录每一次关键状态转移和恢复决策。
@@ -131,6 +166,7 @@ planned -> queued -> running -> failed
 planned -> queued -> running -> cancelled
 planned -> queued -> running -> waiting_human -> queued -> running -> completed
 planned -> queued -> running -> waiting_human -> cancelled + append new planned tasks
+planned -> queued -> running -> waiting_human(acceptance_required) -> completed
 ```
 
 允许的核心流转：
@@ -140,6 +176,7 @@ planned -> queued -> running -> waiting_human -> cancelled + append new planned 
 - `queued -> running`：Runtime/Provider started 写回。
 - `queued -> cancelled`：尚未开始时被业务取消或计划废弃。
 - `running -> completed`：attempt 完成并通过任务完成契约校验。
+- `running -> waiting_human(acceptance_required)`：attempt 成功但任务需要协调者或人类接受后才能完成。
 - `running -> failed`：不可恢复执行错误。
 - `running -> waiting_human`：需要人类补上下文、审批、授权、澄清或判断。
 - `running -> queued`：仅通过“结束当前 attempt + 创建新 attempt”的事务表达，不能直接复用旧 attempt。
@@ -159,6 +196,8 @@ planned -> queued -> running -> waiting_human -> cancelled + append new planned 
 - `failed`：执行错误、能力不足或不可恢复失败。
 - `cancelled`：业务废弃、计划不成立、需求变化、人类拒绝继续，或上层协调决定停止。
 
+下游依赖只能在 ProjectTask 进入 `completed` 后解锁。attempt `succeeded` 但 task 仍处于 `waiting_human` 时，不能解锁下游。
+
 ## 7. 数据模型
 
 ### 7.1 project_tasks 增强字段
@@ -167,6 +206,8 @@ planned -> queued -> running -> waiting_human -> cancelled + append new planned 
 
 - `status VARCHAR(50) NOT NULL`
 - `current_attempt_id UUID NULL`
+- `accepted_plan_revision_id UUID NULL`
+- `decomposition_claim_key VARCHAR(255) NULL`
 - `attempt_count INT NOT NULL DEFAULT 0`
 - `max_attempts INT NULL`
 - `retry_not_before TIMESTAMPTZ NULL`
@@ -193,6 +234,8 @@ planned -> queued -> running -> waiting_human -> cancelled + append new planned 
 - `runtime_task_id UUID NULL`
 - `runtime_node_id UUID NULL`
 - `provider_session_id VARCHAR(255) NULL`
+- `execution_context_packet JSONB NOT NULL`
+- `execution_context_packet_version VARCHAR(50) NOT NULL`
 - `lease_token VARCHAR(255) NOT NULL`
 - `lease_expires_at TIMESTAMPTZ NULL`
 - `renewed_at TIMESTAMPTZ NULL`
@@ -241,6 +284,7 @@ attempt status：
 
 - `project_task_id`
 - `attempt_id`，如果事件与 attempt 相关
+- `accepted_plan_revision_id`，如果事件来自计划分解或重规划
 - `previous_status`
 - `next_status`
 - `reason`
@@ -248,12 +292,94 @@ attempt status：
 - `runtime_node_id`，如果来自 Runtime
 - `failure_family`，如果是失败或恢复事件
 
+### 7.4 计划版本与分解 claim
+
+计划生成、确认和分解需要和 task 生命周期分开建模。建议引入或复用现有 coordination job/route decision 字段，并明确以下事实：
+
+- `plan_revision_id`：一次可被人类或系统审阅的计划版本。
+- `accepted_plan_revision_id`：被接受并允许分解成 ProjectTask 的版本。
+- `decomposition_claim_key`：精确一次分解 claim。
+- `decomposed_at`：分解完成时间。
+- `decomposition_event_id`：分解审计事件。
+
+唯一约束建议：
+
+`(tenant_id, project_id, demand_id, accepted_plan_revision_id)` 唯一。
+
+如果同一 accepted revision 重放分解请求，Control Plane 必须返回既有 task graph。若请求中的 task 契约和既有分解不一致，返回冲突并写审计事件。
+
+### 7.5 liveness projection
+
+新增 ProjectTask liveness projection，用于前端总览、异常诊断和调度判断。它不是新的事实源，而是从 task、attempt、dependency、decision/request、lease 和 retry 字段投影。
+
+建议 liveness 值：
+
+- `blocked_by_dependency`
+- `ready_to_dispatch`
+- `queued`
+- `running`
+- `waiting_human`
+- `retry_scheduled`
+- `lease_lost`
+- `timed_out`
+- `terminal`
+
+projection 至少返回：
+
+- `project_task_id`
+- `liveness`
+- `reason`
+- `blocking_dependency_ids`
+- `current_attempt_id`
+- `waiting_request_id`
+- `retry_not_before`
+- `lease_expires_at`
+- `next_action`
+
+`next_action` 应能直接回答“这个任务下一步靠什么推进”，例如 dispatch、lease renew、human response、retry wakeup、dependency completion 或 no-op terminal。
+
+### 7.6 execution context packet
+
+每个 attempt 创建时必须固化一份版本化 execution context packet，并把它传给 Runtime Agent。packet 不是临时 prompt，而是可审计的执行输入快照。
+
+packet 建议包含：
+
+- task 目标、标题、摘要和 expected outputs；
+- input requirements 和 handoff contract；
+- 依赖任务的输出摘要、证据引用和 artifact refs；
+- 相关人类决策、审批、补充上下文和验收标准；
+- allowed capabilities、provider constraints 和 runtime constraints；
+- 禁止改动范围、风险等级和需要停下等待人类的条件；
+- project/task/attempt/idempotency 元数据。
+
+如果任务运行中出现新评论、新约束或补充材料，不默认创建新 run。Control Plane 先记录 `attempt_context_updates` 或等价 deferred follow-up：
+
+- Provider 支持热注入时，将 context update 递送到当前 attempt。
+- Provider 不支持热注入时，将 update 排到下一 attempt 或等待人类处理。
+- 如果 update 改变任务契约，当前 task 必须 `cancelled + replan`，不能把新契约偷偷塞进旧 attempt。
+
+### 7.7 结构关系与阻塞关系分离
+
+ProjectTask 可以属于阶段、子任务树、重规划树或 recovery chain，但这些结构关系不等于调度依赖。
+
+规则：
+
+- 阶段、父子、replacement、retry/rework/reassign 是结构或历史关系。
+- 真正阻塞下游执行的只能是 `project_task_dependencies` 或显式 blocker 事实。
+- liveness projection 只能根据 dependency/blocker 判定 `blocked_by_dependency`，不能因为一个 task 有父节点就自动阻塞。
+
 ## 8. Control Plane 内部接口
 
 建议以 project service 为状态机入口，repository 只提供原子事务方法。
 
+`DecomposeAcceptedPlanRevision`：
+基于 accepted plan revision 精确一次创建 ProjectTask 和 dependency。重复调用返回既有分解结果；payload 不一致返回冲突。
+
 `QueueProjectTask`：
 把 `planned/waiting_human` 推进到 `queued`，创建新 attempt，写 queued event。
+
+`BuildProjectTaskExecutionPacket`：
+在创建 attempt 时固化 execution context packet，注入依赖输出、证据、人类决策、验收标准、能力约束和禁止改动范围。
 
 `StartProjectTaskAttempt`：
 校验 attempt、lease token、runtime node，把 attempt 和 task 推进到 `running`，写 started event。
@@ -262,7 +388,10 @@ attempt status：
 校验 active attempt 和 lease token，刷新 `lease_expires_at`、`renewed_at`，必要时写低频 lease event 或只更新 attempt。
 
 `CompleteProjectTaskAttempt`：
-幂等完成 attempt、task、event、summary 和 demand/project read model。完成契约不满足时进入 waiting-human 或拒绝写回，不能伪完成。
+幂等记录 attempt 成功、event、summary 和 work products。完成契约不满足时进入 waiting-human 或拒绝写回，不能伪完成。若策略允许自动接受，则 task 进入 `completed` 并更新 demand/project read model；若需要验收，则调用 `RequestProjectTaskAcceptance`，task 保持 `waiting_human`，不得解锁下游。
+
+`RequestProjectTaskAcceptance`：
+对需要协调者或人类验收的成功 attempt，将 attempt 标记为 `succeeded`，task 进入 `waiting_human`，`waiting_reason='acceptance_required'`，并创建验收请求。
 
 `FailProjectTaskAttempt`：
 记录 attempt 失败，按错误分类和 retry policy 决定：
@@ -282,6 +411,12 @@ attempt status：
 - `cancel_and_replan`
 - `cancel_without_replan`
 - `mark_failed`
+
+`RecordAttemptContextUpdate`：
+记录运行中新增上下文、评论、约束或补充材料。该接口只追加 context update；是否热注入当前 attempt、排到下一 attempt、或触发 replan 由 Control Plane 策略决定。
+
+`ProjectTaskLivenessProjection`：
+从 task、attempt、dependency、lease、retry 和 waiting request 投影 liveness 和 next action，供前端、诊断和调度器读取。
 
 ## 9. Runtime API
 
@@ -322,8 +457,11 @@ Runtime claim/dispatch payload 必须包含：
 - `attempt_id`
 - `lease_token`
 - `lease_expires_at`
-- 任务契约和 expected outputs；
+- `execution_context_packet`
+- `execution_context_packet_version`
 - 需要写回的 Runtime endpoint base。
+
+Runtime Agent 不应自行拼装跨任务上下文。它只消费 Control Plane 下发的 execution context packet，并在执行日志和写回里引用 packet version。
 
 ## 10. 错误分类与恢复策略
 
@@ -350,6 +488,9 @@ task 进入 `waiting_human`。批准后同 task 新 attempt；拒绝后按业务
 `business_cancelled` / `plan_invalid` / `requirement_changed`：
 task `cancelled`，上层追加新计划或终止下游。
 
+`acceptance_required`：
+attempt 结果已经产出，但高风险、关键依赖或策略要求协调者/人类接受。task 进入 `waiting_human`。接受后进入 `completed`；驳回后按人类决策同 task retry、cancel and replan、cancel 或 failed。
+
 ## 11. 幂等与并发
 
 每个外部写入都必须有幂等键。
@@ -367,6 +508,7 @@ Runtime 写回幂等键：
 - 重复 started 只返回同一 running attempt。
 - 重复 lease 只刷新或返回当前 lease 状态，不写重复业务事件。
 - 重复 complete/fail/wait-human 只返回第一次 terminal 结果，不重复 event、summary 或 transfer/decision request。
+- 重复 accepted plan revision decomposition 只返回既有 task graph，不重复创建 task 或 dependency。
 - complete 与 fail 并发时，只有一个 terminal writeback 成功；另一个必须识别为冲突或幂等重放。
 - 新 attempt 创建和 `project_tasks.current_attempt_id` 更新必须在同一事务中完成。
 - terminal task 禁止创建新 attempt。
@@ -389,18 +531,21 @@ Runtime 写回幂等键：
 
 这个 loop 是受控的项目协调 loop，不是自由聊天。所有输入、结论、证据和恢复动作都必须结构化持久化。
 
+验收 loop 复用同一机制。数字员工完成后的结果如果需要接受，task 停在 `waiting_human`，reason 为 `acceptance_required`。只有接受事件落库后，task 才进入 `completed` 并解锁依赖。
+
 ## 13. 迁移和破坏式收敛
 
 本设计接受 breaking change，优先降低长期复杂度。
 
 迁移策略：
 
-1. 新增状态机、attempt 表、repository 事务方法和服务层接口。
+1. 新增状态机、attempt 表、plan decomposition claim、execution context packet、repository 事务方法和服务层接口。
 2. 将 dispatch 成功后的状态从 `assigned` 改为 `queued`，并创建当前 attempt。
 3. Runtime Agent 改为只使用 attempt endpoints。
 4. 删除旧 project-task 写回 handler、OpenAPI path、客户端调用和测试。
 5. 更新读模型和 operational status 逻辑，让 queued 来自 `project_tasks.status='queued'` 和 active attempt，而不是旧 assigned 口径。
-6. 清理不再作为新链路事实源的 `project_tasks.digital_employee_run_id/runtime_task_id` 依赖。
+6. 增加 liveness projection，供前端总览、异常诊断和调度器读取。
+7. 清理不再作为新链路事实源的 `project_tasks.digital_employee_run_id/runtime_task_id` 依赖。
 
 历史数据处理：
 
@@ -416,6 +561,7 @@ Runtime 写回幂等键：
 - 非法流转拒绝。
 - terminal 状态不可回滚。
 - `waiting_human` 的恢复分支正确。
+- `acceptance_required` 不解锁下游，接受后才完成。
 - `assigned` 不再作为新状态使用。
 
 ### 14.2 Repository/sqlc 测试
@@ -423,6 +569,8 @@ Runtime 写回幂等键：
 - 创建 attempt 并原子更新 `current_attempt_id`。
 - active attempt 唯一。
 - lease token 校验。
+- accepted plan revision 分解精确一次。
+- execution context packet 创建后不可被运行中隐式改写。
 - started/complete/fail/wait-human 幂等。
 - complete 与 fail 并发只有一个成功。
 - event 和 summary 不重复写入。
@@ -432,13 +580,17 @@ Runtime 写回幂等键：
 - dispatch 生成 `queued + current attempt`。
 - started 推进 `running`。
 - complete 原子写 task、attempt、event、summary。
+- 高风险 complete 进入 `waiting_human(acceptance_required)`，验收通过后才 `completed`。
 - fail 根据错误分类进入 retry、waiting_human、failed 或 cancelled。
 - 人类补充上下文后同 task 新 attempt。
 - plan invalid 后旧 task cancelled 并追加新 planned 子图。
+- 新增 context update 不改变契约时进入 deferred follow-up 或热注入；改变契约时必须 cancel and replan。
+- liveness projection 能区分 dependency blocked、queued、running、waiting human、retry scheduled、lease lost、timed out 和 terminal。
 
 ### 14.4 Runtime Agent 测试
 
 - 执行 payload 使用 attempt id 和 lease token。
+- 执行 payload 使用 Control Plane 下发的 execution context packet，不自行拼装跨任务上下文。
 - started/lease/complete/fail/wait-human 全部调用 attempt endpoints。
 - 旧 project-task 写回路径不存在。
 - lease 失败时本地任务取消，并向 Control Plane 写回可分类事实。
@@ -453,20 +605,22 @@ Runtime 写回幂等键：
 - 真实 smoke：
   1. 创建项目需求；
   2. planner 生成 `planned` task；
-  3. dispatch 创建 `queued` task 和 attempt；
-  4. Runtime started 推进 `running`；
-  5. lease renew 写入持久 lease；
-  6. complete 写回；
-  7. API 读回 task、attempt、event、summary 和项目读模型。
+  3. accepted plan revision 精确一次分解为 task graph；
+  4. dispatch 创建 `queued` task、attempt 和 execution context packet；
+  5. Runtime started 推进 `running`；
+  6. lease renew 写入持久 lease；
+  7. complete 写回；
+  8. 高风险任务走 acceptance gate，接受后进入 `completed`；
+  9. API 读回 task、attempt、event、summary、liveness 和项目读模型。
 
 ## 15. 实施边界
 
 建议拆成三阶段计划：
 
-第一阶段：Control Plane 数据模型、状态机、attempt repository/service、OpenAPI breaking contract。
+第一阶段：Control Plane 数据模型、状态机、attempt repository/service、accepted plan decomposition claim、OpenAPI breaking contract。
 
-第二阶段：Runtime Agent 调用 attempt endpoints，并删除旧 project-task 写回调用。
+第二阶段：Runtime Agent 调用 attempt endpoints，消费 execution context packet，并删除旧 project-task 写回调用。
 
-第三阶段：恢复策略、waiting-human loop、真实链路 smoke、读模型和 operational status 收敛。
+第三阶段：恢复策略、waiting-human/acceptance loop、liveness projection、真实链路 smoke、读模型和 operational status 收敛。
 
 每阶段都必须保持生成代码、契约验证和针对性测试通过。最终不能把 mock、单元测试或构建通过表述为真实链路已验证；只有真实 Web/Control Plane/DB/Runtime/Provider 路径跑通后，才能声明执行链路可用。
