@@ -551,6 +551,96 @@ func TestProjectTasksMigrationAddsGraphContractColumns(t *testing.T) {
 	}
 }
 
+func TestProjectTaskAttemptsMigration(t *testing.T) {
+	sql := migrationsSQL(t)
+	block := createTableBlock(t, sql, "project_task_attempts")
+	for _, fragment := range []string{
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"tenant_id UUID NOT NULL",
+		"project_task_id UUID NOT NULL",
+		"attempt_no INTEGER NOT NULL",
+		"status VARCHAR(50) NOT NULL",
+		"digital_employee_run_id UUID",
+		"runtime_task_id UUID",
+		"runtime_node_id UUID",
+		"provider_session_id VARCHAR(255)",
+		"execution_context_packet JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"execution_context_packet_version VARCHAR(50) NOT NULL DEFAULT 'v1'",
+		"lease_token VARCHAR(255) NOT NULL",
+		"lease_expires_at TIMESTAMPTZ",
+		"renewed_at TIMESTAMPTZ",
+		"lost_at TIMESTAMPTZ",
+		"started_at TIMESTAMPTZ",
+		"finished_at TIMESTAMPTZ",
+		"timeout_at TIMESTAMPTZ",
+		"retryable BOOLEAN",
+		"failure_family VARCHAR(100)",
+		"failure_message TEXT",
+		"idempotency_key VARCHAR(255) NOT NULL",
+		"created_event_id UUID",
+		"terminal_event_id UUID",
+		"CONSTRAINT fk_project_task_attempts_project_task",
+		"FOREIGN KEY (tenant_id, project_task_id) REFERENCES project_tasks(tenant_id, id) ON DELETE CASCADE",
+	} {
+		if !strings.Contains(block, fragment) {
+			t.Fatalf("project_task_attempts block missing %q:\n%s", fragment, block)
+		}
+	}
+}
+
+func TestProjectTasksDurableClosureColumns(t *testing.T) {
+	sql := migrationsSQL(t)
+	for _, fragment := range []string{
+		"ALTER TABLE project_tasks",
+		"ADD COLUMN current_attempt_id UUID",
+		"ADD COLUMN accepted_plan_revision_id UUID",
+		"ADD COLUMN decomposition_claim_key VARCHAR(255)",
+		"ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN max_attempts INTEGER",
+		"ADD COLUMN retry_not_before TIMESTAMPTZ",
+		"ADD COLUMN waiting_reason VARCHAR(100)",
+		"ADD COLUMN waiting_request_id UUID",
+		"ADD COLUMN terminal_reason VARCHAR(100)",
+		"ADD COLUMN terminal_event_id UUID",
+		"ADD COLUMN cancelled_by VARCHAR(100)",
+		"ADD COLUMN failed_by VARCHAR(100)",
+		"ADD COLUMN status_changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"idx_project_tasks_current_attempt",
+		"uq_project_tasks_tenant_id",
+		"uq_project_tasks_accepted_plan_decomposition",
+		"uq_project_task_attempts_tenant_task_id",
+		"uq_project_task_attempts_active",
+		"uq_project_task_attempts_idempotency_key",
+		"FOREIGN KEY (tenant_id, id, current_attempt_id)",
+		"REFERENCES project_task_attempts(tenant_id, project_task_id, id)",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migrations missing durable-closure fragment %q", fragment)
+		}
+	}
+}
+
+func TestProjectTaskDurableClosureMigrationComments(t *testing.T) {
+	sql := migrationsSQL(t)
+	for _, fragment := range []string{
+		"任务状态：planned, queued, running, waiting_human, completed, failed, cancelled",
+		"当前项目任务执行尝试ID",
+		"生成该任务的已接受计划版本ID",
+		"计划分解幂等声明键",
+		"任务执行尝试次数",
+		"项目任务执行尝试表",
+		"执行尝试所属项目任务ID",
+		"尝试序号，从 1 开始递增",
+		"尝试状态：queued, running, succeeded, failed, cancelled, lost, timed_out, waiting_human",
+		"Runtime 租约令牌",
+		"执行上下文包 JSON",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migrations missing durable-closure comment %q", fragment)
+		}
+	}
+}
+
 func TestSkillManagementMigrationAddsSkillPackageTables(t *testing.T) {
 	body, err := os.ReadFile("migrations/009_skill_management.sql")
 	if err != nil {
