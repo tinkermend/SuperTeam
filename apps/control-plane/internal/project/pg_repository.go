@@ -796,7 +796,7 @@ func (r *PgRepository) CreateProjectTask(ctx context.Context, req CreateProjectT
 	return r.createProjectTaskWithQueries(ctx, r.q, req)
 }
 
-func (r *PgRepository) createProjectTaskAttemptWithQueries(ctx context.Context, q *queries.Queries, req QueueProjectTaskRequest, attemptNo int32, eventID *uuid.UUID) (ProjectTaskAttempt, error) {
+func (r *PgRepository) createProjectTaskAttemptWithQueries(ctx context.Context, q *queries.Queries, req QueueProjectTaskRequest, attemptID uuid.UUID, attemptNo int32, eventID *uuid.UUID) (ProjectTaskAttempt, error) {
 	packet, err := jsonbObject(req.ExecutionContextPacket, "execution_context_packet")
 	if err != nil {
 		return ProjectTaskAttempt{}, err
@@ -806,10 +806,14 @@ func (r *PgRepository) createProjectTaskAttemptWithQueries(ctx context.Context, 
 		version = "v1"
 	}
 	row, err := q.CreateProjectTaskAttempt(ctx, queries.CreateProjectTaskAttemptParams{
+		ID:                            attemptID,
 		TenantID:                      req.TenantID,
 		ProjectTaskID:                 req.ProjectTaskID,
 		AttemptNo:                     attemptNo,
 		Status:                        ProjectTaskAttemptStatusQueued,
+		DigitalEmployeeRunID:          nullUUID(req.DigitalEmployeeRunID),
+		RuntimeTaskID:                 nullUUID(req.RuntimeTaskID),
+		RuntimeNodeID:                 nullUUID(req.RuntimeNodeID),
 		ExecutionContextPacket:        packet,
 		ExecutionContextPacketVersion: version,
 		LeaseToken:                    req.LeaseToken,
@@ -899,37 +903,34 @@ func (r *PgRepository) QueueProjectTaskWithAttempt(ctx context.Context, req Queu
 			req.ExecutionContextPacketVersion = "v1"
 		}
 		attemptNo := task.AttemptCount + 1
+		attemptID := uuid.New()
 
 		event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
 			TenantID:     req.TenantID,
 			ProjectID:    req.ProjectID,
 			EventType:    ProjectEventTaskDispatched,
-			ActorType:    "digital_employee",
-			ActorID:      req.DigitalEmployeeID.String(),
+			ActorType:    "project_coordinator",
+			ActorID:      req.ProjectTaskID.String(),
 			ResourceType: strPtr("project_task"),
 			ResourceID:   strPtr(req.ProjectTaskID.String()),
 			Summary:      "项目任务已排队",
-			Payload: map[string]any{
-				"project_task_id":      req.ProjectTaskID.String(),
-				"digital_employee_id":  req.DigitalEmployeeID.String(),
-				"attempt_no":           attemptNo,
-				"idempotency_key":      req.IdempotencyKey,
-				"lease_expires_at_set": req.LeaseExpiresAt != nil,
-			},
+			Payload:      queueProjectTaskEventPayload(req, attemptID, attemptNo),
 		})
 		if err != nil {
 			return QueueProjectTaskResult{}, err
 		}
-		attempt, err := r.createProjectTaskAttemptWithQueries(ctx, q, req, attemptNo, &event.ID)
+		attempt, err := r.createProjectTaskAttemptWithQueries(ctx, q, req, attemptID, attemptNo, &event.ID)
 		if err != nil {
 			return QueueProjectTaskResult{}, err
 		}
 		queued, err := q.QueueProjectTask(ctx, queries.QueueProjectTaskParams{
-			CurrentAttemptID: attempt.ID,
-			LatestEventID:    uuid.NullUUID{UUID: event.ID, Valid: true},
-			TenantID:         req.TenantID,
-			ProjectID:        req.ProjectID,
-			ID:               req.ProjectTaskID,
+			CurrentAttemptID:     attempt.ID,
+			RuntimeTaskID:        nullUUID(req.RuntimeTaskID),
+			DigitalEmployeeRunID: nullUUID(req.DigitalEmployeeRunID),
+			LatestEventID:        uuid.NullUUID{UUID: event.ID, Valid: true},
+			TenantID:             req.TenantID,
+			ProjectID:            req.ProjectID,
+			ID:                   req.ProjectTaskID,
 		})
 		if err != nil {
 			return QueueProjectTaskResult{}, projectRepositoryError(err)
@@ -940,6 +941,28 @@ func (r *PgRepository) QueueProjectTaskWithAttempt(ctx context.Context, req Queu
 		}
 		return QueueProjectTaskResult{Task: mappedTask, Attempt: attempt, Event: event}, nil
 	})
+}
+
+func queueProjectTaskEventPayload(req QueueProjectTaskRequest, attemptID uuid.UUID, attemptNo int32) map[string]any {
+	payload := map[string]any{
+		"project_task_id":         req.ProjectTaskID.String(),
+		"project_task_attempt_id": attemptID.String(),
+		"project_task_status":     ProjectTaskStatusQueued,
+		"digital_employee_id":     req.DigitalEmployeeID.String(),
+		"attempt_no":              attemptNo,
+		"idempotency_key":         req.IdempotencyKey,
+		"lease_expires_at_set":    req.LeaseExpiresAt != nil,
+	}
+	if req.DigitalEmployeeRunID != nil {
+		payload["digital_employee_run_id"] = req.DigitalEmployeeRunID.String()
+	}
+	if req.RuntimeTaskID != nil {
+		payload["runtime_task_id"] = req.RuntimeTaskID.String()
+	}
+	if req.RuntimeNodeID != nil {
+		payload["runtime_node_id"] = req.RuntimeNodeID.String()
+	}
+	return payload
 }
 
 func (r *PgRepository) GetProjectTaskAttempt(ctx context.Context, tenantID, attemptID uuid.UUID) (ProjectTaskAttempt, error) {

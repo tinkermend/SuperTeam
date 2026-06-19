@@ -1109,14 +1109,16 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 			return err
 		}
 		if exists {
-			return nil
+			return s.advanceDispatchedTaskDemand(ctx, input, task)
 		}
 		projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
 		if err != nil {
 			return err
 		}
-		_, err = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskDispatched, input.TaskID.String(), "项目任务已分派", reemittedDispatchedPayload(task, projectRecord)))
-		return err
+		if _, err = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskDispatched, input.TaskID.String(), "项目任务已分派", reemittedDispatchedPayload(task, projectRecord))); err != nil {
+			return err
+		}
+		return s.advanceDispatchedTaskDemand(ctx, input, task)
 	}
 	if !projectTaskDispatchAllowed(task.Status) || task.AssignedDigitalEmployeeID == nil || task.DemandID == nil {
 		return s.recordDispatchFailure(ctx, input.TenantID, task.ProjectID, task, project.ErrInvalidProject)
@@ -1153,28 +1155,42 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 	if err != nil {
 		return s.recordDispatchFailure(ctx, input.TenantID, input.ProjectID, task, err)
 	}
-	if _, err := s.repository.BindProjectTaskRun(ctx, project.BindProjectTaskRunRequest{
+	if _, err := s.repository.QueueProjectTaskWithAttempt(ctx, project.QueueProjectTaskRequest{
 		TenantID:             input.TenantID,
+		ProjectID:            input.ProjectID,
 		ProjectTaskID:        input.TaskID,
-		DigitalEmployeeRunID: run.RunID,
-		RuntimeTaskID:        run.RuntimeTaskID,
-		CurrentStatuses:      []string{"planned", "pending"},
+		DigitalEmployeeID:    *task.AssignedDigitalEmployeeID,
+		DigitalEmployeeRunID: &run.RunID,
+		RuntimeTaskID:        &run.RuntimeTaskID,
+		RuntimeNodeID:        &run.RuntimeNodeID,
+		IdempotencyKey:       projectTaskDispatchIdempotencyKey(task.ID),
+		LeaseToken:           "project-task-" + task.ID.String() + "-attempt-1",
+		ExecutionContextPacket: map[string]any{
+			"project_id":              input.ProjectID.String(),
+			"demand_id":               demand.ID.String(),
+			"project_task_id":         task.ID.String(),
+			"digital_employee_id":     task.AssignedDigitalEmployeeID.String(),
+			"objective":               task.Title,
+			"expected_outputs":        append([]any(nil), task.ExpectedOutputs...),
+			"input_requirements":      cloneAnyMap(task.InputRequirements),
+			"handoff_contract":        projectTaskDispatchHandoffContract(task.HandoffContract),
+			"digital_employee_run_id": run.RunID.String(),
+			"runtime_task_id":         run.RuntimeTaskID.String(),
+			"runtime_node_id":         run.RuntimeNodeID.String(),
+			"node_id":                 run.NodeID,
+		},
+		ExecutionContextPacketVersion: "v1",
 	}); err != nil {
 		return s.recordDispatchFailure(ctx, input.TenantID, input.ProjectID, task, err)
 	}
-	if _, err = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskDispatched, input.TaskID.String(), "项目任务已分派", map[string]any{
-		"project_task_id":         input.TaskID.String(),
-		"digital_employee_id":     task.AssignedDigitalEmployeeID.String(),
-		"digital_employee_run_id": run.RunID.String(),
-		"runtime_task_id":         run.RuntimeTaskID.String(),
-		"runtime_node_id":         run.RuntimeNodeID.String(),
-		"node_id":                 run.NodeID,
-		"dispatch_actor_type":     "project_coordinator",
-		"dispatch_user_id":        projectRecord.HumanOwnerUserID.String(),
-	})); err != nil {
-		return err
+	return s.advanceDispatchedTaskDemand(ctx, input, task)
+}
+
+func (s *ProjectStore) advanceDispatchedTaskDemand(ctx context.Context, input DispatchProjectTaskInput, task project.ProjectTask) error {
+	if task.DemandID == nil {
+		return nil
 	}
-	return s.repository.AdvanceProjectDemandStatus(ctx, input.TenantID, input.ProjectID, demand.ID, project.ProjectDemandStatusExecuting)
+	return s.repository.AdvanceProjectDemandStatus(ctx, input.TenantID, input.ProjectID, *task.DemandID, project.ProjectDemandStatusExecuting)
 }
 
 func (s *ProjectStore) recordDispatchFailure(ctx context.Context, tenantID, projectID uuid.UUID, task project.ProjectTask, dispatchErr error) error {
@@ -1185,7 +1201,7 @@ func (s *ProjectStore) recordDispatchFailure(ctx context.Context, tenantID, proj
 }
 
 func projectTaskDispatchAllowed(status string) bool {
-	return status == "planned" || status == "pending"
+	return status == project.ProjectTaskStatusPlanned || status == project.ProjectTaskStatusWaitingHuman
 }
 
 func projectTaskDispatchIdempotencyKey(taskID uuid.UUID) string {
@@ -1259,9 +1275,13 @@ func dispatchErrorRetryable(err error) bool {
 func reemittedDispatchedPayload(task project.ProjectTask, projectRecord project.Project) map[string]any {
 	payload := map[string]any{
 		"project_task_id":     task.ID.String(),
+		"project_task_status": task.Status,
 		"dispatch_actor_type": "project_coordinator",
 		"dispatch_user_id":    projectRecord.HumanOwnerUserID.String(),
 		"reemitted":           true,
+	}
+	if task.CurrentAttemptID != nil {
+		payload["project_task_attempt_id"] = task.CurrentAttemptID.String()
 	}
 	if task.AssignedDigitalEmployeeID != nil {
 		payload["digital_employee_id"] = task.AssignedDigitalEmployeeID.String()

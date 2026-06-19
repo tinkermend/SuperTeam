@@ -370,6 +370,9 @@ type QueueProjectTaskRequest struct {
 	ProjectID                     uuid.UUID
 	ProjectTaskID                 uuid.UUID
 	DigitalEmployeeID             uuid.UUID
+	DigitalEmployeeRunID          *uuid.UUID
+	RuntimeTaskID                 *uuid.UUID
+	RuntimeNodeID                 *uuid.UUID
 	IdempotencyKey                string
 	LeaseToken                    string
 	LeaseExpiresAt                *time.Time

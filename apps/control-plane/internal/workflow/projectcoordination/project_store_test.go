@@ -349,7 +349,7 @@ func TestProjectStoreListDispatchableTasksFiltersBlockedTasksAndUnresolvedBlocke
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, []uuid.UUID{rootID, pendingID, readyDependentID}, ids)
+	require.Equal(t, []uuid.UUID{rootID, readyDependentID}, ids)
 }
 
 func TestProjectStoreResolveReadyDownstreamUpdatesOnlyUnblockedDependents(t *testing.T) {
@@ -577,7 +577,7 @@ func TestProjectStoreRequestProjectAcceptanceReviewRollsBackStatusWhenApprovalCr
 	store := NewProjectStoreWithApprovals(repo, approvals)
 
 	result, err := store.RequestProjectAcceptanceReview(context.Background(), RequestProjectAcceptanceReviewInput{
-		TenantID: tenantID,
+		TenantID:  tenantID,
 		ProjectID: projectID,
 	})
 
@@ -1303,7 +1303,7 @@ func TestApplyFailureRecoveryCancelDownstreamRepairsMissingAuditEventOnRetry(t *
 	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskCancelled), 1)
 }
 
-func TestProjectStoreDispatchProjectTaskStartsRunAndBindsTask(t *testing.T) {
+func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
 	demandID := uuid.New()
@@ -1368,18 +1368,225 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndBindsTask(t *testing.T) {
 	require.Equal(t, []any{"execution_summary", "evidence_refs"}, req.Metadata["expected_outputs"])
 	require.Equal(t, map[string]any{"required_context": []any{"test_report", "rollback_plan"}}, req.Metadata["input_requirements"])
 	require.Equal(t, map[string]any{"completion_path": "project_task_writeback", "required_refs": []any{"test_report"}}, req.Metadata["handoff_contract"])
-	if len(repo.bindRequests) != 1 || repo.bindRequests[0].DigitalEmployeeRunID != runID || repo.bindRequests[0].RuntimeTaskID != runtimeTaskID {
-		t.Fatalf("expected bind request, got %#v", repo.bindRequests)
-	}
-	if repo.tasks[0].Status != "assigned" || repo.tasks[0].DigitalEmployeeRunID == nil || *repo.tasks[0].DigitalEmployeeRunID != runID {
-		t.Fatalf("expected assigned bound task, got %#v", repo.tasks[0])
-	}
+	require.Empty(t, repo.bindRequests)
+	require.Len(t, repo.queueRequests, 1)
+	queueReq := repo.queueRequests[0]
+	require.Equal(t, projectTaskDispatchIdempotencyKey(taskID), queueReq.IdempotencyKey)
+	require.Equal(t, "project-task-"+taskID.String()+"-attempt-1", queueReq.LeaseToken)
+	require.Equal(t, runID, *queueReq.DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *queueReq.RuntimeTaskID)
+	require.Equal(t, runtimeNodeID, *queueReq.RuntimeNodeID)
+	require.Equal(t, projectID.String(), queueReq.ExecutionContextPacket["project_id"])
+	require.Equal(t, demandID.String(), queueReq.ExecutionContextPacket["demand_id"])
+	require.Equal(t, taskID.String(), queueReq.ExecutionContextPacket["project_task_id"])
+	require.Equal(t, employeeID.String(), queueReq.ExecutionContextPacket["digital_employee_id"])
+	require.Equal(t, "整理证据", queueReq.ExecutionContextPacket["objective"])
+	require.Equal(t, []any{"execution_summary", "evidence_refs"}, queueReq.ExecutionContextPacket["expected_outputs"])
+	require.Equal(t, map[string]any{"required_context": []any{"test_report", "rollback_plan"}}, queueReq.ExecutionContextPacket["input_requirements"])
+	require.Equal(t, map[string]any{"completion_path": "project_task_writeback", "required_refs": []any{"test_report"}}, queueReq.ExecutionContextPacket["handoff_contract"])
+	require.Equal(t, runID.String(), queueReq.ExecutionContextPacket["digital_employee_run_id"])
+	require.Equal(t, runtimeTaskID.String(), queueReq.ExecutionContextPacket["runtime_task_id"])
+	require.Equal(t, runtimeNodeID.String(), queueReq.ExecutionContextPacket["runtime_node_id"])
+	require.Equal(t, "node-1", queueReq.ExecutionContextPacket["node_id"])
+	require.Equal(t, "queued", repo.tasks[0].Status)
+	require.NotNil(t, repo.tasks[0].CurrentAttemptID)
+	require.Equal(t, int32(1), repo.tasks[0].AttemptCount)
+	require.Equal(t, runID, *repo.tasks[0].DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *repo.tasks[0].RuntimeTaskID)
+	require.Len(t, repo.projectTaskAttempts, 1)
+	require.Equal(t, *repo.tasks[0].CurrentAttemptID, repo.projectTaskAttempts[0].ID)
 	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventTaskDispatched {
 		t.Fatalf("expected dispatched event, got %#v", repo.events)
 	}
-	if repo.events[0].Payload["digital_employee_run_id"] != runID.String() || repo.events[0].Payload["runtime_task_id"] != runtimeTaskID.String() {
+	require.Equal(t, "project_coordinator", repo.events[0].ActorType)
+	require.Equal(t, taskID.String(), repo.events[0].ActorID)
+	if repo.events[0].Payload["project_task_attempt_id"] != repo.projectTaskAttempts[0].ID.String() ||
+		repo.events[0].Payload["project_task_status"] != "queued" ||
+		repo.events[0].Payload["digital_employee_run_id"] != runID.String() ||
+		repo.events[0].Payload["runtime_task_id"] != runtimeTaskID.String() ||
+		repo.events[0].Payload["runtime_node_id"] != runtimeNodeID.String() {
 		t.Fatalf("expected run binding payload, got %#v", repo.events[0].Payload)
 	}
+}
+
+func TestProjectStoreDispatchProjectTaskCreatesQueuedAttempt(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
+		RunID:         runID,
+		RuntimeTaskID: runtimeTaskID,
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        "node-1",
+	}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.NoError(t, err)
+	require.Len(t, repo.queueRequests, 1)
+	require.Empty(t, repo.bindRequests)
+	require.Len(t, repo.projectTaskAttempts, 1)
+	require.Equal(t, project.ProjectTaskStatusQueued, repo.tasks[0].Status)
+	require.Equal(t, repo.projectTaskAttempts[0].ID, *repo.tasks[0].CurrentAttemptID)
+	require.Equal(t, runID, *repo.tasks[0].DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *repo.tasks[0].RuntimeTaskID)
+	require.Equal(t, runID, *repo.projectTaskAttempts[0].DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *repo.projectTaskAttempts[0].RuntimeTaskID)
+	require.Equal(t, runtimeNodeID, *repo.projectTaskAttempts[0].RuntimeNodeID)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatched), 1)
+}
+
+func TestProjectStoreDispatchProjectTaskQueuedAttemptEventIsIdempotentOnRetry(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	_, err := repo.QueueProjectTaskWithAttempt(context.Background(), project.QueueProjectTaskRequest{
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        taskID,
+		DigitalEmployeeID:    employeeID,
+		DigitalEmployeeRunID: &runID,
+		RuntimeTaskID:        &runtimeTaskID,
+		RuntimeNodeID:        &runtimeNodeID,
+		IdempotencyKey:       projectTaskDispatchIdempotencyKey(taskID),
+		LeaseToken:           "project-task-" + taskID.String() + "-attempt-1",
+	})
+	require.NoError(t, err)
+	require.Len(t, repo.events, 1)
+	require.Equal(t, "project_coordinator", repo.events[0].ActorType)
+	require.Equal(t, taskID.String(), repo.events[0].ActorID)
+
+	starter := &projectTaskRunStarterFake{}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err = store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.NoError(t, err)
+	require.Empty(t, starter.requests)
+	require.Empty(t, repo.bindRequests)
+	require.Len(t, repo.queueRequests, 1)
+	require.Len(t, repo.events, 1)
+	require.Equal(t, 1, repo.advanceDemandCalls)
+	require.Equal(t, project.ProjectDemandStatusExecuting, repo.demand.Status)
+}
+
+func TestProjectStoreDispatchProjectTaskRejectsPendingBeforeRunStart(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Status: project.ProjectDemandStatusPlanned, Title: "需求"},
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    "pending",
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{RunID: uuid.New(), RuntimeTaskID: uuid.New(), RuntimeNodeID: uuid.New(), NodeID: "node-1"}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.ErrorIs(t, err, project.ErrInvalidProject)
+	require.True(t, dispatchFailureRecorded(err))
+	require.Empty(t, starter.requests)
+	require.Empty(t, repo.queueRequests)
+	require.Empty(t, repo.bindRequests)
+	require.Equal(t, 0, repo.advanceDemandCalls)
+	require.Equal(t, "pending", repo.tasks[0].Status)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskDispatchFailed), 1)
+}
+
+func TestProjectStoreDispatchProjectTaskRetriesDemandAdvanceAfterQueuedReplay(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	advanceErr := errors.New("demand status write failed")
+	repo := &projectStoreMemoryRepository{
+		projectRecord:    project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:           project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Status: project.ProjectDemandStatusPlanned, Title: "需求"},
+		advanceDemandErr: advanceErr,
+		tasks: []project.ProjectTask{{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "执行任务",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
+		RunID:         runID,
+		RuntimeTaskID: runtimeTaskID,
+		RuntimeNodeID: runtimeNodeID,
+		NodeID:        "node-1",
+	}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	err := store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.ErrorIs(t, err, advanceErr)
+	require.Len(t, starter.requests, 1)
+	require.Len(t, repo.queueRequests, 1)
+	require.Len(t, repo.events, 1)
+	require.Equal(t, 1, repo.advanceDemandCalls)
+	require.Equal(t, project.ProjectTaskStatusQueued, repo.tasks[0].Status)
+
+	repo.advanceDemandErr = nil
+	err = store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID})
+	require.NoError(t, err)
+	require.Len(t, starter.requests, 1)
+	require.Len(t, repo.queueRequests, 1)
+	require.Empty(t, repo.bindRequests)
+	require.Len(t, repo.events, 1)
+	require.Equal(t, 2, repo.advanceDemandCalls)
+	require.Equal(t, project.ProjectDemandStatusExecuting, repo.demand.Status)
 }
 
 func TestProjectStoreDispatchProjectTaskBindingEnablesRuntimeWriteback(t *testing.T) {
@@ -1416,8 +1623,8 @@ func TestProjectStoreDispatchProjectTaskBindingEnablesRuntimeWriteback(t *testin
 	if err != nil {
 		t.Fatalf("dispatch project task: %v", err)
 	}
-	if repo.tasks[0].Status != "assigned" {
-		t.Fatalf("expected assigned task after dispatch, got %s", repo.tasks[0].Status)
+	if repo.tasks[0].Status != "queued" {
+		t.Fatalf("expected queued task after dispatch, got %s", repo.tasks[0].Status)
 	}
 	if repo.tasks[0].DigitalEmployeeRunID == nil || *repo.tasks[0].DigitalEmployeeRunID != runID {
 		t.Fatalf("expected digital employee run binding, got %#v", repo.tasks[0].DigitalEmployeeRunID)
@@ -1428,6 +1635,8 @@ func TestProjectStoreDispatchProjectTaskBindingEnablesRuntimeWriteback(t *testin
 	if repo.demand.Status != project.ProjectDemandStatusExecuting {
 		t.Fatalf("expected demand advanced to executing after dispatch, got %s", repo.demand.Status)
 	}
+	require.Len(t, repo.queueRequests, 1)
+	require.Empty(t, repo.bindRequests)
 }
 
 func TestProjectStoreDispatchProjectTaskRunStartFailureKeepsTaskPlanned(t *testing.T) {
@@ -1457,8 +1666,8 @@ func TestProjectStoreDispatchProjectTaskRunStartFailureKeepsTaskPlanned(t *testi
 	if err == nil {
 		t.Fatal("expected dispatch error")
 	}
-	if repo.tasks[0].Status != "planned" || len(repo.bindRequests) != 0 {
-		t.Fatalf("expected planned unbound task, task=%#v binds=%#v", repo.tasks[0], repo.bindRequests)
+	if repo.tasks[0].Status != "planned" || len(repo.bindRequests) != 0 || len(repo.queueRequests) != 0 {
+		t.Fatalf("expected planned unqueued task, task=%#v binds=%#v queues=%#v", repo.tasks[0], repo.bindRequests, repo.queueRequests)
 	}
 	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventTaskDispatchFailed {
 		t.Fatalf("expected dispatch failed event, got %#v", repo.events)
@@ -1497,8 +1706,8 @@ func TestProjectStoreDispatchProjectTaskTerminalRunStartFailureMarksNonRetryable
 	if len(repo.events) != 1 || repo.events[0].Payload["retryable"] != false {
 		t.Fatalf("expected non-retryable failure payload, got %#v", repo.events)
 	}
-	if repo.tasks[0].Status != "planned" || len(repo.bindRequests) != 0 {
-		t.Fatalf("expected planned unbound task, task=%#v binds=%#v", repo.tasks[0], repo.bindRequests)
+	if repo.tasks[0].Status != "planned" || len(repo.bindRequests) != 0 || len(repo.queueRequests) != 0 {
+		t.Fatalf("expected planned unqueued task, task=%#v binds=%#v queues=%#v", repo.tasks[0], repo.bindRequests, repo.queueRequests)
 	}
 }
 
@@ -1519,14 +1728,14 @@ func TestProjectStoreDispatchProjectTaskAlreadyBoundSameRunIsIdempotent(t *testi
 			ProjectID:                 projectID,
 			DemandID:                  &demandID,
 			Title:                     "执行任务",
-			Status:                    "assigned",
+			Status:                    "queued",
 			AssignedDigitalEmployeeID: &employeeID,
 			DigitalEmployeeRunID:      &runID,
 			RuntimeTaskID:             &runtimeTaskID,
 		}},
 	}
 	// The dispatched event already exists, so the idempotent replay must be a pure no-op.
-	repo.events = append(repo.events, project.ProjectEvent{TenantID: tenantID, ProjectID: projectID, EventType: project.ProjectEventTaskDispatched, ActorID: taskID.String()})
+	repo.events = append(repo.events, project.ProjectEvent{TenantID: tenantID, ProjectID: projectID, EventType: project.ProjectEventTaskDispatched, ActorType: "project_coordinator", ActorID: taskID.String()})
 	starter := &projectTaskRunStarterFake{}
 	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
 
@@ -1534,9 +1743,10 @@ func TestProjectStoreDispatchProjectTaskAlreadyBoundSameRunIsIdempotent(t *testi
 	if err != nil {
 		t.Fatalf("expected idempotent success, got %v", err)
 	}
-	if len(starter.requests) != 0 || len(repo.bindRequests) != 0 || len(repo.events) != 1 {
-		t.Fatalf("expected no duplicate side effects, starts=%d binds=%d events=%d", len(starter.requests), len(repo.bindRequests), len(repo.events))
+	if len(starter.requests) != 0 || len(repo.bindRequests) != 0 || len(repo.queueRequests) != 0 || len(repo.events) != 1 {
+		t.Fatalf("expected no duplicate side effects, starts=%d binds=%d queues=%d events=%d", len(starter.requests), len(repo.bindRequests), len(repo.queueRequests), len(repo.events))
 	}
+	require.Equal(t, 1, repo.advanceDemandCalls)
 }
 
 func TestProjectStoreDispatchProjectTaskReemitsMissingDispatchedEvent(t *testing.T) {
@@ -1557,7 +1767,7 @@ func TestProjectStoreDispatchProjectTaskReemitsMissingDispatchedEvent(t *testing
 			ProjectID:                 projectID,
 			DemandID:                  &demandID,
 			Title:                     "执行任务",
-			Status:                    "assigned",
+			Status:                    "queued",
 			AssignedDigitalEmployeeID: &employeeID,
 			DigitalEmployeeRunID:      &runID,
 			RuntimeTaskID:             &runtimeTaskID,
@@ -1572,8 +1782,8 @@ func TestProjectStoreDispatchProjectTaskReemitsMissingDispatchedEvent(t *testing
 	if err != nil {
 		t.Fatalf("expected idempotent success, got %v", err)
 	}
-	if len(starter.requests) != 0 || len(repo.bindRequests) != 0 {
-		t.Fatalf("expected no run start or bind, starts=%d binds=%d", len(starter.requests), len(repo.bindRequests))
+	if len(starter.requests) != 0 || len(repo.bindRequests) != 0 || len(repo.queueRequests) != 0 {
+		t.Fatalf("expected no run start, bind, or queue, starts=%d binds=%d queues=%d", len(starter.requests), len(repo.bindRequests), len(repo.queueRequests))
 	}
 	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventTaskDispatched || repo.events[0].Payload["reemitted"] != true {
 		t.Fatalf("expected one re-emitted dispatched event, got %#v", repo.events)
@@ -1581,6 +1791,7 @@ func TestProjectStoreDispatchProjectTaskReemitsMissingDispatchedEvent(t *testing
 	if repo.events[0].Payload["digital_employee_run_id"] != runID.String() {
 		t.Fatalf("expected re-emitted payload to carry run id, got %#v", repo.events[0].Payload)
 	}
+	require.Equal(t, 1, repo.advanceDemandCalls)
 }
 
 func TestProjectStoreDispatchProjectTaskRejectsBoundRunMissingRuntimeTask(t *testing.T) {
@@ -1599,7 +1810,7 @@ func TestProjectStoreDispatchProjectTaskRejectsBoundRunMissingRuntimeTask(t *tes
 			ProjectID:                 projectID,
 			DemandID:                  &demandID,
 			Title:                     "执行任务",
-			Status:                    "assigned",
+			Status:                    "queued",
 			AssignedDigitalEmployeeID: &employeeID,
 			DigitalEmployeeRunID:      &runID,
 		}},
@@ -1614,8 +1825,8 @@ func TestProjectStoreDispatchProjectTaskRejectsBoundRunMissingRuntimeTask(t *tes
 	if !dispatchFailureRecorded(err) {
 		t.Fatalf("expected recorded dispatch failure, got %v", err)
 	}
-	if len(starter.requests) != 0 || len(repo.bindRequests) != 0 {
-		t.Fatalf("expected no run start or bind, starts=%d binds=%d", len(starter.requests), len(repo.bindRequests))
+	if len(starter.requests) != 0 || len(repo.bindRequests) != 0 || len(repo.queueRequests) != 0 {
+		t.Fatalf("expected no run start, bind, or queue, starts=%d binds=%d queues=%d", len(starter.requests), len(repo.bindRequests), len(repo.queueRequests))
 	}
 	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventTaskDispatchFailed {
 		t.Fatalf("expected dispatch failed event, got %#v", repo.events)
@@ -1653,7 +1864,11 @@ type projectStoreMemoryRepository struct {
 	approvalID    uuid.UUID
 
 	bindRequests             []project.BindProjectTaskRunRequest
+	queueRequests            []project.QueueProjectTaskRequest
+	projectTaskAttempts      []project.ProjectTaskAttempt
 	bindErr                  error
+	advanceDemandErr         error
+	advanceDemandCalls       int
 	appendProjectEventErr    error
 	events                   []project.ProjectEvent
 	coordinationJobs         []project.CoordinationJob
@@ -1712,13 +1927,13 @@ func (r *projectStoreMemoryRepository) CreateAcceptanceRecordWithEvent(ctx conte
 	event := project.ProjectEvent{ID: uuid.New(), TenantID: req.Event.TenantID, ProjectID: req.Event.ProjectID, EventType: req.Event.EventType}
 	r.events = append(r.events, event)
 	record := project.ProjectAcceptanceRecord{
-		ID:             uuid.New(),
-		TenantID:       req.Acceptance.TenantID,
-		ProjectID:      req.Acceptance.ProjectID,
+		ID:               uuid.New(),
+		TenantID:         req.Acceptance.TenantID,
+		ProjectID:        req.Acceptance.ProjectID,
 		AcceptedByUserID: req.Acceptance.AcceptedByUserID,
-		Status:         req.Acceptance.Status,
-		Conclusion:     req.Acceptance.Conclusion,
-		CreatedEventID: &event.ID,
+		Status:           req.Acceptance.Status,
+		Conclusion:       req.Acceptance.Conclusion,
+		CreatedEventID:   &event.ID,
 	}
 	r.acceptanceRecords = append(r.acceptanceRecords, record)
 	return project.ProjectAcceptanceRecordWriteResult{Event: event, Acceptance: record}, nil
@@ -1732,6 +1947,10 @@ func (r *projectStoreMemoryRepository) GetProjectDemand(ctx context.Context, ten
 }
 
 func (r *projectStoreMemoryRepository) AdvanceProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID, target project.ProjectDemandStatus) error {
+	r.advanceDemandCalls++
+	if r.advanceDemandErr != nil {
+		return r.advanceDemandErr
+	}
 	if r.demand.TenantID == tenantID && r.demand.ID == demandID &&
 		project.ProjectDemandStatusCanAdvance(r.demand.Status, target) {
 		r.demand.Status = target
@@ -1784,7 +2003,7 @@ func (r *projectStoreMemoryRepository) AppendProjectEvent(ctx context.Context, r
 	if r.appendProjectEventErr != nil {
 		return project.ProjectEvent{}, r.appendProjectEventErr
 	}
-	event := project.ProjectEvent{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, EventType: req.EventType, ActorID: req.ActorID, Payload: req.Payload, CreatedAt: time.Now().UTC()}
+	event := project.ProjectEvent{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, EventType: req.EventType, ActorType: req.ActorType, ActorID: req.ActorID, Payload: req.Payload, CreatedAt: time.Now().UTC()}
 	r.events = append(r.events, event)
 	return event, nil
 }
@@ -2033,6 +2252,122 @@ func (r *projectStoreMemoryRepository) BindProjectTaskRun(ctx context.Context, r
 		return task, nil
 	}
 	return project.ProjectTask{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) QueueProjectTaskWithAttempt(ctx context.Context, req project.QueueProjectTaskRequest) (project.QueueProjectTaskResult, error) {
+	r.queueRequests = append(r.queueRequests, req)
+	for _, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID != req.TenantID || attempt.IdempotencyKey != req.IdempotencyKey {
+			continue
+		}
+		if attempt.ProjectTaskID != req.ProjectTaskID {
+			return project.QueueProjectTaskResult{}, project.ErrProjectConflict
+		}
+		task, err := r.GetProjectTask(ctx, req.TenantID, req.ProjectTaskID)
+		if err != nil {
+			return project.QueueProjectTaskResult{}, err
+		}
+		var event project.ProjectEvent
+		if attempt.CreatedEventID != nil {
+			for _, candidate := range r.events {
+				if candidate.TenantID == req.TenantID && candidate.ProjectID == req.ProjectID && candidate.ID == *attempt.CreatedEventID {
+					event = candidate
+					break
+				}
+			}
+		}
+		return project.QueueProjectTaskResult{Task: task, Attempt: attempt, Event: event}, nil
+	}
+	for i, task := range r.tasks {
+		if task.TenantID != req.TenantID || task.ProjectID != req.ProjectID || task.ID != req.ProjectTaskID {
+			continue
+		}
+		if task.Status != project.ProjectTaskStatusPlanned && task.Status != project.ProjectTaskStatusWaitingHuman {
+			return project.QueueProjectTaskResult{}, project.ErrProjectConflict
+		}
+		if task.AssignedDigitalEmployeeID != nil && *task.AssignedDigitalEmployeeID != req.DigitalEmployeeID {
+			return project.QueueProjectTaskResult{}, project.ErrProjectTaskForbidden
+		}
+		attemptID := uuid.New()
+		attemptNo := task.AttemptCount + 1
+		event, err := r.AppendProjectEvent(ctx, project.AppendProjectEventRequest{
+			TenantID:     req.TenantID,
+			ProjectID:    req.ProjectID,
+			EventType:    project.ProjectEventTaskDispatched,
+			ActorType:    "project_coordinator",
+			ActorID:      req.ProjectTaskID.String(),
+			ResourceType: strPtr("project_task"),
+			ResourceID:   strPtr(req.ProjectTaskID.String()),
+			Summary:      "项目任务已排队",
+			Payload:      projectStoreQueueTaskEventPayload(req, attemptID, attemptNo),
+		})
+		if err != nil {
+			return project.QueueProjectTaskResult{}, err
+		}
+		packet := req.ExecutionContextPacket
+		if packet == nil {
+			packet = map[string]any{}
+		}
+		version := strings.TrimSpace(req.ExecutionContextPacketVersion)
+		if version == "" {
+			version = "v1"
+		}
+		attempt := project.ProjectTaskAttempt{
+			ID:                            attemptID,
+			TenantID:                      req.TenantID,
+			ProjectTaskID:                 req.ProjectTaskID,
+			AttemptNo:                     attemptNo,
+			Status:                        project.ProjectTaskAttemptStatusQueued,
+			DigitalEmployeeRunID:          req.DigitalEmployeeRunID,
+			RuntimeTaskID:                 req.RuntimeTaskID,
+			RuntimeNodeID:                 req.RuntimeNodeID,
+			ExecutionContextPacket:        packet,
+			ExecutionContextPacketVersion: version,
+			LeaseToken:                    req.LeaseToken,
+			LeaseExpiresAt:                req.LeaseExpiresAt,
+			IdempotencyKey:                req.IdempotencyKey,
+			CreatedEventID:                &event.ID,
+			CreatedAt:                     time.Now().UTC(),
+			UpdatedAt:                     time.Now().UTC(),
+		}
+		r.projectTaskAttempts = append(r.projectTaskAttempts, attempt)
+		now := time.Now().UTC()
+		task.Status = project.ProjectTaskStatusQueued
+		task.CurrentAttemptID = &attempt.ID
+		task.AttemptCount++
+		task.DigitalEmployeeRunID = req.DigitalEmployeeRunID
+		task.RuntimeTaskID = req.RuntimeTaskID
+		task.RetryNotBefore = nil
+		task.WaitingReason = nil
+		task.WaitingRequestID = nil
+		task.StatusChangedAt = now
+		task.UpdatedAt = now
+		r.tasks[i] = task
+		return project.QueueProjectTaskResult{Task: task, Attempt: attempt, Event: event}, nil
+	}
+	return project.QueueProjectTaskResult{}, project.ErrProjectNotFound
+}
+
+func projectStoreQueueTaskEventPayload(req project.QueueProjectTaskRequest, attemptID uuid.UUID, attemptNo int32) map[string]any {
+	payload := map[string]any{
+		"project_task_id":         req.ProjectTaskID.String(),
+		"project_task_attempt_id": attemptID.String(),
+		"project_task_status":     project.ProjectTaskStatusQueued,
+		"digital_employee_id":     req.DigitalEmployeeID.String(),
+		"attempt_no":              attemptNo,
+		"idempotency_key":         req.IdempotencyKey,
+		"lease_expires_at_set":    req.LeaseExpiresAt != nil,
+	}
+	if req.DigitalEmployeeRunID != nil {
+		payload["digital_employee_run_id"] = req.DigitalEmployeeRunID.String()
+	}
+	if req.RuntimeTaskID != nil {
+		payload["runtime_task_id"] = req.RuntimeTaskID.String()
+	}
+	if req.RuntimeNodeID != nil {
+		payload["runtime_node_id"] = req.RuntimeNodeID.String()
+	}
+	return payload
 }
 
 func (r *projectStoreMemoryRepository) ListProjectTasksByCoordinationJob(ctx context.Context, tenantID, projectID, coordinationJobID uuid.UUID) ([]project.ProjectTask, error) {

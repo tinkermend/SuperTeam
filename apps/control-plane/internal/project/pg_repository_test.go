@@ -394,12 +394,18 @@ func TestQueueProjectTaskWithAttemptMovesPlannedTaskToQueued(t *testing.T) {
 		AssignedDigitalEmployeeID: &employeeID,
 	})
 	require.NoError(t, err)
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
 
 	result, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
 		TenantID:                      tenantID,
 		ProjectID:                     projectID,
 		ProjectTaskID:                 task.ID,
 		DigitalEmployeeID:             employeeID,
+		DigitalEmployeeRunID:          &runID,
+		RuntimeTaskID:                 &runtimeTaskID,
+		RuntimeNodeID:                 &runtimeNodeID,
 		IdempotencyKey:                "project-task:" + task.ID.String() + ":attempt:1:queue",
 		LeaseToken:                    "lease-token-1",
 		ExecutionContextPacket:        map[string]any{"task_title": task.Title},
@@ -408,10 +414,22 @@ func TestQueueProjectTaskWithAttemptMovesPlannedTaskToQueued(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ProjectTaskStatusQueued, result.Task.Status)
 	require.Equal(t, result.Attempt.ID, *result.Task.CurrentAttemptID)
+	require.Equal(t, runID, *result.Task.DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *result.Task.RuntimeTaskID)
 	require.Equal(t, int32(1), result.Attempt.AttemptNo)
 	require.Equal(t, ProjectTaskAttemptStatusQueued, result.Attempt.Status)
+	require.Equal(t, runID, *result.Attempt.DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *result.Attempt.RuntimeTaskID)
+	require.Equal(t, runtimeNodeID, *result.Attempt.RuntimeNodeID)
 	require.Equal(t, "lease-token-1", result.Attempt.LeaseToken)
 	require.Equal(t, "v1", result.Attempt.ExecutionContextPacketVersion)
+	require.Equal(t, "project_coordinator", result.Event.ActorType)
+	require.Equal(t, task.ID.String(), result.Event.ActorID)
+	require.Equal(t, result.Attempt.ID.String(), result.Event.Payload["project_task_attempt_id"])
+	require.Equal(t, ProjectTaskStatusQueued, result.Event.Payload["project_task_status"])
+	require.Equal(t, runID.String(), result.Event.Payload["digital_employee_run_id"])
+	require.Equal(t, runtimeTaskID.String(), result.Event.Payload["runtime_task_id"])
+	require.Equal(t, runtimeNodeID.String(), result.Event.Payload["runtime_node_id"])
 }
 
 func TestCreateProjectTaskGraphCreatesTasksEdgesAndEvents(t *testing.T) {

@@ -938,6 +938,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 
 -- name: CreateProjectTaskAttempt :one
 INSERT INTO project_task_attempts (
+    id,
     tenant_id,
     project_task_id,
     attempt_no,
@@ -952,6 +953,7 @@ INSERT INTO project_task_attempts (
     idempotency_key,
     created_event_id
 ) VALUES (
+    sqlc.arg('id')::uuid,
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('project_task_id')::uuid,
     sqlc.arg('attempt_no')::integer,
@@ -995,6 +997,8 @@ FOR UPDATE;
 UPDATE project_tasks
 SET status = 'queued',
     current_attempt_id = sqlc.arg('current_attempt_id')::uuid,
+    runtime_task_id = COALESCE(sqlc.narg('runtime_task_id')::uuid, runtime_task_id),
+    digital_employee_run_id = COALESCE(sqlc.narg('digital_employee_run_id')::uuid, digital_employee_run_id),
     attempt_count = attempt_count + 1,
     retry_not_before = NULL,
     waiting_reason = NULL,

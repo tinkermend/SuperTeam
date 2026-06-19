@@ -1089,6 +1089,7 @@ func (q *Queries) CreateProjectTask(ctx context.Context, arg CreateProjectTaskPa
 
 const CreateProjectTaskAttempt = `-- name: CreateProjectTaskAttempt :one
 INSERT INTO project_task_attempts (
+    id,
     tenant_id,
     project_task_id,
     attempt_no,
@@ -1105,21 +1106,23 @@ INSERT INTO project_task_attempts (
 ) VALUES (
     $1::uuid,
     $2::uuid,
-    $3::integer,
-    $4::varchar,
-    $5::uuid,
+    $3::uuid,
+    $4::integer,
+    $5::varchar,
     $6::uuid,
     $7::uuid,
-    $8::jsonb,
-    $9::varchar,
+    $8::uuid,
+    $9::jsonb,
     $10::varchar,
-    $11::timestamptz,
-    $12::varchar,
-    $13::uuid
+    $11::varchar,
+    $12::timestamptz,
+    $13::varchar,
+    $14::uuid
 ) RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at
 `
 
 type CreateProjectTaskAttemptParams struct {
+	ID                            uuid.UUID          `json:"id"`
 	TenantID                      uuid.UUID          `json:"tenant_id"`
 	ProjectTaskID                 uuid.UUID          `json:"project_task_id"`
 	AttemptNo                     int32              `json:"attempt_no"`
@@ -1137,6 +1140,7 @@ type CreateProjectTaskAttemptParams struct {
 
 func (q *Queries) CreateProjectTaskAttempt(ctx context.Context, arg CreateProjectTaskAttemptParams) (ProjectTaskAttempt, error) {
 	row := q.db.QueryRow(ctx, CreateProjectTaskAttempt,
+		arg.ID,
 		arg.TenantID,
 		arg.ProjectTaskID,
 		arg.AttemptNo,
@@ -3880,31 +3884,37 @@ const QueueProjectTask = `-- name: QueueProjectTask :one
 UPDATE project_tasks
 SET status = 'queued',
     current_attempt_id = $1::uuid,
+    runtime_task_id = COALESCE($2::uuid, runtime_task_id),
+    digital_employee_run_id = COALESCE($3::uuid, digital_employee_run_id),
     attempt_count = attempt_count + 1,
     retry_not_before = NULL,
     waiting_reason = NULL,
     waiting_request_id = NULL,
-    latest_event_id = COALESCE($2::uuid, latest_event_id),
+    latest_event_id = COALESCE($4::uuid, latest_event_id),
     status_changed_at = NOW(),
     updated_at = NOW()
-WHERE tenant_id = $3::uuid
-  AND project_id = $4::uuid
-  AND id = $5::uuid
+WHERE tenant_id = $5::uuid
+  AND project_id = $6::uuid
+  AND id = $7::uuid
   AND status IN ('planned', 'waiting_human')
 RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at
 `
 
 type QueueProjectTaskParams struct {
-	CurrentAttemptID uuid.UUID     `json:"current_attempt_id"`
-	LatestEventID    uuid.NullUUID `json:"latest_event_id"`
-	TenantID         uuid.UUID     `json:"tenant_id"`
-	ProjectID        uuid.UUID     `json:"project_id"`
-	ID               uuid.UUID     `json:"id"`
+	CurrentAttemptID     uuid.UUID     `json:"current_attempt_id"`
+	RuntimeTaskID        uuid.NullUUID `json:"runtime_task_id"`
+	DigitalEmployeeRunID uuid.NullUUID `json:"digital_employee_run_id"`
+	LatestEventID        uuid.NullUUID `json:"latest_event_id"`
+	TenantID             uuid.UUID     `json:"tenant_id"`
+	ProjectID            uuid.UUID     `json:"project_id"`
+	ID                   uuid.UUID     `json:"id"`
 }
 
 func (q *Queries) QueueProjectTask(ctx context.Context, arg QueueProjectTaskParams) (ProjectTask, error) {
 	row := q.db.QueryRow(ctx, QueueProjectTask,
 		arg.CurrentAttemptID,
+		arg.RuntimeTaskID,
+		arg.DigitalEmployeeRunID,
 		arg.LatestEventID,
 		arg.TenantID,
 		arg.ProjectID,

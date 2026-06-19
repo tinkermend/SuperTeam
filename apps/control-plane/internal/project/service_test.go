@@ -70,6 +70,9 @@ func TestQueueProjectTaskCreatesAttemptAndMovesTaskToQueued(t *testing.T) {
 	projectID := uuid.New()
 	taskID := uuid.New()
 	employeeID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
 	repo.tasks = append(repo.tasks, ProjectTask{
 		ID:                        taskID,
 		TenantID:                  tenantID,
@@ -82,19 +85,34 @@ func TestQueueProjectTaskCreatesAttemptAndMovesTaskToQueued(t *testing.T) {
 	})
 
 	result, err := service.QueueProjectTask(context.Background(), QueueProjectTaskRequest{
-		TenantID:          tenantID,
-		ProjectID:         projectID,
-		ProjectTaskID:     taskID,
-		DigitalEmployeeID: employeeID,
-		IdempotencyKey:    "project-task:" + taskID.String() + ":attempt:1:queue",
-		LeaseToken:        "lease-token-1",
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        taskID,
+		DigitalEmployeeID:    employeeID,
+		DigitalEmployeeRunID: &runID,
+		RuntimeTaskID:        &runtimeTaskID,
+		RuntimeNodeID:        &runtimeNodeID,
+		IdempotencyKey:       "project-task:" + taskID.String() + ":attempt:1:queue",
+		LeaseToken:           "lease-token-1",
 	})
 	require.NoError(t, err)
 	require.Equal(t, ProjectTaskStatusQueued, result.Task.Status)
 	require.NotNil(t, result.Task.CurrentAttemptID)
+	require.Equal(t, runID, *result.Task.DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *result.Task.RuntimeTaskID)
 	require.Equal(t, int32(1), result.Attempt.AttemptNo)
 	require.Equal(t, ProjectTaskAttemptStatusQueued, result.Attempt.Status)
+	require.Equal(t, runID, *result.Attempt.DigitalEmployeeRunID)
+	require.Equal(t, runtimeTaskID, *result.Attempt.RuntimeTaskID)
+	require.Equal(t, runtimeNodeID, *result.Attempt.RuntimeNodeID)
 	require.Equal(t, "lease-token-1", result.Attempt.LeaseToken)
+	require.Equal(t, "project_coordinator", result.Event.ActorType)
+	require.Equal(t, taskID.String(), result.Event.ActorID)
+	require.Equal(t, result.Attempt.ID.String(), result.Event.Payload["project_task_attempt_id"])
+	require.Equal(t, ProjectTaskStatusQueued, result.Event.Payload["project_task_status"])
+	require.Equal(t, runID.String(), result.Event.Payload["digital_employee_run_id"])
+	require.Equal(t, runtimeTaskID.String(), result.Event.Payload["runtime_task_id"])
+	require.Equal(t, runtimeNodeID.String(), result.Event.Payload["runtime_node_id"])
 }
 
 func TestQueueProjectTaskReplaysIdempotencyKey(t *testing.T) {
@@ -4224,6 +4242,9 @@ func (r *memoryRepository) createProjectTaskAttempt(req QueueProjectTaskRequest,
 		ProjectTaskID:                 req.ProjectTaskID,
 		AttemptNo:                     attemptNo,
 		Status:                        ProjectTaskAttemptStatusQueued,
+		DigitalEmployeeRunID:          req.DigitalEmployeeRunID,
+		RuntimeTaskID:                 req.RuntimeTaskID,
+		RuntimeNodeID:                 req.RuntimeNodeID,
 		ExecutionContextPacket:        packet,
 		ExecutionContextPacketVersion: version,
 		LeaseToken:                    req.LeaseToken,
@@ -4284,25 +4305,24 @@ func (r *memoryRepository) QueueProjectTaskWithAttempt(ctx context.Context, req 
 			TenantID:     req.TenantID,
 			ProjectID:    req.ProjectID,
 			EventType:    ProjectEventTaskDispatched,
-			ActorType:    "digital_employee",
-			ActorID:      req.DigitalEmployeeID.String(),
+			ActorType:    "project_coordinator",
+			ActorID:      req.ProjectTaskID.String(),
 			ResourceType: strPtr("project_task"),
 			ResourceID:   strPtr(req.ProjectTaskID.String()),
 			Summary:      "项目任务已排队",
-			Payload: map[string]any{
-				"project_task_id":     req.ProjectTaskID.String(),
-				"digital_employee_id": req.DigitalEmployeeID.String(),
-				"attempt_no":          task.AttemptCount + 1,
-				"idempotency_key":     req.IdempotencyKey,
-			},
+			Payload:      queueProjectTaskEventPayload(req, uuid.Nil, task.AttemptCount+1),
 		})
 		if err != nil {
 			return QueueProjectTaskResult{}, err
 		}
 		attempt := r.createProjectTaskAttempt(req, task.AttemptCount+1, &event.ID)
+		event.Payload["project_task_attempt_id"] = attempt.ID.String()
+		r.events[len(r.events)-1] = event
 		now := time.Now().UTC()
 		task.Status = ProjectTaskStatusQueued
 		task.CurrentAttemptID = &attempt.ID
+		task.DigitalEmployeeRunID = req.DigitalEmployeeRunID
+		task.RuntimeTaskID = req.RuntimeTaskID
 		task.AttemptCount++
 		task.RetryNotBefore = nil
 		task.WaitingReason = nil
