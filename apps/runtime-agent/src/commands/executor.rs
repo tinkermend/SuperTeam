@@ -20,6 +20,7 @@ use crate::instances::{EnsureInstanceRequest, ensure_instance};
 use crate::providers::catalog;
 use crate::providers::{ProviderAdapter, ProviderEventStream, ProviderRequest};
 use crate::runs::{RunEventRecord, RunSpec, RunStatus, RuntimeCommandRunContext, RuntimeRunStore};
+use crate::skills::materialize_skills;
 use crate::workspace_files::{
     WorkspaceMaterializationPlan, materialize_workspace, provider_home_kind,
 };
@@ -107,15 +108,20 @@ pub struct RuntimeCommandExecutor {
     runs: RuntimeRunStore,
     registry: RuntimeCommandRegistry,
     control_plane: Option<ControlPlaneClient>,
+    s3_client: Option<aws_sdk_s3::Client>,
+    s3_bucket: Option<String>,
 }
 
 impl RuntimeCommandExecutor {
     pub fn new(config: RuntimeConfig) -> Self {
+        let (s3_client, s3_bucket) = create_s3_client(&config);
         Self {
             runs: RuntimeRunStore::new(config.runs.log_dir.clone()),
             registry: RuntimeCommandRegistry::default(),
             config,
             control_plane: None,
+            s3_client,
+            s3_bucket,
         }
     }
 
@@ -465,6 +471,34 @@ impl RuntimeCommandExecutor {
             }
         };
 
+        if !payload.skills.is_empty() {
+            if let (Some(s3_client), Some(bucket)) = (&self.s3_client, &self.s3_bucket) {
+                if let Err(error) = materialize_skills(
+                    &PathBuf::from(&payload.agent_home_dir),
+                    &payload.skills,
+                    s3_client,
+                    bucket,
+                )
+                .await
+                {
+                    let error = self.recorded_error(&command.id, error);
+                    let message = error.to_string();
+                    self.write_provisioning_failure(&command.id, message)
+                        .await?;
+                    return Err(error);
+                }
+            } else {
+                let error = self.recorded_error(
+                    &command.id,
+                    anyhow::anyhow!("skills require S3 configuration but s3 client is not configured"),
+                );
+                let message = error.to_string();
+                self.write_provisioning_failure(&command.id, message)
+                    .await?;
+                return Err(error);
+            }
+        }
+
         if let Some(control_plane) = &self.control_plane {
             control_plane
                 .complete_runtime_command(
@@ -780,6 +814,29 @@ impl RuntimeCommandExecutor {
         self.registry
             .record_rejection(command_id, &error.to_string());
         error
+    }
+}
+
+fn create_s3_client(config: &RuntimeConfig) -> (Option<aws_sdk_s3::Client>, Option<String>) {
+    match &config.s3 {
+        Some(s3) => {
+            let creds = aws_sdk_s3::config::Credentials::new(
+                &s3.access_key_id,
+                &s3.secret_access_key,
+                None,
+                None,
+                "static",
+            );
+            let s3_config = aws_sdk_s3::Config::builder()
+                .region(aws_sdk_s3::config::Region::new(s3.region.clone()))
+                .credentials_provider(creds)
+                .endpoint_url(&s3.endpoint)
+                .force_path_style(s3.force_path_style)
+                .behavior_version_latest()
+                .build();
+            (Some(aws_sdk_s3::Client::from_conf(s3_config)), Some(s3.bucket.clone()))
+        }
+        None => (None, None),
     }
 }
 

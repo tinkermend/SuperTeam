@@ -7,56 +7,36 @@ import (
 	"github.com/google/uuid"
 )
 
-type SkillStatus string
-
-const (
-	SkillStatusInstalled SkillStatus = "installed"
-	SkillStatusAvailable SkillStatus = "available"
-)
-
-type SkillFileType string
-
-const (
-	SkillFileTypeFile SkillFileType = "file"
-)
-
 var (
-	ErrInvalidInput = errors.New("invalid skill input")
-	ErrNotFound     = errors.New("skill not found")
+	ErrInvalidInput        = errors.New("invalid skill input")
+	ErrNotFound            = errors.New("skill not found")
+	ErrTeamAlreadyInherited = errors.New("team already inherited this skill")
 )
 
 type Skill struct {
-	ID            uuid.UUID
-	TenantID      uuid.UUID
-	Slug          string
-	Name          string
-	Description   string
-	Version       string
-	Source        string
-	RiskLevel     string
-	Status        SkillStatus
-	IconKey       string
-	ColorToken    string
-	Tags          []string
-	TeamIDs       []uuid.UUID
-	Files         []*SkillFile
-	TeamBindings  []*SkillTeamBinding
-	AgentBindings []*SkillAgentBinding
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-}
-
-type SkillFile struct {
-	ID             uuid.UUID
-	TenantID       uuid.UUID
-	SkillID        uuid.UUID
-	Path           string
-	FileType       SkillFileType
-	Content        string
-	SizeBytes      int64
-	ChecksumSHA256 string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	Slug              string
+	Name              string
+	Description       string
+	Version           string
+	Source            string
+	RiskLevel         string
+	IconKey           string
+	ColorToken        string
+	Tags              []string
+	TeamIDs           []uuid.UUID
+	ArchiveObjectRef  string
+	ArchiveFilename   string
+	ArchiveSizeBytes  int64
+	ArchiveChecksum   string
+	ArchiveFileCount  int
+	CreatedBy         uuid.UUID
+	CreatedByName     string
+	TeamBindings      []*SkillTeamBinding
+	AgentBindings     []*SkillAgentBinding
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 type SkillTeamBinding struct {
@@ -72,13 +52,26 @@ type SkillAgentBinding struct {
 	Status    string
 }
 
+type SkillRuntimeRecord struct {
+	ID              uuid.UUID
+	Slug            string
+	ArchiveObjectRef string
+	ArchiveChecksum string
+	ArchiveSizeBytes int64
+	ArchiveFileCount int
+}
+
 type ListSkillsRequest struct {
 	TenantID uuid.UUID
-	Status   SkillStatus
 	Q        string
 }
 
 type GetSkillRequest struct {
+	TenantID uuid.UUID
+	SkillID  uuid.UUID
+}
+
+type DeleteSkillRequest struct {
 	TenantID uuid.UUID
 	SkillID  uuid.UUID
 }
@@ -96,27 +89,23 @@ type UploadSkillRequest struct {
 }
 
 type UpsertSkillPackageRequest struct {
-	TenantID    uuid.UUID
-	ActorUserID uuid.UUID
-	Slug        string
-	Name        string
-	Description string
-	Version     string
-	Source      string
-	RiskLevel   string
-	Status      SkillStatus
-	IconKey     string
-	ColorToken  string
-	Tags        []string
-	TeamIDs     []uuid.UUID
-	Files       []*SkillFile
-}
-
-type UpdateSkillFileRequest struct {
-	TenantID uuid.UUID
-	SkillID  uuid.UUID
-	Path     string
-	Content  string
+	TenantID          uuid.UUID
+	ActorUserID       uuid.UUID
+	Slug              string
+	Name              string
+	Description       string
+	Version           string
+	Source            string
+	RiskLevel         string
+	IconKey           string
+	ColorToken        string
+	Tags              []string
+	TeamIDs           []uuid.UUID
+	ArchiveObjectRef  string
+	ArchiveFilename   string
+	ArchiveSizeBytes  int64
+	ArchiveChecksum   string
+	ArchiveFileCount  int
 }
 
 type BindTeamSkillRequest struct {

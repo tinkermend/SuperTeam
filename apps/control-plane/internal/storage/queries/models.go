@@ -1637,8 +1637,6 @@ type Skill struct {
 	Source string `json:"source"`
 	// 技能风险等级，由服务端和上传表单校验
 	RiskLevel string `json:"risk_level"`
-	// 技能状态，例如 installed 或 available
-	Status string `json:"status"`
 	// 技能市场彩色图标键，前端映射到图标库
 	IconKey string `json:"icon_key"`
 	// 技能图标语义色标识
@@ -1655,6 +1653,16 @@ type Skill struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 技能更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 技能 zip 包在对象存储的 URI，例如 s3://bucket/skills/.../xxx.zip
+	ArchiveObjectRef pgtype.Text `json:"archive_object_ref"`
+	// 上传时原始 zip 文件名
+	ArchiveFilename pgtype.Text `json:"archive_filename"`
+	// zip 包字节数
+	ArchiveSizeBytes int64 `json:"archive_size_bytes"`
+	// zip 包 SHA256 校验值，用于 Runtime 下发完整性校验
+	ArchiveChecksumSha256 string `json:"archive_checksum_sha256"`
+	// zip 包内文件总数
+	ArchiveFileCount int32 `json:"archive_file_count"`
 }
 
 // 技能安装到数字员工的绑定表
@@ -1674,32 +1682,6 @@ type SkillAgentBinding struct {
 	// 安装关系创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 安装关系更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-// 技能包文件表，保存 SKILL.md、脚本和附加资源的可编辑文本内容
-type SkillFile struct {
-	// 技能文件主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 技能文件所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 所属技能 ID
-	SkillID uuid.UUID `json:"skill_id"`
-	// 技能包内规范化相对路径
-	Path string `json:"path"`
-	// 文件节点类型，当前为 file
-	FileType string `json:"file_type"`
-	// 文本文件内容，支持在线编辑
-	Content string `json:"content"`
-	// 文件内容字节数
-	SizeBytes int64 `json:"size_bytes"`
-	// 文件内容 SHA256 校验值
-	ChecksumSha256 string `json:"checksum_sha256"`
-	// 技能文件扩展元数据 JSON
-	Metadata []byte `json:"metadata"`
-	// 技能文件创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 技能文件更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
@@ -1905,6 +1887,74 @@ type TaskStateHistory struct {
 	Reason pgtype.Text `json:"reason"`
 	// 状态变更记录时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// 团队借调策略：团队负责人设置本团队员工是否/在什么条件下可被项目借调（每团队一条 active）
+type TeamLendingPolicy struct {
+	// 借调策略 UUID
+	ID uuid.UUID `json:"id"`
+	// 租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属团队 ID（供给侧）
+	TeamID uuid.UUID `json:"team_id"`
+	// 是否允许本团队员工被项目借调
+	AllowLending bool `json:"allow_lending"`
+	// 审批模式：auto 符合策略自动放行；manual 每次借调需团队负责人审批
+	ApprovalMode string `json:"approval_mode"`
+	// 单次借调预算上限；请求超过则强制转人工审批
+	BudgetCeiling pgtype.Numeric `json:"budget_ceiling"`
+	// 可被借调时允许的能力/runtime scope 天花板，不可超出团队治理外壳
+	CapabilityCeiling []byte `json:"capability_ceiling"`
+	// 可被哪些项目调用的匹配条件（标签 / owner 范围等，registry-first）
+	ProjectMatch []byte `json:"project_match"`
+	// 策略状态：active 生效，archived 历史版本
+	Status string `json:"status"`
+	// 创建该策略的用户 ID
+	CreatedByUserID uuid.NullUUID `json:"created_by_user_id"`
+	// 最后更新该策略的用户 ID
+	UpdatedByUserID uuid.NullUUID `json:"updated_by_user_id"`
+	// 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 团队借调请求：项目向团队申请借调数字员工，团队负责人裁决（D1 团队级 (project, team) 授权）
+type TeamLendingRequest struct {
+	// 借调请求 UUID
+	ID uuid.UUID `json:"id"`
+	// 租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 被借调的团队 ID（供给侧）
+	TeamID uuid.UUID `json:"team_id"`
+	// 发起借调的项目 ID（需求侧）
+	ProjectID uuid.UUID `json:"project_id"`
+	// 请求状态：pending 待审批，auto_approved 策略自动放行，approved 人工通过，rejected 驳回，revoked 撤销
+	Status string `json:"status"`
+	// 发起借调的用户 ID（项目负责人）
+	RequestedByUserID uuid.UUID `json:"requested_by_user_id"`
+	// 借调事由
+	RequestReason string `json:"request_reason"`
+	// 申请的借调预算
+	RequestedBudget pgtype.Numeric `json:"requested_budget"`
+	// 申请使用的能力范围
+	RequestedCapability []byte `json:"requested_capability"`
+	// 实际授予的借调预算（≤ 策略天花板）
+	GrantedBudget pgtype.Numeric `json:"granted_budget"`
+	// 实际授予的能力范围（≤ 策略天花板）
+	GrantedCapability []byte `json:"granted_capability"`
+	// 是否因超出策略预算/能力天花板而强制转人工审批
+	IsException bool `json:"is_exception"`
+	// 裁决该请求的团队负责人用户 ID
+	DecidedByUserID uuid.NullUUID `json:"decided_by_user_id"`
+	// 裁决时间
+	DecidedAt pgtype.Timestamptz `json:"decided_at"`
+	// 裁决说明
+	DecisionReason string `json:"decision_reason"`
+	// 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 // 团队公共 MCP 服务器配置，团队下数字员工强制继承

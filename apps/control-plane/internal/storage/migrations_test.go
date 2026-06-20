@@ -702,6 +702,31 @@ func TestSkillManagementMigrationAddsSkillPackageTables(t *testing.T) {
 	}
 }
 
+func TestSkillArchiveStorageMigrationRefactorsStorageModel(t *testing.T) {
+	body, err := os.ReadFile("migrations/025_skill_archive_storage.sql")
+	if err != nil {
+		t.Fatalf("read skill archive storage migration: %v", err)
+	}
+	sql := string(body)
+
+	for _, expected := range []string{
+		"ADD COLUMN archive_object_ref TEXT",
+		"ADD COLUMN archive_filename VARCHAR(255)",
+		"ADD COLUMN archive_size_bytes BIGINT NOT NULL DEFAULT 0",
+		"ADD COLUMN archive_checksum_sha256 VARCHAR(64) NOT NULL DEFAULT ''",
+		"ADD COLUMN archive_file_count INTEGER NOT NULL DEFAULT 0",
+		"COMMENT ON COLUMN skills.archive_object_ref IS '技能 zip 包在对象存储的 URI，例如 s3://bucket/skills/.../xxx.zip'",
+		"DROP INDEX IF EXISTS idx_skills_tenant_status_updated",
+		"ALTER TABLE skills DROP COLUMN status",
+		"DROP TABLE IF EXISTS skill_files",
+		"CREATE INDEX IF NOT EXISTS idx_skills_tenant_updated",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected skill archive storage migration to contain %q", expected)
+		}
+	}
+}
+
 func TestDigitalEmployeeCreationQueriesHandlePolicyReasonsAndAbortAnchoring(t *testing.T) {
 	body, err := os.ReadFile("queries/employee_execution.sql")
 	if err != nil {

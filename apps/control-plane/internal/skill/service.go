@@ -7,33 +7,42 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"path"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/storage"
 )
 
 type Repository interface {
 	ListSkills(ctx context.Context, req ListSkillsRequest) ([]*Skill, error)
 	GetSkill(ctx context.Context, req GetSkillRequest) (*Skill, error)
 	UpsertSkillPackage(ctx context.Context, req UpsertSkillPackageRequest) (*Skill, error)
-	UpdateSkillFile(ctx context.Context, req UpdateSkillFileRequest) (*SkillFile, error)
+	DeleteSkill(ctx context.Context, req DeleteSkillRequest) error
 	BindSkillToTeam(ctx context.Context, req BindTeamSkillRequest) (*Skill, error)
 	UnbindSkillFromTeam(ctx context.Context, req BindTeamSkillRequest) error
 	ListTeamSkills(ctx context.Context, req ListTeamSkillsRequest) ([]*Skill, error)
 	BindSkillToEmployee(ctx context.Context, req BindEmployeeSkillRequest) (*Skill, error)
 	UnbindSkillFromEmployee(ctx context.Context, req BindEmployeeSkillRequest) error
 	ListEffectiveEmployeeSkills(ctx context.Context, req ListEffectiveEmployeeSkillsRequest) ([]EffectiveEmployeeSkill, error)
+	ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]SkillRuntimeRecord, error)
+	IsSkillBoundToEmployeeTeam(ctx context.Context, req BindEmployeeSkillRequest) (bool, error)
+}
+
+type ObjectStore interface {
+	PutObject(ctx context.Context, key string, body io.Reader, options storage.PutObjectOptions) (storage.ObjectRef, error)
+	DeleteObject(ctx context.Context, key string) error
 }
 
 type Service struct {
-	repository Repository
+	repository  Repository
+	objectStore ObjectStore
 }
 
-func NewService(repository Repository) *Service {
-	return &Service{repository: repository}
+func NewService(repository Repository, objectStore ObjectStore) *Service {
+	return &Service{repository: repository, objectStore: objectStore}
 }
 
 func (s *Service) ListSkills(ctx context.Context, req ListSkillsRequest) ([]*Skill, error) {
@@ -54,6 +63,9 @@ func (s *Service) UploadSkill(ctx context.Context, req UploadSkillRequest) (*Ski
 	if s == nil || s.repository == nil {
 		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
 	}
+	if s.objectStore == nil {
+		return nil, fmt.Errorf("%w: object store is not configured", ErrInvalidInput)
+	}
 	if req.TenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
 	}
@@ -61,17 +73,23 @@ func (s *Service) UploadSkill(ctx context.Context, req UploadSkillRequest) (*Ski
 		return nil, fmt.Errorf("%w: zip archive is required", ErrInvalidInput)
 	}
 
-	files, err := filesFromZip(req.Archive)
+	reader, err := zip.NewReader(bytes.NewReader(req.Archive), int64(len(req.Archive)))
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid zip archive", ErrInvalidInput)
+	}
+
+	rootPrefix := commonRootPrefix(reader.File)
+	skillMarkdownContent, fileCount, err := extractSkillMarkdown(reader, rootPrefix)
 	if err != nil {
 		return nil, err
 	}
-	if !hasSkillMarkdown(files) {
+	if skillMarkdownContent == "" {
 		return nil, fmt.Errorf("%w: zip archive must include SKILL.md", ErrInvalidInput)
 	}
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		name = skillNameFromMarkdown(files)
+		name = skillNameFromMarkdown(skillMarkdownContent)
 	}
 	if name == "" {
 		name = strings.TrimSuffix(path.Base(req.Filename), path.Ext(req.Filename))
@@ -82,39 +100,86 @@ func (s *Service) UploadSkill(ctx context.Context, req UploadSkillRequest) (*Ski
 
 	description := strings.TrimSpace(req.Description)
 	if description == "" {
-		description = firstParagraphFromMarkdown(files)
+		description = firstParagraphFromMarkdown(skillMarkdownContent)
 	}
 	slug := slugify(name)
 	if slug == "" {
 		return nil, fmt.Errorf("%w: skill slug is required", ErrInvalidInput)
 	}
-	return s.repository.UpsertSkillPackage(ctx, UpsertSkillPackageRequest{
-		TenantID:    req.TenantID,
-		ActorUserID: req.ActorUserID,
-		Slug:        slug,
-		Name:        name,
-		Description: description,
-		Version:     "v0.1.0",
-		Source:      "upload",
-		RiskLevel:   riskLevelOrDefault(req.RiskLevel),
-		Status:      SkillStatusInstalled,
-		IconKey:     iconKeyForSkill(slug),
-		ColorToken:  colorTokenForSkill(slug),
-		Tags:        normalizeStringList(req.Tags),
-		TeamIDs:     req.TeamIDs,
-		Files:       files,
+
+	sum := sha256.Sum256(req.Archive)
+	checksum := hex.EncodeToString(sum[:])
+	sizeBytes := int64(len(req.Archive))
+
+	objectKey := fmt.Sprintf("skills/%s/%s/%s.zip", req.TenantID, slug, checksum)
+	ref, err := s.objectStore.PutObject(ctx, objectKey, bytes.NewReader(req.Archive), storage.PutObjectOptions{
+		ContentType: "application/zip",
 	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to store skill archive: %v", ErrInvalidInput, err)
+	}
+
+	skill, err := s.repository.UpsertSkillPackage(ctx, UpsertSkillPackageRequest{
+		TenantID:          req.TenantID,
+		ActorUserID:       req.ActorUserID,
+		Slug:              slug,
+		Name:              name,
+		Description:       description,
+		Version:           "v0.1.0",
+		Source:            "upload",
+		RiskLevel:         riskLevelOrDefault(req.RiskLevel),
+		IconKey:           iconKeyForSkill(slug),
+		ColorToken:        colorTokenForSkill(slug),
+		Tags:              normalizeStringList(req.Tags),
+		TeamIDs:           req.TeamIDs,
+		ArchiveObjectRef:  ref.URI,
+		ArchiveFilename:   req.Filename,
+		ArchiveSizeBytes:  sizeBytes,
+		ArchiveChecksum:   checksum,
+		ArchiveFileCount:  fileCount,
+	})
+	if err != nil {
+		_ = s.objectStore.DeleteObject(ctx, objectKey)
+		return nil, err
+	}
+	return skill, nil
 }
 
-func (s *Service) UpdateSkillFile(ctx context.Context, req UpdateSkillFileRequest) (*SkillFile, error) {
+func (s *Service) DeleteSkill(ctx context.Context, req DeleteSkillRequest) error {
 	if s == nil || s.repository == nil {
-		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
+		return fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
 	}
-	req.Path = normalizeFilePath(req.Path)
-	if req.Path == "" {
-		return nil, fmt.Errorf("%w: file path is required", ErrInvalidInput)
+	if req.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
 	}
-	return s.repository.UpdateSkillFile(ctx, req)
+	if req.SkillID == uuid.Nil {
+		return fmt.Errorf("%w: skill_id is required", ErrInvalidInput)
+	}
+	skill, err := s.repository.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: req.SkillID})
+	if err != nil {
+		return err
+	}
+	if err := s.repository.DeleteSkill(ctx, req); err != nil {
+		return err
+	}
+	if s.objectStore != nil && skill.ArchiveObjectRef != "" {
+		objectKey := extractObjectKeyFromURI(skill.ArchiveObjectRef)
+		if objectKey != "" {
+			_ = s.objectStore.DeleteObject(ctx, objectKey)
+		}
+	}
+	return nil
+}
+
+func extractObjectKeyFromURI(uri string) string {
+	stripped := uri
+	if prefix, found := strings.CutPrefix(uri, "s3://"); found {
+		stripped = prefix
+	}
+	if idx := strings.Index(stripped, "/"); idx >= 0 {
+		return stripped[idx+1:]
+	}
+	return stripped
 }
 
 func (s *Service) BindSkillToTeam(ctx context.Context, req BindTeamSkillRequest) (*Skill, error) {
@@ -175,6 +240,13 @@ func (s *Service) BindSkillToEmployee(ctx context.Context, req BindEmployeeSkill
 	if req.SkillID == uuid.Nil {
 		return nil, fmt.Errorf("%w: skill_id is required", ErrInvalidInput)
 	}
+	inherited, err := s.repository.IsSkillBoundToEmployeeTeam(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if inherited {
+		return nil, ErrTeamAlreadyInherited
+	}
 	return s.repository.BindSkillToEmployee(ctx, req)
 }
 
@@ -207,55 +279,51 @@ func (s *Service) ListEffectiveEmployeeSkills(ctx context.Context, req ListEffec
 	return s.repository.ListEffectiveEmployeeSkills(ctx, req)
 }
 
-func filesFromZip(archive []byte) ([]*SkillFile, error) {
-	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid zip archive", ErrInvalidInput)
+func (s *Service) ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]SkillRuntimeRecord, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
 	}
-	rootPrefix := commonRootPrefix(reader.File)
-	files := make([]*SkillFile, 0, len(reader.File))
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if digitalEmployeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	return s.repository.ListSkillsForRuntime(ctx, tenantID, digitalEmployeeID)
+}
+
+func extractSkillMarkdown(reader *zip.Reader, rootPrefix string) (string, int, error) {
+	var skillMarkdownContent string
+	fileCount := 0
 	for _, file := range reader.File {
 		if file.FileInfo().IsDir() {
 			continue
 		}
-		filePath := normalizeFilePath(strings.TrimPrefix(file.Name, rootPrefix))
-		if filePath == "" || strings.HasPrefix(filePath, "../") {
-			continue
-		}
-		rc, err := file.Open()
-		if err != nil {
-			return nil, fmt.Errorf("%w: cannot read %s", ErrInvalidInput, file.Name)
-		}
-		var buf bytes.Buffer
-		if _, err := buf.ReadFrom(rc); err != nil {
+		fileCount++
+		normalizedPath := normalizeFilePath(strings.TrimPrefix(file.Name, rootPrefix))
+		if normalizedPath == "SKILL.md" {
+			rc, err := file.Open()
+			if err != nil {
+				return "", 0, fmt.Errorf("%w: cannot read SKILL.md", ErrInvalidInput)
+			}
+			var buf bytes.Buffer
+			if _, err := buf.ReadFrom(rc); err != nil {
+				_ = rc.Close()
+				return "", 0, fmt.Errorf("%w: cannot read SKILL.md", ErrInvalidInput)
+			}
 			_ = rc.Close()
-			return nil, fmt.Errorf("%w: cannot read %s", ErrInvalidInput, file.Name)
+			skillMarkdownContent = buf.String()
 		}
-		_ = rc.Close()
-		sum := sha256.Sum256(buf.Bytes())
-		files = append(files, &SkillFile{
-			Path:           filePath,
-			FileType:       SkillFileTypeFile,
-			Content:        buf.String(),
-			SizeBytes:      int64(buf.Len()),
-			ChecksumSHA256: hex.EncodeToString(sum[:]),
-		})
 	}
-	sort.Slice(files, func(i, j int) bool {
-		if files[i].Path == "SKILL.md" {
-			return true
-		}
-		if files[j].Path == "SKILL.md" {
-			return false
-		}
-		return files[i].Path < files[j].Path
-	})
-	return files, nil
+	return skillMarkdownContent, fileCount, nil
 }
 
 func commonRootPrefix(files []*zip.File) string {
 	root := ""
 	for _, file := range files {
+		if file.FileInfo().IsDir() {
+			continue
+		}
 		parts := strings.Split(strings.Trim(file.Name, "/"), "/")
 		if len(parts) < 2 {
 			return ""
@@ -274,42 +342,23 @@ func commonRootPrefix(files []*zip.File) string {
 	return root + "/"
 }
 
-func hasSkillMarkdown(files []*SkillFile) bool {
-	for _, file := range files {
-		if file.Path == "SKILL.md" {
-			return true
-		}
-	}
-	return false
-}
-
-func skillNameFromMarkdown(files []*SkillFile) string {
-	for _, file := range files {
-		if file.Path != "SKILL.md" {
-			continue
-		}
-		for _, line := range strings.Split(file.Content, "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "# ") {
-				return strings.TrimSpace(strings.TrimPrefix(line, "# "))
-			}
+func skillNameFromMarkdown(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "# ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "# "))
 		}
 	}
 	return ""
 }
 
-func firstParagraphFromMarkdown(files []*SkillFile) string {
-	for _, file := range files {
-		if file.Path != "SKILL.md" {
+func firstParagraphFromMarkdown(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		for _, line := range strings.Split(file.Content, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			return line
-		}
+		return line
 	}
 	return ""
 }

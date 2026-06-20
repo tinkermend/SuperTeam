@@ -17,6 +17,7 @@ import (
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/skill"
+	"github.com/superteam/control-plane/internal/teamlending"
 	"github.com/superteam/control-plane/internal/tenant"
 )
 
@@ -37,6 +38,7 @@ type Server struct {
 	projectHandler                 *project.HTTPHandler
 	skillHandler                   *skill.HTTPHandler
 	tenantHandler                  *tenant.HTTPHandler
+	teamLendingHandler             *teamlending.HTTPHandler
 }
 
 func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
@@ -141,6 +143,14 @@ func (s *Server) SetTenantHandler(tenantHandler *tenant.HTTPHandler) {
 	s.tenantHandler = tenantHandler
 	if tenantHandler != nil {
 		tenantHandler.SetAuthorizer(s.authorizer)
+	}
+	s.registerRoutes()
+}
+
+func (s *Server) SetTeamLendingHandler(teamLendingHandler *teamlending.HTTPHandler) {
+	s.teamLendingHandler = teamLendingHandler
+	if teamLendingHandler != nil {
+		teamLendingHandler.SetAuthorizer(s.authorizer)
 	}
 	s.registerRoutes()
 }
@@ -301,6 +311,22 @@ func (s *Server) registerRoutes() {
 			})
 		}
 
+		if s.teamLendingHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				// 团队供给侧：借调策略 + 请求审批/撤销。
+				r.Get("/teams/{teamId}/lending-policy", s.teamLendingHandler.GetLendingPolicy)
+				r.Put("/teams/{teamId}/lending-policy", s.teamLendingHandler.UpsertLendingPolicy)
+				r.Get("/teams/{teamId}/lending-requests", s.teamLendingHandler.ListTeamLendingRequests)
+				r.Post("/teams/{teamId}/lending-requests/{requestId}/approve", s.teamLendingHandler.ApproveLendingRequest)
+				r.Post("/teams/{teamId}/lending-requests/{requestId}/reject", s.teamLendingHandler.RejectLendingRequest)
+				r.Post("/teams/{teamId}/lending-requests/{requestId}/revoke", s.teamLendingHandler.RevokeLendingRequest)
+				// 项目需求侧：发起借调 + 查看。
+				r.Post("/projects/{projectId}/lending-requests", s.teamLendingHandler.CreateProjectLendingRequest)
+				r.Get("/projects/{projectId}/lending-requests", s.teamLendingHandler.ListProjectLendingRequests)
+			})
+		}
+
 		if s.auditHandler != nil {
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.ConsoleUserAuth(s.authService))
@@ -313,8 +339,8 @@ func (s *Server) registerRoutes() {
 				r.Use(middleware.ConsoleUserAuth(s.authService))
 				r.Get("/skills", s.skillHandler.ListSkills)
 				r.Post("/skills/uploads", s.skillHandler.UploadSkill)
-				r.Get("/skills/{skillId}", s.skillHandler.GetSkill)
-				r.Put("/skills/{skillId}/files/*", s.skillHandler.UpdateSkillFile)
+			r.Get("/skills/{skillId}", s.skillHandler.GetSkill)
+				r.Delete("/skills/{skillId}", s.skillHandler.DeleteSkill)
 				r.Get("/teams/{teamId}/skills", s.skillHandler.ListTeamSkills)
 				r.Post("/teams/{teamId}/skills", s.skillHandler.BindTeamSkill)
 				r.Delete("/teams/{teamId}/skills/{skillId}", s.skillHandler.UnbindTeamSkill)

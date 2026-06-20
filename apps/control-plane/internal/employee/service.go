@@ -13,11 +13,17 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/skill"
 )
+
+type SkillLister interface {
+	ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]skill.SkillRuntimeRecord, error)
+}
 
 type Service struct {
 	repository               Repository
 	dispatcher               RuntimeCommandDispatcher
+	skillLister              SkillLister
 	provisioningTimeout      time.Duration
 	provisioningPollInterval time.Duration
 }
@@ -30,16 +36,17 @@ const (
 )
 
 func NewService(repository Repository) (*Service, error) {
-	return NewServiceWithProvisioning(repository, nil)
+	return NewServiceWithProvisioning(repository, nil, nil)
 }
 
-func NewServiceWithProvisioning(repository Repository, dispatcher RuntimeCommandDispatcher) (*Service, error) {
+func NewServiceWithProvisioning(repository Repository, dispatcher RuntimeCommandDispatcher, skillLister SkillLister) (*Service, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("%w: repository is required", ErrInvalidInput)
 	}
 	return &Service{
 		repository:               repository,
 		dispatcher:               dispatcher,
+		skillLister:              skillLister,
 		provisioningTimeout:      defaultProvisioningTimeout,
 		provisioningPollInterval: defaultProvisioningPollInterval,
 	}, nil
@@ -648,7 +655,7 @@ func (s *Service) createLocalReadyEmployeeFacts(ctx context.Context, repository 
 	if _, err := createApprovedEffectiveConfig(ctx, repository, record, teamConfig.ID, configRevision.ID, preview, req.OwnerUserID); err != nil {
 		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
 	}
-	instance, commandID, payload, err := createProvisioningInstanceAndReceipt(ctx, repository, record, req, preflight, configInput, preview)
+	instance, commandID, payload, err := createProvisioningInstanceAndReceipt(ctx, repository, s.skillLister, record, req, preflight, configInput, preview)
 	if err != nil {
 		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
 	}
@@ -745,7 +752,7 @@ func createApprovedEffectiveConfig(ctx context.Context, repository Repository, r
 	return effectiveConfig, nil
 }
 
-func createProvisioningInstanceAndReceipt(ctx context.Context, repository Repository, record DigitalEmployeeRecord, req CreateDigitalEmployeeRequest, preflight RuntimeProvisioningPreflight, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) (DigitalEmployeeExecutionInstanceRecord, string, map[string]any, error) {
+func createProvisioningInstanceAndReceipt(ctx context.Context, repository Repository, skillLister SkillLister, record DigitalEmployeeRecord, req CreateDigitalEmployeeRequest, preflight RuntimeProvisioningPreflight, configInput EmployeeConfigInput, preview *EffectiveConfigPreview) (DigitalEmployeeExecutionInstanceRecord, string, map[string]any, error) {
 	agentHomeDir := canonicalEmployeeHome(preflight.AgentHomeDir, preflight.TeamID, record.ID)
 	instance, err := repository.UpsertDigitalEmployeeExecutionInstance(ctx, UpsertExecutionInstanceParams{
 		TenantID:          req.TenantID,
@@ -773,8 +780,16 @@ func createProvisioningInstanceAndReceipt(ctx context.Context, repository Reposi
 		return DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
 	}
 
+	var runtimeSkills []skill.SkillRuntimeRecord
+	if skillLister != nil {
+		runtimeSkills, err = skillLister.ListSkillsForRuntime(ctx, req.TenantID, record.ID)
+		if err != nil {
+			return DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("list skills for runtime: %w", err)
+		}
+	}
+
 	commandID := newRuntimeCommandID()
-	payload := buildProvisionInstancePayload(commandID, record, instance, req.ProviderType, preflight, req, configInput, preview, workspaceFiles)
+	payload := buildProvisionInstancePayload(commandID, record, instance, req.ProviderType, preflight, req, configInput, preview, workspaceFiles, runtimeSkills)
 	if err := repository.CreateRuntimeCommandReceipt(ctx, CreateRuntimeCommandReceiptRequest{
 		TenantID:      req.TenantID,
 		CommandID:     commandID,
@@ -962,7 +977,7 @@ func validateRuntimeProvisioningPreflight(preflight RuntimeProvisioningPreflight
 	return nil
 }
 
-func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRecord, instance DigitalEmployeeExecutionInstanceRecord, providerType string, preflight RuntimeProvisioningPreflight, req CreateDigitalEmployeeRequest, configInput EmployeeConfigInput, preview *EffectiveConfigPreview, workspaceFiles []WorkspaceFileForSyncRecord) map[string]any {
+func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRecord, instance DigitalEmployeeExecutionInstanceRecord, providerType string, preflight RuntimeProvisioningPreflight, req CreateDigitalEmployeeRequest, configInput EmployeeConfigInput, preview *EffectiveConfigPreview, workspaceFiles []WorkspaceFileForSyncRecord, runtimeSkills []skill.SkillRuntimeRecord) map[string]any {
 	return redactRuntimeEventPayload(map[string]any{
 		"command_id":                  commandID,
 		"digital_employee_id":         employee.ID.String(),
@@ -995,7 +1010,7 @@ func buildProvisionInstancePayload(commandID string, employee DigitalEmployeeRec
 		"employee_metadata":           cloneMap(employee.Metadata),
 		"execution_instance_ref":      instance.ID.String(),
 		"workspace_files":             runtimeWorkspaceFilesPayload(workspaceFiles),
-		"skills":                      runtimeSkillsPayload(configInput.CapabilitySelection),
+		"skills":                      runtimeSkillsPayload(runtimeSkills),
 		"mcp_servers":                 runtimeMCPServersPayload(configInput.CapabilitySelection),
 	})
 }
@@ -1175,11 +1190,13 @@ type runtimeWorkspaceFilePayload struct {
 }
 
 type runtimeSkillPayload struct {
-	SkillID     string   `json:"skill_id"`
-	SkillKey    string   `json:"skill_key"`
-	RevisionID  string   `json:"revision_id"`
-	Files       []string `json:"files"`
-	ContentHash string   `json:"content_hash"`
+	SkillID               string `json:"skill_id"`
+	SkillKey              string `json:"skill_key"`
+	RevisionID            string `json:"revision_id"`
+	ArchiveObjectRef      string `json:"archive_object_ref"`
+	ArchiveChecksumSHA256 string `json:"archive_checksum_sha256"`
+	ArchiveSizeBytes      int64  `json:"archive_size_bytes"`
+	ArchiveFileCount      int    `json:"archive_file_count"`
 }
 
 type runtimeMCPServerPayload struct {
@@ -1233,20 +1250,26 @@ func runtimeWorkspaceFilesPayload(files []WorkspaceFileForSyncRecord) []map[stri
 	return out
 }
 
-func runtimeSkillsPayload(capabilitySelection map[string]any) []map[string]any {
-	keys := stringList(capabilitySelection["enabled_skills"])
-	out := make([]map[string]any, 0, len(keys))
-	for _, key := range keys {
+func runtimeSkillsPayload(skills []skill.SkillRuntimeRecord) []map[string]any {
+	out := make([]map[string]any, 0, len(skills))
+	for _, s := range skills {
 		payload := runtimeSkillPayload{
-			SkillKey: key,
-			Files:    []string{},
+			SkillID:               s.ID.String(),
+			SkillKey:              s.Slug,
+			RevisionID:            s.ArchiveChecksum,
+			ArchiveObjectRef:      s.ArchiveObjectRef,
+			ArchiveChecksumSHA256: s.ArchiveChecksum,
+			ArchiveSizeBytes:      s.ArchiveSizeBytes,
+			ArchiveFileCount:      s.ArchiveFileCount,
 		}
 		out = append(out, map[string]any{
-			"skill_id":     payload.SkillID,
-			"skill_key":    payload.SkillKey,
-			"revision_id":  payload.RevisionID,
-			"files":        payload.Files,
-			"content_hash": payload.ContentHash,
+			"skill_id":                payload.SkillID,
+			"skill_key":               payload.SkillKey,
+			"revision_id":             payload.RevisionID,
+			"archive_object_ref":      payload.ArchiveObjectRef,
+			"archive_checksum_sha256": payload.ArchiveChecksumSHA256,
+			"archive_size_bytes":      payload.ArchiveSizeBytes,
+			"archive_file_count":      payload.ArchiveFileCount,
 		})
 	}
 	return out

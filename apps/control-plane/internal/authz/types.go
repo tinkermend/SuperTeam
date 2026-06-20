@@ -53,7 +53,7 @@ const (
 
 	ActionSkillRead   = "skill.read"
 	ActionSkillUpload = "skill.upload"
-	ActionSkillUpdate = "skill.update"
+	ActionSkillDelete = "skill.delete"
 
 	ActionTeamCreate                      = "team.create"
 	ActionTeamRead                        = "team.read"
@@ -73,6 +73,10 @@ const (
 	ActionTeamCapabilityUnbind            = "team.capability.unbind"
 	ActionTeamCapabilityManage            = "team.capability.manage"
 	ActionTeamAuditRead                   = "team.audit.read"
+	ActionTeamLendingPolicyRead           = "team.lending.policy.read"
+	ActionTeamLendingPolicyEdit           = "team.lending.policy.edit"
+	ActionTeamLendingRequestRead          = "team.lending.request.read"
+	ActionTeamLendingRequestDecide        = "team.lending.request.decide"
 )
 
 const (

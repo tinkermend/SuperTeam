@@ -21,7 +21,7 @@ type HandlerService interface {
 	ListSkills(ctx context.Context, req ListSkillsRequest) ([]*Skill, error)
 	GetSkill(ctx context.Context, req GetSkillRequest) (*Skill, error)
 	UploadSkill(ctx context.Context, req UploadSkillRequest) (*Skill, error)
-	UpdateSkillFile(ctx context.Context, req UpdateSkillFileRequest) (*SkillFile, error)
+	DeleteSkill(ctx context.Context, req DeleteSkillRequest) error
 	BindSkillToTeam(ctx context.Context, req BindTeamSkillRequest) (*Skill, error)
 	UnbindSkillFromTeam(ctx context.Context, req BindTeamSkillRequest) error
 	ListTeamSkills(ctx context.Context, req ListTeamSkillsRequest) ([]*Skill, error)
@@ -54,7 +54,6 @@ func (h *HTTPHandler) ListSkills(w http.ResponseWriter, r *http.Request) {
 	}
 	skills, err := service.ListSkills(r.Context(), ListSkillsRequest{
 		TenantID: tenantID,
-		Status:   SkillStatus(r.URL.Query().Get("status")),
 		Q:        r.URL.Query().Get("q"),
 	})
 	if err != nil {
@@ -131,13 +130,12 @@ func (h *HTTPHandler) UploadSkill(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, skillResponseFromDomain(skill))
 }
 
-func (h *HTTPHandler) UpdateSkillFile(w http.ResponseWriter, r *http.Request) {
+func (h *HTTPHandler) DeleteSkill(w http.ResponseWriter, r *http.Request) {
 	skillID, ok := skillIDFromRequest(w, r)
 	if !ok {
 		return
 	}
-	path := chi.URLParam(r, "*")
-	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionSkillUpdate, authz.ResourceRef{Type: authz.ResourceSkill, ID: skillID.String()}, "skill file update")
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionSkillDelete, authz.ResourceRef{Type: authz.ResourceSkill, ID: skillID.String()}, "skill delete")
 	if !ok {
 		return
 	}
@@ -145,24 +143,14 @@ func (h *HTTPHandler) UpdateSkillFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var req struct {
-		Content string `json:"content"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	file, err := service.UpdateSkillFile(r.Context(), UpdateSkillFileRequest{
+	if err := service.DeleteSkill(r.Context(), DeleteSkillRequest{
 		TenantID: tenantID,
 		SkillID:  skillID,
-		Path:     path,
-		Content:  req.Content,
-	})
-	if err != nil {
+	}); err != nil {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, skillFileResponseFromDomain(file))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) ListTeamSkills(w http.ResponseWriter, r *http.Request) {
@@ -369,33 +357,28 @@ func (h *HTTPHandler) authorizeSkillAction(w http.ResponseWriter, r *http.Reques
 }
 
 type skillResponse struct {
-	ID            string                      `json:"id"`
-	TenantID      string                      `json:"tenant_id"`
-	Slug          string                      `json:"slug"`
-	Name          string                      `json:"name"`
-	Description   string                      `json:"description"`
-	Version       string                      `json:"version"`
-	Source        string                      `json:"source"`
-	RiskLevel     string                      `json:"risk_level"`
-	Status        SkillStatus                 `json:"status"`
-	IconKey       string                      `json:"icon_key"`
-	ColorToken    string                      `json:"color_token"`
-	Tags          []string                    `json:"tags"`
-	Files         []skillFileResponse         `json:"files"`
-	TeamBindings  []skillTeamBindingResponse  `json:"team_bindings"`
-	AgentBindings []skillAgentBindingResponse `json:"agent_bindings"`
-	CreatedAt     string                      `json:"created_at,omitempty"`
-	UpdatedAt     string                      `json:"updated_at,omitempty"`
-}
-
-type skillFileResponse struct {
-	ID             string        `json:"id,omitempty"`
-	Path           string        `json:"path"`
-	FileType       SkillFileType `json:"file_type"`
-	Content        string        `json:"content,omitempty"`
-	SizeBytes      int64         `json:"size_bytes"`
-	ChecksumSHA256 string        `json:"checksum_sha256,omitempty"`
-	UpdatedAt      string        `json:"updated_at,omitempty"`
+	ID                string                      `json:"id"`
+	TenantID          string                      `json:"tenant_id"`
+	Slug              string                      `json:"slug"`
+	Name              string                      `json:"name"`
+	Description       string                      `json:"description"`
+	Version           string                      `json:"version"`
+	Source            string                      `json:"source"`
+	RiskLevel         string                      `json:"risk_level"`
+	IconKey           string                      `json:"icon_key"`
+	ColorToken        string                      `json:"color_token"`
+	Tags              []string                    `json:"tags"`
+	ArchiveObjectRef  string                      `json:"archive_object_ref"`
+	ArchiveFilename   string                      `json:"archive_filename"`
+	ArchiveSizeBytes  int64                       `json:"archive_size_bytes"`
+	ArchiveChecksum   string                      `json:"archive_checksum_sha256"`
+	ArchiveFileCount  int                         `json:"archive_file_count"`
+	CreatedBy         string                      `json:"created_by"`
+	CreatedByName     string                      `json:"created_by_name"`
+	TeamBindings      []skillTeamBindingResponse  `json:"team_bindings"`
+	AgentBindings     []skillAgentBindingResponse `json:"agent_bindings"`
+	CreatedAt         string                      `json:"created_at,omitempty"`
+	UpdatedAt         string                      `json:"updated_at,omitempty"`
 }
 
 type skillTeamBindingResponse struct {
@@ -445,50 +428,28 @@ func skillResponseFromDomain(item *Skill) skillResponse {
 		return skillResponse{}
 	}
 	return skillResponse{
-		ID:            item.ID.String(),
-		TenantID:      item.TenantID.String(),
-		Slug:          item.Slug,
-		Name:          item.Name,
-		Description:   item.Description,
-		Version:       item.Version,
-		Source:        item.Source,
-		RiskLevel:     item.RiskLevel,
-		Status:        item.Status,
-		IconKey:       item.IconKey,
-		ColorToken:    item.ColorToken,
-		Tags:          item.Tags,
-		Files:         skillFileResponses(item.Files),
-		TeamBindings:  skillTeamBindingResponses(item.TeamBindings),
-		AgentBindings: skillAgentBindingResponses(item.AgentBindings),
-		CreatedAt:     formatTime(item.CreatedAt),
-		UpdatedAt:     formatTime(item.UpdatedAt),
-	}
-}
-
-func skillFileResponses(files []*SkillFile) []skillFileResponse {
-	responses := make([]skillFileResponse, 0, len(files))
-	for _, file := range files {
-		responses = append(responses, skillFileResponseFromDomain(file))
-	}
-	return responses
-}
-
-func skillFileResponseFromDomain(file *SkillFile) skillFileResponse {
-	if file == nil {
-		return skillFileResponse{}
-	}
-	id := ""
-	if file.ID != uuid.Nil {
-		id = file.ID.String()
-	}
-	return skillFileResponse{
-		ID:             id,
-		Path:           file.Path,
-		FileType:       file.FileType,
-		Content:        file.Content,
-		SizeBytes:      file.SizeBytes,
-		ChecksumSHA256: file.ChecksumSHA256,
-		UpdatedAt:      formatTime(file.UpdatedAt),
+		ID:               item.ID.String(),
+		TenantID:         item.TenantID.String(),
+		Slug:             item.Slug,
+		Name:             item.Name,
+		Description:      item.Description,
+		Version:          item.Version,
+		Source:           item.Source,
+		RiskLevel:        item.RiskLevel,
+		IconKey:          item.IconKey,
+		ColorToken:       item.ColorToken,
+		Tags:             item.Tags,
+		ArchiveObjectRef: item.ArchiveObjectRef,
+		ArchiveFilename:  item.ArchiveFilename,
+		ArchiveSizeBytes: item.ArchiveSizeBytes,
+		ArchiveChecksum:  item.ArchiveChecksum,
+		ArchiveFileCount: item.ArchiveFileCount,
+		CreatedBy:        item.CreatedBy.String(),
+		CreatedByName:    item.CreatedByName,
+		TeamBindings:     skillTeamBindingResponses(item.TeamBindings),
+		AgentBindings:    skillAgentBindingResponses(item.AgentBindings),
+		CreatedAt:        formatTime(item.CreatedAt),
+		UpdatedAt:        formatTime(item.UpdatedAt),
 	}
 }
 
@@ -610,6 +571,8 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidInput):
 		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrTeamAlreadyInherited):
+		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
 	default:

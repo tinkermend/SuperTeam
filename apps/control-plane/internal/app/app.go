@@ -26,6 +26,7 @@ import (
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/storage/queries"
 	"github.com/superteam/control-plane/internal/task"
+	"github.com/superteam/control-plane/internal/teamlending"
 	"github.com/superteam/control-plane/internal/tenant"
 	"github.com/superteam/control-plane/internal/workflow/projectcoordination"
 	temporalclient "go.temporal.io/sdk/client"
@@ -50,6 +51,7 @@ type Container struct {
 	SkillService                   *skill.Service
 	CapabilityService              *capability.Service
 	TenantService                  *tenant.Service
+	TeamLendingService             *teamlending.Service
 	AuditService                   *audit.Service
 	RuntimeCommands                *runtimepkg.ConnectionRegistry
 	AuthService                    *auth.Service
@@ -68,6 +70,7 @@ type Container struct {
 	SkillHandler                   *skill.HTTPHandler
 	CapabilityHandler              *capability.HTTPHandler
 	TenantHandler                  *tenant.HTTPHandler
+	TeamLendingHandler             *teamlending.HTTPHandler
 	AuthzHandler                   *authzcenter.HTTPHandler
 	Server                         *api.Server
 }
@@ -202,6 +205,53 @@ func (l projectArtifactLocker) LockProjectArtifacts(ctx context.Context, tenantI
 	}, err
 }
 
+// teamLendingInboxProjector 把待裁决的团队借调请求投影到团队负责人 inbox（D3）。
+// inbox 仅作通知/提醒（无 inbox 内可执行动作）；裁决发生在团队详情「借调」tab。
+type teamLendingInboxProjector struct {
+	service *inbox.Service
+}
+
+func (p teamLendingInboxProjector) upsert(ctx context.Context, item teamlending.LendingInboxItem, status inbox.Status) error {
+	if p.service == nil || len(item.OwnerUserIDs) == 0 {
+		return nil
+	}
+	teamID := item.TeamID
+	projectID := item.ProjectID
+	title := item.Title
+	if title == "" {
+		// 裁决（resolve）路径不重传标题，给一个非空兜底以满足 inbox 校验。
+		title = "团队借调请求"
+	}
+	_, err := p.service.UpsertItem(ctx, inbox.UpsertItemRequest{
+		TenantID:        item.TenantID,
+		TeamID:          &teamID,
+		TargetUserID:    item.OwnerUserIDs[0],
+		Scope:           "team",
+		ItemType:        inbox.ItemTypeTeamLending,
+		SourceType:      inbox.SourceTypeTeamLendingRequest,
+		SourceID:        item.RequestID,
+		SourceProjectID: &projectID,
+		Title:           title,
+		Summary:         item.Summary,
+		RiskLevel:       item.RiskLevel,
+		Status:          status,
+		DeepLink: map[string]any{
+			"route":      "/teams/" + item.TeamID.String(),
+			"tab":        "lending",
+			"request_id": item.RequestID.String(),
+		},
+	})
+	return err
+}
+
+func (p teamLendingInboxProjector) UpsertLendingRequest(ctx context.Context, item teamlending.LendingInboxItem) error {
+	return p.upsert(ctx, item, inbox.StatusOpen)
+}
+
+func (p teamLendingInboxProjector) ResolveLendingRequest(ctx context.Context, item teamlending.LendingInboxItem) error {
+	return p.upsert(ctx, item, inbox.StatusResolved)
+}
+
 func strPtr(value string) *string {
 	return &value
 }
@@ -239,7 +289,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	runtimeCommands := runtimepkg.NewConnectionRegistry()
 
 	employeeRepository := employee.NewPgRepository(q, stores.Postgres)
-	employeeService, err := employee.NewServiceWithProvisioning(employeeRepository, runtimeCommands)
+	skillRepository := skill.NewPgRepository(stores.Postgres)
+	skillService := skill.NewService(skillRepository, stores.ObjectStore)
+	employeeService, err := employee.NewServiceWithProvisioning(employeeRepository, runtimeCommands, skillService)
 	if err != nil {
 		return nil, err
 	}
@@ -322,8 +374,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if err != nil {
 		return nil, err
 	}
-	skillRepository := skill.NewPgRepository(stores.Postgres)
-	skillService := skill.NewService(skillRepository)
 	capabilityRepository := capability.NewPgRepository(q)
 	var credentialSealer capability.CredentialSealer
 	if credentialKey := os.Getenv("CONTROL_PLANE_CREDENTIAL_KEY"); credentialKey != "" {
@@ -333,6 +383,12 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		}
 	}
 	capabilityService := capability.NewService(capabilityRepository, credentialSealer)
+
+	teamLendingRepository := teamlending.NewPgRepository(q)
+	teamLendingService, err := teamlending.NewService(teamLendingRepository, auditService, teamLendingInboxProjector{service: inboxService})
+	if err != nil {
+		return nil, err
+	}
 
 	authRepository := auth.NewPgRepository(q, stores.Postgres)
 	authService, err := auth.NewService(authRepository)
@@ -357,10 +413,12 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	skillHandler := skill.NewHandler(skillService)
 	capabilityHandler := capability.NewHandler(capabilityService)
 	tenantHandler := tenant.NewHandler(tenantService)
+	teamLendingHandler := teamlending.NewHandler(teamLendingService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
 	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
 	server.SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler)
 	server.SetTenantHandler(tenantHandler)
+	server.SetTeamLendingHandler(teamLendingHandler)
 	server.SetEmployeeHandler(employeeHandler)
 	server.SetInboxHandler(inboxHandler)
 	server.SetAuditHandler(auditHandler)
@@ -382,6 +440,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		SkillService:                   skillService,
 		CapabilityService:              capabilityService,
 		TenantService:                  tenantService,
+		TeamLendingService:             teamLendingService,
 		AuditService:                   auditService,
 		RuntimeCommands:                runtimeCommands,
 		AuthService:                    authService,
@@ -400,6 +459,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		SkillHandler:                   skillHandler,
 		CapabilityHandler:              capabilityHandler,
 		TenantHandler:                  tenantHandler,
+		TeamLendingHandler:             teamLendingHandler,
 		AuthzHandler:                   authzCenterHandler,
 		Server:                         server,
 	}, nil

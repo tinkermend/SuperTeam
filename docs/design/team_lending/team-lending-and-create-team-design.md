@@ -47,7 +47,7 @@
 - `team_lending_request` = **交易**：具体项目实际借调具体团队员工，受借调策略约束，可能需团队负责人审批。
 - 两者互补、不替代。借调请求发起的前置校验仍复用 `CanUseTeamForProject`（资格）→ 再走借调策略（条件/额度/审批）。
 
-## 2. 数据库（migration 025，遵循 DATABASE_DESIGN.md）
+## 2. 数据库（下一个可用迁移号 ≥026，025_skill_archive_storage 为他人 WIP；遵循 DATABASE_DESIGN.md）
 
 - 模块前缀：团队属于 `tenant_teams`，借调是团队级新边界 → 建议新前缀 **`team_lending_*`**（待确认是否并入既有前缀）。
 - UUID-first / tenant-first / team-aware：两表均含 `id UUID PK`、`tenant_id`、`team_id`。
@@ -90,10 +90,39 @@
 - **D3 审批载体**：借调请求自带 status + 写 inbox/audit（推荐，轻） vs 接入 `approval_*` 通用审批模块。
 - **D4 借调策略入口**：创建后在团队详情配置（推荐，创建页保持 `待设置` 信息行） vs 创建页内嵌策略表单。
 
-## 6. 落地顺序（建议）
+## 6. 落地顺序（进度）
 
-1. 本设计 + D1–D4 确认。
-2. 前端：方案 B 新建团队全页路由（不依赖借调后端，可独立先上 + 真实 E2E）。
-3. 后端：migration 025 + sqlc + service/handler + 契约生成验证。
-4. 前端：团队详情「借调」tab。
+1. ✅ 本设计 + D1–D4 确认。
+2. ✅ 前端：方案 B 新建团队全页路由 `/teams/new`（真实 E2E + 浏览器点穿已过）。
+3. 后端（进行中）：
+   - ✅ migration `026_team_lending.sql` 已 hash 并 apply 到开发库，2 表 + 7 索引已验证存在。
+   - ⏳ sqlc 查询 `internal/storage/queries/team_lending.sql` + `sqlc generate`。
+   - ⏳ `internal/teamlending`（domain types + pg repository + service[含 auto/manual + 超纲转人工] + handler）。
+   - ⏳ 路由注册 + authz 动作 + inbox/audit 写入。
+   - ⏳ OpenAPI 契约 + `pnpm generate:control-plane` + `pnpm verify:contracts`。
+   - ⏳ go test（teamlending 包）+ 对运行中 Control Plane 真实 curl。
+4. 前端：团队详情「借调」tab（编辑策略 + 审批待办）。
 5. 全链路真实 E2E（建团队→设借调策略→项目发起借调→审批→协调线程取员工）。
+
+---
+
+## 7. 接续指引（供新会话冷启动）
+
+**分支与检查点**：工作在 `feat/team-lending-create-team` 分支。前端建团队页 + 设计文档 + 原型落在 `d132e342`（auto-commit，含部分项目协调 WIP），借调 DB 层（migration 026 + atlas.sum）落在 `d192c367`。**所有团队借调/建团队改动已提交**；工作区里还存在的 skill-archive 相关未提交改动（`internal/api`、`internal/skill`、`contracts`、`025_skill_archive_storage.sql` 等）**属于另一条 WIP，不要动**。
+
+**真实链路状态**：`scripts/dev-services.sh start` 起 Temporal/Control Plane(:8081)/Web(:3000)/Runtime。开发库 DSN 在 `apps/control-plane/config/config.yaml`（postgres … 115.190.247.9:35432/superteam）。migration 026 **已 apply**（`atlas migrate status` 应显示 Current Version 026）。
+
+**下一步具体动作（按顺序）**：
+
+1. **sqlc**：参考 `internal/storage/queries/tenant_team_config.sql` 与 `004` member-role-request 的查询写法，新建 `internal/storage/queries/team_lending.sql`，覆盖 policy 的 upsert/get-by-team、request 的 create/list-by-team/list-by-project/decide/revoke。然后在 `apps/control-plane` 跑 `make generate-sqlc`（= `sqlc generate`），检查 `internal/storage/queries/{models.go,querier.go,*.sql.go}` 已生成。
+2. **模块**：仿照 `internal/tenant` 的 member-role-request（service.go / handler.go / repository.go / types.go / pg_repository.go）建 `internal/teamlending`。service 里实现审批逻辑：
+   - 发起 request 时读 policy；`approval_mode=auto` 且未超 `budget_ceiling`/`capability_ceiling` → 直接 `auto_approved`；超纲或 `manual` → `pending`（`is_exception=true`）。
+   - approve/reject 仅团队负责人（authz），写 `audit_*` + 团队负责人 inbox（参考 `016_inbox_items` 与现有 inbox 写法）。
+3. **路由 + authz**：在 `internal/api/server.go`（或 tenant handler 的 chi 路由处）注册 `/api/v1/teams/{teamId}/lending-policy`(GET/PUT)、`/lending-requests`(GET)、`/lending-requests/{id}/approve|reject`(POST)、`/api/v1/projects/{projectId}/lending-requests`(POST)。在 `internal/authz` 增 action（如 `team.lending.policy.edit`、`team.lending.request.decide`）。
+4. **契约**：在 `contracts/control-plane/openapi.yaml`（或对应 team yaml）补 schema + 路径，跑 `make generate-openapi` + 根 `pnpm generate:control-plane` + `pnpm verify:contracts`。
+5. **验证**：`go test ./internal/teamlending/... ./internal/tenant/...`；起服务后用真实会话 curl 走 GET policy / PUT policy / POST request（auto 与超纲两条）/ approve / reject 全路径，校验 DB 行。
+6. **前端**：团队详情 `team-detail-layout`/tabs 加「借调」tab（编辑策略 + 待处理请求审批列表），复用 `LiquidTabsList`/`StatusBadge`。
+
+**决策已锁定，不要再问**：D1 团队级 (project,team) 粒度；D2 含超纲强制转人工；D3 请求自带 status + 写 inbox/audit；D4 创建后配置（创建页保持「待设置」信息行）。
+
+**完成门槛**：借调后端属真实链路变更，必须 `go test` + 真实 curl + `verify:contracts` 全绿才算完成；前端借调 tab 需真实浏览器点穿。收尾用 `$superteam-completion-check`（`.codex/skills/superteam-completion-check/SKILL.md`）。

@@ -1,38 +1,29 @@
-import { useEffect, useState } from "react";
-import Editor from "@monaco-editor/react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Blocks,
   Bot,
-  ChevronDown,
-  ChevronRight,
-  FileCode2,
-  FileText,
-  FlaskConical,
-  Folder,
-  RefreshCw,
-  Save,
+  FileArchive,
+  Plus,
   Search as SearchIcon,
   ServerCog,
   ShieldCheck,
   Stethoscope,
+  Trash2,
   TriangleAlert,
   UploadCloud,
+  User,
   type LucideIcon,
 } from "lucide-react";
 import {
   LiquidCard,
-  LiquidTabsList,
-  LiquidTabsTrigger,
   SemanticIconTile,
-  StatusBadge,
   type Tone,
 } from "@/components/superteam";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -44,15 +35,31 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { Search } from "@/components/search";
 import { ThemeSwitch } from "@/components/theme-switch";
-import { listSkills, updateSkillFile, uploadSkill, type Skill, type SkillFile } from "@/lib/api/skills";
-import { listTeams, type TeamListItem } from "@/lib/api/teams";
+import {
+  bindEmployeeSkill,
+  bindTeamSkill,
+  deleteSkill,
+  listSkills,
+  unbindEmployeeSkill,
+  unbindTeamSkill,
+  uploadSkill,
+  type Skill,
+} from "@/lib/api/skills";
+import { listDigitalEmployees, type DigitalEmployee } from "@/lib/api/employees";
+import { listTeams } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 
@@ -61,18 +68,11 @@ type SkillsViewProps = {
   fetcher?: typeof fetch;
 };
 
-type SkillTab = "installed" | "market";
-
-type TreeNode = {
-  children: Map<string, TreeNode>;
-  name: string;
-  path: string;
-  type: "dir" | "file";
-};
+type ApiOpts = { baseUrl: string; fetcher?: typeof fetch };
 
 const iconMap: Record<string, LucideIcon> = {
   blocks: Blocks,
-  flask: FlaskConical,
+  flask: Blocks,
   "server-cog": ServerCog,
   "shield-check": ShieldCheck,
   stethoscope: Stethoscope,
@@ -88,74 +88,31 @@ const toneByColor: Record<string, Tone> = {
 
 export function SkillsPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
-
   return <SkillsView apiBaseUrl={apiBaseUrl} />;
 }
 
 export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<SkillTab>("installed");
   const [query, setQuery] = useState("");
   const [selectedSkillId, setSelectedSkillId] = useState<string>();
-  const [selectedPath, setSelectedPath] = useState("SKILL.md");
-  const [expandedSkills, setExpandedSkills] = useState<Set<string>>(new Set());
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-  const [draftContent, setDraftContent] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Skill | null>(null);
 
-  const apiOptions = { baseUrl: apiBaseUrl, fetcher };
+  const apiOptions: ApiOpts = { baseUrl: apiBaseUrl, fetcher };
   const skills = useQuery({
     queryKey: ["skills", query],
     queryFn: () => listSkills(apiOptions, { q: query }),
   });
-  const teams = useQuery({
-    enabled: uploadOpen,
-    queryKey: ["skill-upload-teams"],
-    queryFn: () => listTeams(apiOptions),
-  });
 
   const skillRows = skills.data ?? [];
-  const installedSkills = skillRows.filter((skill) => skill.status === "installed");
-  const marketplaceSkills = skillRows;
-  const activeSkills = tab === "installed" ? installedSkills : marketplaceSkills;
-  const selectedSkill = skillRows.find((skill) => skill.id === selectedSkillId) ?? activeSkills[0];
-  const selectedFile = selectedSkill?.files.find((file) => file.path === selectedPath) ?? selectedSkill?.files.find((file) => file.path === "SKILL.md") ?? selectedSkill?.files[0];
+  const selectedSkill = skillRows.find((skill) => skill.id === selectedSkillId) ?? skillRows[0];
   const skillsError = skills.error instanceof Error ? skills.error.message : undefined;
 
-  useEffect(() => {
-    if (!selectedSkill && activeSkills[0]) {
-      setSelectedSkillId(activeSkills[0].id);
-    }
-  }, [activeSkills, selectedSkill]);
-
-  useEffect(() => {
-    if (selectedSkill) {
-      setExpandedSkills((current) => new Set(current).add(selectedSkill.id));
-    }
-  }, [selectedSkill]);
-
-  useEffect(() => {
-    setDraftContent(selectedFile?.content ?? "");
-  }, [selectedFile?.content, selectedFile?.path, selectedSkill?.id]);
-
-  const saveFile = useMutation({
-    mutationFn: () => {
-      if (!selectedSkill || !selectedFile) {
-        throw new Error("未选择技能文件");
-      }
-      return updateSkillFile(apiOptions, selectedSkill.id, selectedFile.path, draftContent);
-    },
-    onSuccess: (updatedFile) => {
-      queryClient.setQueryData<Skill[]>(["skills", query], (current) =>
-        current?.map((skill) =>
-          skill.id === selectedSkill?.id
-            ? {
-                ...skill,
-                files: skill.files.map((file) => (file.path === updatedFile.path ? { ...file, ...updatedFile } : file)),
-              }
-            : skill,
-        ),
-      );
+  const deleteMutation = useMutation({
+    mutationFn: (skillId: string) => deleteSkill(apiOptions, skillId),
+    onSuccess: async () => {
+      setDeleteTarget(null);
+      await queryClient.invalidateQueries({ queryKey: ["skills"] });
     },
   });
 
@@ -174,22 +131,19 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
               </SemanticIconTile>
               <div className="min-w-0">
                 <h1 className="text-2xl font-bold tracking-normal">技能管理</h1>
-                <p className="text-sm text-muted-foreground">管理可安装技能、技能市场、文件内容和 Agent 绑定关系。</p>
+                <p className="text-sm text-muted-foreground">上传技能 zip 包，管理团队和数字员工的技能绑定。</p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => setUploadOpen(true)} type="button">
-                <UploadCloud data-icon="inline-start" />
-                上传技能
-              </Button>
-            </div>
+            <Button onClick={() => setUploadOpen(true)} type="button">
+              <UploadCloud data-icon="inline-start" />
+              上传技能
+            </Button>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-4">
-            <SkillMetric icon={Blocks} label="已安装" value={installedSkills.length} tone="primary" />
+          <div className="grid gap-3 md:grid-cols-3">
+            <SkillMetric icon={Blocks} label="技能总数" value={skillRows.length} tone="primary" />
             <SkillMetric icon={Bot} label="已绑定 Agent" value={countAgentBindings(skillRows)} tone="info" />
-            <SkillMetric icon={RefreshCw} label="待更新" value={0} tone="warning" />
-            <SkillMetric icon={UploadCloud} label="市场技能" value={marketplaceSkills.length} tone="artifact" />
+            <SkillMetric icon={FileArchive} label="归档文件数" value={countArchiveFiles(skillRows)} tone="artifact" />
           </div>
 
           {skills.isError ? (
@@ -200,65 +154,55 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
             </Alert>
           ) : null}
 
-          <Tabs value={tab} onValueChange={(value) => setTab(value as SkillTab)}>
-            <LiquidTabsList className="max-w-md">
-              <LiquidTabsTrigger value="installed">已安装技能</LiquidTabsTrigger>
-              <LiquidTabsTrigger value="market">技能市场</LiquidTabsTrigger>
-            </LiquidTabsList>
-
-            <TabsContent value="installed">
-              <div className="grid min-h-[650px] gap-4 xl:grid-cols-[280px_minmax(0,1fr)_340px]">
-                <SkillTreePanel
-                  expandedFolders={expandedFolders}
-                  expandedSkills={expandedSkills}
-                  onQueryChange={setQuery}
-                  onSelectFile={(skill, file) => {
-                    setSelectedSkillId(skill.id);
-                    setSelectedPath(file.path);
-                  }}
-                  onToggleFolder={(key) =>
-                    setExpandedFolders((current) => toggleSetValue(current, key))
-                  }
-                  onToggleSkill={(skill) => {
-                    setSelectedSkillId(skill.id);
-                    setExpandedSkills((current) => toggleSetValue(current, skill.id));
-                  }}
-                  query={query}
-                  selectedPath={selectedFile?.path}
-                  selectedSkillId={selectedSkill?.id}
-                  skills={installedSkills}
-                />
-                <SkillEditorPanel
-                  content={draftContent}
-                  file={selectedFile}
-                  isSaving={saveFile.isPending}
-                  onChange={setDraftContent}
-                  onSave={() => saveFile.mutate()}
-                  saveError={saveFile.error instanceof Error ? saveFile.error.message : undefined}
-                  skill={selectedSkill}
-                />
-                <SkillSidePanel skill={selectedSkill} />
-              </div>
-            </TabsContent>
-
-            <TabsContent value="market">
-              <SkillMarket skills={marketplaceSkills} />
-            </TabsContent>
-          </Tabs>
+          <div className="grid min-h-[650px] gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+            <SkillListPanel
+              onQueryChange={setQuery}
+              onSelectSkill={setSelectedSkillId}
+              query={query}
+              selectedSkillId={selectedSkill?.id}
+              skills={skillRows}
+            />
+            <SkillDetailPanel skill={selectedSkill} apiOptions={apiOptions} onDelete={setDeleteTarget} />
+          </div>
         </div>
       </Main>
+
       <SkillUploadDialog
         apiOptions={apiOptions}
         onUploaded={(skill) => {
           setSelectedSkillId(skill.id);
-          setSelectedPath("SKILL.md");
           setUploadOpen(false);
           void queryClient.invalidateQueries({ queryKey: ["skills"] });
         }}
         onOpenChange={setUploadOpen}
         open={uploadOpen}
-        teams={teams.data ?? []}
       />
+
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除技能</DialogTitle>
+            <DialogDescription>
+              确定要删除「{deleteTarget?.name}」吗？所有团队和数字员工的绑定关系将被移除，S3 归档对象也将被删除。此操作不可撤销。
+            </DialogDescription>
+          </DialogHeader>
+          {deleteMutation.isError ? (
+            <p className="text-sm text-destructive">{deleteMutation.error instanceof Error ? deleteMutation.error.message : "删除失败"}</p>
+          ) : null}
+          <DialogFooter>
+            <Button onClick={() => setDeleteTarget(null)} type="button" variant="outline">取消</Button>
+            <Button
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              type="button"
+              variant="destructive"
+            >
+              <Trash2 data-icon="inline-start" />
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -279,40 +223,30 @@ function SkillMetric({ icon: Icon, label, tone, value }: { icon: LucideIcon; lab
   );
 }
 
-function SkillTreePanel({
-  expandedFolders,
-  expandedSkills,
+function SkillListPanel({
   onQueryChange,
-  onSelectFile,
-  onToggleFolder,
-  onToggleSkill,
+  onSelectSkill,
   query,
-  selectedPath,
   selectedSkillId,
   skills,
 }: {
-  expandedFolders: Set<string>;
-  expandedSkills: Set<string>;
   onQueryChange: (value: string) => void;
-  onSelectFile: (skill: Skill, file: SkillFile) => void;
-  onToggleFolder: (key: string) => void;
-  onToggleSkill: (skill: Skill) => void;
+  onSelectSkill: (id: string) => void;
   query: string;
-  selectedPath?: string;
   selectedSkillId?: string;
   skills: Skill[];
 }) {
   return (
     <LiquidCard className="min-w-0 rounded-lg">
       <CardHeader className="gap-3 border-b">
-        <CardTitle className="text-base">已安装技能</CardTitle>
+        <CardTitle className="text-base">技能列表</CardTitle>
         <div className="flex items-center gap-2 rounded-md border bg-background px-2">
           <SearchIcon className="size-4 text-muted-foreground" />
           <Input
-            aria-label="搜索技能或文件"
+            aria-label="搜索技能"
             className="border-0 px-0 shadow-none focus-visible:ring-0"
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="搜索技能或文件"
+            placeholder="搜索技能名称"
             value={query}
           />
         </div>
@@ -320,41 +254,28 @@ function SkillTreePanel({
       <CardContent className="p-0">
         <ScrollArea className="h-[560px]">
           <div className="flex flex-col gap-1 p-3">
-            {skills.map((skill) => {
-              const isExpanded = expandedSkills.has(skill.id);
-              return (
-                <div className="flex flex-col gap-1" key={skill.id}>
-                  <button
-                    aria-expanded={isExpanded}
-                    className={cn(
-                      "flex min-w-0 items-start gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted",
-                      selectedSkillId === skill.id && "bg-primary/10 text-primary",
-                    )}
-                    onClick={() => onToggleSkill(skill)}
-                    type="button"
-                  >
-                    {isExpanded ? <ChevronDown className="mt-0.5 size-4 shrink-0" /> : <ChevronRight className="mt-0.5 size-4 shrink-0" />}
-                    <SkillIcon skill={skill} size="sm" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{skill.name}</span>
-                      <span className="block truncate text-xs text-muted-foreground">已绑定 {skill.agent_bindings.length} 个 Agent</span>
-                    </span>
-                  </button>
-                  {isExpanded ? (
-                    <div className="ms-6 flex flex-col gap-1 border-s ps-2">
-                      {renderTreeNodes({
-                        expandedFolders,
-                        nodes: buildFileTree(skill.files).children,
-                        onSelectFile,
-                        onToggleFolder,
-                        selectedPath,
-                        skill,
-                      })}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
+            {skills.map((skill) => (
+              <button
+                className={cn(
+                  "flex min-w-0 items-start gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted",
+                  selectedSkillId === skill.id && "bg-primary/10 text-primary",
+                )}
+                key={skill.id}
+                onClick={() => onSelectSkill(skill.id)}
+                type="button"
+              >
+                <SkillIcon skill={skill} size="sm" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{skill.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {skill.archive_file_count} 个文件 · {skill.team_bindings.length} 个团队
+                  </span>
+                </span>
+              </button>
+            ))}
+            {skills.length === 0 ? (
+              <p className="p-4 text-center text-sm text-muted-foreground">暂无技能，请上传 zip 包</p>
+            ) : null}
           </div>
         </ScrollArea>
       </CardContent>
@@ -362,82 +283,245 @@ function SkillTreePanel({
   );
 }
 
-function SkillEditorPanel({
-  content,
-  file,
-  isSaving,
-  onChange,
-  onSave,
-  saveError,
+function SkillDetailPanel({
   skill,
+  apiOptions,
+  onDelete,
 }: {
-  content: string;
-  file?: SkillFile;
-  isSaving: boolean;
-  onChange: (value: string) => void;
-  onSave: () => void;
-  saveError?: string;
   skill?: Skill;
+  apiOptions: ApiOpts;
+  onDelete: (skill: Skill) => void;
 }) {
+  if (!skill) {
+    return (
+      <LiquidCard className="min-w-0 rounded-lg">
+        <CardContent className="flex h-[560px] min-w-0 items-center justify-center p-6 text-center text-sm text-muted-foreground">
+          请选择左侧技能查看详情
+        </CardContent>
+      </LiquidCard>
+    );
+  }
+
   return (
-    <LiquidCard className="min-w-0 rounded-lg">
-      <CardHeader className="gap-3 border-b">
-        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <CardTitle className="truncate text-base">
-              {skill?.name ?? "未选择技能"} / {file?.path ?? "SKILL.md"}
-            </CardTitle>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {skill?.status ? <StatusBadge tone="success">{skill.status === "installed" ? "已安装" : "可安装"}</StatusBadge> : null}
-              {file ? <Badge variant="secondary">{languageForFile(file.path)}</Badge> : null}
-              {file ? <Badge variant="outline">{file.size_bytes} bytes</Badge> : null}
+    <div className="flex min-w-0 flex-col gap-4">
+      <LiquidCard className="rounded-lg">
+        <CardHeader className="gap-3 border-b">
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <SkillIcon skill={skill} />
+              <div className="min-w-0">
+                <CardTitle className="truncate text-base">{skill.name}</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">{skill.description}</p>
+              </div>
             </div>
+            <Button aria-label={`删除技能 ${skill.name}`} onClick={() => onDelete(skill)} size="sm" type="button" variant="ghost">
+              <Trash2 className="text-destructive" />
+            </Button>
           </div>
-          <Button disabled={!file || isSaving} onClick={onSave} type="button">
-            <Save data-icon="inline-start" />
-            保存
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 p-4 text-sm">
+          <div className="grid gap-3 md:grid-cols-2">
+            <InfoRow label="版本" value={skill.version} />
+            <InfoRow label="来源" value={skill.source} />
+            <InfoRow label="风险等级" value={skill.risk_level} />
+            <InfoRow label="文件数" value={`${skill.archive_file_count}`} />
+            <InfoRow label="包大小" value={formatBytes(skill.archive_size_bytes)} />
+            <InfoRow label="校验值" value={skill.archive_checksum_sha256.slice(0, 12) + "…"} />
+          </div>
+          <Separator />
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <User className="size-4" />
+            <span>上传者：<span className="font-medium text-foreground">{skill.created_by_name || "未知"}</span></span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {skill.tags.map((tag) => (
+              <Badge key={tag} variant="outline">{tag}</Badge>
+            ))}
+          </div>
+        </CardContent>
+      </LiquidCard>
+
+      <TeamBindingSection skill={skill} apiOptions={apiOptions} />
+      <EmployeeBindingSection skill={skill} apiOptions={apiOptions} />
+    </div>
+  );
+}
+
+function TeamBindingSection({ skill, apiOptions }: { skill: Skill; apiOptions: ApiOpts }) {
+  const queryClient = useQueryClient();
+  const [selectedTeamId, setSelectedTeamId] = useState<string>("");
+
+  const teams = useQuery({
+    queryKey: ["teams", "all"],
+    queryFn: () => listTeams(apiOptions),
+  });
+
+  const boundTeamIds = useMemo(() => new Set(skill.team_bindings.map((b) => b.team_id)), [skill.team_bindings]);
+  const availableTeams = (teams.data ?? []).filter((team) => !boundTeamIds.has(team.id));
+
+  const bindMutation = useMutation({
+    mutationFn: (teamId: string) => bindTeamSkill(apiOptions, teamId, skill.id),
+    onSuccess: async () => {
+      setSelectedTeamId("");
+      await queryClient.invalidateQueries({ queryKey: ["skills"] });
+    },
+  });
+  const unbindMutation = useMutation({
+    mutationFn: (teamId: string) => unbindTeamSkill(apiOptions, teamId, skill.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["skills"] });
+    },
+  });
+
+  return (
+    <LiquidCard className="rounded-lg">
+      <CardHeader className="border-b">
+        <CardTitle className="text-base">团队绑定</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3 p-4">
+        <div className="flex items-center gap-2">
+          <Select onValueChange={setSelectedTeamId} value={selectedTeamId}>
+            <SelectTrigger className="min-w-0 flex-1">
+              <SelectValue placeholder="选择要绑定的团队" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableTeams.map((team) => (
+                <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            disabled={!selectedTeamId || bindMutation.isPending}
+            onClick={() => selectedTeamId && bindMutation.mutate(selectedTeamId)}
+            size="sm"
+            type="button"
+          >
+            <Plus data-icon="inline-start" />
+            绑定
           </Button>
         </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        {file ? (
-          <div className="h-[560px] min-w-0 overflow-hidden rounded-b-lg border-t bg-background">
-            <Editor
-              height="100%"
-              language={languageForFile(file.path)}
-              onChange={(value: string | undefined) => onChange(value ?? "")}
-              options={{
-                fontSize: 13,
-                minimap: { enabled: false },
-                scrollBeyondLastLine: false,
-                wordWrap: "on",
-              }}
-              theme="vs"
-              value={content}
-            />
-          </div>
-        ) : (
-          <div className="flex h-[560px] min-w-0 items-center justify-center rounded-b-lg border-t bg-background p-6 text-center text-sm text-muted-foreground">
-            请选择左侧技能文件，或先处理技能数据加载失败。
-          </div>
-        )}
-        {saveError ? <p className="p-3 text-sm text-destructive">保存失败：{saveError}</p> : null}
+        {bindMutation.isError ? (
+          <p className="text-sm text-destructive">{bindMutation.error instanceof Error ? bindMutation.error.message : "绑定失败"}</p>
+        ) : null}
+        <div className="flex flex-col gap-2">
+          {skill.team_bindings.map((binding) => (
+            <div className="flex items-center justify-between gap-3 rounded-md border bg-background p-3" key={binding.team_id}>
+              <span className="truncate text-sm font-medium">{binding.team_name}</span>
+              <Button
+                disabled={unbindMutation.isPending}
+                onClick={() => unbindMutation.mutate(binding.team_id)}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+          ))}
+          {skill.team_bindings.length === 0 ? <p className="text-sm text-muted-foreground">暂无团队绑定</p> : null}
+        </div>
       </CardContent>
     </LiquidCard>
   );
 }
 
-function SkillSidePanel({ skill }: { skill?: Skill }) {
+function EmployeeBindingSection({ skill, apiOptions }: { skill: Skill; apiOptions: ApiOpts }) {
+  const queryClient = useQueryClient();
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
+
+  const boundTeamIds = useMemo(() => skill.team_bindings.map((b) => b.team_id), [skill.team_bindings]);
+
+  const employeesQuery = useQuery({
+    enabled: boundTeamIds.length > 0,
+    queryKey: ["skill-employees", boundTeamIds.join(",")],
+    queryFn: async () => {
+      const results = await Promise.all(
+        boundTeamIds.map((teamId) => listDigitalEmployees(apiOptions, { team_id: teamId })),
+      );
+      const merged: DigitalEmployee[] = [];
+      const seen = new Set<string>();
+      for (const list of results) {
+        for (const emp of list) {
+          if (!seen.has(emp.id)) {
+            seen.add(emp.id);
+            merged.push(emp);
+          }
+        }
+      }
+      return merged;
+    },
+  });
+
+  const personalBoundIds = useMemo(
+    () => new Set(skill.agent_bindings.map((b) => b.agent_id)),
+    [skill.agent_bindings],
+  );
+
+  const availableEmployees = (employeesQuery.data ?? []).filter(
+    (emp) => !personalBoundIds.has(emp.id),
+  );
+
+  const bindMutation = useMutation({
+    mutationFn: (employeeId: string) => bindEmployeeSkill(apiOptions, employeeId, skill.id),
+    onSuccess: async () => {
+      setSelectedEmployeeId("");
+      await queryClient.invalidateQueries({ queryKey: ["skills"] });
+    },
+  });
+  const unbindMutation = useMutation({
+    mutationFn: (employeeId: string) => unbindEmployeeSkill(apiOptions, employeeId, skill.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["skills"] });
+    },
+  });
+
+  const personalBindings = skill.agent_bindings;
+
   return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <LiquidCard className="rounded-lg">
-        <CardHeader className="border-b">
-          <CardTitle className="text-base">Agent 绑定</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 p-4">
-          {(skill?.agent_bindings ?? []).map((binding) => (
+    <LiquidCard className="rounded-lg">
+      <CardHeader className="border-b">
+        <CardTitle className="text-base">数字员工绑定</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3 p-4">
+        {boundTeamIds.length === 0 ? (
+          <p className="text-sm text-muted-foreground">请先绑定团队，员工将通过团队继承获得此技能。如需个人补充绑定，团队绑定后可在此操作。</p>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">团队继承的员工自动拥有此技能。下方可对未继承的员工做个人补充绑定。</p>
+            <div className="flex items-center gap-2">
+              <Select onValueChange={setSelectedEmployeeId} value={selectedEmployeeId}>
+                <SelectTrigger className="min-w-0 flex-1">
+                  <SelectValue placeholder="选择要绑定的数字员工" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableEmployees.map((emp) => (
+                    <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                disabled={!selectedEmployeeId || bindMutation.isPending}
+                onClick={() => selectedEmployeeId && bindMutation.mutate(selectedEmployeeId)}
+                size="sm"
+                type="button"
+              >
+                <Plus data-icon="inline-start" />
+                绑定
+              </Button>
+            </div>
+            {bindMutation.isError ? (
+              <p className="text-sm text-destructive">
+                {bindMutation.error instanceof Error ? bindMutation.error.message : "绑定失败，可能团队已继承此技能"}
+              </p>
+            ) : null}
+          </>
+        )}
+
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-medium text-muted-foreground">个人绑定</p>
+          {personalBindings.map((binding) => (
             <div className="flex items-center justify-between gap-3 rounded-md border bg-background p-3" key={binding.agent_id}>
-              <div className="flex min-w-0 items-center gap-3">
+              <div className="flex min-w-0 items-center gap-2">
                 <SemanticIconTile tone="info" size="sm">
                   <Bot />
                 </SemanticIconTile>
@@ -446,78 +530,21 @@ function SkillSidePanel({ skill }: { skill?: Skill }) {
                   <p className="truncate text-xs text-muted-foreground">{binding.team_name || "未归属团队"}</p>
                 </div>
               </div>
-              <StatusBadge tone={binding.status === "enabled" ? "success" : "neutral"}>{binding.status === "enabled" ? "已启用" : binding.status}</StatusBadge>
+              <Button
+                disabled={unbindMutation.isPending}
+                onClick={() => unbindMutation.mutate(binding.agent_id)}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                <Trash2 className="size-4" />
+              </Button>
             </div>
           ))}
-          {skill && skill.agent_bindings.length === 0 ? <p className="text-sm text-muted-foreground">暂无 Agent 绑定</p> : null}
-        </CardContent>
-      </LiquidCard>
-
-      <LiquidCard className="rounded-lg">
-        <CardHeader className="border-b">
-          <CardTitle className="text-base">技能信息</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 p-4 text-sm">
-          <InfoRow label="版本" value={skill?.version ?? "-"} />
-          <InfoRow label="来源" value={skill?.source ?? "-"} />
-          <InfoRow label="风险等级" value={skill?.risk_level ?? "-"} />
-          <Separator />
-          <div className="flex flex-wrap gap-2">
-            {(skill?.tags ?? []).map((tag) => (
-              <Badge key={tag} variant="outline">{tag}</Badge>
-            ))}
-          </div>
-        </CardContent>
-      </LiquidCard>
-    </div>
-  );
-}
-
-function SkillMarket({ skills }: { skills: Skill[] }) {
-  const uploadedTags = [...new Set(skills.flatMap((skill) => skill.tags))];
-
-  return (
-    <div className="grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)]">
-      <LiquidCard className="rounded-lg">
-        <CardHeader className="border-b">
-          <CardTitle className="text-base">上传标签</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2 p-4 text-sm">
-          {uploadedTags.map((tag) => (
-            <button className="rounded-md px-2 py-2 text-left hover:bg-muted" key={tag} type="button">
-              {tag}
-            </button>
-          ))}
-          {uploadedTags.length === 0 ? <p className="text-sm text-muted-foreground">暂无上传标签</p> : null}
-        </CardContent>
-      </LiquidCard>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {skills.map((skill) => (
-          <LiquidCard className="rounded-lg" key={skill.id}>
-            <CardContent className="flex min-h-48 flex-col gap-4 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="truncate text-lg font-semibold tracking-normal">{skill.name}</h2>
-                  <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{skill.description}</p>
-                </div>
-                <SkillIcon skill={skill} />
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {skill.tags.map((tag) => (
-                  <Badge key={tag} variant="outline">{tag}</Badge>
-                ))}
-              </div>
-              <div className="mt-auto flex items-center justify-between gap-3">
-                <span className="text-xs text-muted-foreground">{skill.files.length} 个文件</span>
-                <Button size="sm" type="button" variant={skill.status === "installed" ? "outline" : "default"}>
-                  {skill.status === "installed" ? "已安装 / 更新" : "安装"}
-                </Button>
-              </div>
-            </CardContent>
-          </LiquidCard>
-        ))}
-      </div>
-    </div>
+          {personalBindings.length === 0 ? <p className="text-sm text-muted-foreground">暂无个人绑定</p> : null}
+        </div>
+      </CardContent>
+    </LiquidCard>
   );
 }
 
@@ -526,19 +553,17 @@ function SkillUploadDialog({
   onOpenChange,
   onUploaded,
   open,
-  teams,
 }: {
-  apiOptions: { baseUrl: string; fetcher?: typeof fetch };
+  apiOptions: ApiOpts;
   onOpenChange: (open: boolean) => void;
   onUploaded: (skill: Skill) => void;
   open: boolean;
-  teams: TeamListItem[];
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState("");
+  const [riskLevel, setRiskLevel] = useState("medium");
   const [file, setFile] = useState<File | null>(null);
-  const [teamIds, setTeamIds] = useState<Set<string>>(new Set());
   const upload = useMutation({
     mutationFn: () => {
       if (!file) {
@@ -548,16 +573,16 @@ function SkillUploadDialog({
         description,
         file,
         name,
+        risk_level: riskLevel,
         tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean),
-        team_ids: [...teamIds],
       });
     },
     onSuccess: (skill) => {
       setName("");
       setDescription("");
       setTags("");
+      setRiskLevel("medium");
       setFile(null);
-      setTeamIds(new Set());
       onUploaded(skill);
     },
   });
@@ -567,7 +592,7 @@ function SkillUploadDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>上传技能</DialogTitle>
-          <DialogDescription>通过 zip 包导入技能，并补充描述、标签和归属团队。</DialogDescription>
+          <DialogDescription>通过 zip 包导入技能。zip 包必须包含 SKILL.md。上传后可在详情页绑定团队和数字员工。</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="flex flex-col gap-2 md:col-span-2">
@@ -584,6 +609,19 @@ function SkillUploadDialog({
             <Input id="skill-name" onChange={(event) => setName(event.target.value)} value={name} />
           </div>
           <div className="flex flex-col gap-2">
+            <Label htmlFor="skill-risk">风险等级</Label>
+            <Select onValueChange={setRiskLevel} value={riskLevel}>
+              <SelectTrigger id="skill-risk">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="low">低风险</SelectItem>
+                <SelectItem value="medium">中风险</SelectItem>
+                <SelectItem value="high">高风险</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
             <Label htmlFor="skill-tags">标签</Label>
             <Input id="skill-tags" onChange={(event) => setTags(event.target.value)} placeholder="诊断,自动化" value={tags} />
           </div>
@@ -591,104 +629,18 @@ function SkillUploadDialog({
             <Label htmlFor="skill-description">技能描述</Label>
             <Textarea id="skill-description" onChange={(event) => setDescription(event.target.value)} value={description} />
           </div>
-          <div className="flex flex-col gap-2 md:col-span-2">
-            <p className="text-sm font-medium">归属团队</p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {teams.map((team) => (
-                <label className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm" key={team.id}>
-                  <Checkbox
-                    checked={teamIds.has(team.id)}
-                    onCheckedChange={() => setTeamIds((current) => toggleSetValue(current, team.id))}
-                  />
-                  {team.name}
-                </label>
-              ))}
-            </div>
-          </div>
         </div>
         {upload.error instanceof Error ? <p className="text-sm text-destructive">{upload.error.message}</p> : null}
         <DialogFooter>
           <Button onClick={() => onOpenChange(false)} type="button" variant="outline">取消</Button>
           <Button disabled={!file || !name.trim() || upload.isPending} onClick={() => upload.mutate()} type="button">
             <UploadCloud data-icon="inline-start" />
-            上传并安装
+            上传
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
-}
-
-function renderTreeNodes({
-  expandedFolders,
-  nodes,
-  onSelectFile,
-  onToggleFolder,
-  selectedPath,
-  skill,
-}: {
-  expandedFolders: Set<string>;
-  nodes: Map<string, TreeNode>;
-  onSelectFile: (skill: Skill, file: SkillFile) => void;
-  onToggleFolder: (key: string) => void;
-  selectedPath?: string;
-  skill: Skill;
-}) {
-  return [...nodes.values()].map((node) => {
-    if (node.type === "dir") {
-      const key = `${skill.id}:${node.path}`;
-      const expanded = expandedFolders.has(key);
-      return (
-        <div className="flex flex-col gap-1" key={node.path}>
-          <button className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted" onClick={() => onToggleFolder(key)} type="button">
-            {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-            <Folder className="size-4 text-muted-foreground" />
-            {node.name}
-          </button>
-          {expanded ? (
-            <div className="ms-5 flex flex-col gap-1 border-s ps-2">
-              {renderTreeNodes({ expandedFolders, nodes: node.children, onSelectFile, onToggleFolder, selectedPath, skill })}
-            </div>
-          ) : null}
-        </div>
-      );
-    }
-    const file = skill.files.find((item) => item.path === node.path);
-    if (!file) return null;
-    return (
-      <button
-        className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted", selectedPath === file.path && "bg-primary/10 text-primary")}
-        key={node.path}
-        onClick={() => onSelectFile(skill, file)}
-        type="button"
-      >
-        {file.path.endsWith(".md") ? <FileText className="size-4" /> : <FileCode2 className="size-4" />}
-        {node.name}
-      </button>
-    );
-  });
-}
-
-function buildFileTree(files: SkillFile[]) {
-  const root: TreeNode = { children: new Map(), name: "", path: "", type: "dir" };
-  for (const file of files) {
-    const parts = file.path.split("/");
-    let current = root;
-    parts.forEach((part, index) => {
-      const isFile = index === parts.length - 1;
-      const currentPath = parts.slice(0, index + 1).join("/");
-      if (!current.children.has(part)) {
-        current.children.set(part, {
-          children: new Map(),
-          name: part,
-          path: currentPath,
-          type: isFile ? "file" : "dir",
-        });
-      }
-      current = current.children.get(part)!;
-    });
-  }
-  return root;
 }
 
 function SkillIcon({ size = "default", skill }: { size?: "sm" | "default"; skill: Skill }) {
@@ -713,20 +665,12 @@ function countAgentBindings(skills: Skill[]) {
   return skills.reduce((total, skill) => total + skill.agent_bindings.length, 0);
 }
 
-function languageForFile(path: string) {
-  if (path.endsWith(".md")) return "markdown";
-  if (path.endsWith(".sh")) return "shell";
-  if (path.endsWith(".py")) return "python";
-  if (path.endsWith(".json")) return "json";
-  return "plaintext";
+function countArchiveFiles(skills: Skill[]) {
+  return skills.reduce((total, skill) => total + skill.archive_file_count, 0);
 }
 
-function toggleSetValue(current: Set<string>, value: string) {
-  const next = new Set(current);
-  if (next.has(value)) {
-    next.delete(value);
-  } else {
-    next.add(value);
-  }
-  return next;
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

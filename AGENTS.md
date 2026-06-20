@@ -57,6 +57,7 @@ SuperTeam 目标是把 AI 执行能力、流程状态调度、人类审批、上
 - 不要盲目猜测；如果存在无法从本地上下文确认且会影响架构或业务判断的不确定点，先与人类沟通。
 - 如果需要web仿真测试请使用 codex chrome plugs 调用进行测试
 - 前端页面、布局或样式变更前必须阅读 `DESIGN.md`。
+- Web 测试必须通过 `corepack pnpm --filter ./apps/web run test` 运行，禁止使用 `npx playwright install` 或 `npx vitest run`。
 - 每次功能、修复、合并或跨层联调任务收尾前，必须使用项目内 skill `$superteam-completion-check`（`.codex/skills/superteam-completion-check/SKILL.md`）做完成前检查；不得把 mock、组件测试、单元测试或构建通过表述为真实链路已验证。
 - 真实端到端验证是功能、修复、合并、前后端联调、Runtime/Provider 接入、数据库/迁移变更以及任何声称“功能可用”任务的默认完成条件。验证必须让当前代码通过真实 Web、Control Plane、数据库、Runtime、Provider 或对应真实服务路径运行；不能只停留在 mock、单元测试、组件测试、构建或代码审查。
 - 如果真实端到端验证因服务未启动、认证缺失、外部 Provider 不可用、迁移未准备或环境不安全而无法完成，任务必须标记为阻塞并说明缺失依赖；不得把“未做真实链路验证”作为完成状态交付，除非人类明确把本次范围限定为纯单层局部验证。

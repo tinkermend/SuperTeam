@@ -30,6 +30,7 @@ time = { version = "0.3", features = ["formatting", "parsing"] }
 tokio = { version = "1.48", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-tungstenite = "0.29"
 tokio-util = "0.7"
+zip = "2"
 
 [dev-dependencies]
 tempfile = "3.23"
