@@ -1308,6 +1308,36 @@ func (e TeamUserAvatarStyle) Valid() bool {
 	}
 }
 
+// Defines values for WaitHumanProjectTaskAttemptRequestReason.
+const (
+	AcceptanceRequired WaitHumanProjectTaskAttemptRequestReason = "acceptance_required"
+	ApprovalRequired   WaitHumanProjectTaskAttemptRequestReason = "approval_required"
+	Clarification      WaitHumanProjectTaskAttemptRequestReason = "clarification"
+	MissingContext     WaitHumanProjectTaskAttemptRequestReason = "missing_context"
+	PermissionRequired WaitHumanProjectTaskAttemptRequestReason = "permission_required"
+	PlanInvalid        WaitHumanProjectTaskAttemptRequestReason = "plan_invalid"
+)
+
+// Valid indicates whether the value is a known member of the WaitHumanProjectTaskAttemptRequestReason enum.
+func (e WaitHumanProjectTaskAttemptRequestReason) Valid() bool {
+	switch e {
+	case AcceptanceRequired:
+		return true
+	case ApprovalRequired:
+		return true
+	case Clarification:
+		return true
+	case MissingContext:
+		return true
+	case PermissionRequired:
+		return true
+	case PlanInvalid:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkflowInstanceStatus.
 const (
 	WorkflowInstanceStatusCancelled    WorkflowInstanceStatus = "cancelled"
@@ -3560,6 +3590,23 @@ type UserCredential struct {
 	UserId         openapi_types.UUID `json:"user_id"`
 }
 
+// WaitHumanProjectTaskAttemptRequest defines model for WaitHumanProjectTaskAttemptRequest.
+type WaitHumanProjectTaskAttemptRequest struct {
+	DigitalEmployeeId          openapi_types.UUID                       `json:"digital_employee_id"`
+	IdempotencyKey             string                                   `json:"idempotency_key"`
+	LeaseToken                 string                                   `json:"lease_token"`
+	MissingContextRefs         *[]interface{}                           `json:"missing_context_refs,omitempty"`
+	ProjectTaskId              openapi_types.UUID                       `json:"project_task_id"`
+	ProviderSessionId          *string                                  `json:"provider_session_id,omitempty"`
+	Reason                     WaitHumanProjectTaskAttemptRequestReason `json:"reason"`
+	RuntimeNodeId              openapi_types.UUID                       `json:"runtime_node_id"`
+	SuggestedResolutionOptions *[]string                                `json:"suggested_resolution_options,omitempty"`
+	Summary                    string                                   `json:"summary"`
+}
+
+// WaitHumanProjectTaskAttemptRequestReason defines model for WaitHumanProjectTaskAttemptRequest.Reason.
+type WaitHumanProjectTaskAttemptRequestReason string
+
 // WorkflowInstanceCurrentBlocker defines model for WorkflowInstanceCurrentBlocker.
 type WorkflowInstanceCurrentBlocker struct {
 	ResourceId *openapi_types.UUID `json:"resource_id,omitempty"`
@@ -4186,6 +4233,9 @@ type RenewProjectTaskAttemptLeaseJSONRequestBody = RenewProjectTaskAttemptLeaseR
 
 // StartProjectTaskAttemptJSONRequestBody defines body for StartProjectTaskAttempt for application/json ContentType.
 type StartProjectTaskAttemptJSONRequestBody = StartProjectTaskAttemptRequest
+
+// WaitHumanProjectTaskAttemptJSONRequestBody defines body for WaitHumanProjectTaskAttempt for application/json ContentType.
+type WaitHumanProjectTaskAttemptJSONRequestBody = WaitHumanProjectTaskAttemptRequest
 
 // RegisterRuntimeNodeJSONRequestBody defines body for RegisterRuntimeNode for application/json ContentType.
 type RegisterRuntimeNodeJSONRequestBody = RegisterRuntimeNodeRequest
@@ -4978,6 +5028,9 @@ type ServerInterface interface {
 	// Mark a ProjectTask attempt as started by Runtime
 	// (POST /api/v1/runtime/project-task-attempts/{attemptId}/started)
 	StartProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID)
+	// Pause a ProjectTask attempt and request human input
+	// (POST /api/v1/runtime/project-task-attempts/{attemptId}/wait-human)
+	WaitHumanProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID)
 	// Register a Runtime Agent node
 	// (POST /api/v1/runtime/register)
 	RegisterRuntimeNode(w http.ResponseWriter, r *http.Request, params RegisterRuntimeNodeParams)
@@ -5689,6 +5742,12 @@ func (_ Unimplemented) RenewProjectTaskAttemptLease(w http.ResponseWriter, r *ht
 // Mark a ProjectTask attempt as started by Runtime
 // (POST /api/v1/runtime/project-task-attempts/{attemptId}/started)
 func (_ Unimplemented) StartProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Pause a ProjectTask attempt and request human input
+// (POST /api/v1/runtime/project-task-attempts/{attemptId}/wait-human)
+func (_ Unimplemented) WaitHumanProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9669,6 +9728,32 @@ func (siw *ServerInterfaceWrapper) StartProjectTaskAttempt(w http.ResponseWriter
 	handler.ServeHTTP(w, r)
 }
 
+// WaitHumanProjectTaskAttempt operation middleware
+func (siw *ServerInterfaceWrapper) WaitHumanProjectTaskAttempt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "attemptId" -------------
+	var attemptId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "attemptId", chi.URLParam(r, "attemptId"), &attemptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "attemptId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.WaitHumanProjectTaskAttempt(w, r, attemptId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RegisterRuntimeNode operation middleware
 func (siw *ServerInterfaceWrapper) RegisterRuntimeNode(w http.ResponseWriter, r *http.Request) {
 
@@ -11896,6 +11981,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attempts/{attemptId}/started", wrapper.StartProjectTaskAttempt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attempts/{attemptId}/wait-human", wrapper.WaitHumanProjectTaskAttempt)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/register", wrapper.RegisterRuntimeNode)

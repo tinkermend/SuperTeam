@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- [2026-06-20 17:43] ProjectTask recovery now supports retry scheduling, typed waiting-human pauses, and acceptance-gated completion.
 - 2026-06-20 16:18：运行时 ProjectTask 回写切换到 attempt-scoped contract：Control Plane 新增 `/api/v1/runtime/project-task-attempts/{attemptId}` started/lease/complete/fail 路由与持久化写回，终态写回同步记录 `project_tasks.terminal_event_id` 与 attempt terminal facts，Runtime Agent 改用 attempt_id、lease_token、runtime_node_id 和 idempotency_key 回写完成/失败；项目协调分派预生成 deterministic attempt id/lease 并在 Runtime command metadata 中补齐 attempt 与 runtime node facts，旧 `/api/v1/runtime/project-tasks/{id}` 回写路由不再暴露。
 - 2026-06-20 04:13：ProjectTask durable closure Phase 1 完成控制平面基础：新增 `project_task_attempts`、queued attempt 排队写入、dispatch 创建 attempt 的 durable 状态桥接，并以 accepted plan revision exact-once decomposition 防止规划重试重复生成项目任务。
 - 2026-06-20 03:34：ProjectTask durable closure Phase 1 Task 5 将项目协调分派改为 queue-attempt 写入：`DispatchProjectTask` 保留真实 Runtime run 创建桥接，但以 `QueueProjectTaskWithAttempt` 绑定 `digital_employee_run_id`/`runtime_task_id`/`runtime_node_id` 并保持任务 durable 状态为 `queued`；`project_task.dispatched` 事件携带 attempt/run/runtime facts，queued attempt 的 execution context packet 补齐项目、需求、任务、员工、run、runtime 与 handoff contract 信息，兼容旧 Runtime project-task writeback 依赖的 run/task 绑定。
