@@ -371,6 +371,9 @@ func (s *ProjectStore) CreateProjectTasks(ctx context.Context, input CreateProje
 		plannerMetadata := cloneAnyMap(input.Decision.PlannerMetadata)
 		plannerMetadata["accepted_plan_revision_id"] = acceptedPlanRevisionID.String()
 		plannerMetadata["decomposition_claim_key"] = decompositionClaimKey
+		if hasPlanningSelectionEvidence(plannedTask) {
+			plannerMetadata["employee_selection"] = PlanningSelectionMetadata(plannedTask)
+		}
 		graphTasks = append(graphTasks, project.ProjectTaskGraphCreateTask{
 			Key:                       plannedTask.Key,
 			Title:                     plannedTask.Title,
@@ -1571,6 +1574,36 @@ func aggregateTaskInputSummary(task PlannedTask) map[string]any {
 	}
 	if len(task.BlockedByKeys) > 0 {
 		summary["blocked_by_keys"] = stringsToAny(task.BlockedByKeys)
+	}
+	if task.EmployeeSelectionReason != "" {
+		summary["employee_selection_reason"] = task.EmployeeSelectionReason
+	}
+	if len(task.RequiredCapabilities) > 0 {
+		summary["required_capabilities"] = stringsToAny(task.RequiredCapabilities)
+	}
+	if len(task.MatchedCapabilities) > 0 {
+		summary["matched_capabilities"] = stringsToAny(task.MatchedCapabilities)
+	}
+	if len(task.MissingCapabilities) > 0 {
+		summary["missing_capabilities"] = stringsToAny(task.MissingCapabilities)
+	}
+	if len(task.PermissionRequirements) > 0 {
+		summary["permission_requirements"] = stringsToAny(task.PermissionRequirements)
+	}
+	if len(task.ToolRequirements) > 0 {
+		summary["tool_requirements"] = stringsToAny(task.ToolRequirements)
+	}
+	if len(task.RuntimeRequirements) > 0 {
+		summary["runtime_requirements"] = stringsToAny(task.RuntimeRequirements)
+	}
+	if len(task.VerificationRequirements) > 0 {
+		summary["verification_requirements"] = stringsToAny(task.VerificationRequirements)
+	}
+	if task.SelectionScore > 0 {
+		summary["selection_score"] = task.SelectionScore
+	}
+	if task.PlanningProfileSnapshotHash != "" {
+		summary["profile_snapshot_hash"] = task.PlanningProfileSnapshotHash
 	}
 	return summary
 }

@@ -112,21 +112,27 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 			lastErr = err
 			continue
 		}
-		pool := activeExecutorIDs(snapshot.DigitalEmployeePool)
 		applyRequiredHumanReviewPolicy(snapshot, &plan)
-		if err := ValidateRouteDecisionGraph(plan, pool, GraphValidationPolicy{MaxTasks: 12}); err != nil {
+		if err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}); err != nil {
 			if contextErr := terminalContextError(ctx); contextErr != nil {
 				return RouteDecisionPlan{}, contextErr
 			}
+			if errors.Is(err, errIncoherentSelectionEvidence) {
+				lastErr = err
+				continue
+			}
 			if requiredHumanReviewPolicyEnabled(snapshot.CoordinationPolicy) {
+				pool := activeExecutorIDs(snapshot.DigitalEmployeePool)
 				repaired := synthesizeRequiredReviewPlan(snapshot, pool, plan)
-				if repairErr := ValidateRouteDecisionGraph(repaired, pool, GraphValidationPolicy{MaxTasks: 12}); repairErr == nil {
+				if repairErr := ValidateRouteDecisionPlan(snapshot, repaired, GraphValidationPolicy{MaxTasks: 12}); repairErr == nil {
+					ApplyPlanningProfileScores(snapshot, &repaired)
 					return repaired, nil
 				}
 			}
 			lastErr = err
 			continue
 		}
+		ApplyPlanningProfileScores(snapshot, &plan)
 		return plan, nil
 	}
 	if lastErr == nil {
@@ -567,10 +573,20 @@ func synthesizeRequiredReviewPlan(snapshot CoordinationSnapshot, pool []uuid.UUI
 		TemplateKey:         templateKey,
 		PlannerMetadata:     metadata,
 		Tasks: []PlannedTask{{
-			Key:                   "required_review_execute_demand",
-			Title:                 title,
-			Summary:               summary,
-			SelectedEmployeeID:    pool[0],
+			Key:                     "required_review_execute_demand",
+			Title:                   title,
+			Summary:                 summary,
+			SelectedEmployeeID:      pool[0],
+			EmployeeSelectionReason: "协调策略要求人工审核，选择可执行员工承接审核后的执行任务",
+			RequiredCapabilities:    []string{"execution"},
+			MatchedCapabilities:     []string{"execution"},
+			MissingCapabilities:     []string{},
+			PermissionRequirements:  []string{},
+			ToolRequirements:        []string{},
+			RuntimeRequirements:     []string{},
+			VerificationRequirements: []string{
+				"写回 project task attempt 结果",
+			},
 			TaskKind:              "execution",
 			StageIndex:            &stageIndex,
 			RiskLevel:             "normal",

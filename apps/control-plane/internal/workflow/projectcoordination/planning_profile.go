@@ -197,6 +197,35 @@ func PlanningProfileSnapshotHash(profile DigitalEmployeePlanningProfile) string 
 	return hex.EncodeToString(sum[:])
 }
 
+func PlanningSelectionMetadata(task PlannedTask) map[string]any {
+	return map[string]any{
+		"selected_employee_id":      task.SelectedEmployeeID.String(),
+		"employee_selection_reason": task.EmployeeSelectionReason,
+		"profile_snapshot_hash":     task.PlanningProfileSnapshotHash,
+		"selection_score":           task.SelectionScore,
+		"required_capabilities":     stringsToAny(task.RequiredCapabilities),
+		"matched_capabilities":      stringsToAny(task.MatchedCapabilities),
+		"missing_capabilities":      stringsToAny(task.MissingCapabilities),
+		"permission_requirements":   stringsToAny(task.PermissionRequirements),
+		"tool_requirements":         stringsToAny(task.ToolRequirements),
+		"runtime_requirements":      stringsToAny(task.RuntimeRequirements),
+		"verification_requirements": stringsToAny(task.VerificationRequirements),
+	}
+}
+
+func hasPlanningSelectionEvidence(task PlannedTask) bool {
+	return strings.TrimSpace(task.EmployeeSelectionReason) != "" ||
+		task.PlanningProfileSnapshotHash != "" ||
+		len(task.RequiredCapabilities) > 0 ||
+		len(task.MatchedCapabilities) > 0 ||
+		len(task.MissingCapabilities) > 0 ||
+		len(task.PermissionRequirements) > 0 ||
+		len(task.ToolRequirements) > 0 ||
+		len(task.RuntimeRequirements) > 0 ||
+		len(task.VerificationRequirements) > 0 ||
+		task.SelectionScore > 0
+}
+
 func buildPlanningRoleProfile(member project.ProjectMember, source DigitalEmployeePlanningProfileSourceRecord) PlanningRoleProfile {
 	roleProfile := PlanningRoleProfile{
 		PrimaryRole:  normalizePlanningString(stringFromMap(source.RoleProfile, "primary_role")),

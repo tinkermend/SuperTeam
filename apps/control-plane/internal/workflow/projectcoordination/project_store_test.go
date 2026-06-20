@@ -332,11 +332,20 @@ func TestProjectStorePersistRouteDecisionAggregatesGraphFields(t *testing.T) {
 			BudgetEstimate:      map[string]any{"mode": "policy_default"},
 			Tasks: []PlannedTask{
 				{
-					Key:                "investigate",
-					Title:              "调查问题",
-					Summary:            "整理日志和复现路径",
-					SelectedEmployeeID: firstEmployeeID,
-					ExpectedOutputs:    []string{"execution_summary", "evidence_refs"},
+					Key:                         "investigate",
+					Title:                       "调查问题",
+					Summary:                     "整理日志和复现路径",
+					SelectedEmployeeID:          firstEmployeeID,
+					EmployeeSelectionReason:     "具备日志调查能力",
+					RequiredCapabilities:        []string{"log.analysis"},
+					MatchedCapabilities:         []string{"log.analysis"},
+					PermissionRequirements:      []string{"logs.read"},
+					ToolRequirements:            []string{"mcp:logstore"},
+					RuntimeRequirements:         []string{"provider:codex"},
+					VerificationRequirements:    []string{"复现路径已记录"},
+					SelectionScore:              92,
+					PlanningProfileSnapshotHash: "profile-hash-for-route-summary",
+					ExpectedOutputs:             []string{"execution_summary", "evidence_refs"},
 					InputRequirements: map[string]any{
 						"demand_id": demandID.String(),
 						"prompt":    strings.Repeat("long prompt ", 20),
@@ -395,6 +404,15 @@ func TestProjectStorePersistRouteDecisionAggregatesGraphFields(t *testing.T) {
 		t.Fatalf("route-level input summary must not store raw task input requirements: %#v", firstSummary)
 	}
 	assertPayloadStrings(t, firstSummary["input_requirement_keys"], []string{"demand_id", "prompt"})
+	require.Equal(t, "具备日志调查能力", firstSummary["employee_selection_reason"])
+	assertPayloadStrings(t, firstSummary["required_capabilities"], []string{"log.analysis"})
+	assertPayloadStrings(t, firstSummary["matched_capabilities"], []string{"log.analysis"})
+	assertPayloadStrings(t, firstSummary["permission_requirements"], []string{"logs.read"})
+	assertPayloadStrings(t, firstSummary["tool_requirements"], []string{"mcp:logstore"})
+	assertPayloadStrings(t, firstSummary["runtime_requirements"], []string{"provider:codex"})
+	assertPayloadStrings(t, firstSummary["verification_requirements"], []string{"复现路径已记录"})
+	require.Equal(t, 92, firstSummary["selection_score"])
+	require.Equal(t, "profile-hash-for-route-summary", firstSummary["profile_snapshot_hash"])
 }
 
 func TestProjectStoreCreateCoordinationJobIsIdempotentForSameTrigger(t *testing.T) {
@@ -488,17 +506,23 @@ func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMeta
 			PlannerMetadata: plannerMetadata,
 			Tasks: []PlannedTask{
 				{
-					Key:                   "investigate",
-					Title:                 "调查问题",
-					Summary:               "整理日志",
-					SelectedEmployeeID:    firstEmployeeID,
-					TaskKind:              "investigation",
-					StageIndex:            &stageZero,
-					RiskLevel:             "medium",
-					RequiresHumanApproval: true,
-					ExpectedOutputs:       []string{"execution_summary", "evidence_refs"},
-					InputRequirements:     map[string]any{"scope": "logs"},
-					HandoffContract:       map[string]any{"format": "markdown"},
+					Key:                         "investigate",
+					Title:                       "调查问题",
+					Summary:                     "整理日志",
+					SelectedEmployeeID:          firstEmployeeID,
+					EmployeeSelectionReason:     "具备 execution 能力",
+					RequiredCapabilities:        []string{"execution"},
+					MatchedCapabilities:         []string{"execution"},
+					SelectionScore:              80,
+					VerificationRequirements:    []string{"写回 project task attempt 结果"},
+					PlanningProfileSnapshotHash: "profile-hash-for-test",
+					TaskKind:                    "investigation",
+					StageIndex:                  &stageZero,
+					RiskLevel:                   "medium",
+					RequiresHumanApproval:       true,
+					ExpectedOutputs:             []string{"execution_summary", "evidence_refs"},
+					InputRequirements:           map[string]any{"scope": "logs"},
+					HandoffContract:             map[string]any{"format": "markdown"},
 				},
 				{
 					Key:                "repair",
@@ -554,6 +578,16 @@ func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMeta
 		firstTask.PlannerMetadata["decomposition_claim_key"] != decomposeReq.DecompositionClaimKey {
 		t.Fatalf("expected graph metadata on first task, got %#v", firstTask)
 	}
+	selection, ok := firstTask.PlannerMetadata["employee_selection"].(map[string]any)
+	require.True(t, ok, "expected employee_selection metadata, got %#v", firstTask.PlannerMetadata)
+	require.Equal(t, firstEmployeeID.String(), selection["selected_employee_id"])
+	require.Equal(t, "具备 execution 能力", selection["employee_selection_reason"])
+	require.Equal(t, []any{"execution"}, selection["required_capabilities"])
+	require.Equal(t, []any{"execution"}, selection["matched_capabilities"])
+	require.Equal(t, []any{}, selection["missing_capabilities"])
+	require.Equal(t, 80, selection["selection_score"])
+	require.Equal(t, []any{"写回 project task attempt 结果"}, selection["verification_requirements"])
+	require.Equal(t, "profile-hash-for-test", selection["profile_snapshot_hash"])
 	require.Equal(t, map[string]any{"planner": "heuristic"}, plannerMetadata)
 
 	secondTask := decomposeReq.Tasks[1]
@@ -613,6 +647,11 @@ func TestProjectStoreCreateProjectTasksReplaysAcceptedPlanRevision(t *testing.T)
 	require.Len(t, repo.tasks, 2)
 	require.Len(t, repo.taskDependencies, 1)
 	require.Empty(t, repo.events)
+	for _, req := range repo.decomposeAcceptedPlanRevisionRequests {
+		for _, task := range req.Tasks {
+			require.NotContains(t, task.PlannerMetadata, "employee_selection")
+		}
+	}
 }
 
 func TestProjectStoreListDispatchableTasksFiltersBlockedTasksAndUnresolvedBlockers(t *testing.T) {

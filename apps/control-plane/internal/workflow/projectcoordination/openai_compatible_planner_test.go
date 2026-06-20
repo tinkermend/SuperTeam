@@ -28,7 +28,7 @@ func TestOpenAICompatibleRoutePlannerParsesJSONGraph(t *testing.T) {
 		"reason":"split demand",
 		"requires_human_review":false,
 		"tasks":[
-			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"stage_index":0,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{},"blocked_by_keys":[],"risk_level":"medium","task_kind":"analysis"}
+			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"employee_selection_reason":"具备 execution 能力","required_capabilities":["execution"],"matched_capabilities":["execution"],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":["写回 project task attempt 结果"],"selection_score":0,"stage_index":0,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{},"blocked_by_keys":[],"risk_level":"medium","task_kind":"analysis"}
 		],
 		"budget_estimate":{"mode":"planner"},
 		"template_key":"default",
@@ -38,7 +38,7 @@ func TestOpenAICompatibleRoutePlannerParsesJSONGraph(t *testing.T) {
 	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
 		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
 		DigitalEmployeePool: []ProjectMemberSnapshot{
-			{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+			openAITestExecutorMember(employeeID),
 		},
 	})
 
@@ -135,7 +135,7 @@ func TestOpenAICompatibleRoutePlannerSynthesizesReviewPlanWhenPolicyRequiresHuma
 	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
 		Demand: DemandSnapshot{ID: uuid.New(), Title: "删除生产数据", Content: "需要先确认风险"},
 		DigitalEmployeePool: []ProjectMemberSnapshot{
-			{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+			openAITestExecutorMember(employeeID),
 		},
 		CoordinationPolicy: map[string]any{"require_human_review_for_new_demands": true},
 	})
@@ -145,10 +145,70 @@ func TestOpenAICompatibleRoutePlannerSynthesizesReviewPlanWhenPolicyRequiresHuma
 	require.Len(t, plan.Tasks, 1)
 	require.Equal(t, employeeID, plan.Tasks[0].SelectedEmployeeID)
 	require.True(t, plan.Tasks[0].RequiresHumanApproval)
+	require.NotEmpty(t, plan.Tasks[0].EmployeeSelectionReason)
+	require.Equal(t, []string{"execution"}, plan.Tasks[0].RequiredCapabilities)
+	require.Equal(t, []string{"execution"}, plan.Tasks[0].MatchedCapabilities)
+	require.NotZero(t, plan.Tasks[0].SelectionScore)
+	require.NotEmpty(t, plan.Tasks[0].VerificationRequirements)
+	require.NotEmpty(t, plan.Tasks[0].PlanningProfileSnapshotHash)
 	require.NotEmpty(t, plan.Tasks[0].ExpectedOutputs)
 	require.NotEmpty(t, plan.Tasks[0].InputRequirements)
 	require.NotEmpty(t, plan.Tasks[0].HandoffContract)
 	require.Equal(t, int32(1), client.calls.Load())
+}
+
+func TestOpenAICompatibleRoutePlannerRejectsRequiredReviewRepairWithoutValidPlanningProfile(t *testing.T) {
+	employeeID := uuid.New()
+
+	for _, tc := range []struct {
+		name   string
+		member ProjectMemberSnapshot
+	}{
+		{
+			name: "missing profile",
+			member: ProjectMemberSnapshot{
+				PrincipalID: employeeID,
+				ProjectRole: "executor",
+				Status:      "active",
+			},
+		},
+		{
+			name: "mismatched profile identity",
+			member: func() ProjectMemberSnapshot {
+				member := openAITestExecutorMember(employeeID)
+				member.PlanningProfile.DigitalEmployeeID = uuid.New()
+				return member
+			}(),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &countingChatCompletionClient{content: `{
+				"reason":"pause for owner review before dispatch",
+				"requires_human_review":true,
+				"tasks":[],
+				"budget_estimate":{"mode":"planner"},
+				"template_key":"route_review",
+				"planner_metadata":{"provider":"openai-compatible"}
+			}`}
+			planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
+				APIKey:      "test-key",
+				BaseURL:     "https://planner.example",
+				Model:       "planner-model",
+				MaxAttempts: 1,
+			}, client)
+
+			_, err := planner.Plan(context.Background(), CoordinationSnapshot{
+				Demand: DemandSnapshot{ID: uuid.New(), Title: "删除生产数据", Content: "需要先确认风险"},
+				DigitalEmployeePool: []ProjectMemberSnapshot{
+					tc.member,
+				},
+				CoordinationPolicy: map[string]any{"require_human_review_for_new_demands": true},
+			})
+
+			require.ErrorIs(t, err, ErrInvalidRouteDecision)
+			require.Equal(t, int32(1), client.calls.Load())
+		})
+	}
 }
 
 func TestOpenAICompatibleRoutePlannerRejectsMissingRequiredTaskMaps(t *testing.T) {
@@ -207,7 +267,7 @@ func TestOpenAICompatibleRoutePlannerNormalizesNonObjectRequirementMaps(t *testi
 	client := &countingChatCompletionClient{content: fmt.Sprintf(`{
 		"reason":"split demand",
 		"requires_human_review":false,
-		"tasks":[{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":["a","b"],"handoff_contract":"none"}]
+		"tasks":[{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"employee_selection_reason":"具备 execution 能力","required_capabilities":["execution"],"matched_capabilities":["execution"],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":["写回 project task attempt 结果"],"selection_score":0,"expected_outputs":["execution_summary"],"input_requirements":["a","b"],"handoff_contract":"none"}]
 	}`, employeeID.String())}
 	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
 		APIKey:      "test-key",
@@ -219,7 +279,7 @@ func TestOpenAICompatibleRoutePlannerNormalizesNonObjectRequirementMaps(t *testi
 	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
 		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
 		DigitalEmployeePool: []ProjectMemberSnapshot{
-			{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+			openAITestExecutorMember(employeeID),
 		},
 	})
 
@@ -413,7 +473,7 @@ func TestOpenAICompatibleRoutePlannerPromptsIncludeJSONWord(t *testing.T) {
 		"reason":"split demand",
 		"requires_human_review":false,
 		"tasks":[
-			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{}}
+			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"employee_selection_reason":"具备 execution 能力","required_capabilities":["execution"],"matched_capabilities":["execution"],"missing_capabilities":[],"permission_requirements":[],"tool_requirements":[],"runtime_requirements":[],"verification_requirements":["写回 project task attempt 结果"],"selection_score":0,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{}}
 		]
 	}`, employeeID.String())}
 	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
@@ -426,7 +486,7 @@ func TestOpenAICompatibleRoutePlannerPromptsIncludeJSONWord(t *testing.T) {
 	_, err := planner.Plan(context.Background(), CoordinationSnapshot{
 		Demand: DemandSnapshot{ID: uuid.New(), Title: "需求", Content: "内容"},
 		DigitalEmployeePool: []ProjectMemberSnapshot{
-			{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+			openAITestExecutorMember(employeeID),
 		},
 	})
 
@@ -491,12 +551,20 @@ func TestOpenAICompatiblePlannerPromptIncludesPlanningProfiles(t *testing.T) {
 				RoleProfile: PlanningRoleProfile{
 					PrimaryRole: "data_analyst",
 				},
-				Capabilities: []PlanningCapability{{
-					Key:        "database.read",
-					Level:      "strong",
-					Source:     "test",
-					Confidence: 1,
-				}},
+				Capabilities: []PlanningCapability{
+					{
+						Key:        "database.read",
+						Level:      "strong",
+						Source:     "test",
+						Confidence: 1,
+					},
+					{
+						Key:        "sql.analysis",
+						Level:      "strong",
+						Source:     "test",
+						Confidence: 1,
+					},
+				},
 				Skills: []PlanningSkill{{
 					Key:    "sql.analysis",
 					Source: "test",
@@ -531,6 +599,169 @@ func TestOpenAICompatiblePlannerPromptIncludesPlanningProfiles(t *testing.T) {
 	require.Contains(t, client.req.User, `"database.read"`)
 	require.Contains(t, client.req.System, "employee_selection_reason")
 	require.Contains(t, client.req.System, "required_capabilities")
+}
+
+func TestOpenAICompatiblePlannerAppliesProfileScoresToAcceptedPlan(t *testing.T) {
+	employeeID := uuid.New()
+	client := &countingChatCompletionClient{
+		content: fmt.Sprintf(`{
+			"reason":"按能力选择数据库分析员工",
+			"requires_human_review":false,
+			"tasks":[{
+				"key":"analyze-db",
+				"title":"分析数据库",
+				"summary":"检查慢查询",
+				"selected_employee_id":%q,
+				"employee_selection_reason":"具备数据库分析经验",
+				"required_capabilities":["database.read","sql.analysis"],
+				"matched_capabilities":[],
+				"missing_capabilities":[],
+				"permission_requirements":["database.read:dev_database"],
+				"tool_requirements":["mcp:postgres.readonly"],
+				"runtime_requirements":["provider:codex"],
+				"verification_requirements":["只读查询成功"],
+				"selection_score":0,
+				"expected_outputs":["execution_summary"],
+				"input_requirements":{},
+				"handoff_contract":{},
+				"blocked_by_keys":[],
+				"risk_level":"medium",
+				"task_kind":"database_analysis"
+			}],
+			"budget_estimate":{},
+			"template_key":"database_analysis",
+			"planner_metadata":{"provider":"openai-compatible"}
+		}`, employeeID.String()),
+	}
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
+		MaxAttempts: 1,
+	}, client)
+	snapshot := CoordinationSnapshot{
+		ProjectID: uuid.New(),
+		Demand: DemandSnapshot{
+			ID:      uuid.New(),
+			Title:   "分析数据库",
+			Content: "检查慢查询",
+		},
+		DigitalEmployeePool: []ProjectMemberSnapshot{openAITestDatabaseMember(employeeID)},
+	}
+
+	plan, err := planner.Plan(context.Background(), snapshot)
+
+	require.NoError(t, err)
+	require.Len(t, plan.Tasks, 1)
+	task := plan.Tasks[0]
+	require.Equal(t, 100, task.SelectionScore)
+	require.Equal(t, []string{"database.read", "sql.analysis"}, task.MatchedCapabilities)
+	require.Empty(t, task.MissingCapabilities)
+	require.Equal(t, PlanningProfileSnapshotHash(*snapshot.DigitalEmployeePool[0].PlanningProfile), task.PlanningProfileSnapshotHash)
+}
+
+func TestOpenAICompatiblePlannerRejectsIncoherentSelectionEvidenceAndRetries(t *testing.T) {
+	employeeID := uuid.New()
+	client := &countingChatCompletionClient{
+		content: fmt.Sprintf(`{
+			"reason":"按能力选择数据库分析员工",
+			"requires_human_review":false,
+			"tasks":[{
+				"key":"analyze-db",
+				"title":"分析数据库",
+				"summary":"检查慢查询",
+				"selected_employee_id":%q,
+				"employee_selection_reason":"具备数据库分析经验",
+				"required_capabilities":["database.read","sql.analysis"],
+				"matched_capabilities":["model.guess"],
+				"missing_capabilities":[],
+				"permission_requirements":["database.read:dev_database"],
+				"tool_requirements":["mcp:postgres.readonly"],
+				"runtime_requirements":["provider:codex"],
+				"verification_requirements":["只读查询成功"],
+				"selection_score":100,
+				"expected_outputs":["execution_summary"],
+				"input_requirements":{},
+				"handoff_contract":{},
+				"blocked_by_keys":[],
+				"risk_level":"medium",
+				"task_kind":"database_analysis"
+			}],
+			"budget_estimate":{},
+			"template_key":"database_analysis",
+			"planner_metadata":{"provider":"openai-compatible"}
+		}`, employeeID.String()),
+	}
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
+		MaxAttempts: 2,
+	}, client)
+
+	_, err := planner.Plan(context.Background(), CoordinationSnapshot{
+		ProjectID: uuid.New(),
+		Demand:    DemandSnapshot{ID: uuid.New(), Title: "分析数据库", Content: "检查慢查询"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			openAITestDatabaseMember(employeeID),
+		},
+	})
+
+	require.ErrorIs(t, err, ErrInvalidRouteDecision)
+	require.Equal(t, int32(2), client.calls.Load())
+}
+
+func TestOpenAICompatiblePlannerRejectsPolicyReviewPlanWithIncoherentSelectionEvidence(t *testing.T) {
+	employeeID := uuid.New()
+	client := &countingChatCompletionClient{
+		content: fmt.Sprintf(`{
+			"reason":"策略要求人工审核但模型证据不一致",
+			"requires_human_review":true,
+			"tasks":[{
+				"key":"analyze-db",
+				"title":"分析数据库",
+				"summary":"检查慢查询",
+				"selected_employee_id":%q,
+				"employee_selection_reason":"具备数据库分析经验",
+				"required_capabilities":["database.read","sql.analysis"],
+				"matched_capabilities":["model.guess"],
+				"missing_capabilities":[],
+				"permission_requirements":["database.read:dev_database"],
+				"tool_requirements":["mcp:postgres.readonly"],
+				"runtime_requirements":["provider:codex"],
+				"verification_requirements":["只读查询成功"],
+				"selection_score":100,
+				"expected_outputs":["execution_summary"],
+				"input_requirements":{},
+				"handoff_contract":{},
+				"blocked_by_keys":[],
+				"risk_level":"medium",
+				"requires_human_approval":true,
+				"task_kind":"database_analysis"
+			}],
+			"budget_estimate":{},
+			"template_key":"database_analysis",
+			"planner_metadata":{"provider":"openai-compatible"}
+		}`, employeeID.String()),
+	}
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
+		MaxAttempts: 2,
+	}, client)
+
+	_, err := planner.Plan(context.Background(), CoordinationSnapshot{
+		ProjectID: uuid.New(),
+		Demand:    DemandSnapshot{ID: uuid.New(), Title: "分析数据库", Content: "检查慢查询"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			openAITestDatabaseMember(employeeID),
+		},
+		CoordinationPolicy: map[string]any{"require_human_review_for_new_demands": true},
+	})
+
+	require.ErrorIs(t, err, ErrInvalidRouteDecision)
+	require.Equal(t, int32(2), client.calls.Load())
 }
 
 func TestOpenAICompatiblePlannerDecodesSelectionEvidence(t *testing.T) {
@@ -760,6 +991,64 @@ func (f *capturingChatCompletionClient) CreateChatCompletion(ctx context.Context
 	_ = ctx
 	f.req = req
 	return f.content, nil
+}
+
+func openAITestExecutorMember(employeeID uuid.UUID) ProjectMemberSnapshot {
+	return ProjectMemberSnapshot{
+		PrincipalID:     employeeID,
+		ProjectRole:     "executor",
+		Status:          "active",
+		PlanningProfile: openAITestExecutorProfile(employeeID),
+	}
+}
+
+func openAITestExecutorProfile(employeeID uuid.UUID) *DigitalEmployeePlanningProfile {
+	return &DigitalEmployeePlanningProfile{
+		DigitalEmployeeID: employeeID,
+		RoleProfile:       PlanningRoleProfile{PrimaryRole: "executor"},
+		Capabilities: []PlanningCapability{{
+			Key:        "execution",
+			Level:      "strong",
+			Source:     "test",
+			Confidence: 1,
+		}},
+		RuntimeRequirements: PlanningRuntimeRequirements{
+			ProviderTypes:  []string{"codex"},
+			ProviderStatus: "ready",
+		},
+		LoadState:        PlanningLoadState{AvailableSlots: 1, Lendable: true},
+		ProfileFreshness: PlanningProfileFreshness{SourceState: "ready"},
+	}
+}
+
+func openAITestDatabaseMember(employeeID uuid.UUID) ProjectMemberSnapshot {
+	return ProjectMemberSnapshot{
+		PrincipalID:     employeeID,
+		ProjectRole:     "executor",
+		Status:          "active",
+		DisplayName:     "数据库员工",
+		PlanningProfile: openAITestDatabaseProfile(employeeID),
+	}
+}
+
+func openAITestDatabaseProfile(employeeID uuid.UUID) *DigitalEmployeePlanningProfile {
+	return &DigitalEmployeePlanningProfile{
+		DigitalEmployeeID: employeeID,
+		RoleProfile:       PlanningRoleProfile{PrimaryRole: "data_analyst"},
+		Capabilities: []PlanningCapability{
+			{Key: "database.read", Level: "strong", Source: "test", Confidence: 1},
+			{Key: "sql.analysis", Level: "strong", Source: "test", Confidence: 1},
+		},
+		Skills:       []PlanningSkill{{Key: "sql.analysis", Source: "test"}},
+		ToolBindings: []PlanningToolBinding{{Type: "mcp", Key: "postgres.readonly", Status: "available"}},
+		RuntimeRequirements: PlanningRuntimeRequirements{
+			ProviderTypes:  []string{"codex"},
+			ProviderStatus: "ready",
+		},
+		Permissions:      []PlanningPermission{{Scope: "database.read", Resource: "dev_database", Status: "granted"}},
+		LoadState:        PlanningLoadState{AvailableSlots: 1, Lendable: true},
+		ProfileFreshness: PlanningProfileFreshness{SourceState: "ready"},
+	}
 }
 
 type failingRoutePlanner struct {
