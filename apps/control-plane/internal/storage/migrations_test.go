@@ -741,7 +741,13 @@ func TestExecutionLedgerAppendOnlyHardeningMigration(t *testing.T) {
 	}
 	query := string(querySQL)
 	for _, fragment := range []string{
-		"WITH source_event_matches AS",
+		"WITH candidate_attempts AS",
+		"eligible_attempts AS",
+		"source_event_matches AS",
+		"exact_match_count > 0",
+		"AND exact_provider_session_match",
+		"exact_match_count = 0",
+		"AND NULLIF(attempt_provider_session_id, '') IS NULL",
 		"source_event AS (",
 		"FROM source_event_matches",
 		"WHERE match_count = 1",
