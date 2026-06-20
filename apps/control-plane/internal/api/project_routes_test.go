@@ -395,6 +395,38 @@ func TestProjectExecutionTraceRouteUsesConsoleAuth(t *testing.T) {
 	}
 }
 
+func TestProjectExecutionTraceRouteRejectsMalformedUUIDFilters(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	projectID := uuid.New()
+	service := &routeProjectService{projectID: projectID}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	for _, query := range []string{"attempt_id=bad", "project_task_id=bad"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/execution-trace?"+query, nil)
+		req.AddCookie(cookie)
+		resp := httptest.NewRecorder()
+		server.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("expected execution trace route with %s to return 400, got %d: %s", query, resp.Code, resp.Body.String())
+		}
+	}
+}
+
 func TestProjectDemandLaunchDetailRouteUsesDemandID(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
