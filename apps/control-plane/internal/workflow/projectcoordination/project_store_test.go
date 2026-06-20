@@ -63,6 +63,115 @@ func TestProjectStoreSnapshotIncludesOnlyActiveDigitalExecutorsAndReviewers(t *t
 	}
 }
 
+type fakeLendingGatekeeper struct {
+	employeeTeams map[uuid.UUID]uuid.UUID
+	grantedTeams  map[uuid.UUID]bool
+	resolveErr    error
+	grantsErr     error
+}
+
+func (g fakeLendingGatekeeper) ResolveEmployeeTeams(_ context.Context, _ uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
+	if g.resolveErr != nil {
+		return nil, g.resolveErr
+	}
+	out := map[uuid.UUID]uuid.UUID{}
+	for _, id := range employeeIDs {
+		if team, ok := g.employeeTeams[id]; ok {
+			out[id] = team
+		}
+	}
+	return out, nil
+}
+
+func (g fakeLendingGatekeeper) EffectiveLendingTeams(_ context.Context, _, _ uuid.UUID) (map[uuid.UUID]bool, error) {
+	if g.grantsErr != nil {
+		return nil, g.grantsErr
+	}
+	return g.grantedTeams, nil
+}
+
+func TestLoadSnapshotAppliesLendingGate(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	ownTeam := uuid.New()
+	grantedTeam := uuid.New()
+	foreignTeam := uuid.New()
+	ownEmp := uuid.New()
+	grantedEmp := uuid.New()
+	foreignEmp := uuid.New()
+	noTeamEmp := uuid.New()
+
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, TeamID: &ownTeam},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members: []project.ProjectMember{
+			{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, PrincipalType: project.PrincipalTypeDigitalEmployee, PrincipalID: ownEmp, ProjectRole: project.ProjectRoleExecutor, Status: "active"},
+			{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, PrincipalType: project.PrincipalTypeDigitalEmployee, PrincipalID: grantedEmp, ProjectRole: project.ProjectRoleExecutor, Status: "active"},
+			{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, PrincipalType: project.PrincipalTypeDigitalEmployee, PrincipalID: foreignEmp, ProjectRole: project.ProjectRoleExecutor, Status: "active"},
+			{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, PrincipalType: project.PrincipalTypeDigitalEmployee, PrincipalID: noTeamEmp, ProjectRole: project.ProjectRoleExecutor, Status: "active"},
+		},
+	}
+	gate := fakeLendingGatekeeper{
+		employeeTeams: map[uuid.UUID]uuid.UUID{ownEmp: ownTeam, grantedEmp: grantedTeam, foreignEmp: foreignTeam},
+		grantedTeams:  map[uuid.UUID]bool{grantedTeam: true},
+	}
+	store := NewProjectStore(repo).WithLendingGatekeeper(gate)
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{TenantID: tenantID, ProjectID: projectID, DemandID: demandID})
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	got := map[uuid.UUID]bool{}
+	for _, member := range snapshot.DigitalEmployeePool {
+		got[member.PrincipalID] = true
+	}
+	if !got[ownEmp] || !got[grantedEmp] || !got[noTeamEmp] {
+		t.Fatalf("own-team, granted-foreign-team and no-team employees must be eligible: %#v", snapshot.DigitalEmployeePool)
+	}
+	if got[foreignEmp] {
+		t.Fatalf("ungranted foreign-team employee must be gated out: %#v", snapshot.DigitalEmployeePool)
+	}
+	skipEvents := 0
+	for _, event := range repo.events {
+		if event.EventType == project.ProjectEventLendingEmployeeSkipped {
+			skipEvents++
+		}
+	}
+	if skipEvents != 1 {
+		t.Fatalf("expected one lending-skip event, got %d", skipEvents)
+	}
+}
+
+func TestLoadSnapshotLendingGateFailsOpen(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	ownTeam := uuid.New()
+	foreignEmp := uuid.New()
+
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, TeamID: &ownTeam},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members: []project.ProjectMember{
+			{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, PrincipalType: project.PrincipalTypeDigitalEmployee, PrincipalID: foreignEmp, ProjectRole: project.ProjectRoleExecutor, Status: "active"},
+		},
+	}
+	// A lending lookup error must not strand planning: the gate fails open (no filtering).
+	gate := fakeLendingGatekeeper{grantsErr: errLendingGateProbe}
+	store := NewProjectStore(repo).WithLendingGatekeeper(gate)
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{TenantID: tenantID, ProjectID: projectID, DemandID: demandID})
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if len(snapshot.DigitalEmployeePool) != 1 {
+		t.Fatalf("gate error should fail open and keep the candidate: %#v", snapshot.DigitalEmployeePool)
+	}
+}
+
+var errLendingGateProbe = errors.New("lending gate probe")
+
 func TestProjectStorePersistRouteDecisionAggregatesGraphFields(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

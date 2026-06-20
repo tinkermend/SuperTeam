@@ -96,6 +96,14 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: ListEffectiveLendingTeamsForProject :many
+-- 协调线程挑数字员工前的借调闸门：项目当前持有有效（approved/auto_approved）借调授权的团队集合。
+SELECT DISTINCT team_id
+FROM team_lending_request
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND status IN ('approved', 'auto_approved');
+
 -- name: ApproveTeamLendingRequest :one
 -- 仅 pending（manual/超纲转人工）请求可被人工通过；通过时落定授予额度。
 UPDATE team_lending_request SET

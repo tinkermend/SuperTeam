@@ -196,6 +196,56 @@ func (r *fakeRepository) GetTeamOwnerUserIDs(_ context.Context, _, _ uuid.UUID) 
 	return r.ownerUserIDs, nil
 }
 
+func (r *fakeRepository) ListEffectiveLendingTeams(_ context.Context, tenantID, projectID uuid.UUID) ([]uuid.UUID, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	seen := map[uuid.UUID]bool{}
+	teams := make([]uuid.UUID, 0)
+	for _, request := range r.requests {
+		if request.TenantID != tenantID || request.ProjectID != projectID {
+			continue
+		}
+		if request.Status != RequestStatusApproved && request.Status != RequestStatusAutoApproved {
+			continue
+		}
+		if seen[request.TeamID] {
+			continue
+		}
+		seen[request.TeamID] = true
+		teams = append(teams, request.TeamID)
+	}
+	return teams, nil
+}
+
+func TestEffectiveLendingTeams(t *testing.T) {
+	tenantID, projectID := uuid.New(), uuid.New()
+	approvedTeam, autoTeam, rejectedTeam, otherProjectTeam := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	repo := newFakeRepository()
+	seed := func(teamID, project uuid.UUID, status RequestStatus) {
+		id := uuid.New()
+		repo.requests[id] = Request{ID: id, TenantID: tenantID, TeamID: teamID, ProjectID: project, Status: status}
+	}
+	seed(approvedTeam, projectID, RequestStatusApproved)
+	seed(autoTeam, projectID, RequestStatusAutoApproved)
+	seed(rejectedTeam, projectID, RequestStatusRejected)
+	seed(otherProjectTeam, uuid.New(), RequestStatusApproved)
+
+	service := mustService(t, repo)
+	granted, err := service.EffectiveLendingTeams(context.Background(), tenantID, projectID)
+	if err != nil {
+		t.Fatalf("effective lending teams: %v", err)
+	}
+	if !granted[approvedTeam] || !granted[autoTeam] {
+		t.Fatalf("approved and auto_approved teams must be granted: %#v", granted)
+	}
+	if granted[rejectedTeam] || granted[otherProjectTeam] {
+		t.Fatalf("rejected or other-project grants must not appear: %#v", granted)
+	}
+	if len(granted) != 2 {
+		t.Fatalf("expected exactly two granted teams, got %d", len(granted))
+	}
+}
+
 func mustService(t *testing.T, repo Repository) *Service {
 	t.Helper()
 	service, err := NewService(repo, nil, nil)

@@ -143,6 +143,51 @@ func (a digitalEmployeeReadinessAdapter) AreRuntimeReady(ctx context.Context, te
 	return a.repository.AreRuntimeReady(ctx, tenantID, employeeIDs)
 }
 
+// lendingTeamsResolver resolves the set of teams a project may currently borrow from
+// (effective approved/auto_approved lending grants). Satisfied by teamlending's repository.
+type lendingTeamsResolver interface {
+	ListEffectiveLendingTeams(ctx context.Context, tenantID, projectID uuid.UUID) ([]uuid.UUID, error)
+}
+
+// lendingGatekeeperAdapter implements projectcoordination.LendingGatekeeper: it resolves
+// each digital employee's owning team and the project's effective lending grants so the
+// coordinator can exclude borrowed employees from foreign, ungranted teams.
+type lendingGatekeeperAdapter struct {
+	employees employee.Repository
+	lending   lendingTeamsResolver
+}
+
+func (a lendingGatekeeperAdapter) ResolveEmployeeTeams(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
+	teams := make(map[uuid.UUID]uuid.UUID, len(employeeIDs))
+	for _, id := range employeeIDs {
+		if id == uuid.Nil {
+			continue
+		}
+		record, err := a.employees.GetDigitalEmployee(ctx, tenantID, id)
+		if err != nil {
+			return nil, err
+		}
+		if record.TeamID != nil && *record.TeamID != uuid.Nil {
+			teams[id] = *record.TeamID
+		}
+	}
+	return teams, nil
+}
+
+func (a lendingGatekeeperAdapter) EffectiveLendingTeams(ctx context.Context, tenantID, projectID uuid.UUID) (map[uuid.UUID]bool, error) {
+	teamIDs, err := a.lending.ListEffectiveLendingTeams(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	granted := make(map[uuid.UUID]bool, len(teamIDs))
+	for _, teamID := range teamIDs {
+		if teamID != uuid.Nil {
+			granted[teamID] = true
+		}
+	}
+	return granted, nil
+}
+
 func runStartRetryable(err error) bool {
 	switch {
 	case errors.Is(err, employee.ErrInvalidInput):
@@ -334,6 +379,8 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return nil, err
 	}
 
+	teamLendingRepository := teamlending.NewPgRepository(q)
+
 	coordinatorClient := project.CoordinatorSignalClient(project.NoopCoordinatorSignalClient{})
 	var coordinationWorker lifecycleWorker
 	var temporalClientClose func()
@@ -352,7 +399,8 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			approvalService,
 			decisionProjector,
 			projectTaskRunStarterAdapter{runService: runService},
-		).WithDigitalEmployeeReadiness(digitalEmployeeReadinessAdapter{repository: employeeRepository})
+		).WithDigitalEmployeeReadiness(digitalEmployeeReadinessAdapter{repository: employeeRepository}).
+			WithLendingGatekeeper(lendingGatekeeperAdapter{employees: employeeRepository, lending: teamLendingRepository})
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore, routePlannerFromConfig(cfg.Planner))
 		coordinationWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
 	}
@@ -384,7 +432,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	capabilityService := capability.NewService(capabilityRepository, credentialSealer)
 
-	teamLendingRepository := teamlending.NewPgRepository(q)
 	teamLendingService, err := teamlending.NewService(teamLendingRepository, auditService, teamLendingInboxProjector{service: inboxService})
 	if err != nil {
 		return nil, err

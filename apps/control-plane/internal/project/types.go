@@ -99,6 +99,7 @@ const (
 	ProjectEventAcceptanceSubmitted     ProjectEventType = "project.acceptance.submitted"
 	ProjectEventArchiveSnapshotCreated  ProjectEventType = "project.archive_snapshot.created"
 	ProjectEventArchiveRetentionPending ProjectEventType = "project.archive.retention_pending"
+	ProjectEventLendingEmployeeSkipped  ProjectEventType = "project.lending.employee_skipped"
 )
 
 type EvidenceVerificationStatus string

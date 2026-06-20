@@ -205,6 +205,25 @@ func (s *Service) ListRequestsByProject(ctx context.Context, tenantID, projectID
 	return requestPtrs(records), nil
 }
 
+// EffectiveLendingTeams 返回项目当前持有有效（approved/auto_approved）借调授权的团队集合，
+// 供协调线程挑数字员工前的借调闸门批量判断（key 为团队 ID）。
+func (s *Service) EffectiveLendingTeams(ctx context.Context, tenantID, projectID uuid.UUID) (map[uuid.UUID]bool, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id and project_id are required", ErrInvalidInput)
+	}
+	teams, err := s.repository.ListEffectiveLendingTeams(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list effective lending teams: %w", err)
+	}
+	granted := make(map[uuid.UUID]bool, len(teams))
+	for _, teamID := range teams {
+		if teamID != uuid.Nil {
+			granted[teamID] = true
+		}
+	}
+	return granted, nil
+}
+
 // ApproveRequest 团队负责人通过一个 pending 请求（含超纲转人工的例外）。
 func (s *Service) ApproveRequest(ctx context.Context, input DecideRequestInput) (*Request, error) {
 	return s.decideRequest(ctx, input, RequestStatusApproved, "team.lending.request.approve")

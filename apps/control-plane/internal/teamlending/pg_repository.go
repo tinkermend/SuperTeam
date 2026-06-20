@@ -212,6 +212,17 @@ func (r *PgRepository) GetTeamOwnerUserIDs(ctx context.Context, tenantID, teamID
 	return owners, nil
 }
 
+func (r *PgRepository) ListEffectiveLendingTeams(ctx context.Context, tenantID, projectID uuid.UUID) ([]uuid.UUID, error) {
+	teams, err := r.q.ListEffectiveLendingTeamsForProject(ctx, queries.ListEffectiveLendingTeamsForProjectParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return teams, nil
+}
+
 func policyFromQuery(record queries.TeamLendingPolicy) Policy {
 	budget, _ := numericToString(record.BudgetCeiling)
 	capability, _ := mapFromJSONB(record.CapabilityCeiling, "capability_ceiling")

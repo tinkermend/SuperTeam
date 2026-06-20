@@ -217,6 +217,8 @@ type Querier interface {
 	ListDigitalEmployeeOverviewOperationalFacts(ctx context.Context, arg ListDigitalEmployeeOverviewOperationalFactsParams) ([]ListDigitalEmployeeOverviewOperationalFactsRow, error)
 	ListDigitalEmployeeRuns(ctx context.Context, arg ListDigitalEmployeeRunsParams) ([]TaskRun, error)
 	ListDigitalEmployees(ctx context.Context, arg ListDigitalEmployeesParams) ([]DigitalEmployee, error)
+	// 协调线程挑数字员工前的借调闸门：项目当前持有有效（approved/auto_approved）借调授权的团队集合。
+	ListEffectiveLendingTeamsForProject(ctx context.Context, arg ListEffectiveLendingTeamsForProjectParams) ([]uuid.UUID, error)
 	ListEffectiveMCPServersForEmployee(ctx context.Context, arg ListEffectiveMCPServersForEmployeeParams) ([]ListEffectiveMCPServersForEmployeeRow, error)
 	ListInboxItems(ctx context.Context, arg ListInboxItemsParams) ([]InboxItem, error)
 	ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)

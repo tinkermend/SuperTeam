@@ -19,6 +19,9 @@ type Repository interface {
 	RevokeRequest(ctx context.Context, params DecideRequestParams) (Request, error)
 	// GetTeamOwnerUserIDs 取团队的人类负责人（借调审批 inbox 目标）。
 	GetTeamOwnerUserIDs(ctx context.Context, tenantID, teamID uuid.UUID) ([]uuid.UUID, error)
+	// ListEffectiveLendingTeams 返回项目当前持有有效（approved/auto_approved）借调授权的团队集合，
+	// 供协调线程挑数字员工前做借调闸门。
+	ListEffectiveLendingTeams(ctx context.Context, tenantID, projectID uuid.UUID) ([]uuid.UUID, error)
 }
 
 // UpsertPolicyParams 设置/更新借调策略的仓储参数。

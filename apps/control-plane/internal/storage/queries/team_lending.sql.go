@@ -223,6 +223,40 @@ func (q *Queries) GetTeamLendingRequest(ctx context.Context, arg GetTeamLendingR
 	return i, err
 }
 
+const ListEffectiveLendingTeamsForProject = `-- name: ListEffectiveLendingTeamsForProject :many
+SELECT DISTINCT team_id
+FROM team_lending_request
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND status IN ('approved', 'auto_approved')
+`
+
+type ListEffectiveLendingTeamsForProjectParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+// 协调线程挑数字员工前的借调闸门：项目当前持有有效（approved/auto_approved）借调授权的团队集合。
+func (q *Queries) ListEffectiveLendingTeamsForProject(ctx context.Context, arg ListEffectiveLendingTeamsForProjectParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, ListEffectiveLendingTeamsForProject, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var team_id uuid.UUID
+		if err := rows.Scan(&team_id); err != nil {
+			return nil, err
+		}
+		items = append(items, team_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListTeamLendingRequestsByProject = `-- name: ListTeamLendingRequestsByProject :many
 SELECT id, tenant_id, team_id, project_id, status, requested_by_user_id, request_reason, requested_budget, requested_capability, granted_budget, granted_capability, is_exception, decided_by_user_id, decided_at, decision_reason, created_at, updated_at
 FROM team_lending_request
