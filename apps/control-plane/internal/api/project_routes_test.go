@@ -357,6 +357,44 @@ func TestProjectTaskLivenessRouteUsesConsoleAuth(t *testing.T) {
 	}
 }
 
+func TestProjectExecutionTraceRouteUsesConsoleAuth(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	projectID := uuid.New()
+	attemptID := uuid.New()
+	service := &routeProjectService{projectID: projectID}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/execution-trace?attempt_id="+attemptID.String()+"&limit=4&offset=2", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected execution trace route to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	if service.executionTraceReq.TenantID != expectedTenantID || service.executionTraceReq.ProjectID != projectID || service.executionTraceReq.Limit != 4 || service.executionTraceReq.Offset != 2 {
+		t.Fatalf("expected execution trace tenant/project/page, got %#v", service.executionTraceReq)
+	}
+	if service.executionTraceReq.ProjectTaskAttemptID == nil || *service.executionTraceReq.ProjectTaskAttemptID != attemptID {
+		t.Fatalf("expected execution trace attempt filter, got %#v", service.executionTraceReq.ProjectTaskAttemptID)
+	}
+}
+
 func TestProjectDemandLaunchDetailRouteUsesDemandID(t *testing.T) {
 	authService, err := auth.NewService(newRouteAuthRepo())
 	if err != nil {
@@ -636,6 +674,7 @@ type routeProjectService struct {
 	taskLiveness              []project.ProjectTaskLiveness
 	taskLivenessTenantID      uuid.UUID
 	taskLivenessProjectID     uuid.UUID
+	executionTraceReq         project.GetExecutionTraceRequest
 	archiveErr                error
 }
 
@@ -826,6 +865,17 @@ func (s *routeProjectService) ResolveDecision(ctx context.Context, req project.R
 
 func (s *routeProjectService) ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.ExecutionSummary, error) {
 	return nil, nil
+}
+
+func (s *routeProjectService) GetExecutionTrace(ctx context.Context, req project.GetExecutionTraceRequest) (*project.ProjectExecutionTrace, error) {
+	s.executionTraceReq = req
+	return &project.ProjectExecutionTrace{
+		ProjectID: req.ProjectID,
+		Summary: project.ProjectExecutionTraceSummary{
+			AttemptCount: 1,
+		},
+		Attempts: []project.ProjectExecutionTraceAttempt{},
+	}, nil
 }
 
 func (s *routeProjectService) ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.TransferRequest, error) {

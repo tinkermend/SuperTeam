@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -36,6 +37,7 @@ type HandlerService interface {
 	ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error)
 	ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error)
 	ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error)
+	GetExecutionTrace(ctx context.Context, req GetExecutionTraceRequest) (*ProjectExecutionTrace, error)
 	ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]TransferRequest, error)
 	StartProjectTaskAttempt(ctx context.Context, req StartProjectTaskAttemptRequest) (*ProjectTaskAttempt, error)
 	RenewProjectTaskAttemptLease(ctx context.Context, req RenewProjectTaskAttemptLeaseRequest) error
@@ -553,6 +555,55 @@ func (h *HTTPHandler) ListExecutionSummaries(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, executionSummaryResponses(summaries))
+}
+
+func (h *HTTPHandler) GetExecutionTrace(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	limit, offset, ok := paginationFromRequest(w, r)
+	if !ok {
+		return
+	}
+	req := GetExecutionTraceRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Limit:     limit,
+		Offset:    offset,
+	}
+	query := r.URL.Query()
+	if raw := query.Get("project_task_id"); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			http.Error(w, "invalid project_task_id", http.StatusBadRequest)
+			return
+		}
+		req.ProjectTaskID = &id
+	}
+	if raw := query.Get("attempt_id"); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			http.Error(w, "invalid attempt_id", http.StatusBadRequest)
+			return
+		}
+		req.ProjectTaskAttemptID = &id
+	}
+	if value := strings.TrimSpace(query.Get("event_type")); value != "" {
+		req.EventType = &value
+	}
+	if value := strings.TrimSpace(query.Get("error_family")); value != "" {
+		req.ErrorFamily = &value
+	}
+	trace, err := service.GetExecutionTrace(r.Context(), req)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	if trace == nil {
+		trace = &ProjectExecutionTrace{ProjectID: projectID}
+	}
+	writeJSON(w, http.StatusOK, executionTraceResponseFromDomain(*trace))
 }
 
 func (h *HTTPHandler) ListTransferRequests(w http.ResponseWriter, r *http.Request) {
@@ -1623,6 +1674,74 @@ type executionSummaryResponse struct {
 	CreatedAt             string         `json:"created_at,omitempty"`
 }
 
+type projectExecutionTraceResponse struct {
+	ProjectID string                                 `json:"project_id"`
+	Summary   projectExecutionTraceSummaryResponse   `json:"summary"`
+	Attempts  []projectExecutionTraceAttemptResponse `json:"attempts"`
+}
+
+type projectExecutionTraceSummaryResponse struct {
+	AttemptCount             int32   `json:"attempt_count"`
+	FailedAttemptCount       int32   `json:"failed_attempt_count"`
+	HumanReviewRequiredCount int32   `json:"human_review_required_count"`
+	ArtifactRefCount         int32   `json:"artifact_ref_count"`
+	EvidenceRefCount         int32   `json:"evidence_ref_count"`
+	LatestErrorFamily        *string `json:"latest_error_family,omitempty"`
+}
+
+type projectExecutionTraceAttemptResponse struct {
+	ProjectTaskID     string                                       `json:"project_task_id"`
+	AttemptID         string                                       `json:"attempt_id"`
+	AttemptNo         int32                                        `json:"attempt_no"`
+	Status            string                                       `json:"status"`
+	RuntimeNodeID     *string                                      `json:"runtime_node_id,omitempty"`
+	ProviderType      *string                                      `json:"provider_type,omitempty"`
+	ProviderSessionID *string                                      `json:"provider_session_id,omitempty"`
+	StartedAt         *string                                      `json:"started_at,omitempty"`
+	FinishedAt        *string                                      `json:"finished_at,omitempty"`
+	FailureFamily     *string                                      `json:"failure_family,omitempty"`
+	Retryable         *bool                                        `json:"retryable,omitempty"`
+	Events            []executionLedgerEventResponse               `json:"events"`
+	Summary           *projectExecutionTraceAttemptSummaryResponse `json:"summary,omitempty"`
+}
+
+type executionLedgerEventResponse struct {
+	ID                   string         `json:"id"`
+	TenantID             string         `json:"tenant_id"`
+	TeamID               *string        `json:"team_id,omitempty"`
+	ProjectID            string         `json:"project_id"`
+	ProjectTaskID        *string        `json:"project_task_id,omitempty"`
+	ProjectTaskAttemptID *string        `json:"project_task_attempt_id,omitempty"`
+	EventType            string         `json:"event_type"`
+	SourceType           string         `json:"source_type"`
+	SourceID             string         `json:"source_id"`
+	ActorType            string         `json:"actor_type"`
+	ActorID              *string        `json:"actor_id,omitempty"`
+	RuntimeNodeID        *string        `json:"runtime_node_id,omitempty"`
+	ProviderType         *string        `json:"provider_type,omitempty"`
+	ProviderSessionID    *string        `json:"provider_session_id,omitempty"`
+	InputSummary         *string        `json:"input_summary,omitempty"`
+	OutputSummary        *string        `json:"output_summary,omitempty"`
+	ErrorFamily          *string        `json:"error_family,omitempty"`
+	ErrorCode            *string        `json:"error_code,omitempty"`
+	ErrorMessage         *string        `json:"error_message,omitempty"`
+	Retryable            *bool          `json:"retryable,omitempty"`
+	ArtifactRefs         []any          `json:"artifact_refs"`
+	EvidenceRefs         []any          `json:"evidence_refs"`
+	Metadata             map[string]any `json:"metadata"`
+	OccurredAt           string         `json:"occurred_at"`
+	CreatedAt            string         `json:"created_at"`
+}
+
+type projectExecutionTraceAttemptSummaryResponse struct {
+	ExecutionSummaryID  string `json:"execution_summary_id"`
+	Conclusion          string `json:"conclusion"`
+	RequiresHumanReview bool   `json:"requires_human_review"`
+	ArtifactRefs        []any  `json:"artifact_refs"`
+	EvidenceRefs        []any  `json:"evidence_refs"`
+	CreatedAt           string `json:"created_at"`
+}
+
 type transferRequestResponse struct {
 	ID                           string   `json:"id"`
 	TenantID                     string   `json:"tenant_id"`
@@ -2259,6 +2378,99 @@ func executionSummaryResponseFromDomain(summary ExecutionSummary) executionSumma
 		TransferRequestID:     stringPtr(summary.TransferRequestID),
 		CreatedEventID:        stringPtr(summary.CreatedEventID),
 		CreatedAt:             timeValue(summary.CreatedAt),
+	}
+}
+
+func executionTraceResponseFromDomain(trace ProjectExecutionTrace) projectExecutionTraceResponse {
+	return projectExecutionTraceResponse{
+		ProjectID: trace.ProjectID.String(),
+		Summary: projectExecutionTraceSummaryResponse{
+			AttemptCount:             trace.Summary.AttemptCount,
+			FailedAttemptCount:       trace.Summary.FailedAttemptCount,
+			HumanReviewRequiredCount: trace.Summary.HumanReviewRequiredCount,
+			ArtifactRefCount:         trace.Summary.ArtifactRefCount,
+			EvidenceRefCount:         trace.Summary.EvidenceRefCount,
+			LatestErrorFamily:        trace.Summary.LatestErrorFamily,
+		},
+		Attempts: executionTraceAttemptResponses(trace.Attempts),
+	}
+}
+
+func executionTraceAttemptResponses(attempts []ProjectExecutionTraceAttempt) []projectExecutionTraceAttemptResponse {
+	responses := make([]projectExecutionTraceAttemptResponse, 0, len(attempts))
+	for _, attempt := range attempts {
+		responses = append(responses, executionTraceAttemptResponseFromDomain(attempt))
+	}
+	return responses
+}
+
+func executionTraceAttemptResponseFromDomain(attempt ProjectExecutionTraceAttempt) projectExecutionTraceAttemptResponse {
+	return projectExecutionTraceAttemptResponse{
+		ProjectTaskID:     attempt.ProjectTaskID.String(),
+		AttemptID:         attempt.AttemptID.String(),
+		AttemptNo:         attempt.AttemptNo,
+		Status:            attempt.Status,
+		RuntimeNodeID:     stringPtr(attempt.RuntimeNodeID),
+		ProviderType:      attempt.ProviderType,
+		ProviderSessionID: attempt.ProviderSessionID,
+		StartedAt:         timePtr(attempt.StartedAt),
+		FinishedAt:        timePtr(attempt.FinishedAt),
+		FailureFamily:     attempt.FailureFamily,
+		Retryable:         attempt.Retryable,
+		Events:            executionLedgerEventResponses(attempt.Events),
+		Summary:           executionTraceAttemptSummaryResponseFromDomain(attempt.Summary),
+	}
+}
+
+func executionLedgerEventResponses(events []ExecutionLedgerEvent) []executionLedgerEventResponse {
+	responses := make([]executionLedgerEventResponse, 0, len(events))
+	for _, event := range events {
+		responses = append(responses, executionLedgerEventResponseFromDomain(event))
+	}
+	return responses
+}
+
+func executionLedgerEventResponseFromDomain(event ExecutionLedgerEvent) executionLedgerEventResponse {
+	return executionLedgerEventResponse{
+		ID:                   event.ID.String(),
+		TenantID:             event.TenantID.String(),
+		TeamID:               stringPtr(event.TeamID),
+		ProjectID:            event.ProjectID.String(),
+		ProjectTaskID:        stringPtr(event.ProjectTaskID),
+		ProjectTaskAttemptID: stringPtr(event.ProjectTaskAttemptID),
+		EventType:            event.EventType,
+		SourceType:           event.SourceType,
+		SourceID:             event.SourceID,
+		ActorType:            event.ActorType,
+		ActorID:              event.ActorID,
+		RuntimeNodeID:        stringPtr(event.RuntimeNodeID),
+		ProviderType:         event.ProviderType,
+		ProviderSessionID:    event.ProviderSessionID,
+		InputSummary:         event.InputSummary,
+		OutputSummary:        event.OutputSummary,
+		ErrorFamily:          event.ErrorFamily,
+		ErrorCode:            event.ErrorCode,
+		ErrorMessage:         event.ErrorMessage,
+		Retryable:            event.Retryable,
+		ArtifactRefs:         sliceOrEmpty(event.ArtifactRefs),
+		EvidenceRefs:         sliceOrEmpty(event.EvidenceRefs),
+		Metadata:             mapOrEmpty(event.Metadata),
+		OccurredAt:           timeValue(event.OccurredAt),
+		CreatedAt:            timeValue(event.CreatedAt),
+	}
+}
+
+func executionTraceAttemptSummaryResponseFromDomain(summary *ProjectExecutionTraceAttemptSummary) *projectExecutionTraceAttemptSummaryResponse {
+	if summary == nil {
+		return nil
+	}
+	return &projectExecutionTraceAttemptSummaryResponse{
+		ExecutionSummaryID:  summary.ExecutionSummaryID.String(),
+		Conclusion:          summary.Conclusion,
+		RequiresHumanReview: summary.RequiresHumanReview,
+		ArtifactRefs:        sliceOrEmpty(summary.ArtifactRefs),
+		EvidenceRefs:        sliceOrEmpty(summary.EvidenceRefs),
+		CreatedAt:           timeValue(summary.CreatedAt),
 	}
 }
 
