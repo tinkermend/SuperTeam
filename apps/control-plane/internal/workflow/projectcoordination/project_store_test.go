@@ -643,6 +643,35 @@ func TestProjectStoreRequestProjectAcceptanceReviewRollsBackStatusWhenApprovalCr
 	require.Empty(t, repo.decisionRequests)
 }
 
+func TestProjectStoreRequestProjectAcceptanceReviewRollsBackStatusWhenDecisionRequestCreationFails(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	ownerID := uuid.New()
+	decisionErr := errors.New("decision request store unavailable")
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{
+			ID:               projectID,
+			TenantID:         tenantID,
+			Status:           project.ProjectStatusRunning,
+			HumanOwnerUserID: ownerID,
+		},
+		createDecisionRequestErr: decisionErr,
+	}
+	approvals := &projectStoreApprovalCreator{}
+	store := NewProjectStoreWithApprovals(repo, approvals)
+
+	result, err := store.RequestProjectAcceptanceReview(context.Background(), RequestProjectAcceptanceReviewInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+
+	require.ErrorIs(t, err, decisionErr)
+	require.Equal(t, uuid.Nil, result.ID)
+	require.Equal(t, project.ProjectStatusRunning, repo.projectRecord.Status)
+	require.Len(t, repo.events, 1)
+	require.Empty(t, repo.decisionRequests)
+}
+
 func TestProjectStoreApplyProjectAcceptanceDecisionAcceptArchivesRejectReopens(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -1936,6 +1965,7 @@ type projectStoreMemoryRepository struct {
 	projectTaskGraphRequests              []project.CreateProjectTaskGraphRequest
 	decomposeAcceptedPlanRevisionRequests []project.DecomposeAcceptedPlanRevisionRequest
 	decisionRequests                      []project.DecisionRequest
+	createDecisionRequestErr              error
 
 	acceptanceReady   bool
 	acceptanceRecords []project.ProjectAcceptanceRecord
@@ -2593,6 +2623,9 @@ func (r *projectStoreMemoryRepository) FinishCoordinationJob(ctx context.Context
 }
 
 func (r *projectStoreMemoryRepository) CreateDecisionRequest(ctx context.Context, req project.CreateDecisionRequestRequest) (project.DecisionRequest, error) {
+	if r.createDecisionRequestErr != nil {
+		return project.DecisionRequest{}, r.createDecisionRequestErr
+	}
 	decision := project.DecisionRequest{
 		ID:                uuid.New(),
 		TenantID:          req.TenantID,

@@ -18,7 +18,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listUsers, type UserSummary } from "@/lib/api/auth";
 import type { InitialTeamMemberInput } from "@/lib/api/teams";
-import type { CreateTeamDraft } from "./create-team-drawer";
+import type { CreateTeamDraft } from "./create-team-draft";
 
 type CreateTeamMembersStepProps = {
   apiBaseUrl: string;

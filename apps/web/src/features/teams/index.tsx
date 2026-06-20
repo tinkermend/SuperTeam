@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Plus, UsersRound } from "lucide-react";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
@@ -9,7 +10,6 @@ import { ThemeSwitch } from "@/components/theme-switch";
 import { Button } from "@/components/ui/button";
 import {
   archiveTeam,
-  createTeam,
   disableTeam,
   getCurrentTeamGovernance,
   getTeamOverview,
@@ -17,10 +17,7 @@ import {
   restoreTeam,
 } from "@/lib/api/teams";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
-import {
-  CreateTeamDrawer,
-  type CreateTeamDraft,
-} from "./components/create-team-drawer";
+import { CreateTeamView } from "./components/create-team-page";
 import {
   TeamManagementToolbar,
   type TeamListFilters,
@@ -40,16 +37,40 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
   return <TeamDetailView apiBaseUrl={apiBaseUrl} teamId={teamId} />;
 }
 
+export function CreateTeamPage() {
+  const apiBaseUrl = resolveControlPlaneUrl();
+  const navigate = useNavigate();
+
+  return (
+    <>
+      <Header>
+        <Search />
+        <ThemeSwitch />
+      </Header>
+      <Main className="min-w-0 overflow-x-hidden">
+        <CreateTeamView
+          apiBaseUrl={apiBaseUrl}
+          onCancel={() => void navigate({ to: "/teams" })}
+          onCreated={(overview, { goToGovernance }) =>
+            void navigate({
+              hash: goToGovernance ? "governance" : undefined,
+              params: { teamId: overview.team.id },
+              to: "/teams/$teamId",
+            })
+          }
+        />
+      </Main>
+    </>
+  );
+}
+
 type TeamsViewProps = {
   apiBaseUrl: string;
   fetcher?: typeof fetch;
 };
 
 export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
-  const queryClient = useQueryClient();
   const [filters, setFilters] = useState<TeamListFilters>({ q: "" });
-  const [createOpen, setCreateOpen] = useState(false);
-  const [highlightedTeamId, setHighlightedTeamId] = useState<string>();
   const teams = useQuery({
     queryKey: ["team-summaries", filters],
     queryFn: () =>
@@ -61,31 +82,6 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
           status: filters.status,
         },
       ),
-  });
-  const createMutation = useMutation({
-    mutationFn: (draft: CreateTeamDraft) =>
-      createTeam(
-        { baseUrl: apiBaseUrl, fetcher },
-        {
-          name: draft.name.trim(),
-          slug: draft.slug.trim(),
-          human_owner_user_ids: draft.owner?.id ? [draft.owner.id] : [],
-          initial_members: draft.initial_members,
-          metadata: {
-            display: {
-              color_tone: draft.display.color_tone,
-              icon_key: draft.display.icon_key,
-            },
-          },
-        },
-      ),
-    onSuccess: (overview) => {
-      setCreateOpen(false);
-      setHighlightedTeamId(overview.team.id);
-      void queryClient.invalidateQueries({
-        queryKey: ["team-summaries"],
-      });
-    },
   });
 
   return (
@@ -107,9 +103,11 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
               </p>
             </div>
           </div>
-          <Button className="self-start sm:self-auto" onClick={() => setCreateOpen(true)} type="button">
-            <Plus data-icon="inline-start" />
-            新建团队
+          <Button asChild className="self-start sm:self-auto">
+            <Link to="/teams/new">
+              <Plus data-icon="inline-start" />
+              新建团队
+            </Link>
           </Button>
         </div>
 
@@ -121,26 +119,9 @@ export function TeamsView({ apiBaseUrl, fetcher }: TeamsViewProps) {
         <TeamCardGrid
           apiBaseUrl={apiBaseUrl}
           fetcher={fetcher}
-          highlightedTeamId={highlightedTeamId}
           isError={teams.isError}
           isLoading={teams.isLoading}
           teams={teams.data ?? []}
-        />
-        <CreateTeamDrawer
-          apiBaseUrl={apiBaseUrl}
-          fetcher={fetcher}
-          isSubmitting={createMutation.isPending}
-          onOpenChange={(open) => {
-            createMutation.reset();
-            setCreateOpen(open);
-          }}
-          onSubmit={(draft) => createMutation.mutate(draft)}
-          open={createOpen}
-          submitError={
-            createMutation.error instanceof Error
-              ? createMutation.error.message
-              : undefined
-          }
         />
       </Main>
     </>

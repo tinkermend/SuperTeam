@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>新建团队 · 方案 B 全页生命周期创建台</title>
+    <style>
+      :root {
+        --panel-strong: rgba(255, 255, 255, 0.94);
+        --border: rgba(156, 242, 218, 0.5);
+        --border-blue: rgba(191, 219, 254, 0.62);
+        --line: rgba(15, 23, 42, 0.08);
+        --text: #07140e;
+        --muted: #64748b;
+        --soft: #e6fbf5;
+        --teal: #2cc7aa;
+        --teal-deep: #0a806f;
+        --success: #16a34a;
+        --warning: #f59e0b;
+        --danger: #ef4444;
+        --shadow-low: 0 18px 45px rgba(38, 72, 56, 0.08);
+        --shadow-mid: 0 26px 70px rgba(38, 72, 56, 0.14);
+        --radius: 14px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh;
+        background:
+          linear-gradient(135deg, rgba(230, 251, 245, 0.7), rgba(248, 251, 255, 0.8) 46%, #ffffff 100%),
+          linear-gradient(90deg, rgba(209, 250, 229, 0.22), rgba(219, 234, 254, 0.2));
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+        font-size: 14px;
+      }
+      button, input { font: inherit; color: inherit; }
+      svg { display: block; }
+
+      .shell { max-width: 1180px; margin: 0 auto; padding: 26px 28px 60px; }
+
+      .crumb { color: var(--muted); font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
+      .crumb b { color: var(--text); font-weight: 700; }
+      .page-head { display: flex; align-items: flex-end; justify-content: space-between; margin: 12px 0 22px; }
+      .page-title { font-size: 23px; font-weight: 800; letter-spacing: -.02em; }
+      .page-desc { margin-top: 6px; color: var(--muted); font-size: 13px; max-width: 620px; }
+      .head-actions { display: flex; gap: 10px; }
+
+      .grid { display: grid; grid-template-columns: minmax(0,1fr) 360px; gap: 22px; align-items: start; }
+
+      .card { background: var(--panel-strong); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-low); }
+      .card + .card { margin-top: 18px; }
+      .card-head { display: flex; align-items: center; gap: 11px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+      .sec-ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; flex: none; }
+      .ic-id { background: linear-gradient(135deg,#9cf2da,#2cc7aa 60%,#0a806f); }
+      .ic-own { background: linear-gradient(135deg,#6ee7b7,#10b981); }
+      .ic-mem { background: linear-gradient(135deg,#5eead4,#14b8a6); }
+      .card-title { font-weight: 760; font-size: 14.5px; }
+      .card-note { color: var(--muted); font-size: 12px; margin-top: 1px; }
+      .card-body { padding: 20px; }
+
+      .row2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
+      .field + .field { margin-top: 18px; }
+      .label { display: block; font-weight: 700; font-size: 13px; margin-bottom: 7px; }
+      .req { color: var(--danger); margin-left: 3px; }
+      .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+      .input { width: 100%; padding: 0 13px; height: 42px; border-radius: 11px; border: 1px solid var(--border-blue); background: #fff; outline: none; }
+      .input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(44,199,170,0.18); }
+      .slug-box { display: flex; align-items: center; height: 42px; border-radius: 11px; border: 1px dashed var(--border-blue); background: rgba(248,251,255,0.7); padding: 0 13px; color: var(--text); font-family: ui-monospace, monospace; font-weight: 700; }
+      .slug-edit { margin-left: auto; color: var(--teal-deep); font-weight: 700; cursor: pointer; font-size: 12.5px; font-family: Inter, sans-serif; }
+
+      .tones { display: flex; gap: 10px; flex-wrap: wrap; }
+      .tone { cursor: pointer; border-radius: 11px; border: 1px solid var(--line); background: #fff; padding: 8px 12px 8px 8px; display: flex; align-items: center; gap: 9px; transition: .15s; }
+      .tone:hover { transform: translateY(-1px); box-shadow: var(--shadow-low); }
+      .tone.sel { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(44,199,170,0.18); }
+      .tone-swatch { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 13px; }
+      .tone-name { font-size: 12.5px; color: #475569; font-weight: 640; }
+      .t-dev { background: linear-gradient(135deg,#7cc0ff,#2685e8); }
+      .t-ops { background: linear-gradient(135deg,#6fe3ef,#0891b2); }
+      .t-qa  { background: linear-gradient(135deg,#c4b1ff,#8b5cf6); }
+      .t-sec { background: linear-gradient(135deg,#7fe9cf,#0a806f); }
+      .t-def { background: linear-gradient(135deg,#cbd5e1,#64748b); }
+
+      .owner { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--border-blue); background: #fff; }
+      .avatar { width: 36px; height: 36px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 740; color: #fff; }
+      .av-1 { background: linear-gradient(135deg,#34d399,#0a806f); }
+      .av-2 { background: linear-gradient(135deg,#60a5fa,#2685e8); }
+      .av-3 { background: linear-gradient(135deg,#f0abfc,#a855f7); }
+      .av-4 { background: linear-gradient(135deg,#fdba74,#f59e0b); }
+      .owner-name { font-weight: 700; }
+      .owner-mail { color: var(--muted); font-size: 12px; }
+      .badge-owner { margin-left: auto; background: rgba(16,185,129,0.12); color: #047857; border: 1px solid rgba(16,185,129,0.3); padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+
+      .member-search { position: relative; }
+      .member-search .input { padding-left: 38px; }
+      .search-ic { position: absolute; left: 12px; top: 11px; color: var(--muted); }
+      .seg-filter { display: inline-flex; gap: 4px; background: rgba(248,251,255,0.8); border: 1px solid var(--line); border-radius: 10px; padding: 3px; margin: 12px 0; }
+      .seg-filter button { height: 28px; padding: 0 12px; border: 0; background: transparent; border-radius: 7px; cursor: pointer; color: var(--muted); font-weight: 640; font-size: 12.5px; }
+      .seg-filter button.on { background: #fff; color: var(--teal-deep); font-weight: 740; box-shadow: var(--shadow-low); }
+
+      table { width: 100%; border-collapse: collapse; }
+      thead th { text-align: left; color: var(--muted); font-size: 11.5px; font-weight: 700; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+      tbody td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+      tbody tr:last-child td { border-bottom: 0; }
+      tr.sel-row { background: rgba(230,251,245,0.5); }
+      .u { display: flex; align-items: center; gap: 10px; }
+      .u-name { font-weight: 680; }
+      .u-mail { color: var(--muted); font-size: 11.5px; }
+      .role-seg { display: inline-flex; background: #fff; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+      .role-seg button { height: 30px; padding: 0 12px; border: 0; background: transparent; cursor: pointer; color: var(--muted); font-weight: 640; font-size: 12.5px; }
+      .role-seg button.on { background: var(--soft); color: var(--teal-deep); font-weight: 740; }
+      .add-btn { height: 32px; padding: 0 14px; border-radius: 9px; cursor: pointer; border: 1px solid var(--border); background: var(--soft); color: var(--teal-deep); font-weight: 700; }
+      .chk { width: 18px; height: 18px; border-radius: 5px; border: 1px solid var(--teal); background: linear-gradient(135deg,#2cc7aa,#0a806f); display: grid; place-items: center; color: #fff; font-size: 11px; }
+      .chk-off { width: 18px; height: 18px; border-radius: 5px; border: 1px solid var(--border-blue); background: #fff; }
+      .add-btn:hover { filter: brightness(0.97); }
+      .note { margin-top: 14px; display: flex; gap: 10px; padding: 11px 13px; border-radius: 11px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.28); color: #92600c; font-size: 12.5px; }
+
+      .rail { position: sticky; top: 20px; display: flex; flex-direction: column; gap: 18px; }
+      .preview-card { border-radius: 16px; padding: 18px; color: #fff; position: relative; overflow: hidden; background: linear-gradient(135deg, #2cc7aa 0%, #0a806f 100%); box-shadow: var(--shadow-mid); }
+      .preview-card::after { content:""; position:absolute; right:-30px; top:-30px; width:140px; height:140px; border-radius:50%; background: rgba(255,255,255,0.12); }
+      .pc-tag { font-size: 11px; font-weight: 700; letter-spacing: .08em; opacity: .85; }
+      .pc-row { display: flex; align-items: center; gap: 13px; margin-top: 12px; }
+      .pc-tile { width: 50px; height: 50px; border-radius: 14px; background: rgba(255,255,255,0.22); display: grid; place-items: center; font-weight: 800; font-size: 20px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.4); }
+      .pc-name { font-weight: 780; font-size: 17px; }
+      .pc-slug { font-size: 12px; opacity: .9; font-family: ui-monospace, monospace; margin-top: 2px; }
+      .pc-stats { display: flex; gap: 18px; margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.22); }
+      .pc-stat .n { font-weight: 800; font-size: 18px; }
+      .pc-stat .l { font-size: 11px; opacity: .85; }
+
+      .lc-card { background: var(--panel-strong); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-low); padding: 16px 18px; }
+      .lc-title { font-weight: 760; font-size: 13.5px; display: flex; align-items: center; gap: 8px; }
+      .lc-sub { color: var(--muted); font-size: 11.5px; margin-top: 4px; margin-bottom: 12px; }
+      .lc { display: flex; gap: 11px; padding: 11px 0; border-top: 1px solid var(--line); }
+      .lc:first-of-type { border-top: 0; }
+      .lc-ic { width: 32px; height: 32px; border-radius: 9px; flex: none; display: grid; place-items: center; color: #fff; }
+      .ic-gov { background: linear-gradient(135deg,#6ee7b7,#10b981); }
+      .ic-lend { background: linear-gradient(135deg,#7cc0ff,#2685e8); }
+      .ic-emp { background: linear-gradient(135deg,#5eead4,#14b8a6); }
+      .ic-cap { background: linear-gradient(135deg,#fcd34d,#f59e0b); }
+      .ic-aud { background: linear-gradient(135deg,#cbd5e1,#64748b); }
+      .lc-name { font-weight: 700; font-size: 13px; }
+      .lc-desc { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+      .lc-state { margin-left: auto; align-self: center; }
+      .b-pending { background: rgba(100,116,139,0.12); color: #475569; border: 1px solid rgba(100,116,139,0.26); padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+      .b-draft { background: rgba(245,158,11,0.12); color: #92600c; border: 1px solid rgba(245,158,11,0.3); padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+
+      .submit-card { background: var(--panel-strong); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-low); padding: 16px 18px; }
+      .opt { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; cursor: pointer; }
+      .opt .chk { margin-top: 1px; }
+      .opt-text { font-size: 12.5px; }
+      .opt-text b { font-weight: 720; }
+      .opt-text span { color: var(--muted); display: block; margin-top: 2px; }
+      .btn-primary { width: 100%; height: 46px; border-radius: 12px; border: 0; cursor: pointer; color: #fff; font-weight: 780; font-size: 14.5px; background: linear-gradient(135deg, #9cf2da, #2cc7aa 55%, #0a806f); box-shadow: 0 12px 26px rgba(44,199,170,0.42); }
+      .btn-outline { width: 100%; height: 42px; margin-top: 10px; border-radius: 12px; border: 1px solid var(--border-blue); background: #fff; cursor: pointer; font-weight: 700; }
+      .btn-ghost { height: 42px; padding: 0 18px; border-radius: 11px; border: 1px solid var(--border-blue); background: #fff; cursor: pointer; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="crumb">团队管理 <span>›</span> <b>新建团队</b></div>
+      <div class="page-head">
+        <div>
+          <div class="page-title">新建团队</div>
+          <div class="page-desc">团队创建后即进入治理生命周期：先确定身份与成员，再配置治理策略、绑定能力并加入数字员工。右侧可预览创建结果与后续待办。</div>
+        </div>
+        <div class="head-actions">
+          <button class="btn-ghost">取消</button>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div>
+          <section class="card">
+            <div class="card-head">
+              <div class="sec-ic ic-id">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              </div>
+              <div>
+                <div class="card-title">团队身份</div>
+                <div class="card-note">名称、标识与配色，用于全站识别这个团队。</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="row2">
+                <div class="field">
+                  <label class="label">团队名称<span class="req">*</span></label>
+                  <input class="input" value="研发交付团队" />
+                  <div class="hint">用于全站展示，可随时修改。</div>
+                </div>
+                <div class="field">
+                  <label class="label">团队标识 slug</label>
+                  <div class="slug-box">rd-delivery <span class="slug-edit">编辑</span></div>
+                  <div class="hint">由名称自动生成，URL 与 API 标识。</div>
+                </div>
+              </div>
+              <div class="field" style="margin-top:18px">
+                <label class="label">配色与图标</label>
+                <div class="tones">
+                  <div class="tone sel"><div class="tone-swatch t-dev">研</div><div class="tone-name">研发</div></div>
+                  <div class="tone"><div class="tone-swatch t-ops">运</div><div class="tone-name">运维</div></div>
+                  <div class="tone"><div class="tone-swatch t-qa">测</div><div class="tone-name">测试</div></div>
+                  <div class="tone"><div class="tone-swatch t-sec">安</div><div class="tone-name">安全</div></div>
+                  <div class="tone"><div class="tone-swatch t-def">默</div><div class="tone-name">默认</div></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <div class="sec-ic ic-own">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              <div>
+                <div class="card-title">团队负责人 <span class="req">*</span></div>
+                <div class="card-note">团队的固定人类管理者，负责成员的添加、删除与团队配置；审批 / 驳回 / 补证 / 验收由项目负责人在项目内承担。</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="owner">
+                <div class="avatar av-1">林</div>
+                <div>
+                  <div class="owner-name">林清远</div>
+                  <div class="owner-mail">linqy@superteam.io</div>
+                </div>
+                <span class="badge-owner">人类 · 团队管理者</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <div class="sec-ic ic-mem">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-3-3.87M9 21v-2a4 4 0 0 1 3-3.87M16 3.13a4 4 0 0 1 0 7.75M8 3.13a4 4 0 0 0 0 7.75"/></svg>
+              </div>
+              <div>
+                <div class="card-title">初始成员 <span style="color:var(--muted);font-weight:600;font-size:12px">（可选）</span></div>
+                <div class="card-note">创建时仅可加入「普通成员」与「只读观察者」。</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="member-search">
+                <span class="search-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-3.5-3.5"/></svg></span>
+                <input class="input" placeholder="搜索用户名或邮箱…" />
+              </div>
+              <div class="seg-filter">
+                <button class="on">全部</button>
+                <button>普通成员</button>
+                <button>只读观察者</button>
+              </div>
+
+              <table>
+                <thead>
+                  <tr><th style="width:34px"></th><th>用户</th><th style="width:170px">初始角色</th><th style="width:70px"></th></tr>
+                </thead>
+                <tbody>
+                  <tr class="sel-row">
+                    <td><div class="chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></div></td>
+                    <td><div class="u"><div class="avatar av-2" style="width:30px;height:30px;font-size:12px">赵</div><div><div class="u-name">赵明</div><div class="u-mail">zhaom@superteam.io</div></div></div></td>
+                    <td><div class="role-seg"><button class="on">成员</button><button>观察者</button></div></td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td><div class="chk-off"></div></td>
+                    <td><div class="u"><div class="avatar av-3" style="width:30px;height:30px;font-size:12px">钱</div><div><div class="u-name">钱思</div><div class="u-mail">qiansi@superteam.io</div></div></div></td>
+                    <td><div class="role-seg"><button class="on">成员</button><button>观察者</button></div></td>
+                    <td><button class="add-btn">添加</button></td>
+                  </tr>
+                  <tr>
+                    <td><div class="chk-off"></div></td>
+                    <td><div class="u"><div class="avatar av-4" style="width:30px;height:30px;font-size:12px">孙</div><div><div class="u-name">孙岚</div><div class="u-mail">sunlan@superteam.io</div></div></div></td>
+                    <td><div class="role-seg"><button>成员</button><button class="on">观察者</button></div></td>
+                    <td><button class="add-btn">添加</button></td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div class="note">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex:none;margin-top:1px"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>
+                <div>「管理员 / 审批人」等特权角色需在创建后，于团队成员页发起<b>特权角色申请</b>并经审批。这里只设置普通成员与观察者。</div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="rail">
+          <div class="preview-card">
+            <div class="pc-tag">实时预览</div>
+            <div class="pc-row">
+              <div class="pc-tile">研</div>
+              <div>
+                <div class="pc-name">研发交付团队</div>
+                <div class="pc-slug">rd-delivery</div>
+              </div>
+            </div>
+            <div class="pc-stats">
+              <div class="pc-stat"><div class="n">1</div><div class="l">负责人</div></div>
+              <div class="pc-stat"><div class="n">1</div><div class="l">初始成员</div></div>
+              <div class="pc-stat"><div class="n">0</div><div class="l">数字员工</div></div>
+            </div>
+          </div>
+
+          <div class="lc-card">
+            <div class="lc-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--teal-deep)" stroke-width="2"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="4"/></svg>
+              创建后的生命周期
+            </div>
+            <div class="lc-sub">创建只是第一步，以下能力将在团队创建后开放配置：</div>
+
+            <div class="lc">
+              <div class="lc-ic ic-gov"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 4 7v5c0 4 3.5 7.5 8 9 4.5-1.5 8-5 8-9V7z"/></svg></div>
+              <div><div class="lc-name">治理策略</div><div class="lc-desc">章程 · 能力策略 · 审批策略 · 工件契约</div></div>
+              <div class="lc-state"><span class="b-draft">待配置</span></div>
+            </div>
+            <div class="lc">
+              <div class="lc-ic ic-lend"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg></div>
+              <div><div class="lc-name">对外借调策略</div><div class="lc-desc">本团队员工可被哪些项目调用 · 预算 / 能力上限 · 超纲走团队负责人审批</div></div>
+              <div class="lc-state"><span class="b-draft">待设置</span></div>
+            </div>
+            <div class="lc">
+              <div class="lc-ic ic-emp"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h.01M15 9h.01M9 14h6"/></svg></div>
+              <div><div class="lc-name">数字员工</div><div class="lc-desc">从员工池调度可执行的数字员工</div></div>
+              <div class="lc-state"><span class="b-pending">0 已加入</span></div>
+            </div>
+            <div class="lc">
+              <div class="lc-ic ic-cap"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div>
+              <div><div class="lc-name">外部能力</div><div class="lc-desc">绑定 HTTP 连接器与外部系统能力</div></div>
+              <div class="lc-state"><span class="b-pending">0 已绑定</span></div>
+            </div>
+            <div class="lc">
+              <div class="lc-ic ic-aud"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg></div>
+              <div><div class="lc-name">审计日志</div><div class="lc-desc">团队内所有操作自动留痕</div></div>
+              <div class="lc-state"><span class="b-pending">自动开启</span></div>
+            </div>
+          </div>
+
+          <div class="submit-card">
+            <label class="opt">
+              <span class="chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <span class="opt-text"><b>创建后前往治理配置</b><span>立即进入治理草稿，补齐章程与审批策略。</span></span>
+            </label>
+            <button class="btn-primary">创建团队</button>
+            <button class="btn-outline">仅创建，稍后配置</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </body>
+</html>

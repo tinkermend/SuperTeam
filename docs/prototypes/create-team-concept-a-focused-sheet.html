@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>新建团队 · 方案 A 聚焦式创建抽屉</title>
+    <style>
+      :root {
+        --bg: #f8fbf7;
+        --panel: rgba(255, 255, 255, 0.78);
+        --panel-strong: rgba(255, 255, 255, 0.94);
+        --border: rgba(156, 242, 218, 0.5);
+        --border-blue: rgba(191, 219, 254, 0.62);
+        --line: rgba(15, 23, 42, 0.08);
+        --text: #07140e;
+        --muted: #64748b;
+        --soft: #e6fbf5;
+        --teal: #2cc7aa;
+        --teal-deep: #0a806f;
+        --task: #2685e8;
+        --runtime: #0891b2;
+        --success: #16a34a;
+        --warning: #f59e0b;
+        --danger: #ef4444;
+        --artifact: #8b5cf6;
+        --decision: #10b981;
+        --neutral: #64748b;
+        --shadow-low: 0 18px 45px rgba(38, 72, 56, 0.08);
+        --shadow-mid: 0 26px 80px rgba(38, 72, 56, 0.16);
+        --radius: 14px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(135deg, rgba(230, 251, 245, 0.86), rgba(248, 251, 255, 0.84) 42%, #ffffff 100%),
+          linear-gradient(90deg, rgba(209, 250, 229, 0.3), rgba(219, 234, 254, 0.26));
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+        font-size: 14px;
+      }
+      button, input { font: inherit; color: inherit; }
+
+      .page-hint {
+        position: fixed; inset: 0; padding: 28px 36px;
+        color: rgba(7,20,14,0.32); font-weight: 700; letter-spacing: .04em;
+      }
+      .scrim { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.28); backdrop-filter: blur(2px); }
+
+      .sheet {
+        position: fixed; top: 0; right: 0; bottom: 0;
+        width: 760px; max-width: 96vw;
+        display: grid; grid-template-rows: auto 1fr auto;
+        background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,251,255,0.96));
+        border-left: 1px solid var(--border-blue);
+        box-shadow: -30px 0 80px rgba(15, 23, 42, 0.18);
+      }
+      .sheet-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 20px 26px 16px; border-bottom: 1px solid var(--line);
+      }
+      .sheet-title { font-size: 18px; font-weight: 780; letter-spacing: -.01em; }
+      .sheet-sub { margin-top: 3px; color: var(--muted); font-size: 12.5px; max-width: 560px; }
+      .icon-btn {
+        width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line);
+        background: var(--panel-strong); display: grid; place-items: center; cursor: pointer;
+      }
+
+      .preview {
+        margin: 16px 26px 4px;
+        display: flex; align-items: center; gap: 14px;
+        padding: 14px 16px; border-radius: var(--radius);
+        background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(230,251,245,0.5));
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-low);
+      }
+      .tile {
+        width: 46px; height: 46px; border-radius: 13px; flex: none;
+        display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 18px;
+        background: linear-gradient(135deg, #7cc0ff, #2685e8);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+      }
+      .preview-name { font-weight: 740; font-size: 15px; }
+      .preview-meta { margin-top: 3px; color: var(--muted); font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      .chip {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 640;
+        background: var(--soft); color: var(--teal-deep); border: 1px solid var(--border);
+      }
+      .preview-spacer { flex: 1; }
+      .preview-tag { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: .06em; }
+
+      .body { display: grid; grid-template-columns: 188px 1fr; min-height: 0; overflow: hidden; }
+      .stepper { padding: 22px 14px 22px 26px; border-right: 1px solid var(--line); }
+      .step { display: flex; gap: 12px; align-items: flex-start; padding: 10px 8px; border-radius: 10px; position: relative; }
+      .step + .step { margin-top: 2px; }
+      .step-dot {
+        width: 26px; height: 26px; border-radius: 50%; flex: none;
+        display: grid; place-items: center; font-size: 12px; font-weight: 760;
+        border: 1px solid var(--line); background: #fff; color: var(--muted);
+      }
+      .step.active .step-dot { background: linear-gradient(135deg, #2cc7aa, #0a806f); color: #fff; border-color: transparent; box-shadow: 0 6px 16px rgba(44,199,170,0.4); }
+      .step.done .step-dot { background: var(--soft); color: var(--teal-deep); border-color: var(--border); }
+      .step-label { font-weight: 700; font-size: 13.5px; padding-top: 3px; }
+      .step.active .step-label { color: var(--text); }
+      .step:not(.active) .step-label { color: var(--muted); }
+      .step-desc { font-size: 11.5px; color: var(--muted); margin-top: 2px; font-weight: 500; }
+      .step-rail { position: absolute; left: 20px; top: 36px; bottom: -2px; width: 2px; background: var(--line); }
+      .step:last-child .step-rail { display: none; }
+
+      .content { padding: 24px 28px; overflow-y: auto; }
+      .field { margin-bottom: 20px; }
+      .label { display: block; font-weight: 700; font-size: 13px; margin-bottom: 7px; }
+      .label .req { color: var(--danger); margin-left: 3px; }
+      .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+      .input, .input-lg {
+        width: 100%; padding: 0 13px; height: 42px; border-radius: 11px;
+        border: 1px solid var(--border-blue); background: var(--panel-strong); outline: none;
+      }
+      .input-lg { height: 48px; font-size: 16px; font-weight: 640; }
+      .input:focus, .input-lg:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(44,199,170,0.18); }
+
+      .slug-row { display: flex; align-items: center; gap: 10px; }
+      .slug-box {
+        flex: 1; display: flex; align-items: center; height: 42px; border-radius: 11px;
+        border: 1px dashed var(--border-blue); background: rgba(248,251,255,0.7); padding: 0 13px; color: var(--muted);
+      }
+      .slug-box b { color: var(--text); font-weight: 700; font-family: ui-monospace, monospace; }
+      .ghost-btn { height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: #fff; cursor: pointer; font-weight: 640; color: #334155; }
+
+      .tones { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+      .tone { cursor: pointer; border-radius: 12px; border: 1px solid var(--line); background: #fff; padding: 12px 8px 10px; text-align: center; transition: .15s; }
+      .tone:hover { transform: translateY(-2px); box-shadow: var(--shadow-low); }
+      .tone.sel { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(44,199,170,0.18); }
+      .tone-swatch { width: 36px; height: 36px; border-radius: 10px; margin: 0 auto 8px; display: grid; place-items: center; color: #fff; font-weight: 800; }
+      .tone-name { font-size: 11.5px; color: var(--muted); font-weight: 640; }
+      .t-dev { background: linear-gradient(135deg,#7cc0ff,#2685e8); }
+      .t-ops { background: linear-gradient(135deg,#6fe3ef,#0891b2); }
+      .t-qa  { background: linear-gradient(135deg,#c4b1ff,#8b5cf6); }
+      .t-sec { background: linear-gradient(135deg,#7fe9cf,#0a806f); }
+      .t-def { background: linear-gradient(135deg,#cbd5e1,#64748b); }
+
+      .owner { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--border-blue); background: var(--panel-strong); }
+      .avatar { width: 36px; height: 36px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 740; color: #fff; }
+      .av-1 { background: linear-gradient(135deg,#34d399,#0a806f); }
+      .av-2 { background: linear-gradient(135deg,#60a5fa,#2685e8); }
+      .av-3 { background: linear-gradient(135deg,#f0abfc,#a855f7); }
+      .av-4 { background: linear-gradient(135deg,#fdba74,#f59e0b); }
+      .owner-name { font-weight: 700; }
+      .owner-mail { color: var(--muted); font-size: 12px; }
+      .owner-tag { margin-left: auto; }
+      .badge-owner { background: rgba(16,185,129,0.12); color: #047857; border: 1px solid rgba(16,185,129,0.3); padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+
+      .foot { display: flex; align-items: center; justify-content: space-between; padding: 16px 26px; border-top: 1px solid var(--line); background: rgba(255,255,255,0.6); }
+      .foot .right { display: flex; gap: 10px; }
+      .btn-text { background: transparent; border: 0; cursor: pointer; color: var(--muted); font-weight: 640; padding: 10px 6px; }
+      .btn-outline { height: 42px; padding: 0 18px; border-radius: 11px; border: 1px solid var(--border-blue); background: #fff; cursor: pointer; font-weight: 700; }
+      .btn-primary {
+        height: 42px; padding: 0 22px; border-radius: 11px; border: 0; cursor: pointer; color: #fff; font-weight: 760;
+        background: linear-gradient(135deg, #9cf2da, #2cc7aa 55%, #0a806f);
+        box-shadow: 0 10px 24px rgba(44,199,170,0.4);
+        display: inline-flex; align-items: center; gap: 8px;
+      }
+      svg { display: block; }
+    </style>
+  </head>
+  <body>
+    <div class="page-hint">团队管理 · 列表（背景）</div>
+    <div class="scrim"></div>
+
+    <aside class="sheet">
+      <div class="sheet-head">
+        <div>
+          <div class="sheet-title">新建团队</div>
+          <div class="sheet-sub">团队是数字员工、治理策略与能力的承载容器。创建后可继续配置治理与成员。</div>
+        </div>
+        <button class="icon-btn" aria-label="关闭">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="preview">
+        <div class="tile">研</div>
+        <div>
+          <div class="preview-name">研发交付团队</div>
+          <div class="preview-meta">
+            <span class="chip">slug · rd-delivery</span>
+            <span>负责人 · 林清远</span>
+          </div>
+        </div>
+        <div class="preview-spacer"></div>
+        <div class="preview-tag">实时预览</div>
+      </div>
+
+      <div class="body">
+        <nav class="stepper">
+          <div class="step active">
+            <div class="step-dot">1</div>
+            <div><div class="step-label">团队身份</div><div class="step-desc">名称 · 标识 · 配色 · 负责人</div></div>
+            <div class="step-rail"></div>
+          </div>
+          <div class="step">
+            <div class="step-dot">2</div>
+            <div><div class="step-label">初始成员</div><div class="step-desc">添加成员 / 观察者</div></div>
+            <div class="step-rail"></div>
+          </div>
+          <div class="step">
+            <div class="step-dot">3</div>
+            <div><div class="step-label">确认与下一步</div><div class="step-desc">复核 · 后续配置</div></div>
+          </div>
+        </nav>
+
+        <div class="content">
+          <div class="field">
+            <label class="label">团队名称<span class="req">*</span></label>
+            <input class="input-lg" value="研发交付团队" />
+            <div class="hint">用于全站展示，可随时修改。</div>
+          </div>
+
+          <div class="field">
+            <label class="label">团队标识 slug</label>
+            <div class="slug-row">
+              <div class="slug-box">/teams/&nbsp;<b>rd-delivery</b></div>
+              <button class="ghost-btn">编辑</button>
+            </div>
+            <div class="hint">由名称自动生成，作为稳定的 URL 与 API 标识，一般无需手动改。</div>
+          </div>
+
+          <div class="field">
+            <label class="label">配色与图标</label>
+            <div class="tones">
+              <div class="tone sel"><div class="tone-swatch t-dev">研</div><div class="tone-name">研发</div></div>
+              <div class="tone"><div class="tone-swatch t-ops">运</div><div class="tone-name">运维</div></div>
+              <div class="tone"><div class="tone-swatch t-qa">测</div><div class="tone-name">测试</div></div>
+              <div class="tone"><div class="tone-swatch t-sec">安</div><div class="tone-name">安全</div></div>
+              <div class="tone"><div class="tone-swatch t-def">默</div><div class="tone-name">默认</div></div>
+            </div>
+            <div class="hint">配色仅用于卡片与列表识别，不影响权限。</div>
+          </div>
+
+          <div class="field">
+            <label class="label">负责人<span class="req">*</span></label>
+            <div class="owner">
+              <div class="avatar av-1">林</div>
+              <div>
+                <div class="owner-name">林清远</div>
+                <div class="owner-mail">linqy@superteam.io</div>
+              </div>
+              <div class="owner-tag"><span class="badge-owner">人类 · Owner</span></div>
+            </div>
+            <div class="hint">负责人为固定人类负责人，承担审批、驳回与验收的最终判断。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="foot">
+        <button class="btn-text">取消</button>
+        <div class="right">
+          <button class="btn-outline">上一步</button>
+          <button class="btn-primary">
+            下一步 · 初始成员
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+  </body>
+</html>

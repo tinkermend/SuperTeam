@@ -974,6 +974,7 @@ func (s *ProjectStore) RequestProjectAcceptanceReview(ctx context.Context, input
 		CreatedEventID:    &event.ID,
 	})
 	if err != nil {
+		rollbackToRunning()
 		return DecisionRequestResult{}, err
 	}
 	if s.inbox != nil {

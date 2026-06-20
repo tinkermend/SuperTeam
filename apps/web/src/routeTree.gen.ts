@@ -35,6 +35,7 @@ import { Route as AuthenticatedCapabilitiesIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedAuditIndexRouteImport } from './routes/_authenticated/audit/index'
 import { Route as AuthenticatedApprovalsIndexRouteImport } from './routes/_authenticated/approvals/index'
 import { Route as AuthenticatedWorkflowsDemandIdRouteImport } from './routes/_authenticated/workflows/$demandId'
+import { Route as AuthenticatedTeamsNewRouteImport } from './routes/_authenticated/teams/new'
 import { Route as AuthenticatedTeamsTeamIdRouteImport } from './routes/_authenticated/teams/$teamId'
 import { Route as AuthenticatedTaskLaunchesDemandIdRouteImport } from './routes/_authenticated/task-launches/$demandId'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
@@ -185,6 +186,11 @@ const AuthenticatedWorkflowsDemandIdRoute =
     path: '/workflows/$demandId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedTeamsNewRoute = AuthenticatedTeamsNewRouteImport.update({
+  id: '/teams/new',
+  path: '/teams/new',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedTeamsTeamIdRoute =
   AuthenticatedTeamsTeamIdRouteImport.update({
     id: '/teams/$teamId',
@@ -256,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/task-launches/$demandId': typeof AuthenticatedTaskLaunchesDemandIdRoute
   '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
+  '/teams/new': typeof AuthenticatedTeamsNewRoute
   '/workflows/$demandId': typeof AuthenticatedWorkflowsDemandIdRoute
   '/approvals/': typeof AuthenticatedApprovalsIndexRoute
   '/audit/': typeof AuthenticatedAuditIndexRoute
@@ -292,6 +299,7 @@ export interface FileRoutesByTo {
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/task-launches/$demandId': typeof AuthenticatedTaskLaunchesDemandIdRoute
   '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
+  '/teams/new': typeof AuthenticatedTeamsNewRoute
   '/workflows/$demandId': typeof AuthenticatedWorkflowsDemandIdRoute
   '/approvals': typeof AuthenticatedApprovalsIndexRoute
   '/audit': typeof AuthenticatedAuditIndexRoute
@@ -330,6 +338,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/task-launches/$demandId': typeof AuthenticatedTaskLaunchesDemandIdRoute
   '/_authenticated/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
+  '/_authenticated/teams/new': typeof AuthenticatedTeamsNewRoute
   '/_authenticated/workflows/$demandId': typeof AuthenticatedWorkflowsDemandIdRoute
   '/_authenticated/approvals/': typeof AuthenticatedApprovalsIndexRoute
   '/_authenticated/audit/': typeof AuthenticatedAuditIndexRoute
@@ -368,6 +377,7 @@ export interface FileRouteTypes {
     | '/settings/account'
     | '/task-launches/$demandId'
     | '/teams/$teamId'
+    | '/teams/new'
     | '/workflows/$demandId'
     | '/approvals/'
     | '/audit/'
@@ -404,6 +414,7 @@ export interface FileRouteTypes {
     | '/settings/account'
     | '/task-launches/$demandId'
     | '/teams/$teamId'
+    | '/teams/new'
     | '/workflows/$demandId'
     | '/approvals'
     | '/audit'
@@ -441,6 +452,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/account'
     | '/_authenticated/task-launches/$demandId'
     | '/_authenticated/teams/$teamId'
+    | '/_authenticated/teams/new'
     | '/_authenticated/workflows/$demandId'
     | '/_authenticated/approvals/'
     | '/_authenticated/audit/'
@@ -657,6 +669,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkflowsDemandIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/teams/new': {
+      id: '/_authenticated/teams/new'
+      path: '/teams/new'
+      fullPath: '/teams/new'
+      preLoaderRoute: typeof AuthenticatedTeamsNewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/teams/$teamId': {
       id: '/_authenticated/teams/$teamId'
       path: '/teams/$teamId'
@@ -762,6 +781,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsAccountRoute: typeof AuthenticatedSettingsAccountRoute
   AuthenticatedTaskLaunchesDemandIdRoute: typeof AuthenticatedTaskLaunchesDemandIdRoute
   AuthenticatedTeamsTeamIdRoute: typeof AuthenticatedTeamsTeamIdRoute
+  AuthenticatedTeamsNewRoute: typeof AuthenticatedTeamsNewRoute
   AuthenticatedWorkflowsDemandIdRoute: typeof AuthenticatedWorkflowsDemandIdRoute
   AuthenticatedApprovalsIndexRoute: typeof AuthenticatedApprovalsIndexRoute
   AuthenticatedAuditIndexRoute: typeof AuthenticatedAuditIndexRoute
@@ -793,6 +813,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedTaskLaunchesDemandIdRoute:
     AuthenticatedTaskLaunchesDemandIdRoute,
   AuthenticatedTeamsTeamIdRoute: AuthenticatedTeamsTeamIdRoute,
+  AuthenticatedTeamsNewRoute: AuthenticatedTeamsNewRoute,
   AuthenticatedWorkflowsDemandIdRoute: AuthenticatedWorkflowsDemandIdRoute,
   AuthenticatedApprovalsIndexRoute: AuthenticatedApprovalsIndexRoute,
   AuthenticatedAuditIndexRoute: AuthenticatedAuditIndexRoute,
