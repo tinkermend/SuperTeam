@@ -30,7 +30,7 @@ SuperTeam 是企业级数字员工控制平面，数据库模型必须服务于�
 - `tenant_*`：租户、团队、成员、租户画像。
 - `auth_*`：用户、会话、认证令牌。
 - `employee_*`：数字员工定义、团队分配、配置版本、能力绑定。
-- `runtime_*`：Runtime Agent 节点、槽位、租约、心跳、服务范围。
+- `runtime_*`：Runtime Agent 节点、槽位、心跳、服务范围。
 - `provider_*`：Provider 类型、adapter 注册、Provider 会话。
 - `capability_*`：外部能力注册、授权、调用审计。
 - `tasks` / `task_*`：任务主表、任务运行、任务事件、任务状态历史、任务产物。
@@ -310,7 +310,6 @@ CREATE UNIQUE INDEX uq_tasks_active_idempotency
 - `runtime_nodes`
 - `runtime_node_scopes`
 - `runtime_slots`
-- `runtime_leases`
 - `runtime_heartbeats`
 
 要求：
@@ -318,8 +317,8 @@ CREATE UNIQUE INDEX uq_tasks_active_idempotency
 - `runtime_nodes.id` 使用 UUID。
 - `node_key`、机器指纹或注册 token 只能作为唯一业务字段，不作为主键。
 - Runtime claim 使用 `FOR UPDATE SKIP LOCKED` 或等价原子领取机制。
-- 租约必须包含 `lease_expires_at`、`renewed_at`、`lost_at` 等字段。
-- Runtime 节点只承载执行能力、健康、槽位和租约，不承载业务策略、人类审批策略和长期业务状态。
+- 项目任务执行租约落在 `project_task_attempts`，使用 `lease_token`、`lease_expires_at`、`renewed_at`、`lost_at` 等字段；不要重新引入独立 `runtime_leases` 表。
+- Runtime 节点只承载执行能力、健康、槽位和执行租约状态，不承载业务策略、人类审批策略和长期业务状态。
 
 ### 9.5 Provider 与 Capability
 

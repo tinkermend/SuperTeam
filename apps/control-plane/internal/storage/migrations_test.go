@@ -36,7 +36,6 @@ var uuidFirstTables = []string{
 	"provider_session_events",
 	"tasks",
 	"task_runs",
-	"runtime_leases",
 	"task_state_history",
 	"task_events",
 	"task_artifacts",
@@ -70,7 +69,6 @@ func TestInitialSchemaIsUUIDFirst(t *testing.T) {
 		"CREATE TABLE tenants",
 		"CREATE TABLE tenant_teams",
 		"CREATE TABLE runtime_node_scopes",
-		"CREATE TABLE runtime_leases",
 		"CREATE TABLE auth_sessions",
 		"CREATE TABLE task_runs",
 		"CREATE TABLE web_login_logs",
@@ -832,7 +830,6 @@ func TestInitialSchemaPreservesHistoryWithoutHeavyForeignKeys(t *testing.T) {
 	for _, table := range []string{
 		"tasks",
 		"task_runs",
-		"runtime_leases",
 		"task_state_history",
 		"task_events",
 		"task_artifacts",
@@ -1004,6 +1001,13 @@ func TestUserProjectTeamScopesQueriesAreNilSafeAndTenantScoped(t *testing.T) {
 
 	if count := strings.Count(sql, "tenant_id = sqlc.arg('tenant_id')::uuid"); count < 5 {
 		t.Fatalf("expected tenant-scoped aggregate CTEs plus final filters, got %d tenant filters", count)
+	}
+}
+
+func TestRuntimeLeasesCleanupMigrationDropsLegacyTable(t *testing.T) {
+	sql := migrationsSQL(t)
+	if !strings.Contains(sql, "DROP TABLE IF EXISTS runtime_leases") {
+		t.Fatal("expected a forward migration to drop legacy runtime_leases table")
 	}
 }
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- 2026-06-21 00:52：删除已废弃的 `runtime_leases` 表：新增 migration 028 `DROP TABLE IF EXISTS runtime_leases` 并已应用到当前开发库；同步移除迁移/查询测试中对该表作为当前表的要求，规范文档明确项目任务执行租约由 `project_task_attempts` 承载，避免后续重建独立 runtime lease 表。
+
 ### Added
 
 - 2026-06-20 23:18：团队借调接入项目协调线程（闭环借调最后一块）：协调线程在构建可执行数字员工池（`LoadProjectCoordinationSnapshot`，挑人前）新增借调闸门——归属团队不等于项目自有团队（`Project.TeamID`）的数字员工，只有当项目持有 (project, team) 维度的有效借调授权（status ∈ approved/auto_approved）时才进入可执行池；无授权的外团队员工被静默剔除并写 `project.lending.employee_skipped` 协调事件（最佳努力、不阻断规划）。无自有团队/无归属团队的员工不受闸门约束；借调查找出错时与就绪检查一致 fail-open（权威授权仍由审批流把守）。新增 sqlc 查询 `ListEffectiveLendingTeamsForProject` + `teamlending` repo `ListEffectiveLendingTeams` + service `EffectiveLendingTeams`；协调侧新增 nil-safe `LendingGatekeeper` 接口与 `ProjectStore.WithLendingGatekeeper`，app.go 以 `lendingGatekeeperAdapter`（employee 仓储解析员工归属团队 + teamlending 仓储解析项目有效授权）装配。验证：`go test ./internal/teamlending ./internal/workflow/projectcoordination` 通过（含闸门三态 + fail-open + 跳过事件断言、`EffectiveLendingTeams` 单测）；新 SQL 在真实开发库验证只返回 approved/auto_approved 授权团队、排除 rejected/revoked；`go build ./...` 通过、Control Plane(:8081) 重启加载新装配并健康、协调 worker 正常注册。
