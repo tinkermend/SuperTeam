@@ -268,14 +268,20 @@ func buildPlanningRuntimeRequirements(source DigitalEmployeePlanningProfileSourc
 		requirements.ProviderStatus = "unknown"
 		return requirements
 	}
+	executionStatus := normalizePlanningString(source.ExecutionStatus)
+	if executionStatus == "ready" || executionStatus == "active" {
+		requirements.ProviderStatus = executionStatus
+		return requirements
+	}
 	if !runtimeReady {
 		requirements.ProviderStatus = "unavailable"
 		return requirements
 	}
-	requirements.ProviderStatus = normalizePlanningString(source.ExecutionStatus)
-	if requirements.ProviderStatus == "" {
-		requirements.ProviderStatus = "ready"
+	if executionStatus != "" {
+		requirements.ProviderStatus = executionStatus
+		return requirements
 	}
+	requirements.ProviderStatus = "unknown"
 	return requirements
 }
 

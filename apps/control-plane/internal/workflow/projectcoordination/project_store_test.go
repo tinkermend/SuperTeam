@@ -63,6 +63,113 @@ func TestProjectStoreSnapshotIncludesOnlyActiveDigitalExecutorsAndReviewers(t *t
 	}
 }
 
+func TestProjectStoreSnapshotAttachesPlanningProfilesFromSource(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	employeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand: project.ProjectDemand{
+			ID:        demandID,
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			Title:     "分析数据库",
+			Content:   strPtr("检查慢查询"),
+		},
+		members: []project.ProjectMember{{
+			ID:                  uuid.New(),
+			TenantID:            tenantID,
+			ProjectID:           projectID,
+			PrincipalType:       project.PrincipalTypeDigitalEmployee,
+			PrincipalID:         employeeID,
+			ProjectRole:         project.ProjectRoleExecutor,
+			Status:              "active",
+			DisplayNameSnapshot: strPtr("数据库员工"),
+		}},
+	}
+	source := fakePlanningProfileSource{
+		records: map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{
+			employeeID: {
+				DigitalEmployeeID: employeeID,
+				EmployeeType:      "database_admin",
+				RoleProfile:       map[string]any{"primary_role": "data_analyst"},
+				CapabilitySelection: map[string]any{
+					"enabled_external_capabilities": []any{"database.read"},
+					"enabled_skills":                []any{"sql.analysis"},
+					"enabled_provider_types":        []any{"codex"},
+				},
+				ExecutionStatus:       "ready",
+				EffectiveConfigStatus: "approved",
+			},
+		},
+	}
+
+	snapshot, err := NewProjectStore(repo).WithDigitalEmployeePlanningProfiles(source).LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.DigitalEmployeePool, 1)
+	profile := snapshot.DigitalEmployeePool[0].PlanningProfile
+	require.NotNil(t, profile)
+	require.Equal(t, employeeID, profile.DigitalEmployeeID)
+	require.Equal(t, "data_analyst", profile.RoleProfile.PrimaryRole)
+	require.Equal(t, []PlanningCapability{{Key: "database.read", Level: "strong", Source: "capability_selection.enabled_external_capabilities", Confidence: 0.9}}, profile.Capabilities)
+}
+
+func TestProjectStoreSnapshotKeepsUnknownProfileWhenProfileSourceFails(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	employeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "分析数据库"},
+		members: []project.ProjectMember{{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+	}
+
+	snapshot, err := NewProjectStore(repo).WithDigitalEmployeePlanningProfiles(fakePlanningProfileSource{err: errors.New("source down")}).LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.DigitalEmployeePool, 1)
+	require.NotNil(t, snapshot.DigitalEmployeePool[0].PlanningProfile)
+	require.Equal(t, "unknown", snapshot.DigitalEmployeePool[0].PlanningProfile.ProfileFreshness.SourceState)
+	require.Contains(t, snapshot.DigitalEmployeePool[0].PlanningProfile.SelectionWarnings, "profile_source_missing")
+}
+
+type fakePlanningProfileSource struct {
+	records map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord
+	err     error
+}
+
+func (s fakePlanningProfileSource) PlanningProfileRecords(_ context.Context, _ uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	out := map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord{}
+	for _, id := range employeeIDs {
+		if record, ok := s.records[id]; ok {
+			out[id] = record
+		}
+	}
+	return out, nil
+}
+
 type fakeLendingGatekeeper struct {
 	employeeTeams map[uuid.UUID]uuid.UUID
 	grantedTeams  map[uuid.UUID]bool

@@ -14,12 +14,13 @@ import (
 )
 
 type ProjectStore struct {
-	repository project.Repository
-	approvals  ApprovalCreator
-	inbox      project.DecisionInboxProjector
-	runStarter ProjectTaskRunStarter
-	readiness  DigitalEmployeeReadinessChecker
-	lending    LendingGatekeeper
+	repository    project.Repository
+	approvals     ApprovalCreator
+	inbox         project.DecisionInboxProjector
+	runStarter    ProjectTaskRunStarter
+	readiness     DigitalEmployeeReadinessChecker
+	lending       LendingGatekeeper
+	profileSource DigitalEmployeePlanningProfileSource
 }
 
 // WithDigitalEmployeeReadiness attaches a runtime-readiness checker used to filter the
@@ -33,6 +34,11 @@ func (s *ProjectStore) WithDigitalEmployeeReadiness(checker DigitalEmployeeReadi
 // employees from a foreign team that the project has no effective lending grant for.
 func (s *ProjectStore) WithLendingGatekeeper(gatekeeper LendingGatekeeper) *ProjectStore {
 	s.lending = gatekeeper
+	return s
+}
+
+func (s *ProjectStore) WithDigitalEmployeePlanningProfiles(source DigitalEmployeePlanningProfileSource) *ProjectStore {
+	s.profileSource = source
 	return s
 }
 
@@ -58,6 +64,18 @@ func (s *ProjectStore) runtimeReadyEmployeeIDs(ctx context.Context, tenantID uui
 		return nil
 	}
 	return ready
+}
+
+func (s *ProjectStore) planningProfileRecords(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord {
+	if s.profileSource == nil || len(employeeIDs) == 0 {
+		return nil
+	}
+	records, err := s.profileSource.PlanningProfileRecords(ctx, tenantID, employeeIDs)
+	if err != nil {
+		// Fail open: profile facts enrich planning, but a source outage must not block it.
+		return nil
+	}
+	return records
 }
 
 // lendingEligibleEmployeeIDs applies the team-lending gate to candidate digital-employee
@@ -144,6 +162,10 @@ type DigitalEmployeeReadinessChecker interface {
 	AreRuntimeReady(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, error)
 }
 
+type DigitalEmployeePlanningProfileSource interface {
+	PlanningProfileRecords(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]DigitalEmployeePlanningProfileSourceRecord, error)
+}
+
 // LendingGatekeeper enforces team-lending grants when the coordinator builds its executor
 // pool. A digital employee whose owning team differs from the project's own team is only
 // eligible if the project holds an effective (approved/auto_approved) lending grant for
@@ -209,20 +231,34 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 	// silently excluded from the pool and recorded as skipped (best-effort audit event).
 	lendingEligible, lendingSkipped := s.lendingEligibleEmployeeIDs(ctx, input.TenantID, input.ProjectID, projectRecord.TeamID, candidateIDs)
 	s.recordLendingSkips(ctx, input.TenantID, input.ProjectID, input.DemandID, lendingSkipped)
-	pool := make([]ProjectMemberSnapshot, 0, len(candidates))
+	eligibleCandidates := make([]project.ProjectMember, 0, len(candidates))
+	eligibleCandidateIDs := make([]uuid.UUID, 0, len(candidates))
 	for _, member := range candidates {
 		if lendingEligible != nil && !lendingEligible[member.PrincipalID] {
 			continue
 		}
+		eligibleCandidates = append(eligibleCandidates, member)
+		eligibleCandidateIDs = append(eligibleCandidateIDs, member.PrincipalID)
+	}
+	profileRecords := s.planningProfileRecords(ctx, input.TenantID, eligibleCandidateIDs)
+	pool := make([]ProjectMemberSnapshot, 0, len(eligibleCandidates))
+	for _, member := range eligibleCandidates {
 		displayName := ""
 		if member.DisplayNameSnapshot != nil {
 			displayName = *member.DisplayNameSnapshot
 		}
+		sourceRecord := DigitalEmployeePlanningProfileSourceRecord{}
+		if profileRecords != nil {
+			sourceRecord = profileRecords[member.PrincipalID]
+		}
+		runtimeReady := readyEmployees == nil || readyEmployees[member.PrincipalID]
+		profile := BuildDigitalEmployeePlanningProfile(member, sourceRecord, runtimeReady)
 		pool = append(pool, ProjectMemberSnapshot{
-			PrincipalID: member.PrincipalID,
-			ProjectRole: string(member.ProjectRole),
-			Status:      member.Status,
-			DisplayName: displayName,
+			PrincipalID:     member.PrincipalID,
+			ProjectRole:     string(member.ProjectRole),
+			Status:          member.Status,
+			DisplayName:     displayName,
+			PlanningProfile: &profile,
 		})
 	}
 	content := ""

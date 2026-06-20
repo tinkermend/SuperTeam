@@ -24,10 +24,11 @@ type DemandSnapshot struct {
 }
 
 type ProjectMemberSnapshot struct {
-	PrincipalID uuid.UUID
-	ProjectRole string
-	Status      string
-	DisplayName string
+	PrincipalID     uuid.UUID                       `json:"principal_id"`
+	ProjectRole     string                          `json:"project_role"`
+	Status          string                          `json:"status"`
+	DisplayName     string                          `json:"display_name,omitempty"`
+	PlanningProfile *DigitalEmployeePlanningProfile `json:"planning_profile,omitempty"`
 }
 
 // RoutePlanner plans a demand's execution route. The only supported implementation

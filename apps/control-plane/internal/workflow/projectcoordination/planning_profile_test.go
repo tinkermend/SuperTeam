@@ -138,6 +138,25 @@ func TestBuildDigitalEmployeePlanningProfileUsesSourceFacts(t *testing.T) {
 	require.Equal(t, "approved", profile.ProfileFreshness.SourceVersions["effective_config_status"])
 }
 
+func TestBuildDigitalEmployeePlanningProfileKeepsRuntimeStatusUnknownWithoutExecutionFacts(t *testing.T) {
+	employeeID := uuid.New()
+	member := project.ProjectMember{
+		PrincipalID:         employeeID,
+		ProjectRole:         project.ProjectRoleExecutor,
+		Status:              "active",
+		DisplayNameSnapshot: strPtr("执行员工"),
+	}
+
+	profile := BuildDigitalEmployeePlanningProfile(member, DigitalEmployeePlanningProfileSourceRecord{
+		DigitalEmployeeID: employeeID,
+		EmployeeType:      "database_admin",
+		EmployeeStatus:    "active",
+		RoleProfile:       map[string]any{"primary_role": "data_analyst"},
+	}, true)
+
+	require.Equal(t, "unknown", profile.RuntimeRequirements.ProviderStatus)
+}
+
 func TestScorePlanningProfileRecordsHardFailures(t *testing.T) {
 	profile := DigitalEmployeePlanningProfile{
 		DigitalEmployeeID: uuid.New(),
