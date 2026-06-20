@@ -130,33 +130,28 @@ func (q *Queries) CreateExecutionLedgerEvent(ctx context.Context, arg CreateExec
 }
 
 const CreateProviderSessionEventLedgerEvent = `-- name: CreateProviderSessionEventLedgerEvent :one
-WITH source_event_matches AS (
+WITH candidate_attempts AS (
     SELECT
         pse.tenant_id,
         p.team_id,
         pt.project_id,
         pt.id AS project_task_id,
         pta.id AS project_task_attempt_id,
-        'provider.event'::varchar AS event_type,
-        'provider_session_event'::varchar AS source_type,
-        pse.id::varchar AS source_id,
-        'provider'::varchar AS actor_type,
-        pse.provider_type::varchar AS actor_id,
+        pse.id AS provider_session_event_id,
+        pse.event_type AS provider_event_type,
+        pse.payload,
+        pse.command_id,
+        pse.sequence_number,
+        pse.raw_event_ref,
+        pse.log_ref,
+        pse.created_at,
         pse.runtime_node_id,
         pse.provider_type,
         ps.provider_session_id,
-        NULLIF(pse.event_type, '')::text AS input_summary,
-        COALESCE(NULLIF(pse.payload->>'summary', ''), NULLIF(pse.payload->>'text', ''), pse.event_type)::text AS output_summary,
-        ps.last_error_family AS error_family,
-        jsonb_build_object(
-            'command_id', pse.command_id,
-            'sequence_number', pse.sequence_number,
-            'raw_event_ref', pse.raw_event_ref,
-            'log_ref', pse.log_ref
-        ) AS metadata,
-        pse.created_at AS occurred_at,
-        'provider_session_event:' || pse.id::varchar || ':provider.event' AS idempotency_key,
-        COUNT(*) OVER () AS match_count
+        ps.last_error_family,
+        pta.provider_session_id AS attempt_provider_session_id,
+        (pta.provider_session_id = ps.provider_session_id) AS exact_provider_session_match,
+        COUNT(*) FILTER (WHERE pta.provider_session_id = ps.provider_session_id) OVER () AS exact_match_count
     FROM provider_session_events pse
     JOIN provider_sessions ps
       ON ps.tenant_id = pse.tenant_id
@@ -164,7 +159,6 @@ WITH source_event_matches AS (
     JOIN project_task_attempts pta
       ON pta.tenant_id = pse.tenant_id
      AND pta.digital_employee_run_id = $1::uuid
-     AND pta.provider_session_id = ps.provider_session_id
     JOIN project_tasks pt
       ON pt.tenant_id = pta.tenant_id
      AND pt.id = pta.project_task_id
@@ -173,6 +167,47 @@ WITH source_event_matches AS (
      AND p.id = pt.project_id
     WHERE pse.tenant_id = $2::uuid
       AND pse.id = $3::uuid
+),
+eligible_attempts AS (
+    SELECT tenant_id, team_id, project_id, project_task_id, project_task_attempt_id, provider_session_event_id, provider_event_type, payload, command_id, sequence_number, raw_event_ref, log_ref, created_at, runtime_node_id, provider_type, provider_session_id, last_error_family, attempt_provider_session_id, exact_provider_session_match, exact_match_count
+    FROM candidate_attempts
+    WHERE (
+        exact_match_count > 0
+        AND exact_provider_session_match
+    )
+       OR (
+        exact_match_count = 0
+        AND NULLIF(attempt_provider_session_id, '') IS NULL
+    )
+),
+source_event_matches AS (
+    SELECT
+        tenant_id,
+        team_id,
+        project_id,
+        project_task_id,
+        project_task_attempt_id,
+        'provider.event'::varchar AS event_type,
+        'provider_session_event'::varchar AS source_type,
+        provider_session_event_id::varchar AS source_id,
+        'provider'::varchar AS actor_type,
+        provider_type::varchar AS actor_id,
+        runtime_node_id,
+        provider_type,
+        provider_session_id,
+        NULLIF(provider_event_type, '')::text AS input_summary,
+        COALESCE(NULLIF(payload->>'summary', ''), NULLIF(payload->>'text', ''), provider_event_type)::text AS output_summary,
+        last_error_family AS error_family,
+        jsonb_build_object(
+            'command_id', command_id,
+            'sequence_number', sequence_number,
+            'raw_event_ref', raw_event_ref,
+            'log_ref', log_ref
+        ) AS metadata,
+        created_at AS occurred_at,
+        'provider_session_event:' || provider_session_event_id::varchar || ':provider.event' AS idempotency_key,
+        COUNT(*) OVER () AS match_count
+    FROM eligible_attempts
 ),
 source_event AS (
     SELECT tenant_id, team_id, project_id, project_task_id, project_task_attempt_id, event_type, source_type, source_id, actor_type, actor_id, runtime_node_id, provider_type, provider_session_id, input_summary, output_summary, error_family, metadata, occurred_at, idempotency_key, match_count
