@@ -517,10 +517,12 @@ func TestExecutionLedgerEventQueries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "attempt.started", created.EventType)
 
+	time.Sleep(20 * time.Millisecond)
 	eventParams.InputSummary = pgtype.Text{String: "duplicate should reuse original row", Valid: true}
 	duplicate, err := q.CreateExecutionLedgerEvent(ctx, eventParams)
 	require.NoError(t, err)
 	require.Equal(t, created.ID, duplicate.ID)
+	require.Equal(t, created.UpdatedAt.Time, duplicate.UpdatedAt.Time)
 
 	events, err := q.ListProjectExecutionLedgerEvents(ctx, queries.ListProjectExecutionLedgerEventsParams{
 		TenantID:  tenantID,
@@ -541,6 +543,122 @@ func TestExecutionLedgerEventQueries(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, attempts, 1)
 	require.Equal(t, attempt.ID, attempts[0].ID)
+
+	providerRunID := uuid.New()
+	wrongTask, err := q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
+		TenantID:              tenantID,
+		ProjectID:             project.ID,
+		Title:                 "错误 Provider Session 任务",
+		Status:                "completed",
+		DigitalEmployeeRunID:  uuid.NullUUID{UUID: providerRunID, Valid: true},
+		ExpectedOutputs:       []byte(`[]`),
+		InputRequirements:     []byte(`{}`),
+		HandoffContract:       []byte(`{}`),
+		PlannerMetadata:       []byte(`{}`),
+		RequiresHumanApproval: false,
+	})
+	require.NoError(t, err)
+	correctTask, err := q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
+		TenantID:              tenantID,
+		ProjectID:             project.ID,
+		Title:                 "匹配 Provider Session 任务",
+		Status:                "completed",
+		DigitalEmployeeRunID:  uuid.NullUUID{UUID: providerRunID, Valid: true},
+		ExpectedOutputs:       []byte(`[]`),
+		InputRequirements:     []byte(`{}`),
+		HandoffContract:       []byte(`{}`),
+		PlannerMetadata:       []byte(`{}`),
+		RequiresHumanApproval: false,
+	})
+	require.NoError(t, err)
+
+	wrongAttempt, err := q.CreateProjectTaskAttempt(ctx, queries.CreateProjectTaskAttemptParams{
+		ID:                            uuid.New(),
+		TenantID:                      tenantID,
+		ProjectTaskID:                 wrongTask.ID,
+		AttemptNo:                     1,
+		Status:                        "succeeded",
+		DigitalEmployeeRunID:          uuid.NullUUID{UUID: providerRunID, Valid: true},
+		ExecutionContextPacket:        []byte(`{}`),
+		ExecutionContextPacketVersion: "v1",
+		LeaseToken:                    "wrong-provider-session-lease",
+		LeaseExpiresAt:                pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		IdempotencyKey:                "project-task-attempt:wrong-provider-session",
+	})
+	require.NoError(t, err)
+	correctAttempt, err := q.CreateProjectTaskAttempt(ctx, queries.CreateProjectTaskAttemptParams{
+		ID:                            uuid.New(),
+		TenantID:                      tenantID,
+		ProjectTaskID:                 correctTask.ID,
+		AttemptNo:                     1,
+		Status:                        "succeeded",
+		DigitalEmployeeRunID:          uuid.NullUUID{UUID: providerRunID, Valid: true},
+		ExecutionContextPacket:        []byte(`{}`),
+		ExecutionContextPacketVersion: "v1",
+		LeaseToken:                    "correct-provider-session-lease",
+		LeaseExpiresAt:                pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		IdempotencyKey:                "project-task-attempt:correct-provider-session",
+	})
+	require.NoError(t, err)
+
+	_, err = db.Exec(ctx, `
+		UPDATE project_task_attempts
+		SET provider_session_id = CASE
+			WHEN id = $1 THEN 'provider-session-other'
+			WHEN id = $2 THEN 'provider-session-match'
+			ELSE provider_session_id
+		END
+		WHERE tenant_id = $3
+		  AND id IN ($1, $2)
+	`, wrongAttempt.ID, correctAttempt.ID, tenantID)
+	require.NoError(t, err)
+
+	providerSessionID := uuid.New()
+	providerEventID := uuid.New()
+	digitalEmployeeID := uuid.New()
+	executionInstanceID := uuid.New()
+	runtimeNodeID := uuid.New()
+	_, err = db.Exec(ctx, `
+		INSERT INTO provider_sessions (
+			id,
+			tenant_id,
+			provider_session_id,
+			digital_employee_id,
+			execution_instance_id,
+			runtime_node_id,
+			provider_type,
+			status,
+			recoverable,
+			last_active_at
+		) VALUES ($1, $2, 'provider-session-match', $3, $4, $5, 'codex', 'running', true, NOW())
+	`, providerSessionID, tenantID, digitalEmployeeID, executionInstanceID, runtimeNodeID)
+	require.NoError(t, err)
+	_, err = db.Exec(ctx, `
+		INSERT INTO provider_session_events (
+			id,
+			tenant_id,
+			provider_session_id,
+			digital_employee_id,
+			execution_instance_id,
+			runtime_node_id,
+			provider_type,
+			event_type,
+			sequence_number,
+			payload,
+			command_id
+		) VALUES ($1, $2, $3, $4, $5, $6, 'codex', 'message_delta', 1, '{"summary":"provider finished"}'::jsonb, 'ledger-provider-event-command')
+	`, providerEventID, tenantID, providerSessionID, digitalEmployeeID, executionInstanceID, runtimeNodeID)
+	require.NoError(t, err)
+
+	providerLedgerEvent, err := q.CreateProviderSessionEventLedgerEvent(ctx, queries.CreateProviderSessionEventLedgerEventParams{
+		DigitalEmployeeRunID:   providerRunID,
+		TenantID:               tenantID,
+		ProviderSessionEventID: providerEventID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, correctTask.ID, providerLedgerEvent.ProjectTaskID.UUID)
+	require.Equal(t, correctAttempt.ID, providerLedgerEvent.ProjectTaskAttemptID.UUID)
+	require.Equal(t, "provider-session-match", providerLedgerEvent.ProviderSessionID.String)
 }
 
 func TestUserProjectTeamScopesQueriesReplaceAndList(t *testing.T) {

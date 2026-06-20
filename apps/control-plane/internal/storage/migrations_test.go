@@ -688,6 +688,8 @@ func TestExecutionLedgerEventsMigration(t *testing.T) {
 		"metadata JSONB NOT NULL DEFAULT '{}'::jsonb",
 		"occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
 		"idempotency_key VARCHAR(255) NOT NULL",
+		"created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
 	}
 	for _, want := range expected {
 		if !strings.Contains(block, want) {
@@ -698,8 +700,17 @@ func TestExecutionLedgerEventsMigration(t *testing.T) {
 	assertMigrationContains(t, sql, "CREATE UNIQUE INDEX uq_execution_ledger_events_idempotency")
 	assertMigrationContains(t, sql, "CREATE INDEX idx_execution_ledger_events_project_time")
 	assertMigrationContains(t, sql, "CREATE INDEX idx_execution_ledger_events_attempt_time")
+	assertMigrationContains(t, sql, "CREATE INDEX idx_execution_ledger_events_project_type")
+	assertMigrationContains(t, sql, "CREATE INDEX idx_execution_ledger_events_project_error")
+	assertMigrationContains(t, sql, "CREATE TRIGGER update_execution_ledger_events_updated_at")
 	assertMigrationContains(t, sql, "COMMENT ON TABLE execution_ledger_events IS '执行账本事件表，记录项目任务执行、Provider、工具、MCP、外部能力和证据链的统一审计索引。'")
 	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.input_summary IS '输入摘要，不保存完整 prompt、secret 或大 payload。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.provider_session_id IS 'Provider 外部会话 ID。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.error_family IS '错误分类，例如 provider_error、runtime_error、missing_context、capability_denied。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.artifact_refs IS '工件引用数组。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.evidence_refs IS '证据引用数组。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.metadata IS '结构化扩展数据，禁止写入 secret 和完整 raw payload。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.idempotency_key IS '执行账本事件幂等键。'")
 }
 
 func TestSkillManagementMigrationAddsSkillPackageTables(t *testing.T) {
