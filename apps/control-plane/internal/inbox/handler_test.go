@@ -121,6 +121,47 @@ func TestHandlerListItemsUsesConsoleIdentity(t *testing.T) {
 	}
 }
 
+func TestHandlerListItemsSerializesNilActionsAsEmptyArray(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	service := &handlerService{
+		listResult: ListItemsResult{
+			Items: []Item{{
+				ID:             uuid.New(),
+				TenantID:       tenantID,
+				TargetUserID:   userID,
+				ItemType:       ItemTypeApproval,
+				SourceType:     SourceTypeApprovalRequest,
+				SourceID:       uuid.New(),
+				Title:          "通知类事项",
+				Status:         StatusOpen,
+				Actions:        nil,
+				ContextPayload: map[string]any{},
+				DeepLink:       map[string]any{},
+				LastActivityAt: now,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			}},
+		},
+	}
+	handler := NewHandler(service)
+	req := withConsoleIdentity(httptest.NewRequest(http.MethodGet, "/inbox/items?view=mine&status=open", nil), tenantID, userID)
+	resp := httptest.NewRecorder()
+
+	handler.ListItems(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), `"actions":null`) {
+		t.Fatalf("expected empty action array, got %s", resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), `"actions":[]`) {
+		t.Fatalf("expected actions field to be serialized as [], got %s", resp.Body.String())
+	}
+}
+
 func TestHandlerBadgeUsesConsoleIdentity(t *testing.T) {
 	tenantID := uuid.New()
 	userID := uuid.New()

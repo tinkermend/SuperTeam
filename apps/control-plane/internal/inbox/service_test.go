@@ -196,7 +196,7 @@ func TestServiceRejectsProjectDecisionUpsertWithoutProjectSource(t *testing.T) {
 	}
 }
 
-func TestServiceRejectsProjectDecisionUpsertWithoutApprovalSource(t *testing.T) {
+func TestServiceAcceptsProjectDecisionUpsertWithoutApprovalSource(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
 	if err != nil {
@@ -204,7 +204,7 @@ func TestServiceRejectsProjectDecisionUpsertWithoutApprovalSource(t *testing.T) 
 	}
 	projectID := uuid.New()
 
-	_, err = service.UpsertItem(context.Background(), UpsertItemRequest{
+	item, err := service.UpsertItem(context.Background(), UpsertItemRequest{
 		TenantID:        uuid.New(),
 		TargetUserID:    uuid.New(),
 		Scope:           "personal",
@@ -214,11 +214,14 @@ func TestServiceRejectsProjectDecisionUpsertWithoutApprovalSource(t *testing.T) 
 		SourceProjectID: &projectID,
 		Title:           "项目决策待处理",
 	})
-	if !errors.Is(err, ErrInvalidItem) {
-		t.Fatalf("expected invalid item, got %v", err)
+	if err != nil {
+		t.Fatalf("upsert project decision without approval source: %v", err)
 	}
-	if repo.upsertItemCalls != 0 || repo.upsertByApprovalSourceCalls != 0 {
-		t.Fatalf("expected rejection before repository upsert, got generic=%d approval=%d", repo.upsertItemCalls, repo.upsertByApprovalSourceCalls)
+	if item.SourceApprovalRequestID != nil {
+		t.Fatalf("expected no approval source id, got %#v", item.SourceApprovalRequestID)
+	}
+	if repo.upsertItemCalls != 1 || repo.upsertByApprovalSourceCalls != 0 {
+		t.Fatalf("expected generic source upsert, got generic=%d approval=%d", repo.upsertItemCalls, repo.upsertByApprovalSourceCalls)
 	}
 }
 

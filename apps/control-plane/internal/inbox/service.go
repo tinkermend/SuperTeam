@@ -246,9 +246,6 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 	if req.ItemType == ItemTypeProjectDecision && (req.SourceProjectID == nil || *req.SourceProjectID == uuid.Nil) {
 		return UpsertItemRequest{}, ErrInvalidItem
 	}
-	if req.ItemType == ItemTypeProjectDecision && req.SourceApprovalRequestID == nil {
-		return UpsertItemRequest{}, ErrInvalidItem
-	}
 	if req.Status == "" {
 		req.Status = StatusOpen
 	}

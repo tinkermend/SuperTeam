@@ -20,6 +20,7 @@ var (
 )
 
 const maxDeepSeekChatCompletionResponseBytes = 1 << 20
+
 // defaultDeepSeekRequestTimeout is generous because the planner targets a reasoning
 // model, whose chain-of-thought on a full project planning prompt routinely takes far
 // longer than a non-reasoning completion before it emits the final JSON content.
@@ -112,9 +113,16 @@ func (p *DeepSeekRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSn
 			continue
 		}
 		pool := activeExecutorIDs(snapshot.DigitalEmployeePool)
+		applyRequiredHumanReviewPolicy(snapshot, &plan)
 		if err := ValidateRouteDecisionGraph(plan, pool, GraphValidationPolicy{MaxTasks: 12}); err != nil {
 			if contextErr := terminalContextError(ctx); contextErr != nil {
 				return RouteDecisionPlan{}, contextErr
+			}
+			if requiredHumanReviewPolicyEnabled(snapshot.CoordinationPolicy) {
+				repaired := synthesizeRequiredReviewPlan(snapshot, pool, plan)
+				if repairErr := ValidateRouteDecisionGraph(repaired, pool, GraphValidationPolicy{MaxTasks: 12}); repairErr == nil {
+					return repaired, nil
+				}
 			}
 			lastErr = err
 			continue
@@ -246,6 +254,7 @@ func buildPlannerSystemPrompt() string {
 		"The JSON object must match this schema: reason string, requires_human_review bool, tasks array, budget_estimate object, template_key string, planner_metadata object.",
 		"Each task JSON object must include key, title, summary, selected_employee_id as a UUID string, expected_outputs, input_requirements, handoff_contract, blocked_by_keys, risk_level, and task_kind.",
 		"Use selected_employee_id only from active executor candidates provided by the user prompt.",
+		"If coordination_policy.require_human_review_for_new_demands is true, still return at least one concrete task and set requires_human_review plus every task requires_human_approval to true.",
 	}, "\n")
 }
 
@@ -472,6 +481,91 @@ func canonicalPlannerMetadataKey(key string) string {
 		}
 	}
 	return builder.String()
+}
+
+func applyRequiredHumanReviewPolicy(snapshot CoordinationSnapshot, plan *RouteDecisionPlan) {
+	if plan == nil || !requiredHumanReviewPolicyEnabled(snapshot.CoordinationPolicy) {
+		return
+	}
+	plan.RequiresHumanReview = true
+	for i := range plan.Tasks {
+		plan.Tasks[i].RequiresHumanApproval = true
+	}
+}
+
+func synthesizeRequiredReviewPlan(snapshot CoordinationSnapshot, pool []uuid.UUID, source RouteDecisionPlan) RouteDecisionPlan {
+	if len(pool) == 0 {
+		return source
+	}
+	title := strings.TrimSpace(snapshot.Demand.Title)
+	if title == "" {
+		title = "处理项目需求"
+	}
+	summary := strings.TrimSpace(snapshot.Demand.Content)
+	if summary == "" {
+		summary = title
+	}
+	reason := strings.TrimSpace(source.Reason)
+	if reason == "" {
+		reason = "协调策略要求先进行人类审核，因此生成一个待审核的执行任务图"
+	}
+	expectedOutputs := []string{"execution_summary", "evidence_refs", "recommended_next_action"}
+	stageIndex := int32(0)
+	metadata := clonePlannerMap(source.PlannerMetadata)
+	metadata["planner_repair"] = "policy_required_human_review"
+	metadata["repair_reason"] = "model_output_invalid_for_required_review"
+	templateKey := strings.TrimSpace(source.TemplateKey)
+	if templateKey == "" {
+		templateKey = "policy.required_human_review.single_task"
+	}
+	budgetEstimate := clonePlannerMap(source.BudgetEstimate)
+	if len(budgetEstimate) == 0 {
+		budgetEstimate["mode"] = "policy_default"
+	}
+	return RouteDecisionPlan{
+		Reason:              reason,
+		RequiresHumanReview: true,
+		BudgetEstimate:      budgetEstimate,
+		TemplateKey:         templateKey,
+		PlannerMetadata:     metadata,
+		Tasks: []PlannedTask{{
+			Key:                   "required_review_execute_demand",
+			Title:                 title,
+			Summary:               summary,
+			SelectedEmployeeID:    pool[0],
+			TaskKind:              "execution",
+			StageIndex:            &stageIndex,
+			RiskLevel:             "normal",
+			RequiresHumanApproval: true,
+			ExpectedOutputs:       expectedOutputs,
+			InputRequirements: map[string]any{
+				"demand_id":             snapshot.Demand.ID.String(),
+				"title":                 title,
+				"content":               snapshot.Demand.Content,
+				"requires_route_review": true,
+			},
+			HandoffContract: map[string]any{
+				"expected_outputs": stringsToAny(expectedOutputs),
+				"completion_path":  "project_task_attempt_writeback",
+			},
+		}},
+	}
+}
+
+func requiredHumanReviewPolicyEnabled(policy map[string]any) bool {
+	value, ok := policy["require_human_review_for_new_demands"].(bool)
+	return ok && value
+}
+
+func clonePlannerMap(value map[string]any) map[string]any {
+	if len(value) == 0 {
+		return map[string]any{}
+	}
+	cloned := make(map[string]any, len(value))
+	for key, item := range value {
+		cloned[key] = item
+	}
+	return cloned
 }
 
 func readLimitedSuccessBody(body io.Reader) ([]byte, error) {

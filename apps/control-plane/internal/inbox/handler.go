@@ -376,7 +376,7 @@ func itemResponseFromDomain(item Item) itemResponse {
 		RiskLevel:               item.RiskLevel,
 		Priority:                item.Priority,
 		Status:                  item.Status,
-		Actions:                 append([]Action(nil), item.Actions...),
+		Actions:                 actionsOrEmpty(item.Actions),
 		Context:                 mapOrEmpty(item.ContextPayload),
 		DeepLink:                mapOrEmpty(item.DeepLink),
 		LastActivityAt:          timeValue(item.LastActivityAt),
@@ -384,6 +384,13 @@ func itemResponseFromDomain(item Item) itemResponse {
 		UpdatedAt:               timeValue(item.UpdatedAt),
 		ResolvedAt:              optionalTimeString(item.ResolvedAt),
 	}
+}
+
+func actionsOrEmpty(actions []Action) []Action {
+	if actions == nil {
+		return []Action{}
+	}
+	return append([]Action(nil), actions...)
 }
 
 func optionalUUIDString(value *uuid.UUID) *string {

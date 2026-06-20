@@ -68,7 +68,7 @@ func (s *ProjectStore) runtimeReadyEmployeeIDs(ctx context.Context, tenantID uui
 // lookups fail open: a gate error must not strand planning, since the authoritative
 // lending enforcement remains the approval workflow.
 func (s *ProjectStore) lendingEligibleEmployeeIDs(ctx context.Context, tenantID, projectID uuid.UUID, ownTeamID *uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]bool, map[uuid.UUID]uuid.UUID) {
-	if s.lending == nil || len(employeeIDs) == 0 {
+	if s.lending == nil || ownTeamID == nil || len(employeeIDs) == 0 {
 		return nil, nil
 	}
 	employeeTeams, err := s.lending.ResolveEmployeeTeams(ctx, tenantID, employeeIDs)

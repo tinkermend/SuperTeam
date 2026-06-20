@@ -143,6 +143,38 @@ func TestLoadSnapshotAppliesLendingGate(t *testing.T) {
 	}
 }
 
+func TestLoadSnapshotLendingGateFailsOpenWhenProjectHasNoTeam(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	employeeID := uuid.New()
+	employeeTeam := uuid.New()
+
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "需求"},
+		members: []project.ProjectMember{
+			{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, PrincipalType: project.PrincipalTypeDigitalEmployee, PrincipalID: employeeID, ProjectRole: project.ProjectRoleExecutor, Status: "active"},
+		},
+	}
+	gate := fakeLendingGatekeeper{
+		employeeTeams: map[uuid.UUID]uuid.UUID{employeeID: employeeTeam},
+		grantedTeams:  map[uuid.UUID]bool{},
+	}
+	store := NewProjectStore(repo).WithLendingGatekeeper(gate)
+
+	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{TenantID: tenantID, ProjectID: projectID, DemandID: demandID})
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if len(snapshot.DigitalEmployeePool) != 1 || snapshot.DigitalEmployeePool[0].PrincipalID != employeeID {
+		t.Fatalf("project without own team must not lending-gate executors: %#v", snapshot.DigitalEmployeePool)
+	}
+	if events := eventsByType(repo.events, project.ProjectEventLendingEmployeeSkipped); len(events) != 0 {
+		t.Fatalf("project without own team must not record lending skips: %#v", events)
+	}
+}
+
 func TestLoadSnapshotLendingGateFailsOpen(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

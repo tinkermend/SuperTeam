@@ -153,6 +153,41 @@ func TestDecisionProjectorAdapterUpsertsProjectDecision(t *testing.T) {
 	}
 }
 
+func TestDecisionProjectorAdapterOmitsEmptyApprovalSource(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new inbox service: %v", err)
+	}
+	adapter := NewDecisionProjectorAdapter(service)
+	taskID := uuid.New()
+	decision := project.DecisionRequest{
+		ID:             uuid.New(),
+		TenantID:       uuid.New(),
+		ProjectID:      uuid.New(),
+		ProjectTaskID:  &taskID,
+		TargetUserID:   uuid.New(),
+		DecisionType:   "project_task_acceptance",
+		TitleSnapshot:  "Review task result",
+		StatusSnapshot: "pending",
+		CreatedAt:      time.Date(2026, 6, 20, 15, 0, 0, 0, time.UTC),
+		UpdatedAt:      time.Date(2026, 6, 20, 15, 0, 0, 0, time.UTC),
+	}
+
+	err = adapter.UpsertProjectDecisionRequest(context.Background(), decision)
+	if err != nil {
+		t.Fatalf("upsert project decision: %v", err)
+	}
+	itemID := repo.itemsBySource[sourceKey(decision.TenantID, SourceTypeProjectDecisionRequest, decision.ID)]
+	item, err := repo.GetItem(context.Background(), decision.TenantID, itemID)
+	if err != nil {
+		t.Fatalf("get projected item: %v", err)
+	}
+	if item.SourceApprovalRequestID != nil {
+		t.Fatalf("expected no approval source id, got %#v", item.SourceApprovalRequestID)
+	}
+}
+
 func TestDecisionProjectorAdapterResolvesProjectDecision(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)

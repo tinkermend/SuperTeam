@@ -1655,6 +1655,11 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		if err != nil {
 			return nil, err
 		}
+		if s.inbox != nil {
+			if err := s.inbox.UpsertProjectDecisionRequest(ctx, result.Decision); err != nil {
+				return nil, err
+			}
+		}
 		if err := s.materializeTaskCompletionEvidence(ctx, task, CompleteProjectTaskRequest{
 			TenantID:              req.TenantID,
 			RuntimeNodeID:         req.RuntimeNodeID,
@@ -2210,6 +2215,11 @@ func (s *Service) WaitHumanProjectTaskAttempt(ctx context.Context, req WaitHuman
 	if err != nil {
 		return nil, err
 	}
+	if s.inbox != nil {
+		if err := s.inbox.UpsertProjectDecisionRequest(ctx, result.Decision); err != nil {
+			return nil, err
+		}
+	}
 	return &result.Task, nil
 }
 
@@ -2471,7 +2481,16 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 	if err != nil {
 		return nil, err
 	}
-	if s.approvals != nil {
+	if decision.StatusSnapshot != "pending" {
+		if decision.StatusSnapshot == req.Decision {
+			if err := s.resolveProjectTaskAcceptanceDecision(ctx, decision, req); err != nil {
+				return nil, err
+			}
+			return &decision, nil
+		}
+		return nil, ErrInvalidProject
+	}
+	if s.approvals != nil && decision.ApprovalRequestID != uuid.Nil {
 		if err := s.approvals.ResolveApproval(ctx, ResolveApprovalRequest{
 			TenantID:          req.TenantID,
 			ApprovalRequestID: decision.ApprovalRequestID,
@@ -2512,6 +2531,9 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 			return nil, err
 		}
 	}
+	if err := s.resolveProjectTaskAcceptanceDecision(ctx, resolved, req); err != nil {
+		return nil, err
+	}
 	if err := s.coordinator.SignalHumanDecisionSubmitted(ctx, HumanDecisionSubmittedSignal{
 		TenantID:          req.TenantID,
 		ProjectID:         req.ProjectID,
@@ -2532,6 +2554,38 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 		return nil, err
 	}
 	return &resolved, nil
+}
+
+func (s *Service) resolveProjectTaskAcceptanceDecision(ctx context.Context, decision DecisionRequest, req ResolveDecisionRequest) error {
+	if decision.DecisionType != "project_task_acceptance" || req.Decision != "approved" || decision.ProjectTaskID == nil {
+		return nil
+	}
+	_, err := s.ResolveProjectTaskHumanWait(ctx, ResolveProjectTaskHumanWaitRequest{
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		ProjectTaskID:   *decision.ProjectTaskID,
+		ActorUserID:     req.DecidedByUserID,
+		Resolution:      HumanWaitResolutionApprove,
+		ResponseSummary: projectTaskAcceptanceResponseSummary(req.Comment),
+	})
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, ErrProjectConflict) {
+		task, getErr := s.repository.GetProjectTask(ctx, req.TenantID, *decision.ProjectTaskID)
+		if getErr == nil && task.ProjectID == req.ProjectID && task.Status == ProjectTaskStatusCompleted {
+			return nil
+		}
+	}
+	return err
+}
+
+func projectTaskAcceptanceResponseSummary(comment string) string {
+	comment = strings.TrimSpace(comment)
+	if comment != "" {
+		return comment
+	}
+	return "任务验收通过"
 }
 
 func (s *Service) RetryWorkflowSignal(ctx context.Context, req RetryWorkflowSignalRequest) (*ProjectEvent, error) {

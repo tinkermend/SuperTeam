@@ -77,7 +77,11 @@ func (a *DecisionProjectorAdapter) upsert(ctx context.Context, decision project.
 		return ErrSourceUnavailable
 	}
 	projectID := decision.ProjectID
-	approvalID := decision.ApprovalRequestID
+	var approvalID *uuid.UUID
+	if decision.ApprovalRequestID != uuid.Nil {
+		id := decision.ApprovalRequestID
+		approvalID = &id
+	}
 	_, err := a.service.UpsertItem(ctx, UpsertItemRequest{
 		TenantID:                decision.TenantID,
 		TargetUserID:            decision.TargetUserID,
@@ -87,7 +91,7 @@ func (a *DecisionProjectorAdapter) upsert(ctx context.Context, decision project.
 		SourceID:                decision.ID,
 		SourceProjectID:         &projectID,
 		SourceTaskID:            decision.ProjectTaskID,
-		SourceApprovalRequestID: &approvalID,
+		SourceApprovalRequestID: approvalID,
 		Title:                   decision.TitleSnapshot,
 		Summary:                 stringValue(decision.SummarySnapshot),
 		RiskLevel:               stringValue(decision.RiskLevelSnapshot),

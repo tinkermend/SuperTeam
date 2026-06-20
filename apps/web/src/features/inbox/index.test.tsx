@@ -209,6 +209,18 @@ describe("InboxView", () => {
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
   });
 
+  it("renders read-only inbox items when API returns null actions", async () => {
+    const itemWithNullActions = makeInboxItem({
+      actions: null as unknown as InboxItem["actions"],
+      title: "验收项目交付",
+    });
+    const screen = await renderInboxView(createInboxFetcher({ mineItem: itemWithNullActions }));
+
+    await expect.element(screen.getByText("验收项目交付")).toBeVisible();
+    expect(screen.getByRole("button", { name: "通过" }).query()).toBeNull();
+    expect(screen.getByRole("button", { name: "退回" }).query()).toBeNull();
+  });
+
   it("requests open inbox by default", async () => {
     const fetcher = createInboxFetcher();
     const screen = await renderInboxView(fetcher);

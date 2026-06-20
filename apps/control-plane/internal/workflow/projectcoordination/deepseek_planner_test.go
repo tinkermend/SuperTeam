@@ -115,6 +115,42 @@ func TestDeepSeekRoutePlannerRetriesInvalidOutput(t *testing.T) {
 	}
 }
 
+func TestDeepSeekRoutePlannerSynthesizesReviewPlanWhenPolicyRequiresHumanReview(t *testing.T) {
+	employeeID := uuid.New()
+	client := &countingChatCompletionClient{content: `{
+		"reason":"pause for owner review before dispatch",
+		"requires_human_review":true,
+		"tasks":[],
+		"budget_estimate":{"mode":"planner"},
+		"template_key":"route_review",
+		"planner_metadata":{"provider":"deepseek"}
+	}`}
+	planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://api.deepseek.com",
+		Model:       "deepseek-chat",
+		MaxAttempts: 1,
+	}, client)
+
+	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
+		Demand: DemandSnapshot{ID: uuid.New(), Title: "删除生产数据", Content: "需要先确认风险"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			{PrincipalID: employeeID, ProjectRole: "executor", Status: "active"},
+		},
+		CoordinationPolicy: map[string]any{"require_human_review_for_new_demands": true},
+	})
+
+	require.NoError(t, err)
+	require.True(t, plan.RequiresHumanReview)
+	require.Len(t, plan.Tasks, 1)
+	require.Equal(t, employeeID, plan.Tasks[0].SelectedEmployeeID)
+	require.True(t, plan.Tasks[0].RequiresHumanApproval)
+	require.NotEmpty(t, plan.Tasks[0].ExpectedOutputs)
+	require.NotEmpty(t, plan.Tasks[0].InputRequirements)
+	require.NotEmpty(t, plan.Tasks[0].HandoffContract)
+	require.Equal(t, int32(1), client.calls.Load())
+}
+
 func TestDeepSeekRoutePlannerRejectsMissingRequiredTaskMaps(t *testing.T) {
 	employeeID := uuid.New()
 	for _, tc := range []struct {

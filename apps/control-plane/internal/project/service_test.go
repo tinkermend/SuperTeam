@@ -294,7 +294,8 @@ func TestCompleteProjectTaskAttemptCreatesSummaryAndCompletesTask(t *testing.T) 
 
 func TestCompleteHighRiskAttemptRequiresAcceptanceBeforeCompleted(t *testing.T) {
 	repo := newMemoryRepository()
-	service, err := NewService(repo)
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, nil, nil, inbox, nil)
 	require.NoError(t, err)
 	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
 	high := "high"
@@ -313,6 +314,9 @@ func TestCompleteHighRiskAttemptRequiresAcceptanceBeforeCompleted(t *testing.T) 
 	require.Equal(t, ProjectTaskAttemptStatusSucceeded, repo.projectTaskAttempts[0].Status)
 	require.Len(t, repo.decisionRequests, 1)
 	require.Equal(t, "project_task_acceptance", repo.decisionRequests[0].DecisionType)
+	require.Len(t, inbox.upserts, 1)
+	require.Equal(t, repo.decisionRequests[0].ID, inbox.upserts[0].ID)
+	require.Equal(t, repo.decisionRequests[0].ProjectTaskID, inbox.upserts[0].ProjectTaskID)
 }
 
 func TestResolveProjectTaskHumanWaitAcceptanceApprovedCompletesTask(t *testing.T) {
@@ -478,7 +482,8 @@ func TestFailProjectTaskAttemptNonRetryableExecutionFailsTask(t *testing.T) {
 
 func TestWaitHumanProjectTaskAttemptMovesTaskAndCreatesDecisionRequest(t *testing.T) {
 	repo := newMemoryRepository()
-	service, err := NewService(repo)
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, nil, nil, inbox, nil)
 	require.NoError(t, err)
 	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
 	employeeID := *repo.tasks[0].AssignedDigitalEmployeeID
@@ -499,6 +504,9 @@ func TestWaitHumanProjectTaskAttemptMovesTaskAndCreatesDecisionRequest(t *testin
 	require.Equal(t, ProjectTaskAttemptStatusWaitingHuman, repo.projectTaskAttempts[0].Status)
 	require.Len(t, repo.decisionRequests, 1)
 	require.Equal(t, "project_task_missing_context", repo.decisionRequests[0].DecisionType)
+	require.Len(t, inbox.upserts, 1)
+	require.Equal(t, repo.decisionRequests[0].ID, inbox.upserts[0].ID)
+	require.Equal(t, repo.decisionRequests[0].ProjectTaskID, inbox.upserts[0].ProjectTaskID)
 	require.Equal(t, ProjectEventTaskWaitingHuman, repo.eventTypes[len(repo.eventTypes)-1])
 }
 
@@ -3521,6 +3529,147 @@ func TestResolveDecisionUsesApprovalAndSignalsCoordinator(t *testing.T) {
 	}
 	if coordinator.lastDecision.Payload["source"] != "console" {
 		t.Fatalf("expected decision signal payload to be preserved, got %#v", coordinator.lastDecision.Payload)
+	}
+}
+
+func TestResolveDecisionSkipsApprovalResolverForProjectOnlyDecision(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:             decisionID,
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		TargetUserID:   actorID,
+		DecisionType:   "project_task_acceptance",
+		TitleSnapshot:  "任务验收",
+		StatusSnapshot: "pending",
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          "approved",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "approved", resolved.StatusSnapshot)
+	require.Equal(t, 0, approvals.calls)
+	require.Equal(t, 1, coordinator.decisionSignals)
+	require.Equal(t, uuid.Nil, coordinator.lastDecision.ApprovalRequestID)
+}
+
+func TestResolveDecisionApprovedProjectTaskAcceptanceCompletesWaitingTask(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusWaitingHuman, ProjectTaskAttemptStatusSucceeded)
+	actorID := repo.projects[fixture.projectID].HumanOwnerUserID
+	decisionID := uuid.New()
+	reason := HumanWaitReasonAcceptanceRequired
+	repo.tasks[0].WaitingReason = &reason
+	repo.tasks[0].WaitingRequestID = &decisionID
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:             decisionID,
+		TenantID:       fixture.tenantID,
+		ProjectID:      fixture.projectID,
+		ProjectTaskID:  &fixture.taskID,
+		TargetUserID:   actorID,
+		DecisionType:   "project_task_acceptance",
+		TitleSnapshot:  "任务验收",
+		StatusSnapshot: "pending",
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          fixture.tenantID,
+		ProjectID:         fixture.projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          "approved",
+		Comment:           "验收通过",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "approved", resolved.StatusSnapshot)
+	task, err := repo.GetProjectTask(context.Background(), fixture.tenantID, fixture.taskID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusCompleted, task.Status)
+	require.Equal(t, 0, approvals.calls)
+	require.Equal(t, 1, coordinator.decisionSignals)
+}
+
+func TestResolveDecisionIsIdempotentForSameResolvedDecision(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	approvals := &fakeApprovalResolver{}
+	service, err := NewServiceWithCoordinatorAndApprovals(repo, coordinator, approvals)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	actorID := uuid.New()
+	resolvedEventID := uuid.New()
+	resolvedAt := time.Now().UTC()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "项目",
+		Goal:                   "目标",
+		Status:                 ProjectStatusArchived,
+		HumanOwnerUserID:       actorID,
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+	}
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:                decisionID,
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalID,
+		TargetUserID:      actorID,
+		DecisionType:      "project_acceptance",
+		TitleSnapshot:     "验收项目交付",
+		StatusSnapshot:    "approved",
+		ResolvedEventID:   &resolvedEventID,
+		ResolvedAt:        &resolvedAt,
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		DecidedByUserID:   actorID,
+		Decision:          "approved",
+	})
+
+	if err != nil {
+		t.Fatalf("resolve decision replay: %v", err)
+	}
+	if resolved.ID != decisionID || resolved.StatusSnapshot != "approved" || resolved.ResolvedEventID == nil || *resolved.ResolvedEventID != resolvedEventID {
+		t.Fatalf("expected existing resolved decision, got %#v", resolved)
+	}
+	if approvals.calls != 0 || coordinator.decisionSignals != 0 || len(repo.events) != 0 {
+		t.Fatalf("expected idempotent replay without side effects, approvals=%d signals=%d events=%d", approvals.calls, coordinator.decisionSignals, len(repo.events))
 	}
 }
 

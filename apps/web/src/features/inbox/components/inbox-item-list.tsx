@@ -43,6 +43,7 @@ export function InboxItemList({ items, onAction, view }: InboxItemListProps) {
     <LiquidCard>
       <CardContent className="divide-y divide-border/70 p-0">
         {items.map((item) => {
+          const actions = Array.isArray(item.actions) ? item.actions : [];
           const contextLabel = formatContext(item);
 
           return (
@@ -84,9 +85,9 @@ export function InboxItemList({ items, onAction, view }: InboxItemListProps) {
                   </div>
                 </div>
 
-                {view === "mine" && item.actions.length > 0 ? (
+                {view === "mine" && actions.length > 0 ? (
                   <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
-                    {item.actions.map((action) => (
+                    {actions.map((action) => (
                       <Button
                         className={cn(actionToneClass[action.tone])}
                         key={action.key}
