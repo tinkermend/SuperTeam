@@ -231,6 +231,8 @@ pub struct ProjectTaskFailWriteback {
     pub runtime_node_id: String,
     pub idempotency_key: String,
     pub failure_summary: String,
+    pub failure_family: String,
+    pub retryable: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

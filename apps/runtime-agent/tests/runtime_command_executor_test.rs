@@ -572,6 +572,11 @@ async fn capture_completion_project_task_fail_writeback(
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> StatusCode {
+    let _ = required_string_field(&payload, "failure_family");
+    assert!(
+        payload.get("retryable").is_some_and(Value::is_boolean),
+        "missing boolean retryable in payload: {payload}"
+    );
     *capture
         .project_task_fail
         .lock()
@@ -687,6 +692,11 @@ async fn capture_project_task_fail_writeback(
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> StatusCode {
+    let _ = required_string_field(&payload, "failure_family");
+    assert!(
+        payload.get("retryable").is_some_and(Value::is_boolean),
+        "missing boolean retryable in payload: {payload}"
+    );
     *capture
         .project_task_fail
         .lock()
@@ -928,6 +938,8 @@ exit 1
         project_fail.payload["failure_summary"],
         "claude exited with status 1"
     );
+    assert_eq!(project_fail.payload["failure_family"], "transient_provider");
+    assert_eq!(project_fail.payload["retryable"], true);
 
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert!(
@@ -1561,6 +1573,11 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
             .and_then(Value::as_str)
             .is_some_and(|value| value.contains("content_hash mismatch"))
     );
+    assert_eq!(
+        project_task_failed.payload["failure_family"],
+        "invalid_contract"
+    );
+    assert_eq!(project_task_failed.payload["retryable"], false);
     assert!(
         !marker_file.exists(),
         "provider started after workspace failure"
@@ -2062,6 +2079,11 @@ sleep 5
         project_task_failed.payload["failure_summary"],
         "operator cancelled"
     );
+    assert_eq!(
+        project_task_failed.payload["failure_family"],
+        "business_cancelled"
+    );
+    assert_eq!(project_task_failed.payload["retryable"], false);
     server.task.abort();
 }
 

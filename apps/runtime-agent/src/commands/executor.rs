@@ -1458,6 +1458,7 @@ fn project_task_fail_writeback(
     command_id: &str,
     error_message: &str,
 ) -> ProjectTaskFailWriteback {
+    let (failure_family, retryable) = project_task_failure_classification(error_message);
     ProjectTaskFailWriteback {
         project_task_id: context.project_task_id.clone(),
         lease_token: context.lease_token.clone(),
@@ -1468,7 +1469,36 @@ fn project_task_fail_writeback(
             command_id,
         ),
         failure_summary: error_message.trim().to_string(),
+        failure_family: failure_family.to_string(),
+        retryable,
     }
+}
+
+fn project_task_failure_classification(error_message: &str) -> (&'static str, bool) {
+    let normalized = error_message.to_ascii_lowercase();
+    if normalized.contains("operator cancelled") || normalized.contains("cancelled") {
+        return ("business_cancelled", false);
+    }
+    if normalized.contains("content_hash mismatch")
+        || normalized.contains("workspace_sync")
+        || normalized.contains("workspace sync")
+    {
+        return ("invalid_contract", false);
+    }
+    if normalized.contains("timeout") || normalized.contains("timed out") {
+        return ("timeout", true);
+    }
+    if normalized.contains("claude exited")
+        || normalized.contains("opencode exited")
+        || normalized.contains("codex exited")
+        || normalized.contains("api error")
+        || normalized.contains("rate limit")
+        || normalized.contains("overloaded")
+        || normalized.contains("unavailable")
+    {
+        return ("transient_provider", true);
+    }
+    ("non_retryable_execution", false)
 }
 
 fn project_task_attempt_idempotency_key(
