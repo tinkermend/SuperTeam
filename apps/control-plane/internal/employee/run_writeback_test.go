@@ -98,6 +98,65 @@ func TestWritebackEventCreatesTaskAndProviderSessionEventsIdempotently(t *testin
 	}
 }
 
+func TestWritebackEventRecordsProviderLedgerBestEffort(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
+	ledger := &fakeExecutionLedgerRecorder{}
+	service.WithExecutionLedgerRecorder(ledger)
+	providerSessionExternalID := "provider-session-1"
+
+	if err := service.RecordEvent(context.Background(), validWritebackIdentity(run), "cmd-1", RuntimeCommandEventWriteback{
+		EventType:                 "text_delta",
+		SequenceNumber:            7,
+		Payload:                   map[string]any{"text": "hello"},
+		ProviderSessionExternalID: &providerSessionExternalID,
+	}); err != nil {
+		t.Fatalf("record event: %v", err)
+	}
+
+	if len(ledger.requests) != 1 {
+		t.Fatalf("expected one ledger request, got %#v", ledger.requests)
+	}
+	wantProviderEventID, ok := repo.providerSessionEventIDs[providerSessionEventKey(run.TenantID, "cmd-1", 7)]
+	if !ok {
+		t.Fatalf("expected fake repository to store provider event ID")
+	}
+	got := ledger.requests[0]
+	if got.TenantID != run.TenantID || got.DigitalEmployeeRunID != run.ID || got.ProviderSessionEventID != wantProviderEventID {
+		t.Fatalf("unexpected ledger request: %#v want tenant=%s run=%s event=%s", got, run.TenantID, run.ID, wantProviderEventID)
+	}
+}
+
+func TestWritebackEventIgnoresProviderLedgerRecorderError(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
+	ledger := &fakeExecutionLedgerRecorder{err: errors.New("ledger unavailable")}
+	service.WithExecutionLedgerRecorder(ledger)
+	providerSessionExternalID := "provider-session-1"
+
+	if err := service.RecordEvent(context.Background(), validWritebackIdentity(run), "cmd-1", RuntimeCommandEventWriteback{
+		EventType:                 "text_delta",
+		SequenceNumber:            7,
+		Payload:                   map[string]any{"text": "hello"},
+		ProviderSessionExternalID: &providerSessionExternalID,
+	}); err != nil {
+		t.Fatalf("record event should ignore ledger failure: %v", err)
+	}
+
+	if len(ledger.requests) != 1 {
+		t.Fatalf("expected one attempted ledger request, got %#v", ledger.requests)
+	}
+	if repo.taskEventInsertCount != 1 || repo.providerSessionEventInsertCount != 1 {
+		t.Fatalf("expected writeback writes to succeed, task=%d provider=%d", repo.taskEventInsertCount, repo.providerSessionEventInsertCount)
+	}
+}
+
 func TestWritebackDuplicateProviderEventUsesInsertSignalForRuntimeOverview(t *testing.T) {
 	repo := newFakeRunWritebackRepository()
 	repo.forceMissingRunEventSequence = true
@@ -126,6 +185,37 @@ func TestWritebackDuplicateProviderEventUsesInsertSignalForRuntimeOverview(t *te
 	}
 	if len(recorder.events) != 1 {
 		t.Fatalf("expected overview event only for effective new task event, got %#v", recorder.events)
+	}
+}
+
+func TestWritebackTerminalRecordsProviderLedgerBestEffort(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
+	ledger := &fakeExecutionLedgerRecorder{}
+	service.WithExecutionLedgerRecorder(ledger)
+	providerSessionExternalID := "provider-session-terminal"
+
+	if err := service.Complete(context.Background(), validWritebackIdentity(run), "cmd-1", RuntimeCommandTerminalWriteback{
+		Status:                    DigitalEmployeeRunStatusCompleted,
+		ProviderSessionExternalID: &providerSessionExternalID,
+		Result:                    map[string]any{"summary": "done"},
+	}); err != nil {
+		t.Fatalf("complete run: %v", err)
+	}
+
+	if len(ledger.requests) != 1 {
+		t.Fatalf("expected one terminal ledger request, got %#v", ledger.requests)
+	}
+	wantProviderEventID, ok := repo.providerSessionEventIDs[providerSessionEventKey(run.TenantID, "cmd-1", terminalCompletedSequence)]
+	if !ok {
+		t.Fatalf("expected fake repository to store terminal provider event ID")
+	}
+	got := ledger.requests[0]
+	if got.TenantID != run.TenantID || got.DigitalEmployeeRunID != run.ID || got.ProviderSessionEventID != wantProviderEventID {
+		t.Fatalf("unexpected terminal ledger request: %#v want tenant=%s run=%s event=%s", got, run.TenantID, run.ID, wantProviderEventID)
 	}
 }
 
@@ -893,6 +983,7 @@ type fakeRunWritebackRepository struct {
 	executionInstances              map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord
 	taskEventKeys                   map[string]struct{}
 	providerSessionEventKeys        map[string]struct{}
+	providerSessionEventIDs         map[string]uuid.UUID
 	providerSessionIDs              map[string]uuid.UUID
 	taskEvents                      []CreateRunEventRecordRequest
 	providerSessionEvents           []CreateProviderSessionEventRecordRequest
@@ -932,6 +1023,7 @@ func newFakeRunWritebackRepository() *fakeRunWritebackRepository {
 		executionInstances:       map[uuid.UUID]DigitalEmployeeExecutionInstanceRecord{},
 		taskEventKeys:            map[string]struct{}{},
 		providerSessionEventKeys: map[string]struct{}{},
+		providerSessionEventIDs:  map[string]uuid.UUID{},
 		providerSessionIDs:       map[string]uuid.UUID{},
 	}
 }
@@ -1062,6 +1154,10 @@ func (f *fakeRunWritebackRepository) CreateTaskEventIfAbsent(_ context.Context, 
 	return true, nil
 }
 
+func providerSessionEventKey(tenantID uuid.UUID, commandID string, sequenceNumber int32) string {
+	return fmt.Sprintf("%s:%s:%d", tenantID, commandID, sequenceNumber)
+}
+
 func (f *fakeRunWritebackRepository) UpsertProviderSession(_ context.Context, req UpsertProviderSessionRequest) (uuid.UUID, error) {
 	req.SessionState = redactRuntimeEventPayload(req.SessionState)
 	req.Metadata = redactRuntimeEventPayload(req.Metadata)
@@ -1075,22 +1171,24 @@ func (f *fakeRunWritebackRepository) UpsertProviderSession(_ context.Context, re
 	return id, nil
 }
 
-func (f *fakeRunWritebackRepository) CreateProviderSessionEventIfAbsent(_ context.Context, req CreateProviderSessionEventRecordRequest) error {
+func (f *fakeRunWritebackRepository) CreateProviderSessionEventIfAbsent(_ context.Context, req CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {
 	commandID := ""
 	if req.CommandID != nil {
 		commandID = *req.CommandID
 	}
-	key := fmt.Sprintf("%s:%s:%d", req.TenantID, commandID, req.SequenceNumber)
-	if _, exists := f.providerSessionEventKeys[key]; exists {
-		return nil
+	key := providerSessionEventKey(req.TenantID, commandID, req.SequenceNumber)
+	if id, exists := f.providerSessionEventIDs[key]; exists {
+		return id, nil
 	}
+	id := uuid.NewSHA1(uuid.NameSpaceOID, []byte(key))
+	f.providerSessionEventIDs[key] = id
 	f.providerSessionEventKeys[key] = struct{}{}
 	req.Payload = redactRuntimeEventPayload(req.Payload)
 	req.SessionStatePatch = redactRuntimeEventPayload(req.SessionStatePatch)
 	req.Metadata = redactRuntimeEventPayload(req.Metadata)
 	f.providerSessionEvents = append(f.providerSessionEvents, req)
 	f.providerSessionEventInsertCount++
-	return nil
+	return id, nil
 }
 
 func (f *fakeRunWritebackRepository) CreateCommandReceipt(context.Context, CreateRuntimeCommandReceiptRequest) error {
@@ -1196,6 +1294,16 @@ type fakeRuntimeEventRecorder struct {
 
 func (f *fakeRuntimeEventRecorder) RecordRuntimeEvent(_ context.Context, req RuntimeEventRecordRequest) error {
 	f.events = append(f.events, req)
+	return f.err
+}
+
+type fakeExecutionLedgerRecorder struct {
+	requests []ProviderSessionEventLedgerRecordRequest
+	err      error
+}
+
+func (f *fakeExecutionLedgerRecorder) RecordProviderSessionEvent(_ context.Context, req ProviderSessionEventLedgerRecordRequest) error {
+	f.requests = append(f.requests, req)
 	return f.err
 }
 

@@ -369,21 +369,21 @@ func (r *PgRunRepository) UpsertProviderSession(ctx context.Context, req UpsertP
 	return session.ID, nil
 }
 
-func (r *PgRunRepository) CreateProviderSessionEventIfAbsent(ctx context.Context, req CreateProviderSessionEventRecordRequest) error {
+func (r *PgRunRepository) CreateProviderSessionEventIfAbsent(ctx context.Context, req CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {
 	payload, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Payload), "payload")
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 	sessionStatePatch, err := jsonBytesFromMap(req.SessionStatePatch, "session_state_patch")
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 	metadata, err := jsonBytesFromMap(redactRuntimeEventPayload(req.Metadata), "metadata")
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 
-	_, err = r.q.CreateProviderSessionEventIfAbsent(ctx, queries.CreateProviderSessionEventIfAbsentParams{
+	event, err := r.q.CreateProviderSessionEventIfAbsent(ctx, queries.CreateProviderSessionEventIfAbsentParams{
 		EventType:           req.EventType,
 		SequenceNumber:      req.SequenceNumber,
 		Payload:             payload,
@@ -396,7 +396,10 @@ func (r *PgRunRepository) CreateProviderSessionEventIfAbsent(ctx context.Context
 		ProviderSessionUuid: req.ProviderSessionUUID,
 		TenantID:            req.TenantID,
 	})
-	return err
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return event.ID, nil
 }
 
 func (r *PgRunRepository) CreateCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error {
