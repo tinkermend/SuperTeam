@@ -233,6 +233,21 @@ pub struct ProjectTaskFailWriteback {
     pub failure_summary: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectTaskWaitHumanWriteback {
+    pub project_task_id: String,
+    pub lease_token: String,
+    pub runtime_node_id: String,
+    pub idempotency_key: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub provider_session_id: Option<String>,
+    pub digital_employee_id: String,
+    pub reason: String,
+    pub summary: String,
+    pub missing_context_refs: Vec<serde_json::Value>,
+    pub suggested_resolution_options: Vec<String>,
+}
+
 impl<'de> Deserialize<'de> for RuntimeCommandType {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

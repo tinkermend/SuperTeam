@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use super::models::{
     EnrollHelloRequest, EnrollHelloResponse, HeartbeatRequest, HeartbeatResponse,
-    ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, RegisterNodeRequest,
-    RegisterNodeResponse, RuntimeCapabilitiesRequest, RuntimeCapabilityInput,
+    ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, ProjectTaskWaitHumanWriteback,
+    RegisterNodeRequest, RegisterNodeResponse, RuntimeCapabilitiesRequest, RuntimeCapabilityInput,
     RuntimeCapabilityResponse, RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback,
     RuntimeSessionResponse, Task,
 };
@@ -496,6 +496,36 @@ impl ControlPlaneClient {
         Ok(())
     }
 
+    pub async fn wait_human_project_task_attempt(
+        &self,
+        attempt_id: &str,
+        writeback: &ProjectTaskWaitHumanWriteback,
+    ) -> Result<()> {
+        let url = self.project_task_attempt_wait_human_url(attempt_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
+            .json(writeback)
+            .send()
+            .await
+            .context("Failed to wait-human project task attempt")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Wait-human project task attempt failed with {}: {}",
+                status,
+                body
+            );
+        }
+
+        Ok(())
+    }
+
     /// Renew task lease
     pub async fn renew_lease(&self, task_id: i64) -> Result<()> {
         let url = self.task_lease_url(task_id);
@@ -619,6 +649,13 @@ impl ControlPlaneClient {
         )
     }
 
+    fn project_task_attempt_wait_human_url(&self, attempt_id: &str) -> String {
+        format!(
+            "{}/api/v1/runtime/project-task-attempts/{}/wait-human",
+            self.base_url, attempt_id
+        )
+    }
+
     fn task_lease_url(&self, task_id: i64) -> String {
         format!("{}/api/v1/runtime/tasks/{}/lease", self.base_url, task_id)
     }
@@ -691,6 +728,10 @@ mod tests {
         assert_eq!(
             client.project_task_attempt_fail_url("attempt-1"),
             "http://localhost:8080/api/v1/runtime/project-task-attempts/attempt-1/fail"
+        );
+        assert_eq!(
+            client.project_task_attempt_wait_human_url("attempt-1"),
+            "http://localhost:8080/api/v1/runtime/project-task-attempts/attempt-1/wait-human"
         );
         assert_eq!(
             client.task_lease_url(1),

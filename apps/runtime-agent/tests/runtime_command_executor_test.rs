@@ -416,6 +416,7 @@ struct CommandCompletionCapture {
     fail: Arc<Mutex<Option<CapturedWriteback>>>,
     project_task_complete: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
     project_task_fail: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
+    project_task_wait_human: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -455,6 +456,10 @@ async fn serve_command_completion_writebacks(
         .route(
             "/api/v1/runtime/project-task-attempts/{attempt_id}/fail",
             post(capture_completion_project_task_fail_writeback),
+        )
+        .route(
+            "/api/v1/runtime/project-task-attempts/{attempt_id}/wait-human",
+            post(capture_project_task_wait_human_writeback),
         )
         .with_state(capture);
     let task = tokio::spawn(async move {
@@ -592,6 +597,28 @@ async fn capture_project_task_complete_writeback(
         .project_task_complete
         .lock()
         .expect("project task complete lock") = Some(CapturedProjectTaskWriteback {
+        attempt_id,
+        project_task_id: required_string_field(&payload, "project_task_id"),
+        lease_token: required_string_field(&payload, "lease_token"),
+        runtime_node_id: required_string_field(&payload, "runtime_node_id"),
+        idempotency_key: required_string_field(&payload, "idempotency_key"),
+        authorization: header_value(&headers, "authorization"),
+        node_id: header_value(&headers, "x-node-id"),
+        payload,
+    });
+    StatusCode::ACCEPTED
+}
+
+async fn capture_project_task_wait_human_writeback(
+    AxumPath(attempt_id): AxumPath<String>,
+    State(capture): State<CommandCompletionCapture>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    *capture
+        .project_task_wait_human
+        .lock()
+        .expect("project task wait human lock") = Some(CapturedProjectTaskWriteback {
         attempt_id,
         project_task_id: required_string_field(&payload, "project_task_id"),
         lease_token: required_string_field(&payload, "lease_token"),
@@ -1099,6 +1126,79 @@ EOF
         "ready for review"
     );
     assert_eq!(project_complete.payload["requires_human_review"], true);
+
+    http_server.task.abort();
+}
+
+#[tokio::test]
+async fn start_session_wait_human_when_provider_reports_missing_context() {
+    let temp = TempDir::new().expect("tempdir");
+    let fake_claude = make_script(
+        temp.path(),
+        "fake-claude-project-task-wait-human",
+        r#"#!/usr/bin/env bash
+cat <<'EOF'
+{"type":"system","session_id":"session-from-wait-human-project-task"}
+{"type":"result","result":"{\"requires_human_review\":true,\"wait_human_reason\":\"missing_context\",\"missing_context_refs\":[\"customer_scope\"],\"recommended_next_action\":\"Ask the human owner for the missing customer scope.\"}"}
+EOF
+"#,
+    );
+    let capture = CommandCompletionCapture::default();
+    let http_server = serve_command_completion_writebacks(capture.clone()).await;
+    let control_plane = ControlPlaneClient::with_session_token(
+        format!("http://{}", http_server.addr),
+        "session-token",
+        RUNTIME_NODE_ID,
+    );
+    let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
+    let home = prepare_employee_home(&temp);
+    let mut command = session_command_in_home(
+        &home,
+        "cmd-project-task-wait-human",
+        RuntimeCommandType::StartSession,
+        "new",
+        None,
+        Some("complete the project task"),
+        None,
+    );
+    command.payload["metadata"] = project_task_attempt_metadata(vec![
+        "execution_summary",
+        "evidence_refs",
+        "recommended_next_action",
+    ]);
+
+    let outcome = executor
+        .handle_command(command)
+        .await
+        .expect("project task command accepted");
+    let run_id = outcome.run_id.expect("run id");
+    wait_for_status(&executor.runs(), &run_id, RunStatus::Completed).await;
+
+    let wait = wait_for_project_task_writeback(capture.project_task_wait_human.clone()).await;
+    assert_eq!(wait.attempt_id, PROJECT_TASK_ATTEMPT_ID);
+    assert_eq!(wait.project_task_id, PROJECT_TASK_ID);
+    assert_eq!(wait.lease_token, PROJECT_TASK_LEASE_TOKEN);
+    assert_eq!(wait.runtime_node_id, RUNTIME_NODE_ID);
+    assert_eq!(
+        wait.idempotency_key,
+        format!(
+            "project-task-attempt:{PROJECT_TASK_ATTEMPT_ID}:wait-human:cmd-project-task-wait-human"
+        )
+    );
+    assert_eq!(wait.payload["digital_employee_id"], DIGITAL_EMPLOYEE_ID);
+    assert_eq!(wait.payload["reason"], "missing_context");
+    assert_eq!(
+        wait.payload["summary"],
+        "Ask the human owner for the missing customer scope."
+    );
+    assert_eq!(wait.payload["missing_context_refs"][0], "customer_scope");
+    assert!(
+        capture
+            .project_task_complete
+            .lock()
+            .expect("complete lock")
+            .is_none()
+    );
 
     http_server.task.abort();
 }

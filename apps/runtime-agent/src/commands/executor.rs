@@ -11,8 +11,9 @@ use crate::commands::registry::{ActiveRunLookup, RuntimeCommandRegistry, Runtime
 use crate::config::RuntimeConfig;
 use crate::controlplane::ControlPlaneClient;
 use crate::controlplane::models::{
-    EnsureInstanceCommand, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, RuntimeCommand,
-    RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeCommandType,
+    EnsureInstanceCommand, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback,
+    ProjectTaskWaitHumanWriteback, RuntimeCommand, RuntimeCommandEventWriteback,
+    RuntimeCommandTerminalWriteback, RuntimeCommandType,
 };
 use crate::events::ProviderEvent;
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
@@ -956,19 +957,29 @@ impl RuntimeCommandWritebackSink {
             )
             .await?;
         if let Some(project_task) = &self.project_task {
-            if let Err(error) = self
-                .client
-                .complete_project_task_attempt(
-                    &project_task.attempt_id,
-                    &project_task_complete_writeback(
-                        project_task,
-                        &self.command_id,
-                        summary.as_deref(),
-                        provider_session_id.as_deref(),
-                    ),
-                )
-                .await
-            {
+            let result = if let Some(writeback) = project_task_wait_human_writeback(
+                project_task,
+                &self.command_id,
+                summary.as_deref(),
+                provider_session_id.as_deref(),
+            ) {
+                self.client
+                    .wait_human_project_task_attempt(&project_task.attempt_id, &writeback)
+                    .await
+            } else {
+                self.client
+                    .complete_project_task_attempt(
+                        &project_task.attempt_id,
+                        &project_task_complete_writeback(
+                            project_task,
+                            &self.command_id,
+                            summary.as_deref(),
+                            provider_session_id.as_deref(),
+                        ),
+                    )
+                    .await
+            };
+            if let Err(error) = result {
                 eprintln!(
                     "Project task writeback failed for command {} project_task {}: {}",
                     self.command_id, project_task.project_task_id, error
@@ -1270,6 +1281,47 @@ fn project_task_complete_writeback(
     }
 }
 
+fn project_task_wait_human_writeback(
+    context: &ProjectTaskWritebackContext,
+    command_id: &str,
+    summary: Option<&str>,
+    provider_session_id: Option<&str>,
+) -> Option<ProjectTaskWaitHumanWriteback> {
+    let parsed = parse_summary_json(summary)?;
+    let requires_human_review = parsed
+        .get("requires_human_review")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if !requires_human_review {
+        return None;
+    }
+    let reason = parsed_string(Some(&parsed), "wait_human_reason")?;
+    let summary = parsed_string(Some(&parsed), "recommended_next_action")
+        .or_else(|| parsed_string(Some(&parsed), "summary"))
+        .unwrap_or_else(|| "Human input is required before this task can continue.".to_string());
+
+    Some(ProjectTaskWaitHumanWriteback {
+        project_task_id: context.project_task_id.clone(),
+        lease_token: context.lease_token.clone(),
+        runtime_node_id: context.runtime_node_id.clone(),
+        idempotency_key: project_task_attempt_idempotency_key(
+            &context.attempt_id,
+            "wait-human",
+            command_id,
+        ),
+        provider_session_id: provider_session_id.map(ToString::to_string),
+        digital_employee_id: context.digital_employee_id.clone(),
+        reason,
+        summary,
+        missing_context_refs: parsed_array(Some(&parsed), "missing_context_refs"),
+        suggested_resolution_options: parsed_string_array(
+            Some(&parsed),
+            "suggested_resolution_options",
+        )
+        .unwrap_or_else(|| vec!["resume_same_task".to_string()]),
+    })
+}
+
 fn expected_output(context: &ProjectTaskWritebackContext, key: &str) -> bool {
     context.expected_outputs.iter().any(|value| value == key)
 }
@@ -1338,6 +1390,17 @@ fn parsed_array(value: Option<&serde_json::Value>, key: &str) -> Vec<serde_json:
         .and_then(serde_json::Value::as_array)
         .cloned()
         .unwrap_or_default()
+}
+
+fn parsed_string_array(value: Option<&serde_json::Value>, key: &str) -> Option<Vec<String>> {
+    let values: Vec<String> = value
+        .and_then(|value| value.get(key))
+        .and_then(serde_json::Value::as_array)?
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .filter_map(|text| trimmed_optional(Some(text)))
+        .collect();
+    (!values.is_empty()).then_some(values)
 }
 
 fn parsed_confidence_factors(
