@@ -1,68 +1,31 @@
 -- name: CreateExecutionLedgerEvent :one
-WITH inserted AS (
-    INSERT INTO execution_ledger_events (
-        tenant_id,
-        team_id,
-        project_id,
-        project_task_id,
-        project_task_attempt_id,
-        event_type,
-        source_type,
-        source_id,
-        actor_type,
-        actor_id,
-        runtime_node_id,
-        provider_type,
-        provider_session_id,
-        input_summary,
-        output_summary,
-        error_family,
-        error_code,
-        error_message,
-        retryable,
-        artifact_refs,
-        evidence_refs,
-        metadata,
-        occurred_at,
-        idempotency_key
-    ) VALUES (
-        sqlc.arg('tenant_id')::uuid,
-        sqlc.narg('team_id')::uuid,
-        sqlc.arg('project_id')::uuid,
-        sqlc.narg('project_task_id')::uuid,
-        sqlc.narg('project_task_attempt_id')::uuid,
-        sqlc.arg('event_type')::varchar,
-        sqlc.arg('source_type')::varchar,
-        sqlc.arg('source_id')::varchar,
-        sqlc.arg('actor_type')::varchar,
-        sqlc.narg('actor_id')::varchar,
-        sqlc.narg('runtime_node_id')::uuid,
-        sqlc.narg('provider_type')::varchar,
-        sqlc.narg('provider_session_id')::varchar,
-        sqlc.narg('input_summary')::text,
-        sqlc.narg('output_summary')::text,
-        sqlc.narg('error_family')::varchar,
-        sqlc.narg('error_code')::varchar,
-        sqlc.narg('error_message')::text,
-        sqlc.narg('retryable')::boolean,
-        COALESCE(sqlc.narg('artifact_refs')::jsonb, '[]'::jsonb),
-        COALESCE(sqlc.narg('evidence_refs')::jsonb, '[]'::jsonb),
-        COALESCE(sqlc.narg('metadata')::jsonb, '{}'::jsonb),
-        COALESCE(sqlc.narg('occurred_at')::timestamptz, NOW()),
-        sqlc.arg('idempotency_key')::varchar
-    )
-    ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
-    RETURNING *
-)
-SELECT *
-FROM inserted
-UNION ALL
-SELECT existing.*
-FROM execution_ledger_events existing
-WHERE existing.tenant_id = sqlc.arg('tenant_id')::uuid
-  AND existing.idempotency_key = sqlc.arg('idempotency_key')::varchar
-  AND NOT EXISTS (SELECT 1 FROM inserted)
-LIMIT 1;
+SELECT ledger.*
+FROM create_execution_ledger_event(
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.narg('team_id')::uuid,
+    sqlc.arg('project_id')::uuid,
+    sqlc.narg('project_task_id')::uuid,
+    sqlc.narg('project_task_attempt_id')::uuid,
+    sqlc.arg('event_type')::varchar,
+    sqlc.arg('source_type')::varchar,
+    sqlc.arg('source_id')::varchar,
+    sqlc.arg('actor_type')::varchar,
+    sqlc.narg('actor_id')::varchar,
+    sqlc.narg('runtime_node_id')::uuid,
+    sqlc.narg('provider_type')::varchar,
+    sqlc.narg('provider_session_id')::varchar,
+    sqlc.narg('input_summary')::text,
+    sqlc.narg('output_summary')::text,
+    sqlc.narg('error_family')::varchar,
+    sqlc.narg('error_code')::varchar,
+    sqlc.narg('error_message')::text,
+    sqlc.narg('retryable')::boolean,
+    sqlc.narg('artifact_refs')::jsonb,
+    sqlc.narg('evidence_refs')::jsonb,
+    sqlc.narg('metadata')::jsonb,
+    sqlc.narg('occurred_at')::timestamptz,
+    sqlc.arg('idempotency_key')::varchar
+) AS ledger;
 
 -- name: ListProjectExecutionLedgerEvents :many
 SELECT *
@@ -112,7 +75,8 @@ WITH source_event AS (
             'log_ref', pse.log_ref
         ) AS metadata,
         pse.created_at AS occurred_at,
-        'provider_session_event:' || pse.id::varchar || ':provider.event' AS idempotency_key
+        'provider_session_event:' || pse.id::varchar || ':provider.event' AS idempotency_key,
+        COUNT(*) OVER () AS match_count
     FROM provider_session_events pse
     JOIN provider_sessions ps
       ON ps.tenant_id = pse.tenant_id
@@ -129,60 +93,33 @@ WITH source_event AS (
      AND p.id = pt.project_id
     WHERE pse.tenant_id = sqlc.arg('tenant_id')::uuid
       AND pse.id = sqlc.arg('provider_session_event_id')::uuid
-),
-inserted AS (
-    INSERT INTO execution_ledger_events (
-        tenant_id,
-        team_id,
-        project_id,
-        project_task_id,
-        project_task_attempt_id,
-        event_type,
-        source_type,
-        source_id,
-        actor_type,
-        actor_id,
-        runtime_node_id,
-        provider_type,
-        provider_session_id,
-        input_summary,
-        output_summary,
-        error_family,
-        metadata,
-        occurred_at,
-        idempotency_key
-    )
-    SELECT
-        tenant_id,
-        team_id,
-        project_id,
-        project_task_id,
-        project_task_attempt_id,
-        event_type,
-        source_type,
-        source_id,
-        actor_type,
-        actor_id,
-        runtime_node_id,
-        provider_type,
-        provider_session_id,
-        input_summary,
-        output_summary,
-        error_family,
-        metadata,
-        occurred_at,
-        idempotency_key
-    FROM source_event
-    ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
-    RETURNING *
 )
-SELECT *
-FROM inserted
-UNION ALL
-SELECT existing.*
-FROM execution_ledger_events existing
-JOIN source_event source
-  ON source.tenant_id = existing.tenant_id
- AND source.idempotency_key = existing.idempotency_key
-WHERE NOT EXISTS (SELECT 1 FROM inserted)
-LIMIT 1;
+SELECT ledger.*
+FROM source_event source
+CROSS JOIN LATERAL create_execution_ledger_event(
+    source.tenant_id,
+    source.team_id,
+    source.project_id,
+    source.project_task_id,
+    source.project_task_attempt_id,
+    source.event_type,
+    source.source_type,
+    source.source_id,
+    source.actor_type,
+    source.actor_id,
+    source.runtime_node_id,
+    source.provider_type,
+    source.provider_session_id,
+    source.input_summary,
+    source.output_summary,
+    source.error_family,
+    NULL::varchar,
+    NULL::text,
+    NULL::boolean,
+    NULL::jsonb,
+    NULL::jsonb,
+    source.metadata,
+    source.occurred_at,
+    source.idempotency_key
+) AS ledger
+WHERE source.match_count = 1;

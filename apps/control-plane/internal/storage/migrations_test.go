@@ -713,6 +713,29 @@ func TestExecutionLedgerEventsMigration(t *testing.T) {
 	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.idempotency_key IS '执行账本事件幂等键。'")
 }
 
+func TestExecutionLedgerAppendOnlyHardeningMigration(t *testing.T) {
+	sql := readMigration(t, "030_execution_ledger_append_only_hardening.sql")
+
+	for _, fragment := range []string{
+		"DROP TRIGGER IF EXISTS update_execution_ledger_events_updated_at ON execution_ledger_events",
+		"CREATE OR REPLACE FUNCTION create_execution_ledger_event",
+		"RETURNS execution_ledger_events",
+		"ON CONFLICT (tenant_id, idempotency_key) DO NOTHING",
+		"RAISE EXCEPTION 'create_execution_ledger_event could not insert or find idempotency key % for tenant %'",
+		"CREATE OR REPLACE FUNCTION reject_execution_ledger_events_mutation()",
+		"RAISE EXCEPTION 'execution_ledger_events is append-only and does not allow %', TG_OP",
+		"CREATE TRIGGER prevent_execution_ledger_events_update",
+		"BEFORE UPDATE ON execution_ledger_events",
+		"CREATE TRIGGER prevent_execution_ledger_events_delete",
+		"BEFORE DELETE ON execution_ledger_events",
+		"CREATE INDEX IF NOT EXISTS idx_execution_ledger_events_task_time",
+		"ON execution_ledger_events(tenant_id, project_task_id, occurred_at ASC, created_at ASC)",
+		"WHERE project_task_id IS NOT NULL",
+	} {
+		assertMigrationContains(t, sql, fragment)
+	}
+}
+
 func TestSkillManagementMigrationAddsSkillPackageTables(t *testing.T) {
 	body, err := os.ReadFile("migrations/009_skill_management.sql")
 	if err != nil {

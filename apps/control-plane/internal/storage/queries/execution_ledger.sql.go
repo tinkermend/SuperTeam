@@ -13,70 +13,33 @@ import (
 )
 
 const CreateExecutionLedgerEvent = `-- name: CreateExecutionLedgerEvent :one
-WITH inserted AS (
-    INSERT INTO execution_ledger_events (
-        tenant_id,
-        team_id,
-        project_id,
-        project_task_id,
-        project_task_attempt_id,
-        event_type,
-        source_type,
-        source_id,
-        actor_type,
-        actor_id,
-        runtime_node_id,
-        provider_type,
-        provider_session_id,
-        input_summary,
-        output_summary,
-        error_family,
-        error_code,
-        error_message,
-        retryable,
-        artifact_refs,
-        evidence_refs,
-        metadata,
-        occurred_at,
-        idempotency_key
-    ) VALUES (
-        $1::uuid,
-        $2::uuid,
-        $3::uuid,
-        $4::uuid,
-        $5::uuid,
-        $6::varchar,
-        $7::varchar,
-        $8::varchar,
-        $9::varchar,
-        $10::varchar,
-        $11::uuid,
-        $12::varchar,
-        $13::varchar,
-        $14::text,
-        $15::text,
-        $16::varchar,
-        $17::varchar,
-        $18::text,
-        $19::boolean,
-        COALESCE($20::jsonb, '[]'::jsonb),
-        COALESCE($21::jsonb, '[]'::jsonb),
-        COALESCE($22::jsonb, '{}'::jsonb),
-        COALESCE($23::timestamptz, NOW()),
-        $24::varchar
-    )
-    ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
-    RETURNING id, tenant_id, team_id, project_id, project_task_id, project_task_attempt_id, event_type, source_type, source_id, actor_type, actor_id, runtime_node_id, provider_type, provider_session_id, input_summary, output_summary, error_family, error_code, error_message, retryable, artifact_refs, evidence_refs, metadata, occurred_at, idempotency_key, created_at, updated_at
-)
-SELECT id, tenant_id, team_id, project_id, project_task_id, project_task_attempt_id, event_type, source_type, source_id, actor_type, actor_id, runtime_node_id, provider_type, provider_session_id, input_summary, output_summary, error_family, error_code, error_message, retryable, artifact_refs, evidence_refs, metadata, occurred_at, idempotency_key, created_at, updated_at
-FROM inserted
-UNION ALL
-SELECT existing.id, existing.tenant_id, existing.team_id, existing.project_id, existing.project_task_id, existing.project_task_attempt_id, existing.event_type, existing.source_type, existing.source_id, existing.actor_type, existing.actor_id, existing.runtime_node_id, existing.provider_type, existing.provider_session_id, existing.input_summary, existing.output_summary, existing.error_family, existing.error_code, existing.error_message, existing.retryable, existing.artifact_refs, existing.evidence_refs, existing.metadata, existing.occurred_at, existing.idempotency_key, existing.created_at, existing.updated_at
-FROM execution_ledger_events existing
-WHERE existing.tenant_id = $1::uuid
-  AND existing.idempotency_key = $24::varchar
-  AND NOT EXISTS (SELECT 1 FROM inserted)
-LIMIT 1
+SELECT ledger.id, ledger.tenant_id, ledger.team_id, ledger.project_id, ledger.project_task_id, ledger.project_task_attempt_id, ledger.event_type, ledger.source_type, ledger.source_id, ledger.actor_type, ledger.actor_id, ledger.runtime_node_id, ledger.provider_type, ledger.provider_session_id, ledger.input_summary, ledger.output_summary, ledger.error_family, ledger.error_code, ledger.error_message, ledger.retryable, ledger.artifact_refs, ledger.evidence_refs, ledger.metadata, ledger.occurred_at, ledger.idempotency_key, ledger.created_at, ledger.updated_at
+FROM create_execution_ledger_event(
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::uuid,
+    $5::uuid,
+    $6::varchar,
+    $7::varchar,
+    $8::varchar,
+    $9::varchar,
+    $10::varchar,
+    $11::uuid,
+    $12::varchar,
+    $13::varchar,
+    $14::text,
+    $15::text,
+    $16::varchar,
+    $17::varchar,
+    $18::text,
+    $19::boolean,
+    $20::jsonb,
+    $21::jsonb,
+    $22::jsonb,
+    $23::timestamptz,
+    $24::varchar
+) AS ledger
 `
 
 type CreateExecutionLedgerEventParams struct {
@@ -106,37 +69,7 @@ type CreateExecutionLedgerEventParams struct {
 	IdempotencyKey       string             `json:"idempotency_key"`
 }
 
-type CreateExecutionLedgerEventRow struct {
-	ID                   uuid.UUID          `json:"id"`
-	TenantID             uuid.UUID          `json:"tenant_id"`
-	TeamID               uuid.NullUUID      `json:"team_id"`
-	ProjectID            uuid.UUID          `json:"project_id"`
-	ProjectTaskID        uuid.NullUUID      `json:"project_task_id"`
-	ProjectTaskAttemptID uuid.NullUUID      `json:"project_task_attempt_id"`
-	EventType            string             `json:"event_type"`
-	SourceType           string             `json:"source_type"`
-	SourceID             string             `json:"source_id"`
-	ActorType            string             `json:"actor_type"`
-	ActorID              pgtype.Text        `json:"actor_id"`
-	RuntimeNodeID        uuid.NullUUID      `json:"runtime_node_id"`
-	ProviderType         pgtype.Text        `json:"provider_type"`
-	ProviderSessionID    pgtype.Text        `json:"provider_session_id"`
-	InputSummary         pgtype.Text        `json:"input_summary"`
-	OutputSummary        pgtype.Text        `json:"output_summary"`
-	ErrorFamily          pgtype.Text        `json:"error_family"`
-	ErrorCode            pgtype.Text        `json:"error_code"`
-	ErrorMessage         pgtype.Text        `json:"error_message"`
-	Retryable            pgtype.Bool        `json:"retryable"`
-	ArtifactRefs         []byte             `json:"artifact_refs"`
-	EvidenceRefs         []byte             `json:"evidence_refs"`
-	Metadata             []byte             `json:"metadata"`
-	OccurredAt           pgtype.Timestamptz `json:"occurred_at"`
-	IdempotencyKey       string             `json:"idempotency_key"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) CreateExecutionLedgerEvent(ctx context.Context, arg CreateExecutionLedgerEventParams) (CreateExecutionLedgerEventRow, error) {
+func (q *Queries) CreateExecutionLedgerEvent(ctx context.Context, arg CreateExecutionLedgerEventParams) (ExecutionLedgerEvent, error) {
 	row := q.db.QueryRow(ctx, CreateExecutionLedgerEvent,
 		arg.TenantID,
 		arg.TeamID,
@@ -163,7 +96,7 @@ func (q *Queries) CreateExecutionLedgerEvent(ctx context.Context, arg CreateExec
 		arg.OccurredAt,
 		arg.IdempotencyKey,
 	)
-	var i CreateExecutionLedgerEventRow
+	var i ExecutionLedgerEvent
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -222,7 +155,8 @@ WITH source_event AS (
             'log_ref', pse.log_ref
         ) AS metadata,
         pse.created_at AS occurred_at,
-        'provider_session_event:' || pse.id::varchar || ':provider.event' AS idempotency_key
+        'provider_session_event:' || pse.id::varchar || ':provider.event' AS idempotency_key,
+        COUNT(*) OVER () AS match_count
     FROM provider_session_events pse
     JOIN provider_sessions ps
       ON ps.tenant_id = pse.tenant_id
@@ -239,63 +173,36 @@ WITH source_event AS (
      AND p.id = pt.project_id
     WHERE pse.tenant_id = $2::uuid
       AND pse.id = $3::uuid
-),
-inserted AS (
-    INSERT INTO execution_ledger_events (
-        tenant_id,
-        team_id,
-        project_id,
-        project_task_id,
-        project_task_attempt_id,
-        event_type,
-        source_type,
-        source_id,
-        actor_type,
-        actor_id,
-        runtime_node_id,
-        provider_type,
-        provider_session_id,
-        input_summary,
-        output_summary,
-        error_family,
-        metadata,
-        occurred_at,
-        idempotency_key
-    )
-    SELECT
-        tenant_id,
-        team_id,
-        project_id,
-        project_task_id,
-        project_task_attempt_id,
-        event_type,
-        source_type,
-        source_id,
-        actor_type,
-        actor_id,
-        runtime_node_id,
-        provider_type,
-        provider_session_id,
-        input_summary,
-        output_summary,
-        error_family,
-        metadata,
-        occurred_at,
-        idempotency_key
-    FROM source_event
-    ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
-    RETURNING id, tenant_id, team_id, project_id, project_task_id, project_task_attempt_id, event_type, source_type, source_id, actor_type, actor_id, runtime_node_id, provider_type, provider_session_id, input_summary, output_summary, error_family, error_code, error_message, retryable, artifact_refs, evidence_refs, metadata, occurred_at, idempotency_key, created_at, updated_at
 )
-SELECT id, tenant_id, team_id, project_id, project_task_id, project_task_attempt_id, event_type, source_type, source_id, actor_type, actor_id, runtime_node_id, provider_type, provider_session_id, input_summary, output_summary, error_family, error_code, error_message, retryable, artifact_refs, evidence_refs, metadata, occurred_at, idempotency_key, created_at, updated_at
-FROM inserted
-UNION ALL
-SELECT existing.id, existing.tenant_id, existing.team_id, existing.project_id, existing.project_task_id, existing.project_task_attempt_id, existing.event_type, existing.source_type, existing.source_id, existing.actor_type, existing.actor_id, existing.runtime_node_id, existing.provider_type, existing.provider_session_id, existing.input_summary, existing.output_summary, existing.error_family, existing.error_code, existing.error_message, existing.retryable, existing.artifact_refs, existing.evidence_refs, existing.metadata, existing.occurred_at, existing.idempotency_key, existing.created_at, existing.updated_at
-FROM execution_ledger_events existing
-JOIN source_event source
-  ON source.tenant_id = existing.tenant_id
- AND source.idempotency_key = existing.idempotency_key
-WHERE NOT EXISTS (SELECT 1 FROM inserted)
-LIMIT 1
+SELECT ledger.id, ledger.tenant_id, ledger.team_id, ledger.project_id, ledger.project_task_id, ledger.project_task_attempt_id, ledger.event_type, ledger.source_type, ledger.source_id, ledger.actor_type, ledger.actor_id, ledger.runtime_node_id, ledger.provider_type, ledger.provider_session_id, ledger.input_summary, ledger.output_summary, ledger.error_family, ledger.error_code, ledger.error_message, ledger.retryable, ledger.artifact_refs, ledger.evidence_refs, ledger.metadata, ledger.occurred_at, ledger.idempotency_key, ledger.created_at, ledger.updated_at
+FROM source_event source
+CROSS JOIN LATERAL create_execution_ledger_event(
+    source.tenant_id,
+    source.team_id,
+    source.project_id,
+    source.project_task_id,
+    source.project_task_attempt_id,
+    source.event_type,
+    source.source_type,
+    source.source_id,
+    source.actor_type,
+    source.actor_id,
+    source.runtime_node_id,
+    source.provider_type,
+    source.provider_session_id,
+    source.input_summary,
+    source.output_summary,
+    source.error_family,
+    NULL::varchar,
+    NULL::text,
+    NULL::boolean,
+    NULL::jsonb,
+    NULL::jsonb,
+    source.metadata,
+    source.occurred_at,
+    source.idempotency_key
+) AS ledger
+WHERE source.match_count = 1
 `
 
 type CreateProviderSessionEventLedgerEventParams struct {
@@ -304,39 +211,9 @@ type CreateProviderSessionEventLedgerEventParams struct {
 	ProviderSessionEventID uuid.UUID `json:"provider_session_event_id"`
 }
 
-type CreateProviderSessionEventLedgerEventRow struct {
-	ID                   uuid.UUID          `json:"id"`
-	TenantID             uuid.UUID          `json:"tenant_id"`
-	TeamID               uuid.NullUUID      `json:"team_id"`
-	ProjectID            uuid.UUID          `json:"project_id"`
-	ProjectTaskID        uuid.NullUUID      `json:"project_task_id"`
-	ProjectTaskAttemptID uuid.NullUUID      `json:"project_task_attempt_id"`
-	EventType            string             `json:"event_type"`
-	SourceType           string             `json:"source_type"`
-	SourceID             string             `json:"source_id"`
-	ActorType            string             `json:"actor_type"`
-	ActorID              pgtype.Text        `json:"actor_id"`
-	RuntimeNodeID        uuid.NullUUID      `json:"runtime_node_id"`
-	ProviderType         pgtype.Text        `json:"provider_type"`
-	ProviderSessionID    pgtype.Text        `json:"provider_session_id"`
-	InputSummary         pgtype.Text        `json:"input_summary"`
-	OutputSummary        pgtype.Text        `json:"output_summary"`
-	ErrorFamily          pgtype.Text        `json:"error_family"`
-	ErrorCode            pgtype.Text        `json:"error_code"`
-	ErrorMessage         pgtype.Text        `json:"error_message"`
-	Retryable            pgtype.Bool        `json:"retryable"`
-	ArtifactRefs         []byte             `json:"artifact_refs"`
-	EvidenceRefs         []byte             `json:"evidence_refs"`
-	Metadata             []byte             `json:"metadata"`
-	OccurredAt           pgtype.Timestamptz `json:"occurred_at"`
-	IdempotencyKey       string             `json:"idempotency_key"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) CreateProviderSessionEventLedgerEvent(ctx context.Context, arg CreateProviderSessionEventLedgerEventParams) (CreateProviderSessionEventLedgerEventRow, error) {
+func (q *Queries) CreateProviderSessionEventLedgerEvent(ctx context.Context, arg CreateProviderSessionEventLedgerEventParams) (ExecutionLedgerEvent, error) {
 	row := q.db.QueryRow(ctx, CreateProviderSessionEventLedgerEvent, arg.DigitalEmployeeRunID, arg.TenantID, arg.ProviderSessionEventID)
-	var i CreateProviderSessionEventLedgerEventRow
+	var i ExecutionLedgerEvent
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
