@@ -26,6 +26,7 @@ const requiredOpenApiOperations = new Set([
   "POST /api/v1/runtime/project-task-attempts/{attemptId}/lease",
   "POST /api/v1/runtime/project-task-attempts/{attemptId}/complete",
   "POST /api/v1/runtime/project-task-attempts/{attemptId}/fail",
+  "POST /api/v1/runtime/project-task-attempts/{attemptId}/wait-human",
   "GET /api/v1/runtime/nodes",
   "GET /api/v1/runtime/nodes/{nodeId}",
   "GET /api/v1/teams",
@@ -97,6 +98,7 @@ const requiredRustClientPaths = new Set([
   "/api/v1/runtime/commands/{commandId}/fail",
   "/api/v1/runtime/project-task-attempts/{attemptId}/complete",
   "/api/v1/runtime/project-task-attempts/{attemptId}/fail",
+  "/api/v1/runtime/project-task-attempts/{attemptId}/wait-human",
   "/api/v1/runtime/sessions/{sessionId}/renew",
   "/api/v1/runtime/nodes/{nodeId}/capabilities",
 ]);
