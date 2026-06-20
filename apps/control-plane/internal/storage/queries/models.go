@@ -1166,6 +1166,19 @@ type ProjectTaskAttempt struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ProjectTaskAttemptContextUpdate struct {
+	ID             uuid.UUID          `json:"id"`
+	TenantID       uuid.UUID          `json:"tenant_id"`
+	ProjectTaskID  uuid.UUID          `json:"project_task_id"`
+	AttemptID      uuid.NullUUID      `json:"attempt_id"`
+	UpdateKind     string             `json:"update_kind"`
+	Payload        []byte             `json:"payload"`
+	DeliveryMode   string             `json:"delivery_mode"`
+	CreatedEventID uuid.NullUUID      `json:"created_event_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 项目任务依赖边，记录一个任务被另一个任务完成结果阻塞的DAG关系
 type ProjectTaskDependency struct {
 	// 任务依赖边ID

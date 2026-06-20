@@ -283,6 +283,33 @@ func (s *Service) BuildProjectTaskExecutionPacket(ctx context.Context, task Proj
 	return packet, nil
 }
 
+func (s *Service) RecordAttemptContextUpdate(ctx context.Context, req RecordAttemptContextUpdateRequest) (ProjectTaskAttemptContextUpdate, error) {
+	req.UpdateKind = strings.TrimSpace(req.UpdateKind)
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ProjectTaskID == uuid.Nil || req.UpdateKind == "" || req.Payload == nil {
+		return ProjectTaskAttemptContextUpdate{}, ErrInvalidProject
+	}
+	task, err := s.repository.GetProjectTask(ctx, req.TenantID, req.ProjectTaskID)
+	if err != nil {
+		return ProjectTaskAttemptContextUpdate{}, err
+	}
+	if task.ProjectID != req.ProjectID {
+		return ProjectTaskAttemptContextUpdate{}, ErrProjectNotFound
+	}
+	attemptID := req.AttemptID
+	if attemptID == nil {
+		attemptID = task.CurrentAttemptID
+	}
+	deliveryMode := projectTaskContextUpdateDeliveryMode(task, req.UpdateKind)
+	return s.repository.RecordProjectTaskAttemptContextUpdate(ctx, RecordProjectTaskAttemptContextUpdateRepositoryRequest{
+		TenantID:      req.TenantID,
+		ProjectTaskID: req.ProjectTaskID,
+		AttemptID:     attemptID,
+		UpdateKind:    req.UpdateKind,
+		Payload:       cloneMap(req.Payload),
+		DeliveryMode:  deliveryMode,
+	})
+}
+
 func (s *Service) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
 	if req.TenantID == uuid.Nil || req.ActorUserID == uuid.Nil {
 		return nil, ErrInvalidProject
@@ -2965,6 +2992,20 @@ func projectTaskExecutionPacketMap(packet ProjectTaskExecutionPacket) map[string
 		"forbidden_scopes":        forbiddenScopes,
 		"risk_level":              packet.RiskLevel,
 		"stop_for_human_criteria": stopForHumanCriteria,
+	}
+}
+
+func projectTaskContextUpdateDeliveryMode(task ProjectTask, updateKind string) string {
+	switch strings.TrimSpace(updateKind) {
+	case "requirement_changed", "plan_invalid", "scope_changed":
+		return ContextUpdateDeliveryCancelAndReplan
+	case "comment", "additional_context", "evidence_ref":
+		if task.Status == ProjectTaskStatusWaitingHuman {
+			return ContextUpdateDeliveryWaitingHuman
+		}
+		return ContextUpdateDeliveryNextAttempt
+	default:
+		return ContextUpdateDeliveryNextAttempt
 	}
 }
 

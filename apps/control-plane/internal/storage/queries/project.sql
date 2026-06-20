@@ -1305,3 +1305,24 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
     OR project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
   )
 ORDER BY created_at DESC;
+
+-- name: CreateProjectTaskAttemptContextUpdate :one
+INSERT INTO project_task_attempt_context_updates (
+    id,
+    tenant_id,
+    project_task_id,
+    attempt_id,
+    update_kind,
+    payload,
+    delivery_mode,
+    created_event_id
+) VALUES (
+    sqlc.arg('id')::uuid,
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('project_task_id')::uuid,
+    sqlc.narg('attempt_id')::uuid,
+    sqlc.arg('update_kind')::varchar,
+    sqlc.arg('payload')::jsonb,
+    sqlc.arg('delivery_mode')::varchar,
+    sqlc.narg('created_event_id')::uuid
+) RETURNING *;

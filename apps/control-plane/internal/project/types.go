@@ -346,6 +346,13 @@ type ProjectTaskHumanDecisionRef struct {
 }
 
 const (
+	ContextUpdateDeliveryHotInject       = "hot_inject"
+	ContextUpdateDeliveryNextAttempt     = "next_attempt"
+	ContextUpdateDeliveryWaitingHuman    = "waiting_human"
+	ContextUpdateDeliveryCancelAndReplan = "cancel_and_replan"
+)
+
+const (
 	ProjectTaskStatusPlanned      = "planned"
 	ProjectTaskStatusQueued       = "queued"
 	ProjectTaskStatusRunning      = "running"
@@ -446,6 +453,38 @@ type QueueProjectTaskResult struct {
 	Task    ProjectTask
 	Attempt ProjectTaskAttempt
 	Event   ProjectEvent
+}
+
+type ProjectTaskAttemptContextUpdate struct {
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	ProjectTaskID  uuid.UUID
+	AttemptID      *uuid.UUID
+	UpdateKind     string
+	Payload        map[string]any
+	DeliveryMode   string
+	CreatedEventID *uuid.UUID
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type RecordAttemptContextUpdateRequest struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID uuid.UUID
+	AttemptID     *uuid.UUID
+	UpdateKind    string
+	Payload       map[string]any
+}
+
+type RecordProjectTaskAttemptContextUpdateRepositoryRequest struct {
+	TenantID       uuid.UUID
+	ProjectTaskID  uuid.UUID
+	AttemptID      *uuid.UUID
+	UpdateKind     string
+	Payload        map[string]any
+	DeliveryMode   string
+	CreatedEventID *uuid.UUID
 }
 
 type DecomposeAcceptedPlanRevisionRequest struct {

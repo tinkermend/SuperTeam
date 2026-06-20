@@ -112,6 +112,34 @@ func TestBuildProjectTaskExecutionPacketIncludesDependenciesAndHumanDecisions(t 
 	require.Len(t, packet.HumanDecisionRefs, 1)
 }
 
+func TestRecordAttemptContextUpdateRoutesContractChangeToReplan(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:               taskID,
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		Status:           ProjectTaskStatusRunning,
+		CurrentAttemptID: &attemptID,
+	})
+
+	update, err := service.RecordAttemptContextUpdate(context.Background(), RecordAttemptContextUpdateRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: taskID,
+		AttemptID:     &attemptID,
+		UpdateKind:    "requirement_changed",
+		Payload:       map[string]any{"new_scope": "include production"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, ContextUpdateDeliveryCancelAndReplan, update.DeliveryMode)
+}
+
 func TestQueueProjectTaskCreatesAttemptAndMovesTaskToQueued(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -4010,6 +4038,7 @@ type memoryRepository struct {
 	executionSummaries  []ExecutionSummary
 	transferRequests    []TransferRequest
 	decisionRequests    []DecisionRequest
+	contextUpdates      []ProjectTaskAttemptContextUpdate
 	evidenceRefs        []ProjectEvidenceRef
 	artifactRefs        []ProjectArtifactRef
 	reportRefs          []ProjectReportRef
@@ -4774,6 +4803,23 @@ func (r *memoryRepository) GetCurrentProjectTaskAttempt(ctx context.Context, ten
 		return ProjectTaskAttempt{}, ErrProjectNotFound
 	}
 	return r.GetProjectTaskAttempt(ctx, tenantID, *task.CurrentAttemptID)
+}
+
+func (r *memoryRepository) RecordProjectTaskAttemptContextUpdate(ctx context.Context, req RecordProjectTaskAttemptContextUpdateRepositoryRequest) (ProjectTaskAttemptContextUpdate, error) {
+	update := ProjectTaskAttemptContextUpdate{
+		ID:             uuid.New(),
+		TenantID:       req.TenantID,
+		ProjectTaskID:  req.ProjectTaskID,
+		AttemptID:      req.AttemptID,
+		UpdateKind:     req.UpdateKind,
+		Payload:        cloneMap(req.Payload),
+		DeliveryMode:   req.DeliveryMode,
+		CreatedEventID: req.CreatedEventID,
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+	}
+	r.contextUpdates = append(r.contextUpdates, update)
+	return update, nil
 }
 
 func (r *memoryRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req DecomposeAcceptedPlanRevisionRequest) (DecomposeAcceptedPlanRevisionResult, error) {

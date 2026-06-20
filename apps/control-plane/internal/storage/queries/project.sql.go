@@ -1195,6 +1195,66 @@ func (q *Queries) CreateProjectTaskAttempt(ctx context.Context, arg CreateProjec
 	return i, err
 }
 
+const CreateProjectTaskAttemptContextUpdate = `-- name: CreateProjectTaskAttemptContextUpdate :one
+INSERT INTO project_task_attempt_context_updates (
+    id,
+    tenant_id,
+    project_task_id,
+    attempt_id,
+    update_kind,
+    payload,
+    delivery_mode,
+    created_event_id
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::uuid,
+    $5::varchar,
+    $6::jsonb,
+    $7::varchar,
+    $8::uuid
+) RETURNING id, tenant_id, project_task_id, attempt_id, update_kind, payload, delivery_mode, created_event_id, created_at, updated_at
+`
+
+type CreateProjectTaskAttemptContextUpdateParams struct {
+	ID             uuid.UUID     `json:"id"`
+	TenantID       uuid.UUID     `json:"tenant_id"`
+	ProjectTaskID  uuid.UUID     `json:"project_task_id"`
+	AttemptID      uuid.NullUUID `json:"attempt_id"`
+	UpdateKind     string        `json:"update_kind"`
+	Payload        []byte        `json:"payload"`
+	DeliveryMode   string        `json:"delivery_mode"`
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+}
+
+func (q *Queries) CreateProjectTaskAttemptContextUpdate(ctx context.Context, arg CreateProjectTaskAttemptContextUpdateParams) (ProjectTaskAttemptContextUpdate, error) {
+	row := q.db.QueryRow(ctx, CreateProjectTaskAttemptContextUpdate,
+		arg.ID,
+		arg.TenantID,
+		arg.ProjectTaskID,
+		arg.AttemptID,
+		arg.UpdateKind,
+		arg.Payload,
+		arg.DeliveryMode,
+		arg.CreatedEventID,
+	)
+	var i ProjectTaskAttemptContextUpdate
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectTaskID,
+		&i.AttemptID,
+		&i.UpdateKind,
+		&i.Payload,
+		&i.DeliveryMode,
+		&i.CreatedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const CreateProjectTaskDependency = `-- name: CreateProjectTaskDependency :one
 INSERT INTO project_task_dependencies (
     tenant_id, project_id, coordination_job_id, dependent_task_id, blocker_task_id

@@ -984,6 +984,27 @@ func (r *PgRepository) GetCurrentProjectTaskAttempt(ctx context.Context, tenantI
 	return projectTaskAttemptFromRecord(row)
 }
 
+func (r *PgRepository) RecordProjectTaskAttemptContextUpdate(ctx context.Context, req RecordProjectTaskAttemptContextUpdateRepositoryRequest) (ProjectTaskAttemptContextUpdate, error) {
+	payload, err := jsonbObject(req.Payload, "payload")
+	if err != nil {
+		return ProjectTaskAttemptContextUpdate{}, err
+	}
+	row, err := r.q.CreateProjectTaskAttemptContextUpdate(ctx, queries.CreateProjectTaskAttemptContextUpdateParams{
+		ID:             uuid.New(),
+		TenantID:       req.TenantID,
+		ProjectTaskID:  req.ProjectTaskID,
+		AttemptID:      nullUUID(req.AttemptID),
+		UpdateKind:     req.UpdateKind,
+		Payload:        payload,
+		DeliveryMode:   req.DeliveryMode,
+		CreatedEventID: nullUUID(req.CreatedEventID),
+	})
+	if err != nil {
+		return ProjectTaskAttemptContextUpdate{}, projectRepositoryError(err)
+	}
+	return projectTaskAttemptContextUpdateFromRecord(row)
+}
+
 func (r *PgRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req DecomposeAcceptedPlanRevisionRequest) (DecomposeAcceptedPlanRevisionResult, error) {
 	req.DecompositionClaimKey = strings.TrimSpace(req.DecompositionClaimKey)
 	if err := validateDecomposeAcceptedPlanRevisionRequest(req); err != nil {
@@ -3623,6 +3644,25 @@ func projectTaskAttemptFromRecord(row queries.ProjectTaskAttempt) (ProjectTaskAt
 		TerminalEventID:               ptrUUID(row.TerminalEventID),
 		CreatedAt:                     row.CreatedAt.Time,
 		UpdatedAt:                     row.UpdatedAt.Time,
+	}, nil
+}
+
+func projectTaskAttemptContextUpdateFromRecord(row queries.ProjectTaskAttemptContextUpdate) (ProjectTaskAttemptContextUpdate, error) {
+	payload, err := mapFromJSON(row.Payload)
+	if err != nil {
+		return ProjectTaskAttemptContextUpdate{}, fmt.Errorf("context_update_payload: %w", err)
+	}
+	return ProjectTaskAttemptContextUpdate{
+		ID:             row.ID,
+		TenantID:       row.TenantID,
+		ProjectTaskID:  row.ProjectTaskID,
+		AttemptID:      ptrUUID(row.AttemptID),
+		UpdateKind:     row.UpdateKind,
+		Payload:        payload,
+		DeliveryMode:   row.DeliveryMode,
+		CreatedEventID: ptrUUID(row.CreatedEventID),
+		CreatedAt:      row.CreatedAt.Time,
+		UpdatedAt:      row.UpdatedAt.Time,
 	}, nil
 }
 

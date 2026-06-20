@@ -588,6 +588,25 @@ func TestProjectTaskAttemptsMigration(t *testing.T) {
 	}
 }
 
+func TestProjectTaskAttemptContextUpdatesMigration(t *testing.T) {
+	sql := migrationsSQL(t)
+	block := createTableBlock(t, sql, "project_task_attempt_context_updates")
+	for _, fragment := range []string{
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"tenant_id UUID NOT NULL",
+		"project_task_id UUID NOT NULL",
+		"attempt_id UUID",
+		"update_kind VARCHAR(100) NOT NULL",
+		"payload JSONB NOT NULL",
+		"delivery_mode VARCHAR(50) NOT NULL",
+		"created_event_id UUID",
+	} {
+		if !strings.Contains(block, fragment) {
+			t.Fatalf("project_task_attempt_context_updates block missing %q:\n%s", fragment, block)
+		}
+	}
+}
+
 func TestProjectTasksDurableClosureColumns(t *testing.T) {
 	sql := migrationsSQL(t)
 	for _, fragment := range []string{

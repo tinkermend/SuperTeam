@@ -71,6 +71,7 @@ type Querier interface {
 	CreateProjectRouteDecision(ctx context.Context, arg CreateProjectRouteDecisionParams) (ProjectRouteDecision, error)
 	CreateProjectTask(ctx context.Context, arg CreateProjectTaskParams) (ProjectTask, error)
 	CreateProjectTaskAttempt(ctx context.Context, arg CreateProjectTaskAttemptParams) (ProjectTaskAttempt, error)
+	CreateProjectTaskAttemptContextUpdate(ctx context.Context, arg CreateProjectTaskAttemptContextUpdateParams) (ProjectTaskAttemptContextUpdate, error)
 	CreateProjectTaskDependency(ctx context.Context, arg CreateProjectTaskDependencyParams) (ProjectTaskDependency, error)
 	CreateProjectTransferRequest(ctx context.Context, arg CreateProjectTransferRequestParams) (ProjectTransferRequest, error)
 	CreateProviderSession(ctx context.Context, arg CreateProviderSessionParams) (ProviderSession, error)
