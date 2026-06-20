@@ -59,6 +59,9 @@ type ProjectOperationalDetailProps = {
   evidence?: ProjectEvidenceRef[];
   events: ProjectEvent[];
   executionTrace?: ProjectExecutionTrace;
+  executionTraceErrorMessage?: string;
+  executionTraceIsError?: boolean;
+  executionTraceIsLoading?: boolean;
   executionSummaries: ProjectExecutionSummary[];
   isArchived?: boolean;
   onArchiveProject: () => void;
@@ -69,6 +72,7 @@ type ProjectOperationalDetailProps = {
     evidenceId: string,
     verificationStatus: ProjectEvidenceVerificationStatus,
   ) => void;
+  onRetryExecutionTrace?: () => void;
   onResolveDecision: (decisionId: string, decision: string) => void;
   onSubmitDemand: () => void;
   overview?: ProjectOverview;
@@ -92,6 +96,9 @@ export function ProjectOperationalDetail({
   evidence,
   events,
   executionTrace,
+  executionTraceErrorMessage,
+  executionTraceIsError,
+  executionTraceIsLoading,
   executionSummaries,
   isArchived,
   onArchiveProject,
@@ -99,6 +106,7 @@ export function ProjectOperationalDetail({
   onCreateArchiveSnapshot,
   onCreateEvidence,
   onPatchEvidence,
+  onRetryExecutionTrace,
   onResolveDecision,
   onSubmitDemand,
   overview,
@@ -334,7 +342,13 @@ export function ProjectOperationalDetail({
             </div>
           </LiquidCard>
 
-          <ProjectExecutionTracePanel trace={executionTrace} />
+          <ProjectExecutionTracePanel
+            errorMessage={executionTraceErrorMessage}
+            isError={executionTraceIsError}
+            isLoading={executionTraceIsLoading}
+            onRetry={onRetryExecutionTrace}
+            trace={executionTrace}
+          />
 
           <ProjectGovernanceTabs
             acceptance={acceptance}

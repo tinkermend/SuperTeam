@@ -6,6 +6,7 @@ import {
   StatusBadge,
   type Tone,
 } from "@/components/superteam";
+import { Button } from "@/components/ui/button";
 import type {
   ExecutionLedgerEvent,
   ProjectExecutionTrace,
@@ -13,10 +14,18 @@ import type {
 } from "@/lib/api/projects";
 
 type ProjectExecutionTracePanelProps = {
+  errorMessage?: string;
+  isError?: boolean;
+  isLoading?: boolean;
+  onRetry?: () => void;
   trace?: ProjectExecutionTrace;
 };
 
 export function ProjectExecutionTracePanel({
+  errorMessage,
+  isError,
+  isLoading,
+  onRetry,
   trace,
 }: ProjectExecutionTracePanelProps) {
   const attempts = trace?.attempts ?? [];
@@ -40,7 +49,27 @@ export function ProjectExecutionTracePanel({
         <StatusBadge tone="info">{attemptCount} 次</StatusBadge>
       </div>
 
-      {attempts.length === 0 ? (
+      {isLoading ? (
+        <div className="flex min-h-32 items-center justify-center p-4 text-sm text-muted-foreground">
+          正在加载执行证据链
+        </div>
+      ) : isError ? (
+        <div className="grid min-h-32 place-items-center gap-3 p-4 text-center">
+          <div className="grid gap-1">
+            <p className="text-sm font-medium text-destructive">
+              执行证据链加载失败
+            </p>
+            <p className="break-words text-xs text-muted-foreground">
+              {errorMessage || "请重试或稍后查看执行证据链。"}
+            </p>
+          </div>
+          {onRetry ? (
+            <Button size="sm" type="button" variant="outline" onClick={onRetry}>
+              重试
+            </Button>
+          ) : null}
+        </div>
+      ) : attempts.length === 0 ? (
         <div className="flex min-h-32 items-center justify-center p-4 text-sm text-muted-foreground">
           暂无执行证据链
         </div>
@@ -76,7 +105,11 @@ export function ProjectExecutionTracePanel({
           {summary?.latest_error_family ? (
             <div className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs">
               <span className="font-medium text-destructive">最新错误</span>
-              <StatusBadge tone="danger" showDot={false}>
+              <StatusBadge
+                tone="danger"
+                showDot={false}
+                title={summary.latest_error_family}
+              >
                 {summary.latest_error_family}
               </StatusBadge>
             </div>
@@ -115,7 +148,10 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
             ) : null}
           </div>
           {attempt.failure_family ? (
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p
+              className="mt-1 break-all text-xs text-muted-foreground"
+              title={attempt.failure_family}
+            >
               失败族：{attempt.failure_family}
             </p>
           ) : null}
@@ -143,7 +179,12 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
               <StatusBadge tone="success">已回写</StatusBadge>
             )}
           </div>
-          <p className="line-clamp-3 text-sm leading-6">{summary.conclusion}</p>
+          <p
+            className="whitespace-pre-wrap break-words text-sm leading-6"
+            title={summary.conclusion}
+          >
+            {summary.conclusion}
+          </p>
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             <span>证据 {summary.evidence_refs.length}</span>
             <span>工件 {summary.artifact_refs.length}</span>
@@ -176,22 +217,30 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
 }
 
 function EventRow({ event }: { event: ExecutionLedgerEvent }) {
+  const actorSourceLabel = `${event.actor_type}${
+    event.actor_id ? `:${event.actor_id}` : ""
+  } · ${event.source_type}:${event.source_id}`;
+  const errorHeader = formatErrorHeader(event);
+
   return (
     <div className="grid gap-2 rounded-md border bg-white/70 p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge tone={eventTone(event)}>{event.event_type}</StatusBadge>
+            <StatusBadge tone={eventTone(event)} title={event.event_type}>
+              {event.event_type}
+            </StatusBadge>
             {event.retryable !== undefined ? (
               <StatusBadge tone={event.retryable ? "warning" : "neutral"}>
                 {event.retryable ? "可重试" : "不可重试"}
               </StatusBadge>
             ) : null}
           </div>
-          <p className="mt-1 truncate text-xs text-muted-foreground">
-            {event.actor_type}
-            {event.actor_id ? `:${event.actor_id}` : ""} · {event.source_type}:
-            {event.source_id}
+          <p
+            className="mt-1 break-all text-xs text-muted-foreground"
+            title={actorSourceLabel}
+          >
+            {actorSourceLabel}
           </p>
         </div>
         <div className="flex flex-wrap justify-end gap-2 text-xs text-muted-foreground">
@@ -210,11 +259,14 @@ function EventRow({ event }: { event: ExecutionLedgerEvent }) {
 
       {event.error_family || event.error_code || event.error_message ? (
         <div className="grid gap-1 rounded-md border border-destructive/20 bg-destructive/5 p-2 text-xs">
-          <p className="font-medium text-destructive">
-            错误 {formatErrorHeader(event)}
+          <p className="break-all font-medium text-destructive" title={errorHeader}>
+            错误 {errorHeader}
           </p>
           {event.error_message ? (
-            <p className="line-clamp-2 text-muted-foreground">
+            <p
+              className="whitespace-pre-wrap break-words text-muted-foreground"
+              title={event.error_message}
+            >
               {event.error_message}
             </p>
           ) : null}
@@ -252,7 +304,9 @@ function MetaBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-md border bg-white/60 p-2">
       <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate font-mono text-xs">{value}</p>
+      <p className="mt-1 break-all font-mono text-xs" title={value}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -261,7 +315,10 @@ function SummaryBlock({ label, value }: { label: string; value?: string }) {
   return (
     <div className="min-w-0 rounded-md border bg-white/60 p-2">
       <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className="mt-1 line-clamp-2 text-xs leading-5">
+      <p
+        className="mt-1 whitespace-pre-wrap break-words text-xs leading-5"
+        title={value}
+      >
         {value || "未记录"}
       </p>
     </div>
