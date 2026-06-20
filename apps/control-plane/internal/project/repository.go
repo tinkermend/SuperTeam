@@ -102,6 +102,13 @@ type ProjectTaskWritebackRepository interface {
 	RequestProjectTaskTransferWriteback(ctx context.Context, req RequestProjectTaskTransferWritebackRequest) (ProjectTaskTransferWritebackResult, error)
 }
 
+type ProjectTaskAttemptWritebackRepository interface {
+	StartProjectTaskAttemptWriteback(ctx context.Context, req StartProjectTaskAttemptRequest) (ProjectTaskAttemptWritebackResult, error)
+	RenewProjectTaskAttemptLeaseWriteback(ctx context.Context, req RenewProjectTaskAttemptLeaseRequest) (ProjectTaskAttempt, error)
+	CompleteProjectTaskAttemptWriteback(ctx context.Context, req CompleteProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error)
+	FailProjectTaskAttemptWriteback(ctx context.Context, req FailProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error)
+}
+
 type AppendProjectEventRequest struct {
 	TenantID     uuid.UUID
 	ProjectID    uuid.UUID
@@ -293,6 +300,12 @@ type ProjectTaskWritebackResult struct {
 	Task    ProjectTask
 	Event   ProjectEvent
 	Summary ExecutionSummary
+}
+
+type ProjectTaskAttemptWritebackResult struct {
+	Task    ProjectTask
+	Attempt ProjectTaskAttempt
+	Event   ProjectEvent
 }
 
 type ProjectTaskTransferWritebackResult struct {

@@ -15,6 +15,7 @@ import (
 	"github.com/superteam/control-plane/internal/auth"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
+	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/task"
 	"nhooyr.io/websocket"
@@ -64,6 +65,48 @@ func TestRuntimeRoutesAreRegistered(t *testing.T) {
 				t.Fatalf("expected runtime route to be registered, got 404")
 			}
 		})
+	}
+}
+
+func TestRuntimeProjectTaskAttemptRoutesRegistered(t *testing.T) {
+	server := NewServer(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+	)
+	server.SetProjectHandler(project.NewHandler(&routeProjectService{}))
+	attemptID := "11111111-1111-4111-8111-111111111111"
+
+	for _, path := range []string{
+		"/api/v1/runtime/project-task-attempts/" + attemptID + "/started",
+		"/api/v1/runtime/project-task-attempts/" + attemptID + "/lease",
+		"/api/v1/runtime/project-task-attempts/" + attemptID + "/complete",
+		"/api/v1/runtime/project-task-attempts/" + attemptID + "/fail",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+
+		server.ServeHTTP(resp, req)
+
+		if resp.Code == http.StatusNotFound {
+			t.Fatalf("expected runtime project task attempt route %s to be registered, got 404", path)
+		}
+	}
+
+	legacyProjectTaskPrefix := "/api/v1/runtime/project-" + "tasks/"
+	for _, path := range []string{
+		legacyProjectTaskPrefix + attemptID + "/complete",
+		legacyProjectTaskPrefix + attemptID + "/fail",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+
+		server.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusNotFound {
+			t.Fatalf("expected legacy runtime project task route %s to be removed, got %d", path, resp.Code)
+		}
 	}
 }
 

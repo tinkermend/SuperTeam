@@ -36,9 +36,10 @@ type HandlerService interface {
 	ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error)
 	ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error)
 	ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]TransferRequest, error)
-	CompleteProjectTask(ctx context.Context, req CompleteProjectTaskRequest) (*ExecutionSummary, error)
-	FailProjectTask(ctx context.Context, req FailProjectTaskRequest) (*ProjectTask, error)
-	RequestProjectTaskTransfer(ctx context.Context, req RequestProjectTaskTransferRequest) (*TransferRequest, error)
+	StartProjectTaskAttempt(ctx context.Context, req StartProjectTaskAttemptRequest) (*ProjectTaskAttempt, error)
+	RenewProjectTaskAttemptLease(ctx context.Context, req RenewProjectTaskAttemptLeaseRequest) error
+	CompleteProjectTaskAttempt(ctx context.Context, req CompleteProjectTaskAttemptRequest) (*ExecutionSummary, error)
+	FailProjectTaskAttempt(ctx context.Context, req FailProjectTaskAttemptRequest) (*ProjectTask, error)
 	ListEvidence(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error)
 	CreateEvidence(ctx context.Context, req CreateEvidenceRefServiceRequest) (*ProjectEvidenceRef, error)
 	PatchEvidence(ctx context.Context, req PatchEvidenceRequest) (*ProjectEvidenceRef, error)
@@ -830,83 +831,104 @@ func (h *HTTPHandler) GetConfigRevision(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, configRevisionResponseFromDomain(*revision))
 }
 
-func (h *HTTPHandler) CompleteProjectTask(w http.ResponseWriter, r *http.Request) {
-	tenantID, runtimeNodeID, taskID, service, ok := h.runtimeProjectTaskContext(w, r)
+func (h *HTTPHandler) StartProjectTaskAttempt(w http.ResponseWriter, r *http.Request) {
+	tenantID, runtimeNodeID, attemptID, service, ok := h.runtimeProjectTaskAttemptContext(w, r)
 	if !ok {
 		return
 	}
-	var body completeProjectTaskBody
+	var body startProjectTaskAttemptBody
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
-	summary, err := service.CompleteProjectTask(r.Context(), CompleteProjectTaskRequest{
-		TenantID:              tenantID,
-		RuntimeNodeID:         runtimeNodeID,
-		ProjectTaskID:         taskID,
-		DigitalEmployeeID:     body.DigitalEmployeeID,
-		Conclusion:            body.Conclusion,
-		EvidenceRefs:          body.EvidenceRefs,
-		ArtifactRefs:          body.ArtifactRefs,
-		ConfidenceFactors:     body.ConfidenceFactors,
-		Uncertainty:           body.Uncertainty,
-		MissingInformation:    body.MissingInformation,
-		RecommendedNextAction: body.RecommendedNextAction,
-		RequiresHumanReview:   body.RequiresHumanReview,
-	})
-	if err != nil {
+	runtimeReq, ok := projectTaskAttemptRuntimeRequestFromBody(w, tenantID, runtimeNodeID, attemptID, body.ProjectTaskAttemptRuntimeBody)
+	if !ok {
+		return
+	}
+	if _, err := service.StartProjectTaskAttempt(r.Context(), StartProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: runtimeReq,
+	}); err != nil {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, executionSummaryResponseFromDomain(*summary))
+	w.WriteHeader(http.StatusAccepted)
 }
 
-func (h *HTTPHandler) FailProjectTask(w http.ResponseWriter, r *http.Request) {
-	tenantID, runtimeNodeID, taskID, service, ok := h.runtimeProjectTaskContext(w, r)
+func (h *HTTPHandler) RenewProjectTaskAttemptLease(w http.ResponseWriter, r *http.Request) {
+	tenantID, runtimeNodeID, attemptID, service, ok := h.runtimeProjectTaskAttemptContext(w, r)
 	if !ok {
 		return
 	}
-	var body failProjectTaskBody
+	var body renewProjectTaskAttemptLeaseBody
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
-	task, err := service.FailProjectTask(r.Context(), FailProjectTaskRequest{
-		TenantID:          tenantID,
-		RuntimeNodeID:     runtimeNodeID,
-		ProjectTaskID:     taskID,
-		DigitalEmployeeID: body.DigitalEmployeeID,
-		FailureSummary:    body.FailureSummary,
-	})
-	if err != nil {
+	runtimeReq, ok := projectTaskAttemptRuntimeRequestFromBody(w, tenantID, runtimeNodeID, attemptID, body.ProjectTaskAttemptRuntimeBody)
+	if !ok {
+		return
+	}
+	if err := service.RenewProjectTaskAttemptLease(r.Context(), RenewProjectTaskAttemptLeaseRequest{
+		ProjectTaskAttemptRuntimeRequest: runtimeReq,
+		LeaseExpiresAt:                   body.LeaseExpiresAt,
+	}); err != nil {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, taskResponseFromDomain(*task))
+	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *HTTPHandler) RequestProjectTaskTransfer(w http.ResponseWriter, r *http.Request) {
-	tenantID, runtimeNodeID, taskID, service, ok := h.runtimeProjectTaskContext(w, r)
+func (h *HTTPHandler) CompleteProjectTaskAttempt(w http.ResponseWriter, r *http.Request) {
+	tenantID, runtimeNodeID, attemptID, service, ok := h.runtimeProjectTaskAttemptContext(w, r)
 	if !ok {
 		return
 	}
-	var body requestProjectTaskTransferBody
+	var body completeProjectTaskAttemptBody
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
-	transfer, err := service.RequestProjectTaskTransfer(r.Context(), RequestProjectTaskTransferRequest{
-		TenantID:                    tenantID,
-		RuntimeNodeID:               runtimeNodeID,
-		ProjectTaskID:               taskID,
-		DigitalEmployeeID:           body.DigitalEmployeeID,
-		Reason:                      body.Reason,
-		SuggestedEmployeeType:       body.SuggestedEmployeeType,
-		SuggestedDigitalEmployeeIDs: body.SuggestedDigitalEmployeeIDs,
-		MissingContextRefs:          body.MissingContextRefs,
-	})
-	if err != nil {
+	runtimeReq, ok := projectTaskAttemptRuntimeRequestFromBody(w, tenantID, runtimeNodeID, attemptID, body.ProjectTaskAttemptRuntimeBody)
+	if !ok {
+		return
+	}
+	if _, err := service.CompleteProjectTaskAttempt(r.Context(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: runtimeReq,
+		Conclusion:                       body.Conclusion,
+		EvidenceRefs:                     body.EvidenceRefs,
+		ArtifactRefs:                     body.ArtifactRefs,
+		ConfidenceFactors:                body.ConfidenceFactors,
+		Uncertainty:                      body.Uncertainty,
+		MissingInformation:               body.MissingInformation,
+		RecommendedNextAction:            body.RecommendedNextAction,
+		RequiresHumanReview:              body.RequiresHumanReview,
+	}); err != nil {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, transferRequestResponseFromDomain(*transfer))
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *HTTPHandler) FailProjectTaskAttempt(w http.ResponseWriter, r *http.Request) {
+	tenantID, runtimeNodeID, attemptID, service, ok := h.runtimeProjectTaskAttemptContext(w, r)
+	if !ok {
+		return
+	}
+	var body failProjectTaskAttemptBody
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	runtimeReq, ok := projectTaskAttemptRuntimeRequestFromBody(w, tenantID, runtimeNodeID, attemptID, body.ProjectTaskAttemptRuntimeBody)
+	if !ok {
+		return
+	}
+	if _, err := service.FailProjectTaskAttempt(r.Context(), FailProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: runtimeReq,
+		FailureSummary:                   body.FailureSummary,
+		FailureFamily:                    body.FailureFamily,
+		Retryable:                        body.Retryable,
+	}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (h *HTTPHandler) updateProjectConfig(w http.ResponseWriter, r *http.Request) {
@@ -956,7 +978,7 @@ func (h *HTTPHandler) projectRouteContext(w http.ResponseWriter, r *http.Request
 	return tenantID, actorID, projectID, service, true
 }
 
-func (h *HTTPHandler) runtimeProjectTaskContext(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, uuid.UUID, HandlerService, bool) {
+func (h *HTTPHandler) runtimeProjectTaskAttemptContext(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, uuid.UUID, HandlerService, bool) {
 	tenantID := middleware.GetTenantID(r.Context())
 	if tenantID == uuid.Nil {
 		http.Error(w, "tenant_id not found in context", http.StatusUnauthorized)
@@ -967,7 +989,7 @@ func (h *HTTPHandler) runtimeProjectTaskContext(w http.ResponseWriter, r *http.R
 		http.Error(w, "runtime_node_id not found in context", http.StatusUnauthorized)
 		return uuid.Nil, uuid.Nil, uuid.Nil, nil, false
 	}
-	taskID, ok := projectTaskIDFromRequest(w, r)
+	attemptID, ok := attemptIDFromRequest(w, r)
 	if !ok {
 		return uuid.Nil, uuid.Nil, uuid.Nil, nil, false
 	}
@@ -975,7 +997,27 @@ func (h *HTTPHandler) runtimeProjectTaskContext(w http.ResponseWriter, r *http.R
 	if !ok {
 		return uuid.Nil, uuid.Nil, uuid.Nil, nil, false
 	}
-	return tenantID, runtimeNodeID, taskID, service, true
+	return tenantID, runtimeNodeID, attemptID, service, true
+}
+
+func projectTaskAttemptRuntimeRequestFromBody(w http.ResponseWriter, tenantID, runtimeNodeID, attemptID uuid.UUID, body ProjectTaskAttemptRuntimeBody) (ProjectTaskAttemptRuntimeRequest, bool) {
+	if body.RuntimeNodeID == uuid.Nil {
+		http.Error(w, "runtime_node_id is required", http.StatusBadRequest)
+		return ProjectTaskAttemptRuntimeRequest{}, false
+	}
+	if body.RuntimeNodeID != runtimeNodeID {
+		http.Error(w, "runtime_node_id does not match authenticated runtime node", http.StatusForbidden)
+		return ProjectTaskAttemptRuntimeRequest{}, false
+	}
+	return ProjectTaskAttemptRuntimeRequest{
+		TenantID:          tenantID,
+		AttemptID:         attemptID,
+		ProjectTaskID:     body.ProjectTaskID,
+		RuntimeNodeID:     runtimeNodeID,
+		LeaseToken:        body.LeaseToken,
+		IdempotencyKey:    body.IdempotencyKey,
+		ProviderSessionID: body.ProviderSessionID,
+	}, true
 }
 
 func (h *HTTPHandler) serviceFromRequest(w http.ResponseWriter) (HandlerService, bool) {
@@ -1023,13 +1065,13 @@ func projectEventIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUI
 	return eventID, true
 }
 
-func projectTaskIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
-	taskID, err := uuid.Parse(chi.URLParam(r, "projectTaskId"))
-	if err != nil || taskID == uuid.Nil {
-		http.Error(w, "invalid project task id", http.StatusBadRequest)
+func attemptIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	attemptID, err := uuid.Parse(chi.URLParam(r, "attemptId"))
+	if err != nil || attemptID == uuid.Nil {
+		http.Error(w, "invalid project task attempt id", http.StatusBadRequest)
 		return uuid.Nil, false
 	}
-	return taskID, true
+	return attemptID, true
 }
 
 func evidenceIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
@@ -1159,8 +1201,25 @@ type resolveDecisionBody struct {
 	Payload  map[string]any `json:"payload"`
 }
 
-type completeProjectTaskBody struct {
-	DigitalEmployeeID     uuid.UUID      `json:"digital_employee_id"`
+type ProjectTaskAttemptRuntimeBody struct {
+	ProjectTaskID     uuid.UUID `json:"project_task_id"`
+	LeaseToken        string    `json:"lease_token"`
+	RuntimeNodeID     uuid.UUID `json:"runtime_node_id"`
+	IdempotencyKey    string    `json:"idempotency_key"`
+	ProviderSessionID *string   `json:"provider_session_id"`
+}
+
+type startProjectTaskAttemptBody struct {
+	ProjectTaskAttemptRuntimeBody
+}
+
+type renewProjectTaskAttemptLeaseBody struct {
+	ProjectTaskAttemptRuntimeBody
+	LeaseExpiresAt *time.Time `json:"lease_expires_at"`
+}
+
+type completeProjectTaskAttemptBody struct {
+	ProjectTaskAttemptRuntimeBody
 	Conclusion            string         `json:"conclusion"`
 	EvidenceRefs          []any          `json:"evidence_refs"`
 	ArtifactRefs          []any          `json:"artifact_refs"`
@@ -1171,17 +1230,11 @@ type completeProjectTaskBody struct {
 	RequiresHumanReview   bool           `json:"requires_human_review"`
 }
 
-type failProjectTaskBody struct {
-	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
-	FailureSummary    string    `json:"failure_summary"`
-}
-
-type requestProjectTaskTransferBody struct {
-	DigitalEmployeeID           uuid.UUID   `json:"digital_employee_id"`
-	Reason                      string      `json:"reason"`
-	SuggestedEmployeeType       string      `json:"suggested_employee_type"`
-	SuggestedDigitalEmployeeIDs []uuid.UUID `json:"suggested_digital_employee_ids"`
-	MissingContextRefs          []any       `json:"missing_context_refs"`
+type failProjectTaskAttemptBody struct {
+	ProjectTaskAttemptRuntimeBody
+	FailureSummary string `json:"failure_summary"`
+	FailureFamily  string `json:"failure_family"`
+	Retryable      *bool  `json:"retryable"`
 }
 
 type createEvidenceBody struct {

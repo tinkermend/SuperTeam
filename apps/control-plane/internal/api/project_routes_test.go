@@ -431,9 +431,12 @@ func TestRuntimeProjectTaskWritebackRoutesUseRuntimeSessionAuth(t *testing.T) {
 	)
 	server.SetProjectHandler(project.NewHandler(service))
 	projectTaskID := uuid.New()
-	employeeID := uuid.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-tasks/"+projectTaskID.String()+"/complete", strings.NewReader(`{
-		"digital_employee_id":"`+employeeID.String()+`",
+	attemptID := uuid.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attempts/"+attemptID.String()+"/complete", strings.NewReader(`{
+		"project_task_id":"`+projectTaskID.String()+`",
+		"lease_token":"lease-token-1",
+		"runtime_node_id":"`+runtimeAuth.runtimeNodeID.String()+`",
+		"idempotency_key":"attempt-complete-route-test",
 		"conclusion":"证据充分",
 		"evidence_refs":["s3://bucket/report.md"],
 		"artifact_refs":[],
@@ -448,8 +451,13 @@ func TestRuntimeProjectTaskWritebackRoutesUseRuntimeSessionAuth(t *testing.T) {
 	if resp.Code != http.StatusAccepted {
 		t.Fatalf("expected project task complete to succeed, got %d: %s", resp.Code, resp.Body.String())
 	}
-	if service.completeTaskReq.TenantID != runtimeAuth.tenantID || service.completeTaskReq.RuntimeNodeID != runtimeAuth.runtimeNodeID || service.completeTaskReq.ProjectTaskID != projectTaskID || service.completeTaskReq.DigitalEmployeeID != employeeID {
-		t.Fatalf("expected runtime context/path/body in complete request, got %#v", service.completeTaskReq)
+	if service.completeAttemptReq.TenantID != runtimeAuth.tenantID ||
+		service.completeAttemptReq.RuntimeNodeID != runtimeAuth.runtimeNodeID ||
+		service.completeAttemptReq.AttemptID != attemptID ||
+		service.completeAttemptReq.ProjectTaskID != projectTaskID ||
+		service.completeAttemptReq.LeaseToken != "lease-token-1" ||
+		service.completeAttemptReq.IdempotencyKey != "attempt-complete-route-test" {
+		t.Fatalf("expected runtime context/path/body in complete attempt request, got %#v", service.completeAttemptReq)
 	}
 }
 
@@ -552,7 +560,7 @@ type routeProjectService struct {
 	routeDecisionLimit        int32
 	resolveDecisionReq        project.ResolveDecisionRequest
 	retryWorkflowSignalReq    project.RetryWorkflowSignalRequest
-	completeTaskReq           project.CompleteProjectTaskRequest
+	completeAttemptReq        project.CompleteProjectTaskAttemptRequest
 	createEvidenceReq         project.CreateEvidenceRefServiceRequest
 	patchEvidenceReq          project.PatchEvidenceRequest
 	budgetSummaryTenantID     uuid.UUID
@@ -754,28 +762,21 @@ func (s *routeProjectService) ListTransferRequests(ctx context.Context, tenantID
 	return nil, nil
 }
 
-func (s *routeProjectService) CompleteProjectTask(ctx context.Context, req project.CompleteProjectTaskRequest) (*project.ExecutionSummary, error) {
-	s.completeTaskReq = req
-	summary := project.ExecutionSummary{
-		ID:                uuid.New(),
-		TenantID:          req.TenantID,
-		ProjectID:         uuid.New(),
-		ProjectTaskID:     req.ProjectTaskID,
-		DigitalEmployeeID: req.DigitalEmployeeID,
-		Conclusion:        req.Conclusion,
-		EvidenceRefs:      req.EvidenceRefs,
-		ArtifactRefs:      req.ArtifactRefs,
-		ConfidenceFactors: req.ConfidenceFactors,
-	}
-	return &summary, nil
+func (s *routeProjectService) StartProjectTaskAttempt(ctx context.Context, req project.StartProjectTaskAttemptRequest) (*project.ProjectTaskAttempt, error) {
+	return &project.ProjectTaskAttempt{ID: req.AttemptID, TenantID: req.TenantID, ProjectTaskID: req.ProjectTaskID, Status: project.ProjectTaskAttemptStatusRunning}, nil
 }
 
-func (s *routeProjectService) FailProjectTask(ctx context.Context, req project.FailProjectTaskRequest) (*project.ProjectTask, error) {
-	return &project.ProjectTask{ID: req.ProjectTaskID, TenantID: req.TenantID, ProjectID: uuid.New(), Status: "failed"}, nil
+func (s *routeProjectService) RenewProjectTaskAttemptLease(ctx context.Context, req project.RenewProjectTaskAttemptLeaseRequest) error {
+	return nil
 }
 
-func (s *routeProjectService) RequestProjectTaskTransfer(ctx context.Context, req project.RequestProjectTaskTransferRequest) (*project.TransferRequest, error) {
-	return &project.TransferRequest{ID: uuid.New(), TenantID: req.TenantID, ProjectID: uuid.New(), ProjectTaskID: req.ProjectTaskID, RequestedByDigitalEmployeeID: req.DigitalEmployeeID, Reason: req.Reason, Status: "requested"}, nil
+func (s *routeProjectService) CompleteProjectTaskAttempt(ctx context.Context, req project.CompleteProjectTaskAttemptRequest) (*project.ExecutionSummary, error) {
+	s.completeAttemptReq = req
+	return &project.ExecutionSummary{ID: uuid.New(), TenantID: req.TenantID, ProjectID: uuid.New(), ProjectTaskID: req.ProjectTaskID, Conclusion: req.Conclusion}, nil
+}
+
+func (s *routeProjectService) FailProjectTaskAttempt(ctx context.Context, req project.FailProjectTaskAttemptRequest) (*project.ProjectTask, error) {
+	return &project.ProjectTask{ID: req.ProjectTaskID, TenantID: req.TenantID, ProjectID: uuid.New(), Status: project.ProjectTaskStatusFailed}, nil
 }
 
 func (s *routeProjectService) ListEvidence(ctx context.Context, tenantID, projectID uuid.UUID, status *project.EvidenceVerificationStatus, limit, offset int32) ([]project.ProjectEvidenceRef, error) {

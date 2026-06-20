@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -1139,6 +1140,10 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 	if err != nil {
 		return err
 	}
+	nextAttemptNo := task.AttemptCount + 1
+	attemptID := projectTaskDispatchAttemptID(task.ID, nextAttemptNo)
+	leaseToken := projectTaskAttemptLeaseToken(task.ID, nextAttemptNo)
+	handoffContract := projectTaskDispatchHandoffContract(task.HandoffContract)
 	run, err := s.runStarter.StartProjectTaskRun(ctx, StartProjectTaskRunRequest{
 		TenantID:          input.TenantID,
 		ProjectID:         input.ProjectID,
@@ -1150,14 +1155,17 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		Prompt:            projectTaskRunPrompt(projectRecord, demand, task),
 		IdempotencyKey:    projectTaskDispatchIdempotencyKey(task.ID),
 		Metadata: map[string]any{
-			"source":             "project_task_dispatch",
-			"actor_type":         "project_coordinator",
-			"project_id":         input.ProjectID.String(),
-			"demand_id":          demand.ID.String(),
-			"project_task_id":    task.ID.String(),
-			"expected_outputs":   append([]any(nil), task.ExpectedOutputs...),
-			"input_requirements": cloneAnyMap(task.InputRequirements),
-			"handoff_contract":   projectTaskDispatchHandoffContract(task.HandoffContract),
+			"source":                           "project_task_dispatch",
+			"actor_type":                       "project_coordinator",
+			"project_id":                       input.ProjectID.String(),
+			"demand_id":                        demand.ID.String(),
+			"project_task_id":                  task.ID.String(),
+			"project_task_attempt_id":          attemptID.String(),
+			"project_task_lease_token":         leaseToken,
+			"execution_context_packet_version": "v1",
+			"expected_outputs":                 append([]any(nil), task.ExpectedOutputs...),
+			"input_requirements":               cloneAnyMap(task.InputRequirements),
+			"handoff_contract":                 handoffContract,
 		},
 	})
 	if err != nil {
@@ -1167,25 +1175,28 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		TenantID:             input.TenantID,
 		ProjectID:            input.ProjectID,
 		ProjectTaskID:        input.TaskID,
+		ProjectTaskAttemptID: &attemptID,
 		DigitalEmployeeID:    *task.AssignedDigitalEmployeeID,
 		DigitalEmployeeRunID: &run.RunID,
 		RuntimeTaskID:        &run.RuntimeTaskID,
 		RuntimeNodeID:        &run.RuntimeNodeID,
 		IdempotencyKey:       projectTaskDispatchIdempotencyKey(task.ID),
-		LeaseToken:           "project-task-" + task.ID.String() + "-attempt-1",
+		LeaseToken:           leaseToken,
 		ExecutionContextPacket: map[string]any{
-			"project_id":              input.ProjectID.String(),
-			"demand_id":               demand.ID.String(),
-			"project_task_id":         task.ID.String(),
-			"digital_employee_id":     task.AssignedDigitalEmployeeID.String(),
-			"objective":               task.Title,
-			"expected_outputs":        append([]any(nil), task.ExpectedOutputs...),
-			"input_requirements":      cloneAnyMap(task.InputRequirements),
-			"handoff_contract":        projectTaskDispatchHandoffContract(task.HandoffContract),
-			"digital_employee_run_id": run.RunID.String(),
-			"runtime_task_id":         run.RuntimeTaskID.String(),
-			"runtime_node_id":         run.RuntimeNodeID.String(),
-			"node_id":                 run.NodeID,
+			"project_id":               input.ProjectID.String(),
+			"demand_id":                demand.ID.String(),
+			"project_task_id":          task.ID.String(),
+			"project_task_attempt_id":  attemptID.String(),
+			"project_task_lease_token": leaseToken,
+			"digital_employee_id":      task.AssignedDigitalEmployeeID.String(),
+			"objective":                task.Title,
+			"expected_outputs":         append([]any(nil), task.ExpectedOutputs...),
+			"input_requirements":       cloneAnyMap(task.InputRequirements),
+			"handoff_contract":         handoffContract,
+			"digital_employee_run_id":  run.RunID.String(),
+			"runtime_task_id":          run.RuntimeTaskID.String(),
+			"runtime_node_id":          run.RuntimeNodeID.String(),
+			"node_id":                  run.NodeID,
 		},
 		ExecutionContextPacketVersion: "v1",
 	}); err != nil {
@@ -1524,13 +1535,21 @@ func cloneAnyMap(values map[string]any) map[string]any {
 	return cloned
 }
 
+func projectTaskDispatchAttemptID(projectTaskID uuid.UUID, attemptNo int32) uuid.UUID {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("superteam:project-task-attempt:"+projectTaskID.String()+":"+strconv.FormatInt(int64(attemptNo), 10)))
+}
+
+func projectTaskAttemptLeaseToken(projectTaskID uuid.UUID, attemptNo int32) string {
+	return "project-task-" + projectTaskID.String() + "-attempt-" + strconv.FormatInt(int64(attemptNo), 10)
+}
+
 // projectTaskDispatchHandoffContract clones a task's handoff contract and forces
-// completion_path to "project_task_writeback". The runtime agent gates project-task
-// completion writeback on this exact value; the planner does not always emit it, so
-// the control-plane enforces it at dispatch to guarantee the run completes the task.
+// completion_path to "project_task_attempt_writeback". The runtime agent gates
+// project-task completion writeback on this exact value; the planner does not
+// always emit it, so the control-plane enforces it at dispatch.
 func projectTaskDispatchHandoffContract(contract map[string]any) map[string]any {
 	cloned := cloneAnyMap(contract)
-	cloned["completion_path"] = "project_task_writeback"
+	cloned["completion_path"] = "project_task_attempt_writeback"
 	return cloned
 }
 

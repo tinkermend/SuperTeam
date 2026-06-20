@@ -567,6 +567,14 @@ func buildRunParams(req CreateDigitalEmployeeRunRequest, objective, prompt strin
 }
 
 func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, workspaceFiles []WorkspaceFileForSyncRecord) map[string]any {
+	metadata := cloneMap(req.Metadata)
+	if metadata["source"] == "project_task_dispatch" {
+		metadata["runtime_node_id"] = preflight.RuntimeNodeID.String()
+		version, _ := metadata["execution_context_packet_version"].(string)
+		if strings.TrimSpace(version) == "" {
+			metadata["execution_context_packet_version"] = "v1"
+		}
+	}
 	return map[string]any{
 		"provider_run_protocol": providerRunProtocol,
 		"tenant_id":             req.TenantID.String(),
@@ -597,7 +605,7 @@ func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, pr
 		"workspace_files":       runtimeWorkspaceFilesPayload(workspaceFiles),
 		"skills":                emptyRuntimeSkillsPayload(),
 		"mcp_servers":           emptyRuntimeMCPServersPayload(),
-		"metadata":              cloneMap(req.Metadata),
+		"metadata":              metadata,
 	}
 }
 

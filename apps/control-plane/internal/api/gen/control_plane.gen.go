@@ -1487,6 +1487,23 @@ type AuditEvent struct {
 	TenantId     openapi_types.UUID     `json:"tenant_id"`
 }
 
+// CompleteProjectTaskAttemptRequest defines model for CompleteProjectTaskAttemptRequest.
+type CompleteProjectTaskAttemptRequest struct {
+	ArtifactRefs          *[]interface{}          `json:"artifact_refs,omitempty"`
+	Conclusion            string                  `json:"conclusion"`
+	ConfidenceFactors     *map[string]interface{} `json:"confidence_factors,omitempty"`
+	EvidenceRefs          *[]interface{}          `json:"evidence_refs,omitempty"`
+	IdempotencyKey        string                  `json:"idempotency_key"`
+	LeaseToken            string                  `json:"lease_token"`
+	MissingInformation    *[]interface{}          `json:"missing_information,omitempty"`
+	ProjectTaskId         openapi_types.UUID      `json:"project_task_id"`
+	ProviderSessionId     *string                 `json:"provider_session_id,omitempty"`
+	RecommendedNextAction *string                 `json:"recommended_next_action,omitempty"`
+	RequiresHumanReview   *bool                   `json:"requires_human_review,omitempty"`
+	RuntimeNodeId         openapi_types.UUID      `json:"runtime_node_id"`
+	Uncertainty           *string                 `json:"uncertainty,omitempty"`
+}
+
 // CompleteProjectTaskRequest defines model for CompleteProjectTaskRequest.
 type CompleteProjectTaskRequest struct {
 	ArtifactRefs          *[]interface{}          `json:"artifact_refs,omitempty"`
@@ -2168,6 +2185,18 @@ type ExecuteInboxActionResponse struct {
 	SourceResult InboxSourceActionResult `json:"source_result"`
 }
 
+// FailProjectTaskAttemptRequest defines model for FailProjectTaskAttemptRequest.
+type FailProjectTaskAttemptRequest struct {
+	FailureFamily     string             `json:"failure_family"`
+	FailureSummary    string             `json:"failure_summary"`
+	IdempotencyKey    string             `json:"idempotency_key"`
+	LeaseToken        string             `json:"lease_token"`
+	ProjectTaskId     openapi_types.UUID `json:"project_task_id"`
+	ProviderSessionId *string            `json:"provider_session_id,omitempty"`
+	Retryable         *bool              `json:"retryable,omitempty"`
+	RuntimeNodeId     openapi_types.UUID `json:"runtime_node_id"`
+}
+
 // FailProjectTaskRequest defines model for FailProjectTaskRequest.
 type FailProjectTaskRequest struct {
 	DigitalEmployeeId openapi_types.UUID `json:"digital_employee_id"`
@@ -2732,6 +2761,15 @@ type ProjectTask struct {
 	Title                     string                  `json:"title"`
 }
 
+// ProjectTaskAttemptRuntimeFields defines model for ProjectTaskAttemptRuntimeFields.
+type ProjectTaskAttemptRuntimeFields struct {
+	IdempotencyKey    string             `json:"idempotency_key"`
+	LeaseToken        string             `json:"lease_token"`
+	ProjectTaskId     openapi_types.UUID `json:"project_task_id"`
+	ProviderSessionId *string            `json:"provider_session_id,omitempty"`
+	RuntimeNodeId     openapi_types.UUID `json:"runtime_node_id"`
+}
+
 // ProjectTaskGraph defines model for ProjectTaskGraph.
 type ProjectTaskGraph struct {
 	DecisionRequests   []ProjectDecisionRequest        `json:"decision_requests"`
@@ -2890,6 +2928,16 @@ type RegisterRuntimeNodeRequest struct {
 	Name               string                  `json:"name"`
 	NodeId             string                  `json:"node_id"`
 	SupportedProviders []string                `json:"supported_providers"`
+}
+
+// RenewProjectTaskAttemptLeaseRequest defines model for RenewProjectTaskAttemptLeaseRequest.
+type RenewProjectTaskAttemptLeaseRequest struct {
+	IdempotencyKey    string             `json:"idempotency_key"`
+	LeaseExpiresAt    *time.Time         `json:"lease_expires_at,omitempty"`
+	LeaseToken        string             `json:"lease_token"`
+	ProjectTaskId     openapi_types.UUID `json:"project_task_id"`
+	ProviderSessionId *string            `json:"provider_session_id,omitempty"`
+	RuntimeNodeId     openapi_types.UUID `json:"runtime_node_id"`
 }
 
 // ReplaceProjectMembersRequest defines model for ReplaceProjectMembersRequest.
@@ -3220,6 +3268,9 @@ type SkillTeamBinding struct {
 	TeamId   openapi_types.UUID `json:"team_id"`
 	TeamName string             `json:"team_name"`
 }
+
+// StartProjectTaskAttemptRequest defines model for StartProjectTaskAttemptRequest.
+type StartProjectTaskAttemptRequest = ProjectTaskAttemptRuntimeFields
 
 // StopDigitalEmployeeRunRequest defines model for StopDigitalEmployeeRunRequest.
 type StopDigitalEmployeeRunRequest struct {
@@ -4124,14 +4175,17 @@ type HeartbeatRuntimeNodeJSONRequestBody = RuntimeHeartbeatRequest
 // UpsertRuntimeCapabilitiesJSONRequestBody defines body for UpsertRuntimeCapabilities for application/json ContentType.
 type UpsertRuntimeCapabilitiesJSONRequestBody = RuntimeCapabilityReportRequest
 
-// CompleteProjectTaskJSONRequestBody defines body for CompleteProjectTask for application/json ContentType.
-type CompleteProjectTaskJSONRequestBody = CompleteProjectTaskRequest
+// CompleteProjectTaskAttemptJSONRequestBody defines body for CompleteProjectTaskAttempt for application/json ContentType.
+type CompleteProjectTaskAttemptJSONRequestBody = CompleteProjectTaskAttemptRequest
 
-// FailProjectTaskJSONRequestBody defines body for FailProjectTask for application/json ContentType.
-type FailProjectTaskJSONRequestBody = FailProjectTaskRequest
+// FailProjectTaskAttemptJSONRequestBody defines body for FailProjectTaskAttempt for application/json ContentType.
+type FailProjectTaskAttemptJSONRequestBody = FailProjectTaskAttemptRequest
 
-// RequestProjectTaskTransferJSONRequestBody defines body for RequestProjectTaskTransfer for application/json ContentType.
-type RequestProjectTaskTransferJSONRequestBody = RequestProjectTaskTransferRequest
+// RenewProjectTaskAttemptLeaseJSONRequestBody defines body for RenewProjectTaskAttemptLease for application/json ContentType.
+type RenewProjectTaskAttemptLeaseJSONRequestBody = RenewProjectTaskAttemptLeaseRequest
+
+// StartProjectTaskAttemptJSONRequestBody defines body for StartProjectTaskAttempt for application/json ContentType.
+type StartProjectTaskAttemptJSONRequestBody = StartProjectTaskAttemptRequest
 
 // RegisterRuntimeNodeJSONRequestBody defines body for RegisterRuntimeNode for application/json ContentType.
 type RegisterRuntimeNodeJSONRequestBody = RegisterRuntimeNodeRequest
@@ -4912,15 +4966,18 @@ type ServerInterface interface {
 	// Get Runtime Agent fleet overview
 	// (GET /api/v1/runtime/overview)
 	GetRuntimeOverview(w http.ResponseWriter, r *http.Request)
-	// Complete a project task from a Runtime Agent session
-	// (POST /api/v1/runtime/project-tasks/{projectTaskId}/complete)
-	CompleteProjectTask(w http.ResponseWriter, r *http.Request, projectTaskId ProjectTaskId)
-	// Fail a project task from a Runtime Agent session
-	// (POST /api/v1/runtime/project-tasks/{projectTaskId}/fail)
-	FailProjectTask(w http.ResponseWriter, r *http.Request, projectTaskId ProjectTaskId)
-	// Request project task transfer from a Runtime Agent session
-	// (POST /api/v1/runtime/project-tasks/{projectTaskId}/transfer-requests)
-	RequestProjectTaskTransfer(w http.ResponseWriter, r *http.Request, projectTaskId ProjectTaskId)
+	// Complete a ProjectTask attempt
+	// (POST /api/v1/runtime/project-task-attempts/{attemptId}/complete)
+	CompleteProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID)
+	// Fail a ProjectTask attempt
+	// (POST /api/v1/runtime/project-task-attempts/{attemptId}/fail)
+	FailProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID)
+	// Renew a ProjectTask attempt lease
+	// (POST /api/v1/runtime/project-task-attempts/{attemptId}/lease)
+	RenewProjectTaskAttemptLease(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID)
+	// Mark a ProjectTask attempt as started by Runtime
+	// (POST /api/v1/runtime/project-task-attempts/{attemptId}/started)
+	StartProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID)
 	// Register a Runtime Agent node
 	// (POST /api/v1/runtime/register)
 	RegisterRuntimeNode(w http.ResponseWriter, r *http.Request, params RegisterRuntimeNodeParams)
@@ -5611,21 +5668,27 @@ func (_ Unimplemented) GetRuntimeOverview(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Complete a project task from a Runtime Agent session
-// (POST /api/v1/runtime/project-tasks/{projectTaskId}/complete)
-func (_ Unimplemented) CompleteProjectTask(w http.ResponseWriter, r *http.Request, projectTaskId ProjectTaskId) {
+// Complete a ProjectTask attempt
+// (POST /api/v1/runtime/project-task-attempts/{attemptId}/complete)
+func (_ Unimplemented) CompleteProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Fail a project task from a Runtime Agent session
-// (POST /api/v1/runtime/project-tasks/{projectTaskId}/fail)
-func (_ Unimplemented) FailProjectTask(w http.ResponseWriter, r *http.Request, projectTaskId ProjectTaskId) {
+// Fail a ProjectTask attempt
+// (POST /api/v1/runtime/project-task-attempts/{attemptId}/fail)
+func (_ Unimplemented) FailProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Request project task transfer from a Runtime Agent session
-// (POST /api/v1/runtime/project-tasks/{projectTaskId}/transfer-requests)
-func (_ Unimplemented) RequestProjectTaskTransfer(w http.ResponseWriter, r *http.Request, projectTaskId ProjectTaskId) {
+// Renew a ProjectTask attempt lease
+// (POST /api/v1/runtime/project-task-attempts/{attemptId}/lease)
+func (_ Unimplemented) RenewProjectTaskAttemptLease(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Mark a ProjectTask attempt as started by Runtime
+// (POST /api/v1/runtime/project-task-attempts/{attemptId}/started)
+func (_ Unimplemented) StartProjectTaskAttempt(w http.ResponseWriter, r *http.Request, attemptId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9502,23 +9565,23 @@ func (siw *ServerInterfaceWrapper) GetRuntimeOverview(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
-// CompleteProjectTask operation middleware
-func (siw *ServerInterfaceWrapper) CompleteProjectTask(w http.ResponseWriter, r *http.Request) {
+// CompleteProjectTaskAttempt operation middleware
+func (siw *ServerInterfaceWrapper) CompleteProjectTaskAttempt(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "projectTaskId" -------------
-	var projectTaskId ProjectTaskId
+	// ------------- Path parameter "attemptId" -------------
+	var attemptId openapi_types.UUID
 
-	err = runtime.BindStyledParameterWithOptions("simple", "projectTaskId", chi.URLParam(r, "projectTaskId"), &projectTaskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	err = runtime.BindStyledParameterWithOptions("simple", "attemptId", chi.URLParam(r, "attemptId"), &attemptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectTaskId", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "attemptId", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CompleteProjectTask(w, r, projectTaskId)
+		siw.Handler.CompleteProjectTaskAttempt(w, r, attemptId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9528,23 +9591,23 @@ func (siw *ServerInterfaceWrapper) CompleteProjectTask(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
-// FailProjectTask operation middleware
-func (siw *ServerInterfaceWrapper) FailProjectTask(w http.ResponseWriter, r *http.Request) {
+// FailProjectTaskAttempt operation middleware
+func (siw *ServerInterfaceWrapper) FailProjectTaskAttempt(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "projectTaskId" -------------
-	var projectTaskId ProjectTaskId
+	// ------------- Path parameter "attemptId" -------------
+	var attemptId openapi_types.UUID
 
-	err = runtime.BindStyledParameterWithOptions("simple", "projectTaskId", chi.URLParam(r, "projectTaskId"), &projectTaskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	err = runtime.BindStyledParameterWithOptions("simple", "attemptId", chi.URLParam(r, "attemptId"), &attemptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectTaskId", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "attemptId", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.FailProjectTask(w, r, projectTaskId)
+		siw.Handler.FailProjectTaskAttempt(w, r, attemptId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9554,23 +9617,49 @@ func (siw *ServerInterfaceWrapper) FailProjectTask(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
-// RequestProjectTaskTransfer operation middleware
-func (siw *ServerInterfaceWrapper) RequestProjectTaskTransfer(w http.ResponseWriter, r *http.Request) {
+// RenewProjectTaskAttemptLease operation middleware
+func (siw *ServerInterfaceWrapper) RenewProjectTaskAttemptLease(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "projectTaskId" -------------
-	var projectTaskId ProjectTaskId
+	// ------------- Path parameter "attemptId" -------------
+	var attemptId openapi_types.UUID
 
-	err = runtime.BindStyledParameterWithOptions("simple", "projectTaskId", chi.URLParam(r, "projectTaskId"), &projectTaskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	err = runtime.BindStyledParameterWithOptions("simple", "attemptId", chi.URLParam(r, "attemptId"), &attemptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectTaskId", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "attemptId", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RequestProjectTaskTransfer(w, r, projectTaskId)
+		siw.Handler.RenewProjectTaskAttemptLease(w, r, attemptId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartProjectTaskAttempt operation middleware
+func (siw *ServerInterfaceWrapper) StartProjectTaskAttempt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "attemptId" -------------
+	var attemptId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "attemptId", chi.URLParam(r, "attemptId"), &attemptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "attemptId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartProjectTaskAttempt(w, r, attemptId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -11797,13 +11886,16 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/runtime/overview", wrapper.GetRuntimeOverview)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/runtime/project-tasks/{projectTaskId}/complete", wrapper.CompleteProjectTask)
+		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attempts/{attemptId}/complete", wrapper.CompleteProjectTaskAttempt)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/runtime/project-tasks/{projectTaskId}/fail", wrapper.FailProjectTask)
+		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attempts/{attemptId}/fail", wrapper.FailProjectTaskAttempt)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/runtime/project-tasks/{projectTaskId}/transfer-requests", wrapper.RequestProjectTaskTransfer)
+		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attempts/{attemptId}/lease", wrapper.RenewProjectTaskAttemptLease)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/runtime/project-task-attempts/{attemptId}/started", wrapper.StartProjectTaskAttempt)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/register", wrapper.RegisterRuntimeNode)

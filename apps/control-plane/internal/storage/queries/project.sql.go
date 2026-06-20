@@ -1349,6 +1349,79 @@ func (q *Queries) FinishProjectCoordinationJob(ctx context.Context, arg FinishPr
 	return i, err
 }
 
+const FinishProjectTaskAttempt = `-- name: FinishProjectTaskAttempt :one
+UPDATE project_task_attempts
+SET status = $1::varchar,
+    provider_session_id = COALESCE($2::varchar, provider_session_id),
+    finished_at = NOW(),
+    retryable = $3::boolean,
+    failure_family = $4::varchar,
+    failure_message = $5::text,
+    terminal_event_id = $6::uuid,
+    updated_at = NOW()
+WHERE tenant_id = $7::uuid
+  AND id = $8::uuid
+  AND lease_token = $9::varchar
+  AND status IN ('queued', 'running')
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at
+`
+
+type FinishProjectTaskAttemptParams struct {
+	Status            string        `json:"status"`
+	ProviderSessionID pgtype.Text   `json:"provider_session_id"`
+	Retryable         pgtype.Bool   `json:"retryable"`
+	FailureFamily     pgtype.Text   `json:"failure_family"`
+	FailureMessage    pgtype.Text   `json:"failure_message"`
+	TerminalEventID   uuid.NullUUID `json:"terminal_event_id"`
+	TenantID          uuid.UUID     `json:"tenant_id"`
+	ID                uuid.UUID     `json:"id"`
+	LeaseToken        string        `json:"lease_token"`
+}
+
+func (q *Queries) FinishProjectTaskAttempt(ctx context.Context, arg FinishProjectTaskAttemptParams) (ProjectTaskAttempt, error) {
+	row := q.db.QueryRow(ctx, FinishProjectTaskAttempt,
+		arg.Status,
+		arg.ProviderSessionID,
+		arg.Retryable,
+		arg.FailureFamily,
+		arg.FailureMessage,
+		arg.TerminalEventID,
+		arg.TenantID,
+		arg.ID,
+		arg.LeaseToken,
+	)
+	var i ProjectTaskAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectTaskID,
+		&i.AttemptNo,
+		&i.Status,
+		&i.DigitalEmployeeRunID,
+		&i.RuntimeTaskID,
+		&i.RuntimeNodeID,
+		&i.ProviderSessionID,
+		&i.ExecutionContextPacket,
+		&i.ExecutionContextPacketVersion,
+		&i.LeaseToken,
+		&i.LeaseExpiresAt,
+		&i.RenewedAt,
+		&i.LostAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.TimeoutAt,
+		&i.Retryable,
+		&i.FailureFamily,
+		&i.FailureMessage,
+		&i.IdempotencyKey,
+		&i.CreatedEventID,
+		&i.TerminalEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const GetCurrentProjectTaskAttempt = `-- name: GetCurrentProjectTaskAttempt :one
 SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.lost_at, pta.started_at, pta.finished_at, pta.timeout_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at
 FROM project_task_attempts pta
@@ -4050,6 +4123,64 @@ func (q *Queries) QueueProjectTask(ctx context.Context, arg QueueProjectTaskPara
 	return i, err
 }
 
+const RenewProjectTaskAttemptLease = `-- name: RenewProjectTaskAttemptLease :one
+UPDATE project_task_attempts
+SET lease_expires_at = $1::timestamptz,
+    renewed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND id = $3::uuid
+  AND lease_token = $4::varchar
+  AND status IN ('queued', 'running')
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at
+`
+
+type RenewProjectTaskAttemptLeaseParams struct {
+	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
+	TenantID       uuid.UUID          `json:"tenant_id"`
+	ID             uuid.UUID          `json:"id"`
+	LeaseToken     string             `json:"lease_token"`
+}
+
+func (q *Queries) RenewProjectTaskAttemptLease(ctx context.Context, arg RenewProjectTaskAttemptLeaseParams) (ProjectTaskAttempt, error) {
+	row := q.db.QueryRow(ctx, RenewProjectTaskAttemptLease,
+		arg.LeaseExpiresAt,
+		arg.TenantID,
+		arg.ID,
+		arg.LeaseToken,
+	)
+	var i ProjectTaskAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectTaskID,
+		&i.AttemptNo,
+		&i.Status,
+		&i.DigitalEmployeeRunID,
+		&i.RuntimeTaskID,
+		&i.RuntimeNodeID,
+		&i.ProviderSessionID,
+		&i.ExecutionContextPacket,
+		&i.ExecutionContextPacketVersion,
+		&i.LeaseToken,
+		&i.LeaseExpiresAt,
+		&i.RenewedAt,
+		&i.LostAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.TimeoutAt,
+		&i.Retryable,
+		&i.FailureFamily,
+		&i.FailureMessage,
+		&i.IdempotencyKey,
+		&i.CreatedEventID,
+		&i.TerminalEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const ReplaceProjectMembersDelete = `-- name: ReplaceProjectMembersDelete :exec
 DELETE FROM project_members
 WHERE tenant_id = $1::uuid
@@ -4208,6 +4339,69 @@ func (q *Queries) RewireProjectTaskDependencies(ctx context.Context, arg RewireP
 		return nil, err
 	}
 	return items, nil
+}
+
+const StartProjectTaskAttempt = `-- name: StartProjectTaskAttempt :one
+UPDATE project_task_attempts
+SET status = 'running',
+    runtime_node_id = $1::uuid,
+    provider_session_id = COALESCE($2::varchar, provider_session_id),
+    started_at = COALESCE(started_at, NOW()),
+    renewed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = $3::uuid
+  AND id = $4::uuid
+  AND lease_token = $5::varchar
+  AND status = 'queued'
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at
+`
+
+type StartProjectTaskAttemptParams struct {
+	RuntimeNodeID     uuid.UUID   `json:"runtime_node_id"`
+	ProviderSessionID pgtype.Text `json:"provider_session_id"`
+	TenantID          uuid.UUID   `json:"tenant_id"`
+	ID                uuid.UUID   `json:"id"`
+	LeaseToken        string      `json:"lease_token"`
+}
+
+func (q *Queries) StartProjectTaskAttempt(ctx context.Context, arg StartProjectTaskAttemptParams) (ProjectTaskAttempt, error) {
+	row := q.db.QueryRow(ctx, StartProjectTaskAttempt,
+		arg.RuntimeNodeID,
+		arg.ProviderSessionID,
+		arg.TenantID,
+		arg.ID,
+		arg.LeaseToken,
+	)
+	var i ProjectTaskAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectTaskID,
+		&i.AttemptNo,
+		&i.Status,
+		&i.DigitalEmployeeRunID,
+		&i.RuntimeTaskID,
+		&i.RuntimeNodeID,
+		&i.ProviderSessionID,
+		&i.ExecutionContextPacket,
+		&i.ExecutionContextPacketVersion,
+		&i.LeaseToken,
+		&i.LeaseExpiresAt,
+		&i.RenewedAt,
+		&i.LostAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.TimeoutAt,
+		&i.Retryable,
+		&i.FailureFamily,
+		&i.FailureMessage,
+		&i.IdempotencyKey,
+		&i.CreatedEventID,
+		&i.TerminalEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const TransitionProjectStatus = `-- name: TransitionProjectStatus :one
@@ -4377,6 +4571,11 @@ const UpdateProjectTaskStatus = `-- name: UpdateProjectTaskStatus :one
 UPDATE project_tasks
 SET status = $1::varchar,
     latest_event_id = COALESCE($2::uuid, latest_event_id),
+    terminal_event_id = CASE
+        WHEN $1::varchar IN ('completed', 'failed', 'cancelled')
+        THEN COALESCE($2::uuid, terminal_event_id)
+        ELSE terminal_event_id
+    END,
     updated_at = NOW()
 WHERE tenant_id = $3::uuid
   AND id = $4::uuid

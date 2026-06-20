@@ -54,7 +54,7 @@ func (HeuristicRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSnap
 				},
 				HandoffContract: map[string]any{
 					"expected_outputs": stringsToAny(expectedOutputs),
-					"completion_path":  "project_task_writeback",
+					"completion_path":  "project_task_attempt_writeback",
 				},
 			})
 		}
@@ -97,7 +97,7 @@ func (HeuristicRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSnap
 			},
 			HandoffContract: map[string]any{
 				"expected_outputs": stringsToAny(expectedOutputs),
-				"completion_path":  "project_task_writeback",
+				"completion_path":  "project_task_attempt_writeback",
 			},
 		}},
 	}

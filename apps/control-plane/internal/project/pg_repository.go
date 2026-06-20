@@ -904,6 +904,9 @@ func (r *PgRepository) QueueProjectTaskWithAttempt(ctx context.Context, req Queu
 		}
 		attemptNo := task.AttemptCount + 1
 		attemptID := uuid.New()
+		if req.ProjectTaskAttemptID != nil {
+			attemptID = *req.ProjectTaskAttemptID
+		}
 
 		event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
 			TenantID:     req.TenantID,
@@ -2339,6 +2342,158 @@ func (r *PgRepository) FailProjectTaskWriteback(ctx context.Context, req FailPro
 		}
 		if req.Task.DemandID != nil {
 			if err := r.recomputeProjectDemandStatusWithQueries(ctx, q, req.Task.TenantID, req.Task.ProjectID, *req.Task.DemandID); err != nil {
+				return ProjectTaskWritebackResult{}, err
+			}
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+	})
+}
+
+func (r *PgRepository) StartProjectTaskAttemptWriteback(ctx context.Context, req StartProjectTaskAttemptRequest) (ProjectTaskAttemptWritebackResult, error) {
+	return withProjectQueries(ctx, r, "project task attempt start writeback", func(q *queries.Queries) (ProjectTaskAttemptWritebackResult, error) {
+		row, err := q.StartProjectTaskAttempt(ctx, queries.StartProjectTaskAttemptParams{
+			TenantID:          req.TenantID,
+			ID:                req.AttemptID,
+			RuntimeNodeID:     req.RuntimeNodeID,
+			ProviderSessionID: textPtr(req.ProviderSessionID),
+			LeaseToken:        req.LeaseToken,
+		})
+		if err != nil {
+			return ProjectTaskAttemptWritebackResult{}, err
+		}
+		attempt, err := projectTaskAttemptFromRecord(row)
+		if err != nil {
+			return ProjectTaskAttemptWritebackResult{}, err
+		}
+		task, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, req.ProjectTaskID, ProjectTaskStatusRunning, nil, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
+		if err != nil {
+			return ProjectTaskAttemptWritebackResult{}, err
+		}
+		return ProjectTaskAttemptWritebackResult{Task: task, Attempt: attempt}, nil
+	})
+}
+
+func (r *PgRepository) RenewProjectTaskAttemptLeaseWriteback(ctx context.Context, req RenewProjectTaskAttemptLeaseRequest) (ProjectTaskAttempt, error) {
+	row, err := r.q.RenewProjectTaskAttemptLease(ctx, queries.RenewProjectTaskAttemptLeaseParams{
+		TenantID:       req.TenantID,
+		ID:             req.AttemptID,
+		LeaseToken:     req.LeaseToken,
+		LeaseExpiresAt: timestamptzPtr(req.LeaseExpiresAt),
+	})
+	if err != nil {
+		return ProjectTaskAttempt{}, err
+	}
+	return projectTaskAttemptFromRecord(row)
+}
+
+func (r *PgRepository) CompleteProjectTaskAttemptWriteback(ctx context.Context, req CompleteProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {
+	return withProjectQueries(ctx, r, "project task attempt completion writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		task, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, req.ProjectTaskID, ProjectTaskStatusCompleted, nil, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+			TenantID:     req.TenantID,
+			ProjectID:    task.ProjectID,
+			EventType:    ProjectEventTaskCompleted,
+			ActorType:    "digital_employee",
+			ActorID:      req.DigitalEmployeeID.String(),
+			ResourceType: strPtr("project_task"),
+			ResourceID:   strPtr(task.ID.String()),
+			Summary:      "项目任务已完成",
+			Payload: map[string]any{
+				"project_task_id":         task.ID.String(),
+				"project_task_attempt_id": req.AttemptID.String(),
+			},
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		summary, err := r.createExecutionSummaryWithQueries(ctx, q, CreateExecutionSummaryRequest{
+			TenantID:              req.TenantID,
+			ProjectID:             task.ProjectID,
+			ProjectTaskID:         task.ID,
+			DigitalEmployeeID:     req.DigitalEmployeeID,
+			Conclusion:            req.Conclusion,
+			EvidenceRefs:          sliceOrEmptyAny(req.EvidenceRefs),
+			ArtifactRefs:          sliceOrEmptyAny(req.ArtifactRefs),
+			ConfidenceFactors:     mapOrEmptyAny(req.ConfidenceFactors),
+			Uncertainty:           strings.TrimSpace(req.Uncertainty),
+			MissingInformation:    sliceOrEmptyAny(req.MissingInformation),
+			RecommendedNextAction: strings.TrimSpace(req.RecommendedNextAction),
+			RequiresHumanReview:   req.RequiresHumanReview,
+			CreatedEventID:        &event.ID,
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
+			TenantID:          req.TenantID,
+			ID:                req.AttemptID,
+			LeaseToken:        req.LeaseToken,
+			Status:            ProjectTaskAttemptStatusSucceeded,
+			ProviderSessionID: textPtr(req.ProviderSessionID),
+			TerminalEventID:   nullUUID(&event.ID),
+		}); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		task, err = r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, req.ProjectTaskID, ProjectTaskStatusCompleted, &event.ID, []string{ProjectTaskStatusCompleted})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		if task.DemandID != nil {
+			if err := r.recomputeProjectDemandStatusWithQueries(ctx, q, task.TenantID, task.ProjectID, *task.DemandID); err != nil {
+				return ProjectTaskWritebackResult{}, err
+			}
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary}, nil
+	})
+}
+
+func (r *PgRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req FailProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {
+	return withProjectQueries(ctx, r, "project task attempt failure writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		task, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, req.ProjectTaskID, ProjectTaskStatusFailed, nil, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+			TenantID:     req.TenantID,
+			ProjectID:    task.ProjectID,
+			EventType:    ProjectEventTaskFailed,
+			ActorType:    "digital_employee",
+			ActorID:      req.DigitalEmployeeID.String(),
+			ResourceType: strPtr("project_task"),
+			ResourceID:   strPtr(task.ID.String()),
+			Summary:      "项目任务执行失败",
+			Payload: map[string]any{
+				"project_task_id":         task.ID.String(),
+				"project_task_attempt_id": req.AttemptID.String(),
+				"failure_summary":         req.FailureSummary,
+				"failure_family":          req.FailureFamily,
+			},
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
+			TenantID:          req.TenantID,
+			ID:                req.AttemptID,
+			LeaseToken:        req.LeaseToken,
+			Status:            ProjectTaskAttemptStatusFailed,
+			ProviderSessionID: textPtr(req.ProviderSessionID),
+			Retryable:         boolPtr(req.Retryable),
+			FailureFamily:     textOrNull(req.FailureFamily),
+			FailureMessage:    textOrNull(req.FailureSummary),
+			TerminalEventID:   nullUUID(&event.ID),
+		}); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		task, err = r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, req.ProjectTaskID, ProjectTaskStatusFailed, &event.ID, []string{ProjectTaskStatusFailed})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		if task.DemandID != nil {
+			if err := r.recomputeProjectDemandStatusWithQueries(ctx, q, task.TenantID, task.ProjectID, *task.DemandID); err != nil {
 				return ProjectTaskWritebackResult{}, err
 			}
 		}
@@ -3873,6 +4028,13 @@ func ptrBool(value pgtype.Bool) *bool {
 	}
 	b := value.Bool
 	return &b
+}
+
+func boolPtr(value *bool) pgtype.Bool {
+	if value == nil {
+		return pgtype.Bool{}
+	}
+	return pgtype.Bool{Bool: *value, Valid: true}
 }
 
 func int8Ptr(value *int64) pgtype.Int8 {

@@ -208,7 +208,12 @@ pub struct RuntimeCommandEventWriteback {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectTaskCompleteWriteback {
-    pub digital_employee_id: String,
+    pub project_task_id: String,
+    pub lease_token: String,
+    pub runtime_node_id: String,
+    pub idempotency_key: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub provider_session_id: Option<String>,
     pub conclusion: String,
     pub evidence_refs: Vec<serde_json::Value>,
     pub artifact_refs: Vec<serde_json::Value>,
@@ -221,7 +226,10 @@ pub struct ProjectTaskCompleteWriteback {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectTaskFailWriteback {
-    pub digital_employee_id: String,
+    pub project_task_id: String,
+    pub lease_token: String,
+    pub runtime_node_id: String,
+    pub idempotency_key: String,
     pub failure_summary: String,
 }
 

@@ -432,6 +432,227 @@ func TestQueueProjectTaskWithAttemptMovesPlannedTaskToQueued(t *testing.T) {
 	require.Equal(t, runtimeNodeID.String(), result.Event.Payload["runtime_node_id"])
 }
 
+func TestStartProjectTaskAttemptAdvancesTaskAndAttempt(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	writebacks := repo.(ProjectTaskAttemptWritebackRepository)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证 attempt started 写回",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	nodeID := uuid.New()
+	queued, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        task.ID,
+		DigitalEmployeeID:    employeeID,
+		DigitalEmployeeRunID: &runID,
+		RuntimeTaskID:        &runtimeTaskID,
+		RuntimeNodeID:        &nodeID,
+		IdempotencyKey:       "project-task:" + task.ID.String() + ":attempt:1:queue",
+		LeaseToken:           "lease-token-1",
+	})
+	require.NoError(t, err)
+
+	started, err := writebacks.StartProjectTaskAttemptWriteback(context.Background(), StartProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: ProjectTaskAttemptRuntimeRequest{
+			TenantID:       tenantID,
+			AttemptID:      queued.Attempt.ID,
+			ProjectTaskID:  queued.Task.ID,
+			RuntimeNodeID:  nodeID,
+			LeaseToken:     queued.Attempt.LeaseToken,
+			IdempotencyKey: "start-" + queued.Attempt.ID.String(),
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskAttemptStatusRunning, started.Attempt.Status)
+	require.Equal(t, ProjectTaskStatusRunning, started.Task.Status)
+	require.NotNil(t, started.Attempt.StartedAt)
+	require.NotNil(t, started.Attempt.RenewedAt)
+}
+
+func TestCompleteProjectTaskAttemptWritebackPersistsTerminalFacts(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	writebacks := repo.(ProjectTaskAttemptWritebackRepository)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证 attempt complete 写回",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	nodeID := uuid.New()
+	queued, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        task.ID,
+		DigitalEmployeeID:    employeeID,
+		DigitalEmployeeRunID: &runID,
+		RuntimeTaskID:        &runtimeTaskID,
+		RuntimeNodeID:        &nodeID,
+		IdempotencyKey:       "project-task:" + task.ID.String() + ":attempt:1:queue",
+		LeaseToken:           "lease-token-complete",
+	})
+	require.NoError(t, err)
+	providerSessionID := "provider-session-complete"
+	_, err = writebacks.StartProjectTaskAttemptWriteback(context.Background(), StartProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: ProjectTaskAttemptRuntimeRequest{
+			TenantID:          tenantID,
+			AttemptID:         queued.Attempt.ID,
+			ProjectTaskID:     queued.Task.ID,
+			RuntimeNodeID:     nodeID,
+			LeaseToken:        queued.Attempt.LeaseToken,
+			IdempotencyKey:    "start-" + queued.Attempt.ID.String(),
+			ProviderSessionID: &providerSessionID,
+		},
+	})
+	require.NoError(t, err)
+
+	completed, err := writebacks.CompleteProjectTaskAttemptWriteback(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: ProjectTaskAttemptRuntimeRequest{
+			TenantID:          tenantID,
+			AttemptID:         queued.Attempt.ID,
+			ProjectTaskID:     queued.Task.ID,
+			RuntimeNodeID:     nodeID,
+			LeaseToken:        queued.Attempt.LeaseToken,
+			IdempotencyKey:    "complete-" + queued.Attempt.ID.String(),
+			ProviderSessionID: &providerSessionID,
+		},
+		DigitalEmployeeID:     employeeID,
+		Conclusion:            "真实开发库 complete 写回验证通过",
+		EvidenceRefs:          []any{map[string]any{"type": "dev_db", "ref": "project_task_attempts"}},
+		ArtifactRefs:          []any{map[string]any{"type": "test_log", "ref": "pg_repository_test"}},
+		ConfidenceFactors:     map[string]any{"writeback_path": "project_task_attempt_writeback"},
+		Uncertainty:           "无",
+		MissingInformation:    []any{},
+		RecommendedNextAction: "进入验收",
+		RequiresHumanReview:   false,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusCompleted, completed.Task.Status)
+	require.Equal(t, ProjectEventTaskCompleted, completed.Event.EventType)
+	require.Equal(t, queued.Task.ID.String(), completed.Event.Payload["project_task_id"])
+	require.Equal(t, queued.Attempt.ID.String(), completed.Event.Payload["project_task_attempt_id"])
+	require.Equal(t, "真实开发库 complete 写回验证通过", completed.Summary.Conclusion)
+	require.Equal(t, employeeID, completed.Summary.DigitalEmployeeID)
+	require.NotNil(t, completed.Summary.CreatedEventID)
+	require.Equal(t, completed.Event.ID, *completed.Summary.CreatedEventID)
+
+	attempt, err := repo.GetProjectTaskAttempt(context.Background(), tenantID, queued.Attempt.ID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskAttemptStatusSucceeded, attempt.Status)
+	require.NotNil(t, attempt.FinishedAt)
+	require.NotNil(t, attempt.TerminalEventID)
+	require.Equal(t, completed.Event.ID, *attempt.TerminalEventID)
+	require.NotNil(t, attempt.ProviderSessionID)
+	require.Equal(t, providerSessionID, *attempt.ProviderSessionID)
+	persistedTask, err := repo.GetProjectTask(context.Background(), tenantID, queued.Task.ID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusCompleted, persistedTask.Status)
+	require.NotNil(t, persistedTask.TerminalEventID)
+	require.Equal(t, completed.Event.ID, *persistedTask.TerminalEventID)
+}
+
+func TestFailProjectTaskAttemptWritebackPersistsTerminalFacts(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	writebacks := repo.(ProjectTaskAttemptWritebackRepository)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "验证 attempt fail 写回",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+	})
+	require.NoError(t, err)
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	nodeID := uuid.New()
+	queued, err := repo.QueueProjectTaskWithAttempt(context.Background(), QueueProjectTaskRequest{
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        task.ID,
+		DigitalEmployeeID:    employeeID,
+		DigitalEmployeeRunID: &runID,
+		RuntimeTaskID:        &runtimeTaskID,
+		RuntimeNodeID:        &nodeID,
+		IdempotencyKey:       "project-task:" + task.ID.String() + ":attempt:1:queue",
+		LeaseToken:           "lease-token-fail",
+	})
+	require.NoError(t, err)
+	providerSessionID := "provider-session-fail"
+	_, err = writebacks.StartProjectTaskAttemptWriteback(context.Background(), StartProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: ProjectTaskAttemptRuntimeRequest{
+			TenantID:          tenantID,
+			AttemptID:         queued.Attempt.ID,
+			ProjectTaskID:     queued.Task.ID,
+			RuntimeNodeID:     nodeID,
+			LeaseToken:        queued.Attempt.LeaseToken,
+			IdempotencyKey:    "start-" + queued.Attempt.ID.String(),
+			ProviderSessionID: &providerSessionID,
+		},
+	})
+	require.NoError(t, err)
+	retryable := true
+
+	failed, err := writebacks.FailProjectTaskAttemptWriteback(context.Background(), FailProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: ProjectTaskAttemptRuntimeRequest{
+			TenantID:          tenantID,
+			AttemptID:         queued.Attempt.ID,
+			ProjectTaskID:     queued.Task.ID,
+			RuntimeNodeID:     nodeID,
+			LeaseToken:        queued.Attempt.LeaseToken,
+			IdempotencyKey:    "fail-" + queued.Attempt.ID.String(),
+			ProviderSessionID: &providerSessionID,
+		},
+		DigitalEmployeeID: employeeID,
+		FailureSummary:    "Provider 执行失败",
+		FailureFamily:     "provider_error",
+		Retryable:         &retryable,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusFailed, failed.Task.Status)
+	require.Equal(t, ProjectEventTaskFailed, failed.Event.EventType)
+	require.Equal(t, queued.Task.ID.String(), failed.Event.Payload["project_task_id"])
+	require.Equal(t, queued.Attempt.ID.String(), failed.Event.Payload["project_task_attempt_id"])
+	require.Equal(t, "Provider 执行失败", failed.Event.Payload["failure_summary"])
+	require.Equal(t, "provider_error", failed.Event.Payload["failure_family"])
+
+	attempt, err := repo.GetProjectTaskAttempt(context.Background(), tenantID, queued.Attempt.ID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskAttemptStatusFailed, attempt.Status)
+	require.NotNil(t, attempt.FinishedAt)
+	require.NotNil(t, attempt.TerminalEventID)
+	require.Equal(t, failed.Event.ID, *attempt.TerminalEventID)
+	require.NotNil(t, attempt.Retryable)
+	require.True(t, *attempt.Retryable)
+	require.NotNil(t, attempt.FailureFamily)
+	require.Equal(t, "provider_error", *attempt.FailureFamily)
+	require.NotNil(t, attempt.FailureMessage)
+	require.Equal(t, "Provider 执行失败", *attempt.FailureMessage)
+	persistedTask, err := repo.GetProjectTask(context.Background(), tenantID, queued.Task.ID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusFailed, persistedTask.Status)
+	require.NotNil(t, persistedTask.TerminalEventID)
+	require.Equal(t, failed.Event.ID, *persistedTask.TerminalEventID)
+}
+
 func TestCreateProjectTaskGraphCreatesTasksEdgesAndEvents(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)
@@ -2003,8 +2224,18 @@ func newProjectRepositoryTestStore(t *testing.T) (Repository, uuid.UUID) {
 	require.NoError(t, pool.Ping(ctx))
 
 	tenantID := uuid.New()
+	_, err = pool.Exec(ctx,
+		`INSERT INTO tenants (id, slug, name, status)
+		 VALUES ($1, $2, $3, 'active')
+		 ON CONFLICT (id) DO NOTHING`,
+		tenantID,
+		"project-repository-test-"+tenantID.String(),
+		"Project repository test "+tenantID.String(),
+	)
+	require.NoError(t, err)
 	t.Cleanup(func() {
 		for _, statement := range []string{
+			"DELETE FROM project_task_attempts WHERE tenant_id = $1",
 			"DELETE FROM project_execution_summaries WHERE tenant_id = $1",
 			"DELETE FROM project_decision_requests WHERE tenant_id = $1",
 			"DELETE FROM project_task_dependencies WHERE tenant_id = $1",
@@ -2018,6 +2249,7 @@ func newProjectRepositoryTestStore(t *testing.T) (Repository, uuid.UUID) {
 			"DELETE FROM project_config_revisions WHERE tenant_id = $1",
 			"DELETE FROM project_members WHERE tenant_id = $1",
 			"DELETE FROM projects WHERE tenant_id = $1",
+			"DELETE FROM tenants WHERE id = $1",
 		} {
 			_, _ = pool.Exec(context.Background(), statement, tenantID)
 		}

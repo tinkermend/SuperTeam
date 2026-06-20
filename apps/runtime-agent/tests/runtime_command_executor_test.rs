@@ -24,6 +24,8 @@ const TENANT_ID: &str = "00000000-0000-4000-8000-000000000001";
 const TEAM_ID: &str = "33333333-3333-4333-8333-333333333333";
 const RUNTIME_NODE_ID: &str = "44444444-4444-4444-8444-444444444444";
 const PROJECT_TASK_ID: &str = "55555555-5555-4555-8555-555555555555";
+const PROJECT_TASK_ATTEMPT_ID: &str = "66666666-6666-4666-8666-666666666666";
+const PROJECT_TASK_LEASE_TOKEN: &str = "lease-token-1";
 
 fn make_script(dir: &Path, name: &str, body: &str) -> PathBuf {
     let path = dir.join(name);
@@ -397,7 +399,7 @@ async fn serve_command_failures(capture: CommandFailureCapture) -> CommandWriteb
             post(capture_cancelled_writeback),
         )
         .route(
-            "/api/v1/runtime/project-tasks/{project_task_id}/fail",
+            "/api/v1/runtime/project-task-attempts/{attempt_id}/fail",
             post(capture_project_task_fail_writeback),
         )
         .with_state(capture);
@@ -418,7 +420,11 @@ struct CommandCompletionCapture {
 
 #[derive(Clone, Debug)]
 struct CapturedProjectTaskWriteback {
+    attempt_id: String,
     project_task_id: String,
+    lease_token: String,
+    runtime_node_id: String,
+    idempotency_key: String,
     authorization: Option<String>,
     node_id: Option<String>,
     payload: Value,
@@ -443,11 +449,11 @@ async fn serve_command_completion_writebacks(
             post(capture_event_writeback),
         )
         .route(
-            "/api/v1/runtime/project-tasks/{project_task_id}/complete",
+            "/api/v1/runtime/project-task-attempts/{attempt_id}/complete",
             post(capture_project_task_complete_writeback),
         )
         .route(
-            "/api/v1/runtime/project-tasks/{project_task_id}/fail",
+            "/api/v1/runtime/project-task-attempts/{attempt_id}/fail",
             post(capture_completion_project_task_fail_writeback),
         )
         .with_state(capture);
@@ -493,7 +499,7 @@ async fn serve_failing_project_task_completion(
             post(capture_event_writeback),
         )
         .route(
-            "/api/v1/runtime/project-tasks/{project_task_id}/complete",
+            "/api/v1/runtime/project-task-attempts/{attempt_id}/complete",
             post(reject_project_task_complete_writeback),
         )
         .with_state(capture);
@@ -555,7 +561,7 @@ async fn capture_event_writeback(
 }
 
 async fn capture_completion_project_task_fail_writeback(
-    AxumPath(project_task_id): AxumPath<String>,
+    AxumPath(attempt_id): AxumPath<String>,
     State(capture): State<CommandCompletionCapture>,
     headers: HeaderMap,
     Json(payload): Json<Value>,
@@ -564,7 +570,11 @@ async fn capture_completion_project_task_fail_writeback(
         .project_task_fail
         .lock()
         .expect("project task fail lock") = Some(CapturedProjectTaskWriteback {
-        project_task_id,
+        attempt_id,
+        project_task_id: required_string_field(&payload, "project_task_id"),
+        lease_token: required_string_field(&payload, "lease_token"),
+        runtime_node_id: required_string_field(&payload, "runtime_node_id"),
+        idempotency_key: required_string_field(&payload, "idempotency_key"),
         authorization: header_value(&headers, "authorization"),
         node_id: header_value(&headers, "x-node-id"),
         payload,
@@ -573,7 +583,7 @@ async fn capture_completion_project_task_fail_writeback(
 }
 
 async fn capture_project_task_complete_writeback(
-    AxumPath(project_task_id): AxumPath<String>,
+    AxumPath(attempt_id): AxumPath<String>,
     State(capture): State<CommandCompletionCapture>,
     headers: HeaderMap,
     Json(payload): Json<Value>,
@@ -582,7 +592,11 @@ async fn capture_project_task_complete_writeback(
         .project_task_complete
         .lock()
         .expect("project task complete lock") = Some(CapturedProjectTaskWriteback {
-        project_task_id,
+        attempt_id,
+        project_task_id: required_string_field(&payload, "project_task_id"),
+        lease_token: required_string_field(&payload, "lease_token"),
+        runtime_node_id: required_string_field(&payload, "runtime_node_id"),
+        idempotency_key: required_string_field(&payload, "idempotency_key"),
         authorization: header_value(&headers, "authorization"),
         node_id: header_value(&headers, "x-node-id"),
         payload,
@@ -640,7 +654,7 @@ async fn capture_cancelled_writeback(
 }
 
 async fn capture_project_task_fail_writeback(
-    AxumPath(project_task_id): AxumPath<String>,
+    AxumPath(attempt_id): AxumPath<String>,
     State(capture): State<CommandFailureCapture>,
     headers: HeaderMap,
     Json(payload): Json<Value>,
@@ -649,7 +663,11 @@ async fn capture_project_task_fail_writeback(
         .project_task_fail
         .lock()
         .expect("project task fail lock") = Some(CapturedProjectTaskWriteback {
-        project_task_id,
+        attempt_id,
+        project_task_id: required_string_field(&payload, "project_task_id"),
+        lease_token: required_string_field(&payload, "lease_token"),
+        runtime_node_id: required_string_field(&payload, "runtime_node_id"),
+        idempotency_key: required_string_field(&payload, "idempotency_key"),
         authorization: header_value(&headers, "authorization"),
         node_id: header_value(&headers, "x-node-id"),
         payload,
@@ -690,6 +708,28 @@ fn header_value(headers: &HeaderMap, key: &str) -> Option<String> {
         .map(ToString::to_string)
 }
 
+fn required_string_field(payload: &Value, key: &str) -> String {
+    payload
+        .get(key)
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("missing string field {key} in payload: {payload}"))
+        .to_string()
+}
+
+fn project_task_attempt_metadata(expected_outputs: Vec<&str>) -> Value {
+    json!({
+        "source": "project_task_dispatch",
+        "project_task_id": PROJECT_TASK_ID,
+        "project_task_attempt_id": PROJECT_TASK_ATTEMPT_ID,
+        "project_task_lease_token": PROJECT_TASK_LEASE_TOKEN,
+        "runtime_node_id": RUNTIME_NODE_ID,
+        "execution_context_packet_version": "v1",
+        "expected_outputs": expected_outputs,
+        "input_requirements": {},
+        "handoff_contract": {"completion_path": "project_task_attempt_writeback"}
+    })
+}
+
 #[tokio::test]
 async fn start_session_completes_project_task_when_metadata_requests_writeback() {
     let temp = TempDir::new().expect("tempdir");
@@ -706,7 +746,7 @@ printf '%s\n' '{"type":"result","result":"provider produced the requested execut
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        "node-1",
+        RUNTIME_NODE_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -719,13 +759,11 @@ printf '%s\n' '{"type":"result","result":"provider produced the requested execut
         Some("complete the project task"),
         None,
     );
-    command.payload["metadata"] = json!({
-        "source": "project_task_dispatch",
-        "project_task_id": PROJECT_TASK_ID,
-        "expected_outputs": ["execution_summary", "evidence_refs", "recommended_next_action"],
-        "input_requirements": {},
-        "handoff_contract": {"completion_path": "project_task_writeback"}
-    });
+    command.payload["metadata"] = project_task_attempt_metadata(vec![
+        "execution_summary",
+        "evidence_refs",
+        "recommended_next_action",
+    ]);
 
     let outcome = executor
         .handle_command(command)
@@ -743,15 +781,24 @@ printf '%s\n' '{"type":"result","result":"provider produced the requested execut
 
     let project_complete =
         wait_for_project_task_writeback(capture.project_task_complete.clone()).await;
+    assert_eq!(project_complete.attempt_id, PROJECT_TASK_ATTEMPT_ID);
     assert_eq!(project_complete.project_task_id, PROJECT_TASK_ID);
+    assert_eq!(project_complete.lease_token, PROJECT_TASK_LEASE_TOKEN);
+    assert_eq!(project_complete.runtime_node_id, RUNTIME_NODE_ID);
+    assert_eq!(
+        project_complete.idempotency_key,
+        format!("project-task-attempt:{PROJECT_TASK_ATTEMPT_ID}:complete:cmd-project-task")
+    );
     assert_eq!(
         project_complete.authorization.as_deref(),
         Some("Bearer session-token")
     );
-    assert_eq!(project_complete.node_id.as_deref(), Some("node-1"));
-    assert_eq!(
-        project_complete.payload["digital_employee_id"],
-        DIGITAL_EMPLOYEE_ID
+    assert_eq!(project_complete.node_id.as_deref(), Some(RUNTIME_NODE_ID));
+    assert!(
+        project_complete
+            .payload
+            .get("digital_employee_id")
+            .is_none()
     );
     assert_eq!(
         project_complete.payload["conclusion"],
@@ -792,7 +839,7 @@ exit 1
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        "node-1",
+        RUNTIME_NODE_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -805,12 +852,11 @@ exit 1
         Some("complete the project task"),
         None,
     );
-    command.payload["metadata"] = json!({
-        "source": "project_task_dispatch",
-        "project_task_id": PROJECT_TASK_ID,
-        "expected_outputs": ["execution_summary", "evidence_refs", "recommended_next_action"],
-        "handoff_contract": {"completion_path": "project_task_writeback"}
-    });
+    command.payload["metadata"] = project_task_attempt_metadata(vec![
+        "execution_summary",
+        "evidence_refs",
+        "recommended_next_action",
+    ]);
 
     let outcome = executor
         .handle_command(command)
@@ -832,11 +878,17 @@ exit 1
     assert_eq!(command_fail.payload["status"], "failed");
 
     let project_fail = wait_for_project_task_writeback(capture.project_task_fail.clone()).await;
+    assert_eq!(project_fail.attempt_id, PROJECT_TASK_ATTEMPT_ID);
     assert_eq!(project_fail.project_task_id, PROJECT_TASK_ID);
+    assert_eq!(project_fail.lease_token, PROJECT_TASK_LEASE_TOKEN);
+    assert_eq!(project_fail.runtime_node_id, RUNTIME_NODE_ID);
     assert_eq!(
-        project_fail.payload["digital_employee_id"],
-        DIGITAL_EMPLOYEE_ID
+        project_fail.idempotency_key,
+        format!(
+            "project-task-attempt:{PROJECT_TASK_ATTEMPT_ID}:fail:cmd-project-task-provider-failure"
+        )
     );
+    assert!(project_fail.payload.get("digital_employee_id").is_none());
     assert_eq!(
         project_fail.payload["failure_summary"],
         "claude exited with status 1"
@@ -875,7 +927,7 @@ printf '%s\n' '{"type":"result","result":"ordinary command completed"}'
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        "node-1",
+        RUNTIME_NODE_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -891,7 +943,10 @@ printf '%s\n' '{"type":"result","result":"ordinary command completed"}'
     command.payload["metadata"] = json!({
         "source": "manual",
         "project_task_id": PROJECT_TASK_ID,
-        "handoff_contract": {"completion_path": "project_task_writeback"}
+        "project_task_attempt_id": PROJECT_TASK_ATTEMPT_ID,
+        "project_task_lease_token": PROJECT_TASK_LEASE_TOKEN,
+        "runtime_node_id": RUNTIME_NODE_ID,
+        "handoff_contract": {"completion_path": "project_task_attempt_writeback"}
     });
 
     let outcome = executor
@@ -932,7 +987,7 @@ printf '%s\n' '{"type":"result","result":"provider finished before project task 
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        "node-1",
+        RUNTIME_NODE_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -945,12 +1000,11 @@ printf '%s\n' '{"type":"result","result":"provider finished before project task 
         Some("complete the project task"),
         None,
     );
-    command.payload["metadata"] = json!({
-        "source": "project_task_dispatch",
-        "project_task_id": PROJECT_TASK_ID,
-        "expected_outputs": ["execution_summary", "evidence_refs", "recommended_next_action"],
-        "handoff_contract": {"completion_path": "project_task_writeback"}
-    });
+    command.payload["metadata"] = project_task_attempt_metadata(vec![
+        "execution_summary",
+        "evidence_refs",
+        "recommended_next_action",
+    ]);
 
     let outcome = executor
         .handle_command(command)
@@ -987,7 +1041,7 @@ EOF
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        "node-1",
+        RUNTIME_NODE_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -1000,12 +1054,11 @@ EOF
         Some("complete the project task"),
         None,
     );
-    command.payload["metadata"] = json!({
-        "source": "project_task_dispatch",
-        "project_task_id": PROJECT_TASK_ID,
-        "expected_outputs": ["execution_summary", "evidence_refs", "recommended_next_action"],
-        "handoff_contract": {"completion_path": "project_task_writeback"}
-    });
+    command.payload["metadata"] = project_task_attempt_metadata(vec![
+        "execution_summary",
+        "evidence_refs",
+        "recommended_next_action",
+    ]);
 
     let outcome = executor
         .handle_command(command)
@@ -1247,7 +1300,7 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        "node-1",
+        RUNTIME_NODE_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
 
@@ -1327,7 +1380,7 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        "node-1",
+        RUNTIME_NODE_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
 
@@ -1352,12 +1405,8 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
     );
     command.payload["workspace_files"] =
         json!([workspace_file_with_hash(content, "not-the-content-hash")]);
-    command.payload["metadata"] = json!({
-        "source": "project_task_dispatch",
-        "project_task_id": PROJECT_TASK_ID,
-        "expected_outputs": ["execution_summary", "evidence_refs"],
-        "handoff_contract": {"completion_path": "project_task_writeback"}
-    });
+    command.payload["metadata"] =
+        project_task_attempt_metadata(vec!["execution_summary", "evidence_refs"]);
 
     let error = executor
         .handle_command(command)
@@ -1373,15 +1422,29 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
 
     let project_task_failed =
         wait_for_project_task_writeback(capture.project_task_fail.clone()).await;
+    assert_eq!(project_task_failed.attempt_id, PROJECT_TASK_ATTEMPT_ID);
     assert_eq!(project_task_failed.project_task_id, PROJECT_TASK_ID);
+    assert_eq!(project_task_failed.lease_token, PROJECT_TASK_LEASE_TOKEN);
+    assert_eq!(project_task_failed.runtime_node_id, RUNTIME_NODE_ID);
+    assert_eq!(
+        project_task_failed.idempotency_key,
+        format!(
+            "project-task-attempt:{PROJECT_TASK_ATTEMPT_ID}:fail:cmd-project-task-bad-workspace"
+        )
+    );
     assert_eq!(
         project_task_failed.authorization.as_deref(),
         Some("Bearer session-token")
     );
-    assert_eq!(project_task_failed.node_id.as_deref(), Some("node-1"));
     assert_eq!(
-        project_task_failed.payload["digital_employee_id"],
-        DIGITAL_EMPLOYEE_ID
+        project_task_failed.node_id.as_deref(),
+        Some(RUNTIME_NODE_ID)
+    );
+    assert!(
+        project_task_failed
+            .payload
+            .get("digital_employee_id")
+            .is_none()
     );
     assert!(
         project_task_failed
@@ -1756,7 +1819,7 @@ sleep 5
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", server.addr),
         "session-token",
-        "node-1",
+        RUNTIME_NODE_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -1820,7 +1883,7 @@ sleep 5
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", server.addr),
         "session-token",
-        "node-1",
+        RUNTIME_NODE_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -1834,12 +1897,7 @@ sleep 5
         Some("start work that will be cancelled"),
         None,
     );
-    start.payload["metadata"] = json!({
-        "source": "project_task_dispatch",
-        "project_task_id": PROJECT_TASK_ID,
-        "expected_outputs": ["execution_summary"],
-        "handoff_contract": {"completion_path": "project_task_writeback"}
-    });
+    start.payload["metadata"] = project_task_attempt_metadata(vec!["execution_summary"]);
     let start = executor
         .handle_command(start)
         .await
@@ -1870,15 +1928,27 @@ sleep 5
 
     let project_task_failed =
         wait_for_project_task_writeback(capture.project_task_fail.clone()).await;
+    assert_eq!(project_task_failed.attempt_id, PROJECT_TASK_ATTEMPT_ID);
     assert_eq!(project_task_failed.project_task_id, PROJECT_TASK_ID);
+    assert_eq!(project_task_failed.lease_token, PROJECT_TASK_LEASE_TOKEN);
+    assert_eq!(project_task_failed.runtime_node_id, RUNTIME_NODE_ID);
+    assert_eq!(
+        project_task_failed.idempotency_key,
+        format!("project-task-attempt:{PROJECT_TASK_ATTEMPT_ID}:fail:cmd-start-project-task-stop")
+    );
     assert_eq!(
         project_task_failed.authorization.as_deref(),
         Some("Bearer session-token")
     );
-    assert_eq!(project_task_failed.node_id.as_deref(), Some("node-1"));
     assert_eq!(
-        project_task_failed.payload["digital_employee_id"],
-        DIGITAL_EMPLOYEE_ID
+        project_task_failed.node_id.as_deref(),
+        Some(RUNTIME_NODE_ID)
+    );
+    assert!(
+        project_task_failed
+            .payload
+            .get("digital_employee_id")
+            .is_none()
     );
     assert_eq!(
         project_task_failed.payload["failure_summary"],

@@ -115,6 +115,185 @@ func TestQueueProjectTaskCreatesAttemptAndMovesTaskToQueued(t *testing.T) {
 	require.Equal(t, runtimeNodeID.String(), result.Event.Payload["runtime_node_id"])
 }
 
+func TestStartProjectTaskAttemptAdvancesRunning(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusQueued, ProjectTaskAttemptStatusQueued)
+
+	started, err := service.StartProjectTaskAttempt(context.Background(), StartProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-start-1"),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskAttemptStatusRunning, started.Status)
+	require.Equal(t, ProjectTaskStatusRunning, repo.tasks[0].Status)
+	require.NotNil(t, started.StartedAt)
+	require.NotNil(t, started.RenewedAt)
+}
+
+func TestStartProjectTaskAttemptRejectsWrongLeaseToken(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusQueued, ProjectTaskAttemptStatusQueued)
+	req := fixture.runtimeRequest("attempt-start-1")
+	req.LeaseToken = "wrong-token"
+
+	_, err = service.StartProjectTaskAttempt(context.Background(), StartProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: req,
+	})
+
+	require.ErrorIs(t, err, ErrProjectConflict)
+}
+
+func TestRenewProjectTaskAttemptLeaseUpdatesExpiry(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	expiresAt := time.Now().UTC().Add(5 * time.Minute)
+
+	err = service.RenewProjectTaskAttemptLease(context.Background(), RenewProjectTaskAttemptLeaseRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-lease-1"),
+		LeaseExpiresAt:                   &expiresAt,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, repo.projectTaskAttempts[0].LeaseExpiresAt)
+	require.True(t, repo.projectTaskAttempts[0].LeaseExpiresAt.Equal(expiresAt))
+	require.NotNil(t, repo.projectTaskAttempts[0].RenewedAt)
+}
+
+func TestCompleteProjectTaskAttemptCreatesSummaryAndCompletesTask(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+
+	summary, err := service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-complete-1"),
+		Conclusion:                       "done",
+		EvidenceRefs:                     []any{"s3://bucket/report.md"},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixture.taskID, summary.ProjectTaskID)
+	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
+	require.Equal(t, ProjectTaskAttemptStatusSucceeded, repo.projectTaskAttempts[0].Status)
+	require.Contains(t, repo.eventTypes, ProjectEventTaskCompleted)
+}
+
+func TestFailProjectTaskAttemptFailsTaskAndAttempt(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	retryable := true
+
+	task, err := service.FailProjectTaskAttempt(context.Background(), FailProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-fail-1"),
+		FailureSummary:                   "provider crashed",
+		FailureFamily:                    "runtime_agent_failure",
+		Retryable:                        &retryable,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusFailed, task.Status)
+	require.Equal(t, ProjectTaskAttemptStatusFailed, repo.projectTaskAttempts[0].Status)
+	require.Equal(t, "runtime_agent_failure", *repo.projectTaskAttempts[0].FailureFamily)
+	require.Equal(t, "provider crashed", *repo.projectTaskAttempts[0].FailureMessage)
+	require.Equal(t, ProjectEventTaskFailed, repo.eventTypes[len(repo.eventTypes)-1])
+}
+
+func TestProjectTaskAttemptRejectsWrongRuntimeNode(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	req := fixture.runtimeRequest("attempt-lease-1")
+	req.RuntimeNodeID = uuid.New()
+
+	err = service.RenewProjectTaskAttemptLease(context.Background(), RenewProjectTaskAttemptLeaseRequest{
+		ProjectTaskAttemptRuntimeRequest: req,
+	})
+
+	require.ErrorIs(t, err, ErrProjectConflict)
+}
+
+type projectTaskAttemptServiceFixture struct {
+	tenantID  uuid.UUID
+	projectID uuid.UUID
+	taskID    uuid.UUID
+	attemptID uuid.UUID
+	nodeID    uuid.UUID
+	lease     string
+}
+
+func (f projectTaskAttemptServiceFixture) runtimeRequest(idempotencyKey string) ProjectTaskAttemptRuntimeRequest {
+	return ProjectTaskAttemptRuntimeRequest{
+		TenantID:       f.tenantID,
+		AttemptID:      f.attemptID,
+		ProjectTaskID:  f.taskID,
+		RuntimeNodeID:  f.nodeID,
+		LeaseToken:     f.lease,
+		IdempotencyKey: idempotencyKey,
+	}
+}
+
+func newProjectTaskAttemptServiceFixture(repo *memoryRepository, taskStatus, attemptStatus string) projectTaskAttemptServiceFixture {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	employeeID := uuid.New()
+	nodeID := uuid.New()
+	lease := "lease-token-1"
+	now := time.Now().UTC()
+	repo.projects[projectID] = Project{
+		ID:                     projectID,
+		TenantID:               tenantID,
+		Name:                   "Runtime closure",
+		Goal:                   "Close task through attempts",
+		Status:                 ProjectStatusRunning,
+		HumanOwnerUserID:       uuid.New(),
+		CoordinationWorkflowID: "project-coordinator:" + projectID.String(),
+		CreatedAt:              now,
+		UpdatedAt:              now,
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:                        taskID,
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "attempt writeback",
+		Status:                    taskStatus,
+		AssignedDigitalEmployeeID: &employeeID,
+		CurrentAttemptID:          &attemptID,
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
+	})
+	repo.projectTaskAttempts = append(repo.projectTaskAttempts, ProjectTaskAttempt{
+		ID:             attemptID,
+		TenantID:       tenantID,
+		ProjectTaskID:  taskID,
+		AttemptNo:      1,
+		Status:         attemptStatus,
+		RuntimeNodeID:  &nodeID,
+		LeaseToken:     lease,
+		IdempotencyKey: "project-task:" + taskID.String() + ":attempt:1:queue",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	})
+	return projectTaskAttemptServiceFixture{
+		tenantID:  tenantID,
+		projectID: projectID,
+		taskID:    taskID,
+		attemptID: attemptID,
+		nodeID:    nodeID,
+		lease:     lease,
+	}
+}
+
 func TestQueueProjectTaskReplaysIdempotencyKey(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -4560,26 +4739,183 @@ func (r *memoryRepository) RequestProjectTaskTransferWriteback(ctx context.Conte
 	return ProjectTaskTransferWritebackResult{Task: task, Event: event, Transfer: transfer}, nil
 }
 
+func (r *memoryRepository) StartProjectTaskAttemptWriteback(ctx context.Context, req StartProjectTaskAttemptRequest) (ProjectTaskAttemptWritebackResult, error) {
+	for i, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID != req.TenantID || attempt.ID != req.AttemptID {
+			continue
+		}
+		if attempt.LeaseToken != req.LeaseToken {
+			return ProjectTaskAttemptWritebackResult{}, ErrProjectConflict
+		}
+		now := time.Now().UTC()
+		attempt.Status = ProjectTaskAttemptStatusRunning
+		attempt.RuntimeNodeID = &req.RuntimeNodeID
+		attempt.ProviderSessionID = req.ProviderSessionID
+		if attempt.StartedAt == nil {
+			attempt.StartedAt = &now
+		}
+		attempt.RenewedAt = &now
+		attempt.UpdatedAt = now
+		r.projectTaskAttempts[i] = attempt
+		task, err := r.UpdateProjectTaskStatus(ctx, req.TenantID, req.ProjectTaskID, ProjectTaskStatusRunning, nil, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
+		if err != nil {
+			return ProjectTaskAttemptWritebackResult{}, err
+		}
+		return ProjectTaskAttemptWritebackResult{Task: task, Attempt: attempt}, nil
+	}
+	return ProjectTaskAttemptWritebackResult{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) RenewProjectTaskAttemptLeaseWriteback(ctx context.Context, req RenewProjectTaskAttemptLeaseRequest) (ProjectTaskAttempt, error) {
+	for i, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID != req.TenantID || attempt.ID != req.AttemptID {
+			continue
+		}
+		if attempt.LeaseToken != req.LeaseToken {
+			return ProjectTaskAttempt{}, ErrProjectConflict
+		}
+		now := time.Now().UTC()
+		attempt.LeaseExpiresAt = req.LeaseExpiresAt
+		attempt.RenewedAt = &now
+		attempt.UpdatedAt = now
+		r.projectTaskAttempts[i] = attempt
+		return attempt, nil
+	}
+	return ProjectTaskAttempt{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) CompleteProjectTaskAttemptWriteback(ctx context.Context, req CompleteProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {
+	snapshot := r.writebackSnapshot()
+	task, err := r.UpdateProjectTaskStatus(ctx, req.TenantID, req.ProjectTaskID, ProjectTaskStatusCompleted, nil, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	event, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    task.ProjectID,
+		EventType:    ProjectEventTaskCompleted,
+		ActorType:    "digital_employee",
+		ActorID:      req.DigitalEmployeeID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务已完成",
+		Payload:      map[string]any{"project_task_id": task.ID.String(), "project_task_attempt_id": req.AttemptID.String()},
+	})
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	summary, err := r.CreateExecutionSummary(ctx, CreateExecutionSummaryRequest{
+		TenantID:              req.TenantID,
+		ProjectID:             task.ProjectID,
+		ProjectTaskID:         task.ID,
+		DigitalEmployeeID:     req.DigitalEmployeeID,
+		Conclusion:            req.Conclusion,
+		EvidenceRefs:          sliceOrEmptyAny(req.EvidenceRefs),
+		ArtifactRefs:          sliceOrEmptyAny(req.ArtifactRefs),
+		ConfidenceFactors:     mapOrEmptyAny(req.ConfidenceFactors),
+		Uncertainty:           strings.TrimSpace(req.Uncertainty),
+		MissingInformation:    sliceOrEmptyAny(req.MissingInformation),
+		RecommendedNextAction: strings.TrimSpace(req.RecommendedNextAction),
+		RequiresHumanReview:   req.RequiresHumanReview,
+		CreatedEventID:        &event.ID,
+	})
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	if err := r.finishProjectTaskAttempt(req.TenantID, req.AttemptID, ProjectTaskAttemptStatusSucceeded, &event.ID, nil, nil, nil); err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	task, err = r.UpdateProjectTaskStatus(ctx, req.TenantID, req.ProjectTaskID, ProjectTaskStatusCompleted, &event.ID, []string{ProjectTaskStatusCompleted})
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary}, nil
+}
+
+func (r *memoryRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req FailProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {
+	snapshot := r.writebackSnapshot()
+	task, err := r.UpdateProjectTaskStatus(ctx, req.TenantID, req.ProjectTaskID, ProjectTaskStatusFailed, nil, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
+	if err != nil {
+		return ProjectTaskWritebackResult{}, err
+	}
+	event, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    task.ProjectID,
+		EventType:    ProjectEventTaskFailed,
+		ActorType:    "digital_employee",
+		ActorID:      req.DigitalEmployeeID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(task.ID.String()),
+		Summary:      "项目任务执行失败",
+		Payload: map[string]any{
+			"project_task_id":         task.ID.String(),
+			"project_task_attempt_id": req.AttemptID.String(),
+			"failure_summary":         req.FailureSummary,
+			"failure_family":          req.FailureFamily,
+		},
+	})
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	if err := r.finishProjectTaskAttempt(req.TenantID, req.AttemptID, ProjectTaskAttemptStatusFailed, &event.ID, req.Retryable, &req.FailureFamily, &req.FailureSummary); err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	task, err = r.UpdateProjectTaskStatus(ctx, req.TenantID, req.ProjectTaskID, ProjectTaskStatusFailed, &event.ID, []string{ProjectTaskStatusFailed})
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+}
+
+func (r *memoryRepository) finishProjectTaskAttempt(tenantID, attemptID uuid.UUID, status string, terminalEventID *uuid.UUID, retryable *bool, failureFamily, failureMessage *string) error {
+	for i, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID != tenantID || attempt.ID != attemptID {
+			continue
+		}
+		now := time.Now().UTC()
+		attempt.Status = status
+		attempt.FinishedAt = &now
+		attempt.TerminalEventID = terminalEventID
+		attempt.Retryable = retryable
+		attempt.FailureFamily = failureFamily
+		attempt.FailureMessage = failureMessage
+		attempt.UpdatedAt = now
+		r.projectTaskAttempts[i] = attempt
+		return nil
+	}
+	return ErrProjectNotFound
+}
+
 type memoryWritebackSnapshot struct {
-	tasks              []ProjectTask
-	events             []ProjectEvent
-	eventTypes         []ProjectEventType
-	executionSummaries []ExecutionSummary
-	transferRequests   []TransferRequest
+	tasks               []ProjectTask
+	projectTaskAttempts []ProjectTaskAttempt
+	events              []ProjectEvent
+	eventTypes          []ProjectEventType
+	executionSummaries  []ExecutionSummary
+	transferRequests    []TransferRequest
 }
 
 func (r *memoryRepository) writebackSnapshot() memoryWritebackSnapshot {
 	return memoryWritebackSnapshot{
-		tasks:              append([]ProjectTask(nil), r.tasks...),
-		events:             append([]ProjectEvent(nil), r.events...),
-		eventTypes:         append([]ProjectEventType(nil), r.eventTypes...),
-		executionSummaries: append([]ExecutionSummary(nil), r.executionSummaries...),
-		transferRequests:   append([]TransferRequest(nil), r.transferRequests...),
+		tasks:               append([]ProjectTask(nil), r.tasks...),
+		projectTaskAttempts: append([]ProjectTaskAttempt(nil), r.projectTaskAttempts...),
+		events:              append([]ProjectEvent(nil), r.events...),
+		eventTypes:          append([]ProjectEventType(nil), r.eventTypes...),
+		executionSummaries:  append([]ExecutionSummary(nil), r.executionSummaries...),
+		transferRequests:    append([]TransferRequest(nil), r.transferRequests...),
 	}
 }
 
 func (r *memoryRepository) restoreWritebackSnapshot(snapshot memoryWritebackSnapshot) {
 	r.tasks = snapshot.tasks
+	r.projectTaskAttempts = snapshot.projectTaskAttempts
 	r.events = snapshot.events
 	r.eventTypes = snapshot.eventTypes
 	r.executionSummaries = snapshot.executionSummaries

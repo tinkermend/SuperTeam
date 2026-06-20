@@ -319,63 +319,86 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RuntimeCommandWritebackAccepted"
-  /api/v1/runtime/project-tasks/{projectTaskId}/complete:
+  /api/v1/runtime/project-task-attempts/{attemptId}/started:
     post:
-      operationId: completeProjectTask
-      summary: Complete a project task from a Runtime Agent session
+      operationId: startProjectTaskAttempt
+      summary: Mark a ProjectTask attempt as started by Runtime
       parameters:
-        - $ref: "#/components/parameters/ProjectTaskId"
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CompleteProjectTaskRequest"
+              $ref: "#/components/schemas/StartProjectTaskAttemptRequest"
       responses:
         "202":
-          description: Project task completion accepted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProjectExecutionSummary"
-  /api/v1/runtime/project-tasks/{projectTaskId}/fail:
+          description: Attempt started
+  /api/v1/runtime/project-task-attempts/{attemptId}/lease:
     post:
-      operationId: failProjectTask
-      summary: Fail a project task from a Runtime Agent session
+      operationId: renewProjectTaskAttemptLease
+      summary: Renew a ProjectTask attempt lease
       parameters:
-        - $ref: "#/components/parameters/ProjectTaskId"
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/FailProjectTaskRequest"
+              $ref: "#/components/schemas/RenewProjectTaskAttemptLeaseRequest"
       responses:
-        "202":
-          description: Project task failure accepted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProjectTask"
-  /api/v1/runtime/project-tasks/{projectTaskId}/transfer-requests:
+        "204":
+          description: Lease renewed
+  /api/v1/runtime/project-task-attempts/{attemptId}/complete:
     post:
-      operationId: requestProjectTaskTransfer
-      summary: Request project task transfer from a Runtime Agent session
+      operationId: completeProjectTaskAttempt
+      summary: Complete a ProjectTask attempt
       parameters:
-        - $ref: "#/components/parameters/ProjectTaskId"
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RequestProjectTaskTransferRequest"
+              $ref: "#/components/schemas/CompleteProjectTaskAttemptRequest"
       responses:
         "202":
-          description: Project task transfer request accepted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProjectTransferRequest"
+          description: Attempt completion accepted
+  /api/v1/runtime/project-task-attempts/{attemptId}/fail:
+    post:
+      operationId: failProjectTaskAttempt
+      summary: Fail a ProjectTask attempt
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FailProjectTaskAttemptRequest"
+      responses:
+        "202":
+          description: Attempt failure accepted
   /api/v1/runtime/nodes:
     get:
       operationId: listRuntimeNodes
@@ -5678,6 +5701,78 @@ components:
         missing_context_refs:
           type: array
           items: {}
+    ProjectTaskAttemptRuntimeFields:
+      type: object
+      required:
+        - project_task_id
+        - lease_token
+        - runtime_node_id
+        - idempotency_key
+      properties:
+        project_task_id:
+          type: string
+          format: uuid
+        lease_token:
+          type: string
+        runtime_node_id:
+          type: string
+          format: uuid
+        idempotency_key:
+          type: string
+        provider_session_id:
+          type: string
+    StartProjectTaskAttemptRequest:
+      allOf:
+        - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"
+    RenewProjectTaskAttemptLeaseRequest:
+      allOf:
+        - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"
+        - type: object
+          properties:
+            lease_expires_at:
+              type: string
+              format: date-time
+    CompleteProjectTaskAttemptRequest:
+      allOf:
+        - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"
+        - type: object
+          required:
+            - conclusion
+          properties:
+            conclusion:
+              type: string
+            evidence_refs:
+              type: array
+              items: {}
+            artifact_refs:
+              type: array
+              items: {}
+            confidence_factors:
+              type: object
+              additionalProperties: true
+            uncertainty:
+              type: string
+            missing_information:
+              type: array
+              items: {}
+            recommended_next_action:
+              type: string
+            requires_human_review:
+              type: boolean
+    FailProjectTaskAttemptRequest:
+      allOf:
+        - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"
+        - type: object
+          required:
+            - failure_summary
+            - failure_family
+          properties:
+            failure_summary:
+              type: string
+            failure_family:
+              type: string
+            retryable:
+              type: boolean
     Team:
       type: object
       required:

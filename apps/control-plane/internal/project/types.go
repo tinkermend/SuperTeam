@@ -369,6 +369,7 @@ type QueueProjectTaskRequest struct {
 	TenantID                      uuid.UUID
 	ProjectID                     uuid.UUID
 	ProjectTaskID                 uuid.UUID
+	ProjectTaskAttemptID          *uuid.UUID
 	DigitalEmployeeID             uuid.UUID
 	DigitalEmployeeRunID          *uuid.UUID
 	RuntimeTaskID                 *uuid.UUID
@@ -829,12 +830,52 @@ type CompleteProjectTaskRequest struct {
 	RequiresHumanReview   bool
 }
 
+type ProjectTaskAttemptRuntimeRequest struct {
+	TenantID          uuid.UUID
+	AttemptID         uuid.UUID
+	ProjectTaskID     uuid.UUID
+	RuntimeNodeID     uuid.UUID
+	LeaseToken        string
+	IdempotencyKey    string
+	ProviderSessionID *string
+}
+
+type StartProjectTaskAttemptRequest struct {
+	ProjectTaskAttemptRuntimeRequest
+}
+
+type RenewProjectTaskAttemptLeaseRequest struct {
+	ProjectTaskAttemptRuntimeRequest
+	LeaseExpiresAt *time.Time
+}
+
+type CompleteProjectTaskAttemptRequest struct {
+	ProjectTaskAttemptRuntimeRequest
+	DigitalEmployeeID     uuid.UUID
+	Conclusion            string
+	EvidenceRefs          []any
+	ArtifactRefs          []any
+	ConfidenceFactors     map[string]any
+	Uncertainty           string
+	MissingInformation    []any
+	RecommendedNextAction string
+	RequiresHumanReview   bool
+}
+
 type FailProjectTaskRequest struct {
 	TenantID          uuid.UUID
 	RuntimeNodeID     uuid.UUID
 	ProjectTaskID     uuid.UUID
 	DigitalEmployeeID uuid.UUID
 	FailureSummary    string
+}
+
+type FailProjectTaskAttemptRequest struct {
+	ProjectTaskAttemptRuntimeRequest
+	DigitalEmployeeID uuid.UUID
+	FailureSummary    string
+	FailureFamily     string
+	Retryable         *bool
 }
 
 type RequestProjectTaskTransferRequest struct {

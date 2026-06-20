@@ -22,9 +22,10 @@ const requiredOpenApiOperations = new Set([
   "POST /api/v1/runtime/commands/{commandId}/fail",
   "POST /api/v1/runtime/commands/{commandId}/cancelled",
   "POST /api/v1/runtime/commands/{commandId}/timed-out",
-  "POST /api/v1/runtime/project-tasks/{projectTaskId}/complete",
-  "POST /api/v1/runtime/project-tasks/{projectTaskId}/fail",
-  "POST /api/v1/runtime/project-tasks/{projectTaskId}/transfer-requests",
+  "POST /api/v1/runtime/project-task-attempts/{attemptId}/started",
+  "POST /api/v1/runtime/project-task-attempts/{attemptId}/lease",
+  "POST /api/v1/runtime/project-task-attempts/{attemptId}/complete",
+  "POST /api/v1/runtime/project-task-attempts/{attemptId}/fail",
   "GET /api/v1/runtime/nodes",
   "GET /api/v1/runtime/nodes/{nodeId}",
   "GET /api/v1/teams",
@@ -94,6 +95,8 @@ const requiredRustClientPaths = new Set([
   "/api/v1/runtime/commands/{commandId}/events",
   "/api/v1/runtime/commands/{commandId}/complete",
   "/api/v1/runtime/commands/{commandId}/fail",
+  "/api/v1/runtime/project-task-attempts/{attemptId}/complete",
+  "/api/v1/runtime/project-task-attempts/{attemptId}/fail",
   "/api/v1/runtime/sessions/{sessionId}/renew",
   "/api/v1/runtime/nodes/{nodeId}/capabilities",
 ]);
@@ -138,8 +141,9 @@ function normalizePath(path) {
     .replace(/\{command_id\}/g, "{commandId}")
     .replace(/\/api\/v1\/runtime\/commands\/\{taskId\}/g, "/api/v1/runtime/commands/{commandId}")
     .replace(/\/api\/v1\/runtime\/commands\/\{id\}/g, "/api/v1/runtime/commands/{commandId}")
-    .replace(/\/api\/v1\/runtime\/project-tasks\/\{taskId\}/g, "/api/v1/runtime/project-tasks/{projectTaskId}")
-    .replace(/\/api\/v1\/runtime\/project-tasks\/\{id\}/g, "/api/v1/runtime/project-tasks/{projectTaskId}")
+    .replace(/\/api\/v1\/runtime\/project-task-attempts\/\{taskId\}/g, "/api/v1/runtime/project-task-attempts/{attemptId}")
+    .replace(/\/api\/v1\/runtime\/project-task-attempts\/\{id\}/g, "/api/v1/runtime/project-task-attempts/{attemptId}")
+    .replace(/\/api\/v1\/runtime\/project-task-attempts\/\{attempt_id\}/g, "/api/v1/runtime/project-task-attempts/{attemptId}")
     .replace(/\/api\/v1\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/tasks/{taskId}")
     .replace(/\/api\/v1\/runtime\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/runtime/tasks/{taskId}")
     .replace(/\/api\/v1\/tasks\/\{id\}/g, "/api/v1/tasks/{taskId}")
@@ -154,6 +158,7 @@ function normalizePath(path) {
     .replace(/\{decisionId\}/g, "{decisionId}")
     .replace(/\{revisionId\}/g, "{revisionId}")
     .replace(/\{projectTaskId\}/g, "{projectTaskId}")
+    .replace(/\{attemptId\}/g, "{attemptId}")
     .replace(/\/api\/v1\/skills\/\{skillId\}\/files\/\*/g, "/api/v1/skills/{skillId}/files/{filePath}")
     .replace(/\{filePath:\.\*\}/g, "{filePath}");
 }

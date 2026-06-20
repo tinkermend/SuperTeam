@@ -140,6 +140,47 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 	}
 }
 
+func TestRunServiceCreateRunEnrichesProjectTaskAttemptMetadata(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+	req := validCreateRunServiceRequest()
+	req.Metadata = map[string]any{
+		"source":                   "project_task_dispatch",
+		"project_task_id":          "55555555-5555-4555-8555-555555555555",
+		"project_task_attempt_id":  "66666666-6666-4666-8666-666666666666",
+		"project_task_lease_token": "lease-token-1",
+		"runtime_node_id":          "stale-runtime-node",
+		"handoff_contract":         map[string]any{"completion_path": "project_task_attempt_writeback"},
+	}
+
+	_, err := service.CreateRun(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
+	}
+	payload := commandPayload(t, dispatcher.commands[0].command)
+	metadata, ok := payload["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata object, got %#v", payload["metadata"])
+	}
+	if metadata["runtime_node_id"] != repo.preflight.RuntimeNodeID.String() {
+		t.Fatalf("expected runtime_node_id from preflight, got %#v", metadata["runtime_node_id"])
+	}
+	if metadata["execution_context_packet_version"] != "v1" {
+		t.Fatalf("expected default execution_context_packet_version, got %#v", metadata["execution_context_packet_version"])
+	}
+	if metadata["project_task_attempt_id"] != "66666666-6666-4666-8666-666666666666" ||
+		metadata["project_task_lease_token"] != "lease-token-1" {
+		t.Fatalf("expected attempt metadata to be preserved, got %#v", metadata)
+	}
+}
+
 func TestRunServiceCreateRunDispatchesStartSessionWithEmployeeHomeAndWorkspaceFiles(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()

@@ -1437,6 +1437,8 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 		t.Fatalf("expected one run start request, got %d", len(starter.requests))
 	}
 	req := starter.requests[0]
+	attemptID := projectTaskDispatchAttemptID(taskID, 1)
+	leaseToken := projectTaskAttemptLeaseToken(taskID, 1)
 	if req.DispatchUserID != ownerID || req.DigitalEmployeeID != employeeID || req.IdempotencyKey != "project-task:"+taskID.String() {
 		t.Fatalf("unexpected run start request: %#v", req)
 	}
@@ -1452,23 +1454,30 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.Contains(t, req.Prompt, "test_report")
 	require.Equal(t, []any{"execution_summary", "evidence_refs"}, req.Metadata["expected_outputs"])
 	require.Equal(t, map[string]any{"required_context": []any{"test_report", "rollback_plan"}}, req.Metadata["input_requirements"])
-	require.Equal(t, map[string]any{"completion_path": "project_task_writeback", "required_refs": []any{"test_report"}}, req.Metadata["handoff_contract"])
+	require.Equal(t, attemptID.String(), req.Metadata["project_task_attempt_id"])
+	require.Equal(t, leaseToken, req.Metadata["project_task_lease_token"])
+	require.Equal(t, "v1", req.Metadata["execution_context_packet_version"])
+	require.Equal(t, map[string]any{"completion_path": "project_task_attempt_writeback", "required_refs": []any{"test_report"}}, req.Metadata["handoff_contract"])
 	require.Empty(t, repo.bindRequests)
 	require.Len(t, repo.queueRequests, 1)
 	queueReq := repo.queueRequests[0]
 	require.Equal(t, projectTaskDispatchIdempotencyKey(taskID), queueReq.IdempotencyKey)
-	require.Equal(t, "project-task-"+taskID.String()+"-attempt-1", queueReq.LeaseToken)
+	require.NotNil(t, queueReq.ProjectTaskAttemptID)
+	require.Equal(t, attemptID, *queueReq.ProjectTaskAttemptID)
+	require.Equal(t, leaseToken, queueReq.LeaseToken)
 	require.Equal(t, runID, *queueReq.DigitalEmployeeRunID)
 	require.Equal(t, runtimeTaskID, *queueReq.RuntimeTaskID)
 	require.Equal(t, runtimeNodeID, *queueReq.RuntimeNodeID)
 	require.Equal(t, projectID.String(), queueReq.ExecutionContextPacket["project_id"])
 	require.Equal(t, demandID.String(), queueReq.ExecutionContextPacket["demand_id"])
 	require.Equal(t, taskID.String(), queueReq.ExecutionContextPacket["project_task_id"])
+	require.Equal(t, attemptID.String(), queueReq.ExecutionContextPacket["project_task_attempt_id"])
+	require.Equal(t, leaseToken, queueReq.ExecutionContextPacket["project_task_lease_token"])
 	require.Equal(t, employeeID.String(), queueReq.ExecutionContextPacket["digital_employee_id"])
 	require.Equal(t, "整理证据", queueReq.ExecutionContextPacket["objective"])
 	require.Equal(t, []any{"execution_summary", "evidence_refs"}, queueReq.ExecutionContextPacket["expected_outputs"])
 	require.Equal(t, map[string]any{"required_context": []any{"test_report", "rollback_plan"}}, queueReq.ExecutionContextPacket["input_requirements"])
-	require.Equal(t, map[string]any{"completion_path": "project_task_writeback", "required_refs": []any{"test_report"}}, queueReq.ExecutionContextPacket["handoff_contract"])
+	require.Equal(t, map[string]any{"completion_path": "project_task_attempt_writeback", "required_refs": []any{"test_report"}}, queueReq.ExecutionContextPacket["handoff_contract"])
 	require.Equal(t, runID.String(), queueReq.ExecutionContextPacket["digital_employee_run_id"])
 	require.Equal(t, runtimeTaskID.String(), queueReq.ExecutionContextPacket["runtime_task_id"])
 	require.Equal(t, runtimeNodeID.String(), queueReq.ExecutionContextPacket["runtime_node_id"])
@@ -1479,7 +1488,8 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.Equal(t, runID, *repo.tasks[0].DigitalEmployeeRunID)
 	require.Equal(t, runtimeTaskID, *repo.tasks[0].RuntimeTaskID)
 	require.Len(t, repo.projectTaskAttempts, 1)
-	require.Equal(t, *repo.tasks[0].CurrentAttemptID, repo.projectTaskAttempts[0].ID)
+	require.Equal(t, attemptID, *repo.tasks[0].CurrentAttemptID)
+	require.Equal(t, attemptID, repo.projectTaskAttempts[0].ID)
 	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventTaskDispatched {
 		t.Fatalf("expected dispatched event, got %#v", repo.events)
 	}
@@ -2450,6 +2460,9 @@ func (r *projectStoreMemoryRepository) QueueProjectTaskWithAttempt(ctx context.C
 			return project.QueueProjectTaskResult{}, project.ErrProjectTaskForbidden
 		}
 		attemptID := uuid.New()
+		if req.ProjectTaskAttemptID != nil {
+			attemptID = *req.ProjectTaskAttemptID
+		}
 		attemptNo := task.AttemptCount + 1
 		event, err := r.AppendProjectEvent(ctx, project.AppendProjectEventRequest{
 			TenantID:     req.TenantID,

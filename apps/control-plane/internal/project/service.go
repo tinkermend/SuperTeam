@@ -1397,6 +1397,133 @@ func (s *Service) CompleteProjectTask(ctx context.Context, req CompleteProjectTa
 	return &result.Summary, nil
 }
 
+func (s *Service) StartProjectTaskAttempt(ctx context.Context, req StartProjectTaskAttemptRequest) (*ProjectTaskAttempt, error) {
+	if _, _, err := s.validateAttemptRuntimeRequest(ctx, req.ProjectTaskAttemptRuntimeRequest); err != nil {
+		return nil, err
+	}
+	writebackRepository, err := s.projectTaskAttemptWritebackRepository()
+	if err != nil {
+		return nil, err
+	}
+	result, err := writebackRepository.StartProjectTaskAttemptWriteback(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &result.Attempt, nil
+}
+
+func (s *Service) RenewProjectTaskAttemptLease(ctx context.Context, req RenewProjectTaskAttemptLeaseRequest) error {
+	if _, _, err := s.validateAttemptRuntimeRequest(ctx, req.ProjectTaskAttemptRuntimeRequest); err != nil {
+		return err
+	}
+	writebackRepository, err := s.projectTaskAttemptWritebackRepository()
+	if err != nil {
+		return err
+	}
+	_, err = writebackRepository.RenewProjectTaskAttemptLeaseWriteback(ctx, req)
+	return err
+}
+
+func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompleteProjectTaskAttemptRequest) (*ExecutionSummary, error) {
+	req.Conclusion = strings.TrimSpace(req.Conclusion)
+	if req.Conclusion == "" {
+		return nil, ErrInvalidProject
+	}
+	task, _, err := s.validateAttemptRuntimeRequest(ctx, req.ProjectTaskAttemptRuntimeRequest)
+	if err != nil {
+		return nil, err
+	}
+	digitalEmployeeID, err := digitalEmployeeIDForProjectTask(task)
+	if err != nil {
+		return nil, err
+	}
+	req.DigitalEmployeeID = digitalEmployeeID
+	projectRecord, err := s.repository.GetProject(ctx, req.TenantID, task.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	runWorkProducts, err := s.projectTaskRunWorkProducts(ctx, req.TenantID, task)
+	if err != nil {
+		return nil, err
+	}
+	contract := validateProjectTaskCompletionContract(task, CompleteProjectTaskRequest{
+		TenantID:              req.TenantID,
+		RuntimeNodeID:         req.RuntimeNodeID,
+		ProjectTaskID:         req.ProjectTaskID,
+		DigitalEmployeeID:     digitalEmployeeID,
+		Conclusion:            req.Conclusion,
+		EvidenceRefs:          req.EvidenceRefs,
+		ArtifactRefs:          req.ArtifactRefs,
+		ConfidenceFactors:     req.ConfidenceFactors,
+		Uncertainty:           req.Uncertainty,
+		MissingInformation:    req.MissingInformation,
+		RecommendedNextAction: req.RecommendedNextAction,
+		RequiresHumanReview:   req.RequiresHumanReview,
+	}, runWorkProducts)
+	if !contract.Satisfied() {
+		if err := s.appendProjectTaskContractMissingEvent(ctx, task, CompleteProjectTaskRequest{
+			TenantID:              req.TenantID,
+			RuntimeNodeID:         req.RuntimeNodeID,
+			ProjectTaskID:         req.ProjectTaskID,
+			DigitalEmployeeID:     digitalEmployeeID,
+			Conclusion:            req.Conclusion,
+			EvidenceRefs:          req.EvidenceRefs,
+			ArtifactRefs:          req.ArtifactRefs,
+			ConfidenceFactors:     req.ConfidenceFactors,
+			Uncertainty:           req.Uncertainty,
+			MissingInformation:    req.MissingInformation,
+			RecommendedNextAction: req.RecommendedNextAction,
+			RequiresHumanReview:   req.RequiresHumanReview,
+		}, contract); err != nil {
+			return nil, err
+		}
+		return nil, ErrInvalidProjectEvidence
+	}
+	writebackRepository, err := s.projectTaskAttemptWritebackRepository()
+	if err != nil {
+		return nil, err
+	}
+	result, err := writebackRepository.CompleteProjectTaskAttemptWriteback(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.materializeTaskCompletionEvidence(ctx, task, CompleteProjectTaskRequest{
+		TenantID:              req.TenantID,
+		RuntimeNodeID:         req.RuntimeNodeID,
+		ProjectTaskID:         req.ProjectTaskID,
+		DigitalEmployeeID:     digitalEmployeeID,
+		Conclusion:            req.Conclusion,
+		EvidenceRefs:          req.EvidenceRefs,
+		ArtifactRefs:          req.ArtifactRefs,
+		ConfidenceFactors:     req.ConfidenceFactors,
+		Uncertainty:           req.Uncertainty,
+		MissingInformation:    req.MissingInformation,
+		RecommendedNextAction: req.RecommendedNextAction,
+		RequiresHumanReview:   req.RequiresHumanReview,
+	}, result.Summary.ID); err != nil {
+		_ = s.appendWorkflowSignalEvent(ctx, req.TenantID, task.ProjectID, "EvidenceMaterialization", "failed", err, map[string]any{
+			"project_task_id":      task.ID.String(),
+			"execution_summary_id": result.Summary.ID.String(),
+		})
+	}
+	if err := s.coordinator.SignalEmployeeTaskCompleted(ctx, EmployeeTaskCompletedSignal{
+		TenantID:           req.TenantID,
+		ProjectID:          task.ProjectID,
+		ProjectTaskID:      task.ID,
+		ExecutionSummaryID: result.Summary.ID,
+		CompletedEventID:   result.Event.ID,
+		WorkflowID:         projectRecord.CoordinationWorkflowID,
+	}); err != nil {
+		_ = s.appendWorkflowSignalEvent(ctx, req.TenantID, task.ProjectID, "EmployeeTaskCompleted", "failed", err, map[string]any{
+			"project_task_id":      task.ID.String(),
+			"execution_summary_id": result.Summary.ID.String(),
+			"completed_event_id":   result.Event.ID.String(),
+		})
+		return nil, err
+	}
+	return &result.Summary, nil
+}
+
 type parsedEvidenceRef struct {
 	EvidenceType string
 	Title        string
@@ -1763,6 +1890,51 @@ func (s *Service) FailProjectTask(ctx context.Context, req FailProjectTaskReques
 		},
 		AllowedCurrentStatuses: runtimeWritebackProjectTaskStatuses(),
 	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.coordinator.SignalEmployeeTaskFailed(ctx, EmployeeTaskFailedSignal{
+		TenantID:       req.TenantID,
+		ProjectID:      task.ProjectID,
+		ProjectTaskID:  task.ID,
+		FailureSummary: req.FailureSummary,
+		FailedEventID:  result.Event.ID,
+		WorkflowID:     projectRecord.CoordinationWorkflowID,
+	}); err != nil {
+		_ = s.appendWorkflowSignalEvent(ctx, req.TenantID, task.ProjectID, "EmployeeTaskFailed", "failed", err, map[string]any{
+			"project_task_id": task.ID.String(),
+			"failed_event_id": result.Event.ID.String(),
+			"failure_summary": req.FailureSummary,
+		})
+		return nil, err
+	}
+	return &result.Task, nil
+}
+
+func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTaskAttemptRequest) (*ProjectTask, error) {
+	req.FailureSummary = strings.TrimSpace(req.FailureSummary)
+	req.FailureFamily = strings.TrimSpace(req.FailureFamily)
+	if req.FailureSummary == "" || req.FailureFamily == "" {
+		return nil, ErrInvalidProject
+	}
+	task, _, err := s.validateAttemptRuntimeRequest(ctx, req.ProjectTaskAttemptRuntimeRequest)
+	if err != nil {
+		return nil, err
+	}
+	digitalEmployeeID, err := digitalEmployeeIDForProjectTask(task)
+	if err != nil {
+		return nil, err
+	}
+	req.DigitalEmployeeID = digitalEmployeeID
+	projectRecord, err := s.repository.GetProject(ctx, req.TenantID, task.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	writebackRepository, err := s.projectTaskAttemptWritebackRepository()
+	if err != nil {
+		return nil, err
+	}
+	result, err := writebackRepository.FailProjectTaskAttemptWriteback(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -2229,6 +2401,45 @@ func (s *Service) taskAndProjectForWriteback(ctx context.Context, tenantID, runt
 	return task, projectRecord, nil
 }
 
+func (s *Service) validateAttemptRuntimeRequest(ctx context.Context, req ProjectTaskAttemptRuntimeRequest) (ProjectTask, ProjectTaskAttempt, error) {
+	req.LeaseToken = strings.TrimSpace(req.LeaseToken)
+	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	if req.TenantID == uuid.Nil || req.AttemptID == uuid.Nil || req.ProjectTaskID == uuid.Nil || req.RuntimeNodeID == uuid.Nil {
+		return ProjectTask{}, ProjectTaskAttempt{}, ErrInvalidProject
+	}
+	if req.LeaseToken == "" || req.IdempotencyKey == "" {
+		return ProjectTask{}, ProjectTaskAttempt{}, ErrInvalidProject
+	}
+	task, err := s.repository.GetProjectTask(ctx, req.TenantID, req.ProjectTaskID)
+	if err != nil {
+		return ProjectTask{}, ProjectTaskAttempt{}, err
+	}
+	if task.CurrentAttemptID == nil || *task.CurrentAttemptID != req.AttemptID {
+		return ProjectTask{}, ProjectTaskAttempt{}, ErrProjectConflict
+	}
+	if !projectTaskAcceptsRuntimeWriteback(task.Status) {
+		return ProjectTask{}, ProjectTaskAttempt{}, ErrProjectConflict
+	}
+	attempt, err := s.repository.GetProjectTaskAttempt(ctx, req.TenantID, req.AttemptID)
+	if err != nil {
+		return ProjectTask{}, ProjectTaskAttempt{}, err
+	}
+	if attempt.ProjectTaskID != req.ProjectTaskID || attempt.LeaseToken != req.LeaseToken {
+		return ProjectTask{}, ProjectTaskAttempt{}, ErrProjectConflict
+	}
+	if attempt.RuntimeNodeID != nil && *attempt.RuntimeNodeID != req.RuntimeNodeID {
+		return ProjectTask{}, ProjectTaskAttempt{}, ErrProjectConflict
+	}
+	return task, attempt, nil
+}
+
+func digitalEmployeeIDForProjectTask(task ProjectTask) (uuid.UUID, error) {
+	if task.AssignedDigitalEmployeeID == nil || *task.AssignedDigitalEmployeeID == uuid.Nil {
+		return uuid.Nil, ErrProjectTaskForbidden
+	}
+	return *task.AssignedDigitalEmployeeID, nil
+}
+
 func projectTaskAcceptsRuntimeWriteback(status string) bool {
 	switch status {
 	case "assigned", "queued", "running":
@@ -2246,6 +2457,14 @@ func (s *Service) projectTaskWritebackRepository() (ProjectTaskWritebackReposito
 	repository, ok := s.repository.(ProjectTaskWritebackRepository)
 	if !ok {
 		return nil, fmt.Errorf("project repository does not support atomic project task writeback")
+	}
+	return repository, nil
+}
+
+func (s *Service) projectTaskAttemptWritebackRepository() (ProjectTaskAttemptWritebackRepository, error) {
+	repository, ok := s.repository.(ProjectTaskAttemptWritebackRepository)
+	if !ok {
+		return nil, fmt.Errorf("project repository does not support atomic project task attempt writeback")
 	}
 	return repository, nil
 }

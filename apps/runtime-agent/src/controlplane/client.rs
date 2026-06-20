@@ -440,12 +440,12 @@ impl ControlPlaneClient {
         Ok(())
     }
 
-    pub async fn complete_project_task(
+    pub async fn complete_project_task_attempt(
         &self,
-        project_task_id: &str,
+        attempt_id: &str,
         writeback: &ProjectTaskCompleteWriteback,
     ) -> Result<()> {
-        let url = self.project_task_complete_url(project_task_id);
+        let url = self.project_task_attempt_complete_url(attempt_id);
 
         let response = self
             .client
@@ -455,23 +455,27 @@ impl ControlPlaneClient {
             .json(writeback)
             .send()
             .await
-            .context("Failed to complete project task")?;
+            .context("Failed to complete project task attempt")?;
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Complete project task failed with {}: {}", status, body);
+            anyhow::bail!(
+                "Complete project task attempt failed with {}: {}",
+                status,
+                body
+            );
         }
 
         Ok(())
     }
 
-    pub async fn fail_project_task(
+    pub async fn fail_project_task_attempt(
         &self,
-        project_task_id: &str,
+        attempt_id: &str,
         writeback: &ProjectTaskFailWriteback,
     ) -> Result<()> {
-        let url = self.project_task_fail_url(project_task_id);
+        let url = self.project_task_attempt_fail_url(attempt_id);
 
         let response = self
             .client
@@ -481,12 +485,12 @@ impl ControlPlaneClient {
             .json(writeback)
             .send()
             .await
-            .context("Failed to fail project task")?;
+            .context("Failed to fail project task attempt")?;
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Fail project task failed with {}: {}", status, body);
+            anyhow::bail!("Fail project task attempt failed with {}: {}", status, body);
         }
 
         Ok(())
@@ -601,17 +605,17 @@ impl ControlPlaneClient {
         )
     }
 
-    fn project_task_complete_url(&self, project_task_id: &str) -> String {
+    fn project_task_attempt_complete_url(&self, attempt_id: &str) -> String {
         format!(
-            "{}/api/v1/runtime/project-tasks/{}/complete",
-            self.base_url, project_task_id
+            "{}/api/v1/runtime/project-task-attempts/{}/complete",
+            self.base_url, attempt_id
         )
     }
 
-    fn project_task_fail_url(&self, project_task_id: &str) -> String {
+    fn project_task_attempt_fail_url(&self, attempt_id: &str) -> String {
         format!(
-            "{}/api/v1/runtime/project-tasks/{}/fail",
-            self.base_url, project_task_id
+            "{}/api/v1/runtime/project-task-attempts/{}/fail",
+            self.base_url, attempt_id
         )
     }
 
@@ -681,12 +685,12 @@ mod tests {
             "http://localhost:8080/api/v1/runtime/commands/cmd-1/fail"
         );
         assert_eq!(
-            client.project_task_complete_url("project-task-1"),
-            "http://localhost:8080/api/v1/runtime/project-tasks/project-task-1/complete"
+            client.project_task_attempt_complete_url("attempt-1"),
+            "http://localhost:8080/api/v1/runtime/project-task-attempts/attempt-1/complete"
         );
         assert_eq!(
-            client.project_task_fail_url("project-task-1"),
-            "http://localhost:8080/api/v1/runtime/project-tasks/project-task-1/fail"
+            client.project_task_attempt_fail_url("attempt-1"),
+            "http://localhost:8080/api/v1/runtime/project-task-attempts/attempt-1/fail"
         );
         assert_eq!(
             client.task_lease_url(1),

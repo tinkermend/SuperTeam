@@ -113,6 +113,7 @@ type Querier interface {
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
 	FinishProjectCoordinationJob(ctx context.Context, arg FinishProjectCoordinationJobParams) (ProjectCoordinationJob, error)
+	FinishProjectTaskAttempt(ctx context.Context, arg FinishProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	GetActiveDigitalEmployeeRun(ctx context.Context, arg GetActiveDigitalEmployeeRunParams) (TaskRun, error)
 	GetActiveRuntimeBootstrapKeyByHash(ctx context.Context, arg GetActiveRuntimeBootstrapKeyByHashParams) (RuntimeBootstrapKey, error)
 	GetActiveRuntimeSessionByLookupHash(ctx context.Context, tokenLookupHash string) (GetActiveRuntimeSessionByLookupHashRow, error)
@@ -278,6 +279,7 @@ type Querier interface {
 	QueueProjectTask(ctx context.Context, arg QueueProjectTaskParams) (ProjectTask, error)
 	RejectRuntimeEnrollment(ctx context.Context, arg RejectRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	RejectTenantTeamConfigRevision(ctx context.Context, arg RejectTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
+	RenewProjectTaskAttemptLease(ctx context.Context, arg RenewProjectTaskAttemptLeaseParams) (ProjectTaskAttempt, error)
 	RenewRuntimeSession(ctx context.Context, arg RenewRuntimeSessionParams) (RuntimeSession, error)
 	ReplaceProjectMembersDelete(ctx context.Context, arg ReplaceProjectMembersDeleteParams) error
 	ResolveApprovalRequest(ctx context.Context, arg ResolveApprovalRequestParams) (ApprovalRequest, error)
@@ -289,6 +291,7 @@ type Querier interface {
 	RewireProjectTaskDependencies(ctx context.Context, arg RewireProjectTaskDependenciesParams) ([]RewireProjectTaskDependenciesRow, error)
 	RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNodeCoversTaskScopeParams) (bool, error)
 	SetTenantTeamStatus(ctx context.Context, arg SetTenantTeamStatusParams) (TenantTeam, error)
+	StartProjectTaskAttempt(ctx context.Context, arg StartProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	TouchRuntimeSessionLastSeen(ctx context.Context, arg TouchRuntimeSessionLastSeenParams) (RuntimeSession, error)
 	// Forward-guarded project status transition: only applied when the current status
 	// is in from_statuses. No matching row (wrong current status) yields no rows so the

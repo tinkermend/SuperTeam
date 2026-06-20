@@ -376,9 +376,12 @@ func (s *Server) registerRoutes() {
 					r.Post("/commands/{commandId}/timed-out", s.runtimeCommandWritebackHandler.TimedOut)
 				}
 				if s.projectHandler != nil {
-					r.Post("/project-tasks/{projectTaskId}/complete", s.projectHandler.CompleteProjectTask)
-					r.Post("/project-tasks/{projectTaskId}/fail", s.projectHandler.FailProjectTask)
-					r.Post("/project-tasks/{projectTaskId}/transfer-requests", s.projectHandler.RequestProjectTaskTransfer)
+					r.Route("/project-task-attempts/{attemptId}", func(r chi.Router) {
+						r.Post("/started", s.projectHandler.StartProjectTaskAttempt)
+						r.Post("/lease", s.projectHandler.RenewProjectTaskAttemptLease)
+						r.Post("/complete", s.projectHandler.CompleteProjectTaskAttempt)
+						r.Post("/fail", s.projectHandler.FailProjectTaskAttempt)
+					})
 				}
 				r.Get("/ws", s.runtimeHandler.WebSocket)
 			})

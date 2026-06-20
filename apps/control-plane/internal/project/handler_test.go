@@ -714,20 +714,39 @@ func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 		TenantID:                  tenantID,
 		ProjectID:                 projectID,
 		Title:                     "整理执行证据",
-		Status:                    "assigned",
+		Status:                    ProjectTaskStatusQueued,
 		AssignedDigitalEmployeeID: &employeeID,
 	})
-	bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+	runID := bindTaskToRuntimeRun(repo, 0, runtimeNodeID)
+	attemptID := uuid.New()
+	leaseToken := "lease-token-1"
+	repo.tasks[0].CurrentAttemptID = &attemptID
+	repo.projectTaskAttempts = append(repo.projectTaskAttempts, ProjectTaskAttempt{
+		ID:                   attemptID,
+		TenantID:             tenantID,
+		ProjectTaskID:        taskID,
+		AttemptNo:            1,
+		Status:               ProjectTaskAttemptStatusQueued,
+		DigitalEmployeeRunID: &runID,
+		RuntimeNodeID:        &runtimeNodeID,
+		LeaseToken:           leaseToken,
+		IdempotencyKey:       "project-task:" + taskID.String(),
+		CreatedAt:            time.Now().UTC(),
+		UpdatedAt:            time.Now().UTC(),
+	})
 
-	wrongRuntimeReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-tasks/"+taskID.String()+"/complete", strings.NewReader(`{
-		"digital_employee_id":"`+employeeID.String()+`",
+	wrongRuntimeReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attempts/"+attemptID.String()+"/complete", strings.NewReader(`{
+		"project_task_id":"`+taskID.String()+`",
+		"lease_token":"`+leaseToken+`",
+		"runtime_node_id":"`+runtimeNodeID.String()+`",
+		"idempotency_key":"attempt-complete-wrong-runtime",
 		"conclusion":"错误 Runtime 尝试写回"
 	}`))
-	wrongRuntimeReq = withProjectRouteParams(wrongRuntimeReq, map[string]string{"projectTaskId": taskID.String()})
+	wrongRuntimeReq = withProjectRouteParams(wrongRuntimeReq, map[string]string{"attemptId": attemptID.String()})
 	wrongRuntimeReq = withRuntimeContext(wrongRuntimeReq, tenantID, uuid.New())
 	wrongRuntimeResp := httptest.NewRecorder()
 
-	handler.CompleteProjectTask(wrongRuntimeResp, wrongRuntimeReq)
+	handler.CompleteProjectTaskAttempt(wrongRuntimeResp, wrongRuntimeReq)
 
 	if wrongRuntimeResp.Code != http.StatusForbidden {
 		t.Fatalf("expected wrong runtime writeback to return 403, got %d: %s", wrongRuntimeResp.Code, wrongRuntimeResp.Body.String())
@@ -737,19 +756,22 @@ func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 	}
 
 	coordinator.completedSignalErr = errors.New("temporal unavailable")
-	completeReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-tasks/"+taskID.String()+"/complete", strings.NewReader(`{
-		"digital_employee_id":"`+employeeID.String()+`",
+	completeReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attempts/"+attemptID.String()+"/complete", strings.NewReader(`{
+		"project_task_id":"`+taskID.String()+`",
+		"lease_token":"`+leaseToken+`",
+		"runtime_node_id":"`+runtimeNodeID.String()+`",
+		"idempotency_key":"attempt-complete-success",
 		"conclusion":"证据充分",
 		"evidence_refs":["s3://bucket/e2e-report.md"],
 		"artifact_refs":["artifact-runtime-log"],
 		"confidence_factors":{"tests":"passed"},
 		"recommended_next_action":"提交负责人验收"
 	}`))
-	completeReq = withProjectRouteParams(completeReq, map[string]string{"projectTaskId": taskID.String()})
+	completeReq = withProjectRouteParams(completeReq, map[string]string{"attemptId": attemptID.String()})
 	completeReq = withRuntimeContext(completeReq, tenantID, runtimeNodeID)
 	completeResp := httptest.NewRecorder()
 
-	handler.CompleteProjectTask(completeResp, completeReq)
+	handler.CompleteProjectTaskAttempt(completeResp, completeReq)
 
 	if completeResp.Code != http.StatusInternalServerError {
 		t.Fatalf("expected completed signal failure to surface as 500, got %d: %s", completeResp.Code, completeResp.Body.String())
@@ -809,6 +831,151 @@ func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 	}
 }
 
+func TestStartProjectTaskAttemptHandlerBuildsServiceRequest(t *testing.T) {
+	tenantID := uuid.New()
+	attemptID := uuid.New()
+	taskID := uuid.New()
+	nodeID := uuid.New()
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	body := strings.NewReader(`{
+		"project_task_id":"` + taskID.String() + `",
+		"runtime_node_id":"` + nodeID.String() + `",
+		"lease_token":"lease-token-1",
+		"idempotency_key":"attempt-start-1",
+		"provider_session_id":"provider-session-1"
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attempts/"+attemptID.String()+"/started", body)
+	req = withProjectRouteParams(req, map[string]string{"attemptId": attemptID.String()})
+	req = withRuntimeContext(req, tenantID, nodeID)
+	resp := httptest.NewRecorder()
+
+	handler.StartProjectTaskAttempt(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected started writeback to return 202, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.startAttemptReq.AttemptID != attemptID || service.startAttemptReq.ProjectTaskID != taskID || service.startAttemptReq.RuntimeNodeID != nodeID {
+		t.Fatalf("unexpected started request identity: %#v", service.startAttemptReq)
+	}
+	if service.startAttemptReq.LeaseToken != "lease-token-1" || service.startAttemptReq.IdempotencyKey != "attempt-start-1" {
+		t.Fatalf("unexpected started request lease/idempotency: %#v", service.startAttemptReq)
+	}
+	if service.startAttemptReq.ProviderSessionID == nil || *service.startAttemptReq.ProviderSessionID != "provider-session-1" {
+		t.Fatalf("expected provider session id to be forwarded, got %#v", service.startAttemptReq.ProviderSessionID)
+	}
+}
+
+func TestRenewProjectTaskAttemptLeaseHandlerBuildsServiceRequest(t *testing.T) {
+	tenantID := uuid.New()
+	attemptID := uuid.New()
+	taskID := uuid.New()
+	nodeID := uuid.New()
+	leaseExpiresAt := time.Now().UTC().Add(5 * time.Minute).Truncate(time.Second)
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	body := strings.NewReader(`{
+		"project_task_id":"` + taskID.String() + `",
+		"runtime_node_id":"` + nodeID.String() + `",
+		"lease_token":"lease-token-2",
+		"idempotency_key":"attempt-lease-1",
+		"lease_expires_at":"` + leaseExpiresAt.Format(time.RFC3339) + `"
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attempts/"+attemptID.String()+"/lease", body)
+	req = withProjectRouteParams(req, map[string]string{"attemptId": attemptID.String()})
+	req = withRuntimeContext(req, tenantID, nodeID)
+	resp := httptest.NewRecorder()
+
+	handler.RenewProjectTaskAttemptLease(resp, req)
+
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("expected lease writeback to return 204, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.renewAttemptLeaseReq.AttemptID != attemptID || service.renewAttemptLeaseReq.ProjectTaskID != taskID || service.renewAttemptLeaseReq.RuntimeNodeID != nodeID {
+		t.Fatalf("unexpected lease request identity: %#v", service.renewAttemptLeaseReq)
+	}
+	if service.renewAttemptLeaseReq.LeaseExpiresAt == nil || !service.renewAttemptLeaseReq.LeaseExpiresAt.Equal(leaseExpiresAt) {
+		t.Fatalf("expected lease expiry %s, got %#v", leaseExpiresAt, service.renewAttemptLeaseReq.LeaseExpiresAt)
+	}
+}
+
+func TestCompleteProjectTaskAttemptHandlerBuildsServiceRequest(t *testing.T) {
+	tenantID := uuid.New()
+	attemptID := uuid.New()
+	taskID := uuid.New()
+	nodeID := uuid.New()
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	body := strings.NewReader(`{
+		"project_task_id":"` + taskID.String() + `",
+		"runtime_node_id":"` + nodeID.String() + `",
+		"lease_token":"lease-token-3",
+		"idempotency_key":"attempt-complete-1",
+		"conclusion":"done",
+		"evidence_refs":["s3://bucket/report.md"],
+		"artifact_refs":["artifact-runtime-log"],
+		"confidence_factors":{"tests":"passed"},
+		"uncertainty":"low",
+		"missing_information":[],
+		"recommended_next_action":"accept",
+		"requires_human_review":true
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attempts/"+attemptID.String()+"/complete", body)
+	req = withProjectRouteParams(req, map[string]string{"attemptId": attemptID.String()})
+	req = withRuntimeContext(req, tenantID, nodeID)
+	resp := httptest.NewRecorder()
+
+	handler.CompleteProjectTaskAttempt(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected complete writeback to return 202, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.completeAttemptReq.AttemptID != attemptID || service.completeAttemptReq.ProjectTaskID != taskID || service.completeAttemptReq.RuntimeNodeID != nodeID {
+		t.Fatalf("unexpected complete request identity: %#v", service.completeAttemptReq)
+	}
+	if service.completeAttemptReq.Conclusion != "done" || !service.completeAttemptReq.RequiresHumanReview {
+		t.Fatalf("unexpected complete request payload: %#v", service.completeAttemptReq)
+	}
+}
+
+func TestFailProjectTaskAttemptHandlerBuildsServiceRequest(t *testing.T) {
+	tenantID := uuid.New()
+	attemptID := uuid.New()
+	taskID := uuid.New()
+	nodeID := uuid.New()
+	retryable := true
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	body := strings.NewReader(`{
+		"project_task_id":"` + taskID.String() + `",
+		"runtime_node_id":"` + nodeID.String() + `",
+		"lease_token":"lease-token-4",
+		"idempotency_key":"attempt-fail-1",
+		"failure_summary":"provider crashed",
+		"failure_family":"runtime_agent_failure",
+		"retryable":true
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attempts/"+attemptID.String()+"/fail", body)
+	req = withProjectRouteParams(req, map[string]string{"attemptId": attemptID.String()})
+	req = withRuntimeContext(req, tenantID, nodeID)
+	resp := httptest.NewRecorder()
+
+	handler.FailProjectTaskAttempt(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected fail writeback to return 202, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.failAttemptReq.AttemptID != attemptID || service.failAttemptReq.ProjectTaskID != taskID || service.failAttemptReq.RuntimeNodeID != nodeID {
+		t.Fatalf("unexpected fail request identity: %#v", service.failAttemptReq)
+	}
+	if service.failAttemptReq.FailureSummary != "provider crashed" || service.failAttemptReq.FailureFamily != "runtime_agent_failure" {
+		t.Fatalf("unexpected fail request payload: %#v", service.failAttemptReq)
+	}
+	if service.failAttemptReq.Retryable == nil || *service.failAttemptReq.Retryable != retryable {
+		t.Fatalf("expected retryable true, got %#v", service.failAttemptReq.Retryable)
+	}
+}
+
 func withProjectRouteParams(req *http.Request, params map[string]string) *http.Request {
 	rctx := chi.NewRouteContext()
 	for key, value := range params {
@@ -855,6 +1022,10 @@ type handlerTestService struct {
 	taskGraph              ProjectTaskGraph
 	taskGraphReq           GetProjectTaskGraphRequest
 	taskGraphCalls         int
+	startAttemptReq        StartProjectTaskAttemptRequest
+	renewAttemptLeaseReq   RenewProjectTaskAttemptLeaseRequest
+	completeAttemptReq     CompleteProjectTaskAttemptRequest
+	failAttemptReq         FailProjectTaskAttemptRequest
 }
 
 func (s *handlerTestService) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -1041,6 +1212,26 @@ func (s *handlerTestService) FailProjectTask(ctx context.Context, req FailProjec
 
 func (s *handlerTestService) RequestProjectTaskTransfer(ctx context.Context, req RequestProjectTaskTransferRequest) (*TransferRequest, error) {
 	return nil, nil
+}
+
+func (s *handlerTestService) StartProjectTaskAttempt(ctx context.Context, req StartProjectTaskAttemptRequest) (*ProjectTaskAttempt, error) {
+	s.startAttemptReq = req
+	return &ProjectTaskAttempt{ID: req.AttemptID, TenantID: req.TenantID, ProjectTaskID: req.ProjectTaskID, Status: ProjectTaskAttemptStatusRunning}, nil
+}
+
+func (s *handlerTestService) RenewProjectTaskAttemptLease(ctx context.Context, req RenewProjectTaskAttemptLeaseRequest) error {
+	s.renewAttemptLeaseReq = req
+	return nil
+}
+
+func (s *handlerTestService) CompleteProjectTaskAttempt(ctx context.Context, req CompleteProjectTaskAttemptRequest) (*ExecutionSummary, error) {
+	s.completeAttemptReq = req
+	return &ExecutionSummary{ID: uuid.New(), TenantID: req.TenantID, ProjectTaskID: req.ProjectTaskID}, nil
+}
+
+func (s *handlerTestService) FailProjectTaskAttempt(ctx context.Context, req FailProjectTaskAttemptRequest) (*ProjectTask, error) {
+	s.failAttemptReq = req
+	return &ProjectTask{ID: req.ProjectTaskID, TenantID: req.TenantID, Status: ProjectTaskStatusFailed}, nil
 }
 
 func (s *handlerTestService) ListEvidence(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error) {

@@ -1024,10 +1024,56 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND status IN ('planned', 'waiting_human')
 RETURNING *;
 
+-- name: StartProjectTaskAttempt :one
+UPDATE project_task_attempts
+SET status = 'running',
+    runtime_node_id = sqlc.arg('runtime_node_id')::uuid,
+    provider_session_id = COALESCE(sqlc.narg('provider_session_id')::varchar, provider_session_id),
+    started_at = COALESCE(started_at, NOW()),
+    renewed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND lease_token = sqlc.arg('lease_token')::varchar
+  AND status = 'queued'
+RETURNING *;
+
+-- name: RenewProjectTaskAttemptLease :one
+UPDATE project_task_attempts
+SET lease_expires_at = sqlc.narg('lease_expires_at')::timestamptz,
+    renewed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND lease_token = sqlc.arg('lease_token')::varchar
+  AND status IN ('queued', 'running')
+RETURNING *;
+
+-- name: FinishProjectTaskAttempt :one
+UPDATE project_task_attempts
+SET status = sqlc.arg('status')::varchar,
+    provider_session_id = COALESCE(sqlc.narg('provider_session_id')::varchar, provider_session_id),
+    finished_at = NOW(),
+    retryable = sqlc.narg('retryable')::boolean,
+    failure_family = sqlc.narg('failure_family')::varchar,
+    failure_message = sqlc.narg('failure_message')::text,
+    terminal_event_id = sqlc.narg('terminal_event_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND lease_token = sqlc.arg('lease_token')::varchar
+  AND status IN ('queued', 'running')
+RETURNING *;
+
 -- name: UpdateProjectTaskStatus :one
 UPDATE project_tasks
 SET status = sqlc.arg('status')::varchar,
     latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
+    terminal_event_id = CASE
+        WHEN sqlc.arg('status')::varchar IN ('completed', 'failed', 'cancelled')
+        THEN COALESCE(sqlc.narg('latest_event_id')::uuid, terminal_event_id)
+        ELSE terminal_event_id
+    END,
     updated_at = NOW()
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid

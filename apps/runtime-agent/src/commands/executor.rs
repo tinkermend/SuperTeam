@@ -91,9 +91,13 @@ impl ProviderTerminalWritebackState {
 #[derive(Clone, Debug)]
 struct ProjectTaskWritebackContext {
     project_task_id: String,
+    attempt_id: String,
+    lease_token: String,
+    runtime_node_id: String,
     digital_employee_id: String,
     expected_outputs: Vec<String>,
     handoff_contract: serde_json::Value,
+    execution_context_packet_version: String,
 }
 
 #[derive(Clone)]
@@ -603,9 +607,9 @@ impl RuntimeCommandExecutor {
                 .await?;
             if let Some(project_task) = project_task {
                 control_plane
-                    .fail_project_task(
-                        &project_task.project_task_id,
-                        &project_task_fail_writeback(project_task, &error_message),
+                    .fail_project_task_attempt(
+                        &project_task.attempt_id,
+                        &project_task_fail_writeback(project_task, command_id, &error_message),
                     )
                     .await?;
             }
@@ -628,9 +632,9 @@ impl RuntimeCommandExecutor {
                 .await?;
             if let Some(project_task) = project_task {
                 control_plane
-                    .fail_project_task(
-                        &project_task.project_task_id,
-                        &project_task_fail_writeback(project_task, &error_message),
+                    .fail_project_task_attempt(
+                        &project_task.attempt_id,
+                        &project_task_fail_writeback(project_task, command_id, &error_message),
                     )
                     .await?;
             }
@@ -954,8 +958,8 @@ impl RuntimeCommandWritebackSink {
         if let Some(project_task) = &self.project_task {
             if let Err(error) = self
                 .client
-                .complete_project_task(
-                    &project_task.project_task_id,
+                .complete_project_task_attempt(
+                    &project_task.attempt_id,
                     &project_task_complete_writeback(
                         project_task,
                         &self.command_id,
@@ -977,9 +981,9 @@ impl RuntimeCommandWritebackSink {
     async fn fail_project_task(&self, error_message: &str) -> anyhow::Result<()> {
         if let Some(project_task) = &self.project_task {
             self.client
-                .fail_project_task(
-                    &project_task.project_task_id,
-                    &project_task_fail_writeback(project_task, error_message),
+                .fail_project_task_attempt(
+                    &project_task.attempt_id,
+                    &project_task_fail_writeback(project_task, &self.command_id, error_message),
                 )
                 .await?;
         }
@@ -1110,11 +1114,10 @@ fn project_task_writeback_context_from_metadata(
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
         .unwrap_or("");
-    // A project_task_dispatch run with a project_task_id completes the project task via
-    // writeback. The control-plane normally sets handoff_contract.completion_path to
-    // "project_task_writeback"; when it is omitted we default to the same behavior so the
-    // task still closes. An explicit non-matching value is respected (no writeback).
-    if !completion_path.is_empty() && completion_path != "project_task_writeback" {
+    // A project_task_dispatch run with attempt metadata closes through the attempt-scoped
+    // Runtime writeback API. When completion_path is omitted, default to the attempt path;
+    // an explicit non-matching value is respected as no writeback.
+    if !completion_path.is_empty() && completion_path != "project_task_attempt_writeback" {
         return None;
     }
     let project_task_id = metadata
@@ -1122,15 +1125,40 @@ fn project_task_writeback_context_from_metadata(
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())?;
+    let attempt_id = metadata
+        .get("project_task_attempt_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let lease_token = metadata
+        .get("project_task_lease_token")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let runtime_node_id = metadata
+        .get("runtime_node_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
     let digital_employee_id = digital_employee_id.trim();
     if digital_employee_id.is_empty() {
         return None;
     }
+    let execution_context_packet_version = metadata
+        .get("execution_context_packet_version")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("v1");
     Some(ProjectTaskWritebackContext {
         project_task_id: project_task_id.to_string(),
+        attempt_id: attempt_id.to_string(),
+        lease_token: lease_token.to_string(),
+        runtime_node_id: runtime_node_id.to_string(),
         digital_employee_id: digital_employee_id.to_string(),
         expected_outputs: string_array_from_metadata(metadata.get("expected_outputs")),
         handoff_contract,
+        execution_context_packet_version: execution_context_packet_version.to_string(),
     })
 }
 
@@ -1177,11 +1205,27 @@ fn project_task_complete_writeback(
     let mut confidence_factors = parsed_confidence_factors(parsed.as_ref());
     confidence_factors.insert(
         "source".to_string(),
-        serde_json::Value::String("runtime_agent_project_task_writeback".to_string()),
+        serde_json::Value::String("runtime_agent_project_task_attempt_writeback".to_string()),
     );
     confidence_factors.insert(
         "command_id".to_string(),
         serde_json::Value::String(command_id.to_string()),
+    );
+    confidence_factors.insert(
+        "project_task_id".to_string(),
+        serde_json::Value::String(context.project_task_id.clone()),
+    );
+    confidence_factors.insert(
+        "project_task_attempt_id".to_string(),
+        serde_json::Value::String(context.attempt_id.clone()),
+    );
+    confidence_factors.insert(
+        "digital_employee_id".to_string(),
+        serde_json::Value::String(context.digital_employee_id.clone()),
+    );
+    confidence_factors.insert(
+        "execution_context_packet_version".to_string(),
+        serde_json::Value::String(context.execution_context_packet_version.clone()),
     );
     if let Some(provider_session_id) = provider_session_id {
         confidence_factors.insert(
@@ -1202,7 +1246,15 @@ fn project_task_complete_writeback(
     }
 
     ProjectTaskCompleteWriteback {
-        digital_employee_id: context.digital_employee_id.clone(),
+        project_task_id: context.project_task_id.clone(),
+        lease_token: context.lease_token.clone(),
+        runtime_node_id: context.runtime_node_id.clone(),
+        idempotency_key: project_task_attempt_idempotency_key(
+            &context.attempt_id,
+            "complete",
+            command_id,
+        ),
+        provider_session_id: provider_session_id.map(ToString::to_string),
         conclusion,
         evidence_refs,
         artifact_refs,
@@ -1340,12 +1392,28 @@ fn runtime_command_evidence_ref(
 
 fn project_task_fail_writeback(
     context: &ProjectTaskWritebackContext,
+    command_id: &str,
     error_message: &str,
 ) -> ProjectTaskFailWriteback {
     ProjectTaskFailWriteback {
-        digital_employee_id: context.digital_employee_id.clone(),
+        project_task_id: context.project_task_id.clone(),
+        lease_token: context.lease_token.clone(),
+        runtime_node_id: context.runtime_node_id.clone(),
+        idempotency_key: project_task_attempt_idempotency_key(
+            &context.attempt_id,
+            "fail",
+            command_id,
+        ),
         failure_summary: error_message.trim().to_string(),
     }
+}
+
+fn project_task_attempt_idempotency_key(
+    attempt_id: &str,
+    action: &str,
+    command_id: &str,
+) -> String {
+    format!("project-task-attempt:{attempt_id}:{action}:{command_id}")
 }
 
 fn path_to_string(path: &Path) -> String {
@@ -1471,8 +1539,12 @@ mod tests {
             metadata: json!({
                 "source": "project_task_dispatch",
                 "project_task_id": "55555555-5555-4555-8555-555555555555",
+                "project_task_attempt_id": "66666666-6666-4666-8666-666666666666",
+                "project_task_lease_token": "lease-token-1",
+                "runtime_node_id": "44444444-4444-4444-8444-444444444444",
+                "execution_context_packet_version": "v1",
                 "expected_outputs": ["execution_summary", "evidence_refs", "recommended_next_action"],
-                "handoff_contract": {"completion_path": "project_task_writeback"}
+                "handoff_contract": {"completion_path": "project_task_attempt_writeback"}
             }),
         }
     }
@@ -1492,20 +1564,27 @@ mod tests {
         payload.metadata = json!({
             "source": "project_task_dispatch",
             "project_task_id": "55555555-5555-4555-8555-555555555555",
+            "project_task_attempt_id": "66666666-6666-4666-8666-666666666666",
+            "project_task_lease_token": "lease-token-1",
+            "runtime_node_id": "44444444-4444-4444-8444-444444444444",
             "handoff_contract": {}
         });
         let context = project_task_writeback_context(&payload)
-            .expect("writeback context should default to project_task_writeback");
+            .expect("writeback context should default to project_task_attempt_writeback");
         assert_eq!(
             context.project_task_id,
             "55555555-5555-4555-8555-555555555555"
         );
+        assert_eq!(context.attempt_id, "66666666-6666-4666-8666-666666666666");
 
         // An explicit non-matching completion_path is still respected (no writeback).
         let mut other = project_task_session_payload("emp-1");
         other.metadata = json!({
             "source": "project_task_dispatch",
             "project_task_id": "55555555-5555-4555-8555-555555555555",
+            "project_task_attempt_id": "66666666-6666-4666-8666-666666666666",
+            "project_task_lease_token": "lease-token-1",
+            "runtime_node_id": "44444444-4444-4444-8444-444444444444",
             "handoff_contract": {"completion_path": "manual_review"}
         });
         assert!(project_task_writeback_context(&other).is_none());

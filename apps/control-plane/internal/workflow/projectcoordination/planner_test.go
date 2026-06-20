@@ -111,7 +111,7 @@ func TestPlanDemandRouteCanFanOutToAllActiveExecutorsWithoutHumanReview(t *testi
 		if len(task.BlockedByKeys) != 0 {
 			t.Fatalf("fanout tasks should be independently dispatchable, got blockers %#v", task.BlockedByKeys)
 		}
-		if task.HandoffContract["completion_path"] != "project_task_writeback" {
+		if task.HandoffContract["completion_path"] != "project_task_attempt_writeback" {
 			t.Fatalf("expected runtime project task writeback contract, got %#v", task.HandoffContract)
 		}
 	}
