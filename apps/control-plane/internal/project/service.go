@@ -1822,6 +1822,25 @@ func (s *Service) StartProjectTaskAttempt(ctx context.Context, req StartProjectT
 	if err != nil {
 		return nil, err
 	}
+	_, _ = s.repository.CreateExecutionLedgerEvent(ctx, CreateExecutionLedgerEventRequest{
+		TenantID:             req.TenantID,
+		ProjectID:            result.Task.ProjectID,
+		ProjectTaskID:        &req.ProjectTaskID,
+		ProjectTaskAttemptID: &req.AttemptID,
+		EventType:            ExecutionLedgerEventAttemptStarted,
+		SourceType:           "project_task_attempt",
+		SourceID:             req.AttemptID.String(),
+		ActorType:            "runtime_node",
+		ActorID:              strPtr(req.RuntimeNodeID.String()),
+		RuntimeNodeID:        &req.RuntimeNodeID,
+		ProviderSessionID:    req.ProviderSessionID,
+		InputSummary:         "Runtime started project task attempt",
+		Metadata: map[string]any{
+			"project_task_id": req.ProjectTaskID.String(),
+			"idempotency_key": req.IdempotencyKey,
+		},
+		IdempotencyKey: "project_task_attempt:" + req.AttemptID.String() + ":attempt.started",
+	})
 	return &result.Attempt, nil
 }
 

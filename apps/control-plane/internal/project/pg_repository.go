@@ -2491,6 +2491,154 @@ func (r *PgRepository) StartProjectTaskAttemptWriteback(ctx context.Context, req
 	})
 }
 
+func projectTaskAttemptCompletionLedgerEventRequests(req CompleteProjectTaskAttemptRequest, task ProjectTask, event ProjectEvent, summary ExecutionSummary, requiresHumanReview bool) []CreateExecutionLedgerEventRequest {
+	metadata := map[string]any{
+		"project_event_id": event.ID.String(),
+		"project_task_id":  task.ID.String(),
+	}
+	if requiresHumanReview {
+		metadata["requires_human_review"] = true
+	}
+	summaryMetadata := map[string]any{
+		"project_event_id":      event.ID.String(),
+		"project_task_id":       task.ID.String(),
+		"execution_summary_id":  summary.ID.String(),
+		"requires_human_review": requiresHumanReview,
+	}
+	return []CreateExecutionLedgerEventRequest{
+		{
+			TenantID:             req.TenantID,
+			ProjectID:            task.ProjectID,
+			ProjectTaskID:        &task.ID,
+			ProjectTaskAttemptID: &req.AttemptID,
+			EventType:            ExecutionLedgerEventAttemptCompleted,
+			SourceType:           "project_task_attempt",
+			SourceID:             req.AttemptID.String(),
+			ActorType:            "digital_employee",
+			ActorID:              strPtr(req.DigitalEmployeeID.String()),
+			RuntimeNodeID:        &req.RuntimeNodeID,
+			ProviderSessionID:    req.ProviderSessionID,
+			OutputSummary:        req.Conclusion,
+			ArtifactRefs:         sliceOrEmptyAny(req.ArtifactRefs),
+			EvidenceRefs:         sliceOrEmptyAny(req.EvidenceRefs),
+			Metadata:             metadata,
+			IdempotencyKey:       "project_task_attempt:" + req.AttemptID.String() + ":attempt.completed",
+		},
+		{
+			TenantID:             req.TenantID,
+			ProjectID:            task.ProjectID,
+			ProjectTaskID:        &task.ID,
+			ProjectTaskAttemptID: &req.AttemptID,
+			EventType:            ExecutionLedgerEventSummaryCreated,
+			SourceType:           "project_execution_summary",
+			SourceID:             summary.ID.String(),
+			ActorType:            "system",
+			OutputSummary:        req.Conclusion,
+			ArtifactRefs:         sliceOrEmptyAny(req.ArtifactRefs),
+			EvidenceRefs:         sliceOrEmptyAny(req.EvidenceRefs),
+			Metadata:             summaryMetadata,
+			IdempotencyKey:       "project_execution_summary:" + summary.ID.String() + ":summary.created",
+		},
+	}
+}
+
+func projectTaskAttemptFailureLedgerEventRequest(req FailProjectTaskAttemptRequest, task ProjectTask, event ProjectEvent) CreateExecutionLedgerEventRequest {
+	return CreateExecutionLedgerEventRequest{
+		TenantID:             req.TenantID,
+		ProjectID:            task.ProjectID,
+		ProjectTaskID:        &task.ID,
+		ProjectTaskAttemptID: &req.AttemptID,
+		EventType:            ExecutionLedgerEventAttemptFailed,
+		SourceType:           "project_task_attempt",
+		SourceID:             req.AttemptID.String(),
+		ActorType:            "digital_employee",
+		ActorID:              strPtr(req.DigitalEmployeeID.String()),
+		RuntimeNodeID:        &req.RuntimeNodeID,
+		ProviderSessionID:    req.ProviderSessionID,
+		ErrorFamily:          req.FailureFamily,
+		ErrorMessage:         req.FailureSummary,
+		Retryable:            req.Retryable,
+		Metadata: map[string]any{
+			"project_event_id": event.ID.String(),
+			"project_task_id":  task.ID.String(),
+		},
+		IdempotencyKey: "project_task_attempt:" + req.AttemptID.String() + ":attempt.failed",
+	}
+}
+
+func recoveredProjectTaskAttemptLedgerEventRequest(req RecoverProjectTaskAttemptFailureWritebackRequest, event ProjectEvent) (CreateExecutionLedgerEventRequest, bool) {
+	eventType := ExecutionLedgerEventAttemptFailed
+	if req.AttemptTerminalStatus == ProjectTaskAttemptStatusWaitingHuman || req.TaskTargetStatus == ProjectTaskStatusWaitingHuman {
+		eventType = ExecutionLedgerEventAttemptWaitingHuman
+	} else {
+		switch req.AttemptTerminalStatus {
+		case ProjectTaskAttemptStatusFailed, ProjectTaskAttemptStatusTimedOut, ProjectTaskAttemptStatusLost, ProjectTaskAttemptStatusCancelled:
+			eventType = ExecutionLedgerEventAttemptFailed
+		default:
+			return CreateExecutionLedgerEventRequest{}, false
+		}
+	}
+	metadata := map[string]any{
+		"project_event_id":        event.ID.String(),
+		"project_task_id":         req.Task.ID.String(),
+		"attempt_terminal_status": req.AttemptTerminalStatus,
+		"task_target_status":      req.TaskTargetStatus,
+	}
+	if req.WaitingReason != "" {
+		metadata["waiting_reason"] = req.WaitingReason
+	}
+	if req.RetryAttemptID != uuid.Nil {
+		metadata["retry_project_task_attempt_id"] = req.RetryAttemptID.String()
+	}
+	ledgerReq := CreateExecutionLedgerEventRequest{
+		TenantID:             req.Failure.TenantID,
+		ProjectID:            req.Task.ProjectID,
+		ProjectTaskID:        &req.Task.ID,
+		ProjectTaskAttemptID: &req.Failure.AttemptID,
+		EventType:            eventType,
+		SourceType:           "project_task_attempt",
+		SourceID:             req.Failure.AttemptID.String(),
+		ActorType:            "digital_employee",
+		ActorID:              strPtr(req.Failure.DigitalEmployeeID.String()),
+		RuntimeNodeID:        &req.Failure.RuntimeNodeID,
+		ProviderSessionID:    req.Failure.ProviderSessionID,
+		Metadata:             metadata,
+		IdempotencyKey:       "project_task_attempt:" + req.Failure.AttemptID.String() + ":" + eventType,
+	}
+	if eventType == ExecutionLedgerEventAttemptWaitingHuman {
+		ledgerReq.OutputSummary = req.Failure.FailureSummary
+	} else {
+		ledgerReq.ErrorFamily = req.Failure.FailureFamily
+		ledgerReq.ErrorMessage = req.Failure.FailureSummary
+		ledgerReq.Retryable = req.Failure.Retryable
+	}
+	return ledgerReq, true
+}
+
+func projectTaskAttemptHumanWaitLedgerEventRequest(req WaitHumanProjectTaskAttemptWritebackRequest, event ProjectEvent, decision DecisionRequest) CreateExecutionLedgerEventRequest {
+	return CreateExecutionLedgerEventRequest{
+		TenantID:             req.Wait.TenantID,
+		ProjectID:            req.Task.ProjectID,
+		ProjectTaskID:        &req.Task.ID,
+		ProjectTaskAttemptID: &req.Wait.AttemptID,
+		EventType:            ExecutionLedgerEventAttemptWaitingHuman,
+		SourceType:           "project_task_attempt",
+		SourceID:             req.Wait.AttemptID.String(),
+		ActorType:            "digital_employee",
+		ActorID:              strPtr(req.Wait.DigitalEmployeeID.String()),
+		RuntimeNodeID:        &req.Wait.RuntimeNodeID,
+		ProviderSessionID:    req.Wait.ProviderSessionID,
+		OutputSummary:        req.Wait.Summary,
+		Metadata: map[string]any{
+			"project_event_id":    event.ID.String(),
+			"project_task_id":     req.Task.ID.String(),
+			"waiting_reason":      req.Wait.Reason,
+			"decision_request_id": decision.ID.String(),
+		},
+		IdempotencyKey: "project_task_attempt:" + req.Wait.AttemptID.String() + ":attempt.waiting_human",
+	}
+}
+
 func (r *PgRepository) RenewProjectTaskAttemptLeaseWriteback(ctx context.Context, req RenewProjectTaskAttemptLeaseRequest) (ProjectTaskAttempt, error) {
 	row, err := r.q.RenewProjectTaskAttemptLease(ctx, queries.RenewProjectTaskAttemptLeaseParams{
 		TenantID:       req.TenantID,
@@ -2555,6 +2703,11 @@ func (r *PgRepository) CompleteProjectTaskAttemptWriteback(ctx context.Context, 
 		}); err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
+		for _, ledgerReq := range projectTaskAttemptCompletionLedgerEventRequests(req, task, event, summary, req.RequiresHumanReview) {
+			if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, ledgerReq); err != nil {
+				return ProjectTaskWritebackResult{}, err
+			}
+		}
 		task, err = r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, req.ProjectTaskID, ProjectTaskStatusCompleted, &event.ID, []string{ProjectTaskStatusCompleted})
 		if err != nil {
 			return ProjectTaskWritebackResult{}, err
@@ -2615,6 +2768,11 @@ func (r *PgRepository) CompleteProjectTaskAttemptAcceptanceWriteback(ctx context
 			TerminalEventID:   nullUUID(&event.ID),
 		}); err != nil {
 			return ProjectTaskWritebackResult{}, err
+		}
+		for _, ledgerReq := range projectTaskAttemptCompletionLedgerEventRequests(req.Complete, req.Task, event, summary, true) {
+			if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, ledgerReq); err != nil {
+				return ProjectTaskWritebackResult{}, err
+			}
 		}
 		decisionReq := req.Decision
 		decisionReq.CreatedEventID = &event.ID
@@ -2678,6 +2836,9 @@ func (r *PgRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req 
 		}); err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
+		if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, projectTaskAttemptFailureLedgerEventRequest(req, task, event)); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
 		task, err = r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, req.ProjectTaskID, ProjectTaskStatusFailed, &event.ID, []string{ProjectTaskStatusFailed})
 		if err != nil {
 			return ProjectTaskWritebackResult{}, err
@@ -2738,6 +2899,11 @@ func (r *PgRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context.Con
 			TerminalEventID:   nullUUID(&event.ID),
 		}); err != nil {
 			return ProjectTaskWritebackResult{}, err
+		}
+		if ledgerReq, ok := recoveredProjectTaskAttemptLedgerEventRequest(req, event); ok {
+			if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, ledgerReq); err != nil {
+				return ProjectTaskWritebackResult{}, err
+			}
 		}
 
 		var task ProjectTask
@@ -2856,6 +3022,9 @@ func (r *PgRepository) WaitHumanProjectTaskAttemptWriteback(ctx context.Context,
 		decisionReq.CreatedEventID = &event.ID
 		decision, err := r.createDecisionRequestWithQueries(ctx, q, decisionReq)
 		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, projectTaskAttemptHumanWaitLedgerEventRequest(req, event, decision)); err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
 		row, err := q.MoveProjectTaskToWaitingHuman(ctx, queries.MoveProjectTaskToWaitingHumanParams{

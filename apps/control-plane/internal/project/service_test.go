@@ -680,6 +680,20 @@ func TestStartProjectTaskAttemptAdvancesRunning(t *testing.T) {
 	require.NotNil(t, started.RenewedAt)
 }
 
+func TestStartProjectTaskAttemptWritesLedgerEvent(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusQueued, ProjectTaskAttemptStatusQueued)
+	_, err = service.StartProjectTaskAttempt(context.Background(), StartProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("start-ledger"),
+	})
+	require.NoError(t, err)
+	require.Len(t, repo.executionLedgerEvents, 1)
+	require.Equal(t, ExecutionLedgerEventAttemptStarted, repo.executionLedgerEvents[0].EventType)
+	require.Equal(t, fixture.attemptID, *repo.executionLedgerEvents[0].ProjectTaskAttemptID)
+}
+
 func TestStartProjectTaskAttemptRejectsWrongLeaseToken(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -730,6 +744,24 @@ func TestCompleteProjectTaskAttemptCreatesSummaryAndCompletesTask(t *testing.T) 
 	require.Equal(t, ProjectTaskStatusCompleted, repo.tasks[0].Status)
 	require.Equal(t, ProjectTaskAttemptStatusSucceeded, repo.projectTaskAttempts[0].Status)
 	require.Contains(t, repo.eventTypes, ProjectEventTaskCompleted)
+}
+
+func TestCompleteProjectTaskAttemptWritesLedgerEvents(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	_, err = service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("complete-ledger"),
+		Conclusion:                       "验收证据已生成",
+		EvidenceRefs:                     []any{map[string]any{"ref": "evidence://complete"}},
+		ArtifactRefs:                     []any{map[string]any{"ref": "artifact://complete"}},
+		ConfidenceFactors:                map[string]any{"verified": true},
+		MissingInformation:               []any{},
+		RecommendedNextAction:            "进入验收",
+	})
+	require.NoError(t, err)
+	requireLedgerEventTypes(t, repo.executionLedgerEvents, ExecutionLedgerEventAttemptCompleted, ExecutionLedgerEventSummaryCreated)
 }
 
 func TestCompleteHighRiskAttemptRequiresAcceptanceBeforeCompleted(t *testing.T) {
@@ -850,6 +882,31 @@ func TestFailProjectTaskAttemptFailsTaskAndAttempt(t *testing.T) {
 	require.Equal(t, ProjectEventTaskFailed, repo.eventTypes[len(repo.eventTypes)-1])
 }
 
+func TestFailProjectTaskAttemptWritesLedgerEvent(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	retryable := true
+
+	_, err = service.FailProjectTaskAttempt(context.Background(), FailProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("fail-ledger"),
+		FailureSummary:                   "provider crashed",
+		FailureFamily:                    "runtime_agent_failure",
+		Retryable:                        &retryable,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, repo.executionLedgerEvents, 1)
+	event := repo.executionLedgerEvents[0]
+	require.Equal(t, ExecutionLedgerEventAttemptFailed, event.EventType)
+	require.Equal(t, fixture.attemptID, *event.ProjectTaskAttemptID)
+	require.Equal(t, "runtime_agent_failure", *event.ErrorFamily)
+	require.Equal(t, "provider crashed", *event.ErrorMessage)
+	require.NotNil(t, event.Retryable)
+	require.True(t, *event.Retryable)
+}
+
 func TestFailProjectTaskAttemptTransientRuntimeSchedulesRetry(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -950,6 +1007,30 @@ func TestWaitHumanProjectTaskAttemptMovesTaskAndCreatesDecisionRequest(t *testin
 	require.Equal(t, ProjectEventTaskWaitingHuman, repo.eventTypes[len(repo.eventTypes)-1])
 }
 
+func TestWaitHumanProjectTaskAttemptWritesLedgerEvent(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	employeeID := *repo.tasks[0].AssignedDigitalEmployeeID
+
+	_, err = service.WaitHumanProjectTaskAttempt(context.Background(), WaitHumanProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("wait-human-ledger"),
+		DigitalEmployeeID:                employeeID,
+		Reason:                           HumanWaitReasonMissingContext,
+		Summary:                          "Need customer scope",
+		MissingContextRefs:               []any{"customer_scope"},
+		SuggestedResolutionOptions:       []string{HumanWaitResolutionResumeSameTask},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, repo.executionLedgerEvents, 1)
+	event := repo.executionLedgerEvents[0]
+	require.Equal(t, ExecutionLedgerEventAttemptWaitingHuman, event.EventType)
+	require.Equal(t, fixture.attemptID, *event.ProjectTaskAttemptID)
+	require.Equal(t, "Need customer scope", *event.OutputSummary)
+}
+
 func TestProjectTaskAttemptRejectsWrongRuntimeNode(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -1035,6 +1116,17 @@ func newProjectTaskAttemptServiceFixture(repo *memoryRepository, taskStatus, att
 		attemptID: attemptID,
 		nodeID:    nodeID,
 		lease:     lease,
+	}
+}
+
+func requireLedgerEventTypes(t *testing.T, events []ExecutionLedgerEvent, expected ...string) {
+	t.Helper()
+	actual := make([]string, 0, len(events))
+	for _, event := range events {
+		actual = append(actual, event.EventType)
+	}
+	for _, eventType := range expected {
+		require.Contains(t, actual, eventType)
 	}
 }
 
@@ -5558,6 +5650,13 @@ func (r *memoryRepository) ListExecutionSummaries(ctx context.Context, tenantID,
 }
 
 func (r *memoryRepository) CreateExecutionLedgerEvent(ctx context.Context, req CreateExecutionLedgerEventRequest) (ExecutionLedgerEvent, error) {
+	if req.IdempotencyKey != "" {
+		for _, event := range r.executionLedgerEvents {
+			if event.TenantID == req.TenantID && event.IdempotencyKey == req.IdempotencyKey {
+				return cloneExecutionLedgerEvent(event), nil
+			}
+		}
+	}
 	now := time.Now().UTC()
 	occurredAt := now
 	if req.OccurredAt != nil {
@@ -5831,6 +5930,12 @@ func (r *memoryRepository) CompleteProjectTaskAttemptWriteback(ctx context.Conte
 		r.restoreWritebackSnapshot(snapshot)
 		return ProjectTaskWritebackResult{}, err
 	}
+	for _, ledgerReq := range projectTaskAttemptCompletionLedgerEventRequests(req, task, event, summary, req.RequiresHumanReview) {
+		if _, err := r.CreateExecutionLedgerEvent(ctx, ledgerReq); err != nil {
+			r.restoreWritebackSnapshot(snapshot)
+			return ProjectTaskWritebackResult{}, err
+		}
+	}
 	task, err = r.UpdateProjectTaskStatus(ctx, req.TenantID, req.ProjectTaskID, ProjectTaskStatusCompleted, &event.ID, []string{ProjectTaskStatusCompleted})
 	if err != nil {
 		r.restoreWritebackSnapshot(snapshot)
@@ -5883,6 +5988,12 @@ func (r *memoryRepository) CompleteProjectTaskAttemptAcceptanceWriteback(ctx con
 		r.restoreWritebackSnapshot(snapshot)
 		return ProjectTaskWritebackResult{}, err
 	}
+	for _, ledgerReq := range projectTaskAttemptCompletionLedgerEventRequests(req.Complete, req.Task, event, summary, true) {
+		if _, err := r.CreateExecutionLedgerEvent(ctx, ledgerReq); err != nil {
+			r.restoreWritebackSnapshot(snapshot)
+			return ProjectTaskWritebackResult{}, err
+		}
+	}
 	decisionReq := req.Decision
 	decisionReq.CreatedEventID = &event.ID
 	decision, err := r.CreateDecisionRequest(ctx, decisionReq)
@@ -5925,6 +6036,10 @@ func (r *memoryRepository) FailProjectTaskAttemptWriteback(ctx context.Context, 
 		return ProjectTaskWritebackResult{}, err
 	}
 	if err := r.finishProjectTaskAttempt(req.TenantID, req.AttemptID, ProjectTaskAttemptStatusFailed, &event.ID, req.Retryable, &req.FailureFamily, &req.FailureSummary); err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	if _, err := r.CreateExecutionLedgerEvent(ctx, projectTaskAttemptFailureLedgerEventRequest(req, task, event)); err != nil {
 		r.restoreWritebackSnapshot(snapshot)
 		return ProjectTaskWritebackResult{}, err
 	}
@@ -5975,6 +6090,12 @@ func (r *memoryRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context
 	if err := r.finishProjectTaskAttempt(req.Failure.TenantID, req.Failure.AttemptID, req.AttemptTerminalStatus, &event.ID, req.Failure.Retryable, &req.Failure.FailureFamily, &req.Failure.FailureSummary); err != nil {
 		r.restoreWritebackSnapshot(snapshot)
 		return ProjectTaskWritebackResult{}, err
+	}
+	if ledgerReq, ok := recoveredProjectTaskAttemptLedgerEventRequest(req, event); ok {
+		if _, err := r.CreateExecutionLedgerEvent(ctx, ledgerReq); err != nil {
+			r.restoreWritebackSnapshot(snapshot)
+			return ProjectTaskWritebackResult{}, err
+		}
 	}
 
 	switch req.TaskTargetStatus {
@@ -6037,6 +6158,10 @@ func (r *memoryRepository) WaitHumanProjectTaskAttemptWriteback(ctx context.Cont
 	decisionReq.CreatedEventID = &event.ID
 	decision, err := r.CreateDecisionRequest(ctx, decisionReq)
 	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	if _, err := r.CreateExecutionLedgerEvent(ctx, projectTaskAttemptHumanWaitLedgerEventRequest(req, event, decision)); err != nil {
 		r.restoreWritebackSnapshot(snapshot)
 		return ProjectTaskWritebackResult{}, err
 	}
