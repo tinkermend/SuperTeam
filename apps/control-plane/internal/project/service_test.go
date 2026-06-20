@@ -61,6 +61,94 @@ func TestRuntimeWritebackProjectTaskStatusesIncludeQueued(t *testing.T) {
 	require.True(t, projectTaskAcceptsRuntimeWriteback("queued"))
 }
 
+func TestGetExecutionTraceGroupsEventsByAttempt(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	summaryID := uuid.New()
+	now := time.Now().UTC()
+	repo := newMemoryRepository()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:        taskID,
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Title:     "核对证据链",
+		Status:    ProjectTaskStatusCompleted,
+	})
+	repo.projectTaskAttempts = append(repo.projectTaskAttempts, ProjectTaskAttempt{
+		ID:            attemptID,
+		TenantID:      tenantID,
+		ProjectTaskID: taskID,
+		AttemptNo:     1,
+		Status:        ProjectTaskAttemptStatusSucceeded,
+		StartedAt:     &now,
+		FinishedAt:    &now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	})
+	repo.executionSummaries = append(repo.executionSummaries, ExecutionSummary{
+		ID:                  summaryID,
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		ProjectTaskID:       taskID,
+		DigitalEmployeeID:   uuid.New(),
+		Conclusion:          "证据链完整",
+		EvidenceRefs:        []any{map[string]any{"ref": "evidence://1"}},
+		ArtifactRefs:        []any{map[string]any{"ref": "artifact://1"}},
+		ConfidenceFactors:   map[string]any{"source": "test"},
+		MissingInformation:  []any{},
+		RequiresHumanReview: false,
+		CreatedAt:           now,
+	})
+	repo.executionLedgerEvents = append(repo.executionLedgerEvents, ExecutionLedgerEvent{
+		ID:                   uuid.New(),
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        &taskID,
+		ProjectTaskAttemptID: &attemptID,
+		EventType:            ExecutionLedgerEventAttemptStarted,
+		SourceType:           "project_task_attempt",
+		SourceID:             attemptID.String(),
+		ActorType:            "runtime_node",
+		InputSummary:         strPtr("Runtime started attempt"),
+		OccurredAt:           now,
+		CreatedAt:            now,
+	})
+	repo.executionLedgerEvents = append(repo.executionLedgerEvents, ExecutionLedgerEvent{
+		ID:                   uuid.New(),
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        &taskID,
+		ProjectTaskAttemptID: &attemptID,
+		EventType:            ExecutionLedgerEventSummaryCreated,
+		SourceType:           "project_execution_summary",
+		SourceID:             summaryID.String(),
+		ActorType:            "system",
+		OutputSummary:        strPtr("证据链完整"),
+		OccurredAt:           now.Add(time.Second),
+		CreatedAt:            now.Add(time.Second),
+	})
+
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	trace, err := service.GetExecutionTrace(context.Background(), GetExecutionTraceRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Limit:     100,
+	})
+	require.NoError(t, err)
+	require.Equal(t, projectID, trace.ProjectID)
+	require.Equal(t, int32(1), trace.Summary.AttemptCount)
+	require.Equal(t, int32(1), trace.Summary.ArtifactRefCount)
+	require.Equal(t, int32(1), trace.Summary.EvidenceRefCount)
+	require.Len(t, trace.Attempts, 1)
+	require.Equal(t, attemptID, trace.Attempts[0].AttemptID)
+	require.Len(t, trace.Attempts[0].Events, 2)
+	require.NotNil(t, trace.Attempts[0].Summary)
+	require.Equal(t, summaryID, trace.Attempts[0].Summary.ExecutionSummaryID)
+}
+
 func TestBuildProjectTaskExecutionPacketIncludesDependenciesAndHumanDecisions(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -4200,34 +4288,35 @@ func TestListPaginationIsNormalized(t *testing.T) {
 }
 
 type memoryRepository struct {
-	projects            map[uuid.UUID]Project
-	members             map[uuid.UUID][]ProjectMember
-	tasks               []ProjectTask
-	projectTaskAttempts []ProjectTaskAttempt
-	events              []ProjectEvent
-	eventTypes          []ProjectEventType
-	demands             []ProjectDemand
-	revisions           []ProjectConfigRevision
-	coordinationJobs    []CoordinationJob
-	routeDecisions      []RouteDecision
-	executionSummaries  []ExecutionSummary
-	transferRequests    []TransferRequest
-	decisionRequests    []DecisionRequest
-	contextUpdates      []ProjectTaskAttemptContextUpdate
-	evidenceRefs        []ProjectEvidenceRef
-	artifactRefs        []ProjectArtifactRef
-	reportRefs          []ProjectReportRef
-	budgetLedger        []ProjectBudgetLedgerEntry
-	acceptanceRecords   []ProjectAcceptanceRecord
-	archiveSnapshots    []ProjectArchiveSnapshot
-	projectTeamScopes   map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool
-	lastListProjects    ListProjectsRequest
-	lastTasksLimit      int32
-	lastTasksOffset     int32
-	lastEventsLimit     int32
-	lastEventsOffset    int32
-	lastDemandsLimit    int32
-	lastDemandsOffset   int32
+	projects              map[uuid.UUID]Project
+	members               map[uuid.UUID][]ProjectMember
+	tasks                 []ProjectTask
+	projectTaskAttempts   []ProjectTaskAttempt
+	events                []ProjectEvent
+	eventTypes            []ProjectEventType
+	demands               []ProjectDemand
+	revisions             []ProjectConfigRevision
+	coordinationJobs      []CoordinationJob
+	routeDecisions        []RouteDecision
+	executionSummaries    []ExecutionSummary
+	executionLedgerEvents []ExecutionLedgerEvent
+	transferRequests      []TransferRequest
+	decisionRequests      []DecisionRequest
+	contextUpdates        []ProjectTaskAttemptContextUpdate
+	evidenceRefs          []ProjectEvidenceRef
+	artifactRefs          []ProjectArtifactRef
+	reportRefs            []ProjectReportRef
+	budgetLedger          []ProjectBudgetLedgerEntry
+	acceptanceRecords     []ProjectAcceptanceRecord
+	archiveSnapshots      []ProjectArchiveSnapshot
+	projectTeamScopes     map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool
+	lastListProjects      ListProjectsRequest
+	lastTasksLimit        int32
+	lastTasksOffset       int32
+	lastEventsLimit       int32
+	lastEventsOffset      int32
+	lastDemandsLimit      int32
+	lastDemandsOffset     int32
 
 	taskStatusBeforeUpdate     *string
 	appendProjectEventErr      error
@@ -5111,6 +5200,99 @@ func (r *memoryRepository) ListExecutionSummaries(ctx context.Context, tenantID,
 	return filtered, nil
 }
 
+func (r *memoryRepository) CreateExecutionLedgerEvent(ctx context.Context, req CreateExecutionLedgerEventRequest) (ExecutionLedgerEvent, error) {
+	now := time.Now().UTC()
+	occurredAt := now
+	if req.OccurredAt != nil {
+		occurredAt = *req.OccurredAt
+	}
+	event := ExecutionLedgerEvent{
+		ID:                   uuid.New(),
+		TenantID:             req.TenantID,
+		TeamID:               req.TeamID,
+		ProjectID:            req.ProjectID,
+		ProjectTaskID:        req.ProjectTaskID,
+		ProjectTaskAttemptID: req.ProjectTaskAttemptID,
+		EventType:            req.EventType,
+		SourceType:           req.SourceType,
+		SourceID:             req.SourceID,
+		ActorType:            req.ActorType,
+		ActorID:              req.ActorID,
+		RuntimeNodeID:        req.RuntimeNodeID,
+		ProviderType:         req.ProviderType,
+		ProviderSessionID:    req.ProviderSessionID,
+		InputSummary:         strPtrOrNil(req.InputSummary),
+		OutputSummary:        strPtrOrNil(req.OutputSummary),
+		ErrorFamily:          strPtrOrNil(req.ErrorFamily),
+		ErrorCode:            strPtrOrNil(req.ErrorCode),
+		ErrorMessage:         strPtrOrNil(req.ErrorMessage),
+		Retryable:            req.Retryable,
+		ArtifactRefs:         append([]any(nil), sliceOrEmptyAny(req.ArtifactRefs)...),
+		EvidenceRefs:         append([]any(nil), sliceOrEmptyAny(req.EvidenceRefs)...),
+		Metadata:             cloneMap(mapOrEmptyAny(req.Metadata)),
+		OccurredAt:           occurredAt,
+		IdempotencyKey:       req.IdempotencyKey,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+	r.executionLedgerEvents = append(r.executionLedgerEvents, cloneExecutionLedgerEvent(event))
+	return event, nil
+}
+
+func (r *memoryRepository) ListProjectExecutionLedgerEvents(ctx context.Context, req GetExecutionTraceRequest) ([]ExecutionLedgerEvent, error) {
+	filtered := make([]ExecutionLedgerEvent, 0, len(r.executionLedgerEvents))
+	for _, event := range r.executionLedgerEvents {
+		if event.TenantID != req.TenantID || event.ProjectID != req.ProjectID {
+			continue
+		}
+		if req.ProjectTaskID != nil && (event.ProjectTaskID == nil || *event.ProjectTaskID != *req.ProjectTaskID) {
+			continue
+		}
+		if req.ProjectTaskAttemptID != nil && (event.ProjectTaskAttemptID == nil || *event.ProjectTaskAttemptID != *req.ProjectTaskAttemptID) {
+			continue
+		}
+		if req.EventType != nil && event.EventType != *req.EventType {
+			continue
+		}
+		if req.ErrorFamily != nil && (event.ErrorFamily == nil || *event.ErrorFamily != *req.ErrorFamily) {
+			continue
+		}
+		filtered = append(filtered, cloneExecutionLedgerEvent(event))
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		if !filtered[i].OccurredAt.Equal(filtered[j].OccurredAt) {
+			return filtered[i].OccurredAt.Before(filtered[j].OccurredAt)
+		}
+		return filtered[i].CreatedAt.Before(filtered[j].CreatedAt)
+	})
+	return paginateTestSlice(filtered, req.Limit, req.Offset), nil
+}
+
+func (r *memoryRepository) ListProjectTaskAttemptsForExecutionTrace(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectTaskAttempt, error) {
+	taskProjects := make(map[uuid.UUID]uuid.UUID, len(r.tasks))
+	for _, task := range r.tasks {
+		if task.TenantID == tenantID {
+			taskProjects[task.ID] = task.ProjectID
+		}
+	}
+	filtered := make([]ProjectTaskAttempt, 0, len(r.projectTaskAttempts))
+	for _, attempt := range r.projectTaskAttempts {
+		if attempt.TenantID == tenantID && taskProjects[attempt.ProjectTaskID] == projectID {
+			filtered = append(filtered, attempt)
+		}
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		if filtered[i].ProjectTaskID != filtered[j].ProjectTaskID {
+			return filtered[i].ProjectTaskID.String() < filtered[j].ProjectTaskID.String()
+		}
+		if filtered[i].AttemptNo != filtered[j].AttemptNo {
+			return filtered[i].AttemptNo < filtered[j].AttemptNo
+		}
+		return filtered[i].CreatedAt.Before(filtered[j].CreatedAt)
+	})
+	return filtered, nil
+}
+
 func (r *memoryRepository) CreateTransferRequest(ctx context.Context, req CreateTransferRequestRequest) (TransferRequest, error) {
 	if r.createTransferRequestErr != nil {
 		return TransferRequest{}, r.createTransferRequestErr
@@ -5714,22 +5896,24 @@ func (r *memoryRepository) finishProjectTaskAttempt(tenantID, attemptID uuid.UUI
 }
 
 type memoryWritebackSnapshot struct {
-	tasks               []ProjectTask
-	projectTaskAttempts []ProjectTaskAttempt
-	events              []ProjectEvent
-	eventTypes          []ProjectEventType
-	executionSummaries  []ExecutionSummary
-	transferRequests    []TransferRequest
+	tasks                 []ProjectTask
+	projectTaskAttempts   []ProjectTaskAttempt
+	events                []ProjectEvent
+	eventTypes            []ProjectEventType
+	executionSummaries    []ExecutionSummary
+	executionLedgerEvents []ExecutionLedgerEvent
+	transferRequests      []TransferRequest
 }
 
 func (r *memoryRepository) writebackSnapshot() memoryWritebackSnapshot {
 	return memoryWritebackSnapshot{
-		tasks:               append([]ProjectTask(nil), r.tasks...),
-		projectTaskAttempts: append([]ProjectTaskAttempt(nil), r.projectTaskAttempts...),
-		events:              append([]ProjectEvent(nil), r.events...),
-		eventTypes:          append([]ProjectEventType(nil), r.eventTypes...),
-		executionSummaries:  append([]ExecutionSummary(nil), r.executionSummaries...),
-		transferRequests:    append([]TransferRequest(nil), r.transferRequests...),
+		tasks:                 append([]ProjectTask(nil), r.tasks...),
+		projectTaskAttempts:   append([]ProjectTaskAttempt(nil), r.projectTaskAttempts...),
+		events:                append([]ProjectEvent(nil), r.events...),
+		eventTypes:            append([]ProjectEventType(nil), r.eventTypes...),
+		executionSummaries:    append([]ExecutionSummary(nil), r.executionSummaries...),
+		executionLedgerEvents: append([]ExecutionLedgerEvent(nil), r.executionLedgerEvents...),
+		transferRequests:      append([]TransferRequest(nil), r.transferRequests...),
 	}
 }
 
@@ -5739,6 +5923,7 @@ func (r *memoryRepository) restoreWritebackSnapshot(snapshot memoryWritebackSnap
 	r.events = snapshot.events
 	r.eventTypes = snapshot.eventTypes
 	r.executionSummaries = snapshot.executionSummaries
+	r.executionLedgerEvents = snapshot.executionLedgerEvents
 	r.transferRequests = snapshot.transferRequests
 }
 

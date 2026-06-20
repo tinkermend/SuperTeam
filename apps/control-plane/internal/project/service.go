@@ -1455,6 +1455,168 @@ func (s *Service) ListExecutionSummaries(ctx context.Context, tenantID, projectI
 	return s.repository.ListExecutionSummaries(ctx, tenantID, projectID, limit, offset)
 }
 
+func (s *Service) GetExecutionTrace(ctx context.Context, req GetExecutionTraceRequest) (ProjectExecutionTrace, error) {
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil {
+		return ProjectExecutionTrace{}, ErrInvalidProject
+	}
+	req.Limit, req.Offset = normalizePagination(req.Limit, req.Offset)
+	if req.Limit < 100 {
+		req.Limit = 100
+	}
+	attempts, err := s.repository.ListProjectTaskAttemptsForExecutionTrace(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return ProjectExecutionTrace{}, err
+	}
+	attempts = filterExecutionTraceAttempts(attempts, req)
+	events, err := s.repository.ListProjectExecutionLedgerEvents(ctx, req)
+	if err != nil {
+		return ProjectExecutionTrace{}, err
+	}
+	summaries, err := s.repository.ListExecutionSummaries(ctx, req.TenantID, req.ProjectID, 100, 0)
+	if err != nil {
+		return ProjectExecutionTrace{}, err
+	}
+	return buildProjectExecutionTrace(req.ProjectID, attempts, events, summaries), nil
+}
+
+func filterExecutionTraceAttempts(attempts []ProjectTaskAttempt, req GetExecutionTraceRequest) []ProjectTaskAttempt {
+	if req.ProjectTaskID == nil && req.ProjectTaskAttemptID == nil {
+		return attempts
+	}
+	filtered := make([]ProjectTaskAttempt, 0, len(attempts))
+	for _, attempt := range attempts {
+		if req.ProjectTaskID != nil && attempt.ProjectTaskID != *req.ProjectTaskID {
+			continue
+		}
+		if req.ProjectTaskAttemptID != nil && attempt.ID != *req.ProjectTaskAttemptID {
+			continue
+		}
+		filtered = append(filtered, attempt)
+	}
+	return filtered
+}
+
+func buildProjectExecutionTrace(projectID uuid.UUID, attempts []ProjectTaskAttempt, events []ExecutionLedgerEvent, summaries []ExecutionSummary) ProjectExecutionTrace {
+	trace := ProjectExecutionTrace{
+		ProjectID: projectID,
+		Attempts:  make([]ProjectExecutionTraceAttempt, 0, len(attempts)),
+	}
+	attemptIndexes := make(map[uuid.UUID]int, len(attempts))
+	for _, attempt := range attempts {
+		attemptIndexes[attempt.ID] = len(trace.Attempts)
+		trace.Attempts = append(trace.Attempts, ProjectExecutionTraceAttempt{
+			ProjectTaskID:     attempt.ProjectTaskID,
+			AttemptID:         attempt.ID,
+			AttemptNo:         attempt.AttemptNo,
+			Status:            attempt.Status,
+			RuntimeNodeID:     attempt.RuntimeNodeID,
+			ProviderSessionID: attempt.ProviderSessionID,
+			StartedAt:         attempt.StartedAt,
+			FinishedAt:        attempt.FinishedAt,
+			FailureFamily:     attempt.FailureFamily,
+			Retryable:         attempt.Retryable,
+			Events:            []ExecutionLedgerEvent{},
+		})
+		trace.Summary.AttemptCount++
+		if isFailedExecutionTraceAttempt(attempt.Status) {
+			trace.Summary.FailedAttemptCount++
+		}
+	}
+
+	summaryByID := make(map[string]ExecutionSummary, len(summaries))
+	latestSummaryByTaskID := make(map[uuid.UUID]ExecutionSummary, len(summaries))
+	for _, summary := range summaries {
+		summaryByID[summary.ID.String()] = summary
+		latest, ok := latestSummaryByTaskID[summary.ProjectTaskID]
+		if !ok || summary.CreatedAt.After(latest.CreatedAt) {
+			latestSummaryByTaskID[summary.ProjectTaskID] = summary
+		}
+	}
+
+	var latestErrorEvent *ExecutionLedgerEvent
+	for _, event := range events {
+		if event.ErrorFamily != nil && (latestErrorEvent == nil || executionTraceEventAfter(event, *latestErrorEvent)) {
+			latestEvent := event
+			latestErrorEvent = &latestEvent
+			errorFamily := *event.ErrorFamily
+			trace.Summary.LatestErrorFamily = &errorFamily
+		}
+		if event.ProjectTaskAttemptID == nil {
+			continue
+		}
+		index, ok := attemptIndexes[*event.ProjectTaskAttemptID]
+		if !ok {
+			continue
+		}
+		clonedEvent := cloneExecutionLedgerEvent(event)
+		trace.Attempts[index].Events = append(trace.Attempts[index].Events, clonedEvent)
+		trace.Summary.ArtifactRefCount += int32(len(clonedEvent.ArtifactRefs))
+		trace.Summary.EvidenceRefCount += int32(len(clonedEvent.EvidenceRefs))
+		if trace.Attempts[index].ProviderType == nil && clonedEvent.ProviderType != nil {
+			trace.Attempts[index].ProviderType = clonedEvent.ProviderType
+		}
+		if event.EventType == ExecutionLedgerEventSummaryCreated {
+			if summary, ok := summaryByID[event.SourceID]; ok {
+				attachExecutionTraceSummary(&trace, index, summary)
+			}
+		}
+	}
+
+	for index := range trace.Attempts {
+		if trace.Attempts[index].Summary != nil {
+			continue
+		}
+		if summary, ok := latestSummaryByTaskID[trace.Attempts[index].ProjectTaskID]; ok {
+			attachExecutionTraceSummary(&trace, index, summary)
+		}
+	}
+	return trace
+}
+
+func isFailedExecutionTraceAttempt(status string) bool {
+	switch status {
+	case ProjectTaskAttemptStatusFailed, ProjectTaskAttemptStatusLost, ProjectTaskAttemptStatusTimedOut:
+		return true
+	default:
+		return false
+	}
+}
+
+func executionTraceEventAfter(left, right ExecutionLedgerEvent) bool {
+	if !left.OccurredAt.Equal(right.OccurredAt) {
+		return left.OccurredAt.After(right.OccurredAt)
+	}
+	return left.CreatedAt.After(right.CreatedAt)
+}
+
+func attachExecutionTraceSummary(trace *ProjectExecutionTrace, attemptIndex int, summary ExecutionSummary) {
+	if trace.Attempts[attemptIndex].Summary != nil {
+		return
+	}
+	artifactRefs := sliceOrEmptyAny(summary.ArtifactRefs)
+	evidenceRefs := sliceOrEmptyAny(summary.EvidenceRefs)
+	trace.Attempts[attemptIndex].Summary = &ProjectExecutionTraceAttemptSummary{
+		ExecutionSummaryID:  summary.ID,
+		Conclusion:          summary.Conclusion,
+		RequiresHumanReview: summary.RequiresHumanReview,
+		ArtifactRefs:        append([]any(nil), artifactRefs...),
+		EvidenceRefs:        append([]any(nil), evidenceRefs...),
+		CreatedAt:           summary.CreatedAt,
+	}
+	if summary.RequiresHumanReview {
+		trace.Summary.HumanReviewRequiredCount++
+	}
+	trace.Summary.ArtifactRefCount += int32(len(artifactRefs))
+	trace.Summary.EvidenceRefCount += int32(len(evidenceRefs))
+}
+
+func cloneExecutionLedgerEvent(event ExecutionLedgerEvent) ExecutionLedgerEvent {
+	event.ArtifactRefs = append([]any(nil), sliceOrEmptyAny(event.ArtifactRefs)...)
+	event.EvidenceRefs = append([]any(nil), sliceOrEmptyAny(event.EvidenceRefs)...)
+	event.Metadata = cloneMap(mapOrEmptyAny(event.Metadata))
+	return event
+}
+
 func (s *Service) ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]TransferRequest, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject

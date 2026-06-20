@@ -2301,6 +2301,103 @@ func (r *PgRepository) ListExecutionSummaries(ctx context.Context, tenantID, pro
 	return executionSummariesFromRecords(rows)
 }
 
+func (r *PgRepository) CreateExecutionLedgerEvent(ctx context.Context, req CreateExecutionLedgerEventRequest) (ExecutionLedgerEvent, error) {
+	return r.createExecutionLedgerEventWithQueries(ctx, r.q, req)
+}
+
+func (r *PgRepository) createExecutionLedgerEventWithQueries(ctx context.Context, q *queries.Queries, req CreateExecutionLedgerEventRequest) (ExecutionLedgerEvent, error) {
+	artifactRefs, err := jsonbArray(req.ArtifactRefs, "artifact_refs")
+	if err != nil {
+		return ExecutionLedgerEvent{}, err
+	}
+	evidenceRefs, err := jsonbArray(req.EvidenceRefs, "evidence_refs")
+	if err != nil {
+		return ExecutionLedgerEvent{}, err
+	}
+	metadata, err := jsonbObject(req.Metadata, "metadata")
+	if err != nil {
+		return ExecutionLedgerEvent{}, err
+	}
+	row, err := q.CreateExecutionLedgerEvent(ctx, queries.CreateExecutionLedgerEventParams{
+		TenantID:             req.TenantID,
+		TeamID:               nullUUID(req.TeamID),
+		ProjectID:            req.ProjectID,
+		ProjectTaskID:        nullUUID(req.ProjectTaskID),
+		ProjectTaskAttemptID: nullUUID(req.ProjectTaskAttemptID),
+		EventType:            req.EventType,
+		SourceType:           req.SourceType,
+		SourceID:             req.SourceID,
+		ActorType:            req.ActorType,
+		ActorID:              textPtr(req.ActorID),
+		RuntimeNodeID:        nullUUID(req.RuntimeNodeID),
+		ProviderType:         textPtr(req.ProviderType),
+		ProviderSessionID:    textPtr(req.ProviderSessionID),
+		InputSummary:         textOrNull(req.InputSummary),
+		OutputSummary:        textOrNull(req.OutputSummary),
+		ErrorFamily:          textOrNull(req.ErrorFamily),
+		ErrorCode:            textOrNull(req.ErrorCode),
+		ErrorMessage:         textOrNull(req.ErrorMessage),
+		Retryable:            boolPtr(req.Retryable),
+		ArtifactRefs:         artifactRefs,
+		EvidenceRefs:         evidenceRefs,
+		Metadata:             metadata,
+		OccurredAt:           timestamptzPtr(req.OccurredAt),
+		IdempotencyKey:       req.IdempotencyKey,
+	})
+	if err != nil {
+		return ExecutionLedgerEvent{}, err
+	}
+	return executionLedgerEventFromRecord(row)
+}
+
+func (r *PgRepository) CreateProviderSessionEventLedgerEvent(ctx context.Context, tenantID, digitalEmployeeRunID, providerSessionEventID uuid.UUID) (ExecutionLedgerEvent, error) {
+	row, err := r.q.CreateProviderSessionEventLedgerEvent(ctx, queries.CreateProviderSessionEventLedgerEventParams{
+		DigitalEmployeeRunID:   digitalEmployeeRunID,
+		TenantID:               tenantID,
+		ProviderSessionEventID: providerSessionEventID,
+	})
+	if err != nil {
+		return ExecutionLedgerEvent{}, err
+	}
+	return executionLedgerEventFromRecord(row)
+}
+
+func (r *PgRepository) ListProjectExecutionLedgerEvents(ctx context.Context, req GetExecutionTraceRequest) ([]ExecutionLedgerEvent, error) {
+	rows, err := r.q.ListProjectExecutionLedgerEvents(ctx, queries.ListProjectExecutionLedgerEventsParams{
+		TenantID:             req.TenantID,
+		ProjectID:            req.ProjectID,
+		ProjectTaskID:        nullUUID(req.ProjectTaskID),
+		ProjectTaskAttemptID: nullUUID(req.ProjectTaskAttemptID),
+		EventType:            textPtr(req.EventType),
+		ErrorFamily:          textPtr(req.ErrorFamily),
+		Limit:                req.Limit,
+		Offset:               req.Offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return executionLedgerEventsFromRecords(rows)
+}
+
+func (r *PgRepository) ListProjectTaskAttemptsForExecutionTrace(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectTaskAttempt, error) {
+	rows, err := r.q.ListProjectTaskAttemptsForExecutionTrace(ctx, queries.ListProjectTaskAttemptsForExecutionTraceParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	attempts := make([]ProjectTaskAttempt, 0, len(rows))
+	for _, row := range rows {
+		attempt, err := projectTaskAttemptFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		attempts = append(attempts, attempt)
+	}
+	return attempts, nil
+}
+
 func (r *PgRepository) listProjectExecutionSummariesByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ExecutionSummary, error) {
 	if len(taskIDs) == 0 {
 		return []ExecutionSummary{}, nil
@@ -3931,6 +4028,62 @@ func executionSummaryFromRecord(row queries.ProjectExecutionSummary) (ExecutionS
 		CreatedEventID:        ptrUUID(row.CreatedEventID),
 		CreatedAt:             row.CreatedAt.Time,
 	}, nil
+}
+
+func executionLedgerEventFromRecord(row queries.ExecutionLedgerEvent) (ExecutionLedgerEvent, error) {
+	artifactRefs, err := anySliceFromJSON(row.ArtifactRefs)
+	if err != nil {
+		return ExecutionLedgerEvent{}, fmt.Errorf("artifact_refs: %w", err)
+	}
+	evidenceRefs, err := anySliceFromJSON(row.EvidenceRefs)
+	if err != nil {
+		return ExecutionLedgerEvent{}, fmt.Errorf("evidence_refs: %w", err)
+	}
+	metadata, err := mapFromJSON(row.Metadata)
+	if err != nil {
+		return ExecutionLedgerEvent{}, fmt.Errorf("metadata: %w", err)
+	}
+	return ExecutionLedgerEvent{
+		ID:                   row.ID,
+		TenantID:             row.TenantID,
+		TeamID:               ptrUUID(row.TeamID),
+		ProjectID:            row.ProjectID,
+		ProjectTaskID:        ptrUUID(row.ProjectTaskID),
+		ProjectTaskAttemptID: ptrUUID(row.ProjectTaskAttemptID),
+		EventType:            row.EventType,
+		SourceType:           row.SourceType,
+		SourceID:             row.SourceID,
+		ActorType:            row.ActorType,
+		ActorID:              ptrText(row.ActorID),
+		RuntimeNodeID:        ptrUUID(row.RuntimeNodeID),
+		ProviderType:         ptrText(row.ProviderType),
+		ProviderSessionID:    ptrText(row.ProviderSessionID),
+		InputSummary:         ptrText(row.InputSummary),
+		OutputSummary:        ptrText(row.OutputSummary),
+		ErrorFamily:          ptrText(row.ErrorFamily),
+		ErrorCode:            ptrText(row.ErrorCode),
+		ErrorMessage:         ptrText(row.ErrorMessage),
+		Retryable:            ptrBool(row.Retryable),
+		ArtifactRefs:         artifactRefs,
+		EvidenceRefs:         evidenceRefs,
+		Metadata:             metadata,
+		OccurredAt:           row.OccurredAt.Time,
+		IdempotencyKey:       row.IdempotencyKey,
+		CreatedAt:            row.CreatedAt.Time,
+		UpdatedAt:            row.UpdatedAt.Time,
+	}, nil
+}
+
+func executionLedgerEventsFromRecords(rows []queries.ExecutionLedgerEvent) ([]ExecutionLedgerEvent, error) {
+	events := make([]ExecutionLedgerEvent, 0, len(rows))
+	for _, row := range rows {
+		event, err := executionLedgerEventFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	return events, nil
 }
 
 func transferRequestFromRecord(row queries.ProjectTransferRequest) (TransferRequest, error) {
