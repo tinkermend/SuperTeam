@@ -49,18 +49,27 @@ type RouteDecisionPlan struct {
 }
 
 type PlannedTask struct {
-	Key                   string
-	Title                 string
-	Summary               string
-	SelectedEmployeeID    uuid.UUID
-	TaskKind              string
-	StageIndex            *int32
-	RiskLevel             string
-	RequiresHumanApproval bool
-	ExpectedOutputs       []string
-	InputRequirements     map[string]any
-	HandoffContract       map[string]any
-	BlockedByKeys         []string
+	Key                      string
+	Title                    string
+	Summary                  string
+	SelectedEmployeeID       uuid.UUID
+	EmployeeSelectionReason  string
+	RequiredCapabilities     []string
+	MatchedCapabilities      []string
+	MissingCapabilities      []string
+	PermissionRequirements   []string
+	ToolRequirements         []string
+	RuntimeRequirements      []string
+	VerificationRequirements []string
+	SelectionScore           int
+	TaskKind                 string
+	StageIndex               *int32
+	RiskLevel                string
+	RequiresHumanApproval    bool
+	ExpectedOutputs          []string
+	InputRequirements        map[string]any
+	HandoffContract          map[string]any
+	BlockedByKeys            []string
 }
 
 // activeExecutorIDs returns the active executor members of a coordination snapshot's

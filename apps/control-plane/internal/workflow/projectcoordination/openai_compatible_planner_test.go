@@ -435,6 +435,150 @@ func TestOpenAICompatibleRoutePlannerPromptsIncludeJSONWord(t *testing.T) {
 	require.Contains(t, strings.ToLower(client.req.User), "json")
 }
 
+func TestOpenAICompatiblePlannerPromptIncludesPlanningProfiles(t *testing.T) {
+	employeeID := uuid.New()
+	client := &capturingChatCompletionClient{
+		content: fmt.Sprintf(`{
+			"reason":"按能力选择数据库分析员工",
+			"requires_human_review":false,
+			"tasks":[{
+				"key":"analyze-db",
+				"title":"分析数据库",
+				"summary":"检查慢查询",
+				"selected_employee_id":%q,
+				"employee_selection_reason":"具备 database.read 和 sql.analysis",
+				"required_capabilities":["database.read","sql.analysis"],
+				"matched_capabilities":["database.read","sql.analysis"],
+				"missing_capabilities":[],
+				"permission_requirements":["database.read:dev_database"],
+				"tool_requirements":["mcp:postgres.readonly"],
+				"runtime_requirements":["provider:codex"],
+				"verification_requirements":["只读查询成功"],
+				"selection_score":100,
+				"expected_outputs":["execution_summary"],
+				"input_requirements":{},
+				"handoff_contract":{},
+				"blocked_by_keys":[],
+				"risk_level":"medium",
+				"task_kind":"database_analysis"
+			}],
+			"budget_estimate":{},
+			"template_key":"database_analysis",
+			"planner_metadata":{"provider":"openai-compatible"}
+		}`, employeeID.String()),
+	}
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
+		MaxAttempts: 1,
+	}, client)
+
+	_, err := planner.Plan(context.Background(), CoordinationSnapshot{
+		ProjectID: uuid.New(),
+		Demand: DemandSnapshot{
+			ID:      uuid.New(),
+			Title:   "分析数据库",
+			Content: "检查慢查询",
+		},
+		DigitalEmployeePool: []ProjectMemberSnapshot{{
+			PrincipalID: employeeID,
+			ProjectRole: "executor",
+			Status:      "active",
+			DisplayName: "数据库员工",
+			PlanningProfile: &DigitalEmployeePlanningProfile{
+				DigitalEmployeeID: employeeID,
+				RoleProfile: PlanningRoleProfile{
+					PrimaryRole: "data_analyst",
+				},
+				Capabilities: []PlanningCapability{{
+					Key:        "database.read",
+					Level:      "strong",
+					Source:     "test",
+					Confidence: 1,
+				}},
+				Skills: []PlanningSkill{{
+					Key:    "sql.analysis",
+					Source: "test",
+				}},
+				ToolBindings: []PlanningToolBinding{{
+					Type:   "mcp",
+					Key:    "postgres.readonly",
+					Status: "available",
+				}},
+				RuntimeRequirements: PlanningRuntimeRequirements{
+					ProviderTypes:  []string{"codex"},
+					ProviderStatus: "ready",
+				},
+				Permissions: []PlanningPermission{{
+					Scope:    "database.read",
+					Resource: "dev_database",
+					Status:   "granted",
+				}},
+				LoadState: PlanningLoadState{
+					AvailableSlots: 1,
+					Lendable:       true,
+				},
+				ProfileFreshness: PlanningProfileFreshness{
+					SourceState: "ready",
+				},
+			},
+		}},
+	})
+
+	require.NoError(t, err)
+	require.Contains(t, client.req.User, `"planning_profile"`)
+	require.Contains(t, client.req.User, `"database.read"`)
+	require.Contains(t, client.req.System, "employee_selection_reason")
+	require.Contains(t, client.req.System, "required_capabilities")
+}
+
+func TestOpenAICompatiblePlannerDecodesSelectionEvidence(t *testing.T) {
+	employeeID := uuid.New()
+	content := fmt.Sprintf(`{
+		"reason":"按能力选择",
+		"requires_human_review":false,
+		"tasks":[{
+			"key":"analyze-db",
+			"title":"分析数据库",
+			"summary":"检查慢查询",
+			"selected_employee_id":%q,
+			"employee_selection_reason":"具备 database.read 和 sql.analysis",
+			"required_capabilities":["database.read","sql.analysis"],
+			"matched_capabilities":["database.read","sql.analysis"],
+			"missing_capabilities":[],
+			"permission_requirements":["database.read:dev_database"],
+			"tool_requirements":["mcp:postgres.readonly"],
+			"runtime_requirements":["provider:codex"],
+			"verification_requirements":["只读查询成功"],
+			"selection_score":100,
+			"expected_outputs":["execution_summary"],
+			"input_requirements":{},
+			"handoff_contract":{},
+			"blocked_by_keys":[],
+			"risk_level":"medium",
+			"task_kind":"database_analysis"
+		}],
+		"budget_estimate":{},
+		"template_key":"database_analysis",
+		"planner_metadata":{}
+	}`, employeeID.String())
+
+	plan, err := decodePlannerJSON(content)
+
+	require.NoError(t, err)
+	task := plan.Tasks[0]
+	require.Equal(t, "具备 database.read 和 sql.analysis", task.EmployeeSelectionReason)
+	require.Equal(t, []string{"database.read", "sql.analysis"}, task.RequiredCapabilities)
+	require.Equal(t, []string{"database.read", "sql.analysis"}, task.MatchedCapabilities)
+	require.Empty(t, task.MissingCapabilities)
+	require.Equal(t, []string{"database.read:dev_database"}, task.PermissionRequirements)
+	require.Equal(t, []string{"mcp:postgres.readonly"}, task.ToolRequirements)
+	require.Equal(t, []string{"provider:codex"}, task.RuntimeRequirements)
+	require.Equal(t, []string{"只读查询成功"}, task.VerificationRequirements)
+	require.Equal(t, 100, task.SelectionScore)
+}
+
 func TestSanitizePlannerMetadataRemovesPromptAndRawVariants(t *testing.T) {
 	metadata := sanitizePlannerMetadata(map[string]any{
 		"provider":     "openai-compatible",
