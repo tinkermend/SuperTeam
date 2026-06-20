@@ -44,6 +44,9 @@ export type AuthzOverviewResponse = {
     engine: string;
     status: string;
     engine_version?: string | null;
+    openfga_store_id?: string | null;
+    openfga_model_id?: string | null;
+    recent_diff_count: number;
   };
   totals: {
     total: number;

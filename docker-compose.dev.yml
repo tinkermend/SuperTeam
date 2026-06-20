@@ -65,7 +65,36 @@ services:
       exit 0;
       "
 
+  openfga-migrate:
+    image: openfga/openfga:latest
+    container_name: superteam-openfga-migrate-dev
+    command: migrate
+    environment:
+      OPENFGA_DATASTORE_ENGINE: sqlite
+      OPENFGA_DATASTORE_URI: file:/tmp/openfga.db
+    volumes:
+      - openfga_data:/tmp
+
+  openfga:
+    image: openfga/openfga:latest
+    container_name: superteam-openfga-dev
+    command: run
+    depends_on:
+      openfga-migrate:
+        condition: service_completed_successfully
+    environment:
+      OPENFGA_DATASTORE_ENGINE: sqlite
+      OPENFGA_DATASTORE_URI: file:/tmp/openfga.db
+      OPENFGA_PLAYGROUND_ENABLED: "true"
+    ports:
+      - "8088:8080"
+      - "8089:8081"
+      - "3008:3000"
+    volumes:
+      - openfga_data:/tmp
+
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  openfga_data:

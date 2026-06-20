@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/superteam/control-plane/internal/api"
 	"github.com/superteam/control-plane/internal/artifact"
+	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/config"
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/project"
@@ -193,6 +194,53 @@ func TestNewContainerWithConfigWiresTemporalOnlyWhenEnabled(t *testing.T) {
 	enabled.TemporalClientClose()
 }
 
+func TestNewContainerWithConfigWiresOpenFGAShadowAuthorizer(t *testing.T) {
+	stores := newTestStorageClients(t)
+
+	container, err := NewContainerWithConfig(stores, config.Config{
+		Authz: config.AuthzConfig{
+			Engine: "openfga_shadow",
+			OpenFGA: config.OpenFGAConfig{
+				APIURL:  "http://127.0.0.1:8088",
+				StoreID: "store-1",
+				ModelID: "model-1",
+			},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("new container: %v", err)
+	}
+	if _, ok := container.Authorizer.(*authz.ShadowAuthorizer); !ok {
+		t.Fatalf("expected shadow authorizer, got %T", container.Authorizer)
+	}
+	assertUnexportedFieldType(t, container.ProjectService, "teamScopeAuthorizer", "*project.TeamScopeShadowAuthorizer")
+	assertUnexportedFieldType(t, container.AuthService, "projectTeamScopeSyncer", "*authz.OpenFGATupleSyncer")
+}
+
+func TestNewContainerWithConfigWiresOpenFGAAuthorizer(t *testing.T) {
+	stores := newTestStorageClients(t)
+
+	container, err := NewContainerWithConfig(stores, config.Config{
+		Authz: config.AuthzConfig{
+			Engine: "openfga",
+			OpenFGA: config.OpenFGAConfig{
+				APIURL:  "http://127.0.0.1:8088",
+				StoreID: "store-1",
+				ModelID: "model-1",
+			},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("new container: %v", err)
+	}
+	if _, ok := container.Authorizer.(*authz.OpenFGAAuthorizer); !ok {
+		t.Fatalf("expected openfga authorizer, got %T", container.Authorizer)
+	}
+	assertUnexportedFieldType(t, container.AuthService, "projectTeamScopeSyncer", "*authz.OpenFGATupleSyncer")
+}
+
 func TestRunStartRetryableClassifiesRunStartFailures(t *testing.T) {
 	t.Parallel()
 
@@ -343,6 +391,28 @@ func assertNonNilUnexportedField(t *testing.T, owner any, fieldName string) {
 	}
 	if field.IsNil() {
 		t.Fatalf("expected %T.%s to be wired", owner, fieldName)
+	}
+}
+
+func assertUnexportedFieldType(t *testing.T, owner any, fieldName, typeName string) {
+	t.Helper()
+
+	value := reflect.ValueOf(owner)
+	if value.Kind() == reflect.Pointer {
+		value = value.Elem()
+	}
+	field := value.FieldByName(fieldName)
+	if !field.IsValid() {
+		t.Fatalf("expected %T to have field %q", owner, fieldName)
+	}
+	if field.Kind() != reflect.Interface {
+		t.Fatalf("expected %T.%s to be interface, got %s", owner, fieldName, field.Kind())
+	}
+	if field.IsNil() {
+		t.Fatalf("expected %T.%s to be wired", owner, fieldName)
+	}
+	if got := field.Elem().Type().String(); got != typeName {
+		t.Fatalf("expected %s, got %s", typeName, got)
 	}
 }
 

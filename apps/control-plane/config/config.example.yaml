@@ -26,6 +26,17 @@ temporal:
   namespace: "default"
   taskQueue: "superteam-project-coordination"
 
+authz:
+  # Default keeps PostgreSQL business tables as the effective permission source.
+  # Local OpenFGA shadow trial:
+  # engine: "openfga_shadow"
+  # openfga:
+  #   apiUrl: "http://127.0.0.1:8088"
+  #   storeId: "replace-with-openfga-store-id"
+  #   modelId: "replace-with-openfga-model-id"
+  #   apiToken: ""
+  engine: "db"
+
 planner:
   provider: "openai-compatible"
   apiKey: "replace-with-planner-api-key"

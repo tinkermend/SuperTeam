@@ -23,6 +23,18 @@ WHERE module = 'authz'
   AND tenant_id = sqlc.arg('tenant_id')::uuid
   AND created_at >= sqlc.arg('since')::timestamptz;
 
+-- name: CountAuthzDecisionDiffsSince :one
+SELECT COUNT(*)::bigint AS diff_count
+FROM web_operation_logs
+WHERE module = 'authz'
+  AND tenant_id = sqlc.arg('tenant_id')::uuid
+  AND created_at >= sqlc.arg('since')::timestamptz
+  AND (
+    details->'snapshot'->>'diff' = 'true'
+    OR details->>'diff' = 'true'
+    OR details->'decision'->'snapshot'->>'diff' = 'true'
+  );
+
 -- name: ListTopDeniedAuthzActionsSince :many
 SELECT action, COUNT(*)::bigint AS count
 FROM web_operation_logs

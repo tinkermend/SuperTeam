@@ -16,6 +16,7 @@ type Config struct {
 	ObjectStore ObjectStoreConfig `yaml:"objectStore"`
 	Temporal    TemporalConfig    `yaml:"temporal"`
 	Planner     PlannerConfig     `yaml:"planner"`
+	Authz       AuthzConfig       `yaml:"authz"`
 }
 
 type HTTPConfig struct {
@@ -54,6 +55,18 @@ type PlannerConfig struct {
 	MaxTokens   int     `yaml:"maxTokens"`
 	Temperature float64 `yaml:"temperature"`
 	MaxAttempts int     `yaml:"maxAttempts"`
+}
+
+type AuthzConfig struct {
+	Engine  string        `yaml:"engine"`
+	OpenFGA OpenFGAConfig `yaml:"openfga"`
+}
+
+type OpenFGAConfig struct {
+	APIURL   string `yaml:"apiUrl"`
+	StoreID  string `yaml:"storeId"`
+	ModelID  string `yaml:"modelId"`
+	APIToken string `yaml:"apiToken"`
 }
 
 func LoadFromEnv() (Config, error) {
@@ -105,6 +118,9 @@ func defaultConfig() Config {
 			Temperature: 0,
 			MaxAttempts: 2,
 		},
+		Authz: AuthzConfig{
+			Engine: "db",
+		},
 	}
 }
 
@@ -145,10 +161,34 @@ func applyEnv(cfg Config) Config {
 			cfg.Planner.MaxAttempts = parsed
 		}
 	}
+	cfg.Authz.Engine = envOrDefault("AUTHZ_ENGINE", cfg.Authz.Engine)
+	cfg.Authz.OpenFGA.APIURL = envOrDefault("OPENFGA_API_URL", cfg.Authz.OpenFGA.APIURL)
+	cfg.Authz.OpenFGA.StoreID = envOrDefault("OPENFGA_STORE_ID", cfg.Authz.OpenFGA.StoreID)
+	cfg.Authz.OpenFGA.ModelID = envOrDefault("OPENFGA_MODEL_ID", cfg.Authz.OpenFGA.ModelID)
+	cfg.Authz.OpenFGA.APIToken = envOrDefault("OPENFGA_API_TOKEN", cfg.Authz.OpenFGA.APIToken)
 	return cfg
 }
 
 func (cfg Config) validate() error {
+	if cfg.Authz.Engine == "" {
+		cfg.Authz.Engine = "db"
+	}
+	switch cfg.Authz.Engine {
+	case "db", "openfga_shadow", "openfga":
+	default:
+		return errors.New("AUTHZ_ENGINE must be one of db, openfga_shadow, openfga")
+	}
+	if cfg.Authz.Engine != "db" {
+		if strings.TrimSpace(cfg.Authz.OpenFGA.APIURL) == "" {
+			return errors.New("OPENFGA_API_URL is required when AUTHZ_ENGINE uses OpenFGA")
+		}
+		if strings.TrimSpace(cfg.Authz.OpenFGA.StoreID) == "" {
+			return errors.New("OPENFGA_STORE_ID is required when AUTHZ_ENGINE uses OpenFGA")
+		}
+		if strings.TrimSpace(cfg.Authz.OpenFGA.ModelID) == "" {
+			return errors.New("OPENFGA_MODEL_ID is required when AUTHZ_ENGINE uses OpenFGA")
+		}
+	}
 	if strings.TrimSpace(cfg.Postgres.URL) == "" {
 		return errors.New("DATABASE_URL is required")
 	}

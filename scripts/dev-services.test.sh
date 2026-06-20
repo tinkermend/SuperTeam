@@ -10,6 +10,10 @@ cleanup() {
     if [ -x "$SCRIPT" ]; then
         SUPERTEAM_DEV_PID_DIR="$TMP_DIR/pids" \
         SUPERTEAM_DEV_LOG_DIR="$TMP_DIR/logs" \
+        SUPERTEAM_DEV_OPENFGA_WAIT_URL="" \
+        bash "$SCRIPT" stop openfga >/dev/null 2>&1 || true
+        SUPERTEAM_DEV_PID_DIR="$TMP_DIR/pids" \
+        SUPERTEAM_DEV_LOG_DIR="$TMP_DIR/logs" \
         bash "$SCRIPT" stop all >/dev/null 2>&1 || true
     fi
     rm -rf "$TMP_DIR"
@@ -83,3 +87,42 @@ run_script status all >"$TMP_DIR/status-stopped.out"
 assert_contains "$TMP_DIR/status-stopped.out" "control-plane: stopped"
 assert_contains "$TMP_DIR/status-stopped.out" "web: stopped"
 assert_contains "$TMP_DIR/status-stopped.out" "runtime-agent: stopped"
+
+FAKE_BIN="$TMP_DIR/bin"
+mkdir -p "$FAKE_BIN"
+cat >"$FAKE_BIN/openfga" <<'FAKE_OPENFGA'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+    migrate)
+        echo "migrate $*" >>"$SUPERTEAM_FAKE_OPENFGA_LOG"
+        exit 0
+        ;;
+    run)
+        echo "run $*" >>"$SUPERTEAM_FAKE_OPENFGA_LOG"
+        sleep 60
+        ;;
+    *)
+        echo "unexpected openfga command: $*" >&2
+        exit 1
+        ;;
+esac
+FAKE_OPENFGA
+chmod +x "$FAKE_BIN/openfga"
+
+export PATH="$FAKE_BIN:$PATH"
+export SUPERTEAM_FAKE_OPENFGA_LOG="$TMP_DIR/openfga-fake.log"
+export SUPERTEAM_DEV_OPENFGA_WAIT_URL=""
+export SUPERTEAM_DEV_OPENFGA_DATASTORE_URI="file:$TMP_DIR/openfga.db"
+
+run_script start openfga >"$TMP_DIR/start-openfga.out"
+assert_pid_running openfga
+assert_contains "$SUPERTEAM_FAKE_OPENFGA_LOG" "migrate migrate --datastore-engine sqlite --datastore-uri file:$TMP_DIR/openfga.db"
+assert_contains "$SUPERTEAM_FAKE_OPENFGA_LOG" "run run --datastore-engine sqlite --datastore-uri file:$TMP_DIR/openfga.db"
+
+run_script status openfga >"$TMP_DIR/status-openfga-running.out"
+assert_contains "$TMP_DIR/status-openfga-running.out" "openfga: running"
+
+run_script stop openfga >"$TMP_DIR/stop-openfga.out"
+run_script status openfga >"$TMP_DIR/status-openfga-stopped.out"
+assert_contains "$TMP_DIR/status-openfga-stopped.out" "openfga: stopped"

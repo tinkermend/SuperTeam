@@ -35,6 +35,10 @@ func (s *Service) GetOverview(ctx context.Context, actor Actor) (Overview, error
 	if err != nil {
 		return Overview{}, err
 	}
+	recentDiffCount, err := s.repo.CountDecisionDiffsSince(ctx, actor.TenantID, since)
+	if err != nil {
+		return Overview{}, err
+	}
 	topDenied, err := s.repo.ListTopDeniedActionsSince(ctx, actor.TenantID, since, 5)
 	if err != nil {
 		return Overview{}, err
@@ -43,12 +47,24 @@ func (s *Service) GetOverview(ctx context.Context, actor Actor) (Overview, error
 	if err != nil {
 		return Overview{}, err
 	}
+	engine := EngineStatus{
+		Engine:        "db",
+		Status:        "healthy",
+		EngineVersion: "db-authorizer-v1",
+	}
+	if reporter, ok := s.authorizer.(authz.EngineReporter); ok {
+		status := reporter.AuthzEngineStatus()
+		engine = EngineStatus{
+			Engine:         status.Engine,
+			Status:         status.Status,
+			EngineVersion:  status.EngineVersion,
+			OpenFGAStoreID: status.OpenFGAStoreID,
+			OpenFGAModelID: status.OpenFGAModelID,
+		}
+	}
+	engine.RecentDiffCount = recentDiffCount
 	return Overview{
-		Engine: EngineStatus{
-			Engine:        "db",
-			Status:        "healthy",
-			EngineVersion: "db-authorizer-v1",
-		},
+		Engine:           engine,
 		Totals:           totals,
 		TopDeniedActions: topDenied,
 		RecentEvents:     recent,

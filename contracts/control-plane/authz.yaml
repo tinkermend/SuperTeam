@@ -263,7 +263,7 @@ components:
 
     AuthzEngineStatus:
       type: object
-      required: [engine, status]
+      required: [engine, status, recent_diff_count]
       properties:
         engine:
           type: string
@@ -275,6 +275,18 @@ components:
           type: string
           nullable: true
           example: db-authorizer-v1
+        openfga_store_id:
+          type: string
+          nullable: true
+          example: 01JZOPENFGASTORE
+        openfga_model_id:
+          type: string
+          nullable: true
+          example: 01JZOPENFGAMODEL
+        recent_diff_count:
+          type: integer
+          format: int64
+          example: 0
 
     AuthzTotals:
       type: object

@@ -27,6 +27,10 @@ type fakeAuthzQueryStore struct {
 	runtimeParams       queries.RuntimeNodeCoversTaskScopeParams
 	runtimeOK           bool
 	runtimeErr          error
+	openFGAMembers      []queries.ListOpenFGAMembersRow
+	openFGAMembersErr   error
+	openFGAScopes       []queries.ListOpenFGAProjectTeamScopesRow
+	openFGAScopesErr    error
 }
 
 func (s *fakeAuthzQueryStore) GetActiveTenantMembership(ctx context.Context, params queries.GetActiveTenantMembershipParams) (queries.TenantMember, error) {
@@ -47,6 +51,14 @@ func (s *fakeAuthzQueryStore) GetDigitalEmployeeAuthzScope(ctx context.Context, 
 func (s *fakeAuthzQueryStore) RuntimeNodeCoversTaskScope(ctx context.Context, params queries.RuntimeNodeCoversTaskScopeParams) (bool, error) {
 	s.runtimeParams = params
 	return s.runtimeOK, s.runtimeErr
+}
+
+func (s *fakeAuthzQueryStore) ListOpenFGAMembers(ctx context.Context) ([]queries.ListOpenFGAMembersRow, error) {
+	return s.openFGAMembers, s.openFGAMembersErr
+}
+
+func (s *fakeAuthzQueryStore) ListOpenFGAProjectTeamScopes(ctx context.Context) ([]queries.ListOpenFGAProjectTeamScopesRow, error) {
+	return s.openFGAScopes, s.openFGAScopesErr
 }
 
 func TestPgRepositoryMapsTenantMembership(t *testing.T) {
@@ -107,6 +119,44 @@ func TestPgRepositoryMapsTeamMembership(t *testing.T) {
 	require.NotNil(t, membership.TeamID)
 	require.Equal(t, teamID, *membership.TeamID)
 	require.Equal(t, RoleMember, membership.Role)
+}
+
+func TestPgRepositoryListsOpenFGATuples(t *testing.T) {
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	userID := uuid.New()
+	store := &fakeAuthzQueryStore{
+		openFGAMembers: []queries.ListOpenFGAMembersRow{
+			{
+				TenantID:      tenantID,
+				PrincipalType: ActorUser,
+				PrincipalID:   userID,
+				Role:          RoleAdmin,
+				Status:        "active",
+			},
+			{
+				TenantID:      tenantID,
+				TeamID:        uuid.NullUUID{UUID: teamID, Valid: true},
+				PrincipalType: ActorUser,
+				PrincipalID:   userID,
+				Role:          RoleMember,
+				Status:        "active",
+			},
+		},
+		openFGAScopes: []queries.ListOpenFGAProjectTeamScopesRow{
+			{TenantID: tenantID, UserID: userID, TeamID: teamID, Status: "active"},
+		},
+	}
+	repo := NewPgRepository(store)
+
+	tuples, err := repo.ListOpenFGATuples(context.Background())
+
+	require.NoError(t, err)
+	require.ElementsMatch(t, []OpenFGATuple{
+		{User: "user:" + userID.String(), Relation: OpenFGARelationAdmin, Object: "tenant:" + tenantID.String()},
+		{User: "user:" + userID.String(), Relation: OpenFGARelationMember, Object: "team:" + teamID.String()},
+		{User: "user:" + userID.String(), Relation: OpenFGARelationProjectScopeUser, Object: "team:" + teamID.String()},
+	}, tuples)
 }
 
 func TestPgRepositoryMapsDigitalEmployeeAuthzScope(t *testing.T) {

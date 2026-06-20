@@ -245,9 +245,12 @@ type AuthzDecisionRecordResult string
 
 // AuthzEngineStatus defines model for AuthzEngineStatus.
 type AuthzEngineStatus struct {
-	Engine        string  `json:"engine"`
-	EngineVersion *string `json:"engine_version,omitempty"`
-	Status        string  `json:"status"`
+	Engine          string  `json:"engine"`
+	EngineVersion   *string `json:"engine_version,omitempty"`
+	OpenfgaModelId  *string `json:"openfga_model_id,omitempty"`
+	OpenfgaStoreId  *string `json:"openfga_store_id,omitempty"`
+	RecentDiffCount int64   `json:"recent_diff_count"`
+	Status          string  `json:"status"`
 }
 
 // AuthzMemberListResponse defines model for AuthzMemberListResponse.

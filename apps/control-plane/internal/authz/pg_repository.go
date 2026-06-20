@@ -17,6 +17,8 @@ type QueryStore interface {
 	GetActiveTenantMembership(ctx context.Context, params queries.GetActiveTenantMembershipParams) (queries.TenantMember, error)
 	GetActiveTeamMembership(ctx context.Context, params queries.GetActiveTeamMembershipParams) (queries.TenantMember, error)
 	GetDigitalEmployeeAuthzScope(ctx context.Context, params queries.GetDigitalEmployeeAuthzScopeParams) (queries.GetDigitalEmployeeAuthzScopeRow, error)
+	ListOpenFGAMembers(ctx context.Context) ([]queries.ListOpenFGAMembersRow, error)
+	ListOpenFGAProjectTeamScopes(ctx context.Context) ([]queries.ListOpenFGAProjectTeamScopesRow, error)
 	RuntimeNodeCoversTaskScope(ctx context.Context, params queries.RuntimeNodeCoversTaskScopeParams) (bool, error)
 }
 
@@ -87,11 +89,52 @@ func (r *PgRepository) RuntimeNodeCoversTaskScope(ctx context.Context, params Ru
 	})
 }
 
+func (r *PgRepository) ListOpenFGATuples(ctx context.Context) ([]OpenFGATuple, error) {
+	if r == nil || r.q == nil {
+		return nil, nil
+	}
+	members, err := r.q.ListOpenFGAMembers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scopes, err := r.q.ListOpenFGAProjectTeamScopes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tuples := make([]OpenFGATuple, 0, len(members)+len(scopes))
+	for _, member := range members {
+		if tuple, ok := OpenFGATupleForMembership(membershipFromOpenFGAMember(member)); ok {
+			tuples = append(tuples, tuple)
+		}
+	}
+	for _, scope := range scopes {
+		if tuple, ok := OpenFGATupleForProjectTeamScope(scope.TenantID, scope.UserID, scope.TeamID, scope.Status); ok {
+			tuples = append(tuples, tuple)
+		}
+	}
+	return tuples, nil
+}
+
 func timestamptz(value time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: value, Valid: true}
 }
 
 func membershipFromTenantMember(member queries.TenantMember) Membership {
+	var teamID *uuid.UUID
+	if member.TeamID.Valid {
+		teamID = &member.TeamID.UUID
+	}
+	return Membership{
+		TenantID:      member.TenantID,
+		TeamID:        teamID,
+		PrincipalType: member.PrincipalType,
+		PrincipalID:   member.PrincipalID,
+		Role:          member.Role,
+		Status:        member.Status,
+	}
+}
+
+func membershipFromOpenFGAMember(member queries.ListOpenFGAMembersRow) Membership {
 	var teamID *uuid.UUID
 	if member.TeamID.Valid {
 		teamID = &member.TeamID.UUID

@@ -444,7 +444,38 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	authzRepository := authz.NewPgRepository(q)
 	authzRecorder := authz.NewOperationLogDecisionRecorder(q)
-	authorizer := authz.NewDBAuthorizer(authzRepository, authzRecorder)
+	dbAuthorizer := authz.NewDBAuthorizer(authzRepository, authzRecorder)
+	var authorizer authz.Authorizer = dbAuthorizer
+	if cfg.Authz.Engine == "openfga_shadow" || cfg.Authz.Engine == "openfga" {
+		openFGAClient := authz.NewOpenFGAHTTPClient(authz.OpenFGAClientConfig{
+			APIURL:   cfg.Authz.OpenFGA.APIURL,
+			StoreID:  cfg.Authz.OpenFGA.StoreID,
+			ModelID:  cfg.Authz.OpenFGA.ModelID,
+			APIToken: cfg.Authz.OpenFGA.APIToken,
+		})
+		authService.SetProjectTeamScopeSyncer(authz.NewOpenFGATupleSyncer(openFGAClient, authzRepository))
+		switch cfg.Authz.Engine {
+		case "openfga_shadow":
+			authorizer = authz.NewShadowAuthorizer(dbAuthorizer, openFGAClient, authz.ShadowOptions{
+				Recorder: authzRecorder,
+				StoreID:  cfg.Authz.OpenFGA.StoreID,
+				ModelID:  cfg.Authz.OpenFGA.ModelID,
+			})
+			if teamScopeAuthorizer, ok := projectRepository.(project.ProjectTeamScopeAuthorizer); ok {
+				projectService.SetTeamScopeAuthorizer(project.NewTeamScopeShadowAuthorizer(teamScopeAuthorizer, openFGAClient, project.TeamScopeShadowOptions{
+					Recorder: authzRecorder,
+					StoreID:  cfg.Authz.OpenFGA.StoreID,
+					ModelID:  cfg.Authz.OpenFGA.ModelID,
+				}))
+			}
+		case "openfga":
+			authorizer = authz.NewOpenFGAAuthorizer(openFGAClient, authz.OpenFGAAuthorizerOptions{
+				Recorder: authzRecorder,
+				StoreID:  cfg.Authz.OpenFGA.StoreID,
+				ModelID:  cfg.Authz.OpenFGA.ModelID,
+			})
+		}
+	}
 	authzCenterRepository := authzcenter.NewPgRepository(q)
 	authzCenterService := authzcenter.NewService(authzCenterRepository, authorizer)
 	authzCenterHandler := authzcenter.NewHandler(authzCenterService, authService)

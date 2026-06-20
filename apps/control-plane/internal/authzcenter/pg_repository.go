@@ -14,6 +14,7 @@ import (
 )
 
 type PgQueryStore interface {
+	CountAuthzDecisionDiffsSince(ctx context.Context, params queries.CountAuthzDecisionDiffsSinceParams) (int64, error)
 	CountAuthzDecisionsSince(ctx context.Context, params queries.CountAuthzDecisionsSinceParams) (queries.CountAuthzDecisionsSinceRow, error)
 	ListTopDeniedAuthzActionsSince(ctx context.Context, params queries.ListTopDeniedAuthzActionsSinceParams) ([]queries.ListTopDeniedAuthzActionsSinceRow, error)
 	ListAuthzDecisions(ctx context.Context, params queries.ListAuthzDecisionsParams) ([]queries.WebOperationLog, error)
@@ -41,6 +42,13 @@ func (r *PgRepository) CountDecisionsSince(ctx context.Context, tenantID uuid.UU
 		return DecisionTotals{}, err
 	}
 	return DecisionTotals{Total: row.Total, Allowed: row.Allowed, Denied: row.Denied}, nil
+}
+
+func (r *PgRepository) CountDecisionDiffsSince(ctx context.Context, tenantID uuid.UUID, since time.Time) (int64, error) {
+	return r.q.CountAuthzDecisionDiffsSince(ctx, queries.CountAuthzDecisionDiffsSinceParams{
+		TenantID: tenantID,
+		Since:    pgtype.Timestamptz{Time: since, Valid: true},
+	})
 }
 
 func (r *PgRepository) ListTopDeniedActionsSince(ctx context.Context, tenantID uuid.UUID, since time.Time, limit int32) ([]ActionCount, error) {
