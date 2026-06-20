@@ -81,6 +81,7 @@ func TestRuntimeProjectTaskAttemptRoutesRegistered(t *testing.T) {
 		"/api/v1/runtime/project-task-attempts/" + attemptID + "/lease",
 		"/api/v1/runtime/project-task-attempts/" + attemptID + "/complete",
 		"/api/v1/runtime/project-task-attempts/" + attemptID + "/fail",
+		"/api/v1/runtime/project-task-attempts/" + attemptID + "/wait-human",
 	} {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 		req.Header.Set("Content-Type", "application/json")

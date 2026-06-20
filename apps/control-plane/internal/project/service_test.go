@@ -276,6 +276,32 @@ func TestFailProjectTaskAttemptNonRetryableExecutionFailsTask(t *testing.T) {
 	require.Equal(t, "output contract cannot be parsed", *repo.projectTaskAttempts[0].FailureMessage)
 }
 
+func TestWaitHumanProjectTaskAttemptMovesTaskAndCreatesDecisionRequest(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	employeeID := *repo.tasks[0].AssignedDigitalEmployeeID
+
+	task, err := service.WaitHumanProjectTaskAttempt(context.Background(), WaitHumanProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-wait-human-1"),
+		DigitalEmployeeID:                employeeID,
+		Reason:                           HumanWaitReasonMissingContext,
+		Summary:                          "Need customer scope",
+		MissingContextRefs:               []any{"customer_scope"},
+		SuggestedResolutionOptions:       []string{HumanWaitResolutionResumeSameTask},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status)
+	require.NotNil(t, task.WaitingReason)
+	require.Equal(t, HumanWaitReasonMissingContext, *task.WaitingReason)
+	require.Equal(t, ProjectTaskAttemptStatusWaitingHuman, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.decisionRequests, 1)
+	require.Equal(t, "project_task_missing_context", repo.decisionRequests[0].DecisionType)
+	require.Equal(t, ProjectEventTaskWaitingHuman, repo.eventTypes[len(repo.eventTypes)-1])
+}
+
 func TestProjectTaskAttemptRejectsWrongRuntimeNode(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -5011,6 +5037,69 @@ func (r *memoryRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context
 		r.restoreWritebackSnapshot(snapshot)
 		return ProjectTaskWritebackResult{}, ErrInvalidProject
 	}
+}
+
+func (r *memoryRepository) WaitHumanProjectTaskAttemptWriteback(ctx context.Context, req WaitHumanProjectTaskAttemptWritebackRequest) (ProjectTaskWritebackResult, error) {
+	snapshot := r.writebackSnapshot()
+	event, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.Wait.TenantID,
+		ProjectID:    req.Task.ProjectID,
+		EventType:    ProjectEventTaskWaitingHuman,
+		ActorType:    "digital_employee",
+		ActorID:      req.Wait.DigitalEmployeeID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(req.Task.ID.String()),
+		Summary:      req.Wait.Summary,
+		Payload: map[string]any{
+			"project_task_id":              req.Wait.ProjectTaskID.String(),
+			"project_task_attempt_id":      req.Wait.AttemptID.String(),
+			"reason":                       req.Wait.Reason,
+			"summary":                      req.Wait.Summary,
+			"missing_context_refs":         sliceOrEmptyAny(req.Wait.MissingContextRefs),
+			"suggested_resolution_options": req.Wait.SuggestedResolutionOptions,
+		},
+	})
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	if err := r.finishProjectTaskAttempt(req.Wait.TenantID, req.Wait.AttemptID, ProjectTaskAttemptStatusWaitingHuman, &event.ID, nil, nil, &req.Wait.Summary); err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	decisionReq := req.Decision
+	decisionReq.CreatedEventID = &event.ID
+	decision, err := r.CreateDecisionRequest(ctx, decisionReq)
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	task, err := r.moveProjectTaskToWaitingHumanWithRequest(req.Wait.TenantID, req.Wait.ProjectTaskID, req.Wait.Reason, &decision.ID)
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	return ProjectTaskWritebackResult{Task: task, Event: event, Decision: decision}, nil
+}
+
+func (r *memoryRepository) moveProjectTaskToWaitingHumanWithRequest(tenantID, projectTaskID uuid.UUID, waitingReason string, waitingRequestID *uuid.UUID) (ProjectTask, error) {
+	for index, task := range r.tasks {
+		if task.TenantID != tenantID || task.ID != projectTaskID {
+			continue
+		}
+		if task.Status != ProjectTaskStatusQueued && task.Status != ProjectTaskStatusRunning {
+			return ProjectTask{}, ErrProjectConflict
+		}
+		now := time.Now().UTC()
+		task.Status = ProjectTaskStatusWaitingHuman
+		task.WaitingReason = &waitingReason
+		task.WaitingRequestID = waitingRequestID
+		task.StatusChangedAt = now
+		task.UpdatedAt = now
+		r.tasks[index] = task
+		return task, nil
+	}
+	return ProjectTask{}, ErrProjectNotFound
 }
 
 func (r *memoryRepository) scheduleProjectTaskRetry(req RecoverProjectTaskAttemptFailureWritebackRequest, eventID *uuid.UUID) (ProjectTask, error) {

@@ -84,6 +84,7 @@ const (
 	ProjectEventTaskDispatched          ProjectEventType = "project_task.dispatched"
 	ProjectEventTaskDispatchFailed      ProjectEventType = "project_task.dispatch_failed"
 	ProjectEventTaskContractMissing     ProjectEventType = "project_task.contract_missing"
+	ProjectEventTaskWaitingHuman        ProjectEventType = "project_task.waiting_human"
 	ProjectEventTaskCancelled           ProjectEventType = "project_task.cancelled"
 	ProjectEventTaskCompleted           ProjectEventType = "project_task.completed"
 	ProjectEventTaskFailed              ProjectEventType = "project_task.failed"

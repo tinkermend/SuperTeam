@@ -381,6 +381,7 @@ func (s *Server) registerRoutes() {
 						r.Post("/lease", s.projectHandler.RenewProjectTaskAttemptLease)
 						r.Post("/complete", s.projectHandler.CompleteProjectTaskAttempt)
 						r.Post("/fail", s.projectHandler.FailProjectTaskAttempt)
+						r.Post("/wait-human", s.projectHandler.WaitHumanProjectTaskAttempt)
 					})
 				}
 				r.Get("/ws", s.runtimeHandler.WebSocket)

@@ -1970,6 +1970,56 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 	return &result.Task, nil
 }
 
+func (s *Service) WaitHumanProjectTaskAttempt(ctx context.Context, req WaitHumanProjectTaskAttemptRequest) (*ProjectTask, error) {
+	req.Reason = strings.TrimSpace(req.Reason)
+	req.Summary = strings.TrimSpace(req.Summary)
+	if req.Reason == "" || req.Summary == "" || !validHumanWaitReason(req.Reason) {
+		return nil, ErrInvalidProject
+	}
+	task, attempt, err := s.validateAttemptRuntimeRequest(ctx, req.ProjectTaskAttemptRuntimeRequest)
+	if err != nil {
+		return nil, err
+	}
+	digitalEmployeeID, err := digitalEmployeeIDForProjectTask(task)
+	if err != nil {
+		return nil, err
+	}
+	if req.DigitalEmployeeID != uuid.Nil && req.DigitalEmployeeID != digitalEmployeeID {
+		return nil, ErrProjectTaskForbidden
+	}
+	req.DigitalEmployeeID = digitalEmployeeID
+	projectRecord, err := s.repository.GetProject(ctx, req.TenantID, task.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	writebackRepository, err := s.projectTaskAttemptWritebackRepository()
+	if err != nil {
+		return nil, err
+	}
+	result, err := writebackRepository.WaitHumanProjectTaskAttemptWriteback(ctx, WaitHumanProjectTaskAttemptWritebackRequest{
+		Task:    task,
+		Attempt: attempt,
+		Wait:    req,
+		Decision: CreateDecisionRequestRequest{
+			TenantID:          req.TenantID,
+			ProjectID:         task.ProjectID,
+			ApprovalRequestID: uuid.Nil,
+			CoordinationJobID: task.CoordinationJobID,
+			ProjectTaskID:     &task.ID,
+			TargetUserID:      projectRecord.HumanOwnerUserID,
+			DecisionType:      projectTaskHumanWaitDecisionType(req.Reason),
+			TitleSnapshot:     task.Title,
+			SummarySnapshot:   req.Summary,
+			RiskLevelSnapshot: stringValue(task.RiskLevel),
+			StatusSnapshot:    "pending",
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &result.Task, nil
+}
+
 func projectTaskFailureAction(task ProjectTask, failureFamily string, retryable *bool) string {
 	if retryable != nil && !*retryable {
 		if failureFamily == FailureFamilyBusinessCancelled || failureFamily == FailureFamilyPlanInvalid || failureFamily == FailureFamilyRequirementChanged {
@@ -2024,6 +2074,46 @@ func humanWaitReasonForFailureFamily(failureFamily string) string {
 
 func projectTaskRetryIdempotencyKey(task ProjectTask, failureIdempotencyKey string) string {
 	return fmt.Sprintf("project-task:%s:attempt:%d:retry:%s", task.ID, task.AttemptCount+1, failureIdempotencyKey)
+}
+
+func validHumanWaitReason(reason string) bool {
+	switch reason {
+	case HumanWaitReasonMissingContext,
+		HumanWaitReasonClarification,
+		HumanWaitReasonApprovalRequired,
+		HumanWaitReasonPermissionRequired,
+		HumanWaitReasonPlanInvalid,
+		HumanWaitReasonAcceptanceRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+func projectTaskHumanWaitDecisionType(reason string) string {
+	switch reason {
+	case HumanWaitReasonMissingContext:
+		return "project_task_missing_context"
+	case HumanWaitReasonClarification:
+		return "project_task_clarification"
+	case HumanWaitReasonApprovalRequired:
+		return "project_task_approval"
+	case HumanWaitReasonPermissionRequired:
+		return "project_task_permission"
+	case HumanWaitReasonPlanInvalid:
+		return "project_task_plan_invalid"
+	case HumanWaitReasonAcceptanceRequired:
+		return "project_task_acceptance"
+	default:
+		return "project_task_human_wait"
+	}
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (s *Service) RequestProjectTaskTransfer(ctx context.Context, req RequestProjectTaskTransferRequest) (*TransferRequest, error) {

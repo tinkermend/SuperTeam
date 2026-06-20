@@ -109,6 +109,7 @@ type ProjectTaskAttemptWritebackRepository interface {
 	CompleteProjectTaskAttemptWriteback(ctx context.Context, req CompleteProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error)
 	FailProjectTaskAttemptWriteback(ctx context.Context, req FailProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error)
 	RecoverProjectTaskAttemptFailureWriteback(ctx context.Context, req RecoverProjectTaskAttemptFailureWritebackRequest) (ProjectTaskWritebackResult, error)
+	WaitHumanProjectTaskAttemptWriteback(ctx context.Context, req WaitHumanProjectTaskAttemptWritebackRequest) (ProjectTaskWritebackResult, error)
 }
 
 type AppendProjectEventRequest struct {
@@ -311,10 +312,18 @@ type RecoverProjectTaskAttemptFailureWritebackRequest struct {
 	RetryNotBefore        *time.Time
 }
 
+type WaitHumanProjectTaskAttemptWritebackRequest struct {
+	Task     ProjectTask
+	Attempt  ProjectTaskAttempt
+	Wait     WaitHumanProjectTaskAttemptRequest
+	Decision CreateDecisionRequestRequest
+}
+
 type ProjectTaskWritebackResult struct {
-	Task    ProjectTask
-	Event   ProjectEvent
-	Summary ExecutionSummary
+	Task     ProjectTask
+	Event    ProjectEvent
+	Summary  ExecutionSummary
+	Decision DecisionRequest
 }
 
 type ProjectTaskAttemptWritebackResult struct {

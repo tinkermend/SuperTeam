@@ -976,6 +976,49 @@ func TestFailProjectTaskAttemptHandlerBuildsServiceRequest(t *testing.T) {
 	}
 }
 
+func TestWaitHumanProjectTaskAttemptHandlerBuildsServiceRequest(t *testing.T) {
+	tenantID := uuid.New()
+	attemptID := uuid.New()
+	taskID := uuid.New()
+	nodeID := uuid.New()
+	employeeID := uuid.New()
+	service := &handlerTestService{}
+	handler := NewHandler(service)
+	body := strings.NewReader(`{
+		"project_task_id":"` + taskID.String() + `",
+		"runtime_node_id":"` + nodeID.String() + `",
+		"lease_token":"lease-token-5",
+		"idempotency_key":"attempt-wait-human-1",
+		"digital_employee_id":"` + employeeID.String() + `",
+		"reason":"missing_context",
+		"summary":"Need customer scope",
+		"missing_context_refs":["customer_scope"],
+		"suggested_resolution_options":["resume_same_task"]
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/project-task-attempts/"+attemptID.String()+"/wait-human", body)
+	req = withProjectRouteParams(req, map[string]string{"attemptId": attemptID.String()})
+	req = withRuntimeContext(req, tenantID, nodeID)
+	resp := httptest.NewRecorder()
+
+	handler.WaitHumanProjectTaskAttempt(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected wait-human writeback to return 202, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.waitAttemptReq.AttemptID != attemptID || service.waitAttemptReq.ProjectTaskID != taskID || service.waitAttemptReq.RuntimeNodeID != nodeID {
+		t.Fatalf("unexpected wait-human request identity: %#v", service.waitAttemptReq)
+	}
+	if service.waitAttemptReq.DigitalEmployeeID != employeeID || service.waitAttemptReq.Reason != HumanWaitReasonMissingContext || service.waitAttemptReq.Summary != "Need customer scope" {
+		t.Fatalf("unexpected wait-human request payload: %#v", service.waitAttemptReq)
+	}
+	if len(service.waitAttemptReq.MissingContextRefs) != 1 || service.waitAttemptReq.MissingContextRefs[0] != "customer_scope" {
+		t.Fatalf("unexpected missing context refs: %#v", service.waitAttemptReq.MissingContextRefs)
+	}
+	if len(service.waitAttemptReq.SuggestedResolutionOptions) != 1 || service.waitAttemptReq.SuggestedResolutionOptions[0] != HumanWaitResolutionResumeSameTask {
+		t.Fatalf("unexpected suggested resolution options: %#v", service.waitAttemptReq.SuggestedResolutionOptions)
+	}
+}
+
 func withProjectRouteParams(req *http.Request, params map[string]string) *http.Request {
 	rctx := chi.NewRouteContext()
 	for key, value := range params {
@@ -1026,6 +1069,7 @@ type handlerTestService struct {
 	renewAttemptLeaseReq   RenewProjectTaskAttemptLeaseRequest
 	completeAttemptReq     CompleteProjectTaskAttemptRequest
 	failAttemptReq         FailProjectTaskAttemptRequest
+	waitAttemptReq         WaitHumanProjectTaskAttemptRequest
 }
 
 func (s *handlerTestService) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
@@ -1232,6 +1276,11 @@ func (s *handlerTestService) CompleteProjectTaskAttempt(ctx context.Context, req
 func (s *handlerTestService) FailProjectTaskAttempt(ctx context.Context, req FailProjectTaskAttemptRequest) (*ProjectTask, error) {
 	s.failAttemptReq = req
 	return &ProjectTask{ID: req.ProjectTaskID, TenantID: req.TenantID, Status: ProjectTaskStatusFailed}, nil
+}
+
+func (s *handlerTestService) WaitHumanProjectTaskAttempt(ctx context.Context, req WaitHumanProjectTaskAttemptRequest) (*ProjectTask, error) {
+	s.waitAttemptReq = req
+	return &ProjectTask{ID: req.ProjectTaskID, TenantID: req.TenantID, Status: ProjectTaskStatusWaitingHuman}, nil
 }
 
 func (s *handlerTestService) ListEvidence(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error) {

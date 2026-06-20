@@ -40,6 +40,7 @@ type HandlerService interface {
 	RenewProjectTaskAttemptLease(ctx context.Context, req RenewProjectTaskAttemptLeaseRequest) error
 	CompleteProjectTaskAttempt(ctx context.Context, req CompleteProjectTaskAttemptRequest) (*ExecutionSummary, error)
 	FailProjectTaskAttempt(ctx context.Context, req FailProjectTaskAttemptRequest) (*ProjectTask, error)
+	WaitHumanProjectTaskAttempt(ctx context.Context, req WaitHumanProjectTaskAttemptRequest) (*ProjectTask, error)
 	ListEvidence(ctx context.Context, tenantID, projectID uuid.UUID, status *EvidenceVerificationStatus, limit, offset int32) ([]ProjectEvidenceRef, error)
 	CreateEvidence(ctx context.Context, req CreateEvidenceRefServiceRequest) (*ProjectEvidenceRef, error)
 	PatchEvidence(ctx context.Context, req PatchEvidenceRequest) (*ProjectEvidenceRef, error)
@@ -931,6 +932,33 @@ func (h *HTTPHandler) FailProjectTaskAttempt(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusAccepted)
 }
 
+func (h *HTTPHandler) WaitHumanProjectTaskAttempt(w http.ResponseWriter, r *http.Request) {
+	tenantID, runtimeNodeID, attemptID, service, ok := h.runtimeProjectTaskAttemptContext(w, r)
+	if !ok {
+		return
+	}
+	var body waitHumanProjectTaskAttemptBody
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	runtimeReq, ok := projectTaskAttemptRuntimeRequestFromBody(w, tenantID, runtimeNodeID, attemptID, body.ProjectTaskAttemptRuntimeBody)
+	if !ok {
+		return
+	}
+	if _, err := service.WaitHumanProjectTaskAttempt(r.Context(), WaitHumanProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: runtimeReq,
+		DigitalEmployeeID:                body.DigitalEmployeeID,
+		Reason:                           body.Reason,
+		Summary:                          body.Summary,
+		MissingContextRefs:               body.MissingContextRefs,
+		SuggestedResolutionOptions:       body.SuggestedResolutionOptions,
+	}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
 func (h *HTTPHandler) updateProjectConfig(w http.ResponseWriter, r *http.Request) {
 	tenantID, actorID, projectID, service, ok := h.projectRouteContext(w, r)
 	if !ok {
@@ -1235,6 +1263,15 @@ type failProjectTaskAttemptBody struct {
 	FailureSummary string `json:"failure_summary"`
 	FailureFamily  string `json:"failure_family"`
 	Retryable      *bool  `json:"retryable"`
+}
+
+type waitHumanProjectTaskAttemptBody struct {
+	ProjectTaskAttemptRuntimeBody
+	DigitalEmployeeID          uuid.UUID `json:"digital_employee_id"`
+	Reason                     string    `json:"reason"`
+	Summary                    string    `json:"summary"`
+	MissingContextRefs         []any     `json:"missing_context_refs"`
+	SuggestedResolutionOptions []string  `json:"suggested_resolution_options"`
 }
 
 type createEvidenceBody struct {

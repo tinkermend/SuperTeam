@@ -2628,6 +2628,64 @@ func (r *PgRepository) moveProjectTaskToWaitingHumanWithQueries(ctx context.Cont
 	return taskFromRecord(row)
 }
 
+func (r *PgRepository) WaitHumanProjectTaskAttemptWriteback(ctx context.Context, req WaitHumanProjectTaskAttemptWritebackRequest) (ProjectTaskWritebackResult, error) {
+	return withProjectQueries(ctx, r, "project task attempt wait human writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+			TenantID:     req.Wait.TenantID,
+			ProjectID:    req.Task.ProjectID,
+			EventType:    ProjectEventTaskWaitingHuman,
+			ActorType:    "digital_employee",
+			ActorID:      req.Wait.DigitalEmployeeID.String(),
+			ResourceType: strPtr("project_task"),
+			ResourceID:   strPtr(req.Task.ID.String()),
+			Summary:      req.Wait.Summary,
+			Payload: map[string]any{
+				"project_task_id":              req.Wait.ProjectTaskID.String(),
+				"project_task_attempt_id":      req.Wait.AttemptID.String(),
+				"reason":                       req.Wait.Reason,
+				"summary":                      req.Wait.Summary,
+				"missing_context_refs":         sliceOrEmptyAny(req.Wait.MissingContextRefs),
+				"suggested_resolution_options": req.Wait.SuggestedResolutionOptions,
+			},
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
+			TenantID:          req.Wait.TenantID,
+			ID:                req.Wait.AttemptID,
+			LeaseToken:        req.Wait.LeaseToken,
+			Status:            ProjectTaskAttemptStatusWaitingHuman,
+			ProviderSessionID: textPtr(req.Wait.ProviderSessionID),
+			FailureMessage:    textOrNull(req.Wait.Summary),
+			TerminalEventID:   nullUUID(&event.ID),
+		}); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		decisionReq := req.Decision
+		decisionReq.CreatedEventID = &event.ID
+		decision, err := r.createDecisionRequestWithQueries(ctx, q, decisionReq)
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		row, err := q.MoveProjectTaskToWaitingHuman(ctx, queries.MoveProjectTaskToWaitingHumanParams{
+			WaitingReason:    req.Wait.Reason,
+			WaitingRequestID: nullUUID(&decision.ID),
+			LatestEventID:    nullUUID(&event.ID),
+			TenantID:         req.Task.TenantID,
+			ID:               req.Task.ID,
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, projectRepositoryError(err)
+		}
+		task, err := taskFromRecord(row)
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event, Decision: decision}, nil
+	})
+}
+
 // advanceProjectDemandStatusWithQueries moves a demand forward in its lifecycle,
 // guarded so status never regresses. It shares the per-project advisory lock with
 // project event appends so concurrent task writebacks serialize their demand updates.
@@ -2757,7 +2815,11 @@ func (r *PgRepository) ListTransferRequests(ctx context.Context, tenantID, proje
 }
 
 func (r *PgRepository) CreateDecisionRequest(ctx context.Context, req CreateDecisionRequestRequest) (DecisionRequest, error) {
-	row, err := r.q.CreateProjectDecisionRequest(ctx, queries.CreateProjectDecisionRequestParams{
+	return r.createDecisionRequestWithQueries(ctx, r.q, req)
+}
+
+func (r *PgRepository) createDecisionRequestWithQueries(ctx context.Context, q *queries.Queries, req CreateDecisionRequestRequest) (DecisionRequest, error) {
+	row, err := q.CreateProjectDecisionRequest(ctx, queries.CreateProjectDecisionRequestParams{
 		TenantID:          req.TenantID,
 		ProjectID:         req.ProjectID,
 		ApprovalRequestID: req.ApprovalRequestID,

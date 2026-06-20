@@ -399,6 +399,26 @@ paths:
       responses:
         "202":
           description: Attempt failure accepted
+  /api/v1/runtime/project-task-attempts/{attemptId}/wait-human:
+    post:
+      operationId: waitHumanProjectTaskAttempt
+      summary: Pause a ProjectTask attempt and request human input
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WaitHumanProjectTaskAttemptRequest"
+      responses:
+        "202":
+          description: Human wait accepted
   /api/v1/runtime/nodes:
     get:
       operationId: listRuntimeNodes
@@ -5773,6 +5793,36 @@ components:
               type: string
             retryable:
               type: boolean
+    WaitHumanProjectTaskAttemptRequest:
+      allOf:
+        - $ref: "#/components/schemas/ProjectTaskAttemptRuntimeFields"
+        - type: object
+          required:
+            - digital_employee_id
+            - reason
+            - summary
+          properties:
+            digital_employee_id:
+              type: string
+              format: uuid
+            reason:
+              type: string
+              enum:
+                - missing_context
+                - clarification
+                - approval_required
+                - permission_required
+                - plan_invalid
+                - acceptance_required
+            summary:
+              type: string
+            missing_context_refs:
+              type: array
+              items: {}
+            suggested_resolution_options:
+              type: array
+              items:
+                type: string
     Team:
       type: object
       required:

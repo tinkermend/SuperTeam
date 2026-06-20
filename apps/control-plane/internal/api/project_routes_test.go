@@ -779,6 +779,10 @@ func (s *routeProjectService) FailProjectTaskAttempt(ctx context.Context, req pr
 	return &project.ProjectTask{ID: req.ProjectTaskID, TenantID: req.TenantID, ProjectID: uuid.New(), Status: project.ProjectTaskStatusFailed}, nil
 }
 
+func (s *routeProjectService) WaitHumanProjectTaskAttempt(ctx context.Context, req project.WaitHumanProjectTaskAttemptRequest) (*project.ProjectTask, error) {
+	return &project.ProjectTask{ID: req.ProjectTaskID, TenantID: req.TenantID, ProjectID: uuid.New(), Status: project.ProjectTaskStatusWaitingHuman}, nil
+}
+
 func (s *routeProjectService) ListEvidence(ctx context.Context, tenantID, projectID uuid.UUID, status *project.EvidenceVerificationStatus, limit, offset int32) ([]project.ProjectEvidenceRef, error) {
 	return []project.ProjectEvidenceRef{routeEvidence(tenantID, projectID, uuid.New())}, nil
 }
