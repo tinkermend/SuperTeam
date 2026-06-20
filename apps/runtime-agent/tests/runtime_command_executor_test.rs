@@ -23,6 +23,7 @@ const EXECUTION_INSTANCE_ID: &str = "22222222-2222-4222-8222-222222222222";
 const TENANT_ID: &str = "00000000-0000-4000-8000-000000000001";
 const TEAM_ID: &str = "33333333-3333-4333-8333-333333333333";
 const RUNTIME_NODE_ID: &str = "44444444-4444-4444-8444-444444444444";
+const RUNTIME_NODE_EXTERNAL_ID: &str = "node-1";
 const PROJECT_TASK_ID: &str = "55555555-5555-4555-8555-555555555555";
 const PROJECT_TASK_ATTEMPT_ID: &str = "66666666-6666-4666-8666-666666666666";
 const PROJECT_TASK_LEASE_TOKEN: &str = "lease-token-1";
@@ -773,7 +774,7 @@ printf '%s\n' '{"type":"result","result":"provider produced the requested execut
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        RUNTIME_NODE_ID,
+        RUNTIME_NODE_EXTERNAL_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -820,7 +821,10 @@ printf '%s\n' '{"type":"result","result":"provider produced the requested execut
         project_complete.authorization.as_deref(),
         Some("Bearer session-token")
     );
-    assert_eq!(project_complete.node_id.as_deref(), Some(RUNTIME_NODE_ID));
+    assert_eq!(
+        project_complete.node_id.as_deref(),
+        Some(RUNTIME_NODE_EXTERNAL_ID)
+    );
     assert!(
         project_complete
             .payload
@@ -870,7 +874,7 @@ exit 1
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        RUNTIME_NODE_ID,
+        RUNTIME_NODE_EXTERNAL_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -958,7 +962,7 @@ printf '%s\n' '{"type":"result","result":"ordinary command completed"}'
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        RUNTIME_NODE_ID,
+        RUNTIME_NODE_EXTERNAL_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -1018,7 +1022,7 @@ printf '%s\n' '{"type":"result","result":"provider finished before project task 
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        RUNTIME_NODE_ID,
+        RUNTIME_NODE_EXTERNAL_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -1072,7 +1076,7 @@ EOF
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        RUNTIME_NODE_ID,
+        RUNTIME_NODE_EXTERNAL_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -1152,7 +1156,7 @@ EOF
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        RUNTIME_NODE_ID,
+        RUNTIME_NODE_EXTERNAL_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -1404,7 +1408,7 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        RUNTIME_NODE_ID,
+        RUNTIME_NODE_EXTERNAL_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
 
@@ -1452,7 +1456,7 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
         failed.authorization.as_deref(),
         Some("Bearer session-token")
     );
-    assert_eq!(failed.node_id.as_deref(), Some("node-1"));
+    assert_eq!(failed.node_id.as_deref(), Some(RUNTIME_NODE_EXTERNAL_ID));
     assert_eq!(failed.payload["status"], "failed");
     assert_eq!(failed.payload["error_code"], "workspace_sync_failed");
     assert_eq!(failed.payload["error_family"], "workspace_materialization");
@@ -1484,7 +1488,7 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", http_server.addr),
         "session-token",
-        RUNTIME_NODE_ID,
+        RUNTIME_NODE_EXTERNAL_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
 
@@ -1542,7 +1546,7 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
     );
     assert_eq!(
         project_task_failed.node_id.as_deref(),
-        Some(RUNTIME_NODE_ID)
+        Some(RUNTIME_NODE_EXTERNAL_ID)
     );
     assert!(
         project_task_failed
@@ -1923,7 +1927,7 @@ sleep 5
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", server.addr),
         "session-token",
-        RUNTIME_NODE_ID,
+        RUNTIME_NODE_EXTERNAL_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -1968,7 +1972,7 @@ sleep 5
         cancel.authorization.as_deref(),
         Some("Bearer session-token")
     );
-    assert_eq!(cancel.node_id.as_deref(), Some("node-1"));
+    assert_eq!(cancel.node_id.as_deref(), Some(RUNTIME_NODE_EXTERNAL_ID));
     server.task.abort();
 }
 
@@ -1987,7 +1991,7 @@ sleep 5
     let control_plane = ControlPlaneClient::with_session_token(
         format!("http://{}", server.addr),
         "session-token",
-        RUNTIME_NODE_ID,
+        RUNTIME_NODE_EXTERNAL_ID,
     );
     let executor = configure_runtime_with_control_plane(&temp, fake_claude, control_plane);
     let home = prepare_employee_home(&temp);
@@ -2046,7 +2050,7 @@ sleep 5
     );
     assert_eq!(
         project_task_failed.node_id.as_deref(),
-        Some(RUNTIME_NODE_ID)
+        Some(RUNTIME_NODE_EXTERNAL_ID)
     );
     assert!(
         project_task_failed
