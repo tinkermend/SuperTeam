@@ -860,6 +860,16 @@ func TestExecutionLedgerEventQueries(t *testing.T) {
 		ProviderSessionEventID: ambiguousProviderEventID,
 	})
 	require.ErrorIs(t, err, pgx.ErrNoRows)
+
+	var ambiguousLedgerCount int
+	err = db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM execution_ledger_events
+		WHERE tenant_id = $1
+		  AND idempotency_key = $2
+	`, tenantID, "provider_session_event:"+ambiguousProviderEventID.String()+":provider.event").Scan(&ambiguousLedgerCount)
+	require.NoError(t, err)
+	require.Zero(t, ambiguousLedgerCount)
 }
 
 func TestUserProjectTeamScopesQueriesReplaceAndList(t *testing.T) {

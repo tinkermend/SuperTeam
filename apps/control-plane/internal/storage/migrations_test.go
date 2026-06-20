@@ -734,6 +734,24 @@ func TestExecutionLedgerAppendOnlyHardeningMigration(t *testing.T) {
 	} {
 		assertMigrationContains(t, sql, fragment)
 	}
+
+	querySQL, err := os.ReadFile("queries/execution_ledger.sql")
+	if err != nil {
+		t.Fatalf("read execution ledger queries: %v", err)
+	}
+	query := string(querySQL)
+	for _, fragment := range []string{
+		"WITH source_event_matches AS",
+		"source_event AS (",
+		"FROM source_event_matches",
+		"WHERE match_count = 1",
+		"FROM source_event source\nCROSS JOIN LATERAL create_execution_ledger_event",
+	} {
+		assertMigrationContains(t, query, fragment)
+	}
+	if strings.Contains(query, "WHERE source.match_count = 1") {
+		t.Fatal("provider ledger query must filter source_event before invoking create_execution_ledger_event")
+	}
 }
 
 func TestSkillManagementMigrationAddsSkillPackageTables(t *testing.T) {

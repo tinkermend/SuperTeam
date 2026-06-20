@@ -130,7 +130,7 @@ func (q *Queries) CreateExecutionLedgerEvent(ctx context.Context, arg CreateExec
 }
 
 const CreateProviderSessionEventLedgerEvent = `-- name: CreateProviderSessionEventLedgerEvent :one
-WITH source_event AS (
+WITH source_event_matches AS (
     SELECT
         pse.tenant_id,
         p.team_id,
@@ -173,6 +173,11 @@ WITH source_event AS (
      AND p.id = pt.project_id
     WHERE pse.tenant_id = $2::uuid
       AND pse.id = $3::uuid
+),
+source_event AS (
+    SELECT tenant_id, team_id, project_id, project_task_id, project_task_attempt_id, event_type, source_type, source_id, actor_type, actor_id, runtime_node_id, provider_type, provider_session_id, input_summary, output_summary, error_family, metadata, occurred_at, idempotency_key, match_count
+    FROM source_event_matches
+    WHERE match_count = 1
 )
 SELECT ledger.id, ledger.tenant_id, ledger.team_id, ledger.project_id, ledger.project_task_id, ledger.project_task_attempt_id, ledger.event_type, ledger.source_type, ledger.source_id, ledger.actor_type, ledger.actor_id, ledger.runtime_node_id, ledger.provider_type, ledger.provider_session_id, ledger.input_summary, ledger.output_summary, ledger.error_family, ledger.error_code, ledger.error_message, ledger.retryable, ledger.artifact_refs, ledger.evidence_refs, ledger.metadata, ledger.occurred_at, ledger.idempotency_key, ledger.created_at, ledger.updated_at
 FROM source_event source
@@ -202,7 +207,6 @@ CROSS JOIN LATERAL create_execution_ledger_event(
     source.occurred_at,
     source.idempotency_key
 ) AS ledger
-WHERE source.match_count = 1
 `
 
 type CreateProviderSessionEventLedgerEventParams struct {

@@ -50,7 +50,7 @@ WHERE pta.tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY pt.created_at ASC, pta.attempt_no ASC, pta.created_at ASC;
 
 -- name: CreateProviderSessionEventLedgerEvent :one
-WITH source_event AS (
+WITH source_event_matches AS (
     SELECT
         pse.tenant_id,
         p.team_id,
@@ -93,6 +93,11 @@ WITH source_event AS (
      AND p.id = pt.project_id
     WHERE pse.tenant_id = sqlc.arg('tenant_id')::uuid
       AND pse.id = sqlc.arg('provider_session_event_id')::uuid
+),
+source_event AS (
+    SELECT *
+    FROM source_event_matches
+    WHERE match_count = 1
 )
 SELECT ledger.*
 FROM source_event source
@@ -121,5 +126,4 @@ CROSS JOIN LATERAL create_execution_ledger_event(
     source.metadata,
     source.occurred_at,
     source.idempotency_key
-) AS ledger
-WHERE source.match_count = 1;
+) AS ledger;
