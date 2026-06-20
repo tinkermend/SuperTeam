@@ -100,9 +100,7 @@ func defaultConfig() Config {
 			TaskQueue: "superteam-project-coordination",
 		},
 		Planner: PlannerConfig{
-			Provider:    "deepseek",
-			BaseURL:     "https://api.deepseek.com",
-			Model:       "deepseek-chat",
+			Provider:    "openai-compatible",
 			MaxTokens:   8192,
 			Temperature: 0,
 			MaxAttempts: 2,

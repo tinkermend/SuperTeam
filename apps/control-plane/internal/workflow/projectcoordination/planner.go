@@ -31,7 +31,7 @@ type ProjectMemberSnapshot struct {
 }
 
 // RoutePlanner plans a demand's execution route. The only supported implementation
-// is a reasoning-model planner (see NewDeepSeekRoutePlanner); there is deliberately
+// is a reasoning-model planner (see NewOpenAICompatibleRoutePlanner); there is deliberately
 // no non-reasoning / heuristic fallback in production — planning failures surface as
 // errors instead of silently degrading to a fan-out.
 type RoutePlanner interface {

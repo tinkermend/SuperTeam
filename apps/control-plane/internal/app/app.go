@@ -567,7 +567,7 @@ func routePlannerFromConfig(cfg config.PlannerConfig) projectcoordination.RouteP
 	// Planning is reasoning-model only; there is no non-reasoning fallback, so any
 	// configured provider resolves to the reasoning planner. Misconfiguration then
 	// surfaces as a planning error instead of a silent heuristic fan-out.
-	return projectcoordination.NewDeepSeekRoutePlanner(projectcoordination.DeepSeekPlannerConfig{
+	return projectcoordination.NewOpenAICompatibleRoutePlanner(projectcoordination.OpenAICompatiblePlannerConfig{
 		APIKey:      cfg.APIKey,
 		BaseURL:     cfg.BaseURL,
 		Model:       cfg.Model,

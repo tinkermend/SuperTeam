@@ -19,14 +19,14 @@ var (
 	ErrPlannerRequestTimeout = errors.New("route planner request timeout")
 )
 
-const maxDeepSeekChatCompletionResponseBytes = 1 << 20
+const maxChatCompletionResponseBytes = 1 << 20
 
-// defaultDeepSeekRequestTimeout is generous because the planner targets a reasoning
+// defaultPlannerRequestTimeout is generous because the planner targets a reasoning
 // model, whose chain-of-thought on a full project planning prompt routinely takes far
 // longer than a non-reasoning completion before it emits the final JSON content.
-const defaultDeepSeekRequestTimeout = 120 * time.Second
+const defaultPlannerRequestTimeout = 120 * time.Second
 
-type DeepSeekPlannerConfig struct {
+type OpenAICompatiblePlannerConfig struct {
 	APIKey         string
 	BaseURL        string
 	Model          string
@@ -36,7 +36,7 @@ type DeepSeekPlannerConfig struct {
 	RequestTimeout time.Duration
 }
 
-type DeepSeekChatRequest struct {
+type OpenAICompatibleChatRequest struct {
 	Model       string
 	System      string
 	User        string
@@ -45,26 +45,26 @@ type DeepSeekChatRequest struct {
 }
 
 type chatCompletionClient interface {
-	CreateChatCompletion(ctx context.Context, req DeepSeekChatRequest) (string, error)
+	CreateChatCompletion(ctx context.Context, req OpenAICompatibleChatRequest) (string, error)
 }
 
-type DeepSeekRoutePlanner struct {
-	cfg    DeepSeekPlannerConfig
+type OpenAICompatibleRoutePlanner struct {
+	cfg    OpenAICompatiblePlannerConfig
 	client chatCompletionClient
 }
 
-func NewDeepSeekRoutePlanner(cfg DeepSeekPlannerConfig, clients ...chatCompletionClient) *DeepSeekRoutePlanner {
+func NewOpenAICompatibleRoutePlanner(cfg OpenAICompatiblePlannerConfig, clients ...chatCompletionClient) *OpenAICompatibleRoutePlanner {
 	var client chatCompletionClient
 	if len(clients) > 0 {
 		client = clients[0]
 	}
 	if client == nil {
-		client = newDeepSeekHTTPChatCompletionClient(cfg.BaseURL, cfg.APIKey, deepSeekRequestTimeout(cfg.RequestTimeout))
+		client = newOpenAICompatibleHTTPChatCompletionClient(cfg.BaseURL, cfg.APIKey, plannerRequestTimeout(cfg.RequestTimeout))
 	}
-	return &DeepSeekRoutePlanner{cfg: cfg, client: client}
+	return &OpenAICompatibleRoutePlanner{cfg: cfg, client: client}
 }
 
-func (p *DeepSeekRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
+func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
 	if p == nil || strings.TrimSpace(p.cfg.APIKey) == "" || strings.TrimSpace(p.cfg.BaseURL) == "" || strings.TrimSpace(p.cfg.Model) == "" || p.client == nil {
 		return RouteDecisionPlan{}, ErrPlannerUnavailable
 	}
@@ -81,7 +81,7 @@ func (p *DeepSeekRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSn
 			return RouteDecisionPlan{}, err
 		}
 		requestCtx, cancel := p.requestContext(ctx)
-		content, err := p.client.CreateChatCompletion(requestCtx, DeepSeekChatRequest{
+		content, err := p.client.CreateChatCompletion(requestCtx, OpenAICompatibleChatRequest{
 			Model:       p.cfg.Model,
 			System:      buildPlannerSystemPrompt(),
 			User:        buildPlannerUserPrompt(snapshot),
@@ -135,17 +135,17 @@ func (p *DeepSeekRoutePlanner) Plan(ctx context.Context, snapshot CoordinationSn
 	return RouteDecisionPlan{}, lastErr
 }
 
-func (p *DeepSeekRoutePlanner) requestContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	timeout := deepSeekRequestTimeout(p.cfg.RequestTimeout)
+func (p *OpenAICompatibleRoutePlanner) requestContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	timeout := plannerRequestTimeout(p.cfg.RequestTimeout)
 	if timeout <= 0 {
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, timeout)
 }
 
-func deepSeekRequestTimeout(timeout time.Duration) time.Duration {
+func plannerRequestTimeout(timeout time.Duration) time.Duration {
 	if timeout == 0 {
-		return defaultDeepSeekRequestTimeout
+		return defaultPlannerRequestTimeout
 	}
 	if timeout < 0 {
 		return 0
@@ -153,18 +153,18 @@ func deepSeekRequestTimeout(timeout time.Duration) time.Duration {
 	return timeout
 }
 
-type deepSeekHTTPChatCompletionClient struct {
+type openAICompatibleHTTPChatCompletionClient struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
 }
 
-func newDeepSeekHTTPChatCompletionClient(baseURL, apiKey string, requestTimeout ...time.Duration) *deepSeekHTTPChatCompletionClient {
-	timeout := defaultDeepSeekRequestTimeout
+func newOpenAICompatibleHTTPChatCompletionClient(baseURL, apiKey string, requestTimeout ...time.Duration) *openAICompatibleHTTPChatCompletionClient {
+	timeout := defaultPlannerRequestTimeout
 	if len(requestTimeout) > 0 {
 		timeout = requestTimeout[0]
 	}
-	return &deepSeekHTTPChatCompletionClient{
+	return &openAICompatibleHTTPChatCompletionClient{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		apiKey:  strings.TrimSpace(apiKey),
 		httpClient: &http.Client{
@@ -173,10 +173,10 @@ func newDeepSeekHTTPChatCompletionClient(baseURL, apiKey string, requestTimeout 
 	}
 }
 
-func (c *deepSeekHTTPChatCompletionClient) CreateChatCompletion(ctx context.Context, req DeepSeekChatRequest) (string, error) {
-	payload := deepSeekChatCompletionRequest{
+func (c *openAICompatibleHTTPChatCompletionClient) CreateChatCompletion(ctx context.Context, req OpenAICompatibleChatRequest) (string, error) {
+	payload := openAICompatibleChatCompletionRequest{
 		Model: req.Model,
-		Messages: []deepSeekChatMessage{
+		Messages: []openAICompatibleChatMessage{
 			{Role: "system", Content: req.System},
 			{Role: "user", Content: req.User},
 		},
@@ -211,39 +211,39 @@ func (c *deepSeekHTTPChatCompletionClient) CreateChatCompletion(ctx context.Cont
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("deepseek chat completion status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("chat completion status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	responseBody, err := readLimitedSuccessBody(resp.Body)
 	if err != nil {
 		return "", err
 	}
-	var decoded deepSeekChatCompletionResponse
+	var decoded openAICompatibleChatCompletionResponse
 	if err := json.Unmarshal(responseBody, &decoded); err != nil {
 		return "", err
 	}
 	if len(decoded.Choices) == 0 || strings.TrimSpace(decoded.Choices[0].Message.Content) == "" {
-		return "", errors.New("deepseek chat completion response missing content")
+		return "", errors.New("chat completion response missing content")
 	}
 	return decoded.Choices[0].Message.Content, nil
 }
 
-type deepSeekChatCompletionRequest struct {
-	Model          string                `json:"model"`
-	Messages       []deepSeekChatMessage `json:"messages"`
-	MaxTokens      *int                  `json:"max_tokens,omitempty"`
-	Temperature    float64               `json:"temperature"`
-	ResponseFormat map[string]string     `json:"response_format"`
+type openAICompatibleChatCompletionRequest struct {
+	Model          string                        `json:"model"`
+	Messages       []openAICompatibleChatMessage `json:"messages"`
+	MaxTokens      *int                          `json:"max_tokens,omitempty"`
+	Temperature    float64                       `json:"temperature"`
+	ResponseFormat map[string]string             `json:"response_format"`
 }
 
-type deepSeekChatMessage struct {
+type openAICompatibleChatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-type deepSeekChatCompletionResponse struct {
+type openAICompatibleChatCompletionResponse struct {
 	Choices []struct {
-		Message deepSeekChatMessage `json:"message"`
+		Message openAICompatibleChatMessage `json:"message"`
 	} `json:"choices"`
 }
 
@@ -569,12 +569,12 @@ func clonePlannerMap(value map[string]any) map[string]any {
 }
 
 func readLimitedSuccessBody(body io.Reader) ([]byte, error) {
-	responseBody, err := io.ReadAll(io.LimitReader(body, maxDeepSeekChatCompletionResponseBytes+1))
+	responseBody, err := io.ReadAll(io.LimitReader(body, maxChatCompletionResponseBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(responseBody) > maxDeepSeekChatCompletionResponseBytes {
-		return nil, fmt.Errorf("deepseek chat completion response too large")
+	if len(responseBody) > maxChatCompletionResponseBytes {
+		return nil, fmt.Errorf("chat completion response too large")
 	}
 	return responseBody, nil
 }

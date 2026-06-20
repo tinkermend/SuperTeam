@@ -40,6 +40,25 @@ func TestLoadFromEnvBuildsControlPlaneConfig(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnvPlannerDefaultsAreProviderNeutral(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
+	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
+	t.Setenv("S3_ENDPOINT", "http://127.0.0.1:9000")
+	t.Setenv("S3_REGION", "us-east-1")
+	t.Setenv("S3_BUCKET", "superteam-artifacts")
+	t.Setenv("S3_ACCESS_KEY_ID", "minio")
+	t.Setenv("S3_SECRET_ACCESS_KEY", "minio-secret")
+
+	cfg, err := LoadFromEnv()
+
+	require.NoError(t, err)
+	require.Equal(t, "openai-compatible", cfg.Planner.Provider)
+	require.Empty(t, cfg.Planner.BaseURL)
+	require.Empty(t, cfg.Planner.Model)
+	require.Equal(t, 8192, cfg.Planner.MaxTokens)
+	require.Equal(t, 2, cfg.Planner.MaxAttempts)
+}
+
 func TestLoadFromEnvRequiresStorageConfiguration(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("REDIS_URL", "")
@@ -159,10 +178,10 @@ func TestLoadFromFilePlannerConfig(t *testing.T) {
 
 	path := writeTempConfig(t, `
 planner:
-  provider: deepseek
+  provider: qwen
   apiKey: file-key
-  baseURL: https://api.deepseek.com
-  model: deepseek-v4-pro
+  baseURL: https://dashscope.aliyuncs.com/compatible-mode/v1
+  model: qwen-plus
   maxTokens: 8192
   temperature: 0.1
   maxAttempts: 2
@@ -170,10 +189,10 @@ planner:
 
 	cfg, err := LoadFromFile(path)
 	require.NoError(t, err)
-	require.Equal(t, "deepseek", cfg.Planner.Provider)
+	require.Equal(t, "qwen", cfg.Planner.Provider)
 	require.Equal(t, "file-key", cfg.Planner.APIKey)
-	require.Equal(t, "https://api.deepseek.com", cfg.Planner.BaseURL)
-	require.Equal(t, "deepseek-v4-pro", cfg.Planner.Model)
+	require.Equal(t, "https://dashscope.aliyuncs.com/compatible-mode/v1", cfg.Planner.BaseURL)
+	require.Equal(t, "qwen-plus", cfg.Planner.Model)
 	require.Equal(t, 8192, cfg.Planner.MaxTokens)
 	require.InDelta(t, 0.1, cfg.Planner.Temperature, 0.0001)
 	require.Equal(t, 2, cfg.Planner.MaxAttempts)
@@ -187,19 +206,20 @@ func TestPlannerEnvOverridesFileConfig(t *testing.T) {
 	t.Setenv("S3_BUCKET", "superteam")
 	t.Setenv("S3_ACCESS_KEY_ID", "access")
 	t.Setenv("S3_SECRET_ACCESS_KEY", "secret")
+	t.Setenv("PLANNER_PROVIDER", "qwen")
 	t.Setenv("PLANNER_API_KEY", "env-key")
 	t.Setenv("PLANNER_BASE_URL", "https://gateway.local")
-	t.Setenv("PLANNER_MODEL", "deepseek-v4-flash")
+	t.Setenv("PLANNER_MODEL", "qwen-plus")
 	t.Setenv("PLANNER_MAX_TOKENS", "4096")
 	t.Setenv("PLANNER_TEMPERATURE", "0")
 	t.Setenv("PLANNER_MAX_ATTEMPTS", "3")
 
 	path := writeTempConfig(t, `
 planner:
-  provider: deepseek
+  provider: openai-compatible
   apiKey: file-key
-  baseURL: https://api.deepseek.com
-  model: deepseek-v4-pro
+  baseURL: https://planner.example
+  model: planner-model
   maxTokens: 8192
   temperature: 0.3
   maxAttempts: 1
@@ -207,9 +227,10 @@ planner:
 
 	cfg, err := LoadFromFile(path)
 	require.NoError(t, err)
+	require.Equal(t, "qwen", cfg.Planner.Provider)
 	require.Equal(t, "env-key", cfg.Planner.APIKey)
 	require.Equal(t, "https://gateway.local", cfg.Planner.BaseURL)
-	require.Equal(t, "deepseek-v4-flash", cfg.Planner.Model)
+	require.Equal(t, "qwen-plus", cfg.Planner.Model)
 	require.Equal(t, 4096, cfg.Planner.MaxTokens)
 	require.Equal(t, 0.0, cfg.Planner.Temperature)
 	require.Equal(t, 3, cfg.Planner.MaxAttempts)

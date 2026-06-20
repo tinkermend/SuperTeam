@@ -16,12 +16,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDeepSeekRoutePlannerParsesJSONGraph(t *testing.T) {
+func TestOpenAICompatibleRoutePlannerParsesJSONGraph(t *testing.T) {
 	employeeID := uuid.New()
-	planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
 		APIKey:      "test-key",
-		BaseURL:     "https://api.deepseek.com",
-		Model:       "deepseek-chat",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
 		MaxTokens:   1024,
 		MaxAttempts: 1,
 	}, fakeChatCompletionClient{content: fmt.Sprintf(`{
@@ -32,7 +32,7 @@ func TestDeepSeekRoutePlannerParsesJSONGraph(t *testing.T) {
 		],
 		"budget_estimate":{"mode":"planner"},
 		"template_key":"default",
-		"planner_metadata":{"provider":"deepseek"}
+		"planner_metadata":{"provider":"openai-compatible"}
 	}`, employeeID.String())})
 
 	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
@@ -48,27 +48,27 @@ func TestDeepSeekRoutePlannerParsesJSONGraph(t *testing.T) {
 	require.Equal(t, int32(0), *plan.Tasks[0].StageIndex)
 }
 
-func TestDeepSeekRoutePlannerUnavailableConfigDoesNotCallClient(t *testing.T) {
+func TestOpenAICompatibleRoutePlannerUnavailableConfigDoesNotCallClient(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		cfg  DeepSeekPlannerConfig
+		cfg  OpenAICompatiblePlannerConfig
 	}{
 		{
 			name: "missing api key",
-			cfg:  DeepSeekPlannerConfig{BaseURL: "https://api.deepseek.com", Model: "deepseek-chat"},
+			cfg:  OpenAICompatiblePlannerConfig{BaseURL: "https://planner.example", Model: "planner-model"},
 		},
 		{
 			name: "missing base url",
-			cfg:  DeepSeekPlannerConfig{APIKey: "test-key", Model: "deepseek-chat"},
+			cfg:  OpenAICompatiblePlannerConfig{APIKey: "test-key", Model: "planner-model"},
 		},
 		{
 			name: "missing model",
-			cfg:  DeepSeekPlannerConfig{APIKey: "test-key", BaseURL: "https://api.deepseek.com"},
+			cfg:  OpenAICompatiblePlannerConfig{APIKey: "test-key", BaseURL: "https://planner.example"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := &countingChatCompletionClient{content: `{}`}
-			planner := NewDeepSeekRoutePlanner(tc.cfg, client)
+			planner := NewOpenAICompatibleRoutePlanner(tc.cfg, client)
 
 			_, err := planner.Plan(context.Background(), CoordinationSnapshot{})
 
@@ -78,7 +78,7 @@ func TestDeepSeekRoutePlannerUnavailableConfigDoesNotCallClient(t *testing.T) {
 	}
 }
 
-func TestDeepSeekRoutePlannerRetriesInvalidOutput(t *testing.T) {
+func TestOpenAICompatibleRoutePlannerRetriesInvalidOutput(t *testing.T) {
 	employeeID := uuid.New()
 	for _, tc := range []struct {
 		name    string
@@ -95,10 +95,10 @@ func TestDeepSeekRoutePlannerRetriesInvalidOutput(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := &countingChatCompletionClient{content: tc.content}
-			planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+			planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
 				APIKey:      "test-key",
-				BaseURL:     "https://api.deepseek.com",
-				Model:       "deepseek-chat",
+				BaseURL:     "https://planner.example",
+				Model:       "planner-model",
 				MaxAttempts: 3,
 			}, client)
 
@@ -115,7 +115,7 @@ func TestDeepSeekRoutePlannerRetriesInvalidOutput(t *testing.T) {
 	}
 }
 
-func TestDeepSeekRoutePlannerSynthesizesReviewPlanWhenPolicyRequiresHumanReview(t *testing.T) {
+func TestOpenAICompatibleRoutePlannerSynthesizesReviewPlanWhenPolicyRequiresHumanReview(t *testing.T) {
 	employeeID := uuid.New()
 	client := &countingChatCompletionClient{content: `{
 		"reason":"pause for owner review before dispatch",
@@ -123,12 +123,12 @@ func TestDeepSeekRoutePlannerSynthesizesReviewPlanWhenPolicyRequiresHumanReview(
 		"tasks":[],
 		"budget_estimate":{"mode":"planner"},
 		"template_key":"route_review",
-		"planner_metadata":{"provider":"deepseek"}
+		"planner_metadata":{"provider":"openai-compatible"}
 	}`}
-	planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
 		APIKey:      "test-key",
-		BaseURL:     "https://api.deepseek.com",
-		Model:       "deepseek-chat",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
 		MaxAttempts: 1,
 	}, client)
 
@@ -151,7 +151,7 @@ func TestDeepSeekRoutePlannerSynthesizesReviewPlanWhenPolicyRequiresHumanReview(
 	require.Equal(t, int32(1), client.calls.Load())
 }
 
-func TestDeepSeekRoutePlannerRejectsMissingRequiredTaskMaps(t *testing.T) {
+func TestOpenAICompatibleRoutePlannerRejectsMissingRequiredTaskMaps(t *testing.T) {
 	employeeID := uuid.New()
 	for _, tc := range []struct {
 		name string
@@ -180,10 +180,10 @@ func TestDeepSeekRoutePlannerRejectsMissingRequiredTaskMaps(t *testing.T) {
 				"requires_human_review":false,
 				"tasks":[%s]
 			}`, tc.task)}
-			planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+			planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
 				APIKey:      "test-key",
-				BaseURL:     "https://api.deepseek.com",
-				Model:       "deepseek-chat",
+				BaseURL:     "https://planner.example",
+				Model:       "planner-model",
 				MaxAttempts: 2,
 			}, client)
 
@@ -200,7 +200,7 @@ func TestDeepSeekRoutePlannerRejectsMissingRequiredTaskMaps(t *testing.T) {
 	}
 }
 
-func TestDeepSeekRoutePlannerNormalizesNonObjectRequirementMaps(t *testing.T) {
+func TestOpenAICompatibleRoutePlannerNormalizesNonObjectRequirementMaps(t *testing.T) {
 	// Reasoning models sometimes emit input_requirements/handoff_contract as an array
 	// or scalar; the planner normalizes these into objects instead of rejecting the plan.
 	employeeID := uuid.New()
@@ -209,10 +209,10 @@ func TestDeepSeekRoutePlannerNormalizesNonObjectRequirementMaps(t *testing.T) {
 		"requires_human_review":false,
 		"tasks":[{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":["a","b"],"handoff_contract":"none"}]
 	}`, employeeID.String())}
-	planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
 		APIKey:      "test-key",
-		BaseURL:     "https://api.deepseek.com",
-		Model:       "deepseek-chat",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
 		MaxAttempts: 2,
 	}, client)
 
@@ -229,7 +229,7 @@ func TestDeepSeekRoutePlannerNormalizesNonObjectRequirementMaps(t *testing.T) {
 	require.Equal(t, "none", plan.Tasks[0].HandoffContract["value"])
 }
 
-func TestDeepSeekRoutePlannerDoesNotRetryContextDone(t *testing.T) {
+func TestOpenAICompatibleRoutePlannerDoesNotRetryContextDone(t *testing.T) {
 	employeeID := uuid.New()
 	for _, tc := range []struct {
 		name string
@@ -240,10 +240,10 @@ func TestDeepSeekRoutePlannerDoesNotRetryContextDone(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := &countingChatCompletionClient{err: tc.err}
-			planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+			planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
 				APIKey:      "test-key",
-				BaseURL:     "https://api.deepseek.com",
-				Model:       "deepseek-chat",
+				BaseURL:     "https://planner.example",
+				Model:       "planner-model",
 				MaxAttempts: 3,
 			}, client)
 
@@ -260,14 +260,14 @@ func TestDeepSeekRoutePlannerDoesNotRetryContextDone(t *testing.T) {
 	}
 }
 
-func TestDeepSeekRoutePlannerDoesNotCallClientWhenContextAlreadyDone(t *testing.T) {
+func TestOpenAICompatibleRoutePlannerDoesNotCallClientWhenContextAlreadyDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	client := &countingChatCompletionClient{content: `{}`}
-	planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
 		APIKey:      "test-key",
-		BaseURL:     "https://api.deepseek.com",
-		Model:       "deepseek-chat",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
 		MaxAttempts: 3,
 	}, client)
 
@@ -277,7 +277,7 @@ func TestDeepSeekRoutePlannerDoesNotCallClientWhenContextAlreadyDone(t *testing.
 	require.Equal(t, int32(0), client.calls.Load())
 }
 
-func TestDeepSeekHTTPChatCompletionClientBuildsRequest(t *testing.T) {
+func TestOpenAICompatibleHTTPChatCompletionClientBuildsRequest(t *testing.T) {
 	var gotPath string
 	var gotAuthorization string
 	var gotContentType string
@@ -292,10 +292,10 @@ func TestDeepSeekHTTPChatCompletionClientBuildsRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newDeepSeekHTTPChatCompletionClient(server.URL+"/", "test-key")
+	client := newOpenAICompatibleHTTPChatCompletionClient(server.URL+"/", "test-key")
 
-	content, err := client.CreateChatCompletion(context.Background(), DeepSeekChatRequest{
-		Model:       "deepseek-chat",
+	content, err := client.CreateChatCompletion(context.Background(), OpenAICompatibleChatRequest{
+		Model:       "planner-model",
 		System:      "system json",
 		User:        "user json",
 		MaxTokens:   1024,
@@ -307,7 +307,7 @@ func TestDeepSeekHTTPChatCompletionClientBuildsRequest(t *testing.T) {
 	require.Equal(t, "/chat/completions", gotPath)
 	require.Equal(t, "Bearer test-key", gotAuthorization)
 	require.Equal(t, "application/json", gotContentType)
-	require.Equal(t, "deepseek-chat", gotBody["model"])
+	require.Equal(t, "planner-model", gotBody["model"])
 	require.Equal(t, float64(1024), gotBody["max_tokens"])
 	require.Equal(t, 0.2, gotBody["temperature"])
 	require.Len(t, gotBody["messages"], 2)
@@ -316,7 +316,53 @@ func TestDeepSeekHTTPChatCompletionClientBuildsRequest(t *testing.T) {
 	require.Equal(t, "json_object", responseFormat["type"])
 }
 
-func TestDeepSeekHTTPChatCompletionClientOmitsNonPositiveMaxTokens(t *testing.T) {
+func TestOpenAICompatibleHTTPChatCompletionClientBuildsQwenRequest(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"reason\":\"ok\",\"tasks\":[]}"}}]}`))
+	}))
+	defer server.Close()
+
+	client := newOpenAICompatibleHTTPChatCompletionClient(server.URL+"/", "test-key")
+
+	content, err := client.CreateChatCompletion(context.Background(), OpenAICompatibleChatRequest{
+		Model:       "qwen-plus",
+		System:      "system json",
+		User:        "user json",
+		MaxTokens:   2048,
+		Temperature: 0.1,
+	})
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{"reason":"ok","tasks":[]}`, content)
+	require.Equal(t, "qwen-plus", gotBody["model"])
+	require.Equal(t, float64(2048), gotBody["max_tokens"])
+}
+
+func TestOpenAICompatibleHTTPChatCompletionClientErrorsAreProviderNeutral(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	client := newOpenAICompatibleHTTPChatCompletionClient(server.URL, "test-key")
+
+	_, err := client.CreateChatCompletion(context.Background(), OpenAICompatibleChatRequest{
+		Model:  "qwen-plus",
+		System: "system json",
+		User:   "user json",
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "chat completion status 429")
+	require.NotContains(t, strings.ToLower(err.Error()), "deepseek")
+	require.NotContains(t, strings.ToLower(err.Error()), "qwen")
+	require.NotContains(t, strings.ToLower(err.Error()), "openai-compatible")
+}
+
+func TestOpenAICompatibleHTTPChatCompletionClientOmitsNonPositiveMaxTokens(t *testing.T) {
 	for _, maxTokens := range []int{0, -1} {
 		t.Run(fmt.Sprintf("max_tokens_%d", maxTokens), func(t *testing.T) {
 			var gotBody map[string]any
@@ -327,10 +373,10 @@ func TestDeepSeekHTTPChatCompletionClientOmitsNonPositiveMaxTokens(t *testing.T)
 			}))
 			defer server.Close()
 
-			client := newDeepSeekHTTPChatCompletionClient(server.URL, "test-key")
+			client := newOpenAICompatibleHTTPChatCompletionClient(server.URL, "test-key")
 
-			_, err := client.CreateChatCompletion(context.Background(), DeepSeekChatRequest{
-				Model:       "deepseek-chat",
+			_, err := client.CreateChatCompletion(context.Background(), OpenAICompatibleChatRequest{
+				Model:       "planner-model",
 				System:      "system json",
 				User:        "user json",
 				MaxTokens:   maxTokens,
@@ -343,16 +389,16 @@ func TestDeepSeekHTTPChatCompletionClientOmitsNonPositiveMaxTokens(t *testing.T)
 	}
 }
 
-func TestDeepSeekHTTPChatCompletionClientRejectsOversizedSuccessBody(t *testing.T) {
+func TestOpenAICompatibleHTTPChatCompletionClientRejectsOversizedSuccessBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(strings.Repeat(" ", 2*1024*1024)))
 	}))
 	defer server.Close()
-	client := newDeepSeekHTTPChatCompletionClient(server.URL, "test-key")
+	client := newOpenAICompatibleHTTPChatCompletionClient(server.URL, "test-key")
 
-	_, err := client.CreateChatCompletion(context.Background(), DeepSeekChatRequest{
-		Model:  "deepseek-chat",
+	_, err := client.CreateChatCompletion(context.Background(), OpenAICompatibleChatRequest{
+		Model:  "planner-model",
 		System: "system json",
 		User:   "user json",
 	})
@@ -361,7 +407,7 @@ func TestDeepSeekHTTPChatCompletionClientRejectsOversizedSuccessBody(t *testing.
 	require.Contains(t, err.Error(), "too large")
 }
 
-func TestDeepSeekRoutePlannerPromptsIncludeJSONWord(t *testing.T) {
+func TestOpenAICompatibleRoutePlannerPromptsIncludeJSONWord(t *testing.T) {
 	employeeID := uuid.New()
 	client := &capturingChatCompletionClient{content: fmt.Sprintf(`{
 		"reason":"split demand",
@@ -370,10 +416,10 @@ func TestDeepSeekRoutePlannerPromptsIncludeJSONWord(t *testing.T) {
 			{"key":"t1","title":"分析","summary":"分析需求","selected_employee_id":%q,"expected_outputs":["execution_summary"],"input_requirements":{},"handoff_contract":{}}
 		]
 	}`, employeeID.String())}
-	planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
 		APIKey:      "test-key",
-		BaseURL:     "https://api.deepseek.com",
-		Model:       "deepseek-chat",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
 		MaxAttempts: 1,
 	}, client)
 
@@ -391,8 +437,8 @@ func TestDeepSeekRoutePlannerPromptsIncludeJSONWord(t *testing.T) {
 
 func TestSanitizePlannerMetadataRemovesPromptAndRawVariants(t *testing.T) {
 	metadata := sanitizePlannerMetadata(map[string]any{
-		"provider":     "deepseek",
-		"model":        "deepseek-chat",
+		"provider":     "openai-compatible",
+		"model":        "planner-model",
 		"rawResponse":  "model text",
 		"raw-response": "model text",
 		"raw_model":    "model text",
@@ -400,8 +446,8 @@ func TestSanitizePlannerMetadataRemovesPromptAndRawVariants(t *testing.T) {
 		"systemPrompt": "prompt text",
 	})
 
-	require.Equal(t, "deepseek", metadata["provider"])
-	require.Equal(t, "deepseek-chat", metadata["model"])
+	require.Equal(t, "openai-compatible", metadata["provider"])
+	require.Equal(t, "planner-model", metadata["model"])
 	require.NotContains(t, metadata, "rawResponse")
 	require.NotContains(t, metadata, "raw-response")
 	require.NotContains(t, metadata, "raw_model")
@@ -452,13 +498,13 @@ func TestActivitiesPlanDemandRouteSurfacesDeadlineWithoutFallback(t *testing.T) 
 	require.Empty(t, plan.Tasks)
 }
 
-func TestDeepSeekRoutePlannerTimesOutRequestBeforeActivityDeadline(t *testing.T) {
+func TestOpenAICompatibleRoutePlannerTimesOutRequestBeforeActivityDeadline(t *testing.T) {
 	employeeID := uuid.New()
 	client := &blockingChatCompletionClient{}
-	planner := NewDeepSeekRoutePlanner(DeepSeekPlannerConfig{
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
 		APIKey:         "test-key",
-		BaseURL:        "https://api.deepseek.com",
-		Model:          "deepseek-chat",
+		BaseURL:        "https://planner.example",
+		Model:          "planner-model",
 		MaxAttempts:    3,
 		RequestTimeout: 10 * time.Millisecond,
 	}, client)
@@ -521,7 +567,7 @@ type fakeChatCompletionClient struct {
 	err     error
 }
 
-func (f fakeChatCompletionClient) CreateChatCompletion(ctx context.Context, req DeepSeekChatRequest) (string, error) {
+func (f fakeChatCompletionClient) CreateChatCompletion(ctx context.Context, req OpenAICompatibleChatRequest) (string, error) {
 	_ = ctx
 	_ = req
 	return f.content, f.err
@@ -533,7 +579,7 @@ type countingChatCompletionClient struct {
 	calls   atomic.Int32
 }
 
-func (f *countingChatCompletionClient) CreateChatCompletion(ctx context.Context, req DeepSeekChatRequest) (string, error) {
+func (f *countingChatCompletionClient) CreateChatCompletion(ctx context.Context, req OpenAICompatibleChatRequest) (string, error) {
 	_ = ctx
 	_ = req
 	f.calls.Add(1)
@@ -544,7 +590,7 @@ type blockingChatCompletionClient struct {
 	calls atomic.Int32
 }
 
-func (f *blockingChatCompletionClient) CreateChatCompletion(ctx context.Context, req DeepSeekChatRequest) (string, error) {
+func (f *blockingChatCompletionClient) CreateChatCompletion(ctx context.Context, req OpenAICompatibleChatRequest) (string, error) {
 	_ = req
 	f.calls.Add(1)
 	<-ctx.Done()
@@ -563,10 +609,10 @@ func (timeoutTestError) Timeout() bool {
 
 type capturingChatCompletionClient struct {
 	content string
-	req     DeepSeekChatRequest
+	req     OpenAICompatibleChatRequest
 }
 
-func (f *capturingChatCompletionClient) CreateChatCompletion(ctx context.Context, req DeepSeekChatRequest) (string, error) {
+func (f *capturingChatCompletionClient) CreateChatCompletion(ctx context.Context, req OpenAICompatibleChatRequest) (string, error) {
 	_ = ctx
 	f.req = req
 	return f.content, nil
