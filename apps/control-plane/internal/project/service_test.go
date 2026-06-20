@@ -250,6 +250,257 @@ func TestGetExecutionTraceRequestsThousandExecutionSummaries(t *testing.T) {
 	require.Equal(t, int32(0), repo.lastExecutionSummariesOffset)
 }
 
+func TestGetExecutionTraceUsesSummaryMappingOutsideVisibleEventFilter(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	firstAttemptID := uuid.New()
+	secondAttemptID := uuid.New()
+	summaryID := uuid.New()
+	now := time.Now().UTC()
+	eventType := ExecutionLedgerEventProviderEvent
+	repo := newMemoryRepository()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:        taskID,
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Title:     "核对执行事件",
+		Status:    ProjectTaskStatusCompleted,
+	})
+	repo.projectTaskAttempts = append(repo.projectTaskAttempts,
+		ProjectTaskAttempt{
+			ID:            firstAttemptID,
+			TenantID:      tenantID,
+			ProjectTaskID: taskID,
+			AttemptNo:     1,
+			Status:        ProjectTaskAttemptStatusFailed,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		},
+		ProjectTaskAttempt{
+			ID:            secondAttemptID,
+			TenantID:      tenantID,
+			ProjectTaskID: taskID,
+			AttemptNo:     2,
+			Status:        ProjectTaskAttemptStatusSucceeded,
+			CreatedAt:     now.Add(time.Second),
+			UpdatedAt:     now.Add(time.Second),
+		},
+	)
+	repo.executionSummaries = append(repo.executionSummaries, ExecutionSummary{
+		ID:                  summaryID,
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		ProjectTaskID:       taskID,
+		DigitalEmployeeID:   uuid.New(),
+		Conclusion:          "第二次尝试完成",
+		EvidenceRefs:        []any{map[string]any{"ref": "evidence://summary-filtered"}},
+		ArtifactRefs:        []any{map[string]any{"ref": "artifact://summary-filtered"}},
+		ConfidenceFactors:   map[string]any{"source": "test"},
+		MissingInformation:  []any{},
+		RequiresHumanReview: false,
+		CreatedAt:           now.Add(2 * time.Second),
+	})
+	repo.executionLedgerEvents = append(repo.executionLedgerEvents,
+		ExecutionLedgerEvent{
+			ID:                   uuid.New(),
+			TenantID:             tenantID,
+			ProjectID:            projectID,
+			ProjectTaskID:        &taskID,
+			ProjectTaskAttemptID: &secondAttemptID,
+			EventType:            ExecutionLedgerEventProviderEvent,
+			SourceType:           "provider_session_event",
+			SourceID:             uuid.NewString(),
+			ActorType:            "provider",
+			OutputSummary:        strPtr("visible provider event"),
+			OccurredAt:           now.Add(3 * time.Second),
+			CreatedAt:            now.Add(3 * time.Second),
+		},
+		ExecutionLedgerEvent{
+			ID:                   uuid.New(),
+			TenantID:             tenantID,
+			ProjectID:            projectID,
+			ProjectTaskID:        &taskID,
+			ProjectTaskAttemptID: &secondAttemptID,
+			EventType:            ExecutionLedgerEventSummaryCreated,
+			SourceType:           "project_execution_summary",
+			SourceID:             summaryID.String(),
+			ActorType:            "system",
+			OutputSummary:        strPtr("hidden by visible filter"),
+			OccurredAt:           now.Add(4 * time.Second),
+			CreatedAt:            now.Add(4 * time.Second),
+		},
+	)
+
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	trace, err := service.GetExecutionTrace(context.Background(), GetExecutionTraceRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventType: &eventType,
+		Limit:     100,
+	})
+	require.NoError(t, err)
+	require.Len(t, trace.Attempts, 2)
+	require.Nil(t, trace.Attempts[0].Summary)
+	require.NotNil(t, trace.Attempts[1].Summary)
+	require.Equal(t, summaryID, trace.Attempts[1].Summary.ExecutionSummaryID)
+	require.Empty(t, trace.Attempts[0].Events)
+	require.Len(t, trace.Attempts[1].Events, 1)
+	require.Equal(t, ExecutionLedgerEventProviderEvent, trace.Attempts[1].Events[0].EventType)
+	require.Len(t, repo.executionLedgerEventListRequests, 2)
+	require.Equal(t, &eventType, repo.executionLedgerEventListRequests[0].EventType)
+	require.NotNil(t, repo.executionLedgerEventListRequests[1].EventType)
+	require.Equal(t, ExecutionLedgerEventSummaryCreated, *repo.executionLedgerEventListRequests[1].EventType)
+	require.Nil(t, repo.executionLedgerEventListRequests[1].ErrorFamily)
+	require.Equal(t, int32(1000), repo.executionLedgerEventListRequests[1].Limit)
+	require.Equal(t, int32(0), repo.executionLedgerEventListRequests[1].Offset)
+}
+
+func TestGetExecutionTraceFallbackSummaryAttachesToLatestAttempt(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	firstAttemptID := uuid.New()
+	secondAttemptID := uuid.New()
+	summaryID := uuid.New()
+	startedAt := time.Now().UTC()
+	finishedAt := startedAt.Add(5 * time.Second)
+	secondStartedAt := startedAt.Add(10 * time.Second)
+	repo := newMemoryRepository()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:        taskID,
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Title:     "生成验收报告",
+		Status:    ProjectTaskStatusCompleted,
+	})
+	repo.projectTaskAttempts = append(repo.projectTaskAttempts,
+		ProjectTaskAttempt{
+			ID:            firstAttemptID,
+			TenantID:      tenantID,
+			ProjectTaskID: taskID,
+			AttemptNo:     1,
+			Status:        ProjectTaskAttemptStatusFailed,
+			StartedAt:     &startedAt,
+			FinishedAt:    &finishedAt,
+			CreatedAt:     startedAt,
+			UpdatedAt:     finishedAt,
+		},
+		ProjectTaskAttempt{
+			ID:            secondAttemptID,
+			TenantID:      tenantID,
+			ProjectTaskID: taskID,
+			AttemptNo:     2,
+			Status:        ProjectTaskAttemptStatusSucceeded,
+			StartedAt:     &secondStartedAt,
+			CreatedAt:     secondStartedAt,
+			UpdatedAt:     secondStartedAt,
+		},
+	)
+	repo.executionSummaries = append(repo.executionSummaries, ExecutionSummary{
+		ID:                  summaryID,
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		ProjectTaskID:       taskID,
+		DigitalEmployeeID:   uuid.New(),
+		Conclusion:          "最新尝试完成报告",
+		EvidenceRefs:        []any{map[string]any{"ref": "evidence://latest"}},
+		ArtifactRefs:        []any{map[string]any{"ref": "artifact://latest"}},
+		ConfidenceFactors:   map[string]any{"source": "test"},
+		MissingInformation:  []any{},
+		RequiresHumanReview: false,
+		CreatedAt:           startedAt.Add(11 * time.Second),
+	})
+
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	trace, err := service.GetExecutionTrace(context.Background(), GetExecutionTraceRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Limit:     100,
+	})
+	require.NoError(t, err)
+	require.Len(t, trace.Attempts, 2)
+	require.Equal(t, firstAttemptID, trace.Attempts[0].AttemptID)
+	require.Nil(t, trace.Attempts[0].Summary)
+	require.Equal(t, secondAttemptID, trace.Attempts[1].AttemptID)
+	require.NotNil(t, trace.Attempts[1].Summary)
+	require.Equal(t, summaryID, trace.Attempts[1].Summary.ExecutionSummaryID)
+}
+
+func TestGetExecutionTraceDeduplicatesAggregateRefsAcrossSummaryEventAndSummary(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	summaryID := uuid.New()
+	now := time.Now().UTC()
+	artifactRef := map[string]any{"ref": "artifact://same"}
+	evidenceRef := map[string]any{"ref": "evidence://same"}
+	repo := newMemoryRepository()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:        taskID,
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Title:     "去重引用计数",
+		Status:    ProjectTaskStatusCompleted,
+	})
+	repo.projectTaskAttempts = append(repo.projectTaskAttempts, ProjectTaskAttempt{
+		ID:            attemptID,
+		TenantID:      tenantID,
+		ProjectTaskID: taskID,
+		AttemptNo:     1,
+		Status:        ProjectTaskAttemptStatusSucceeded,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	})
+	repo.executionSummaries = append(repo.executionSummaries, ExecutionSummary{
+		ID:                  summaryID,
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		ProjectTaskID:       taskID,
+		DigitalEmployeeID:   uuid.New(),
+		Conclusion:          "引用相同",
+		EvidenceRefs:        []any{evidenceRef},
+		ArtifactRefs:        []any{artifactRef},
+		ConfidenceFactors:   map[string]any{"source": "test"},
+		MissingInformation:  []any{},
+		RequiresHumanReview: false,
+		CreatedAt:           now,
+	})
+	repo.executionLedgerEvents = append(repo.executionLedgerEvents, ExecutionLedgerEvent{
+		ID:                   uuid.New(),
+		TenantID:             tenantID,
+		ProjectID:            projectID,
+		ProjectTaskID:        &taskID,
+		ProjectTaskAttemptID: &attemptID,
+		EventType:            ExecutionLedgerEventSummaryCreated,
+		SourceType:           "project_execution_summary",
+		SourceID:             summaryID.String(),
+		ActorType:            "system",
+		ArtifactRefs:         []any{artifactRef},
+		EvidenceRefs:         []any{evidenceRef},
+		OccurredAt:           now,
+		CreatedAt:            now,
+	})
+
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	trace, err := service.GetExecutionTrace(context.Background(), GetExecutionTraceRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Limit:     100,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(1), trace.Summary.ArtifactRefCount)
+	require.Equal(t, int32(1), trace.Summary.EvidenceRefCount)
+	require.Len(t, trace.Attempts, 1)
+	require.Len(t, trace.Attempts[0].Events, 1)
+	require.Len(t, trace.Attempts[0].Events[0].ArtifactRefs, 1)
+	require.Len(t, trace.Attempts[0].Summary.ArtifactRefs, 1)
+}
+
 func TestBuildProjectTaskExecutionPacketIncludesDependenciesAndHumanDecisions(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -4389,37 +4640,38 @@ func TestListPaginationIsNormalized(t *testing.T) {
 }
 
 type memoryRepository struct {
-	projects                     map[uuid.UUID]Project
-	members                      map[uuid.UUID][]ProjectMember
-	tasks                        []ProjectTask
-	projectTaskAttempts          []ProjectTaskAttempt
-	events                       []ProjectEvent
-	eventTypes                   []ProjectEventType
-	demands                      []ProjectDemand
-	revisions                    []ProjectConfigRevision
-	coordinationJobs             []CoordinationJob
-	routeDecisions               []RouteDecision
-	executionSummaries           []ExecutionSummary
-	executionLedgerEvents        []ExecutionLedgerEvent
-	transferRequests             []TransferRequest
-	decisionRequests             []DecisionRequest
-	contextUpdates               []ProjectTaskAttemptContextUpdate
-	evidenceRefs                 []ProjectEvidenceRef
-	artifactRefs                 []ProjectArtifactRef
-	reportRefs                   []ProjectReportRef
-	budgetLedger                 []ProjectBudgetLedgerEntry
-	acceptanceRecords            []ProjectAcceptanceRecord
-	archiveSnapshots             []ProjectArchiveSnapshot
-	projectTeamScopes            map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool
-	lastListProjects             ListProjectsRequest
-	lastTasksLimit               int32
-	lastTasksOffset              int32
-	lastEventsLimit              int32
-	lastEventsOffset             int32
-	lastDemandsLimit             int32
-	lastDemandsOffset            int32
-	lastExecutionSummariesLimit  int32
-	lastExecutionSummariesOffset int32
+	projects                         map[uuid.UUID]Project
+	members                          map[uuid.UUID][]ProjectMember
+	tasks                            []ProjectTask
+	projectTaskAttempts              []ProjectTaskAttempt
+	events                           []ProjectEvent
+	eventTypes                       []ProjectEventType
+	demands                          []ProjectDemand
+	revisions                        []ProjectConfigRevision
+	coordinationJobs                 []CoordinationJob
+	routeDecisions                   []RouteDecision
+	executionSummaries               []ExecutionSummary
+	executionLedgerEvents            []ExecutionLedgerEvent
+	transferRequests                 []TransferRequest
+	decisionRequests                 []DecisionRequest
+	contextUpdates                   []ProjectTaskAttemptContextUpdate
+	evidenceRefs                     []ProjectEvidenceRef
+	artifactRefs                     []ProjectArtifactRef
+	reportRefs                       []ProjectReportRef
+	budgetLedger                     []ProjectBudgetLedgerEntry
+	acceptanceRecords                []ProjectAcceptanceRecord
+	archiveSnapshots                 []ProjectArchiveSnapshot
+	projectTeamScopes                map[uuid.UUID]map[uuid.UUID]map[uuid.UUID]bool
+	lastListProjects                 ListProjectsRequest
+	lastTasksLimit                   int32
+	lastTasksOffset                  int32
+	lastEventsLimit                  int32
+	lastEventsOffset                 int32
+	lastDemandsLimit                 int32
+	lastDemandsOffset                int32
+	lastExecutionSummariesLimit      int32
+	lastExecutionSummariesOffset     int32
+	executionLedgerEventListRequests []GetExecutionTraceRequest
 
 	taskStatusBeforeUpdate     *string
 	appendProjectEventErr      error
@@ -5345,6 +5597,7 @@ func (r *memoryRepository) CreateExecutionLedgerEvent(ctx context.Context, req C
 }
 
 func (r *memoryRepository) ListProjectExecutionLedgerEvents(ctx context.Context, req GetExecutionTraceRequest) ([]ExecutionLedgerEvent, error) {
+	r.executionLedgerEventListRequests = append(r.executionLedgerEventListRequests, req)
 	filtered := make([]ExecutionLedgerEvent, 0, len(r.executionLedgerEvents))
 	for _, event := range r.executionLedgerEvents {
 		if event.TenantID != req.TenantID || event.ProjectID != req.ProjectID {
