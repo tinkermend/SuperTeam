@@ -929,6 +929,8 @@ func TestFailProjectTaskAttemptTransientRuntimeSchedulesRetry(t *testing.T) {
 	require.NotNil(t, task.CurrentAttemptID)
 	require.NotEqual(t, fixture.attemptID, *task.CurrentAttemptID)
 	require.Equal(t, int32(2), task.AttemptCount)
+	require.Len(t, repo.executionLedgerEvents, 1)
+	require.Equal(t, (*task.CurrentAttemptID).String(), repo.executionLedgerEvents[0].Metadata["retry_project_task_attempt_id"])
 }
 
 func TestFailProjectTaskAttemptRetryExhaustionMovesToWaitingHuman(t *testing.T) {
@@ -955,6 +957,8 @@ func TestFailProjectTaskAttemptRetryExhaustionMovesToWaitingHuman(t *testing.T) 
 	require.Equal(t, fixture.attemptID, *task.CurrentAttemptID)
 	require.Equal(t, int32(3), task.AttemptCount)
 	require.Equal(t, ProjectTaskAttemptStatusTimedOut, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.executionLedgerEvents, 1)
+	require.NotContains(t, repo.executionLedgerEvents[0].Metadata, "retry_project_task_attempt_id")
 }
 
 func TestFailProjectTaskAttemptNonRetryableExecutionFailsTask(t *testing.T) {

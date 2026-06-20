@@ -2587,7 +2587,7 @@ func recoveredProjectTaskAttemptLedgerEventRequest(req RecoverProjectTaskAttempt
 	if req.WaitingReason != "" {
 		metadata["waiting_reason"] = req.WaitingReason
 	}
-	if req.RetryAttemptID != uuid.Nil {
+	if req.TaskTargetStatus == ProjectTaskStatusQueued && req.RetryAttemptID != uuid.Nil {
 		metadata["retry_project_task_attempt_id"] = req.RetryAttemptID.String()
 	}
 	ledgerReq := CreateExecutionLedgerEventRequest{
