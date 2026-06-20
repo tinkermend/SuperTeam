@@ -21,6 +21,7 @@ import {
   getProjectAcceptance,
   getProjectArchivePreview,
   getProjectBudgetSummary,
+  getProjectExecutionTrace,
   getProjectOverview,
   listProjectArchiveSnapshots,
   listProjectArtifacts,
@@ -45,6 +46,7 @@ import {
   type CreateProjectInput,
   type ListProjectsFilters,
   type ProjectEvidenceVerificationStatus,
+  type ProjectExecutionTrace,
   type ProjectStatus,
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
@@ -262,6 +264,14 @@ export function ProjectsView({
     queryKey: ["project-execution-summaries", effectiveProjectId],
     queryFn: () =>
       listProjectExecutionSummaries(apiOptions, effectiveProjectId as string, { limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const executionTraceQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-execution-trace", effectiveProjectId],
+    queryFn: () =>
+      getProjectExecutionTrace(apiOptions, effectiveProjectId as string, { limit: 100 }),
     placeholderData: keepPreviousData,
   });
 
@@ -488,6 +498,10 @@ export function ProjectsView({
   const projectExecutionSummaries = (executionSummariesQuery.data ?? []).filter(
     (summary) => summary.project_id === effectiveProjectId,
   );
+  const projectExecutionTrace: ProjectExecutionTrace | undefined =
+    executionTraceQuery.data?.project_id === effectiveProjectId
+      ? executionTraceQuery.data
+      : undefined;
   const projectTransferRequests = (transferRequestsQuery.data ?? []).filter(
     (request) => request.project_id === effectiveProjectId,
   );
@@ -571,6 +585,7 @@ export function ProjectsView({
             demands={projectDemands}
             evidence={projectEvidence}
             events={projectEvents}
+            executionTrace={projectExecutionTrace}
             executionSummaries={projectExecutionSummaries}
             isArchived={isArchived}
             onArchiveProject={() => {

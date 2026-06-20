@@ -33,6 +33,7 @@ import type {
   ProjectEvidenceRef,
   ProjectEvidenceVerificationStatus,
   ProjectEvent,
+  ProjectExecutionTrace,
   ProjectExecutionSummary,
   ProjectMember,
   ProjectOverview,
@@ -41,6 +42,7 @@ import type {
   ProjectTask,
   ProjectTransferRequest,
 } from "@/lib/api/projects";
+import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
 import { statusLabel, statusTone } from "./project-switcher-pane";
 
@@ -56,6 +58,7 @@ type ProjectOperationalDetailProps = {
   demands: ProjectDemand[];
   evidence?: ProjectEvidenceRef[];
   events: ProjectEvent[];
+  executionTrace?: ProjectExecutionTrace;
   executionSummaries: ProjectExecutionSummary[];
   isArchived?: boolean;
   onArchiveProject: () => void;
@@ -88,6 +91,7 @@ export function ProjectOperationalDetail({
   demands,
   evidence,
   events,
+  executionTrace,
   executionSummaries,
   isArchived,
   onArchiveProject,
@@ -329,6 +333,8 @@ export function ProjectOperationalDetail({
               )}
             </div>
           </LiquidCard>
+
+          <ProjectExecutionTracePanel trace={executionTrace} />
 
           <ProjectGovernanceTabs
             acceptance={acceptance}
