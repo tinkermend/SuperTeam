@@ -361,6 +361,7 @@ const (
 )
 
 const (
+	HumanWaitResolutionApprove           = "approve"
 	HumanWaitResolutionResumeSameTask    = "resume_same_task"
 	HumanWaitResolutionCancelAndReplan   = "cancel_and_replan"
 	HumanWaitResolutionCancelWithoutPlan = "cancel_without_replan"

@@ -107,9 +107,14 @@ type ProjectTaskAttemptWritebackRepository interface {
 	StartProjectTaskAttemptWriteback(ctx context.Context, req StartProjectTaskAttemptRequest) (ProjectTaskAttemptWritebackResult, error)
 	RenewProjectTaskAttemptLeaseWriteback(ctx context.Context, req RenewProjectTaskAttemptLeaseRequest) (ProjectTaskAttempt, error)
 	CompleteProjectTaskAttemptWriteback(ctx context.Context, req CompleteProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error)
+	CompleteProjectTaskAttemptAcceptanceWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceWritebackRequest) (ProjectTaskWritebackResult, error)
 	FailProjectTaskAttemptWriteback(ctx context.Context, req FailProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error)
 	RecoverProjectTaskAttemptFailureWriteback(ctx context.Context, req RecoverProjectTaskAttemptFailureWritebackRequest) (ProjectTaskWritebackResult, error)
 	WaitHumanProjectTaskAttemptWriteback(ctx context.Context, req WaitHumanProjectTaskAttemptWritebackRequest) (ProjectTaskWritebackResult, error)
+}
+
+type ProjectTaskHumanWaitResolutionRepository interface {
+	ResolveProjectTaskHumanWaitWriteback(ctx context.Context, req ResolveProjectTaskHumanWaitWritebackRequest) (ProjectTaskWritebackResult, error)
 }
 
 type AppendProjectEventRequest struct {
@@ -317,6 +322,23 @@ type WaitHumanProjectTaskAttemptWritebackRequest struct {
 	Attempt  ProjectTaskAttempt
 	Wait     WaitHumanProjectTaskAttemptRequest
 	Decision CreateDecisionRequestRequest
+}
+
+type CompleteProjectTaskAttemptAcceptanceWritebackRequest struct {
+	Task     ProjectTask
+	Attempt  ProjectTaskAttempt
+	Complete CompleteProjectTaskAttemptRequest
+	Decision CreateDecisionRequestRequest
+}
+
+type ResolveProjectTaskHumanWaitWritebackRequest struct {
+	Task                ProjectTask
+	CurrentAttempt      ProjectTaskAttempt
+	Resolve             ResolveProjectTaskHumanWaitRequest
+	TargetStatus        string
+	RetryAttemptID      uuid.UUID
+	RetryLeaseToken     string
+	RetryIdempotencyKey string
 }
 
 type ProjectTaskWritebackResult struct {

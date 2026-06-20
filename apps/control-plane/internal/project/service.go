@@ -1483,6 +1483,48 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 	if err != nil {
 		return nil, err
 	}
+	if projectTaskRequiresAcceptance(task, req) {
+		result, err := writebackRepository.CompleteProjectTaskAttemptAcceptanceWriteback(ctx, CompleteProjectTaskAttemptAcceptanceWritebackRequest{
+			Task:     task,
+			Complete: req,
+			Decision: CreateDecisionRequestRequest{
+				TenantID:          req.TenantID,
+				ProjectID:         task.ProjectID,
+				ApprovalRequestID: uuid.Nil,
+				CoordinationJobID: task.CoordinationJobID,
+				ProjectTaskID:     &task.ID,
+				TargetUserID:      projectRecord.HumanOwnerUserID,
+				DecisionType:      projectTaskHumanWaitDecisionType(HumanWaitReasonAcceptanceRequired),
+				TitleSnapshot:     task.Title,
+				SummarySnapshot:   req.Conclusion,
+				RiskLevelSnapshot: stringValue(task.RiskLevel),
+				StatusSnapshot:    "pending",
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if err := s.materializeTaskCompletionEvidence(ctx, task, CompleteProjectTaskRequest{
+			TenantID:              req.TenantID,
+			RuntimeNodeID:         req.RuntimeNodeID,
+			ProjectTaskID:         req.ProjectTaskID,
+			DigitalEmployeeID:     digitalEmployeeID,
+			Conclusion:            req.Conclusion,
+			EvidenceRefs:          req.EvidenceRefs,
+			ArtifactRefs:          req.ArtifactRefs,
+			ConfidenceFactors:     req.ConfidenceFactors,
+			Uncertainty:           req.Uncertainty,
+			MissingInformation:    req.MissingInformation,
+			RecommendedNextAction: req.RecommendedNextAction,
+			RequiresHumanReview:   req.RequiresHumanReview,
+		}, result.Summary.ID); err != nil {
+			_ = s.appendWorkflowSignalEvent(ctx, req.TenantID, task.ProjectID, "EvidenceMaterialization", "failed", err, map[string]any{
+				"project_task_id":      task.ID.String(),
+				"execution_summary_id": result.Summary.ID.String(),
+			})
+		}
+		return &result.Summary, nil
+	}
 	result, err := writebackRepository.CompleteProjectTaskAttemptWriteback(ctx, req)
 	if err != nil {
 		return nil, err
@@ -2020,6 +2062,66 @@ func (s *Service) WaitHumanProjectTaskAttempt(ctx context.Context, req WaitHuman
 	return &result.Task, nil
 }
 
+func (s *Service) ResolveProjectTaskHumanWait(ctx context.Context, req ResolveProjectTaskHumanWaitRequest) (*ProjectTask, error) {
+	req.Resolution = strings.TrimSpace(req.Resolution)
+	req.ResponseSummary = strings.TrimSpace(req.ResponseSummary)
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ProjectTaskID == uuid.Nil || req.ActorUserID == uuid.Nil || req.ResponseSummary == "" || !validHumanWaitResolution(req.Resolution) {
+		return nil, ErrInvalidProject
+	}
+	task, err := s.repository.GetProjectTask(ctx, req.TenantID, req.ProjectTaskID)
+	if err != nil {
+		return nil, err
+	}
+	if task.ProjectID != req.ProjectID || task.Status != ProjectTaskStatusWaitingHuman {
+		return nil, ErrProjectConflict
+	}
+	if req.Resolution == HumanWaitResolutionApprove && (task.WaitingReason == nil || *task.WaitingReason != HumanWaitReasonAcceptanceRequired) {
+		return nil, ErrProjectConflict
+	}
+	projectRecord, err := s.repository.GetProject(ctx, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if req.ActorUserID != projectRecord.HumanOwnerUserID {
+		return nil, ErrProjectTaskForbidden
+	}
+	var currentAttempt ProjectTaskAttempt
+	if task.CurrentAttemptID != nil {
+		currentAttempt, _ = s.repository.GetProjectTaskAttempt(ctx, req.TenantID, *task.CurrentAttemptID)
+	}
+	targetStatus := projectTaskHumanWaitResolutionStatus(req.Resolution)
+	resolutionRepository, err := s.projectTaskHumanWaitResolutionRepository()
+	if err != nil {
+		return nil, err
+	}
+	result, err := resolutionRepository.ResolveProjectTaskHumanWaitWriteback(ctx, ResolveProjectTaskHumanWaitWritebackRequest{
+		Task:                task,
+		CurrentAttempt:      currentAttempt,
+		Resolve:             req,
+		TargetStatus:        targetStatus,
+		RetryAttemptID:      uuid.New(),
+		RetryLeaseToken:     "human-wait-" + uuid.NewString(),
+		RetryIdempotencyKey: fmt.Sprintf("project-task:%s:attempt:%d:human-wait:%s", task.ID, task.AttemptCount+1, req.Resolution),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &result.Task, nil
+}
+
+func projectTaskRequiresAcceptance(task ProjectTask, req CompleteProjectTaskAttemptRequest) bool {
+	if task.RequiresHumanApproval {
+		return true
+	}
+	if task.RiskLevel != nil {
+		switch strings.ToLower(strings.TrimSpace(*task.RiskLevel)) {
+		case "high", "critical":
+			return true
+		}
+	}
+	return req.RequiresHumanReview
+}
+
 func projectTaskFailureAction(task ProjectTask, failureFamily string, retryable *bool) string {
 	if retryable != nil && !*retryable {
 		if failureFamily == FailureFamilyBusinessCancelled || failureFamily == FailureFamilyPlanInvalid || failureFamily == FailureFamilyRequirementChanged {
@@ -2087,6 +2189,34 @@ func validHumanWaitReason(reason string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func validHumanWaitResolution(resolution string) bool {
+	switch resolution {
+	case HumanWaitResolutionApprove,
+		HumanWaitResolutionResumeSameTask,
+		HumanWaitResolutionCancelAndReplan,
+		HumanWaitResolutionCancelWithoutPlan,
+		HumanWaitResolutionMarkFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+func projectTaskHumanWaitResolutionStatus(resolution string) string {
+	switch resolution {
+	case HumanWaitResolutionApprove:
+		return ProjectTaskStatusCompleted
+	case HumanWaitResolutionResumeSameTask:
+		return ProjectTaskStatusQueued
+	case HumanWaitResolutionCancelAndReplan, HumanWaitResolutionCancelWithoutPlan:
+		return ProjectTaskStatusCancelled
+	case HumanWaitResolutionMarkFailed:
+		return ProjectTaskStatusFailed
+	default:
+		return ""
 	}
 }
 
@@ -2625,6 +2755,14 @@ func (s *Service) projectTaskAttemptWritebackRepository() (ProjectTaskAttemptWri
 	repository, ok := s.repository.(ProjectTaskAttemptWritebackRepository)
 	if !ok {
 		return nil, fmt.Errorf("project repository does not support atomic project task attempt writeback")
+	}
+	return repository, nil
+}
+
+func (s *Service) projectTaskHumanWaitResolutionRepository() (ProjectTaskHumanWaitResolutionRepository, error) {
+	repository, ok := s.repository.(ProjectTaskHumanWaitResolutionRepository)
+	if !ok {
+		return nil, fmt.Errorf("project repository does not support atomic project task human wait resolution")
 	}
 	return repository, nil
 }

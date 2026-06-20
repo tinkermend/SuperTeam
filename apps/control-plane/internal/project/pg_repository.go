@@ -2450,6 +2450,78 @@ func (r *PgRepository) CompleteProjectTaskAttemptWriteback(ctx context.Context, 
 	})
 }
 
+func (r *PgRepository) CompleteProjectTaskAttemptAcceptanceWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceWritebackRequest) (ProjectTaskWritebackResult, error) {
+	return withProjectQueries(ctx, r, "project task attempt acceptance writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+			TenantID:     req.Complete.TenantID,
+			ProjectID:    req.Task.ProjectID,
+			EventType:    ProjectEventTaskWaitingHuman,
+			ActorType:    "digital_employee",
+			ActorID:      req.Complete.DigitalEmployeeID.String(),
+			ResourceType: strPtr("project_task"),
+			ResourceID:   strPtr(req.Task.ID.String()),
+			Summary:      "项目任务等待验收",
+			Payload: map[string]any{
+				"project_task_id":         req.Complete.ProjectTaskID.String(),
+				"project_task_attempt_id": req.Complete.AttemptID.String(),
+				"waiting_reason":          HumanWaitReasonAcceptanceRequired,
+			},
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		summary, err := r.createExecutionSummaryWithQueries(ctx, q, CreateExecutionSummaryRequest{
+			TenantID:              req.Complete.TenantID,
+			ProjectID:             req.Task.ProjectID,
+			ProjectTaskID:         req.Task.ID,
+			DigitalEmployeeID:     req.Complete.DigitalEmployeeID,
+			Conclusion:            req.Complete.Conclusion,
+			EvidenceRefs:          sliceOrEmptyAny(req.Complete.EvidenceRefs),
+			ArtifactRefs:          sliceOrEmptyAny(req.Complete.ArtifactRefs),
+			ConfidenceFactors:     mapOrEmptyAny(req.Complete.ConfidenceFactors),
+			Uncertainty:           strings.TrimSpace(req.Complete.Uncertainty),
+			MissingInformation:    sliceOrEmptyAny(req.Complete.MissingInformation),
+			RecommendedNextAction: strings.TrimSpace(req.Complete.RecommendedNextAction),
+			RequiresHumanReview:   true,
+			CreatedEventID:        &event.ID,
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
+			TenantID:          req.Complete.TenantID,
+			ID:                req.Complete.AttemptID,
+			LeaseToken:        req.Complete.LeaseToken,
+			Status:            ProjectTaskAttemptStatusSucceeded,
+			ProviderSessionID: textPtr(req.Complete.ProviderSessionID),
+			TerminalEventID:   nullUUID(&event.ID),
+		}); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		decisionReq := req.Decision
+		decisionReq.CreatedEventID = &event.ID
+		decision, err := r.createDecisionRequestWithQueries(ctx, q, decisionReq)
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		row, err := q.MoveProjectTaskToWaitingHuman(ctx, queries.MoveProjectTaskToWaitingHumanParams{
+			WaitingReason:    HumanWaitReasonAcceptanceRequired,
+			WaitingRequestID: nullUUID(&decision.ID),
+			LatestEventID:    nullUUID(&event.ID),
+			TenantID:         req.Task.TenantID,
+			ID:               req.Task.ID,
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, projectRepositoryError(err)
+		}
+		task, err := taskFromRecord(row)
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary, Decision: decision}, nil
+	})
+}
+
 func (r *PgRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req FailProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {
 	return withProjectQueries(ctx, r, "project task attempt failure writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
 		task, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, req.ProjectTaskID, ProjectTaskStatusFailed, nil, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
@@ -2684,6 +2756,96 @@ func (r *PgRepository) WaitHumanProjectTaskAttemptWriteback(ctx context.Context,
 		}
 		return ProjectTaskWritebackResult{Task: task, Event: event, Decision: decision}, nil
 	})
+}
+
+func (r *PgRepository) ResolveProjectTaskHumanWaitWriteback(ctx context.Context, req ResolveProjectTaskHumanWaitWritebackRequest) (ProjectTaskWritebackResult, error) {
+	return withProjectQueries(ctx, r, "project task human wait resolution", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		eventType := ProjectEventTaskCompleted
+		summary := "项目任务等待已处理"
+		switch req.TargetStatus {
+		case ProjectTaskStatusQueued:
+			eventType = ProjectEventTaskDispatched
+			summary = "项目任务已恢复排队"
+		case ProjectTaskStatusCancelled:
+			eventType = ProjectEventTaskCancelled
+			summary = "项目任务已取消"
+		case ProjectTaskStatusFailed:
+			eventType = ProjectEventTaskFailed
+			summary = "项目任务已标记失败"
+		}
+		event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+			TenantID:     req.Resolve.TenantID,
+			ProjectID:    req.Resolve.ProjectID,
+			EventType:    eventType,
+			ActorType:    "human_user",
+			ActorID:      req.Resolve.ActorUserID.String(),
+			ResourceType: strPtr("project_task"),
+			ResourceID:   strPtr(req.Resolve.ProjectTaskID.String()),
+			Summary:      summary,
+			Payload: map[string]any{
+				"project_task_id":  req.Resolve.ProjectTaskID.String(),
+				"resolution":       req.Resolve.Resolution,
+				"response_summary": req.Resolve.ResponseSummary,
+				"context_refs":     sliceOrEmptyAny(req.Resolve.ContextRefs),
+			},
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		var task ProjectTask
+		switch req.TargetStatus {
+		case ProjectTaskStatusQueued:
+			task, err = r.resumeProjectTaskAfterHumanWaitWithQueries(ctx, q, req, &event.ID)
+		case ProjectTaskStatusCompleted, ProjectTaskStatusCancelled, ProjectTaskStatusFailed:
+			task, err = r.updateProjectTaskStatusWithQueries(ctx, q, req.Resolve.TenantID, req.Resolve.ProjectTaskID, req.TargetStatus, &event.ID, []string{ProjectTaskStatusWaitingHuman})
+			if err == nil && task.DemandID != nil {
+				err = r.recomputeProjectDemandStatusWithQueries(ctx, q, task.TenantID, task.ProjectID, *task.DemandID)
+			}
+		default:
+			err = ErrInvalidProject
+		}
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+	})
+}
+
+func (r *PgRepository) resumeProjectTaskAfterHumanWaitWithQueries(ctx context.Context, q *queries.Queries, req ResolveProjectTaskHumanWaitWritebackRequest, eventID *uuid.UUID) (ProjectTask, error) {
+	if req.CurrentAttempt.ID == uuid.Nil {
+		return ProjectTask{}, ErrProjectNotFound
+	}
+	if req.Task.AssignedDigitalEmployeeID == nil {
+		return ProjectTask{}, ErrProjectTaskForbidden
+	}
+	attemptReq := QueueProjectTaskRequest{
+		TenantID:                      req.Task.TenantID,
+		ProjectID:                     req.Task.ProjectID,
+		ProjectTaskID:                 req.Task.ID,
+		ProjectTaskAttemptID:          &req.RetryAttemptID,
+		DigitalEmployeeID:             *req.Task.AssignedDigitalEmployeeID,
+		DigitalEmployeeRunID:          req.CurrentAttempt.DigitalEmployeeRunID,
+		RuntimeTaskID:                 req.CurrentAttempt.RuntimeTaskID,
+		RuntimeNodeID:                 req.CurrentAttempt.RuntimeNodeID,
+		IdempotencyKey:                req.RetryIdempotencyKey,
+		LeaseToken:                    req.RetryLeaseToken,
+		ExecutionContextPacket:        req.CurrentAttempt.ExecutionContextPacket,
+		ExecutionContextPacketVersion: req.CurrentAttempt.ExecutionContextPacketVersion,
+	}
+	if _, err := r.createProjectTaskAttemptWithQueries(ctx, q, attemptReq, req.RetryAttemptID, req.Task.AttemptCount+1, eventID); err != nil {
+		return ProjectTask{}, err
+	}
+	row, err := q.ScheduleProjectTaskRetry(ctx, queries.ScheduleProjectTaskRetryParams{
+		CurrentAttemptID: req.RetryAttemptID,
+		RetryNotBefore:   pgtype.Timestamptz{},
+		LatestEventID:    nullUUID(eventID),
+		TenantID:         req.Task.TenantID,
+		ID:               req.Task.ID,
+	})
+	if err != nil {
+		return ProjectTask{}, projectRepositoryError(err)
+	}
+	return taskFromRecord(row)
 }
 
 // advanceProjectDemandStatusWithQueries moves a demand forward in its lifecycle,

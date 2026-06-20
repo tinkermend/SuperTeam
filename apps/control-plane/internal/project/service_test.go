@@ -184,6 +184,98 @@ func TestCompleteProjectTaskAttemptCreatesSummaryAndCompletesTask(t *testing.T) 
 	require.Contains(t, repo.eventTypes, ProjectEventTaskCompleted)
 }
 
+func TestCompleteHighRiskAttemptRequiresAcceptanceBeforeCompleted(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	high := "high"
+	repo.tasks[0].RiskLevel = &high
+
+	_, err = service.CompleteProjectTaskAttempt(context.Background(), CompleteProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("complete-high-risk-1"),
+		Conclusion:                       "候选结果已完成",
+	})
+
+	require.NoError(t, err)
+	task := repo.tasks[0]
+	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status)
+	require.NotNil(t, task.WaitingReason)
+	require.Equal(t, HumanWaitReasonAcceptanceRequired, *task.WaitingReason)
+	require.Equal(t, ProjectTaskAttemptStatusSucceeded, repo.projectTaskAttempts[0].Status)
+	require.Len(t, repo.decisionRequests, 1)
+	require.Equal(t, "project_task_acceptance", repo.decisionRequests[0].DecisionType)
+}
+
+func TestResolveProjectTaskHumanWaitAcceptanceApprovedCompletesTask(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusWaitingHuman, ProjectTaskAttemptStatusSucceeded)
+	reason := HumanWaitReasonAcceptanceRequired
+	repo.tasks[0].WaitingReason = &reason
+	waitingRequestID := uuid.New()
+	repo.tasks[0].WaitingRequestID = &waitingRequestID
+
+	task, err := service.ResolveProjectTaskHumanWait(context.Background(), ResolveProjectTaskHumanWaitRequest{
+		TenantID:        fixture.tenantID,
+		ProjectID:       fixture.projectID,
+		ProjectTaskID:   fixture.taskID,
+		ActorUserID:     repo.projects[fixture.projectID].HumanOwnerUserID,
+		Resolution:      HumanWaitResolutionApprove,
+		ResponseSummary: "验收通过",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusCompleted, task.Status)
+}
+
+func TestResolveProjectTaskHumanWaitResumeSameTaskCreatesQueuedAttempt(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusWaitingHuman, ProjectTaskAttemptStatusWaitingHuman)
+	reason := HumanWaitReasonMissingContext
+	repo.tasks[0].WaitingReason = &reason
+	repo.tasks[0].AttemptCount = 1
+
+	task, err := service.ResolveProjectTaskHumanWait(context.Background(), ResolveProjectTaskHumanWaitRequest{
+		TenantID:        fixture.tenantID,
+		ProjectID:       fixture.projectID,
+		ProjectTaskID:   fixture.taskID,
+		ActorUserID:     repo.projects[fixture.projectID].HumanOwnerUserID,
+		Resolution:      HumanWaitResolutionResumeSameTask,
+		ResponseSummary: "已补充上下文",
+		ContextRefs:     []any{"customer_scope"},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusQueued, task.Status)
+	require.NotEqual(t, fixture.attemptID, *task.CurrentAttemptID)
+	require.Equal(t, int32(2), task.AttemptCount)
+}
+
+func TestResolveProjectTaskHumanWaitMarkFailedFailsTask(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusWaitingHuman, ProjectTaskAttemptStatusWaitingHuman)
+	reason := HumanWaitReasonClarification
+	repo.tasks[0].WaitingReason = &reason
+
+	task, err := service.ResolveProjectTaskHumanWait(context.Background(), ResolveProjectTaskHumanWaitRequest{
+		TenantID:        fixture.tenantID,
+		ProjectID:       fixture.projectID,
+		ProjectTaskID:   fixture.taskID,
+		ActorUserID:     repo.projects[fixture.projectID].HumanOwnerUserID,
+		Resolution:      HumanWaitResolutionMarkFailed,
+		ResponseSummary: "无法继续",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusFailed, task.Status)
+}
+
 func TestFailProjectTaskAttemptFailsTaskAndAttempt(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -4932,6 +5024,65 @@ func (r *memoryRepository) CompleteProjectTaskAttemptWriteback(ctx context.Conte
 	return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary}, nil
 }
 
+func (r *memoryRepository) CompleteProjectTaskAttemptAcceptanceWriteback(ctx context.Context, req CompleteProjectTaskAttemptAcceptanceWritebackRequest) (ProjectTaskWritebackResult, error) {
+	snapshot := r.writebackSnapshot()
+	event, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.Complete.TenantID,
+		ProjectID:    req.Task.ProjectID,
+		EventType:    ProjectEventTaskWaitingHuman,
+		ActorType:    "digital_employee",
+		ActorID:      req.Complete.DigitalEmployeeID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(req.Task.ID.String()),
+		Summary:      "项目任务等待验收",
+		Payload: map[string]any{
+			"project_task_id":         req.Complete.ProjectTaskID.String(),
+			"project_task_attempt_id": req.Complete.AttemptID.String(),
+			"waiting_reason":          HumanWaitReasonAcceptanceRequired,
+		},
+	})
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	summary, err := r.CreateExecutionSummary(ctx, CreateExecutionSummaryRequest{
+		TenantID:              req.Complete.TenantID,
+		ProjectID:             req.Task.ProjectID,
+		ProjectTaskID:         req.Task.ID,
+		DigitalEmployeeID:     req.Complete.DigitalEmployeeID,
+		Conclusion:            req.Complete.Conclusion,
+		EvidenceRefs:          sliceOrEmptyAny(req.Complete.EvidenceRefs),
+		ArtifactRefs:          sliceOrEmptyAny(req.Complete.ArtifactRefs),
+		ConfidenceFactors:     mapOrEmptyAny(req.Complete.ConfidenceFactors),
+		Uncertainty:           strings.TrimSpace(req.Complete.Uncertainty),
+		MissingInformation:    sliceOrEmptyAny(req.Complete.MissingInformation),
+		RecommendedNextAction: strings.TrimSpace(req.Complete.RecommendedNextAction),
+		RequiresHumanReview:   true,
+		CreatedEventID:        &event.ID,
+	})
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	if err := r.finishProjectTaskAttempt(req.Complete.TenantID, req.Complete.AttemptID, ProjectTaskAttemptStatusSucceeded, &event.ID, nil, nil, nil); err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	decisionReq := req.Decision
+	decisionReq.CreatedEventID = &event.ID
+	decision, err := r.CreateDecisionRequest(ctx, decisionReq)
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	task, err := r.moveProjectTaskToWaitingHumanWithRequest(req.Complete.TenantID, req.Complete.ProjectTaskID, HumanWaitReasonAcceptanceRequired, &decision.ID)
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	return ProjectTaskWritebackResult{Task: task, Event: event, Summary: summary, Decision: decision}, nil
+}
+
 func (r *memoryRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req FailProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {
 	snapshot := r.writebackSnapshot()
 	task, err := r.UpdateProjectTaskStatus(ctx, req.TenantID, req.ProjectTaskID, ProjectTaskStatusFailed, nil, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
@@ -5094,6 +5245,99 @@ func (r *memoryRepository) moveProjectTaskToWaitingHumanWithRequest(tenantID, pr
 		task.Status = ProjectTaskStatusWaitingHuman
 		task.WaitingReason = &waitingReason
 		task.WaitingRequestID = waitingRequestID
+		task.StatusChangedAt = now
+		task.UpdatedAt = now
+		r.tasks[index] = task
+		return task, nil
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) ResolveProjectTaskHumanWaitWriteback(ctx context.Context, req ResolveProjectTaskHumanWaitWritebackRequest) (ProjectTaskWritebackResult, error) {
+	snapshot := r.writebackSnapshot()
+	eventType := ProjectEventTaskCompleted
+	summary := "项目任务等待已处理"
+	switch req.TargetStatus {
+	case ProjectTaskStatusQueued:
+		eventType = ProjectEventTaskDispatched
+		summary = "项目任务已恢复排队"
+	case ProjectTaskStatusCancelled:
+		eventType = ProjectEventTaskCancelled
+		summary = "项目任务已取消"
+	case ProjectTaskStatusFailed:
+		eventType = ProjectEventTaskFailed
+		summary = "项目任务已标记失败"
+	}
+	event, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.Resolve.TenantID,
+		ProjectID:    req.Resolve.ProjectID,
+		EventType:    eventType,
+		ActorType:    "human_user",
+		ActorID:      req.Resolve.ActorUserID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(req.Resolve.ProjectTaskID.String()),
+		Summary:      summary,
+		Payload: map[string]any{
+			"project_task_id":  req.Resolve.ProjectTaskID.String(),
+			"resolution":       req.Resolve.Resolution,
+			"response_summary": req.Resolve.ResponseSummary,
+			"context_refs":     sliceOrEmptyAny(req.Resolve.ContextRefs),
+		},
+	})
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	var task ProjectTask
+	switch req.TargetStatus {
+	case ProjectTaskStatusQueued:
+		task, err = r.resumeProjectTaskAfterHumanWait(req, &event.ID)
+	case ProjectTaskStatusCompleted, ProjectTaskStatusCancelled, ProjectTaskStatusFailed:
+		task, err = r.UpdateProjectTaskStatus(ctx, req.Resolve.TenantID, req.Resolve.ProjectTaskID, req.TargetStatus, &event.ID, []string{ProjectTaskStatusWaitingHuman})
+	default:
+		err = ErrInvalidProject
+	}
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+}
+
+func (r *memoryRepository) resumeProjectTaskAfterHumanWait(req ResolveProjectTaskHumanWaitWritebackRequest, eventID *uuid.UUID) (ProjectTask, error) {
+	if req.CurrentAttempt.ID == uuid.Nil {
+		return ProjectTask{}, ErrProjectNotFound
+	}
+	for index, task := range r.tasks {
+		if task.TenantID != req.Resolve.TenantID || task.ID != req.Resolve.ProjectTaskID {
+			continue
+		}
+		if task.Status != ProjectTaskStatusWaitingHuman {
+			return ProjectTask{}, ErrProjectConflict
+		}
+		attemptReq := QueueProjectTaskRequest{
+			TenantID:                      task.TenantID,
+			ProjectID:                     task.ProjectID,
+			ProjectTaskID:                 task.ID,
+			ProjectTaskAttemptID:          &req.RetryAttemptID,
+			DigitalEmployeeID:             *task.AssignedDigitalEmployeeID,
+			DigitalEmployeeRunID:          req.CurrentAttempt.DigitalEmployeeRunID,
+			RuntimeTaskID:                 req.CurrentAttempt.RuntimeTaskID,
+			RuntimeNodeID:                 req.CurrentAttempt.RuntimeNodeID,
+			IdempotencyKey:                req.RetryIdempotencyKey,
+			LeaseToken:                    req.RetryLeaseToken,
+			ExecutionContextPacket:        req.CurrentAttempt.ExecutionContextPacket,
+			ExecutionContextPacketVersion: req.CurrentAttempt.ExecutionContextPacketVersion,
+		}
+		attempt := r.createProjectTaskAttempt(attemptReq, task.AttemptCount+1, eventID)
+		attempt.ID = req.RetryAttemptID
+		r.projectTaskAttempts[len(r.projectTaskAttempts)-1] = attempt
+		now := time.Now().UTC()
+		task.Status = ProjectTaskStatusQueued
+		task.CurrentAttemptID = &attempt.ID
+		task.AttemptCount++
+		task.WaitingReason = nil
+		task.WaitingRequestID = nil
 		task.StatusChangedAt = now
 		task.UpdatedAt = now
 		r.tasks[index] = task
