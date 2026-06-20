@@ -34,9 +34,12 @@ type Actor struct {
 }
 
 type EngineStatus struct {
-	Engine        string
-	Status        string
-	EngineVersion string
+	Engine          string
+	Status          string
+	EngineVersion   string
+	OpenFGAStoreID  string
+	OpenFGAModelID  string
+	RecentDiffCount int64
 }
 
 type DecisionTotals struct {

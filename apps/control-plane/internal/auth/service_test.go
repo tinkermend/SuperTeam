@@ -24,6 +24,28 @@ type mockRepo struct {
 	lastLoginLogFilter  ListLoginLogsFilter
 }
 
+type recordingProjectTeamScopeSyncer struct {
+	calls []projectTeamScopeSyncCall
+	err   error
+}
+
+type projectTeamScopeSyncCall struct {
+	tenantID uuid.UUID
+	userID   uuid.UUID
+	teamID   uuid.UUID
+	status   string
+}
+
+func (s *recordingProjectTeamScopeSyncer) SyncProjectTeamScope(ctx context.Context, tenantID, userID, teamID uuid.UUID, status string) error {
+	s.calls = append(s.calls, projectTeamScopeSyncCall{
+		tenantID: tenantID,
+		userID:   userID,
+		teamID:   teamID,
+		status:   status,
+	})
+	return s.err
+}
+
 func newMockRepo() *mockRepo {
 	return &mockRepo{
 		users:          make(map[string]*User),
@@ -542,6 +564,38 @@ func TestReplaceUserProjectTeamScopesRejectsNilOrInvalidTeamIDs(t *testing.T) {
 	}
 }
 
+func TestReplaceUserProjectTeamScopesSyncsOpenFGATuplesBestEffort(t *testing.T) {
+	repo := newMockRepo()
+	svc, _ := NewService(repo)
+	syncer := &recordingProjectTeamScopeSyncer{err: errors.New("openfga write failed")}
+	svc.SetProjectTeamScopeSyncer(syncer)
+	actor, err := svc.CreateUser(context.Background(), "admin", "admin")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	target, err := svc.CreateUser(context.Background(), "target", "secret")
+	if err != nil {
+		t.Fatalf("create target: %v", err)
+	}
+	tenantID := uuid.MustParse(DefaultTenantID)
+	oldTeamID := uuid.New()
+	keptTeamID := uuid.New()
+	newTeamID := uuid.New()
+	repo.scopeTeamIDs[target.ID] = []uuid.UUID{oldTeamID, keptTeamID}
+
+	scopes, err := svc.ReplaceUserProjectTeamScopes(context.Background(), Actor{UserID: actor.ID, Username: actor.Username}, tenantID, target.ID, []uuid.UUID{keptTeamID, newTeamID})
+
+	if err != nil {
+		t.Fatalf("replace scopes should keep DB result when OpenFGA sync fails: %v", err)
+	}
+	if len(scopes) != 2 {
+		t.Fatalf("expected DB scopes to be returned, got %#v", scopes)
+	}
+	assertProjectTeamScopeSyncCall(t, syncer.calls, projectTeamScopeSyncCall{tenantID: tenantID, userID: target.ID, teamID: keptTeamID, status: "active"})
+	assertProjectTeamScopeSyncCall(t, syncer.calls, projectTeamScopeSyncCall{tenantID: tenantID, userID: target.ID, teamID: newTeamID, status: "active"})
+	assertProjectTeamScopeSyncCall(t, syncer.calls, projectTeamScopeSyncCall{tenantID: tenantID, userID: target.ID, teamID: oldTeamID, status: "revoked"})
+}
+
 func TestCreateManagedUserRejectsDigitalEmployeeAvatarAssetOnly(t *testing.T) {
 	repo := newMockRepo()
 	svc, _ := NewService(repo)
@@ -561,6 +615,16 @@ func TestCreateManagedUserRejectsDigitalEmployeeAvatarAssetOnly(t *testing.T) {
 	if !errors.Is(err, ErrInvalidManagedUserInput) {
 		t.Fatalf("expected invalid managed user input for digital employee avatar asset, got %v", err)
 	}
+}
+
+func assertProjectTeamScopeSyncCall(t *testing.T, calls []projectTeamScopeSyncCall, want projectTeamScopeSyncCall) {
+	t.Helper()
+	for _, call := range calls {
+		if call == want {
+			return
+		}
+	}
+	t.Fatalf("expected sync call %#v in %#v", want, calls)
 }
 
 func TestUpdateCurrentUserProfileOnlyMutatesActorAndRecordsOperation(t *testing.T) {

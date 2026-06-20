@@ -48,8 +48,9 @@ export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps
     {
       title: "授权引擎",
       value: overview.engine.engine,
-      description: overview.engine.status,
+      description: engineStatusDescription(overview.engine),
       icon: ShieldCheck,
+      details: engineDetails(overview.engine),
     },
     {
       title: "总决策",
@@ -88,6 +89,16 @@ export function AuthorizationOverview({ apiOptions }: AuthorizationOverviewProps
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-semibold">{metric.value}</div>
+                {metric.details ? (
+                  <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                    {metric.details.map((detail) => (
+                      <div key={detail.label} className="flex items-start justify-between gap-3">
+                        <span>{detail.label}</span>
+                        <span className="max-w-40 break-all text-right font-mono">{detail.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           );
@@ -149,6 +160,22 @@ function formatNumber(value: number) {
 
 function formatRate(value: number) {
   return `${(value * 100).toFixed(1)}%`;
+}
+
+function engineStatusDescription(engine: { status: string; recent_diff_count: number }) {
+  return `${engine.status} · 近 24h diff ${formatNumber(engine.recent_diff_count)}`;
+}
+
+function engineDetails(engine: {
+  engine_version?: string | null;
+  openfga_store_id?: string | null;
+  openfga_model_id?: string | null;
+}) {
+  return [
+    { label: "版本", value: engine.engine_version ?? "-" },
+    { label: "Store", value: engine.openfga_store_id ?? "-" },
+    { label: "Model", value: engine.openfga_model_id ?? "-" },
+  ];
 }
 
 function formatTime(value: string) {

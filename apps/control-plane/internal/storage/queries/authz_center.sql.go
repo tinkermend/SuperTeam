@@ -12,6 +12,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const CountAuthzDecisionDiffsSince = `-- name: CountAuthzDecisionDiffsSince :one
+SELECT COUNT(*)::bigint AS diff_count
+FROM web_operation_logs
+WHERE module = 'authz'
+  AND tenant_id = $1::uuid
+  AND created_at >= $2::timestamptz
+  AND (
+    details->'snapshot'->>'diff' = 'true'
+    OR details->>'diff' = 'true'
+    OR details->'decision'->'snapshot'->>'diff' = 'true'
+  )
+`
+
+type CountAuthzDecisionDiffsSinceParams struct {
+	TenantID uuid.UUID          `json:"tenant_id"`
+	Since    pgtype.Timestamptz `json:"since"`
+}
+
+func (q *Queries) CountAuthzDecisionDiffsSince(ctx context.Context, arg CountAuthzDecisionDiffsSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, CountAuthzDecisionDiffsSince, arg.TenantID, arg.Since)
+	var diff_count int64
+	err := row.Scan(&diff_count)
+	return diff_count, err
+}
+
 const CountAuthzDecisionsSince = `-- name: CountAuthzDecisionsSince :one
 SELECT
   COUNT(*)::bigint AS total,

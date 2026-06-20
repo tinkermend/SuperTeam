@@ -233,9 +233,12 @@ func toGeneratedOverview(overview Overview) AuthzOverviewResponse {
 	}
 	return AuthzOverviewResponse{
 		Engine: AuthzEngineStatus{
-			Engine:        overview.Engine.Engine,
-			Status:        overview.Engine.Status,
-			EngineVersion: optionalString(overview.Engine.EngineVersion),
+			Engine:          overview.Engine.Engine,
+			Status:          overview.Engine.Status,
+			EngineVersion:   optionalString(overview.Engine.EngineVersion),
+			OpenfgaStoreId:  optionalString(overview.Engine.OpenFGAStoreID),
+			OpenfgaModelId:  optionalString(overview.Engine.OpenFGAModelID),
+			RecentDiffCount: overview.Engine.RecentDiffCount,
 		},
 		Totals: AuthzTotals{
 			Total:      overview.Totals.Total,

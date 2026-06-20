@@ -59,6 +59,48 @@ func TestLoadFromEnvPlannerDefaultsAreProviderNeutral(t *testing.T) {
 	require.Equal(t, 2, cfg.Planner.MaxAttempts)
 }
 
+func TestLoadFromEnvAuthzDefaultsToDBEngine(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
+	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
+	t.Setenv("S3_ENDPOINT", "http://127.0.0.1:9000")
+	t.Setenv("S3_REGION", "us-east-1")
+	t.Setenv("S3_BUCKET", "superteam-artifacts")
+	t.Setenv("S3_ACCESS_KEY_ID", "minio")
+	t.Setenv("S3_SECRET_ACCESS_KEY", "minio-secret")
+
+	cfg, err := LoadFromEnv()
+
+	require.NoError(t, err)
+	require.Equal(t, "db", cfg.Authz.Engine)
+	require.Empty(t, cfg.Authz.OpenFGA.APIURL)
+	require.Empty(t, cfg.Authz.OpenFGA.StoreID)
+	require.Empty(t, cfg.Authz.OpenFGA.ModelID)
+}
+
+func TestLoadFromEnvAuthzOpenFGAShadowConfig(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
+	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
+	t.Setenv("S3_ENDPOINT", "http://127.0.0.1:9000")
+	t.Setenv("S3_REGION", "us-east-1")
+	t.Setenv("S3_BUCKET", "superteam-artifacts")
+	t.Setenv("S3_ACCESS_KEY_ID", "minio")
+	t.Setenv("S3_SECRET_ACCESS_KEY", "minio-secret")
+	t.Setenv("AUTHZ_ENGINE", "openfga_shadow")
+	t.Setenv("OPENFGA_API_URL", "http://127.0.0.1:8088")
+	t.Setenv("OPENFGA_STORE_ID", "store-1")
+	t.Setenv("OPENFGA_MODEL_ID", "model-1")
+	t.Setenv("OPENFGA_API_TOKEN", "token-1")
+
+	cfg, err := LoadFromEnv()
+
+	require.NoError(t, err)
+	require.Equal(t, "openfga_shadow", cfg.Authz.Engine)
+	require.Equal(t, "http://127.0.0.1:8088", cfg.Authz.OpenFGA.APIURL)
+	require.Equal(t, "store-1", cfg.Authz.OpenFGA.StoreID)
+	require.Equal(t, "model-1", cfg.Authz.OpenFGA.ModelID)
+	require.Equal(t, "token-1", cfg.Authz.OpenFGA.APIToken)
+}
+
 func TestLoadFromEnvRequiresStorageConfiguration(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("REDIS_URL", "")

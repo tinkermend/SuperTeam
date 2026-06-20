@@ -146,6 +146,19 @@ type DecisionRecord struct {
 	Snapshot     map[string]any
 }
 
+type EngineStatus struct {
+	Engine          string
+	Status          string
+	EngineVersion   string
+	OpenFGAStoreID  string
+	OpenFGAModelID  string
+	RecentDiffCount int64
+}
+
+type EngineReporter interface {
+	AuthzEngineStatus() EngineStatus
+}
+
 type DecisionRecorder interface {
 	RecordDecision(ctx context.Context, record DecisionRecord) error
 }

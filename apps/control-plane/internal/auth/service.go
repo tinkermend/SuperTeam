@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 	"time"
 
@@ -47,7 +48,12 @@ type Repository interface {
 }
 
 type Service struct {
-	repo Repository
+	repo                   Repository
+	projectTeamScopeSyncer ProjectTeamScopeSyncer
+}
+
+type ProjectTeamScopeSyncer interface {
+	SyncProjectTeamScope(ctx context.Context, tenantID, userID, teamID uuid.UUID, status string) error
 }
 
 type CurrentUserContext struct {
@@ -61,6 +67,12 @@ func NewService(repo Repository) (*Service, error) {
 		return nil, errors.New("repository is required")
 	}
 	return &Service{repo: repo}, nil
+}
+
+func (s *Service) SetProjectTeamScopeSyncer(syncer ProjectTeamScopeSyncer) {
+	if s != nil {
+		s.projectTeamScopeSyncer = syncer
+	}
 }
 
 func (s *Service) CreateUser(ctx context.Context, username, password string) (*User, error) {
@@ -120,6 +132,7 @@ func (s *Service) CreateManagedUser(ctx context.Context, actor Actor, input Crea
 		return nil, err
 	}
 	_ = s.recordUserOperation(ctx, actor, user.ID, OperationActionUserCreate, OperationResultSucceeded)
+	s.syncProjectTeamScopeChanges(ctx, input.TenantID, user.ID, nil, input.SelectableTeamIDs)
 	return user, nil
 }
 
@@ -250,7 +263,16 @@ func (s *Service) ReplaceUserProjectTeamScopes(ctx context.Context, actor Actor,
 	if err := s.repo.ValidateActiveTenantTeamIDs(ctx, tenantID, normalizedTeamIDs); err != nil {
 		return nil, err
 	}
-	return s.repo.ReplaceUserProjectTeamScopes(ctx, tenantID, userID, actor.UserID, normalizedTeamIDs)
+	previous, previousErr := s.repo.ListUserProjectTeamScopes(ctx, tenantID, userID)
+	if previousErr != nil {
+		log.Printf("openfga project team scope sync skipped revoked tuples: tenant_id=%s user_id=%s err=%v", tenantID, userID, previousErr)
+	}
+	scopes, err := s.repo.ReplaceUserProjectTeamScopes(ctx, tenantID, userID, actor.UserID, normalizedTeamIDs)
+	if err != nil {
+		return nil, err
+	}
+	s.syncProjectTeamScopeChanges(ctx, tenantID, userID, previous, normalizedTeamIDs)
+	return scopes, nil
 }
 
 func (s *Service) CanUseTeamForProject(ctx context.Context, tenantID, userID, teamID uuid.UUID) (bool, error) {
@@ -258,6 +280,27 @@ func (s *Service) CanUseTeamForProject(ctx context.Context, tenantID, userID, te
 		tenantID = uuid.MustParse(DefaultTenantID)
 	}
 	return s.repo.CanUseTeamForProject(ctx, tenantID, userID, teamID)
+}
+
+func (s *Service) syncProjectTeamScopeChanges(ctx context.Context, tenantID, userID uuid.UUID, previous []UserProjectTeamScopeSummary, activeTeamIDs []uuid.UUID) {
+	if s == nil || s.projectTeamScopeSyncer == nil {
+		return
+	}
+	active := make(map[uuid.UUID]bool, len(activeTeamIDs))
+	for _, teamID := range activeTeamIDs {
+		active[teamID] = true
+		if err := s.projectTeamScopeSyncer.SyncProjectTeamScope(ctx, tenantID, userID, teamID, "active"); err != nil {
+			log.Printf("openfga project team scope sync failed: tenant_id=%s user_id=%s team_id=%s status=active err=%v", tenantID, userID, teamID, err)
+		}
+	}
+	for _, scope := range previous {
+		if active[scope.TeamID] {
+			continue
+		}
+		if err := s.projectTeamScopeSyncer.SyncProjectTeamScope(ctx, tenantID, userID, scope.TeamID, "revoked"); err != nil {
+			log.Printf("openfga project team scope sync failed: tenant_id=%s user_id=%s team_id=%s status=revoked err=%v", tenantID, userID, scope.TeamID, err)
+		}
+	}
 }
 
 func (s *Service) UpdateCurrentUserProfile(ctx context.Context, actor Actor, input UpdateUserProfileInput) (*User, error) {

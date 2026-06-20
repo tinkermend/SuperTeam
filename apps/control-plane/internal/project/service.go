@@ -70,6 +70,12 @@ func NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repository 
 	}, nil
 }
 
+func (s *Service) SetTeamScopeAuthorizer(authorizer ProjectTeamScopeAuthorizer) {
+	if s != nil {
+		s.teamScopeAuthorizer = authorizer
+	}
+}
+
 func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (*CreateProjectResult, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Goal = strings.TrimSpace(req.Goal)

@@ -24,6 +24,14 @@ func NewDBAuthorizer(repository Repository, recorder ...DecisionRecorder) *DBAut
 	return &DBAuthorizer{repository: repository, recorder: r}
 }
 
+func (a *DBAuthorizer) AuthzEngineStatus() EngineStatus {
+	return EngineStatus{
+		Engine:        "db",
+		Status:        "healthy",
+		EngineVersion: "db-authorizer-v1",
+	}
+}
+
 func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, error) {
 	var decision Decision
 	var err error

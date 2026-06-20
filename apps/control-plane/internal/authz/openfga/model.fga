@@ -1,0 +1,29 @@
+model
+  schema 1.1
+
+type user
+
+type tenant
+  relations
+    define owner: [user]
+    define admin: [user] or owner
+    define approver: [user]
+    define member: [user]
+    define viewer: [user] or member or admin
+
+type team
+  relations
+    define tenant: [tenant]
+    define owner: [user] or owner from tenant
+    define admin: [user] or owner or admin from tenant
+    define approver: [user]
+    define member: [user]
+    define viewer: [user] or member or approver or admin or viewer from tenant
+    define project_scope_user: [user]
+
+type project
+  relations
+    define team: [team]
+    define owner: [user]
+    define viewer: [user] or owner
+    define team_scope_user: project_scope_user from team

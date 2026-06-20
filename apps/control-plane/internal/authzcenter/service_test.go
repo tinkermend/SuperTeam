@@ -20,6 +20,7 @@ type serviceRepo struct {
 	listFilter          DecisionFilter
 
 	totals    DecisionTotals
+	diffCount int64
 	top       []ActionCount
 	decisions []DecisionRecord
 
@@ -36,6 +37,10 @@ func (r *serviceRepo) CountDecisionsSince(ctx context.Context, tenantID uuid.UUI
 	r.totalsTenantID = tenantID
 	r.totalsSince = since
 	return r.totals, nil
+}
+
+func (r *serviceRepo) CountDecisionDiffsSince(ctx context.Context, tenantID uuid.UUID, since time.Time) (int64, error) {
+	return r.diffCount, nil
 }
 
 func (r *serviceRepo) ListTopDeniedActionsSince(ctx context.Context, tenantID uuid.UUID, since time.Time, limit int32) ([]ActionCount, error) {
@@ -104,13 +109,23 @@ func (a *serviceAuthorizer) Check(ctx context.Context, req authz.CheckRequest) (
 	return a.decision, nil
 }
 
+type serviceEngineAuthorizer struct {
+	serviceAuthorizer
+	status authz.EngineStatus
+}
+
+func (a *serviceEngineAuthorizer) AuthzEngineStatus() authz.EngineStatus {
+	return a.status
+}
+
 func TestServiceOverviewUsesDecisionDataAndDBEngine(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	userID := uuid.MustParse("00000000-0000-4000-8000-000000000001")
 	recentID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
 	repo := &serviceRepo{
-		totals: DecisionTotals{Total: 10, Allowed: 7, Denied: 3},
-		top:    []ActionCount{{Action: authz.ActionTaskClaim, Count: 3}},
+		totals:    DecisionTotals{Total: 10, Allowed: 7, Denied: 3},
+		diffCount: 2,
+		top:       []ActionCount{{Action: authz.ActionTaskClaim, Count: 3}},
 		decisions: []DecisionRecord{{
 			ID:       recentID,
 			TenantID: tenantID,
@@ -148,6 +163,9 @@ func TestServiceOverviewUsesDecisionDataAndDBEngine(t *testing.T) {
 	if overview.Totals.Total != 10 || overview.Totals.Allowed != 7 || overview.Totals.Denied != 3 {
 		t.Fatalf("unexpected totals: %#v", overview.Totals)
 	}
+	if overview.Engine.RecentDiffCount != 2 {
+		t.Fatalf("expected recent diff count 2, got %#v", overview.Engine)
+	}
 	if got := overview.Totals.DeniedRate(); got != 0.3 {
 		t.Fatalf("expected denied rate 0.3, got %v", got)
 	}
@@ -162,6 +180,35 @@ func TestServiceOverviewUsesDecisionDataAndDBEngine(t *testing.T) {
 	}
 	if len(overview.TopDeniedActions) != 1 || len(overview.RecentEvents) != 1 {
 		t.Fatalf("expected top denied and recent events to be populated, got %#v", overview)
+	}
+}
+
+func TestServiceOverviewUsesAuthorizerEngineStatus(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	userID := uuid.MustParse("00000000-0000-4000-8000-000000000001")
+	repo := &serviceRepo{}
+	authorizer := &serviceEngineAuthorizer{
+		serviceAuthorizer: serviceAuthorizer{decision: authz.Decision{Allowed: true}},
+		status: authz.EngineStatus{
+			Engine:         "openfga_shadow",
+			Status:         "healthy",
+			EngineVersion:  "openfga-shadow-v1",
+			OpenFGAStoreID: "store-1",
+			OpenFGAModelID: "model-1",
+		},
+	}
+	service := NewService(repo, authorizer)
+
+	overview, err := service.GetOverview(context.Background(), Actor{UserID: userID, TenantID: tenantID})
+
+	if err != nil {
+		t.Fatalf("expected overview: %v", err)
+	}
+	if overview.Engine.Engine != "openfga_shadow" {
+		t.Fatalf("expected shadow engine, got %#v", overview.Engine)
+	}
+	if overview.Engine.OpenFGAStoreID != "store-1" || overview.Engine.OpenFGAModelID != "model-1" {
+		t.Fatalf("expected openfga store/model in status, got %#v", overview.Engine)
 	}
 }
 

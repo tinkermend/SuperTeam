@@ -24,6 +24,19 @@ WEB_WAIT_URL="${SUPERTEAM_DEV_WEB_WAIT_URL-http://127.0.0.1:3000/}"
 RUNTIME_AGENT_CMD="${SUPERTEAM_DEV_RUNTIME_AGENT_CMD:-pnpm run dev:runtime-agent}"
 RUNTIME_AGENT_WAIT_URL="${SUPERTEAM_DEV_RUNTIME_AGENT_WAIT_URL-}"
 
+OPENFGA_COMPOSE_FILE="${SUPERTEAM_DEV_OPENFGA_COMPOSE_FILE:-$PROJECT_ROOT/docker-compose.dev.yml}"
+OPENFGA_MODE="${SUPERTEAM_DEV_OPENFGA_MODE:-auto}"
+OPENFGA_CMD="${SUPERTEAM_DEV_OPENFGA_CMD:-openfga}"
+OPENFGA_DATA_DIR="${SUPERTEAM_DEV_OPENFGA_DATA_DIR:-$PROJECT_ROOT/.scratch/openfga}"
+OPENFGA_DATASTORE_ENGINE="${SUPERTEAM_DEV_OPENFGA_DATASTORE_ENGINE:-sqlite}"
+OPENFGA_DATASTORE_URI="${SUPERTEAM_DEV_OPENFGA_DATASTORE_URI:-file:$OPENFGA_DATA_DIR/openfga.db}"
+OPENFGA_HTTP_ADDR="${SUPERTEAM_DEV_OPENFGA_HTTP_ADDR:-127.0.0.1:8088}"
+OPENFGA_GRPC_ADDR="${SUPERTEAM_DEV_OPENFGA_GRPC_ADDR:-127.0.0.1:8089}"
+OPENFGA_PLAYGROUND_ENABLED="${SUPERTEAM_DEV_OPENFGA_PLAYGROUND_ENABLED:-true}"
+OPENFGA_PLAYGROUND_PORT="${SUPERTEAM_DEV_OPENFGA_PLAYGROUND_PORT:-3008}"
+OPENFGA_PLAYGROUND_ADDR="${SUPERTEAM_DEV_OPENFGA_PLAYGROUND_ADDR:-127.0.0.1:$OPENFGA_PLAYGROUND_PORT}"
+OPENFGA_WAIT_URL="${SUPERTEAM_DEV_OPENFGA_WAIT_URL-http://127.0.0.1:8088/healthz}"
+
 SERVICES=(temporal control-plane web runtime-agent)
 STOP_SERVICES=(runtime-agent web control-plane temporal)
 
@@ -52,10 +65,11 @@ log_success() {
 usage() {
     cat <<'USAGE'
 Usage:
-  scripts/dev-services.sh <start|stop|restart|status> [all|temporal|control-plane|web|runtime-agent]
+  scripts/dev-services.sh <start|stop|restart|status> [all|temporal|control-plane|web|runtime-agent|openfga]
 
 Examples:
   scripts/dev-services.sh start all
+  scripts/dev-services.sh start openfga
   scripts/dev-services.sh status
   scripts/dev-services.sh restart web
   scripts/dev-services.sh stop runtime-agent
@@ -72,6 +86,18 @@ Environment overrides:
   SUPERTEAM_DEV_WEB_WAIT_URL
   SUPERTEAM_DEV_RUNTIME_AGENT_CMD
   SUPERTEAM_DEV_RUNTIME_AGENT_WAIT_URL
+  SUPERTEAM_DEV_OPENFGA_MODE
+  SUPERTEAM_DEV_OPENFGA_CMD
+  SUPERTEAM_DEV_OPENFGA_COMPOSE_FILE
+  SUPERTEAM_DEV_OPENFGA_DATA_DIR
+  SUPERTEAM_DEV_OPENFGA_DATASTORE_ENGINE
+  SUPERTEAM_DEV_OPENFGA_DATASTORE_URI
+  SUPERTEAM_DEV_OPENFGA_HTTP_ADDR
+  SUPERTEAM_DEV_OPENFGA_GRPC_ADDR
+  SUPERTEAM_DEV_OPENFGA_PLAYGROUND_ENABLED
+  SUPERTEAM_DEV_OPENFGA_PLAYGROUND_ADDR
+  SUPERTEAM_DEV_OPENFGA_PLAYGROUND_PORT
+  SUPERTEAM_DEV_OPENFGA_WAIT_URL
 USAGE
 }
 
@@ -81,7 +107,7 @@ ensure_dirs() {
 
 is_known_service() {
     case "$1" in
-        temporal|control-plane|web|runtime-agent) return 0 ;;
+        temporal|control-plane|web|runtime-agent|openfga) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -101,6 +127,7 @@ service_wait_url() {
         control-plane) printf '%s\n' "$CONTROL_PLANE_WAIT_URL" ;;
         web) printf '%s\n' "$WEB_WAIT_URL" ;;
         runtime-agent) printf '%s\n' "$RUNTIME_AGENT_WAIT_URL" ;;
+        openfga) printf '%s\n' "$OPENFGA_WAIT_URL" ;;
     esac
 }
 
@@ -130,6 +157,56 @@ http_ok() {
     [ -n "$url" ] || return 1
     command -v curl >/dev/null 2>&1 || return 1
     curl -fsS --max-time 2 "$url" >/dev/null 2>&1
+}
+
+docker_compose() {
+    docker compose -f "$OPENFGA_COMPOSE_FILE" "$@"
+}
+
+shell_join() {
+    local joined=""
+    local quoted
+    local arg
+    for arg in "$@"; do
+        printf -v quoted '%q' "$arg"
+        joined="${joined}${joined:+ }$quoted"
+    done
+    printf '%s\n' "$joined"
+}
+
+openfga_local_available() {
+    command -v "$OPENFGA_CMD" >/dev/null 2>&1
+}
+
+openfga_migrate_command() {
+    local openfga_bin="${1:-$OPENFGA_CMD}"
+    shell_join \
+        "$openfga_bin" migrate \
+        --datastore-engine "$OPENFGA_DATASTORE_ENGINE" \
+        --datastore-uri "$OPENFGA_DATASTORE_URI"
+}
+
+openfga_run_command() {
+    local openfga_bin="${1:-$OPENFGA_CMD}"
+    local args=(
+        "$openfga_bin" run
+        --datastore-engine "$OPENFGA_DATASTORE_ENGINE"
+        --datastore-uri "$OPENFGA_DATASTORE_URI"
+        --http-addr "$OPENFGA_HTTP_ADDR"
+        --grpc-addr "$OPENFGA_GRPC_ADDR"
+    )
+
+    if [ "$OPENFGA_PLAYGROUND_ENABLED" = "true" ]; then
+        args+=(--playground-enabled --playground-addr "$OPENFGA_PLAYGROUND_ADDR")
+    fi
+
+    shell_join "${args[@]}"
+}
+
+tail_openfga_log() {
+    if command -v docker >/dev/null 2>&1; then
+        docker_compose logs --tail 80 openfga openfga-migrate >&2 || true
+    fi
 }
 
 tail_service_log() {
@@ -237,6 +314,11 @@ start_service() {
     local service="$1"
     ensure_dirs
 
+    if [ "$service" = "openfga" ]; then
+        start_openfga_service
+        return 0
+    fi
+
     local pid
     pid="$(read_pid "$service")"
     if pid_running "$pid"; then
@@ -278,9 +360,125 @@ start_service() {
     fi
 }
 
+start_openfga_service() {
+    ensure_dirs
+
+    if http_ok "$OPENFGA_WAIT_URL"; then
+        log_info "openfga already healthy at $OPENFGA_WAIT_URL"
+        return 0
+    fi
+
+    case "$OPENFGA_MODE" in
+        local)
+            start_openfga_local_service
+            ;;
+        compose)
+            start_openfga_compose_service
+            ;;
+        auto)
+            if openfga_local_available; then
+                start_openfga_local_service
+            elif command -v docker >/dev/null 2>&1; then
+                start_openfga_compose_service
+            else
+                log_error "openfga binary is not available and docker is not available; install OpenFGA or set SUPERTEAM_DEV_OPENFGA_MODE=compose with Docker"
+                return 1
+            fi
+            ;;
+        *)
+            log_error "unknown SUPERTEAM_DEV_OPENFGA_MODE: $OPENFGA_MODE"
+            return 1
+            ;;
+    esac
+}
+
+start_openfga_local_service() {
+    if ! openfga_local_available; then
+        log_error "openfga command not found: $OPENFGA_CMD"
+        return 1
+    fi
+
+    local openfga_bin
+    openfga_bin="$(command -v "$OPENFGA_CMD")"
+
+    local pid
+    pid="$(read_pid openfga)"
+    if pid_running "$pid"; then
+        log_info "openfga already running pid=$pid"
+        return 0
+    fi
+
+    local file
+    file="$(pid_file openfga)"
+    if [ -f "$file" ]; then
+        log_warn "openfga has stale pid file; removing $file"
+        rm -f "$file"
+    fi
+
+    mkdir -p "$OPENFGA_DATA_DIR"
+
+    local migrate_cmd
+    local run_cmd
+    local log
+    migrate_cmd="$(openfga_migrate_command "$openfga_bin")"
+    run_cmd="$(openfga_run_command "$openfga_bin")"
+    log="$(log_file openfga)"
+    {
+        echo ""
+        echo "===== $(date '+%Y-%m-%d %H:%M:%S') start openfga ====="
+        echo "cwd: $PROJECT_ROOT"
+        echo "mode: local"
+        echo "migrate: $migrate_cmd"
+        echo "cmd: $run_cmd"
+    } >>"$log"
+
+    log_info "migrating openfga datastore: $OPENFGA_DATASTORE_URI"
+    if ! (cd "$PROJECT_ROOT" && bash -lc "$migrate_cmd" >>"$log" 2>&1); then
+        log_error "openfga datastore migration failed"
+        tail_service_log openfga
+        return 1
+    fi
+
+    log_info "starting openfga via local CLI: $OPENFGA_CMD"
+    pid="$(launch_service_process "$run_cmd" "$log")"
+    echo "$pid" >"$file"
+    if ! wait_for_start openfga "$pid"; then
+        rm -f "$file"
+        return 1
+    fi
+}
+
+start_openfga_compose_service() {
+    if ! command -v docker >/dev/null 2>&1; then
+        log_error "docker is required to start openfga in compose mode"
+        return 1
+    fi
+    log_info "starting openfga via docker compose: $OPENFGA_COMPOSE_FILE"
+    docker_compose up -d openfga
+
+    local waited=0
+    while [ "$waited" -lt "$WAIT_SECONDS" ]; do
+        if http_ok "$OPENFGA_WAIT_URL"; then
+            log_success "openfga healthy at $OPENFGA_WAIT_URL"
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    log_error "openfga did not become healthy at $OPENFGA_WAIT_URL within ${WAIT_SECONDS}s"
+    tail_openfga_log
+    return 1
+}
+
 stop_service() {
     local service="$1"
     ensure_dirs
+
+    if [ "$service" = "openfga" ]; then
+        stop_openfga_service
+        return 0
+    fi
 
     local pid
     pid="$(read_pid "$service")"
@@ -310,8 +508,91 @@ stop_service() {
     log_success "$service stopped"
 }
 
+stop_openfga_service() {
+    ensure_dirs
+
+    local pid
+    pid="$(read_pid openfga)"
+    local file
+    file="$(pid_file openfga)"
+
+    if pid_running "$pid"; then
+        log_info "stopping openfga pid=$pid"
+        kill_tree TERM "$pid"
+        if ! wait_for_stop "$pid"; then
+            log_warn "openfga did not stop after ${STOP_TIMEOUT_SECONDS}s; sending SIGKILL"
+            kill_tree KILL "$pid"
+            wait_for_stop "$pid" || true
+        fi
+        rm -f "$file"
+        log_success "openfga stopped"
+        return 0
+    fi
+
+    rm -f "$file"
+    if http_ok "$OPENFGA_WAIT_URL"; then
+        log_warn "openfga is available at $OPENFGA_WAIT_URL but was not started by this script; leaving it running"
+        return 0
+    fi
+
+    if [ "$OPENFGA_MODE" != "local" ] && command -v docker >/dev/null 2>&1; then
+        if docker_compose ps --status running --services 2>/dev/null | grep -Eq '^(openfga|openfga-migrate)$'; then
+            log_info "stopping openfga via docker compose"
+            docker_compose stop openfga openfga-migrate >/dev/null 2>&1 || true
+            log_success "openfga stopped"
+            return 0
+        fi
+    fi
+
+    log_info "openfga stopped"
+}
+
+status_openfga_service() {
+    local pid
+    pid="$(read_pid openfga)"
+
+    if pid_running "$pid"; then
+        if [ -n "$OPENFGA_WAIT_URL" ]; then
+            if http_ok "$OPENFGA_WAIT_URL"; then
+                echo "openfga: running pid=$pid healthy=$OPENFGA_WAIT_URL log=$(log_file openfga)"
+            else
+                echo "openfga: running pid=$pid health=pending url=$OPENFGA_WAIT_URL log=$(log_file openfga)"
+            fi
+        else
+            echo "openfga: running pid=$pid log=$(log_file openfga)"
+        fi
+        return 0
+    fi
+
+    if [ -n "$pid" ] && http_ok "$OPENFGA_WAIT_URL"; then
+        echo "openfga: running-external stale_pid=$pid healthy=$OPENFGA_WAIT_URL"
+        return 0
+    fi
+
+    if [ -n "$pid" ]; then
+        echo "openfga: stale pid=$pid"
+        return 0
+    fi
+
+    if http_ok "$OPENFGA_WAIT_URL"; then
+        echo "openfga: running-external healthy=$OPENFGA_WAIT_URL"
+        return 0
+    fi
+
+    if command -v docker >/dev/null 2>&1 && docker_compose ps --status running --services 2>/dev/null | grep -Fxq openfga; then
+        echo "openfga: running health=pending url=$OPENFGA_WAIT_URL compose=$OPENFGA_COMPOSE_FILE"
+        return 0
+    fi
+    echo "openfga: stopped"
+}
+
 status_service() {
     local service="$1"
+    if [ "$service" = "openfga" ]; then
+        status_openfga_service
+        return 0
+    fi
+
     local pid
     pid="$(read_pid "$service")"
     local url

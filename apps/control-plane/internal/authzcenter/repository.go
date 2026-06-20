@@ -9,6 +9,7 @@ import (
 
 type Repository interface {
 	CountDecisionsSince(ctx context.Context, tenantID uuid.UUID, since time.Time) (DecisionTotals, error)
+	CountDecisionDiffsSince(ctx context.Context, tenantID uuid.UUID, since time.Time) (int64, error)
 	ListTopDeniedActionsSince(ctx context.Context, tenantID uuid.UUID, since time.Time, limit int32) ([]ActionCount, error)
 	ListDecisions(ctx context.Context, filter DecisionFilter) ([]DecisionRecord, error)
 	ListRuntimeScopeNodes(ctx context.Context, tenantID uuid.UUID) ([]RuntimeScopeNodeRecord, error)

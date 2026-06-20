@@ -96,6 +96,10 @@ function createAuthzFetcher(options: AuthzFetcherOptions = {}) {
           engine: {
             engine: "db",
             status: "ok",
+            engine_version: "db-authorizer-v1",
+            openfga_model_id: null,
+            openfga_store_id: null,
+            recent_diff_count: 0,
           },
           totals: {
             allowed: 0,
@@ -189,7 +193,7 @@ describe("PermissionsCenter", () => {
       await expect.element(screen.getByRole("tab", { name: tabName })).toBeVisible();
     }
 
-    await expect.element(screen.getByText("db")).toBeVisible();
+    await expect.element(screen.getByText(/^db$/)).toBeVisible();
   });
 
   it("submits permission diagnostics", async () => {

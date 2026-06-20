@@ -2186,6 +2186,11 @@ func (r *routeAuthzCenterRepo) CountDecisionsSince(ctx context.Context, tenantID
 	return authzcenter.DecisionTotals{}, nil
 }
 
+func (r *routeAuthzCenterRepo) CountDecisionDiffsSince(ctx context.Context, tenantID uuid.UUID, since time.Time) (int64, error) {
+	r.lastTenantID = tenantID
+	return 0, nil
+}
+
 func (r *routeAuthzCenterRepo) ListTopDeniedActionsSince(ctx context.Context, tenantID uuid.UUID, since time.Time, limit int32) ([]authzcenter.ActionCount, error) {
 	r.lastTenantID = tenantID
 	return []authzcenter.ActionCount{}, nil
