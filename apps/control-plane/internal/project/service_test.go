@@ -694,6 +694,24 @@ func TestStartProjectTaskAttemptWritesLedgerEvent(t *testing.T) {
 	require.Equal(t, fixture.attemptID, *repo.executionLedgerEvents[0].ProjectTaskAttemptID)
 }
 
+func TestStartProjectTaskAttemptIgnoresLedgerWriteFailure(t *testing.T) {
+	repo := newMemoryRepository()
+	repo.createExecutionLedgerEventErr = fmt.Errorf("ledger unavailable")
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusQueued, ProjectTaskAttemptStatusQueued)
+
+	started, err := service.StartProjectTaskAttempt(context.Background(), StartProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("start-ledger-error"),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskAttemptStatusRunning, started.Status)
+	require.Equal(t, ProjectTaskStatusRunning, repo.tasks[0].Status)
+	require.Equal(t, ProjectTaskAttemptStatusRunning, repo.projectTaskAttempts[0].Status)
+	require.Empty(t, repo.executionLedgerEvents)
+}
+
 func TestStartProjectTaskAttemptRejectsWrongLeaseToken(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -764,7 +782,7 @@ func TestCompleteProjectTaskAttemptWritesLedgerEvents(t *testing.T) {
 	requireLedgerEventTypes(t, repo.executionLedgerEvents, ExecutionLedgerEventAttemptCompleted, ExecutionLedgerEventSummaryCreated)
 }
 
-func TestCompleteHighRiskAttemptRequiresAcceptanceBeforeCompleted(t *testing.T) {
+func TestCompleteProjectTaskAttemptAcceptanceBeforeCompletedWritesLedgerEvents(t *testing.T) {
 	repo := newMemoryRepository()
 	inbox := &fakeDecisionInboxProjector{}
 	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, nil, nil, inbox, nil)
@@ -789,6 +807,17 @@ func TestCompleteHighRiskAttemptRequiresAcceptanceBeforeCompleted(t *testing.T) 
 	require.Len(t, inbox.upserts, 1)
 	require.Equal(t, repo.decisionRequests[0].ID, inbox.upserts[0].ID)
 	require.Equal(t, repo.decisionRequests[0].ProjectTaskID, inbox.upserts[0].ProjectTaskID)
+	require.Len(t, repo.executionLedgerEvents, 2)
+	completedEvent := repo.executionLedgerEvents[0]
+	summaryEvent := repo.executionLedgerEvents[1]
+	require.Equal(t, ExecutionLedgerEventAttemptCompleted, completedEvent.EventType)
+	require.Equal(t, fixture.attemptID.String(), completedEvent.SourceID)
+	require.Equal(t, "project_task_attempt:"+fixture.attemptID.String()+":attempt.completed", completedEvent.IdempotencyKey)
+	require.Equal(t, true, completedEvent.Metadata["requires_human_review"])
+	require.Equal(t, ExecutionLedgerEventSummaryCreated, summaryEvent.EventType)
+	require.Equal(t, repo.executionSummaries[0].ID.String(), summaryEvent.SourceID)
+	require.Equal(t, "project_execution_summary:"+repo.executionSummaries[0].ID.String()+":summary.created", summaryEvent.IdempotencyKey)
+	require.Equal(t, true, summaryEvent.Metadata["requires_human_review"])
 }
 
 func TestResolveProjectTaskHumanWaitAcceptanceApprovedCompletesTask(t *testing.T) {
@@ -4769,13 +4798,14 @@ type memoryRepository struct {
 	lastExecutionSummariesOffset     int32
 	executionLedgerEventListRequests []GetExecutionTraceRequest
 
-	taskStatusBeforeUpdate     *string
-	appendProjectEventErr      error
-	createExecutionSummaryErr  error
-	createTransferRequestErr   error
-	archiveProjectErr          error
-	projectTaskRunRuntimeNodes map[uuid.UUID]uuid.UUID
-	projectTaskRunWorkProducts map[uuid.UUID][]any
+	taskStatusBeforeUpdate        *string
+	appendProjectEventErr         error
+	createExecutionSummaryErr     error
+	createExecutionLedgerEventErr error
+	createTransferRequestErr      error
+	archiveProjectErr             error
+	projectTaskRunRuntimeNodes    map[uuid.UUID]uuid.UUID
+	projectTaskRunWorkProducts    map[uuid.UUID][]any
 }
 
 type repositoryWithoutProjectTeamScopeAuthorizer struct {
@@ -5654,6 +5684,9 @@ func (r *memoryRepository) ListExecutionSummaries(ctx context.Context, tenantID,
 }
 
 func (r *memoryRepository) CreateExecutionLedgerEvent(ctx context.Context, req CreateExecutionLedgerEventRequest) (ExecutionLedgerEvent, error) {
+	if r.createExecutionLedgerEventErr != nil {
+		return ExecutionLedgerEvent{}, r.createExecutionLedgerEventErr
+	}
 	if req.IdempotencyKey != "" {
 		for _, event := range r.executionLedgerEvents {
 			if event.TenantID == req.TenantID && event.IdempotencyKey == req.IdempotencyKey {
