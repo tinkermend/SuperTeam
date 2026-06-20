@@ -223,6 +223,7 @@ async fn build_capabilities(config: &RuntimeConfig) -> Vec<RuntimeCapabilityInpu
             descriptor.provider_type,
             section.enabled,
             section.binary_path.display().to_string(),
+            config.workspace.base_dir.display().to_string(),
             health,
         ));
     }
@@ -280,6 +281,7 @@ fn provider_capability(
     provider_type: &str,
     enabled: bool,
     binary_path: String,
+    workspace_base_dir: String,
     health: Option<ProviderHealth>,
 ) -> RuntimeCapabilityInput {
     let available = enabled && health.as_ref().is_some_and(|probe| probe.available);
@@ -296,7 +298,7 @@ fn provider_capability(
         provider_version,
         binary_path: Some(binary_path),
         available,
-        workspace_base_dir: None,
+        workspace_base_dir: Some(workspace_base_dir),
         capacity: None,
         labels: None,
         status: if !enabled {

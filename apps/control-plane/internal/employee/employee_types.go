@@ -46,6 +46,45 @@ var defaultEmployeeTypeDefinitions = []EmployeeTypeDefinition{
 		},
 	},
 	{
+		Type:                     "security_engineer",
+		Label:                    "安全工程",
+		Description:              "负责安全评审、漏洞分析、权限与配置风险检查、应急处置和修复建议。",
+		DefaultRole:              "security_engineer",
+		RecommendedSkills:        []string{"security-review", "vulnerability-analysis", "permission-audit", "incident-response"},
+		RecommendedMCPServers:    []string{"postgres-readonly", "http-connector"},
+		RecommendedProviderTypes: []string{"codex", "opencode"},
+		DefaultCapabilitySelection: map[string]any{
+			"enabled_skills":         []string{"security-review", "vulnerability-analysis"},
+			"enabled_provider_types": []string{"codex"},
+		},
+		DefaultContextPolicyOverride: map[string]any{
+			"sources": []string{"security_policy", "audit_logs", "repository"},
+		},
+		DefaultApprovalPolicy: map[string]any{
+			"min_risk_for_human":          "high",
+			"write_actions_require_human": true,
+		},
+	},
+	{
+		Type:                     "qa_engineer",
+		Label:                    "测试工程",
+		Description:              "负责测试计划、用例设计、自动化验证、缺陷复现、回归检查和验收证据整理。",
+		DefaultRole:              "qa_engineer",
+		RecommendedSkills:        []string{"test-planning", "test-automation", "bug-reproduction", "regression-verification"},
+		RecommendedMCPServers:    []string{"browser"},
+		RecommendedProviderTypes: []string{"codex", "opencode"},
+		DefaultCapabilitySelection: map[string]any{
+			"enabled_skills":         []string{"test-planning", "regression-verification"},
+			"enabled_provider_types": []string{"codex"},
+		},
+		DefaultContextPolicyOverride: map[string]any{
+			"sources": []string{"requirements", "test_reports", "browser_logs"},
+		},
+		DefaultApprovalPolicy: map[string]any{
+			"min_risk_for_human": "medium",
+		},
+	},
+	{
 		Type:                     "frontend_engineer",
 		Label:                    "前端开发",
 		Description:              "负责 Web 控制台界面开发、交互实现、前端状态管理和页面问题诊断。",

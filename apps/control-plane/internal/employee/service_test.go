@@ -32,6 +32,12 @@ func TestEmployeeTypeRegistryExcludesProjectCoordinator(t *testing.T) {
 	if _, ok := EmployeeTypeDefinitionByType("devops_engineer"); !ok {
 		t.Fatalf("expected devops_engineer type")
 	}
+	if _, ok := EmployeeTypeDefinitionByType("security_engineer"); !ok {
+		t.Fatalf("expected security_engineer type")
+	}
+	if _, ok := EmployeeTypeDefinitionByType("qa_engineer"); !ok {
+		t.Fatalf("expected qa_engineer type")
+	}
 }
 
 func TestEmployeeTypeRegistryReturnsClonedDefinitions(t *testing.T) {

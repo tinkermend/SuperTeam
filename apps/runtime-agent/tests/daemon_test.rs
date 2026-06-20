@@ -526,6 +526,7 @@ fi
     config.providers.opencode.enabled = false;
     config.providers.codex.enabled = true;
     config.providers.codex.binary_path = fake_codex;
+    let expected_workspace_base_dir = config.workspace.base_dir.display().to_string();
 
     let daemon = RuntimeDaemon::new(config);
     let handle = tokio::spawn(async move { daemon.run().await });
@@ -555,6 +556,10 @@ fi
     assert_eq!(
         codex["provider_version"],
         serde_json::json!("codex-cli 0.137.0")
+    );
+    assert_eq!(
+        codex["workspace_base_dir"],
+        serde_json::json!(expected_workspace_base_dir)
     );
 }
 
