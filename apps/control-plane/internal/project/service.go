@@ -1455,9 +1455,9 @@ func (s *Service) ListExecutionSummaries(ctx context.Context, tenantID, projectI
 	return s.repository.ListExecutionSummaries(ctx, tenantID, projectID, limit, offset)
 }
 
-func (s *Service) GetExecutionTrace(ctx context.Context, req GetExecutionTraceRequest) (ProjectExecutionTrace, error) {
+func (s *Service) GetExecutionTrace(ctx context.Context, req GetExecutionTraceRequest) (*ProjectExecutionTrace, error) {
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil {
-		return ProjectExecutionTrace{}, ErrInvalidProject
+		return nil, ErrInvalidProject
 	}
 	req.Limit, req.Offset = normalizePagination(req.Limit, req.Offset)
 	if req.Limit < 100 {
@@ -1465,18 +1465,19 @@ func (s *Service) GetExecutionTrace(ctx context.Context, req GetExecutionTraceRe
 	}
 	attempts, err := s.repository.ListProjectTaskAttemptsForExecutionTrace(ctx, req.TenantID, req.ProjectID)
 	if err != nil {
-		return ProjectExecutionTrace{}, err
+		return nil, err
 	}
 	attempts = filterExecutionTraceAttempts(attempts, req)
 	events, err := s.repository.ListProjectExecutionLedgerEvents(ctx, req)
 	if err != nil {
-		return ProjectExecutionTrace{}, err
+		return nil, err
 	}
-	summaries, err := s.repository.ListExecutionSummaries(ctx, req.TenantID, req.ProjectID, 100, 0)
+	summaries, err := s.repository.ListExecutionSummaries(ctx, req.TenantID, req.ProjectID, 1000, 0)
 	if err != nil {
-		return ProjectExecutionTrace{}, err
+		return nil, err
 	}
-	return buildProjectExecutionTrace(req.ProjectID, attempts, events, summaries), nil
+	trace := buildProjectExecutionTrace(req.ProjectID, attempts, events, summaries)
+	return &trace, nil
 }
 
 func filterExecutionTraceAttempts(attempts []ProjectTaskAttempt, req GetExecutionTraceRequest) []ProjectTaskAttempt {
@@ -1525,6 +1526,8 @@ func buildProjectExecutionTrace(projectID uuid.UUID, attempts []ProjectTaskAttem
 
 	summaryByID := make(map[string]ExecutionSummary, len(summaries))
 	latestSummaryByTaskID := make(map[uuid.UUID]ExecutionSummary, len(summaries))
+	tasksWithMatchedSummaryEvent := make(map[uuid.UUID]bool, len(summaries))
+	attachedSummaryIDs := make(map[uuid.UUID]bool, len(summaries))
 	for _, summary := range summaries {
 		summaryByID[summary.ID.String()] = summary
 		latest, ok := latestSummaryByTaskID[summary.ProjectTaskID]
@@ -1542,23 +1545,32 @@ func buildProjectExecutionTrace(projectID uuid.UUID, attempts []ProjectTaskAttem
 			trace.Summary.LatestErrorFamily = &errorFamily
 		}
 		if event.ProjectTaskAttemptID == nil {
+			if event.EventType == ExecutionLedgerEventSummaryCreated {
+				if summary, ok := summaryByID[event.SourceID]; ok {
+					tasksWithMatchedSummaryEvent[summary.ProjectTaskID] = true
+				}
+			}
 			continue
 		}
-		index, ok := attemptIndexes[*event.ProjectTaskAttemptID]
-		if !ok {
+		attemptIndex, attemptOK := attemptIndexes[*event.ProjectTaskAttemptID]
+		if event.EventType == ExecutionLedgerEventSummaryCreated {
+			if summary, ok := summaryByID[event.SourceID]; ok {
+				tasksWithMatchedSummaryEvent[summary.ProjectTaskID] = true
+				if attemptOK && !attachedSummaryIDs[summary.ID] && trace.Attempts[attemptIndex].Summary == nil {
+					attachExecutionTraceSummary(&trace, attemptIndex, summary)
+					attachedSummaryIDs[summary.ID] = true
+				}
+			}
+		}
+		if !attemptOK {
 			continue
 		}
 		clonedEvent := cloneExecutionLedgerEvent(event)
-		trace.Attempts[index].Events = append(trace.Attempts[index].Events, clonedEvent)
+		trace.Attempts[attemptIndex].Events = append(trace.Attempts[attemptIndex].Events, clonedEvent)
 		trace.Summary.ArtifactRefCount += int32(len(clonedEvent.ArtifactRefs))
 		trace.Summary.EvidenceRefCount += int32(len(clonedEvent.EvidenceRefs))
-		if trace.Attempts[index].ProviderType == nil && clonedEvent.ProviderType != nil {
-			trace.Attempts[index].ProviderType = clonedEvent.ProviderType
-		}
-		if event.EventType == ExecutionLedgerEventSummaryCreated {
-			if summary, ok := summaryByID[event.SourceID]; ok {
-				attachExecutionTraceSummary(&trace, index, summary)
-			}
+		if trace.Attempts[attemptIndex].ProviderType == nil && clonedEvent.ProviderType != nil {
+			trace.Attempts[attemptIndex].ProviderType = clonedEvent.ProviderType
 		}
 	}
 
@@ -1566,8 +1578,14 @@ func buildProjectExecutionTrace(projectID uuid.UUID, attempts []ProjectTaskAttem
 		if trace.Attempts[index].Summary != nil {
 			continue
 		}
+		if tasksWithMatchedSummaryEvent[trace.Attempts[index].ProjectTaskID] {
+			continue
+		}
 		if summary, ok := latestSummaryByTaskID[trace.Attempts[index].ProjectTaskID]; ok {
-			attachExecutionTraceSummary(&trace, index, summary)
+			if !attachedSummaryIDs[summary.ID] {
+				attachExecutionTraceSummary(&trace, index, summary)
+				attachedSummaryIDs[summary.ID] = true
+			}
 		}
 	}
 	return trace
