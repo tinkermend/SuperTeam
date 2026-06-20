@@ -336,6 +336,36 @@ const (
 	ProjectTaskAttemptStatusWaitingHuman = "waiting_human"
 )
 
+const (
+	FailureFamilyTransientRuntime      = "transient_runtime"
+	FailureFamilyTransientProvider     = "transient_provider"
+	FailureFamilyTimeout               = "timeout"
+	FailureFamilyInvalidContract       = "invalid_contract"
+	FailureFamilyApprovalRequired      = "approval_required"
+	FailureFamilyPermissionRequired    = "permission_required"
+	FailureFamilyNonRetryableExecution = "non_retryable_execution"
+	FailureFamilyBusinessCancelled     = "business_cancelled"
+	FailureFamilyPlanInvalid           = "plan_invalid"
+	FailureFamilyRequirementChanged    = "requirement_changed"
+	FailureFamilyAcceptanceRequired    = "acceptance_required"
+)
+
+const (
+	HumanWaitReasonMissingContext     = "missing_context"
+	HumanWaitReasonClarification      = "clarification"
+	HumanWaitReasonApprovalRequired   = "approval_required"
+	HumanWaitReasonPermissionRequired = "permission_required"
+	HumanWaitReasonPlanInvalid        = "plan_invalid"
+	HumanWaitReasonAcceptanceRequired = "acceptance_required"
+)
+
+const (
+	HumanWaitResolutionResumeSameTask    = "resume_same_task"
+	HumanWaitResolutionCancelAndReplan   = "cancel_and_replan"
+	HumanWaitResolutionCancelWithoutPlan = "cancel_without_replan"
+	HumanWaitResolutionMarkFailed        = "mark_failed"
+)
+
 type ProjectTaskAttempt struct {
 	ID                            uuid.UUID
 	TenantID                      uuid.UUID
@@ -876,6 +906,25 @@ type FailProjectTaskAttemptRequest struct {
 	FailureSummary    string
 	FailureFamily     string
 	Retryable         *bool
+}
+
+type WaitHumanProjectTaskAttemptRequest struct {
+	ProjectTaskAttemptRuntimeRequest
+	DigitalEmployeeID          uuid.UUID
+	Reason                     string
+	Summary                    string
+	MissingContextRefs         []any
+	SuggestedResolutionOptions []string
+}
+
+type ResolveProjectTaskHumanWaitRequest struct {
+	TenantID        uuid.UUID
+	ProjectID       uuid.UUID
+	ProjectTaskID   uuid.UUID
+	ActorUserID     uuid.UUID
+	Resolution      string
+	ResponseSummary string
+	ContextRefs     []any
 }
 
 type RequestProjectTaskTransferRequest struct {

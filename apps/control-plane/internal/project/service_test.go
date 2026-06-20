@@ -206,6 +206,30 @@ func TestFailProjectTaskAttemptFailsTaskAndAttempt(t *testing.T) {
 	require.Equal(t, ProjectEventTaskFailed, repo.eventTypes[len(repo.eventTypes)-1])
 }
 
+func TestFailProjectTaskAttemptTransientRuntimeSchedulesRetry(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	maxAttempts := int32(3)
+	repo.tasks[0].AttemptCount = 1
+	repo.tasks[0].MaxAttempts = &maxAttempts
+	retryable := true
+
+	task, err := service.FailProjectTaskAttempt(context.Background(), FailProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("fail-transient-1"),
+		FailureSummary:                   "runtime node restarted",
+		FailureFamily:                    FailureFamilyTransientRuntime,
+		Retryable:                        &retryable,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusQueued, task.Status)
+	require.NotNil(t, task.CurrentAttemptID)
+	require.NotEqual(t, fixture.attemptID, *task.CurrentAttemptID)
+	require.Equal(t, int32(2), task.AttemptCount)
+}
+
 func TestProjectTaskAttemptRejectsWrongRuntimeNode(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
