@@ -845,6 +845,10 @@ printf '%s\n' '{"type":"result","result":"provider produced the requested execut
             .and_then(Value::as_str)
             .is_some_and(|value| !value.trim().is_empty())
     );
+    assert_eq!(
+        project_complete.payload["confidence_factors"]["execution_context_packet_version"],
+        "v1"
+    );
 
     http_server.task.abort();
 }
