@@ -137,7 +137,18 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			return err
 		}
 		if userProjectTeamScopesMigrated {
-			return nil
+			executionLedgerMigrated, err := schemaHasTable(ctx, conn, "execution_ledger_events")
+			if err != nil {
+				return err
+			}
+			if executionLedgerMigrated {
+				return nil
+			}
+			files, err := migrationSQLFiles()
+			if err != nil {
+				return err
+			}
+			return applyMigrationFiles(ctx, conn, migrationFilesFrom(files, "029_execution_ledger_events.sql"))
 		}
 		files, err := migrationSQLFiles()
 		if err != nil {
@@ -264,6 +275,12 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 	ctx := context.Background()
 	_, err := db.Exec(ctx, `
 		TRUNCATE
+			execution_ledger_events,
+			project_task_attempts,
+			project_tasks,
+			project_events,
+			project_members,
+			projects,
 			runtime_events,
 			runtime_command_receipts,
 			provider_session_events,
@@ -419,6 +436,111 @@ func seedTestTeamConfigRevision(t *testing.T, db *pgxpool.Pool, tenantID, teamID
 	})
 	require.NoError(t, err)
 	return revision
+}
+
+func TestExecutionLedgerEventQueries(t *testing.T) {
+	db := newQueriesTestDB(t)
+	ctx := context.Background()
+	q := queries.New(db)
+
+	tenantID := seedTestTenant(t, db)
+	teamID := seedTestTeam(t, db, tenantID, "ledger-team", "执行账本团队")
+	ownerID := seedTestAuthUser(t, db, "ledger-owner")
+
+	project, err := q.CreateProject(ctx, queries.CreateProjectParams{
+		ID:               uuid.New(),
+		TenantID:         tenantID,
+		TeamID:           uuid.NullUUID{UUID: teamID, Valid: true},
+		Name:             "执行账本项目",
+		Description:      pgtype.Text{String: "execution ledger query test", Valid: true},
+		Goal:             pgtype.Text{String: "verify idempotent ledger events", Valid: true},
+		Status:           "active",
+		HumanOwnerUserID: ownerID,
+		ApprovalPolicy:   []byte(`{}`),
+		EvidencePolicy:   []byte(`{}`),
+	})
+	require.NoError(t, err)
+
+	task, err := q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
+		TenantID:              tenantID,
+		ProjectID:             project.ID,
+		Title:                 "执行账本任务",
+		Summary:               pgtype.Text{String: "write ledger event", Valid: true},
+		Status:                "queued",
+		DigitalEmployeeRunID:  uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RiskLevel:             pgtype.Text{String: "medium", Valid: true},
+		ExpectedOutputs:       []byte(`[]`),
+		InputRequirements:     []byte(`{}`),
+		HandoffContract:       []byte(`{}`),
+		PlannerMetadata:       []byte(`{}`),
+		RequiresHumanApproval: false,
+	})
+	require.NoError(t, err)
+
+	attemptID := uuid.New()
+	attempt, err := q.CreateProjectTaskAttempt(ctx, queries.CreateProjectTaskAttemptParams{
+		ID:                            attemptID,
+		TenantID:                      tenantID,
+		ProjectTaskID:                 task.ID,
+		AttemptNo:                     1,
+		Status:                        "running",
+		DigitalEmployeeRunID:          task.DigitalEmployeeRunID,
+		ExecutionContextPacket:        []byte(`{}`),
+		ExecutionContextPacketVersion: "v1",
+		LeaseToken:                    "ledger-query-test-lease",
+		LeaseExpiresAt:                pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		IdempotencyKey:                "project-task-attempt:ledger-query-test",
+	})
+	require.NoError(t, err)
+
+	eventParams := queries.CreateExecutionLedgerEventParams{
+		TenantID:             tenantID,
+		TeamID:               uuid.NullUUID{UUID: teamID, Valid: true},
+		ProjectID:            project.ID,
+		ProjectTaskID:        uuid.NullUUID{UUID: task.ID, Valid: true},
+		ProjectTaskAttemptID: uuid.NullUUID{UUID: attempt.ID, Valid: true},
+		EventType:            "attempt.started",
+		SourceType:           "project_task_attempt",
+		SourceID:             attempt.ID.String(),
+		ActorType:            "runtime_node",
+		ActorID:              pgtype.Text{String: "runtime-node-1", Valid: true},
+		InputSummary:         pgtype.Text{String: "start attempt", Valid: true},
+		OutputSummary:        pgtype.Text{String: "attempt accepted", Valid: true},
+		ArtifactRefs:         []byte(`[]`),
+		EvidenceRefs:         []byte(`[]`),
+		Metadata:             []byte(`{"test":"execution-ledger"}`),
+		OccurredAt:           pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		IdempotencyKey:       "project_task_attempt:" + attempt.ID.String() + ":attempt.started",
+	}
+
+	created, err := q.CreateExecutionLedgerEvent(ctx, eventParams)
+	require.NoError(t, err)
+	require.Equal(t, "attempt.started", created.EventType)
+
+	eventParams.InputSummary = pgtype.Text{String: "duplicate should reuse original row", Valid: true}
+	duplicate, err := q.CreateExecutionLedgerEvent(ctx, eventParams)
+	require.NoError(t, err)
+	require.Equal(t, created.ID, duplicate.ID)
+
+	events, err := q.ListProjectExecutionLedgerEvents(ctx, queries.ListProjectExecutionLedgerEventsParams{
+		TenantID:  tenantID,
+		ProjectID: project.ID,
+		Offset:    0,
+		Limit:     10,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	require.Equal(t, created.ID, events[0].ID)
+	require.Equal(t, task.ID, events[0].ProjectTaskID.UUID)
+	require.Equal(t, attempt.ID, events[0].ProjectTaskAttemptID.UUID)
+
+	attempts, err := q.ListProjectTaskAttemptsForExecutionTrace(ctx, queries.ListProjectTaskAttemptsForExecutionTraceParams{
+		TenantID:  tenantID,
+		ProjectID: project.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, attempts, 1)
+	require.Equal(t, attempt.ID, attempts[0].ID)
 }
 
 func TestUserProjectTeamScopesQueriesReplaceAndList(t *testing.T) {

@@ -490,6 +490,64 @@ type DigitalEmployeeWorkspaceFileSync struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 执行账本事件表，记录项目任务执行、Provider、工具、MCP、外部能力和证据链的统一审计索引。
+type ExecutionLedgerEvent struct {
+	// 执行账本事件主键 UUID。
+	ID uuid.UUID `json:"id"`
+	// 执行账本事件所属租户 ID。
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 执行账本事件所属团队 ID，可为空以兼容项目未绑定团队的历史数据。
+	TeamID uuid.NullUUID `json:"team_id"`
+	// 执行账本事件所属项目 ID。
+	ProjectID uuid.UUID `json:"project_id"`
+	// 执行账本事件关联项目任务 ID，可为空表示项目级执行事件。
+	ProjectTaskID uuid.NullUUID `json:"project_task_id"`
+	// 执行账本事件关联项目任务执行尝试 ID。
+	ProjectTaskAttemptID uuid.NullUUID `json:"project_task_attempt_id"`
+	// 执行事件类型，例如 attempt.started、provider.event、mcp.tool_call、summary.created。
+	EventType string `json:"event_type"`
+	// 来源事实类型，例如 project_task_attempt、provider_session_event、runtime_command_receipt。
+	SourceType string `json:"source_type"`
+	// 来源事实 ID 或稳定外部 ID。
+	SourceID string `json:"source_id"`
+	// 执行事件主体类型，例如 digital_employee、runtime_node、provider、system。
+	ActorType string `json:"actor_type"`
+	// 执行事件主体 ID 或外部标识。
+	ActorID pgtype.Text `json:"actor_id"`
+	// 关联 Runtime 节点 ID。
+	RuntimeNodeID uuid.NullUUID `json:"runtime_node_id"`
+	// 关联 Provider 类型，由服务端注册表校验。
+	ProviderType pgtype.Text `json:"provider_type"`
+	// Provider 外部会话 ID。
+	ProviderSessionID pgtype.Text `json:"provider_session_id"`
+	// 输入摘要，不保存完整 prompt、secret 或大 payload。
+	InputSummary pgtype.Text `json:"input_summary"`
+	// 输出摘要，不保存完整 raw payload。
+	OutputSummary pgtype.Text `json:"output_summary"`
+	// 错误分类，例如 provider_error、runtime_error、missing_context、capability_denied。
+	ErrorFamily pgtype.Text `json:"error_family"`
+	// 细分错误码。
+	ErrorCode pgtype.Text `json:"error_code"`
+	// 短错误说明，禁止写入 secret。
+	ErrorMessage pgtype.Text `json:"error_message"`
+	// 该事件对应失败是否可重试。
+	Retryable pgtype.Bool `json:"retryable"`
+	// 工件引用数组。
+	ArtifactRefs []byte `json:"artifact_refs"`
+	// 证据引用数组。
+	EvidenceRefs []byte `json:"evidence_refs"`
+	// 结构化扩展数据，禁止写入 secret 和完整 raw payload。
+	Metadata []byte `json:"metadata"`
+	// 事件发生时间。
+	OccurredAt pgtype.Timestamptz `json:"occurred_at"`
+	// 执行账本事件幂等键。
+	IdempotencyKey string `json:"idempotency_key"`
+	// 执行账本事件创建时间。
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 执行账本事件更新时间。
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 收件箱可操作事项 read model，聚合需要人类用户处理的审批和项目决策待办
 type InboxItem struct {
 	// 收件箱事项ID
@@ -1500,38 +1558,6 @@ type RuntimeEvent struct {
 	// Runtime 管理面事件创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// Runtime 管理面事件最后更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-// Runtime 任务租约表
-type RuntimeLease struct {
-	// 租约主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 租约所属任务 ID
-	TaskID uuid.UUID `json:"task_id"`
-	// 租约所属任务运行 ID
-	RunID uuid.NullUUID `json:"run_id"`
-	// 持有租约的 Runtime 节点 UUID
-	RuntimeNodeID uuid.NullUUID `json:"runtime_node_id"`
-	// 持有租约的 Runtime 外部业务节点 ID
-	NodeID string `json:"node_id"`
-	// 租约令牌
-	LeaseToken string `json:"lease_token"`
-	// 租约状态
-	Status string `json:"status"`
-	// 租约过期时间
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
-	// 租约续约时间
-	RenewedAt pgtype.Timestamptz `json:"renewed_at"`
-	// 租约释放时间
-	ReleasedAt pgtype.Timestamptz `json:"released_at"`
-	// 租约取消时间
-	CancelledAt pgtype.Timestamptz `json:"cancelled_at"`
-	// 租约创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 租约最后更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 

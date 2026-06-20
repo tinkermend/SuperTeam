@@ -658,6 +658,50 @@ func TestProjectTaskDurableClosureMigrationComments(t *testing.T) {
 	}
 }
 
+func TestExecutionLedgerEventsMigration(t *testing.T) {
+	sql := readMigration(t, "029_execution_ledger_events.sql")
+	block := createTableBlock(t, sql, "execution_ledger_events")
+
+	expected := []string{
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"tenant_id UUID NOT NULL",
+		"team_id UUID",
+		"project_id UUID NOT NULL",
+		"project_task_id UUID",
+		"project_task_attempt_id UUID",
+		"event_type VARCHAR(100) NOT NULL",
+		"source_type VARCHAR(100) NOT NULL",
+		"source_id VARCHAR(255) NOT NULL",
+		"actor_type VARCHAR(80) NOT NULL",
+		"actor_id VARCHAR(255)",
+		"runtime_node_id UUID",
+		"provider_type VARCHAR(100)",
+		"provider_session_id VARCHAR(255)",
+		"input_summary TEXT",
+		"output_summary TEXT",
+		"error_family VARCHAR(100)",
+		"error_code VARCHAR(100)",
+		"error_message TEXT",
+		"retryable BOOLEAN",
+		"artifact_refs JSONB NOT NULL DEFAULT '[]'::jsonb",
+		"evidence_refs JSONB NOT NULL DEFAULT '[]'::jsonb",
+		"metadata JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"idempotency_key VARCHAR(255) NOT NULL",
+	}
+	for _, want := range expected {
+		if !strings.Contains(block, want) {
+			t.Fatalf("expected execution_ledger_events schema to contain %q, got block:\n%s", want, block)
+		}
+	}
+
+	assertMigrationContains(t, sql, "CREATE UNIQUE INDEX uq_execution_ledger_events_idempotency")
+	assertMigrationContains(t, sql, "CREATE INDEX idx_execution_ledger_events_project_time")
+	assertMigrationContains(t, sql, "CREATE INDEX idx_execution_ledger_events_attempt_time")
+	assertMigrationContains(t, sql, "COMMENT ON TABLE execution_ledger_events IS '执行账本事件表，记录项目任务执行、Provider、工具、MCP、外部能力和证据链的统一审计索引。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.input_summary IS '输入摘要，不保存完整 prompt、secret 或大 payload。'")
+}
+
 func TestSkillManagementMigrationAddsSkillPackageTables(t *testing.T) {
 	body, err := os.ReadFile("migrations/009_skill_management.sql")
 	if err != nil {
@@ -1024,6 +1068,22 @@ func createTableBlock(t *testing.T, sql string, table string) string {
 		t.Fatalf("missing end of %s create table block", table)
 	}
 	return rest[:end]
+}
+
+func readMigration(t *testing.T, name string) string {
+	t.Helper()
+	body, err := os.ReadFile("migrations/" + name)
+	if err != nil {
+		t.Fatalf("read migration %s: %v", name, err)
+	}
+	return string(body)
+}
+
+func assertMigrationContains(t *testing.T, sql string, fragment string) {
+	t.Helper()
+	if !strings.Contains(sql, fragment) {
+		t.Fatalf("expected migration to contain %q", fragment)
+	}
 }
 
 func migrationsSQL(t *testing.T) string {
