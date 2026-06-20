@@ -2501,6 +2501,133 @@ func (r *PgRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req 
 	})
 }
 
+func (r *PgRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context.Context, req RecoverProjectTaskAttemptFailureWritebackRequest) (ProjectTaskWritebackResult, error) {
+	return withProjectQueries(ctx, r, "project task attempt failure recovery", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
+		eventType := ProjectEventTaskFailed
+		summary := "项目任务执行失败"
+		if req.TaskTargetStatus == ProjectTaskStatusCancelled {
+			eventType = ProjectEventTaskCancelled
+			summary = "项目任务已取消"
+		}
+		payload := map[string]any{
+			"project_task_id":         req.Failure.ProjectTaskID.String(),
+			"project_task_attempt_id": req.Failure.AttemptID.String(),
+			"failure_summary":         req.Failure.FailureSummary,
+			"failure_family":          req.Failure.FailureFamily,
+			"recovery_status":         req.TaskTargetStatus,
+		}
+		if req.TaskTargetStatus == ProjectTaskStatusWaitingHuman {
+			payload["waiting_reason"] = req.WaitingReason
+		}
+		if req.TaskTargetStatus == ProjectTaskStatusQueued {
+			payload["retry_project_task_attempt_id"] = req.RetryAttemptID.String()
+		}
+		event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
+			TenantID:     req.Failure.TenantID,
+			ProjectID:    req.Task.ProjectID,
+			EventType:    eventType,
+			ActorType:    "digital_employee",
+			ActorID:      req.Failure.DigitalEmployeeID.String(),
+			ResourceType: strPtr("project_task"),
+			ResourceID:   strPtr(req.Task.ID.String()),
+			Summary:      summary,
+			Payload:      payload,
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
+			TenantID:          req.Failure.TenantID,
+			ID:                req.Failure.AttemptID,
+			LeaseToken:        req.Failure.LeaseToken,
+			Status:            req.AttemptTerminalStatus,
+			ProviderSessionID: textPtr(req.Failure.ProviderSessionID),
+			Retryable:         boolPtr(req.Failure.Retryable),
+			FailureFamily:     textOrNull(req.Failure.FailureFamily),
+			FailureMessage:    textOrNull(req.Failure.FailureSummary),
+			TerminalEventID:   nullUUID(&event.ID),
+		}); err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+
+		var task ProjectTask
+		switch req.TaskTargetStatus {
+		case ProjectTaskStatusQueued:
+			task, err = r.scheduleProjectTaskRetryWithQueries(ctx, q, req, &event.ID)
+		case ProjectTaskStatusWaitingHuman:
+			task, err = r.moveProjectTaskToWaitingHumanWithQueries(ctx, q, req, &event.ID)
+		case ProjectTaskStatusFailed, ProjectTaskStatusCancelled:
+			task, err = r.updateProjectTaskStatusWithQueries(ctx, q, req.Failure.TenantID, req.Failure.ProjectTaskID, req.TaskTargetStatus, &event.ID, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
+			if err == nil && task.DemandID != nil {
+				err = r.recomputeProjectDemandStatusWithQueries(ctx, q, task.TenantID, task.ProjectID, *task.DemandID)
+			}
+		default:
+			err = ErrInvalidProject
+		}
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+	})
+}
+
+func (r *PgRepository) scheduleProjectTaskRetryWithQueries(ctx context.Context, q *queries.Queries, req RecoverProjectTaskAttemptFailureWritebackRequest, eventID *uuid.UUID) (ProjectTask, error) {
+	retryAttemptID := req.RetryAttemptID
+	if retryAttemptID == uuid.Nil {
+		retryAttemptID = uuid.New()
+	}
+	retryLeaseToken := strings.TrimSpace(req.RetryLeaseToken)
+	if retryLeaseToken == "" {
+		retryLeaseToken = "retry-" + uuid.NewString()
+	}
+	retryIdempotencyKey := strings.TrimSpace(req.RetryIdempotencyKey)
+	if retryIdempotencyKey == "" {
+		retryIdempotencyKey = fmt.Sprintf("project-task:%s:attempt:%d:retry", req.Task.ID, req.Task.AttemptCount+1)
+	}
+	attemptReq := QueueProjectTaskRequest{
+		TenantID:                      req.Task.TenantID,
+		ProjectID:                     req.Task.ProjectID,
+		ProjectTaskID:                 req.Task.ID,
+		ProjectTaskAttemptID:          &retryAttemptID,
+		DigitalEmployeeID:             req.Failure.DigitalEmployeeID,
+		DigitalEmployeeRunID:          req.Attempt.DigitalEmployeeRunID,
+		RuntimeTaskID:                 req.Attempt.RuntimeTaskID,
+		RuntimeNodeID:                 req.Attempt.RuntimeNodeID,
+		IdempotencyKey:                retryIdempotencyKey,
+		LeaseToken:                    retryLeaseToken,
+		ExecutionContextPacket:        req.Attempt.ExecutionContextPacket,
+		ExecutionContextPacketVersion: req.Attempt.ExecutionContextPacketVersion,
+	}
+	if _, err := r.createProjectTaskAttemptWithQueries(ctx, q, attemptReq, retryAttemptID, req.Task.AttemptCount+1, eventID); err != nil {
+		return ProjectTask{}, err
+	}
+	row, err := q.ScheduleProjectTaskRetry(ctx, queries.ScheduleProjectTaskRetryParams{
+		CurrentAttemptID: retryAttemptID,
+		RetryNotBefore:   timestamptzPtr(req.RetryNotBefore),
+		LatestEventID:    nullUUID(eventID),
+		TenantID:         req.Task.TenantID,
+		ID:               req.Task.ID,
+	})
+	if err != nil {
+		return ProjectTask{}, projectRepositoryError(err)
+	}
+	return taskFromRecord(row)
+}
+
+func (r *PgRepository) moveProjectTaskToWaitingHumanWithQueries(ctx context.Context, q *queries.Queries, req RecoverProjectTaskAttemptFailureWritebackRequest, eventID *uuid.UUID) (ProjectTask, error) {
+	row, err := q.MoveProjectTaskToWaitingHuman(ctx, queries.MoveProjectTaskToWaitingHumanParams{
+		WaitingReason:    req.WaitingReason,
+		WaitingRequestID: uuid.NullUUID{},
+		LatestEventID:    nullUUID(eventID),
+		TenantID:         req.Task.TenantID,
+		ID:               req.Task.ID,
+	})
+	if err != nil {
+		return ProjectTask{}, projectRepositoryError(err)
+	}
+	return taskFromRecord(row)
+}
+
 // advanceProjectDemandStatusWithQueries moves a demand forward in its lifecycle,
 // guarded so status never regresses. It shares the per-project advisory lock with
 // project event appends so concurrent task writebacks serialize their demand updates.

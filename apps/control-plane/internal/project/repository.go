@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -107,6 +108,7 @@ type ProjectTaskAttemptWritebackRepository interface {
 	RenewProjectTaskAttemptLeaseWriteback(ctx context.Context, req RenewProjectTaskAttemptLeaseRequest) (ProjectTaskAttempt, error)
 	CompleteProjectTaskAttemptWriteback(ctx context.Context, req CompleteProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error)
 	FailProjectTaskAttemptWriteback(ctx context.Context, req FailProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error)
+	RecoverProjectTaskAttemptFailureWriteback(ctx context.Context, req RecoverProjectTaskAttemptFailureWritebackRequest) (ProjectTaskWritebackResult, error)
 }
 
 type AppendProjectEventRequest struct {
@@ -294,6 +296,19 @@ type RequestProjectTaskTransferWritebackRequest struct {
 	Event                  AppendProjectEventRequest
 	Transfer               CreateTransferRequestRequest
 	AllowedCurrentStatuses []string
+}
+
+type RecoverProjectTaskAttemptFailureWritebackRequest struct {
+	Task                  ProjectTask
+	Attempt               ProjectTaskAttempt
+	Failure               FailProjectTaskAttemptRequest
+	AttemptTerminalStatus string
+	TaskTargetStatus      string
+	WaitingReason         string
+	RetryAttemptID        uuid.UUID
+	RetryLeaseToken       string
+	RetryIdempotencyKey   string
+	RetryNotBefore        *time.Time
 }
 
 type ProjectTaskWritebackResult struct {

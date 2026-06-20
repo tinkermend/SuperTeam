@@ -1024,6 +1024,35 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND status IN ('planned', 'waiting_human')
 RETURNING *;
 
+-- name: ScheduleProjectTaskRetry :one
+UPDATE project_tasks
+SET status = 'queued',
+    current_attempt_id = sqlc.arg('current_attempt_id')::uuid,
+    attempt_count = attempt_count + 1,
+    retry_not_before = sqlc.narg('retry_not_before')::timestamptz,
+    waiting_reason = NULL,
+    waiting_request_id = NULL,
+    latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status IN ('running', 'waiting_human')
+RETURNING *;
+
+-- name: MoveProjectTaskToWaitingHuman :one
+UPDATE project_tasks
+SET status = 'waiting_human',
+    waiting_reason = sqlc.arg('waiting_reason')::varchar,
+    waiting_request_id = sqlc.narg('waiting_request_id')::uuid,
+    latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status IN ('queued', 'running')
+RETURNING *;
+
 -- name: StartProjectTaskAttempt :one
 UPDATE project_task_attempts
 SET status = 'running',

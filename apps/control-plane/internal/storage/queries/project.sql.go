@@ -4011,6 +4011,79 @@ func (q *Queries) LockProjectTaskForQueue(ctx context.Context, arg LockProjectTa
 	return i, err
 }
 
+const MoveProjectTaskToWaitingHuman = `-- name: MoveProjectTaskToWaitingHuman :one
+UPDATE project_tasks
+SET status = 'waiting_human',
+    waiting_reason = $1::varchar,
+    waiting_request_id = $2::uuid,
+    latest_event_id = COALESCE($3::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = $4::uuid
+  AND id = $5::uuid
+  AND status IN ('queued', 'running')
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at
+`
+
+type MoveProjectTaskToWaitingHumanParams struct {
+	WaitingReason    string        `json:"waiting_reason"`
+	WaitingRequestID uuid.NullUUID `json:"waiting_request_id"`
+	LatestEventID    uuid.NullUUID `json:"latest_event_id"`
+	TenantID         uuid.UUID     `json:"tenant_id"`
+	ID               uuid.UUID     `json:"id"`
+}
+
+func (q *Queries) MoveProjectTaskToWaitingHuman(ctx context.Context, arg MoveProjectTaskToWaitingHumanParams) (ProjectTask, error) {
+	row := q.db.QueryRow(ctx, MoveProjectTaskToWaitingHuman,
+		arg.WaitingReason,
+		arg.WaitingRequestID,
+		arg.LatestEventID,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i ProjectTask
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Title,
+		&i.Summary,
+		&i.Status,
+		&i.AssignedDigitalEmployeeID,
+		&i.RuntimeTaskID,
+		&i.DigitalEmployeeRunID,
+		&i.RiskLevel,
+		&i.RequiresHumanApproval,
+		&i.LatestEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.PlannedTaskKey,
+		&i.TaskKind,
+		&i.StageIndex,
+		&i.ExpectedOutputs,
+		&i.InputRequirements,
+		&i.HandoffContract,
+		&i.PlannerMetadata,
+		&i.CurrentAttemptID,
+		&i.AcceptedPlanRevisionID,
+		&i.DecompositionClaimKey,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.RetryNotBefore,
+		&i.WaitingReason,
+		&i.WaitingRequestID,
+		&i.TerminalReason,
+		&i.TerminalEventID,
+		&i.CancelledBy,
+		&i.FailedBy,
+		&i.StatusChangedAt,
+	)
+	return i, err
+}
+
 const ProjectTaskEventExists = `-- name: ProjectTaskEventExists :one
 SELECT EXISTS (
     SELECT 1 FROM project_events
@@ -4339,6 +4412,82 @@ func (q *Queries) RewireProjectTaskDependencies(ctx context.Context, arg RewireP
 		return nil, err
 	}
 	return items, nil
+}
+
+const ScheduleProjectTaskRetry = `-- name: ScheduleProjectTaskRetry :one
+UPDATE project_tasks
+SET status = 'queued',
+    current_attempt_id = $1::uuid,
+    attempt_count = attempt_count + 1,
+    retry_not_before = $2::timestamptz,
+    waiting_reason = NULL,
+    waiting_request_id = NULL,
+    latest_event_id = COALESCE($3::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = $4::uuid
+  AND id = $5::uuid
+  AND status IN ('running', 'waiting_human')
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_reason, terminal_event_id, cancelled_by, failed_by, status_changed_at
+`
+
+type ScheduleProjectTaskRetryParams struct {
+	CurrentAttemptID uuid.UUID          `json:"current_attempt_id"`
+	RetryNotBefore   pgtype.Timestamptz `json:"retry_not_before"`
+	LatestEventID    uuid.NullUUID      `json:"latest_event_id"`
+	TenantID         uuid.UUID          `json:"tenant_id"`
+	ID               uuid.UUID          `json:"id"`
+}
+
+func (q *Queries) ScheduleProjectTaskRetry(ctx context.Context, arg ScheduleProjectTaskRetryParams) (ProjectTask, error) {
+	row := q.db.QueryRow(ctx, ScheduleProjectTaskRetry,
+		arg.CurrentAttemptID,
+		arg.RetryNotBefore,
+		arg.LatestEventID,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i ProjectTask
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Title,
+		&i.Summary,
+		&i.Status,
+		&i.AssignedDigitalEmployeeID,
+		&i.RuntimeTaskID,
+		&i.DigitalEmployeeRunID,
+		&i.RiskLevel,
+		&i.RequiresHumanApproval,
+		&i.LatestEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.PlannedTaskKey,
+		&i.TaskKind,
+		&i.StageIndex,
+		&i.ExpectedOutputs,
+		&i.InputRequirements,
+		&i.HandoffContract,
+		&i.PlannerMetadata,
+		&i.CurrentAttemptID,
+		&i.AcceptedPlanRevisionID,
+		&i.DecompositionClaimKey,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.RetryNotBefore,
+		&i.WaitingReason,
+		&i.WaitingRequestID,
+		&i.TerminalReason,
+		&i.TerminalEventID,
+		&i.CancelledBy,
+		&i.FailedBy,
+		&i.StatusChangedAt,
+	)
+	return i, err
 }
 
 const StartProjectTaskAttempt = `-- name: StartProjectTaskAttempt :one

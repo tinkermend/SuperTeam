@@ -230,6 +230,52 @@ func TestFailProjectTaskAttemptTransientRuntimeSchedulesRetry(t *testing.T) {
 	require.Equal(t, int32(2), task.AttemptCount)
 }
 
+func TestFailProjectTaskAttemptRetryExhaustionMovesToWaitingHuman(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	maxAttempts := int32(3)
+	repo.tasks[0].AttemptCount = 3
+	repo.tasks[0].MaxAttempts = &maxAttempts
+	retryable := true
+
+	task, err := service.FailProjectTaskAttempt(context.Background(), FailProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("fail-exhausted-1"),
+		FailureSummary:                   "provider timed out repeatedly",
+		FailureFamily:                    FailureFamilyTimeout,
+		Retryable:                        &retryable,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status)
+	require.NotNil(t, task.WaitingReason)
+	require.Equal(t, HumanWaitReasonClarification, *task.WaitingReason)
+	require.Equal(t, fixture.attemptID, *task.CurrentAttemptID)
+	require.Equal(t, int32(3), task.AttemptCount)
+	require.Equal(t, ProjectTaskAttemptStatusTimedOut, repo.projectTaskAttempts[0].Status)
+}
+
+func TestFailProjectTaskAttemptNonRetryableExecutionFailsTask(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	retryable := false
+
+	task, err := service.FailProjectTaskAttempt(context.Background(), FailProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("fail-non-retryable-1"),
+		FailureSummary:                   "output contract cannot be parsed",
+		FailureFamily:                    FailureFamilyNonRetryableExecution,
+		Retryable:                        &retryable,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusFailed, task.Status)
+	require.Equal(t, ProjectTaskAttemptStatusFailed, repo.projectTaskAttempts[0].Status)
+	require.Equal(t, "output contract cannot be parsed", *repo.projectTaskAttempts[0].FailureMessage)
+}
+
 func TestProjectTaskAttemptRejectsWrongRuntimeNode(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -4896,6 +4942,148 @@ func (r *memoryRepository) FailProjectTaskAttemptWriteback(ctx context.Context, 
 		return ProjectTaskWritebackResult{}, err
 	}
 	return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+}
+
+func (r *memoryRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context.Context, req RecoverProjectTaskAttemptFailureWritebackRequest) (ProjectTaskWritebackResult, error) {
+	snapshot := r.writebackSnapshot()
+	eventType := ProjectEventTaskFailed
+	summary := "项目任务执行失败"
+	if req.TaskTargetStatus == ProjectTaskStatusCancelled {
+		eventType = ProjectEventTaskCancelled
+		summary = "项目任务已取消"
+	}
+	payload := map[string]any{
+		"project_task_id":         req.Failure.ProjectTaskID.String(),
+		"project_task_attempt_id": req.Failure.AttemptID.String(),
+		"failure_summary":         req.Failure.FailureSummary,
+		"failure_family":          req.Failure.FailureFamily,
+		"recovery_status":         req.TaskTargetStatus,
+	}
+	if req.TaskTargetStatus == ProjectTaskStatusWaitingHuman {
+		payload["waiting_reason"] = req.WaitingReason
+	}
+	if req.TaskTargetStatus == ProjectTaskStatusQueued {
+		payload["retry_project_task_attempt_id"] = req.RetryAttemptID.String()
+	}
+	event, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.Failure.TenantID,
+		ProjectID:    req.Task.ProjectID,
+		EventType:    eventType,
+		ActorType:    "digital_employee",
+		ActorID:      req.Failure.DigitalEmployeeID.String(),
+		ResourceType: strPtr("project_task"),
+		ResourceID:   strPtr(req.Task.ID.String()),
+		Summary:      summary,
+		Payload:      payload,
+	})
+	if err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+	if err := r.finishProjectTaskAttempt(req.Failure.TenantID, req.Failure.AttemptID, req.AttemptTerminalStatus, &event.ID, req.Failure.Retryable, &req.Failure.FailureFamily, &req.Failure.FailureSummary); err != nil {
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, err
+	}
+
+	switch req.TaskTargetStatus {
+	case ProjectTaskStatusQueued:
+		task, err := r.scheduleProjectTaskRetry(req, &event.ID)
+		if err != nil {
+			r.restoreWritebackSnapshot(snapshot)
+			return ProjectTaskWritebackResult{}, err
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+	case ProjectTaskStatusWaitingHuman:
+		task, err := r.moveProjectTaskToWaitingHuman(req, &event.ID)
+		if err != nil {
+			r.restoreWritebackSnapshot(snapshot)
+			return ProjectTaskWritebackResult{}, err
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+	case ProjectTaskStatusFailed, ProjectTaskStatusCancelled:
+		task, err := r.UpdateProjectTaskStatus(ctx, req.Failure.TenantID, req.Failure.ProjectTaskID, req.TaskTargetStatus, &event.ID, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
+		if err != nil {
+			r.restoreWritebackSnapshot(snapshot)
+			return ProjectTaskWritebackResult{}, err
+		}
+		return ProjectTaskWritebackResult{Task: task, Event: event}, nil
+	default:
+		r.restoreWritebackSnapshot(snapshot)
+		return ProjectTaskWritebackResult{}, ErrInvalidProject
+	}
+}
+
+func (r *memoryRepository) scheduleProjectTaskRetry(req RecoverProjectTaskAttemptFailureWritebackRequest, eventID *uuid.UUID) (ProjectTask, error) {
+	retryAttemptID := req.RetryAttemptID
+	if retryAttemptID == uuid.Nil {
+		retryAttemptID = uuid.New()
+	}
+	retryLeaseToken := strings.TrimSpace(req.RetryLeaseToken)
+	if retryLeaseToken == "" {
+		retryLeaseToken = "retry-" + uuid.NewString()
+	}
+	retryIdempotencyKey := strings.TrimSpace(req.RetryIdempotencyKey)
+	if retryIdempotencyKey == "" {
+		retryIdempotencyKey = "project-task:" + req.Task.ID.String() + ":attempt:" + fmt.Sprint(req.Task.AttemptCount+1) + ":retry"
+	}
+	for index, task := range r.tasks {
+		if task.TenantID != req.Failure.TenantID || task.ID != req.Failure.ProjectTaskID {
+			continue
+		}
+		if task.Status != ProjectTaskStatusRunning && task.Status != ProjectTaskStatusWaitingHuman {
+			return ProjectTask{}, ErrProjectConflict
+		}
+		attemptReq := QueueProjectTaskRequest{
+			TenantID:                      task.TenantID,
+			ProjectID:                     task.ProjectID,
+			ProjectTaskID:                 task.ID,
+			ProjectTaskAttemptID:          &retryAttemptID,
+			DigitalEmployeeID:             req.Failure.DigitalEmployeeID,
+			DigitalEmployeeRunID:          req.Attempt.DigitalEmployeeRunID,
+			RuntimeTaskID:                 req.Attempt.RuntimeTaskID,
+			RuntimeNodeID:                 req.Attempt.RuntimeNodeID,
+			IdempotencyKey:                retryIdempotencyKey,
+			LeaseToken:                    retryLeaseToken,
+			ExecutionContextPacket:        req.Attempt.ExecutionContextPacket,
+			ExecutionContextPacketVersion: req.Attempt.ExecutionContextPacketVersion,
+		}
+		attempt := r.createProjectTaskAttempt(attemptReq, task.AttemptCount+1, eventID)
+		attempt.ID = retryAttemptID
+		r.projectTaskAttempts[len(r.projectTaskAttempts)-1] = attempt
+		now := time.Now().UTC()
+		task.Status = ProjectTaskStatusQueued
+		task.CurrentAttemptID = &attempt.ID
+		task.AttemptCount++
+		task.RetryNotBefore = req.RetryNotBefore
+		task.WaitingReason = nil
+		task.WaitingRequestID = nil
+		task.StatusChangedAt = now
+		task.UpdatedAt = now
+		r.tasks[index] = task
+		return task, nil
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) moveProjectTaskToWaitingHuman(req RecoverProjectTaskAttemptFailureWritebackRequest, eventID *uuid.UUID) (ProjectTask, error) {
+	for index, task := range r.tasks {
+		if task.TenantID != req.Failure.TenantID || task.ID != req.Failure.ProjectTaskID {
+			continue
+		}
+		if task.Status != ProjectTaskStatusQueued && task.Status != ProjectTaskStatusRunning {
+			return ProjectTask{}, ErrProjectConflict
+		}
+		waitingReason := req.WaitingReason
+		now := time.Now().UTC()
+		task.Status = ProjectTaskStatusWaitingHuman
+		task.WaitingReason = &waitingReason
+		task.WaitingRequestID = nil
+		task.StatusChangedAt = now
+		task.UpdatedAt = now
+		r.tasks[index] = task
+		return task, nil
+	}
+	return ProjectTask{}, ErrProjectNotFound
 }
 
 func (r *memoryRepository) finishProjectTaskAttempt(tenantID, attemptID uuid.UUID, status string, terminalEventID *uuid.UUID, retryable *bool, failureFamily, failureMessage *string) error {

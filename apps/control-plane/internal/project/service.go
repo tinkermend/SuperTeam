@@ -1917,7 +1917,7 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 	if req.FailureSummary == "" || req.FailureFamily == "" {
 		return nil, ErrInvalidProject
 	}
-	task, _, err := s.validateAttemptRuntimeRequest(ctx, req.ProjectTaskAttemptRuntimeRequest)
+	task, attempt, err := s.validateAttemptRuntimeRequest(ctx, req.ProjectTaskAttemptRuntimeRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -1926,15 +1926,29 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 		return nil, err
 	}
 	req.DigitalEmployeeID = digitalEmployeeID
-	projectRecord, err := s.repository.GetProject(ctx, req.TenantID, task.ProjectID)
-	if err != nil {
-		return nil, err
-	}
 	writebackRepository, err := s.projectTaskAttemptWritebackRepository()
 	if err != nil {
 		return nil, err
 	}
-	result, err := writebackRepository.FailProjectTaskAttemptWriteback(ctx, req)
+	action := projectTaskFailureAction(task, req.FailureFamily, req.Retryable)
+	result, err := writebackRepository.RecoverProjectTaskAttemptFailureWriteback(ctx, RecoverProjectTaskAttemptFailureWritebackRequest{
+		Task:                  task,
+		Attempt:               attempt,
+		Failure:               req,
+		AttemptTerminalStatus: projectTaskAttemptFailureStatus(req.FailureFamily),
+		TaskTargetStatus:      action,
+		WaitingReason:         humanWaitReasonForFailureFamily(req.FailureFamily),
+		RetryAttemptID:        uuid.New(),
+		RetryLeaseToken:       "retry-" + uuid.NewString(),
+		RetryIdempotencyKey:   projectTaskRetryIdempotencyKey(task, req.IdempotencyKey),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result.Task.Status != ProjectTaskStatusFailed {
+		return &result.Task, nil
+	}
+	projectRecord, err := s.repository.GetProject(ctx, req.TenantID, task.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -1954,6 +1968,62 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 		return nil, err
 	}
 	return &result.Task, nil
+}
+
+func projectTaskFailureAction(task ProjectTask, failureFamily string, retryable *bool) string {
+	if retryable != nil && !*retryable {
+		if failureFamily == FailureFamilyBusinessCancelled || failureFamily == FailureFamilyPlanInvalid || failureFamily == FailureFamilyRequirementChanged {
+			return ProjectTaskStatusCancelled
+		}
+		return ProjectTaskStatusFailed
+	}
+	switch failureFamily {
+	case FailureFamilyTransientRuntime, FailureFamilyTransientProvider, FailureFamilyTimeout:
+		maxAttempts := int32(1)
+		if task.MaxAttempts != nil {
+			maxAttempts = *task.MaxAttempts
+		}
+		if task.AttemptCount < maxAttempts {
+			return ProjectTaskStatusQueued
+		}
+		return ProjectTaskStatusWaitingHuman
+	case FailureFamilyInvalidContract, FailureFamilyApprovalRequired, FailureFamilyPermissionRequired, FailureFamilyAcceptanceRequired:
+		return ProjectTaskStatusWaitingHuman
+	case FailureFamilyBusinessCancelled, FailureFamilyPlanInvalid, FailureFamilyRequirementChanged:
+		return ProjectTaskStatusCancelled
+	default:
+		return ProjectTaskStatusFailed
+	}
+}
+
+func projectTaskAttemptFailureStatus(failureFamily string) string {
+	switch failureFamily {
+	case FailureFamilyTimeout:
+		return ProjectTaskAttemptStatusTimedOut
+	case FailureFamilyTransientRuntime:
+		return ProjectTaskAttemptStatusLost
+	default:
+		return ProjectTaskAttemptStatusFailed
+	}
+}
+
+func humanWaitReasonForFailureFamily(failureFamily string) string {
+	switch failureFamily {
+	case FailureFamilyApprovalRequired:
+		return HumanWaitReasonApprovalRequired
+	case FailureFamilyPermissionRequired:
+		return HumanWaitReasonPermissionRequired
+	case FailureFamilyInvalidContract, FailureFamilyPlanInvalid:
+		return HumanWaitReasonPlanInvalid
+	case FailureFamilyAcceptanceRequired:
+		return HumanWaitReasonAcceptanceRequired
+	default:
+		return HumanWaitReasonClarification
+	}
+}
+
+func projectTaskRetryIdempotencyKey(task ProjectTask, failureIdempotencyKey string) string {
+	return fmt.Sprintf("project-task:%s:attempt:%d:retry:%s", task.ID, task.AttemptCount+1, failureIdempotencyKey)
 }
 
 func (s *Service) RequestProjectTaskTransfer(ctx context.Context, req RequestProjectTaskTransferRequest) (*TransferRequest, error) {
