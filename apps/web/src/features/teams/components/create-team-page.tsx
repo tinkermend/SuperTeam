@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   BadgeCheck,
@@ -62,11 +62,6 @@ export function CreateTeamView({
       onCreated?.(overview, { goToGovernance });
     },
   });
-
-  const canSubmit = useMemo(
-    () => Boolean(draft.name.trim() && draft.slug.trim() && draft.owner),
-    [draft],
-  );
 
   function updateName(name: string) {
     setDraft((current) => ({
@@ -388,7 +383,7 @@ export function CreateTeamView({
             </label>
             <Button
               className="w-full"
-              disabled={!canSubmit || createMutation.isPending}
+              disabled={createMutation.isPending}
               onClick={handleSubmit}
               type="button"
             >

@@ -47,7 +47,7 @@
 - `team_lending_request` = **交易**：具体项目实际借调具体团队员工，受借调策略约束，可能需团队负责人审批。
 - 两者互补、不替代。借调请求发起的前置校验仍复用 `CanUseTeamForProject`（资格）→ 再走借调策略（条件/额度/审批）。
 
-## 2. 数据库（migration 025，遵循 DATABASE_DESIGN.md）
+## 2. 数据库（下一个可用迁移号 ≥026，025_skill_archive_storage 为他人 WIP；遵循 DATABASE_DESIGN.md）
 
 - 模块前缀：团队属于 `tenant_teams`，借调是团队级新边界 → 建议新前缀 **`team_lending_*`**（待确认是否并入既有前缀）。
 - UUID-first / tenant-first / team-aware：两表均含 `id UUID PK`、`tenant_id`、`team_id`。
@@ -90,10 +90,16 @@
 - **D3 审批载体**：借调请求自带 status + 写 inbox/audit（推荐，轻） vs 接入 `approval_*` 通用审批模块。
 - **D4 借调策略入口**：创建后在团队详情配置（推荐，创建页保持 `待设置` 信息行） vs 创建页内嵌策略表单。
 
-## 6. 落地顺序（建议）
+## 6. 落地顺序（进度）
 
-1. 本设计 + D1–D4 确认。
-2. 前端：方案 B 新建团队全页路由（不依赖借调后端，可独立先上 + 真实 E2E）。
-3. 后端：migration 025 + sqlc + service/handler + 契约生成验证。
-4. 前端：团队详情「借调」tab。
+1. ✅ 本设计 + D1–D4 确认。
+2. ✅ 前端：方案 B 新建团队全页路由 `/teams/new`（真实 E2E + 浏览器点穿已过）。
+3. 后端（进行中）：
+   - ✅ migration `026_team_lending.sql` 已 hash 并 apply 到开发库，2 表 + 7 索引已验证存在。
+   - ⏳ sqlc 查询 `internal/storage/queries/team_lending.sql` + `sqlc generate`。
+   - ⏳ `internal/teamlending`（domain types + pg repository + service[含 auto/manual + 超纲转人工] + handler）。
+   - ⏳ 路由注册 + authz 动作 + inbox/audit 写入。
+   - ⏳ OpenAPI 契约 + `pnpm generate:control-plane` + `pnpm verify:contracts`。
+   - ⏳ go test（teamlending 包）+ 对运行中 Control Plane 真实 curl。
+4. 前端：团队详情「借调」tab（编辑策略 + 审批待办）。
 5. 全链路真实 E2E（建团队→设借调策略→项目发起借调→审批→协调线程取员工）。

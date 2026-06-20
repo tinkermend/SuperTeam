@@ -47,7 +47,7 @@ vi.mock("@tanstack/react-router", () => {
   );
   Link.displayName = "MockRouterLink";
 
-  return { Link };
+  return { Link, useNavigate: () => () => undefined };
 });
 
 function createQueryClient() {
@@ -982,13 +982,16 @@ describe("TeamDetailView", () => {
       name: "observe",
       description: "观测巡检",
       version: "1.0.0",
-      source: "marketplace",
+      source: "upload",
       risk_level: "low",
-      status: "installed",
       icon_key: "network",
       color_token: "info",
       tags: ["ops"],
-      files: [],
+      archive_object_ref: "s3://bucket/skills/observe.zip",
+      archive_filename: "observe.zip",
+      archive_size_bytes: 1024,
+      archive_checksum_sha256: "abc123",
+      archive_file_count: 2,
       team_bindings: [{ team_id: "team-1", team_name: "运维团队" }],
       agent_bindings: [],
     };
@@ -999,13 +1002,16 @@ describe("TeamDetailView", () => {
       name: "diagnose",
       description: "故障诊断",
       version: "1.0.0",
-      source: "marketplace",
+      source: "upload",
       risk_level: "medium",
-      status: "available",
       icon_key: "boxes",
       color_token: "warning",
       tags: ["incident"],
-      files: [],
+      archive_object_ref: "s3://bucket/skills/diagnose.zip",
+      archive_filename: "diagnose.zip",
+      archive_size_bytes: 2048,
+      archive_checksum_sha256: "def456",
+      archive_file_count: 1,
       team_bindings: [],
       agent_bindings: [],
     };
@@ -1042,7 +1048,6 @@ describe("TeamDetailView", () => {
         ],
         "POST /api/v1/teams/team-1/skills": {
           ...installableSkill,
-          status: "installed",
           team_bindings: [{ team_id: "team-1", team_name: "运维团队" }],
         },
         "POST /api/v1/teams/team-1/mcp-servers": {
