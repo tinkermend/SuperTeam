@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   bindEmployeeSkill,
   bindTeamSkill,
+  deleteSkill,
   listEmployeeSkills,
   listSkills,
   listTeamSkills,
-  updateSkillFile,
   unbindEmployeeSkill,
   unbindTeamSkill,
   uploadSkill,
@@ -20,13 +20,18 @@ function makeSkill(overrides: Partial<Skill> = {}): Skill {
     name: "diagnose",
     description: "诊断流程",
     version: "v1.0.0",
-    source: "internal_market",
+    source: "upload",
     risk_level: "low",
-    status: "installed",
     icon_key: "stethoscope",
     color_token: "cyan",
     tags: ["诊断", "测试"],
-    files: [],
+    archive_object_ref: "s3://bucket/skills/diagnose.zip",
+    archive_filename: "diagnose.zip",
+    archive_size_bytes: 1024,
+    archive_checksum_sha256: "abc123def456",
+    archive_file_count: 2,
+    created_by: "user-1",
+    created_by_name: "开发管理员",
     team_bindings: [],
     agent_bindings: [],
     ...overrides,
@@ -34,7 +39,7 @@ function makeSkill(overrides: Partial<Skill> = {}): Skill {
 }
 
 describe("skills API", () => {
-  it("lists skills with files and agent bindings", async () => {
+  it("lists skills with archive metadata and agent bindings", async () => {
     const skills = [
       {
         id: "skill-1",
@@ -43,23 +48,28 @@ describe("skills API", () => {
         name: "diagnose",
         description: "诊断流程",
         version: "v1.0.0",
-        source: "internal_market",
+        source: "upload",
         risk_level: "low",
-        status: "installed",
         icon_key: "stethoscope",
         color_token: "cyan",
         tags: ["诊断", "测试"],
-        files: [{ path: "SKILL.md", file_type: "file", content: "# diagnose", size_bytes: 10 }],
+        archive_object_ref: "s3://bucket/skills/diagnose.zip",
+        archive_filename: "diagnose.zip",
+        archive_size_bytes: 1024,
+        archive_checksum_sha256: "abc123def456",
+        archive_file_count: 2,
+        created_by: "user-1",
+        created_by_name: "开发管理员",
         team_bindings: [{ team_id: "team-1", team_name: "平台工程" }],
         agent_bindings: [{ agent_id: "agent-1", agent_name: "需求澄清 Agent", team_name: "产品团队", status: "enabled" }],
       },
     ] satisfies Skill[];
     const fetcher = vi.fn(async () => new Response(JSON.stringify(skills), { headers: { "content-type": "application/json" } }));
 
-    await expect(listSkills({ baseUrl: "http://control-plane.local", fetcher }, { status: "installed", q: "dia" })).resolves.toEqual(skills);
+    await expect(listSkills({ baseUrl: "http://control-plane.local", fetcher }, { q: "dia" })).resolves.toEqual(skills);
 
     expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/skills?status=installed&q=dia",
+      "http://control-plane.local/api/v1/skills?q=dia",
       {
         credentials: "include",
         headers: { accept: "application/json" },
@@ -78,11 +88,16 @@ describe("skills API", () => {
       version: "v0.1.0",
       source: "upload",
       risk_level: "medium",
-      status: "installed",
       icon_key: "blocks",
       color_token: "teal",
       tags: ["诊断"],
-      files: [],
+      archive_object_ref: "s3://bucket/skills/custom-diagnose.zip",
+      archive_filename: "skill.zip",
+      archive_size_bytes: 2048,
+      archive_checksum_sha256: "def456abc789",
+      archive_file_count: 1,
+      created_by: "user-1",
+      created_by_name: "开发管理员",
       team_bindings: [],
       agent_bindings: [],
     } satisfies Skill;
@@ -92,7 +107,7 @@ describe("skills API", () => {
       expect(formData.get("name")).toBe("custom-diagnose");
       expect(formData.get("description")).toBe("自定义诊断");
       expect(formData.get("tags")).toBe("诊断,自动化");
-      expect(formData.get("team_ids")).toBe("team-1,team-2");
+      expect(formData.get("risk_level")).toBe("medium");
       expect(formData.get("file")).toBeInstanceOf(File);
       return new Response(JSON.stringify(skill), { headers: { "content-type": "application/json" }, status: 201 });
     });
@@ -105,7 +120,7 @@ describe("skills API", () => {
           file: new File(["zip"], "skill.zip", { type: "application/zip" }),
           name: "custom-diagnose",
           tags: ["诊断", "自动化"],
-          team_ids: ["team-1", "team-2"],
+          risk_level: "medium",
         },
       ),
     ).resolves.toEqual(skill);
@@ -119,27 +134,12 @@ describe("skills API", () => {
     );
   });
 
-  it("updates one skill file with an encoded path", async () => {
-    const file = { path: "references/check list.md", file_type: "file", content: "# updated", size_bytes: 9 };
-    const fetcher = vi.fn(async () => new Response(JSON.stringify(file), { headers: { "content-type": "application/json" } }));
-
-    await expect(
-      updateSkillFile(
-        { baseUrl: "http://control-plane.local", fetcher },
-        "skill-1",
-        "references/check list.md",
-        "# updated",
-      ),
-    ).resolves.toEqual(file);
-
+  it("deletes a skill by id", async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+    await expect(deleteSkill({ baseUrl: "http://control-plane.local", fetcher }, "skill 1/ops")).resolves.toBeUndefined();
     expect(fetcher).toHaveBeenCalledWith(
-      "http://control-plane.local/api/v1/skills/skill-1/files/references/check%20list.md",
-      {
-        body: JSON.stringify({ content: "# updated" }),
-        credentials: "include",
-        headers: { accept: "application/json", "content-type": "application/json" },
-        method: "PUT",
-      },
+      "http://control-plane.local/api/v1/skills/skill%201%2Fops",
+      expect.objectContaining({ credentials: "include", method: "DELETE" }),
     );
   });
 

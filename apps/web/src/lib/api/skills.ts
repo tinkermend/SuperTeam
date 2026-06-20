@@ -1,20 +1,6 @@
 import type { ApiClientOptions } from "./client";
 import { buildApiUrl, parseJson } from "./client";
 
-export type SkillStatus = "installed" | "available";
-
-export type SkillFileType = "file";
-
-export type SkillFile = {
-  id?: string;
-  path: string;
-  file_type: SkillFileType;
-  content?: string;
-  size_bytes: number;
-  checksum_sha256?: string;
-  updated_at?: string;
-};
-
 export type SkillTeamBinding = {
   team_id: string;
   team_name: string;
@@ -37,11 +23,16 @@ export type Skill = {
   version: string;
   source: string;
   risk_level: string;
-  status: SkillStatus;
   icon_key: string;
   color_token: string;
   tags: string[];
-  files: SkillFile[];
+  archive_object_ref: string;
+  archive_filename: string;
+  archive_size_bytes: number;
+  archive_checksum_sha256: string;
+  archive_file_count: number;
+  created_by: string;
+  created_by_name: string;
   team_bindings: SkillTeamBinding[];
   agent_bindings: SkillAgentBinding[];
   created_at?: string;
@@ -57,7 +48,6 @@ export type EffectiveEmployeeSkill = {
 
 export type ListSkillsFilters = {
   q?: string;
-  status?: SkillStatus;
 };
 
 export type UploadSkillInput = {
@@ -66,17 +56,29 @@ export type UploadSkillInput = {
   name: string;
   risk_level?: string;
   tags?: string[];
-  team_ids?: string[];
 };
+
+export async function deleteSkill(
+  options: ApiClientOptions,
+  skillId: string,
+): Promise<void> {
+  const fetcher = options.fetcher ?? fetch;
+  const encodedSkillId = encodeURIComponent(skillId);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/skills/${encodedSkillId}`), {
+    credentials: "include",
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    await parseJson<unknown>(response, "delete skill");
+  }
+}
 
 export async function listSkills(
   options: ApiClientOptions,
   filters: ListSkillsFilters = {},
 ): Promise<Skill[]> {
   const searchParams = new URLSearchParams();
-  if (filters.status) {
-    searchParams.set("status", filters.status);
-  }
   if (filters.q?.trim()) {
     searchParams.set("q", filters.q.trim());
   }
@@ -108,9 +110,6 @@ export async function uploadSkill(
   if (input.tags?.length) {
     formData.set("tags", input.tags.join(","));
   }
-  if (input.team_ids?.length) {
-    formData.set("team_ids", input.team_ids.join(","));
-  }
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(buildApiUrl(options.baseUrl, "/api/v1/skills/uploads"), {
     body: formData,
@@ -119,25 +118,6 @@ export async function uploadSkill(
   });
 
   return parseJson<Skill>(response, "upload skill");
-}
-
-export async function updateSkillFile(
-  options: ApiClientOptions,
-  skillId: string,
-  filePath: string,
-  content: string,
-): Promise<SkillFile> {
-  const fetcher = options.fetcher ?? fetch;
-  const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
-  const encodedSkillId = encodeURIComponent(skillId);
-  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/skills/${encodedSkillId}/files/${encodedPath}`), {
-    body: JSON.stringify({ content }),
-    credentials: "include",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    method: "PUT",
-  });
-
-  return parseJson<SkillFile>(response, "update skill file");
 }
 
 export async function listTeamSkills(

@@ -155,6 +155,20 @@ struct FileLoggingSection {
 }
 
 impl RuntimeConfig {
+    fn ensure_s3(&mut self) -> &mut S3Section {
+        if self.s3.is_none() {
+            self.s3 = Some(S3Section {
+                endpoint: String::new(),
+                region: String::new(),
+                bucket: String::new(),
+                access_key_id: String::new(),
+                secret_access_key: String::new(),
+                force_path_style: false,
+            });
+        }
+        self.s3.as_mut().unwrap()
+    }
+
     pub fn new(node_id: impl Into<String>) -> anyhow::Result<Self> {
         let mut cfg = Self::default();
         cfg.runtime.node_id = node_id.into().trim().to_string();
@@ -342,6 +356,24 @@ impl RuntimeConfig {
             "RUNTIME_AGENT_LOG_OUTPUT" => self.logging.output = value.to_string(),
             "RUNTIME_AGENT_LOG_FILE_PATH" => {
                 self.logging.file_path = Some(PathBuf::from(value));
+            }
+            "S3_ENDPOINT" => {
+                self.ensure_s3().endpoint = value.to_string();
+            }
+            "S3_REGION" => {
+                self.ensure_s3().region = value.to_string();
+            }
+            "S3_BUCKET" => {
+                self.ensure_s3().bucket = value.to_string();
+            }
+            "S3_ACCESS_KEY_ID" => {
+                self.ensure_s3().access_key_id = value.to_string();
+            }
+            "S3_SECRET_ACCESS_KEY" => {
+                self.ensure_s3().secret_access_key = value.to_string();
+            }
+            "S3_FORCE_PATH_STYLE" => {
+                self.ensure_s3().force_path_style = parse_env(key, value)?;
             }
             _ => {}
         }

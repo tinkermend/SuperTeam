@@ -51,36 +51,19 @@ func TestSkillRoutesUseConsoleTenantAndMultipartUpload(t *testing.T) {
 		t.Fatalf("expected list tenant %s, got %s", expectedTenantID, service.listReq.TenantID)
 	}
 	var listed []struct {
-		Name   string   `json:"name"`
-		Tags   []string `json:"tags"`
-		Rating *string  `json:"rating"`
-		Files  []struct {
-			Path string `json:"path"`
-		} `json:"files"`
-		AgentBindings []struct {
+		Name             string   `json:"name"`
+		Tags             []string `json:"tags"`
+		ArchiveObjectRef string   `json:"archive_object_ref"`
+		ArchiveFileCount int      `json:"archive_file_count"`
+		AgentBindings    []struct {
 			AgentName string `json:"agent_name"`
 		} `json:"agent_bindings"`
 	}
 	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
 		t.Fatalf("decode list skills: %v", err)
 	}
-	if len(listed) != 1 || listed[0].Name != "diagnose" || listed[0].Tags[0] != "诊断" || listed[0].Files[0].Path != "SKILL.md" || listed[0].AgentBindings[0].AgentName != "需求澄清 Agent" {
-		t.Fatalf("expected skill response with tags, file and agent binding, got %#v", listed)
-	}
-	if listed[0].Rating != nil {
-		t.Fatalf("skill marketplace responses must not expose rating, got %#v", listed[0].Rating)
-	}
-
-	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/skills/"+service.skillID.String()+"/files/scripts/collect.py", strings.NewReader(`{"content":"# updated"}`))
-	updateReq.Header.Set("Content-Type", "application/json")
-	updateReq.AddCookie(cookie)
-	updateResp := httptest.NewRecorder()
-	server.ServeHTTP(updateResp, updateReq)
-	if updateResp.Code != http.StatusOK {
-		t.Fatalf("expected update skill file to succeed, got %d: %s", updateResp.Code, updateResp.Body.String())
-	}
-	if service.updateReq.TenantID != expectedTenantID || service.updateReq.SkillID != service.skillID || service.updateReq.Path != "scripts/collect.py" || service.updateReq.Content != "# updated" {
-		t.Fatalf("expected update request to preserve tenant/skill/path/content, got %#v", service.updateReq)
+	if len(listed) != 1 || listed[0].Name != "diagnose" || listed[0].Tags[0] != "诊断" || listed[0].ArchiveObjectRef != "s3://bucket/skills/diagnose.zip" || listed[0].ArchiveFileCount != 3 || listed[0].AgentBindings[0].AgentName != "需求澄清 Agent" {
+		t.Fatalf("expected skill response with tags, archive metadata and agent binding, got %#v", listed)
 	}
 
 	teamID := uuid.New()
@@ -282,7 +265,7 @@ func TestSkillBindRoutesPropagateMissingTargets(t *testing.T) {
 
 type routeSkillService struct {
 	listReq           skill.ListSkillsRequest
-	updateReq         skill.UpdateSkillFileRequest
+	deleteReq         skill.DeleteSkillRequest
 	uploadReq         skill.UploadSkillRequest
 	teamListReq       skill.ListTeamSkillsRequest
 	teamBindReq       skill.BindTeamSkillRequest
@@ -299,19 +282,15 @@ func (s *routeSkillService) ListSkills(_ context.Context, req skill.ListSkillsRe
 	s.listReq = req
 	s.skillID = uuid.New()
 	return []*skill.Skill{{
-		ID:          s.skillID,
-		TenantID:    req.TenantID,
-		Slug:        "diagnose",
-		Name:        "diagnose",
-		Description: "诊断流程",
-		Version:     "v1.0.0",
-		Status:      skill.SkillStatusInstalled,
-		Tags:        []string{"诊断", "测试"},
-		Files: []*skill.SkillFile{{
-			Path:     "SKILL.md",
-			FileType: skill.SkillFileTypeFile,
-			Content:  "# diagnose",
-		}},
+		ID:               s.skillID,
+		TenantID:         req.TenantID,
+		Slug:             "diagnose",
+		Name:             "diagnose",
+		Description:      "诊断流程",
+		Version:          "v1.0.0",
+		Tags:             []string{"诊断", "测试"},
+		ArchiveObjectRef: "s3://bucket/skills/diagnose.zip",
+		ArchiveFileCount: 3,
 		AgentBindings: []*skill.SkillAgentBinding{{
 			AgentID:   uuid.New(),
 			AgentName: "需求澄清 Agent",
@@ -325,13 +304,9 @@ func (s *routeSkillService) GetSkill(context.Context, skill.GetSkillRequest) (*s
 	return nil, nil
 }
 
-func (s *routeSkillService) UpdateSkillFile(_ context.Context, req skill.UpdateSkillFileRequest) (*skill.SkillFile, error) {
-	s.updateReq = req
-	return &skill.SkillFile{
-		Path:     req.Path,
-		FileType: skill.SkillFileTypeFile,
-		Content:  req.Content,
-	}, nil
+func (s *routeSkillService) DeleteSkill(_ context.Context, req skill.DeleteSkillRequest) error {
+	s.deleteReq = req
+	return nil
 }
 
 func (s *routeSkillService) UploadSkill(_ context.Context, req skill.UploadSkillRequest) (*skill.Skill, error) {
@@ -342,7 +317,6 @@ func (s *routeSkillService) UploadSkill(_ context.Context, req skill.UploadSkill
 		Name:        req.Name,
 		Description: req.Description,
 		Tags:        req.Tags,
-		Status:      skill.SkillStatusInstalled,
 	}, nil
 }
 
@@ -356,7 +330,6 @@ func (s *routeSkillService) BindSkillToTeam(_ context.Context, req skill.BindTea
 		TenantID: req.TenantID,
 		Slug:     "bound-team-skill",
 		Name:     "bound-team-skill",
-		Status:   skill.SkillStatusInstalled,
 	}, nil
 }
 
@@ -372,7 +345,6 @@ func (s *routeSkillService) ListTeamSkills(_ context.Context, req skill.ListTeam
 		TenantID: req.TenantID,
 		Slug:     "team-diagnose",
 		Name:     "team-diagnose",
-		Status:   skill.SkillStatusInstalled,
 	}}, nil
 }
 
@@ -386,7 +358,6 @@ func (s *routeSkillService) BindSkillToEmployee(_ context.Context, req skill.Bin
 		TenantID: req.TenantID,
 		Slug:     "bound-employee-skill",
 		Name:     "bound-employee-skill",
-		Status:   skill.SkillStatusInstalled,
 	}, nil
 }
 
@@ -399,13 +370,13 @@ func (s *routeSkillService) ListEffectiveEmployeeSkills(_ context.Context, req s
 	s.effectiveListReq = req
 	return []skill.EffectiveEmployeeSkill{
 		{
-			Skill:       skill.Skill{ID: uuid.New(), TenantID: req.TenantID, Slug: "team-diagnose", Name: "team-diagnose", Status: skill.SkillStatusInstalled},
+			Skill:       skill.Skill{ID: uuid.New(), TenantID: req.TenantID, Slug: "team-diagnose", Name: "team-diagnose"},
 			SourceScope: "team",
 			Inherited:   true,
 			ReadOnly:    true,
 		},
 		{
-			Skill:       skill.Skill{ID: uuid.New(), TenantID: req.TenantID, Slug: "personal-review", Name: "personal-review", Status: skill.SkillStatusInstalled},
+			Skill:       skill.Skill{ID: uuid.New(), TenantID: req.TenantID, Slug: "personal-review", Name: "personal-review"},
 			SourceScope: "employee",
 			Inherited:   false,
 			ReadOnly:    false,

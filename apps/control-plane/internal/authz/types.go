@@ -53,7 +53,7 @@ const (
 
 	ActionSkillRead   = "skill.read"
 	ActionSkillUpload = "skill.upload"
-	ActionSkillUpdate = "skill.update"
+	ActionSkillDelete = "skill.delete"
 
 	ActionTeamCreate                      = "team.create"
 	ActionTeamRead                        = "team.read"

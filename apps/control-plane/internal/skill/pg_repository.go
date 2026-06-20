@@ -2,12 +2,9 @@ package skill
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -22,25 +19,25 @@ func NewPgRepository(db *pgxpool.Pool) Repository {
 	return &PgRepository{db: db}
 }
 
+const skillSelectColumns = `s.id, s.tenant_id, s.slug, s.name, s.description, s.version, s.source, s.risk_level, s.icon_key, s.color_token, s.tags, s.archive_object_ref, s.archive_filename, s.archive_size_bytes, s.archive_checksum_sha256, s.archive_file_count, COALESCE(s.created_by::text, '') AS created_by, COALESCE(au.display_name, au.username, '') AS created_by_name, s.created_at, s.updated_at`
+
+const skillJoinClause = `LEFT JOIN auth_users au ON au.id = s.created_by`
+
 func (r *PgRepository) ListSkills(ctx context.Context, req ListSkillsRequest) ([]*Skill, error) {
 	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
 	}
-	conditions := []string{"tenant_id = $1", "deleted_at IS NULL"}
+	conditions := []string{"s.tenant_id = $1", "s.deleted_at IS NULL"}
 	args := []any{req.TenantID}
-	if req.Status != "" {
-		args = append(args, string(req.Status))
-		conditions = append(conditions, fmt.Sprintf("status = $%d", len(args)))
-	}
 	if strings.TrimSpace(req.Q) != "" {
 		args = append(args, "%"+strings.TrimSpace(req.Q)+"%")
-		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d OR slug ILIKE $%d)", len(args), len(args), len(args)))
+		conditions = append(conditions, fmt.Sprintf("(s.name ILIKE $%d OR s.description ILIKE $%d OR s.slug ILIKE $%d)", len(args), len(args), len(args)))
 	}
 	rows, err := r.db.Query(ctx, `
-SELECT id, tenant_id, slug, name, description, version, source, risk_level, status, icon_key, color_token, tags, created_at, updated_at
-FROM skills
+SELECT `+skillSelectColumns+`
+FROM skills s `+skillJoinClause+`
 WHERE `+strings.Join(conditions, " AND ")+`
-ORDER BY updated_at DESC, name ASC`, args...)
+ORDER BY s.updated_at DESC, s.name ASC`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -66,9 +63,9 @@ ORDER BY updated_at DESC, name ASC`, args...)
 
 func (r *PgRepository) GetSkill(ctx context.Context, req GetSkillRequest) (*Skill, error) {
 	row := r.db.QueryRow(ctx, `
-SELECT id, tenant_id, slug, name, description, version, source, risk_level, status, icon_key, color_token, tags, created_at, updated_at
-FROM skills
-WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`, req.TenantID, req.SkillID)
+SELECT `+skillSelectColumns+`
+FROM skills s `+skillJoinClause+`
+WHERE s.tenant_id = $1 AND s.id = $2 AND s.deleted_at IS NULL`, req.TenantID, req.SkillID)
 	item, err := scanSkill(row)
 	if err != nil {
 		return nil, mapNoRows(err)
@@ -95,9 +92,11 @@ func (r *PgRepository) UpsertSkillPackage(ctx context.Context, req UpsertSkillPa
 	var skillID uuid.UUID
 	err = tx.QueryRow(ctx, `
 INSERT INTO skills (
-    tenant_id, slug, name, description, version, source, risk_level, status, icon_key, color_token, tags, created_by, updated_at
+    tenant_id, slug, name, description, version, source, risk_level,
+    icon_key, color_token, tags, created_by, updated_at,
+    archive_object_ref, archive_filename, archive_size_bytes, archive_checksum_sha256, archive_file_count
 )
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12,$13,$14,$15,$16)
 ON CONFLICT (tenant_id, slug) WHERE deleted_at IS NULL
 DO UPDATE SET
     name = EXCLUDED.name,
@@ -105,24 +104,22 @@ DO UPDATE SET
     version = EXCLUDED.version,
     source = EXCLUDED.source,
     risk_level = EXCLUDED.risk_level,
-    status = EXCLUDED.status,
     icon_key = EXCLUDED.icon_key,
     color_token = EXCLUDED.color_token,
     tags = EXCLUDED.tags,
+    archive_object_ref = EXCLUDED.archive_object_ref,
+    archive_filename = EXCLUDED.archive_filename,
+    archive_size_bytes = EXCLUDED.archive_size_bytes,
+    archive_checksum_sha256 = EXCLUDED.archive_checksum_sha256,
+    archive_file_count = EXCLUDED.archive_file_count,
     updated_at = NOW()
-RETURNING id`, req.TenantID, req.Slug, req.Name, req.Description, req.Version, req.Source, req.RiskLevel, string(req.Status), req.IconKey, req.ColorToken, req.Tags, nullUUID(req.ActorUserID)).Scan(&skillID)
+RETURNING id`,
+		req.TenantID, req.Slug, req.Name, req.Description, req.Version, req.Source, req.RiskLevel,
+		req.IconKey, req.ColorToken, req.Tags, nullUUID(req.ActorUserID),
+		req.ArchiveObjectRef, req.ArchiveFilename, req.ArchiveSizeBytes, req.ArchiveChecksum, req.ArchiveFileCount,
+	).Scan(&skillID)
 	if err != nil {
 		return nil, err
-	}
-	if _, err = tx.Exec(ctx, `DELETE FROM skill_files WHERE tenant_id = $1 AND skill_id = $2`, req.TenantID, skillID); err != nil {
-		return nil, err
-	}
-	for _, file := range req.Files {
-		if _, err = tx.Exec(ctx, `
-INSERT INTO skill_files (tenant_id, skill_id, path, file_type, content, size_bytes, checksum_sha256)
-VALUES ($1,$2,$3,$4,$5,$6,$7)`, req.TenantID, skillID, file.Path, string(file.FileType), file.Content, file.SizeBytes, file.ChecksumSHA256); err != nil {
-			return nil, err
-		}
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM skill_team_bindings WHERE tenant_id = $1 AND skill_id = $2`, req.TenantID, skillID); err != nil {
 		return nil, err
@@ -142,22 +139,52 @@ ON CONFLICT DO NOTHING`, req.TenantID, skillID, teamID); err != nil {
 	return r.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: skillID})
 }
 
-func (r *PgRepository) UpdateSkillFile(ctx context.Context, req UpdateSkillFileRequest) (*SkillFile, error) {
-	sum := sha256.Sum256([]byte(req.Content))
-	row := r.db.QueryRow(ctx, `
-UPDATE skill_files
-SET content = $1,
-    size_bytes = $2,
-    checksum_sha256 = $3,
-    updated_at = NOW()
-WHERE tenant_id = $4 AND skill_id = $5 AND path = $6
-RETURNING id, tenant_id, skill_id, path, file_type, content, size_bytes, checksum_sha256, created_at, updated_at`,
-		req.Content, len([]byte(req.Content)), hex.EncodeToString(sum[:]), req.TenantID, req.SkillID, req.Path)
-	file, err := scanSkillFile(row)
-	if err != nil {
-		return nil, mapNoRows(err)
+func (r *PgRepository) DeleteSkill(ctx context.Context, req DeleteSkillRequest) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
 	}
-	return file, nil
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+	if _, err = tx.Exec(ctx, `DELETE FROM skill_team_bindings WHERE tenant_id = $1 AND skill_id = $2`, req.TenantID, req.SkillID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM skill_agent_bindings WHERE tenant_id = $1 AND skill_id = $2`, req.TenantID, req.SkillID); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `UPDATE skills SET deleted_at = NOW() WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`, req.TenantID, req.SkillID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		err = ErrNotFound
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *PgRepository) IsSkillBoundToEmployeeTeam(ctx context.Context, req BindEmployeeSkillRequest) (bool, error) {
+	if r == nil || r.db == nil {
+		return false, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	var exists bool
+	err := r.db.QueryRow(ctx, `
+SELECT EXISTS(
+    SELECT 1
+    FROM skill_team_bindings stb
+    JOIN digital_employees de ON de.tenant_id = stb.tenant_id AND de.team_id = stb.team_id
+    WHERE stb.tenant_id = $1
+      AND stb.skill_id = $2
+      AND de.id = $3
+      AND de.deleted_at IS NULL
+)`, req.TenantID, req.SkillID, req.DigitalEmployeeID).Scan(&exists)
+	return exists, err
 }
 
 func (r *PgRepository) BindSkillToTeam(ctx context.Context, req BindTeamSkillRequest) (*Skill, error) {
@@ -194,11 +221,12 @@ func (r *PgRepository) ListTeamSkills(ctx context.Context, req ListTeamSkillsReq
 		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
 	}
 	rows, err := r.db.Query(ctx, `
-SELECT s.id, s.tenant_id, s.slug, s.name, s.description, s.version, s.source, s.risk_level, s.status, s.icon_key, s.color_token, s.tags, s.created_at, s.updated_at
+SELECT `+skillSelectColumns+`
 FROM skill_team_bindings stb
 JOIN skills s ON s.tenant_id = stb.tenant_id
     AND s.id = stb.skill_id
     AND s.deleted_at IS NULL
+`+skillJoinClause+`
 JOIN tenant_teams tt ON tt.tenant_id = stb.tenant_id
     AND tt.id = stb.team_id
     AND tt.deleted_at IS NULL
@@ -270,48 +298,29 @@ WITH target_employee AS (
       AND deleted_at IS NULL
 )
 SELECT
-    s.id,
-    s.tenant_id,
-    s.slug,
-    s.name,
-    s.description,
-    s.version,
-    s.source,
-    s.risk_level,
-    s.status,
-    s.icon_key,
-    s.color_token,
-    s.tags,
-    s.created_at,
-    s.updated_at,
-    'team'::text AS source_scope,
-    true AS inherited,
-    true AS read_only
+    s.id, s.tenant_id, s.slug, s.name, s.description, s.version, s.source, s.risk_level,
+    s.icon_key, s.color_token, s.tags, s.archive_object_ref, s.archive_filename,
+    s.archive_size_bytes, s.archive_checksum_sha256, s.archive_file_count,
+    COALESCE(s.created_by::text, '') AS created_by,
+    COALESCE(au.display_name, au.username, '') AS created_by_name,
+    s.created_at, s.updated_at,
+    'team'::text AS source_scope, true AS inherited, true AS read_only
 FROM target_employee
 JOIN skill_team_bindings stb ON stb.tenant_id = target_employee.tenant_id
     AND stb.team_id = target_employee.team_id
 JOIN skills s ON s.tenant_id = stb.tenant_id
     AND s.id = stb.skill_id
     AND s.deleted_at IS NULL
+LEFT JOIN auth_users au ON au.id = s.created_by
 UNION ALL
 SELECT
-    s.id,
-    s.tenant_id,
-    s.slug,
-    s.name,
-    s.description,
-    s.version,
-    s.source,
-    s.risk_level,
-    s.status,
-    s.icon_key,
-    s.color_token,
-    s.tags,
-    s.created_at,
-    s.updated_at,
-    'employee'::text AS source_scope,
-    false AS inherited,
-    false AS read_only
+    s.id, s.tenant_id, s.slug, s.name, s.description, s.version, s.source, s.risk_level,
+    s.icon_key, s.color_token, s.tags, s.archive_object_ref, s.archive_filename,
+    s.archive_size_bytes, s.archive_checksum_sha256, s.archive_file_count,
+    COALESCE(s.created_by::text, '') AS created_by,
+    COALESCE(au.display_name, au.username, '') AS created_by_name,
+    s.created_at, s.updated_at,
+    'employee'::text AS source_scope, false AS inherited, false AS read_only
 FROM target_employee
 JOIN skill_agent_bindings sab ON sab.tenant_id = target_employee.tenant_id
     AND sab.digital_employee_id = target_employee.digital_employee_id
@@ -319,6 +328,7 @@ JOIN skill_agent_bindings sab ON sab.tenant_id = target_employee.tenant_id
 JOIN skills s ON s.tenant_id = sab.tenant_id
     AND s.id = sab.skill_id
     AND s.deleted_at IS NULL
+LEFT JOIN auth_users au ON au.id = s.created_by
 WHERE NOT EXISTS (
     SELECT 1
     FROM skill_team_bindings inherited_binding
@@ -334,6 +344,7 @@ ORDER BY inherited DESC, name ASC`, req.TenantID, req.DigitalEmployeeID)
 	var skills []EffectiveEmployeeSkill
 	for rows.Next() {
 		item := EffectiveEmployeeSkill{}
+		var createdByStr string
 		if err := rows.Scan(
 			&item.Skill.ID,
 			&item.Skill.TenantID,
@@ -343,10 +354,16 @@ ORDER BY inherited DESC, name ASC`, req.TenantID, req.DigitalEmployeeID)
 			&item.Skill.Version,
 			&item.Skill.Source,
 			&item.Skill.RiskLevel,
-			&item.Skill.Status,
 			&item.Skill.IconKey,
 			&item.Skill.ColorToken,
 			&item.Skill.Tags,
+			&item.Skill.ArchiveObjectRef,
+			&item.Skill.ArchiveFilename,
+			&item.Skill.ArchiveSizeBytes,
+			&item.Skill.ArchiveChecksum,
+			&item.Skill.ArchiveFileCount,
+			&createdByStr,
+			&item.Skill.CreatedByName,
 			&item.Skill.CreatedAt,
 			&item.Skill.UpdatedAt,
 			&item.SourceScope,
@@ -355,12 +372,67 @@ ORDER BY inherited DESC, name ASC`, req.TenantID, req.DigitalEmployeeID)
 		); err != nil {
 			return nil, err
 		}
+		if createdByStr != "" {
+			item.Skill.CreatedBy, _ = uuid.Parse(createdByStr)
+		}
 		if err := r.loadChildren(ctx, &item.Skill); err != nil {
 			return nil, err
 		}
 		skills = append(skills, item)
 	}
 	return skills, rows.Err()
+}
+
+func (r *PgRepository) ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]SkillRuntimeRecord, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	rows, err := r.db.Query(ctx, `
+WITH target_employee AS (
+    SELECT tenant_id, id AS digital_employee_id, team_id
+    FROM digital_employees
+    WHERE tenant_id = $1
+      AND id = $2
+      AND deleted_at IS NULL
+)
+SELECT
+    s.id,
+    s.slug,
+    s.archive_object_ref,
+    s.archive_checksum_sha256,
+    s.archive_size_bytes,
+    s.archive_file_count
+FROM target_employee
+JOIN skills s ON s.tenant_id = target_employee.tenant_id
+    AND s.deleted_at IS NULL
+    AND s.archive_object_ref IS NOT NULL
+    AND s.archive_object_ref <> ''
+WHERE EXISTS (
+    SELECT 1 FROM skill_team_bindings stb
+    WHERE stb.tenant_id = target_employee.tenant_id
+      AND stb.team_id = target_employee.team_id
+      AND stb.skill_id = s.id
+) OR EXISTS (
+    SELECT 1 FROM skill_agent_bindings sab
+    WHERE sab.tenant_id = target_employee.tenant_id
+      AND sab.digital_employee_id = target_employee.digital_employee_id
+      AND sab.skill_id = s.id
+      AND sab.status = 'enabled'
+)
+ORDER BY s.slug ASC`, tenantID, digitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var records []SkillRuntimeRecord
+	for rows.Next() {
+		var rec SkillRuntimeRecord
+		if err := rows.Scan(&rec.ID, &rec.Slug, &rec.ArchiveObjectRef, &rec.ArchiveChecksum, &rec.ArchiveSizeBytes, &rec.ArchiveFileCount); err != nil {
+			return nil, err
+		}
+		records = append(records, rec)
+	}
+	return records, rows.Err()
 }
 
 func (r *PgRepository) ensureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error {
@@ -382,11 +454,6 @@ WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`, tenantID, employeeID).
 }
 
 func (r *PgRepository) loadChildren(ctx context.Context, item *Skill) error {
-	files, err := r.listFiles(ctx, item.TenantID, item.ID)
-	if err != nil {
-		return err
-	}
-	item.Files = files
 	teams, err := r.listTeamBindings(ctx, item.TenantID, item.ID)
 	if err != nil {
 		return err
@@ -402,27 +469,6 @@ func (r *PgRepository) loadChildren(ctx context.Context, item *Skill) error {
 	}
 	item.AgentBindings = agents
 	return nil
-}
-
-func (r *PgRepository) listFiles(ctx context.Context, tenantID, skillID uuid.UUID) ([]*SkillFile, error) {
-	rows, err := r.db.Query(ctx, `
-SELECT id, tenant_id, skill_id, path, file_type, content, size_bytes, checksum_sha256, created_at, updated_at
-FROM skill_files
-WHERE tenant_id = $1 AND skill_id = $2
-ORDER BY CASE WHEN path = 'SKILL.md' THEN 0 ELSE 1 END, path ASC`, tenantID, skillID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var files []*SkillFile
-	for rows.Next() {
-		file, err := scanSkillFile(rows)
-		if err != nil {
-			return nil, err
-		}
-		files = append(files, file)
-	}
-	return files, rows.Err()
 }
 
 func (r *PgRepository) listTeamBindings(ctx context.Context, tenantID, skillID uuid.UUID) ([]*SkillTeamBinding, error) {
@@ -483,6 +529,7 @@ type skillScanner interface {
 
 func scanSkill(row skillScanner) (*Skill, error) {
 	item := &Skill{}
+	var createdByStr string
 	if err := row.Scan(
 		&item.ID,
 		&item.TenantID,
@@ -492,35 +539,25 @@ func scanSkill(row skillScanner) (*Skill, error) {
 		&item.Version,
 		&item.Source,
 		&item.RiskLevel,
-		&item.Status,
 		&item.IconKey,
 		&item.ColorToken,
 		&item.Tags,
+		&item.ArchiveObjectRef,
+		&item.ArchiveFilename,
+		&item.ArchiveSizeBytes,
+		&item.ArchiveChecksum,
+		&item.ArchiveFileCount,
+		&createdByStr,
+		&item.CreatedByName,
 		&item.CreatedAt,
 		&item.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
-	return item, nil
-}
-
-func scanSkillFile(row skillScanner) (*SkillFile, error) {
-	file := &SkillFile{}
-	if err := row.Scan(
-		&file.ID,
-		&file.TenantID,
-		&file.SkillID,
-		&file.Path,
-		&file.FileType,
-		&file.Content,
-		&file.SizeBytes,
-		&file.ChecksumSHA256,
-		&file.CreatedAt,
-		&file.UpdatedAt,
-	); err != nil {
-		return nil, err
+	if createdByStr != "" {
+		item.CreatedBy, _ = uuid.Parse(createdByStr)
 	}
-	return file, nil
+	return item, nil
 }
 
 func mapNoRows(err error) error {
@@ -536,7 +573,3 @@ func nullUUID(value uuid.UUID) any {
 	}
 	return value
 }
-
-var _ Repository = (*PgRepository)(nil)
-
-var _ = time.Time{}

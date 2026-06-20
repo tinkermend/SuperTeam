@@ -992,6 +992,8 @@ describe("TeamDetailView", () => {
       archive_size_bytes: 1024,
       archive_checksum_sha256: "abc123",
       archive_file_count: 2,
+      created_by: "user-1",
+      created_by_name: "开发管理员",
       team_bindings: [{ team_id: "team-1", team_name: "运维团队" }],
       agent_bindings: [],
     };
@@ -1012,6 +1014,8 @@ describe("TeamDetailView", () => {
       archive_size_bytes: 2048,
       archive_checksum_sha256: "def456",
       archive_file_count: 1,
+      created_by: "user-1",
+      created_by_name: "开发管理员",
       team_bindings: [],
       agent_bindings: [],
     };

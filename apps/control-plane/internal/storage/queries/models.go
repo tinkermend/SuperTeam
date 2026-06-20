@@ -1624,8 +1624,6 @@ type Skill struct {
 	Source string `json:"source"`
 	// 技能风险等级，由服务端和上传表单校验
 	RiskLevel string `json:"risk_level"`
-	// 技能状态，例如 installed 或 available
-	Status string `json:"status"`
 	// 技能市场彩色图标键，前端映射到图标库
 	IconKey string `json:"icon_key"`
 	// 技能图标语义色标识
@@ -1642,6 +1640,16 @@ type Skill struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 技能更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 技能 zip 包在对象存储的 URI，例如 s3://bucket/skills/.../xxx.zip
+	ArchiveObjectRef pgtype.Text `json:"archive_object_ref"`
+	// 上传时原始 zip 文件名
+	ArchiveFilename pgtype.Text `json:"archive_filename"`
+	// zip 包字节数
+	ArchiveSizeBytes int64 `json:"archive_size_bytes"`
+	// zip 包 SHA256 校验值，用于 Runtime 下发完整性校验
+	ArchiveChecksumSha256 string `json:"archive_checksum_sha256"`
+	// zip 包内文件总数
+	ArchiveFileCount int32 `json:"archive_file_count"`
 }
 
 // 技能安装到数字员工的绑定表
@@ -1661,32 +1669,6 @@ type SkillAgentBinding struct {
 	// 安装关系创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 安装关系更新时间
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-// 技能包文件表，保存 SKILL.md、脚本和附加资源的可编辑文本内容
-type SkillFile struct {
-	// 技能文件主键 UUID
-	ID uuid.UUID `json:"id"`
-	// 技能文件所属租户 ID
-	TenantID uuid.UUID `json:"tenant_id"`
-	// 所属技能 ID
-	SkillID uuid.UUID `json:"skill_id"`
-	// 技能包内规范化相对路径
-	Path string `json:"path"`
-	// 文件节点类型，当前为 file
-	FileType string `json:"file_type"`
-	// 文本文件内容，支持在线编辑
-	Content string `json:"content"`
-	// 文件内容字节数
-	SizeBytes int64 `json:"size_bytes"`
-	// 文件内容 SHA256 校验值
-	ChecksumSha256 string `json:"checksum_sha256"`
-	// 技能文件扩展元数据 JSON
-	Metadata []byte `json:"metadata"`
-	// 技能文件创建时间
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	// 技能文件更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 

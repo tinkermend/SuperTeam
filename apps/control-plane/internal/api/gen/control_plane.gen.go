@@ -632,25 +632,25 @@ func (e ProjectAcceptanceRecordStatus) Valid() bool {
 
 // Defines values for ProjectDemandSourceType.
 const (
-	Document ProjectDemandSourceType = "document"
-	Github   ProjectDemandSourceType = "github"
-	Log      ProjectDemandSourceType = "log"
-	Manual   ProjectDemandSourceType = "manual"
-	Ticket   ProjectDemandSourceType = "ticket"
+	ProjectDemandSourceTypeDocument ProjectDemandSourceType = "document"
+	ProjectDemandSourceTypeGithub   ProjectDemandSourceType = "github"
+	ProjectDemandSourceTypeLog      ProjectDemandSourceType = "log"
+	ProjectDemandSourceTypeManual   ProjectDemandSourceType = "manual"
+	ProjectDemandSourceTypeTicket   ProjectDemandSourceType = "ticket"
 )
 
 // Valid indicates whether the value is a known member of the ProjectDemandSourceType enum.
 func (e ProjectDemandSourceType) Valid() bool {
 	switch e {
-	case Document:
+	case ProjectDemandSourceTypeDocument:
 		return true
-	case Github:
+	case ProjectDemandSourceTypeGithub:
 		return true
-	case Log:
+	case ProjectDemandSourceTypeLog:
 		return true
-	case Manual:
+	case ProjectDemandSourceTypeManual:
 		return true
-	case Ticket:
+	case ProjectDemandSourceTypeTicket:
 		return true
 	default:
 		return false
@@ -1080,39 +1080,6 @@ func (e RuntimeNodeStatus) Valid() bool {
 	}
 }
 
-// Defines values for SkillFileType.
-const (
-	File SkillFileType = "file"
-)
-
-// Valid indicates whether the value is a known member of the SkillFileType enum.
-func (e SkillFileType) Valid() bool {
-	switch e {
-	case File:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for SkillStatus.
-const (
-	Available SkillStatus = "available"
-	Installed SkillStatus = "installed"
-)
-
-// Valid indicates whether the value is a known member of the SkillStatus enum.
-func (e SkillStatus) Valid() bool {
-	switch e {
-	case Available:
-		return true
-	case Installed:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for SubmitProjectDemandRequestReviewerSelectionReason.
 const (
 	SubmitProjectDemandRequestReviewerSelectionReasonProjectHumanOwnerFallback SubmitProjectDemandRequestReviewerSelectionReason = "project_human_owner_fallback"
@@ -1188,6 +1155,51 @@ func (e TeamConfigRevisionStatus) Valid() bool {
 	}
 }
 
+// Defines values for TeamLendingApprovalMode.
+const (
+	TeamLendingApprovalModeAuto   TeamLendingApprovalMode = "auto"
+	TeamLendingApprovalModeManual TeamLendingApprovalMode = "manual"
+)
+
+// Valid indicates whether the value is a known member of the TeamLendingApprovalMode enum.
+func (e TeamLendingApprovalMode) Valid() bool {
+	switch e {
+	case TeamLendingApprovalModeAuto:
+		return true
+	case TeamLendingApprovalModeManual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TeamLendingRequestStatus.
+const (
+	TeamLendingRequestStatusApproved     TeamLendingRequestStatus = "approved"
+	TeamLendingRequestStatusAutoApproved TeamLendingRequestStatus = "auto_approved"
+	TeamLendingRequestStatusPending      TeamLendingRequestStatus = "pending"
+	TeamLendingRequestStatusRejected     TeamLendingRequestStatus = "rejected"
+	TeamLendingRequestStatusRevoked      TeamLendingRequestStatus = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the TeamLendingRequestStatus enum.
+func (e TeamLendingRequestStatus) Valid() bool {
+	switch e {
+	case TeamLendingRequestStatusApproved:
+		return true
+	case TeamLendingRequestStatusAutoApproved:
+		return true
+	case TeamLendingRequestStatusPending:
+		return true
+	case TeamLendingRequestStatusRejected:
+		return true
+	case TeamLendingRequestStatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TeamMemberRole.
 const (
 	TeamMemberRoleAdmin    TeamMemberRole = "admin"
@@ -1238,19 +1250,19 @@ func (e TeamMemberRoleRequestRequestedRole) Valid() bool {
 
 // Defines values for TeamMemberRoleRequestStatus.
 const (
-	Approved TeamMemberRoleRequestStatus = "approved"
-	Pending  TeamMemberRoleRequestStatus = "pending"
-	Rejected TeamMemberRoleRequestStatus = "rejected"
+	TeamMemberRoleRequestStatusApproved TeamMemberRoleRequestStatus = "approved"
+	TeamMemberRoleRequestStatusPending  TeamMemberRoleRequestStatus = "pending"
+	TeamMemberRoleRequestStatusRejected TeamMemberRoleRequestStatus = "rejected"
 )
 
 // Valid indicates whether the value is a known member of the TeamMemberRoleRequestStatus enum.
 func (e TeamMemberRoleRequestStatus) Valid() bool {
 	switch e {
-	case Approved:
+	case TeamMemberRoleRequestStatusApproved:
 		return true
-	case Pending:
+	case TeamMemberRoleRequestStatusPending:
 		return true
-	case Rejected:
+	case TeamMemberRoleRequestStatusRejected:
 		return true
 	default:
 		return false
@@ -1655,6 +1667,14 @@ type CreateProjectEvidenceRequest struct {
 	Title              string                  `json:"title"`
 }
 
+// CreateProjectLendingRequest defines model for CreateProjectLendingRequest.
+type CreateProjectLendingRequest struct {
+	RequestReason       *string                 `json:"request_reason,omitempty"`
+	RequestedBudget     *string                 `json:"requested_budget,omitempty"`
+	RequestedCapability *map[string]interface{} `json:"requested_capability,omitempty"`
+	TeamId              openapi_types.UUID      `json:"team_id"`
+}
+
 // CreateProjectRequest defines model for CreateProjectRequest.
 type CreateProjectRequest struct {
 	AcceptanceUserId   *openapi_types.UUID     `json:"acceptance_user_id,omitempty"`
@@ -1748,6 +1768,15 @@ type CreateUserCredentialRequest struct {
 
 // CredentialType defines model for CredentialType.
 type CredentialType string
+
+// DecideTeamLendingRequest defines model for DecideTeamLendingRequest.
+type DecideTeamLendingRequest struct {
+	DecisionReason *string `json:"decision_reason,omitempty"`
+
+	// GrantedBudget Override granted budget on approve (decimal string).
+	GrantedBudget     *string                 `json:"granted_budget,omitempty"`
+	GrantedCapability *map[string]interface{} `json:"granted_capability,omitempty"`
+}
 
 // DecideTeamMemberRoleRequest defines model for DecideTeamMemberRoleRequest.
 type DecideTeamMemberRoleRequest struct {
@@ -3248,23 +3277,34 @@ type RuntimeSession struct {
 
 // Skill defines model for Skill.
 type Skill struct {
-	AgentBindings []SkillAgentBinding `json:"agent_bindings"`
-	ColorToken    string              `json:"color_token"`
-	CreatedAt     *time.Time          `json:"created_at,omitempty"`
-	Description   string              `json:"description"`
-	Files         []SkillFile         `json:"files"`
-	IconKey       string              `json:"icon_key"`
-	Id            openapi_types.UUID  `json:"id"`
-	Name          string              `json:"name"`
-	RiskLevel     string              `json:"risk_level"`
-	Slug          string              `json:"slug"`
-	Source        string              `json:"source"`
-	Status        SkillStatus         `json:"status"`
-	Tags          []string            `json:"tags"`
-	TeamBindings  []SkillTeamBinding  `json:"team_bindings"`
-	TenantId      openapi_types.UUID  `json:"tenant_id"`
-	UpdatedAt     *time.Time          `json:"updated_at,omitempty"`
-	Version       string              `json:"version"`
+	AgentBindings         []SkillAgentBinding `json:"agent_bindings"`
+	ArchiveChecksumSha256 string              `json:"archive_checksum_sha256"`
+	ArchiveFileCount      int32               `json:"archive_file_count"`
+	ArchiveFilename       string              `json:"archive_filename"`
+
+	// ArchiveObjectRef Skill zip archive object storage URI (e.g. s3://bucket/skills/.../xxx.zip)
+	ArchiveObjectRef string     `json:"archive_object_ref"`
+	ArchiveSizeBytes int64      `json:"archive_size_bytes"`
+	ColorToken       string     `json:"color_token"`
+	CreatedAt        *time.Time `json:"created_at,omitempty"`
+
+	// CreatedBy Uploader user UUID (empty if unknown)
+	CreatedBy *string `json:"created_by,omitempty"`
+
+	// CreatedByName Uploader display name
+	CreatedByName *string            `json:"created_by_name,omitempty"`
+	Description   string             `json:"description"`
+	IconKey       string             `json:"icon_key"`
+	Id            openapi_types.UUID `json:"id"`
+	Name          string             `json:"name"`
+	RiskLevel     string             `json:"risk_level"`
+	Slug          string             `json:"slug"`
+	Source        string             `json:"source"`
+	Tags          []string           `json:"tags"`
+	TeamBindings  []SkillTeamBinding `json:"team_bindings"`
+	TenantId      openapi_types.UUID `json:"tenant_id"`
+	UpdatedAt     *time.Time         `json:"updated_at,omitempty"`
+	Version       string             `json:"version"`
 }
 
 // SkillAgentBinding defines model for SkillAgentBinding.
@@ -3275,23 +3315,6 @@ type SkillAgentBinding struct {
 	TeamId    *openapi_types.UUID `json:"team_id,omitempty"`
 	TeamName  *string             `json:"team_name,omitempty"`
 }
-
-// SkillFile defines model for SkillFile.
-type SkillFile struct {
-	ChecksumSha256 *string             `json:"checksum_sha256,omitempty"`
-	Content        *string             `json:"content,omitempty"`
-	FileType       SkillFileType       `json:"file_type"`
-	Id             *openapi_types.UUID `json:"id,omitempty"`
-	Path           string              `json:"path"`
-	SizeBytes      int64               `json:"size_bytes"`
-	UpdatedAt      *time.Time          `json:"updated_at,omitempty"`
-}
-
-// SkillFileType defines model for SkillFileType.
-type SkillFileType string
-
-// SkillStatus defines model for SkillStatus.
-type SkillStatus string
 
 // SkillTeamBinding defines model for SkillTeamBinding.
 type SkillTeamBinding struct {
@@ -3407,6 +3430,52 @@ type TeamHumanOwner struct {
 	Username    string             `json:"username"`
 }
 
+// TeamLendingApprovalMode defines model for TeamLendingApprovalMode.
+type TeamLendingApprovalMode string
+
+// TeamLendingPolicy defines model for TeamLendingPolicy.
+type TeamLendingPolicy struct {
+	AllowLending bool                    `json:"allow_lending"`
+	ApprovalMode TeamLendingApprovalMode `json:"approval_mode"`
+
+	// BudgetCeiling Decimal budget ceiling as a string; empty means no ceiling.
+	BudgetCeiling     *string                `json:"budget_ceiling,omitempty"`
+	CapabilityCeiling map[string]interface{} `json:"capability_ceiling"`
+	CreatedAt         *time.Time             `json:"created_at,omitempty"`
+	CreatedByUserId   *openapi_types.UUID    `json:"created_by_user_id,omitempty"`
+	Id                openapi_types.UUID     `json:"id"`
+	ProjectMatch      map[string]interface{} `json:"project_match"`
+	Status            string                 `json:"status"`
+	TeamId            openapi_types.UUID     `json:"team_id"`
+	TenantId          openapi_types.UUID     `json:"tenant_id"`
+	UpdatedAt         *time.Time             `json:"updated_at,omitempty"`
+	UpdatedByUserId   *openapi_types.UUID    `json:"updated_by_user_id,omitempty"`
+}
+
+// TeamLendingRequest defines model for TeamLendingRequest.
+type TeamLendingRequest struct {
+	CreatedAt           *time.Time               `json:"created_at,omitempty"`
+	DecidedAt           *time.Time               `json:"decided_at,omitempty"`
+	DecidedByUserId     *openapi_types.UUID      `json:"decided_by_user_id,omitempty"`
+	DecisionReason      string                   `json:"decision_reason"`
+	GrantedBudget       *string                  `json:"granted_budget,omitempty"`
+	GrantedCapability   map[string]interface{}   `json:"granted_capability"`
+	Id                  openapi_types.UUID       `json:"id"`
+	IsException         bool                     `json:"is_exception"`
+	ProjectId           openapi_types.UUID       `json:"project_id"`
+	RequestReason       string                   `json:"request_reason"`
+	RequestedBudget     *string                  `json:"requested_budget,omitempty"`
+	RequestedByUserId   openapi_types.UUID       `json:"requested_by_user_id"`
+	RequestedCapability map[string]interface{}   `json:"requested_capability"`
+	Status              TeamLendingRequestStatus `json:"status"`
+	TeamId              openapi_types.UUID       `json:"team_id"`
+	TenantId            openapi_types.UUID       `json:"tenant_id"`
+	UpdatedAt           *time.Time               `json:"updated_at,omitempty"`
+}
+
+// TeamLendingRequestStatus defines model for TeamLendingRequestStatus.
+type TeamLendingRequestStatus string
+
 // TeamListItem defines model for TeamListItem.
 type TeamListItem struct {
 	CapabilityCount      int32                   `json:"capability_count"`
@@ -3521,11 +3590,6 @@ type UpdateProjectConfigRequest struct {
 	Name    *string               `json:"name,omitempty"`
 }
 
-// UpdateSkillFileRequest defines model for UpdateSkillFileRequest.
-type UpdateSkillFileRequest struct {
-	Content string `json:"content"`
-}
-
 // UpdateTaskStatusRequest defines model for UpdateTaskStatusRequest.
 type UpdateTaskStatusRequest struct {
 	Status TaskStatus `json:"status"`
@@ -3564,6 +3628,15 @@ type UpsertDigitalEmployeeExecutionInstanceRequest struct {
 	RuntimeSelector      *map[string]interface{} `json:"runtime_selector,omitempty"`
 	SessionPolicy        *map[string]interface{} `json:"session_policy,omitempty"`
 	WorkspacePolicy      *map[string]interface{} `json:"workspace_policy,omitempty"`
+}
+
+// UpsertTeamLendingPolicy defines model for UpsertTeamLendingPolicy.
+type UpsertTeamLendingPolicy struct {
+	AllowLending      bool                    `json:"allow_lending"`
+	ApprovalMode      TeamLendingApprovalMode `json:"approval_mode"`
+	BudgetCeiling     *string                 `json:"budget_ceiling,omitempty"`
+	CapabilityCeiling *map[string]interface{} `json:"capability_ceiling,omitempty"`
+	ProjectMatch      *map[string]interface{} `json:"project_match,omitempty"`
 }
 
 // UpsertWorkspaceFileRequest defines model for UpsertWorkspaceFileRequest.
@@ -3764,9 +3837,6 @@ type RuntimeSessionId = openapi_types.UUID
 // ServerId defines model for ServerId.
 type ServerId = openapi_types.UUID
 
-// SkillFilePath defines model for SkillFilePath.
-type SkillFilePath = string
-
 // SkillId defines model for SkillId.
 type SkillId = openapi_types.UUID
 
@@ -3927,6 +3997,13 @@ type ListProjectExecutionSummariesParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// ListProjectLendingRequestsParams defines parameters for ListProjectLendingRequests.
+type ListProjectLendingRequestsParams struct {
+	Limit  *Limit                    `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset                   `form:"offset,omitempty" json:"offset,omitempty"`
+	Status *TeamLendingRequestStatus `form:"status,omitempty" json:"status,omitempty"`
+}
+
 // ListProjectReportsParams defines parameters for ListProjectReports.
 type ListProjectReportsParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
@@ -4054,8 +4131,7 @@ type RenewRuntimeTaskLeaseParams struct {
 
 // ListSkillsParams defines parameters for ListSkills.
 type ListSkillsParams struct {
-	Q      *string      `form:"q,omitempty" json:"q,omitempty"`
-	Status *SkillStatus `form:"status,omitempty" json:"status,omitempty"`
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
 }
 
 // ListTasksParams defines parameters for ListTasks.
@@ -4086,6 +4162,13 @@ type ListTeamAuditEventsParams struct {
 type ListTeamGovernanceDraftsParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListTeamLendingRequestsParams defines parameters for ListTeamLendingRequests.
+type ListTeamLendingRequestsParams struct {
+	Limit  *Limit                    `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset                   `form:"offset,omitempty" json:"offset,omitempty"`
+	Status *TeamLendingRequestStatus `form:"status,omitempty" json:"status,omitempty"`
 }
 
 // ListTeamMemberRoleRequestsParams defines parameters for ListTeamMemberRoleRequests.
@@ -4186,6 +4269,9 @@ type CreateProjectEvidenceJSONRequestBody = CreateProjectEvidenceRequest
 // PatchProjectEvidenceJSONRequestBody defines body for PatchProjectEvidence for application/json ContentType.
 type PatchProjectEvidenceJSONRequestBody = PatchProjectEvidenceRequest
 
+// CreateProjectLendingRequestJSONRequestBody defines body for CreateProjectLendingRequest for application/json ContentType.
+type CreateProjectLendingRequestJSONRequestBody = CreateProjectLendingRequest
+
 // ReplaceProjectMembersJSONRequestBody defines body for ReplaceProjectMembers for application/json ContentType.
 type ReplaceProjectMembersJSONRequestBody = ReplaceProjectMembersRequest
 
@@ -4255,9 +4341,6 @@ type FailRuntimeTaskJSONRequestBody = FailTaskRequest
 // UploadSkillMultipartRequestBody defines body for UploadSkill for multipart/form-data ContentType.
 type UploadSkillMultipartRequestBody = UploadSkillRequest
 
-// UpdateSkillFileJSONRequestBody defines body for UpdateSkillFile for application/json ContentType.
-type UpdateSkillFileJSONRequestBody = UpdateSkillFileRequest
-
 // CreateTaskJSONRequestBody defines body for CreateTask for application/json ContentType.
 type CreateTaskJSONRequestBody = CreateTaskRequest
 
@@ -4278,6 +4361,18 @@ type CreateTeamGovernanceDraftJSONRequestBody = GovernanceDraftInput
 
 // UpdateTeamGovernanceDraftJSONRequestBody defines body for UpdateTeamGovernanceDraft for application/json ContentType.
 type UpdateTeamGovernanceDraftJSONRequestBody = GovernanceDraftInput
+
+// UpsertTeamLendingPolicyJSONRequestBody defines body for UpsertTeamLendingPolicy for application/json ContentType.
+type UpsertTeamLendingPolicyJSONRequestBody = UpsertTeamLendingPolicy
+
+// ApproveTeamLendingRequestJSONRequestBody defines body for ApproveTeamLendingRequest for application/json ContentType.
+type ApproveTeamLendingRequestJSONRequestBody = DecideTeamLendingRequest
+
+// RejectTeamLendingRequestJSONRequestBody defines body for RejectTeamLendingRequest for application/json ContentType.
+type RejectTeamLendingRequestJSONRequestBody = DecideTeamLendingRequest
+
+// RevokeTeamLendingRequestJSONRequestBody defines body for RevokeTeamLendingRequest for application/json ContentType.
+type RevokeTeamLendingRequestJSONRequestBody = DecideTeamLendingRequest
 
 // CreateTeamMCPServerJSONRequestBody defines body for CreateTeamMCPServer for application/json ContentType.
 type CreateTeamMCPServerJSONRequestBody = CreateMCPServerRequest
@@ -4935,6 +5030,12 @@ type ServerInterface interface {
 	// List project execution summaries
 	// (GET /api/v1/projects/{projectId}/execution-summaries)
 	ListProjectExecutionSummaries(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectExecutionSummariesParams)
+	// List lending requests raised by a project (demand side)
+	// (GET /api/v1/projects/{projectId}/lending-requests)
+	ListProjectLendingRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectLendingRequestsParams)
+	// Create a lending request from a project (demand side)
+	// (POST /api/v1/projects/{projectId}/lending-requests)
+	CreateProjectLendingRequest(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// List project members
 	// (GET /api/v1/projects/{projectId}/members)
 	ListProjectMembers(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -5061,12 +5162,12 @@ type ServerInterface interface {
 	// Upload a skill package zip
 	// (POST /api/v1/skills/uploads)
 	UploadSkill(w http.ResponseWriter, r *http.Request)
-	// Get a skill with files and bindings
+	// Delete a skill and cascade-remove all bindings
+	// (DELETE /api/v1/skills/{skillId})
+	DeleteSkill(w http.ResponseWriter, r *http.Request, skillId SkillId)
+	// Get a skill with archive metadata and bindings
 	// (GET /api/v1/skills/{skillId})
 	GetSkill(w http.ResponseWriter, r *http.Request, skillId SkillId)
-	// Update a skill file
-	// (PUT /api/v1/skills/{skillId}/files/{filePath})
-	UpdateSkillFile(w http.ResponseWriter, r *http.Request, skillId SkillId, filePath SkillFilePath)
 	// List tasks
 	// (GET /api/v1/tasks)
 	ListTasks(w http.ResponseWriter, r *http.Request, params ListTasksParams)
@@ -5130,6 +5231,24 @@ type ServerInterface interface {
 	// Reject a draft team governance revision
 	// (POST /api/v1/teams/{teamId}/governance/drafts/{draftId}/reject)
 	RejectTeamGovernanceDraft(w http.ResponseWriter, r *http.Request, teamId TeamId, draftId GovernanceDraftId)
+	// Read the team lending policy
+	// (GET /api/v1/teams/{teamId}/lending-policy)
+	GetTeamLendingPolicy(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// Create or update the team lending policy
+	// (PUT /api/v1/teams/{teamId}/lending-policy)
+	UpsertTeamLendingPolicy(w http.ResponseWriter, r *http.Request, teamId TeamId)
+	// List lending requests targeting a team (supply-side approval view)
+	// (GET /api/v1/teams/{teamId}/lending-requests)
+	ListTeamLendingRequests(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamLendingRequestsParams)
+	// Approve a pending lending request
+	// (POST /api/v1/teams/{teamId}/lending-requests/{requestId}/approve)
+	ApproveTeamLendingRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId)
+	// Reject a pending lending request
+	// (POST /api/v1/teams/{teamId}/lending-requests/{requestId}/reject)
+	RejectTeamLendingRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId)
+	// Revoke an approved or auto-approved lending request
+	// (POST /api/v1/teams/{teamId}/lending-requests/{requestId}/revoke)
+	RevokeTeamLendingRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId)
 	// List team MCP servers
 	// (GET /api/v1/teams/{teamId}/mcp-servers)
 	ListTeamMCPServers(w http.ResponseWriter, r *http.Request, teamId TeamId)
@@ -5559,6 +5678,18 @@ func (_ Unimplemented) ListProjectExecutionSummaries(w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List lending requests raised by a project (demand side)
+// (GET /api/v1/projects/{projectId}/lending-requests)
+func (_ Unimplemented) ListProjectLendingRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectLendingRequestsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a lending request from a project (demand side)
+// (POST /api/v1/projects/{projectId}/lending-requests)
+func (_ Unimplemented) CreateProjectLendingRequest(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List project members
 // (GET /api/v1/projects/{projectId}/members)
 func (_ Unimplemented) ListProjectMembers(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
@@ -5811,15 +5942,15 @@ func (_ Unimplemented) UploadSkill(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Get a skill with files and bindings
-// (GET /api/v1/skills/{skillId})
-func (_ Unimplemented) GetSkill(w http.ResponseWriter, r *http.Request, skillId SkillId) {
+// Delete a skill and cascade-remove all bindings
+// (DELETE /api/v1/skills/{skillId})
+func (_ Unimplemented) DeleteSkill(w http.ResponseWriter, r *http.Request, skillId SkillId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Update a skill file
-// (PUT /api/v1/skills/{skillId}/files/{filePath})
-func (_ Unimplemented) UpdateSkillFile(w http.ResponseWriter, r *http.Request, skillId SkillId, filePath SkillFilePath) {
+// Get a skill with archive metadata and bindings
+// (GET /api/v1/skills/{skillId})
+func (_ Unimplemented) GetSkill(w http.ResponseWriter, r *http.Request, skillId SkillId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5946,6 +6077,42 @@ func (_ Unimplemented) PreviewTeamGovernanceDiff(w http.ResponseWriter, r *http.
 // Reject a draft team governance revision
 // (POST /api/v1/teams/{teamId}/governance/drafts/{draftId}/reject)
 func (_ Unimplemented) RejectTeamGovernanceDraft(w http.ResponseWriter, r *http.Request, teamId TeamId, draftId GovernanceDraftId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Read the team lending policy
+// (GET /api/v1/teams/{teamId}/lending-policy)
+func (_ Unimplemented) GetTeamLendingPolicy(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create or update the team lending policy
+// (PUT /api/v1/teams/{teamId}/lending-policy)
+func (_ Unimplemented) UpsertTeamLendingPolicy(w http.ResponseWriter, r *http.Request, teamId TeamId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List lending requests targeting a team (supply-side approval view)
+// (GET /api/v1/teams/{teamId}/lending-requests)
+func (_ Unimplemented) ListTeamLendingRequests(w http.ResponseWriter, r *http.Request, teamId TeamId, params ListTeamLendingRequestsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Approve a pending lending request
+// (POST /api/v1/teams/{teamId}/lending-requests/{requestId}/approve)
+func (_ Unimplemented) ApproveTeamLendingRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Reject a pending lending request
+// (POST /api/v1/teams/{teamId}/lending-requests/{requestId}/reject)
+func (_ Unimplemented) RejectTeamLendingRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Revoke an approved or auto-approved lending request
+// (POST /api/v1/teams/{teamId}/lending-requests/{requestId}/revoke)
+func (_ Unimplemented) RevokeTeamLendingRequest(w http.ResponseWriter, r *http.Request, teamId TeamId, requestId RequestId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8448,6 +8615,100 @@ func (siw *ServerInterfaceWrapper) ListProjectExecutionSummaries(w http.Response
 	handler.ServeHTTP(w, r)
 }
 
+// ListProjectLendingRequests operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectLendingRequests(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectLendingRequestsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectLendingRequests(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateProjectLendingRequest operation middleware
+func (siw *ServerInterfaceWrapper) CreateProjectLendingRequest(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateProjectLendingRequest(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListProjectMembers operation middleware
 func (siw *ServerInterfaceWrapper) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 
@@ -10147,19 +10408,6 @@ func (siw *ServerInterfaceWrapper) ListSkills(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// ------------- Optional query parameter "status" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
-		}
-		return
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListSkills(w, r, params)
 	}))
@@ -10176,6 +10424,32 @@ func (siw *ServerInterfaceWrapper) UploadSkill(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UploadSkill(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSkill operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSkill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "skillId" -------------
+	var skillId SkillId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "skillId", chi.URLParam(r, "skillId"), &skillId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skillId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSkill(w, r, skillId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10202,41 +10476,6 @@ func (siw *ServerInterfaceWrapper) GetSkill(w http.ResponseWriter, r *http.Reque
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSkill(w, r, skillId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpdateSkillFile operation middleware
-func (siw *ServerInterfaceWrapper) UpdateSkillFile(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "skillId" -------------
-	var skillId SkillId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "skillId", chi.URLParam(r, "skillId"), &skillId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skillId", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "filePath" -------------
-	var filePath SkillFilePath
-
-	err = runtime.BindStyledParameterWithOptions("simple", "filePath", chi.URLParam(r, "filePath"), &filePath, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filePath", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateSkillFile(w, r, skillId, filePath)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10932,6 +11171,231 @@ func (siw *ServerInterfaceWrapper) RejectTeamGovernanceDraft(w http.ResponseWrit
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RejectTeamGovernanceDraft(w, r, teamId, draftId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTeamLendingPolicy operation middleware
+func (siw *ServerInterfaceWrapper) GetTeamLendingPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTeamLendingPolicy(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpsertTeamLendingPolicy operation middleware
+func (siw *ServerInterfaceWrapper) UpsertTeamLendingPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpsertTeamLendingPolicy(w, r, teamId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTeamLendingRequests operation middleware
+func (siw *ServerInterfaceWrapper) ListTeamLendingRequests(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTeamLendingRequestsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTeamLendingRequests(w, r, teamId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ApproveTeamLendingRequest operation middleware
+func (siw *ServerInterfaceWrapper) ApproveTeamLendingRequest(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "requestId" -------------
+	var requestId RequestId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "requestId", chi.URLParam(r, "requestId"), &requestId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "requestId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApproveTeamLendingRequest(w, r, teamId, requestId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RejectTeamLendingRequest operation middleware
+func (siw *ServerInterfaceWrapper) RejectTeamLendingRequest(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "requestId" -------------
+	var requestId RequestId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "requestId", chi.URLParam(r, "requestId"), &requestId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "requestId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RejectTeamLendingRequest(w, r, teamId, requestId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeTeamLendingRequest operation middleware
+func (siw *ServerInterfaceWrapper) RevokeTeamLendingRequest(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "teamId" -------------
+	var teamId TeamId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "teamId", chi.URLParam(r, "teamId"), &teamId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "teamId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "requestId" -------------
+	var requestId RequestId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "requestId", chi.URLParam(r, "requestId"), &requestId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "requestId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeTeamLendingRequest(w, r, teamId, requestId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -11890,6 +12354,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/execution-summaries", wrapper.ListProjectExecutionSummaries)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/lending-requests", wrapper.ListProjectLendingRequests)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/lending-requests", wrapper.CreateProjectLendingRequest)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/members", wrapper.ListProjectMembers)
 	})
 	r.Group(func(r chi.Router) {
@@ -12016,10 +12486,10 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/skills/uploads", wrapper.UploadSkill)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/skills/{skillId}", wrapper.GetSkill)
+		r.Delete(options.BaseURL+"/api/v1/skills/{skillId}", wrapper.DeleteSkill)
 	})
 	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/api/v1/skills/{skillId}/files/{filePath}", wrapper.UpdateSkillFile)
+		r.Get(options.BaseURL+"/api/v1/skills/{skillId}", wrapper.GetSkill)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tasks", wrapper.ListTasks)
@@ -12083,6 +12553,24 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/governance/drafts/{draftId}/reject", wrapper.RejectTeamGovernanceDraft)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/lending-policy", wrapper.GetTeamLendingPolicy)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/teams/{teamId}/lending-policy", wrapper.UpsertTeamLendingPolicy)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/lending-requests", wrapper.ListTeamLendingRequests)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/lending-requests/{requestId}/approve", wrapper.ApproveTeamLendingRequest)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/lending-requests/{requestId}/reject", wrapper.RejectTeamLendingRequest)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/teams/{teamId}/lending-requests/{requestId}/revoke", wrapper.RevokeTeamLendingRequest)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams/{teamId}/mcp-servers", wrapper.ListTeamMCPServers)

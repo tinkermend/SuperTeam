@@ -2919,11 +2919,6 @@ paths:
           schema:
             type: string
             minLength: 1
-        - name: status
-          in: query
-          required: false
-          schema:
-            $ref: "#/components/schemas/SkillStatus"
       responses:
         "200":
           description: Skill list
@@ -3000,7 +2995,7 @@ paths:
   /api/v1/skills/{skillId}:
     get:
       operationId: getSkill
-      summary: Get a skill with files and bindings
+      summary: Get a skill with archive metadata and bindings
       parameters:
         - $ref: "#/components/parameters/SkillId"
       responses:
@@ -3014,28 +3009,14 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
-  /api/v1/skills/{skillId}/files/{filePath}:
-    put:
-      operationId: updateSkillFile
-      summary: Update a skill file
+    delete:
+      operationId: deleteSkill
+      summary: Delete a skill and cascade-remove all bindings
       parameters:
         - $ref: "#/components/parameters/SkillId"
-        - $ref: "#/components/parameters/SkillFilePath"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateSkillFileRequest"
       responses:
-        "200":
-          description: Skill file updated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SkillFile"
-        "400":
-          $ref: "#/components/responses/Error"
+        "204":
+          description: Skill deleted
         "403":
           $ref: "#/components/responses/Error"
         "404":
@@ -3154,14 +3135,6 @@ components:
       schema:
         type: string
         format: uuid
-    SkillFilePath:
-      name: filePath
-      in: path
-      required: true
-      description: Slash-separated skill package path captured by the server wildcard. Encode each path segment.
-      schema:
-        type: string
-        minLength: 1
     ServerId:
       name: serverId
       in: path
@@ -6770,15 +6743,6 @@ components:
           type: string
         severity:
           type: string
-    SkillStatus:
-      type: string
-      enum:
-        - installed
-        - available
-    SkillFileType:
-      type: string
-      enum:
-        - file
     Skill:
       type: object
       required:
@@ -6790,11 +6754,14 @@ components:
         - version
         - source
         - risk_level
-        - status
         - icon_key
         - color_token
         - tags
-        - files
+        - archive_object_ref
+        - archive_filename
+        - archive_size_bytes
+        - archive_checksum_sha256
+        - archive_file_count
         - team_bindings
         - agent_bindings
       properties:
@@ -6816,8 +6783,6 @@ components:
           type: string
         risk_level:
           type: string
-        status:
-          $ref: "#/components/schemas/SkillStatus"
         icon_key:
           type: string
         color_token:
@@ -6826,10 +6791,25 @@ components:
           type: array
           items:
             type: string
-        files:
-          type: array
-          items:
-            $ref: "#/components/schemas/SkillFile"
+        archive_object_ref:
+          type: string
+          description: Skill zip archive object storage URI (e.g. s3://bucket/skills/.../xxx.zip)
+        archive_filename:
+          type: string
+        archive_size_bytes:
+          type: integer
+          format: int64
+        archive_checksum_sha256:
+          type: string
+        archive_file_count:
+          type: integer
+          format: int32
+        created_by:
+          type: string
+          description: Uploader user UUID (empty if unknown)
+        created_by_name:
+          type: string
+          description: Uploader display name
         team_bindings:
           type: array
           items:
@@ -6841,30 +6821,6 @@ components:
         created_at:
           type: string
           format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    SkillFile:
-      type: object
-      required:
-        - path
-        - file_type
-        - size_bytes
-      properties:
-        id:
-          type: string
-          format: uuid
-        path:
-          type: string
-        file_type:
-          $ref: "#/components/schemas/SkillFileType"
-        content:
-          type: string
-        size_bytes:
-          type: integer
-          format: int64
-        checksum_sha256:
-          type: string
         updated_at:
           type: string
           format: date-time
@@ -7144,13 +7100,6 @@ components:
           type: string
           description: Comma-separated team UUIDs that can use the skill.
         risk_level:
-          type: string
-    UpdateSkillFileRequest:
-      type: object
-      required:
-        - content
-      properties:
-        content:
           type: string
     DigitalEmployeeStatus:
       type: string

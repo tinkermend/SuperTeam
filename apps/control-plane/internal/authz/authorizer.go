@@ -132,7 +132,7 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 			break
 		}
 		decision, err = a.checkTenantAdminAccess(ctx, req)
-	case ActionSkillUpdate:
+	case ActionSkillDelete:
 		if !validUUIDResource(req.Resource, ResourceSkill) {
 			decision = deny(ReasonInvalidResource)
 			break

@@ -289,7 +289,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	runtimeCommands := runtimepkg.NewConnectionRegistry()
 
 	employeeRepository := employee.NewPgRepository(q, stores.Postgres)
-	employeeService, err := employee.NewServiceWithProvisioning(employeeRepository, runtimeCommands)
+	skillRepository := skill.NewPgRepository(stores.Postgres)
+	skillService := skill.NewService(skillRepository, stores.ObjectStore)
+	employeeService, err := employee.NewServiceWithProvisioning(employeeRepository, runtimeCommands, skillService)
 	if err != nil {
 		return nil, err
 	}
@@ -372,8 +374,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if err != nil {
 		return nil, err
 	}
-	skillRepository := skill.NewPgRepository(stores.Postgres)
-	skillService := skill.NewService(skillRepository)
 	capabilityRepository := capability.NewPgRepository(q)
 	var credentialSealer capability.CredentialSealer
 	if credentialKey := os.Getenv("CONTROL_PLANE_CREDENTIAL_KEY"); credentialKey != "" {

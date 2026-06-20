@@ -4,16 +4,42 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/storage"
 )
+
+type mockObjectStore struct {
+	putKey    string
+	putBody   []byte
+	deleteKey string
+	ref       storage.ObjectRef
+}
+
+func (m *mockObjectStore) PutObject(_ context.Context, key string, body io.Reader, _ storage.PutObjectOptions) (storage.ObjectRef, error) {
+	m.putKey = key
+	data, _ := io.ReadAll(body)
+	m.putBody = data
+	return m.ref, nil
+}
+
+func (m *mockObjectStore) DeleteObject(_ context.Context, key string) error {
+	m.deleteKey = key
+	return nil
+}
+
+func newTestService(repo *serviceTestRepository) *Service {
+	objStore := &mockObjectStore{ref: storage.ObjectRef{Bucket: "test-bucket", Key: "test-key", URI: "s3://test-bucket/test-key"}}
+	return NewService(repo, objStore)
+}
 
 func TestServiceUploadSkillParsesRootedZipAndKeepsUploadMetadata(t *testing.T) {
 	repo := &serviceTestRepository{}
-	service := NewService(repo)
+	service := newTestService(repo)
 	tenantID := uuid.New()
 	teamID := uuid.New()
 
@@ -50,27 +76,33 @@ func TestServiceUploadSkillParsesRootedZipAndKeepsUploadMetadata(t *testing.T) {
 	if len(repo.upsertReq.TeamIDs) != 1 || repo.upsertReq.TeamIDs[0] != teamID {
 		t.Fatalf("expected team binding %s, got %#v", teamID, repo.upsertReq.TeamIDs)
 	}
-	if len(repo.upsertReq.Files) != 2 {
-		t.Fatalf("expected 2 files, got %#v", repo.upsertReq.Files)
+	if repo.upsertReq.ArchiveFileCount != 2 {
+		t.Fatalf("expected 2 files in archive, got %d", repo.upsertReq.ArchiveFileCount)
 	}
-	if repo.upsertReq.Files[0].Path != "SKILL.md" || repo.upsertReq.Files[1].Path != "scripts/reproduce.sh" {
-		t.Fatalf("expected normalized file paths, got %#v", repo.upsertReq.Files)
+	if repo.upsertReq.ArchiveSizeBytes != int64(len(archive)) {
+		t.Fatalf("expected archive size %d, got %d", len(archive), repo.upsertReq.ArchiveSizeBytes)
 	}
-	if uploaded.Files[0].Content != "# diagnose\n\n用于失败任务诊断。" {
-		t.Fatalf("expected SKILL.md content in uploaded skill, got %#v", uploaded.Files[0])
+	if repo.upsertReq.ArchiveChecksum == "" {
+		t.Fatal("expected non-empty archive checksum")
+	}
+	if repo.upsertReq.ArchiveObjectRef == "" {
+		t.Fatal("expected non-empty archive object ref")
+	}
+	if uploaded.ArchiveObjectRef == "" {
+		t.Fatal("expected uploaded skill to have archive object ref")
 	}
 }
 
 func TestServiceUploadSkillParsesSkillMarkdownOnlyZip(t *testing.T) {
 	repo := &serviceTestRepository{}
-	service := NewService(repo)
+	service := newTestService(repo)
 	tenantID := uuid.New()
 
 	archive := buildSkillZip(t, map[string]string{
 		"SKILL.md": "# Release Review\n\n检查发布计划、回滚策略和验收证据。",
 	})
 
-	uploaded, err := service.UploadSkill(context.Background(), UploadSkillRequest{
+	_, err := service.UploadSkill(context.Background(), UploadSkillRequest{
 		TenantID: tenantID,
 		Tags:     []string{"发布", "验收"},
 		Archive:  archive,
@@ -86,16 +118,13 @@ func TestServiceUploadSkillParsesSkillMarkdownOnlyZip(t *testing.T) {
 	if repo.upsertReq.Description != "检查发布计划、回滚策略和验收证据。" {
 		t.Fatalf("expected description derived from SKILL.md, got %q", repo.upsertReq.Description)
 	}
-	if len(repo.upsertReq.Files) != 1 || repo.upsertReq.Files[0].Path != "SKILL.md" {
-		t.Fatalf("expected only SKILL.md file, got %#v", repo.upsertReq.Files)
-	}
-	if uploaded.Files[0].Path != "SKILL.md" {
-		t.Fatalf("expected uploaded skill to include SKILL.md, got %#v", uploaded.Files)
+	if repo.upsertReq.ArchiveFileCount != 1 {
+		t.Fatalf("expected 1 file in archive, got %d", repo.upsertReq.ArchiveFileCount)
 	}
 }
 
 func TestServiceUploadSkillRejectsZipWithoutSkillMarkdown(t *testing.T) {
-	service := NewService(&serviceTestRepository{})
+	service := newTestService(&serviceTestRepository{})
 	archive := buildSkillZip(t, map[string]string{
 		"scripts/run.sh": "#!/usr/bin/env bash\n",
 	})
@@ -117,20 +146,20 @@ func TestServiceListsEffectiveEmployeeSkillsWithTeamInheritedFirst(t *testing.T)
 	repo := &serviceTestRepository{
 		effectiveSkills: []EffectiveEmployeeSkill{
 			{
-				Skill:       Skill{ID: teamSkillID, Name: "diagnose", Slug: "diagnose", Status: SkillStatusInstalled},
+				Skill:       Skill{ID: teamSkillID, Name: "diagnose", Slug: "diagnose"},
 				SourceScope: "team",
 				Inherited:   true,
 				ReadOnly:    true,
 			},
 			{
-				Skill:       Skill{ID: employeeSkillID, Name: "release", Slug: "release", Status: SkillStatusInstalled},
+				Skill:       Skill{ID: employeeSkillID, Name: "release", Slug: "release"},
 				SourceScope: "employee",
 				Inherited:   false,
 				ReadOnly:    false,
 			},
 		},
 	}
-	service := NewService(repo)
+	service := NewService(repo, nil)
 	items, err := service.ListEffectiveEmployeeSkills(context.Background(), ListEffectiveEmployeeSkillsRequest{
 		TenantID:          uuid.New(),
 		DigitalEmployeeID: uuid.New(),
@@ -153,9 +182,9 @@ func TestServiceListsEffectiveEmployeeSkillsWithTeamInheritedFirst(t *testing.T)
 }
 
 func TestServiceBindSkillToTeamReturnsBoundSkill(t *testing.T) {
-	boundSkill := &Skill{ID: uuid.New(), Name: "diagnose", Slug: "diagnose", Status: SkillStatusInstalled}
+	boundSkill := &Skill{ID: uuid.New(), Name: "diagnose", Slug: "diagnose"}
 	repo := &serviceTestRepository{boundTeamSkill: boundSkill}
-	service := NewService(repo)
+	service := NewService(repo, nil)
 	tenantID := uuid.New()
 	teamID := uuid.New()
 
@@ -176,9 +205,9 @@ func TestServiceBindSkillToTeamReturnsBoundSkill(t *testing.T) {
 }
 
 func TestServiceBindSkillToEmployeeReturnsBoundSkill(t *testing.T) {
-	boundSkill := &Skill{ID: uuid.New(), Name: "diagnose", Slug: "diagnose", Status: SkillStatusInstalled}
+	boundSkill := &Skill{ID: uuid.New(), Name: "diagnose", Slug: "diagnose"}
 	repo := &serviceTestRepository{boundEmployeeSkill: boundSkill}
-	service := NewService(repo)
+	service := NewService(repo, nil)
 	tenantID := uuid.New()
 	employeeID := uuid.New()
 
@@ -244,19 +273,18 @@ func (r *serviceTestRepository) GetSkill(context.Context, GetSkillRequest) (*Ski
 func (r *serviceTestRepository) UpsertSkillPackage(_ context.Context, req UpsertSkillPackageRequest) (*Skill, error) {
 	r.upsertReq = req
 	return &Skill{
-		ID:          uuid.New(),
-		TenantID:    req.TenantID,
-		Slug:        req.Slug,
-		Name:        req.Name,
-		Description: req.Description,
-		Tags:        req.Tags,
-		TeamIDs:     req.TeamIDs,
-		Files:       req.Files,
+		ID:               uuid.New(),
+		TenantID:         req.TenantID,
+		Slug:             req.Slug,
+		Name:             req.Name,
+		Description:      req.Description,
+		Tags:             req.Tags,
+		TeamIDs:          req.TeamIDs,
+		ArchiveObjectRef: req.ArchiveObjectRef,
+		ArchiveChecksum:  req.ArchiveChecksum,
+		ArchiveSizeBytes: req.ArchiveSizeBytes,
+		ArchiveFileCount: req.ArchiveFileCount,
 	}, nil
-}
-
-func (r *serviceTestRepository) UpdateSkillFile(context.Context, UpdateSkillFileRequest) (*SkillFile, error) {
-	return nil, nil
 }
 
 func (r *serviceTestRepository) BindSkillToTeam(_ context.Context, req BindTeamSkillRequest) (*Skill, error) {
@@ -283,6 +311,18 @@ func (r *serviceTestRepository) UnbindSkillFromEmployee(context.Context, BindEmp
 
 func (r *serviceTestRepository) ListEffectiveEmployeeSkills(context.Context, ListEffectiveEmployeeSkillsRequest) ([]EffectiveEmployeeSkill, error) {
 	return r.effectiveSkills, nil
+}
+
+func (r *serviceTestRepository) ListSkillsForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]SkillRuntimeRecord, error) {
+	return nil, nil
+}
+
+func (r *serviceTestRepository) DeleteSkill(context.Context, DeleteSkillRequest) error {
+	return nil
+}
+
+func (r *serviceTestRepository) IsSkillBoundToEmployeeTeam(context.Context, BindEmployeeSkillRequest) (bool, error) {
+	return false, nil
 }
 
 func buildSkillZip(t *testing.T, files map[string]string) []byte {

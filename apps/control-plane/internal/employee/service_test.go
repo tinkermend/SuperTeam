@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 	cpruntime "github.com/superteam/control-plane/internal/runtime"
+	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
@@ -527,12 +528,17 @@ func TestCreateDigitalEmployeeProvisionPayloadUsesTeamEmployeeHomeAndWorkspaceFi
 }
 
 func TestCreateDigitalEmployeeProvisionPayloadCarriesEffectiveCapabilityArrays(t *testing.T) {
-	svc, _, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	svc, repo, dispatcher, req := newCreateDigitalEmployeeReadyFixture(t)
+	svc.skillLister = &fakeSkillLister{records: []skill.SkillRuntimeRecord{
+		{ID: uuid.New(), Slug: "database-troubleshooting", ArchiveObjectRef: "s3://bucket/skills/db-trouble.zip", ArchiveChecksum: "abc123", ArchiveSizeBytes: 1024, ArchiveFileCount: 2},
+		{ID: uuid.New(), Slug: "sql-review", ArchiveObjectRef: "s3://bucket/skills/sql-review.zip", ArchiveChecksum: "def456", ArchiveSizeBytes: 2048, ArchiveFileCount: 1},
+	}}
 	req.CapabilitySelection = map[string]any{
 		"enabled_skills":                []string{"database-troubleshooting", "sql-review"},
 		"enabled_mcp_servers":           []string{"postgres-readonly"},
 		"enabled_external_capabilities": []string{"change-ticket"},
 	}
+	_ = repo
 
 	if _, err := svc.CreateDigitalEmployee(context.Background(), req); err != nil {
 		t.Fatalf("create digital employee: %v", err)
@@ -553,6 +559,9 @@ func TestCreateDigitalEmployeeProvisionPayloadCarriesEffectiveCapabilityArrays(t
 	firstSkill, ok := skills[0].(map[string]any)
 	if !ok || firstSkill["skill_key"] != "database-troubleshooting" {
 		t.Fatalf("unexpected first skill payload: %#v", skills[0])
+	}
+	if firstSkill["archive_object_ref"] != "s3://bucket/skills/db-trouble.zip" {
+		t.Fatalf("expected archive_object_ref in skill payload, got %#v", firstSkill)
 	}
 	mcpServers, ok := payload["mcp_servers"].([]any)
 	if !ok || len(mcpServers) != 1 {
@@ -601,7 +610,7 @@ func TestRuntimeWorkspaceFilesPayloadOmitsInlineContentForObjectStore(t *testing
 func TestCreateDigitalEmployeeRejectsUnknownEmployeeType(t *testing.T) {
 	repo := newMemoryRepository()
 	dispatcher := newFakeRuntimeCommandDispatcher()
-	svc, err := NewServiceWithProvisioning(repo, dispatcher)
+	svc, err := NewServiceWithProvisioning(repo, dispatcher, nil)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -1895,7 +1904,7 @@ func newCreateDigitalEmployeeReadyFixture(t *testing.T) (*Service, *memoryReposi
 	t.Helper()
 	repo := newMemoryRepository()
 	dispatcher := newFakeRuntimeCommandDispatcher()
-	svc, err := NewServiceWithProvisioning(repo, dispatcher)
+	svc, err := NewServiceWithProvisioning(repo, dispatcher, nil)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -2816,4 +2825,12 @@ func (f *fakeRuntimeCommandDispatcher) Dispatch(_ context.Context, nodeID string
 	}
 	f.commands = append(f.commands, command)
 	return nil
+}
+
+type fakeSkillLister struct {
+	records []skill.SkillRuntimeRecord
+}
+
+func (f *fakeSkillLister) ListSkillsForRuntime(_ context.Context, _ uuid.UUID, _ uuid.UUID) ([]skill.SkillRuntimeRecord, error) {
+	return f.records, nil
 }

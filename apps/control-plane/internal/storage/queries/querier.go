@@ -20,6 +20,8 @@ type Querier interface {
 	AddTeamOwnerMembership(ctx context.Context, arg AddTeamOwnerMembershipParams) (TenantMember, error)
 	ApproveRuntimeEnrollment(ctx context.Context, arg ApproveRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	ApproveRuntimeEnrollmentWithNode(ctx context.Context, arg ApproveRuntimeEnrollmentWithNodeParams) (RuntimeEnrollment, error)
+	// 仅 pending（manual/超纲转人工）请求可被人工通过；通过时落定授予额度。
+	ApproveTeamLendingRequest(ctx context.Context, arg ApproveTeamLendingRequestParams) (TeamLendingRequest, error)
 	ArchiveActiveTenantTeamConfigRevision(ctx context.Context, arg ArchiveActiveTenantTeamConfigRevisionParams) ([]TenantTeamConfigRevision, error)
 	ArchiveProject(ctx context.Context, arg ArchiveProjectParams) (Project, error)
 	AreEmployeesRuntimeReady(ctx context.Context, arg AreEmployeesRuntimeReadyParams) ([]AreEmployeesRuntimeReadyRow, error)
@@ -90,6 +92,7 @@ type Querier interface {
 	CreateTaskEventIfAbsent(ctx context.Context, arg CreateTaskEventIfAbsentParams) (CreateTaskEventIfAbsentRow, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
 	CreateTaskStateHistory(ctx context.Context, arg CreateTaskStateHistoryParams) (TaskStateHistory, error)
+	CreateTeamLendingRequest(ctx context.Context, arg CreateTeamLendingRequestParams) (TeamLendingRequest, error)
 	CreateTeamMCPServer(ctx context.Context, arg CreateTeamMCPServerParams) (TeamMcpServer, error)
 	CreateTeamMemberRoleRequest(ctx context.Context, arg CreateTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	CreateTenantTeam(ctx context.Context, arg CreateTenantTeamParams) (TenantTeam, error)
@@ -179,6 +182,8 @@ type Querier interface {
 	GetTaskArtifact(ctx context.Context, arg GetTaskArtifactParams) (TaskArtifact, error)
 	GetTaskEvent(ctx context.Context, arg GetTaskEventParams) (TaskEvent, error)
 	GetTaskRun(ctx context.Context, arg GetTaskRunParams) (TaskRun, error)
+	GetTeamLendingPolicy(ctx context.Context, arg GetTeamLendingPolicyParams) (TeamLendingPolicy, error)
+	GetTeamLendingRequest(ctx context.Context, arg GetTeamLendingRequestParams) (TeamLendingRequest, error)
 	GetTeamMember(ctx context.Context, arg GetTeamMemberParams) (GetTeamMemberRow, error)
 	GetTeamMemberRoleRequest(ctx context.Context, arg GetTeamMemberRoleRequestParams) (TenantTeamMemberRoleRequest, error)
 	GetTenantTeam(ctx context.Context, arg GetTenantTeamParams) (TenantTeam, error)
@@ -260,6 +265,8 @@ type Querier interface {
 	ListTaskStateHistory(ctx context.Context, arg ListTaskStateHistoryParams) ([]TaskStateHistory, error)
 	ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error)
 	ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]AuditEvent, error)
+	ListTeamLendingRequestsByProject(ctx context.Context, arg ListTeamLendingRequestsByProjectParams) ([]TeamLendingRequest, error)
+	ListTeamLendingRequestsByTeam(ctx context.Context, arg ListTeamLendingRequestsByTeamParams) ([]TeamLendingRequest, error)
 	ListTeamMCPServers(ctx context.Context, arg ListTeamMCPServersParams) ([]ListTeamMCPServersRow, error)
 	ListTeamMemberRoleRequests(ctx context.Context, arg ListTeamMemberRoleRequestsParams) ([]TenantTeamMemberRoleRequest, error)
 	ListTeamMembers(ctx context.Context, arg ListTeamMembersParams) ([]ListTeamMembersRow, error)
@@ -279,6 +286,7 @@ type Querier interface {
 	ProjectTaskEventExists(ctx context.Context, arg ProjectTaskEventExistsParams) (bool, error)
 	QueueProjectTask(ctx context.Context, arg QueueProjectTaskParams) (ProjectTask, error)
 	RejectRuntimeEnrollment(ctx context.Context, arg RejectRuntimeEnrollmentParams) (RuntimeEnrollment, error)
+	RejectTeamLendingRequest(ctx context.Context, arg RejectTeamLendingRequestParams) (TeamLendingRequest, error)
 	RejectTenantTeamConfigRevision(ctx context.Context, arg RejectTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
 	RenewProjectTaskAttemptLease(ctx context.Context, arg RenewProjectTaskAttemptLeaseParams) (ProjectTaskAttempt, error)
 	RenewRuntimeSession(ctx context.Context, arg RenewRuntimeSessionParams) (RuntimeSession, error)
@@ -288,6 +296,8 @@ type Querier interface {
 	RevokeRuntimeBootstrapKey(ctx context.Context, arg RevokeRuntimeBootstrapKeyParams) (RuntimeBootstrapKey, error)
 	RevokeRuntimeEnrollment(ctx context.Context, arg RevokeRuntimeEnrollmentParams) (RevokeRuntimeEnrollmentRow, error)
 	RevokeRuntimeSession(ctx context.Context, arg RevokeRuntimeSessionParams) (RuntimeSession, error)
+	// 已生效（approved/auto_approved）的借调可被团队负责人撤销。
+	RevokeTeamLendingRequest(ctx context.Context, arg RevokeTeamLendingRequestParams) (TeamLendingRequest, error)
 	RevokeUserProjectTeamScopes(ctx context.Context, arg RevokeUserProjectTeamScopesParams) error
 	RewireProjectTaskDependencies(ctx context.Context, arg RewireProjectTaskDependenciesParams) ([]RewireProjectTaskDependenciesRow, error)
 	RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNodeCoversTaskScopeParams) (bool, error)
@@ -332,6 +342,10 @@ type Querier interface {
 	UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntimeCapabilityParams) (RuntimeCapability, error)
 	UpsertRuntimeEnrollment(ctx context.Context, arg UpsertRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	UpsertRuntimeNodeForTenant(ctx context.Context, arg UpsertRuntimeNodeForTenantParams) (RuntimeNode, error)
+	// 团队借调查询：供给侧策略（每团队一条 active，upsert）+ 需求侧借调请求生命周期。
+	// D1 团队级 (project, team) 粒度；D2 超纲强制转人工；D3 请求自带 status。
+	// 每团队一条 active 策略：存在则更新，不存在则插入。
+	UpsertTeamLendingPolicy(ctx context.Context, arg UpsertTeamLendingPolicyParams) (TeamLendingPolicy, error)
 	UpsertUserProjectTeamScope(ctx context.Context, arg UpsertUserProjectTeamScopeParams) (UserProjectTeamScope, error)
 	UserHasActiveProjectTeamScope(ctx context.Context, arg UserHasActiveProjectTeamScopeParams) (bool, error)
 	ValidateRuntimeToken(ctx context.Context, arg ValidateRuntimeTokenParams) (AuthRuntimeToken, error)

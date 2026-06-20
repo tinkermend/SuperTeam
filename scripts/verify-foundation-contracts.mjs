@@ -46,7 +46,7 @@ const requiredOpenApiOperations = new Set([
   "GET /api/v1/skills",
   "POST /api/v1/skills/uploads",
   "GET /api/v1/skills/{skillId}",
-  "PUT /api/v1/skills/{skillId}/files/{filePath}",
+  "DELETE /api/v1/skills/{skillId}",
   "GET /api/v1/projects",
   "POST /api/v1/projects",
   "GET /api/v1/projects/{projectId}",
@@ -127,7 +127,6 @@ const requiredTypeScriptClientPaths = new Set([
   "/api/v1/digital-employees/{employeeId}/runs/{runId}/stop",
   "/api/v1/skills",
   "/api/v1/skills/uploads",
-  "/api/v1/skills/{skillId}/files/{filePath}",
 ]);
 
 function readText(path) {
@@ -160,9 +159,7 @@ function normalizePath(path) {
     .replace(/\{decisionId\}/g, "{decisionId}")
     .replace(/\{revisionId\}/g, "{revisionId}")
     .replace(/\{projectTaskId\}/g, "{projectTaskId}")
-    .replace(/\{attemptId\}/g, "{attemptId}")
-    .replace(/\/api\/v1\/skills\/\{skillId\}\/files\/\*/g, "/api/v1/skills/{skillId}/files/{filePath}")
-    .replace(/\{filePath:\.\*\}/g, "{filePath}");
+    .replace(/\{attemptId\}/g, "{attemptId}");
 }
 
 function normalizeOperation(method, path) {
@@ -286,8 +283,7 @@ function readTypeScriptClientPaths() {
             .replaceAll("${runId}", "{runId}")
             .replaceAll("${encodedRunId}", "{runId}")
             .replaceAll("${skillId}", "{skillId}")
-            .replaceAll("${encodedSkillId}", "{skillId}")
-            .replaceAll("${encodedPath}", "{filePath}"),
+            .replaceAll("${encodedSkillId}", "{skillId}"),
         ),
       );
     }

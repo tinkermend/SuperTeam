@@ -54,10 +54,10 @@ pub struct RuntimeSkillPayload {
     pub skill_key: String,
     #[serde(default)]
     pub revision_id: Option<String>,
-    #[serde(default)]
-    pub files: Vec<serde_json::Value>,
-    #[serde(default)]
-    pub content_hash: Option<String>,
+    pub archive_object_ref: String,
+    pub archive_checksum_sha256: String,
+    pub archive_size_bytes: i64,
+    pub archive_file_count: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
