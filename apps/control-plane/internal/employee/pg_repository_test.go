@@ -365,8 +365,8 @@ func assertEmployeeOverviewOperationalFactsSQL(t *testing.T, sql string) {
 	normalizedSQL := normalizeSQL(sql)
 	terminalGuard := "pt.requires_human_approval AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed')"
 	decisionTypeWhereAllowlist := "AND pdr.decision_type IN ('task_failure_recovery', 'route_review', 'project_acceptance')"
-	joinStatusNarrowing := "AND ( pt.status IN ('pending', 'planned', 'queued', 'blocked', 'assigned', 'running', 'in_progress', 'waiting_human', 'pending_review', 'failed') OR ( pt.requires_human_approval AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed') ) )"
-	queuedTaskStatusNarrowing := "count(pt.id) FILTER (WHERE pt.status IN ('planned', 'queued', 'assigned')) > 0 AS operational_has_queued_work"
+	joinStatusNarrowing := "AND ( pt.status IN ('pending', 'planned', 'queued', 'blocked', 'running', 'in_progress', 'waiting_human', 'pending_review', 'failed') OR ( pt.requires_human_approval AND pt.status NOT IN ('completed', 'done', 'success', 'cancelled', 'failed') ) )"
+	queuedTaskStatusNarrowing := "count(pt.id) FILTER (WHERE pt.status IN ('queued')) > 0 AS operational_has_queued_work"
 	queuedTaskStatusBroadening := "count(pt.id) FILTER (WHERE pt.status IN ('pending', 'planned', 'queued', 'blocked', 'assigned')) > 0 AS operational_has_queued_work"
 
 	for _, expected := range []string{
@@ -379,6 +379,8 @@ func assertEmployeeOverviewOperationalFactsSQL(t *testing.T, sql string) {
 		"operational_has_project_acceptance_blocker",
 		"task_failure_recovery",
 		"route_review",
+		"project_task_attempts pta",
+		"pta.id = pt.current_attempt_id",
 		terminalGuard,
 		decisionTypeWhereAllowlist,
 		joinStatusNarrowing,
@@ -392,6 +394,7 @@ func assertEmployeeOverviewOperationalFactsSQL(t *testing.T, sql string) {
 		require.Contains(t, normalizedSQL, expected)
 	}
 	require.NotContains(t, normalizedSQL, queuedTaskStatusBroadening)
+	require.NotContains(t, normalizedSQL, "pt.status IN ('planned', 'assigned')")
 	require.NotContains(t, sql, "<> 'project_acceptance'")
 	require.Equal(t, 3, strings.Count(normalizedSQL, terminalGuard))
 }
