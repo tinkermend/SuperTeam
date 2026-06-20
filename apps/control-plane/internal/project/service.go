@@ -199,13 +199,88 @@ func (s *Service) QueueProjectTask(ctx context.Context, req QueueProjectTaskRequ
 	if req.IdempotencyKey == "" || req.LeaseToken == "" {
 		return QueueProjectTaskResult{}, ErrInvalidProject
 	}
-	if req.ExecutionContextPacket == nil {
-		req.ExecutionContextPacket = map[string]any{}
+	if len(req.ExecutionContextPacket) == 0 {
+		task, err := s.repository.GetProjectTask(ctx, req.TenantID, req.ProjectTaskID)
+		if err != nil {
+			return QueueProjectTaskResult{}, err
+		}
+		if task.ProjectID != req.ProjectID {
+			return QueueProjectTaskResult{}, ErrProjectNotFound
+		}
+		packet, err := s.BuildProjectTaskExecutionPacket(ctx, task)
+		if err != nil {
+			return QueueProjectTaskResult{}, err
+		}
+		req.ExecutionContextPacket = projectTaskExecutionPacketMap(packet)
+		req.ExecutionContextPacketVersion = packet.Version
 	}
 	if strings.TrimSpace(req.ExecutionContextPacketVersion) == "" {
 		req.ExecutionContextPacketVersion = "v1"
 	}
 	return s.repository.QueueProjectTaskWithAttempt(ctx, req)
+}
+
+func (s *Service) BuildProjectTaskExecutionPacket(ctx context.Context, task ProjectTask) (ProjectTaskExecutionPacket, error) {
+	if task.TenantID == uuid.Nil || task.ProjectID == uuid.Nil || task.ID == uuid.Nil {
+		return ProjectTaskExecutionPacket{}, ErrInvalidProject
+	}
+	summary := ""
+	if task.Summary != nil {
+		summary = *task.Summary
+	}
+	riskLevel := ""
+	if task.RiskLevel != nil {
+		riskLevel = *task.RiskLevel
+	}
+	packet := ProjectTaskExecutionPacket{
+		Version:              "v1",
+		ProjectID:            task.ProjectID.String(),
+		ProjectTaskID:        task.ID.String(),
+		Title:                task.Title,
+		Summary:              summary,
+		ExpectedOutputs:      append([]any(nil), task.ExpectedOutputs...),
+		InputRequirements:    cloneMap(mapOrEmptyAny(task.InputRequirements)),
+		HandoffContract:      cloneMap(mapOrEmptyAny(task.HandoffContract)),
+		ForbiddenScopes:      []string{},
+		RiskLevel:            riskLevel,
+		StopForHumanCriteria: []string{HumanWaitReasonMissingContext, HumanWaitReasonApprovalRequired, HumanWaitReasonPermissionRequired, HumanWaitReasonPlanInvalid},
+	}
+	if len(task.BlockedByTaskIDs) > 0 {
+		summaries, err := s.repository.ListExecutionSummaries(ctx, task.TenantID, task.ProjectID, 200, 0)
+		if err != nil {
+			return ProjectTaskExecutionPacket{}, err
+		}
+		blockedBy := make(map[uuid.UUID]struct{}, len(task.BlockedByTaskIDs))
+		for _, blockerID := range task.BlockedByTaskIDs {
+			blockedBy[blockerID] = struct{}{}
+		}
+		for _, summary := range summaries {
+			if _, ok := blockedBy[summary.ProjectTaskID]; !ok {
+				continue
+			}
+			packet.DependencyOutputs = append(packet.DependencyOutputs, ProjectTaskDependencyOutput{
+				ProjectTaskID: summary.ProjectTaskID.String(),
+				Conclusion:    summary.Conclusion,
+				EvidenceRefs:  append([]any(nil), summary.EvidenceRefs...),
+				ArtifactRefs:  append([]any(nil), summary.ArtifactRefs...),
+			})
+		}
+	}
+	decisions, err := s.repository.ListDecisionRequests(ctx, task.TenantID, task.ProjectID, 200, 0)
+	if err != nil {
+		return ProjectTaskExecutionPacket{}, err
+	}
+	for _, decision := range decisions {
+		if decision.ProjectTaskID == nil || *decision.ProjectTaskID != task.ID {
+			continue
+		}
+		packet.HumanDecisionRefs = append(packet.HumanDecisionRefs, ProjectTaskHumanDecisionRef{
+			DecisionRequestID: decision.ID.String(),
+			DecisionType:      decision.DecisionType,
+			StatusSnapshot:    decision.StatusSnapshot,
+		})
+	}
+	return packet, nil
 }
 
 func (s *Service) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
@@ -2848,6 +2923,49 @@ func cloneMap(value map[string]any) map[string]any {
 		cloned[key] = item
 	}
 	return cloned
+}
+
+func projectTaskExecutionPacketMap(packet ProjectTaskExecutionPacket) map[string]any {
+	dependencyOutputs := make([]any, 0, len(packet.DependencyOutputs))
+	for _, output := range packet.DependencyOutputs {
+		dependencyOutputs = append(dependencyOutputs, map[string]any{
+			"project_task_id": output.ProjectTaskID,
+			"conclusion":      output.Conclusion,
+			"evidence_refs":   append([]any(nil), output.EvidenceRefs...),
+			"artifact_refs":   append([]any(nil), output.ArtifactRefs...),
+		})
+	}
+	humanDecisionRefs := make([]any, 0, len(packet.HumanDecisionRefs))
+	for _, ref := range packet.HumanDecisionRefs {
+		humanDecisionRefs = append(humanDecisionRefs, map[string]any{
+			"decision_request_id": ref.DecisionRequestID,
+			"decision_type":       ref.DecisionType,
+			"status_snapshot":     ref.StatusSnapshot,
+		})
+	}
+	forbiddenScopes := make([]any, 0, len(packet.ForbiddenScopes))
+	for _, scope := range packet.ForbiddenScopes {
+		forbiddenScopes = append(forbiddenScopes, scope)
+	}
+	stopForHumanCriteria := make([]any, 0, len(packet.StopForHumanCriteria))
+	for _, criterion := range packet.StopForHumanCriteria {
+		stopForHumanCriteria = append(stopForHumanCriteria, criterion)
+	}
+	return map[string]any{
+		"version":                 packet.Version,
+		"project_id":              packet.ProjectID,
+		"project_task_id":         packet.ProjectTaskID,
+		"title":                   packet.Title,
+		"summary":                 packet.Summary,
+		"expected_outputs":        append([]any(nil), packet.ExpectedOutputs...),
+		"input_requirements":      cloneMap(mapOrEmptyAny(packet.InputRequirements)),
+		"handoff_contract":        cloneMap(mapOrEmptyAny(packet.HandoffContract)),
+		"dependency_outputs":      dependencyOutputs,
+		"human_decision_refs":     humanDecisionRefs,
+		"forbidden_scopes":        forbiddenScopes,
+		"risk_level":              packet.RiskLevel,
+		"stop_for_human_criteria": stopForHumanCriteria,
+	}
 }
 
 func validHumanDecision(decision string) bool {

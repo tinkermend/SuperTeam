@@ -316,6 +316,35 @@ type ProjectTask struct {
 	UpdatedAt                 time.Time
 }
 
+type ProjectTaskExecutionPacket struct {
+	Version              string
+	ProjectID            string
+	ProjectTaskID        string
+	Title                string
+	Summary              string
+	ExpectedOutputs      []any
+	InputRequirements    map[string]any
+	HandoffContract      map[string]any
+	DependencyOutputs    []ProjectTaskDependencyOutput
+	HumanDecisionRefs    []ProjectTaskHumanDecisionRef
+	ForbiddenScopes      []string
+	RiskLevel            string
+	StopForHumanCriteria []string
+}
+
+type ProjectTaskDependencyOutput struct {
+	ProjectTaskID string
+	Conclusion    string
+	EvidenceRefs  []any
+	ArtifactRefs  []any
+}
+
+type ProjectTaskHumanDecisionRef struct {
+	DecisionRequestID string
+	DecisionType      string
+	StatusSnapshot    string
+}
+
 const (
 	ProjectTaskStatusPlanned      = "planned"
 	ProjectTaskStatusQueued       = "queued"

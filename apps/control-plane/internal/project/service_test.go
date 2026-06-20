@@ -61,6 +61,57 @@ func TestRuntimeWritebackProjectTaskStatusesIncludeQueued(t *testing.T) {
 	require.True(t, projectTaskAcceptsRuntimeWriteback("queued"))
 }
 
+func TestBuildProjectTaskExecutionPacketIncludesDependenciesAndHumanDecisions(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	blockerID := uuid.New()
+	decisionID := uuid.New()
+	task := ProjectTask{
+		ID:              taskID,
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		Title:           "执行上线检查",
+		Status:          ProjectTaskStatusPlanned,
+		ExpectedOutputs: []any{"deployment_report"},
+		InputRequirements: map[string]any{
+			"environment": "staging",
+		},
+		HandoffContract: map[string]any{
+			"completion_path": "project_task_attempt_writeback",
+		},
+		BlockedByTaskIDs: []uuid.UUID{blockerID},
+	}
+	repo.executionSummaries = append(repo.executionSummaries, ExecutionSummary{
+		ID:            uuid.New(),
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: blockerID,
+		Conclusion:    "依赖任务已完成，产出 staging 检查清单。",
+		EvidenceRefs:  []any{"evidence://staging-checklist"},
+	})
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:             decisionID,
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskID:  &taskID,
+		DecisionType:   "approval_required",
+		StatusSnapshot: ProjectTaskStatusWaitingHuman,
+	})
+
+	packet, err := service.BuildProjectTaskExecutionPacket(context.Background(), task)
+	require.NoError(t, err)
+	require.Equal(t, "v1", packet.Version)
+	require.Equal(t, taskID.String(), packet.ProjectTaskID)
+	require.Contains(t, packet.ExpectedOutputs, "deployment_report")
+	require.Len(t, packet.DependencyOutputs, 1)
+	require.Equal(t, "evidence://staging-checklist", packet.DependencyOutputs[0].EvidenceRefs[0])
+	require.Len(t, packet.HumanDecisionRefs, 1)
+}
+
 func TestQueueProjectTaskCreatesAttemptAndMovesTaskToQueued(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -106,6 +157,9 @@ func TestQueueProjectTaskCreatesAttemptAndMovesTaskToQueued(t *testing.T) {
 	require.Equal(t, runtimeTaskID, *result.Attempt.RuntimeTaskID)
 	require.Equal(t, runtimeNodeID, *result.Attempt.RuntimeNodeID)
 	require.Equal(t, "lease-token-1", result.Attempt.LeaseToken)
+	require.Equal(t, "v1", result.Attempt.ExecutionContextPacketVersion)
+	require.Equal(t, taskID.String(), result.Attempt.ExecutionContextPacket["project_task_id"])
+	require.Equal(t, "实现幂等写回", result.Attempt.ExecutionContextPacket["title"])
 	require.Equal(t, "project_coordinator", result.Event.ActorType)
 	require.Equal(t, taskID.String(), result.Event.ActorID)
 	require.Equal(t, result.Attempt.ID.String(), result.Event.Payload["project_task_attempt_id"])
