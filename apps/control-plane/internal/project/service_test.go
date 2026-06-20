@@ -140,6 +140,32 @@ func TestRecordAttemptContextUpdateRoutesContractChangeToReplan(t *testing.T) {
 	require.Equal(t, ContextUpdateDeliveryCancelAndReplan, update.DeliveryMode)
 }
 
+func TestProjectTaskLivenessProjectionExplainsNextAction(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	waitingReason := HumanWaitReasonMissingContext
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:               taskID,
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		Status:           ProjectTaskStatusWaitingHuman,
+		CurrentAttemptID: &attemptID,
+		WaitingReason:    &waitingReason,
+	})
+
+	items, err := service.ListProjectTaskLiveness(context.Background(), tenantID, projectID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, ProjectTaskLivenessWaitingHuman, items[0].Liveness)
+	require.Equal(t, "human response", items[0].NextAction)
+	require.Equal(t, HumanWaitReasonMissingContext, items[0].Reason)
+}
+
 func TestQueueProjectTaskCreatesAttemptAndMovesTaskToQueued(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)

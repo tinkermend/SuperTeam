@@ -2876,6 +2876,32 @@ type ProjectTaskGraphStageSummary struct {
 	WaitingHumanNodes int32  `json:"waiting_human_nodes"`
 }
 
+// ProjectTaskLiveness defines model for ProjectTaskLiveness.
+type ProjectTaskLiveness struct {
+	Attempt               ProjectTaskLivenessAttempt    `json:"attempt"`
+	BlockingDependencyIds []openapi_types.UUID          `json:"blocking_dependency_ids"`
+	CurrentAttemptId      *openapi_types.UUID           `json:"current_attempt_id,omitempty"`
+	IsTerminal            bool                          `json:"is_terminal"`
+	LeaseExpiresAt        *time.Time                    `json:"lease_expires_at,omitempty"`
+	Liveness              string                        `json:"liveness"`
+	NextAction            ProjectTaskLivenessNextAction `json:"next_action"`
+	ProjectTaskId         openapi_types.UUID            `json:"project_task_id"`
+	Reason                *string                       `json:"reason,omitempty"`
+	RetryNotBefore        *time.Time                    `json:"retry_not_before,omitempty"`
+	WaitingRequestId      *openapi_types.UUID           `json:"waiting_request_id,omitempty"`
+}
+
+// ProjectTaskLivenessAttempt defines model for ProjectTaskLivenessAttempt.
+type ProjectTaskLivenessAttempt struct {
+	Id     *openapi_types.UUID `json:"id,omitempty"`
+	Status string              `json:"status"`
+}
+
+// ProjectTaskLivenessNextAction defines model for ProjectTaskLivenessNextAction.
+type ProjectTaskLivenessNextAction struct {
+	Source string `json:"source"`
+}
+
 // ProjectTaskSummary defines model for ProjectTaskSummary.
 type ProjectTaskSummary struct {
 	ActiveTasks       int32 `json:"active_tasks"`
@@ -4956,6 +4982,9 @@ type ServerInterface interface {
 	// List project tasks
 	// (GET /api/v1/projects/{projectId}/tasks)
 	ListProjectTasks(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTasksParams)
+	// Get project task liveness projection
+	// (GET /api/v1/projects/{projectId}/tasks/{taskId}/liveness)
+	GetProjectTaskLiveness(w http.ResponseWriter, r *http.Request, projectId ProjectId, taskId TaskId)
 	// List project transfer requests
 	// (GET /api/v1/projects/{projectId}/transfer-requests)
 	ListProjectTransferRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTransferRequestsParams)
@@ -5598,6 +5627,12 @@ func (_ Unimplemented) GetProjectTaskGraph(w http.ResponseWriter, r *http.Reques
 // List project tasks
 // (GET /api/v1/projects/{projectId}/tasks)
 func (_ Unimplemented) ListProjectTasks(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTasksParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get project task liveness projection
+// (GET /api/v1/projects/{projectId}/tasks/{taskId}/liveness)
+func (_ Unimplemented) GetProjectTaskLiveness(w http.ResponseWriter, r *http.Request, projectId ProjectId, taskId TaskId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8759,6 +8794,41 @@ func (siw *ServerInterfaceWrapper) ListProjectTasks(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// GetProjectTaskLiveness operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectTaskLiveness(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "taskId" -------------
+	var taskId TaskId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "taskId", chi.URLParam(r, "taskId"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "taskId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectTaskLiveness(w, r, projectId, taskId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListProjectTransferRequests operation middleware
 func (siw *ServerInterfaceWrapper) ListProjectTransferRequests(w http.ResponseWriter, r *http.Request) {
 
@@ -11909,6 +11979,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/tasks", wrapper.ListProjectTasks)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/tasks/{taskId}/liveness", wrapper.GetProjectTaskLiveness)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/transfer-requests", wrapper.ListProjectTransferRequests)

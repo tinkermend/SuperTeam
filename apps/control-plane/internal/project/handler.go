@@ -29,6 +29,7 @@ type HandlerService interface {
 	ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error)
 	GetDemandLaunchDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandLaunchDetail, error)
 	GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (*ProjectTaskGraph, error)
+	ListProjectTaskLiveness(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectTaskLiveness, error)
 	GetOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error)
 	ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error)
 	ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error)
@@ -309,6 +310,29 @@ func (h *HTTPHandler) GetProjectTaskGraph(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, taskGraphResponseFromDomain(*graph))
+}
+
+func (h *HTTPHandler) GetProjectTaskLiveness(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	taskID, ok := taskIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	items, err := service.ListProjectTaskLiveness(r.Context(), tenantID, projectID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	for _, item := range items {
+		if item.ProjectTaskID == taskID {
+			writeJSON(w, http.StatusOK, taskLivenessResponseFromDomain(item))
+			return
+		}
+	}
+	writeHandlerError(w, ErrProjectNotFound)
 }
 
 func (h *HTTPHandler) ListProjectEvents(w http.ResponseWriter, r *http.Request) {
@@ -1102,6 +1126,15 @@ func attemptIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bo
 	return attemptID, true
 }
 
+func taskIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	taskID, err := uuid.Parse(chi.URLParam(r, "taskId"))
+	if err != nil || taskID == uuid.Nil {
+		http.Error(w, "invalid task id", http.StatusBadRequest)
+		return uuid.Nil, false
+	}
+	return taskID, true
+}
+
 func evidenceIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	evidenceID, err := uuid.Parse(chi.URLParam(r, "evidenceId"))
 	if err != nil || evidenceID == uuid.Nil {
@@ -1455,6 +1488,29 @@ type projectTaskGraphResponse struct {
 	RecentEvents       []projectEventResponse                 `json:"recent_events"`
 	DecisionRequests   []decisionRequestResponse              `json:"decision_requests"`
 	StageSummaries     []projectTaskGraphStageSummaryResponse `json:"stage_summaries,omitempty"`
+}
+
+type projectTaskLivenessResponse struct {
+	ProjectTaskID         string                                `json:"project_task_id"`
+	Liveness              string                                `json:"liveness"`
+	Reason                string                                `json:"reason,omitempty"`
+	BlockingDependencyIDs []string                              `json:"blocking_dependency_ids"`
+	CurrentAttemptID      *string                               `json:"current_attempt_id,omitempty"`
+	WaitingRequestID      *string                               `json:"waiting_request_id,omitempty"`
+	RetryNotBefore        *string                               `json:"retry_not_before,omitempty"`
+	LeaseExpiresAt        *string                               `json:"lease_expires_at,omitempty"`
+	NextAction            projectTaskLivenessNextActionResponse `json:"next_action"`
+	IsTerminal            bool                                  `json:"is_terminal"`
+	Attempt               projectTaskLivenessAttemptResponse    `json:"attempt"`
+}
+
+type projectTaskLivenessNextActionResponse struct {
+	Source string `json:"source"`
+}
+
+type projectTaskLivenessAttemptResponse struct {
+	ID     *string `json:"id,omitempty"`
+	Status string  `json:"status"`
 }
 
 type projectTaskGraphNodeResponse struct {
@@ -2011,6 +2067,25 @@ func taskGraphResponseFromDomain(graph ProjectTaskGraph) projectTaskGraphRespons
 		RecentEvents:       eventResponses(graph.RecentEvents),
 		DecisionRequests:   decisionRequestResponses(graph.DecisionRequests),
 		StageSummaries:     taskGraphStageSummaryResponses(graph.StageSummaries),
+	}
+}
+
+func taskLivenessResponseFromDomain(item ProjectTaskLiveness) projectTaskLivenessResponse {
+	return projectTaskLivenessResponse{
+		ProjectTaskID:         item.ProjectTaskID.String(),
+		Liveness:              item.Liveness,
+		Reason:                item.Reason,
+		BlockingDependencyIDs: uuidStrings(item.BlockingDependencyIDs),
+		CurrentAttemptID:      stringPtr(item.CurrentAttemptID),
+		WaitingRequestID:      stringPtr(item.WaitingRequestID),
+		RetryNotBefore:        timePtr(item.RetryNotBefore),
+		LeaseExpiresAt:        timePtr(item.LeaseExpiresAt),
+		NextAction:            projectTaskLivenessNextActionResponse{Source: item.NextAction},
+		IsTerminal:            item.Liveness == ProjectTaskLivenessTerminal,
+		Attempt: projectTaskLivenessAttemptResponse{
+			ID:     stringPtr(item.CurrentAttemptID),
+			Status: item.AttemptStatus,
+		},
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -490,6 +491,54 @@ func (s *Service) ListProjectTasks(ctx context.Context, tenantID, projectID uuid
 	}
 	limit, offset = normalizePagination(limit, offset)
 	return s.repository.ListProjectTasks(ctx, tenantID, projectID, status, limit, offset)
+}
+
+func (s *Service) ListProjectTaskLiveness(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectTaskLiveness, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	tasks, err := s.repository.ListProjectTasks(ctx, tenantID, projectID, nil, 1000, 0)
+	if err != nil {
+		return nil, err
+	}
+	taskIDs := make([]uuid.UUID, 0, len(tasks))
+	for _, task := range tasks {
+		taskIDs = append(taskIDs, task.ID)
+	}
+	unresolvedByTask := map[uuid.UUID][]uuid.UUID{}
+	if len(taskIDs) > 0 {
+		readiness, err := s.repository.ListUnresolvedBlockersForTasks(ctx, tenantID, projectID, taskIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range readiness {
+			unresolvedByTask[item.DependentTaskID] = append(unresolvedByTask[item.DependentTaskID], item.BlockerTaskID)
+		}
+	}
+	now := time.Now().UTC()
+	items := make([]ProjectTaskLiveness, 0, len(tasks))
+	for _, task := range tasks {
+		item := ProjectTaskLiveness{
+			ProjectTaskID:         task.ID,
+			BlockingDependencyIDs: append([]uuid.UUID(nil), unresolvedByTask[task.ID]...),
+			CurrentAttemptID:      task.CurrentAttemptID,
+			WaitingRequestID:      task.WaitingRequestID,
+			RetryNotBefore:        task.RetryNotBefore,
+		}
+		if task.CurrentAttemptID != nil {
+			attempt, err := s.repository.GetCurrentProjectTaskAttempt(ctx, tenantID, task.ID)
+			if err != nil && !errors.Is(err, ErrProjectNotFound) {
+				return nil, err
+			}
+			if err == nil {
+				item.AttemptStatus = attempt.Status
+				item.LeaseExpiresAt = attempt.LeaseExpiresAt
+			}
+		}
+		classifyProjectTaskLiveness(&item, task, now)
+		items = append(items, item)
+	}
+	return items, nil
 }
 
 func (s *Service) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error) {
@@ -3006,6 +3055,47 @@ func projectTaskContextUpdateDeliveryMode(task ProjectTask, updateKind string) s
 		return ContextUpdateDeliveryNextAttempt
 	default:
 		return ContextUpdateDeliveryNextAttempt
+	}
+}
+
+func classifyProjectTaskLiveness(item *ProjectTaskLiveness, task ProjectTask, now time.Time) {
+	switch task.Status {
+	case ProjectTaskStatusCompleted, ProjectTaskStatusFailed, ProjectTaskStatusCancelled:
+		item.Liveness = ProjectTaskLivenessTerminal
+		item.NextAction = "no-op terminal"
+		return
+	}
+	if task.RetryNotBefore != nil && task.RetryNotBefore.After(now) {
+		item.Liveness = ProjectTaskLivenessRetryScheduled
+		item.NextAction = "retry wakeup"
+		return
+	}
+	if len(item.BlockingDependencyIDs) > 0 {
+		item.Liveness = ProjectTaskLivenessBlockedByDependency
+		item.NextAction = "dependency completion"
+		return
+	}
+	switch task.Status {
+	case ProjectTaskStatusQueued:
+		item.Liveness = ProjectTaskLivenessQueued
+		item.NextAction = "runtime start"
+	case ProjectTaskStatusRunning:
+		if item.LeaseExpiresAt != nil && item.LeaseExpiresAt.Before(now) {
+			item.Liveness = ProjectTaskLivenessLeaseLost
+			item.NextAction = "recovery policy"
+			return
+		}
+		item.Liveness = ProjectTaskLivenessRunning
+		item.NextAction = "lease renew"
+	case ProjectTaskStatusWaitingHuman:
+		item.Liveness = ProjectTaskLivenessWaitingHuman
+		item.NextAction = "human response"
+		if task.WaitingReason != nil {
+			item.Reason = *task.WaitingReason
+		}
+	default:
+		item.Liveness = ProjectTaskLivenessReadyToDispatch
+		item.NextAction = "dispatch"
 	}
 }
 

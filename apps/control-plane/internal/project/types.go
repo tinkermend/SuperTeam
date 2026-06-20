@@ -353,6 +353,18 @@ const (
 )
 
 const (
+	ProjectTaskLivenessBlockedByDependency = "blocked_by_dependency"
+	ProjectTaskLivenessReadyToDispatch     = "ready_to_dispatch"
+	ProjectTaskLivenessQueued              = "queued"
+	ProjectTaskLivenessRunning             = "running"
+	ProjectTaskLivenessWaitingHuman        = "waiting_human"
+	ProjectTaskLivenessRetryScheduled      = "retry_scheduled"
+	ProjectTaskLivenessLeaseLost           = "lease_lost"
+	ProjectTaskLivenessTimedOut            = "timed_out"
+	ProjectTaskLivenessTerminal            = "terminal"
+)
+
+const (
 	ProjectTaskStatusPlanned      = "planned"
 	ProjectTaskStatusQueued       = "queued"
 	ProjectTaskStatusRunning      = "running"
@@ -485,6 +497,19 @@ type RecordProjectTaskAttemptContextUpdateRepositoryRequest struct {
 	Payload        map[string]any
 	DeliveryMode   string
 	CreatedEventID *uuid.UUID
+}
+
+type ProjectTaskLiveness struct {
+	ProjectTaskID         uuid.UUID
+	Liveness              string
+	Reason                string
+	BlockingDependencyIDs []uuid.UUID
+	CurrentAttemptID      *uuid.UUID
+	AttemptStatus         string
+	WaitingRequestID      *uuid.UUID
+	RetryNotBefore        *time.Time
+	LeaseExpiresAt        *time.Time
+	NextAction            string
 }
 
 type DecomposeAcceptedPlanRevisionRequest struct {

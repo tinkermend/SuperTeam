@@ -99,6 +99,24 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 		t.Fatalf("expected overview tenant/project %s/%s, got %s/%s", expectedTenantID, service.projectID, service.overviewTenantID, service.overviewProjectID)
 	}
 
+	taskID := uuid.New()
+	service.taskLiveness = []project.ProjectTaskLiveness{{
+		ProjectTaskID: taskID,
+		Liveness:      project.ProjectTaskLivenessQueued,
+		AttemptStatus: project.ProjectTaskAttemptStatusQueued,
+		NextAction:    "runtime start",
+	}}
+	livenessReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/tasks/"+taskID.String()+"/liveness", nil)
+	livenessReq.AddCookie(cookie)
+	livenessResp := httptest.NewRecorder()
+	server.ServeHTTP(livenessResp, livenessReq)
+	if livenessResp.Code != http.StatusOK {
+		t.Fatalf("expected task liveness to succeed, got %d: %s", livenessResp.Code, livenessResp.Body.String())
+	}
+	if service.taskLivenessTenantID != expectedTenantID || service.taskLivenessProjectID != service.projectID {
+		t.Fatalf("expected liveness tenant/project %s/%s, got %s/%s", expectedTenantID, service.projectID, service.taskLivenessTenantID, service.taskLivenessProjectID)
+	}
+
 	configReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/config", nil)
 	configReq.AddCookie(cookie)
 	configResp := httptest.NewRecorder()
@@ -293,6 +311,49 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 	}
 	if service.configRevisionTenantID != expectedTenantID || service.configRevisionProjectID != service.projectID || service.configRevisionID != revisionID {
 		t.Fatalf("expected config revision context/path, got tenant=%s project=%s revision=%s", service.configRevisionTenantID, service.configRevisionProjectID, service.configRevisionID)
+	}
+}
+
+func TestProjectTaskLivenessRouteUsesConsoleAuth(t *testing.T) {
+	authService, err := auth.NewService(newRouteAuthRepo())
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+	if _, err := authService.CreateUser(context.Background(), "admin", "admin"); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	projectID := uuid.New()
+	taskID := uuid.New()
+	service := &routeProjectService{
+		projectID: projectID,
+		taskLiveness: []project.ProjectTaskLiveness{{
+			ProjectTaskID: taskID,
+			Liveness:      project.ProjectTaskLivenessQueued,
+			AttemptStatus: project.ProjectTaskAttemptStatusQueued,
+			NextAction:    "runtime start",
+		}},
+	}
+	server := NewServerWithAuthz(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		authService,
+		nil,
+		&routeAuthorizer{allowed: true},
+	)
+	server.SetProjectHandler(project.NewHandler(service))
+	cookie := routeLogin(t, server, "admin", "admin")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/tasks/"+taskID.String()+"/liveness", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected task liveness to succeed, got %d: %s", resp.Code, resp.Body.String())
+	}
+	expectedTenantID := uuid.MustParse(auth.DefaultTenantID)
+	if service.taskLivenessTenantID != expectedTenantID || service.taskLivenessProjectID != projectID {
+		t.Fatalf("expected liveness tenant/project %s/%s, got %s/%s", expectedTenantID, projectID, service.taskLivenessTenantID, service.taskLivenessProjectID)
 	}
 }
 
@@ -572,6 +633,9 @@ type routeProjectService struct {
 	configRevisionID          uuid.UUID
 	launchDetailTenantID      uuid.UUID
 	launchDetailDemandID      uuid.UUID
+	taskLiveness              []project.ProjectTaskLiveness
+	taskLivenessTenantID      uuid.UUID
+	taskLivenessProjectID     uuid.UUID
 	archiveErr                error
 }
 
@@ -641,6 +705,12 @@ func (s *routeProjectService) GetProjectTaskGraph(ctx context.Context, req proje
 		RecentEvents:       []project.ProjectEvent{},
 		DecisionRequests:   []project.DecisionRequest{},
 	}, nil
+}
+
+func (s *routeProjectService) ListProjectTaskLiveness(ctx context.Context, tenantID, projectID uuid.UUID) ([]project.ProjectTaskLiveness, error) {
+	s.taskLivenessTenantID = tenantID
+	s.taskLivenessProjectID = projectID
+	return s.taskLiveness, nil
 }
 
 func (s *routeProjectService) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.ProjectEvent, error) {

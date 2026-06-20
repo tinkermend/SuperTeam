@@ -644,6 +644,54 @@ func TestGetProjectTaskGraphRejectsMissingFilter(t *testing.T) {
 	}
 }
 
+func TestGetProjectTaskLivenessReturnsNextAction(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	service := &handlerTestService{
+		taskLiveness: []ProjectTaskLiveness{{
+			ProjectTaskID:    taskID,
+			Liveness:         ProjectTaskLivenessWaitingHuman,
+			Reason:           HumanWaitReasonMissingContext,
+			CurrentAttemptID: &attemptID,
+			AttemptStatus:    ProjectTaskAttemptStatusWaitingHuman,
+			NextAction:       "human response",
+		}},
+	}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/tasks/"+taskID.String()+"/liveness", nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String(), "taskId": taskID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetProjectTaskLiveness(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected task liveness 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.taskLivenessTenantID != tenantID || service.taskLivenessProjectID != projectID {
+		t.Fatalf("unexpected liveness request tenant/project: %s/%s", service.taskLivenessTenantID, service.taskLivenessProjectID)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode liveness response: %v", err)
+	}
+	if body["project_task_id"] != taskID.String() || body["liveness"] != ProjectTaskLivenessWaitingHuman || body["reason"] != HumanWaitReasonMissingContext {
+		t.Fatalf("unexpected liveness response: %#v", body)
+	}
+	if body["next_action"].(map[string]any)["source"] != "human response" {
+		t.Fatalf("expected next action source, got %#v", body["next_action"])
+	}
+	if body["attempt"].(map[string]any)["status"] != ProjectTaskAttemptStatusWaitingHuman {
+		t.Fatalf("expected attempt status, got %#v", body["attempt"])
+	}
+	if body["is_terminal"].(bool) {
+		t.Fatalf("waiting human liveness must not be terminal: %#v", body)
+	}
+}
+
 func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{demandSignalErr: errors.New("temporal unavailable")}
@@ -1065,6 +1113,9 @@ type handlerTestService struct {
 	taskGraph              ProjectTaskGraph
 	taskGraphReq           GetProjectTaskGraphRequest
 	taskGraphCalls         int
+	taskLiveness           []ProjectTaskLiveness
+	taskLivenessTenantID   uuid.UUID
+	taskLivenessProjectID  uuid.UUID
 	startAttemptReq        StartProjectTaskAttemptRequest
 	renewAttemptLeaseReq   RenewProjectTaskAttemptLeaseRequest
 	completeAttemptReq     CompleteProjectTaskAttemptRequest
@@ -1208,6 +1259,12 @@ func (s *handlerTestService) GetProjectTaskGraph(ctx context.Context, req GetPro
 	s.taskGraphCalls++
 	s.taskGraphReq = req
 	return &s.taskGraph, nil
+}
+
+func (s *handlerTestService) ListProjectTaskLiveness(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectTaskLiveness, error) {
+	s.taskLivenessTenantID = tenantID
+	s.taskLivenessProjectID = projectID
+	return s.taskLiveness, nil
 }
 
 func (s *handlerTestService) ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error) {

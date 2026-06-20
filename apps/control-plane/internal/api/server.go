@@ -229,6 +229,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/projects/{projectId}/members", s.projectHandler.ListProjectMembers)
 				r.Put("/projects/{projectId}/members", s.projectHandler.ReplaceProjectMembers)
 				r.Get("/projects/{projectId}/tasks", s.projectHandler.ListProjectTasks)
+				r.Get("/projects/{projectId}/tasks/{taskId}/liveness", s.projectHandler.GetProjectTaskLiveness)
 				r.Get("/projects/{projectId}/task-graph", s.projectHandler.GetProjectTaskGraph)
 				r.Get("/projects/{projectId}/events", s.projectHandler.ListProjectEvents)
 				r.Post("/projects/{projectId}/events/{eventId}/retry-workflow-signal", s.projectHandler.RetryWorkflowSignal)

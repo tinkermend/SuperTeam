@@ -898,6 +898,24 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/tasks/{taskId}/liveness:
+    get:
+      operationId: getProjectTaskLiveness
+      summary: Get project task liveness projection
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Project task liveness projection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectTaskLiveness"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/task-graph:
     get:
       operationId: getProjectTaskGraph
@@ -4326,6 +4344,63 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProjectTaskGraphStageSummary"
+    ProjectTaskLiveness:
+      type: object
+      required:
+        - project_task_id
+        - liveness
+        - blocking_dependency_ids
+        - next_action
+        - is_terminal
+        - attempt
+      properties:
+        project_task_id:
+          type: string
+          format: uuid
+        liveness:
+          type: string
+        reason:
+          type: string
+        blocking_dependency_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        current_attempt_id:
+          type: string
+          format: uuid
+        waiting_request_id:
+          type: string
+          format: uuid
+        retry_not_before:
+          type: string
+          format: date-time
+        lease_expires_at:
+          type: string
+          format: date-time
+        next_action:
+          $ref: "#/components/schemas/ProjectTaskLivenessNextAction"
+        is_terminal:
+          type: boolean
+        attempt:
+          $ref: "#/components/schemas/ProjectTaskLivenessAttempt"
+    ProjectTaskLivenessNextAction:
+      type: object
+      required:
+        - source
+      properties:
+        source:
+          type: string
+    ProjectTaskLivenessAttempt:
+      type: object
+      required:
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
     ProjectTaskGraphStageSummary:
       type: object
       required:
