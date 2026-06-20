@@ -8,6 +8,7 @@ import type { TeamOverview, TeamStatus } from "@/lib/api/teams";
 import { TeamAuditTab } from "./team-audit-tab";
 import { TeamCapabilitiesTab } from "./team-capabilities-tab";
 import { TeamGovernanceTab } from "./team-governance-tab";
+import { TeamLendingTab } from "./team-lending-tab";
 import { TeamOverviewTab } from "./team-overview-tab";
 
 function TeamStatusBadge({ status }: { status: TeamStatus }) {
@@ -46,6 +47,8 @@ export function TeamDetailLayout({
   const canAddMember = isActive && overview.allowed_actions.includes("team.member.add");
   const canCreateGovernance = isActive && overview.allowed_actions.includes("team.governance.edit");
   const canApproveGovernance = isActive && overview.allowed_actions.includes("team.governance.approve");
+  const canEditLending = isActive && overview.allowed_actions.includes("team.lending.policy.edit");
+  const canDecideLending = isActive && overview.allowed_actions.includes("team.lending.request.decide");
   const canDisable = isActive && overview.allowed_actions.includes("team.disable");
   const canArchive = team.status !== "archived" && overview.allowed_actions.includes("team.archive");
   const canRestore = team.status !== "active" && overview.allowed_actions.includes("team.restore");
@@ -106,6 +109,7 @@ export function TeamDetailLayout({
           <LiquidTabsTrigger value="overview">概览</LiquidTabsTrigger>
           <LiquidTabsTrigger value="capabilities">能力与知识</LiquidTabsTrigger>
           <LiquidTabsTrigger value="governance">治理策略</LiquidTabsTrigger>
+          <LiquidTabsTrigger value="lending">借调</LiquidTabsTrigger>
           <LiquidTabsTrigger value="audit">审计记录</LiquidTabsTrigger>
         </LiquidTabsList>
         <TabsContent value="overview">
@@ -131,6 +135,14 @@ export function TeamDetailLayout({
             canApprove={canApproveGovernance}
             canEdit={canCreateGovernance}
             currentRevision={currentRevision ?? overview.current_revision}
+            teamId={team.id}
+          />
+        </TabsContent>
+        <TabsContent value="lending">
+          <TeamLendingTab
+            apiOptions={apiOptions}
+            canDecide={canDecideLending}
+            canEdit={canEditLending}
             teamId={team.id}
           />
         </TabsContent>

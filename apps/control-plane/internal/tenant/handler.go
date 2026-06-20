@@ -659,6 +659,10 @@ var overviewActions = []string{
 	authz.ActionTeamCapabilityBind,
 	authz.ActionTeamCapabilityUnbind,
 	authz.ActionTeamAuditRead,
+	authz.ActionTeamLendingPolicyRead,
+	authz.ActionTeamLendingPolicyEdit,
+	authz.ActionTeamLendingRequestRead,
+	authz.ActionTeamLendingRequestDecide,
 }
 
 func (h *HTTPHandler) changeTeamStatus(w http.ResponseWriter, r *http.Request, status TeamStatus, action, auditReason string) {

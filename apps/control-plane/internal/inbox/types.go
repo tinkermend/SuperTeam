@@ -37,6 +37,7 @@ type ItemType string
 const (
 	ItemTypeApproval        ItemType = "approval"
 	ItemTypeProjectDecision ItemType = "project_decision"
+	ItemTypeTeamLending     ItemType = "team_lending"
 )
 
 type SourceType string
@@ -44,6 +45,7 @@ type SourceType string
 const (
 	SourceTypeApprovalRequest        SourceType = "approval_request"
 	SourceTypeProjectDecisionRequest SourceType = "project_decision_request"
+	SourceTypeTeamLendingRequest     SourceType = "team_lending_request"
 )
 
 type Action struct {

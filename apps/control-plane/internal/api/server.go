@@ -17,6 +17,7 @@ import (
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/skill"
+	"github.com/superteam/control-plane/internal/teamlending"
 	"github.com/superteam/control-plane/internal/tenant"
 )
 
@@ -37,6 +38,7 @@ type Server struct {
 	projectHandler                 *project.HTTPHandler
 	skillHandler                   *skill.HTTPHandler
 	tenantHandler                  *tenant.HTTPHandler
+	teamLendingHandler             *teamlending.HTTPHandler
 }
 
 func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
@@ -141,6 +143,14 @@ func (s *Server) SetTenantHandler(tenantHandler *tenant.HTTPHandler) {
 	s.tenantHandler = tenantHandler
 	if tenantHandler != nil {
 		tenantHandler.SetAuthorizer(s.authorizer)
+	}
+	s.registerRoutes()
+}
+
+func (s *Server) SetTeamLendingHandler(teamLendingHandler *teamlending.HTTPHandler) {
+	s.teamLendingHandler = teamLendingHandler
+	if teamLendingHandler != nil {
+		teamLendingHandler.SetAuthorizer(s.authorizer)
 	}
 	s.registerRoutes()
 }
@@ -297,6 +307,22 @@ func (s *Server) registerRoutes() {
 				r.Post("/teams/{teamId}/governance/drafts/{draftId}/approve", s.tenantHandler.ApproveGovernanceDraft)
 				r.Post("/teams/{teamId}/governance/drafts/{draftId}/reject", s.tenantHandler.RejectGovernanceDraft)
 				r.Get("/teams/{teamId}/governance/drafts/{draftId}/diff", s.tenantHandler.PreviewGovernanceDiff)
+			})
+		}
+
+		if s.teamLendingHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				// 团队供给侧：借调策略 + 请求审批/撤销。
+				r.Get("/teams/{teamId}/lending-policy", s.teamLendingHandler.GetLendingPolicy)
+				r.Put("/teams/{teamId}/lending-policy", s.teamLendingHandler.UpsertLendingPolicy)
+				r.Get("/teams/{teamId}/lending-requests", s.teamLendingHandler.ListTeamLendingRequests)
+				r.Post("/teams/{teamId}/lending-requests/{requestId}/approve", s.teamLendingHandler.ApproveLendingRequest)
+				r.Post("/teams/{teamId}/lending-requests/{requestId}/reject", s.teamLendingHandler.RejectLendingRequest)
+				r.Post("/teams/{teamId}/lending-requests/{requestId}/revoke", s.teamLendingHandler.RevokeLendingRequest)
+				// 项目需求侧：发起借调 + 查看。
+				r.Post("/projects/{projectId}/lending-requests", s.teamLendingHandler.CreateProjectLendingRequest)
+				r.Get("/projects/{projectId}/lending-requests", s.teamLendingHandler.ListProjectLendingRequests)
 			})
 		}
 

@@ -226,6 +226,10 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 		if req.SourceType != SourceTypeProjectDecisionRequest {
 			return UpsertItemRequest{}, ErrInvalidItem
 		}
+	case ItemTypeTeamLending:
+		if req.SourceType != SourceTypeTeamLendingRequest {
+			return UpsertItemRequest{}, ErrInvalidItem
+		}
 	}
 	if req.SourceApprovalRequestID != nil && *req.SourceApprovalRequestID == uuid.Nil {
 		return UpsertItemRequest{}, ErrInvalidItem
@@ -296,6 +300,10 @@ func normalizeActions(actions []Action) ([]Action, error) {
 }
 
 func DefaultActions(itemType ItemType) []Action {
+	if itemType == ItemTypeTeamLending {
+		// 借调请求只在团队详情「借调」tab 审批；inbox 仅作通知/提醒，不挂可执行动作。
+		return []Action{}
+	}
 	actions := []Action{
 		{Key: "approved", Label: "Approve", Tone: "positive"},
 		{Key: "rejected", Label: "Reject", Tone: "destructive", RequiresComment: true},
@@ -338,7 +346,7 @@ func validScope(scope string) bool {
 
 func validItemType(itemType ItemType) bool {
 	switch itemType {
-	case ItemTypeApproval, ItemTypeProjectDecision:
+	case ItemTypeApproval, ItemTypeProjectDecision, ItemTypeTeamLending:
 		return true
 	default:
 		return false
@@ -347,7 +355,7 @@ func validItemType(itemType ItemType) bool {
 
 func validSourceType(sourceType SourceType) bool {
 	switch sourceType {
-	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest:
+	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest, SourceTypeTeamLendingRequest:
 		return true
 	default:
 		return false

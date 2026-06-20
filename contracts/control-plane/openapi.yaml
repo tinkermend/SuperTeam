@@ -2178,6 +2178,161 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TeamMemberRoleRequest"
+  /api/v1/teams/{teamId}/lending-policy:
+    get:
+      operationId: getTeamLendingPolicy
+      summary: Read the team lending policy
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Active team lending policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamLendingPolicy"
+        "404":
+          description: No lending policy configured for the team
+    put:
+      operationId: upsertTeamLendingPolicy
+      summary: Create or update the team lending policy
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertTeamLendingPolicy"
+      responses:
+        "200":
+          description: Team lending policy saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamLendingPolicy"
+  /api/v1/teams/{teamId}/lending-requests:
+    get:
+      operationId: listTeamLendingRequests
+      summary: List lending requests targeting a team (supply-side approval view)
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/TeamLendingRequestStatus"
+      responses:
+        "200":
+          description: Lending request list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamLendingRequest"
+  /api/v1/teams/{teamId}/lending-requests/{requestId}/approve:
+    post:
+      operationId: approveTeamLendingRequest
+      summary: Approve a pending lending request
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideTeamLendingRequest"
+      responses:
+        "200":
+          description: Lending request approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamLendingRequest"
+  /api/v1/teams/{teamId}/lending-requests/{requestId}/reject:
+    post:
+      operationId: rejectTeamLendingRequest
+      summary: Reject a pending lending request
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideTeamLendingRequest"
+      responses:
+        "200":
+          description: Lending request rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamLendingRequest"
+  /api/v1/teams/{teamId}/lending-requests/{requestId}/revoke:
+    post:
+      operationId: revokeTeamLendingRequest
+      summary: Revoke an approved or auto-approved lending request
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideTeamLendingRequest"
+      responses:
+        "200":
+          description: Lending request revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamLendingRequest"
+  /api/v1/projects/{projectId}/lending-requests:
+    post:
+      operationId: createProjectLendingRequest
+      summary: Create a lending request from a project (demand side)
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectLendingRequest"
+      responses:
+        "201":
+          description: Lending request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamLendingRequest"
+    get:
+      operationId: listProjectLendingRequests
+      summary: List lending requests raised by a project (demand side)
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/TeamLendingRequestStatus"
+      responses:
+        "200":
+          description: Lending request list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamLendingRequest"
   /api/v1/digital-employees:
     get:
       operationId: listDigitalEmployees
@@ -6218,6 +6373,171 @@ components:
       properties:
         decision_reason:
           type: string
+    TeamLendingApprovalMode:
+      type: string
+      enum:
+        - auto
+        - manual
+    TeamLendingRequestStatus:
+      type: string
+      enum:
+        - pending
+        - auto_approved
+        - approved
+        - rejected
+        - revoked
+    TeamLendingPolicy:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - team_id
+        - allow_lending
+        - approval_mode
+        - capability_ceiling
+        - project_match
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        allow_lending:
+          type: boolean
+        approval_mode:
+          $ref: "#/components/schemas/TeamLendingApprovalMode"
+        budget_ceiling:
+          type: string
+          description: Decimal budget ceiling as a string; empty means no ceiling.
+        capability_ceiling:
+          type: object
+          additionalProperties: true
+        project_match:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+        created_by_user_id:
+          type: string
+          format: uuid
+        updated_by_user_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    UpsertTeamLendingPolicy:
+      type: object
+      required:
+        - allow_lending
+        - approval_mode
+      properties:
+        allow_lending:
+          type: boolean
+        approval_mode:
+          $ref: "#/components/schemas/TeamLendingApprovalMode"
+        budget_ceiling:
+          type: string
+        capability_ceiling:
+          type: object
+          additionalProperties: true
+        project_match:
+          type: object
+          additionalProperties: true
+    TeamLendingRequest:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - team_id
+        - project_id
+        - status
+        - requested_by_user_id
+        - request_reason
+        - requested_capability
+        - granted_capability
+        - is_exception
+        - decision_reason
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/TeamLendingRequestStatus"
+        requested_by_user_id:
+          type: string
+          format: uuid
+        request_reason:
+          type: string
+        requested_budget:
+          type: string
+        requested_capability:
+          type: object
+          additionalProperties: true
+        granted_budget:
+          type: string
+        granted_capability:
+          type: object
+          additionalProperties: true
+        is_exception:
+          type: boolean
+        decided_by_user_id:
+          type: string
+          format: uuid
+        decided_at:
+          type: string
+          format: date-time
+        decision_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateProjectLendingRequest:
+      type: object
+      required:
+        - team_id
+      properties:
+        team_id:
+          type: string
+          format: uuid
+        request_reason:
+          type: string
+        requested_budget:
+          type: string
+        requested_capability:
+          type: object
+          additionalProperties: true
+    DecideTeamLendingRequest:
+      type: object
+      properties:
+        decision_reason:
+          type: string
+        granted_budget:
+          type: string
+          description: Override granted budget on approve (decimal string).
+        granted_capability:
+          type: object
+          additionalProperties: true
     TeamConfigRevision:
       type: object
       required:

@@ -125,6 +125,20 @@ func (s *Service) LogEvent(ctx context.Context, eventType, actorType, actorID, r
 	return s.repository.CreateEvent(ctx, event)
 }
 
+// RecordEvent 记录带租户/详情的完整审计事件（供需要 tenant_id + details 的模块使用）。
+func (s *Service) RecordEvent(ctx context.Context, event *Event) error {
+	if s == nil || s.repository == nil {
+		return errors.New("audit service is not configured")
+	}
+	if event == nil {
+		return errors.New("audit event is required")
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now()
+	}
+	return s.repository.CreateEvent(ctx, event)
+}
+
 func (s *Service) ListEvents(ctx context.Context, limit, offset int) ([]*Event, error) {
 	return s.repository.ListEvents(ctx, limit, offset)
 }

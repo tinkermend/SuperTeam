@@ -169,7 +169,11 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 		ActionTeamCapabilityBind,
 		ActionTeamCapabilityUnbind,
 		ActionTeamCapabilityManage,
-		ActionTeamAuditRead:
+		ActionTeamAuditRead,
+		ActionTeamLendingPolicyRead,
+		ActionTeamLendingPolicyEdit,
+		ActionTeamLendingRequestRead,
+		ActionTeamLendingRequestDecide:
 		if req.TeamID == nil || !resourceMatchesUUID(req.Resource, ResourceTeam, *req.TeamID) {
 			decision = deny(ReasonInvalidResource)
 			break
@@ -448,7 +452,8 @@ func roleAllowsTenantAdminAccess(role string) bool {
 
 func roleAllowsTeamAction(action, role string) bool {
 	switch action {
-	case ActionTeamRead, ActionTeamGovernanceRead:
+	case ActionTeamRead, ActionTeamGovernanceRead,
+		ActionTeamLendingPolicyRead, ActionTeamLendingRequestRead:
 		return roleAllowsTeamRead(role)
 	case ActionTeamUpdate,
 		ActionTeamDisable,
@@ -462,7 +467,8 @@ func roleAllowsTeamAction(action, role string) bool {
 		ActionTeamCapabilityBind,
 		ActionTeamCapabilityUnbind,
 		ActionTeamCapabilityManage,
-		ActionTeamAuditRead:
+		ActionTeamAuditRead,
+		ActionTeamLendingPolicyEdit, ActionTeamLendingRequestDecide:
 		return roleAllowsTeamManagement(role)
 	case ActionTeamMemberApprovePrivilegedRole:
 		return role == RoleOwner

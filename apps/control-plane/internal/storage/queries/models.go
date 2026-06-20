@@ -1894,6 +1894,74 @@ type TaskStateHistory struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// 团队借调策略：团队负责人设置本团队员工是否/在什么条件下可被项目借调（每团队一条 active）
+type TeamLendingPolicy struct {
+	// 借调策略 UUID
+	ID uuid.UUID `json:"id"`
+	// 租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 所属团队 ID（供给侧）
+	TeamID uuid.UUID `json:"team_id"`
+	// 是否允许本团队员工被项目借调
+	AllowLending bool `json:"allow_lending"`
+	// 审批模式：auto 符合策略自动放行；manual 每次借调需团队负责人审批
+	ApprovalMode string `json:"approval_mode"`
+	// 单次借调预算上限；请求超过则强制转人工审批
+	BudgetCeiling pgtype.Numeric `json:"budget_ceiling"`
+	// 可被借调时允许的能力/runtime scope 天花板，不可超出团队治理外壳
+	CapabilityCeiling []byte `json:"capability_ceiling"`
+	// 可被哪些项目调用的匹配条件（标签 / owner 范围等，registry-first）
+	ProjectMatch []byte `json:"project_match"`
+	// 策略状态：active 生效，archived 历史版本
+	Status string `json:"status"`
+	// 创建该策略的用户 ID
+	CreatedByUserID uuid.NullUUID `json:"created_by_user_id"`
+	// 最后更新该策略的用户 ID
+	UpdatedByUserID uuid.NullUUID `json:"updated_by_user_id"`
+	// 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 团队借调请求：项目向团队申请借调数字员工，团队负责人裁决（D1 团队级 (project, team) 授权）
+type TeamLendingRequest struct {
+	// 借调请求 UUID
+	ID uuid.UUID `json:"id"`
+	// 租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 被借调的团队 ID（供给侧）
+	TeamID uuid.UUID `json:"team_id"`
+	// 发起借调的项目 ID（需求侧）
+	ProjectID uuid.UUID `json:"project_id"`
+	// 请求状态：pending 待审批，auto_approved 策略自动放行，approved 人工通过，rejected 驳回，revoked 撤销
+	Status string `json:"status"`
+	// 发起借调的用户 ID（项目负责人）
+	RequestedByUserID uuid.UUID `json:"requested_by_user_id"`
+	// 借调事由
+	RequestReason string `json:"request_reason"`
+	// 申请的借调预算
+	RequestedBudget pgtype.Numeric `json:"requested_budget"`
+	// 申请使用的能力范围
+	RequestedCapability []byte `json:"requested_capability"`
+	// 实际授予的借调预算（≤ 策略天花板）
+	GrantedBudget pgtype.Numeric `json:"granted_budget"`
+	// 实际授予的能力范围（≤ 策略天花板）
+	GrantedCapability []byte `json:"granted_capability"`
+	// 是否因超出策略预算/能力天花板而强制转人工审批
+	IsException bool `json:"is_exception"`
+	// 裁决该请求的团队负责人用户 ID
+	DecidedByUserID uuid.NullUUID `json:"decided_by_user_id"`
+	// 裁决时间
+	DecidedAt pgtype.Timestamptz `json:"decided_at"`
+	// 裁决说明
+	DecisionReason string `json:"decision_reason"`
+	// 创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 最后更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 团队公共 MCP 服务器配置，团队下数字员工强制继承
 type TeamMcpServer struct {
 	// 团队 MCP 配置主键 UUID
