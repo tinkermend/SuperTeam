@@ -42,7 +42,7 @@ func (s *ProjectStore) now() time.Time {
 }
 
 type GateEmployeeRuntimeReader interface {
-	GetEmployeeRuntimeSnapshot(ctx context.Context, tenantID, employeeID uuid.UUID) (project.PreDispatchEmployeeSnapshot, project.PreDispatchRuntimeSnapshot, error)
+	GetEmployeeRuntimeSnapshot(ctx context.Context, tenantID, projectID, employeeID uuid.UUID) (project.PreDispatchEmployeeSnapshot, project.PreDispatchRuntimeSnapshot, error)
 }
 
 type GateCapabilityReader interface {

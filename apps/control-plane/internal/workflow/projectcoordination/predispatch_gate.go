@@ -18,6 +18,11 @@ type PreDispatchGateDecision struct {
 	Terminal      bool
 }
 
+var (
+	errPreDispatchGateApprovalCreatorRequired = errors.New("pre-dispatch gate waiting-human action requires approval creator")
+	errPreDispatchGateApprovalRequestRequired = errors.New("pre-dispatch gate waiting-human action requires non-empty approval request")
+)
+
 func (s *ProjectStore) RunPreDispatchGate(ctx context.Context, input DispatchProjectTaskInput) (PreDispatchGateDecision, error) {
 	if s.repository == nil {
 		return PreDispatchGateDecision{}, ErrActivityStoreRequired
@@ -133,11 +138,11 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 		snapshot.Risk.Reason = "task.requires_human_approval"
 	}
 	if s.employeeReader != nil && task.AssignedDigitalEmployeeID != nil && *task.AssignedDigitalEmployeeID != uuid.Nil {
-		employee, runtime, err := s.employeeReader.GetEmployeeRuntimeSnapshot(ctx, input.TenantID, *task.AssignedDigitalEmployeeID)
+		employee, runtime, err := s.employeeReader.GetEmployeeRuntimeSnapshot(ctx, input.TenantID, input.ProjectID, *task.AssignedDigitalEmployeeID)
 		if err != nil {
 			return project.PreDispatchGateSnapshot{}, err
 		}
-		snapshot.Employee = employee
+		snapshot.Employee = mergePreDispatchEmployeeSnapshot(snapshot.Employee, employee)
 		snapshot.Runtime = runtime
 	}
 	if s.capabilityReader != nil && task.AssignedDigitalEmployeeID != nil && *task.AssignedDigitalEmployeeID != uuid.Nil {
@@ -152,23 +157,7 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 }
 
 func (s *ProjectStore) recordEvaluatedGate(ctx context.Context, input DispatchProjectTaskInput, gateInput project.PreDispatchGateInput, evaluation project.PreDispatchGateEvaluation) (project.PreDispatchGateResult, error) {
-	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, gateEventType(evaluation.Status), input.TaskID.String(), gateEventSummary(evaluation.Status), map[string]any{
-		"project_task_id":      input.TaskID.String(),
-		"status":               evaluation.Status,
-		"selected_employee_id": gateInput.SelectedEmployeeID.String(),
-		"attempt_no":           gateInput.AttemptNo,
-		"dispatch_reason":      gateInput.DispatchReason,
-		"idempotency_key":      evaluation.IdempotencyKey,
-		"dispatch_token":       evaluation.DispatchToken,
-		"check_count":          len(evaluation.Checks),
-		"blocker_count":        len(evaluation.Blockers),
-		"human_action":         humanActionMap(evaluation.HumanActionRequest),
-		"retry_after":          timePtrString(evaluation.RetryAfter),
-	}))
-	if err != nil {
-		return project.PreDispatchGateResult{}, err
-	}
-	return s.repository.RecordPreDispatchGateResult(ctx, project.RecordPreDispatchGateResultRequest{
+	gate, err := s.repository.RecordPreDispatchGateResult(ctx, project.RecordPreDispatchGateResultRequest{
 		TenantID:               input.TenantID,
 		ProjectID:              input.ProjectID,
 		ProjectTaskID:          input.TaskID,
@@ -185,43 +174,94 @@ func (s *ProjectStore) recordEvaluatedGate(ctx context.Context, input DispatchPr
 		Blockers:               evaluation.Blockers,
 		HumanActionRequest:     humanActionMap(evaluation.HumanActionRequest),
 		RetryAfter:             evaluation.RetryAfter,
-		CreatedEventID:         &event.ID,
 	})
+	if err != nil {
+		return project.PreDispatchGateResult{}, err
+	}
+	if gate.CreatedEventID != nil {
+		return gate, nil
+	}
+	eventType := gateEventType(gate.Status)
+	exists, err := s.repository.ProjectTaskEventExists(ctx, input.TenantID, input.ProjectID, eventType, input.TaskID.String())
+	if err != nil {
+		return project.PreDispatchGateResult{}, err
+	}
+	if exists {
+		return gate, nil
+	}
+	_, err = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, eventType, input.TaskID.String(), gateEventSummary(gate.Status), map[string]any{
+		"project_task_id":      input.TaskID.String(),
+		"status":               gate.Status,
+		"selected_employee_id": gate.SelectedEmployeeID.String(),
+		"attempt_no":           gate.AttemptNo,
+		"dispatch_reason":      gate.DispatchReason,
+		"idempotency_key":      gate.IdempotencyKey,
+		"dispatch_token":       gate.DispatchToken,
+		"check_count":          len(gate.Checks),
+		"blocker_count":        len(gate.Blockers),
+		"human_action":         cloneHumanActionRequest(gate.HumanActionRequest),
+		"retry_after":          timePtrString(gate.RetryAfter),
+	}))
+	if err != nil {
+		return project.PreDispatchGateResult{}, err
+	}
+	return gate, nil
 }
 
 func (s *ProjectStore) createGateHumanAction(ctx context.Context, input DispatchProjectTaskInput, task project.ProjectTask, gate project.PreDispatchGateResult, action *project.PreDispatchHumanActionRequest) (project.PreDispatchGateResult, error) {
-	if gate.DecisionRequestID != nil {
-		if task.WaitingRequestID == nil || *task.WaitingRequestID != *gate.DecisionRequestID {
-			if _, err := s.repository.MoveProjectTaskToWaitingHumanForPreDispatchGate(ctx, project.MoveProjectTaskToWaitingHumanForPreDispatchGateRequest{
+	actionPayload := humanActionMap(action)
+	linkedGate := gate
+	var decision project.DecisionRequest
+	var err error
+	switch {
+	case gate.DecisionRequestID != nil:
+		decision, err = s.repository.GetDecisionRequest(ctx, input.TenantID, input.ProjectID, *gate.DecisionRequestID)
+		if err != nil {
+			return project.PreDispatchGateResult{}, err
+		}
+		if err := validateGateDecisionTask(input, decision); err != nil {
+			return project.PreDispatchGateResult{}, err
+		}
+		if decision.DispatchGateResultID == nil || *decision.DispatchGateResultID != gate.ID {
+			linkedGate, err = s.repository.LinkPreDispatchGateDecisionRequest(ctx, project.LinkPreDispatchGateDecisionRequest{
 				TenantID:          input.TenantID,
 				ProjectID:         input.ProjectID,
 				ProjectTaskID:     input.TaskID,
 				GateResultID:      gate.ID,
 				DecisionRequestID: *gate.DecisionRequestID,
-				EventID:           gate.CreatedEventID,
-				WaitingReason:     action.WaitingReason,
-			}); err != nil {
+			})
+			if err != nil {
 				return project.PreDispatchGateResult{}, err
 			}
+			decision.DispatchGateResultID = &gate.ID
 		}
-		return gate, nil
-	}
-	if task.WaitingRequestID != nil {
-		return s.repository.LinkPreDispatchGateDecisionRequest(ctx, project.LinkPreDispatchGateDecisionRequest{
+	case task.WaitingRequestID != nil && *task.WaitingRequestID != uuid.Nil:
+		decision, err = s.repository.GetDecisionRequest(ctx, input.TenantID, input.ProjectID, *task.WaitingRequestID)
+		if err != nil {
+			return project.PreDispatchGateResult{}, err
+		}
+		if err := validateGateDecisionTask(input, decision); err != nil {
+			return project.PreDispatchGateResult{}, err
+		}
+		linkedGate, err = s.repository.LinkPreDispatchGateDecisionRequest(ctx, project.LinkPreDispatchGateDecisionRequest{
 			TenantID:          input.TenantID,
 			ProjectID:         input.ProjectID,
 			ProjectTaskID:     input.TaskID,
 			GateResultID:      gate.ID,
 			DecisionRequestID: *task.WaitingRequestID,
 		})
-	}
-	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
-	if err != nil {
-		return project.PreDispatchGateResult{}, err
-	}
-	approvalID := uuid.Nil
-	actionPayload := humanActionMap(action)
-	if s.approvals != nil {
+		if err != nil {
+			return project.PreDispatchGateResult{}, err
+		}
+		decision.DispatchGateResultID = &gate.ID
+	default:
+		if s.approvals == nil {
+			return project.PreDispatchGateResult{}, errPreDispatchGateApprovalCreatorRequired
+		}
+		projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+		if err != nil {
+			return project.PreDispatchGateResult{}, err
+		}
 		approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
 			TenantID:       input.TenantID,
 			ResourceType:   "project_task_dispatch_gate",
@@ -238,64 +278,116 @@ func (s *ProjectStore) createGateHumanAction(ctx context.Context, input Dispatch
 		if err != nil {
 			return project.PreDispatchGateResult{}, err
 		}
-		approvalID = approvalRequest.ID
+		if approvalRequest == nil || approvalRequest.ID == uuid.Nil {
+			return project.PreDispatchGateResult{}, errPreDispatchGateApprovalRequestRequired
+		}
+		projectTaskID := input.TaskID
+		decision, err = s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
+			TenantID:          input.TenantID,
+			ProjectID:         input.ProjectID,
+			ApprovalRequestID: approvalRequest.ID,
+			ProjectTaskID:     &projectTaskID,
+			TargetUserID:      projectRecord.HumanOwnerUserID,
+			DecisionType:      action.DecisionType,
+			TitleSnapshot:     action.Title,
+			SummarySnapshot:   action.Summary,
+			RiskLevelSnapshot: action.RiskLevel,
+			StatusSnapshot:    "pending",
+		})
+		if err != nil {
+			return project.PreDispatchGateResult{}, err
+		}
+		linkedGate, err = s.repository.LinkPreDispatchGateDecisionRequest(ctx, project.LinkPreDispatchGateDecisionRequest{
+			TenantID:          input.TenantID,
+			ProjectID:         input.ProjectID,
+			ProjectTaskID:     input.TaskID,
+			GateResultID:      gate.ID,
+			DecisionRequestID: decision.ID,
+		})
+		if err != nil {
+			return project.PreDispatchGateResult{}, err
+		}
+		decision.DispatchGateResultID = &gate.ID
 	}
-	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, gate.ID.String(), "Dispatch gate requires human action", map[string]any{
-		"approval_request_id": approvalID.String(),
-		"decision_type":       action.DecisionType,
-		"dispatch_gate_id":    gate.ID.String(),
-		"project_task_id":     input.TaskID.String(),
-		"target_user_id":      projectRecord.HumanOwnerUserID.String(),
-		"human_action":        actionPayload,
-	}))
+	eventID, err := s.ensureGateDecisionRequestedEvent(ctx, input, linkedGate, decision, actionPayload)
 	if err != nil {
 		return project.PreDispatchGateResult{}, err
 	}
-	projectTaskID := input.TaskID
-	decision, err := s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
-		TenantID:          input.TenantID,
-		ProjectID:         input.ProjectID,
-		ApprovalRequestID: approvalID,
-		ProjectTaskID:     &projectTaskID,
-		TargetUserID:      projectRecord.HumanOwnerUserID,
-		DecisionType:      action.DecisionType,
-		TitleSnapshot:     action.Title,
-		SummarySnapshot:   action.Summary,
-		RiskLevelSnapshot: action.RiskLevel,
-		StatusSnapshot:    "pending",
-		CreatedEventID:    &event.ID,
-	})
-	if err != nil {
-		return project.PreDispatchGateResult{}, err
-	}
-	linkedGate, err := s.repository.LinkPreDispatchGateDecisionRequest(ctx, project.LinkPreDispatchGateDecisionRequest{
-		TenantID:          input.TenantID,
-		ProjectID:         input.ProjectID,
-		ProjectTaskID:     input.TaskID,
-		GateResultID:      gate.ID,
-		DecisionRequestID: decision.ID,
-	})
-	if err != nil {
-		return project.PreDispatchGateResult{}, err
-	}
-	if _, err := s.repository.MoveProjectTaskToWaitingHumanForPreDispatchGate(ctx, project.MoveProjectTaskToWaitingHumanForPreDispatchGateRequest{
-		TenantID:          input.TenantID,
-		ProjectID:         input.ProjectID,
-		ProjectTaskID:     input.TaskID,
-		GateResultID:      gate.ID,
-		DecisionRequestID: decision.ID,
-		EventID:           &event.ID,
-		WaitingReason:     action.WaitingReason,
-	}); err != nil {
-		return project.PreDispatchGateResult{}, err
+	if task.Status != project.ProjectTaskStatusWaitingHuman || task.WaitingRequestID == nil || *task.WaitingRequestID != decision.ID {
+		if _, err := s.repository.MoveProjectTaskToWaitingHumanForPreDispatchGate(ctx, project.MoveProjectTaskToWaitingHumanForPreDispatchGateRequest{
+			TenantID:          input.TenantID,
+			ProjectID:         input.ProjectID,
+			ProjectTaskID:     input.TaskID,
+			GateResultID:      linkedGate.ID,
+			DecisionRequestID: decision.ID,
+			EventID:           eventID,
+			WaitingReason:     action.WaitingReason,
+		}); err != nil {
+			return project.PreDispatchGateResult{}, err
+		}
 	}
 	if s.inbox != nil {
-		decision.DispatchGateResultID = &gate.ID
+		if decision.DispatchGateResultID == nil || *decision.DispatchGateResultID != linkedGate.ID {
+			decision.DispatchGateResultID = &linkedGate.ID
+		}
 		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
 			return project.PreDispatchGateResult{}, err
 		}
 	}
 	return linkedGate, nil
+}
+
+func validateGateDecisionTask(input DispatchProjectTaskInput, decision project.DecisionRequest) error {
+	if decision.ProjectTaskID == nil || *decision.ProjectTaskID != input.TaskID {
+		return project.ErrProjectNotFound
+	}
+	return nil
+}
+
+func (s *ProjectStore) ensureGateDecisionRequestedEvent(ctx context.Context, input DispatchProjectTaskInput, gate project.PreDispatchGateResult, decision project.DecisionRequest, actionPayload project.HumanActionRequest) (*uuid.UUID, error) {
+	exists, err := s.repository.ProjectTaskEventExists(ctx, input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, gate.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return decision.CreatedEventID, nil
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, gate.ID.String(), "Dispatch gate requires human action", map[string]any{
+		"approval_request_id": decision.ApprovalRequestID.String(),
+		"decision_type":       decision.DecisionType,
+		"dispatch_gate_id":    gate.ID.String(),
+		"project_task_id":     input.TaskID.String(),
+		"target_user_id":      decision.TargetUserID.String(),
+		"human_action":        actionPayload,
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return &event.ID, nil
+}
+
+func mergePreDispatchEmployeeSnapshot(base, update project.PreDispatchEmployeeSnapshot) project.PreDispatchEmployeeSnapshot {
+	merged := update
+	if merged.ID == uuid.Nil {
+		merged.ID = base.ID
+	}
+	if !merged.IsProjectExecutor && base.IsProjectExecutor {
+		merged.IsProjectExecutor = true
+	}
+	if strings.TrimSpace(merged.Status) == "" {
+		merged.Status = base.Status
+	}
+	if !merged.PolicyAllowed && base.PolicyAllowed && update.ID == uuid.Nil && update.RequiredLoadSlots == 0 && update.AvailableLoadSlots == 0 && strings.TrimSpace(update.Status) == "" {
+		merged.PolicyAllowed = true
+	}
+	if merged.RequiredLoadSlots == 0 && merged.AvailableLoadSlots == 0 {
+		merged.RequiredLoadSlots = base.RequiredLoadSlots
+		merged.AvailableLoadSlots = base.AvailableLoadSlots
+	}
+	if strings.TrimSpace(merged.ProfileSnapshotHash) == "" {
+		merged.ProfileSnapshotHash = base.ProfileSnapshotHash
+	}
+	return merged
 }
 
 func gateEventType(status string) project.ProjectEventType {
@@ -357,6 +449,17 @@ func humanActionMap(action *project.PreDispatchHumanActionRequest) project.Human
 		}
 	}
 	return result
+}
+
+func cloneHumanActionRequest(input project.HumanActionRequest) project.HumanActionRequest {
+	if input == nil {
+		return nil
+	}
+	clone := make(project.HumanActionRequest, len(input))
+	for key, value := range input {
+		clone[key] = value
+	}
+	return clone
 }
 
 func gateHumanActionContext(input DispatchProjectTaskInput, task project.ProjectTask, gate project.PreDispatchGateResult, action map[string]any) map[string]any {
