@@ -185,6 +185,47 @@ func (q *Queries) GetApprovalRequest(ctx context.Context, arg GetApprovalRequest
 	return i, err
 }
 
+const GetApprovalRequestByResource = `-- name: GetApprovalRequestByResource :one
+SELECT id, tenant_id, resource_type, resource_id, requester_type, requester_id, target_user_id, decision_type, title, summary, risk_level, status, options, context_payload, created_at, updated_at, resolved_at FROM approval_requests
+WHERE tenant_id = $1::uuid
+  AND resource_type = $2::varchar
+  AND resource_id = $3::uuid
+  AND status = 'pending'
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type GetApprovalRequestByResourceParams struct {
+	TenantID     uuid.UUID `json:"tenant_id"`
+	ResourceType string    `json:"resource_type"`
+	ResourceID   uuid.UUID `json:"resource_id"`
+}
+
+func (q *Queries) GetApprovalRequestByResource(ctx context.Context, arg GetApprovalRequestByResourceParams) (ApprovalRequest, error) {
+	row := q.db.QueryRow(ctx, GetApprovalRequestByResource, arg.TenantID, arg.ResourceType, arg.ResourceID)
+	var i ApprovalRequest
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ResourceType,
+		&i.ResourceID,
+		&i.RequesterType,
+		&i.RequesterID,
+		&i.TargetUserID,
+		&i.DecisionType,
+		&i.Title,
+		&i.Summary,
+		&i.RiskLevel,
+		&i.Status,
+		&i.Options,
+		&i.ContextPayload,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ResolvedAt,
+	)
+	return i, err
+}
+
 const ListApprovalDecisionsForRequest = `-- name: ListApprovalDecisionsForRequest :many
 SELECT id, tenant_id, approval_request_id, decided_by_user_id, decision, comment, payload, created_at FROM approval_decisions
 WHERE tenant_id = $1::uuid

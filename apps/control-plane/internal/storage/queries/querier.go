@@ -140,6 +140,7 @@ type Querier interface {
 	GetActiveTenantMembership(ctx context.Context, arg GetActiveTenantMembershipParams) (TenantMember, error)
 	GetActiveTenantUserForTeamCreate(ctx context.Context, arg GetActiveTenantUserForTeamCreateParams) (GetActiveTenantUserForTeamCreateRow, error)
 	GetApprovalRequest(ctx context.Context, arg GetApprovalRequestParams) (ApprovalRequest, error)
+	GetApprovalRequestByResource(ctx context.Context, arg GetApprovalRequestByResourceParams) (ApprovalRequest, error)
 	GetAuditEvent(ctx context.Context, id uuid.UUID) (AuditEvent, error)
 	GetCurrentDigitalEmployeeConfigRevision(ctx context.Context, arg GetCurrentDigitalEmployeeConfigRevisionParams) (DigitalEmployeeConfigRevision, error)
 	GetCurrentDigitalEmployeeEffectiveConfig(ctx context.Context, arg GetCurrentDigitalEmployeeEffectiveConfigParams) (DigitalEmployeeEffectiveConfig, error)

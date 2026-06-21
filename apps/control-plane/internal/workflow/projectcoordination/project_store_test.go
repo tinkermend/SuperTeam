@@ -2805,6 +2805,7 @@ func (r *projectStoreMemoryRepository) GetDecisionRequest(ctx context.Context, t
 type projectStoreApprovalCreator struct {
 	approvalID uuid.UUID
 	last       approval.CreateRequestInput
+	record     *approval.ApprovalRequest
 	err        error
 }
 
@@ -2817,7 +2818,7 @@ func (c *projectStoreApprovalCreator) CreateRequest(ctx context.Context, input a
 	if id == uuid.Nil {
 		id = uuid.New()
 	}
-	return &approval.ApprovalRequest{
+	request := &approval.ApprovalRequest{
 		ID:           id,
 		TenantID:     input.TenantID,
 		ResourceType: input.ResourceType,
@@ -2826,7 +2827,20 @@ func (c *projectStoreApprovalCreator) CreateRequest(ctx context.Context, input a
 		DecisionType: input.DecisionType,
 		Title:        input.Title,
 		Status:       approval.ApprovalStatusPending,
-	}, nil
+	}
+	c.record = request
+	return request, nil
+}
+
+func (c *projectStoreApprovalCreator) GetRequestByResource(ctx context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID) (*approval.ApprovalRequest, error) {
+	if c.record != nil &&
+		c.record.TenantID == tenantID &&
+		c.record.ResourceType == resourceType &&
+		c.record.ResourceID == resourceID &&
+		c.record.Status == approval.ApprovalStatusPending {
+		return c.record, nil
+	}
+	return nil, approval.ErrApprovalNotFound
 }
 
 type projectStoreDecisionInboxProjector struct {

@@ -2,6 +2,7 @@ package projectcoordination
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -203,8 +204,217 @@ func TestProjectStoreRunPreDispatchGateFailsClosedWhenApprovalsMissing(t *testin
 	})
 
 	require.Error(t, err)
+	require.Empty(t, repo.gates)
+	require.Empty(t, repo.events)
 	require.Empty(t, repo.decisionRequests)
+	require.Nil(t, repo.task.LatestDispatchGateResultID)
+	require.Nil(t, repo.task.WaitingReason)
 	require.Nil(t, repo.task.WaitingRequestID)
+}
+
+func TestProjectStoreRunPreDispatchGateReusesApprovalAfterDecisionCreateFailure(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	approvalID := uuid.New()
+	fixedNow := time.Date(2026, 6, 21, 11, 0, 0, 0, time.UTC)
+	createDecisionErr := errors.New("create decision failed")
+	repo := &preDispatchGateRepositoryFake{
+		projectRecord:     project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		createDecisionErr: createDecisionErr,
+		task: project.ProjectTask{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			Title:                     "Approve after partial failure",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			RequiresHumanApproval:     true,
+			AttemptCount:              0,
+		},
+		members: []project.ProjectMember{{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+	}
+	approvals := &preDispatchGateApprovalRecorder{approvalID: approvalID}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, approvals, nil, &projectTaskRunStarterFake{}).
+		WithClock(func() time.Time { return fixedNow })
+	input := DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID}
+
+	_, err := store.RunPreDispatchGate(context.Background(), input)
+	require.ErrorIs(t, err, createDecisionErr)
+
+	decision, err := store.RunPreDispatchGate(context.Background(), input)
+	require.NoError(t, err)
+
+	require.Equal(t, project.PreDispatchGateStatusWaitingHuman, decision.Gate.Status)
+	require.Len(t, approvals.requests, 1)
+	require.Len(t, approvals.records, 1)
+	require.Len(t, repo.decisionRequests, 1)
+	require.Equal(t, approvalID, repo.decisionRequests[0].ApprovalRequestID)
+	require.NotNil(t, repo.task.WaitingRequestID)
+	require.Equal(t, repo.decisionRequests[0].ID, *repo.task.WaitingRequestID)
+}
+
+func TestProjectStoreRunPreDispatchGateReusesDecisionAfterLinkFailure(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	approvalID := uuid.New()
+	fixedNow := time.Date(2026, 6, 21, 11, 0, 0, 0, time.UTC)
+	linkErr := errors.New("link gate decision failed")
+	repo := &preDispatchGateRepositoryFake{
+		projectRecord:   project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		linkDecisionErr: linkErr,
+		task: project.ProjectTask{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			Title:                     "Link after partial failure",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			RequiresHumanApproval:     true,
+			AttemptCount:              0,
+		},
+		members: []project.ProjectMember{{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+	}
+	approvals := &preDispatchGateApprovalRecorder{approvalID: approvalID}
+	inbox := &preDispatchGateInboxRecorder{}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, approvals, inbox, &projectTaskRunStarterFake{}).
+		WithClock(func() time.Time { return fixedNow })
+	input := DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID}
+
+	_, err := store.RunPreDispatchGate(context.Background(), input)
+	require.ErrorIs(t, err, linkErr)
+	require.Len(t, approvals.requests, 1)
+	require.Len(t, repo.decisionRequests, 1)
+	require.Nil(t, repo.decisionRequests[0].DispatchGateResultID)
+
+	decision, err := store.RunPreDispatchGate(context.Background(), input)
+	require.NoError(t, err)
+
+	require.Equal(t, project.PreDispatchGateStatusWaitingHuman, decision.Gate.Status)
+	require.Len(t, approvals.requests, 1)
+	require.Len(t, approvals.records, 1)
+	require.Len(t, repo.decisionRequests, 1)
+	require.NotNil(t, repo.decisionRequests[0].DispatchGateResultID)
+	require.Equal(t, decision.Gate.ID, *repo.decisionRequests[0].DispatchGateResultID)
+	require.NotNil(t, repo.task.WaitingRequestID)
+	require.Equal(t, repo.decisionRequests[0].ID, *repo.task.WaitingRequestID)
+	require.Len(t, inbox.upserts, 1)
+	require.Equal(t, repo.decisionRequests[0].ID, inbox.upserts[0].ID)
+}
+
+func TestProjectStoreRunPreDispatchGateReusesExistingDecisionRequestedEventID(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	gateID := uuid.New()
+	decisionID := uuid.New()
+	approvalID := uuid.New()
+	eventID := uuid.New()
+	checkedAt := time.Date(2026, 6, 21, 11, 0, 0, 0, time.UTC)
+	gateInput := project.PreDispatchGateInput{
+		ProjectID:          projectID,
+		ProjectTaskID:      taskID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     project.DispatchReasonRootReady,
+	}
+	taskIDCopy := taskID
+	repo := &preDispatchGateRepositoryFake{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		task: project.ProjectTask{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			Title:                     "Recover event id",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			RequiresHumanApproval:     true,
+			AttemptCount:              0,
+		},
+		members: []project.ProjectMember{{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+		gates: []project.PreDispatchGateResult{{
+			ID:                 gateID,
+			TenantID:           tenantID,
+			ProjectID:          projectID,
+			ProjectTaskID:      taskID,
+			SelectedEmployeeID: employeeID,
+			AttemptNo:          1,
+			DispatchReason:     project.DispatchReasonRootReady,
+			IdempotencyKey:     project.PreDispatchGateIdempotencyKey(gateInput),
+			DispatchToken:      project.PreDispatchGateDispatchToken(gateInput),
+			Status:             project.PreDispatchGateStatusWaitingHuman,
+			CheckedAt:          checkedAt,
+			DecisionRequestID:  &decisionID,
+			HumanActionRequest: project.HumanActionRequest{"waiting_reason": project.HumanWaitReasonApprovalRequired},
+		}},
+		decisionRequests: []project.DecisionRequest{{
+			ID:                   decisionID,
+			TenantID:             tenantID,
+			ProjectID:            projectID,
+			ApprovalRequestID:    approvalID,
+			ProjectTaskID:        &taskIDCopy,
+			TargetUserID:         ownerID,
+			DecisionType:         "project_task_approval",
+			TitleSnapshot:        "High risk action requires confirmation",
+			StatusSnapshot:       "pending",
+			DispatchGateResultID: &gateID,
+		}},
+		events: []project.ProjectEvent{{
+			ID:        eventID,
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			EventType: project.ProjectEventDecisionRequested,
+			ActorType: "project_coordinator",
+			ActorID:   gateID.String(),
+			CreatedAt: checkedAt,
+		}},
+	}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, &preDispatchGateApprovalRecorder{}, nil, &projectTaskRunStarterFake{}).
+		WithClock(func() time.Time { return checkedAt })
+
+	decision, err := store.RunPreDispatchGate(context.Background(), DispatchProjectTaskInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		TaskID:    taskID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, gateID, decision.Gate.ID)
+	require.NotNil(t, repo.lastMoveWaitingReq)
+	require.NotNil(t, repo.lastMoveWaitingReq.EventID)
+	require.Equal(t, eventID, *repo.lastMoveWaitingReq.EventID)
+	require.Equal(t, 1, countProjectEvents(repo.events, project.ProjectEventDecisionRequested))
 }
 
 func TestProjectStoreRunPreDispatchGateLinkedDecisionRetryCompletesWaitAndInbox(t *testing.T) {
@@ -491,16 +701,19 @@ func TestProjectStoreRunPreDispatchGateDoesNotCreateRunOnRetryLater(t *testing.T
 type preDispatchGateRepositoryFake struct {
 	project.Repository
 
-	projectRecord    project.Project
-	task             project.ProjectTask
-	currentAttempt   *project.ProjectTaskAttempt
-	dependencies     []project.ProjectTaskDependency
-	dependencyTasks  map[uuid.UUID]project.ProjectTask
-	members          []project.ProjectMember
-	events           []project.ProjectEvent
-	gates            []project.PreDispatchGateResult
-	decisionRequests []project.DecisionRequest
-	operations       []string
+	projectRecord      project.Project
+	task               project.ProjectTask
+	currentAttempt     *project.ProjectTaskAttempt
+	dependencies       []project.ProjectTaskDependency
+	dependencyTasks    map[uuid.UUID]project.ProjectTask
+	members            []project.ProjectMember
+	events             []project.ProjectEvent
+	gates              []project.PreDispatchGateResult
+	decisionRequests   []project.DecisionRequest
+	operations         []string
+	createDecisionErr  error
+	linkDecisionErr    error
+	lastMoveWaitingReq *project.MoveProjectTaskToWaitingHumanForPreDispatchGateRequest
 }
 
 func (r *preDispatchGateRepositoryFake) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (project.Project, error) {
@@ -582,6 +795,15 @@ func (r *preDispatchGateRepositoryFake) ProjectTaskEventExists(ctx context.Conte
 	return false, nil
 }
 
+func (r *preDispatchGateRepositoryFake) GetProjectEventByTypeAndActor(ctx context.Context, tenantID, projectID uuid.UUID, eventType project.ProjectEventType, actorID string) (project.ProjectEvent, error) {
+	for _, event := range r.events {
+		if event.TenantID == tenantID && event.ProjectID == projectID && event.EventType == eventType && event.ActorID == actorID {
+			return event, nil
+		}
+	}
+	return project.ProjectEvent{}, project.ErrProjectNotFound
+}
+
 func (r *preDispatchGateRepositoryFake) RecordPreDispatchGateResult(ctx context.Context, req project.RecordPreDispatchGateResultRequest) (project.PreDispatchGateResult, error) {
 	r.operations = append(r.operations, "record_gate")
 	if r.task.TenantID != req.TenantID || r.task.ProjectID != req.ProjectID || r.task.ID != req.ProjectTaskID {
@@ -643,6 +865,11 @@ func (r *preDispatchGateRepositoryFake) GetDecisionRequest(ctx context.Context, 
 }
 
 func (r *preDispatchGateRepositoryFake) LinkPreDispatchGateDecisionRequest(ctx context.Context, req project.LinkPreDispatchGateDecisionRequest) (project.PreDispatchGateResult, error) {
+	if r.linkDecisionErr != nil {
+		err := r.linkDecisionErr
+		r.linkDecisionErr = nil
+		return project.PreDispatchGateResult{}, err
+	}
 	for gateIndex, gate := range r.gates {
 		if gate.TenantID != req.TenantID || gate.ProjectID != req.ProjectID || gate.ProjectTaskID != req.ProjectTaskID || gate.ID != req.GateResultID {
 			continue
@@ -668,6 +895,8 @@ func (r *preDispatchGateRepositoryFake) MoveProjectTaskToWaitingHumanForPreDispa
 	if r.task.TenantID != req.TenantID || r.task.ProjectID != req.ProjectID || r.task.ID != req.ProjectTaskID {
 		return project.ProjectTask{}, project.ErrProjectNotFound
 	}
+	reqCopy := req
+	r.lastMoveWaitingReq = &reqCopy
 	r.task.Status = project.ProjectTaskStatusWaitingHuman
 	r.task.WaitingReason = stringPtr(req.WaitingReason)
 	r.task.WaitingRequestID = &req.DecisionRequestID
@@ -676,6 +905,11 @@ func (r *preDispatchGateRepositoryFake) MoveProjectTaskToWaitingHumanForPreDispa
 }
 
 func (r *preDispatchGateRepositoryFake) CreateDecisionRequest(ctx context.Context, req project.CreateDecisionRequestRequest) (project.DecisionRequest, error) {
+	if r.createDecisionErr != nil {
+		err := r.createDecisionErr
+		r.createDecisionErr = nil
+		return project.DecisionRequest{}, err
+	}
 	projectTaskID := req.ProjectTaskID
 	decision := project.DecisionRequest{
 		ID:                   uuid.New(),
@@ -699,9 +933,27 @@ func (r *preDispatchGateRepositoryFake) CreateDecisionRequest(ctx context.Contex
 	return decision, nil
 }
 
+func (r *preDispatchGateRepositoryFake) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.DecisionRequest, error) {
+	matches := make([]project.DecisionRequest, 0)
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID == tenantID && decision.ProjectID == projectID {
+			matches = append(matches, decision)
+		}
+	}
+	if offset >= int32(len(matches)) {
+		return []project.DecisionRequest{}, nil
+	}
+	end := int(offset + limit)
+	if limit <= 0 || end > len(matches) {
+		end = len(matches)
+	}
+	return append([]project.DecisionRequest(nil), matches[offset:end]...), nil
+}
+
 type preDispatchGateApprovalRecorder struct {
 	approvalID uuid.UUID
 	requests   []approval.CreateRequestInput
+	records    []approval.ApprovalRequest
 }
 
 func (r *preDispatchGateApprovalRecorder) CreateRequest(ctx context.Context, input approval.CreateRequestInput) (*approval.ApprovalRequest, error) {
@@ -710,7 +962,7 @@ func (r *preDispatchGateApprovalRecorder) CreateRequest(ctx context.Context, inp
 	if id == uuid.Nil {
 		id = uuid.New()
 	}
-	return &approval.ApprovalRequest{
+	request := approval.ApprovalRequest{
 		ID:             id,
 		TenantID:       input.TenantID,
 		ResourceType:   input.ResourceType,
@@ -725,7 +977,19 @@ func (r *preDispatchGateApprovalRecorder) CreateRequest(ctx context.Context, inp
 		Options:        append([]any(nil), input.Options...),
 		ContextPayload: input.ContextPayload,
 		Status:         approval.ApprovalStatusPending,
-	}, nil
+	}
+	r.records = append(r.records, request)
+	return &request, nil
+}
+
+func (r *preDispatchGateApprovalRecorder) GetRequestByResource(ctx context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID) (*approval.ApprovalRequest, error) {
+	for index := len(r.records) - 1; index >= 0; index-- {
+		request := r.records[index]
+		if request.TenantID == tenantID && request.ResourceType == resourceType && request.ResourceID == resourceID && request.Status == approval.ApprovalStatusPending {
+			return &request, nil
+		}
+	}
+	return nil, approval.ErrApprovalNotFound
 }
 
 type preDispatchGateInboxRecorder struct {
@@ -750,6 +1014,16 @@ type preDispatchGateEmployeeRuntimeReader struct {
 func (r *preDispatchGateEmployeeRuntimeReader) GetEmployeeRuntimeSnapshot(ctx context.Context, tenantID, projectID, employeeID uuid.UUID) (project.PreDispatchEmployeeSnapshot, project.PreDispatchRuntimeSnapshot, error) {
 	r.projectID = projectID
 	return r.employee, r.runtime, nil
+}
+
+func countProjectEvents(events []project.ProjectEvent, eventType project.ProjectEventType) int {
+	count := 0
+	for _, event := range events {
+		if event.EventType == eventType {
+			count++
+		}
+	}
+	return count
 }
 
 func cloneHumanAction(input project.HumanActionRequest) project.HumanActionRequest {

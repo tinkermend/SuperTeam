@@ -23,6 +23,8 @@ var (
 	errPreDispatchGateApprovalRequestRequired = errors.New("pre-dispatch gate waiting-human action requires non-empty approval request")
 )
 
+const preDispatchGateApprovalResourceType = "project_task_dispatch_gate"
+
 func (s *ProjectStore) RunPreDispatchGate(ctx context.Context, input DispatchProjectTaskInput) (PreDispatchGateDecision, error) {
 	if s.repository == nil {
 		return PreDispatchGateDecision{}, ErrActivityStoreRequired
@@ -48,6 +50,9 @@ func (s *ProjectStore) RunPreDispatchGate(ctx context.Context, input DispatchPro
 		return PreDispatchGateDecision{}, err
 	}
 	evaluation := project.EvaluatePreDispatchGate(gateInput, snapshot, s.now())
+	if evaluation.Status == project.PreDispatchGateStatusWaitingHuman && evaluation.HumanActionRequest != nil && s.approvals == nil {
+		return PreDispatchGateDecision{}, errPreDispatchGateApprovalCreatorRequired
+	}
 	gate, err := s.recordEvaluatedGate(ctx, input, gateInput, evaluation)
 	if err != nil {
 		return PreDispatchGateDecision{}, err
@@ -262,50 +267,43 @@ func (s *ProjectStore) createGateHumanAction(ctx context.Context, input Dispatch
 		if err != nil {
 			return project.PreDispatchGateResult{}, err
 		}
-		approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
-			TenantID:       input.TenantID,
-			ResourceType:   "project_task_dispatch_gate",
-			ResourceID:     gate.ID,
-			RequesterType:  "project_coordinator",
-			TargetUserID:   projectRecord.HumanOwnerUserID,
-			DecisionType:   action.DecisionType,
-			Title:          action.Title,
-			Summary:        action.Summary,
-			RiskLevel:      action.RiskLevel,
-			Options:        append([]any(nil), action.Options...),
-			ContextPayload: gateHumanActionContext(input, task, gate, actionPayload),
-		})
+		approvalRequest, err := s.findOrCreateGateApprovalRequest(ctx, input, task, gate, action, actionPayload, projectRecord.HumanOwnerUserID)
 		if err != nil {
 			return project.PreDispatchGateResult{}, err
 		}
-		if approvalRequest == nil || approvalRequest.ID == uuid.Nil {
-			return project.PreDispatchGateResult{}, errPreDispatchGateApprovalRequestRequired
-		}
-		projectTaskID := input.TaskID
-		decision, err = s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
-			TenantID:          input.TenantID,
-			ProjectID:         input.ProjectID,
-			ApprovalRequestID: approvalRequest.ID,
-			ProjectTaskID:     &projectTaskID,
-			TargetUserID:      projectRecord.HumanOwnerUserID,
-			DecisionType:      action.DecisionType,
-			TitleSnapshot:     action.Title,
-			SummarySnapshot:   action.Summary,
-			RiskLevelSnapshot: action.RiskLevel,
-			StatusSnapshot:    "pending",
-		})
-		if err != nil {
+		decision, err = s.findGateApprovalDecisionRequest(ctx, input, gate, approvalRequest.ID)
+		if err != nil && !errors.Is(err, project.ErrProjectNotFound) {
 			return project.PreDispatchGateResult{}, err
 		}
-		linkedGate, err = s.repository.LinkPreDispatchGateDecisionRequest(ctx, project.LinkPreDispatchGateDecisionRequest{
-			TenantID:          input.TenantID,
-			ProjectID:         input.ProjectID,
-			ProjectTaskID:     input.TaskID,
-			GateResultID:      gate.ID,
-			DecisionRequestID: decision.ID,
-		})
-		if err != nil {
-			return project.PreDispatchGateResult{}, err
+		if errors.Is(err, project.ErrProjectNotFound) {
+			projectTaskID := input.TaskID
+			decision, err = s.repository.CreateDecisionRequest(ctx, project.CreateDecisionRequestRequest{
+				TenantID:          input.TenantID,
+				ProjectID:         input.ProjectID,
+				ApprovalRequestID: approvalRequest.ID,
+				ProjectTaskID:     &projectTaskID,
+				TargetUserID:      projectRecord.HumanOwnerUserID,
+				DecisionType:      action.DecisionType,
+				TitleSnapshot:     action.Title,
+				SummarySnapshot:   action.Summary,
+				RiskLevelSnapshot: action.RiskLevel,
+				StatusSnapshot:    "pending",
+			})
+			if err != nil {
+				return project.PreDispatchGateResult{}, err
+			}
+		}
+		if gate.DecisionRequestID == nil || *gate.DecisionRequestID != decision.ID || decision.DispatchGateResultID == nil || *decision.DispatchGateResultID != gate.ID {
+			linkedGate, err = s.repository.LinkPreDispatchGateDecisionRequest(ctx, project.LinkPreDispatchGateDecisionRequest{
+				TenantID:          input.TenantID,
+				ProjectID:         input.ProjectID,
+				ProjectTaskID:     input.TaskID,
+				GateResultID:      gate.ID,
+				DecisionRequestID: decision.ID,
+			})
+			if err != nil {
+				return project.PreDispatchGateResult{}, err
+			}
 		}
 		decision.DispatchGateResultID = &gate.ID
 	}
@@ -337,6 +335,64 @@ func (s *ProjectStore) createGateHumanAction(ctx context.Context, input Dispatch
 	return linkedGate, nil
 }
 
+func (s *ProjectStore) findOrCreateGateApprovalRequest(ctx context.Context, input DispatchProjectTaskInput, task project.ProjectTask, gate project.PreDispatchGateResult, action *project.PreDispatchHumanActionRequest, actionPayload project.HumanActionRequest, targetUserID uuid.UUID) (*approval.ApprovalRequest, error) {
+	request, err := s.approvals.GetRequestByResource(ctx, input.TenantID, preDispatchGateApprovalResourceType, gate.ID)
+	if err == nil {
+		if request == nil || request.ID == uuid.Nil {
+			return nil, errPreDispatchGateApprovalRequestRequired
+		}
+		return request, nil
+	}
+	if !errors.Is(err, approval.ErrApprovalNotFound) {
+		return nil, err
+	}
+	request, err = s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
+		TenantID:       input.TenantID,
+		ResourceType:   preDispatchGateApprovalResourceType,
+		ResourceID:     gate.ID,
+		RequesterType:  "project_coordinator",
+		TargetUserID:   targetUserID,
+		DecisionType:   action.DecisionType,
+		Title:          action.Title,
+		Summary:        action.Summary,
+		RiskLevel:      action.RiskLevel,
+		Options:        append([]any(nil), action.Options...),
+		ContextPayload: gateHumanActionContext(input, task, gate, actionPayload),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if request == nil || request.ID == uuid.Nil {
+		return nil, errPreDispatchGateApprovalRequestRequired
+	}
+	return request, nil
+}
+
+func (s *ProjectStore) findGateApprovalDecisionRequest(ctx context.Context, input DispatchProjectTaskInput, gate project.PreDispatchGateResult, approvalRequestID uuid.UUID) (project.DecisionRequest, error) {
+	const pageSize int32 = 100
+	for offset := int32(0); ; offset += pageSize {
+		decisions, err := s.repository.ListDecisionRequests(ctx, input.TenantID, input.ProjectID, pageSize, offset)
+		if err != nil {
+			return project.DecisionRequest{}, err
+		}
+		for _, decision := range decisions {
+			if decision.ApprovalRequestID != approvalRequestID {
+				continue
+			}
+			if decision.ProjectTaskID == nil || *decision.ProjectTaskID != input.TaskID {
+				continue
+			}
+			if decision.DispatchGateResultID != nil && *decision.DispatchGateResultID != gate.ID {
+				continue
+			}
+			return decision, nil
+		}
+		if int32(len(decisions)) < pageSize {
+			return project.DecisionRequest{}, project.ErrProjectNotFound
+		}
+	}
+}
+
 func validateGateDecisionTask(input DispatchProjectTaskInput, decision project.DecisionRequest) error {
 	if decision.ProjectTaskID == nil || *decision.ProjectTaskID != input.TaskID {
 		return project.ErrProjectNotFound
@@ -345,12 +401,12 @@ func validateGateDecisionTask(input DispatchProjectTaskInput, decision project.D
 }
 
 func (s *ProjectStore) ensureGateDecisionRequestedEvent(ctx context.Context, input DispatchProjectTaskInput, gate project.PreDispatchGateResult, decision project.DecisionRequest, actionPayload project.HumanActionRequest) (*uuid.UUID, error) {
-	exists, err := s.repository.ProjectTaskEventExists(ctx, input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, gate.ID.String())
-	if err != nil {
-		return nil, err
+	existing, err := s.repository.GetProjectEventByTypeAndActor(ctx, input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, gate.ID.String())
+	if err == nil {
+		return &existing.ID, nil
 	}
-	if exists {
-		return decision.CreatedEventID, nil
+	if !errors.Is(err, project.ErrProjectNotFound) {
+		return nil, err
 	}
 	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, gate.ID.String(), "Dispatch gate requires human action", map[string]any{
 		"approval_request_id": decision.ApprovalRequestID.String(),

@@ -180,6 +180,7 @@ func NewProjectStore(repository project.Repository) *ProjectStore {
 
 type ApprovalCreator interface {
 	CreateRequest(ctx context.Context, input approval.CreateRequestInput) (*approval.ApprovalRequest, error)
+	GetRequestByResource(ctx context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID) (*approval.ApprovalRequest, error)
 }
 
 type ProjectTaskRunStarter interface {
