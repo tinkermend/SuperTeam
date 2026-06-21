@@ -12,8 +12,8 @@ use crate::config::RuntimeConfig;
 use crate::controlplane::ControlPlaneClient;
 use crate::controlplane::models::{
     EnsureInstanceCommand, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback,
-    ProjectTaskWaitHumanWriteback, RuntimeCommand, RuntimeCommandEventWriteback,
-    RuntimeCommandTerminalWriteback, RuntimeCommandType,
+    ProjectTaskStartWriteback, ProjectTaskWaitHumanWriteback, RuntimeCommand,
+    RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeCommandType,
 };
 use crate::events::ProviderEvent;
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
@@ -282,6 +282,19 @@ impl RuntimeCommandExecutor {
                 command_id: payload.command_id.clone(),
                 project_task: project_task.clone(),
             });
+        if let Some(writeback) = &writeback {
+            if let Err(error) = writeback.start_project_task().await {
+                let message = error.to_string();
+                let _ = self.runs.finish_failed(&run_id, message.clone()).await;
+                let _ = writeback.fail(message).await;
+                self.registry.record_run_finished(&run_id);
+                return Ok(RuntimeCommandOutcome {
+                    command_id: payload.command_id,
+                    accepted: true,
+                    run_id: Some(run_id),
+                });
+            }
+        }
         let provider_run = match provider.start(provider_request(&spec)).await {
             Ok(provider_run) => provider_run,
             Err(error) => {
@@ -490,7 +503,9 @@ impl RuntimeCommandExecutor {
             } else {
                 let error = self.recorded_error(
                     &command.id,
-                    anyhow::anyhow!("skills require S3 configuration but s3 client is not configured"),
+                    anyhow::anyhow!(
+                        "skills require S3 configuration but s3 client is not configured"
+                    ),
                 );
                 let message = error.to_string();
                 self.write_provisioning_failure(&command.id, message)
@@ -834,7 +849,10 @@ fn create_s3_client(config: &RuntimeConfig) -> (Option<aws_sdk_s3::Client>, Opti
                 .force_path_style(s3.force_path_style)
                 .behavior_version_latest()
                 .build();
-            (Some(aws_sdk_s3::Client::from_conf(s3_config)), Some(s3.bucket.clone()))
+            (
+                Some(aws_sdk_s3::Client::from_conf(s3_config)),
+                Some(s3.bucket.clone()),
+            )
         }
         None => (None, None),
     }
@@ -989,6 +1007,18 @@ fn command_cancelled_terminal(reason: Option<String>) -> RuntimeCommandTerminalW
 }
 
 impl RuntimeCommandWritebackSink {
+    async fn start_project_task(&self) -> anyhow::Result<()> {
+        if let Some(project_task) = &self.project_task {
+            self.client
+                .start_project_task_attempt(
+                    &project_task.attempt_id,
+                    &project_task_start_writeback(project_task, &self.command_id, None),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
     async fn record_event(
         &self,
         record: &RunEventRecord,
@@ -1335,6 +1365,24 @@ fn project_task_complete_writeback(
             .and_then(|value| value.get("requires_human_review"))
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false),
+    }
+}
+
+fn project_task_start_writeback(
+    context: &ProjectTaskWritebackContext,
+    command_id: &str,
+    provider_session_id: Option<&str>,
+) -> ProjectTaskStartWriteback {
+    ProjectTaskStartWriteback {
+        project_task_id: context.project_task_id.clone(),
+        lease_token: context.lease_token.clone(),
+        runtime_node_id: context.runtime_node_id.clone(),
+        idempotency_key: project_task_attempt_idempotency_key(
+            &context.attempt_id,
+            "start",
+            command_id,
+        ),
+        provider_session_id: provider_session_id.map(ToString::to_string),
     }
 }
 

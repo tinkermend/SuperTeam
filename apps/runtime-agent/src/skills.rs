@@ -52,9 +52,15 @@ pub async fn materialize_skills(
             .key(&object_key)
             .send()
             .await
-            .with_context(|| format!("failed to fetch skill archive from s3: {bucket}/{object_key}"))?;
+            .with_context(|| {
+                format!("failed to fetch skill archive from s3: {bucket}/{object_key}")
+            })?;
 
-        let body = response.body.collect().await.map_err(|e| anyhow::anyhow!("read s3 body: {e}"))?;
+        let body = response
+            .body
+            .collect()
+            .await
+            .map_err(|e| anyhow::anyhow!("read s3 body: {e}"))?;
         let archive_bytes = body.into_bytes();
 
         if archive_bytes.len() as u64 > MAX_ARCHIVE_SIZE {
@@ -74,14 +80,19 @@ pub async fn materialize_skills(
             );
         }
 
-        let temp_dir = agent_home_dir.join(".skill-tmp").join(format!("{}-{}", std::process::id(), skill.skill_key));
+        let temp_dir = agent_home_dir.join(".skill-tmp").join(format!(
+            "{}-{}",
+            std::process::id(),
+            skill.skill_key
+        ));
         if temp_dir.exists() {
             fs::remove_dir_all(&temp_dir)?;
         }
         fs::create_dir_all(&temp_dir)?;
 
         let cursor = Cursor::new(&archive_bytes);
-        let mut archive = ZipArchive::new(cursor).with_context(|| format!("invalid zip archive for skill {}", skill.skill_key))?;
+        let mut archive = ZipArchive::new(cursor)
+            .with_context(|| format!("invalid zip archive for skill {}", skill.skill_key))?;
 
         if archive.len() > MAX_FILE_COUNT {
             anyhow::bail!(
@@ -93,7 +104,10 @@ pub async fn materialize_skills(
 
         let entry_names: Vec<String> = (0..archive.len())
             .filter_map(|i| {
-                archive.by_index(i).ok().map(|entry| entry.name().to_string())
+                archive
+                    .by_index(i)
+                    .ok()
+                    .map(|entry| entry.name().to_string())
             })
             .collect();
         let root_prefix = common_root_prefix(&entry_names);
@@ -216,7 +230,8 @@ fn ensure_real_directory(path: &Path) -> Result<()> {
             Ok(())
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            fs::create_dir_all(path).with_context(|| format!("create skill directory: {}", path.display()))?;
+            fs::create_dir_all(path)
+                .with_context(|| format!("create skill directory: {}", path.display()))?;
             Ok(())
         }
         Err(e) => Err(e).with_context(|| format!("inspect skill directory: {}", path.display())),
@@ -229,7 +244,15 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
 
-    let temp_path = parent.join(format!(".{}-tmp-{}-{}", path.file_name().and_then(|n| n.to_str()).unwrap_or("file"), std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)));
+    let temp_path = parent.join(format!(
+        ".{}-tmp-{}-{}",
+        path.file_name().and_then(|n| n.to_str()).unwrap_or("file"),
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
 
     fs::write(&temp_path, bytes)?;
     fs::rename(&temp_path, path)?;
@@ -270,8 +293,14 @@ mod tests {
 
     #[test]
     fn extract_object_key_parses_s3_uri() {
-        assert_eq!(extract_object_key("s3://bucket/skills/tenant/diagnose/abc.zip").unwrap(), "skills/tenant/diagnose/abc.zip");
-        assert_eq!(extract_object_key("skills/tenant/diagnose/abc.zip").unwrap(), "skills/tenant/diagnose/abc.zip");
+        assert_eq!(
+            extract_object_key("s3://bucket/skills/tenant/diagnose/abc.zip").unwrap(),
+            "skills/tenant/diagnose/abc.zip"
+        );
+        assert_eq!(
+            extract_object_key("skills/tenant/diagnose/abc.zip").unwrap(),
+            "skills/tenant/diagnose/abc.zip"
+        );
     }
 
     #[test]

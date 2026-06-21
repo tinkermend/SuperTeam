@@ -4,10 +4,10 @@ use std::time::Duration;
 
 use super::models::{
     EnrollHelloRequest, EnrollHelloResponse, HeartbeatRequest, HeartbeatResponse,
-    ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, ProjectTaskWaitHumanWriteback,
-    RegisterNodeRequest, RegisterNodeResponse, RuntimeCapabilitiesRequest, RuntimeCapabilityInput,
-    RuntimeCapabilityResponse, RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback,
-    RuntimeSessionResponse, Task,
+    ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, ProjectTaskStartWriteback,
+    ProjectTaskWaitHumanWriteback, RegisterNodeRequest, RegisterNodeResponse,
+    RuntimeCapabilitiesRequest, RuntimeCapabilityInput, RuntimeCapabilityResponse,
+    RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeSessionResponse, Task,
 };
 
 /// Control Plane HTTP client
@@ -470,6 +470,36 @@ impl ControlPlaneClient {
         Ok(())
     }
 
+    pub async fn start_project_task_attempt(
+        &self,
+        attempt_id: &str,
+        writeback: &ProjectTaskStartWriteback,
+    ) -> Result<()> {
+        let url = self.project_task_attempt_started_url(attempt_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .headers(self.runtime_headers()?)
+            .json(writeback)
+            .send()
+            .await
+            .context("Failed to start project task attempt")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Start project task attempt failed with {}: {}",
+                status,
+                body
+            );
+        }
+
+        Ok(())
+    }
+
     pub async fn fail_project_task_attempt(
         &self,
         attempt_id: &str,
@@ -638,6 +668,13 @@ impl ControlPlaneClient {
     fn project_task_attempt_complete_url(&self, attempt_id: &str) -> String {
         format!(
             "{}/api/v1/runtime/project-task-attempts/{}/complete",
+            self.base_url, attempt_id
+        )
+    }
+
+    fn project_task_attempt_started_url(&self, attempt_id: &str) -> String {
+        format!(
+            "{}/api/v1/runtime/project-task-attempts/{}/started",
             self.base_url, attempt_id
         )
     }
