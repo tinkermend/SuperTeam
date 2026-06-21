@@ -24,6 +24,7 @@ type Service struct {
 	repository               Repository
 	dispatcher               RuntimeCommandDispatcher
 	skillLister              SkillLister
+	envCodec                 *EnvironmentValueCodec
 	provisioningTimeout      time.Duration
 	provisioningPollInterval time.Duration
 }
@@ -640,6 +641,9 @@ func (s *Service) createLocalReadyEmployeeFacts(ctx context.Context, repository 
 	if err != nil {
 		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, fmt.Errorf("create digital employee: %w", err)
 	}
+	if err := s.createInitialEnvironmentVariables(ctx, repository, record, req); err != nil {
+		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
+	}
 	configRevision, err := s.createInitialActiveConfigRevision(ctx, repository, record, req, definition, teamConfig)
 	if err != nil {
 		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
@@ -660,6 +664,33 @@ func (s *Service) createLocalReadyEmployeeFacts(ctx context.Context, repository 
 		return DigitalEmployeeRecord{}, DigitalEmployeeExecutionInstanceRecord{}, "", nil, err
 	}
 	return record, instance, commandID, payload, nil
+}
+
+func (s *Service) createInitialEnvironmentVariables(ctx context.Context, repository Repository, record DigitalEmployeeRecord, req CreateDigitalEmployeeRequest) error {
+	if len(req.EnvironmentVariables) == 0 {
+		return nil
+	}
+	if req.TeamID == nil || *req.TeamID == uuid.Nil {
+		return fmt.Errorf("%w: team_id is required for environment variables", ErrInvalidInput)
+	}
+	for _, item := range req.EnvironmentVariables {
+		name, err := normalizeEnvName(item.Name)
+		if err != nil {
+			return err
+		}
+		if _, err := s.upsertEncryptedEnvironmentVariable(ctx, repository, UpsertEnvironmentVariableStoreInput{
+			TenantID:          req.TenantID,
+			TeamID:            *req.TeamID,
+			DigitalEmployeeID: record.ID,
+			Name:              name,
+			Value:             item.Value,
+			Sensitive:         item.Sensitive,
+			UpdatedBy:         &req.OwnerUserID,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func createDigitalEmployeeParams(req CreateDigitalEmployeeRequest) CreateDigitalEmployeeParams {

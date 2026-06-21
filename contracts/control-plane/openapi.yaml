@@ -2618,6 +2618,74 @@ paths:
           $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/environment-variables:
+    get:
+      operationId: listEmployeeEnvironmentVariables
+      summary: List employee environment variables
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Employee environment variable list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DigitalEmployeeEnvironmentVariableSummary"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/environment-variables/{envName}:
+    put:
+      operationId: upsertEmployeeEnvironmentVariable
+      summary: Upsert an employee environment variable
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - name: envName
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertEnvironmentVariableRequest"
+      responses:
+        "200":
+          description: Employee environment variable saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeEnvironmentVariableSummary"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteEmployeeEnvironmentVariable
+      summary: Delete an employee environment variable
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - name: envName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Employee environment variable deleted
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/skills:
     get:
       operationId: listEmployeeSkills
@@ -8164,9 +8232,72 @@ components:
         workspace_policy:
           type: object
           additionalProperties: true
+        environment_variables:
+          type: array
+          items:
+            type: object
+            required:
+              - name
+              - value
+            properties:
+              name:
+                type: string
+              value:
+                type: string
+              sensitive:
+                type: boolean
+                default: true
         metadata:
           type: object
           additionalProperties: true
+    DigitalEmployeeEnvironmentVariableSummary:
+      type: object
+      required:
+        - name
+        - configured
+        - sensitive
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        configured:
+          type: boolean
+        fingerprint:
+          type: string
+          description: Stable non-secret fingerprint for change detection.
+        sensitive:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+        updated_at:
+          type: string
+          format: date-time
+    UpsertEnvironmentVariableRequest:
+      type: object
+      required:
+        - value
+      properties:
+        value:
+          type: string
+          description: Plaintext value accepted only on write; never returned by read APIs.
+        sensitive:
+          type: boolean
+          default: true
     DigitalEmployeeCreateOptions:
       type: object
       required:

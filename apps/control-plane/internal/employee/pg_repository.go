@@ -16,11 +16,13 @@ import (
 )
 
 type PgRepository struct {
-	q  *queries.Queries
-	db employeeTransactionBeginner
+	q   *queries.Queries
+	db  employeeTransactionBeginner
+	sql queries.DBTX
 }
 
 type employeeTransactionBeginner interface {
+	queries.DBTX
 	Begin(context.Context) (pgx.Tx, error)
 }
 
@@ -29,7 +31,11 @@ func NewPgRepository(q *queries.Queries, db ...employeeTransactionBeginner) Repo
 	if len(db) > 0 {
 		beginner = db[0]
 	}
-	return &PgRepository{q: q, db: beginner}
+	var sql queries.DBTX
+	if beginner != nil {
+		sql = beginner
+	}
+	return &PgRepository{q: q, db: beginner, sql: sql}
 }
 
 func (r *PgRepository) WithTransaction(ctx context.Context, fn func(Repository) error) error {
@@ -40,7 +46,7 @@ func (r *PgRepository) WithTransaction(ctx context.Context, fn func(Repository) 
 	if err != nil {
 		return fmt.Errorf("begin employee transaction: %w", err)
 	}
-	txRepo := &PgRepository{q: r.q.WithTx(tx)}
+	txRepo := &PgRepository{q: r.q.WithTx(tx), sql: tx}
 	if err := fn(txRepo); err != nil {
 		_ = tx.Rollback(ctx)
 		return err
@@ -443,6 +449,127 @@ func (r *PgRepository) ListWorkspaceFilesForSync(ctx context.Context, tenantID, 
 		records = append(records, record)
 	}
 	return records, nil
+}
+
+func (r *PgRepository) ListEnvironmentVariables(ctx context.Context, req ListEnvironmentVariablesRequest) ([]EnvironmentVariableRecord, error) {
+	store, err := r.envSQLStore()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := store.Query(ctx, `
+SELECT id, tenant_id, team_id, digital_employee_id, name, encrypted_value,
+       encryption_key_id, value_fingerprint, sensitive, status,
+       created_by, updated_by, created_at, updated_at
+FROM digital_employee_environment_variables
+WHERE tenant_id = $1
+  AND digital_employee_id = $2
+  AND deleted_at IS NULL
+ORDER BY name ASC
+`, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	records := make([]EnvironmentVariableRecord, 0)
+	for rows.Next() {
+		record, err := scanEnvironmentVariableRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func (r *PgRepository) UpsertEnvironmentVariable(ctx context.Context, req UpsertEnvironmentVariableStoreRequest) (EnvironmentVariableRecord, error) {
+	store, err := r.envSQLStore()
+	if err != nil {
+		return EnvironmentVariableRecord{}, err
+	}
+	row := store.QueryRow(ctx, `
+INSERT INTO digital_employee_environment_variables (
+    tenant_id, team_id, digital_employee_id, name,
+    encrypted_value, encryption_key_id, value_fingerprint, sensitive,
+    status, created_by, updated_by, updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',$9,$9,NOW())
+ON CONFLICT (tenant_id, digital_employee_id, name) WHERE deleted_at IS NULL
+DO UPDATE SET
+    encrypted_value = EXCLUDED.encrypted_value,
+    encryption_key_id = EXCLUDED.encryption_key_id,
+    value_fingerprint = EXCLUDED.value_fingerprint,
+    sensitive = EXCLUDED.sensitive,
+    status = 'active',
+    updated_by = EXCLUDED.updated_by,
+    updated_at = NOW()
+RETURNING id, tenant_id, team_id, digital_employee_id, name, encrypted_value,
+          encryption_key_id, value_fingerprint, sensitive, status,
+          created_by, updated_by, created_at, updated_at
+`, req.TenantID, req.TeamID, req.DigitalEmployeeID, req.Name, req.EncryptedValue, req.EncryptionKeyID, req.ValueFingerprint, req.Sensitive, nullUUIDFromPtr(req.UpdatedBy))
+	record, err := scanEnvironmentVariableRecord(row)
+	if err != nil {
+		return EnvironmentVariableRecord{}, err
+	}
+	return record, nil
+}
+
+func (r *PgRepository) DeleteEnvironmentVariable(ctx context.Context, req DeleteEnvironmentVariableRequest) error {
+	store, err := r.envSQLStore()
+	if err != nil {
+		return err
+	}
+	_, err = store.Exec(ctx, `
+UPDATE digital_employee_environment_variables
+SET deleted_at = NOW(), updated_at = NOW()
+WHERE tenant_id = $1
+  AND digital_employee_id = $2
+  AND name = $3
+  AND deleted_at IS NULL
+`, req.TenantID, req.DigitalEmployeeID, req.Name)
+	return err
+}
+
+func (r *PgRepository) ListRuntimeEnvironmentVariables(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]EnvironmentVariableRecord, error) {
+	store, err := r.envSQLStore()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := store.Query(ctx, `
+SELECT id, tenant_id, team_id, digital_employee_id, name, encrypted_value,
+       encryption_key_id, value_fingerprint, sensitive, status,
+       created_by, updated_by, created_at, updated_at
+FROM digital_employee_environment_variables
+WHERE tenant_id = $1
+  AND digital_employee_id = $2
+  AND status = 'active'
+  AND deleted_at IS NULL
+ORDER BY name ASC
+`, tenantID, digitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	records := make([]EnvironmentVariableRecord, 0)
+	for rows.Next() {
+		record, err := scanEnvironmentVariableRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func (r *PgRepository) envSQLStore() (queries.DBTX, error) {
+	if r.sql == nil {
+		return nil, fmt.Errorf("%w: employee repository sql store is required", ErrInvalidInput)
+	}
+	return r.sql, nil
 }
 
 func (r *PgRepository) UpsertWorkspaceFileSync(ctx context.Context, params UpsertWorkspaceFileSyncParams) error {
@@ -1395,6 +1522,39 @@ func workspaceFileFromCurrentRow(row queries.ListCurrentDigitalEmployeeWorkspace
 		CreatedAt:         timeFromTimestamptz(row.FileCreatedAt),
 		UpdatedAt:         timeFromTimestamptz(row.FileUpdatedAt),
 	}, nil
+}
+
+type environmentVariableScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanEnvironmentVariableRecord(scanner environmentVariableScanner) (EnvironmentVariableRecord, error) {
+	var record EnvironmentVariableRecord
+	var status string
+	var createdBy uuid.NullUUID
+	var updatedBy uuid.NullUUID
+	if err := scanner.Scan(
+		&record.ID,
+		&record.TenantID,
+		&record.TeamID,
+		&record.DigitalEmployeeID,
+		&record.Name,
+		&record.EncryptedValue,
+		&record.EncryptionKeyID,
+		&record.ValueFingerprint,
+		&record.Sensitive,
+		&status,
+		&createdBy,
+		&updatedBy,
+		&record.CreatedAt,
+		&record.UpdatedAt,
+	); err != nil {
+		return EnvironmentVariableRecord{}, mapNoRows(err)
+	}
+	record.Status = EnvironmentVariableStatus(status)
+	record.CreatedBy = uuidPtrFromNull(createdBy)
+	record.UpdatedBy = uuidPtrFromNull(updatedBy)
+	return record, nil
 }
 
 func digitalEmployeeRecordFromQuery(employee queries.DigitalEmployee) (DigitalEmployeeRecord, error) {

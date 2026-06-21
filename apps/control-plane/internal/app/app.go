@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -349,6 +350,14 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if err != nil {
 		return nil, err
 	}
+	envCodec, err := employee.NewEnvironmentValueCodec(employee.EnvironmentValueCodecConfig{
+		Keys:        cfg.EmployeeEnv.Keys,
+		ActiveKeyID: cfg.EmployeeEnv.ActiveKeyID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build env encryption codec: %w", err)
+	}
+	employeeService.SetEnvironmentCodec(envCodec)
 
 	inboxRepository := inbox.NewPgRepository(q)
 	inboxService, err := inbox.NewService(inboxRepository)

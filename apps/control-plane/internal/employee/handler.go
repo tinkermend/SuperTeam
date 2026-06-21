@@ -22,6 +22,9 @@ type HandlerService interface {
 	GetOverview(ctx context.Context, req GetDigitalEmployeeOverviewRequest) (*DigitalEmployeeOverview, error)
 	ListWorkspaceFiles(ctx context.Context, req ListWorkspaceFilesRequest) ([]WorkspaceFile, error)
 	UpsertWorkspaceFile(ctx context.Context, req UpsertWorkspaceFileRequest) (WorkspaceFile, error)
+	ListEnvironmentVariables(ctx context.Context, req ListEnvironmentVariablesRequest) ([]EnvironmentVariableSummary, error)
+	UpsertEnvironmentVariable(ctx context.Context, req UpsertEnvironmentVariableRequest) (EnvironmentVariableSummary, error)
+	DeleteEnvironmentVariable(ctx context.Context, req DeleteEnvironmentVariableRequest) error
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployee, error)
 	UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*DigitalEmployee, error)
 	GetExecutionInstance(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeExecutionInstance, error)
@@ -176,10 +179,23 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		ProviderType           string         `json:"provider_type"`
 		SessionPolicy          map[string]any `json:"session_policy"`
 		WorkspacePolicy        map[string]any `json:"workspace_policy"`
+		EnvironmentVariables   []struct {
+			Name      string `json:"name"`
+			Value     string `json:"value"`
+			Sensitive bool   `json:"sensitive"`
+		} `json:"environment_variables"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	environmentVariables := make([]InitialEnvironmentVariable, 0, len(req.EnvironmentVariables))
+	for _, item := range req.EnvironmentVariables {
+		environmentVariables = append(environmentVariables, InitialEnvironmentVariable{
+			Name:      item.Name,
+			Value:     item.Value,
+			Sensitive: item.Sensitive,
+		})
 	}
 	employee, err := service.CreateDigitalEmployee(r.Context(), CreateDigitalEmployeeRequest{
 		TenantID:               tenantID,
@@ -206,6 +222,7 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		ProviderType:           req.ProviderType,
 		SessionPolicy:          req.SessionPolicy,
 		WorkspacePolicy:        req.WorkspacePolicy,
+		EnvironmentVariables:   environmentVariables,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -301,6 +318,91 @@ func (h *HTTPHandler) UpsertWorkspaceFile(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, workspaceFileResponseFromDomain(file))
+}
+
+func (h *HTTPHandler) ListEnvironmentVariables(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee environment variables read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	vars, err := service.ListEnvironmentVariables(r.Context(), ListEnvironmentVariablesRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, environmentVariableSummaryResponses(vars))
+}
+
+func (h *HTTPHandler) UpsertEnvironmentVariable(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeConfigCreate, &employeeID, "digital employee environment variable upsert")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var req struct {
+		Value     string `json:"value"`
+		Sensitive bool   `json:"sensitive"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	updatedBy := middleware.GetUserID(r.Context())
+	summary, err := service.UpsertEnvironmentVariable(r.Context(), UpsertEnvironmentVariableRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Name:              chi.URLParam(r, "envName"),
+		Value:             req.Value,
+		Sensitive:         req.Sensitive,
+		ActorUserID:       &updatedBy,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, environmentVariableSummaryResponseFromDomain(summary))
+}
+
+func (h *HTTPHandler) DeleteEnvironmentVariable(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeConfigCreate, &employeeID, "digital employee environment variable delete")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	if err := service.DeleteEnvironmentVariable(r.Context(), DeleteEnvironmentVariableRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		Name:              chi.URLParam(r, "envName"),
+	}); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *HTTPHandler) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *http.Request) {
@@ -831,6 +933,19 @@ type workspaceFileResponse struct {
 	UpdatedAt         string  `json:"updated_at,omitempty"`
 }
 
+type environmentVariableSummaryResponse struct {
+	ID                string                    `json:"id,omitempty"`
+	TenantID          string                    `json:"tenant_id,omitempty"`
+	TeamID            string                    `json:"team_id,omitempty"`
+	DigitalEmployeeID string                    `json:"digital_employee_id,omitempty"`
+	Name              string                    `json:"name"`
+	Configured        bool                      `json:"configured"`
+	Fingerprint       string                    `json:"fingerprint,omitempty"`
+	Sensitive         bool                      `json:"sensitive"`
+	Status            EnvironmentVariableStatus `json:"status"`
+	UpdatedAt         string                    `json:"updated_at,omitempty"`
+}
+
 type createOptionsResponse struct {
 	TeamConfig             teamConfigCreateOptionResponse  `json:"team_config"`
 	EmployeeTypes          []employeeTypeOptionResponse    `json:"employee_types"`
@@ -1069,6 +1184,29 @@ func workspaceFileResponseFromDomain(file WorkspaceFile) workspaceFileResponse {
 		ChangeNote:        file.ChangeNote,
 		CreatedAt:         timeString(file.CreatedAt),
 		UpdatedAt:         timeString(file.UpdatedAt),
+	}
+}
+
+func environmentVariableSummaryResponses(vars []EnvironmentVariableSummary) []environmentVariableSummaryResponse {
+	responses := make([]environmentVariableSummaryResponse, 0, len(vars))
+	for _, item := range vars {
+		responses = append(responses, environmentVariableSummaryResponseFromDomain(item))
+	}
+	return responses
+}
+
+func environmentVariableSummaryResponseFromDomain(item EnvironmentVariableSummary) environmentVariableSummaryResponse {
+	return environmentVariableSummaryResponse{
+		ID:                optionalUUIDString(item.ID),
+		TenantID:          optionalUUIDString(item.TenantID),
+		TeamID:            optionalUUIDString(item.TeamID),
+		DigitalEmployeeID: optionalUUIDString(item.DigitalEmployeeID),
+		Name:              item.Name,
+		Configured:        item.Configured,
+		Fingerprint:       item.Fingerprint,
+		Sensitive:         item.Sensitive,
+		Status:            item.Status,
+		UpdatedAt:         timeString(item.UpdatedAt),
 	}
 }
 
@@ -1448,6 +1586,13 @@ func uuidStringPtr(value *uuid.UUID) *string {
 	}
 	text := value.String()
 	return &text
+}
+
+func optionalUUIDString(value uuid.UUID) string {
+	if value == uuid.Nil {
+		return ""
+	}
+	return value.String()
 }
 
 func timeStringPtr(value *time.Time) *string {
