@@ -257,6 +257,16 @@ func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinator
 		delete(pendingAcceptance, signal.DecisionRequestID.String())
 		return applyProjectAcceptanceDecision(ctx, input.TenantID, pending.ProjectID, signal)
 	}
+	if workflow.GetVersion(ctx, "predispatch-gate-decision-rerun", workflow.DefaultVersion, 1) == workflow.DefaultVersion {
+		return appendSignalObservedEvent(ctx, input, "human decision submitted")
+	}
+	readyTaskIDs, err := applyPreDispatchGateDecision(ctx, input.TenantID, input.ProjectID, signal)
+	if err != nil {
+		return err
+	}
+	if len(readyTaskIDs) > 0 {
+		return dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, readyTaskIDs, project.DispatchReasonHumanResolved)
+	}
 	return appendSignalObservedEvent(ctx, input, "human decision submitted")
 }
 
@@ -446,6 +456,20 @@ func handleEmployeeTaskFailed(ctx workflow.Context, input ProjectCoordinatorInpu
 func applyFailureRecoveryDecision(ctx workflow.Context, tenantID, projectID uuid.UUID, signal HumanDecisionSubmitted) ([]uuid.UUID, error) {
 	var result ApplyFailureRecoveryDecisionResult
 	if err := workflow.ExecuteActivity(ctx, (*Activities).ApplyFailureRecoveryDecision, ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: signal.DecisionRequestID,
+		Decision:          signal.Decision,
+		Payload:           signal.Payload,
+	}).Get(ctx, &result); err != nil {
+		return nil, err
+	}
+	return result.ReadyTaskIDs, nil
+}
+
+func applyPreDispatchGateDecision(ctx workflow.Context, tenantID, projectID uuid.UUID, signal HumanDecisionSubmitted) ([]uuid.UUID, error) {
+	var result ApplyPreDispatchGateDecisionResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).ApplyPreDispatchGateDecision, ApplyPreDispatchGateDecisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DecisionRequestID: signal.DecisionRequestID,

@@ -145,6 +145,11 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 		snapshot.Risk.HumanApprovalRequired = true
 		snapshot.Risk.HumanApprovalGranted = false
 		snapshot.Risk.Reason = "task.requires_human_approval"
+		granted, err := s.preDispatchRiskApprovalGranted(ctx, input.TenantID, input.ProjectID, task)
+		if err != nil {
+			return project.PreDispatchGateSnapshot{}, err
+		}
+		snapshot.Risk.HumanApprovalGranted = granted
 	}
 	if s.employeeReader != nil && task.AssignedDigitalEmployeeID != nil && *task.AssignedDigitalEmployeeID != uuid.Nil {
 		employee, runtime, err := s.employeeReader.GetEmployeeRuntimeSnapshot(ctx, input.TenantID, input.ProjectID, *task.AssignedDigitalEmployeeID)
@@ -163,6 +168,66 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 		snapshot.Tools = mergePreDispatchToolSnapshot(snapshot.Tools, tools)
 	}
 	return snapshot, nil
+}
+
+func (s *ProjectStore) ApplyPreDispatchGateDecision(ctx context.Context, input ApplyPreDispatchGateDecisionInput) (ApplyPreDispatchGateDecisionResult, error) {
+	if s.repository == nil {
+		return ApplyPreDispatchGateDecisionResult{}, ErrActivityStoreRequired
+	}
+	if input.TenantID == uuid.Nil || input.ProjectID == uuid.Nil || input.DecisionRequestID == uuid.Nil {
+		return ApplyPreDispatchGateDecisionResult{}, project.ErrInvalidProject
+	}
+	decision, err := s.repository.GetDecisionRequest(ctx, input.TenantID, input.ProjectID, input.DecisionRequestID)
+	if err != nil {
+		return ApplyPreDispatchGateDecisionResult{}, err
+	}
+	if !preDispatchGateDecisionResolvedForDispatch(decision, input.Decision) {
+		return ApplyPreDispatchGateDecisionResult{}, nil
+	}
+	task, err := s.repository.GetProjectTask(ctx, input.TenantID, *decision.ProjectTaskID)
+	if err != nil {
+		return ApplyPreDispatchGateDecisionResult{}, err
+	}
+	if task.ProjectID != input.ProjectID {
+		return ApplyPreDispatchGateDecisionResult{}, project.ErrProjectNotFound
+	}
+	if !projectTaskDispatchAllowed(task.Status) {
+		return ApplyPreDispatchGateDecisionResult{}, nil
+	}
+	return ApplyPreDispatchGateDecisionResult{ReadyTaskIDs: []uuid.UUID{task.ID}}, nil
+}
+
+func (s *ProjectStore) preDispatchRiskApprovalGranted(ctx context.Context, tenantID, projectID uuid.UUID, task project.ProjectTask) (bool, error) {
+	if task.WaitingRequestID == nil || *task.WaitingRequestID == uuid.Nil {
+		return false, nil
+	}
+	decision, err := s.repository.GetDecisionRequest(ctx, tenantID, projectID, *task.WaitingRequestID)
+	if err != nil {
+		return false, err
+	}
+	if decision.ProjectTaskID == nil || *decision.ProjectTaskID != task.ID {
+		return false, nil
+	}
+	if decision.DecisionType != "project_task_approval" {
+		return false, nil
+	}
+	if decision.DispatchGateResultID == nil || *decision.DispatchGateResultID == uuid.Nil {
+		return false, nil
+	}
+	return strings.EqualFold(decision.StatusSnapshot, "approved"), nil
+}
+
+func preDispatchGateDecisionResolvedForDispatch(decision project.DecisionRequest, signalDecision string) bool {
+	if decision.ProjectTaskID == nil || *decision.ProjectTaskID == uuid.Nil {
+		return false
+	}
+	if decision.DispatchGateResultID == nil || *decision.DispatchGateResultID == uuid.Nil {
+		return false
+	}
+	if !strings.EqualFold(signalDecision, "approved") || !strings.EqualFold(decision.StatusSnapshot, "approved") {
+		return false
+	}
+	return decision.DecisionType == "project_task_approval"
 }
 
 func (s *ProjectStore) recordEvaluatedGate(ctx context.Context, input DispatchProjectTaskInput, gateInput project.PreDispatchGateInput, evaluation project.PreDispatchGateEvaluation) (project.PreDispatchGateResult, error) {

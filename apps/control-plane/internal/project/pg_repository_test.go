@@ -608,6 +608,96 @@ func TestRecordPreDispatchGateResultReturnsLinkedGateWithoutOverwrite(t *testing
 	require.Equal(t, queued.Attempt.ID, *replayed.AttemptID)
 }
 
+func TestRecordPreDispatchGateResultUpdatesDecisionLinkedWaitingGate(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	projectID := createProjectFixture(t, repo, tenantID)
+	employeeID := uuid.New()
+	task, err := repo.CreateProjectTask(context.Background(), CreateProjectTaskRequest{
+		TenantID:                  tenantID,
+		ProjectID:                 projectID,
+		Title:                     "decision linked gate replay",
+		Status:                    ProjectTaskStatusPlanned,
+		AssignedDigitalEmployeeID: &employeeID,
+		RequiresHumanApproval:     true,
+	})
+	require.NoError(t, err)
+	checkedAt := time.Date(2026, 6, 21, 12, 45, 0, 0, time.UTC)
+	idempotencyKey := "gate:" + task.ID.String() + ":attempt:1:decision-linked-replay"
+	gate, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonHumanResolved,
+		IdempotencyKey:     idempotencyKey,
+		DispatchToken:      "dispatch-token-decision-linked-replay",
+		Status:             PreDispatchGateStatusWaitingHuman,
+		CheckedAt:          checkedAt,
+		Checks: []PreDispatchGateCheck{{
+			Key:    "risk.approval",
+			Status: "failed",
+		}},
+		Blockers: []PreDispatchGateBlocker{{
+			Key:      "risk.approval_required",
+			Severity: "human",
+		}},
+		HumanActionRequest: HumanActionRequest{
+			"type": PreDispatchHumanActionRiskApproval,
+		},
+	})
+	require.NoError(t, err)
+	taskID := task.ID
+	decision, err := repo.CreateDecisionRequest(context.Background(), CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		ProjectTaskID:     &taskID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "project_task_approval",
+		TitleSnapshot:     "Approve dispatch gate",
+		StatusSnapshot:    "approved",
+	})
+	require.NoError(t, err)
+	linked, err := repo.LinkPreDispatchGateDecisionRequest(context.Background(), LinkPreDispatchGateDecisionRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ProjectTaskID:     task.ID,
+		GateResultID:      gate.ID,
+		DecisionRequestID: decision.ID,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, linked.DecisionRequestID)
+
+	replayed, err := repo.RecordPreDispatchGateResult(context.Background(), RecordPreDispatchGateResultRequest{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		ProjectTaskID:      task.ID,
+		SelectedEmployeeID: employeeID,
+		AttemptNo:          1,
+		DispatchReason:     DispatchReasonHumanResolved,
+		IdempotencyKey:     idempotencyKey,
+		DispatchToken:      "dispatch-token-decision-linked-replay",
+		Status:             PreDispatchGateStatusPassed,
+		CheckedAt:          checkedAt.Add(time.Minute),
+		Checks: []PreDispatchGateCheck{{
+			Key:    "risk.approval",
+			Status: "passed",
+		}},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, gate.ID, replayed.ID)
+	require.Equal(t, PreDispatchGateStatusPassed, replayed.Status)
+	require.Nil(t, replayed.AttemptID)
+	require.NotNil(t, replayed.DecisionRequestID)
+	require.Equal(t, decision.ID, *replayed.DecisionRequestID)
+	require.Empty(t, replayed.Blockers)
+	require.Nil(t, replayed.HumanActionRequest)
+	require.Len(t, replayed.Checks, 1)
+	require.Equal(t, "passed", replayed.Checks[0].Status)
+}
+
 func TestRecordLinkedPreDispatchGateReplayDoesNotMoveLatest(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	projectID := createProjectFixture(t, repo, tenantID)

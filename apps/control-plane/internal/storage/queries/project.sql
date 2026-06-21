@@ -1576,7 +1576,13 @@ DO UPDATE SET
     created_event_id = COALESCE(project_task_dispatch_gate_results.created_event_id, EXCLUDED.created_event_id),
     updated_at = NOW()
 WHERE project_task_dispatch_gate_results.attempt_id IS NULL
-  AND project_task_dispatch_gate_results.decision_request_id IS NULL
+  AND (
+    project_task_dispatch_gate_results.decision_request_id IS NULL
+    OR (
+      project_task_dispatch_gate_results.status = 'waiting_human'
+      AND EXCLUDED.status IN ('passed', 'blocked', 'retry_later', 'replan_required')
+    )
+  )
 RETURNING *;
 
 -- name: GetProjectTaskDispatchGateResult :one

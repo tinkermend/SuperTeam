@@ -21,6 +21,11 @@ type Service struct {
 	teamScopeAuthorizer   ProjectTeamScopeAuthorizer
 }
 
+const (
+	projectTaskAttemptStartReadinessAttempts = 25
+	projectTaskAttemptStartReadinessBackoff  = 200 * time.Millisecond
+)
+
 type latestConfigRevisionRepository interface {
 	GetLatestConfigRevision(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectConfigRevision, error)
 }
@@ -1844,6 +1849,61 @@ func (s *Service) CompleteProjectTask(ctx context.Context, req CompleteProjectTa
 }
 
 func (s *Service) StartProjectTaskAttempt(ctx context.Context, req StartProjectTaskAttemptRequest) (*ProjectTaskAttempt, error) {
+	var lastErr error
+	for attempt := 0; attempt < projectTaskAttemptStartReadinessAttempts; attempt++ {
+		started, err := s.startProjectTaskAttemptOnce(ctx, req)
+		if err == nil {
+			return started, nil
+		}
+		lastErr = err
+		if !errors.Is(err, ErrProjectConflict) && !errors.Is(err, ErrProjectNotFound) {
+			return nil, err
+		}
+		if !s.projectTaskAttemptStartMayBeAheadOfQueue(ctx, req.ProjectTaskAttemptRuntimeRequest) {
+			return nil, err
+		}
+		if attempt == projectTaskAttemptStartReadinessAttempts-1 {
+			break
+		}
+		timer := time.NewTimer(projectTaskAttemptStartReadinessBackoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, lastErr
+}
+
+func (s *Service) projectTaskAttemptStartMayBeAheadOfQueue(ctx context.Context, req ProjectTaskAttemptRuntimeRequest) bool {
+	task, err := s.repository.GetProjectTask(ctx, req.TenantID, req.ProjectTaskID)
+	if err != nil {
+		return errors.Is(err, ErrProjectNotFound)
+	}
+	if task.CurrentAttemptID == nil {
+		return task.Status == ProjectTaskStatusPlanned || task.Status == ProjectTaskStatusWaitingHuman
+	}
+	if *task.CurrentAttemptID != req.AttemptID {
+		return task.Status == ProjectTaskStatusPlanned || task.Status == ProjectTaskStatusWaitingHuman
+	}
+	if !projectTaskAcceptsRuntimeWriteback(task.Status) {
+		return false
+	}
+	attempt, err := s.repository.GetProjectTaskAttempt(ctx, req.TenantID, req.AttemptID)
+	if err != nil {
+		return errors.Is(err, ErrProjectNotFound)
+	}
+	if attempt.ProjectTaskID != req.ProjectTaskID || attempt.LeaseToken != req.LeaseToken {
+		return false
+	}
+	if attempt.RuntimeNodeID != nil && *attempt.RuntimeNodeID != req.RuntimeNodeID {
+		return false
+	}
+	return attempt.Status == ProjectTaskAttemptStatusQueued
+}
+
+func (s *Service) startProjectTaskAttemptOnce(ctx context.Context, req StartProjectTaskAttemptRequest) (*ProjectTaskAttempt, error) {
 	if _, _, err := s.validateAttemptRuntimeRequest(ctx, req.ProjectTaskAttemptRuntimeRequest); err != nil {
 		return nil, err
 	}

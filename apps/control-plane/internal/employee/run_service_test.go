@@ -213,6 +213,20 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 	if payload["input"] != "请先复现再修复" {
 		t.Fatalf("expected start payload input to mirror prompt, got %#v", payload["input"])
 	}
+	sessionPolicy, ok := payload["session_policy"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected session_policy object, got %#v", payload["session_policy"])
+	}
+	if sessionPolicy["mode"] != "new" || sessionPolicy["recoverable"] != true || sessionPolicy["resume"] != true {
+		t.Fatalf("expected runtime-compatible session policy defaults, got %#v", sessionPolicy)
+	}
+	persistedSessionPolicy, ok := repo.createRunRequests[0].Params["session_policy"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected persisted session_policy object, got %#v", repo.createRunRequests[0].Params["session_policy"])
+	}
+	if persistedSessionPolicy["mode"] != "new" || persistedSessionPolicy["recoverable"] != true || persistedSessionPolicy["resume"] != true {
+		t.Fatalf("expected persisted runtime-compatible session policy defaults, got %#v", persistedSessionPolicy)
+	}
 	for _, key := range []string{"skills", "mcp_servers"} {
 		values, ok := payload[key].([]any)
 		if !ok || len(values) != 0 {

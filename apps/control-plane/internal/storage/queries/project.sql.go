@@ -1628,7 +1628,13 @@ DO UPDATE SET
     created_event_id = COALESCE(project_task_dispatch_gate_results.created_event_id, EXCLUDED.created_event_id),
     updated_at = NOW()
 WHERE project_task_dispatch_gate_results.attempt_id IS NULL
-  AND project_task_dispatch_gate_results.decision_request_id IS NULL
+  AND (
+    project_task_dispatch_gate_results.decision_request_id IS NULL
+    OR (
+      project_task_dispatch_gate_results.status = 'waiting_human'
+      AND EXCLUDED.status IN ('passed', 'blocked', 'retry_later', 'replan_required')
+    )
+  )
 RETURNING id, tenant_id, project_id, project_task_id, accepted_plan_revision_id, planned_task_key, selected_employee_id, attempt_no, dispatch_reason, idempotency_key, dispatch_token, status, checked_at, checks, blockers, human_action_request, retry_after, attempt_id, decision_request_id, created_event_id, created_at, updated_at
 `
 

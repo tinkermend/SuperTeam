@@ -436,6 +436,85 @@ func TestProjectCoordinatorDispatchesDependencyUnlockedReasonOnCompletion(t *tes
 	}, store.dispatchInputs)
 }
 
+func TestProjectCoordinatorRedispatchesApprovedPreDispatchGateDecision(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	decisionRequestID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot:           CoordinationSnapshot{ProjectID: projectID},
+		dispatchEvent:      uuid.New(),
+		gateDecisionTaskID: &taskID,
+	}
+	activities := newRawDispatchWorkflowActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID: uuid.New(),
+			DecisionRequestID: decisionRequestID,
+			Decision:          "approved",
+			ResolvedEventID:   uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{"ApplyPreDispatchGateDecision", "DispatchProjectTask"}, store.calls)
+	require.Len(t, store.applyPreDispatchGateInputs, 1)
+	require.Equal(t, decisionRequestID, store.applyPreDispatchGateInputs[0].DecisionRequestID)
+	require.Len(t, store.dispatchInputs, 1)
+	require.Equal(t, DispatchProjectTaskInput{
+		TenantID:       store.dispatchInputs[0].TenantID,
+		ProjectID:      projectID,
+		TaskID:         taskID,
+		DispatchReason: project.DispatchReasonHumanResolved,
+	}, store.dispatchInputs[0])
+}
+
+func TestProjectCoordinatorKeepsNonGateDecisionObservedOnly(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot:      CoordinationSnapshot{ProjectID: projectID},
+		dispatchEvent: uuid.New(),
+	}
+	activities := newRawDispatchWorkflowActivities(store)
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID: uuid.New(),
+			DecisionRequestID: uuid.New(),
+			Decision:          "approved",
+			ResolvedEventID:   uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Empty(t, store.dispatchInputs)
+	require.Equal(t, []string{"ApplyPreDispatchGateDecision", "AppendProjectEvent"}, store.calls)
+}
+
 func TestProjectCoordinatorRequestsAcceptanceReviewAndAppliesDecision(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
@@ -789,7 +868,9 @@ type recordingActivityStore struct {
 	applyAcceptanceErr          error
 	holdFailureInputs           []HoldDownstreamForFailureInput
 	applyFailureRecoveryInputs  []ApplyFailureRecoveryDecisionInput
+	applyPreDispatchGateInputs  []ApplyPreDispatchGateDecisionInput
 	dispatchInputs              []DispatchProjectTaskInput
+	gateDecisionTaskID          *uuid.UUID
 	persistPlanRevisionInputs   []PersistPlanRevisionInput
 	requestPlanReviewInputs     []RequestPlanRevisionReviewInput
 	resolvePlanReviewInputs     []ResolvePlanRevisionReviewInput
@@ -925,6 +1006,15 @@ func (s *recordingActivityStore) ApplyFailureRecoveryDecision(ctx context.Contex
 	s.calls = append(s.calls, "ApplyFailureRecoveryDecision")
 	s.applyFailureRecoveryInputs = append(s.applyFailureRecoveryInputs, input)
 	return s.failureRecoveryResult, nil
+}
+
+func (s *recordingActivityStore) ApplyPreDispatchGateDecision(ctx context.Context, input ApplyPreDispatchGateDecisionInput) (ApplyPreDispatchGateDecisionResult, error) {
+	s.calls = append(s.calls, "ApplyPreDispatchGateDecision")
+	s.applyPreDispatchGateInputs = append(s.applyPreDispatchGateInputs, input)
+	if s.gateDecisionTaskID == nil {
+		return ApplyPreDispatchGateDecisionResult{}, nil
+	}
+	return ApplyPreDispatchGateDecisionResult{ReadyTaskIDs: []uuid.UUID{*s.gateDecisionTaskID}}, nil
 }
 
 func (s *recordingActivityStore) AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error) {

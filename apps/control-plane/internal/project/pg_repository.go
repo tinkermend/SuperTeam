@@ -2903,6 +2903,9 @@ func (r *PgRepository) StartProjectTaskAttemptWriteback(ctx context.Context, req
 			LeaseToken:        req.LeaseToken,
 		})
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ProjectTaskAttemptWritebackResult{}, ErrProjectConflict
+			}
 			return ProjectTaskAttemptWritebackResult{}, err
 		}
 		attempt, err := projectTaskAttemptFromRecord(row)

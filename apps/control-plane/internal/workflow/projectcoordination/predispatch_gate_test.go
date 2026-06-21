@@ -168,6 +168,108 @@ func TestProjectStoreRunPreDispatchGateCreatesHumanRequestOnce(t *testing.T) {
 	require.Equal(t, "task.requires_human_approval", first.Gate.HumanActionRequest["risk_reason"])
 }
 
+func TestProjectStoreRunPreDispatchGatePassesAfterApprovalDecision(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	demandID := uuid.New()
+	fixedNow := time.Date(2026, 6, 21, 11, 0, 0, 0, time.UTC)
+	repo := &preDispatchGateRepositoryFake{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		task: project.ProjectTask{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			DemandID:                  &demandID,
+			Title:                     "Approve risky work",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			RequiresHumanApproval:     true,
+			AttemptCount:              0,
+		},
+		members: []project.ProjectMember{{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+	}
+	approvals := &preDispatchGateApprovalRecorder{approvalID: uuid.New()}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, approvals, nil, &projectTaskRunStarterFake{}).
+		WithClock(func() time.Time { return fixedNow })
+	input := DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID}
+
+	first, err := store.RunPreDispatchGate(context.Background(), input)
+	require.NoError(t, err)
+	require.Equal(t, project.PreDispatchGateStatusWaitingHuman, first.Gate.Status)
+	require.Len(t, repo.decisionRequests, 1)
+	repo.decisionRequests[0].StatusSnapshot = "approved"
+	resolvedAt := fixedNow.Add(time.Minute)
+	repo.decisionRequests[0].ResolvedAt = &resolvedAt
+
+	second, err := store.RunPreDispatchGate(context.Background(), DispatchProjectTaskInput{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		TaskID:         taskID,
+		DispatchReason: project.DispatchReasonHumanResolved,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, project.PreDispatchGateStatusPassed, second.Gate.Status)
+	require.True(t, second.AllowRunStart)
+	require.Len(t, repo.gates, 2)
+	require.Equal(t, project.ProjectEventTaskDispatchGateChecked, repo.events[len(repo.events)-1].EventType)
+}
+
+func TestProjectStoreApplyPreDispatchGateDecisionIgnoresNonApprovalGateDecision(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	gateID := uuid.New()
+	taskIDCopy := taskID
+	repo := &preDispatchGateRepositoryFake{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		task: project.ProjectTask{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			Title:                     "Budget approval should not redispatch",
+			Status:                    project.ProjectTaskStatusWaitingHuman,
+			AssignedDigitalEmployeeID: &employeeID,
+			AttemptCount:              0,
+		},
+		decisionRequests: []project.DecisionRequest{{
+			ID:                   uuid.New(),
+			TenantID:             tenantID,
+			ProjectID:            projectID,
+			ApprovalRequestID:    uuid.New(),
+			ProjectTaskID:        &taskIDCopy,
+			TargetUserID:         uuid.New(),
+			DecisionType:         "project_task_budget_approval",
+			TitleSnapshot:        "Budget approval",
+			StatusSnapshot:       "approved",
+			DispatchGateResultID: &gateID,
+		}},
+	}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, &projectTaskRunStarterFake{})
+
+	result, err := store.ApplyPreDispatchGateDecision(context.Background(), ApplyPreDispatchGateDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: repo.decisionRequests[0].ID,
+		Decision:          "approved",
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, result.ReadyTaskIDs)
+}
+
 func TestProjectStoreRunPreDispatchGateFailsClosedWhenApprovalsMissing(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

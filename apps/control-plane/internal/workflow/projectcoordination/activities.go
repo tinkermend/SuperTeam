@@ -32,6 +32,7 @@ type ActivityStore interface {
 	ApplyProjectAcceptanceDecision(ctx context.Context, input ApplyProjectAcceptanceDecisionInput) error
 	HoldDownstreamForFailure(ctx context.Context, input HoldDownstreamForFailureInput) (DecisionRequestResult, error)
 	ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) (ApplyFailureRecoveryDecisionResult, error)
+	ApplyPreDispatchGateDecision(ctx context.Context, input ApplyPreDispatchGateDecisionInput) (ApplyPreDispatchGateDecisionResult, error)
 	AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error)
 	DispatchProjectTask(ctx context.Context, input DispatchProjectTaskInput) error
 	FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error
@@ -148,6 +149,13 @@ func (a *Activities) ApplyFailureRecoveryDecision(ctx context.Context, input App
 		return ApplyFailureRecoveryDecisionResult{}, ErrActivityStoreRequired
 	}
 	return a.store.ApplyFailureRecoveryDecision(ctx, input)
+}
+
+func (a *Activities) ApplyPreDispatchGateDecision(ctx context.Context, input ApplyPreDispatchGateDecisionInput) (ApplyPreDispatchGateDecisionResult, error) {
+	if a.store == nil {
+		return ApplyPreDispatchGateDecisionResult{}, ErrActivityStoreRequired
+	}
+	return a.store.ApplyPreDispatchGateDecision(ctx, input)
 }
 
 func (a *Activities) AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error) {

@@ -198,6 +198,18 @@ type ApplyFailureRecoveryDecisionResult struct {
 	ReadyTaskIDs []uuid.UUID
 }
 
+type ApplyPreDispatchGateDecisionInput struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DecisionRequestID uuid.UUID
+	Decision          string
+	Payload           map[string]any
+}
+
+type ApplyPreDispatchGateDecisionResult struct {
+	ReadyTaskIDs []uuid.UUID
+}
+
 type FailureRecoveryAction struct {
 	Action               string
 	NewDigitalEmployeeID *uuid.UUID

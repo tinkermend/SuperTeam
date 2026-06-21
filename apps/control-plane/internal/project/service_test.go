@@ -680,6 +680,26 @@ func TestStartProjectTaskAttemptAdvancesRunning(t *testing.T) {
 	require.NotNil(t, started.RenewedAt)
 }
 
+func TestStartProjectTaskAttemptRetriesUntilQueuedAttemptVisible(t *testing.T) {
+	baseRepo := newMemoryRepository()
+	fixture := newProjectTaskAttemptServiceFixture(baseRepo, ProjectTaskStatusQueued, ProjectTaskAttemptStatusQueued)
+	repo := &delayedAttemptReadinessRepository{
+		memoryRepository:    baseRepo,
+		staleProjectTaskID:  fixture.taskID,
+		staleReadsRemaining: 1,
+	}
+	service, err := NewService(repo)
+	require.NoError(t, err)
+
+	started, err := service.StartProjectTaskAttempt(context.Background(), StartProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("attempt-start-race"),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskAttemptStatusRunning, started.Status)
+	require.Zero(t, repo.staleReadsRemaining)
+}
+
 func TestStartProjectTaskAttemptWritesLedgerEvent(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -1691,6 +1711,26 @@ func newProjectTaskAttemptServiceFixture(repo *memoryRepository, taskStatus, att
 		nodeID:    nodeID,
 		lease:     lease,
 	}
+}
+
+type delayedAttemptReadinessRepository struct {
+	*memoryRepository
+	staleProjectTaskID  uuid.UUID
+	staleReadsRemaining int
+}
+
+func (r *delayedAttemptReadinessRepository) GetProjectTask(ctx context.Context, tenantID, taskID uuid.UUID) (ProjectTask, error) {
+	task, err := r.memoryRepository.GetProjectTask(ctx, tenantID, taskID)
+	if err != nil {
+		return ProjectTask{}, err
+	}
+	if task.ID == r.staleProjectTaskID && r.staleReadsRemaining > 0 {
+		r.staleReadsRemaining--
+		task.Status = ProjectTaskStatusWaitingHuman
+		task.CurrentAttemptID = nil
+		return task, nil
+	}
+	return task, nil
 }
 
 func requireLedgerEventTypes(t *testing.T, events []ExecutionLedgerEvent, expected ...string) {
