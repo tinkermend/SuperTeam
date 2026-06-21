@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/approval"
@@ -14,13 +15,44 @@ import (
 )
 
 type ProjectStore struct {
-	repository    project.Repository
-	approvals     ApprovalCreator
-	inbox         project.DecisionInboxProjector
-	runStarter    ProjectTaskRunStarter
-	readiness     DigitalEmployeeReadinessChecker
-	lending       LendingGatekeeper
-	profileSource DigitalEmployeePlanningProfileSource
+	repository       project.Repository
+	approvals        ApprovalCreator
+	inbox            project.DecisionInboxProjector
+	runStarter       ProjectTaskRunStarter
+	readiness        DigitalEmployeeReadinessChecker
+	lending          LendingGatekeeper
+	profileSource    DigitalEmployeePlanningProfileSource
+	clock            clockFunc
+	employeeReader   GateEmployeeRuntimeReader
+	capabilityReader GateCapabilityReader
+}
+
+type clockFunc func() time.Time
+
+func (s *ProjectStore) WithClock(clock clockFunc) *ProjectStore {
+	s.clock = clock
+	return s
+}
+
+func (s *ProjectStore) now() time.Time {
+	if s.clock != nil {
+		return s.clock()
+	}
+	return time.Now().UTC()
+}
+
+type GateEmployeeRuntimeReader interface {
+	GetEmployeeRuntimeSnapshot(ctx context.Context, tenantID, employeeID uuid.UUID) (project.PreDispatchEmployeeSnapshot, project.PreDispatchRuntimeSnapshot, error)
+}
+
+type GateCapabilityReader interface {
+	GetEmployeeCapabilitySnapshot(ctx context.Context, tenantID, employeeID uuid.UUID, task project.ProjectTask) (project.PreDispatchCapabilitySnapshot, project.PreDispatchToolSnapshot, error)
+}
+
+func (s *ProjectStore) WithPreDispatchGateReaders(employeeReader GateEmployeeRuntimeReader, capabilityReader GateCapabilityReader) *ProjectStore {
+	s.employeeReader = employeeReader
+	s.capabilityReader = capabilityReader
+	return s
 }
 
 // WithDigitalEmployeeReadiness attaches a runtime-readiness checker used to filter the
