@@ -11,6 +11,7 @@ import {
   getProjectOverview,
   getProjectPlanRevision,
   getProjectTaskGraph,
+  listProjectTaskDispatchGates,
   listProjectConfigRevisions,
   listProjectEvidence,
   listProjectPlanRevisions,
@@ -516,6 +517,57 @@ describe("project API", () => {
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/projects/project%201%2Fprimary/task-graph?demand_id=demand+1%2Fprimary",
       expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("lists project task dispatch gates", async () => {
+    const response = {
+      items: [
+        {
+          attempt_no: 1,
+          blockers: [
+            {
+              details: {},
+              key: "runtime.node_offline",
+              retryable: true,
+              severity: "transient",
+            },
+          ],
+          checked_at: "2026-06-21T12:00:00Z",
+          checks: [],
+          dispatch_reason: "root_ready",
+          human_action_request: {},
+          id: "00000000-0000-0000-0000-000000000401",
+          project_task_id: "00000000-0000-0000-0000-000000000402",
+          retry_after: "2026-06-21T12:02:00Z",
+          selected_employee_id: "00000000-0000-0000-0000-000000000403",
+          status: "retry_later",
+        },
+      ],
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(response), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      listProjectTaskDispatchGates(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+        "task 1/primary",
+      ),
+    ).resolves.toEqual(response);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/tasks/task%201%2Fprimary/dispatch-gates",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
     );
   });
 

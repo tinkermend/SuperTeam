@@ -251,6 +251,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/projects/{projectId}/route-decisions", s.projectHandler.ListRouteDecisions)
 				r.Get("/projects/{projectId}/plan-revisions", s.projectHandler.ListPlanRevisions)
 				r.Get("/projects/{projectId}/plan-revisions/{planRevisionId}", s.projectHandler.GetPlanRevision)
+				r.Get("/projects/{projectId}/tasks/{taskId}/dispatch-gates", s.projectHandler.ListProjectTaskDispatchGates)
 				r.Get("/projects/{projectId}/coordination-jobs", s.projectHandler.ListCoordinationJobs)
 				r.Get("/projects/{projectId}/decisions", s.projectHandler.ListDecisionRequests)
 				r.Post("/projects/{projectId}/decisions/{decisionId}/resolve", s.projectHandler.ResolveDecision)

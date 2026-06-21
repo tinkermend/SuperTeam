@@ -221,6 +221,78 @@ func TestProjectHandlerGetsPlanRevision(t *testing.T) {
 	}
 }
 
+func TestHandlerListProjectTaskDispatchGates(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	gateID := uuid.New()
+	selectedEmployeeID := uuid.New()
+	retryAfter := time.Date(2026, 6, 21, 12, 2, 0, 0, time.UTC)
+	service := &handlerTestService{
+		dispatchGates: []PreDispatchGateResult{
+			{
+				ID:                 gateID,
+				TenantID:           tenantID,
+				ProjectID:          projectID,
+				ProjectTaskID:      taskID,
+				SelectedEmployeeID: selectedEmployeeID,
+				AttemptNo:          1,
+				DispatchReason:     DispatchReasonRootReady,
+				Status:             PreDispatchGateStatusRetryLater,
+				CheckedAt:          time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC),
+				Checks:             []PreDispatchGateCheck{{Key: "runtime.ready", Status: "failed", Details: map[string]any{"node_online": false}}},
+				Blockers:           []PreDispatchGateBlocker{{Key: "runtime.node_offline", Severity: "transient", Retryable: true, Details: map[string]any{"node_id": "runtime-node-1"}}},
+				HumanActionRequest: map[string]any{},
+				RetryAfter:         &retryAfter,
+			},
+		},
+	}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/tasks/"+taskID.String()+"/dispatch-gates", nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String(), "taskId": taskID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.ListProjectTaskDispatchGates(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected list dispatch gates 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.dispatchGateListReq.TenantID != tenantID ||
+		service.dispatchGateListReq.ProjectID != projectID ||
+		service.dispatchGateListReq.ProjectTaskID != taskID ||
+		service.dispatchGateListReq.Limit != 50 {
+		t.Fatalf("unexpected dispatch gate list request: %#v", service.dispatchGateListReq)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode dispatch gate response: %v", err)
+	}
+	items, ok := body["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one dispatch gate item, got %#v", body["items"])
+	}
+	item, ok := items[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected object dispatch gate item, got %#v", items[0])
+	}
+	if item["id"] != gateID.String() || item["status"] != string(PreDispatchGateStatusRetryLater) || item["selected_employee_id"] != selectedEmployeeID.String() {
+		t.Fatalf("unexpected dispatch gate item: %#v", item)
+	}
+	blockers, ok := item["blockers"].([]any)
+	if !ok || len(blockers) != 1 {
+		t.Fatalf("expected one blocker, got %#v", item["blockers"])
+	}
+	blocker := blockers[0].(map[string]any)
+	if blocker["key"] != "runtime.node_offline" || blocker["retryable"] != true {
+		t.Fatalf("unexpected blocker response: %#v", blocker)
+	}
+	if item["retry_after"] != retryAfter.Format(time.RFC3339Nano) {
+		t.Fatalf("expected retry_after timestamp, got %#v", item["retry_after"])
+	}
+}
+
 func TestProjectHandlerDemandResponseIncludesNullReviewerWhenAbsent(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()
@@ -1370,6 +1442,8 @@ type handlerTestService struct {
 	planRevisionTenantID   uuid.UUID
 	planRevisionProjectID  uuid.UUID
 	planRevisionID         uuid.UUID
+	dispatchGates          []PreDispatchGateResult
+	dispatchGateListReq    ListPreDispatchGateResultsRequest
 	resolveDecisionReq     ResolveDecisionRequest
 	launchDetailTenantID   uuid.UUID
 	launchDetailDemandID   uuid.UUID
@@ -1513,6 +1587,11 @@ func (s *handlerTestService) GetPlanRevision(ctx context.Context, tenantID, proj
 		}
 	}
 	return nil, ErrProjectNotFound
+}
+
+func (s *handlerTestService) ListPreDispatchGateResults(ctx context.Context, req ListPreDispatchGateResultsRequest) ([]PreDispatchGateResult, error) {
+	s.dispatchGateListReq = req
+	return s.dispatchGates, nil
 }
 
 func (s *handlerTestService) ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error) {

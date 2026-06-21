@@ -1229,6 +1229,14 @@ func (s *Service) ListPlanRevisions(ctx context.Context, req ListPlanRevisionsRe
 	return s.repository.ListPlanRevisions(ctx, req)
 }
 
+func (s *Service) ListPreDispatchGateResults(ctx context.Context, req ListPreDispatchGateResultsRequest) ([]PreDispatchGateResult, error) {
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ProjectTaskID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	req.Limit, req.Offset = normalizePagination(req.Limit, req.Offset)
+	return s.repository.ListPreDispatchGateResults(ctx, req)
+}
+
 func (s *Service) GetPlanRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (*PlanRevision, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil || revisionID == uuid.Nil {
 		return nil, ErrInvalidProject
