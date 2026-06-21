@@ -7,7 +7,9 @@ use serde_json::Value;
 use tokio::process::Command;
 
 use crate::events::ProviderEvent;
-use crate::providers::{ProviderAdapter, ProviderRequest, ProviderRun, stream_child_events};
+use crate::providers::{
+    ProviderAdapter, ProviderRequest, ProviderRun, apply_environment, stream_child_events,
+};
 
 #[derive(Debug, Clone)]
 pub struct CodexProvider {
@@ -24,6 +26,7 @@ impl CodexProvider {
     pub fn build_command(&self, request: &ProviderRequest) -> Command {
         let mut command = Command::new(&self.bin_path);
         command.current_dir(&request.workspace_path);
+        apply_environment(&mut command, request);
         command.arg("exec");
         if request.continue_session {
             command.arg("resume");

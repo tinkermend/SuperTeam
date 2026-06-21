@@ -26,6 +26,7 @@ fn request(workspace_path: &Path) -> ProviderRequest {
         session_id: Some("session-1".to_string()),
         continue_session: false,
         model: None,
+        environment: Default::default(),
     }
 }
 

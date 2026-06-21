@@ -23,6 +23,7 @@ fn request(workspace_path: &Path) -> ProviderRequest {
         session_id: None,
         continue_session: false,
         model: None,
+        environment: Default::default(),
     }
 }
 

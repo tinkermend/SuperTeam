@@ -32,6 +32,7 @@ pub async fn execute_task(
         session_id: None,
         continue_session: false,
         model: extract_model(&task.params),
+        environment: Default::default(),
     };
 
     let mut event_stream = provider.run(request).await?;

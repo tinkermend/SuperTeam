@@ -3,6 +3,7 @@ pub mod claude;
 pub mod codex;
 pub mod opencode;
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::sync::Arc;
@@ -10,6 +11,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::{self, BoxStream};
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdout};
 use tokio::sync::Mutex;
@@ -19,13 +21,21 @@ use crate::events::ProviderEvent;
 
 pub type ProviderEventStream = BoxStream<'static, anyhow::Result<ProviderEvent>>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderRequest {
     pub prompt: String,
     pub workspace_path: PathBuf,
     pub session_id: Option<String>,
     pub continue_session: bool,
     pub model: Option<String>,
+    #[serde(default)]
+    pub environment: BTreeMap<String, String>,
+}
+
+pub fn apply_environment(command: &mut tokio::process::Command, request: &ProviderRequest) {
+    for (name, value) in &request.environment {
+        command.env(name, value);
+    }
 }
 
 #[async_trait]

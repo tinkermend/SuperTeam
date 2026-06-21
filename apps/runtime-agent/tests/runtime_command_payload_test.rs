@@ -56,6 +56,53 @@ fn parses_valid_start_session_payload() {
 }
 
 #[test]
+fn parses_environment_variables_for_session_payload() {
+    let mut payload = valid_payload();
+    payload["environment"] = json!([
+        {"name": "GH_TOKEN", "value": "plain-token", "sensitive": true}
+    ]);
+
+    let parsed = RuntimeSessionCommandPayload::from_command(&command(payload))
+        .expect("valid environment payload");
+
+    assert_eq!(parsed.environment.len(), 1);
+    assert_eq!(parsed.environment[0].name, "GH_TOKEN");
+    assert_eq!(parsed.environment[0].value, "plain-token");
+    assert!(parsed.environment[0].sensitive);
+}
+
+#[test]
+fn rejects_invalid_environment_variable_name() {
+    let mut payload = valid_payload();
+    payload["environment"] = json!([
+        {"name": "1INVALID", "value": "plain-token", "sensitive": true}
+    ]);
+
+    let error = RuntimeSessionCommandPayload::from_command(&command(payload))
+        .expect_err("invalid environment name should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("invalid environment variable name: 1INVALID")
+    );
+}
+
+#[test]
+fn redacted_environment_view_hides_plaintext_values() {
+    let mut payload = valid_payload();
+    payload["environment"] = json!([
+        {"name": "GH_TOKEN", "value": "plain-token", "sensitive": true}
+    ]);
+    let parsed = RuntimeSessionCommandPayload::from_command(&command(payload)).expect("valid");
+    let view = superteam_runtime_agent::runs::redacted_environment_view(&parsed.environment);
+    let rendered = serde_json::to_string(&view).unwrap();
+    assert!(!rendered.contains("plain-token"));
+    assert!(rendered.contains("GH_TOKEN"));
+    assert!(rendered.contains("[redacted]"));
+}
+
+#[test]
 fn parses_opencode_provider_kind() {
     let mut payload = valid_payload();
     payload["provider_type"] = json!("opencode");

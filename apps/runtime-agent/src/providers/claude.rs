@@ -5,7 +5,9 @@ use async_trait::async_trait;
 use tokio::process::Command;
 
 use crate::events::ProviderEvent;
-use crate::providers::{ProviderAdapter, ProviderRequest, ProviderRun, stream_child_events};
+use crate::providers::{
+    ProviderAdapter, ProviderRequest, ProviderRun, apply_environment, stream_child_events,
+};
 
 #[derive(Debug, Clone)]
 pub struct ClaudeProvider {
@@ -22,6 +24,7 @@ impl ClaudeProvider {
     pub fn build_command(&self, request: &ProviderRequest) -> Command {
         let mut command = Command::new(&self.bin_path);
         command.current_dir(&request.workspace_path);
+        apply_environment(&mut command, request);
         command.arg("-p").arg(&request.prompt);
         command.arg("--output-format").arg("stream-json");
         command.arg("--verbose");
