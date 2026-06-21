@@ -170,6 +170,17 @@ fn test_heartbeat_response_deserializes_control_plane_contract() {
     assert_eq!(response.node_id, "test-node-001");
     assert_eq!(response.current_load, 0);
     assert_eq!(response.status, NodeStatus::Online);
+    assert!(response.required_tools.is_empty());
+}
+
+#[test]
+fn test_heartbeat_response_deserializes_required_tools() {
+    let mut value = runtime_node_response();
+    value["required_tools"] = serde_json::json!(["gh", "terraform"]);
+
+    let response: HeartbeatResponse = serde_json::from_value(value).unwrap();
+
+    assert_eq!(response.required_tools, ["gh", "terraform"]);
 }
 
 #[test]

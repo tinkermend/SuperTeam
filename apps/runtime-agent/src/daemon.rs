@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -15,6 +16,7 @@ use crate::executor::TaskExecutor;
 use crate::health::{ProviderHealth, ProviderHealthProbe, probe_provider_health};
 use crate::providers::catalog;
 use crate::session::RuntimeSession;
+use crate::tools::probe_tool;
 
 const SESSION_RENEWAL_MARGIN: Duration = Duration::from_secs(5 * 60);
 const SESSION_RENEWAL_RETRY_DELAY: Duration = Duration::from_secs(30);
@@ -49,7 +51,7 @@ impl RuntimeDaemon {
     }
 
     pub async fn run(self) -> Result<()> {
-        let capabilities = build_capabilities(&self.config).await;
+        let capabilities = build_capabilities(&self.config, &self.config.tools.probe_names).await;
         let Some(session_context) = establish_runtime_session(&self.config, capabilities).await?
         else {
             return Ok(());
@@ -202,7 +204,10 @@ fn build_supported_providers(config: &RuntimeConfig) -> Vec<String> {
     catalog::supported_provider_types(config)
 }
 
-async fn build_capabilities(config: &RuntimeConfig) -> Vec<RuntimeCapabilityInput> {
+pub async fn build_capabilities(
+    config: &RuntimeConfig,
+    probe_tools: &[String],
+) -> Vec<RuntimeCapabilityInput> {
     let mut capabilities = Vec::new();
 
     for descriptor in catalog::configured_provider_descriptors() {
@@ -274,6 +279,34 @@ async fn build_capabilities(config: &RuntimeConfig) -> Vec<RuntimeCapabilityInpu
         metadata: None,
     });
 
+    for name in normalize_tool_set(probe_tools.iter().cloned()) {
+        let probe = probe_tool(&name);
+        let status = if probe.available {
+            "available"
+        } else {
+            "missing"
+        }
+        .to_string();
+        capabilities.push(RuntimeCapabilityInput {
+            capability_type: "tool".to_string(),
+            capability_key: probe.name,
+            provider_type: "tool".to_string(),
+            provider_version: None,
+            binary_path: probe
+                .binary_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            available: probe.available,
+            workspace_base_dir: None,
+            capacity: None,
+            labels: None,
+            status: status.clone(),
+            details: None,
+            health_status: status,
+            metadata: None,
+        });
+    }
+
     capabilities
 }
 
@@ -344,6 +377,7 @@ fn enrollment_status_label(status: &EnrollmentStatus) -> &'static str {
 async fn heartbeat_loop(client: ControlPlaneClient, config: RuntimeConfig) {
     let mut interval =
         tokio::time::interval(Duration::from_secs(config.runtime.heartbeat_interval));
+    let mut last_required_tools = normalize_tool_set(std::iter::empty::<String>());
 
     loop {
         interval.tick().await;
@@ -353,8 +387,45 @@ async fn heartbeat_loop(client: ControlPlaneClient, config: RuntimeConfig) {
             status: NodeStatus::Online,
         };
 
-        if let Err(e) = client.heartbeat(req).await {
-            eprintln!("Heartbeat failed: {}", e);
+        match client.heartbeat(req).await {
+            Ok(response) => {
+                let required_tools = normalize_tool_set(response.required_tools);
+                if required_tools != last_required_tools {
+                    let probe_tools = merge_tool_sets(&config.tools.probe_names, &required_tools);
+                    let capabilities = build_capabilities(&config, &probe_tools).await;
+                    match client
+                        .upsert_capabilities(&config.runtime.node_id, capabilities)
+                        .await
+                    {
+                        Ok(_) => {
+                            last_required_tools = required_tools;
+                        }
+                        Err(e) => {
+                            eprintln!("Runtime capability upsert failed after heartbeat: {}", e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Heartbeat failed: {}", e);
+            }
         }
     }
+}
+
+fn normalize_tool_set<I>(names: I) -> Vec<String>
+where
+    I: IntoIterator<Item = String>,
+{
+    names
+        .into_iter()
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn merge_tool_sets(baseline: &[String], required: &[String]) -> Vec<String> {
+    normalize_tool_set(baseline.iter().cloned().chain(required.iter().cloned()))
 }

@@ -11,6 +11,7 @@ pub struct RuntimeConfig {
     pub runs: RunsSection,
     pub workspace: WorkspaceSection,
     pub providers: ProvidersSection,
+    pub tools: ToolsSection,
     pub logging: LoggingSection,
     pub s3: Option<S3Section>,
 }
@@ -65,6 +66,11 @@ pub struct ProviderSection {
     pub timeout: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ToolsSection {
+    pub probe_names: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoggingSection {
     pub level: String,
@@ -91,6 +97,7 @@ struct FileConfig {
     runs: Option<FileRunsSection>,
     workspace: Option<FileWorkspaceSection>,
     providers: Option<FileProvidersSection>,
+    tools: Option<FileToolsSection>,
     logging: Option<FileLoggingSection>,
     s3: Option<FileS3Section>,
 }
@@ -144,6 +151,11 @@ struct FileProviderSection {
     enabled: Option<bool>,
     binary_path: Option<PathBuf>,
     timeout: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct FileToolsSection {
+    probe_names: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -261,6 +273,12 @@ impl RuntimeConfig {
             }
         }
 
+        if let Some(tools) = file.tools {
+            if let Some(probe_names) = tools.probe_names {
+                self.tools.probe_names = normalize_tool_names(probe_names);
+            }
+        }
+
         if let Some(logging) = file.logging {
             apply_string(&mut self.logging.level, logging.level);
             apply_string(&mut self.logging.format, logging.format);
@@ -356,6 +374,9 @@ impl RuntimeConfig {
             "RUNTIME_AGENT_LOG_OUTPUT" => self.logging.output = value.to_string(),
             "RUNTIME_AGENT_LOG_FILE_PATH" => {
                 self.logging.file_path = Some(PathBuf::from(value));
+            }
+            "RUNTIME_AGENT_TOOL_PROBE_NAMES" => {
+                self.tools.probe_names = parse_tool_probe_names(value);
             }
             "S3_ENDPOINT" => {
                 self.ensure_s3().endpoint = value.to_string();
@@ -475,6 +496,7 @@ impl Default for RuntimeConfig {
                     timeout: 3600,
                 },
             },
+            tools: ToolsSection::default(),
             logging: LoggingSection {
                 level: "info".to_string(),
                 format: "pretty".to_string(),
@@ -510,6 +532,21 @@ fn apply_copy<T: Copy>(target: &mut T, value: Option<T>) {
     if let Some(value) = value {
         *target = value;
     }
+}
+
+fn parse_tool_probe_names(value: &str) -> Vec<String> {
+    normalize_tool_names(value.split(',').map(str::to_string))
+}
+
+fn normalize_tool_names<I>(names: I) -> Vec<String>
+where
+    I: IntoIterator<Item = String>,
+{
+    names
+        .into_iter()
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .collect()
 }
 
 fn parse_env<T>(key: &str, value: &str) -> anyhow::Result<T>

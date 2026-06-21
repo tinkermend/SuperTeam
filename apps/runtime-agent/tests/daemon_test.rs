@@ -29,6 +29,70 @@ fn config_rejects_blank_node_id() {
 }
 
 #[test]
+fn config_probe_baseline_defaults_empty() {
+    let cfg = RuntimeConfig::new("node-a").expect("config");
+
+    assert!(
+        cfg.tools.probe_names.is_empty(),
+        "baseline must default to empty; the authoritative probe set is injected by the control plane"
+    );
+}
+
+#[test]
+fn config_loads_optional_tool_probe_baseline_from_file_and_env() {
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let config_path = temp.path().join("runtime-agent.yaml");
+    std::fs::write(
+        &config_path,
+        r#"
+tools:
+  probe_names:
+    - gh
+    - terraform
+"#,
+    )
+    .expect("write config");
+
+    let file_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        std::iter::empty::<(&str, &str)>(),
+        Default::default(),
+    )
+    .expect("load file config");
+    assert_eq!(file_config.tools.probe_names, ["gh", "terraform"]);
+
+    let env_config = RuntimeConfig::load_with_env(
+        Some(&config_path),
+        [("RUNTIME_AGENT_TOOL_PROBE_NAMES", "gh, ,kubectl,terraform")],
+        Default::default(),
+    )
+    .expect("load env config");
+    assert_eq!(env_config.tools.probe_names, ["gh", "kubectl", "terraform"]);
+}
+
+#[tokio::test]
+async fn build_capabilities_probes_required_tool_set() {
+    let cfg = RuntimeConfig::new("node-a").expect("config");
+    let caps = superteam_runtime_agent::daemon::build_capabilities(
+        &cfg,
+        &["definitely-missing-superteam-tool".to_string()],
+    )
+    .await;
+
+    let tool = caps
+        .iter()
+        .find(|c| {
+            c.capability_type == "tool" && c.capability_key == "definitely-missing-superteam-tool"
+        })
+        .expect("tool capability probed from required set");
+    assert_eq!(tool.provider_type, "tool");
+    assert_eq!(tool.binary_path, None);
+    assert!(!tool.available);
+    assert_eq!(tool.status, "missing");
+    assert_eq!(tool.health_status, "missing");
+}
+
+#[test]
 fn config_loads_runtime_yaml_and_env_overrides() {
     let temp = tempfile::TempDir::new().expect("tempdir");
     let config_path = temp.path().join("runtime-agent.yaml");

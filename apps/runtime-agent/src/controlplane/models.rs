@@ -337,6 +337,8 @@ pub struct HeartbeatResponse {
     pub node_id: String,
     pub name: String,
     pub supported_providers: Vec<String>,
+    #[serde(default)]
+    pub required_tools: Vec<String>,
     pub max_slots: i32,
     pub current_load: i32,
     pub status: NodeStatus,
