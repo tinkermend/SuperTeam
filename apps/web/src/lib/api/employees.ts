@@ -761,11 +761,11 @@ export function upsertEmployeeEnvironmentVariable(
   input: UpsertDigitalEmployeeEnvironmentVariableInput,
 ): Promise<DigitalEmployeeEnvironmentVariableSummary> {
   const encodedEmployeeId = encodePathSegment(employeeId);
-  const encodedName = encodePathSegment(name);
+  const envName = encodePathSegment(name);
 
   return putJson<DigitalEmployeeEnvironmentVariableSummary>(
     options,
-    `/api/v1/digital-employees/${encodedEmployeeId}/environment-variables/${encodedName}`,
+    `/api/v1/digital-employees/${encodedEmployeeId}/environment-variables/${envName}`,
     input,
     "upsert employee environment variable",
   );
@@ -778,9 +778,9 @@ export async function deleteEmployeeEnvironmentVariable(
 ): Promise<void> {
   const fetcher = options.fetcher ?? fetch;
   const encodedEmployeeId = encodePathSegment(employeeId);
-  const encodedName = encodePathSegment(name);
+  const envName = encodePathSegment(name);
   const response = await fetcher(
-    buildApiUrl(options.baseUrl, `/api/v1/digital-employees/${encodedEmployeeId}/environment-variables/${encodedName}`),
+    buildApiUrl(options.baseUrl, `/api/v1/digital-employees/${encodedEmployeeId}/environment-variables/${envName}`),
     {
       credentials: "include",
       method: "DELETE",
