@@ -46,6 +46,7 @@ const skillsFixture = [
     agent_bindings: [
       { agent_id: "agent-1", agent_name: "需求澄清 Agent", team_name: "产品团队", status: "enabled" },
     ],
+    runtime_dependencies: { tools: [], env: [] },
   },
   {
     id: "skill-tdd",
@@ -68,6 +69,7 @@ const skillsFixture = [
     created_by_name: "开发管理员",
     team_bindings: [],
     agent_bindings: [],
+    runtime_dependencies: { tools: [], env: [] },
   },
 ] satisfies Skill[];
 
@@ -144,6 +146,39 @@ describe("SkillsView", () => {
       "http://control-plane.local/api/v1/skills/uploads",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("submits runtime dependency fields when uploading a skill", async () => {
+    const captured: Record<string, string | null> = {};
+    const fetcher = createSkillsFetcher();
+    fetcher.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+      if (url.pathname === "/api/v1/skills/uploads" && method === "POST" && init?.body instanceof FormData) {
+        captured.runtime_tools = (init.body.get("runtime_tools") as string | null) ?? null;
+        captured.runtime_env = (init.body.get("runtime_env") as string | null) ?? null;
+        return jsonResponse({
+          ...skillsFixture[0],
+          id: "skill-github",
+          slug: "github-skill",
+          name: "GitHub Skill",
+          runtime_dependencies: { tools: ["gh"], env: ["GH_TOKEN"] },
+        }, 201);
+      }
+
+      return createSkillsFetcher()(input, init);
+    });
+    const screen = await renderSkillsView(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "上传技能" }));
+    await userEvent.fill(screen.getByLabelText("技能名称"), "GitHub Skill");
+    await userEvent.fill(screen.getByLabelText("运行依赖 CLI"), "gh");
+    await userEvent.fill(screen.getByLabelText("运行依赖环境变量"), "GH_TOKEN");
+    await userEvent.upload(screen.getByLabelText("技能 zip 包"), new File(["zip"], "skill.zip", { type: "application/zip" }));
+    await userEvent.click(screen.getByRole("button", { name: "上传" }));
+
+    expect(captured.runtime_tools).toBe("gh");
+    expect(captured.runtime_env).toBe("GH_TOKEN");
   });
 
   it("deletes a skill after confirmation", async () => {

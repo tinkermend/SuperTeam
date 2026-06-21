@@ -269,6 +269,7 @@ function SkillListPanel({
                   <span className="block truncate font-medium">{skill.name}</span>
                   <span className="block truncate text-xs text-muted-foreground">
                     {skill.archive_file_count} 个文件 · {skill.team_bindings.length} 个团队
+                    {runtimeDependencyCount(skill) > 0 ? ` · ${runtimeDependencyCount(skill)} 个运行依赖` : ""}
                   </span>
                 </span>
               </button>
@@ -338,6 +339,7 @@ function SkillDetailPanel({
               <Badge key={tag} variant="outline">{tag}</Badge>
             ))}
           </div>
+          <RuntimeDependencyBadges skill={skill} />
         </CardContent>
       </LiquidCard>
 
@@ -563,6 +565,8 @@ function SkillUploadDialog({
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState("");
   const [riskLevel, setRiskLevel] = useState("medium");
+  const [runtimeTools, setRuntimeTools] = useState("");
+  const [runtimeEnv, setRuntimeEnv] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const upload = useMutation({
     mutationFn: () => {
@@ -574,6 +578,10 @@ function SkillUploadDialog({
         file,
         name,
         risk_level: riskLevel,
+        runtime_dependencies: {
+          tools: splitDependencyInput(runtimeTools),
+          env: splitDependencyInput(runtimeEnv),
+        },
         tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean),
       });
     },
@@ -582,6 +590,8 @@ function SkillUploadDialog({
       setDescription("");
       setTags("");
       setRiskLevel("medium");
+      setRuntimeTools("");
+      setRuntimeEnv("");
       setFile(null);
       onUploaded(skill);
     },
@@ -625,6 +635,24 @@ function SkillUploadDialog({
             <Label htmlFor="skill-tags">标签</Label>
             <Input id="skill-tags" onChange={(event) => setTags(event.target.value)} placeholder="诊断,自动化" value={tags} />
           </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="skill-runtime-tools">运行依赖 CLI</Label>
+            <Input
+              id="skill-runtime-tools"
+              onChange={(event) => setRuntimeTools(event.target.value)}
+              placeholder="gh,kubectl"
+              value={runtimeTools}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="skill-runtime-env">运行依赖环境变量</Label>
+            <Input
+              id="skill-runtime-env"
+              onChange={(event) => setRuntimeEnv(event.target.value)}
+              placeholder="GH_TOKEN"
+              value={runtimeEnv}
+            />
+          </div>
           <div className="flex flex-col gap-2 md:col-span-2">
             <Label htmlFor="skill-description">技能描述</Label>
             <Textarea id="skill-description" onChange={(event) => setDescription(event.target.value)} value={description} />
@@ -640,6 +668,26 @@ function SkillUploadDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function RuntimeDependencyBadges({ skill }: { skill: Skill }) {
+  const tools = skill.runtime_dependencies?.tools ?? [];
+  const env = skill.runtime_dependencies?.env ?? [];
+  if (tools.length === 0 && env.length === 0) {
+    return <p className="text-xs text-muted-foreground">运行依赖：无</p>;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-muted-foreground">运行依赖</span>
+      {tools.map((tool) => (
+        <Badge key={`tool-${tool}`} variant="secondary">CLI {tool}</Badge>
+      ))}
+      {env.map((name) => (
+        <Badge key={`env-${name}`} variant="outline">ENV {name}</Badge>
+      ))}
+    </div>
   );
 }
 
@@ -659,6 +707,14 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       <span className="truncate font-medium">{value}</span>
     </div>
   );
+}
+
+function runtimeDependencyCount(skill: Skill) {
+  return (skill.runtime_dependencies?.tools?.length ?? 0) + (skill.runtime_dependencies?.env?.length ?? 0);
+}
+
+function splitDependencyInput(value: string): string[] {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
 
 function countAgentBindings(skills: Skill[]) {

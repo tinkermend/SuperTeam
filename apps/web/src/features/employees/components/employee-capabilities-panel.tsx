@@ -33,6 +33,12 @@ import {
   type EffectiveEmployeeSkill,
   type Skill,
 } from "@/lib/api/skills";
+import {
+  deleteEmployeeEnvironmentVariable,
+  listEmployeeEnvironmentVariables,
+  upsertEmployeeEnvironmentVariable,
+  type DigitalEmployeeEnvironmentVariableSummary,
+} from "@/lib/api/employees";
 
 type EmployeeCapabilitiesPanelProps = {
   apiOptions: ApiClientOptions;
@@ -46,6 +52,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
   const [mcpName, setMcpName] = useState("");
   const [mcpUrl, setMcpUrl] = useState("");
   const [credentialId, setCredentialId] = useState(noCredentialValue);
+  const [replacementValues, setReplacementValues] = useState<Record<string, string>>({});
 
   const marketplace = useQuery({
     queryKey: ["skills", ""],
@@ -65,6 +72,11 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
   const effectiveMcp = useQuery({
     queryKey: ["effective-mcp-servers", employeeId],
     queryFn: () => listEffectiveMcpServers(apiOptions, employeeId),
+    placeholderData: keepPreviousData,
+  });
+  const envVars = useQuery({
+    queryKey: ["employee-environment-variables", employeeId],
+    queryFn: () => listEmployeeEnvironmentVariables(apiOptions, employeeId),
     placeholderData: keepPreviousData,
   });
 
@@ -136,6 +148,30 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
       ]);
     },
   });
+  const upsertEnvMutation = useMutation({
+    mutationFn: (input: { name: string; value: string; sensitive: boolean }) =>
+      upsertEmployeeEnvironmentVariable(apiOptions, employeeId, input.name, {
+        value: input.value,
+        sensitive: input.sensitive,
+      }),
+    onSuccess: async (_summary, input) => {
+      setReplacementValues((current) => ({ ...current, [input.name]: "" }));
+      await queryClient.invalidateQueries({ queryKey: ["employee-environment-variables", employeeId] });
+      await queryClient.invalidateQueries({ queryKey: ["employee-skills", employeeId] });
+    },
+  });
+  const deleteEnvMutation = useMutation({
+    mutationFn: (name: string) => deleteEmployeeEnvironmentVariable(apiOptions, employeeId, name),
+    onSuccess: async (_result, name) => {
+      setReplacementValues((current) => {
+        const next = { ...current };
+        delete next[name];
+        return next;
+      });
+      await queryClient.invalidateQueries({ queryKey: ["employee-environment-variables", employeeId] });
+      await queryClient.invalidateQueries({ queryKey: ["employee-skills", employeeId] });
+    },
+  });
 
   const canCreateMcp =
     mcpName.trim().length > 0 && mcpUrl.trim().length > 0 && !createMcpMutation.isPending;
@@ -183,6 +219,26 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
               ))}
             </div>
           </section>
+
+          <EmployeeEnvironmentPanel
+            envVars={envVars.data ?? []}
+            isError={envVars.isError}
+            isFetching={envVars.isFetching}
+            isLoading={envVars.isLoading}
+            onDelete={(name) => deleteEnvMutation.mutate(name)}
+            onReplace={(name, sensitive) => {
+              const value = replacementValues[name] ?? "";
+              if (value) {
+                upsertEnvMutation.mutate({ name, value, sensitive });
+              }
+            }}
+            onReplacementValueChange={(name, value) =>
+              setReplacementValues((current) => ({ ...current, [name]: value }))
+            }
+            pendingDelete={deleteEnvMutation.isPending}
+            pendingReplace={upsertEnvMutation.isPending}
+            replacementValues={replacementValues}
+          />
 
           <section className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
@@ -346,6 +402,9 @@ function EmployeeSkillRow({
             <StatusBadge tone={skillRiskTone(entry.skill.risk_level)}>
               {skillRiskLabel(entry.skill.risk_level)}
             </StatusBadge>
+            {skillLoadStatusBadges(entry).map((status) => (
+              <StatusBadge key={status.label} tone={status.tone}>{status.label}</StatusBadge>
+            ))}
           </div>
           <p className="truncate text-xs text-muted-foreground">{entry.skill.description}</p>
         </div>
@@ -361,6 +420,101 @@ function EmployeeSkillRow({
         {`移除 ${entry.skill.name}`}
       </Button>
     </div>
+  );
+}
+
+function EmployeeEnvironmentPanel({
+  envVars,
+  isError,
+  isFetching,
+  isLoading,
+  onDelete,
+  onReplace,
+  onReplacementValueChange,
+  pendingDelete,
+  pendingReplace,
+  replacementValues,
+}: {
+  envVars: DigitalEmployeeEnvironmentVariableSummary[];
+  isError: boolean;
+  isFetching: boolean;
+  isLoading: boolean;
+  onDelete: (name: string) => void;
+  onReplace: (name: string, sensitive: boolean) => void;
+  onReplacementValueChange: (name: string, value: string) => void;
+  pendingDelete: boolean;
+  pendingReplace: boolean;
+  replacementValues: Record<string, string>;
+}) {
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="flex items-center gap-2 text-sm font-medium">
+          <KeyRound className="size-4 text-[color:var(--superteam-decision)]" />
+          环境变量
+        </h3>
+        {isFetching ? <StatusBadge tone="info">刷新中</StatusBadge> : null}
+      </div>
+      {isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
+      {isError ? <p className="text-sm text-destructive">环境变量加载失败</p> : null}
+      {!isLoading && !isError && envVars.length === 0 ? (
+        <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无员工环境变量</p>
+      ) : null}
+      {envVars.length > 0 ? (
+        <div className="overflow-x-auto rounded-md border">
+          <div className="grid min-w-[760px] grid-cols-[150px_90px_minmax(140px,1fr)_150px_260px] border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
+            <span>名称</span>
+            <span>状态</span>
+            <span>指纹</span>
+            <span>更新时间</span>
+            <span>操作</span>
+          </div>
+          {envVars.map((envVar) => (
+            <div
+              className="grid min-w-[760px] grid-cols-[150px_90px_minmax(140px,1fr)_150px_260px] items-center gap-2 border-b px-3 py-2 text-sm last:border-b-0"
+              key={envVar.name}
+            >
+              <span className="truncate font-medium">{envVar.name}</span>
+              <span>
+                <StatusBadge tone={envVar.configured ? "success" : "warning"}>
+                  {envVar.configured ? "已配置" : "缺失"}
+                </StatusBadge>
+              </span>
+              <span className="truncate font-mono text-xs text-muted-foreground">{envVar.fingerprint || "-"}</span>
+              <span className="truncate text-xs text-muted-foreground">{formatDateTime(envVar.updated_at)}</span>
+              <span className="flex items-center gap-2">
+                <Input
+                  aria-label={`替换 ${envVar.name}`}
+                  className="h-8"
+                  onChange={(event) => onReplacementValueChange(envVar.name, event.target.value)}
+                  type="password"
+                  value={replacementValues[envVar.name] ?? ""}
+                />
+                <Button
+                  disabled={pendingReplace || !(replacementValues[envVar.name] ?? "")}
+                  onClick={() => onReplace(envVar.name, envVar.sensitive)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  替换
+                </Button>
+                <Button
+                  aria-label={`删除环境变量 ${envVar.name}`}
+                  disabled={pendingDelete}
+                  onClick={() => onDelete(envVar.name)}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Trash2 />
+                </Button>
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -462,6 +616,35 @@ function skillRiskLabel(riskLevel: string) {
   };
 
   return labels[riskLevel] ?? riskLevel;
+}
+
+function skillLoadStatusBadges(entry: EffectiveEmployeeSkill): Array<{ label: string; tone: "success" | "warning" | "info" | "neutral" }> {
+  const status = entry.runtime_dependency_status;
+  const missingTools = status?.missing_tools ?? [];
+  const missingEnv = status?.missing_env ?? [];
+  const dependencyCount =
+    (entry.skill.runtime_dependencies?.tools?.length ?? 0) + (entry.skill.runtime_dependencies?.env?.length ?? 0);
+
+  if (missingTools.length > 0 || status?.load_status === "missing_runtime_tools") {
+    return [{ label: `缺少 Runtime 工具${missingTools.length ? `：${missingTools.join(",")}` : ""}`, tone: "warning" }];
+  }
+  if (missingEnv.length > 0 || status?.load_status === "missing_employee_env") {
+    return [{ label: `缺少员工环境变量${missingEnv.length ? `：${missingEnv.join(",")}` : ""}`, tone: "warning" }];
+  }
+  if (status?.load_status === "waiting_runtime_report") {
+    return [{ label: "等待 Runtime 上报", tone: "info" }];
+  }
+  if (!status?.load_status && dependencyCount > 0) {
+    return [{ label: "等待 Runtime 上报", tone: "info" }];
+  }
+  return [{ label: "可加载", tone: "success" }];
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-CN", { hour12: false });
 }
 
 function serverStatusLabel(status: string) {

@@ -27,6 +27,7 @@ import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 import { EmployeeAvatar } from "./avatar";
 import { employeeAvatarAsset } from "./avatar-library";
+import { EmployeeCapabilitiesPanel } from "./components/employee-capabilities-panel";
 
 const activeRunStatuses = new Set<DigitalEmployeeRunStatus>(["queued", "dispatching", "running", "cancelling"]);
 const failedRunStatuses = new Set<DigitalEmployeeRunStatus>(["failed", "cancelled", "timed_out"]);
@@ -313,6 +314,8 @@ export function EmployeeDetailView({ apiBaseUrl, employeeId, fetcher }: Employee
                 </form>
               </div>
             </section>
+
+            <EmployeeCapabilitiesPanel apiOptions={apiOptions} employeeId={employeeId} />
 
             <section className="rounded-md border p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
