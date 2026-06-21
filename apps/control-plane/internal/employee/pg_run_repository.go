@@ -541,6 +541,10 @@ func redactMap(payload map[string]any, blocked map[string]struct{}) map[string]a
 	}
 	redacted := make(map[string]any, len(payload))
 	for key, value := range payload {
+		if strings.EqualFold(key, "environment") {
+			redacted[key] = redactEnvironmentPayload(value)
+			continue
+		}
 		if _, ok := blocked[strings.ToLower(key)]; ok {
 			redacted[key] = "[redacted]"
 			continue
@@ -569,6 +573,43 @@ func redactValue(value any, blocked map[string]struct{}) any {
 	default:
 		return value
 	}
+}
+
+func redactEnvironmentPayload(value any) any {
+	switch typed := value.(type) {
+	case []any:
+		redacted := make([]any, len(typed))
+		for i, item := range typed {
+			redacted[i] = redactEnvironmentEntry(item)
+		}
+		return redacted
+	case []map[string]any:
+		redacted := make([]map[string]any, len(typed))
+		for i, item := range typed {
+			if entry, ok := redactEnvironmentEntry(item).(map[string]any); ok {
+				redacted[i] = entry
+			}
+		}
+		return redacted
+	default:
+		return value
+	}
+}
+
+func redactEnvironmentEntry(value any) any {
+	entry, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	redacted := make(map[string]any, len(entry))
+	for key, item := range entry {
+		if strings.EqualFold(key, "value") {
+			redacted[key] = "[redacted]"
+			continue
+		}
+		redacted[key] = item
+	}
+	return redacted
 }
 
 func digitalEmployeeRunFromQuery(run queries.TaskRun) *DigitalEmployeeRun {

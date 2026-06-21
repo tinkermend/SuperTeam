@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	cpruntime "github.com/superteam/control-plane/internal/runtime"
+	"github.com/superteam/control-plane/internal/skill"
 )
 
 func TestRunServiceCreateRunRejectsActiveRun(t *testing.T) {
@@ -227,6 +228,121 @@ func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 	}
 	if len(audit.events) != 1 || audit.events[0].eventType != "digital_employee_run_created" || audit.events[0].action != "employee.run.create" {
 		t.Fatalf("expected create audit event, got %#v", audit.events)
+	}
+}
+
+func TestRunServiceCreateRunRejectsSkillWithMissingToolDependency(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	repo.runtimeSkills = []skill.SkillRuntimeRecord{{
+		ID: uuid.New(), Slug: "github", ArchiveObjectRef: "s3://bucket/github.zip",
+		ArchiveChecksum: strings.Repeat("a", 64), ArchiveSizeBytes: 10, ArchiveFileCount: 1,
+		RuntimeDependencies: skill.SkillRuntimeDependencies{Tools: []string{"gh"}},
+	}}
+	repo.runtimeCapabilities = []cpruntime.RuntimeCapability{{
+		CapabilityType: "tool",
+		CapabilityKey:  "git",
+		Available:      true,
+	}}
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := newRunServiceWithListers(t, repo, dispatcher)
+
+	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+
+	if err == nil || !strings.Contains(err.Error(), "gh") {
+		t.Fatalf("expected missing gh dependency, got %v", err)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected missing dependency not to dispatch, got %#v", dispatcher.commands)
+	}
+}
+
+func TestRunServiceStartSessionPayloadIncludesLoadableSkillsAndEnvironment(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	repo.runtimeCapabilities = []cpruntime.RuntimeCapability{{
+		CapabilityType: "tool",
+		CapabilityKey:  "gh",
+		Available:      true,
+	}}
+	repo.runtimeSkills = []skill.SkillRuntimeRecord{{
+		ID: uuid.New(), Slug: "github", ArchiveObjectRef: "s3://bucket/github.zip",
+		ArchiveChecksum: strings.Repeat("b", 64), ArchiveSizeBytes: 10, ArchiveFileCount: 1,
+		RuntimeDependencies: skill.SkillRuntimeDependencies{Tools: []string{"gh"}, Env: []string{"GH_TOKEN"}},
+	}}
+	repo.runtimeEnv = []RuntimeEnvironmentVariablePayload{{
+		Name:      "GH_TOKEN",
+		Value:     "plain-token",
+		Sensitive: true,
+	}}
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := newRunServiceWithListers(t, repo, dispatcher)
+
+	run, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one dispatched command, got %#v", dispatcher.commands)
+	}
+	payload := commandPayload(t, dispatcher.commands[0].command)
+	environment, ok := payload["environment"].([]any)
+	if !ok || len(environment) != 1 {
+		t.Fatalf("expected one env payload, got %#v", payload["environment"])
+	}
+	env := environment[0].(map[string]any)
+	if env["name"] != "GH_TOKEN" || env["value"] != "plain-token" || env["sensitive"] != true {
+		t.Fatalf("unexpected env payload: %#v", env)
+	}
+	if got := payload["skills"].([]any); len(got) != 1 {
+		t.Fatalf("expected one skill payload, got %#v", payload["skills"])
+	}
+	if run.CommandID == "" {
+		t.Fatal("expected command id")
+	}
+}
+
+func TestRunServiceCreateRunReportsPendingRuntimeWhenNodeHasNotReported(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	repo.runtimeSkills = []skill.SkillRuntimeRecord{{
+		ID: uuid.New(), Slug: "github", ArchiveObjectRef: "s3://bucket/github.zip",
+		ArchiveChecksum: strings.Repeat("c", 64), ArchiveSizeBytes: 10, ArchiveFileCount: 1,
+		RuntimeDependencies: skill.SkillRuntimeDependencies{Tools: []string{"gh"}},
+	}}
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := newRunServiceWithListers(t, repo, dispatcher)
+
+	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+
+	if err == nil || !strings.Contains(err.Error(), "pending_runtime") {
+		t.Fatalf("expected pending_runtime failure, got %v", err)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("expected pending runtime not to dispatch, got %#v", dispatcher.commands)
+	}
+}
+
+func TestRunServiceRuntimeEventPayloadRedactsEnvironmentValues(t *testing.T) {
+	redacted := redactRuntimeEventPayload(map[string]any{
+		"environment": []any{
+			map[string]any{"name": "GH_TOKEN", "value": "plain-token", "sensitive": true},
+		},
+	})
+
+	environment, ok := redacted["environment"].([]any)
+	if !ok || len(environment) != 1 {
+		t.Fatalf("expected one redacted environment entry, got %#v", redacted["environment"])
+	}
+	entry := environment[0].(map[string]any)
+	if entry["name"] != "GH_TOKEN" || entry["sensitive"] != true {
+		t.Fatalf("expected name and sensitive preserved, got %#v", entry)
+	}
+	if entry["value"] != "[redacted]" {
+		t.Fatalf("expected environment value redacted, got %#v", entry)
 	}
 }
 
@@ -910,6 +1026,15 @@ func mustNewRunService(t *testing.T, repo DigitalEmployeeRunRepository, dispatch
 	return service
 }
 
+func newRunServiceWithListers(t *testing.T, repo *fakeRunServiceRepository, dispatcher RuntimeCommandDispatcher) *DigitalEmployeeRunService {
+	t.Helper()
+	service := mustNewRunService(t, repo, dispatcher)
+	service.SetSkillLister(repo)
+	service.SetRuntimeCapabilityLister(repo)
+	service.SetEnvironmentLister(repo)
+	return service
+}
+
 func validCreateRunServiceRequest() CreateDigitalEmployeeRunRequest {
 	timeoutSec := int32(120)
 	graceSec := int32(15)
@@ -1006,6 +1131,9 @@ type fakeRunServiceRepository struct {
 	commandReceipt        *RuntimeCommandReceipt
 	commandReceipts       []CreateRuntimeCommandReceiptRequest
 	receiptUpdates        []UpdateRuntimeCommandReceiptRequest
+	runtimeSkills         []skill.SkillRuntimeRecord
+	runtimeCapabilities   []cpruntime.RuntimeCapability
+	runtimeEnv            []RuntimeEnvironmentVariablePayload
 }
 
 func newFakeRunServiceRepository() *fakeRunServiceRepository {
@@ -1072,6 +1200,18 @@ func (f *fakeRunServiceRepository) ListWorkspaceFilesForSync(_ context.Context, 
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeRunServiceRepository) ListSkillsForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]skill.SkillRuntimeRecord, error) {
+	return f.runtimeSkills, nil
+}
+
+func (f *fakeRunServiceRepository) ListRuntimeCapabilitiesForNode(context.Context, uuid.UUID, string) ([]cpruntime.RuntimeCapability, error) {
+	return f.runtimeCapabilities, nil
+}
+
+func (f *fakeRunServiceRepository) ListRuntimeEnvironmentVariablesForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]RuntimeEnvironmentVariablePayload, error) {
+	return f.runtimeEnv, nil
 }
 
 func (f *fakeRunServiceRepository) UpsertWorkspaceFileSync(context.Context, UpsertWorkspaceFileSyncParams) error {
