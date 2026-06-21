@@ -196,6 +196,7 @@ type Querier interface {
 	GetRuntimeEnrollment(ctx context.Context, arg GetRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	GetRuntimeEnrollmentByNodeID(ctx context.Context, arg GetRuntimeEnrollmentByNodeIDParams) (RuntimeEnrollment, error)
 	GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNode, error)
+	GetRuntimeNodeByID(ctx context.Context, id uuid.UUID) (RuntimeNode, error)
 	GetRuntimeProvisioningPreflight(ctx context.Context, arg GetRuntimeProvisioningPreflightParams) (GetRuntimeProvisioningPreflightRow, error)
 	GetRuntimeToken(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (AuthRuntimeToken, error)

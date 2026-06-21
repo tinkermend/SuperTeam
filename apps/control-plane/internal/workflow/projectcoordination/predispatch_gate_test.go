@@ -631,6 +631,63 @@ func TestProjectStoreRunPreDispatchGateReaderMergeKeepsProjectExecutorStatus(t *
 	require.True(t, decision.AllowRunStart)
 }
 
+func TestProjectStoreRunPreDispatchGateCapabilityReaderPreservesPlannerHardMissing(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	repo := &preDispatchGateRepositoryFake{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		task: project.ProjectTask{
+			ID:                        taskID,
+			TenantID:                  tenantID,
+			ProjectID:                 projectID,
+			Title:                     "Preserve capability evidence",
+			Status:                    project.ProjectTaskStatusPlanned,
+			AssignedDigitalEmployeeID: &employeeID,
+			AttemptCount:              0,
+			InputRequirements: map[string]any{
+				"required_capabilities": []any{"database.read"},
+			},
+			PlannerMetadata: map[string]any{
+				"employee_selection": map[string]any{
+					"required_capabilities": []any{"database.read", "database.write"},
+					"missing_capabilities":  []any{"database.write"},
+				},
+			},
+		},
+		members: []project.ProjectMember{{
+			ID:            uuid.New(),
+			TenantID:      tenantID,
+			ProjectID:     projectID,
+			PrincipalType: project.PrincipalTypeDigitalEmployee,
+			PrincipalID:   employeeID,
+			ProjectRole:   project.ProjectRoleExecutor,
+			Status:        "active",
+		}},
+	}
+	capabilityReader := preDispatchGateCapabilityReader{
+		capabilities: project.PreDispatchCapabilitySnapshot{
+			Required: []string{"database.read"},
+		},
+	}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, &projectTaskRunStarterFake{}).
+		WithPreDispatchGateReaders(nil, capabilityReader)
+
+	decision, err := store.RunPreDispatchGate(context.Background(), DispatchProjectTaskInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		TaskID:    taskID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, project.PreDispatchGateStatusReplanRequired, decision.Gate.Status)
+	require.True(t, decision.Terminal)
+	require.Len(t, decision.Gate.Blockers, 1)
+	require.Equal(t, "capability.hard_missing", decision.Gate.Blockers[0].Key)
+	require.Equal(t, []string{"database.write"}, decision.Gate.Blockers[0].Details["hard_missing"])
+}
+
 func TestProjectStoreRunPreDispatchGateDoesNotCreateRunOnRetryLater(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -1038,6 +1095,15 @@ type preDispatchGateEmployeeRuntimeReader struct {
 func (r *preDispatchGateEmployeeRuntimeReader) GetEmployeeRuntimeSnapshot(ctx context.Context, tenantID, projectID, employeeID uuid.UUID) (project.PreDispatchEmployeeSnapshot, project.PreDispatchRuntimeSnapshot, error) {
 	r.projectID = projectID
 	return r.employee, r.runtime, nil
+}
+
+type preDispatchGateCapabilityReader struct {
+	capabilities project.PreDispatchCapabilitySnapshot
+	tools        project.PreDispatchToolSnapshot
+}
+
+func (r preDispatchGateCapabilityReader) GetEmployeeCapabilitySnapshot(ctx context.Context, tenantID, employeeID uuid.UUID, task project.ProjectTask) (project.PreDispatchCapabilitySnapshot, project.PreDispatchToolSnapshot, error) {
+	return r.capabilities, r.tools, nil
 }
 
 func countProjectEvents(events []project.ProjectEvent, eventType project.ProjectEventType) int {

@@ -394,6 +394,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	runWritebackService.WithExecutionLedgerRecorder(providerEventLedgerRecorder{repository: providerLedgerRepository})
 
 	teamLendingRepository := teamlending.NewPgRepository(q)
+	capabilityRepository := capability.NewPgRepository(q)
 
 	coordinatorClient := project.CoordinatorSignalClient(project.NoopCoordinatorSignalClient{})
 	var coordinationWorker lifecycleWorker
@@ -408,6 +409,11 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		}
 		temporalClientClose = temporalClient.Close
 		coordinatorClient = projectcoordination.NewSignalClient(temporalClient, cfg.Temporal.TaskQueue)
+		gateAdapter := preDispatchGateAdapter{
+			employees:    employeeRepository,
+			runtimeNodes: runtimeRepository,
+			capabilities: capabilityRepository,
+		}
 		coordinationStore := projectcoordination.NewProjectStoreWithApprovalsInboxAndRunStarter(
 			projectRepository,
 			approvalService,
@@ -415,7 +421,8 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 			projectTaskRunStarterAdapter{runService: runService},
 		).WithDigitalEmployeeReadiness(digitalEmployeeReadinessAdapter{repository: employeeRepository}).
 			WithLendingGatekeeper(lendingGatekeeperAdapter{employees: employeeRepository, lending: teamLendingRepository}).
-			WithDigitalEmployeePlanningProfiles(digitalEmployeePlanningProfileAdapter{reader: employeeRepository})
+			WithDigitalEmployeePlanningProfiles(digitalEmployeePlanningProfileAdapter{reader: employeeRepository}).
+			WithPreDispatchGateReaders(gateAdapter, gateAdapter)
 		coordinationActivities := projectcoordination.NewActivities(coordinationStore, routePlannerFromConfig(cfg.Planner))
 		coordinationWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
 	}
@@ -437,7 +444,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if err != nil {
 		return nil, err
 	}
-	capabilityRepository := capability.NewPgRepository(q)
 	var credentialSealer capability.CredentialSealer
 	if credentialKey := os.Getenv("CONTROL_PLANE_CREDENTIAL_KEY"); credentialKey != "" {
 		credentialSealer, err = capability.NewAESGCMCredentialSealer(credentialKey)

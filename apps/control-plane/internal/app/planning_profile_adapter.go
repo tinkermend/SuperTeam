@@ -2,12 +2,21 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/project"
+	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/workflow/projectcoordination"
 )
+
+const runtimeNodeHeartbeatTTL = 2 * time.Minute
 
 type digitalEmployeePlanningProfileReader interface {
 	GetDigitalEmployee(ctx context.Context, tenantID, employeeID uuid.UUID) (employee.DigitalEmployeeRecord, error)
@@ -16,8 +25,27 @@ type digitalEmployeePlanningProfileReader interface {
 	GetDigitalEmployeeOperationalSignals(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]employee.OperationalSignals, error)
 }
 
+type gateRuntimeNodeReader interface {
+	GetNode(ctx context.Context, nodeID string) (runtimepkg.NodeRecord, error)
+}
+
+type gateRuntimeNodeIDReader interface {
+	GetNodeByID(ctx context.Context, id uuid.UUID) (runtimepkg.NodeRecord, error)
+}
+
+type gateCapabilityReader interface {
+	ListEffectiveMCPServers(ctx context.Context, req capability.EmployeeScopedRequest) ([]capability.MCPServer, error)
+}
+
 type digitalEmployeePlanningProfileAdapter struct {
 	reader digitalEmployeePlanningProfileReader
+}
+
+type preDispatchGateAdapter struct {
+	employees    digitalEmployeePlanningProfileReader
+	runtimeNodes gateRuntimeNodeReader
+	capabilities gateCapabilityReader
+	now          func() time.Time
 }
 
 func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]projectcoordination.DigitalEmployeePlanningProfileSourceRecord, error) {
@@ -38,12 +66,12 @@ func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx contex
 			return nil, err
 		}
 		record := projectcoordination.DigitalEmployeePlanningProfileSourceRecord{
-			DigitalEmployeeID:     employeeRecord.ID,
-			EmployeeType:          employeeRecord.EmployeeType,
-			Role:                  employeeRecord.Role,
-			EmployeeStatus:        string(employeeRecord.Status),
-			PermissionPolicy:      clonePlanningProfileMap(employeeRecord.PermissionPolicy),
-			ContextPolicy:         clonePlanningProfileMap(employeeRecord.ContextPolicy),
+			DigitalEmployeeID: employeeRecord.ID,
+			EmployeeType:      employeeRecord.EmployeeType,
+			Role:              employeeRecord.Role,
+			EmployeeStatus:    string(employeeRecord.Status),
+			PermissionPolicy:  clonePlanningProfileMap(employeeRecord.PermissionPolicy),
+			ContextPolicy:     clonePlanningProfileMap(employeeRecord.ContextPolicy),
 		}
 		effectiveConfig, err := a.reader.GetCurrentDigitalEmployeeEffectiveConfig(ctx, tenantID, employeeID)
 		if err != nil {
@@ -74,6 +102,252 @@ func (a digitalEmployeePlanningProfileAdapter) PlanningProfileRecords(ctx contex
 	return records, nil
 }
 
+func (a preDispatchGateAdapter) GetEmployeeRuntimeSnapshot(ctx context.Context, tenantID, projectID, employeeID uuid.UUID) (project.PreDispatchEmployeeSnapshot, project.PreDispatchRuntimeSnapshot, error) {
+	_ = projectID
+	employeeSnapshot := project.PreDispatchEmployeeSnapshot{
+		ID:                employeeID,
+		RequiredLoadSlots: 1,
+	}
+	runtimeSnapshot := unavailableRuntimeSnapshot(a.clock().Add(runtimeNodeHeartbeatTTL))
+	if a.employees == nil {
+		employeeSnapshot.Status = "missing"
+		return employeeSnapshot, runtimeSnapshot, nil
+	}
+
+	employeeRecord, err := a.employees.GetDigitalEmployee(ctx, tenantID, employeeID)
+	if err != nil {
+		if normalGateAbsence(err) {
+			employeeSnapshot.Status = "missing"
+			return employeeSnapshot, runtimeSnapshot, nil
+		}
+		return project.PreDispatchEmployeeSnapshot{}, project.PreDispatchRuntimeSnapshot{}, err
+	}
+	employeeSnapshot.ID = employeeRecord.ID
+	employeeSnapshot.Status = string(employeeRecord.Status)
+	employeeSnapshot.PolicyAllowed = employeeRecord.Status == employee.DigitalEmployeeStatusActive
+
+	instance, err := a.employees.GetDigitalEmployeeExecutionInstanceByEmployeeID(ctx, tenantID, employeeID)
+	if err != nil {
+		if normalGateAbsence(err) {
+			return employeeSnapshot, runtimeSnapshot, nil
+		}
+		return project.PreDispatchEmployeeSnapshot{}, project.PreDispatchRuntimeSnapshot{}, err
+	}
+	runtimeSnapshot.ProviderAvailable = instance.ProviderType != "" && executionInstanceRunnable(instance.Status)
+	runtimeSnapshot.WorkspaceReady = strings.TrimSpace(instance.AgentHomeDir) != ""
+	if instance.RuntimeNodeID == uuid.Nil || a.runtimeNodes == nil {
+		return employeeSnapshot, runtimeSnapshot, nil
+	}
+
+	node, err := a.runtimeNodeForInstance(ctx, instance)
+	if err != nil {
+		if normalGateAbsence(err) {
+			return employeeSnapshot, runtimeSnapshot, nil
+		}
+		return project.PreDispatchEmployeeSnapshot{}, project.PreDispatchRuntimeSnapshot{}, err
+	}
+	if node.TenantID != uuid.Nil && node.TenantID != tenantID {
+		return employeeSnapshot, runtimeSnapshot, nil
+	}
+	availableSlots := node.MaxSlots - node.CurrentLoad
+	if availableSlots < 0 {
+		availableSlots = 0
+	}
+	employeeSnapshot.AvailableLoadSlots = availableSlots
+	runtimeSnapshot.NodeOnline = runtimeNodeOnline(node, a.clock())
+	runtimeSnapshot.SlotAvailable = availableSlots >= employeeSnapshot.RequiredLoadSlots
+	if !runtimeProviderSupported(node, instance.ProviderType) {
+		runtimeSnapshot.ProviderAvailable = false
+	}
+	return employeeSnapshot, runtimeSnapshot, nil
+}
+
+func (a preDispatchGateAdapter) GetEmployeeCapabilitySnapshot(ctx context.Context, tenantID, employeeID uuid.UUID, task project.ProjectTask) (project.PreDispatchCapabilitySnapshot, project.PreDispatchToolSnapshot, error) {
+	requiredCapabilities := gateStringList(task.InputRequirements["required_capabilities"])
+	hardMissing := gateStringList(task.InputRequirements["missing_capabilities"])
+	matched := gateStringList(task.InputRequirements["matched_capabilities"])
+	capabilitySnapshot := project.PreDispatchCapabilitySnapshot{
+		Required:    requiredCapabilities,
+		Matched:     matched,
+		HardMissing: hardMissing,
+	}
+
+	requiredTools := gateStringList(task.InputRequirements["tool_requirements"])
+	toolSnapshot := project.PreDispatchToolSnapshot{}
+	if len(requiredTools) == 0 {
+		return capabilitySnapshot, toolSnapshot, nil
+	}
+	if a.capabilities == nil {
+		toolSnapshot.RetryableUnavailable = append([]string(nil), requiredTools...)
+		return capabilitySnapshot, toolSnapshot, nil
+	}
+	servers, err := a.capabilities.ListEffectiveMCPServers(ctx, capability.EmployeeScopedRequest{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+	})
+	if err != nil {
+		toolSnapshot.RetryableUnavailable = append([]string(nil), requiredTools...)
+		return capabilitySnapshot, toolSnapshot, nil
+	}
+	availableMCP := effectiveMCPServerNames(servers)
+	for _, requirement := range requiredTools {
+		toolType, toolKey, ok := strings.Cut(requirement, ":")
+		if !ok || strings.TrimSpace(toolType) == "" || strings.TrimSpace(toolKey) == "" {
+			toolSnapshot.RetryableUnavailable = append(toolSnapshot.RetryableUnavailable, requirement)
+			continue
+		}
+		if strings.TrimSpace(toolType) != "mcp" {
+			toolSnapshot.RetryableUnavailable = append(toolSnapshot.RetryableUnavailable, requirement)
+			continue
+		}
+		if !availableMCP[strings.TrimSpace(toolKey)] {
+			toolSnapshot.MissingBindings = append(toolSnapshot.MissingBindings, requirement)
+		}
+	}
+	return capabilitySnapshot, toolSnapshot, nil
+}
+
+func unavailableRuntimeSnapshot(retryAfter time.Time) project.PreDispatchRuntimeSnapshot {
+	return project.PreDispatchRuntimeSnapshot{
+		ContractVersionAccepted: true,
+		RetryAfter:              retryAfter,
+	}
+}
+
+func (a preDispatchGateAdapter) clock() time.Time {
+	if a.now != nil {
+		return a.now().UTC()
+	}
+	return time.Now().UTC()
+}
+
+func (a preDispatchGateAdapter) runtimeNodeForInstance(ctx context.Context, instance employee.DigitalEmployeeExecutionInstanceRecord) (runtimepkg.NodeRecord, error) {
+	if nodeID := runtimeNodeSelectorID(instance); nodeID != "" {
+		return a.runtimeNodes.GetNode(ctx, nodeID)
+	}
+	if reader, ok := a.runtimeNodes.(gateRuntimeNodeIDReader); ok {
+		return reader.GetNodeByID(ctx, instance.RuntimeNodeID)
+	}
+	return runtimepkg.NodeRecord{}, pgx.ErrNoRows
+}
+
+func normalGateAbsence(err error) bool {
+	return errors.Is(err, employee.ErrNotFound) ||
+		errors.Is(err, capability.ErrNotFound) ||
+		errors.Is(err, pgx.ErrNoRows)
+}
+
+func executionInstanceRunnable(status employee.ExecutionInstanceStatus) bool {
+	return status == employee.ExecutionInstanceStatusReady || status == employee.ExecutionInstanceStatusActive
+}
+
+func runtimeNodeSelectorID(instance employee.DigitalEmployeeExecutionInstanceRecord) string {
+	if instance.RuntimeSelector != nil {
+		if nodeID := strings.TrimSpace(stringFromAny(instance.RuntimeSelector["node_id"])); nodeID != "" {
+			return nodeID
+		}
+	}
+	return ""
+}
+
+func runtimeNodeOnline(node runtimepkg.NodeRecord, now time.Time) bool {
+	if strings.TrimSpace(node.Status) != "online" || !node.LastHeartbeatAt.Valid {
+		return false
+	}
+	heartbeatAt := node.LastHeartbeatAt.Time.UTC()
+	return !heartbeatAt.After(now) && now.Sub(heartbeatAt) <= runtimeNodeHeartbeatTTL
+}
+
+func runtimeProviderSupported(node runtimepkg.NodeRecord, providerType string) bool {
+	providerType = strings.TrimSpace(providerType)
+	if providerType == "" || len(node.SupportedProviders) == 0 {
+		return true
+	}
+	var raw any
+	if err := json.Unmarshal(node.SupportedProviders, &raw); err != nil {
+		return true
+	}
+	return providerInSupportedProviderValue(raw, providerType)
+}
+
+func providerInSupportedProviderValue(value any, providerType string) bool {
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			if strings.TrimSpace(stringFromAny(item)) == providerType {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, key := range []string{"providers", "provider_types", "supported_providers"} {
+			if providerInSupportedProviderValue(typed[key], providerType) {
+				return true
+			}
+		}
+	case string:
+		return strings.TrimSpace(typed) == providerType
+	}
+	return false
+}
+
+func gateStringList(value any) []string {
+	values := make([]string, 0)
+	seen := map[string]struct{}{}
+	add := func(raw string) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return
+		}
+		if _, ok := seen[raw]; ok {
+			return
+		}
+		seen[raw] = struct{}{}
+		values = append(values, raw)
+	}
+	switch typed := value.(type) {
+	case []string:
+		for _, item := range typed {
+			add(item)
+		}
+	case []any:
+		for _, item := range typed {
+			add(stringFromAny(item))
+		}
+	case string:
+		add(typed)
+	}
+	return values
+}
+
+func stringFromAny(value any) string {
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return ""
+}
+
+func effectiveMCPServerNames(servers []capability.MCPServer) map[string]bool {
+	names := make(map[string]bool, len(servers))
+	for _, server := range servers {
+		if !server.DisabledAt.IsZero() || !server.DeletedAt.IsZero() {
+			continue
+		}
+		if server.Status != "" && server.Status != "active" {
+			continue
+		}
+		name := strings.TrimSpace(server.Name)
+		if name == "" {
+			continue
+		}
+		names[name] = true
+		names["mcp:"+name] = true
+	}
+	return names
+}
+
 // planningLoadStateMap translates raw operational counts into the map shape expected by
 // DigitalEmployeePlanningProfileSourceRecord.LoadState. An employee with no in-flight
 // attempts is treated as lendable with one available slot; once actively working they
@@ -85,9 +359,9 @@ func planningLoadStateMap(signal employee.OperationalSignals) map[string]any {
 		availableSlots = 1
 	}
 	return map[string]any{
-		"in_flight_tasks":  signal.InFlightAttemptCount,
-		"available_slots":  availableSlots,
-		"lendable":         lendable,
+		"in_flight_tasks": signal.InFlightAttemptCount,
+		"available_slots": availableSlots,
+		"lendable":        lendable,
 	}
 }
 

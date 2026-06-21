@@ -159,8 +159,8 @@ func (s *ProjectStore) loadPreDispatchGateSnapshot(ctx context.Context, input Di
 		if err != nil {
 			return project.PreDispatchGateSnapshot{}, err
 		}
-		snapshot.Capabilities = capabilities
-		snapshot.Tools = tools
+		snapshot.Capabilities = mergePreDispatchCapabilitySnapshot(snapshot.Capabilities, capabilities)
+		snapshot.Tools = mergePreDispatchToolSnapshot(snapshot.Tools, tools)
 	}
 	return snapshot, nil
 }
@@ -438,6 +438,42 @@ func mergePreDispatchEmployeeSnapshot(base, update project.PreDispatchEmployeeSn
 		merged.ProfileSnapshotHash = base.ProfileSnapshotHash
 	}
 	return merged
+}
+
+func mergePreDispatchCapabilitySnapshot(base, update project.PreDispatchCapabilitySnapshot) project.PreDispatchCapabilitySnapshot {
+	return project.PreDispatchCapabilitySnapshot{
+		Required:    unionStrings(base.Required, update.Required),
+		Matched:     unionStrings(base.Matched, update.Matched),
+		HardMissing: unionStrings(base.HardMissing, update.HardMissing),
+		Unknown:     unionStrings(base.Unknown, update.Unknown),
+	}
+}
+
+func mergePreDispatchToolSnapshot(base, update project.PreDispatchToolSnapshot) project.PreDispatchToolSnapshot {
+	return project.PreDispatchToolSnapshot{
+		MissingBindings:       unionStrings(base.MissingBindings, update.MissingBindings),
+		ExpiredAuthorizations: unionStrings(base.ExpiredAuthorizations, update.ExpiredAuthorizations),
+		RetryableUnavailable:  unionStrings(base.RetryableUnavailable, update.RetryableUnavailable),
+	}
+}
+
+func unionStrings(groups ...[]string) []string {
+	result := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, group := range groups {
+		for _, item := range group {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			if _, ok := seen[item]; ok {
+				continue
+			}
+			seen[item] = struct{}{}
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func gateEventType(status string) project.ProjectEventType {
