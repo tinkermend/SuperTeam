@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- 2026-06-21 02:46：执行证据补齐进入证据读模型（金路径证据缺口）：任务完成回写（`CompleteProjectTaskAttemptWriteback` / `CompleteProjectTaskAttemptAcceptanceWriteback`）原本只把 `evidence_refs` 存进 `project_execution_summaries` 行的 JSONB 列，并未抽取到独立的 `project_evidence_refs` 读模型——而 `/projects/{id}/evidence` 读取后者，导致「执行摘要带 evidence_refs 但证据列表空」。新增 `extractExecutionEvidenceRefsWithQueries`：在两条完成回写事务内、`createExecutionSummaryWithQueries` 之后，把每个 `{ref,type,provider_session_id?}` 条目映射为一条证据行（evidence_type/source_type=type、source_ref=ref、execution_summary_id、project_task_id、submitted_by=digital_employee、metadata=原条目）。best-effort：单条畸形跳过、不回滚任务完成（权威 refs 仍在摘要上）。验证：`go build ./...` 通过、`go test ./internal/project/` 通过（无回归）；真实链路待验证——当前开发库被重置后无处于 queued/running 的 task attempt，无法在本次跑通一次「带 evidence_refs 的任务完成 → 证据行落库」的真实回写，故不声明端到端已验证。
+- 2026-06-21 02:21：修复批准路由决策后任务分派被永久阻塞（卡死 `dispatching` run 占用单活跃槽位）：数字员工 run 进入 `dispatching`（已向 runtime 节点下发 start-session 命令但 runtime 从未回报启动，如节点失联/回调丢失/进程中途崩溃）后会无限期停留，`GetActiveRun` 一直返回它，单活跃 run 守卫（`ErrConflict: active digital employee run exists`）随之永久挡住该员工后续所有 dispatch——表现即「人类决策队列批准失败、拒绝正常」（批准触发 dispatch 命中冲突重试 3 次全败、任务停在 planned；拒绝不走 dispatch 故无碍）。在 `DigitalEmployeeRunService.CreateRun` 冲突分支新增陈旧预确认 run 回收：当被阻塞的活跃 run 处于 `queued`/`dispatching`（命令已发未确认启动）且 `time.Since(UpdatedAt) > staleDispatchTTL(5min)` 时判定废弃，就地标记 `failed`（error_code `dispatch_stale`/error_family `dispatch_timeout`）并写 `run_reaped_stale` 生命周期事件 + `digital_employee_run_reaped_stale` 审计，释放活跃槽位后继续创建新 run；同幂等重试仍走原有重发路径，`running`/`cancelling`（runtime 已确认在跑）即使久也不回收。验证：`go test ./internal/employee/` 通过（新增陈旧回收/新鲜不回收/running 不回收 3 例 + 既有冲突用例）；Control Plane(:8081) 重启加载新代码并健康后，对真实开发库中卡死超过一天的 run `c612ec8c`（dispatching）触发 `POST /digital-employees/{id}/runs`，确证其被回收为 `failed/dispatch_stale`、新 run 创建并派发到真实节点、该员工活跃 run 集合由「卡死旧 run」变为「单一新 run」，且 `task_events` 写入 `run_reaped_stale`、`audit_events` 写入 `digital_employee_run_reaped_stale`。
+
 ### Removed
 
+- 2026-06-21 02:31：删除「任务发起」侧孤儿详情组件：`task-launches/components/task-launch-detail.tsx`（`TaskLaunchDetail`）及 `features/task-launches` 中未被任何路由消费的 `TaskLaunchDetailPage`/`TaskLaunchDetailView`（路由 `/task-launches/$demandId` 实为重定向到 `/workflows/$demandId`，而后者 `WorkflowDetail` 已基于真实 `task-graph` 渲染完整任务节点/负责人/阻塞/输入输出/执行结果，孤儿组件既不可达又与之重复）。统一以 `/workflows/$demandId` 为唯一的计划/详情入口，保留 `/task-launches/$demandId` 重定向作为书签兜底；同步移除对应测试与未用的 `rerenderWithQueryClient` 辅助。验证：`corepack pnpm --filter ./apps/web run typecheck` 通过、`run test -- task-launches` 7/7 通过、Vite HMR 加载 `task-launches/index.tsx` 无报错；发起器（选项目→提交→导航 `/workflows/$demandId`）行为不变。
 - 2026-06-21 00:52：删除已废弃的 `runtime_leases` 表：新增 migration 028 `DROP TABLE IF EXISTS runtime_leases` 并已应用到当前开发库；同步移除迁移/查询测试中对该表作为当前表的要求，规范文档明确项目任务执行租约由 `project_task_attempts` 承载，避免后续重建独立 runtime lease 表。
 
 ### Added

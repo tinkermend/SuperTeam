@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TaskLaunchDetailView, TaskLaunchView } from "@/features/task-launches";
+import { TaskLaunchView } from "@/features/task-launches";
 import {
   resolveDefaultReviewer,
   type ReviewerDefaultResolution,
@@ -398,16 +398,6 @@ async function renderWithQueryClient(children: ReactNode) {
   return { container, queryClient, root };
 }
 
-async function rerenderWithQueryClient(
-  root: Root,
-  queryClient: QueryClient,
-  children: ReactNode,
-) {
-  await act(async () => {
-    root.render(<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>);
-  });
-}
-
 function expectReviewerResolution(
   resolution: ReviewerDefaultResolution | undefined,
   expected: Partial<ReviewerDefaultResolution> & { principalId?: string },
@@ -575,104 +565,6 @@ describe("TaskLaunchView", () => {
     expect(queryByText("待生成")).toBeNull();
     expect(queryByText("已完成")).toBeNull();
     expect(queryByText("运行中")).toBeNull();
-  });
-});
-
-describe("TaskLaunchDetailView", () => {
-  afterEach(() => {
-    for (const root of mountedRoots.splice(0)) {
-      act(() => {
-        root.unmount();
-      });
-    }
-    document.body.innerHTML = "";
-  });
-
-  it("renders launch detail coordination facts", async () => {
-    const fetcher = createTaskLaunchFetcher({ launchDetail: true });
-    await renderWithQueryClient(
-      <TaskLaunchDetailView
-        apiBaseUrl="http://control-plane.local"
-        demandId="demand-1"
-        fetcher={fetcher}
-      />,
-    );
-
-    await vi.waitFor(() => expect(getByText("审查 PR")).toBeTruthy());
-    expect(getByText("协调 Job")).toBeTruthy();
-    expect(getByText("按能力分派")).toBeTruthy();
-    expect(getByText("整理审查清单")).toBeTruthy();
-    expect(getByText("确认路由")).toBeTruthy();
-  });
-
-  it("shows waiting state when coordination facts are empty", async () => {
-    const fetcher = createTaskLaunchFetcher({ emptyFacts: true, launchDetail: true });
-    await renderWithQueryClient(
-      <TaskLaunchDetailView
-        apiBaseUrl="http://control-plane.local"
-        demandId="demand-1"
-        fetcher={fetcher}
-      />,
-    );
-
-    await vi.waitFor(() => expect(getByText("等待项目协调线程处理")).toBeTruthy());
-  });
-
-  it("does not show the previous demand detail while switching demand ids", async () => {
-    let resolveDemand2!: () => void;
-    const demand2Ready = new Promise<void>((resolve) => {
-      resolveDemand2 = resolve;
-    });
-    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = new URL(String(input));
-      const method = init?.method ?? "GET";
-
-      if (
-        url.pathname === "/api/v1/project-demands/demand-1/launch-detail" &&
-        method === "GET"
-      ) {
-        return jsonResponse(
-          makeLaunchDetail({ demandId: "demand-1", title: "旧需求" }),
-        );
-      }
-      if (
-        url.pathname === "/api/v1/project-demands/demand-2/launch-detail" &&
-        method === "GET"
-      ) {
-        await demand2Ready;
-        return jsonResponse(
-          makeLaunchDetail({ demandId: "demand-2", title: "新需求" }),
-        );
-      }
-
-      return jsonResponse({ message: `Unhandled ${method} ${url.pathname}` }, 404);
-    });
-    const { queryClient, root } = await renderWithQueryClient(
-      <TaskLaunchDetailView
-        apiBaseUrl="http://control-plane.local"
-        demandId="demand-1"
-        fetcher={fetcher}
-      />,
-    );
-
-    await vi.waitFor(() => expect(getByText("旧需求")).toBeTruthy());
-    await rerenderWithQueryClient(
-      root,
-      queryClient,
-      <TaskLaunchDetailView
-        apiBaseUrl="http://control-plane.local"
-        demandId="demand-2"
-        fetcher={fetcher}
-      />,
-    );
-
-    await vi.waitFor(() => expect(getByText("正在加载发起详情")).toBeTruthy());
-    expect(queryByText("旧需求")).toBeNull();
-
-    await act(async () => {
-      resolveDemand2();
-    });
-    await vi.waitFor(() => expect(getByText("新需求")).toBeTruthy());
   });
 });
 

@@ -26,6 +26,7 @@ import {
   listProjectArchiveSnapshots,
   listProjectArtifacts,
   listProjectBudgetLedger,
+  getProjectTaskGraph,
   listProjectCoordinationJobs,
   listProjectDecisionRequests,
   listProjectDemands,
@@ -240,6 +241,17 @@ export function ProjectsView({
     queryKey: ["project-route-decisions", effectiveProjectId],
     queryFn: () =>
       listProjectRouteDecisions(apiOptions, effectiveProjectId as string, { limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const latestDemandId = demandsQuery.data?.[0]?.id;
+  const taskGraphQuery = useQuery({
+    enabled: Boolean(effectiveProjectId) && Boolean(latestDemandId),
+    queryKey: ["project-task-graph", effectiveProjectId, latestDemandId],
+    queryFn: () =>
+      getProjectTaskGraph(apiOptions, effectiveProjectId as string, {
+        demandId: latestDemandId as string,
+      }),
     placeholderData: keepPreviousData,
   });
 
@@ -642,6 +654,7 @@ export function ProjectsView({
             project={displayedProject}
             reports={projectReports}
             routeDecisions={projectRouteDecisions}
+            taskGraph={taskGraphQuery.data}
             tasks={projectTasks}
             transferRequests={projectTransferRequests}
           />

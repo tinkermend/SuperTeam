@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -15,9 +16,18 @@ import (
 )
 
 const (
-	providerRunProtocol            = "provider-run/v1"
-	runDispatchedLifecycleSequence = -1
-	stopRequestedLifecycleSequence = -2
+	providerRunProtocol             = "provider-run/v1"
+	runDispatchedLifecycleSequence  = -1
+	stopRequestedLifecycleSequence  = -2
+	runReapedStaleLifecycleSequence = -3
+	// staleDispatchTTL is how long a run may sit in a pre-confirmation state
+	// (queued/dispatching) without any row update before it is treated as
+	// abandoned. A run reaches "dispatching" once the start-session command has
+	// been sent to the runtime node; if the runtime never reports back (node
+	// gone, callback lost, process crash mid-dispatch) the run would otherwise
+	// block every future dispatch to that digital employee via the
+	// one-active-run guard. Reaping it lets the next dispatch proceed.
+	staleDispatchTTL = 5 * time.Minute
 )
 
 type RuntimeCommandDispatcher interface {
@@ -105,7 +115,14 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 		if sameIdempotentRun(activeRun, idempotencyKey, fingerprint) {
 			return s.dispatchStartSession(ctx, req, objective, prompt, preflight, activeRun)
 		}
-		return nil, fmt.Errorf("%w: active digital employee run exists", ErrConflict)
+		if isStalePreConfirmationRun(activeRun) {
+			if _, err := s.reapStaleRun(ctx, req.TenantID, req.UserID, activeRun); err != nil {
+				return nil, err
+			}
+			activeRun = nil
+		} else {
+			return nil, fmt.Errorf("%w: active digital employee run exists", ErrConflict)
+		}
 	}
 
 	commandID := newRuntimeCommandID()
@@ -424,6 +441,55 @@ func (s *DigitalEmployeeRunService) reconcileTerminalReceipt(ctx context.Context
 		return nil, false, fmt.Errorf("reconcile terminal receipt for active run: %w", err)
 	}
 	return updatedRun, true, nil
+}
+
+// isStalePreConfirmationRun reports whether an active run is abandoned in a
+// pre-confirmation state (queued/dispatching): the start-session command was
+// sent (or is mid-flight) but the runtime has not confirmed session start, and
+// the row has not been touched for longer than staleDispatchTTL. Such a run
+// will never make progress on its own and is safe to reap. Runs the runtime has
+// confirmed as running, or that are being cancelled, are never considered
+// stale — those are genuinely active.
+func isStalePreConfirmationRun(run *DigitalEmployeeRun) bool {
+	if run == nil {
+		return false
+	}
+	if run.Status != DigitalEmployeeRunStatusQueued && run.Status != DigitalEmployeeRunStatusDispatching {
+		return false
+	}
+	return time.Since(run.UpdatedAt) > staleDispatchTTL
+}
+
+// reapStaleRun marks an abandoned pre-confirmation run as failed so it no longer
+// occupies the digital employee's single active-run slot. It records a lifecycle
+// event and an audit entry for observability. The triggering actor (the user or
+// coordinator whose dispatch was blocked) is attributed for traceability.
+func (s *DigitalEmployeeRunService) reapStaleRun(ctx context.Context, tenantID, actorID uuid.UUID, run *DigitalEmployeeRun) (*DigitalEmployeeRun, error) {
+	reaped, err := s.repository.UpdateRunStatus(ctx, UpdateRunStatusRequest{
+		TenantID:     tenantID,
+		RunID:        run.ID,
+		Status:       DigitalEmployeeRunStatusFailed,
+		ErrorMessage: stringPtr("run abandoned in pre-confirmation state; reaped as stale"),
+		ErrorCode:    stringPtr("dispatch_stale"),
+		ErrorFamily:  stringPtr("dispatch_timeout"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reap stale dispatching run: %w", err)
+	}
+	_, _ = s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
+		TenantID:       tenantID,
+		TaskID:         run.TaskID,
+		RunID:          run.ID,
+		EventType:      "run_reaped_stale",
+		SequenceNumber: runReapedStaleLifecycleSequence,
+		Payload: map[string]any{
+			"prior_status": string(run.Status),
+			"command_id":   run.CommandID,
+		},
+		Metadata: map[string]any{"source": "control-plane"},
+	})
+	_ = s.logAudit(ctx, "digital_employee_run_reaped_stale", actorID, run.ID, "employee.run.reap_stale")
+	return reaped, nil
 }
 
 func terminalReceiptErrorCode(receipt *RuntimeCommandReceipt) *string {

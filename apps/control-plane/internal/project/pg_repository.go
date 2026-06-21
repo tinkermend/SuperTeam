@@ -2652,6 +2652,47 @@ func (r *PgRepository) RenewProjectTaskAttemptLeaseWriteback(ctx context.Context
 	return projectTaskAttemptFromRecord(row)
 }
 
+// extractExecutionEvidenceRefsWithQueries persists each evidence_ref carried on a
+// completed task's execution summary into the project_evidence_refs read model.
+// The /projects/{id}/evidence endpoint reads that read model, so without this
+// extraction the evidence a digital employee produced (runtime commands, session
+// refs, artifacts) stays buried on the execution_summary row and never surfaces —
+// which is why evidence lists read empty even though summaries carry evidence_refs.
+// Best-effort: the authoritative refs live on the summary, so a malformed
+// individual entry is skipped rather than failing the completion writeback.
+func (r *PgRepository) extractExecutionEvidenceRefsWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID uuid.UUID, taskID *uuid.UUID, employeeID uuid.UUID, summaryID uuid.UUID, refs []any) {
+	for _, raw := range refs {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		sourceRef, _ := entry["ref"].(string)
+		if strings.TrimSpace(sourceRef) == "" {
+			continue
+		}
+		refType, _ := entry["type"].(string)
+		if strings.TrimSpace(refType) == "" {
+			refType = "execution_evidence"
+		}
+		if _, err := r.createEvidenceRefWithQueries(ctx, q, CreateEvidenceRefRequest{
+			TenantID:           tenantID,
+			ProjectID:          projectID,
+			ProjectTaskID:      taskID,
+			ExecutionSummaryID: &summaryID,
+			EvidenceType:       refType,
+			Title:              "执行证据：" + refType,
+			SourceType:         refType,
+			SourceRef:          sourceRef,
+			SubmittedByType:    "digital_employee",
+			SubmittedByID:      &employeeID,
+			Metadata:           entry,
+		}); err != nil {
+			// Best-effort: skip individual failures so completion stays intact.
+			continue
+		}
+	}
+}
+
 func (r *PgRepository) CompleteProjectTaskAttemptWriteback(ctx context.Context, req CompleteProjectTaskAttemptRequest) (ProjectTaskWritebackResult, error) {
 	return withProjectQueries(ctx, r, "project task attempt completion writeback", func(q *queries.Queries) (ProjectTaskWritebackResult, error) {
 		task, err := r.updateProjectTaskStatusWithQueries(ctx, q, req.TenantID, req.ProjectTaskID, ProjectTaskStatusCompleted, nil, []string{ProjectTaskStatusQueued, ProjectTaskStatusRunning})
@@ -2693,6 +2734,7 @@ func (r *PgRepository) CompleteProjectTaskAttemptWriteback(ctx context.Context, 
 		if err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
+		r.extractExecutionEvidenceRefsWithQueries(ctx, q, req.TenantID, task.ProjectID, &task.ID, req.DigitalEmployeeID, summary.ID, sliceOrEmptyAny(req.EvidenceRefs))
 		if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
 			TenantID:          req.TenantID,
 			ID:                req.AttemptID,
@@ -2759,6 +2801,7 @@ func (r *PgRepository) CompleteProjectTaskAttemptAcceptanceWriteback(ctx context
 		if err != nil {
 			return ProjectTaskWritebackResult{}, err
 		}
+		r.extractExecutionEvidenceRefsWithQueries(ctx, q, req.Complete.TenantID, req.Task.ProjectID, &req.Task.ID, req.Complete.DigitalEmployeeID, summary.ID, sliceOrEmptyAny(req.Complete.EvidenceRefs))
 		if _, err := q.FinishProjectTaskAttempt(ctx, queries.FinishProjectTaskAttemptParams{
 			TenantID:          req.Complete.TenantID,
 			ID:                req.Complete.AttemptID,

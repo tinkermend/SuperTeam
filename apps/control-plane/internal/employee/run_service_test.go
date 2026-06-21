@@ -38,6 +38,96 @@ func TestRunServiceCreateRunRejectsActiveRun(t *testing.T) {
 	}
 }
 
+func TestRunServiceCreateRunReapsStaleDispatchingRun(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	// An abandoned dispatching run: command sent, runtime never confirmed start,
+	// row untouched for far longer than staleDispatchTTL.
+	staleRun := validRunServiceRun(DigitalEmployeeRunStatusDispatching)
+	staleRun.UpdatedAt = time.Now().UTC().Add(-10 * time.Minute)
+	repo.activeRun = staleRun
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	audit := &fakeRunServiceAuditLogger{}
+	service := mustNewRunService(t, repo, dispatcher, audit)
+
+	run, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+
+	if err != nil {
+		t.Fatalf("expected stale run reaped and new run created, got error: %v", err)
+	}
+	if run.Status != DigitalEmployeeRunStatusDispatching {
+		t.Fatalf("expected new run to reach dispatching, got %s", run.Status)
+	}
+	// The abandoned run must have been marked failed so it frees the active slot.
+	var reaped *UpdateRunStatusRequest
+	for i := range repo.statusUpdates {
+		if repo.statusUpdates[i].RunID == staleRun.ID {
+			reaped = &repo.statusUpdates[i]
+		}
+	}
+	if reaped == nil {
+		t.Fatalf("expected stale run to be reaped via UpdateRunStatus, got %#v", repo.statusUpdates)
+	}
+	if reaped.Status != DigitalEmployeeRunStatusFailed || reaped.ErrorCode == nil || *reaped.ErrorCode != "dispatch_stale" {
+		t.Fatalf("expected stale run reaped as failed/dispatch_stale, got %#v", reaped)
+	}
+	if len(repo.events) == 0 || repo.events[0].EventType != "run_reaped_stale" {
+		t.Fatalf("expected run_reaped_stale lifecycle event, got %#v", repo.events)
+	}
+	if repo.createdRunCount != 1 || len(dispatcher.commands) != 1 {
+		t.Fatalf("expected a fresh run created and dispatched after reap, got %d creates / %d commands", repo.createdRunCount, len(dispatcher.commands))
+	}
+}
+
+func TestRunServiceCreateRunDoesNotReapRecentDispatchingRun(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	// A dispatching run that is still within the staleness window — not abandoned.
+	repo.activeRun = validRunServiceRun(DigitalEmployeeRunStatusDispatching)
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+
+	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected ErrConflict for a recent dispatching run, got %v", err)
+	}
+	for _, update := range repo.statusUpdates {
+		if update.RunID == repo.activeRun.ID {
+			t.Fatalf("expected recent dispatching run not to be reaped, got status update %#v", update)
+		}
+	}
+	if repo.createdRunCount != 0 {
+		t.Fatalf("expected no new run created, got %d", repo.createdRunCount)
+	}
+}
+
+func TestRunServiceCreateRunDoesNotReapStaleRunningRun(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.preflight = validRunServicePreflight()
+	// A running run the runtime has confirmed — never reaped by time alone,
+	// even if its row is old.
+	runningRun := validRunServiceRun(DigitalEmployeeRunStatusRunning)
+	runningRun.UpdatedAt = time.Now().UTC().Add(-10 * time.Minute)
+	repo.activeRun = runningRun
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.preflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+
+	_, err := service.CreateRun(context.Background(), validCreateRunServiceRequest())
+
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected ErrConflict for a stale running run, got %v", err)
+	}
+	for _, update := range repo.statusUpdates {
+		if update.RunID == runningRun.ID {
+			t.Fatalf("expected running run not to be reaped, got status update %#v", update)
+		}
+	}
+}
+
 func TestRunServiceCreateRunDispatchesStartSession(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.preflight = validRunServicePreflight()

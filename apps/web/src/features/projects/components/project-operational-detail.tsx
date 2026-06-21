@@ -40,10 +40,12 @@ import type {
   ProjectReportRef,
   ProjectRouteDecision,
   ProjectTask,
+  ProjectTaskGraph,
   ProjectTransferRequest,
 } from "@/lib/api/projects";
 import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
+import { PlanTaskGraph } from "./plan-task-graph";
 import { statusLabel, statusTone } from "./project-switcher-pane";
 
 type ProjectOperationalDetailProps = {
@@ -79,6 +81,7 @@ type ProjectOperationalDetailProps = {
   project?: Project;
   reports?: ProjectReportRef[];
   routeDecisions: ProjectRouteDecision[];
+  taskGraph?: ProjectTaskGraph;
   tasks: ProjectTask[];
   transferRequests: ProjectTransferRequest[];
 };
@@ -113,6 +116,7 @@ export function ProjectOperationalDetail({
   project,
   reports,
   routeDecisions,
+  taskGraph,
   tasks,
   transferRequests,
 }: ProjectOperationalDetailProps) {
@@ -222,32 +226,48 @@ export function ProjectOperationalDetail({
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
         <section className="grid min-w-0 gap-4">
-          <LiquidCard className="rounded-xl">
-            <PanelHeader
-              icon={<ClipboardList />}
-              title="活跃任务"
-              meta={`${activeTasks.length} 项`}
-            />
-            <div className="divide-y">
-              {activeTasks.length === 0 ? (
-                <EmptyLine label="当前项目暂无活跃任务" />
-              ) : (
-                activeTasks.slice(0, 6).map((task) => (
-                  <div className="grid gap-1 p-4" key={task.id}>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="min-w-0 truncate text-sm font-medium">
-                        {task.title}
-                      </p>
-                      <StatusBadge tone="info">{task.status}</StatusBadge>
-                    </div>
-                    <p className="line-clamp-2 text-xs text-muted-foreground">
-                      {task.summary || "等待项目协调线程分派执行对象"}
-                    </p>
-                  </div>
-                ))
-              )}
+          {taskGraph && taskGraph.nodes.length > 0 ? (
+            <div className="grid gap-2">
+              <div className="flex items-center gap-2 px-1">
+                <ClipboardList className="size-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold tracking-normal">任务计划</h3>
+                <StatusBadge tone="neutral">{`${taskGraph.nodes.length} 项`}</StatusBadge>
+              </div>
+              <PlanTaskGraph
+                nodes={taskGraph.nodes}
+                edges={taskGraph.edges}
+                employees={taskGraph.employees}
+                stageSummaries={taskGraph.stage_summaries}
+              />
             </div>
-          </LiquidCard>
+          ) : (
+            <LiquidCard className="rounded-xl">
+              <PanelHeader
+                icon={<ClipboardList />}
+                title="任务计划"
+                meta={`${activeTasks.length} 项`}
+              />
+              <div className="divide-y">
+                {activeTasks.length === 0 ? (
+                  <EmptyLine label="当前项目暂无活跃任务" />
+                ) : (
+                  activeTasks.slice(0, 6).map((task) => (
+                    <div className="grid gap-1 p-4" key={task.id}>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="min-w-0 truncate text-sm font-medium">
+                          {task.title}
+                        </p>
+                        <StatusBadge tone="info">{task.status}</StatusBadge>
+                      </div>
+                      <p className="line-clamp-2 text-xs text-muted-foreground">
+                        {task.summary || "等待项目协调线程分派执行对象"}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </LiquidCard>
+          )}
 
           <LiquidCard className="rounded-xl">
             <PanelHeader
