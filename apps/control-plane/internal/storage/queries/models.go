@@ -862,6 +862,8 @@ type ProjectDecisionRequest struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	// 投影处理完成时间
 	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
+	// 该人类决策由哪个 dispatch gate 结果创建。
+	DispatchGateResultID uuid.NullUUID `json:"dispatch_gate_result_id"`
 }
 
 // 用户或外部系统提交到项目的需求
@@ -1252,6 +1254,8 @@ type ProjectTask struct {
 	FailedBy pgtype.Text `json:"failed_by"`
 	// 任务状态最近一次变化时间。
 	StatusChangedAt pgtype.Timestamptz `json:"status_changed_at"`
+	// 该任务最近一次 gate 结果ID。
+	LatestDispatchGateResultID uuid.NullUUID `json:"latest_dispatch_gate_result_id"`
 }
 
 // 项目任务执行尝试表，记录项目任务调度、租约、重试和终态回写。
@@ -1308,6 +1312,8 @@ type ProjectTaskAttempt struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 执行尝试最近更新时间。
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// 创建该尝试前通过的 gate 结果ID。
+	DispatchGateResultID uuid.NullUUID `json:"dispatch_gate_result_id"`
 }
 
 type ProjectTaskAttemptContextUpdate struct {
@@ -1339,6 +1345,54 @@ type ProjectTaskDependency struct {
 	BlockerTaskID uuid.UUID `json:"blocker_task_id"`
 	// 依赖边创建时间
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// ProjectTask 分派 Runtime 前的 Control Plane gate 结果，保存可审计的检查摘要、阻塞原因和后续 attempt 或人类请求引用。
+type ProjectTaskDispatchGateResult struct {
+	// Gate 结果ID。
+	ID uuid.UUID `json:"id"`
+	// 租户ID。
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 项目ID。
+	ProjectID uuid.UUID `json:"project_id"`
+	// 被检查的 ProjectTask ID。
+	ProjectTaskID uuid.UUID `json:"project_task_id"`
+	// 生成任务的 accepted PlanRevision ID。
+	AcceptedPlanRevisionID uuid.NullUUID `json:"accepted_plan_revision_id"`
+	// PlanRevision payload 内稳定任务键。
+	PlannedTaskKey pgtype.Text `json:"planned_task_key"`
+	// Gate 检查时的被选数字员工ID。
+	SelectedEmployeeID uuid.UUID `json:"selected_employee_id"`
+	// 本次 gate 预期创建的执行尝试序号。
+	AttemptNo int32 `json:"attempt_no"`
+	// 触发 gate 的原因，例如 root_ready、dependency_unlocked、human_resolved、retry。
+	DispatchReason string `json:"dispatch_reason"`
+	// Gate 幂等键，同一任务同一分派原因和尝试序号只保留一个结果。
+	IdempotencyKey string `json:"idempotency_key"`
+	// 通过 gate 后交给 dispatch 的稳定 token，不包含密钥。
+	DispatchToken string `json:"dispatch_token"`
+	// Gate 状态：passed, waiting_human, blocked, retry_later, replan_required。
+	Status string `json:"status"`
+	// Gate 检查时间。
+	CheckedAt pgtype.Timestamptz `json:"checked_at"`
+	// 检查项摘要 JSON 数组，禁止保存密钥、完整连接串、敏感 SQL 或完整日志。
+	Checks []byte `json:"checks"`
+	// 阻塞原因 JSON 数组，禁止保存密钥、完整连接串、敏感 SQL 或完整日志。
+	Blockers []byte `json:"blockers"`
+	// 需要人类动作时的请求摘要，不作为审批事实源。
+	HumanActionRequest []byte `json:"human_action_request"`
+	// 暂态不满足时建议下次 gate 时间。
+	RetryAfter pgtype.Timestamptz `json:"retry_after"`
+	// Gate 通过后创建的 ProjectTaskAttempt ID。
+	AttemptID uuid.NullUUID `json:"attempt_id"`
+	// Gate 创建的人类决策请求投影ID。
+	DecisionRequestID uuid.NullUUID `json:"decision_request_id"`
+	// 记录该 gate 结果时产生的项目事件ID。
+	CreatedEventID uuid.NullUUID `json:"created_event_id"`
+	// Gate 结果创建时间。
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// Gate 结果最近更新时间。
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 // 项目任务转派请求表，保存数字员工发起的结构化转派事实
