@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -112,15 +114,17 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 			lastErr = err
 			continue
 		}
-		pool := activeExecutorIDs(snapshot.DigitalEmployeePool)
 		applyRequiredHumanReviewPolicy(snapshot, &plan)
-		if err := ValidateRouteDecisionGraph(plan, pool, GraphValidationPolicy{MaxTasks: 12}); err != nil {
+		ApplyPlanningProfileScores(snapshot, &plan)
+		if err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}); err != nil {
 			if contextErr := terminalContextError(ctx); contextErr != nil {
 				return RouteDecisionPlan{}, contextErr
 			}
 			if requiredHumanReviewPolicyEnabled(snapshot.CoordinationPolicy) {
+				pool := activeExecutorIDs(snapshot.DigitalEmployeePool)
 				repaired := synthesizeRequiredReviewPlan(snapshot, pool, plan)
-				if repairErr := ValidateRouteDecisionGraph(repaired, pool, GraphValidationPolicy{MaxTasks: 12}); repairErr == nil {
+				ApplyPlanningProfileScores(snapshot, &repaired)
+				if repairErr := ValidateRouteDecisionPlan(snapshot, repaired, GraphValidationPolicy{MaxTasks: 12}); repairErr == nil {
 					return repaired, nil
 				}
 			}
@@ -252,8 +256,11 @@ func buildPlannerSystemPrompt() string {
 		"You are the SuperTeam project coordination route planner.",
 		"Return a single JSON object only; do not wrap it in markdown.",
 		"The JSON object must match this schema: reason string, requires_human_review bool, tasks array, budget_estimate object, template_key string, planner_metadata object.",
-		"Each task JSON object must include key, title, summary, selected_employee_id as a UUID string, expected_outputs, input_requirements, handoff_contract, blocked_by_keys, risk_level, and task_kind.",
+		"Each task JSON object must include key, title, summary, selected_employee_id as a UUID string, employee_selection_reason, required_capabilities, matched_capabilities, missing_capabilities, permission_requirements, tool_requirements, runtime_requirements, verification_requirements, selection_score, expected_outputs, input_requirements, handoff_contract, blocked_by_keys, risk_level, and task_kind.",
 		"Use selected_employee_id only from active executor candidates provided by the user prompt.",
+		"For every task, choose selected_employee_id by comparing planning_profile facts; explain the choice in employee_selection_reason and copy the required, matched, and missing capability arrays.",
+		"selection_score must be an integer from 0 to 100; use 0 when unsure because the platform recomputes the authoritative score.",
+		"A task with missing_capabilities must set requires_human_approval or make the whole route requires_human_review true.",
 		"If coordination_policy.require_human_review_for_new_demands is true, still return at least one concrete task and set requires_human_review plus every task requires_human_approval to true.",
 	}, "\n")
 }
@@ -296,18 +303,27 @@ func decodePlannerJSON(content string) (RouteDecisionPlan, error) {
 	}
 	for _, task := range decoded.Tasks {
 		plan.Tasks = append(plan.Tasks, PlannedTask{
-			Key:                   task.Key,
-			Title:                 task.Title,
-			Summary:               task.Summary,
-			SelectedEmployeeID:    task.SelectedEmployeeID,
-			TaskKind:              task.TaskKind,
-			StageIndex:            task.StageIndex,
-			RiskLevel:             task.RiskLevel,
-			RequiresHumanApproval: task.RequiresHumanApproval,
-			ExpectedOutputs:       nonNilStrings(task.ExpectedOutputs),
-			InputRequirements:     nonNilMap(task.InputRequirements),
-			HandoffContract:       nonNilMap(task.HandoffContract),
-			BlockedByKeys:         nonNilStrings(task.BlockedByKeys),
+			Key:                      task.Key,
+			Title:                    task.Title,
+			Summary:                  task.Summary,
+			SelectedEmployeeID:       task.SelectedEmployeeID,
+			EmployeeSelectionReason:  task.EmployeeSelectionReason,
+			RequiredCapabilities:     nonNilStrings(task.RequiredCapabilities),
+			MatchedCapabilities:      nonNilStrings(task.MatchedCapabilities),
+			MissingCapabilities:      nonNilStrings(task.MissingCapabilities),
+			PermissionRequirements:   nonNilStrings(task.PermissionRequirements),
+			ToolRequirements:         nonNilStrings(task.ToolRequirements),
+			RuntimeRequirements:      nonNilStrings(task.RuntimeRequirements),
+			VerificationRequirements: nonNilStrings(task.VerificationRequirements),
+			SelectionScore:           task.SelectionScore,
+			TaskKind:                 task.TaskKind,
+			StageIndex:               task.StageIndex,
+			RiskLevel:                task.RiskLevel,
+			RequiresHumanApproval:    task.RequiresHumanApproval,
+			ExpectedOutputs:          nonNilStrings(task.ExpectedOutputs),
+			InputRequirements:        nonNilMap(task.InputRequirements),
+			HandoffContract:          nonNilMap(task.HandoffContract),
+			BlockedByKeys:            nonNilStrings(task.BlockedByKeys),
 		})
 	}
 	return plan, nil
@@ -323,34 +339,52 @@ type plannerJSON struct {
 }
 
 type plannerTask struct {
-	Key                   string         `json:"key"`
-	Title                 string         `json:"title"`
-	Summary               string         `json:"summary"`
-	SelectedEmployeeID    uuid.UUID      `json:"selected_employee_id"`
-	TaskKind              string         `json:"task_kind"`
-	StageIndex            *int32         `json:"stage_index"`
-	RiskLevel             string         `json:"risk_level"`
-	RequiresHumanApproval bool           `json:"requires_human_approval"`
-	ExpectedOutputs       []string       `json:"expected_outputs"`
-	InputRequirements     map[string]any `json:"input_requirements"`
-	HandoffContract       map[string]any `json:"handoff_contract"`
-	BlockedByKeys         []string       `json:"blocked_by_keys"`
+	Key                      string         `json:"key"`
+	Title                    string         `json:"title"`
+	Summary                  string         `json:"summary"`
+	SelectedEmployeeID       uuid.UUID      `json:"selected_employee_id"`
+	EmployeeSelectionReason  string         `json:"employee_selection_reason"`
+	RequiredCapabilities     []string       `json:"required_capabilities"`
+	MatchedCapabilities      []string       `json:"matched_capabilities"`
+	MissingCapabilities      []string       `json:"missing_capabilities"`
+	PermissionRequirements   []string       `json:"permission_requirements"`
+	ToolRequirements         []string       `json:"tool_requirements"`
+	RuntimeRequirements      []string       `json:"runtime_requirements"`
+	VerificationRequirements []string       `json:"verification_requirements"`
+	SelectionScore           int            `json:"selection_score"`
+	TaskKind                 string         `json:"task_kind"`
+	StageIndex               *int32         `json:"stage_index"`
+	RiskLevel                string         `json:"risk_level"`
+	RequiresHumanApproval    bool           `json:"requires_human_approval"`
+	ExpectedOutputs          []string       `json:"expected_outputs"`
+	InputRequirements        map[string]any `json:"input_requirements"`
+	HandoffContract          map[string]any `json:"handoff_contract"`
+	BlockedByKeys            []string       `json:"blocked_by_keys"`
 }
 
 func (t *plannerTask) UnmarshalJSON(data []byte) error {
 	type plannerTaskJSON struct {
-		Key                   string          `json:"key"`
-		Title                 string          `json:"title"`
-		Summary               string          `json:"summary"`
-		SelectedEmployeeID    uuid.UUID       `json:"selected_employee_id"`
-		TaskKind              string          `json:"task_kind"`
-		StageIndex            *int32          `json:"stage_index"`
-		RiskLevel             string          `json:"risk_level"`
-		RequiresHumanApproval bool            `json:"requires_human_approval"`
-		ExpectedOutputs       json.RawMessage `json:"expected_outputs"`
-		InputRequirements     json.RawMessage `json:"input_requirements"`
-		HandoffContract       json.RawMessage `json:"handoff_contract"`
-		BlockedByKeys         []string        `json:"blocked_by_keys"`
+		Key                      string          `json:"key"`
+		Title                    string          `json:"title"`
+		Summary                  string          `json:"summary"`
+		SelectedEmployeeID       uuid.UUID       `json:"selected_employee_id"`
+		EmployeeSelectionReason  string          `json:"employee_selection_reason"`
+		RequiredCapabilities     json.RawMessage `json:"required_capabilities"`
+		MatchedCapabilities      json.RawMessage `json:"matched_capabilities"`
+		MissingCapabilities      json.RawMessage `json:"missing_capabilities"`
+		PermissionRequirements   json.RawMessage `json:"permission_requirements"`
+		ToolRequirements         json.RawMessage `json:"tool_requirements"`
+		RuntimeRequirements      json.RawMessage `json:"runtime_requirements"`
+		VerificationRequirements json.RawMessage `json:"verification_requirements"`
+		SelectionScore           json.RawMessage `json:"selection_score"`
+		TaskKind                 string          `json:"task_kind"`
+		StageIndex               *int32          `json:"stage_index"`
+		RiskLevel                string          `json:"risk_level"`
+		RequiresHumanApproval    bool            `json:"requires_human_approval"`
+		ExpectedOutputs          json.RawMessage `json:"expected_outputs"`
+		InputRequirements        json.RawMessage `json:"input_requirements"`
+		HandoffContract          json.RawMessage `json:"handoff_contract"`
+		BlockedByKeys            []string        `json:"blocked_by_keys"`
 	}
 	var raw plannerTaskJSON
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -364,21 +398,57 @@ func (t *plannerTask) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	selectionScore, err := decodePlannerSelectionScore(raw.SelectionScore)
+	if err != nil {
+		return err
+	}
 	*t = plannerTask{
-		Key:                   raw.Key,
-		Title:                 raw.Title,
-		Summary:               raw.Summary,
-		SelectedEmployeeID:    raw.SelectedEmployeeID,
-		TaskKind:              raw.TaskKind,
-		StageIndex:            raw.StageIndex,
-		RiskLevel:             raw.RiskLevel,
-		RequiresHumanApproval: raw.RequiresHumanApproval,
-		ExpectedOutputs:       decodePlannerStringArray(raw.ExpectedOutputs),
-		InputRequirements:     inputRequirements,
-		HandoffContract:       handoffContract,
-		BlockedByKeys:         raw.BlockedByKeys,
+		Key:                      raw.Key,
+		Title:                    raw.Title,
+		Summary:                  raw.Summary,
+		SelectedEmployeeID:       raw.SelectedEmployeeID,
+		EmployeeSelectionReason:  raw.EmployeeSelectionReason,
+		RequiredCapabilities:     decodePlannerStringArray(raw.RequiredCapabilities),
+		MatchedCapabilities:      decodePlannerStringArray(raw.MatchedCapabilities),
+		MissingCapabilities:      decodePlannerStringArray(raw.MissingCapabilities),
+		PermissionRequirements:   decodePlannerStringArray(raw.PermissionRequirements),
+		ToolRequirements:         decodePlannerStringArray(raw.ToolRequirements),
+		RuntimeRequirements:      decodePlannerStringArray(raw.RuntimeRequirements),
+		VerificationRequirements: decodePlannerStringArray(raw.VerificationRequirements),
+		SelectionScore:           selectionScore,
+		TaskKind:                 raw.TaskKind,
+		StageIndex:               raw.StageIndex,
+		RiskLevel:                raw.RiskLevel,
+		RequiresHumanApproval:    raw.RequiresHumanApproval,
+		ExpectedOutputs:          decodePlannerStringArray(raw.ExpectedOutputs),
+		InputRequirements:        inputRequirements,
+		HandoffContract:          handoffContract,
+		BlockedByKeys:            raw.BlockedByKeys,
 	}
 	return nil
+}
+
+func decodePlannerSelectionScore(raw json.RawMessage) (int, error) {
+	if len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null" {
+		return 0, nil
+	}
+	var number json.Number
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&number); err != nil {
+		return 0, fmt.Errorf("selection_score must be a number: %w", err)
+	}
+	parsed, err := strconv.ParseFloat(number.String(), 64)
+	if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+		return 0, fmt.Errorf("selection_score must be finite")
+	}
+	if parsed >= 0 && parsed <= 1 {
+		return 0, nil
+	}
+	if parsed != math.Trunc(parsed) {
+		return 0, fmt.Errorf("selection_score must be an integer 0-100 or normalized 0-1 score")
+	}
+	return int(parsed), nil
 }
 
 // decodePlannerStringArray coerces a planner string-array field (expected_outputs,
@@ -529,10 +599,20 @@ func synthesizeRequiredReviewPlan(snapshot CoordinationSnapshot, pool []uuid.UUI
 		TemplateKey:         templateKey,
 		PlannerMetadata:     metadata,
 		Tasks: []PlannedTask{{
-			Key:                   "required_review_execute_demand",
-			Title:                 title,
-			Summary:               summary,
-			SelectedEmployeeID:    pool[0],
+			Key:                     "required_review_execute_demand",
+			Title:                   title,
+			Summary:                 summary,
+			SelectedEmployeeID:      pool[0],
+			EmployeeSelectionReason: "协调策略要求人工审核，选择可执行员工承接审核后的执行任务",
+			RequiredCapabilities:    []string{"execution"},
+			MatchedCapabilities:     []string{"execution"},
+			MissingCapabilities:     []string{},
+			PermissionRequirements:  []string{},
+			ToolRequirements:        []string{},
+			RuntimeRequirements:     []string{},
+			VerificationRequirements: []string{
+				"写回 project task attempt 结果",
+			},
 			TaskKind:              "execution",
 			StageIndex:            &stageIndex,
 			RiskLevel:             "normal",
