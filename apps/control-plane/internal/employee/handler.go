@@ -182,7 +182,7 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		EnvironmentVariables   []struct {
 			Name      string `json:"name"`
 			Value     string `json:"value"`
-			Sensitive bool   `json:"sensitive"`
+			Sensitive *bool  `json:"sensitive"`
 		} `json:"environment_variables"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -194,7 +194,7 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		environmentVariables = append(environmentVariables, InitialEnvironmentVariable{
 			Name:      item.Name,
 			Value:     item.Value,
-			Sensitive: item.Sensitive,
+			Sensitive: sensitiveOrDefault(item.Sensitive),
 		})
 	}
 	employee, err := service.CreateDigitalEmployee(r.Context(), CreateDigitalEmployeeRequest{
@@ -359,7 +359,7 @@ func (h *HTTPHandler) UpsertEnvironmentVariable(w http.ResponseWriter, r *http.R
 	}
 	var req struct {
 		Value     string `json:"value"`
-		Sensitive bool   `json:"sensitive"`
+		Sensitive *bool  `json:"sensitive"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -371,7 +371,7 @@ func (h *HTTPHandler) UpsertEnvironmentVariable(w http.ResponseWriter, r *http.R
 		DigitalEmployeeID: employeeID,
 		Name:              chi.URLParam(r, "envName"),
 		Value:             req.Value,
-		Sensitive:         req.Sensitive,
+		Sensitive:         sensitiveOrDefault(req.Sensitive),
 		ActorUserID:       &updatedBy,
 	})
 	if err != nil {
@@ -379,6 +379,13 @@ func (h *HTTPHandler) UpsertEnvironmentVariable(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusOK, environmentVariableSummaryResponseFromDomain(summary))
+}
+
+func sensitiveOrDefault(value *bool) bool {
+	if value == nil {
+		return true
+	}
+	return *value
 }
 
 func (h *HTTPHandler) DeleteEnvironmentVariable(w http.ResponseWriter, r *http.Request) {

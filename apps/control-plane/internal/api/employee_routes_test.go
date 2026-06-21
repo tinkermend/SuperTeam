@@ -1382,6 +1382,23 @@ func TestDigitalEmployeeEnvironmentVariableRoutes(t *testing.T) {
 	if strings.Contains(upsertResp.Body.String(), "secret") {
 		t.Fatalf("response leaked plaintext: %s", upsertResp.Body.String())
 	}
+	if !service.upsertEnvReq.Sensitive {
+		t.Fatalf("expected explicit sensitive flag to stay true, got %#v", service.upsertEnvReq)
+	}
+
+	defaultSensitiveReq := httptest.NewRequest(http.MethodPut, "/api/v1/digital-employees/"+employeeID.String()+"/environment-variables/GH_PAT", strings.NewReader(`{"value":"secret2"}`))
+	defaultSensitiveReq.AddCookie(cookie)
+	defaultSensitiveResp := httptest.NewRecorder()
+	server.ServeHTTP(defaultSensitiveResp, defaultSensitiveReq)
+	if defaultSensitiveResp.Code != http.StatusOK {
+		t.Fatalf("expected upsert env var without sensitive flag to succeed, got %d: %s", defaultSensitiveResp.Code, defaultSensitiveResp.Body.String())
+	}
+	if strings.Contains(defaultSensitiveResp.Body.String(), "secret2") {
+		t.Fatalf("response leaked plaintext: %s", defaultSensitiveResp.Body.String())
+	}
+	if !service.upsertEnvReq.Sensitive {
+		t.Fatalf("expected omitted sensitive flag to default true, got %#v", service.upsertEnvReq)
+	}
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/digital-employees/"+employeeID.String()+"/environment-variables/GH_TOKEN", nil)
 	deleteReq.AddCookie(cookie)
