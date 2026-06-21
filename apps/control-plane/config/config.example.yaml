@@ -20,6 +20,16 @@ objectStore:
   secretAccessKey: "xxxx"
   forcePathStyle: false
 
+employeeEnv:
+  # Digital-employee environment-variable encryption. Comma-separated
+  # "keyId:base64(32-byte-key)" entries; activeKeyId selects the key used to
+  # encrypt new values (all listed keys can decrypt, to support rotation).
+  # Generate a key with:  openssl rand -base64 32
+  # Keep config.yaml out of git (it already is). Env overrides:
+  #   SUPERTEAM_ENV_ENCRYPTION_KEYS / SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID
+  keys: "v1:replace-with-base64-32-byte-key"
+  activeKeyId: "v1"
+
 temporal:
   enabled: false
   address: "127.0.0.1:7233"

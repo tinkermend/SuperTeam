@@ -17,6 +17,7 @@ type Config struct {
 	Temporal    TemporalConfig    `yaml:"temporal"`
 	Planner     PlannerConfig     `yaml:"planner"`
 	Authz       AuthzConfig       `yaml:"authz"`
+	EmployeeEnv EmployeeEnvConfig `yaml:"employeeEnv"`
 }
 
 type HTTPConfig struct {
@@ -38,6 +39,11 @@ type ObjectStoreConfig struct {
 	AccessKeyID     string `yaml:"accessKeyId"`
 	SecretAccessKey string `yaml:"secretAccessKey"`
 	ForcePathStyle  bool   `yaml:"forcePathStyle"`
+}
+
+type EmployeeEnvConfig struct {
+	Keys        string `yaml:"keys"`
+	ActiveKeyID string `yaml:"activeKeyId"`
 }
 
 type TemporalConfig struct {
@@ -166,6 +172,8 @@ func applyEnv(cfg Config) Config {
 	cfg.Authz.OpenFGA.StoreID = envOrDefault("OPENFGA_STORE_ID", cfg.Authz.OpenFGA.StoreID)
 	cfg.Authz.OpenFGA.ModelID = envOrDefault("OPENFGA_MODEL_ID", cfg.Authz.OpenFGA.ModelID)
 	cfg.Authz.OpenFGA.APIToken = envOrDefault("OPENFGA_API_TOKEN", cfg.Authz.OpenFGA.APIToken)
+	cfg.EmployeeEnv.Keys = envOrDefault("SUPERTEAM_ENV_ENCRYPTION_KEYS", cfg.EmployeeEnv.Keys)
+	cfg.EmployeeEnv.ActiveKeyID = envOrDefault("SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID", cfg.EmployeeEnv.ActiveKeyID)
 	return cfg
 }
 
@@ -209,6 +217,12 @@ func (cfg Config) validate() error {
 	}
 	if strings.TrimSpace(cfg.ObjectStore.SecretAccessKey) == "" {
 		return errors.New("S3_SECRET_ACCESS_KEY is required")
+	}
+	if strings.TrimSpace(cfg.EmployeeEnv.Keys) == "" {
+		return errors.New("employeeEnv.keys is required (set employeeEnv in config.yaml or SUPERTEAM_ENV_ENCRYPTION_KEYS)")
+	}
+	if strings.TrimSpace(cfg.EmployeeEnv.ActiveKeyID) == "" {
+		return errors.New("employeeEnv.activeKeyId is required (set employeeEnv in config.yaml or SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID)")
 	}
 	if cfg.Temporal.Enabled {
 		if strings.TrimSpace(cfg.Temporal.Address) == "" {

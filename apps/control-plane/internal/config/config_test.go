@@ -8,6 +8,7 @@ import (
 )
 
 func TestLoadFromEnvBuildsControlPlaneConfig(t *testing.T) {
+	setRequiredEnv(t)
 	t.Setenv("CONTROL_PLANE_ADDR", ":9090")
 	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
 	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
@@ -41,13 +42,7 @@ func TestLoadFromEnvBuildsControlPlaneConfig(t *testing.T) {
 }
 
 func TestLoadFromEnvPlannerDefaultsAreProviderNeutral(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
-	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
-	t.Setenv("S3_ENDPOINT", "http://127.0.0.1:9000")
-	t.Setenv("S3_REGION", "us-east-1")
-	t.Setenv("S3_BUCKET", "superteam-artifacts")
-	t.Setenv("S3_ACCESS_KEY_ID", "minio")
-	t.Setenv("S3_SECRET_ACCESS_KEY", "minio-secret")
+	setRequiredEnv(t)
 
 	cfg, err := LoadFromEnv()
 
@@ -60,13 +55,7 @@ func TestLoadFromEnvPlannerDefaultsAreProviderNeutral(t *testing.T) {
 }
 
 func TestLoadFromEnvAuthzDefaultsToDBEngine(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
-	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
-	t.Setenv("S3_ENDPOINT", "http://127.0.0.1:9000")
-	t.Setenv("S3_REGION", "us-east-1")
-	t.Setenv("S3_BUCKET", "superteam-artifacts")
-	t.Setenv("S3_ACCESS_KEY_ID", "minio")
-	t.Setenv("S3_SECRET_ACCESS_KEY", "minio-secret")
+	setRequiredEnv(t)
 
 	cfg, err := LoadFromEnv()
 
@@ -78,13 +67,7 @@ func TestLoadFromEnvAuthzDefaultsToDBEngine(t *testing.T) {
 }
 
 func TestLoadFromEnvAuthzOpenFGAShadowConfig(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
-	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
-	t.Setenv("S3_ENDPOINT", "http://127.0.0.1:9000")
-	t.Setenv("S3_REGION", "us-east-1")
-	t.Setenv("S3_BUCKET", "superteam-artifacts")
-	t.Setenv("S3_ACCESS_KEY_ID", "minio")
-	t.Setenv("S3_SECRET_ACCESS_KEY", "minio-secret")
+	setRequiredEnv(t)
 	t.Setenv("AUTHZ_ENGINE", "openfga_shadow")
 	t.Setenv("OPENFGA_API_URL", "http://127.0.0.1:8088")
 	t.Setenv("OPENFGA_STORE_ID", "store-1")
@@ -113,6 +96,8 @@ func TestLoadFromEnvRequiresStorageConfiguration(t *testing.T) {
 }
 
 func TestLoadFromEnvRequiresObjectStoreConnectionConfiguration(t *testing.T) {
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_KEYS", "v1:test-key")
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID", "v1")
 	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
 	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
 	t.Setenv("S3_BUCKET", "superteam-artifacts")
@@ -142,6 +127,9 @@ objectStore:
   accessKeyId: "minio"
   secretAccessKey: "minio-secret"
   forcePathStyle: true
+employeeEnv:
+  keys: "v1:file-key"
+  activeKeyId: "v1"
 `)
 
 	cfg, err := LoadFromFile(path)
@@ -164,6 +152,8 @@ objectStore:
 	if !cfg.ObjectStore.ForcePathStyle {
 		t.Fatal("expected path-style object store config")
 	}
+	require.Equal(t, "v1:file-key", cfg.EmployeeEnv.Keys)
+	require.Equal(t, "v1", cfg.EmployeeEnv.ActiveKeyID)
 }
 
 func TestLoadFromFileAllowsEnvOverrides(t *testing.T) {
@@ -180,12 +170,17 @@ objectStore:
   bucket: "file-bucket"
   accessKeyId: "file-ak"
   secretAccessKey: "file-sk"
+employeeEnv:
+  keys: "v1:file-key"
+  activeKeyId: "v1"
 `)
 	t.Setenv("CONTROL_PLANE_ADDR", ":7070")
 	t.Setenv("DATABASE_URL", "postgres://env")
 	t.Setenv("REDIS_URL", "redis://env")
 	t.Setenv("S3_BUCKET", "env-bucket")
 	t.Setenv("S3_FORCE_PATH_STYLE", "true")
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_KEYS", "v2:env-key")
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID", "v2")
 
 	cfg, err := LoadFromFile(path)
 	if err != nil {
@@ -207,16 +202,12 @@ objectStore:
 	if !cfg.ObjectStore.ForcePathStyle {
 		t.Fatal("expected env bool override")
 	}
+	require.Equal(t, "v2:env-key", cfg.EmployeeEnv.Keys)
+	require.Equal(t, "v2", cfg.EmployeeEnv.ActiveKeyID)
 }
 
 func TestLoadFromFilePlannerConfig(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://example")
-	t.Setenv("REDIS_URL", "redis://example")
-	t.Setenv("S3_ENDPOINT", "http://minio.local")
-	t.Setenv("S3_REGION", "us-east-1")
-	t.Setenv("S3_BUCKET", "superteam")
-	t.Setenv("S3_ACCESS_KEY_ID", "access")
-	t.Setenv("S3_SECRET_ACCESS_KEY", "secret")
+	setRequiredEnv(t)
 
 	path := writeTempConfig(t, `
 planner:
@@ -241,13 +232,7 @@ planner:
 }
 
 func TestPlannerEnvOverridesFileConfig(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://example")
-	t.Setenv("REDIS_URL", "redis://example")
-	t.Setenv("S3_ENDPOINT", "http://minio.local")
-	t.Setenv("S3_REGION", "us-east-1")
-	t.Setenv("S3_BUCKET", "superteam")
-	t.Setenv("S3_ACCESS_KEY_ID", "access")
-	t.Setenv("S3_SECRET_ACCESS_KEY", "secret")
+	setRequiredEnv(t)
 	t.Setenv("PLANNER_PROVIDER", "qwen")
 	t.Setenv("PLANNER_API_KEY", "env-key")
 	t.Setenv("PLANNER_BASE_URL", "https://gateway.local")
@@ -276,6 +261,50 @@ planner:
 	require.Equal(t, 4096, cfg.Planner.MaxTokens)
 	require.Equal(t, 0.0, cfg.Planner.Temperature)
 	require.Equal(t, 3, cfg.Planner.MaxAttempts)
+}
+
+func TestLoadFromEnvRequiresEmployeeEnvEncryptionConfig(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
+	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
+	t.Setenv("S3_ENDPOINT", "http://127.0.0.1:9000")
+	t.Setenv("S3_REGION", "us-east-1")
+	t.Setenv("S3_BUCKET", "superteam-artifacts")
+	t.Setenv("S3_ACCESS_KEY_ID", "minio")
+	t.Setenv("S3_SECRET_ACCESS_KEY", "minio-secret")
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_KEYS", "")
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID", "")
+
+	_, err := LoadFromEnv()
+	require.ErrorContains(t, err, "employeeEnv.keys is required")
+}
+
+func TestLoadFromEnvRequiresEmployeeEnvActiveKeyID(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
+	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
+	t.Setenv("S3_ENDPOINT", "http://127.0.0.1:9000")
+	t.Setenv("S3_REGION", "us-east-1")
+	t.Setenv("S3_BUCKET", "superteam-artifacts")
+	t.Setenv("S3_ACCESS_KEY_ID", "minio")
+	t.Setenv("S3_SECRET_ACCESS_KEY", "minio-secret")
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_KEYS", "v1:test-key")
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID", "")
+
+	_, err := LoadFromEnv()
+	require.ErrorContains(t, err, "employeeEnv.activeKeyId is required")
+}
+
+func setRequiredEnv(t *testing.T) {
+	t.Helper()
+
+	t.Setenv("DATABASE_URL", "postgres://superteam:secret@127.0.0.1:5432/superteam?sslmode=disable")
+	t.Setenv("REDIS_URL", "redis://:secret@127.0.0.1:6379/0")
+	t.Setenv("S3_ENDPOINT", "http://127.0.0.1:9000")
+	t.Setenv("S3_REGION", "us-east-1")
+	t.Setenv("S3_BUCKET", "superteam-artifacts")
+	t.Setenv("S3_ACCESS_KEY_ID", "minio")
+	t.Setenv("S3_SECRET_ACCESS_KEY", "minio-secret")
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_KEYS", "v1:test-key")
+	t.Setenv("SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID", "v1")
 }
 
 func writeConfigFile(t *testing.T, body string) string {

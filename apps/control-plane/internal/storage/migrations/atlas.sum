@@ -1,4 +1,4 @@
-h1:FzS5OgS5is5DOk394c9Y1NVu7HIZrdDOYpZvBEVNIcw=
+h1:iaExmql3wHl81czCKToJDryhIitTqTyK8qbbIPs6O4g=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -30,3 +30,4 @@ h1:FzS5OgS5is5DOk394c9Y1NVu7HIZrdDOYpZvBEVNIcw=
 029_execution_ledger_events.sql h1:x5ue+lk5SRPY1haJbh1Matn373Ib28yF8FrP2+nGmjE=
 030_execution_ledger_append_only_hardening.sql h1:EECofH3s00uljhWG+/c6Q0OjpVcxF6+XvCAaRuf2+78=
 031_project_plan_revisions.sql h1:vxMB/bW3MukynwqODwiIYpWUk3o2/ytOCAU0XZ3c4Ao=
+032_digital_employee_env_and_skill_dependencies.sql h1:j31x0sOjl9bp6SikQEkk39UmV76p288rCgXc42TsdDQ=
