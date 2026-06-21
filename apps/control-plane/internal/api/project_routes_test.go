@@ -193,6 +193,33 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 		t.Fatalf("expected route decision tenant/project/page from route, got tenant=%s project=%s limit=%d", service.routeDecisionTenantID, service.routeDecisionProjectID, service.routeDecisionLimit)
 	}
 
+	planDemandID := uuid.New()
+	planRevisionReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/plan-revisions?demand_id="+planDemandID.String()+"&limit=6", nil)
+	planRevisionReq.AddCookie(cookie)
+	planRevisionResp := httptest.NewRecorder()
+	server.ServeHTTP(planRevisionResp, planRevisionReq)
+	if planRevisionResp.Code != http.StatusOK {
+		t.Fatalf("expected plan revisions to succeed, got %d: %s", planRevisionResp.Code, planRevisionResp.Body.String())
+	}
+	if service.planRevisionListReq.TenantID != expectedTenantID || service.planRevisionListReq.ProjectID != service.projectID || service.planRevisionListReq.Limit != 6 {
+		t.Fatalf("expected plan revision tenant/project/page from route, got %#v", service.planRevisionListReq)
+	}
+	if service.planRevisionListReq.DemandID == nil || *service.planRevisionListReq.DemandID != planDemandID {
+		t.Fatalf("expected plan revision demand filter from query, got %#v", service.planRevisionListReq.DemandID)
+	}
+
+	planRevisionID := uuid.New()
+	getPlanRevisionReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+service.projectID.String()+"/plan-revisions/"+planRevisionID.String(), nil)
+	getPlanRevisionReq.AddCookie(cookie)
+	getPlanRevisionResp := httptest.NewRecorder()
+	server.ServeHTTP(getPlanRevisionResp, getPlanRevisionReq)
+	if getPlanRevisionResp.Code != http.StatusOK {
+		t.Fatalf("expected get plan revision to succeed, got %d: %s", getPlanRevisionResp.Code, getPlanRevisionResp.Body.String())
+	}
+	if service.planRevisionTenantID != expectedTenantID || service.planRevisionProjectID != service.projectID || service.planRevisionID != planRevisionID {
+		t.Fatalf("expected get plan revision identifiers from route, got tenant=%s project=%s revision=%s", service.planRevisionTenantID, service.planRevisionProjectID, service.planRevisionID)
+	}
+
 	decisionID := uuid.New()
 	resolveReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+service.projectID.String()+"/decisions/"+decisionID.String()+"/resolve", strings.NewReader(`{"decision":"approved","comment":"同意"}`))
 	resolveReq.Header.Set("Content-Type", "application/json")
@@ -689,6 +716,10 @@ type routeProjectService struct {
 	routeDecisionTenantID     uuid.UUID
 	routeDecisionProjectID    uuid.UUID
 	routeDecisionLimit        int32
+	planRevisionListReq       project.ListPlanRevisionsRequest
+	planRevisionTenantID      uuid.UUID
+	planRevisionProjectID     uuid.UUID
+	planRevisionID            uuid.UUID
 	resolveDecisionReq        project.ResolveDecisionRequest
 	retryWorkflowSignalReq    project.RetryWorkflowSignalRequest
 	completeAttemptReq        project.CompleteProjectTaskAttemptRequest
@@ -858,6 +889,43 @@ func (s *routeProjectService) ListRouteDecisions(ctx context.Context, tenantID, 
 		ExpectedOutputs:             []any{"执行摘要"},
 		BudgetEstimate:              map[string]any{},
 	}}, nil
+}
+
+func (s *routeProjectService) ListPlanRevisions(ctx context.Context, req project.ListPlanRevisionsRequest) ([]project.PlanRevision, error) {
+	s.planRevisionListReq = req
+	return []project.PlanRevision{{
+		ID:              uuid.New(),
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		DemandID:        uuid.New(),
+		RevisionNumber:  1,
+		Status:          project.PlanRevisionStatusPendingReview,
+		Payload:         map[string]any{"summary": "需要负责人复核计划"},
+		PlanFingerprint: "fingerprint",
+		ReviewRequired:  true,
+		CreatedTaskIDs:  []uuid.UUID{},
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
+	}}, nil
+}
+
+func (s *routeProjectService) GetPlanRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (*project.PlanRevision, error) {
+	s.planRevisionTenantID = tenantID
+	s.planRevisionProjectID = projectID
+	s.planRevisionID = revisionID
+	return &project.PlanRevision{
+		ID:              revisionID,
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		DemandID:        uuid.New(),
+		RevisionNumber:  1,
+		Status:          project.PlanRevisionStatusAccepted,
+		Payload:         map[string]any{},
+		PlanFingerprint: "fingerprint",
+		CreatedTaskIDs:  []uuid.UUID{},
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
+	}, nil
 }
 
 func (s *routeProjectService) ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.CoordinationJob, error) {

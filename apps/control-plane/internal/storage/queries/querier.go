@@ -13,6 +13,7 @@ import (
 
 type Querier interface {
 	AbortProvisionedDigitalEmployee(ctx context.Context, arg AbortProvisionedDigitalEmployeeParams) error
+	AcceptProjectPlanRevision(ctx context.Context, arg AcceptProjectPlanRevisionParams) (ProjectPlanRevision, error)
 	ActivateDigitalEmployeeWorkspaceFileRevision(ctx context.Context, arg ActivateDigitalEmployeeWorkspaceFileRevisionParams) (DigitalEmployeeWorkspaceFile, error)
 	ActivateTenantTeamConfigRevision(ctx context.Context, arg ActivateTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
 	ActiveAuthUserExists(ctx context.Context, id uuid.UUID) (bool, error)
@@ -28,6 +29,7 @@ type Querier interface {
 	AssignProjectTask(ctx context.Context, arg AssignProjectTaskParams) (ProjectTask, error)
 	BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRunParams) (ProjectTask, error)
 	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
+	CompleteProjectPlanDecompositionClaim(ctx context.Context, arg CompleteProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
 	CountActiveArtifactRetentionHolds(ctx context.Context, arg CountActiveArtifactRetentionHoldsParams) (int32, error)
 	CountActiveProviderSessionsForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountActiveTenantTeamsByIDs(ctx context.Context, arg CountActiveTenantTeamsByIDsParams) (int32, error)
@@ -71,6 +73,8 @@ type Querier interface {
 	CreateProjectEvidenceRef(ctx context.Context, arg CreateProjectEvidenceRefParams) (ProjectEvidenceRef, error)
 	CreateProjectExecutionSummary(ctx context.Context, arg CreateProjectExecutionSummaryParams) (ProjectExecutionSummary, error)
 	CreateProjectMember(ctx context.Context, arg CreateProjectMemberParams) (ProjectMember, error)
+	CreateProjectPlanDecompositionClaim(ctx context.Context, arg CreateProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
+	CreateProjectPlanRevision(ctx context.Context, arg CreateProjectPlanRevisionParams) (ProjectPlanRevision, error)
 	CreateProjectReportRef(ctx context.Context, arg CreateProjectReportRefParams) (ProjectReportRef, error)
 	CreateProjectRouteDecision(ctx context.Context, arg CreateProjectRouteDecisionParams) (ProjectRouteDecision, error)
 	CreateProjectTask(ctx context.Context, arg CreateProjectTaskParams) (ProjectTask, error)
@@ -119,6 +123,7 @@ type Querier interface {
 	DeleteTeamMCPServer(ctx context.Context, arg DeleteTeamMCPServerParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	DisableTeamMemberRole(ctx context.Context, arg DisableTeamMemberRoleParams) (TenantMember, error)
+	FailProjectPlanDecompositionClaim(ctx context.Context, arg FailProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
 	FinishProjectCoordinationJob(ctx context.Context, arg FinishProjectCoordinationJobParams) (ProjectCoordinationJob, error)
 	FinishProjectTaskAttempt(ctx context.Context, arg FinishProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	GetActiveDigitalEmployeeRun(ctx context.Context, arg GetActiveDigitalEmployeeRunParams) (TaskRun, error)
@@ -164,6 +169,8 @@ type Querier interface {
 	GetProjectDemand(ctx context.Context, arg GetProjectDemandParams) (ProjectDemand, error)
 	GetProjectEvent(ctx context.Context, arg GetProjectEventParams) (ProjectEvent, error)
 	GetProjectEventByTypeAndActor(ctx context.Context, arg GetProjectEventByTypeAndActorParams) (ProjectEvent, error)
+	GetProjectPlanRevision(ctx context.Context, arg GetProjectPlanRevisionParams) (ProjectPlanRevision, error)
+	GetProjectPlanRevisionByFingerprint(ctx context.Context, arg GetProjectPlanRevisionByFingerprintParams) (ProjectPlanRevision, error)
 	GetProjectRouteDecisionByCoordinationJob(ctx context.Context, arg GetProjectRouteDecisionByCoordinationJobParams) (ProjectRouteDecision, error)
 	GetProjectTask(ctx context.Context, arg GetProjectTaskParams) (ProjectTask, error)
 	GetProjectTaskAttempt(ctx context.Context, arg GetProjectTaskAttemptParams) (ProjectTaskAttempt, error)
@@ -242,6 +249,7 @@ type Querier interface {
 	ListProjectExecutionSummaries(ctx context.Context, arg ListProjectExecutionSummariesParams) ([]ProjectExecutionSummary, error)
 	ListProjectExecutionSummariesByTaskIDs(ctx context.Context, arg ListProjectExecutionSummariesByTaskIDsParams) ([]ProjectExecutionSummary, error)
 	ListProjectMembers(ctx context.Context, arg ListProjectMembersParams) ([]ProjectMember, error)
+	ListProjectPlanRevisions(ctx context.Context, arg ListProjectPlanRevisionsParams) ([]ProjectPlanRevision, error)
 	ListProjectReportRefs(ctx context.Context, arg ListProjectReportRefsParams) ([]ProjectReportRef, error)
 	ListProjectRouteDecisions(ctx context.Context, arg ListProjectRouteDecisionsParams) ([]ProjectRouteDecision, error)
 	ListProjectTaskAttemptsForExecutionTrace(ctx context.Context, arg ListProjectTaskAttemptsForExecutionTraceParams) ([]ProjectTaskAttempt, error)
@@ -292,9 +300,13 @@ type Querier interface {
 	ListWorkflowInstances(ctx context.Context, arg ListWorkflowInstancesParams) ([]ListWorkflowInstancesRow, error)
 	LockProjectEventSequence(ctx context.Context, arg LockProjectEventSequenceParams) error
 	LockProjectTaskForQueue(ctx context.Context, arg LockProjectTaskForQueueParams) (ProjectTask, error)
+	MarkProjectPlanRevisionDecomposed(ctx context.Context, arg MarkProjectPlanRevisionDecomposedParams) (ProjectPlanRevision, error)
+	MarkProjectPlanRevisionDecomposing(ctx context.Context, arg MarkProjectPlanRevisionDecomposingParams) (ProjectPlanRevision, error)
 	MoveProjectTaskToWaitingHuman(ctx context.Context, arg MoveProjectTaskToWaitingHumanParams) (ProjectTask, error)
+	NextProjectPlanRevisionNumber(ctx context.Context, arg NextProjectPlanRevisionNumberParams) (int32, error)
 	ProjectTaskEventExists(ctx context.Context, arg ProjectTaskEventExistsParams) (bool, error)
 	QueueProjectTask(ctx context.Context, arg QueueProjectTaskParams) (ProjectTask, error)
+	RejectProjectPlanRevision(ctx context.Context, arg RejectProjectPlanRevisionParams) (ProjectPlanRevision, error)
 	RejectRuntimeEnrollment(ctx context.Context, arg RejectRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	RejectTeamLendingRequest(ctx context.Context, arg RejectTeamLendingRequestParams) (TeamLendingRequest, error)
 	RejectTenantTeamConfigRevision(ctx context.Context, arg RejectTenantTeamConfigRevisionParams) (TenantTeamConfigRevision, error)
@@ -314,6 +326,7 @@ type Querier interface {
 	ScheduleProjectTaskRetry(ctx context.Context, arg ScheduleProjectTaskRetryParams) (ProjectTask, error)
 	SetTenantTeamStatus(ctx context.Context, arg SetTenantTeamStatusParams) (TenantTeam, error)
 	StartProjectTaskAttempt(ctx context.Context, arg StartProjectTaskAttemptParams) (ProjectTaskAttempt, error)
+	SupersedeOpenProjectPlanRevisions(ctx context.Context, arg SupersedeOpenProjectPlanRevisionsParams) error
 	TouchRuntimeSessionLastSeen(ctx context.Context, arg TouchRuntimeSessionLastSeenParams) (RuntimeSession, error)
 	// Forward-guarded project status transition: only applied when the current status
 	// is in from_statuses. No matching row (wrong current status) yields no rows so the

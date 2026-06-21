@@ -1221,6 +1221,25 @@ func (s *Service) ListRouteDecisions(ctx context.Context, tenantID, projectID uu
 	return s.repository.ListRouteDecisions(ctx, tenantID, projectID, limit, offset)
 }
 
+func (s *Service) ListPlanRevisions(ctx context.Context, req ListPlanRevisionsRequest) ([]PlanRevision, error) {
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	req.Limit, req.Offset = normalizePagination(req.Limit, req.Offset)
+	return s.repository.ListPlanRevisions(ctx, req)
+}
+
+func (s *Service) GetPlanRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (*PlanRevision, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil || revisionID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	revision, err := s.repository.GetPlanRevision(ctx, tenantID, projectID, revisionID)
+	if err != nil {
+		return nil, err
+	}
+	return &revision, nil
+}
+
 func (s *Service) ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject

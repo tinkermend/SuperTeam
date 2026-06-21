@@ -1030,6 +1030,92 @@ type ProjectMember struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 计划版本分解幂等声明表，保证 accepted PlanRevision 精确一次转换为 ProjectTask DAG。
+type ProjectPlanDecompositionClaim struct {
+	// 分解声明ID。
+	ID uuid.UUID `json:"id"`
+	// 租户ID。
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 项目ID。
+	ProjectID uuid.UUID `json:"project_id"`
+	// 需求ID。
+	DemandID uuid.UUID `json:"demand_id"`
+	// 被分解的 accepted PlanRevision ID。
+	AcceptedPlanRevisionID uuid.UUID `json:"accepted_plan_revision_id"`
+	// 被分解计划的 canonical hash。
+	PlanFingerprint string `json:"plan_fingerprint"`
+	// 分解状态：in_flight, completed, failed。
+	Status string `json:"status"`
+	// 分解成功或恢复后对应的 ProjectTask ID。
+	CreatedTaskIds []uuid.UUID `json:"created_task_ids"`
+	// 分解失败时记录的结构化错误。
+	Error []byte `json:"error"`
+	// 分解声明创建时间。
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 分解声明最近更新时间。
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 项目计划版本表，保存 planner 生成并经服务端校验的人类可审核计划版本。
+type ProjectPlanRevision struct {
+	// 计划版本ID。
+	ID uuid.UUID `json:"id"`
+	// 租户ID，所有查询必须以租户隔离。
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 项目所属团队ID；历史项目可为空，由应用层从项目校验。
+	TeamID uuid.NullUUID `json:"team_id"`
+	// 计划版本所属项目ID。
+	ProjectID uuid.UUID `json:"project_id"`
+	// 计划版本关联的用户需求或触发事件ID。
+	DemandID uuid.UUID `json:"demand_id"`
+	// 生成该计划版本的项目协调作业ID。
+	CoordinationJobID uuid.NullUUID `json:"coordination_job_id"`
+	// 兼容现有路由决策读模型的关联决策ID。
+	RouteDecisionID uuid.NullUUID `json:"route_decision_id"`
+	// 同一项目需求下从 1 开始递增的计划版本号。
+	RevisionNumber int32 `json:"revision_number"`
+	// 计划版本状态：draft, validation_failed, pending_review, accepted, rejected, superseded, decomposing, decomposed。
+	Status string `json:"status"`
+	// 结构化 PlanRevisionPayload，不保存长 prompt 或原始模型全文。
+	Payload []byte `json:"payload"`
+	// 生成计划的 planner provider。
+	PlannerProvider pgtype.Text `json:"planner_provider"`
+	// 生成计划的 planner model。
+	PlannerModel pgtype.Text `json:"planner_model"`
+	// PlanningSnapshot 输入摘要 hash。
+	PlannerInputHash pgtype.Text `json:"planner_input_hash"`
+	// canonical payload hash，用于幂等与审计。
+	PlanFingerprint string `json:"plan_fingerprint"`
+	// 服务端校验 hard error 列表。
+	ValidationErrors []byte `json:"validation_errors"`
+	// 服务端校验 warning 列表。
+	ValidationWarnings []byte `json:"validation_warnings"`
+	// 该版本是否需要人类 review。
+	ReviewRequired bool `json:"review_required"`
+	// 需要人类 review 的摘要原因。
+	ReviewReason pgtype.Text `json:"review_reason"`
+	// 接受该计划版本的人类用户ID；策略自动接受时为空。
+	AcceptedBy uuid.NullUUID `json:"accepted_by"`
+	// 计划版本被接受时间。
+	AcceptedAt pgtype.Timestamptz `json:"accepted_at"`
+	// 驳回该计划版本的人类用户ID。
+	RejectedBy uuid.NullUUID `json:"rejected_by"`
+	// 计划版本被驳回时间。
+	RejectedAt pgtype.Timestamptz `json:"rejected_at"`
+	// 驳回或要求修改的原因。
+	RejectionReason pgtype.Text `json:"rejection_reason"`
+	// 替代该版本的新计划版本ID。
+	SupersededByRevisionID uuid.NullUUID `json:"superseded_by_revision_id"`
+	// 分解该版本的幂等 claim ID。
+	DecompositionClaimID uuid.NullUUID `json:"decomposition_claim_id"`
+	// 该计划版本分解后创建或重放的 ProjectTask ID。
+	CreatedTaskIds []uuid.UUID `json:"created_task_ids"`
+	// 计划版本创建时间。
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 计划版本最近更新时间。
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 项目报告引用表，保存阶段汇报、验收报告和归档报告的对象引用
 type ProjectReportRef struct {
 	// 项目报告引用ID

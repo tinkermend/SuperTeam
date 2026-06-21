@@ -131,6 +131,96 @@ func TestProjectHandlerSubmitsDemandReviewerPreference(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerListsPlanRevisions(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	revisionID := uuid.New()
+	service := &handlerTestService{planRevisions: []PlanRevision{{
+		ID:              revisionID,
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		DemandID:        demandID,
+		RevisionNumber:  2,
+		Status:          PlanRevisionStatusPendingReview,
+		Payload:         map[string]any{"summary": "复核生产巡检计划"},
+		PlanFingerprint: "fingerprint",
+		ReviewRequired:  true,
+		CreatedTaskIDs:  []uuid.UUID{},
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
+	}}}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/plan-revisions?demand_id="+demandID.String()+"&limit=5", nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.ListPlanRevisions(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected list plan revisions 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.planRevisionListReq.TenantID != tenantID || service.planRevisionListReq.ProjectID != projectID || service.planRevisionListReq.Limit != 5 {
+		t.Fatalf("unexpected list request: %#v", service.planRevisionListReq)
+	}
+	if service.planRevisionListReq.DemandID == nil || *service.planRevisionListReq.DemandID != demandID {
+		t.Fatalf("expected demand filter to pass through, got %#v", service.planRevisionListReq.DemandID)
+	}
+	var body []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body) != 1 || body[0]["id"] != revisionID.String() || body[0]["status"] != PlanRevisionStatusPendingReview {
+		t.Fatalf("unexpected response body: %#v", body)
+	}
+	payload, ok := body[0]["payload"].(map[string]any)
+	if !ok || payload["summary"] != "复核生产巡检计划" {
+		t.Fatalf("expected payload to be preserved, got %#v", body[0]["payload"])
+	}
+}
+
+func TestProjectHandlerGetsPlanRevision(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	revisionID := uuid.New()
+	service := &handlerTestService{planRevisions: []PlanRevision{{
+		ID:              revisionID,
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		DemandID:        uuid.New(),
+		RevisionNumber:  1,
+		Status:          PlanRevisionStatusAccepted,
+		Payload:         map[string]any{},
+		PlanFingerprint: "fingerprint",
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
+	}}}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/plan-revisions/"+revisionID.String(), nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String(), "planRevisionId": revisionID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetPlanRevision(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected get plan revision 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.planRevisionTenantID != tenantID || service.planRevisionProjectID != projectID || service.planRevisionID != revisionID {
+		t.Fatalf("unexpected get identifiers: tenant=%s project=%s revision=%s", service.planRevisionTenantID, service.planRevisionProjectID, service.planRevisionID)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["id"] != revisionID.String() || body["status"] != PlanRevisionStatusAccepted || body["plan_fingerprint"] != "fingerprint" {
+		t.Fatalf("unexpected response body: %#v", body)
+	}
+}
+
 func TestProjectHandlerDemandResponseIncludesNullReviewerWhenAbsent(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()
@@ -1275,6 +1365,11 @@ type handlerTestService struct {
 	routeDecisionProjectID uuid.UUID
 	routeDecisionLimit     int32
 	routeDecisionOffset    int32
+	planRevisions          []PlanRevision
+	planRevisionListReq    ListPlanRevisionsRequest
+	planRevisionTenantID   uuid.UUID
+	planRevisionProjectID  uuid.UUID
+	planRevisionID         uuid.UUID
 	resolveDecisionReq     ResolveDecisionRequest
 	launchDetailTenantID   uuid.UUID
 	launchDetailDemandID   uuid.UUID
@@ -1401,6 +1496,23 @@ func (s *handlerTestService) ListRouteDecisions(ctx context.Context, tenantID, p
 		ExpectedOutputs:             []any{"执行摘要"},
 		BudgetEstimate:              map[string]any{},
 	}}, nil
+}
+
+func (s *handlerTestService) ListPlanRevisions(ctx context.Context, req ListPlanRevisionsRequest) ([]PlanRevision, error) {
+	s.planRevisionListReq = req
+	return s.planRevisions, nil
+}
+
+func (s *handlerTestService) GetPlanRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (*PlanRevision, error) {
+	s.planRevisionTenantID = tenantID
+	s.planRevisionProjectID = projectID
+	s.planRevisionID = revisionID
+	for _, revision := range s.planRevisions {
+		if revision.ID == revisionID {
+			return &revision, nil
+		}
+	}
+	return nil, ErrProjectNotFound
 }
 
 func (s *handlerTestService) ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error) {

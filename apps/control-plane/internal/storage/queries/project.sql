@@ -942,6 +942,173 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND accepted_plan_revision_id = sqlc.arg('accepted_plan_revision_id')::uuid
 ORDER BY stage_index ASC NULLS LAST, created_at ASC;
 
+-- name: CreateProjectPlanRevision :one
+INSERT INTO project_plan_revisions (
+    tenant_id,
+    team_id,
+    project_id,
+    demand_id,
+    coordination_job_id,
+    route_decision_id,
+    revision_number,
+    status,
+    payload,
+    planner_provider,
+    planner_model,
+    planner_input_hash,
+    plan_fingerprint,
+    validation_errors,
+    validation_warnings,
+    review_required,
+    review_reason
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.narg('team_id')::uuid,
+    sqlc.arg('project_id')::uuid,
+    sqlc.arg('demand_id')::uuid,
+    sqlc.narg('coordination_job_id')::uuid,
+    sqlc.narg('route_decision_id')::uuid,
+    sqlc.arg('revision_number')::integer,
+    sqlc.arg('status')::varchar,
+    COALESCE(sqlc.narg('payload')::jsonb, '{}'::jsonb),
+    sqlc.narg('planner_provider')::varchar,
+    sqlc.narg('planner_model')::varchar,
+    sqlc.narg('planner_input_hash')::varchar,
+    sqlc.arg('plan_fingerprint')::varchar,
+    COALESCE(sqlc.narg('validation_errors')::jsonb, '[]'::jsonb),
+    COALESCE(sqlc.narg('validation_warnings')::jsonb, '[]'::jsonb),
+    sqlc.arg('review_required')::boolean,
+    sqlc.narg('review_reason')::text
+) RETURNING *;
+
+-- name: GetProjectPlanRevision :one
+SELECT * FROM project_plan_revisions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid;
+
+-- name: GetProjectPlanRevisionByFingerprint :one
+SELECT * FROM project_plan_revisions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND demand_id = sqlc.arg('demand_id')::uuid
+  AND plan_fingerprint = sqlc.arg('plan_fingerprint')::varchar;
+
+-- name: ListProjectPlanRevisions :many
+SELECT * FROM project_plan_revisions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND (sqlc.narg('demand_id')::uuid IS NULL OR demand_id = sqlc.narg('demand_id')::uuid)
+ORDER BY demand_id ASC, revision_number DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: NextProjectPlanRevisionNumber :one
+SELECT COALESCE(MAX(revision_number), 0)::integer + 1 AS revision_number
+FROM project_plan_revisions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND demand_id = sqlc.arg('demand_id')::uuid;
+
+-- name: SupersedeOpenProjectPlanRevisions :exec
+UPDATE project_plan_revisions
+SET status = 'superseded',
+    superseded_by_revision_id = sqlc.arg('superseded_by_revision_id')::uuid,
+    rejection_reason = sqlc.narg('reason')::text,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND demand_id = sqlc.arg('demand_id')::uuid
+  AND id <> sqlc.arg('superseded_by_revision_id')::uuid
+  AND status IN ('draft', 'validation_failed', 'pending_review');
+
+-- name: AcceptProjectPlanRevision :one
+UPDATE project_plan_revisions
+SET status = 'accepted',
+    accepted_by = sqlc.narg('accepted_by')::uuid,
+    accepted_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status IN ('draft', 'pending_review')
+RETURNING *;
+
+-- name: RejectProjectPlanRevision :one
+UPDATE project_plan_revisions
+SET status = 'rejected',
+    rejected_by = sqlc.narg('rejected_by')::uuid,
+    rejected_at = NOW(),
+    rejection_reason = sqlc.narg('rejection_reason')::text,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = 'pending_review'
+RETURNING *;
+
+-- name: MarkProjectPlanRevisionDecomposing :one
+UPDATE project_plan_revisions
+SET status = 'decomposing',
+    decomposition_claim_id = sqlc.arg('decomposition_claim_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = 'accepted'
+RETURNING *;
+
+-- name: MarkProjectPlanRevisionDecomposed :one
+UPDATE project_plan_revisions
+SET status = 'decomposed',
+    created_task_ids = sqlc.arg('created_task_ids')::uuid[],
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status IN ('decomposing', 'decomposed')
+RETURNING *;
+
+-- name: CreateProjectPlanDecompositionClaim :one
+INSERT INTO project_plan_decomposition_claims (
+    tenant_id,
+    project_id,
+    demand_id,
+    accepted_plan_revision_id,
+    plan_fingerprint,
+    status
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('project_id')::uuid,
+    sqlc.arg('demand_id')::uuid,
+    sqlc.arg('accepted_plan_revision_id')::uuid,
+    sqlc.arg('plan_fingerprint')::varchar,
+    'in_flight'
+)
+ON CONFLICT (tenant_id, project_id, demand_id, accepted_plan_revision_id)
+DO UPDATE SET updated_at = project_plan_decomposition_claims.updated_at
+RETURNING *;
+
+-- name: CompleteProjectPlanDecompositionClaim :one
+UPDATE project_plan_decomposition_claims
+SET status = 'completed',
+    created_task_ids = sqlc.arg('created_task_ids')::uuid[],
+    error = '{}'::jsonb,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+RETURNING *;
+
+-- name: FailProjectPlanDecompositionClaim :one
+UPDATE project_plan_decomposition_claims
+SET status = 'failed',
+    error = COALESCE(sqlc.narg('error')::jsonb, '{}'::jsonb),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+RETURNING *;
+
 -- name: GetProjectTaskCompletionContract :one
 SELECT id, tenant_id, project_id, expected_outputs, handoff_contract, digital_employee_run_id
 FROM project_tasks

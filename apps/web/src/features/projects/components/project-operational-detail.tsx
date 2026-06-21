@@ -37,6 +37,7 @@ import type {
   ProjectExecutionSummary,
   ProjectMember,
   ProjectOverview,
+  ProjectPlanRevision,
   ProjectReportRef,
   ProjectRouteDecision,
   ProjectTask,
@@ -78,6 +79,7 @@ type ProjectOperationalDetailProps = {
   onResolveDecision: (decisionId: string, decision: string) => void;
   onSubmitDemand: () => void;
   overview?: ProjectOverview;
+  planRevisions: ProjectPlanRevision[];
   project?: Project;
   reports?: ProjectReportRef[];
   routeDecisions: ProjectRouteDecision[];
@@ -113,6 +115,7 @@ export function ProjectOperationalDetail({
   onResolveDecision,
   onSubmitDemand,
   overview,
+  planRevisions,
   project,
   reports,
   routeDecisions,
@@ -135,6 +138,15 @@ export function ProjectOperationalDetail({
   const taskSummary = overview?.task_summary;
   const currentPhase = overview?.status_summary.current_phase || project.status;
   const evidencePolicyConfigured = Object.keys(project.evidence_policy ?? {}).length > 0;
+  const latestPlanRevision = selectLatestPlanRevision(planRevisions);
+  const latestPlanReviewDecision = decisionRequests.find(
+    (decision) =>
+      decision.decision_type === "plan_review" &&
+      decision.status_snapshot === "pending" &&
+      (!latestPlanRevision ||
+        !latestPlanRevision.coordination_job_id ||
+        decision.coordination_job_id === latestPlanRevision.coordination_job_id),
+  );
 
   return (
     <div className="grid min-w-0 gap-4">
@@ -226,6 +238,127 @@ export function ProjectOperationalDetail({
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
         <section className="grid min-w-0 gap-4">
+          <LiquidCard className="rounded-xl">
+            <PanelHeader
+              icon={<GitBranch />}
+              title="计划版本"
+              meta={
+                latestPlanRevision
+                  ? `v${latestPlanRevision.revision_number}`
+                  : "暂无版本"
+              }
+            />
+            {latestPlanRevision ? (
+              <div className="grid gap-4 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge tone={planRevisionTone(latestPlanRevision.status)}>
+                        {latestPlanRevision.status}
+                      </StatusBadge>
+                      {latestPlanRevision.review_required ? (
+                        <StatusBadge tone="warning">需人工复核</StatusBadge>
+                      ) : (
+                        <StatusBadge tone="success">自动接受</StatusBadge>
+                      )}
+                    </div>
+                    <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                      {planRevisionSummary(latestPlanRevision)}
+                    </p>
+                  </div>
+                  {latestPlanReviewDecision ? (
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <Button
+                        aria-label={`批准计划版本 v${latestPlanRevision.revision_number}`}
+                        size="sm"
+                        type="button"
+                        onClick={() =>
+                          onResolveDecision(latestPlanReviewDecision.id, "approved")
+                        }
+                      >
+                        批准
+                      </Button>
+                      <Button
+                        aria-label={`要求修改计划版本 v${latestPlanRevision.revision_number}`}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                        onClick={() =>
+                          onResolveDecision(
+                            latestPlanReviewDecision.id,
+                            "request_changes",
+                          )
+                        }
+                      >
+                        要求修改
+                      </Button>
+                      <Button
+                        aria-label={`拒绝计划版本 v${latestPlanRevision.revision_number}`}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                        onClick={() =>
+                          onResolveDecision(latestPlanReviewDecision.id, "rejected")
+                        }
+                      >
+                        拒绝
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <FactTile
+                    icon={<ClipboardList />}
+                    label="计划任务"
+                    value={`${planRevisionTasks(latestPlanRevision).length} 项`}
+                  />
+                  <FactTile
+                    icon={<Bot />}
+                    label="能力需求"
+                    value={formatShortList(planRevisionCapabilityLabels(latestPlanRevision))}
+                  />
+                  <FactTile
+                    icon={<FileCheck2 />}
+                    label="风险等级"
+                    value={formatShortList(planRevisionRiskLabels(latestPlanRevision))}
+                  />
+                </div>
+                <div className="divide-y rounded-lg border">
+                  {planRevisionTasks(latestPlanRevision)
+                    .slice(0, 4)
+                    .map((task, index) => (
+                      <div
+                        className="grid gap-2 p-3"
+                        key={`${planRevisionTaskKey(task)}-${index}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="min-w-0 line-clamp-2 text-sm font-medium">
+                            {planRevisionTaskTitle(task)}
+                          </p>
+                          <StatusBadge tone={planRevisionTaskRiskTone(task)}>
+                            {planRevisionTaskRisk(task)}
+                          </StatusBadge>
+                        </div>
+                        <RuntimeMeta
+                          label="能力"
+                          value={formatShortList(planRevisionTaskCapabilities(task))}
+                        />
+                        <RuntimeMeta
+                          label="输出"
+                          value={formatShortList(planRevisionTaskOutputs(task))}
+                        />
+                      </div>
+                    ))}
+                  {planRevisionTasks(latestPlanRevision).length === 0 ? (
+                    <EmptyLine label="计划版本尚未包含可展示任务" />
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <EmptyLine label="暂无计划版本" />
+            )}
+          </LiquidCard>
+
           {taskGraph && taskGraph.nodes.length > 0 ? (
             <div className="grid gap-2">
               <div className="flex items-center gap-2 px-1">
@@ -677,6 +810,121 @@ function RuntimeMeta({ label, value }: { label: string; value: string }) {
 
 function formatIdList(ids: string[]) {
   return ids.length > 0 ? ids.join("、") : "未指定";
+}
+
+function selectLatestPlanRevision(revisions: ProjectPlanRevision[]) {
+  return [...revisions].sort((left, right) => {
+    if (right.revision_number !== left.revision_number) {
+      return right.revision_number - left.revision_number;
+    }
+    return (right.created_at ?? "").localeCompare(left.created_at ?? "");
+  })[0];
+}
+
+function planRevisionSummary(revision: ProjectPlanRevision) {
+  const summary = revision.payload.summary;
+  return typeof summary === "string" && summary.trim()
+    ? summary
+    : "计划版本已生成，等待协调线程处理。";
+}
+
+function planRevisionTasks(revision: ProjectPlanRevision) {
+  const tasks = revision.payload.tasks;
+  return Array.isArray(tasks) ? tasks.filter(isRecord) : [];
+}
+
+function planRevisionCapabilityLabels(revision: ProjectPlanRevision) {
+  return uniqueStrings(
+    planRevisionTasks(revision).flatMap((task) => [
+      ...stringArrayField(task, "required_capabilities"),
+      ...stringArrayField(task, "matched_capabilities"),
+    ]),
+  ).slice(0, 4);
+}
+
+function planRevisionRiskLabels(revision: ProjectPlanRevision) {
+  const riskAssessment = revision.payload.risk_assessment;
+  const highest =
+    isRecord(riskAssessment) && typeof riskAssessment.highest_risk_level === "string"
+      ? riskAssessment.highest_risk_level
+      : "";
+  const taskRisks = uniqueStrings(
+    planRevisionTasks(revision)
+      .map((task) => stringField(task, "risk_level"))
+      .filter(Boolean),
+  );
+  return uniqueStrings([highest, ...taskRisks].filter(Boolean)).slice(0, 3);
+}
+
+function planRevisionTaskKey(task: Record<string, unknown>) {
+  return stringField(task, "planned_task_key") || stringField(task, "title") || "task";
+}
+
+function planRevisionTaskTitle(task: Record<string, unknown>) {
+  return stringField(task, "title") || stringField(task, "objective") || "未命名任务";
+}
+
+function planRevisionTaskCapabilities(task: Record<string, unknown>) {
+  return uniqueStrings([
+    ...stringArrayField(task, "required_capabilities"),
+    ...stringArrayField(task, "matched_capabilities"),
+  ]).slice(0, 4);
+}
+
+function planRevisionTaskOutputs(task: Record<string, unknown>) {
+  return stringArrayField(task, "expected_outputs").slice(0, 3);
+}
+
+function planRevisionTaskRisk(task: Record<string, unknown>) {
+  return stringField(task, "risk_level") || "normal";
+}
+
+function planRevisionTaskRiskTone(task: Record<string, unknown>) {
+  const risk = planRevisionTaskRisk(task);
+  if (risk === "critical" || risk === "high") {
+    return "danger";
+  }
+  if (risk === "medium") {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function planRevisionTone(status: string) {
+  if (status === "accepted" || status === "decomposed") {
+    return "success";
+  }
+  if (status === "pending_review" || status === "decomposing") {
+    return "warning";
+  }
+  if (status === "rejected" || status === "validation_failed") {
+    return "danger";
+  }
+  return "neutral";
+}
+
+function formatShortList(values: string[]) {
+  return values.length > 0 ? values.join("、") : "未指定";
+}
+
+function stringField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "string" ? value : "";
+}
+
+function stringArrayField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item !== "")
+    : [];
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.filter((value) => value.trim() !== "")));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function decisionTone(status: string) {

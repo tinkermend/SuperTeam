@@ -2821,6 +2821,38 @@ type ProjectOverview struct {
 	TaskSummary          ProjectTaskSummary          `json:"task_summary"`
 }
 
+// ProjectPlanRevision defines model for ProjectPlanRevision.
+type ProjectPlanRevision struct {
+	AcceptedAt             *time.Time             `json:"accepted_at,omitempty"`
+	AcceptedBy             *openapi_types.UUID    `json:"accepted_by,omitempty"`
+	CoordinationJobId      *openapi_types.UUID    `json:"coordination_job_id,omitempty"`
+	CreatedAt              *time.Time             `json:"created_at,omitempty"`
+	CreatedTaskIds         []openapi_types.UUID   `json:"created_task_ids"`
+	DecompositionClaimId   *openapi_types.UUID    `json:"decomposition_claim_id,omitempty"`
+	DemandId               openapi_types.UUID     `json:"demand_id"`
+	Id                     openapi_types.UUID     `json:"id"`
+	Payload                map[string]interface{} `json:"payload"`
+	PlanFingerprint        string                 `json:"plan_fingerprint"`
+	PlannerInputHash       *string                `json:"planner_input_hash,omitempty"`
+	PlannerModel           *string                `json:"planner_model,omitempty"`
+	PlannerProvider        *string                `json:"planner_provider,omitempty"`
+	ProjectId              openapi_types.UUID     `json:"project_id"`
+	RejectedAt             *time.Time             `json:"rejected_at,omitempty"`
+	RejectedBy             *openapi_types.UUID    `json:"rejected_by,omitempty"`
+	RejectionReason        *string                `json:"rejection_reason,omitempty"`
+	ReviewReason           *string                `json:"review_reason,omitempty"`
+	ReviewRequired         bool                   `json:"review_required"`
+	RevisionNumber         int32                  `json:"revision_number"`
+	RouteDecisionId        *openapi_types.UUID    `json:"route_decision_id,omitempty"`
+	Status                 string                 `json:"status"`
+	SupersededByRevisionId *openapi_types.UUID    `json:"superseded_by_revision_id,omitempty"`
+	TeamId                 *openapi_types.UUID    `json:"team_id,omitempty"`
+	TenantId               openapi_types.UUID     `json:"tenant_id"`
+	UpdatedAt              *time.Time             `json:"updated_at,omitempty"`
+	ValidationErrors       []string               `json:"validation_errors"`
+	ValidationWarnings     []string               `json:"validation_warnings"`
+}
+
 // ProjectPrincipalType defines model for ProjectPrincipalType.
 type ProjectPrincipalType string
 
@@ -3909,6 +3941,9 @@ type NodeId = string
 // Offset defines model for Offset.
 type Offset = int
 
+// PlanRevisionId defines model for PlanRevisionId.
+type PlanRevisionId = openapi_types.UUID
+
 // ProjectId defines model for ProjectId.
 type ProjectId = openapi_types.UUID
 
@@ -4111,6 +4146,13 @@ type ListProjectLendingRequestsParams struct {
 	Limit  *Limit                    `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset *Offset                   `form:"offset,omitempty" json:"offset,omitempty"`
 	Status *TeamLendingRequestStatus `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// ListProjectPlanRevisionsParams defines parameters for ListProjectPlanRevisions.
+type ListProjectPlanRevisionsParams struct {
+	DemandId *openapi_types.UUID `form:"demand_id,omitempty" json:"demand_id,omitempty"`
+	Limit    *Limit              `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset   *Offset             `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // ListProjectReportsParams defines parameters for ListProjectReports.
@@ -5157,6 +5199,12 @@ type ServerInterface interface {
 	// Get project overview
 	// (GET /api/v1/projects/{projectId}/overview)
 	GetProjectOverview(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// List project plan revisions
+	// (GET /api/v1/projects/{projectId}/plan-revisions)
+	ListProjectPlanRevisions(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectPlanRevisionsParams)
+	// Get a project plan revision
+	// (GET /api/v1/projects/{projectId}/plan-revisions/{planRevisionId})
+	GetProjectPlanRevision(w http.ResponseWriter, r *http.Request, projectId ProjectId, planRevisionId PlanRevisionId)
 	// List project report refs
 	// (GET /api/v1/projects/{projectId}/reports)
 	ListProjectReports(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectReportsParams)
@@ -5826,6 +5874,18 @@ func (_ Unimplemented) ReplaceProjectMembers(w http.ResponseWriter, r *http.Requ
 // Get project overview
 // (GET /api/v1/projects/{projectId}/overview)
 func (_ Unimplemented) GetProjectOverview(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project plan revisions
+// (GET /api/v1/projects/{projectId}/plan-revisions)
+func (_ Unimplemented) ListProjectPlanRevisions(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectPlanRevisionsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get a project plan revision
+// (GET /api/v1/projects/{projectId}/plan-revisions/{planRevisionId})
+func (_ Unimplemented) GetProjectPlanRevision(w http.ResponseWriter, r *http.Request, projectId ProjectId, planRevisionId PlanRevisionId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -9012,6 +9072,109 @@ func (siw *ServerInterfaceWrapper) GetProjectOverview(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetProjectOverview(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectPlanRevisions operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectPlanRevisions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectPlanRevisionsParams
+
+	// ------------- Optional query parameter "demand_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "demand_id", r.URL.Query(), &params.DemandId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "demand_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "demand_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectPlanRevisions(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectPlanRevision operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectPlanRevision(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "planRevisionId" -------------
+	var planRevisionId PlanRevisionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "planRevisionId", chi.URLParam(r, "planRevisionId"), &planRevisionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "planRevisionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectPlanRevision(w, r, projectId, planRevisionId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -12639,6 +12802,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/overview", wrapper.GetProjectOverview)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/plan-revisions", wrapper.ListProjectPlanRevisions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/plan-revisions/{planRevisionId}", wrapper.GetProjectPlanRevision)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/reports", wrapper.ListProjectReports)

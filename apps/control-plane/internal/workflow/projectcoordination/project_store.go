@@ -356,39 +356,121 @@ func (s *ProjectStore) ensureRouteDecisionCreatedEvent(ctx context.Context, inpu
 	})
 }
 
-func (s *ProjectStore) CreateProjectTasks(ctx context.Context, input CreateProjectTasksInput) ([]ProjectTaskResult, error) {
+func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPlanRevisionInput) (PlanRevisionResult, error) {
+	if s.repository == nil {
+		return PlanRevisionResult{}, ErrActivityStoreRequired
+	}
+	payload := BuildPlanRevisionPayload(input.Decision)
+	validation := ValidatePlanRevisionPayload(payload)
+	status := project.PlanRevisionStatusAccepted
+	if !validation.Acceptable {
+		status = project.PlanRevisionStatusValidationFailed
+	} else if validation.ReviewRequired || input.Decision.RequiresHumanReview {
+		status = project.PlanRevisionStatusPendingReview
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventWorkflowSignaled, input.CoordinationJobID.String(), "计划版本已生成", map[string]any{
+		"demand_id":        input.DemandID.String(),
+		"plan_fingerprint": validation.PlanFingerprint,
+		"status":           status,
+	}))
+	if err != nil {
+		return PlanRevisionResult{}, err
+	}
+	projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
+	if err != nil {
+		return PlanRevisionResult{}, err
+	}
+	payloadMap, err := planRevisionPayloadMap(payload)
+	if err != nil {
+		return PlanRevisionResult{}, err
+	}
+	reviewReasons := append([]string{}, validation.ReviewReasons...)
+	if input.Decision.RequiresHumanReview {
+		reviewReasons = appendUniqueString(reviewReasons, "plan_requires_human_review")
+	}
+	revision, err := s.repository.CreatePlanRevision(ctx, project.CreatePlanRevisionRequest{
+		TenantID:               input.TenantID,
+		TeamID:                 projectRecord.TeamID,
+		ProjectID:              input.ProjectID,
+		DemandID:               input.DemandID,
+		CoordinationJobID:      &input.CoordinationJobID,
+		RouteDecisionID:        &input.RouteDecisionID,
+		Status:                 status,
+		Payload:                payloadMap,
+		PlanFingerprint:        validation.PlanFingerprint,
+		ValidationErrors:       validation.Errors,
+		ValidationWarnings:     validation.Warnings,
+		ReviewRequired:         validation.ReviewRequired || input.Decision.RequiresHumanReview,
+		ReviewReason:           stringPtr(strings.Join(reviewReasons, "; ")),
+		SupersedeOpenRevisions: input.SupersedeOpen,
+		SupersedeReason:        input.SupersedeReason,
+	})
+	if err != nil {
+		return PlanRevisionResult{}, err
+	}
+	return PlanRevisionResult{
+		ID:              revision.ID,
+		Status:          revision.Status,
+		RevisionNumber:  revision.RevisionNumber,
+		PlanFingerprint: revision.PlanFingerprint,
+		Payload:         payload,
+		ReviewRequired:  revision.ReviewRequired,
+		CreatedEventID:  event.ID,
+	}, nil
+}
+
+func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input DecomposeAcceptedPlanRevisionInput) ([]ProjectTaskResult, error) {
 	if s.repository == nil {
 		return nil, ErrActivityStoreRequired
 	}
-	acceptedPlanRevisionID := acceptedPlanRevisionIDForRouteDecision(input)
-	decompositionClaimKey := acceptedPlanRevisionDecompositionClaimKey(input, acceptedPlanRevisionID)
-	graphTasks := make([]project.ProjectTaskGraphCreateTask, 0, len(input.Decision.Tasks))
-	for _, plannedTask := range input.Decision.Tasks {
-		status := "planned"
-		if len(plannedTask.BlockedByKeys) > 0 {
+	graphTasks := make([]project.ProjectTaskGraphCreateTask, 0, len(input.Payload.Tasks))
+	for _, plannedTask := range input.Payload.Tasks {
+		employeeID, err := uuid.Parse(strings.TrimSpace(plannedTask.SelectedEmployeeID))
+		if err != nil {
+			return nil, project.ErrInvalidProject
+		}
+		status := project.ProjectTaskStatusPlanned
+		if len(plannedTask.DependsOn) > 0 {
 			status = "blocked"
 		}
-		plannerMetadata := cloneAnyMap(input.Decision.PlannerMetadata)
-		plannerMetadata["accepted_plan_revision_id"] = acceptedPlanRevisionID.String()
-		plannerMetadata["decomposition_claim_key"] = decompositionClaimKey
-		if hasPlanningSelectionEvidence(plannedTask) {
-			plannerMetadata["employee_selection"] = PlanningSelectionMetadata(plannedTask)
+		inputRequirements := cloneAnyMap(plannedTask.InputRequirements)
+		if len(inputRequirements) == 0 && len(plannedTask.InputContextRefs) > 0 {
+			inputRequirements["input_context_refs"] = append([]string(nil), plannedTask.InputContextRefs...)
+		}
+		handoffContract := cloneAnyMap(plannedTask.HandoffContract)
+		if len(plannedTask.AcceptanceCriteria) > 0 {
+			handoffContract["acceptance_criteria"] = append([]string(nil), plannedTask.AcceptanceCriteria...)
+		}
+		if len(plannedTask.VerificationRequirements) > 0 {
+			handoffContract["verification_requirements"] = append([]string(nil), plannedTask.VerificationRequirements...)
+		}
+		metadata := map[string]any{
+			"accepted_plan_revision_id": input.PlanRevisionID.String(),
+			"plan_fingerprint":          input.PlanFingerprint,
+			"employee_selection": map[string]any{
+				"reason":                         plannedTask.EmployeeSelectionReason,
+				"required_capabilities":          plannedTask.RequiredCapabilities,
+				"matched_capabilities":           plannedTask.MatchedCapabilities,
+				"missing_capabilities":           plannedTask.MissingCapabilities,
+				"selection_score":                plannedTask.SelectionScore,
+				"planning_profile_snapshot_hash": plannedTask.PlanningProfileSnapshotHash,
+			},
+			"acceptance_criteria": plannedTask.AcceptanceCriteria,
 		}
 		graphTasks = append(graphTasks, project.ProjectTaskGraphCreateTask{
-			Key:                       plannedTask.Key,
+			Key:                       plannedTask.PlannedTaskKey,
 			Title:                     plannedTask.Title,
-			Summary:                   plannedTask.Summary,
+			Summary:                   plannedTask.Objective,
 			Status:                    status,
-			AssignedDigitalEmployeeID: plannedTask.SelectedEmployeeID,
-			TaskKind:                  plannedTask.TaskKind,
-			StageIndex:                plannedTask.StageIndex,
+			AssignedDigitalEmployeeID: employeeID,
+			TaskKind:                  plannedTask.TaskType,
 			RiskLevel:                 plannedTask.RiskLevel,
-			RequiresHumanApproval:     plannedTask.RequiresHumanApproval,
+			RequiresHumanApproval:     plannedTask.HumanReviewRequired,
 			ExpectedOutputs:           stringsToAny(plannedTask.ExpectedOutputs),
-			InputRequirements:         plannedTask.InputRequirements,
-			HandoffContract:           plannedTask.HandoffContract,
-			PlannerMetadata:           plannerMetadata,
-			BlockedByKeys:             plannedTask.BlockedByKeys,
+			InputRequirements:         inputRequirements,
+			HandoffContract:           handoffContract,
+			PlannerMetadata:           metadata,
+			BlockedByKeys:             plannedTask.DependsOn,
 		})
 	}
 	decomposition, err := s.repository.DecomposeAcceptedPlanRevision(ctx, project.DecomposeAcceptedPlanRevisionRequest{
@@ -397,8 +479,9 @@ func (s *ProjectStore) CreateProjectTasks(ctx context.Context, input CreateProje
 		DemandID:               input.DemandID,
 		CoordinationJobID:      input.CoordinationJobID,
 		RouteDecisionID:        input.RouteDecisionID,
-		AcceptedPlanRevisionID: acceptedPlanRevisionID,
-		DecompositionClaimKey:  decompositionClaimKey,
+		AcceptedPlanRevisionID: input.PlanRevisionID,
+		PlanFingerprint:        input.PlanFingerprint,
+		DecompositionClaimKey:  input.PlanRevisionID.String(),
 		Tasks:                  graphTasks,
 	})
 	if err != nil {
@@ -976,7 +1059,7 @@ func unresolvedBlockersByDependent(readiness []project.ProjectTaskDependencyRead
 	return blocked
 }
 
-func (s *ProjectStore) RequestRouteDecisionReview(ctx context.Context, input RequestRouteDecisionReviewInput) (DecisionRequestResult, error) {
+func (s *ProjectStore) RequestPlanRevisionReview(ctx context.Context, input RequestPlanRevisionReviewInput) (DecisionRequestResult, error) {
 	if s.repository == nil || s.approvals == nil {
 		return DecisionRequestResult{}, ErrActivityStoreRequired
 	}
@@ -984,29 +1067,30 @@ func (s *ProjectStore) RequestRouteDecisionReview(ctx context.Context, input Req
 	if err != nil {
 		return DecisionRequestResult{}, err
 	}
-	targetUserID, err := s.routeReviewTargetUserID(ctx, input, projectRecord)
+	targetUserID, err := s.planReviewTargetUserID(ctx, input, projectRecord)
 	if err != nil {
 		return DecisionRequestResult{}, err
 	}
 	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
 		TenantID:       input.TenantID,
-		ResourceType:   "project_route_decision",
-		ResourceID:     input.RouteDecisionID,
+		ResourceType:   "project_plan_revision",
+		ResourceID:     input.PlanRevisionID,
 		RequesterType:  "project_coordinator",
 		TargetUserID:   targetUserID,
-		DecisionType:   "route_review",
-		Title:          "确认项目路由决策",
-		Summary:        input.Decision.Reason,
-		RiskLevel:      "high",
-		Options:        []any{"approved", "rejected", "needs_more_evidence"},
-		ContextPayload: routeReviewContext(input),
+		DecisionType:   "plan_review",
+		Title:          "确认项目计划版本",
+		Summary:        input.Payload.Summary,
+		RiskLevel:      input.Payload.RiskAssessment.HighestRiskLevel,
+		Options:        []any{"approved", "rejected", "request_changes", "cancelled"},
+		ContextPayload: planRevisionReviewContext(input),
 	})
 	if err != nil {
 		return DecisionRequestResult{}, err
 	}
-	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, input.CoordinationJobID.String(), "路由决策需要人类确认", map[string]any{
+	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventDecisionRequested, input.CoordinationJobID.String(), "计划版本需要人类确认", map[string]any{
 		"approval_request_id": approvalRequest.ID.String(),
-		"route_decision_id":   input.RouteDecisionID.String(),
+		"plan_revision_id":    input.PlanRevisionID.String(),
+		"plan_fingerprint":    input.PlanFingerprint,
 		"demand_id":           input.DemandID.String(),
 		"target_user_id":      targetUserID.String(),
 	}))
@@ -1020,10 +1104,10 @@ func (s *ProjectStore) RequestRouteDecisionReview(ctx context.Context, input Req
 		ApprovalRequestID: approvalRequest.ID,
 		CoordinationJobID: &coordinationJobID,
 		TargetUserID:      targetUserID,
-		DecisionType:      "route_review",
-		TitleSnapshot:     "确认项目路由决策",
-		SummarySnapshot:   input.Decision.Reason,
-		RiskLevelSnapshot: "high",
+		DecisionType:      "plan_review",
+		TitleSnapshot:     "确认项目计划版本",
+		SummarySnapshot:   input.Payload.Summary,
+		RiskLevelSnapshot: nonEmptyString(input.Payload.RiskAssessment.HighestRiskLevel, "medium"),
 		StatusSnapshot:    "pending",
 		CreatedEventID:    &event.ID,
 	})
@@ -1036,6 +1120,40 @@ func (s *ProjectStore) RequestRouteDecisionReview(ctx context.Context, input Req
 		}
 	}
 	return DecisionRequestResult{ID: decision.ID}, nil
+}
+
+func (s *ProjectStore) ResolvePlanRevisionReview(ctx context.Context, input ResolvePlanRevisionReviewInput) (PlanRevisionResult, error) {
+	if s.repository == nil {
+		return PlanRevisionResult{}, ErrActivityStoreRequired
+	}
+	switch input.Decision {
+	case project.PlanReviewDecisionAccept:
+		revision, err := s.repository.AcceptPlanRevision(ctx, project.AcceptPlanRevisionRequest{
+			TenantID:   input.TenantID,
+			ProjectID:  input.ProjectID,
+			RevisionID: input.PlanRevisionID,
+			AcceptedBy: uuidPtrOrNil(input.ActorUserID),
+		})
+		if err != nil {
+			return PlanRevisionResult{}, err
+		}
+		return planRevisionResultFromDomain(revision), nil
+	case project.PlanReviewDecisionReject, project.PlanReviewDecisionCancel, project.PlanReviewDecisionRequestChanges:
+		reason := stringFromMap(input.Payload, "reason")
+		revision, err := s.repository.RejectPlanRevision(ctx, project.RejectPlanRevisionRequest{
+			TenantID:        input.TenantID,
+			ProjectID:       input.ProjectID,
+			RevisionID:      input.PlanRevisionID,
+			RejectedBy:      uuidPtrOrNil(input.ActorUserID),
+			RejectionReason: stringPtr(reason),
+		})
+		if err != nil {
+			return PlanRevisionResult{}, err
+		}
+		return planRevisionResultFromDomain(revision), nil
+	default:
+		return PlanRevisionResult{}, project.ErrInvalidProject
+	}
 }
 
 // IsProjectAcceptanceReady reports whether every demand of the project has reached a
@@ -1199,7 +1317,7 @@ func acceptanceSummary(status string) string {
 	}
 }
 
-func (s *ProjectStore) routeReviewTargetUserID(ctx context.Context, input RequestRouteDecisionReviewInput, projectRecord project.Project) (uuid.UUID, error) {
+func (s *ProjectStore) planReviewTargetUserID(ctx context.Context, input RequestPlanRevisionReviewInput, projectRecord project.Project) (uuid.UUID, error) {
 	demand, err := s.repository.GetProjectDemand(ctx, input.TenantID, input.DemandID)
 	if err != nil {
 		return uuid.Nil, err
@@ -1362,26 +1480,6 @@ func projectTaskDispatchAllowed(status string) bool {
 
 func projectTaskDispatchIdempotencyKey(taskID uuid.UUID) string {
 	return "project-task:" + taskID.String()
-}
-
-func acceptedPlanRevisionIDForRouteDecision(input CreateProjectTasksInput) uuid.UUID {
-	if input.RouteDecisionID != uuid.Nil {
-		return input.RouteDecisionID
-	}
-	if input.CoordinationJobID != uuid.Nil {
-		return input.CoordinationJobID
-	}
-	if input.DemandID != uuid.Nil {
-		return input.DemandID
-	}
-	if input.ProjectID != uuid.Nil {
-		return input.ProjectID
-	}
-	return input.TenantID
-}
-
-func acceptedPlanRevisionDecompositionClaimKey(input CreateProjectTasksInput, acceptedPlanRevisionID uuid.UUID) string {
-	return "project-plan-decomposition:" + input.TenantID.String() + ":" + input.ProjectID.String() + ":" + input.DemandID.String() + ":" + acceptedPlanRevisionID.String()
 }
 
 func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectDemand, task project.ProjectTask) string {
@@ -1625,18 +1723,66 @@ func uuidStrings(values []uuid.UUID) []any {
 	return result
 }
 
-func routeReviewContext(input RequestRouteDecisionReviewInput) map[string]any {
-	aggregated := aggregateRouteDecisionFields(input.Decision)
+func planRevisionReviewContext(input RequestPlanRevisionReviewInput) map[string]any {
 	return map[string]any{
-		"project_id":                    input.ProjectID.String(),
-		"demand_id":                     input.DemandID.String(),
-		"coordination_job_id":           input.CoordinationJobID.String(),
-		"route_decision_id":             input.RouteDecisionID.String(),
-		"project_task_ids":              uuidStrings(input.ProjectTaskIDs),
-		"selected_digital_employee_ids": uuidStrings(aggregated.SelectedDigitalEmployeeIDs),
-		"reason":                        input.Decision.Reason,
-		"route_created_event_id":        input.RouteCreatedEventID.String(),
+		"project_id":          input.ProjectID.String(),
+		"demand_id":           input.DemandID.String(),
+		"coordination_job_id": input.CoordinationJobID.String(),
+		"plan_revision_id":    input.PlanRevisionID.String(),
+		"plan_fingerprint":    input.PlanFingerprint,
+		"created_event_id":    input.CreatedEventID.String(),
+		"tasks":               input.Payload.Tasks,
+		"risk_assessment":     input.Payload.RiskAssessment,
+		"human_review":        input.Payload.HumanReview,
 	}
+}
+
+func planRevisionPayloadMap(payload PlanRevisionPayload) (map[string]any, error) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	var value map[string]any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, err
+	}
+	if value == nil {
+		value = map[string]any{}
+	}
+	return value, nil
+}
+
+func planRevisionResultFromDomain(revision project.PlanRevision) PlanRevisionResult {
+	return PlanRevisionResult{
+		ID:              revision.ID,
+		Status:          revision.Status,
+		RevisionNumber:  revision.RevisionNumber,
+		PlanFingerprint: revision.PlanFingerprint,
+		ReviewRequired:  revision.ReviewRequired,
+	}
+}
+
+func uuidPtrOrNil(value uuid.UUID) *uuid.UUID {
+	if value == uuid.Nil {
+		return nil
+	}
+	return &value
+}
+
+func stringPtr(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func nonEmptyString(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 func recoveryReplacementTaskKey(source project.ProjectTask) string {

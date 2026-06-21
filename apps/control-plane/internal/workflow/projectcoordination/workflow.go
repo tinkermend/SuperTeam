@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/project"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
@@ -25,7 +26,7 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 	transferCh := workflow.GetSignalChannel(ctx, SignalEmployeeTransferRequested)
 	humanCh := workflow.GetSignalChannel(ctx, SignalHumanDecisionSubmitted)
 	shutdownCh := workflow.GetSignalChannel(ctx, SignalShutdown)
-	pendingReviews := map[string]pendingRouteDecisionReview{}
+	pendingReviews := map[string]pendingPlanRevisionReview{}
 	pendingFailureRecoveries := map[string]pendingTaskFailureRecovery{}
 	pendingAcceptance := map[string]pendingProjectAcceptance{}
 
@@ -36,7 +37,7 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 		selector.AddReceive(demandCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal DemandSubmitted
 			c.Receive(ctx, &signal)
-			var pending *pendingRouteDecisionReview
+			var pending *pendingPlanRevisionReview
 			pending, workflowErr = handleDemandSubmitted(ctx, input, signal)
 			if workflowErr == nil && pending != nil {
 				pendingReviews[pending.DecisionRequestID.String()] = *pending
@@ -96,10 +97,15 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 	}
 }
 
-type pendingRouteDecisionReview struct {
+type pendingPlanRevisionReview struct {
 	DecisionRequestID uuid.UUID
 	ProjectID         uuid.UUID
+	DemandID          uuid.UUID
 	CoordinationJobID uuid.UUID
+	RouteDecisionID   uuid.UUID
+	PlanRevisionID    uuid.UUID
+	PlanFingerprint   string
+	Payload           PlanRevisionPayload
 	OutputEventIDs    []uuid.UUID
 }
 
@@ -113,7 +119,7 @@ type pendingProjectAcceptance struct {
 	ProjectID         uuid.UUID
 }
 
-func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, signal DemandSubmitted) (*pendingRouteDecisionReview, error) {
+func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, signal DemandSubmitted) (*pendingPlanRevisionReview, error) {
 	workflowID := input.WorkflowID
 	if workflowID == "" {
 		workflowID = "project-coordinator:" + input.ProjectID.String()
@@ -155,58 +161,89 @@ func handleDemandSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, 
 		return nil, err
 	}
 
-	var tasks []ProjectTaskResult
-	if err := workflow.ExecuteActivity(ctx, (*Activities).CreateProjectTasks, CreateProjectTasksInput{
+	var planRevision PlanRevisionResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).PersistPlanRevision, PersistPlanRevisionInput{
 		TenantID:          input.TenantID,
 		ProjectID:         signal.ProjectID,
 		DemandID:          signal.DemandID,
 		CoordinationJobID: job.ID,
 		RouteDecisionID:   route.ID,
 		Decision:          decision,
-	}).Get(ctx, &tasks); err != nil {
+	}).Get(ctx, &planRevision); err != nil {
 		return nil, err
 	}
 
 	outputEventIDs := []uuid.UUID{route.CreatedEventID}
-	taskIDs := make([]uuid.UUID, 0, len(tasks))
-	for _, task := range tasks {
-		taskIDs = append(taskIDs, task.ID)
+	if planRevision.CreatedEventID != uuid.Nil && planRevision.CreatedEventID != route.CreatedEventID {
+		outputEventIDs = append(outputEventIDs, planRevision.CreatedEventID)
 	}
-	readyTaskIDs, err := listDispatchableTasks(ctx, input.TenantID, signal.ProjectID, job.ID)
-	if err != nil {
-		return nil, err
+	pending := pendingPlanRevisionReview{
+		ProjectID:         signal.ProjectID,
+		DemandID:          signal.DemandID,
+		CoordinationJobID: job.ID,
+		RouteDecisionID:   route.ID,
+		PlanRevisionID:    planRevision.ID,
+		PlanFingerprint:   planRevision.PlanFingerprint,
+		Payload:           planRevision.Payload,
+		OutputEventIDs:    outputEventIDs,
 	}
-	if decision.RequiresHumanReview {
+	switch planRevision.Status {
+	case project.PlanRevisionStatusAccepted:
+		return nil, decomposeAndDispatchAcceptedPlan(ctx, input, pending)
+	case project.PlanRevisionStatusPendingReview:
 		var review DecisionRequestResult
-		if err := workflow.ExecuteActivity(ctx, (*Activities).RequestRouteDecisionReview, RequestRouteDecisionReviewInput{
-			TenantID:            input.TenantID,
-			ProjectID:           signal.ProjectID,
-			CoordinationJobID:   job.ID,
-			DemandID:            signal.DemandID,
-			RouteDecisionID:     route.ID,
-			Decision:            decision,
-			ProjectTaskIDs:      taskIDs,
-			RouteCreatedEventID: route.CreatedEventID,
+		if err := workflow.ExecuteActivity(ctx, (*Activities).RequestPlanRevisionReview, RequestPlanRevisionReviewInput{
+			TenantID:          input.TenantID,
+			ProjectID:         signal.ProjectID,
+			CoordinationJobID: job.ID,
+			DemandID:          signal.DemandID,
+			PlanRevisionID:    planRevision.ID,
+			PlanFingerprint:   planRevision.PlanFingerprint,
+			Payload:           planRevision.Payload,
+			CreatedEventID:    planRevision.CreatedEventID,
 		}).Get(ctx, &review); err != nil {
 			return nil, err
 		}
-		return &pendingRouteDecisionReview{
-			DecisionRequestID: review.ID,
-			ProjectID:         signal.ProjectID,
-			CoordinationJobID: job.ID,
-			OutputEventIDs:    outputEventIDs,
-		}, nil
+		pending.DecisionRequestID = review.ID
+		return &pending, nil
+	default:
+		return nil, finishCoordinationJob(ctx, input.TenantID, job.ID, planRevision.Status, outputEventIDs)
 	}
-	if err := dispatchProjectTasks(ctx, input.TenantID, signal.ProjectID, readyTaskIDs); err != nil {
-		return nil, err
-	}
-	return nil, finishCoordinationJob(ctx, input.TenantID, job.ID, "completed", outputEventIDs)
 }
 
-func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, pendingReviews map[string]pendingRouteDecisionReview, pendingFailureRecoveries map[string]pendingTaskFailureRecovery, pendingAcceptance map[string]pendingProjectAcceptance) error {
+func decomposeAndDispatchAcceptedPlan(ctx workflow.Context, input ProjectCoordinatorInput, pending pendingPlanRevisionReview) error {
+	var tasks []ProjectTaskResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).DecomposeAcceptedPlanRevision, DecomposeAcceptedPlanRevisionInput{
+		TenantID:          input.TenantID,
+		ProjectID:         pending.ProjectID,
+		DemandID:          pending.DemandID,
+		CoordinationJobID: pending.CoordinationJobID,
+		RouteDecisionID:   pending.RouteDecisionID,
+		PlanRevisionID:    pending.PlanRevisionID,
+		PlanFingerprint:   pending.PlanFingerprint,
+		Payload:           pending.Payload,
+	}).Get(ctx, &tasks); err != nil {
+		return err
+	}
+	_ = tasks
+	readyTaskIDs, err := listDispatchableTasks(ctx, input.TenantID, pending.ProjectID, pending.CoordinationJobID)
+	if err != nil {
+		return err
+	}
+	if err := dispatchProjectTasks(ctx, input.TenantID, pending.ProjectID, readyTaskIDs); err != nil {
+		return err
+	}
+	return finishCoordinationJob(ctx, input.TenantID, pending.CoordinationJobID, "completed", pending.OutputEventIDs)
+}
+
+func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, pendingReviews map[string]pendingPlanRevisionReview, pendingFailureRecoveries map[string]pendingTaskFailureRecovery, pendingAcceptance map[string]pendingProjectAcceptance) error {
 	if pending, ok := pendingReviews[signal.DecisionRequestID.String()]; ok {
 		delete(pendingReviews, signal.DecisionRequestID.String())
-		return handleRouteReviewDecision(ctx, input, signal, pending)
+		nextPending, err := handlePlanReviewDecision(ctx, input, signal, pending)
+		if err == nil && nextPending != nil {
+			pendingReviews[nextPending.DecisionRequestID.String()] = *nextPending
+		}
+		return err
 	}
 	if pending, ok := pendingFailureRecoveries[signal.DecisionRequestID.String()]; ok {
 		delete(pendingFailureRecoveries, signal.DecisionRequestID.String())
@@ -223,25 +260,128 @@ func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinator
 	return appendSignalObservedEvent(ctx, input, "human decision submitted")
 }
 
-func handleRouteReviewDecision(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, pending pendingRouteDecisionReview) error {
+func handlePlanReviewDecision(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, pending pendingPlanRevisionReview) (*pendingPlanRevisionReview, error) {
 	outputEventIDs := append([]uuid.UUID{}, pending.OutputEventIDs...)
 	if signal.ResolvedEventID != uuid.Nil {
 		outputEventIDs = append(outputEventIDs, signal.ResolvedEventID)
 	}
-	if signal.Decision != "approved" {
-		if err := appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: pending.ProjectID}, "human route review rejected"); err != nil {
-			return err
+	var resolved PlanRevisionResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).ResolvePlanRevisionReview, ResolvePlanRevisionReviewInput{
+		TenantID:          input.TenantID,
+		ProjectID:         pending.ProjectID,
+		DemandID:          pending.DemandID,
+		CoordinationJobID: pending.CoordinationJobID,
+		PlanRevisionID:    pending.PlanRevisionID,
+		DecisionRequestID: signal.DecisionRequestID,
+		Decision:          signal.Decision,
+		Payload:           signal.Payload,
+	}).Get(ctx, &resolved); err != nil {
+		return nil, err
+	}
+	pending.OutputEventIDs = outputEventIDs
+	if signal.Decision == project.PlanReviewDecisionAccept {
+		if resolved.PlanFingerprint != "" {
+			pending.PlanFingerprint = resolved.PlanFingerprint
 		}
-		return finishCoordinationJob(ctx, input.TenantID, pending.CoordinationJobID, signal.Decision, outputEventIDs)
+		return nil, decomposeAndDispatchAcceptedPlan(ctx, input, pending)
 	}
-	readyTaskIDs, err := listDispatchableTasks(ctx, input.TenantID, pending.ProjectID, pending.CoordinationJobID)
-	if err != nil {
-		return err
+	if signal.Decision == project.PlanReviewDecisionRequestChanges {
+		nextPending, err := replanAfterPlanReviewChanges(ctx, input, signal, pending, outputEventIDs)
+		return nextPending, err
 	}
-	if err := dispatchProjectTasks(ctx, input.TenantID, pending.ProjectID, readyTaskIDs); err != nil {
-		return err
+	if err := appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: pending.ProjectID}, "human plan review rejected"); err != nil {
+		return nil, err
 	}
-	return finishCoordinationJob(ctx, input.TenantID, pending.CoordinationJobID, "completed", outputEventIDs)
+	return nil, finishCoordinationJob(ctx, input.TenantID, pending.CoordinationJobID, signal.Decision, outputEventIDs)
+}
+
+func replanAfterPlanReviewChanges(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, pending pendingPlanRevisionReview, outputEventIDs []uuid.UUID) (*pendingPlanRevisionReview, error) {
+	if err := appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: pending.ProjectID}, "human plan review requested changes"); err != nil {
+		return nil, err
+	}
+	var snapshot CoordinationSnapshot
+	if err := workflow.ExecuteActivity(ctx, (*Activities).LoadProjectCoordinationSnapshot, LoadSnapshotInput{
+		TenantID:  input.TenantID,
+		ProjectID: pending.ProjectID,
+		DemandID:  pending.DemandID,
+	}).Get(ctx, &snapshot); err != nil {
+		return nil, err
+	}
+	var decision RouteDecisionPlan
+	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
+		return nil, err
+	}
+	var routeDecision RouteDecisionResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).PersistRouteDecision, PersistRouteDecisionInput{
+		TenantID:  input.TenantID,
+		ProjectID: pending.ProjectID,
+		JobID:     pending.CoordinationJobID,
+		DemandID:  pending.DemandID,
+		Decision:  decision,
+	}).Get(ctx, &routeDecision); err != nil {
+		return nil, err
+	}
+	if routeDecision.CreatedEventID != uuid.Nil {
+		outputEventIDs = append(outputEventIDs, routeDecision.CreatedEventID)
+	}
+	supersedeReason := planReviewChangeReason(signal)
+	var planRevision PlanRevisionResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).PersistPlanRevision, PersistPlanRevisionInput{
+		TenantID:          input.TenantID,
+		ProjectID:         pending.ProjectID,
+		DemandID:          pending.DemandID,
+		CoordinationJobID: pending.CoordinationJobID,
+		RouteDecisionID:   routeDecision.ID,
+		Decision:          decision,
+		SupersedeOpen:     true,
+		SupersedeReason:   supersedeReason,
+	}).Get(ctx, &planRevision); err != nil {
+		return nil, err
+	}
+	if planRevision.CreatedEventID != uuid.Nil {
+		outputEventIDs = append(outputEventIDs, planRevision.CreatedEventID)
+	}
+	next := pendingPlanRevisionReview{
+		ProjectID:         pending.ProjectID,
+		DemandID:          pending.DemandID,
+		CoordinationJobID: pending.CoordinationJobID,
+		RouteDecisionID:   routeDecision.ID,
+		PlanRevisionID:    planRevision.ID,
+		PlanFingerprint:   planRevision.PlanFingerprint,
+		Payload:           planRevision.Payload,
+		OutputEventIDs:    outputEventIDs,
+	}
+	if planRevision.Status == project.PlanRevisionStatusAccepted {
+		return nil, decomposeAndDispatchAcceptedPlan(ctx, input, next)
+	}
+	if planRevision.Status == project.PlanRevisionStatusPendingReview {
+		var review DecisionRequestResult
+		if err := workflow.ExecuteActivity(ctx, (*Activities).RequestPlanRevisionReview, RequestPlanRevisionReviewInput{
+			TenantID:          input.TenantID,
+			ProjectID:         pending.ProjectID,
+			CoordinationJobID: pending.CoordinationJobID,
+			DemandID:          pending.DemandID,
+			PlanRevisionID:    planRevision.ID,
+			PlanFingerprint:   planRevision.PlanFingerprint,
+			Payload:           planRevision.Payload,
+			CreatedEventID:    planRevision.CreatedEventID,
+		}).Get(ctx, &review); err != nil {
+			return nil, err
+		}
+		next.DecisionRequestID = review.ID
+		return &next, nil
+	}
+	return nil, finishCoordinationJob(ctx, input.TenantID, pending.CoordinationJobID, planRevision.Status, outputEventIDs)
+}
+
+func planReviewChangeReason(signal HumanDecisionSubmitted) *string {
+	for _, key := range []string{"reason", "comment", "summary"} {
+		if value, ok := signal.Payload[key].(string); ok && value != "" {
+			return &value
+		}
+	}
+	reason := "human requested plan changes"
+	return &reason
 }
 
 func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorInput, signal EmployeeTaskCompleted) (*pendingProjectAcceptance, error) {

@@ -658,6 +658,29 @@ func TestProjectTaskDurableClosureMigrationComments(t *testing.T) {
 	}
 }
 
+func TestProjectPlanRevisionsMigrationHasTenantFirstIndexes(t *testing.T) {
+	migration := readMigration(t, "031_project_plan_revisions.sql")
+
+	for _, fragment := range []string{
+		"CREATE TABLE project_plan_revisions",
+		"CREATE TABLE project_plan_decomposition_claims",
+		"tenant_id UUID NOT NULL",
+		"CREATE UNIQUE INDEX uq_project_plan_revisions_revision_number",
+		"ON project_plan_revisions(tenant_id, project_id, demand_id, revision_number)",
+		"CREATE UNIQUE INDEX uq_project_plan_revisions_fingerprint",
+		"ON project_plan_revisions(tenant_id, project_id, demand_id, plan_fingerprint)",
+		"CREATE UNIQUE INDEX uq_project_plan_revisions_current_accepted",
+		"CREATE UNIQUE INDEX uq_project_plan_decomposition_claims_revision",
+		"ON project_plan_decomposition_claims(tenant_id, project_id, demand_id, accepted_plan_revision_id)",
+		"COMMENT ON TABLE project_plan_revisions",
+		"COMMENT ON COLUMN project_plan_revisions.payload",
+	} {
+		if !strings.Contains(migration, fragment) {
+			t.Fatalf("project plan revisions migration missing %q", fragment)
+		}
+	}
+}
+
 func TestExecutionLedgerEventsMigration(t *testing.T) {
 	sql := readMigration(t, "029_execution_ledger_events.sql")
 	block := createTableBlock(t, sql, "execution_ledger_events")

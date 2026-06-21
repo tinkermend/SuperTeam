@@ -5392,6 +5392,26 @@ func (r *memoryRepository) ListDemandLaunchRouteDecisions(ctx context.Context, t
 	return paginateTestSlice(filtered, limit, 0), nil
 }
 
+func (r *memoryRepository) CreatePlanRevision(ctx context.Context, req CreatePlanRevisionRequest) (PlanRevision, error) {
+	return PlanRevision{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetPlanRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (PlanRevision, error) {
+	return PlanRevision{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) ListPlanRevisions(ctx context.Context, req ListPlanRevisionsRequest) ([]PlanRevision, error) {
+	return []PlanRevision{}, nil
+}
+
+func (r *memoryRepository) AcceptPlanRevision(ctx context.Context, req AcceptPlanRevisionRequest) (PlanRevision, error) {
+	return PlanRevision{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) RejectPlanRevision(ctx context.Context, req RejectPlanRevisionRequest) (PlanRevision, error) {
+	return PlanRevision{}, ErrProjectNotFound
+}
+
 func (r *memoryRepository) CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error) {
 	task := ProjectTask{
 		ID:                        uuid.New(),
