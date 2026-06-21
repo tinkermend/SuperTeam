@@ -2,6 +2,7 @@ package skill
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -19,7 +20,7 @@ func NewPgRepository(db *pgxpool.Pool) Repository {
 	return &PgRepository{db: db}
 }
 
-const skillSelectColumns = `s.id, s.tenant_id, s.slug, s.name, s.description, s.version, s.source, s.risk_level, s.icon_key, s.color_token, s.tags, s.archive_object_ref, s.archive_filename, s.archive_size_bytes, s.archive_checksum_sha256, s.archive_file_count, COALESCE(s.created_by::text, '') AS created_by, COALESCE(au.display_name, au.username, '') AS created_by_name, s.created_at, s.updated_at`
+const skillSelectColumns = `s.id, s.tenant_id, s.slug, s.name, s.description, s.version, s.source, s.risk_level, s.icon_key, s.color_token, s.tags, COALESCE(s.metadata, '{}'::jsonb) AS metadata, s.archive_object_ref, s.archive_filename, s.archive_size_bytes, s.archive_checksum_sha256, s.archive_file_count, COALESCE(s.created_by::text, '') AS created_by, COALESCE(au.display_name, au.username, '') AS created_by_name, s.created_at, s.updated_at`
 
 const skillJoinClause = `LEFT JOIN auth_users au ON au.id = s.created_by`
 
@@ -90,13 +91,17 @@ func (r *PgRepository) UpsertSkillPackage(ctx context.Context, req UpsertSkillPa
 		}
 	}()
 	var skillID uuid.UUID
+	metadata, err := marshalSkillMetadata(req.Metadata, req.RuntimeDependencies)
+	if err != nil {
+		return nil, err
+	}
 	err = tx.QueryRow(ctx, `
 INSERT INTO skills (
     tenant_id, slug, name, description, version, source, risk_level,
-    icon_key, color_token, tags, created_by, updated_at,
+    icon_key, color_token, tags, metadata, created_by, updated_at,
     archive_object_ref, archive_filename, archive_size_bytes, archive_checksum_sha256, archive_file_count
 )
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12,$13,$14,$15,$16)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),$13,$14,$15,$16,$17)
 ON CONFLICT (tenant_id, slug) WHERE deleted_at IS NULL
 DO UPDATE SET
     name = EXCLUDED.name,
@@ -107,6 +112,7 @@ DO UPDATE SET
     icon_key = EXCLUDED.icon_key,
     color_token = EXCLUDED.color_token,
     tags = EXCLUDED.tags,
+    metadata = COALESCE(skills.metadata, '{}'::jsonb) || EXCLUDED.metadata,
     archive_object_ref = EXCLUDED.archive_object_ref,
     archive_filename = EXCLUDED.archive_filename,
     archive_size_bytes = EXCLUDED.archive_size_bytes,
@@ -115,7 +121,7 @@ DO UPDATE SET
     updated_at = NOW()
 RETURNING id`,
 		req.TenantID, req.Slug, req.Name, req.Description, req.Version, req.Source, req.RiskLevel,
-		req.IconKey, req.ColorToken, req.Tags, nullUUID(req.ActorUserID),
+		req.IconKey, req.ColorToken, req.Tags, metadata, nullUUID(req.ActorUserID),
 		req.ArchiveObjectRef, req.ArchiveFilename, req.ArchiveSizeBytes, req.ArchiveChecksum, req.ArchiveFileCount,
 	).Scan(&skillID)
 	if err != nil {
@@ -299,7 +305,7 @@ WITH target_employee AS (
 )
 SELECT
     s.id, s.tenant_id, s.slug, s.name, s.description, s.version, s.source, s.risk_level,
-    s.icon_key, s.color_token, s.tags, s.archive_object_ref, s.archive_filename,
+    s.icon_key, s.color_token, s.tags, COALESCE(s.metadata, '{}'::jsonb) AS metadata, s.archive_object_ref, s.archive_filename,
     s.archive_size_bytes, s.archive_checksum_sha256, s.archive_file_count,
     COALESCE(s.created_by::text, '') AS created_by,
     COALESCE(au.display_name, au.username, '') AS created_by_name,
@@ -315,7 +321,7 @@ LEFT JOIN auth_users au ON au.id = s.created_by
 UNION ALL
 SELECT
     s.id, s.tenant_id, s.slug, s.name, s.description, s.version, s.source, s.risk_level,
-    s.icon_key, s.color_token, s.tags, s.archive_object_ref, s.archive_filename,
+    s.icon_key, s.color_token, s.tags, COALESCE(s.metadata, '{}'::jsonb) AS metadata, s.archive_object_ref, s.archive_filename,
     s.archive_size_bytes, s.archive_checksum_sha256, s.archive_file_count,
     COALESCE(s.created_by::text, '') AS created_by,
     COALESCE(au.display_name, au.username, '') AS created_by_name,
@@ -345,6 +351,7 @@ ORDER BY inherited DESC, name ASC`, req.TenantID, req.DigitalEmployeeID)
 	for rows.Next() {
 		item := EffectiveEmployeeSkill{}
 		var createdByStr string
+		var metadataBytes []byte
 		if err := rows.Scan(
 			&item.Skill.ID,
 			&item.Skill.TenantID,
@@ -357,6 +364,7 @@ ORDER BY inherited DESC, name ASC`, req.TenantID, req.DigitalEmployeeID)
 			&item.Skill.IconKey,
 			&item.Skill.ColorToken,
 			&item.Skill.Tags,
+			&metadataBytes,
 			&item.Skill.ArchiveObjectRef,
 			&item.Skill.ArchiveFilename,
 			&item.Skill.ArchiveSizeBytes,
@@ -374,6 +382,9 @@ ORDER BY inherited DESC, name ASC`, req.TenantID, req.DigitalEmployeeID)
 		}
 		if createdByStr != "" {
 			item.Skill.CreatedBy, _ = uuid.Parse(createdByStr)
+		}
+		if err := applySkillMetadata(&item.Skill, metadataBytes); err != nil {
+			return nil, err
 		}
 		if err := r.loadChildren(ctx, &item.Skill); err != nil {
 			return nil, err
@@ -398,6 +409,7 @@ WITH target_employee AS (
 SELECT
     s.id,
     s.slug,
+    COALESCE(s.metadata, '{}'::jsonb) AS metadata,
     s.archive_object_ref,
     s.archive_checksum_sha256,
     s.archive_size_bytes,
@@ -427,7 +439,11 @@ ORDER BY s.slug ASC`, tenantID, digitalEmployeeID)
 	var records []SkillRuntimeRecord
 	for rows.Next() {
 		var rec SkillRuntimeRecord
-		if err := rows.Scan(&rec.ID, &rec.Slug, &rec.ArchiveObjectRef, &rec.ArchiveChecksum, &rec.ArchiveSizeBytes, &rec.ArchiveFileCount); err != nil {
+		var metadataBytes []byte
+		if err := rows.Scan(&rec.ID, &rec.Slug, &metadataBytes, &rec.ArchiveObjectRef, &rec.ArchiveChecksum, &rec.ArchiveSizeBytes, &rec.ArchiveFileCount); err != nil {
+			return nil, err
+		}
+		if err := applyRuntimeRecordMetadata(&rec, metadataBytes); err != nil {
 			return nil, err
 		}
 		records = append(records, rec)
@@ -530,6 +546,7 @@ type skillScanner interface {
 func scanSkill(row skillScanner) (*Skill, error) {
 	item := &Skill{}
 	var createdByStr string
+	var metadataBytes []byte
 	if err := row.Scan(
 		&item.ID,
 		&item.TenantID,
@@ -542,6 +559,7 @@ func scanSkill(row skillScanner) (*Skill, error) {
 		&item.IconKey,
 		&item.ColorToken,
 		&item.Tags,
+		&metadataBytes,
 		&item.ArchiveObjectRef,
 		&item.ArchiveFilename,
 		&item.ArchiveSizeBytes,
@@ -557,7 +575,74 @@ func scanSkill(row skillScanner) (*Skill, error) {
 	if createdByStr != "" {
 		item.CreatedBy, _ = uuid.Parse(createdByStr)
 	}
+	if err := applySkillMetadata(item, metadataBytes); err != nil {
+		return nil, err
+	}
 	return item, nil
+}
+
+const runtimeDependenciesMetadataKey = "runtime_dependencies"
+
+func marshalSkillMetadata(metadata map[string]any, deps SkillRuntimeDependencies) ([]byte, error) {
+	merged := make(map[string]any, len(metadata)+1)
+	for key, value := range metadata {
+		merged[key] = value
+	}
+	merged[runtimeDependenciesMetadataKey] = deps
+	return json.Marshal(merged)
+}
+
+func applySkillMetadata(item *Skill, raw []byte) error {
+	metadata, deps, err := decodeSkillMetadata(raw)
+	if err != nil {
+		return err
+	}
+	item.Metadata = metadata
+	item.RuntimeDependencies = deps
+	return nil
+}
+
+func applyRuntimeRecordMetadata(record *SkillRuntimeRecord, raw []byte) error {
+	metadata, deps, err := decodeSkillMetadata(raw)
+	if err != nil {
+		return err
+	}
+	record.Metadata = metadata
+	record.RuntimeDependencies = deps
+	return nil
+}
+
+func decodeSkillMetadata(raw []byte) (map[string]any, SkillRuntimeDependencies, error) {
+	if len(raw) == 0 {
+		raw = []byte("{}")
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return nil, SkillRuntimeDependencies{}, fmt.Errorf("%w: invalid skill metadata", ErrInvalidInput)
+	}
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	deps := SkillRuntimeDependencies{
+		Tools: []string{},
+		Env:   []string{},
+	}
+	value, ok := metadata[runtimeDependenciesMetadataKey]
+	if !ok || value == nil {
+		return metadata, deps, nil
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, SkillRuntimeDependencies{}, fmt.Errorf("%w: invalid skill runtime dependencies", ErrInvalidInput)
+	}
+	if err := json.Unmarshal(encoded, &deps); err != nil {
+		return nil, SkillRuntimeDependencies{}, fmt.Errorf("%w: invalid skill runtime dependencies", ErrInvalidInput)
+	}
+	normalized, err := normalizeRuntimeDependencies(deps)
+	if err != nil {
+		return nil, SkillRuntimeDependencies{}, err
+	}
+	return metadata, normalized, nil
 }
 
 func mapNoRows(err error) error {

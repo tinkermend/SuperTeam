@@ -123,6 +123,59 @@ func TestServiceUploadSkillParsesSkillMarkdownOnlyZip(t *testing.T) {
 	}
 }
 
+func TestServiceUploadSkillStoresRuntimeDependencies(t *testing.T) {
+	repo := &serviceTestRepository{}
+	service := newTestService(repo)
+	archive := buildSkillZip(t, map[string]string{
+		"SKILL.md": "# GitHub Skill\n\nUses gh.",
+	})
+
+	item, err := service.UploadSkill(context.Background(), UploadSkillRequest{
+		TenantID: uuid.New(),
+		Name:     "GitHub Skill",
+		Archive:  archive,
+		Filename: "github-skill.zip",
+		RuntimeDependencies: SkillRuntimeDependencies{
+			Tools: []string{" gh ", "gh", "kubectl"},
+			Env:   []string{"GH_TOKEN", " GH_TOKEN "},
+		},
+	})
+	if err != nil {
+		t.Fatalf("upload skill: %v", err)
+	}
+
+	if !stringSlicesEqual(repo.upsertReq.RuntimeDependencies.Tools, []string{"gh", "kubectl"}) {
+		t.Fatalf("tools mismatch: %#v", repo.upsertReq.RuntimeDependencies.Tools)
+	}
+	if !stringSlicesEqual(repo.upsertReq.RuntimeDependencies.Env, []string{"GH_TOKEN"}) {
+		t.Fatalf("env mismatch: %#v", repo.upsertReq.RuntimeDependencies.Env)
+	}
+	if !stringSlicesEqual(item.RuntimeDependencies.Tools, []string{"gh", "kubectl"}) {
+		t.Fatalf("returned tools mismatch: %#v", item.RuntimeDependencies.Tools)
+	}
+}
+
+func TestServiceUploadSkillRejectsInvalidRuntimeDependencies(t *testing.T) {
+	service := newTestService(&serviceTestRepository{})
+	archive := buildSkillZip(t, map[string]string{
+		"SKILL.md": "# Bad Dependencies\n\nUses invalid deps.",
+	})
+
+	_, err := service.UploadSkill(context.Background(), UploadSkillRequest{
+		TenantID: uuid.New(),
+		Name:     "Bad Dependencies",
+		Archive:  archive,
+		Filename: "bad-dependencies.zip",
+		RuntimeDependencies: SkillRuntimeDependencies{
+			Tools: []string{"bad/tool"},
+			Env:   []string{"1TOKEN"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid runtime dependencies to be rejected")
+	}
+}
+
 func TestServiceUploadSkillRejectsZipWithoutSkillMarkdown(t *testing.T) {
 	service := newTestService(&serviceTestRepository{})
 	archive := buildSkillZip(t, map[string]string{
@@ -273,17 +326,18 @@ func (r *serviceTestRepository) GetSkill(context.Context, GetSkillRequest) (*Ski
 func (r *serviceTestRepository) UpsertSkillPackage(_ context.Context, req UpsertSkillPackageRequest) (*Skill, error) {
 	r.upsertReq = req
 	return &Skill{
-		ID:               uuid.New(),
-		TenantID:         req.TenantID,
-		Slug:             req.Slug,
-		Name:             req.Name,
-		Description:      req.Description,
-		Tags:             req.Tags,
-		TeamIDs:          req.TeamIDs,
-		ArchiveObjectRef: req.ArchiveObjectRef,
-		ArchiveChecksum:  req.ArchiveChecksum,
-		ArchiveSizeBytes: req.ArchiveSizeBytes,
-		ArchiveFileCount: req.ArchiveFileCount,
+		ID:                  uuid.New(),
+		TenantID:            req.TenantID,
+		Slug:                req.Slug,
+		Name:                req.Name,
+		Description:         req.Description,
+		Tags:                req.Tags,
+		TeamIDs:             req.TeamIDs,
+		ArchiveObjectRef:    req.ArchiveObjectRef,
+		ArchiveChecksum:     req.ArchiveChecksum,
+		ArchiveSizeBytes:    req.ArchiveSizeBytes,
+		ArchiveFileCount:    req.ArchiveFileCount,
+		RuntimeDependencies: req.RuntimeDependencies,
 	}, nil
 }
 

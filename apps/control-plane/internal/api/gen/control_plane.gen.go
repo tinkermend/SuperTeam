@@ -3465,19 +3465,20 @@ type Skill struct {
 	CreatedBy *string `json:"created_by,omitempty"`
 
 	// CreatedByName Uploader display name
-	CreatedByName *string            `json:"created_by_name,omitempty"`
-	Description   string             `json:"description"`
-	IconKey       string             `json:"icon_key"`
-	Id            openapi_types.UUID `json:"id"`
-	Name          string             `json:"name"`
-	RiskLevel     string             `json:"risk_level"`
-	Slug          string             `json:"slug"`
-	Source        string             `json:"source"`
-	Tags          []string           `json:"tags"`
-	TeamBindings  []SkillTeamBinding `json:"team_bindings"`
-	TenantId      openapi_types.UUID `json:"tenant_id"`
-	UpdatedAt     *time.Time         `json:"updated_at,omitempty"`
-	Version       string             `json:"version"`
+	CreatedByName       *string                  `json:"created_by_name,omitempty"`
+	Description         string                   `json:"description"`
+	IconKey             string                   `json:"icon_key"`
+	Id                  openapi_types.UUID       `json:"id"`
+	Name                string                   `json:"name"`
+	RiskLevel           string                   `json:"risk_level"`
+	RuntimeDependencies SkillRuntimeDependencies `json:"runtime_dependencies"`
+	Slug                string                   `json:"slug"`
+	Source              string                   `json:"source"`
+	Tags                []string                 `json:"tags"`
+	TeamBindings        []SkillTeamBinding       `json:"team_bindings"`
+	TenantId            openapi_types.UUID       `json:"tenant_id"`
+	UpdatedAt           *time.Time               `json:"updated_at,omitempty"`
+	Version             string                   `json:"version"`
 }
 
 // SkillAgentBinding defines model for SkillAgentBinding.
@@ -3487,6 +3488,12 @@ type SkillAgentBinding struct {
 	Status    string              `json:"status"`
 	TeamId    *openapi_types.UUID `json:"team_id,omitempty"`
 	TeamName  *string             `json:"team_name,omitempty"`
+}
+
+// SkillRuntimeDependencies defines model for SkillRuntimeDependencies.
+type SkillRuntimeDependencies struct {
+	Env   []string `json:"env"`
+	Tools []string `json:"tools"`
 }
 
 // SkillTeamBinding defines model for SkillTeamBinding.
@@ -3778,10 +3785,17 @@ type UpdateTeamRequest struct {
 
 // UploadSkillRequest defines model for UploadSkillRequest.
 type UploadSkillRequest struct {
-	Description *string            `json:"description,omitempty"`
-	File        openapi_types.File `json:"file"`
-	Name        string             `json:"name"`
-	RiskLevel   *string            `json:"risk_level,omitempty"`
+	Description         *string                   `json:"description,omitempty"`
+	File                openapi_types.File        `json:"file"`
+	Name                string                    `json:"name"`
+	RiskLevel           *string                   `json:"risk_level,omitempty"`
+	RuntimeDependencies *SkillRuntimeDependencies `json:"runtime_dependencies,omitempty"`
+
+	// RuntimeEnv Comma-separated environment variable names required by the skill at runtime.
+	RuntimeEnv *string `json:"runtime_env,omitempty"`
+
+	// RuntimeTools Comma-separated CLI tool names required by the skill at runtime.
+	RuntimeTools *string `json:"runtime_tools,omitempty"`
 
 	// Tags Comma-separated uploaded skill labels.
 	Tags *string `json:"tags,omitempty"`

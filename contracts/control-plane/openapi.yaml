@@ -7281,6 +7281,7 @@ components:
         - archive_size_bytes
         - archive_checksum_sha256
         - archive_file_count
+        - runtime_dependencies
         - team_bindings
         - agent_bindings
       properties:
@@ -7323,6 +7324,8 @@ components:
         archive_file_count:
           type: integer
           format: int32
+        runtime_dependencies:
+          $ref: "#/components/schemas/SkillRuntimeDependencies"
         created_by:
           type: string
           description: Uploader user UUID (empty if unknown)
@@ -7343,6 +7346,20 @@ components:
         updated_at:
           type: string
           format: date-time
+    SkillRuntimeDependencies:
+      type: object
+      required:
+        - tools
+        - env
+      properties:
+        tools:
+          type: array
+          items:
+            type: string
+        env:
+          type: array
+          items:
+            type: string
     SkillTeamBinding:
       type: object
       required:
@@ -7620,6 +7637,14 @@ components:
           description: Comma-separated team UUIDs that can use the skill.
         risk_level:
           type: string
+        runtime_tools:
+          type: string
+          description: Comma-separated CLI tool names required by the skill at runtime.
+        runtime_env:
+          type: string
+          description: Comma-separated environment variable names required by the skill at runtime.
+        runtime_dependencies:
+          $ref: "#/components/schemas/SkillRuntimeDependencies"
     DigitalEmployeeStatus:
       type: string
       enum:

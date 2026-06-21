@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -112,16 +113,22 @@ func (h *HTTPHandler) UploadSkill(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "uploaded skill zip exceeds 50MB", http.StatusBadRequest)
 		return
 	}
+	runtimeDependencies, err := parseRuntimeDependenciesForm(r)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
 	skill, err := service.UploadSkill(r.Context(), UploadSkillRequest{
-		TenantID:    tenantID,
-		ActorUserID: middleware.GetUserID(r.Context()),
-		Name:        r.FormValue("name"),
-		Description: r.FormValue("description"),
-		Tags:        splitFormList(r.MultipartForm.Value["tags"]),
-		TeamIDs:     parseUUIDList(r.MultipartForm.Value["team_ids"]),
-		RiskLevel:   r.FormValue("risk_level"),
-		Archive:     archive,
-		Filename:    header.Filename,
+		TenantID:            tenantID,
+		ActorUserID:         middleware.GetUserID(r.Context()),
+		Name:                r.FormValue("name"),
+		Description:         r.FormValue("description"),
+		Tags:                splitFormList(r.MultipartForm.Value["tags"]),
+		TeamIDs:             parseUUIDList(r.MultipartForm.Value["team_ids"]),
+		RiskLevel:           r.FormValue("risk_level"),
+		RuntimeDependencies: runtimeDependencies,
+		Archive:             archive,
+		Filename:            header.Filename,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -357,28 +364,29 @@ func (h *HTTPHandler) authorizeSkillAction(w http.ResponseWriter, r *http.Reques
 }
 
 type skillResponse struct {
-	ID                string                      `json:"id"`
-	TenantID          string                      `json:"tenant_id"`
-	Slug              string                      `json:"slug"`
-	Name              string                      `json:"name"`
-	Description       string                      `json:"description"`
-	Version           string                      `json:"version"`
-	Source            string                      `json:"source"`
-	RiskLevel         string                      `json:"risk_level"`
-	IconKey           string                      `json:"icon_key"`
-	ColorToken        string                      `json:"color_token"`
-	Tags              []string                    `json:"tags"`
-	ArchiveObjectRef  string                      `json:"archive_object_ref"`
-	ArchiveFilename   string                      `json:"archive_filename"`
-	ArchiveSizeBytes  int64                       `json:"archive_size_bytes"`
-	ArchiveChecksum   string                      `json:"archive_checksum_sha256"`
-	ArchiveFileCount  int                         `json:"archive_file_count"`
-	CreatedBy         string                      `json:"created_by"`
-	CreatedByName     string                      `json:"created_by_name"`
-	TeamBindings      []skillTeamBindingResponse  `json:"team_bindings"`
-	AgentBindings     []skillAgentBindingResponse `json:"agent_bindings"`
-	CreatedAt         string                      `json:"created_at,omitempty"`
-	UpdatedAt         string                      `json:"updated_at,omitempty"`
+	ID                  string                      `json:"id"`
+	TenantID            string                      `json:"tenant_id"`
+	Slug                string                      `json:"slug"`
+	Name                string                      `json:"name"`
+	Description         string                      `json:"description"`
+	Version             string                      `json:"version"`
+	Source              string                      `json:"source"`
+	RiskLevel           string                      `json:"risk_level"`
+	IconKey             string                      `json:"icon_key"`
+	ColorToken          string                      `json:"color_token"`
+	Tags                []string                    `json:"tags"`
+	ArchiveObjectRef    string                      `json:"archive_object_ref"`
+	ArchiveFilename     string                      `json:"archive_filename"`
+	ArchiveSizeBytes    int64                       `json:"archive_size_bytes"`
+	ArchiveChecksum     string                      `json:"archive_checksum_sha256"`
+	ArchiveFileCount    int                         `json:"archive_file_count"`
+	RuntimeDependencies SkillRuntimeDependencies    `json:"runtime_dependencies"`
+	CreatedBy           string                      `json:"created_by"`
+	CreatedByName       string                      `json:"created_by_name"`
+	TeamBindings        []skillTeamBindingResponse  `json:"team_bindings"`
+	AgentBindings       []skillAgentBindingResponse `json:"agent_bindings"`
+	CreatedAt           string                      `json:"created_at,omitempty"`
+	UpdatedAt           string                      `json:"updated_at,omitempty"`
 }
 
 type skillTeamBindingResponse struct {
@@ -428,28 +436,29 @@ func skillResponseFromDomain(item *Skill) skillResponse {
 		return skillResponse{}
 	}
 	return skillResponse{
-		ID:               item.ID.String(),
-		TenantID:         item.TenantID.String(),
-		Slug:             item.Slug,
-		Name:             item.Name,
-		Description:      item.Description,
-		Version:          item.Version,
-		Source:           item.Source,
-		RiskLevel:        item.RiskLevel,
-		IconKey:          item.IconKey,
-		ColorToken:       item.ColorToken,
-		Tags:             item.Tags,
-		ArchiveObjectRef: item.ArchiveObjectRef,
-		ArchiveFilename:  item.ArchiveFilename,
-		ArchiveSizeBytes: item.ArchiveSizeBytes,
-		ArchiveChecksum:  item.ArchiveChecksum,
-		ArchiveFileCount: item.ArchiveFileCount,
-		CreatedBy:        item.CreatedBy.String(),
-		CreatedByName:    item.CreatedByName,
-		TeamBindings:     skillTeamBindingResponses(item.TeamBindings),
-		AgentBindings:    skillAgentBindingResponses(item.AgentBindings),
-		CreatedAt:        formatTime(item.CreatedAt),
-		UpdatedAt:        formatTime(item.UpdatedAt),
+		ID:                  item.ID.String(),
+		TenantID:            item.TenantID.String(),
+		Slug:                item.Slug,
+		Name:                item.Name,
+		Description:         item.Description,
+		Version:             item.Version,
+		Source:              item.Source,
+		RiskLevel:           item.RiskLevel,
+		IconKey:             item.IconKey,
+		ColorToken:          item.ColorToken,
+		Tags:                item.Tags,
+		ArchiveObjectRef:    item.ArchiveObjectRef,
+		ArchiveFilename:     item.ArchiveFilename,
+		ArchiveSizeBytes:    item.ArchiveSizeBytes,
+		ArchiveChecksum:     item.ArchiveChecksum,
+		ArchiveFileCount:    item.ArchiveFileCount,
+		RuntimeDependencies: runtimeDependenciesForResponse(item.RuntimeDependencies),
+		CreatedBy:           item.CreatedBy.String(),
+		CreatedByName:       item.CreatedByName,
+		TeamBindings:        skillTeamBindingResponses(item.TeamBindings),
+		AgentBindings:       skillAgentBindingResponses(item.AgentBindings),
+		CreatedAt:           formatTime(item.CreatedAt),
+		UpdatedAt:           formatTime(item.UpdatedAt),
 	}
 }
 
@@ -486,6 +495,16 @@ func skillAgentBindingResponses(bindings []*SkillAgentBinding) []skillAgentBindi
 		})
 	}
 	return responses
+}
+
+func runtimeDependenciesForResponse(deps SkillRuntimeDependencies) SkillRuntimeDependencies {
+	if deps.Tools == nil {
+		deps.Tools = []string{}
+	}
+	if deps.Env == nil {
+		deps.Env = []string{}
+	}
+	return deps
 }
 
 func skillIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
@@ -559,6 +578,20 @@ func parseUUIDList(values []string) []uuid.UUID {
 		}
 	}
 	return result
+}
+
+func parseRuntimeDependenciesForm(r *http.Request) (SkillRuntimeDependencies, error) {
+	if raw := strings.TrimSpace(r.FormValue("runtime_dependencies")); raw != "" {
+		var deps SkillRuntimeDependencies
+		if err := json.Unmarshal([]byte(raw), &deps); err != nil {
+			return SkillRuntimeDependencies{}, fmt.Errorf("%w: invalid runtime_dependencies", ErrInvalidInput)
+		}
+		return deps, nil
+	}
+	return SkillRuntimeDependencies{
+		Tools: splitFormList(r.MultipartForm.Value["runtime_tools"]),
+		Env:   splitFormList(r.MultipartForm.Value["runtime_env"]),
+	}, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

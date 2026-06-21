@@ -68,10 +68,12 @@ func TestSkillRoutesUseConsoleTenantAndMultipartUpload(t *testing.T) {
 
 	teamID := uuid.New()
 	body, contentType := buildSkillUploadMultipart(t, map[string]string{
-		"name":        "diagnose-plus",
-		"description": "上传诊断技能",
-		"tags":        "诊断,自动化",
-		"team_ids":    teamID.String(),
+		"name":          "diagnose-plus",
+		"description":   "上传诊断技能",
+		"tags":          "诊断,自动化",
+		"team_ids":      teamID.String(),
+		"runtime_tools": "gh,kubectl",
+		"runtime_env":   "GH_TOKEN",
 	}, map[string]string{
 		"diagnose-plus/SKILL.md":            "# diagnose-plus\n",
 		"diagnose-plus/scripts/collect.py":  "print('collect')\n",
@@ -96,6 +98,21 @@ func TestSkillRoutesUseConsoleTenantAndMultipartUpload(t *testing.T) {
 	}
 	if len(service.uploadReq.Archive) == 0 || service.uploadReq.Filename != "skill.zip" {
 		t.Fatalf("expected uploaded archive bytes and filename, got filename=%q size=%d", service.uploadReq.Filename, len(service.uploadReq.Archive))
+	}
+	if !stringSlicesEqual(service.uploadReq.RuntimeDependencies.Tools, []string{"gh", "kubectl"}) {
+		t.Fatalf("expected parsed runtime tools, got %#v", service.uploadReq.RuntimeDependencies.Tools)
+	}
+	if !stringSlicesEqual(service.uploadReq.RuntimeDependencies.Env, []string{"GH_TOKEN"}) {
+		t.Fatalf("expected parsed runtime env, got %#v", service.uploadReq.RuntimeDependencies.Env)
+	}
+	var uploadBody struct {
+		RuntimeDependencies skill.SkillRuntimeDependencies `json:"runtime_dependencies"`
+	}
+	if err := json.NewDecoder(uploadResp.Body).Decode(&uploadBody); err != nil {
+		t.Fatalf("decode upload skill response: %v", err)
+	}
+	if !stringSlicesEqual(uploadBody.RuntimeDependencies.Tools, []string{"gh", "kubectl"}) {
+		t.Fatalf("response tools mismatch: %#v", uploadBody.RuntimeDependencies.Tools)
 	}
 
 	routeTeamID := uuid.New()
@@ -312,11 +329,12 @@ func (s *routeSkillService) DeleteSkill(_ context.Context, req skill.DeleteSkill
 func (s *routeSkillService) UploadSkill(_ context.Context, req skill.UploadSkillRequest) (*skill.Skill, error) {
 	s.uploadReq = req
 	return &skill.Skill{
-		ID:          uuid.New(),
-		TenantID:    req.TenantID,
-		Name:        req.Name,
-		Description: req.Description,
-		Tags:        req.Tags,
+		ID:                  uuid.New(),
+		TenantID:            req.TenantID,
+		Name:                req.Name,
+		Description:         req.Description,
+		Tags:                req.Tags,
+		RuntimeDependencies: req.RuntimeDependencies,
 	}, nil
 }
 

@@ -10,6 +10,7 @@ import (
 	"io"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -72,6 +73,10 @@ func (s *Service) UploadSkill(ctx context.Context, req UploadSkillRequest) (*Ski
 	if len(req.Archive) == 0 {
 		return nil, fmt.Errorf("%w: zip archive is required", ErrInvalidInput)
 	}
+	runtimeDependencies, err := normalizeRuntimeDependencies(req.RuntimeDependencies)
+	if err != nil {
+		return nil, err
+	}
 
 	reader, err := zip.NewReader(bytes.NewReader(req.Archive), int64(len(req.Archive)))
 	if err != nil {
@@ -120,23 +125,24 @@ func (s *Service) UploadSkill(ctx context.Context, req UploadSkillRequest) (*Ski
 	}
 
 	skill, err := s.repository.UpsertSkillPackage(ctx, UpsertSkillPackageRequest{
-		TenantID:          req.TenantID,
-		ActorUserID:       req.ActorUserID,
-		Slug:              slug,
-		Name:              name,
-		Description:       description,
-		Version:           "v0.1.0",
-		Source:            "upload",
-		RiskLevel:         riskLevelOrDefault(req.RiskLevel),
-		IconKey:           iconKeyForSkill(slug),
-		ColorToken:        colorTokenForSkill(slug),
-		Tags:              normalizeStringList(req.Tags),
-		TeamIDs:           req.TeamIDs,
-		ArchiveObjectRef:  ref.URI,
-		ArchiveFilename:   req.Filename,
-		ArchiveSizeBytes:  sizeBytes,
-		ArchiveChecksum:   checksum,
-		ArchiveFileCount:  fileCount,
+		TenantID:            req.TenantID,
+		ActorUserID:         req.ActorUserID,
+		Slug:                slug,
+		Name:                name,
+		Description:         description,
+		Version:             "v0.1.0",
+		Source:              "upload",
+		RiskLevel:           riskLevelOrDefault(req.RiskLevel),
+		IconKey:             iconKeyForSkill(slug),
+		ColorToken:          colorTokenForSkill(slug),
+		Tags:                normalizeStringList(req.Tags),
+		TeamIDs:             req.TeamIDs,
+		RuntimeDependencies: runtimeDependencies,
+		ArchiveObjectRef:    ref.URI,
+		ArchiveFilename:     req.Filename,
+		ArchiveSizeBytes:    sizeBytes,
+		ArchiveChecksum:     checksum,
+		ArchiveFileCount:    fileCount,
 	})
 	if err != nil {
 		_ = s.objectStore.DeleteObject(ctx, objectKey)
@@ -386,6 +392,43 @@ func normalizeStringList(values []string) []string {
 		normalized = append(normalized, value)
 	}
 	return normalized
+}
+
+var (
+	skillToolNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	skillEnvNamePattern  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+)
+
+func normalizeRuntimeDependencies(input SkillRuntimeDependencies) (SkillRuntimeDependencies, error) {
+	tools, err := normalizeDependencyList(input.Tools, skillToolNamePattern, "tool")
+	if err != nil {
+		return SkillRuntimeDependencies{}, err
+	}
+	env, err := normalizeDependencyList(input.Env, skillEnvNamePattern, "env")
+	if err != nil {
+		return SkillRuntimeDependencies{}, err
+	}
+	return SkillRuntimeDependencies{Tools: tools, Env: env}, nil
+}
+
+func normalizeDependencyList(values []string, pattern *regexp.Regexp, label string) ([]string, error) {
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if !pattern.MatchString(value) {
+			return nil, fmt.Errorf("%w: invalid runtime dependency %s %q", ErrInvalidInput, label, value)
+		}
+		seen[value] = struct{}{}
+	}
+	normalized := make([]string, 0, len(seen))
+	for value := range seen {
+		normalized = append(normalized, value)
+	}
+	sort.Strings(normalized)
+	return normalized, nil
 }
 
 var slugPattern = regexp.MustCompile(`[^a-z0-9]+`)
