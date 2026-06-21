@@ -2284,6 +2284,10 @@ func (r *memoryRepository) GetDigitalEmployeeExecutionInstanceByEmployeeID(_ con
 	return record, nil
 }
 
+func (r *memoryRepository) GetDigitalEmployeeOperationalSignals(_ context.Context, _ uuid.UUID, _ []uuid.UUID) (map[uuid.UUID]OperationalSignals, error) {
+	return map[uuid.UUID]OperationalSignals{}, nil
+}
+
 func (r *memoryRepository) CreateWorkspaceFile(_ context.Context, params CreateWorkspaceFileParams) (WorkspaceFileRecord, error) {
 	now := time.Now().UTC()
 	record := WorkspaceFileRecord{

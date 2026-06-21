@@ -171,6 +171,68 @@ func (q *Queries) AreEmployeesRuntimeReady(ctx context.Context, arg AreEmployees
 	return items, nil
 }
 
+const CountDigitalEmployeeOperationalSignals = `-- name: CountDigitalEmployeeOperationalSignals :many
+SELECT
+    pt.assigned_digital_employee_id AS digital_employee_id,
+    COUNT(*) FILTER (WHERE pta.status IN ('queued', 'running'))::integer AS in_flight_attempt_count,
+    COUNT(*) FILTER (WHERE pta.status = 'succeeded')::integer AS recent_success_count,
+    COUNT(*) FILTER (WHERE pta.status IN ('failed', 'timed_out', 'lost'))::integer AS recent_failure_count,
+    COUNT(*) FILTER (WHERE pta.status IN ('waiting_human', 'cancelled'))::integer AS recent_human_reject_count
+FROM project_task_attempts pta
+JOIN project_tasks pt
+  ON pt.tenant_id = pta.tenant_id
+ AND pt.id = pta.project_task_id
+WHERE pta.tenant_id = $1
+  AND pt.assigned_digital_employee_id IS NOT NULL
+  AND pt.assigned_digital_employee_id = ANY($2::uuid[])
+  AND pta.created_at >= NOW() - INTERVAL '30 days'
+GROUP BY pt.tenant_id, pt.assigned_digital_employee_id
+`
+
+type CountDigitalEmployeeOperationalSignalsParams struct {
+	TenantID           uuid.UUID   `json:"tenant_id"`
+	DigitalEmployeeIds []uuid.UUID `json:"digital_employee_ids"`
+}
+
+type CountDigitalEmployeeOperationalSignalsRow struct {
+	DigitalEmployeeID      uuid.NullUUID `json:"digital_employee_id"`
+	InFlightAttemptCount   int32         `json:"in_flight_attempt_count"`
+	RecentSuccessCount     int32         `json:"recent_success_count"`
+	RecentFailureCount     int32         `json:"recent_failure_count"`
+	RecentHumanRejectCount int32         `json:"recent_human_reject_count"`
+}
+
+// Batch load per-employee load and reliability counts from recent project task
+// attempts. Used by the planning profile builder to score how busy and how reliable
+// each candidate digital employee is. Scoped to the last 30 days so the signal
+// reflects recent behaviour rather than lifetime totals. Employees with no recent
+// attempts do not produce a row; callers treat absence as zero.
+func (q *Queries) CountDigitalEmployeeOperationalSignals(ctx context.Context, arg CountDigitalEmployeeOperationalSignalsParams) ([]CountDigitalEmployeeOperationalSignalsRow, error) {
+	rows, err := q.db.Query(ctx, CountDigitalEmployeeOperationalSignals, arg.TenantID, arg.DigitalEmployeeIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountDigitalEmployeeOperationalSignalsRow{}
+	for rows.Next() {
+		var i CountDigitalEmployeeOperationalSignalsRow
+		if err := rows.Scan(
+			&i.DigitalEmployeeID,
+			&i.InFlightAttemptCount,
+			&i.RecentSuccessCount,
+			&i.RecentFailureCount,
+			&i.RecentHumanRejectCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const CreateDigitalEmployee = `-- name: CreateDigitalEmployee :one
 INSERT INTO digital_employees (
     tenant_id,

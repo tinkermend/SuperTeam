@@ -309,6 +309,12 @@ func CanTransitionPlanRevisionStatus(from, to string) bool {
 		PlanRevisionStatusDecomposing: {
 			PlanRevisionStatusDecomposed: true,
 		},
+		PlanRevisionStatusDecomposed: {
+			// self-loop: the exact-once replay branch re-marks an already-decomposed
+			// revision via MarkProjectPlanRevisionDecomposed; keep the domain guard
+			// aligned with the SQL WHERE status IN ('decomposing','decomposed').
+			PlanRevisionStatusDecomposed: true,
+		},
 	}
 	return allowed[from][to]
 }
@@ -1082,7 +1088,9 @@ git commit -m "feat: persist project plan revisions"
 - Modify: `apps/control-plane/internal/project/pg_repository.go`
 - Modify: `apps/control-plane/internal/project/pg_repository_test.go`
 
-- [ ] **Step 1: Write failing repository tests**
+**Pre-existing implementation (extend, do not rebuild):** `DecomposeAcceptedPlanRevision` already exists at `apps/control-plane/internal/project/pg_repository.go:1008` (replay-by-`accepted_plan_revision_id`, conflict detection via `acceptedPlanGraphComplete`, graph write via `createProjectTaskGraphWithQueries`) with three passing tests — `TestDecomposeAcceptedPlanRevisionIsIdempotent`, `TestDecomposeAcceptedPlanRevisionReplaysAcrossCoordinationJobs`, `TestDecomposeAcceptedPlanRevisionRejectsChangedPayload` — all built on the `createDecomposeAcceptedPlanRevisionFixtureRequest` helper at `pg_repository_test.go:2393`. `DecomposeAcceptedPlanRevisionRequest` already exists at `types.go:516` and matches the shape below except for `PlanFingerprint`. This task therefore **extends** the existing method to (a) require a real `project_plan_revisions` row in an accepted state with a matching fingerprint, and (b) record the decomposition in the new `project_plan_decomposition_claims` table. The existing fixture and the three existing tests must be updated in the same change — the new `q.GetProjectPlanRevision(...)` preamble will otherwise fail them with "revision not found".
+
+- [ ] **Step 1: Update existing decomposition tests/fixture and add new tests**
 
 Append to `apps/control-plane/internal/project/pg_repository_test.go`:
 
@@ -1229,6 +1237,12 @@ func TestDecomposeAcceptedPlanRevisionRequiresAcceptedRevisionAndCompletesClaim(
 }
 ```
 
+Then update the existing fixture and the three existing decomposition tests so they create a real accepted revision row before calling `DecomposeAcceptedPlanRevision`, and pass `PlanFingerprint` on the request:
+
+- `createDecomposeAcceptedPlanRevisionFixtureRequest` (`pg_repository_test.go:2393`): set `PlanFingerprint` on the returned request and insert a matching `project_plan_revisions` row (status `accepted`) via the new `CreatePlanRevision` repository method before returning.
+- `TestDecomposeAcceptedPlanRevisionIsIdempotent`, `TestDecomposeAcceptedPlanRevisionReplaysAcrossCoordinationJobs`: keep their existing assertions; with the fixture providing the accepted revision row they must still pass against the rewritten method.
+- `TestDecomposeAcceptedPlanRevisionRejectsChangedPayload`: re-assert that the conflict is now raised on fingerprint mismatch against the persisted revision row (the new `revision.PlanFingerprint != req.PlanFingerprint` check).
+
 - [ ] **Step 2: Run repository tests and verify they fail**
 
 Run:
@@ -1299,7 +1313,7 @@ type RejectPlanRevisionRequest struct {
 }
 ```
 
-Extend `DecomposeAcceptedPlanRevisionRequest` in `apps/control-plane/internal/project/types.go`:
+Add the `PlanFingerprint` field to the **existing** `DecomposeAcceptedPlanRevisionRequest` in `apps/control-plane/internal/project/types.go` (the other fields already match at `types.go:516`; do not duplicate the struct):
 
 ```go
 type DecomposeAcceptedPlanRevisionRequest struct {
@@ -1422,9 +1436,9 @@ func (r *PgRepository) CreatePlanRevision(ctx context.Context, req CreatePlanRev
 
 Add `GetPlanRevision`, `ListPlanRevisions`, `AcceptPlanRevision`, and `RejectPlanRevision` using the generated queries. Convert `pgx.ErrNoRows` to `ErrProjectNotFound`, and convert empty UPDATE result to `ErrProjectConflict`.
 
-- [ ] **Step 5: Wrap existing decomposition with claim table**
+- [ ] **Step 5: Extend existing decomposition with the claim table**
 
-Update `DecomposeAcceptedPlanRevision` so it loads and validates the `PlanRevision`, creates or replays the claim, writes tasks with the real revision ID, completes the claim, and marks the revision `decomposed`.
+Rewrite the body of the **existing** `DecomposeAcceptedPlanRevision` at `pg_repository.go:1008` so it loads and validates the `PlanRevision`, creates or replays the claim, writes tasks with the real revision ID, completes the claim, and marks the revision `decomposed`. Reuse the method's current internals (`listProjectTasksByAcceptedPlanRevisionWithQueries`, `acceptedPlanGraphComplete`, `graphResultFromExisting`, `createProjectTaskGraphWithQueries`, `projectTaskGraphWriteOptions`); only the preamble (revision load + fingerprint check + claim row) and tail (claim complete + mark decomposed) are new. The replay branch re-marks an already-`decomposed` revision via `MarkProjectPlanRevisionDecomposed`; the SQL `WHERE status IN ('decomposing','decomposed')` permits this, and `CanTransitionPlanRevisionStatus` was updated in Task 1 Step 3 to allow `decomposed→decomposed` so the domain guard and SQL agree.
 
 Use this flow in `apps/control-plane/internal/project/pg_repository.go`:
 
@@ -1577,6 +1591,8 @@ git commit -m "feat: add plan revision repository state"
 - Modify: `apps/control-plane/internal/workflow/projectcoordination/project_store_test.go`
 - Modify: `apps/control-plane/internal/workflow/projectcoordination/workflow.go`
 - Modify: `apps/control-plane/internal/workflow/projectcoordination/workflow_test.go`
+
+**Compile-order constraint (important):** The new `ActivityStore` interface in Step 4 removes `CreateProjectTasks` and `RequestRouteDecisionReview`, but `workflow.go:159` / `workflow.go:181` still call them and `project_store.go:359` / `project_store.go:979` still implement them (plus helpers `acceptedPlanRevisionIDForRouteDecision` `:1367`, `acceptedPlanRevisionDecompositionClaimKey` `:1383`, `routeReviewTargetUserID` `:1202`, `routeReviewContext` `:1628`). Until Steps 3–7 are all applied the package will not compile. Treat Steps 3–7 as a **single compileable change**: do the interface edit, the `ProjectStore` method replacement, the `workflow.go` rewrite, the deletion of the old store methods/helpers, and the test-double/test updates together, and commit only once `go build ./apps/control-plane/internal/workflow/projectcoordination` passes. Use `-run` to exercise individual new methods during development, but do not treat intermediate steps as green checkpoints.
 
 - [ ] **Step 1: Write failing ProjectStore tests**
 
@@ -1809,6 +1825,13 @@ func (a *Activities) DecomposeAcceptedPlanRevision(ctx context.Context, input De
 }
 ```
 
+In the same step, remove the now-orphaned members so the package compiles:
+
+- Drop `CreateProjectTasks` and `RequestRouteDecisionReview` from the `ActivityStore` interface and delete their `(*Activities)` forwarding methods (`activities.go:74`, `activities.go:130`).
+- Delete `(*ProjectStore).CreateProjectTasks` (`project_store.go:359`) and `(*ProjectStore).RequestRouteDecisionReview` (`project_store.go:979`).
+- Delete the helpers that only served them once no caller remains: `acceptedPlanRevisionIDForRouteDecision` (`:1367`), `acceptedPlanRevisionDecompositionClaimKey` (`:1383`), `routeReviewTargetUserID` (`:1202`), `routeReviewContext` (`:1628`).
+- Update `project_store_test.go` and the `newProjectStoreMemoryRepository` test double to call `PersistPlanRevision` / `RequestPlanRevisionReview` / `ResolvePlanRevisionReview` / `DecomposeAcceptedPlanRevision` instead of the removed methods. Keep `RequestRouteDecisionReviewInput` / `CreateProjectTasksInput` types only if still referenced; otherwise delete them.
+
 - [ ] **Step 5: Implement ProjectStore plan methods**
 
 In `apps/control-plane/internal/workflow/projectcoordination/project_store.go`, add `PersistPlanRevision`:
@@ -2033,6 +2056,8 @@ func decomposeAndDispatchAcceptedPlan(ctx workflow.Context, input ProjectCoordin
 	return finishCoordinationJob(ctx, input.TenantID, pending.CoordinationJobID, "completed", outputEventIDs)
 }
 ```
+
+**Human-decision routing for `plan_review`:** The existing human-decision resolution path (Web `resolveDecisionMutation` → Control Plane decision-resolution endpoint → coordinator signal) must dispatch on `DecisionType` so that `plan_review` reaches `ResolvePlanRevisionReview` while legacy `route_review` keeps its current handler. This is the same chain a prior session found broken (`approve` failed while `reject` succeeded); wire it explicitly here and exercise it end-to-end in Task 7 Step 4b.
 
 - [ ] **Step 7: Run ProjectStore and workflow tests**
 
@@ -2708,6 +2733,28 @@ Expected:
 - response body contains plan revision fields after a demand has generated a plan
 
 If auth cookie or a local project ID is unavailable, mark real-chain verification blocked and keep local tests as supporting evidence only.
+
+- [ ] **Step 4b: Verify the real plan → approve → decompose closed loop**
+
+This is the default completion gate per `CLAUDE.md` (real end-to-end, not just a list endpoint). With Control Plane, Temporal, and Web running the current code, drive the full golden path once and assert the loop actually closes:
+
+1. Submit a real demand on an existing project (Web or `curl`) and wait for the coordinator to produce a `pending_review` PlanRevision.
+2. `GET /api/v1/projects/{projectId}/plan-revisions` returns the revision with `status: pending_review`, and **no** ProjectTasks exist yet for that demand.
+3. Resolve the `plan_review` human decision with `approved` (Web 决策队列 or the decision-resolution endpoint).
+4. The revision transitions `accepted` → `decomposing` → `decomposed`, the `project_plan_decomposition_claims` row is `completed`, and the ProjectTask DAG is created with root tasks dispatched. (Runtime/Provider execution is **out of scope** for Phase 2 — stop at task dispatch.)
+
+```bash
+scripts/dev-services.sh status
+scripts/dev-services.sh restart control-plane temporal web
+# 1. submit demand — adapt auth to the local console session
+curl -i "$CONTROL_PLANE_URL/api/v1/projects/$PROJECT_ID/demands" -H "Cookie: $SUPERTEAM_CONSOLE_COOKIE" ...
+# 2. poll until a pending_review revision appears
+curl -s "$CONTROL_PLANE_URL/api/v1/projects/$PROJECT_ID/plan-revisions?limit=5" -H "Cookie: $SUPERTEAM_CONSOLE_COOKIE"
+# 3. approve the plan_review decision via the same endpoint the Web console uses
+# 4. assert revision becomes decomposed and project_tasks exist
+```
+
+Expected: revision reaches `decomposed`, `created_task_ids` is non-empty, and at least one root ProjectTask is dispatchable. If the `plan_review` approve action fails (the symptom recorded in session memory), mark the task **blocked** with the missing dependency — do not declare Phase 2 complete on curl-list evidence alone.
 
 - [ ] **Step 5: Add changelog entry**
 

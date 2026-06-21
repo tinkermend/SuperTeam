@@ -708,6 +708,46 @@ func (r *PgRepository) AreRuntimeReady(ctx context.Context, tenantID uuid.UUID, 
 	return ready, nil
 }
 
+// OperationalSignals carries the per-employee load and reliability counts that the
+// planning profile builder uses to score how busy and how reliable a digital employee
+// is. All counts are scoped to a recent window (currently 30 days) so the signal
+// reflects current behaviour.
+type OperationalSignals struct {
+	InFlightAttemptCount   int32
+	RecentSuccessCount     int32
+	RecentFailureCount     int32
+	RecentHumanRejectCount int32
+}
+
+// GetDigitalEmployeeOperationalSignals batch-loads recent load and reliability counts
+// for the given digital employees. Employees with no recent attempts are omitted from
+// the result; callers should treat absence as zero signals.
+func (r *PgRepository) GetDigitalEmployeeOperationalSignals(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]OperationalSignals, error) {
+	if len(employeeIDs) == 0 {
+		return map[uuid.UUID]OperationalSignals{}, nil
+	}
+	rows, err := r.q.CountDigitalEmployeeOperationalSignals(ctx, queries.CountDigitalEmployeeOperationalSignalsParams{
+		TenantID:           tenantID,
+		DigitalEmployeeIds: employeeIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	signals := make(map[uuid.UUID]OperationalSignals, len(rows))
+	for _, row := range rows {
+		if !row.DigitalEmployeeID.Valid {
+			continue
+		}
+		signals[row.DigitalEmployeeID.UUID] = OperationalSignals{
+			InFlightAttemptCount:   row.InFlightAttemptCount,
+			RecentSuccessCount:     row.RecentSuccessCount,
+			RecentFailureCount:     row.RecentFailureCount,
+			RecentHumanRejectCount: row.RecentHumanRejectCount,
+		}
+	}
+	return signals, nil
+}
+
 func overviewItemFromQuery(row queries.ListDigitalEmployeeOverviewItemsRow) DigitalEmployeeOverviewItem {
 	executionStatus := overviewExecutionStatus(row.ExecutionStatus)
 	latestRunStatus := overviewRunStatus(row.LatestRunStatus)

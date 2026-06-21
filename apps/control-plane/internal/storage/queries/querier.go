@@ -37,6 +37,12 @@ type Querier interface {
 	CountAuthzDecisionDiffsSince(ctx context.Context, arg CountAuthzDecisionDiffsSinceParams) (int64, error)
 	CountAuthzDecisionsSince(ctx context.Context, arg CountAuthzDecisionsSinceParams) (CountAuthzDecisionsSinceRow, error)
 	CountBlockedRuntimeEventsSince(ctx context.Context, arg CountBlockedRuntimeEventsSinceParams) (int64, error)
+	// Batch load per-employee load and reliability counts from recent project task
+	// attempts. Used by the planning profile builder to score how busy and how reliable
+	// each candidate digital employee is. Scoped to the last 30 days so the signal
+	// reflects recent behaviour rather than lifetime totals. Employees with no recent
+	// attempts do not produce a row; callers treat absence as zero.
+	CountDigitalEmployeeOperationalSignals(ctx context.Context, arg CountDigitalEmployeeOperationalSignalsParams) ([]CountDigitalEmployeeOperationalSignalsRow, error)
 	CountHighRiskInboxItems(ctx context.Context, arg CountHighRiskInboxItemsParams) (int64, error)
 	CountInboxItems(ctx context.Context, arg CountInboxItemsParams) (int64, error)
 	CountOnlineRuntimeNodesForTenant(ctx context.Context, arg CountOnlineRuntimeNodesForTenantParams) (int64, error)

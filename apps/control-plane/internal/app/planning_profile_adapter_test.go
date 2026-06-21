@@ -47,6 +47,14 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 				Status:            employee.ExecutionInstanceStatusReady,
 			},
 		},
+		signals: map[uuid.UUID]employee.OperationalSignals{
+			employeeID: {
+				InFlightAttemptCount:   2,
+				RecentSuccessCount:     7,
+				RecentFailureCount:     1,
+				RecentHumanRejectCount: 0,
+			},
+		},
 	}
 
 	records, err := digitalEmployeePlanningProfileAdapter{reader: reader}.PlanningProfileRecords(context.Background(), tenantID, []uuid.UUID{employeeID})
@@ -60,12 +68,25 @@ func TestDigitalEmployeePlanningProfileAdapterMapsEmployeeFacts(t *testing.T) {
 	require.Equal(t, runtimeNodeID, record.RuntimeNodeID)
 	require.Equal(t, "codex", record.ProviderType)
 	require.Equal(t, map[string]any{"primary_role": "data_analyst"}, record.RoleProfile)
+	require.Equal(t, map[string]any{
+		"in_flight_tasks": int32(2),
+		"available_slots": int32(0),
+		"lendable":        false,
+	}, record.LoadState)
+	require.Equal(t, map[string]any{
+		"status":                    "healthy",
+		"success_rate":              7.0 / 8.0,
+		"recent_success_count":      int32(7),
+		"recent_failure_count":      int32(1),
+		"recent_human_reject_count": int32(0),
+	}, record.ReliabilitySignals)
 }
 
 type fakePlanningProfileEmployeeReader struct {
 	employees map[uuid.UUID]employee.DigitalEmployeeRecord
 	configs   map[uuid.UUID]employee.DigitalEmployeeEffectiveConfigRecord
 	instances map[uuid.UUID]employee.DigitalEmployeeExecutionInstanceRecord
+	signals   map[uuid.UUID]employee.OperationalSignals
 }
 
 func (r fakePlanningProfileEmployeeReader) GetDigitalEmployee(_ context.Context, tenantID, employeeID uuid.UUID) (employee.DigitalEmployeeRecord, error) {
@@ -90,4 +111,8 @@ func (r fakePlanningProfileEmployeeReader) GetDigitalEmployeeExecutionInstanceBy
 		return employee.DigitalEmployeeExecutionInstanceRecord{}, employee.ErrNotFound
 	}
 	return record, nil
+}
+
+func (r fakePlanningProfileEmployeeReader) GetDigitalEmployeeOperationalSignals(_ context.Context, _ uuid.UUID, _ []uuid.UUID) (map[uuid.UUID]employee.OperationalSignals, error) {
+	return r.signals, nil
 }

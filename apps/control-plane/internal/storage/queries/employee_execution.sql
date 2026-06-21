@@ -1733,3 +1733,25 @@ SELECT
 FROM digital_employee_runtime_readiness
 WHERE tenant_id = sqlc.arg('tenant_id')
   AND digital_employee_id = ANY(sqlc.arg('digital_employee_ids')::uuid[]);
+
+-- name: CountDigitalEmployeeOperationalSignals :many
+-- Batch load per-employee load and reliability counts from recent project task
+-- attempts. Used by the planning profile builder to score how busy and how reliable
+-- each candidate digital employee is. Scoped to the last 30 days so the signal
+-- reflects recent behaviour rather than lifetime totals. Employees with no recent
+-- attempts do not produce a row; callers treat absence as zero.
+SELECT
+    pt.assigned_digital_employee_id AS digital_employee_id,
+    COUNT(*) FILTER (WHERE pta.status IN ('queued', 'running'))::integer AS in_flight_attempt_count,
+    COUNT(*) FILTER (WHERE pta.status = 'succeeded')::integer AS recent_success_count,
+    COUNT(*) FILTER (WHERE pta.status IN ('failed', 'timed_out', 'lost'))::integer AS recent_failure_count,
+    COUNT(*) FILTER (WHERE pta.status IN ('waiting_human', 'cancelled'))::integer AS recent_human_reject_count
+FROM project_task_attempts pta
+JOIN project_tasks pt
+  ON pt.tenant_id = pta.tenant_id
+ AND pt.id = pta.project_task_id
+WHERE pta.tenant_id = sqlc.arg('tenant_id')
+  AND pt.assigned_digital_employee_id IS NOT NULL
+  AND pt.assigned_digital_employee_id = ANY(sqlc.arg('digital_employee_ids')::uuid[])
+  AND pta.created_at >= NOW() - INTERVAL '30 days'
+GROUP BY pt.tenant_id, pt.assigned_digital_employee_id;
