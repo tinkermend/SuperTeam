@@ -283,43 +283,44 @@ type ProjectMember struct {
 }
 
 type ProjectTask struct {
-	ID                        uuid.UUID
-	TenantID                  uuid.UUID
-	ProjectID                 uuid.UUID
-	DemandID                  *uuid.UUID
-	Title                     string
-	Summary                   *string
-	Status                    string
-	AssignedDigitalEmployeeID *uuid.UUID
-	RuntimeTaskID             *uuid.UUID
-	DigitalEmployeeRunID      *uuid.UUID
-	RiskLevel                 *string
-	RequiresHumanApproval     bool
-	CoordinationJobID         *uuid.UUID
-	RouteDecisionID           *uuid.UUID
-	PlannedTaskKey            *string
-	TaskKind                  *string
-	StageIndex                *int32
-	ExpectedOutputs           []any
-	InputRequirements         map[string]any
-	HandoffContract           map[string]any
-	PlannerMetadata           map[string]any
-	BlockedByTaskIDs          []uuid.UUID
-	CurrentAttemptID          *uuid.UUID
-	AcceptedPlanRevisionID    *uuid.UUID
-	DecompositionClaimKey     *string
-	AttemptCount              int32
-	MaxAttempts               *int32
-	RetryNotBefore            *time.Time
-	WaitingReason             *string
-	WaitingRequestID          *uuid.UUID
-	TerminalReason            *string
-	TerminalEventID           *uuid.UUID
-	CancelledBy               *string
-	FailedBy                  *string
-	StatusChangedAt           time.Time
-	CreatedAt                 time.Time
-	UpdatedAt                 time.Time
+	ID                         uuid.UUID
+	TenantID                   uuid.UUID
+	ProjectID                  uuid.UUID
+	DemandID                   *uuid.UUID
+	Title                      string
+	Summary                    *string
+	Status                     string
+	AssignedDigitalEmployeeID  *uuid.UUID
+	RuntimeTaskID              *uuid.UUID
+	DigitalEmployeeRunID       *uuid.UUID
+	RiskLevel                  *string
+	RequiresHumanApproval      bool
+	CoordinationJobID          *uuid.UUID
+	RouteDecisionID            *uuid.UUID
+	PlannedTaskKey             *string
+	TaskKind                   *string
+	StageIndex                 *int32
+	ExpectedOutputs            []any
+	InputRequirements          map[string]any
+	HandoffContract            map[string]any
+	PlannerMetadata            map[string]any
+	BlockedByTaskIDs           []uuid.UUID
+	CurrentAttemptID           *uuid.UUID
+	LatestDispatchGateResultID *uuid.UUID
+	AcceptedPlanRevisionID     *uuid.UUID
+	DecompositionClaimKey      *string
+	AttemptCount               int32
+	MaxAttempts                *int32
+	RetryNotBefore             *time.Time
+	WaitingReason              *string
+	WaitingRequestID           *uuid.UUID
+	TerminalReason             *string
+	TerminalEventID            *uuid.UUID
+	CancelledBy                *string
+	FailedBy                   *string
+	StatusChangedAt            time.Time
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
 }
 
 type ProjectTaskExecutionPacket struct {
@@ -447,6 +448,7 @@ type ProjectTaskAttempt struct {
 	FailureFamily                 *string
 	FailureMessage                *string
 	IdempotencyKey                string
+	DispatchGateResultID          *uuid.UUID
 	CreatedEventID                *uuid.UUID
 	TerminalEventID               *uuid.UUID
 	CreatedAt                     time.Time
@@ -467,12 +469,94 @@ type QueueProjectTaskRequest struct {
 	LeaseExpiresAt                *time.Time
 	ExecutionContextPacket        map[string]any
 	ExecutionContextPacketVersion string
+	DispatchGateResultID          *uuid.UUID
 }
 
 type QueueProjectTaskResult struct {
 	Task    ProjectTask
 	Attempt ProjectTaskAttempt
 	Event   ProjectEvent
+}
+
+type HumanActionRequest map[string]any
+
+type PreDispatchGateResult struct {
+	ID                     uuid.UUID
+	TenantID               uuid.UUID
+	ProjectID              uuid.UUID
+	ProjectTaskID          uuid.UUID
+	AcceptedPlanRevisionID *uuid.UUID
+	PlannedTaskKey         *string
+	SelectedEmployeeID     uuid.UUID
+	AttemptNo              int32
+	DispatchReason         string
+	IdempotencyKey         string
+	DispatchToken          string
+	Status                 string
+	CheckedAt              time.Time
+	Checks                 []PreDispatchGateCheck
+	Blockers               []PreDispatchGateBlocker
+	HumanActionRequest     HumanActionRequest
+	RetryAfter             *time.Time
+	AttemptID              *uuid.UUID
+	DecisionRequestID      *uuid.UUID
+	CreatedEventID         *uuid.UUID
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+}
+
+type RecordPreDispatchGateResultRequest struct {
+	TenantID               uuid.UUID
+	ProjectID              uuid.UUID
+	ProjectTaskID          uuid.UUID
+	AcceptedPlanRevisionID *uuid.UUID
+	PlannedTaskKey         *string
+	SelectedEmployeeID     uuid.UUID
+	AttemptNo              int32
+	DispatchReason         string
+	IdempotencyKey         string
+	DispatchToken          string
+	Status                 string
+	CheckedAt              time.Time
+	Checks                 []PreDispatchGateCheck
+	Blockers               []PreDispatchGateBlocker
+	HumanActionRequest     HumanActionRequest
+	RetryAfter             *time.Time
+	CreatedEventID         *uuid.UUID
+}
+
+type ListPreDispatchGateResultsRequest struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID uuid.UUID
+	Limit         int32
+	Offset        int32
+}
+
+type LinkPreDispatchGateAttemptRequest struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID uuid.UUID
+	GateResultID  uuid.UUID
+	AttemptID     uuid.UUID
+}
+
+type LinkPreDispatchGateDecisionRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	ProjectTaskID     uuid.UUID
+	GateResultID      uuid.UUID
+	DecisionRequestID uuid.UUID
+}
+
+type MoveProjectTaskToWaitingHumanForPreDispatchGateRequest struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	ProjectTaskID     uuid.UUID
+	GateResultID      uuid.UUID
+	DecisionRequestID uuid.UUID
+	EventID           *uuid.UUID
+	WaitingReason     string
 }
 
 type ProjectTaskAttemptContextUpdate struct {
@@ -615,23 +699,24 @@ type TransferRequest struct {
 }
 
 type DecisionRequest struct {
-	ID                uuid.UUID
-	TenantID          uuid.UUID
-	ProjectID         uuid.UUID
-	ApprovalRequestID uuid.UUID
-	CoordinationJobID *uuid.UUID
-	ProjectTaskID     *uuid.UUID
-	TargetUserID      uuid.UUID
-	DecisionType      string
-	TitleSnapshot     string
-	SummarySnapshot   *string
-	RiskLevelSnapshot *string
-	StatusSnapshot    string
-	CreatedEventID    *uuid.UUID
-	ResolvedEventID   *uuid.UUID
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	ResolvedAt        *time.Time
+	ID                   uuid.UUID
+	TenantID             uuid.UUID
+	ProjectID            uuid.UUID
+	ApprovalRequestID    uuid.UUID
+	CoordinationJobID    *uuid.UUID
+	ProjectTaskID        *uuid.UUID
+	TargetUserID         uuid.UUID
+	DecisionType         string
+	TitleSnapshot        string
+	SummarySnapshot      *string
+	RiskLevelSnapshot    *string
+	StatusSnapshot       string
+	CreatedEventID       *uuid.UUID
+	ResolvedEventID      *uuid.UUID
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	ResolvedAt           *time.Time
+	DispatchGateResultID *uuid.UUID
 }
 
 type DecisionInboxProjector interface {

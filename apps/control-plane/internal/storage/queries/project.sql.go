@@ -1627,6 +1627,8 @@ DO UPDATE SET
     retry_after = EXCLUDED.retry_after,
     created_event_id = COALESCE(project_task_dispatch_gate_results.created_event_id, EXCLUDED.created_event_id),
     updated_at = NOW()
+WHERE project_task_dispatch_gate_results.attempt_id IS NULL
+  AND project_task_dispatch_gate_results.decision_request_id IS NULL
 RETURNING id, tenant_id, project_id, project_task_id, accepted_plan_revision_id, planned_task_key, selected_employee_id, attempt_no, dispatch_reason, idempotency_key, dispatch_token, status, checked_at, checks, blockers, human_action_request, retry_after, attempt_id, decision_request_id, created_event_id, created_at, updated_at
 `
 
@@ -2642,18 +2644,25 @@ func (q *Queries) GetProjectTaskDispatchGateResult(ctx context.Context, arg GetP
 const GetProjectTaskDispatchGateResultByKey = `-- name: GetProjectTaskDispatchGateResultByKey :one
 SELECT id, tenant_id, project_id, project_task_id, accepted_plan_revision_id, planned_task_key, selected_employee_id, attempt_no, dispatch_reason, idempotency_key, dispatch_token, status, checked_at, checks, blockers, human_action_request, retry_after, attempt_id, decision_request_id, created_event_id, created_at, updated_at FROM project_task_dispatch_gate_results
 WHERE tenant_id = $1::uuid
-  AND project_task_id = $2::uuid
-  AND idempotency_key = $3::varchar
+  AND project_id = $2::uuid
+  AND project_task_id = $3::uuid
+  AND idempotency_key = $4::varchar
 `
 
 type GetProjectTaskDispatchGateResultByKeyParams struct {
 	TenantID       uuid.UUID `json:"tenant_id"`
+	ProjectID      uuid.UUID `json:"project_id"`
 	ProjectTaskID  uuid.UUID `json:"project_task_id"`
 	IdempotencyKey string    `json:"idempotency_key"`
 }
 
 func (q *Queries) GetProjectTaskDispatchGateResultByKey(ctx context.Context, arg GetProjectTaskDispatchGateResultByKeyParams) (ProjectTaskDispatchGateResult, error) {
-	row := q.db.QueryRow(ctx, GetProjectTaskDispatchGateResultByKey, arg.TenantID, arg.ProjectTaskID, arg.IdempotencyKey)
+	row := q.db.QueryRow(ctx, GetProjectTaskDispatchGateResultByKey,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ProjectTaskID,
+		arg.IdempotencyKey,
+	)
 	var i ProjectTaskDispatchGateResult
 	err := row.Scan(
 		&i.ID,
@@ -2714,6 +2723,7 @@ WHERE tenant_id = $2::uuid
   AND project_id = $3::uuid
   AND project_task_id = $4::uuid
   AND id = $5::uuid
+  AND (attempt_id IS NULL OR attempt_id = $1::uuid)
 RETURNING id, tenant_id, project_id, project_task_id, accepted_plan_revision_id, planned_task_key, selected_employee_id, attempt_no, dispatch_reason, idempotency_key, dispatch_token, status, checked_at, checks, blockers, human_action_request, retry_after, attempt_id, decision_request_id, created_event_id, created_at, updated_at
 `
 
@@ -2769,6 +2779,7 @@ WHERE tenant_id = $2::uuid
   AND project_id = $3::uuid
   AND project_task_id = $4::uuid
   AND id = $5::uuid
+  AND (decision_request_id IS NULL OR decision_request_id = $1::uuid)
 RETURNING id, tenant_id, project_id, project_task_id, accepted_plan_revision_id, planned_task_key, selected_employee_id, attempt_no, dispatch_reason, idempotency_key, dispatch_token, status, checked_at, checks, blockers, human_action_request, retry_after, attempt_id, decision_request_id, created_event_id, created_at, updated_at
 `
 
@@ -5815,7 +5826,9 @@ SET dispatch_gate_result_id = $1::uuid,
     updated_at = NOW()
 WHERE tenant_id = $2::uuid
   AND project_id = $3::uuid
-  AND id = $4::uuid
+  AND project_task_id = $4::uuid
+  AND id = $5::uuid
+  AND (dispatch_gate_result_id IS NULL OR dispatch_gate_result_id = $1::uuid)
 RETURNING id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id
 `
 
@@ -5823,6 +5836,7 @@ type SetProjectDecisionRequestDispatchGateParams struct {
 	DispatchGateResultID uuid.UUID `json:"dispatch_gate_result_id"`
 	TenantID             uuid.UUID `json:"tenant_id"`
 	ProjectID            uuid.UUID `json:"project_id"`
+	ProjectTaskID        uuid.UUID `json:"project_task_id"`
 	ID                   uuid.UUID `json:"id"`
 }
 
@@ -5831,6 +5845,7 @@ func (q *Queries) SetProjectDecisionRequestDispatchGate(ctx context.Context, arg
 		arg.DispatchGateResultID,
 		arg.TenantID,
 		arg.ProjectID,
+		arg.ProjectTaskID,
 		arg.ID,
 	)
 	var i ProjectDecisionRequest
@@ -5852,6 +5867,76 @@ func (q *Queries) SetProjectDecisionRequestDispatchGate(ctx context.Context, arg
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ResolvedAt,
+		&i.DispatchGateResultID,
+	)
+	return i, err
+}
+
+const SetProjectTaskAttemptDispatchGate = `-- name: SetProjectTaskAttemptDispatchGate :one
+UPDATE project_task_attempts
+SET dispatch_gate_result_id = $1::uuid,
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND project_task_id = $3::uuid
+  AND id = $4::uuid
+  AND EXISTS (
+      SELECT 1
+      FROM project_tasks
+      WHERE project_tasks.tenant_id = project_task_attempts.tenant_id
+        AND project_tasks.project_id = $5::uuid
+        AND project_tasks.id = project_task_attempts.project_task_id
+  )
+  AND (
+      project_task_attempts.dispatch_gate_result_id IS NULL
+      OR project_task_attempts.dispatch_gate_result_id = $1::uuid
+  )
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, lost_at, started_at, finished_at, timeout_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id
+`
+
+type SetProjectTaskAttemptDispatchGateParams struct {
+	DispatchGateResultID uuid.UUID `json:"dispatch_gate_result_id"`
+	TenantID             uuid.UUID `json:"tenant_id"`
+	ProjectTaskID        uuid.UUID `json:"project_task_id"`
+	ID                   uuid.UUID `json:"id"`
+	ProjectID            uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) SetProjectTaskAttemptDispatchGate(ctx context.Context, arg SetProjectTaskAttemptDispatchGateParams) (ProjectTaskAttempt, error) {
+	row := q.db.QueryRow(ctx, SetProjectTaskAttemptDispatchGate,
+		arg.DispatchGateResultID,
+		arg.TenantID,
+		arg.ProjectTaskID,
+		arg.ID,
+		arg.ProjectID,
+	)
+	var i ProjectTaskAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectTaskID,
+		&i.AttemptNo,
+		&i.Status,
+		&i.DigitalEmployeeRunID,
+		&i.RuntimeTaskID,
+		&i.RuntimeNodeID,
+		&i.ProviderSessionID,
+		&i.ExecutionContextPacket,
+		&i.ExecutionContextPacketVersion,
+		&i.LeaseToken,
+		&i.LeaseExpiresAt,
+		&i.RenewedAt,
+		&i.LostAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.TimeoutAt,
+		&i.Retryable,
+		&i.FailureFamily,
+		&i.FailureMessage,
+		&i.IdempotencyKey,
+		&i.CreatedEventID,
+		&i.TerminalEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 		&i.DispatchGateResultID,
 	)
 	return i, err

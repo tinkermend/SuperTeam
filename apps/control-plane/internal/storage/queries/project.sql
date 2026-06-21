@@ -1155,6 +1155,26 @@ SELECT * FROM project_task_attempts
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid;
 
+-- name: SetProjectTaskAttemptDispatchGate :one
+UPDATE project_task_attempts
+SET dispatch_gate_result_id = sqlc.arg('dispatch_gate_result_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND EXISTS (
+      SELECT 1
+      FROM project_tasks
+      WHERE project_tasks.tenant_id = project_task_attempts.tenant_id
+        AND project_tasks.project_id = sqlc.arg('project_id')::uuid
+        AND project_tasks.id = project_task_attempts.project_task_id
+  )
+  AND (
+      project_task_attempts.dispatch_gate_result_id IS NULL
+      OR project_task_attempts.dispatch_gate_result_id = sqlc.arg('dispatch_gate_result_id')::uuid
+  )
+RETURNING *;
+
 -- name: GetProjectTaskAttemptByIdempotencyKey :one
 SELECT * FROM project_task_attempts
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
@@ -1546,6 +1566,8 @@ DO UPDATE SET
     retry_after = EXCLUDED.retry_after,
     created_event_id = COALESCE(project_task_dispatch_gate_results.created_event_id, EXCLUDED.created_event_id),
     updated_at = NOW()
+WHERE project_task_dispatch_gate_results.attempt_id IS NULL
+  AND project_task_dispatch_gate_results.decision_request_id IS NULL
 RETURNING *;
 
 -- name: GetProjectTaskDispatchGateResult :one
@@ -1557,6 +1579,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 -- name: GetProjectTaskDispatchGateResultByKey :one
 SELECT * FROM project_task_dispatch_gate_results
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
   AND project_task_id = sqlc.arg('project_task_id')::uuid
   AND idempotency_key = sqlc.arg('idempotency_key')::varchar;
 
@@ -1577,6 +1600,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND project_task_id = sqlc.arg('project_task_id')::uuid
   AND id = sqlc.arg('id')::uuid
+  AND (attempt_id IS NULL OR attempt_id = sqlc.arg('attempt_id')::uuid)
 RETURNING *;
 
 -- name: LinkProjectTaskDispatchGateDecisionRequest :one
@@ -1587,6 +1611,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND project_task_id = sqlc.arg('project_task_id')::uuid
   AND id = sqlc.arg('id')::uuid
+  AND (decision_request_id IS NULL OR decision_request_id = sqlc.arg('decision_request_id')::uuid)
 RETURNING *;
 
 -- name: MarkProjectTaskLatestDispatchGate :one
@@ -1619,5 +1644,7 @@ SET dispatch_gate_result_id = sqlc.arg('dispatch_gate_result_id')::uuid,
     updated_at = NOW()
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
   AND id = sqlc.arg('id')::uuid
+  AND (dispatch_gate_result_id IS NULL OR dispatch_gate_result_id = sqlc.arg('dispatch_gate_result_id')::uuid)
 RETURNING *;
