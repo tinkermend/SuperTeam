@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
-	"strings"
 	"testing"
 	"time"
 
@@ -20,8 +19,10 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/superteam/control-plane/internal/storage/queries"
+	"github.com/superteam/control-plane/internal/storage/testenv"
 )
 
 var (
@@ -33,17 +34,17 @@ func TestMain(m *testing.M) {
 	ctx := context.Background()
 	cfg, ok := testConfig()
 	if !ok {
-		fmt.Fprintln(os.Stderr, "skipping storage query integration tests: set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+		fmt.Fprintln(os.Stderr, "skipping storage query integration tests: set TEST_DATABASE_URL and TEST_REDIS_URL for a dedicated cleanable test environment")
 		os.Exit(0)
 	}
 
-	if err := pingRedis(ctx, cfg.redisURL); err != nil {
+	if err := pingRedis(ctx, cfg.RedisURL); err != nil {
 		panic(err)
 	}
 
 	// 连接数据库
 	var err error
-	testDB, err = pgxpool.New(ctx, cfg.databaseURL)
+	testDB, err = pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		panic(err)
 	}
@@ -69,39 +70,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-type integrationTestConfig struct {
-	databaseURL string
-	redisURL    string
-}
-
-func testConfig() (integrationTestConfig, bool) {
-	databaseURL := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL"))
-	redisURL := strings.TrimSpace(os.Getenv("TEST_REDIS_URL"))
-	if envBool("ALLOW_DATABASE_URL_FOR_QUERY_TESTS") {
-		if databaseURL == "" {
-			databaseURL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
-		}
-		if redisURL == "" {
-			redisURL = strings.TrimSpace(os.Getenv("REDIS_URL"))
-		}
-	}
-	if databaseURL == "" || redisURL == "" {
-		return integrationTestConfig{}, false
-	}
-
-	return integrationTestConfig{
-		databaseURL: databaseURL,
-		redisURL:    redisURL,
-	}, true
-}
-
-func envBool(key string) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
-	case "1", "true", "yes", "y", "on":
-		return true
-	default:
-		return false
-	}
+func testConfig() (testenv.StorageQueryConfig, bool) {
+	return testenv.ResolveStorageQueryConfig(os.Getenv)
 }
 
 func pingRedis(ctx context.Context, redisURL string) error {
@@ -349,6 +319,7 @@ func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 	`)
 	require.NoError(t, err)
 	seedDefaultTenant(t, db)
+	seedDevAdmin(t, db)
 }
 
 func newQueriesTestDB(t *testing.T) *pgxpool.Pool {
@@ -375,6 +346,42 @@ func seedDefaultTenant(t *testing.T, db *pgxpool.Pool) {
 		ON CONFLICT (id) DO NOTHING;
 	`)
 	require.NoError(t, err)
+}
+
+func seedDevAdmin(t *testing.T, db *pgxpool.Pool) {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join("..", "migrations", "002_seed_dev_admin.sql"))
+	require.NoError(t, err)
+	_, err = db.Exec(context.Background(), string(content))
+	require.NoError(t, err)
+}
+
+func TestCleanupTestDataReseedsDevAdmin(t *testing.T) {
+	if testQueries == nil {
+		t.Skip("query integration tests require TEST_DATABASE_URL")
+	}
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+
+	var passwordHash, userStatus, role, membershipStatus string
+	var membershipDisabled bool
+	err := testDB.QueryRow(ctx, `
+		SELECT au.password_hash, au.status, tm.role, tm.status, tm.disabled_at IS NOT NULL
+		FROM auth_users au
+		JOIN tenant_members tm
+		  ON tm.principal_type = 'user'
+		 AND tm.principal_id = au.id
+		 AND tm.tenant_id = '00000000-0000-0000-0000-000000000001'::uuid
+		 AND tm.team_id IS NULL
+		WHERE au.username = 'admin'
+		  AND au.deleted_at IS NULL
+	`).Scan(&passwordHash, &userStatus, &role, &membershipStatus, &membershipDisabled)
+	require.NoError(t, err)
+	require.NoError(t, bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte("admin")))
+	assert.Equal(t, "active", userStatus)
+	assert.Equal(t, "owner", role)
+	assert.Equal(t, "active", membershipStatus)
+	assert.False(t, membershipDisabled)
 }
 
 func seedTestTenant(t *testing.T, db *pgxpool.Pool) uuid.UUID {

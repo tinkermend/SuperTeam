@@ -4,16 +4,10 @@
 
 set -e
 
-if [ "${ALLOW_DATABASE_URL_FOR_QUERY_TESTS:-}" = "1" ] || [ "${ALLOW_DATABASE_URL_FOR_QUERY_TESTS:-}" = "true" ]; then
-    : "${TEST_DATABASE_URL:=${DATABASE_URL:-}}"
-    : "${TEST_REDIS_URL:=${REDIS_URL:-}}"
-    export TEST_DATABASE_URL TEST_REDIS_URL
-fi
-
 if [ -z "${TEST_DATABASE_URL:-}" ] || [ -z "${TEST_REDIS_URL:-}" ]; then
     echo "Skipping storage query integration tests."
     echo "Set TEST_DATABASE_URL and TEST_REDIS_URL to run against a remote or dedicated test environment."
-    echo "Alternatively set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL after confirming the database can be migrated and cleaned."
+    echo "Do not point this test at the application DATABASE_URL; it truncates core business tables."
     exit 0
 fi
 

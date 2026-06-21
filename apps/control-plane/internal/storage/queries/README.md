@@ -4,7 +4,7 @@
 
 本目录包含 SuperTeam 控制平面数据层的 sqlc 查询集成测试。测试不再自动启动本机容器，只在显式配置远端或专用测试数据库时运行，避免本地 `go test ./...` 依赖 Docker/Podman。
 
-未配置 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL` 时，本包测试会跳过。确认当前配置的数据库允许迁移和清理测试数据后，也可以设置 `ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1`，让测试复用 `DATABASE_URL` 和 `REDIS_URL`。
+未配置 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL` 时，本包测试会跳过。不要让本包测试复用应用的 `DATABASE_URL` 和 `REDIS_URL`。
 
 ## 测试覆盖
 
@@ -58,17 +58,7 @@ export TEST_REDIS_URL='redis://:password@host:6379/0'
 go test ./internal/storage/queries -v -timeout 5m
 ```
 
-如需使用项目当前配置的开发环境，可从 `doc/database/conn_info.md` 获取连接信息后显式导出为 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL`。只有确认该环境允许迁移和清理测试数据时才应执行。
-
-也可以显式允许测试复用应用配置：
-
-```bash
-cd apps/control-plane
-export ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1
-export DATABASE_URL='postgres://user:password@host:5432/superteam_test?sslmode=disable'
-export REDIS_URL='redis://:password@host:6379/0'
-go test ./internal/storage/queries -v -timeout 5m
-```
+如需使用项目当前配置的开发环境，必须确认它是专用、可清理的测试环境后，显式导出为 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL`。不要通过 `DATABASE_URL` / `REDIS_URL` 复用正在联调的应用数据库。
 
 ## 测试架构
 
@@ -76,7 +66,7 @@ go test ./internal/storage/queries -v -timeout 5m
 
 `TestMain` 函数负责：
 
-1. 检查 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL`；或在 `ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1` 时读取 `DATABASE_URL` 和 `REDIS_URL`。
+1. 检查 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL`。
 2. 连接并 ping PostgreSQL。
 3. 连接并 ping Redis，确保测试环境配置完整。
 4. 运行数据库迁移。
@@ -111,7 +101,7 @@ go test ./internal/storage/queries -v -timeout 5m
 如果看到以下输出，说明没有显式配置测试环境：
 
 ```text
-skipping storage query integration tests: set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL
+skipping storage query integration tests: set TEST_DATABASE_URL and TEST_REDIS_URL for a dedicated cleanable test environment
 ```
 
 导出两个环境变量后重新运行即可。
