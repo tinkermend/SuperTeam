@@ -655,7 +655,7 @@ func TestOpenAICompatiblePlannerAppliesProfileScoresToAcceptedPlan(t *testing.T)
 	require.Len(t, plan.Tasks, 1)
 	task := plan.Tasks[0]
 	require.Equal(t, 100, task.SelectionScore)
-	require.Equal(t, []string{"database.read", "sql.analysis"}, task.MatchedCapabilities)
+	require.Equal(t, []string{"database.read", "sql.analysis", "data.quality.check", "business.metric.interpretation"}, task.MatchedCapabilities)
 	require.Empty(t, task.MissingCapabilities)
 	require.Equal(t, PlanningProfileSnapshotHash(*snapshot.DigitalEmployeePool[0].PlanningProfile), task.PlanningProfileSnapshotHash)
 }
@@ -712,7 +712,7 @@ func TestOpenAICompatiblePlannerDatabaseAnalysisRequiresDatabaseProfile(t *testi
 	require.NoError(t, err)
 	require.Len(t, plan.Tasks, 1)
 	require.Equal(t, dbEmployeeID, plan.Tasks[0].SelectedEmployeeID)
-	require.Equal(t, []string{"database.read", "sql.analysis"}, plan.Tasks[0].MatchedCapabilities)
+	require.Equal(t, []string{"database.read", "sql.analysis", "data.quality.check", "business.metric.interpretation"}, plan.Tasks[0].MatchedCapabilities)
 	require.Empty(t, plan.Tasks[0].MissingCapabilities)
 	require.NotEmpty(t, plan.Tasks[0].PlanningProfileSnapshotHash)
 }
@@ -873,7 +873,7 @@ func TestOpenAICompatiblePlannerOverwritesDriftedSelectionEvidence(t *testing.T)
 
 	require.NoError(t, err)
 	require.Equal(t, int32(1), client.calls.Load())
-	require.Equal(t, []string{"database.read", "sql.analysis"}, plan.Tasks[0].MatchedCapabilities)
+	require.Equal(t, []string{"database.read", "sql.analysis", "data.quality.check", "business.metric.interpretation"}, plan.Tasks[0].MatchedCapabilities)
 	require.Empty(t, plan.Tasks[0].MissingCapabilities)
 	require.Equal(t, 100, plan.Tasks[0].SelectionScore)
 }
@@ -929,7 +929,7 @@ func TestOpenAICompatiblePlannerOverwritesPolicyReviewSelectionEvidence(t *testi
 
 	require.NoError(t, err)
 	require.Equal(t, int32(1), client.calls.Load())
-	require.Equal(t, []string{"database.read", "sql.analysis"}, plan.Tasks[0].MatchedCapabilities)
+	require.Equal(t, []string{"database.read", "sql.analysis", "data.quality.check", "business.metric.interpretation"}, plan.Tasks[0].MatchedCapabilities)
 	require.Empty(t, plan.Tasks[0].MissingCapabilities)
 	require.Equal(t, 100, plan.Tasks[0].SelectionScore)
 }
@@ -1208,6 +1208,8 @@ func openAITestDatabaseProfile(employeeID uuid.UUID) *DigitalEmployeePlanningPro
 		Capabilities: []PlanningCapability{
 			{Key: "database.read", Level: "strong", Source: "test", Confidence: 1},
 			{Key: "sql.analysis", Level: "strong", Source: "test", Confidence: 1},
+			{Key: "data.quality.check", Level: "strong", Source: "test", Confidence: 1},
+			{Key: "business.metric.interpretation", Level: "strong", Source: "test", Confidence: 1},
 		},
 		Skills:       []PlanningSkill{{Key: "sql.analysis", Source: "test"}},
 		ToolBindings: []PlanningToolBinding{{Type: "mcp", Key: "postgres.readonly", Status: "available"}},
@@ -1219,6 +1221,74 @@ func openAITestDatabaseProfile(employeeID uuid.UUID) *DigitalEmployeePlanningPro
 		LoadState:        PlanningLoadState{AvailableSlots: 1, Lendable: true},
 		ProfileFreshness: PlanningProfileFreshness{SourceState: "ready"},
 	}
+}
+
+// TestOpenAICompatiblePlannerDatabaseAnalysisRejectsUnderCapableEmployee is the
+// spec §12 reverse-case integration test: a database_analysis task assigned to an
+// employee without database capabilities must NOT be silently auto-dispatched.
+// The model emits no required_capabilities; platform defaults fill them in, scoring
+// records the gaps, and the plan is upgraded to human review instead of dispatching.
+func TestOpenAICompatiblePlannerDatabaseAnalysisRejectsUnderCapableEmployee(t *testing.T) {
+	underCapableID := uuid.New()
+	client := &countingChatCompletionClient{
+		content: fmt.Sprintf(`{
+			"reason":"按角色分配数据库分析",
+			"requires_human_review":false,
+			"tasks":[{
+				"key":"analyze-db",
+				"title":"分析数据库异常",
+				"summary":"检查慢查询",
+				"selected_employee_id":%q,
+				"employee_selection_reason":"该员工当前空闲",
+				"required_capabilities":[],
+				"matched_capabilities":[],
+				"missing_capabilities":[],
+				"permission_requirements":[],
+				"tool_requirements":[],
+				"runtime_requirements":["provider:codex"],
+				"verification_requirements":[],
+				"selection_score":80,
+				"expected_outputs":["execution_summary"],
+				"input_requirements":{"scope":"database_analysis"},
+				"handoff_contract":{"completion_path":"project_task_attempt_writeback"},
+				"blocked_by_keys":[],
+				"risk_level":"medium",
+				"task_kind":"database_analysis"
+			}],
+			"budget_estimate":{"mode":"planner"},
+			"template_key":"database_analysis",
+			"planner_metadata":{}
+		}`, underCapableID.String()),
+	}
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
+		MaxAttempts: 1,
+	}, client)
+
+	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
+		ProjectID: uuid.New(),
+		Demand:    DemandSnapshot{ID: uuid.New(), Title: "分析数据库异常", Content: "找出订单状态异常原因"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			// Only a generic executor with no database capabilities is available.
+			openAITestExecutorMember(underCapableID),
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, plan.Tasks, 1)
+	task := plan.Tasks[0]
+	// Defaults were applied even though the model emitted none.
+	require.Contains(t, task.RequiredCapabilities, "database.read")
+	require.Contains(t, task.RequiredCapabilities, "sql.analysis")
+	// Scoring detected the gaps against the under-capable employee.
+	require.Contains(t, task.MissingCapabilities, "database.read")
+	require.Contains(t, task.MissingCapabilities, "sql.analysis")
+	// The plan must route to human review rather than silently auto-dispatching.
+	require.True(t, plan.RequiresHumanReview, "under-capable selection must require human review")
+	require.True(t, task.RequiresHumanApproval, "under-capable task must require human approval")
+	require.NotEmpty(t, task.PlanningProfileSnapshotHash)
 }
 
 type failingRoutePlanner struct {

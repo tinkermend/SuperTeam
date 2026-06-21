@@ -114,6 +114,7 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 			lastErr = err
 			continue
 		}
+		ApplyTaskTypeDefaults(&plan)
 		applyRequiredHumanReviewPolicy(snapshot, &plan)
 		ApplyPlanningProfileScores(snapshot, &plan)
 		if err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}); err != nil {
@@ -123,6 +124,7 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 			if requiredHumanReviewPolicyEnabled(snapshot.CoordinationPolicy) {
 				pool := activeExecutorIDs(snapshot.DigitalEmployeePool)
 				repaired := synthesizeRequiredReviewPlan(snapshot, pool, plan)
+				ApplyTaskTypeDefaults(&repaired)
 				ApplyPlanningProfileScores(snapshot, &repaired)
 				if repairErr := ValidateRouteDecisionPlan(snapshot, repaired, GraphValidationPolicy{MaxTasks: 12}); repairErr == nil {
 					return repaired, nil
@@ -260,6 +262,7 @@ func buildPlannerSystemPrompt() string {
 		"Use selected_employee_id only from active executor candidates provided by the user prompt.",
 		"For every task, choose selected_employee_id by comparing planning_profile facts; explain the choice in employee_selection_reason and copy the required, matched, and missing capability arrays.",
 		"selection_score must be an integer from 0 to 100; use 0 when unsure because the platform recomputes the authoritative score.",
+		"task_kind must be one of the canonical platform task types: database_analysis, incident_triage, feature_development. Use database_analysis for any database query, SQL, schema, or data quality work; incident_triage for any system diagnosis, log analysis, metrics, or runtime diagnostics; feature_development for any code implementation, API, contract, migration, or build work. Do not invent custom task_kind values.",
 		"A task with missing_capabilities must set requires_human_approval or make the whole route requires_human_review true.",
 		"If coordination_policy.require_human_review_for_new_demands is true, still return at least one concrete task and set requires_human_review plus every task requires_human_approval to true.",
 	}, "\n")
