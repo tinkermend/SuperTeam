@@ -625,13 +625,13 @@ function skillLoadStatusBadges(entry: EffectiveEmployeeSkill): Array<{ label: st
   const dependencyCount =
     (entry.skill.runtime_dependencies?.tools?.length ?? 0) + (entry.skill.runtime_dependencies?.env?.length ?? 0);
 
-  if (missingTools.length > 0 || status?.load_status === "missing_runtime_tools") {
+  if (missingTools.length > 0 || status?.load_status === "missing_tools" || status?.load_status === "missing_runtime_tools") {
     return [{ label: `缺少 Runtime 工具${missingTools.length ? `：${missingTools.join(",")}` : ""}`, tone: "warning" }];
   }
-  if (missingEnv.length > 0 || status?.load_status === "missing_employee_env") {
+  if (missingEnv.length > 0 || status?.load_status === "missing_env" || status?.load_status === "missing_employee_env") {
     return [{ label: `缺少员工环境变量${missingEnv.length ? `：${missingEnv.join(",")}` : ""}`, tone: "warning" }];
   }
-  if (status?.load_status === "waiting_runtime_report") {
+  if (status?.load_status === "pending_runtime" || status?.load_status === "waiting_runtime_report") {
     return [{ label: "等待 Runtime 上报", tone: "info" }];
   }
   if (!status?.load_status && dependencyCount > 0) {
