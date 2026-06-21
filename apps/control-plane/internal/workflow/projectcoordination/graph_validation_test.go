@@ -234,7 +234,7 @@ func TestValidateRouteDecisionPlanRejectsProfileIdentityMismatch(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidRouteDecision)
 }
 
-func TestValidateRouteDecisionPlanRejectsIncoherentSelectionEvidenceWithoutReview(t *testing.T) {
+func TestValidateRouteDecisionPlanAllowsModelSelectionEvidenceDrift(t *testing.T) {
 	employeeID := uuid.New()
 
 	for _, tc := range []struct {
@@ -267,22 +267,38 @@ func TestValidateRouteDecisionPlanRejectsIncoherentSelectionEvidenceWithoutRevie
 
 			err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 10})
 
-			require.ErrorIs(t, err, ErrInvalidRouteDecision)
+			require.NoError(t, err)
+			ApplyPlanningProfileScores(snapshot, &plan)
+			require.Equal(t, []string{"database.read"}, plan.Tasks[0].MatchedCapabilities)
+			require.Empty(t, plan.Tasks[0].MissingCapabilities)
+			require.Equal(t, 100, plan.Tasks[0].SelectionScore)
 		})
 	}
 }
 
-func TestValidateRouteDecisionPlanRejectsIncoherentSelectionEvidenceWithHumanReview(t *testing.T) {
+func TestValidateRouteDecisionPlanRejectsAuthoritativeMissingCapabilitiesWithoutReview(t *testing.T) {
 	employeeID := uuid.New()
 	snapshot := validationSnapshotWithProfile(employeeID)
 	plan := validEvidenceGraphPlan(employeeID)
-	plan.RequiresHumanReview = true
-	plan.Tasks[0].RequiresHumanApproval = true
-	plan.Tasks[0].MatchedCapabilities = []string{"model.guess"}
+	plan.Tasks[0].RequiredCapabilities = []string{"database.write"}
 
 	err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 10})
 
 	require.ErrorIs(t, err, ErrInvalidRouteDecision)
+}
+
+func TestApplyPlanningProfileScoresMarksMissingCapabilitiesForHumanReview(t *testing.T) {
+	employeeID := uuid.New()
+	snapshot := validationSnapshotWithProfile(employeeID)
+	plan := validEvidenceGraphPlan(employeeID)
+	plan.Tasks[0].RequiredCapabilities = []string{"database.write"}
+
+	ApplyPlanningProfileScores(snapshot, &plan)
+
+	require.True(t, plan.RequiresHumanReview)
+	require.True(t, plan.Tasks[0].RequiresHumanApproval)
+	require.Equal(t, []string{"database.write"}, plan.Tasks[0].MissingCapabilities)
+	require.NoError(t, ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 10}))
 }
 
 func TestApplyPlanningProfileScoresSkipsProfileIdentityMismatch(t *testing.T) {

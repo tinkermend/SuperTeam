@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -113,26 +115,22 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 			continue
 		}
 		applyRequiredHumanReviewPolicy(snapshot, &plan)
+		ApplyPlanningProfileScores(snapshot, &plan)
 		if err := ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12}); err != nil {
 			if contextErr := terminalContextError(ctx); contextErr != nil {
 				return RouteDecisionPlan{}, contextErr
 			}
-			if errors.Is(err, errIncoherentSelectionEvidence) {
-				lastErr = err
-				continue
-			}
 			if requiredHumanReviewPolicyEnabled(snapshot.CoordinationPolicy) {
 				pool := activeExecutorIDs(snapshot.DigitalEmployeePool)
 				repaired := synthesizeRequiredReviewPlan(snapshot, pool, plan)
+				ApplyPlanningProfileScores(snapshot, &repaired)
 				if repairErr := ValidateRouteDecisionPlan(snapshot, repaired, GraphValidationPolicy{MaxTasks: 12}); repairErr == nil {
-					ApplyPlanningProfileScores(snapshot, &repaired)
 					return repaired, nil
 				}
 			}
 			lastErr = err
 			continue
 		}
-		ApplyPlanningProfileScores(snapshot, &plan)
 		return plan, nil
 	}
 	if lastErr == nil {
@@ -261,6 +259,7 @@ func buildPlannerSystemPrompt() string {
 		"Each task JSON object must include key, title, summary, selected_employee_id as a UUID string, employee_selection_reason, required_capabilities, matched_capabilities, missing_capabilities, permission_requirements, tool_requirements, runtime_requirements, verification_requirements, selection_score, expected_outputs, input_requirements, handoff_contract, blocked_by_keys, risk_level, and task_kind.",
 		"Use selected_employee_id only from active executor candidates provided by the user prompt.",
 		"For every task, choose selected_employee_id by comparing planning_profile facts; explain the choice in employee_selection_reason and copy the required, matched, and missing capability arrays.",
+		"selection_score must be an integer from 0 to 100; use 0 when unsure because the platform recomputes the authoritative score.",
 		"A task with missing_capabilities must set requires_human_approval or make the whole route requires_human_review true.",
 		"If coordination_policy.require_human_review_for_new_demands is true, still return at least one concrete task and set requires_human_review plus every task requires_human_approval to true.",
 	}, "\n")
@@ -377,7 +376,7 @@ func (t *plannerTask) UnmarshalJSON(data []byte) error {
 		ToolRequirements         json.RawMessage `json:"tool_requirements"`
 		RuntimeRequirements      json.RawMessage `json:"runtime_requirements"`
 		VerificationRequirements json.RawMessage `json:"verification_requirements"`
-		SelectionScore           int             `json:"selection_score"`
+		SelectionScore           json.RawMessage `json:"selection_score"`
 		TaskKind                 string          `json:"task_kind"`
 		StageIndex               *int32          `json:"stage_index"`
 		RiskLevel                string          `json:"risk_level"`
@@ -399,6 +398,10 @@ func (t *plannerTask) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	selectionScore, err := decodePlannerSelectionScore(raw.SelectionScore)
+	if err != nil {
+		return err
+	}
 	*t = plannerTask{
 		Key:                      raw.Key,
 		Title:                    raw.Title,
@@ -412,7 +415,7 @@ func (t *plannerTask) UnmarshalJSON(data []byte) error {
 		ToolRequirements:         decodePlannerStringArray(raw.ToolRequirements),
 		RuntimeRequirements:      decodePlannerStringArray(raw.RuntimeRequirements),
 		VerificationRequirements: decodePlannerStringArray(raw.VerificationRequirements),
-		SelectionScore:           raw.SelectionScore,
+		SelectionScore:           selectionScore,
 		TaskKind:                 raw.TaskKind,
 		StageIndex:               raw.StageIndex,
 		RiskLevel:                raw.RiskLevel,
@@ -423,6 +426,29 @@ func (t *plannerTask) UnmarshalJSON(data []byte) error {
 		BlockedByKeys:            raw.BlockedByKeys,
 	}
 	return nil
+}
+
+func decodePlannerSelectionScore(raw json.RawMessage) (int, error) {
+	if len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null" {
+		return 0, nil
+	}
+	var number json.Number
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&number); err != nil {
+		return 0, fmt.Errorf("selection_score must be a number: %w", err)
+	}
+	parsed, err := strconv.ParseFloat(number.String(), 64)
+	if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+		return 0, fmt.Errorf("selection_score must be finite")
+	}
+	if parsed >= 0 && parsed <= 1 {
+		return 0, nil
+	}
+	if parsed != math.Trunc(parsed) {
+		return 0, fmt.Errorf("selection_score must be an integer 0-100 or normalized 0-1 score")
+	}
+	return int(parsed), nil
 }
 
 // decodePlannerStringArray coerces a planner string-array field (expected_outputs,

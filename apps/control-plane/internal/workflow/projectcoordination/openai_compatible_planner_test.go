@@ -717,7 +717,114 @@ func TestOpenAICompatiblePlannerDatabaseAnalysisRequiresDatabaseProfile(t *testi
 	require.NotEmpty(t, plan.Tasks[0].PlanningProfileSnapshotHash)
 }
 
-func TestOpenAICompatiblePlannerRejectsIncoherentSelectionEvidenceAndRetries(t *testing.T) {
+func TestOpenAICompatiblePlannerAcceptsNormalizedSelectionScore(t *testing.T) {
+	employeeID := uuid.New()
+	client := &countingChatCompletionClient{
+		content: fmt.Sprintf(`{
+			"reason":"数据库分析需要具备 database.read 的员工",
+			"requires_human_review":false,
+			"tasks":[{
+				"key":"analyze-db",
+				"title":"分析数据库异常",
+				"summary":"检查慢查询和异常状态",
+				"selected_employee_id":%q,
+				"employee_selection_reason":"具备 database.read、sql.analysis 和 postgres.readonly",
+				"required_capabilities":["database.read","sql.analysis"],
+				"matched_capabilities":["database.read","sql.analysis"],
+				"missing_capabilities":[],
+				"permission_requirements":["database.read:dev_database"],
+				"tool_requirements":["mcp:postgres.readonly"],
+				"runtime_requirements":["provider:codex"],
+				"verification_requirements":["只读查询成功","结果包含证据引用"],
+				"selection_score":0.95,
+				"expected_outputs":["execution_summary","evidence_refs"],
+				"input_requirements":{"scope":"database_analysis"},
+				"handoff_contract":{"completion_path":"project_task_attempt_writeback"},
+				"blocked_by_keys":[],
+				"risk_level":"medium",
+				"task_kind":"database_analysis"
+			}],
+			"budget_estimate":{"mode":"planner"},
+			"template_key":"database_analysis",
+			"planner_metadata":{"provider":"openai-compatible"}
+		}`, employeeID.String()),
+	}
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
+		MaxAttempts: 1,
+	}, client)
+
+	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
+		ProjectID: uuid.New(),
+		Demand:    DemandSnapshot{ID: uuid.New(), Title: "分析数据库异常", Content: "找出订单状态异常原因"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			openAITestDatabaseMember(employeeID),
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, plan.Tasks, 1)
+	require.Equal(t, employeeID, plan.Tasks[0].SelectedEmployeeID)
+	require.Equal(t, 100, plan.Tasks[0].SelectionScore)
+}
+
+func TestOpenAICompatiblePlannerMarksProfileGapsForHumanReview(t *testing.T) {
+	employeeID := uuid.New()
+	client := &countingChatCompletionClient{
+		content: fmt.Sprintf(`{
+			"reason":"数据库写入操作需要人工确认",
+			"requires_human_review":false,
+			"tasks":[{
+				"key":"write-db",
+				"title":"处理数据库异常",
+				"summary":"需要执行数据库写入修复",
+				"selected_employee_id":%q,
+				"employee_selection_reason":"数据库员工最接近需求",
+				"required_capabilities":["database.write"],
+				"matched_capabilities":["database.read"],
+				"missing_capabilities":[],
+				"permission_requirements":["database.write:dev_database"],
+				"tool_requirements":["mcp:postgres.admin"],
+				"runtime_requirements":["provider:codex"],
+				"verification_requirements":["人工确认写入风险"],
+				"selection_score":0.7,
+				"expected_outputs":["execution_summary","risk_summary"],
+				"input_requirements":{"scope":"database_write"},
+				"handoff_contract":{"completion_path":"project_task_attempt_writeback"},
+				"blocked_by_keys":[],
+				"risk_level":"high",
+				"task_kind":"database_repair"
+			}],
+			"budget_estimate":{"mode":"planner"},
+			"template_key":"database_repair",
+			"planner_metadata":{"provider":"openai-compatible"}
+		}`, employeeID.String()),
+	}
+	planner := NewOpenAICompatibleRoutePlanner(OpenAICompatiblePlannerConfig{
+		APIKey:      "test-key",
+		BaseURL:     "https://planner.example",
+		Model:       "planner-model",
+		MaxAttempts: 1,
+	}, client)
+
+	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
+		ProjectID: uuid.New(),
+		Demand:    DemandSnapshot{ID: uuid.New(), Title: "修复数据库异常", Content: "需要写入修复"},
+		DigitalEmployeePool: []ProjectMemberSnapshot{
+			openAITestDatabaseMember(employeeID),
+		},
+	})
+
+	require.NoError(t, err)
+	require.True(t, plan.RequiresHumanReview)
+	require.True(t, plan.Tasks[0].RequiresHumanApproval)
+	require.Equal(t, []string{"database.write"}, plan.Tasks[0].MissingCapabilities)
+	require.NotEmpty(t, plan.Tasks[0].PlanningProfileSnapshotHash)
+}
+
+func TestOpenAICompatiblePlannerOverwritesDriftedSelectionEvidence(t *testing.T) {
 	employeeID := uuid.New()
 	client := &countingChatCompletionClient{
 		content: fmt.Sprintf(`{
@@ -753,10 +860,10 @@ func TestOpenAICompatiblePlannerRejectsIncoherentSelectionEvidenceAndRetries(t *
 		APIKey:      "test-key",
 		BaseURL:     "https://planner.example",
 		Model:       "planner-model",
-		MaxAttempts: 2,
+		MaxAttempts: 1,
 	}, client)
 
-	_, err := planner.Plan(context.Background(), CoordinationSnapshot{
+	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
 		ProjectID: uuid.New(),
 		Demand:    DemandSnapshot{ID: uuid.New(), Title: "分析数据库", Content: "检查慢查询"},
 		DigitalEmployeePool: []ProjectMemberSnapshot{
@@ -764,11 +871,14 @@ func TestOpenAICompatiblePlannerRejectsIncoherentSelectionEvidenceAndRetries(t *
 		},
 	})
 
-	require.ErrorIs(t, err, ErrInvalidRouteDecision)
-	require.Equal(t, int32(2), client.calls.Load())
+	require.NoError(t, err)
+	require.Equal(t, int32(1), client.calls.Load())
+	require.Equal(t, []string{"database.read", "sql.analysis"}, plan.Tasks[0].MatchedCapabilities)
+	require.Empty(t, plan.Tasks[0].MissingCapabilities)
+	require.Equal(t, 100, plan.Tasks[0].SelectionScore)
 }
 
-func TestOpenAICompatiblePlannerRejectsPolicyReviewPlanWithIncoherentSelectionEvidence(t *testing.T) {
+func TestOpenAICompatiblePlannerOverwritesPolicyReviewSelectionEvidence(t *testing.T) {
 	employeeID := uuid.New()
 	client := &countingChatCompletionClient{
 		content: fmt.Sprintf(`{
@@ -805,10 +915,10 @@ func TestOpenAICompatiblePlannerRejectsPolicyReviewPlanWithIncoherentSelectionEv
 		APIKey:      "test-key",
 		BaseURL:     "https://planner.example",
 		Model:       "planner-model",
-		MaxAttempts: 2,
+		MaxAttempts: 1,
 	}, client)
 
-	_, err := planner.Plan(context.Background(), CoordinationSnapshot{
+	plan, err := planner.Plan(context.Background(), CoordinationSnapshot{
 		ProjectID: uuid.New(),
 		Demand:    DemandSnapshot{ID: uuid.New(), Title: "分析数据库", Content: "检查慢查询"},
 		DigitalEmployeePool: []ProjectMemberSnapshot{
@@ -817,8 +927,11 @@ func TestOpenAICompatiblePlannerRejectsPolicyReviewPlanWithIncoherentSelectionEv
 		CoordinationPolicy: map[string]any{"require_human_review_for_new_demands": true},
 	})
 
-	require.ErrorIs(t, err, ErrInvalidRouteDecision)
-	require.Equal(t, int32(2), client.calls.Load())
+	require.NoError(t, err)
+	require.Equal(t, int32(1), client.calls.Load())
+	require.Equal(t, []string{"database.read", "sql.analysis"}, plan.Tasks[0].MatchedCapabilities)
+	require.Empty(t, plan.Tasks[0].MissingCapabilities)
+	require.Equal(t, 100, plan.Tasks[0].SelectionScore)
 }
 
 func TestOpenAICompatiblePlannerDecodesSelectionEvidence(t *testing.T) {

@@ -1,7 +1,6 @@
 package projectcoordination
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -10,8 +9,6 @@ import (
 type GraphValidationPolicy struct {
 	MaxTasks int
 }
-
-var errIncoherentSelectionEvidence = fmt.Errorf("%w: incoherent selection evidence", ErrInvalidRouteDecision)
 
 func ValidateRouteDecision(decision RouteDecisionPlan, poolIDs []uuid.UUID) error {
 	return ValidateRouteDecisionGraph(decision, poolIDs, GraphValidationPolicy{})
@@ -44,19 +41,10 @@ func ValidateRouteDecisionPlan(snapshot CoordinationSnapshot, plan RouteDecision
 		}
 		score := ScorePlanningProfile(profile, planningTaskRequirements(task))
 		reviewRequired := plan.RequiresHumanReview || task.RequiresHumanApproval
-		if len(task.MatchedCapabilities) > 0 && !stringSetsEqual(task.MatchedCapabilities, score.MatchedCapabilities) {
-			return errIncoherentSelectionEvidence
-		}
-		if len(task.MissingCapabilities) > 0 && !stringSetsEqual(task.MissingCapabilities, score.MissingCapabilities) {
-			return errIncoherentSelectionEvidence
-		}
-		if task.SelectionScore > 0 && task.SelectionScore != score.Score {
-			return errIncoherentSelectionEvidence
-		}
 		if len(score.HardFailures) > 0 && !reviewRequired {
 			return ErrInvalidRouteDecision
 		}
-		if len(task.MissingCapabilities) > 0 && !reviewRequired {
+		if len(score.MissingCapabilities) > 0 && !reviewRequired {
 			return ErrInvalidRouteDecision
 		}
 	}
@@ -77,10 +65,12 @@ func ApplyPlanningProfileScores(snapshot CoordinationSnapshot, plan *RouteDecisi
 		score := ScorePlanningProfile(profile, planningTaskRequirements(*task))
 		task.SelectionScore = score.Score
 		task.MatchedCapabilities = append([]string(nil), score.MatchedCapabilities...)
-		if len(task.MissingCapabilities) == 0 {
-			task.MissingCapabilities = append([]string(nil), score.MissingCapabilities...)
-		}
+		task.MissingCapabilities = append([]string(nil), score.MissingCapabilities...)
 		task.PlanningProfileSnapshotHash = PlanningProfileSnapshotHash(profile)
+		if len(score.HardFailures) > 0 || len(score.MissingCapabilities) > 0 {
+			task.RequiresHumanApproval = true
+			plan.RequiresHumanReview = true
+		}
 	}
 }
 
