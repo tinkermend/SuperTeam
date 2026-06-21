@@ -22,6 +22,17 @@ type DigitalEmployeeRunWritebackService struct {
 	repository            DigitalEmployeeRunRepository
 	audit                 AuditLogger
 	runtimeEventRecorders []RuntimeEventRecorder
+	executionLedger       ExecutionLedgerRecorder
+}
+
+type ExecutionLedgerRecorder interface {
+	RecordProviderSessionEvent(ctx context.Context, req ProviderSessionEventLedgerRecordRequest) error
+}
+
+type ProviderSessionEventLedgerRecordRequest struct {
+	TenantID               uuid.UUID
+	DigitalEmployeeRunID   uuid.UUID
+	ProviderSessionEventID uuid.UUID
 }
 
 func NewDigitalEmployeeRunWritebackService(repository DigitalEmployeeRunRepository, audit AuditLogger, recorders ...RuntimeEventRecorder) (*DigitalEmployeeRunWritebackService, error) {
@@ -33,6 +44,11 @@ func NewDigitalEmployeeRunWritebackService(repository DigitalEmployeeRunReposito
 		audit:                 audit,
 		runtimeEventRecorders: recorders,
 	}, nil
+}
+
+func (s *DigitalEmployeeRunWritebackService) WithExecutionLedgerRecorder(recorder ExecutionLedgerRecorder) *DigitalEmployeeRunWritebackService {
+	s.executionLedger = recorder
+	return s
 }
 
 func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, event RuntimeCommandEventWriteback) error {
@@ -93,9 +109,15 @@ func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, id
 	if err != nil {
 		return err
 	}
-	if err := s.createProviderSessionEvent(ctx, run, providerSessionUUID, commandID, eventType, event.SequenceNumber, event.Payload, event.RawEventRef, event.LogRef, event.SessionStatePatch, event.Metadata); err != nil {
+	providerSessionEventID, err := s.createProviderSessionEvent(ctx, run, providerSessionUUID, commandID, eventType, event.SequenceNumber, event.Payload, event.RawEventRef, event.LogRef, event.SessionStatePatch, event.Metadata)
+	if err != nil {
 		return err
 	}
+	s.recordProviderSessionEventLedgerBestEffort(ctx, ProviderSessionEventLedgerRecordRequest{
+		TenantID:               run.TenantID,
+		DigitalEmployeeRunID:   run.ID,
+		ProviderSessionEventID: providerSessionEventID,
+	})
 	if insertedTaskEvent {
 		s.recordRuntimeCommandEventBestEffort(ctx, runtimeCommandEventRecordRequest(run, commandID, "command_event", "info", "Runtime 命令事件", runtimeCommandProviderEventPayload(eventType, event, providerSessionExternalID)))
 	}
@@ -184,17 +206,22 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminal(ctx context.Context,
 		return err
 	}
 	shouldRecordRuntimeEvent := false
+	var providerLedgerRequest *ProviderSessionEventLedgerRecordRequest
 	if err := s.repository.WithTransaction(ctx, func(repository DigitalEmployeeRunRepository) error {
 		txService := *s
 		txService.repository = repository
-		shouldRecord, err := txService.recordTerminalLocked(ctx, identity, commandID, terminal, spec)
+		shouldRecord, ledgerRequest, err := txService.recordTerminalLocked(ctx, identity, commandID, terminal, spec)
 		if err != nil {
 			return err
 		}
 		shouldRecordRuntimeEvent = shouldRecord
+		providerLedgerRequest = ledgerRequest
 		return nil
 	}); err != nil {
 		return err
+	}
+	if providerLedgerRequest != nil {
+		s.recordProviderSessionEventLedgerBestEffort(ctx, *providerLedgerRequest)
 	}
 	if shouldRecordRuntimeEvent {
 		s.recordRuntimeTerminalEventBestEffort(ctx, identity, commandID, terminal.Status)
@@ -202,26 +229,26 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminal(ctx context.Context,
 	return nil
 }
 
-func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) (bool, error) {
+func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) (bool, *ProviderSessionEventLedgerRecordRequest, error) {
 	receipt, run, err := s.loadCommandRun(ctx, identity, commandID, true)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	if isTerminalReceiptStatus(receipt.Status) && receipt.Status != string(spec.status) {
-		return false, fmt.Errorf("%w: command receipt is already terminal with status %s", ErrConflict, receipt.Status)
+		return false, nil, fmt.Errorf("%w: command receipt is already terminal with status %s", ErrConflict, receipt.Status)
 	}
 	if run == nil {
-		return false, s.recordProvisioningTerminal(ctx, identity, commandID, receipt, terminal, spec)
+		return false, nil, s.recordProvisioningTerminal(ctx, identity, commandID, receipt, terminal, spec)
 	}
 	wasTerminal := run.Status.IsTerminal()
 	projectionTerminal := terminal
 	updatedRun := run
 	if wasTerminal {
 		if run.Status != spec.status {
-			return false, fmt.Errorf("%w: run is already terminal with status %s", ErrConflict, run.Status)
+			return false, nil, fmt.Errorf("%w: run is already terminal with status %s", ErrConflict, run.Status)
 		}
 		if !terminalCompatibleWithRun(run, terminal) {
-			return false, fmt.Errorf("%w: terminal writeback conflicts with persisted run", ErrConflict)
+			return false, nil, fmt.Errorf("%w: terminal writeback conflicts with persisted run", ErrConflict)
 		}
 		projectionTerminal = terminalWritebackFromRun(run)
 	} else {
@@ -248,7 +275,7 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 			TimedOut:                  spec.status == DigitalEmployeeRunStatusTimedOut || terminal.TimedOut,
 		})
 		if err != nil {
-			return false, fmt.Errorf("update run terminal status: %w", err)
+			return false, nil, fmt.Errorf("update run terminal status: %w", err)
 		}
 	}
 
@@ -268,17 +295,24 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 			"status": string(spec.status),
 		},
 	}); err != nil {
-		return false, fmt.Errorf("create terminal task event: %w", err)
+		return false, nil, fmt.Errorf("create terminal task event: %w", err)
 	}
 
+	var providerLedgerRequest *ProviderSessionEventLedgerRecordRequest
 	providerSessionExternalID := trimmedOptionalValue(projectionTerminal.ProviderSessionExternalID)
 	if providerSessionExternalID != nil {
 		providerSessionUUID, err := s.upsertProviderSession(ctx, updatedRun, *providerSessionExternalID, spec.providerStatus, spec.recoverable, spec.sequenceNumber, &commandID, projectionTerminal.ErrorFamily, projectionTerminal.SessionStatePatch, map[string]any{"source": "runtime", "status": string(spec.status)})
 		if err != nil {
-			return false, err
+			return false, nil, err
 		}
-		if err := s.createProviderSessionEvent(ctx, updatedRun, providerSessionUUID, commandID, spec.eventType, spec.sequenceNumber, terminalEventPayload(projectionTerminal, spec.status), projectionTerminal.RawResultRef, projectionTerminal.LogRef, projectionTerminal.SessionStatePatch, map[string]any{"source": "runtime", "status": string(spec.status)}); err != nil {
-			return false, err
+		providerSessionEventID, err := s.createProviderSessionEvent(ctx, updatedRun, providerSessionUUID, commandID, spec.eventType, spec.sequenceNumber, terminalEventPayload(projectionTerminal, spec.status), projectionTerminal.RawResultRef, projectionTerminal.LogRef, projectionTerminal.SessionStatePatch, map[string]any{"source": "runtime", "status": string(spec.status)})
+		if err != nil {
+			return false, nil, err
+		}
+		providerLedgerRequest = &ProviderSessionEventLedgerRecordRequest{
+			TenantID:               updatedRun.TenantID,
+			DigitalEmployeeRunID:   updatedRun.ID,
+			ProviderSessionEventID: providerSessionEventID,
 		}
 	}
 
@@ -290,15 +324,15 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 		Result:       receiptResult,
 		ErrorMessage: projectionTerminal.ErrorMessage,
 	}); err != nil {
-		return false, fmt.Errorf("update command receipt terminal status: %w", err)
+		return false, nil, fmt.Errorf("update command receipt terminal status: %w", err)
 	}
 	if wasTerminal {
-		return false, nil
+		return false, providerLedgerRequest, nil
 	}
 	if err := s.logRuntimeAudit(ctx, spec.auditEventType, run.NodeID, "digital_employee_run", run.ID.String(), spec.auditAction); err != nil {
-		return false, err
+		return false, nil, err
 	}
-	return true, nil
+	return true, providerLedgerRequest, nil
 }
 
 func (s *DigitalEmployeeRunWritebackService) recordProvisioningTerminal(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, receipt *RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) error {
@@ -607,9 +641,9 @@ func (s *DigitalEmployeeRunWritebackService) upsertProviderSession(ctx context.C
 	return providerSessionUUID, nil
 }
 
-func (s *DigitalEmployeeRunWritebackService) createProviderSessionEvent(ctx context.Context, run *DigitalEmployeeRun, providerSessionUUID uuid.UUID, commandID, eventType string, sequenceNumber int32, payload map[string]any, rawEventRef, logRef *string, sessionStatePatch map[string]any, metadata map[string]any) error {
+func (s *DigitalEmployeeRunWritebackService) createProviderSessionEvent(ctx context.Context, run *DigitalEmployeeRun, providerSessionUUID uuid.UUID, commandID, eventType string, sequenceNumber int32, payload map[string]any, rawEventRef, logRef *string, sessionStatePatch map[string]any, metadata map[string]any) (uuid.UUID, error) {
 	commandIDRef := commandID
-	if err := s.repository.CreateProviderSessionEventIfAbsent(ctx, CreateProviderSessionEventRecordRequest{
+	providerSessionEventID, err := s.repository.CreateProviderSessionEventIfAbsent(ctx, CreateProviderSessionEventRecordRequest{
 		TenantID:            run.TenantID,
 		ProviderSessionUUID: providerSessionUUID,
 		EventType:           eventType,
@@ -620,10 +654,18 @@ func (s *DigitalEmployeeRunWritebackService) createProviderSessionEvent(ctx cont
 		LogRef:              logRef,
 		SessionStatePatch:   redactRuntimeEventPayload(sessionStatePatch),
 		Metadata:            redactRuntimeEventPayload(metadata),
-	}); err != nil {
-		return fmt.Errorf("create provider session event: %w", err)
+	})
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("create provider session event: %w", err)
 	}
-	return nil
+	return providerSessionEventID, nil
+}
+
+func (s *DigitalEmployeeRunWritebackService) recordProviderSessionEventLedgerBestEffort(ctx context.Context, req ProviderSessionEventLedgerRecordRequest) {
+	if s.executionLedger == nil {
+		return
+	}
+	_ = s.executionLedger.RecordProviderSessionEvent(ctx, req)
 }
 
 func validateWritebackIdentity(identity RuntimeCommandWritebackIdentity, commandID string) (RuntimeCommandWritebackIdentity, string, error) {

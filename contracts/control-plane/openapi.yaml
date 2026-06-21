@@ -1178,6 +1178,47 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ProjectExecutionSummary"
+  /api/v1/projects/{projectId}/execution-trace:
+    get:
+      operationId: getProjectExecutionTrace
+      summary: Get project execution trace
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: project_task_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: attempt_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: event_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: error_family
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project execution trace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectExecutionTrace"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/transfer-requests:
     get:
       operationId: listProjectTransferRequests
@@ -5372,6 +5413,195 @@ components:
         created_event_id:
           type: string
           format: uuid
+        created_at:
+          type: string
+          format: date-time
+    ProjectExecutionTrace:
+      type: object
+      required:
+        - project_id
+        - summary
+        - attempts
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        summary:
+          $ref: "#/components/schemas/ProjectExecutionTraceSummary"
+        attempts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectExecutionTraceAttempt"
+    ProjectExecutionTraceSummary:
+      type: object
+      required:
+        - attempt_count
+        - failed_attempt_count
+        - human_review_required_count
+        - artifact_ref_count
+        - evidence_ref_count
+      properties:
+        attempt_count:
+          type: integer
+          format: int32
+        failed_attempt_count:
+          type: integer
+          format: int32
+        human_review_required_count:
+          type: integer
+          format: int32
+        artifact_ref_count:
+          type: integer
+          format: int32
+        evidence_ref_count:
+          type: integer
+          format: int32
+        latest_error_family:
+          type: string
+    ProjectExecutionTraceAttempt:
+      type: object
+      required:
+        - project_task_id
+        - attempt_id
+        - attempt_no
+        - status
+        - events
+      properties:
+        project_task_id:
+          type: string
+          format: uuid
+        attempt_id:
+          type: string
+          format: uuid
+        attempt_no:
+          type: integer
+          format: int32
+        status:
+          type: string
+        runtime_node_id:
+          type: string
+          format: uuid
+        provider_type:
+          type: string
+        provider_session_id:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        failure_family:
+          type: string
+        retryable:
+          type: boolean
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutionLedgerEvent"
+        summary:
+          $ref: "#/components/schemas/ProjectExecutionTraceAttemptSummary"
+    ExecutionLedgerEvent:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - event_type
+        - source_type
+        - source_id
+        - actor_type
+        - artifact_refs
+        - evidence_refs
+        - metadata
+        - occurred_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        project_task_id:
+          type: string
+          format: uuid
+        project_task_attempt_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        source_type:
+          type: string
+        source_id:
+          type: string
+        actor_type:
+          type: string
+        actor_id:
+          type: string
+        runtime_node_id:
+          type: string
+          format: uuid
+        provider_type:
+          type: string
+        provider_session_id:
+          type: string
+        input_summary:
+          type: string
+        output_summary:
+          type: string
+        error_family:
+          type: string
+        error_code:
+          type: string
+        error_message:
+          type: string
+        retryable:
+          type: boolean
+        artifact_refs:
+          type: array
+          items: {}
+        evidence_refs:
+          type: array
+          items: {}
+        metadata:
+          type: object
+          additionalProperties: true
+        occurred_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    ProjectExecutionTraceAttemptSummary:
+      type: object
+      required:
+        - execution_summary_id
+        - conclusion
+        - requires_human_review
+        - artifact_refs
+        - evidence_refs
+        - created_at
+      properties:
+        execution_summary_id:
+          type: string
+          format: uuid
+        conclusion:
+          type: string
+        requires_human_review:
+          type: boolean
+        artifact_refs:
+          type: array
+          items: {}
+        evidence_refs:
+          type: array
+          items: {}
         created_at:
           type: string
           format: date-time

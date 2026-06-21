@@ -2244,6 +2244,35 @@ type ExecuteInboxActionResponse struct {
 	SourceResult InboxSourceActionResult `json:"source_result"`
 }
 
+// ExecutionLedgerEvent defines model for ExecutionLedgerEvent.
+type ExecutionLedgerEvent struct {
+	ActorId              *string                `json:"actor_id,omitempty"`
+	ActorType            string                 `json:"actor_type"`
+	ArtifactRefs         []interface{}          `json:"artifact_refs"`
+	CreatedAt            time.Time              `json:"created_at"`
+	ErrorCode            *string                `json:"error_code,omitempty"`
+	ErrorFamily          *string                `json:"error_family,omitempty"`
+	ErrorMessage         *string                `json:"error_message,omitempty"`
+	EventType            string                 `json:"event_type"`
+	EvidenceRefs         []interface{}          `json:"evidence_refs"`
+	Id                   openapi_types.UUID     `json:"id"`
+	InputSummary         *string                `json:"input_summary,omitempty"`
+	Metadata             map[string]interface{} `json:"metadata"`
+	OccurredAt           time.Time              `json:"occurred_at"`
+	OutputSummary        *string                `json:"output_summary,omitempty"`
+	ProjectId            openapi_types.UUID     `json:"project_id"`
+	ProjectTaskAttemptId *openapi_types.UUID    `json:"project_task_attempt_id,omitempty"`
+	ProjectTaskId        *openapi_types.UUID    `json:"project_task_id,omitempty"`
+	ProviderSessionId    *string                `json:"provider_session_id,omitempty"`
+	ProviderType         *string                `json:"provider_type,omitempty"`
+	Retryable            *bool                  `json:"retryable,omitempty"`
+	RuntimeNodeId        *openapi_types.UUID    `json:"runtime_node_id,omitempty"`
+	SourceId             string                 `json:"source_id"`
+	SourceType           string                 `json:"source_type"`
+	TeamId               *openapi_types.UUID    `json:"team_id,omitempty"`
+	TenantId             openapi_types.UUID     `json:"tenant_id"`
+}
+
 // FailProjectTaskAttemptRequest defines model for FailProjectTaskAttemptRequest.
 type FailProjectTaskAttemptRequest struct {
 	FailureFamily     string             `json:"failure_family"`
@@ -2712,6 +2741,50 @@ type ProjectExecutionSummary struct {
 	TenantId              openapi_types.UUID     `json:"tenant_id"`
 	TransferRequestId     *openapi_types.UUID    `json:"transfer_request_id,omitempty"`
 	Uncertainty           *string                `json:"uncertainty,omitempty"`
+}
+
+// ProjectExecutionTrace defines model for ProjectExecutionTrace.
+type ProjectExecutionTrace struct {
+	Attempts  []ProjectExecutionTraceAttempt `json:"attempts"`
+	ProjectId openapi_types.UUID             `json:"project_id"`
+	Summary   ProjectExecutionTraceSummary   `json:"summary"`
+}
+
+// ProjectExecutionTraceAttempt defines model for ProjectExecutionTraceAttempt.
+type ProjectExecutionTraceAttempt struct {
+	AttemptId         openapi_types.UUID                   `json:"attempt_id"`
+	AttemptNo         int32                                `json:"attempt_no"`
+	Events            []ExecutionLedgerEvent               `json:"events"`
+	FailureFamily     *string                              `json:"failure_family,omitempty"`
+	FinishedAt        *time.Time                           `json:"finished_at,omitempty"`
+	ProjectTaskId     openapi_types.UUID                   `json:"project_task_id"`
+	ProviderSessionId *string                              `json:"provider_session_id,omitempty"`
+	ProviderType      *string                              `json:"provider_type,omitempty"`
+	Retryable         *bool                                `json:"retryable,omitempty"`
+	RuntimeNodeId     *openapi_types.UUID                  `json:"runtime_node_id,omitempty"`
+	StartedAt         *time.Time                           `json:"started_at,omitempty"`
+	Status            string                               `json:"status"`
+	Summary           *ProjectExecutionTraceAttemptSummary `json:"summary,omitempty"`
+}
+
+// ProjectExecutionTraceAttemptSummary defines model for ProjectExecutionTraceAttemptSummary.
+type ProjectExecutionTraceAttemptSummary struct {
+	ArtifactRefs        []interface{}      `json:"artifact_refs"`
+	Conclusion          string             `json:"conclusion"`
+	CreatedAt           time.Time          `json:"created_at"`
+	EvidenceRefs        []interface{}      `json:"evidence_refs"`
+	ExecutionSummaryId  openapi_types.UUID `json:"execution_summary_id"`
+	RequiresHumanReview bool               `json:"requires_human_review"`
+}
+
+// ProjectExecutionTraceSummary defines model for ProjectExecutionTraceSummary.
+type ProjectExecutionTraceSummary struct {
+	ArtifactRefCount         int32   `json:"artifact_ref_count"`
+	AttemptCount             int32   `json:"attempt_count"`
+	EvidenceRefCount         int32   `json:"evidence_ref_count"`
+	FailedAttemptCount       int32   `json:"failed_attempt_count"`
+	HumanReviewRequiredCount int32   `json:"human_review_required_count"`
+	LatestErrorFamily        *string `json:"latest_error_family,omitempty"`
 }
 
 // ProjectMember defines model for ProjectMember.
@@ -4023,6 +4096,16 @@ type ListProjectExecutionSummariesParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// GetProjectExecutionTraceParams defines parameters for GetProjectExecutionTrace.
+type GetProjectExecutionTraceParams struct {
+	ProjectTaskId *openapi_types.UUID `form:"project_task_id,omitempty" json:"project_task_id,omitempty"`
+	AttemptId     *openapi_types.UUID `form:"attempt_id,omitempty" json:"attempt_id,omitempty"`
+	EventType     *string             `form:"event_type,omitempty" json:"event_type,omitempty"`
+	ErrorFamily   *string             `form:"error_family,omitempty" json:"error_family,omitempty"`
+	Limit         *Limit              `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset        *Offset             `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
 // ListProjectLendingRequestsParams defines parameters for ListProjectLendingRequests.
 type ListProjectLendingRequestsParams struct {
 	Limit  *Limit                    `form:"limit,omitempty" json:"limit,omitempty"`
@@ -5056,6 +5139,9 @@ type ServerInterface interface {
 	// List project execution summaries
 	// (GET /api/v1/projects/{projectId}/execution-summaries)
 	ListProjectExecutionSummaries(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectExecutionSummariesParams)
+	// Get project execution trace
+	// (GET /api/v1/projects/{projectId}/execution-trace)
+	GetProjectExecutionTrace(w http.ResponseWriter, r *http.Request, projectId ProjectId, params GetProjectExecutionTraceParams)
 	// List lending requests raised by a project (demand side)
 	// (GET /api/v1/projects/{projectId}/lending-requests)
 	ListProjectLendingRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectLendingRequestsParams)
@@ -5704,6 +5790,12 @@ func (_ Unimplemented) PatchProjectEvidence(w http.ResponseWriter, r *http.Reque
 // List project execution summaries
 // (GET /api/v1/projects/{projectId}/execution-summaries)
 func (_ Unimplemented) ListProjectExecutionSummaries(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectExecutionSummariesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get project execution trace
+// (GET /api/v1/projects/{projectId}/execution-trace)
+func (_ Unimplemented) GetProjectExecutionTrace(w http.ResponseWriter, r *http.Request, projectId ProjectId, params GetProjectExecutionTraceParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8641,6 +8733,113 @@ func (siw *ServerInterfaceWrapper) ListProjectExecutionSummaries(w http.Response
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListProjectExecutionSummaries(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectExecutionTrace operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectExecutionTrace(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetProjectExecutionTraceParams
+
+	// ------------- Optional query parameter "project_task_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project_task_id", r.URL.Query(), &params.ProjectTaskId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project_task_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project_task_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "attempt_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "attempt_id", r.URL.Query(), &params.AttemptId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "attempt_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "attempt_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "event_type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "event_type", r.URL.Query(), &params.EventType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "event_type"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "event_type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "error_family" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "error_family", r.URL.Query(), &params.ErrorFamily, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "error_family"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "error_family", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectExecutionTrace(w, r, projectId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -12422,6 +12621,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/execution-summaries", wrapper.ListProjectExecutionSummaries)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/execution-trace", wrapper.GetProjectExecutionTrace)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/lending-requests", wrapper.ListProjectLendingRequests)

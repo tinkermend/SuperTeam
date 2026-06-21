@@ -400,6 +400,10 @@ async fn serve_command_failures(capture: CommandFailureCapture) -> CommandWriteb
             post(capture_cancelled_writeback),
         )
         .route(
+            "/api/v1/runtime/project-task-attempts/{attempt_id}/started",
+            post(accept_project_task_started_for_failures),
+        )
+        .route(
             "/api/v1/runtime/project-task-attempts/{attempt_id}/fail",
             post(capture_project_task_fail_writeback),
         )
@@ -415,6 +419,7 @@ struct CommandCompletionCapture {
     events: Arc<Mutex<Vec<CapturedWriteback>>>,
     complete: Arc<Mutex<Option<CapturedWriteback>>>,
     fail: Arc<Mutex<Option<CapturedWriteback>>>,
+    project_task_started: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
     project_task_complete: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
     project_task_fail: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
     project_task_wait_human: Arc<Mutex<Option<CapturedProjectTaskWriteback>>>,
@@ -449,6 +454,10 @@ async fn serve_command_completion_writebacks(
         .route(
             "/api/v1/runtime/commands/{command_id}/events",
             post(capture_event_writeback),
+        )
+        .route(
+            "/api/v1/runtime/project-task-attempts/{attempt_id}/started",
+            post(capture_project_task_started_writeback),
         )
         .route(
             "/api/v1/runtime/project-task-attempts/{attempt_id}/complete",
@@ -503,6 +512,10 @@ async fn serve_failing_project_task_completion(
         .route(
             "/api/v1/runtime/commands/{command_id}/events",
             post(capture_event_writeback),
+        )
+        .route(
+            "/api/v1/runtime/project-task-attempts/{attempt_id}/started",
+            post(capture_project_task_started_writeback),
         )
         .route(
             "/api/v1/runtime/project-task-attempts/{attempt_id}/complete",
@@ -581,6 +594,28 @@ async fn capture_completion_project_task_fail_writeback(
         .project_task_fail
         .lock()
         .expect("project task fail lock") = Some(CapturedProjectTaskWriteback {
+        attempt_id,
+        project_task_id: required_string_field(&payload, "project_task_id"),
+        lease_token: required_string_field(&payload, "lease_token"),
+        runtime_node_id: required_string_field(&payload, "runtime_node_id"),
+        idempotency_key: required_string_field(&payload, "idempotency_key"),
+        authorization: header_value(&headers, "authorization"),
+        node_id: header_value(&headers, "x-node-id"),
+        payload,
+    });
+    StatusCode::ACCEPTED
+}
+
+async fn capture_project_task_started_writeback(
+    AxumPath(attempt_id): AxumPath<String>,
+    State(capture): State<CommandCompletionCapture>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    *capture
+        .project_task_started
+        .lock()
+        .expect("project task started lock") = Some(CapturedProjectTaskWriteback {
         attempt_id,
         project_task_id: required_string_field(&payload, "project_task_id"),
         lease_token: required_string_field(&payload, "lease_token"),
@@ -683,6 +718,18 @@ async fn capture_cancelled_writeback(
         node_id: header_value(&headers, "x-node-id"),
         payload,
     });
+    StatusCode::ACCEPTED
+}
+
+async fn accept_project_task_started_for_failures(
+    AxumPath(_attempt_id): AxumPath<String>,
+    State(_capture): State<CommandFailureCapture>,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    let _ = required_string_field(&payload, "project_task_id");
+    let _ = required_string_field(&payload, "lease_token");
+    let _ = required_string_field(&payload, "runtime_node_id");
+    let _ = required_string_field(&payload, "idempotency_key");
     StatusCode::ACCEPTED
 }
 
@@ -815,6 +862,25 @@ printf '%s\n' '{"type":"result","result":"provider produced the requested execut
     assert_eq!(
         command_complete.authorization.as_deref(),
         Some("Bearer session-token")
+    );
+
+    let project_started =
+        wait_for_project_task_writeback(capture.project_task_started.clone()).await;
+    assert_eq!(project_started.attempt_id, PROJECT_TASK_ATTEMPT_ID);
+    assert_eq!(project_started.project_task_id, PROJECT_TASK_ID);
+    assert_eq!(project_started.lease_token, PROJECT_TASK_LEASE_TOKEN);
+    assert_eq!(project_started.runtime_node_id, RUNTIME_NODE_ID);
+    assert_eq!(
+        project_started.idempotency_key,
+        format!("project-task-attempt:{PROJECT_TASK_ATTEMPT_ID}:start:cmd-project-task")
+    );
+    assert_eq!(
+        project_started.authorization.as_deref(),
+        Some("Bearer session-token")
+    );
+    assert_eq!(
+        project_started.node_id.as_deref(),
+        Some(RUNTIME_NODE_EXTERNAL_ID)
     );
 
     let project_complete =

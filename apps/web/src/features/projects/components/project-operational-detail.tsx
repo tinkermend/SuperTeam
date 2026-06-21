@@ -33,6 +33,7 @@ import type {
   ProjectEvidenceRef,
   ProjectEvidenceVerificationStatus,
   ProjectEvent,
+  ProjectExecutionTrace,
   ProjectExecutionSummary,
   ProjectMember,
   ProjectOverview,
@@ -41,6 +42,7 @@ import type {
   ProjectTask,
   ProjectTransferRequest,
 } from "@/lib/api/projects";
+import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
 import { statusLabel, statusTone } from "./project-switcher-pane";
 
@@ -56,6 +58,10 @@ type ProjectOperationalDetailProps = {
   demands: ProjectDemand[];
   evidence?: ProjectEvidenceRef[];
   events: ProjectEvent[];
+  executionTrace?: ProjectExecutionTrace;
+  executionTraceErrorMessage?: string;
+  executionTraceIsError?: boolean;
+  executionTraceIsLoading?: boolean;
   executionSummaries: ProjectExecutionSummary[];
   isArchived?: boolean;
   onArchiveProject: () => void;
@@ -66,6 +72,7 @@ type ProjectOperationalDetailProps = {
     evidenceId: string,
     verificationStatus: ProjectEvidenceVerificationStatus,
   ) => void;
+  onRetryExecutionTrace?: () => void;
   onResolveDecision: (decisionId: string, decision: string) => void;
   onSubmitDemand: () => void;
   overview?: ProjectOverview;
@@ -88,6 +95,10 @@ export function ProjectOperationalDetail({
   demands,
   evidence,
   events,
+  executionTrace,
+  executionTraceErrorMessage,
+  executionTraceIsError,
+  executionTraceIsLoading,
   executionSummaries,
   isArchived,
   onArchiveProject,
@@ -95,6 +106,7 @@ export function ProjectOperationalDetail({
   onCreateArchiveSnapshot,
   onCreateEvidence,
   onPatchEvidence,
+  onRetryExecutionTrace,
   onResolveDecision,
   onSubmitDemand,
   overview,
@@ -329,6 +341,14 @@ export function ProjectOperationalDetail({
               )}
             </div>
           </LiquidCard>
+
+          <ProjectExecutionTracePanel
+            errorMessage={executionTraceErrorMessage}
+            isError={executionTraceIsError}
+            isLoading={executionTraceIsLoading}
+            onRetry={onRetryExecutionTrace}
+            trace={executionTrace}
+          />
 
           <ProjectGovernanceTabs
             acceptance={acceptance}

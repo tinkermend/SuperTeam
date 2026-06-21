@@ -21,6 +21,7 @@ import {
   getProjectAcceptance,
   getProjectArchivePreview,
   getProjectBudgetSummary,
+  getProjectExecutionTrace,
   getProjectOverview,
   listProjectArchiveSnapshots,
   listProjectArtifacts,
@@ -45,6 +46,7 @@ import {
   type CreateProjectInput,
   type ListProjectsFilters,
   type ProjectEvidenceVerificationStatus,
+  type ProjectExecutionTrace,
   type ProjectStatus,
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
@@ -262,6 +264,14 @@ export function ProjectsView({
     queryKey: ["project-execution-summaries", effectiveProjectId],
     queryFn: () =>
       listProjectExecutionSummaries(apiOptions, effectiveProjectId as string, { limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+
+  const executionTraceQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-execution-trace", effectiveProjectId],
+    queryFn: () =>
+      getProjectExecutionTrace(apiOptions, effectiveProjectId as string, { limit: 100 }),
     placeholderData: keepPreviousData,
   });
 
@@ -488,6 +498,23 @@ export function ProjectsView({
   const projectExecutionSummaries = (executionSummariesQuery.data ?? []).filter(
     (summary) => summary.project_id === effectiveProjectId,
   );
+  const hasExecutionTraceForSelectedProject =
+    executionTraceQuery.data?.project_id === effectiveProjectId;
+  const projectExecutionTrace: ProjectExecutionTrace | undefined =
+    hasExecutionTraceForSelectedProject
+      ? executionTraceQuery.data
+      : undefined;
+  const projectExecutionTraceIsLoading =
+    Boolean(effectiveProjectId) &&
+    !hasExecutionTraceForSelectedProject &&
+    (executionTraceQuery.isLoading || executionTraceQuery.isFetching);
+  const projectExecutionTraceIsError =
+    Boolean(effectiveProjectId) &&
+    !hasExecutionTraceForSelectedProject &&
+    executionTraceQuery.isError;
+  const projectExecutionTraceErrorMessage = projectExecutionTraceIsError
+    ? queryErrorMessage(executionTraceQuery.error)
+    : undefined;
   const projectTransferRequests = (transferRequestsQuery.data ?? []).filter(
     (request) => request.project_id === effectiveProjectId,
   );
@@ -571,6 +598,10 @@ export function ProjectsView({
             demands={projectDemands}
             evidence={projectEvidence}
             events={projectEvents}
+            executionTrace={projectExecutionTrace}
+            executionTraceErrorMessage={projectExecutionTraceErrorMessage}
+            executionTraceIsError={projectExecutionTraceIsError}
+            executionTraceIsLoading={projectExecutionTraceIsLoading}
             executionSummaries={projectExecutionSummaries}
             isArchived={isArchived}
             onArchiveProject={() => {
@@ -597,6 +628,9 @@ export function ProjectsView({
               if (effectiveProjectId) {
                 patchEvidenceMutation.mutate({ evidenceId, verificationStatus });
               }
+            }}
+            onRetryExecutionTrace={() => {
+              void executionTraceQuery.refetch();
             }}
             onResolveDecision={(decisionId, decision) => {
               if (effectiveProjectId) {
@@ -636,4 +670,11 @@ export function ProjectsView({
       />
     </ProjectManagementShell>
   );
+}
+
+function queryErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return "执行证据链加载失败";
 }

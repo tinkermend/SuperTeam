@@ -658,6 +658,108 @@ func TestProjectTaskDurableClosureMigrationComments(t *testing.T) {
 	}
 }
 
+func TestExecutionLedgerEventsMigration(t *testing.T) {
+	sql := readMigration(t, "029_execution_ledger_events.sql")
+	block := createTableBlock(t, sql, "execution_ledger_events")
+
+	expected := []string{
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"tenant_id UUID NOT NULL",
+		"team_id UUID",
+		"project_id UUID NOT NULL",
+		"project_task_id UUID",
+		"project_task_attempt_id UUID",
+		"event_type VARCHAR(100) NOT NULL",
+		"source_type VARCHAR(100) NOT NULL",
+		"source_id VARCHAR(255) NOT NULL",
+		"actor_type VARCHAR(80) NOT NULL",
+		"actor_id VARCHAR(255)",
+		"runtime_node_id UUID",
+		"provider_type VARCHAR(100)",
+		"provider_session_id VARCHAR(255)",
+		"input_summary TEXT",
+		"output_summary TEXT",
+		"error_family VARCHAR(100)",
+		"error_code VARCHAR(100)",
+		"error_message TEXT",
+		"retryable BOOLEAN",
+		"artifact_refs JSONB NOT NULL DEFAULT '[]'::jsonb",
+		"evidence_refs JSONB NOT NULL DEFAULT '[]'::jsonb",
+		"metadata JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"idempotency_key VARCHAR(255) NOT NULL",
+		"created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+	}
+	for _, want := range expected {
+		if !strings.Contains(block, want) {
+			t.Fatalf("expected execution_ledger_events schema to contain %q, got block:\n%s", want, block)
+		}
+	}
+
+	assertMigrationContains(t, sql, "CREATE UNIQUE INDEX uq_execution_ledger_events_idempotency")
+	assertMigrationContains(t, sql, "CREATE INDEX idx_execution_ledger_events_project_time")
+	assertMigrationContains(t, sql, "CREATE INDEX idx_execution_ledger_events_attempt_time")
+	assertMigrationContains(t, sql, "CREATE INDEX idx_execution_ledger_events_project_type")
+	assertMigrationContains(t, sql, "CREATE INDEX idx_execution_ledger_events_project_error")
+	assertMigrationContains(t, sql, "CREATE TRIGGER update_execution_ledger_events_updated_at")
+	assertMigrationContains(t, sql, "COMMENT ON TABLE execution_ledger_events IS '执行账本事件表，记录项目任务执行、Provider、工具、MCP、外部能力和证据链的统一审计索引。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.input_summary IS '输入摘要，不保存完整 prompt、secret 或大 payload。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.provider_session_id IS 'Provider 外部会话 ID。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.error_family IS '错误分类，例如 provider_error、runtime_error、missing_context、capability_denied。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.artifact_refs IS '工件引用数组。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.evidence_refs IS '证据引用数组。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.metadata IS '结构化扩展数据，禁止写入 secret 和完整 raw payload。'")
+	assertMigrationContains(t, sql, "COMMENT ON COLUMN execution_ledger_events.idempotency_key IS '执行账本事件幂等键。'")
+}
+
+func TestExecutionLedgerAppendOnlyHardeningMigration(t *testing.T) {
+	sql := readMigration(t, "030_execution_ledger_append_only_hardening.sql")
+
+	for _, fragment := range []string{
+		"DROP TRIGGER IF EXISTS update_execution_ledger_events_updated_at ON execution_ledger_events",
+		"CREATE OR REPLACE FUNCTION create_execution_ledger_event",
+		"RETURNS execution_ledger_events",
+		"ON CONFLICT (tenant_id, idempotency_key) DO NOTHING",
+		"RAISE EXCEPTION 'create_execution_ledger_event could not insert or find idempotency key % for tenant %'",
+		"CREATE OR REPLACE FUNCTION reject_execution_ledger_events_mutation()",
+		"RAISE EXCEPTION 'execution_ledger_events is append-only and does not allow %', TG_OP",
+		"CREATE TRIGGER prevent_execution_ledger_events_update",
+		"BEFORE UPDATE ON execution_ledger_events",
+		"CREATE TRIGGER prevent_execution_ledger_events_delete",
+		"BEFORE DELETE ON execution_ledger_events",
+		"CREATE INDEX IF NOT EXISTS idx_execution_ledger_events_task_time",
+		"ON execution_ledger_events(tenant_id, project_task_id, occurred_at ASC, created_at ASC)",
+		"WHERE project_task_id IS NOT NULL",
+	} {
+		assertMigrationContains(t, sql, fragment)
+	}
+
+	querySQL, err := os.ReadFile("queries/execution_ledger.sql")
+	if err != nil {
+		t.Fatalf("read execution ledger queries: %v", err)
+	}
+	query := string(querySQL)
+	for _, fragment := range []string{
+		"WITH candidate_attempts AS",
+		"eligible_attempts AS",
+		"source_event_matches AS",
+		"exact_match_count > 0",
+		"AND exact_provider_session_match",
+		"exact_match_count = 0",
+		"AND NULLIF(attempt_provider_session_id, '') IS NULL",
+		"source_event AS (",
+		"FROM source_event_matches",
+		"WHERE match_count = 1",
+		"FROM source_event source\nCROSS JOIN LATERAL create_execution_ledger_event",
+	} {
+		assertMigrationContains(t, query, fragment)
+	}
+	if strings.Contains(query, "WHERE source.match_count = 1") {
+		t.Fatal("provider ledger query must filter source_event before invoking create_execution_ledger_event")
+	}
+}
+
 func TestSkillManagementMigrationAddsSkillPackageTables(t *testing.T) {
 	body, err := os.ReadFile("migrations/009_skill_management.sql")
 	if err != nil {
@@ -1024,6 +1126,22 @@ func createTableBlock(t *testing.T, sql string, table string) string {
 		t.Fatalf("missing end of %s create table block", table)
 	}
 	return rest[:end]
+}
+
+func readMigration(t *testing.T, name string) string {
+	t.Helper()
+	body, err := os.ReadFile("migrations/" + name)
+	if err != nil {
+		t.Fatalf("read migration %s: %v", name, err)
+	}
+	return string(body)
+}
+
+func assertMigrationContains(t *testing.T, sql string, fragment string) {
+	t.Helper()
+	if !strings.Contains(sql, fragment) {
+		t.Fatalf("expected migration to contain %q", fragment)
+	}
 }
 
 func migrationsSQL(t *testing.T) string {

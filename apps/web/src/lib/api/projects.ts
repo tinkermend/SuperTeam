@@ -407,6 +407,74 @@ export type ProjectExecutionSummary = {
   created_at?: string;
 };
 
+export type ExecutionLedgerEvent = {
+  id: string;
+  tenant_id: string;
+  team_id?: string;
+  project_id: string;
+  project_task_id?: string;
+  project_task_attempt_id?: string;
+  event_type: string;
+  source_type: string;
+  source_id: string;
+  actor_type: string;
+  actor_id?: string;
+  runtime_node_id?: string;
+  provider_type?: string;
+  provider_session_id?: string;
+  input_summary?: string;
+  output_summary?: string;
+  error_family?: string;
+  error_code?: string;
+  error_message?: string;
+  retryable?: boolean;
+  artifact_refs: unknown[];
+  evidence_refs: unknown[];
+  metadata: Record<string, unknown>;
+  occurred_at: string;
+  created_at: string;
+};
+
+export type ProjectExecutionTraceSummary = {
+  attempt_count: number;
+  failed_attempt_count: number;
+  human_review_required_count: number;
+  artifact_ref_count: number;
+  evidence_ref_count: number;
+  latest_error_family?: string;
+};
+
+export type ProjectExecutionTraceAttemptSummary = {
+  execution_summary_id: string;
+  conclusion: string;
+  requires_human_review: boolean;
+  artifact_refs: unknown[];
+  evidence_refs: unknown[];
+  created_at: string;
+};
+
+export type ProjectExecutionTraceAttempt = {
+  project_task_id: string;
+  attempt_id: string;
+  attempt_no: number;
+  status: string;
+  runtime_node_id?: string;
+  provider_type?: string;
+  provider_session_id?: string;
+  started_at?: string;
+  finished_at?: string;
+  failure_family?: string;
+  retryable?: boolean;
+  events: ExecutionLedgerEvent[];
+  summary?: ProjectExecutionTraceAttemptSummary;
+};
+
+export type ProjectExecutionTrace = {
+  project_id: string;
+  summary: ProjectExecutionTraceSummary;
+  attempts: ProjectExecutionTraceAttempt[];
+};
+
 export type ProjectTransferRequest = {
   id: string;
   tenant_id: string;
@@ -1100,6 +1168,18 @@ export function listProjectExecutionSummaries(
     options,
     projectPath(projectId, `/execution-summaries${paginationQuery(filters)}`),
     "project execution summaries",
+  );
+}
+
+export function getProjectExecutionTrace(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: PaginationFilters = {},
+): Promise<ProjectExecutionTrace> {
+  return getJson<ProjectExecutionTrace>(
+    options,
+    projectPath(projectId, `/execution-trace${paginationQuery(filters)}`),
+    "project execution trace",
   );
 }
 

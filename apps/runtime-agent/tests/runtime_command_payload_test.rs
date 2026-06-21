@@ -233,15 +233,19 @@ fn parses_provision_payload_with_effective_capabilities() {
             "skill_id": "77777777-7777-4777-8777-777777777777",
             "skill_key": "database-troubleshooting",
             "revision_id": "88888888-8888-4888-8888-888888888888",
-            "files": ["skills/database-troubleshooting/SKILL.md"],
-            "content_hash": "sha256:database-troubleshooting"
+            "archive_object_ref": "s3://runtime-skills/tenant/database-troubleshooting.zip",
+            "archive_checksum_sha256": "sha256:database-troubleshooting",
+            "archive_size_bytes": 4096,
+            "archive_file_count": 3
         },
         {
             "skill_id": "99999999-9999-4999-8999-999999999999",
             "skill_key": "sql-review",
             "revision_id": null,
-            "files": [],
-            "content_hash": null
+            "archive_object_ref": "s3://runtime-skills/tenant/sql-review.zip",
+            "archive_checksum_sha256": "sha256:sql-review",
+            "archive_size_bytes": 2048,
+            "archive_file_count": 1
         }
     ]);
     payload["mcp_servers"] = json!([
@@ -267,6 +271,10 @@ fn parses_provision_payload_with_effective_capabilities() {
 
     assert_eq!(parsed.skills.len(), 2);
     assert_eq!(parsed.skills[0].skill_key, "database-troubleshooting");
+    assert_eq!(
+        parsed.skills[0].archive_object_ref,
+        "s3://runtime-skills/tenant/database-troubleshooting.zip"
+    );
     assert_eq!(parsed.skills[1].skill_key, "sql-review");
     assert_eq!(parsed.mcp_servers.len(), 1);
     assert_eq!(parsed.mcp_servers[0].server_key, "postgres-readonly");

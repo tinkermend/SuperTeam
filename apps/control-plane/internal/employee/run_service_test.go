@@ -1047,8 +1047,8 @@ func (f *fakeRunServiceRepository) UpsertProviderSession(context.Context, Upsert
 	return uuid.New(), nil
 }
 
-func (f *fakeRunServiceRepository) CreateProviderSessionEventIfAbsent(context.Context, CreateProviderSessionEventRecordRequest) error {
-	return nil
+func (f *fakeRunServiceRepository) CreateProviderSessionEventIfAbsent(context.Context, CreateProviderSessionEventRecordRequest) (uuid.UUID, error) {
+	return uuid.MustParse("00000000-0000-0000-0000-000000000701"), nil
 }
 
 func (f *fakeRunServiceRepository) CreateCommandReceipt(_ context.Context, req CreateRuntimeCommandReceiptRequest) error {

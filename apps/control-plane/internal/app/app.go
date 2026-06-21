@@ -103,6 +103,15 @@ func (a runtimeEventRecorderAdapter) RecordRuntimeEvent(ctx context.Context, req
 	})
 }
 
+type providerEventLedgerRecorder struct {
+	repository project.ProviderEventExecutionLedgerRepository
+}
+
+func (r providerEventLedgerRecorder) RecordProviderSessionEvent(ctx context.Context, req employee.ProviderSessionEventLedgerRecordRequest) error {
+	_, err := r.repository.CreateProviderSessionEventLedgerEvent(ctx, req.TenantID, req.DigitalEmployeeRunID, req.ProviderSessionEventID)
+	return err
+}
+
 type projectTaskRunStarterAdapter struct {
 	runService *employee.DigitalEmployeeRunService
 }
@@ -378,6 +387,11 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	if err != nil {
 		return nil, err
 	}
+	providerLedgerRepository, ok := projectRepository.(project.ProviderEventExecutionLedgerRepository)
+	if !ok {
+		return nil, errors.New("project repository does not support provider event ledger recording")
+	}
+	runWritebackService.WithExecutionLedgerRecorder(providerEventLedgerRecorder{repository: providerLedgerRepository})
 
 	teamLendingRepository := teamlending.NewPgRepository(q)
 

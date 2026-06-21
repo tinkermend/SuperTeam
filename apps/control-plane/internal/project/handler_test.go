@@ -424,6 +424,175 @@ func TestProjectHandlerListsRouteDecisionsAndResolvesDecision(t *testing.T) {
 	}
 }
 
+func TestProjectHandlerListsExecutionTrace(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	eventID := uuid.New()
+	nodeID := uuid.New()
+	teamID := uuid.New()
+	actor := uuid.New().String()
+	providerType := "codex"
+	providerSessionID := "session-123"
+	inputSummary := "Run project task"
+	outputSummary := "Task completed"
+	errorFamily := "provider"
+	errorCode := "E_PROVIDER"
+	errorMessage := "provider failed"
+	retryable := false
+	attemptRetryable := true
+	latestErrorFamily := "runtime"
+	failureFamily := "timeout"
+	startedAt := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	finishedAt := startedAt.Add(5 * time.Minute)
+	occurredAt := finishedAt.Add(-time.Minute)
+	createdAt := finishedAt
+	summaryID := uuid.New()
+	service := &handlerTestService{
+		executionTrace: &ProjectExecutionTrace{
+			ProjectID: projectID,
+			Summary: ProjectExecutionTraceSummary{
+				AttemptCount:             1,
+				FailedAttemptCount:       0,
+				HumanReviewRequiredCount: 0,
+				ArtifactRefCount:         1,
+				EvidenceRefCount:         1,
+				LatestErrorFamily:        &latestErrorFamily,
+			},
+			Attempts: []ProjectExecutionTraceAttempt{{
+				ProjectTaskID:     taskID,
+				AttemptID:         attemptID,
+				AttemptNo:         1,
+				Status:            string(ProjectTaskAttemptStatusSucceeded),
+				RuntimeNodeID:     &nodeID,
+				ProviderType:      &providerType,
+				ProviderSessionID: &providerSessionID,
+				StartedAt:         &startedAt,
+				FinishedAt:        &finishedAt,
+				FailureFamily:     &failureFamily,
+				Retryable:         &attemptRetryable,
+				Events: []ExecutionLedgerEvent{{
+					ID:                   eventID,
+					TenantID:             tenantID,
+					TeamID:               &teamID,
+					ProjectID:            projectID,
+					ProjectTaskID:        &taskID,
+					ProjectTaskAttemptID: &attemptID,
+					EventType:            ExecutionLedgerEventAttemptCompleted,
+					SourceType:           "project_task_attempt",
+					SourceID:             attemptID.String(),
+					ActorType:            "digital_employee",
+					ActorID:              &actor,
+					RuntimeNodeID:        &nodeID,
+					ProviderType:         &providerType,
+					ProviderSessionID:    &providerSessionID,
+					InputSummary:         &inputSummary,
+					OutputSummary:        &outputSummary,
+					ErrorFamily:          &errorFamily,
+					ErrorCode:            &errorCode,
+					ErrorMessage:         &errorMessage,
+					Retryable:            &retryable,
+					ArtifactRefs:         []any{"artifact-runtime-log"},
+					EvidenceRefs:         []any{"s3://bucket/e2e-report.md"},
+					Metadata:             map[string]any{"source": "runtime"},
+					OccurredAt:           occurredAt,
+					CreatedAt:            createdAt,
+				}},
+				Summary: &ProjectExecutionTraceAttemptSummary{
+					ExecutionSummaryID:  summaryID,
+					Conclusion:          "证据充分",
+					RequiresHumanReview: false,
+					ArtifactRefs:        []any{"artifact-runtime-log"},
+					EvidenceRefs:        []any{"s3://bucket/e2e-report.md"},
+					CreatedAt:           createdAt,
+				},
+			}},
+		},
+	}
+	handler := NewHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/execution-trace?project_task_id="+taskID.String()+"&attempt_id="+attemptID.String()+"&event_type=%20attempt.completed%20&error_family=%20provider%20&limit=7&offset=3", nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetExecutionTrace(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected execution trace 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if service.executionTraceReq.TenantID != tenantID || service.executionTraceReq.ProjectID != projectID || service.executionTraceReq.Limit != 7 || service.executionTraceReq.Offset != 3 {
+		t.Fatalf("unexpected execution trace request identity/page: %#v", service.executionTraceReq)
+	}
+	if service.executionTraceReq.ProjectTaskID == nil || *service.executionTraceReq.ProjectTaskID != taskID {
+		t.Fatalf("expected project task filter, got %#v", service.executionTraceReq.ProjectTaskID)
+	}
+	if service.executionTraceReq.ProjectTaskAttemptID == nil || *service.executionTraceReq.ProjectTaskAttemptID != attemptID {
+		t.Fatalf("expected attempt filter, got %#v", service.executionTraceReq.ProjectTaskAttemptID)
+	}
+	if service.executionTraceReq.EventType == nil || *service.executionTraceReq.EventType != ExecutionLedgerEventAttemptCompleted {
+		t.Fatalf("expected trimmed event type filter, got %#v", service.executionTraceReq.EventType)
+	}
+	if service.executionTraceReq.ErrorFamily == nil || *service.executionTraceReq.ErrorFamily != "provider" {
+		t.Fatalf("expected trimmed error family filter, got %#v", service.executionTraceReq.ErrorFamily)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode execution trace response: %v", err)
+	}
+	if body["project_id"] != projectID.String() {
+		t.Fatalf("unexpected project id in response: %#v", body)
+	}
+	summary, ok := body["summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected summary object, got %#v", body["summary"])
+	}
+	if summary["attempt_count"] != float64(1) || summary["artifact_ref_count"] != float64(1) || summary["latest_error_family"] != latestErrorFamily {
+		t.Fatalf("unexpected trace summary: %#v", summary)
+	}
+	attempts, ok := body["attempts"].([]any)
+	if !ok || len(attempts) != 1 {
+		t.Fatalf("expected one attempt, got %#v", body["attempts"])
+	}
+	attempt, ok := attempts[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected attempt object, got %#v", attempts[0])
+	}
+	if attempt["project_task_id"] != taskID.String() || attempt["attempt_id"] != attemptID.String() || attempt["status"] != string(ProjectTaskAttemptStatusSucceeded) {
+		t.Fatalf("unexpected attempt response: %#v", attempt)
+	}
+	if attempt["started_at"] != startedAt.Format(time.RFC3339) || attempt["finished_at"] != finishedAt.Format(time.RFC3339) {
+		t.Fatalf("unexpected attempt time response: %#v", attempt)
+	}
+	events, ok := attempt["events"].([]any)
+	if !ok || len(events) != 1 {
+		t.Fatalf("expected one ledger event, got %#v", attempt["events"])
+	}
+	event, ok := events[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected event object, got %#v", events[0])
+	}
+	if event["id"] != eventID.String() || event["event_type"] != ExecutionLedgerEventAttemptCompleted || event["project_task_attempt_id"] != attemptID.String() {
+		t.Fatalf("unexpected event response: %#v", event)
+	}
+	if event["occurred_at"] != occurredAt.Format(time.RFC3339) || event["created_at"] != createdAt.Format(time.RFC3339) {
+		t.Fatalf("unexpected event times: %#v", event)
+	}
+	artifactRefs, ok := event["artifact_refs"].([]any)
+	if !ok || len(artifactRefs) != 1 || artifactRefs[0] != "artifact-runtime-log" {
+		t.Fatalf("unexpected event artifact refs: %#v", event["artifact_refs"])
+	}
+	attemptSummary, ok := attempt["summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected attempt summary object, got %#v", attempt["summary"])
+	}
+	if attemptSummary["execution_summary_id"] != summaryID.String() || attemptSummary["requires_human_review"] != false {
+		t.Fatalf("unexpected attempt summary: %#v", attemptSummary)
+	}
+}
+
 func TestProjectHandlerGetsDemandLaunchDetail(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()
@@ -1116,6 +1285,8 @@ type handlerTestService struct {
 	taskLiveness           []ProjectTaskLiveness
 	taskLivenessTenantID   uuid.UUID
 	taskLivenessProjectID  uuid.UUID
+	executionTrace         *ProjectExecutionTrace
+	executionTraceReq      GetExecutionTraceRequest
 	startAttemptReq        StartProjectTaskAttemptRequest
 	renewAttemptLeaseReq   RenewProjectTaskAttemptLeaseRequest
 	completeAttemptReq     CompleteProjectTaskAttemptRequest
@@ -1284,6 +1455,14 @@ func (s *handlerTestService) ResolveDecision(ctx context.Context, req ResolveDec
 
 func (s *handlerTestService) ListExecutionSummaries(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ExecutionSummary, error) {
 	return nil, nil
+}
+
+func (s *handlerTestService) GetExecutionTrace(ctx context.Context, req GetExecutionTraceRequest) (*ProjectExecutionTrace, error) {
+	s.executionTraceReq = req
+	if s.executionTrace != nil {
+		return s.executionTrace, nil
+	}
+	return &ProjectExecutionTrace{ProjectID: req.ProjectID}, nil
 }
 
 func (s *handlerTestService) ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]TransferRequest, error) {

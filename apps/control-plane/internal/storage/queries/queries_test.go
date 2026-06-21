@@ -137,7 +137,29 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			return err
 		}
 		if userProjectTeamScopesMigrated {
-			return nil
+			executionLedgerMigrated, err := schemaHasTable(ctx, conn, "execution_ledger_events")
+			if err != nil {
+				return err
+			}
+			if executionLedgerMigrated {
+				createLedgerEventMigrated, err := schemaHasFunction(ctx, conn, "create_execution_ledger_event")
+				if err != nil {
+					return err
+				}
+				if !createLedgerEventMigrated {
+					files, err := migrationSQLFiles()
+					if err != nil {
+						return err
+					}
+					return applyMigrationFiles(ctx, conn, migrationFilesFrom(files, "030_execution_ledger_append_only_hardening.sql"))
+				}
+				return nil
+			}
+			files, err := migrationSQLFiles()
+			if err != nil {
+				return err
+			}
+			return applyMigrationFiles(ctx, conn, migrationFilesFrom(files, "029_execution_ledger_events.sql"))
 		}
 		files, err := migrationSQLFiles()
 		if err != nil {
@@ -259,11 +281,35 @@ SELECT EXISTS (
 	return exists, nil
 }
 
+func schemaHasFunction(ctx context.Context, conn *pgx.Conn, functionName string) (bool, error) {
+	const query = `
+SELECT EXISTS (
+	SELECT 1
+	FROM pg_proc p
+	JOIN pg_namespace n ON n.oid = p.pronamespace
+	WHERE n.nspname = current_schema()
+		AND p.proname = $1
+)
+`
+
+	var exists bool
+	if err := conn.QueryRow(ctx, query, functionName).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 // cleanupTestData 清理测试数据，避免测试之间相互影响
 func cleanupTestData(t *testing.T, db *pgxpool.Pool) {
 	ctx := context.Background()
 	_, err := db.Exec(ctx, `
 		TRUNCATE
+			execution_ledger_events,
+			project_task_attempts,
+			project_tasks,
+			project_events,
+			project_members,
+			projects,
 			runtime_events,
 			runtime_command_receipts,
 			provider_session_events,
@@ -419,6 +465,495 @@ func seedTestTeamConfigRevision(t *testing.T, db *pgxpool.Pool, tenantID, teamID
 	})
 	require.NoError(t, err)
 	return revision
+}
+
+func TestExecutionLedgerEventQueries(t *testing.T) {
+	db := newQueriesTestDB(t)
+	ctx := context.Background()
+	q := queries.New(db)
+
+	tenantID := seedTestTenant(t, db)
+	teamID := seedTestTeam(t, db, tenantID, "ledger-team", "执行账本团队")
+	ownerID := seedTestAuthUser(t, db, "ledger-owner")
+
+	project, err := q.CreateProject(ctx, queries.CreateProjectParams{
+		ID:               uuid.New(),
+		TenantID:         tenantID,
+		TeamID:           uuid.NullUUID{UUID: teamID, Valid: true},
+		Name:             "执行账本项目",
+		Description:      pgtype.Text{String: "execution ledger query test", Valid: true},
+		Goal:             pgtype.Text{String: "verify idempotent ledger events", Valid: true},
+		Status:           "active",
+		HumanOwnerUserID: ownerID,
+		ApprovalPolicy:   []byte(`{}`),
+		EvidencePolicy:   []byte(`{}`),
+	})
+	require.NoError(t, err)
+
+	task, err := q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
+		TenantID:              tenantID,
+		ProjectID:             project.ID,
+		Title:                 "执行账本任务",
+		Summary:               pgtype.Text{String: "write ledger event", Valid: true},
+		Status:                "queued",
+		DigitalEmployeeRunID:  uuid.NullUUID{UUID: uuid.New(), Valid: true},
+		RiskLevel:             pgtype.Text{String: "medium", Valid: true},
+		ExpectedOutputs:       []byte(`[]`),
+		InputRequirements:     []byte(`{}`),
+		HandoffContract:       []byte(`{}`),
+		PlannerMetadata:       []byte(`{}`),
+		RequiresHumanApproval: false,
+	})
+	require.NoError(t, err)
+
+	attemptID := uuid.New()
+	attempt, err := q.CreateProjectTaskAttempt(ctx, queries.CreateProjectTaskAttemptParams{
+		ID:                            attemptID,
+		TenantID:                      tenantID,
+		ProjectTaskID:                 task.ID,
+		AttemptNo:                     1,
+		Status:                        "running",
+		DigitalEmployeeRunID:          task.DigitalEmployeeRunID,
+		ExecutionContextPacket:        []byte(`{}`),
+		ExecutionContextPacketVersion: "v1",
+		LeaseToken:                    "ledger-query-test-lease",
+		LeaseExpiresAt:                pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		IdempotencyKey:                "project-task-attempt:ledger-query-test",
+	})
+	require.NoError(t, err)
+
+	eventParams := queries.CreateExecutionLedgerEventParams{
+		TenantID:             tenantID,
+		TeamID:               uuid.NullUUID{UUID: teamID, Valid: true},
+		ProjectID:            project.ID,
+		ProjectTaskID:        uuid.NullUUID{UUID: task.ID, Valid: true},
+		ProjectTaskAttemptID: uuid.NullUUID{UUID: attempt.ID, Valid: true},
+		EventType:            "attempt.started",
+		SourceType:           "project_task_attempt",
+		SourceID:             attempt.ID.String(),
+		ActorType:            "runtime_node",
+		ActorID:              pgtype.Text{String: "runtime-node-1", Valid: true},
+		InputSummary:         pgtype.Text{String: "start attempt", Valid: true},
+		OutputSummary:        pgtype.Text{String: "attempt accepted", Valid: true},
+		ArtifactRefs:         []byte(`[]`),
+		EvidenceRefs:         []byte(`[]`),
+		Metadata:             []byte(`{"test":"execution-ledger"}`),
+		OccurredAt:           pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		IdempotencyKey:       "project_task_attempt:" + attempt.ID.String() + ":attempt.started",
+	}
+
+	created, err := q.CreateExecutionLedgerEvent(ctx, eventParams)
+	require.NoError(t, err)
+	require.Equal(t, "attempt.started", created.EventType)
+
+	time.Sleep(20 * time.Millisecond)
+	eventParams.InputSummary = pgtype.Text{String: "duplicate should reuse original row", Valid: true}
+	duplicate, err := q.CreateExecutionLedgerEvent(ctx, eventParams)
+	require.NoError(t, err)
+	require.Equal(t, created.ID, duplicate.ID)
+	require.Equal(t, created.UpdatedAt.Time, duplicate.UpdatedAt.Time)
+
+	_, err = db.Exec(ctx, `
+		UPDATE execution_ledger_events
+		SET input_summary = input_summary
+		WHERE tenant_id = $1
+		  AND id = $2
+	`, tenantID, created.ID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "execution_ledger_events is append-only")
+
+	_, err = db.Exec(ctx, `
+		DELETE FROM execution_ledger_events
+		WHERE tenant_id = $1
+		  AND id = $2
+	`, tenantID, created.ID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "execution_ledger_events is append-only")
+
+	events, err := q.ListProjectExecutionLedgerEvents(ctx, queries.ListProjectExecutionLedgerEventsParams{
+		TenantID:  tenantID,
+		ProjectID: project.ID,
+		Offset:    0,
+		Limit:     10,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	require.Equal(t, created.ID, events[0].ID)
+	require.Equal(t, task.ID, events[0].ProjectTaskID.UUID)
+	require.Equal(t, attempt.ID, events[0].ProjectTaskAttemptID.UUID)
+
+	attempts, err := q.ListProjectTaskAttemptsForExecutionTrace(ctx, queries.ListProjectTaskAttemptsForExecutionTraceParams{
+		TenantID:  tenantID,
+		ProjectID: project.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, attempts, 1)
+	require.Equal(t, attempt.ID, attempts[0].ID)
+
+	providerRunID := uuid.New()
+	wrongTask, err := q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
+		TenantID:              tenantID,
+		ProjectID:             project.ID,
+		Title:                 "错误 Provider Session 任务",
+		Status:                "completed",
+		DigitalEmployeeRunID:  uuid.NullUUID{UUID: providerRunID, Valid: true},
+		ExpectedOutputs:       []byte(`[]`),
+		InputRequirements:     []byte(`{}`),
+		HandoffContract:       []byte(`{}`),
+		PlannerMetadata:       []byte(`{}`),
+		RequiresHumanApproval: false,
+	})
+	require.NoError(t, err)
+	correctTask, err := q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
+		TenantID:              tenantID,
+		ProjectID:             project.ID,
+		Title:                 "匹配 Provider Session 任务",
+		Status:                "completed",
+		DigitalEmployeeRunID:  uuid.NullUUID{UUID: providerRunID, Valid: true},
+		ExpectedOutputs:       []byte(`[]`),
+		InputRequirements:     []byte(`{}`),
+		HandoffContract:       []byte(`{}`),
+		PlannerMetadata:       []byte(`{}`),
+		RequiresHumanApproval: false,
+	})
+	require.NoError(t, err)
+
+	wrongAttempt, err := q.CreateProjectTaskAttempt(ctx, queries.CreateProjectTaskAttemptParams{
+		ID:                            uuid.New(),
+		TenantID:                      tenantID,
+		ProjectTaskID:                 wrongTask.ID,
+		AttemptNo:                     1,
+		Status:                        "succeeded",
+		DigitalEmployeeRunID:          uuid.NullUUID{UUID: providerRunID, Valid: true},
+		ExecutionContextPacket:        []byte(`{}`),
+		ExecutionContextPacketVersion: "v1",
+		LeaseToken:                    "wrong-provider-session-lease",
+		LeaseExpiresAt:                pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		IdempotencyKey:                "project-task-attempt:wrong-provider-session",
+	})
+	require.NoError(t, err)
+	correctAttempt, err := q.CreateProjectTaskAttempt(ctx, queries.CreateProjectTaskAttemptParams{
+		ID:                            uuid.New(),
+		TenantID:                      tenantID,
+		ProjectTaskID:                 correctTask.ID,
+		AttemptNo:                     1,
+		Status:                        "succeeded",
+		DigitalEmployeeRunID:          uuid.NullUUID{UUID: providerRunID, Valid: true},
+		ExecutionContextPacket:        []byte(`{}`),
+		ExecutionContextPacketVersion: "v1",
+		LeaseToken:                    "correct-provider-session-lease",
+		LeaseExpiresAt:                pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		IdempotencyKey:                "project-task-attempt:correct-provider-session",
+	})
+	require.NoError(t, err)
+
+	_, err = db.Exec(ctx, `
+		UPDATE project_task_attempts
+		SET provider_session_id = CASE
+			WHEN id = $1 THEN 'provider-session-other'
+			WHEN id = $2 THEN 'provider-session-match'
+			ELSE provider_session_id
+		END
+		WHERE tenant_id = $3
+		  AND id IN ($1, $2)
+	`, wrongAttempt.ID, correctAttempt.ID, tenantID)
+	require.NoError(t, err)
+
+	providerSessionID := uuid.New()
+	providerEventID := uuid.New()
+	digitalEmployeeID := uuid.New()
+	executionInstanceID := uuid.New()
+	runtimeNodeID := uuid.New()
+	_, err = db.Exec(ctx, `
+		INSERT INTO provider_sessions (
+			id,
+			tenant_id,
+			provider_session_id,
+			digital_employee_id,
+			execution_instance_id,
+			runtime_node_id,
+			provider_type,
+			status,
+			recoverable,
+			last_active_at
+		) VALUES ($1, $2, 'provider-session-match', $3, $4, $5, 'codex', 'running', true, NOW())
+	`, providerSessionID, tenantID, digitalEmployeeID, executionInstanceID, runtimeNodeID)
+	require.NoError(t, err)
+	_, err = db.Exec(ctx, `
+		INSERT INTO provider_session_events (
+			id,
+			tenant_id,
+			provider_session_id,
+			digital_employee_id,
+			execution_instance_id,
+			runtime_node_id,
+			provider_type,
+			event_type,
+			sequence_number,
+			payload,
+			command_id
+		) VALUES ($1, $2, $3, $4, $5, $6, 'codex', 'message_delta', 1, '{"summary":"provider finished"}'::jsonb, 'ledger-provider-event-command')
+	`, providerEventID, tenantID, providerSessionID, digitalEmployeeID, executionInstanceID, runtimeNodeID)
+	require.NoError(t, err)
+
+	providerLedgerEvent, err := q.CreateProviderSessionEventLedgerEvent(ctx, queries.CreateProviderSessionEventLedgerEventParams{
+		DigitalEmployeeRunID:   providerRunID,
+		TenantID:               tenantID,
+		ProviderSessionEventID: providerEventID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, correctTask.ID, providerLedgerEvent.ProjectTaskID.UUID)
+	require.Equal(t, correctAttempt.ID, providerLedgerEvent.ProjectTaskAttemptID.UUID)
+	require.Equal(t, "provider-session-match", providerLedgerEvent.ProviderSessionID.String)
+
+	time.Sleep(20 * time.Millisecond)
+	duplicateProviderLedgerEvent, err := q.CreateProviderSessionEventLedgerEvent(ctx, queries.CreateProviderSessionEventLedgerEventParams{
+		DigitalEmployeeRunID:   providerRunID,
+		TenantID:               tenantID,
+		ProviderSessionEventID: providerEventID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, providerLedgerEvent.ID, duplicateProviderLedgerEvent.ID)
+	require.Equal(t, providerLedgerEvent.UpdatedAt.Time, duplicateProviderLedgerEvent.UpdatedAt.Time)
+
+	earlyRunID := uuid.New()
+	earlyTask, err := q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
+		TenantID:              tenantID,
+		ProjectID:             project.ID,
+		Title:                 "早期 Provider Event 任务",
+		Status:                "running",
+		DigitalEmployeeRunID:  uuid.NullUUID{UUID: earlyRunID, Valid: true},
+		ExpectedOutputs:       []byte(`[]`),
+		InputRequirements:     []byte(`{}`),
+		HandoffContract:       []byte(`{}`),
+		PlannerMetadata:       []byte(`{}`),
+		RequiresHumanApproval: false,
+	})
+	require.NoError(t, err)
+	earlyAttempt, err := q.CreateProjectTaskAttempt(ctx, queries.CreateProjectTaskAttemptParams{
+		ID:                            uuid.New(),
+		TenantID:                      tenantID,
+		ProjectTaskID:                 earlyTask.ID,
+		AttemptNo:                     1,
+		Status:                        "running",
+		DigitalEmployeeRunID:          uuid.NullUUID{UUID: earlyRunID, Valid: true},
+		ExecutionContextPacket:        []byte(`{}`),
+		ExecutionContextPacketVersion: "v1",
+		LeaseToken:                    "early-provider-session-lease",
+		LeaseExpiresAt:                pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		IdempotencyKey:                "project-task-attempt:early-provider-session",
+	})
+	require.NoError(t, err)
+	require.False(t, earlyAttempt.ProviderSessionID.Valid)
+
+	earlyProviderSessionID := uuid.New()
+	earlyProviderEventID := uuid.New()
+	_, err = db.Exec(ctx, `
+		INSERT INTO provider_sessions (
+			id,
+			tenant_id,
+			provider_session_id,
+			digital_employee_id,
+			execution_instance_id,
+			runtime_node_id,
+			provider_type,
+			status,
+			recoverable,
+			last_active_at
+		) VALUES ($1, $2, 'provider-session-early', $3, $4, $5, 'codex', 'running', true, NOW())
+	`, earlyProviderSessionID, tenantID, uuid.New(), uuid.New(), uuid.New())
+	require.NoError(t, err)
+	_, err = db.Exec(ctx, `
+		INSERT INTO provider_session_events (
+			id,
+			tenant_id,
+			provider_session_id,
+			digital_employee_id,
+			execution_instance_id,
+			runtime_node_id,
+			provider_type,
+			event_type,
+			sequence_number,
+			payload,
+			command_id
+		) VALUES ($1, $2, $3, $4, $5, $6, 'codex', 'message_delta', 1, '{"summary":"provider event before terminal link"}'::jsonb, 'ledger-provider-early-command')
+	`, earlyProviderEventID, tenantID, earlyProviderSessionID, uuid.New(), uuid.New(), uuid.New())
+	require.NoError(t, err)
+
+	var earlyAttemptProviderSessionID pgtype.Text
+	err = db.QueryRow(ctx, `
+		SELECT provider_session_id
+		FROM project_task_attempts
+		WHERE tenant_id = $1
+		  AND id = $2
+	`, tenantID, earlyAttempt.ID).Scan(&earlyAttemptProviderSessionID)
+	require.NoError(t, err)
+	require.False(t, earlyAttemptProviderSessionID.Valid)
+
+	earlyProviderLedgerEvent, err := q.CreateProviderSessionEventLedgerEvent(ctx, queries.CreateProviderSessionEventLedgerEventParams{
+		DigitalEmployeeRunID:   earlyRunID,
+		TenantID:               tenantID,
+		ProviderSessionEventID: earlyProviderEventID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, earlyTask.ID, earlyProviderLedgerEvent.ProjectTaskID.UUID)
+	require.Equal(t, earlyAttempt.ID, earlyProviderLedgerEvent.ProjectTaskAttemptID.UUID)
+	require.Equal(t, "provider-session-early", earlyProviderLedgerEvent.ProviderSessionID.String)
+
+	noMatchProviderSessionID := uuid.New()
+	noMatchProviderEventID := uuid.New()
+	_, err = db.Exec(ctx, `
+		INSERT INTO provider_sessions (
+			id,
+			tenant_id,
+			provider_session_id,
+			digital_employee_id,
+			execution_instance_id,
+			runtime_node_id,
+			provider_type,
+			status,
+			recoverable,
+			last_active_at
+		) VALUES ($1, $2, 'provider-session-no-attempt', $3, $4, $5, 'codex', 'running', true, NOW())
+	`, noMatchProviderSessionID, tenantID, uuid.New(), uuid.New(), uuid.New())
+	require.NoError(t, err)
+	_, err = db.Exec(ctx, `
+		INSERT INTO provider_session_events (
+			id,
+			tenant_id,
+			provider_session_id,
+			digital_employee_id,
+			execution_instance_id,
+			runtime_node_id,
+			provider_type,
+			event_type,
+			sequence_number,
+			payload,
+			command_id
+		) VALUES ($1, $2, $3, $4, $5, $6, 'codex', 'message_delta', 1, '{"summary":"provider has no matching attempt"}'::jsonb, 'ledger-provider-no-match-command')
+	`, noMatchProviderEventID, tenantID, noMatchProviderSessionID, uuid.New(), uuid.New(), uuid.New())
+	require.NoError(t, err)
+
+	_, err = q.CreateProviderSessionEventLedgerEvent(ctx, queries.CreateProviderSessionEventLedgerEventParams{
+		DigitalEmployeeRunID:   providerRunID,
+		TenantID:               tenantID,
+		ProviderSessionEventID: noMatchProviderEventID,
+	})
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+
+	ambiguousRunID := uuid.New()
+	ambiguousTaskA, err := q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
+		TenantID:              tenantID,
+		ProjectID:             project.ID,
+		Title:                 "重复 Provider Session 任务 A",
+		Status:                "completed",
+		DigitalEmployeeRunID:  uuid.NullUUID{UUID: ambiguousRunID, Valid: true},
+		ExpectedOutputs:       []byte(`[]`),
+		InputRequirements:     []byte(`{}`),
+		HandoffContract:       []byte(`{}`),
+		PlannerMetadata:       []byte(`{}`),
+		RequiresHumanApproval: false,
+	})
+	require.NoError(t, err)
+	ambiguousTaskB, err := q.CreateProjectTask(ctx, queries.CreateProjectTaskParams{
+		TenantID:              tenantID,
+		ProjectID:             project.ID,
+		Title:                 "重复 Provider Session 任务 B",
+		Status:                "completed",
+		DigitalEmployeeRunID:  uuid.NullUUID{UUID: ambiguousRunID, Valid: true},
+		ExpectedOutputs:       []byte(`[]`),
+		InputRequirements:     []byte(`{}`),
+		HandoffContract:       []byte(`{}`),
+		PlannerMetadata:       []byte(`{}`),
+		RequiresHumanApproval: false,
+	})
+	require.NoError(t, err)
+	ambiguousAttemptA, err := q.CreateProjectTaskAttempt(ctx, queries.CreateProjectTaskAttemptParams{
+		ID:                            uuid.New(),
+		TenantID:                      tenantID,
+		ProjectTaskID:                 ambiguousTaskA.ID,
+		AttemptNo:                     1,
+		Status:                        "succeeded",
+		DigitalEmployeeRunID:          uuid.NullUUID{UUID: ambiguousRunID, Valid: true},
+		ExecutionContextPacket:        []byte(`{}`),
+		ExecutionContextPacketVersion: "v1",
+		LeaseToken:                    "ambiguous-provider-session-lease-a",
+		LeaseExpiresAt:                pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		IdempotencyKey:                "project-task-attempt:ambiguous-provider-session-a",
+	})
+	require.NoError(t, err)
+	ambiguousAttemptB, err := q.CreateProjectTaskAttempt(ctx, queries.CreateProjectTaskAttemptParams{
+		ID:                            uuid.New(),
+		TenantID:                      tenantID,
+		ProjectTaskID:                 ambiguousTaskB.ID,
+		AttemptNo:                     1,
+		Status:                        "succeeded",
+		DigitalEmployeeRunID:          uuid.NullUUID{UUID: ambiguousRunID, Valid: true},
+		ExecutionContextPacket:        []byte(`{}`),
+		ExecutionContextPacketVersion: "v1",
+		LeaseToken:                    "ambiguous-provider-session-lease-b",
+		LeaseExpiresAt:                pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		IdempotencyKey:                "project-task-attempt:ambiguous-provider-session-b",
+	})
+	require.NoError(t, err)
+	_, err = db.Exec(ctx, `
+		UPDATE project_task_attempts
+		SET provider_session_id = 'provider-session-ambiguous'
+		WHERE tenant_id = $1
+		  AND id IN ($2, $3)
+	`, tenantID, ambiguousAttemptA.ID, ambiguousAttemptB.ID)
+	require.NoError(t, err)
+
+	ambiguousProviderSessionID := uuid.New()
+	ambiguousProviderEventID := uuid.New()
+	_, err = db.Exec(ctx, `
+		INSERT INTO provider_sessions (
+			id,
+			tenant_id,
+			provider_session_id,
+			digital_employee_id,
+			execution_instance_id,
+			runtime_node_id,
+			provider_type,
+			status,
+			recoverable,
+			last_active_at
+		) VALUES ($1, $2, 'provider-session-ambiguous', $3, $4, $5, 'codex', 'running', true, NOW())
+	`, ambiguousProviderSessionID, tenantID, uuid.New(), uuid.New(), uuid.New())
+	require.NoError(t, err)
+	_, err = db.Exec(ctx, `
+		INSERT INTO provider_session_events (
+			id,
+			tenant_id,
+			provider_session_id,
+			digital_employee_id,
+			execution_instance_id,
+			runtime_node_id,
+			provider_type,
+			event_type,
+			sequence_number,
+			payload,
+			command_id
+		) VALUES ($1, $2, $3, $4, $5, $6, 'codex', 'message_delta', 1, '{"summary":"provider ambiguous attempt"}'::jsonb, 'ledger-provider-ambiguous-command')
+	`, ambiguousProviderEventID, tenantID, ambiguousProviderSessionID, uuid.New(), uuid.New(), uuid.New())
+	require.NoError(t, err)
+
+	_, err = q.CreateProviderSessionEventLedgerEvent(ctx, queries.CreateProviderSessionEventLedgerEventParams{
+		DigitalEmployeeRunID:   ambiguousRunID,
+		TenantID:               tenantID,
+		ProviderSessionEventID: ambiguousProviderEventID,
+	})
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+
+	var ambiguousLedgerCount int
+	err = db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM execution_ledger_events
+		WHERE tenant_id = $1
+		  AND idempotency_key = $2
+	`, tenantID, "provider_session_event:"+ambiguousProviderEventID.String()+":provider.event").Scan(&ambiguousLedgerCount)
+	require.NoError(t, err)
+	require.Zero(t, ambiguousLedgerCount)
 }
 
 func TestUserProjectTeamScopesQueriesReplaceAndList(t *testing.T) {

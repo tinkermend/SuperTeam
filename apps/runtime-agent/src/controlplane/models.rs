@@ -207,6 +207,16 @@ pub struct RuntimeCommandEventWriteback {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ProjectTaskStartWriteback {
+    pub project_task_id: String,
+    pub lease_token: String,
+    pub runtime_node_id: String,
+    pub idempotency_key: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub provider_session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ProjectTaskCompleteWriteback {
     pub project_task_id: String,
     pub lease_token: String,
