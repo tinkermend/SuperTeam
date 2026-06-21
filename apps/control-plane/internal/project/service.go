@@ -2652,7 +2652,9 @@ func validHumanWaitReason(reason string) bool {
 		HumanWaitReasonApprovalRequired,
 		HumanWaitReasonPermissionRequired,
 		HumanWaitReasonPlanInvalid,
-		HumanWaitReasonAcceptanceRequired:
+		HumanWaitReasonAcceptanceRequired,
+		HumanWaitReasonRuntimeRecovery,
+		HumanWaitReasonBudgetApproval:
 		return true
 	default:
 		return false
@@ -2701,6 +2703,10 @@ func projectTaskHumanWaitDecisionType(reason string) string {
 		return "project_task_plan_invalid"
 	case HumanWaitReasonAcceptanceRequired:
 		return "project_task_acceptance"
+	case HumanWaitReasonRuntimeRecovery:
+		return "project_task_runtime_recovery"
+	case HumanWaitReasonBudgetApproval:
+		return "project_task_budget_approval"
 	default:
 		return "project_task_human_wait"
 	}
