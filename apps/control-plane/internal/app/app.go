@@ -344,8 +344,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	runtimeCommands := runtimepkg.NewConnectionRegistry()
 
 	employeeRepository := employee.NewPgRepository(q, stores.Postgres)
-	skillRepository := skill.NewPgRepository(stores.Postgres)
+	skillRepository := skill.NewPgRepository(stores.Postgres, q)
 	skillService := skill.NewService(skillRepository, stores.ObjectStore)
+	runtimeService.SetRequiredToolsResolver(skillService)
 	employeeService, err := employee.NewServiceWithProvisioning(employeeRepository, runtimeCommands, skillService)
 	if err != nil {
 		return nil, err

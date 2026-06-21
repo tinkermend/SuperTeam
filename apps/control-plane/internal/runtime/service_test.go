@@ -25,6 +25,18 @@ type MockRepository struct {
 	mock.Mock
 }
 
+type heartbeatRequiredToolsResolver struct {
+	tools    []string
+	tenantID uuid.UUID
+	nodeID   string
+}
+
+func (r *heartbeatRequiredToolsResolver) ListRequiredToolsForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]string, error) {
+	r.tenantID = tenantID
+	r.nodeID = nodeID
+	return append([]string(nil), r.tools...), nil
+}
+
 func (m *MockRepository) CreateNode(ctx context.Context, params CreateNodeParams) (NodeRecord, error) {
 	args := m.Called(ctx, params)
 	return args.Get(0).(NodeRecord), args.Error(1)
@@ -249,11 +261,52 @@ func TestUpdateHeartbeat(t *testing.T) {
 		repo.On("UpdateHeartbeat", ctx, mock.AnythingOfType("UpdateHeartbeatParams")).Return(record, nil)
 		repo.On("UpdateLoad", ctx, mock.AnythingOfType("UpdateLoadParams")).Return(record, nil)
 
-		node, err := service.UpdateHeartbeat(ctx, req)
+		resp, err := service.UpdateHeartbeat(ctx, req)
 		assert.NoError(t, err)
-		assert.NotNil(t, node)
-		assert.Equal(t, req.NodeID, node.NodeID)
-		assert.Equal(t, req.CurrentLoad, node.CurrentLoad)
+		require.NotNil(t, resp)
+		assert.Equal(t, req.NodeID, resp.Node.NodeID)
+		assert.Equal(t, req.CurrentLoad, resp.Node.CurrentLoad)
+
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("includes required tools from resolver", func(t *testing.T) {
+		repo := new(MockRepository)
+		service, _ := NewService(repo)
+		resolver := &heartbeatRequiredToolsResolver{tools: []string{"jq", "gh"}}
+		service.SetRequiredToolsResolver(resolver)
+
+		req := UpdateHeartbeatRequest{
+			TenantID:    runtimeTestUUID(77),
+			NodeID:      "node-001",
+			CurrentLoad: 1,
+		}
+
+		providersJSON, _ := json.Marshal([]string{"codex"})
+		record := NodeRecord{
+			ID:                 runtimeTestUUID(1),
+			TenantID:           req.TenantID,
+			NodeID:             req.NodeID,
+			Name:               "Test Node",
+			SupportedProviders: providersJSON,
+			MaxSlots:           4,
+			CurrentLoad:        req.CurrentLoad,
+			Status:             string(NodeStatusOnline),
+			Metadata:           []byte("{}"),
+			LastHeartbeatAt:    timestamptzFromTime(time.Now()),
+			CreatedAt:          timestamptzFromTime(time.Now()),
+			UpdatedAt:          timestamptzFromTime(time.Now()),
+		}
+
+		repo.On("UpdateHeartbeat", ctx, mock.AnythingOfType("UpdateHeartbeatParams")).Return(record, nil)
+		repo.On("UpdateLoad", ctx, mock.AnythingOfType("UpdateLoadParams")).Return(record, nil)
+
+		resp, err := service.UpdateHeartbeat(ctx, req)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, []string{"gh", "jq"}, resp.RequiredTools)
+		assert.Equal(t, req.TenantID, resolver.tenantID)
+		assert.Equal(t, req.NodeID, resolver.nodeID)
 
 		repo.AssertExpectations(t)
 	})

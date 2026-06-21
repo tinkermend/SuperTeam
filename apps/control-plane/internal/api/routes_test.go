@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1189,6 +1190,36 @@ func TestRuntimeRoutesUseAuthenticatedNodeIdentity(t *testing.T) {
 	}
 }
 
+func TestRuntimeRoutesHeartbeatIncludesRequiredTools(t *testing.T) {
+	service := &routeRuntimeService{requiredTools: []string{"gh", "jq"}}
+	server := NewServer(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		&routeRuntimeAuthService{},
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/heartbeat", strings.NewReader(`{"current_load":2}`))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Node-ID", "node-1")
+	rr := httptest.NewRecorder()
+
+	server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected heartbeat to succeed, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		RequiredTools []string `json:"required_tools"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode heartbeat response: %v", err)
+	}
+	if got, want := body.RequiredTools, []string{"gh", "jq"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected required_tools %v, got %v", want, got)
+	}
+}
+
 func TestRuntimeRoutesAcceptRuntimeSessionTokenIdentity(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServerWithRuntimeSessionAuth(
@@ -1634,6 +1665,7 @@ func TestRuntimeRegisterRejectsMismatchedAuthenticatedNodeIdentity(t *testing.T)
 type routeRuntimeService struct {
 	enrollHelloReq          runtime.EnrollHelloRequest
 	heartbeatReq            runtime.UpdateHeartbeatRequest
+	requiredTools           []string
 	validatedSessionToken   string
 	renewedSessionToken     string
 	upsertedCapabilities    []runtime.RuntimeCapabilityInput
@@ -1666,9 +1698,12 @@ func (s *routeRuntimeService) RegisterNode(ctx context.Context, req runtime.Regi
 	return &runtime.Node{NodeID: req.NodeID, Name: req.Name, SupportedProviders: req.SupportedProviders, MaxSlots: req.MaxSlots}, nil
 }
 
-func (s *routeRuntimeService) UpdateHeartbeat(ctx context.Context, req runtime.UpdateHeartbeatRequest) (*runtime.Node, error) {
+func (s *routeRuntimeService) UpdateHeartbeat(ctx context.Context, req runtime.UpdateHeartbeatRequest) (*runtime.HeartbeatResponse, error) {
 	s.heartbeatReq = req
-	return &runtime.Node{NodeID: req.NodeID, CurrentLoad: req.CurrentLoad}, nil
+	return &runtime.HeartbeatResponse{
+		Node:          &runtime.Node{NodeID: req.NodeID, CurrentLoad: req.CurrentLoad},
+		RequiredTools: append([]string(nil), s.requiredTools...),
+	}, nil
 }
 
 func (s *routeRuntimeService) GetNode(ctx context.Context, nodeID string) (*runtime.Node, error) {

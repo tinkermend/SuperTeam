@@ -3713,6 +3713,10 @@ components:
           enum:
             - online
             - offline
+        required_tools:
+          type: array
+          items:
+            type: string
         command_channel_connected:
           type: boolean
         metadata:

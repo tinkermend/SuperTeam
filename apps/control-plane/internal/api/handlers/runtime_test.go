@@ -557,8 +557,8 @@ func (s *claimRuntimeService) RegisterNode(ctx context.Context, req runtime.Regi
 	return nil, nil
 }
 
-func (s *claimRuntimeService) UpdateHeartbeat(ctx context.Context, req runtime.UpdateHeartbeatRequest) (*runtime.Node, error) {
-	return nil, nil
+func (s *claimRuntimeService) UpdateHeartbeat(ctx context.Context, req runtime.UpdateHeartbeatRequest) (*runtime.HeartbeatResponse, error) {
+	return &runtime.HeartbeatResponse{Node: &runtime.Node{NodeID: req.NodeID}, RequiredTools: []string{}}, nil
 }
 
 func (s *claimRuntimeService) GetNode(ctx context.Context, nodeID string) (*runtime.Node, error) {

@@ -140,7 +140,7 @@ JOIN runtime_nodes rn
  AND rn.archived_at IS NULL
 WHERE rc.tenant_id = $1::uuid
   AND rn.node_id = $2::varchar
-  AND rc.capability_type = 'provider'
+  AND rc.capability_type IN ('provider', 'tool')
   AND rc.archived_at IS NULL
 ORDER BY rc.provider_type ASC, rc.capability_key ASC
 `

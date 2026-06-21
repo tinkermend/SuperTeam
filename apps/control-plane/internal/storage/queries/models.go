@@ -311,6 +311,25 @@ type DigitalEmployeeEffectiveConfig struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type DigitalEmployeeEnvironmentVariable struct {
+	ID                uuid.UUID          `json:"id"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	TeamID            uuid.UUID          `json:"team_id"`
+	DigitalEmployeeID uuid.UUID          `json:"digital_employee_id"`
+	Name              string             `json:"name"`
+	EncryptedValue    string             `json:"encrypted_value"`
+	EncryptionKeyID   string             `json:"encryption_key_id"`
+	ValueFingerprint  string             `json:"value_fingerprint"`
+	Sensitive         bool               `json:"sensitive"`
+	Status            string             `json:"status"`
+	CreatedBy         uuid.NullUUID      `json:"created_by"`
+	UpdatedBy         uuid.NullUUID      `json:"updated_by"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	Metadata          []byte             `json:"metadata"`
+}
+
 // 数字员工唯一执行实例表
 type DigitalEmployeeExecutionInstance struct {
 	// 数字员工执行实例主键 UUID

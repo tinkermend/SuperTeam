@@ -10,14 +10,23 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
 type PgRepository struct {
 	db *pgxpool.Pool
+	q  *queries.Queries
 }
 
-func NewPgRepository(db *pgxpool.Pool) Repository {
-	return &PgRepository{db: db}
+func NewPgRepository(db *pgxpool.Pool, querySources ...*queries.Queries) Repository {
+	var q *queries.Queries
+	if len(querySources) > 0 {
+		q = querySources[0]
+	}
+	if q == nil && db != nil {
+		q = queries.New(db)
+	}
+	return &PgRepository{db: db, q: q}
 }
 
 const skillSelectColumns = `s.id, s.tenant_id, s.slug, s.name, s.description, s.version, s.source, s.risk_level, s.icon_key, s.color_token, s.tags, COALESCE(s.metadata, '{}'::jsonb) AS metadata, s.archive_object_ref, s.archive_filename, s.archive_size_bytes, s.archive_checksum_sha256, s.archive_file_count, COALESCE(s.created_by::text, '') AS created_by, COALESCE(au.display_name, au.username, '') AS created_by_name, s.created_at, s.updated_at`

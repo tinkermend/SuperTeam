@@ -1515,6 +1515,160 @@ func TestRuntimeEventsOverviewQueries(t *testing.T) {
 	assert.Equal(t, int64(1), onlineNodes)
 }
 
+func TestListRuntimeCapabilitiesForNodeIncludesToolCapabilities(t *testing.T) {
+	if testQueries == nil {
+		t.Skip("query integration tests require TEST_DATABASE_URL")
+	}
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+	tenantID := seedTestTenant(t, testDB)
+	now := time.Now().UTC()
+
+	node, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "cap-tool-node",
+		Name:               "cap tool node",
+		SupportedProviders: []byte(`["codex"]`),
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{}`),
+		LastHeartbeatAt:    pgtype.Timestamptz{Time: now, Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `UPDATE runtime_nodes SET tenant_id = $1 WHERE id = $2`, tenantID, node.ID)
+	require.NoError(t, err)
+
+	for _, capability := range []struct {
+		capabilityType string
+		capabilityKey  string
+		providerType   string
+	}{
+		{capabilityType: "provider", capabilityKey: "provider:codex", providerType: "codex"},
+		{capabilityType: "tool", capabilityKey: "tool:gh", providerType: "gh"},
+	} {
+		_, err = testQueries.UpsertRuntimeCapability(ctx, queries.UpsertRuntimeCapabilityParams{
+			TenantID:         tenantID,
+			RuntimeNodeID:    node.ID,
+			CapabilityType:   capability.capabilityType,
+			CapabilityKey:    capability.capabilityKey,
+			ProviderType:     capability.providerType,
+			Available:        true,
+			Capacity:         []byte(`{}`),
+			Labels:           []byte(`{}`),
+			Status:           "available",
+			Details:          []byte(`{}`),
+			HealthStatus:     "healthy",
+			Metadata:         []byte(`{}`),
+			LastSeenAt:       pgtype.Timestamptz{Time: now, Valid: true},
+			ProviderVersion:  pgtype.Text{},
+			BinaryPath:       pgtype.Text{},
+			WorkspaceBaseDir: pgtype.Text{},
+		})
+		require.NoError(t, err)
+	}
+
+	capabilities, err := testQueries.ListRuntimeCapabilitiesForNode(ctx, queries.ListRuntimeCapabilitiesForNodeParams{
+		TenantID: tenantID,
+		NodeID:   "cap-tool-node",
+	})
+	require.NoError(t, err)
+	var capabilityTypes []string
+	for _, capability := range capabilities {
+		capabilityTypes = append(capabilityTypes, capability.CapabilityType+":"+capability.CapabilityKey)
+	}
+	assert.Contains(t, capabilityTypes, "provider:provider:codex")
+	assert.Contains(t, capabilityTypes, "tool:tool:gh")
+}
+
+func TestListRequiredToolsForNodeReturnsMountedSkillTools(t *testing.T) {
+	if testQueries == nil {
+		t.Skip("query integration tests require TEST_DATABASE_URL")
+	}
+	ctx := context.Background()
+	cleanupTestData(t, testDB)
+	tenantID := seedTestTenant(t, testDB)
+	teamID := seedTestTeam(t, testDB, tenantID, "cli-tools", "CLI Tools")
+	otherTeamID := seedTestTeam(t, testDB, tenantID, "other-tools", "Other Tools")
+	ownerID := seedTestAuthUser(t, testDB, "tool-owner")
+	employeeID := seedTestDigitalEmployee(t, testDB, tenantID, teamID, ownerID, "Mounted Employee")
+	noDepsEmployeeID := seedTestDigitalEmployee(t, testDB, tenantID, teamID, ownerID, "No Deps Employee")
+	otherNodeEmployeeID := seedTestDigitalEmployee(t, testDB, tenantID, otherTeamID, ownerID, "Other Node Employee")
+	now := time.Now().UTC()
+
+	targetNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "required-tools-node",
+		Name:               "required tools node",
+		SupportedProviders: []byte(`["codex"]`),
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{}`),
+		LastHeartbeatAt:    pgtype.Timestamptz{Time: now, Valid: true},
+	})
+	require.NoError(t, err)
+	otherNode, err := testQueries.CreateRuntimeNode(ctx, queries.CreateRuntimeNodeParams{
+		NodeID:             "other-required-tools-node",
+		Name:               "other required tools node",
+		SupportedProviders: []byte(`["codex"]`),
+		MaxSlots:           2,
+		CurrentLoad:        0,
+		Status:             "online",
+		Metadata:           []byte(`{}`),
+		LastHeartbeatAt:    pgtype.Timestamptz{Time: now, Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `UPDATE runtime_nodes SET tenant_id = $1 WHERE id IN ($2, $3)`, tenantID, targetNode.ID, otherNode.ID)
+	require.NoError(t, err)
+
+	insertExecutionInstance := func(employeeID, nodeID uuid.UUID, status string) {
+		t.Helper()
+		_, err := testDB.Exec(ctx, `
+			INSERT INTO digital_employee_execution_instances (
+				tenant_id, digital_employee_id, runtime_node_id, provider_type, agent_home_dir, status
+			) VALUES ($1, $2, $3, 'codex', '/tmp/agent-home', $4)
+		`, tenantID, employeeID, nodeID, status)
+		require.NoError(t, err)
+	}
+	insertExecutionInstance(employeeID, targetNode.ID, "ready")
+	insertExecutionInstance(noDepsEmployeeID, targetNode.ID, "active")
+	insertExecutionInstance(otherNodeEmployeeID, otherNode.ID, "ready")
+
+	insertSkill := func(slug, metadata string) uuid.UUID {
+		t.Helper()
+		skillID := uuid.New()
+		_, err := testDB.Exec(ctx, `
+			INSERT INTO skills (
+				id, tenant_id, slug, name, description, metadata,
+				archive_object_ref, archive_filename, archive_size_bytes, archive_checksum_sha256, archive_file_count
+			) VALUES ($1, $2, $3, $3, '', $4::jsonb, 's3://skills/' || $3, $3 || '.zip', 1, repeat('a', 64), 1)
+		`, skillID, tenantID, slug, metadata)
+		require.NoError(t, err)
+		return skillID
+	}
+	agentSkillID := insertSkill("agent-cli", `{"runtime_dependencies":{"tools":["jq","gh","jq"]}}`)
+	teamSkillID := insertSkill("team-cli", `{"runtime_dependencies":{"tools":["make"]}}`)
+	noDepsSkillID := insertSkill("no-deps", `{}`)
+	otherNodeSkillID := insertSkill("other-node-cli", `{"runtime_dependencies":{"tools":["helm"]}}`)
+
+	_, err = testDB.Exec(ctx, `
+		INSERT INTO skill_agent_bindings (tenant_id, skill_id, digital_employee_id, status)
+		VALUES ($1, $2, $3, 'enabled'), ($1, $4, $5, 'enabled'), ($1, $6, $7, 'enabled')
+	`, tenantID, agentSkillID, employeeID, noDepsSkillID, noDepsEmployeeID, otherNodeSkillID, otherNodeEmployeeID)
+	require.NoError(t, err)
+	_, err = testDB.Exec(ctx, `
+		INSERT INTO skill_team_bindings (tenant_id, skill_id, team_id)
+		VALUES ($1, $2, $3)
+	`, tenantID, teamSkillID, teamID)
+	require.NoError(t, err)
+
+	tools, err := testQueries.ListRequiredToolsForNode(ctx, queries.ListRequiredToolsForNodeParams{
+		TenantID: tenantID,
+		NodeID:   "required-tools-node",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"gh", "jq", "make"}, tools)
+}
+
 func TestListTenantTeamSummariesReturnsGovernanceCounts(t *testing.T) {
 	ctx := context.Background()
 	cleanupTestData(t, testDB)

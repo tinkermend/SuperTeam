@@ -32,6 +32,10 @@ type Repository interface {
 	IsSkillBoundToEmployeeTeam(ctx context.Context, req BindEmployeeSkillRequest) (bool, error)
 }
 
+type RequiredToolsRepository interface {
+	ListRequiredToolsForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]string, error)
+}
+
 type ObjectStore interface {
 	PutObject(ctx context.Context, key string, body io.Reader, options storage.PutObjectOptions) (storage.ObjectRef, error)
 	DeleteObject(ctx context.Context, key string) error
@@ -296,6 +300,23 @@ func (s *Service) ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmp
 		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
 	}
 	return s.repository.ListSkillsForRuntime(ctx, tenantID, digitalEmployeeID)
+}
+
+func (s *Service) ListRequiredToolsForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]string, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
+	}
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if strings.TrimSpace(nodeID) == "" {
+		return nil, fmt.Errorf("%w: node_id is required", ErrInvalidInput)
+	}
+	repository, ok := s.repository.(RequiredToolsRepository)
+	if !ok {
+		return nil, fmt.Errorf("%w: required tools repository is not configured", ErrInvalidInput)
+	}
+	return repository.ListRequiredToolsForNode(ctx, tenantID, nodeID)
 }
 
 func extractSkillMarkdown(reader *zip.Reader, rootPrefix string) (string, int, error) {

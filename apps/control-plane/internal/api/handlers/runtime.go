@@ -23,7 +23,7 @@ const runtimeCommandDrivenProviderRunProtocol = "provider-run/v1"
 
 type RuntimeService interface {
 	RegisterNode(ctx context.Context, req runtime.RegisterNodeRequest) (*runtime.Node, error)
-	UpdateHeartbeat(ctx context.Context, req runtime.UpdateHeartbeatRequest) (*runtime.Node, error)
+	UpdateHeartbeat(ctx context.Context, req runtime.UpdateHeartbeatRequest) (*runtime.HeartbeatResponse, error)
 	GetNode(ctx context.Context, nodeID string) (*runtime.Node, error)
 	ListNodes(ctx context.Context, filter runtime.ListNodesFilter) ([]*runtime.Node, error)
 	EnrollHello(ctx context.Context, req runtime.EnrollHelloRequest) (*runtime.EnrollHelloResponse, error)
@@ -484,7 +484,8 @@ func (h *RuntimeHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	node, err := h.runtimeService.UpdateHeartbeat(r.Context(), runtime.UpdateHeartbeatRequest{
+	resp, err := h.runtimeService.UpdateHeartbeat(r.Context(), runtime.UpdateHeartbeatRequest{
+		TenantID:    middleware.GetTenantID(r.Context()),
 		NodeID:      nodeID,
 		CurrentLoad: req.CurrentLoad,
 	})
@@ -494,7 +495,7 @@ func (h *RuntimeHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(newRuntimeNodeResponse(node))
+	json.NewEncoder(w).Encode(newRuntimeHeartbeatResponse(resp))
 }
 
 func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {

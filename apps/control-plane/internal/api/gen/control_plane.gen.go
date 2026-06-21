@@ -3398,6 +3398,7 @@ type RuntimeNode struct {
 	Metadata                *map[string]interface{} `json:"metadata,omitempty"`
 	Name                    string                  `json:"name"`
 	NodeId                  string                  `json:"node_id"`
+	RequiredTools           *[]string               `json:"required_tools,omitempty"`
 	RuntimeNodeId           *openapi_types.UUID     `json:"runtime_node_id,omitempty"`
 	Status                  RuntimeNodeStatus       `json:"status"`
 	SupportedProviders      []string                `json:"supported_providers"`
