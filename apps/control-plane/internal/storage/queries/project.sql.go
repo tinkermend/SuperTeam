@@ -2167,6 +2167,54 @@ func (q *Queries) GetProjectDecisionRequest(ctx context.Context, arg GetProjectD
 	return i, err
 }
 
+const GetProjectDecisionRequestByApprovalAndTask = `-- name: GetProjectDecisionRequestByApprovalAndTask :one
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id FROM project_decision_requests
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND approval_request_id = $3::uuid
+  AND project_task_id = $4::uuid
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type GetProjectDecisionRequestByApprovalAndTaskParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	ProjectID         uuid.UUID `json:"project_id"`
+	ApprovalRequestID uuid.UUID `json:"approval_request_id"`
+	ProjectTaskID     uuid.UUID `json:"project_task_id"`
+}
+
+func (q *Queries) GetProjectDecisionRequestByApprovalAndTask(ctx context.Context, arg GetProjectDecisionRequestByApprovalAndTaskParams) (ProjectDecisionRequest, error) {
+	row := q.db.QueryRow(ctx, GetProjectDecisionRequestByApprovalAndTask,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ApprovalRequestID,
+		arg.ProjectTaskID,
+	)
+	var i ProjectDecisionRequest
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.ApprovalRequestID,
+		&i.CoordinationJobID,
+		&i.ProjectTaskID,
+		&i.TargetUserID,
+		&i.DecisionType,
+		&i.TitleSnapshot,
+		&i.SummarySnapshot,
+		&i.RiskLevelSnapshot,
+		&i.StatusSnapshot,
+		&i.CreatedEventID,
+		&i.ResolvedEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ResolvedAt,
+		&i.DispatchGateResultID,
+	)
+	return i, err
+}
+
 const GetProjectDemand = `-- name: GetProjectDemand :one
 SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at FROM project_demands
 WHERE tenant_id = $1::uuid

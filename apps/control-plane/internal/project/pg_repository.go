@@ -3769,6 +3769,22 @@ func (r *PgRepository) GetDecisionRequest(ctx context.Context, tenantID, project
 	return decisionRequestFromRecord(row)
 }
 
+func (r *PgRepository) GetDecisionRequestByApprovalAndTask(ctx context.Context, tenantID, projectID, approvalRequestID, projectTaskID uuid.UUID) (DecisionRequest, error) {
+	row, err := r.q.GetProjectDecisionRequestByApprovalAndTask(ctx, queries.GetProjectDecisionRequestByApprovalAndTaskParams{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: approvalRequestID,
+		ProjectTaskID:     projectTaskID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DecisionRequest{}, ErrProjectNotFound
+		}
+		return DecisionRequest{}, err
+	}
+	return decisionRequestFromRecord(row)
+}
+
 func (r *PgRepository) ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error) {
 	row, err := r.q.ResolveProjectDecisionRequest(ctx, queries.ResolveProjectDecisionRequestParams{
 		TenantID:        req.TenantID,

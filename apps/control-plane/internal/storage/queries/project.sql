@@ -1455,6 +1455,15 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid
   AND id = sqlc.arg('id')::uuid;
 
+-- name: GetProjectDecisionRequestByApprovalAndTask :one
+SELECT * FROM project_decision_requests
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND approval_request_id = sqlc.arg('approval_request_id')::uuid
+  AND project_task_id = sqlc.arg('project_task_id')::uuid
+ORDER BY created_at DESC
+LIMIT 1;
+
 -- name: ResolveProjectDecisionRequest :one
 UPDATE project_decision_requests
 SET status_snapshot = sqlc.arg('status_snapshot')::varchar,

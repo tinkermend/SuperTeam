@@ -308,10 +308,13 @@ func TestProjectStoreRunPreDispatchGateReusesDecisionAfterLinkFailure(t *testing
 	require.Len(t, repo.decisionRequests, 1)
 	require.Nil(t, repo.decisionRequests[0].DispatchGateResultID)
 
+	repo.listDecisionErr = errors.New("ListDecisionRequests should not be used for gate decision retry lookup")
 	decision, err := store.RunPreDispatchGate(context.Background(), input)
 	require.NoError(t, err)
 
 	require.Equal(t, project.PreDispatchGateStatusWaitingHuman, decision.Gate.Status)
+	require.Zero(t, repo.listDecisionCalls)
+	require.GreaterOrEqual(t, repo.directDecisionCalls, 2)
 	require.Len(t, approvals.requests, 1)
 	require.Len(t, approvals.records, 1)
 	require.Len(t, repo.decisionRequests, 1)
@@ -701,19 +704,22 @@ func TestProjectStoreRunPreDispatchGateDoesNotCreateRunOnRetryLater(t *testing.T
 type preDispatchGateRepositoryFake struct {
 	project.Repository
 
-	projectRecord      project.Project
-	task               project.ProjectTask
-	currentAttempt     *project.ProjectTaskAttempt
-	dependencies       []project.ProjectTaskDependency
-	dependencyTasks    map[uuid.UUID]project.ProjectTask
-	members            []project.ProjectMember
-	events             []project.ProjectEvent
-	gates              []project.PreDispatchGateResult
-	decisionRequests   []project.DecisionRequest
-	operations         []string
-	createDecisionErr  error
-	linkDecisionErr    error
-	lastMoveWaitingReq *project.MoveProjectTaskToWaitingHumanForPreDispatchGateRequest
+	projectRecord       project.Project
+	task                project.ProjectTask
+	currentAttempt      *project.ProjectTaskAttempt
+	dependencies        []project.ProjectTaskDependency
+	dependencyTasks     map[uuid.UUID]project.ProjectTask
+	members             []project.ProjectMember
+	events              []project.ProjectEvent
+	gates               []project.PreDispatchGateResult
+	decisionRequests    []project.DecisionRequest
+	operations          []string
+	createDecisionErr   error
+	linkDecisionErr     error
+	listDecisionErr     error
+	listDecisionCalls   int
+	directDecisionCalls int
+	lastMoveWaitingReq  *project.MoveProjectTaskToWaitingHumanForPreDispatchGateRequest
 }
 
 func (r *preDispatchGateRepositoryFake) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (project.Project, error) {
@@ -864,6 +870,20 @@ func (r *preDispatchGateRepositoryFake) GetDecisionRequest(ctx context.Context, 
 	return project.DecisionRequest{}, project.ErrProjectNotFound
 }
 
+func (r *preDispatchGateRepositoryFake) GetDecisionRequestByApprovalAndTask(ctx context.Context, tenantID, projectID, approvalRequestID, projectTaskID uuid.UUID) (project.DecisionRequest, error) {
+	r.directDecisionCalls++
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID != tenantID || decision.ProjectID != projectID || decision.ApprovalRequestID != approvalRequestID {
+			continue
+		}
+		if decision.ProjectTaskID == nil || *decision.ProjectTaskID != projectTaskID {
+			continue
+		}
+		return decision, nil
+	}
+	return project.DecisionRequest{}, project.ErrProjectNotFound
+}
+
 func (r *preDispatchGateRepositoryFake) LinkPreDispatchGateDecisionRequest(ctx context.Context, req project.LinkPreDispatchGateDecisionRequest) (project.PreDispatchGateResult, error) {
 	if r.linkDecisionErr != nil {
 		err := r.linkDecisionErr
@@ -934,6 +954,10 @@ func (r *preDispatchGateRepositoryFake) CreateDecisionRequest(ctx context.Contex
 }
 
 func (r *preDispatchGateRepositoryFake) ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]project.DecisionRequest, error) {
+	r.listDecisionCalls++
+	if r.listDecisionErr != nil {
+		return nil, r.listDecisionErr
+	}
 	matches := make([]project.DecisionRequest, 0)
 	for _, decision := range r.decisionRequests {
 		if decision.TenantID == tenantID && decision.ProjectID == projectID {

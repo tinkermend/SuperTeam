@@ -174,6 +174,7 @@ type Querier interface {
 	GetProjectConfigRevision(ctx context.Context, arg GetProjectConfigRevisionParams) (ProjectConfigRevision, error)
 	GetProjectCoordinationJobByTrigger(ctx context.Context, arg GetProjectCoordinationJobByTriggerParams) (ProjectCoordinationJob, error)
 	GetProjectDecisionRequest(ctx context.Context, arg GetProjectDecisionRequestParams) (ProjectDecisionRequest, error)
+	GetProjectDecisionRequestByApprovalAndTask(ctx context.Context, arg GetProjectDecisionRequestByApprovalAndTaskParams) (ProjectDecisionRequest, error)
 	GetProjectDemand(ctx context.Context, arg GetProjectDemandParams) (ProjectDemand, error)
 	GetProjectEvent(ctx context.Context, arg GetProjectEventParams) (ProjectEvent, error)
 	GetProjectEventByTypeAndActor(ctx context.Context, arg GetProjectEventByTypeAndActorParams) (ProjectEvent, error)

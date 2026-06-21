@@ -36,6 +36,10 @@ CREATE TABLE project_task_dispatch_gate_results (
 CREATE UNIQUE INDEX uq_project_task_dispatch_gate_results_key
     ON project_task_dispatch_gate_results(tenant_id, project_task_id, idempotency_key);
 
+CREATE UNIQUE INDEX uq_approval_requests_dispatch_gate_pending
+    ON approval_requests(tenant_id, resource_id)
+    WHERE resource_type = 'project_task_dispatch_gate' AND status = 'pending';
+
 -- Required target for the composite FKs added below from project_task_attempts and
 -- project_tasks. PostgreSQL requires the referenced column set to be backed by a unique
 -- constraint or unique index; the primary key on (id) alone is not sufficient for a

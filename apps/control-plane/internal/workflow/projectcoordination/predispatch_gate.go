@@ -25,6 +25,10 @@ var (
 
 const preDispatchGateApprovalResourceType = "project_task_dispatch_gate"
 
+type gateApprovalDecisionRequestFinder interface {
+	GetDecisionRequestByApprovalAndTask(ctx context.Context, tenantID, projectID, approvalRequestID, projectTaskID uuid.UUID) (project.DecisionRequest, error)
+}
+
 func (s *ProjectStore) RunPreDispatchGate(ctx context.Context, input DispatchProjectTaskInput) (PreDispatchGateDecision, error) {
 	if s.repository == nil {
 		return PreDispatchGateDecision{}, ErrActivityStoreRequired
@@ -369,28 +373,18 @@ func (s *ProjectStore) findOrCreateGateApprovalRequest(ctx context.Context, inpu
 }
 
 func (s *ProjectStore) findGateApprovalDecisionRequest(ctx context.Context, input DispatchProjectTaskInput, gate project.PreDispatchGateResult, approvalRequestID uuid.UUID) (project.DecisionRequest, error) {
-	const pageSize int32 = 100
-	for offset := int32(0); ; offset += pageSize {
-		decisions, err := s.repository.ListDecisionRequests(ctx, input.TenantID, input.ProjectID, pageSize, offset)
-		if err != nil {
-			return project.DecisionRequest{}, err
-		}
-		for _, decision := range decisions {
-			if decision.ApprovalRequestID != approvalRequestID {
-				continue
-			}
-			if decision.ProjectTaskID == nil || *decision.ProjectTaskID != input.TaskID {
-				continue
-			}
-			if decision.DispatchGateResultID != nil && *decision.DispatchGateResultID != gate.ID {
-				continue
-			}
-			return decision, nil
-		}
-		if int32(len(decisions)) < pageSize {
-			return project.DecisionRequest{}, project.ErrProjectNotFound
-		}
+	finder, ok := s.repository.(gateApprovalDecisionRequestFinder)
+	if !ok {
+		return project.DecisionRequest{}, project.ErrProjectNotFound
 	}
+	decision, err := finder.GetDecisionRequestByApprovalAndTask(ctx, input.TenantID, input.ProjectID, approvalRequestID, input.TaskID)
+	if err != nil {
+		return project.DecisionRequest{}, err
+	}
+	if decision.DispatchGateResultID != nil && *decision.DispatchGateResultID != gate.ID {
+		return project.DecisionRequest{}, project.ErrProjectNotFound
+	}
+	return decision, nil
 }
 
 func validateGateDecisionTask(input DispatchProjectTaskInput, decision project.DecisionRequest) error {
