@@ -35,6 +35,11 @@ type Repository interface {
 	CreateRouteDecision(ctx context.Context, req CreateRouteDecisionRequest) (RouteDecision, error)
 	ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error)
 	ListDemandLaunchRouteDecisions(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]RouteDecision, error)
+	CreatePlanRevision(ctx context.Context, req CreatePlanRevisionRequest) (PlanRevision, error)
+	GetPlanRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (PlanRevision, error)
+	ListPlanRevisions(ctx context.Context, req ListPlanRevisionsRequest) ([]PlanRevision, error)
+	AcceptPlanRevision(ctx context.Context, req AcceptPlanRevisionRequest) (PlanRevision, error)
+	RejectPlanRevision(ctx context.Context, req RejectPlanRevisionRequest) (PlanRevision, error)
 	CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error)
 	CreateProjectTaskGraph(ctx context.Context, req CreateProjectTaskGraphRequest) (CreateProjectTaskGraphResult, error)
 	ListProjectTaskDependencies(ctx context.Context, tenantID, projectID uuid.UUID, dependentTaskIDs []uuid.UUID) ([]ProjectTaskDependency, error)
@@ -167,6 +172,50 @@ type CreateRouteDecisionRequest struct {
 	BudgetEstimate              map[string]any
 	RequiresHumanReview         bool
 	CreatedEventID              *uuid.UUID
+}
+
+type CreatePlanRevisionRequest struct {
+	TenantID               uuid.UUID
+	TeamID                 *uuid.UUID
+	ProjectID              uuid.UUID
+	DemandID               uuid.UUID
+	CoordinationJobID      *uuid.UUID
+	RouteDecisionID        *uuid.UUID
+	Status                 string
+	Payload                map[string]any
+	PlannerProvider        *string
+	PlannerModel           *string
+	PlannerInputHash       *string
+	PlanFingerprint        string
+	ValidationErrors       []string
+	ValidationWarnings     []string
+	ReviewRequired         bool
+	ReviewReason           *string
+	SupersedeOpenRevisions bool
+	SupersedeReason        *string
+}
+
+type ListPlanRevisionsRequest struct {
+	TenantID  uuid.UUID
+	ProjectID uuid.UUID
+	DemandID  *uuid.UUID
+	Limit     int32
+	Offset    int32
+}
+
+type AcceptPlanRevisionRequest struct {
+	TenantID   uuid.UUID
+	ProjectID  uuid.UUID
+	RevisionID uuid.UUID
+	AcceptedBy *uuid.UUID
+}
+
+type RejectPlanRevisionRequest struct {
+	TenantID        uuid.UUID
+	ProjectID       uuid.UUID
+	RevisionID      uuid.UUID
+	RejectedBy      *uuid.UUID
+	RejectionReason *string
 }
 
 type CreateProjectTaskRequest struct {

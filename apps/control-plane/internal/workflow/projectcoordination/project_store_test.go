@@ -481,177 +481,102 @@ func TestProjectStorePersistRouteDecisionIsIdempotentForSameJob(t *testing.T) {
 	require.Equal(t, jobID.String(), createdEvents[0].ActorID)
 }
 
-func TestProjectStoreCreateProjectTasksCreatesOneTaskPerPlannedTaskWithGraphMetadata(t *testing.T) {
+func TestProjectStorePersistsPendingPlanRevisionWithoutCreatingTasks(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
 	demandID := uuid.New()
 	jobID := uuid.New()
-	routeDecisionID := uuid.New()
-	firstEmployeeID := uuid.New()
-	secondEmployeeID := uuid.New()
-	stageZero := int32(0)
-	stageOne := int32(1)
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
 	repo := &projectStoreMemoryRepository{}
+	repo.projectRecord = project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID}
 	store := NewProjectStore(repo)
-	plannerMetadata := map[string]any{"planner": "heuristic"}
 
-	results, err := store.CreateProjectTasks(context.Background(), CreateProjectTasksInput{
+	result, err := store.PersistPlanRevision(context.Background(), PersistPlanRevisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DemandID:          demandID,
 		CoordinationJobID: jobID,
-		RouteDecisionID:   routeDecisionID,
+		RouteDecisionID:   routeID,
 		Decision: RouteDecisionPlan{
-			Reason:          "创建图任务",
-			PlannerMetadata: plannerMetadata,
+			Reason:              "需要人工复核计划",
+			RequiresHumanReview: true,
 			Tasks: []PlannedTask{
 				{
-					Key:                         "investigate",
-					Title:                       "调查问题",
-					Summary:                     "整理日志",
-					SelectedEmployeeID:          firstEmployeeID,
-					EmployeeSelectionReason:     "具备 execution 能力",
-					RequiredCapabilities:        []string{"execution"},
-					MatchedCapabilities:         []string{"execution"},
-					SelectionScore:              80,
-					VerificationRequirements:    []string{"写回 project task attempt 结果"},
-					PlanningProfileSnapshotHash: "profile-hash-for-test",
-					TaskKind:                    "investigation",
-					StageIndex:                  &stageZero,
-					RiskLevel:                   "medium",
-					RequiresHumanApproval:       true,
-					ExpectedOutputs:             []string{"execution_summary", "evidence_refs"},
-					InputRequirements:           map[string]any{"scope": "logs"},
-					HandoffContract:             map[string]any{"format": "markdown"},
-				},
-				{
-					Key:                "repair",
-					Title:              "修复问题",
-					Summary:            "实施补丁",
-					SelectedEmployeeID: secondEmployeeID,
-					TaskKind:           "implementation",
-					StageIndex:         &stageOne,
-					RiskLevel:          "high",
-					ExpectedOutputs:    []string{"recommended_next_action"},
-					InputRequirements:  map[string]any{"scope": "patch"},
-					HandoffContract:    map[string]any{"format": "diff"},
-					BlockedByKeys:      []string{"investigate"},
+					Key:                     "inspect",
+					Title:                   "检查",
+					Summary:                 "检查输入",
+					TaskKind:                "analysis",
+					SelectedEmployeeID:      employeeID,
+					EmployeeSelectionReason: "具备分析能力",
+					RequiredCapabilities:    []string{"codebase.analysis"},
+					MatchedCapabilities:     []string{"codebase.analysis"},
+					ExpectedOutputs:         []string{"结论"},
+					HandoffContract:         map[string]any{"acceptance_criteria": []any{"结论可复核"}},
 				},
 			},
 		},
 	})
-	if err != nil {
-		t.Fatalf("create project tasks: %v", err)
-	}
-	if len(results) != 2 || len(repo.decomposeAcceptedPlanRevisionRequests) != 1 || len(repo.projectTaskGraphRequests) != 0 || len(repo.projectTaskRequests) != 0 {
-		t.Fatalf("expected accepted plan decomposition, results=%#v decomposeRequests=%#v graphRequests=%#v flatRequests=%#v", results, repo.decomposeAcceptedPlanRevisionRequests, repo.projectTaskGraphRequests, repo.projectTaskRequests)
-	}
-	decomposeReq := repo.decomposeAcceptedPlanRevisionRequests[0]
-	if decomposeReq.TenantID != tenantID || decomposeReq.ProjectID != projectID || decomposeReq.DemandID != demandID || decomposeReq.CoordinationJobID != jobID || decomposeReq.RouteDecisionID != routeDecisionID {
-		t.Fatalf("unexpected decompose request identity: %#v", decomposeReq)
-	}
-	require.Equal(t, routeDecisionID, decomposeReq.AcceptedPlanRevisionID)
-	require.Equal(t, "project-plan-decomposition:"+tenantID.String()+":"+projectID.String()+":"+demandID.String()+":"+routeDecisionID.String(), decomposeReq.DecompositionClaimKey)
-	if len(decomposeReq.Tasks) != 2 {
-		t.Fatalf("expected two graph tasks, got %#v", decomposeReq.Tasks)
-	}
 
-	firstTask := decomposeReq.Tasks[0]
-	if firstTask.Title != "调查问题" || firstTask.Summary != "整理日志" || firstTask.Status != "planned" {
-		t.Fatalf("unexpected first task title/summary: %#v", firstTask)
-	}
-	if firstTask.AssignedDigitalEmployeeID != firstEmployeeID {
-		t.Fatalf("unexpected first task assignee: %#v", firstTask.AssignedDigitalEmployeeID)
-	}
-	if firstTask.Key != "investigate" || firstTask.TaskKind != "investigation" {
-		t.Fatalf("expected graph task identity fields, got %#v", firstTask)
-	}
-	if firstTask.StageIndex == nil || *firstTask.StageIndex != stageZero {
-		t.Fatalf("expected stage index, got %#v", firstTask.StageIndex)
-	}
-	if firstTask.RiskLevel != "medium" || !firstTask.RequiresHumanApproval {
-		t.Fatalf("unexpected risk/approval fields: %#v", firstTask)
-	}
-	assertAnyStrings(t, firstTask.ExpectedOutputs, []string{"execution_summary", "evidence_refs"})
-	if firstTask.InputRequirements["scope"] != "logs" || firstTask.HandoffContract["format"] != "markdown" || firstTask.PlannerMetadata["planner"] != "heuristic" ||
-		firstTask.PlannerMetadata["accepted_plan_revision_id"] != routeDecisionID.String() ||
-		firstTask.PlannerMetadata["decomposition_claim_key"] != decomposeReq.DecompositionClaimKey {
-		t.Fatalf("expected graph metadata on first task, got %#v", firstTask)
-	}
-	selection, ok := firstTask.PlannerMetadata["employee_selection"].(map[string]any)
-	require.True(t, ok, "expected employee_selection metadata, got %#v", firstTask.PlannerMetadata)
-	require.Equal(t, firstEmployeeID.String(), selection["selected_employee_id"])
-	require.Equal(t, "具备 execution 能力", selection["employee_selection_reason"])
-	require.Equal(t, []any{"execution"}, selection["required_capabilities"])
-	require.Equal(t, []any{"execution"}, selection["matched_capabilities"])
-	require.Equal(t, []any{}, selection["missing_capabilities"])
-	require.Equal(t, 80, selection["selection_score"])
-	require.Equal(t, []any{"写回 project task attempt 结果"}, selection["verification_requirements"])
-	require.Equal(t, "profile-hash-for-test", selection["profile_snapshot_hash"])
-	require.Equal(t, map[string]any{"planner": "heuristic"}, plannerMetadata)
-
-	secondTask := decomposeReq.Tasks[1]
-	if secondTask.Key != "repair" || secondTask.Status != "blocked" || secondTask.RequiresHumanApproval {
-		t.Fatalf("unexpected second task fields: %#v", secondTask)
-	}
-	if !reflect.DeepEqual(secondTask.BlockedByKeys, []string{"investigate"}) {
-		t.Fatalf("expected second task to be blocked by key, got %#v", secondTask.BlockedByKeys)
-	}
+	require.NoError(t, err)
+	require.Equal(t, project.PlanRevisionStatusPendingReview, result.Status)
+	require.NotEqual(t, uuid.Nil, result.ID)
+	require.Empty(t, repo.decomposeAcceptedPlanRevisionRequests)
+	require.Len(t, repo.planRevisions, 1)
 }
 
-func TestProjectStoreCreateProjectTasksReplaysAcceptedPlanRevision(t *testing.T) {
+func TestProjectStoreDecomposesOnlyAcceptedPlanRevision(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
 	demandID := uuid.New()
 	jobID := uuid.New()
-	routeDecisionID := uuid.New()
+	routeID := uuid.New()
+	revisionID := uuid.New()
 	employeeID := uuid.New()
 	repo := &projectStoreMemoryRepository{}
+	repo.planRevisions = append(repo.planRevisions, project.PlanRevision{
+		ID:              revisionID,
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		DemandID:        demandID,
+		Status:          project.PlanRevisionStatusAccepted,
+		Payload:         map[string]any{"summary": "accepted"},
+		PlanFingerprint: "fingerprint",
+	})
 	store := NewProjectStore(repo)
-	input := CreateProjectTasksInput{
+
+	tasks, err := store.DecomposeAcceptedPlanRevision(context.Background(), DecomposeAcceptedPlanRevisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
 		DemandID:          demandID,
 		CoordinationJobID: jobID,
-		RouteDecisionID:   routeDecisionID,
-		Decision: RouteDecisionPlan{
-			PlannerMetadata: map[string]any{"planner": "heuristic"},
-			Tasks: []PlannedTask{
+		RouteDecisionID:   routeID,
+		PlanRevisionID:    revisionID,
+		PlanFingerprint:   "fingerprint",
+		Payload: PlanRevisionPayload{
+			Summary: "accepted",
+			Tasks: []PlanRevisionTask{
 				{
-					Key:                "investigate",
-					Title:              "调查问题",
-					Summary:            "整理日志",
-					SelectedEmployeeID: employeeID,
-					TaskKind:           "investigation",
-				},
-				{
-					Key:                "repair",
-					Title:              "修复问题",
-					Summary:            "实施补丁",
-					SelectedEmployeeID: employeeID,
-					TaskKind:           "implementation",
-					BlockedByKeys:      []string{"investigate"},
+					PlannedTaskKey:          "inspect",
+					Title:                   "检查",
+					Objective:               "检查输入",
+					TaskType:                "analysis",
+					SelectedEmployeeID:      employeeID.String(),
+					EmployeeSelectionReason: "具备分析能力",
+					ExpectedOutputs:         []string{"结论"},
+					AcceptanceCriteria:      []string{"结论可复核"},
 				},
 			},
+			FinalSummaryContract: PlanRevisionFinalSummaryContract{RequiredSections: []string{"conclusion", "evidence", "risks", "next_steps"}},
 		},
-	}
+	})
 
-	first, err := store.CreateProjectTasks(context.Background(), input)
 	require.NoError(t, err)
-	second, err := store.CreateProjectTasks(context.Background(), input)
-	require.NoError(t, err)
-
-	require.Equal(t, first, second)
-	require.Len(t, repo.decomposeAcceptedPlanRevisionRequests, 2)
-	require.Empty(t, repo.projectTaskGraphRequests)
-	require.Len(t, repo.tasks, 2)
-	require.Len(t, repo.taskDependencies, 1)
-	require.Empty(t, repo.events)
-	for _, req := range repo.decomposeAcceptedPlanRevisionRequests {
-		for _, task := range req.Tasks {
-			require.NotContains(t, task.PlannerMetadata, "employee_selection")
-		}
-	}
+	require.Len(t, tasks, 1)
+	require.Len(t, repo.decomposeAcceptedPlanRevisionRequests, 1)
+	require.Equal(t, revisionID, repo.decomposeAcceptedPlanRevisionRequests[0].AcceptedPlanRevisionID)
+	require.Equal(t, "fingerprint", repo.decomposeAcceptedPlanRevisionRequests[0].PlanFingerprint)
 }
 
 func TestProjectStoreListDispatchableTasksFiltersBlockedTasksAndUnresolvedBlockers(t *testing.T) {
@@ -737,130 +662,6 @@ func TestProjectStoreResolveReadyDownstreamUpdatesOnlyUnblockedDependents(t *tes
 	require.Equal(t, []projectTaskStatusUpdateRecord{
 		{TenantID: tenantID, TaskID: readyDownstreamID, Status: "planned", CurrentStatuses: []string{"blocked"}},
 	}, repo.statusUpdates)
-}
-
-func TestProjectStoreRequestRouteDecisionReviewCreatesApprovalAndDecisionProjection(t *testing.T) {
-	tenantID := uuid.New()
-	projectID := uuid.New()
-	ownerID := uuid.New()
-	jobID := uuid.New()
-	demandID := uuid.New()
-	routeID := uuid.New()
-	taskID := uuid.New()
-	employeeID := uuid.New()
-	approvalID := uuid.New()
-	repo := &projectStoreMemoryRepository{
-		projectRecord: project.Project{
-			ID:               projectID,
-			TenantID:         tenantID,
-			HumanOwnerUserID: ownerID,
-		},
-		demand: project.ProjectDemand{
-			ID:        demandID,
-			TenantID:  tenantID,
-			ProjectID: projectID,
-			Title:     "需要人工确认",
-		},
-		approvalID: approvalID,
-	}
-	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
-	inbox := &projectStoreDecisionInboxProjector{}
-	store := NewProjectStoreWithApprovalsAndInbox(repo, approvals, inbox)
-
-	result, err := store.RequestRouteDecisionReview(context.Background(), RequestRouteDecisionReviewInput{
-		TenantID:          tenantID,
-		ProjectID:         projectID,
-		CoordinationJobID: jobID,
-		DemandID:          demandID,
-		RouteDecisionID:   routeID,
-		Decision: RouteDecisionPlan{
-			Reason: "高风险需求需要负责人确认",
-			Tasks: []PlannedTask{{
-				Key:                "review",
-				Title:              "复核风险",
-				Summary:            "确认高风险需求",
-				SelectedEmployeeID: employeeID,
-				ExpectedOutputs:    []string{"execution_summary"},
-				InputRequirements:  map[string]any{},
-				HandoffContract:    map[string]any{},
-			}},
-		},
-		ProjectTaskIDs:      []uuid.UUID{taskID},
-		RouteCreatedEventID: uuid.New(),
-	})
-	if err != nil {
-		t.Fatalf("request route review: %v", err)
-	}
-	if result.ID == uuid.Nil {
-		t.Fatal("expected decision request id")
-	}
-	if approvals.last.TargetUserID != ownerID || approvals.last.ResourceID != routeID || approvals.last.DecisionType != "route_review" {
-		t.Fatalf("unexpected approval request: %#v", approvals.last)
-	}
-	if approvals.last.ContextPayload["project_id"] != projectID.String() {
-		t.Fatalf("expected project context payload, got %#v", approvals.last.ContextPayload)
-	}
-	assertPayloadStrings(t, approvals.last.ContextPayload["selected_digital_employee_ids"], []string{employeeID.String()})
-	if len(repo.events) != 1 || repo.events[0].EventType != project.ProjectEventDecisionRequested {
-		t.Fatalf("expected decision requested event, got %#v", repo.events)
-	}
-	if len(repo.decisionRequests) != 1 {
-		t.Fatalf("expected project decision projection, got %d", len(repo.decisionRequests))
-	}
-	decision := repo.decisionRequests[0]
-	if decision.ApprovalRequestID != approvalID || decision.TargetUserID != ownerID || decision.StatusSnapshot != "pending" {
-		t.Fatalf("unexpected decision projection: %#v", decision)
-	}
-	if len(inbox.upserts) != 1 ||
-		inbox.upserts[0].ID != decision.ID ||
-		inbox.upserts[0].ProjectID != projectID ||
-		inbox.upserts[0].TargetUserID != ownerID ||
-		inbox.upserts[0].TitleSnapshot != "确认项目路由决策" ||
-		inbox.upserts[0].StatusSnapshot != "pending" ||
-		inbox.upserts[0].ApprovalRequestID != approvalID {
-		t.Fatalf("expected inbox decision projection, got %#v", inbox.upserts)
-	}
-
-	projectionErr := errors.New("inbox unavailable")
-	failingRepo := &projectStoreMemoryRepository{
-		projectRecord: project.Project{
-			ID:               projectID,
-			TenantID:         tenantID,
-			HumanOwnerUserID: ownerID,
-		},
-		demand: project.ProjectDemand{
-			ID:        demandID,
-			TenantID:  tenantID,
-			ProjectID: projectID,
-			Title:     "需要人工确认",
-		},
-		approvalID: approvalID,
-	}
-	failingInbox := &projectStoreDecisionInboxProjector{upsertErr: projectionErr}
-	failingStore := NewProjectStoreWithApprovalsAndInbox(failingRepo, approvals, failingInbox)
-	if _, err := failingStore.RequestRouteDecisionReview(context.Background(), RequestRouteDecisionReviewInput{
-		TenantID:          tenantID,
-		ProjectID:         projectID,
-		CoordinationJobID: jobID,
-		DemandID:          demandID,
-		RouteDecisionID:   routeID,
-		Decision: RouteDecisionPlan{
-			Reason: "高风险需求需要负责人确认",
-			Tasks: []PlannedTask{{
-				Key:                "review",
-				Title:              "复核风险",
-				Summary:            "确认高风险需求",
-				SelectedEmployeeID: employeeID,
-				ExpectedOutputs:    []string{"execution_summary"},
-				InputRequirements:  map[string]any{},
-				HandoffContract:    map[string]any{},
-			}},
-		},
-		ProjectTaskIDs:      []uuid.UUID{taskID},
-		RouteCreatedEventID: uuid.New(),
-	}); !errors.Is(err, projectionErr) {
-		t.Fatalf("expected inbox projector error, got %v", err)
-	}
 }
 
 func TestProjectStoreRequestProjectAcceptanceReviewTransitionsAndIsIdempotent(t *testing.T) {
@@ -992,65 +793,6 @@ func TestProjectStoreApplyProjectAcceptanceDecisionAcceptArchivesRejectReopens(t
 		require.Len(t, repo.acceptanceRecords, 1)
 		require.Equal(t, "rejected", repo.acceptanceRecords[0].Status)
 	})
-}
-
-func TestProjectStoreRequestRouteDecisionReviewTargetsDemandReviewerPreference(t *testing.T) {
-	tenantID := uuid.New()
-	projectID := uuid.New()
-	ownerID := uuid.New()
-	reviewerID := uuid.New()
-	jobID := uuid.New()
-	demandID := uuid.New()
-	routeID := uuid.New()
-	approvalID := uuid.New()
-	repo := &projectStoreMemoryRepository{
-		projectRecord: project.Project{
-			ID:               projectID,
-			TenantID:         tenantID,
-			HumanOwnerUserID: ownerID,
-		},
-		demand: project.ProjectDemand{
-			ID:        demandID,
-			TenantID:  tenantID,
-			ProjectID: projectID,
-			Title:     "需要指定审核人确认",
-			ReviewerPreference: &project.ReviewerPreference{
-				ReviewerUserID:   reviewerID,
-				SelectionReason:  project.ReviewerSelectionUserSelected,
-				ProjectRole:      project.ProjectRoleReviewer,
-				ResolvedFromRule: false,
-			},
-		},
-		approvalID: approvalID,
-	}
-	approvals := &projectStoreApprovalCreator{approvalID: approvalID}
-	store := NewProjectStoreWithApprovals(repo, approvals)
-
-	_, err := store.RequestRouteDecisionReview(context.Background(), RequestRouteDecisionReviewInput{
-		TenantID:          tenantID,
-		ProjectID:         projectID,
-		CoordinationJobID: jobID,
-		DemandID:          demandID,
-		RouteDecisionID:   routeID,
-		Decision: RouteDecisionPlan{
-			Reason:              "风险动作需要指定审核人确认",
-			RequiresHumanReview: true,
-		},
-		RouteCreatedEventID: uuid.New(),
-	})
-	if err != nil {
-		t.Fatalf("request route review: %v", err)
-	}
-
-	if approvals.last.TargetUserID != reviewerID {
-		t.Fatalf("expected approval target reviewer, got %#v", approvals.last)
-	}
-	if len(repo.decisionRequests) != 1 || repo.decisionRequests[0].TargetUserID != reviewerID {
-		t.Fatalf("expected decision request target reviewer, got %#v", repo.decisionRequests)
-	}
-	if len(repo.events) != 1 || repo.events[0].Payload["target_user_id"] != reviewerID.String() {
-		t.Fatalf("expected target user event payload, got %#v", repo.events)
-	}
 }
 
 func TestProjectStoreHoldDownstreamForFailureBlocksRecursiveDownstreamAndCreatesDecision(t *testing.T) {
@@ -2255,6 +1997,7 @@ type projectStoreMemoryRepository struct {
 	events                                []project.ProjectEvent
 	coordinationJobs                      []project.CoordinationJob
 	routeDecisions                        []project.RouteDecision
+	planRevisions                         []project.PlanRevision
 	taskDependencies                      []project.ProjectTaskDependency
 	statusUpdates                         []projectTaskStatusUpdateRecord
 	routeDecisionRequests                 []project.CreateRouteDecisionRequest
@@ -2437,6 +2180,104 @@ func (r *projectStoreMemoryRepository) GetRouteDecisionByCoordinationJob(ctx con
 	return project.RouteDecision{}, project.ErrProjectNotFound
 }
 
+func (r *projectStoreMemoryRepository) CreatePlanRevision(ctx context.Context, req project.CreatePlanRevisionRequest) (project.PlanRevision, error) {
+	revisionNumber := int32(1)
+	for _, revision := range r.planRevisions {
+		if revision.TenantID == req.TenantID && revision.ProjectID == req.ProjectID && revision.DemandID == req.DemandID && revision.RevisionNumber >= revisionNumber {
+			revisionNumber = revision.RevisionNumber + 1
+		}
+	}
+	revision := project.PlanRevision{
+		ID:                 uuid.New(),
+		TenantID:           req.TenantID,
+		TeamID:             req.TeamID,
+		ProjectID:          req.ProjectID,
+		DemandID:           req.DemandID,
+		CoordinationJobID:  req.CoordinationJobID,
+		RouteDecisionID:    req.RouteDecisionID,
+		RevisionNumber:     revisionNumber,
+		Status:             req.Status,
+		Payload:            cloneAnyMap(req.Payload),
+		PlannerProvider:    req.PlannerProvider,
+		PlannerModel:       req.PlannerModel,
+		PlannerInputHash:   req.PlannerInputHash,
+		PlanFingerprint:    req.PlanFingerprint,
+		ValidationErrors:   append([]string(nil), req.ValidationErrors...),
+		ValidationWarnings: append([]string(nil), req.ValidationWarnings...),
+		ReviewRequired:     req.ReviewRequired,
+		ReviewReason:       req.ReviewReason,
+		CreatedAt:          time.Now().UTC(),
+		UpdatedAt:          time.Now().UTC(),
+	}
+	r.planRevisions = append(r.planRevisions, revision)
+	if req.SupersedeOpenRevisions {
+		for index := range r.planRevisions {
+			if r.planRevisions[index].ID == revision.ID ||
+				r.planRevisions[index].TenantID != req.TenantID ||
+				r.planRevisions[index].ProjectID != req.ProjectID ||
+				r.planRevisions[index].DemandID != req.DemandID ||
+				!project.IsMutablePlanRevisionStatus(r.planRevisions[index].Status) {
+				continue
+			}
+			r.planRevisions[index].Status = project.PlanRevisionStatusSuperseded
+			r.planRevisions[index].SupersededByRevisionID = &revision.ID
+		}
+	}
+	return revision, nil
+}
+
+func (r *projectStoreMemoryRepository) GetPlanRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (project.PlanRevision, error) {
+	for _, revision := range r.planRevisions {
+		if revision.TenantID == tenantID && revision.ProjectID == projectID && revision.ID == revisionID {
+			return revision, nil
+		}
+	}
+	return project.PlanRevision{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) ListPlanRevisions(ctx context.Context, req project.ListPlanRevisionsRequest) ([]project.PlanRevision, error) {
+	revisions := make([]project.PlanRevision, 0, len(r.planRevisions))
+	for _, revision := range r.planRevisions {
+		if revision.TenantID != req.TenantID || revision.ProjectID != req.ProjectID {
+			continue
+		}
+		if req.DemandID != nil && revision.DemandID != *req.DemandID {
+			continue
+		}
+		revisions = append(revisions, revision)
+	}
+	return revisions, nil
+}
+
+func (r *projectStoreMemoryRepository) AcceptPlanRevision(ctx context.Context, req project.AcceptPlanRevisionRequest) (project.PlanRevision, error) {
+	for index, revision := range r.planRevisions {
+		if revision.TenantID == req.TenantID && revision.ProjectID == req.ProjectID && revision.ID == req.RevisionID {
+			revision.Status = project.PlanRevisionStatusAccepted
+			revision.AcceptedBy = req.AcceptedBy
+			now := time.Now().UTC()
+			revision.AcceptedAt = &now
+			r.planRevisions[index] = revision
+			return revision, nil
+		}
+	}
+	return project.PlanRevision{}, project.ErrProjectNotFound
+}
+
+func (r *projectStoreMemoryRepository) RejectPlanRevision(ctx context.Context, req project.RejectPlanRevisionRequest) (project.PlanRevision, error) {
+	for index, revision := range r.planRevisions {
+		if revision.TenantID == req.TenantID && revision.ProjectID == req.ProjectID && revision.ID == req.RevisionID {
+			revision.Status = project.PlanRevisionStatusRejected
+			revision.RejectedBy = req.RejectedBy
+			revision.RejectionReason = req.RejectionReason
+			now := time.Now().UTC()
+			revision.RejectedAt = &now
+			r.planRevisions[index] = revision
+			return revision, nil
+		}
+	}
+	return project.PlanRevision{}, project.ErrProjectNotFound
+}
+
 func (r *projectStoreMemoryRepository) CreateProjectTask(ctx context.Context, req project.CreateProjectTaskRequest) (project.ProjectTask, error) {
 	r.projectTaskRequests = append(r.projectTaskRequests, req)
 	var summary *string
@@ -2486,6 +2327,13 @@ func (r *projectStoreMemoryRepository) CreateProjectTaskGraph(ctx context.Contex
 
 func (r *projectStoreMemoryRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req project.DecomposeAcceptedPlanRevisionRequest) (project.DecomposeAcceptedPlanRevisionResult, error) {
 	r.decomposeAcceptedPlanRevisionRequests = append(r.decomposeAcceptedPlanRevisionRequests, req)
+	revision, err := r.GetPlanRevision(ctx, req.TenantID, req.ProjectID, req.AcceptedPlanRevisionID)
+	if err != nil && len(r.planRevisions) > 0 {
+		return project.DecomposeAcceptedPlanRevisionResult{}, err
+	}
+	if err == nil && (revision.DemandID != req.DemandID || !project.IsAcceptedPlanRevisionStatus(revision.Status) || revision.PlanFingerprint != req.PlanFingerprint) {
+		return project.DecomposeAcceptedPlanRevisionResult{}, project.ErrProjectConflict
+	}
 	existing := make([]project.ProjectTask, 0)
 	for _, task := range r.tasks {
 		if task.TenantID != req.TenantID || task.ProjectID != req.ProjectID || task.DemandID == nil || *task.DemandID != req.DemandID ||

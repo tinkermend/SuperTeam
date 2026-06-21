@@ -353,6 +353,37 @@ export type ProjectRouteDecision = {
   created_at?: string;
 };
 
+export type ProjectPlanRevision = {
+  id: string;
+  tenant_id: string;
+  team_id?: string;
+  project_id: string;
+  demand_id: string;
+  coordination_job_id?: string;
+  route_decision_id?: string;
+  revision_number: number;
+  status: string;
+  payload: Record<string, unknown>;
+  planner_provider?: string;
+  planner_model?: string;
+  planner_input_hash?: string;
+  plan_fingerprint: string;
+  validation_errors: string[];
+  validation_warnings: string[];
+  review_required: boolean;
+  review_reason?: string;
+  accepted_by?: string;
+  accepted_at?: string;
+  rejected_by?: string;
+  rejected_at?: string;
+  rejection_reason?: string;
+  superseded_by_revision_id?: string;
+  decomposition_claim_id?: string;
+  created_task_ids: string[];
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type ProjectCoordinationJob = {
   id: string;
   tenant_id: string;
@@ -736,6 +767,10 @@ export type PaginationFilters = {
   offset?: number;
 };
 
+export type ListProjectPlanRevisionsFilters = PaginationFilters & {
+  demandId?: string;
+};
+
 export type ListProjectEvidenceFilters = PaginationFilters & {
   status?: ProjectEvidenceVerificationStatus;
 };
@@ -870,6 +905,21 @@ function workflowInstancesPath(filters: ListWorkflowInstancesFilters = {}): stri
 
 function paginationQuery(filters: PaginationFilters = {}): string {
   const params = new URLSearchParams();
+  if (filters.limit !== undefined) {
+    params.set("limit", String(filters.limit));
+  }
+  if (filters.offset !== undefined) {
+    params.set("offset", String(filters.offset));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function planRevisionsQuery(filters: ListProjectPlanRevisionsFilters = {}): string {
+  const params = new URLSearchParams();
+  if (filters.demandId) {
+    params.set("demand_id", filters.demandId);
+  }
   if (filters.limit !== undefined) {
     params.set("limit", String(filters.limit));
   }
@@ -1118,6 +1168,30 @@ export function listProjectRouteDecisions(
     options,
     projectPath(projectId, `/route-decisions${paginationQuery(filters)}`),
     "project route decisions",
+  );
+}
+
+export function listProjectPlanRevisions(
+  options: ApiClientOptions,
+  projectId: string,
+  filters: ListProjectPlanRevisionsFilters = {},
+): Promise<ProjectPlanRevision[]> {
+  return getJson<ProjectPlanRevision[]>(
+    options,
+    projectPath(projectId, `/plan-revisions${planRevisionsQuery(filters)}`),
+    "project plan revisions",
+  );
+}
+
+export function getProjectPlanRevision(
+  options: ApiClientOptions,
+  projectId: string,
+  revisionId: string,
+): Promise<ProjectPlanRevision> {
+  return getJson<ProjectPlanRevision>(
+    options,
+    projectPath(projectId, `/plan-revisions/${encodeURIComponent(revisionId)}`),
+    "project plan revision",
   );
 }
 

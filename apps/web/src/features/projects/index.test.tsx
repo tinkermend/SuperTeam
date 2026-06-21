@@ -408,6 +408,38 @@ function createProjectFetcher(
         },
       ]);
     }
+    if (url.pathname === "/api/v1/projects/project-1/plan-revisions" && method === "GET") {
+      return jsonResponse([
+        {
+          coordination_job_id: "job-1",
+          created_task_ids: [],
+          demand_id: "demand-1",
+          id: "plan-revision-1",
+          payload: {
+            risk_assessment: { highest_risk_level: "high" },
+            summary: "复核生产巡检计划",
+            tasks: [
+              {
+                expected_outputs: ["巡检结论", "风险说明"],
+                matched_capabilities: ["codebase.analysis"],
+                planned_task_key: "inspect-runtime",
+                required_capabilities: ["runtime.inspect"],
+                risk_level: "high",
+                title: "检查 Runtime 状态",
+              },
+            ],
+          },
+          plan_fingerprint: "fingerprint",
+          project_id: "project-1",
+          review_required: true,
+          revision_number: 2,
+          status: "pending_review",
+          tenant_id: "tenant-1",
+          validation_errors: [],
+          validation_warnings: [],
+        },
+      ]);
+    }
     if (url.pathname === "/api/v1/projects/project-1/coordination-jobs" && method === "GET") {
       return jsonResponse([
         {
@@ -434,6 +466,18 @@ function createProjectFetcher(
           target_user_id: "human-owner-1",
           tenant_id: "tenant-1",
           title_snapshot: "需要负责人确认",
+        },
+        {
+          approval_request_id: "approval-plan-1",
+          coordination_job_id: "job-1",
+          decision_type: "plan_review",
+          id: "decision-plan-1",
+          project_id: "project-1",
+          status_snapshot: "pending",
+          summary_snapshot: "复核生产巡检计划",
+          target_user_id: "human-owner-1",
+          tenant_id: "tenant-1",
+          title_snapshot: "计划版本 v2 需要复核",
         },
       ]);
     }
@@ -671,6 +715,7 @@ function createProjectFetcher(
     }
     if (
       [
+        "/plan-revisions",
         "/evidence",
         "/artifacts",
         "/reports",
@@ -718,6 +763,23 @@ function createProjectFetcher(
         target_user_id: "human-owner-1",
         tenant_id: "tenant-1",
         title_snapshot: "需要负责人确认",
+      });
+    }
+    if (
+      url.pathname === "/api/v1/projects/project-1/decisions/decision-plan-1/resolve" &&
+      method === "POST"
+    ) {
+      const body = JSON.parse(String(init?.body));
+      return jsonResponse({
+        approval_request_id: "approval-plan-1",
+        coordination_job_id: "job-1",
+        decision_type: "plan_review",
+        id: "decision-plan-1",
+        project_id: "project-1",
+        status_snapshot: body.decision,
+        target_user_id: "human-owner-1",
+        tenant_id: "tenant-1",
+        title_snapshot: "计划版本 v2 需要复核",
       });
     }
     if (url.pathname.endsWith("/demands") && method === "GET") {
@@ -786,6 +848,29 @@ describe("ProjectsView", () => {
     await expect.element(screen.getByText("待人工处理")).toBeInTheDocument();
     await expect.element(screen.getByText("证据策略")).toBeInTheDocument();
     await expect.element(screen.getByText("人类决策队列")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("heading", { name: "计划版本" }))
+      .toBeInTheDocument();
+    await expect.element(screen.getByText("检查 Runtime 状态")).toBeInTheDocument();
+    expect(screen.container.textContent).toContain("runtime.inspect、codebase.analysis");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "要求修改计划版本 v2" }),
+    );
+
+    await vi.waitFor(() => {
+      expect(
+        fetchCalls(fetcher).some(([url, init]) => {
+          return (
+            String(url).endsWith(
+              "/api/v1/projects/project-1/decisions/decision-plan-1/resolve",
+            ) &&
+            init?.method === "POST" &&
+            JSON.parse(String(init.body)).decision === "request_changes"
+          );
+        }),
+      ).toBe(true);
+    });
   });
 
   it("treats missing project acceptance as an optional empty state", async () => {

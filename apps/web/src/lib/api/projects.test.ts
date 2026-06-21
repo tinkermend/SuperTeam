@@ -9,9 +9,11 @@ import {
   getProjectConfigRevision,
   getProjectDemandLaunchDetail,
   getProjectOverview,
+  getProjectPlanRevision,
   getProjectTaskGraph,
   listProjectConfigRevisions,
   listProjectEvidence,
+  listProjectPlanRevisions,
   listProjectRouteDecisions,
   listWorkflowInstances,
   patchProjectEvidence,
@@ -632,6 +634,71 @@ describe("project API", () => {
         body: JSON.stringify({ decision: "approved", comment: "同意继续" }),
         method: "POST",
       }),
+    );
+  });
+
+  it("lists and gets project plan revisions", async () => {
+    const revision = {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      tenant_id: "22222222-2222-4222-8222-222222222222",
+      project_id: "11111111-1111-4111-8111-111111111111",
+      demand_id: "55555555-5555-4555-8555-555555555555",
+      revision_number: 2,
+      status: "pending_review",
+      payload: { summary: "复核生产巡检计划" },
+      plan_fingerprint: "fingerprint",
+      validation_errors: [],
+      validation_warnings: [],
+      review_required: true,
+      created_task_ids: [],
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify([revision]), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    await expect(
+      listProjectPlanRevisions(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+        { demandId: "demand 1", limit: 5 },
+      ),
+    ).resolves.toEqual([revision]);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/plan-revisions?demand_id=demand+1&limit=5",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
+    );
+
+    fetcher.mockResolvedValueOnce(
+      new Response(JSON.stringify(revision), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await expect(
+      getProjectPlanRevision(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "project 1/primary",
+        "revision 1",
+      ),
+    ).resolves.toEqual(revision);
+
+    expect(fetcher).toHaveBeenLastCalledWith(
+      "http://control-plane.local/api/v1/projects/project%201%2Fprimary/plan-revisions/revision%201",
+      {
+        credentials: "include",
+        headers: { accept: "application/json" },
+        method: "GET",
+      },
     );
   });
 

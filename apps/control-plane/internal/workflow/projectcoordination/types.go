@@ -93,13 +93,59 @@ type PersistRouteDecisionInput struct {
 	Decision  RouteDecisionPlan
 }
 
-type CreateProjectTasksInput struct {
+type PersistPlanRevisionInput struct {
 	TenantID          uuid.UUID
 	ProjectID         uuid.UUID
 	DemandID          uuid.UUID
 	CoordinationJobID uuid.UUID
 	RouteDecisionID   uuid.UUID
 	Decision          RouteDecisionPlan
+	SupersedeOpen     bool
+	SupersedeReason   *string
+}
+
+type PlanRevisionResult struct {
+	ID              uuid.UUID
+	Status          string
+	RevisionNumber  int32
+	PlanFingerprint string
+	Payload         PlanRevisionPayload
+	ReviewRequired  bool
+	CreatedEventID  uuid.UUID
+}
+
+type RequestPlanRevisionReviewInput struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	CoordinationJobID uuid.UUID
+	DemandID          uuid.UUID
+	PlanRevisionID    uuid.UUID
+	PlanFingerprint   string
+	Payload           PlanRevisionPayload
+	CreatedEventID    uuid.UUID
+}
+
+type ResolvePlanRevisionReviewInput struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DemandID          uuid.UUID
+	CoordinationJobID uuid.UUID
+	PlanRevisionID    uuid.UUID
+	DecisionRequestID uuid.UUID
+	Decision          string
+	Payload           map[string]any
+	ActorUserID       uuid.UUID
+}
+
+type DecomposeAcceptedPlanRevisionInput struct {
+	TenantID          uuid.UUID
+	ProjectID         uuid.UUID
+	DemandID          uuid.UUID
+	CoordinationJobID uuid.UUID
+	RouteDecisionID   uuid.UUID
+	PlanRevisionID    uuid.UUID
+	PlanFingerprint   string
+	Payload           PlanRevisionPayload
 }
 
 type ListDispatchableTasksInput struct {
@@ -155,17 +201,6 @@ type ApplyFailureRecoveryDecisionResult struct {
 type FailureRecoveryAction struct {
 	Action               string
 	NewDigitalEmployeeID *uuid.UUID
-}
-
-type RequestRouteDecisionReviewInput struct {
-	TenantID            uuid.UUID
-	ProjectID           uuid.UUID
-	CoordinationJobID   uuid.UUID
-	DemandID            uuid.UUID
-	RouteDecisionID     uuid.UUID
-	Decision            RouteDecisionPlan
-	ProjectTaskIDs      []uuid.UUID
-	RouteCreatedEventID uuid.UUID
 }
 
 type AppendProjectEventInput struct {

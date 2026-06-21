@@ -33,6 +33,7 @@ import {
   listProjectEvidence,
   listProjectEvents,
   listProjectExecutionSummaries,
+  listProjectPlanRevisions,
   listProjectReports,
   listProjectRouteDecisions,
   listProjects,
@@ -244,6 +245,14 @@ export function ProjectsView({
     placeholderData: keepPreviousData,
   });
 
+  const planRevisionsQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryKey: ["project-plan-revisions", effectiveProjectId],
+    queryFn: () =>
+      listProjectPlanRevisions(apiOptions, effectiveProjectId as string, { limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+
   const latestDemandId = demandsQuery.data?.[0]?.id;
   const taskGraphQuery = useQuery({
     enabled: Boolean(effectiveProjectId) && Boolean(latestDemandId),
@@ -417,6 +426,8 @@ export function ProjectsView({
         queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["project-tasks", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-plan-revisions", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["project-task-graph", projectId] }),
       ]);
     },
   });
@@ -500,6 +511,9 @@ export function ProjectsView({
   const isArchived = displayedProject?.status === "archived";
   const projectRouteDecisions = (routeDecisionsQuery.data ?? []).filter(
     (decision) => decision.project_id === effectiveProjectId,
+  );
+  const projectPlanRevisions = (planRevisionsQuery.data ?? []).filter(
+    (revision) => revision.project_id === effectiveProjectId,
   );
   const projectCoordinationJobs = (coordinationJobsQuery.data ?? []).filter(
     (job) => job.project_id === effectiveProjectId,
@@ -653,6 +667,7 @@ export function ProjectsView({
             overview={overview}
             project={displayedProject}
             reports={projectReports}
+            planRevisions={projectPlanRevisions}
             routeDecisions={projectRouteDecisions}
             taskGraph={taskGraphQuery.data}
             tasks={projectTasks}

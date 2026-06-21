@@ -21,7 +21,10 @@ type ActivityStore interface {
 	LoadProjectCoordinationSnapshot(ctx context.Context, input LoadSnapshotInput) (CoordinationSnapshot, error)
 	CreateCoordinationJob(ctx context.Context, input CreateCoordinationJobInput) (CoordinationJobResult, error)
 	PersistRouteDecision(ctx context.Context, input PersistRouteDecisionInput) (RouteDecisionResult, error)
-	CreateProjectTasks(ctx context.Context, input CreateProjectTasksInput) ([]ProjectTaskResult, error)
+	PersistPlanRevision(ctx context.Context, input PersistPlanRevisionInput) (PlanRevisionResult, error)
+	RequestPlanRevisionReview(ctx context.Context, input RequestPlanRevisionReviewInput) (DecisionRequestResult, error)
+	ResolvePlanRevisionReview(ctx context.Context, input ResolvePlanRevisionReviewInput) (PlanRevisionResult, error)
+	DecomposeAcceptedPlanRevision(ctx context.Context, input DecomposeAcceptedPlanRevisionInput) ([]ProjectTaskResult, error)
 	ListDispatchableTasks(ctx context.Context, input ListDispatchableTasksInput) ([]uuid.UUID, error)
 	ResolveReadyDownstream(ctx context.Context, input ResolveReadyDownstreamInput) ([]uuid.UUID, error)
 	IsProjectAcceptanceReady(ctx context.Context, input IsProjectAcceptanceReadyInput) (bool, error)
@@ -29,7 +32,6 @@ type ActivityStore interface {
 	ApplyProjectAcceptanceDecision(ctx context.Context, input ApplyProjectAcceptanceDecisionInput) error
 	HoldDownstreamForFailure(ctx context.Context, input HoldDownstreamForFailureInput) (DecisionRequestResult, error)
 	ApplyFailureRecoveryDecision(ctx context.Context, input ApplyFailureRecoveryDecisionInput) (ApplyFailureRecoveryDecisionResult, error)
-	RequestRouteDecisionReview(ctx context.Context, input RequestRouteDecisionReviewInput) (DecisionRequestResult, error)
 	AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error)
 	DispatchProjectTask(ctx context.Context, input DispatchProjectTaskInput) error
 	FinishCoordinationJob(ctx context.Context, input FinishCoordinationJobInput) error
@@ -71,11 +73,32 @@ func (a *Activities) PersistRouteDecision(ctx context.Context, input PersistRout
 	return a.store.PersistRouteDecision(ctx, input)
 }
 
-func (a *Activities) CreateProjectTasks(ctx context.Context, input CreateProjectTasksInput) ([]ProjectTaskResult, error) {
+func (a *Activities) PersistPlanRevision(ctx context.Context, input PersistPlanRevisionInput) (PlanRevisionResult, error) {
+	if a.store == nil {
+		return PlanRevisionResult{}, ErrActivityStoreRequired
+	}
+	return a.store.PersistPlanRevision(ctx, input)
+}
+
+func (a *Activities) RequestPlanRevisionReview(ctx context.Context, input RequestPlanRevisionReviewInput) (DecisionRequestResult, error) {
+	if a.store == nil {
+		return DecisionRequestResult{}, ErrActivityStoreRequired
+	}
+	return a.store.RequestPlanRevisionReview(ctx, input)
+}
+
+func (a *Activities) ResolvePlanRevisionReview(ctx context.Context, input ResolvePlanRevisionReviewInput) (PlanRevisionResult, error) {
+	if a.store == nil {
+		return PlanRevisionResult{}, ErrActivityStoreRequired
+	}
+	return a.store.ResolvePlanRevisionReview(ctx, input)
+}
+
+func (a *Activities) DecomposeAcceptedPlanRevision(ctx context.Context, input DecomposeAcceptedPlanRevisionInput) ([]ProjectTaskResult, error) {
 	if a.store == nil {
 		return nil, ErrActivityStoreRequired
 	}
-	return a.store.CreateProjectTasks(ctx, input)
+	return a.store.DecomposeAcceptedPlanRevision(ctx, input)
 }
 
 func (a *Activities) ListDispatchableTasks(ctx context.Context, input ListDispatchableTasksInput) ([]uuid.UUID, error) {
@@ -125,13 +148,6 @@ func (a *Activities) ApplyFailureRecoveryDecision(ctx context.Context, input App
 		return ApplyFailureRecoveryDecisionResult{}, ErrActivityStoreRequired
 	}
 	return a.store.ApplyFailureRecoveryDecision(ctx, input)
-}
-
-func (a *Activities) RequestRouteDecisionReview(ctx context.Context, input RequestRouteDecisionReviewInput) (DecisionRequestResult, error) {
-	if a.store == nil {
-		return DecisionRequestResult{}, ErrActivityStoreRequired
-	}
-	return a.store.RequestRouteDecisionReview(ctx, input)
 }
 
 func (a *Activities) AppendProjectEvent(ctx context.Context, input AppendProjectEventInput) (ProjectEventResult, error) {

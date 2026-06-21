@@ -12,6 +12,67 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const AcceptProjectPlanRevision = `-- name: AcceptProjectPlanRevision :one
+UPDATE project_plan_revisions
+SET status = 'accepted',
+    accepted_by = $1::uuid,
+    accepted_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND project_id = $3::uuid
+  AND id = $4::uuid
+  AND status IN ('draft', 'pending_review')
+RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at
+`
+
+type AcceptProjectPlanRevisionParams struct {
+	AcceptedBy uuid.NullUUID `json:"accepted_by"`
+	TenantID   uuid.UUID     `json:"tenant_id"`
+	ProjectID  uuid.UUID     `json:"project_id"`
+	ID         uuid.UUID     `json:"id"`
+}
+
+func (q *Queries) AcceptProjectPlanRevision(ctx context.Context, arg AcceptProjectPlanRevisionParams) (ProjectPlanRevision, error) {
+	row := q.db.QueryRow(ctx, AcceptProjectPlanRevision,
+		arg.AcceptedBy,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var i ProjectPlanRevision
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.RevisionNumber,
+		&i.Status,
+		&i.Payload,
+		&i.PlannerProvider,
+		&i.PlannerModel,
+		&i.PlannerInputHash,
+		&i.PlanFingerprint,
+		&i.ValidationErrors,
+		&i.ValidationWarnings,
+		&i.ReviewRequired,
+		&i.ReviewReason,
+		&i.AcceptedBy,
+		&i.AcceptedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
+		&i.RejectionReason,
+		&i.SupersededByRevisionID,
+		&i.DecompositionClaimID,
+		&i.CreatedTaskIds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const ArchiveProject = `-- name: ArchiveProject :one
 UPDATE projects
 SET status = 'archived',
@@ -205,6 +266,49 @@ func (q *Queries) BindProjectTaskRun(ctx context.Context, arg BindProjectTaskRun
 		&i.CancelledBy,
 		&i.FailedBy,
 		&i.StatusChangedAt,
+	)
+	return i, err
+}
+
+const CompleteProjectPlanDecompositionClaim = `-- name: CompleteProjectPlanDecompositionClaim :one
+UPDATE project_plan_decomposition_claims
+SET status = 'completed',
+    created_task_ids = $1::uuid[],
+    error = '{}'::jsonb,
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND project_id = $3::uuid
+  AND id = $4::uuid
+RETURNING id, tenant_id, project_id, demand_id, accepted_plan_revision_id, plan_fingerprint, status, created_task_ids, error, created_at, updated_at
+`
+
+type CompleteProjectPlanDecompositionClaimParams struct {
+	CreatedTaskIds []uuid.UUID `json:"created_task_ids"`
+	TenantID       uuid.UUID   `json:"tenant_id"`
+	ProjectID      uuid.UUID   `json:"project_id"`
+	ID             uuid.UUID   `json:"id"`
+}
+
+func (q *Queries) CompleteProjectPlanDecompositionClaim(ctx context.Context, arg CompleteProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error) {
+	row := q.db.QueryRow(ctx, CompleteProjectPlanDecompositionClaim,
+		arg.CreatedTaskIds,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var i ProjectPlanDecompositionClaim
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.AcceptedPlanRevisionID,
+		&i.PlanFingerprint,
+		&i.Status,
+		&i.CreatedTaskIds,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -872,6 +976,174 @@ func (q *Queries) CreateProjectMember(ctx context.Context, arg CreateProjectMemb
 	return i, err
 }
 
+const CreateProjectPlanDecompositionClaim = `-- name: CreateProjectPlanDecompositionClaim :one
+INSERT INTO project_plan_decomposition_claims (
+    tenant_id,
+    project_id,
+    demand_id,
+    accepted_plan_revision_id,
+    plan_fingerprint,
+    status
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::uuid,
+    $5::varchar,
+    'in_flight'
+)
+ON CONFLICT (tenant_id, project_id, demand_id, accepted_plan_revision_id)
+DO UPDATE SET updated_at = project_plan_decomposition_claims.updated_at
+RETURNING id, tenant_id, project_id, demand_id, accepted_plan_revision_id, plan_fingerprint, status, created_task_ids, error, created_at, updated_at
+`
+
+type CreateProjectPlanDecompositionClaimParams struct {
+	TenantID               uuid.UUID `json:"tenant_id"`
+	ProjectID              uuid.UUID `json:"project_id"`
+	DemandID               uuid.UUID `json:"demand_id"`
+	AcceptedPlanRevisionID uuid.UUID `json:"accepted_plan_revision_id"`
+	PlanFingerprint        string    `json:"plan_fingerprint"`
+}
+
+func (q *Queries) CreateProjectPlanDecompositionClaim(ctx context.Context, arg CreateProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error) {
+	row := q.db.QueryRow(ctx, CreateProjectPlanDecompositionClaim,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.DemandID,
+		arg.AcceptedPlanRevisionID,
+		arg.PlanFingerprint,
+	)
+	var i ProjectPlanDecompositionClaim
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.AcceptedPlanRevisionID,
+		&i.PlanFingerprint,
+		&i.Status,
+		&i.CreatedTaskIds,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const CreateProjectPlanRevision = `-- name: CreateProjectPlanRevision :one
+INSERT INTO project_plan_revisions (
+    tenant_id,
+    team_id,
+    project_id,
+    demand_id,
+    coordination_job_id,
+    route_decision_id,
+    revision_number,
+    status,
+    payload,
+    planner_provider,
+    planner_model,
+    planner_input_hash,
+    plan_fingerprint,
+    validation_errors,
+    validation_warnings,
+    review_required,
+    review_reason
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4::uuid,
+    $5::uuid,
+    $6::uuid,
+    $7::integer,
+    $8::varchar,
+    COALESCE($9::jsonb, '{}'::jsonb),
+    $10::varchar,
+    $11::varchar,
+    $12::varchar,
+    $13::varchar,
+    COALESCE($14::jsonb, '[]'::jsonb),
+    COALESCE($15::jsonb, '[]'::jsonb),
+    $16::boolean,
+    $17::text
+) RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at
+`
+
+type CreateProjectPlanRevisionParams struct {
+	TenantID           uuid.UUID     `json:"tenant_id"`
+	TeamID             uuid.NullUUID `json:"team_id"`
+	ProjectID          uuid.UUID     `json:"project_id"`
+	DemandID           uuid.UUID     `json:"demand_id"`
+	CoordinationJobID  uuid.NullUUID `json:"coordination_job_id"`
+	RouteDecisionID    uuid.NullUUID `json:"route_decision_id"`
+	RevisionNumber     int32         `json:"revision_number"`
+	Status             string        `json:"status"`
+	Payload            []byte        `json:"payload"`
+	PlannerProvider    pgtype.Text   `json:"planner_provider"`
+	PlannerModel       pgtype.Text   `json:"planner_model"`
+	PlannerInputHash   pgtype.Text   `json:"planner_input_hash"`
+	PlanFingerprint    string        `json:"plan_fingerprint"`
+	ValidationErrors   []byte        `json:"validation_errors"`
+	ValidationWarnings []byte        `json:"validation_warnings"`
+	ReviewRequired     bool          `json:"review_required"`
+	ReviewReason       pgtype.Text   `json:"review_reason"`
+}
+
+func (q *Queries) CreateProjectPlanRevision(ctx context.Context, arg CreateProjectPlanRevisionParams) (ProjectPlanRevision, error) {
+	row := q.db.QueryRow(ctx, CreateProjectPlanRevision,
+		arg.TenantID,
+		arg.TeamID,
+		arg.ProjectID,
+		arg.DemandID,
+		arg.CoordinationJobID,
+		arg.RouteDecisionID,
+		arg.RevisionNumber,
+		arg.Status,
+		arg.Payload,
+		arg.PlannerProvider,
+		arg.PlannerModel,
+		arg.PlannerInputHash,
+		arg.PlanFingerprint,
+		arg.ValidationErrors,
+		arg.ValidationWarnings,
+		arg.ReviewRequired,
+		arg.ReviewReason,
+	)
+	var i ProjectPlanRevision
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.RevisionNumber,
+		&i.Status,
+		&i.Payload,
+		&i.PlannerProvider,
+		&i.PlannerModel,
+		&i.PlannerInputHash,
+		&i.PlanFingerprint,
+		&i.ValidationErrors,
+		&i.ValidationWarnings,
+		&i.ReviewRequired,
+		&i.ReviewReason,
+		&i.AcceptedBy,
+		&i.AcceptedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
+		&i.RejectionReason,
+		&i.SupersededByRevisionID,
+		&i.DecompositionClaimID,
+		&i.CreatedTaskIds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const CreateProjectRouteDecision = `-- name: CreateProjectRouteDecision :one
 INSERT INTO project_route_decisions (
     tenant_id,
@@ -1367,6 +1639,48 @@ func (q *Queries) CreateProjectTransferRequest(ctx context.Context, arg CreatePr
 	return i, err
 }
 
+const FailProjectPlanDecompositionClaim = `-- name: FailProjectPlanDecompositionClaim :one
+UPDATE project_plan_decomposition_claims
+SET status = 'failed',
+    error = COALESCE($1::jsonb, '{}'::jsonb),
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND project_id = $3::uuid
+  AND id = $4::uuid
+RETURNING id, tenant_id, project_id, demand_id, accepted_plan_revision_id, plan_fingerprint, status, created_task_ids, error, created_at, updated_at
+`
+
+type FailProjectPlanDecompositionClaimParams struct {
+	Error     []byte    `json:"error"`
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	ID        uuid.UUID `json:"id"`
+}
+
+func (q *Queries) FailProjectPlanDecompositionClaim(ctx context.Context, arg FailProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error) {
+	row := q.db.QueryRow(ctx, FailProjectPlanDecompositionClaim,
+		arg.Error,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var i ProjectPlanDecompositionClaim
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.AcceptedPlanRevisionID,
+		&i.PlanFingerprint,
+		&i.Status,
+		&i.CreatedTaskIds,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const FinishProjectCoordinationJob = `-- name: FinishProjectCoordinationJob :one
 UPDATE project_coordination_jobs
 SET status = $1::varchar,
@@ -1821,6 +2135,111 @@ func (q *Queries) GetProjectEventByTypeAndActor(ctx context.Context, arg GetProj
 		&i.Summary,
 		&i.Payload,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const GetProjectPlanRevision = `-- name: GetProjectPlanRevision :one
+SELECT id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at FROM project_plan_revisions
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND id = $3::uuid
+`
+
+type GetProjectPlanRevisionParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	ID        uuid.UUID `json:"id"`
+}
+
+func (q *Queries) GetProjectPlanRevision(ctx context.Context, arg GetProjectPlanRevisionParams) (ProjectPlanRevision, error) {
+	row := q.db.QueryRow(ctx, GetProjectPlanRevision, arg.TenantID, arg.ProjectID, arg.ID)
+	var i ProjectPlanRevision
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.RevisionNumber,
+		&i.Status,
+		&i.Payload,
+		&i.PlannerProvider,
+		&i.PlannerModel,
+		&i.PlannerInputHash,
+		&i.PlanFingerprint,
+		&i.ValidationErrors,
+		&i.ValidationWarnings,
+		&i.ReviewRequired,
+		&i.ReviewReason,
+		&i.AcceptedBy,
+		&i.AcceptedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
+		&i.RejectionReason,
+		&i.SupersededByRevisionID,
+		&i.DecompositionClaimID,
+		&i.CreatedTaskIds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const GetProjectPlanRevisionByFingerprint = `-- name: GetProjectPlanRevisionByFingerprint :one
+SELECT id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at FROM project_plan_revisions
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND demand_id = $3::uuid
+  AND plan_fingerprint = $4::varchar
+`
+
+type GetProjectPlanRevisionByFingerprintParams struct {
+	TenantID        uuid.UUID `json:"tenant_id"`
+	ProjectID       uuid.UUID `json:"project_id"`
+	DemandID        uuid.UUID `json:"demand_id"`
+	PlanFingerprint string    `json:"plan_fingerprint"`
+}
+
+func (q *Queries) GetProjectPlanRevisionByFingerprint(ctx context.Context, arg GetProjectPlanRevisionByFingerprintParams) (ProjectPlanRevision, error) {
+	row := q.db.QueryRow(ctx, GetProjectPlanRevisionByFingerprint,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.DemandID,
+		arg.PlanFingerprint,
+	)
+	var i ProjectPlanRevision
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.RevisionNumber,
+		&i.Status,
+		&i.Payload,
+		&i.PlannerProvider,
+		&i.PlannerModel,
+		&i.PlannerInputHash,
+		&i.PlanFingerprint,
+		&i.ValidationErrors,
+		&i.ValidationWarnings,
+		&i.ReviewRequired,
+		&i.ReviewReason,
+		&i.AcceptedBy,
+		&i.AcceptedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
+		&i.RejectionReason,
+		&i.SupersededByRevisionID,
+		&i.DecompositionClaimID,
+		&i.CreatedTaskIds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2783,6 +3202,78 @@ func (q *Queries) ListProjectMembers(ctx context.Context, arg ListProjectMembers
 			&i.DisplayNameSnapshot,
 			&i.Status,
 			&i.Settings,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectPlanRevisions = `-- name: ListProjectPlanRevisions :many
+SELECT id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at FROM project_plan_revisions
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND ($3::uuid IS NULL OR demand_id = $3::uuid)
+ORDER BY demand_id ASC, revision_number DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListProjectPlanRevisionsParams struct {
+	TenantID  uuid.UUID     `json:"tenant_id"`
+	ProjectID uuid.UUID     `json:"project_id"`
+	DemandID  uuid.NullUUID `json:"demand_id"`
+	Offset    int32         `json:"offset"`
+	Limit     int32         `json:"limit"`
+}
+
+func (q *Queries) ListProjectPlanRevisions(ctx context.Context, arg ListProjectPlanRevisionsParams) ([]ProjectPlanRevision, error) {
+	rows, err := q.db.Query(ctx, ListProjectPlanRevisions,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.DemandID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectPlanRevision{}
+	for rows.Next() {
+		var i ProjectPlanRevision
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.TeamID,
+			&i.ProjectID,
+			&i.DemandID,
+			&i.CoordinationJobID,
+			&i.RouteDecisionID,
+			&i.RevisionNumber,
+			&i.Status,
+			&i.Payload,
+			&i.PlannerProvider,
+			&i.PlannerModel,
+			&i.PlannerInputHash,
+			&i.PlanFingerprint,
+			&i.ValidationErrors,
+			&i.ValidationWarnings,
+			&i.ReviewRequired,
+			&i.ReviewReason,
+			&i.AcceptedBy,
+			&i.AcceptedAt,
+			&i.RejectedBy,
+			&i.RejectedAt,
+			&i.RejectionReason,
+			&i.SupersededByRevisionID,
+			&i.DecompositionClaimID,
+			&i.CreatedTaskIds,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -4071,6 +4562,126 @@ func (q *Queries) LockProjectTaskForQueue(ctx context.Context, arg LockProjectTa
 	return i, err
 }
 
+const MarkProjectPlanRevisionDecomposed = `-- name: MarkProjectPlanRevisionDecomposed :one
+UPDATE project_plan_revisions
+SET status = 'decomposed',
+    created_task_ids = $1::uuid[],
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND project_id = $3::uuid
+  AND id = $4::uuid
+  AND status IN ('decomposing', 'decomposed')
+RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at
+`
+
+type MarkProjectPlanRevisionDecomposedParams struct {
+	CreatedTaskIds []uuid.UUID `json:"created_task_ids"`
+	TenantID       uuid.UUID   `json:"tenant_id"`
+	ProjectID      uuid.UUID   `json:"project_id"`
+	ID             uuid.UUID   `json:"id"`
+}
+
+func (q *Queries) MarkProjectPlanRevisionDecomposed(ctx context.Context, arg MarkProjectPlanRevisionDecomposedParams) (ProjectPlanRevision, error) {
+	row := q.db.QueryRow(ctx, MarkProjectPlanRevisionDecomposed,
+		arg.CreatedTaskIds,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var i ProjectPlanRevision
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.RevisionNumber,
+		&i.Status,
+		&i.Payload,
+		&i.PlannerProvider,
+		&i.PlannerModel,
+		&i.PlannerInputHash,
+		&i.PlanFingerprint,
+		&i.ValidationErrors,
+		&i.ValidationWarnings,
+		&i.ReviewRequired,
+		&i.ReviewReason,
+		&i.AcceptedBy,
+		&i.AcceptedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
+		&i.RejectionReason,
+		&i.SupersededByRevisionID,
+		&i.DecompositionClaimID,
+		&i.CreatedTaskIds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const MarkProjectPlanRevisionDecomposing = `-- name: MarkProjectPlanRevisionDecomposing :one
+UPDATE project_plan_revisions
+SET status = 'decomposing',
+    decomposition_claim_id = $1::uuid,
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND project_id = $3::uuid
+  AND id = $4::uuid
+  AND status = 'accepted'
+RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at
+`
+
+type MarkProjectPlanRevisionDecomposingParams struct {
+	DecompositionClaimID uuid.UUID `json:"decomposition_claim_id"`
+	TenantID             uuid.UUID `json:"tenant_id"`
+	ProjectID            uuid.UUID `json:"project_id"`
+	ID                   uuid.UUID `json:"id"`
+}
+
+func (q *Queries) MarkProjectPlanRevisionDecomposing(ctx context.Context, arg MarkProjectPlanRevisionDecomposingParams) (ProjectPlanRevision, error) {
+	row := q.db.QueryRow(ctx, MarkProjectPlanRevisionDecomposing,
+		arg.DecompositionClaimID,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var i ProjectPlanRevision
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.RevisionNumber,
+		&i.Status,
+		&i.Payload,
+		&i.PlannerProvider,
+		&i.PlannerModel,
+		&i.PlannerInputHash,
+		&i.PlanFingerprint,
+		&i.ValidationErrors,
+		&i.ValidationWarnings,
+		&i.ReviewRequired,
+		&i.ReviewReason,
+		&i.AcceptedBy,
+		&i.AcceptedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
+		&i.RejectionReason,
+		&i.SupersededByRevisionID,
+		&i.DecompositionClaimID,
+		&i.CreatedTaskIds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const MoveProjectTaskToWaitingHuman = `-- name: MoveProjectTaskToWaitingHuman :one
 UPDATE project_tasks
 SET status = 'waiting_human',
@@ -4142,6 +4753,27 @@ func (q *Queries) MoveProjectTaskToWaitingHuman(ctx context.Context, arg MovePro
 		&i.StatusChangedAt,
 	)
 	return i, err
+}
+
+const NextProjectPlanRevisionNumber = `-- name: NextProjectPlanRevisionNumber :one
+SELECT COALESCE(MAX(revision_number), 0)::integer + 1 AS revision_number
+FROM project_plan_revisions
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND demand_id = $3::uuid
+`
+
+type NextProjectPlanRevisionNumberParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	DemandID  uuid.UUID `json:"demand_id"`
+}
+
+func (q *Queries) NextProjectPlanRevisionNumber(ctx context.Context, arg NextProjectPlanRevisionNumberParams) (int32, error) {
+	row := q.db.QueryRow(ctx, NextProjectPlanRevisionNumber, arg.TenantID, arg.ProjectID, arg.DemandID)
+	var revision_number int32
+	err := row.Scan(&revision_number)
+	return revision_number, err
 }
 
 const ProjectTaskEventExists = `-- name: ProjectTaskEventExists :one
@@ -4252,6 +4884,70 @@ func (q *Queries) QueueProjectTask(ctx context.Context, arg QueueProjectTaskPara
 		&i.CancelledBy,
 		&i.FailedBy,
 		&i.StatusChangedAt,
+	)
+	return i, err
+}
+
+const RejectProjectPlanRevision = `-- name: RejectProjectPlanRevision :one
+UPDATE project_plan_revisions
+SET status = 'rejected',
+    rejected_by = $1::uuid,
+    rejected_at = NOW(),
+    rejection_reason = $2::text,
+    updated_at = NOW()
+WHERE tenant_id = $3::uuid
+  AND project_id = $4::uuid
+  AND id = $5::uuid
+  AND status = 'pending_review'
+RETURNING id, tenant_id, team_id, project_id, demand_id, coordination_job_id, route_decision_id, revision_number, status, payload, planner_provider, planner_model, planner_input_hash, plan_fingerprint, validation_errors, validation_warnings, review_required, review_reason, accepted_by, accepted_at, rejected_by, rejected_at, rejection_reason, superseded_by_revision_id, decomposition_claim_id, created_task_ids, created_at, updated_at
+`
+
+type RejectProjectPlanRevisionParams struct {
+	RejectedBy      uuid.NullUUID `json:"rejected_by"`
+	RejectionReason pgtype.Text   `json:"rejection_reason"`
+	TenantID        uuid.UUID     `json:"tenant_id"`
+	ProjectID       uuid.UUID     `json:"project_id"`
+	ID              uuid.UUID     `json:"id"`
+}
+
+func (q *Queries) RejectProjectPlanRevision(ctx context.Context, arg RejectProjectPlanRevisionParams) (ProjectPlanRevision, error) {
+	row := q.db.QueryRow(ctx, RejectProjectPlanRevision,
+		arg.RejectedBy,
+		arg.RejectionReason,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var i ProjectPlanRevision
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.RevisionNumber,
+		&i.Status,
+		&i.Payload,
+		&i.PlannerProvider,
+		&i.PlannerModel,
+		&i.PlannerInputHash,
+		&i.PlanFingerprint,
+		&i.ValidationErrors,
+		&i.ValidationWarnings,
+		&i.ReviewRequired,
+		&i.ReviewReason,
+		&i.AcceptedBy,
+		&i.AcceptedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
+		&i.RejectionReason,
+		&i.SupersededByRevisionID,
+		&i.DecompositionClaimID,
+		&i.CreatedTaskIds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -4611,6 +5307,38 @@ func (q *Queries) StartProjectTaskAttempt(ctx context.Context, arg StartProjectT
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const SupersedeOpenProjectPlanRevisions = `-- name: SupersedeOpenProjectPlanRevisions :exec
+UPDATE project_plan_revisions
+SET status = 'superseded',
+    superseded_by_revision_id = $1::uuid,
+    rejection_reason = $2::text,
+    updated_at = NOW()
+WHERE tenant_id = $3::uuid
+  AND project_id = $4::uuid
+  AND demand_id = $5::uuid
+  AND id <> $1::uuid
+  AND status IN ('draft', 'validation_failed', 'pending_review')
+`
+
+type SupersedeOpenProjectPlanRevisionsParams struct {
+	SupersededByRevisionID uuid.UUID   `json:"superseded_by_revision_id"`
+	Reason                 pgtype.Text `json:"reason"`
+	TenantID               uuid.UUID   `json:"tenant_id"`
+	ProjectID              uuid.UUID   `json:"project_id"`
+	DemandID               uuid.UUID   `json:"demand_id"`
+}
+
+func (q *Queries) SupersedeOpenProjectPlanRevisions(ctx context.Context, arg SupersedeOpenProjectPlanRevisionsParams) error {
+	_, err := q.db.Exec(ctx, SupersedeOpenProjectPlanRevisions,
+		arg.SupersededByRevisionID,
+		arg.Reason,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.DemandID,
+	)
+	return err
 }
 
 const TransitionProjectStatus = `-- name: TransitionProjectStatus :one

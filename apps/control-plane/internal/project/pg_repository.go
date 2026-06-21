@@ -792,6 +792,144 @@ func (r *PgRepository) ListDemandLaunchRouteDecisions(ctx context.Context, tenan
 	return routeDecisionsFromRecords(rows)
 }
 
+func (r *PgRepository) CreatePlanRevision(ctx context.Context, req CreatePlanRevisionRequest) (PlanRevision, error) {
+	req.Status = strings.TrimSpace(req.Status)
+	req.PlanFingerprint = strings.TrimSpace(req.PlanFingerprint)
+	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.DemandID == uuid.Nil || req.Status == "" || req.PlanFingerprint == "" {
+		return PlanRevision{}, ErrInvalidProject
+	}
+	payload, err := jsonbObject(req.Payload, "payload")
+	if err != nil {
+		return PlanRevision{}, err
+	}
+	validationErrors, err := jsonbStringSlice(req.ValidationErrors, "validation_errors")
+	if err != nil {
+		return PlanRevision{}, err
+	}
+	validationWarnings, err := jsonbStringSlice(req.ValidationWarnings, "validation_warnings")
+	if err != nil {
+		return PlanRevision{}, err
+	}
+	return withProjectQueries(ctx, r, "project plan revision create", func(q *queries.Queries) (PlanRevision, error) {
+		revisionNumber, err := q.NextProjectPlanRevisionNumber(ctx, queries.NextProjectPlanRevisionNumberParams{
+			TenantID:  req.TenantID,
+			ProjectID: req.ProjectID,
+			DemandID:  req.DemandID,
+		})
+		if err != nil {
+			return PlanRevision{}, err
+		}
+		row, err := q.CreateProjectPlanRevision(ctx, queries.CreateProjectPlanRevisionParams{
+			TenantID:           req.TenantID,
+			TeamID:             nullUUID(req.TeamID),
+			ProjectID:          req.ProjectID,
+			DemandID:           req.DemandID,
+			CoordinationJobID:  nullUUID(req.CoordinationJobID),
+			RouteDecisionID:    nullUUID(req.RouteDecisionID),
+			RevisionNumber:     revisionNumber,
+			Status:             req.Status,
+			Payload:            payload,
+			PlannerProvider:    textPtr(req.PlannerProvider),
+			PlannerModel:       textPtr(req.PlannerModel),
+			PlannerInputHash:   textPtr(req.PlannerInputHash),
+			PlanFingerprint:    req.PlanFingerprint,
+			ValidationErrors:   validationErrors,
+			ValidationWarnings: validationWarnings,
+			ReviewRequired:     req.ReviewRequired,
+			ReviewReason:       textPtr(req.ReviewReason),
+		})
+		if err != nil {
+			if isPGUniqueConstraint(err, "uq_project_plan_revisions_fingerprint") {
+				existing, existingErr := q.GetProjectPlanRevisionByFingerprint(ctx, queries.GetProjectPlanRevisionByFingerprintParams{
+					TenantID:        req.TenantID,
+					ProjectID:       req.ProjectID,
+					DemandID:        req.DemandID,
+					PlanFingerprint: req.PlanFingerprint,
+				})
+				if existingErr == nil {
+					return planRevisionFromRecord(existing)
+				}
+			}
+			return PlanRevision{}, err
+		}
+		created, err := planRevisionFromRecord(row)
+		if err != nil {
+			return PlanRevision{}, err
+		}
+		if req.SupersedeOpenRevisions {
+			if err := q.SupersedeOpenProjectPlanRevisions(ctx, queries.SupersedeOpenProjectPlanRevisionsParams{
+				SupersededByRevisionID: created.ID,
+				Reason:                 textPtr(req.SupersedeReason),
+				TenantID:               req.TenantID,
+				ProjectID:              req.ProjectID,
+				DemandID:               req.DemandID,
+			}); err != nil {
+				return PlanRevision{}, err
+			}
+		}
+		return created, nil
+	})
+}
+
+func (r *PgRepository) GetPlanRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (PlanRevision, error) {
+	row, err := r.q.GetProjectPlanRevision(ctx, queries.GetProjectPlanRevisionParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		ID:        revisionID,
+	})
+	if err != nil {
+		return PlanRevision{}, projectRepositoryError(err)
+	}
+	return planRevisionFromRecord(row)
+}
+
+func (r *PgRepository) ListPlanRevisions(ctx context.Context, req ListPlanRevisionsRequest) ([]PlanRevision, error) {
+	rows, err := r.q.ListProjectPlanRevisions(ctx, queries.ListProjectPlanRevisionsParams{
+		TenantID:  req.TenantID,
+		ProjectID: req.ProjectID,
+		DemandID:  nullUUID(req.DemandID),
+		Offset:    req.Offset,
+		Limit:     req.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return planRevisionsFromRecords(rows)
+}
+
+func (r *PgRepository) AcceptPlanRevision(ctx context.Context, req AcceptPlanRevisionRequest) (PlanRevision, error) {
+	row, err := r.q.AcceptProjectPlanRevision(ctx, queries.AcceptProjectPlanRevisionParams{
+		AcceptedBy: nullUUID(req.AcceptedBy),
+		TenantID:   req.TenantID,
+		ProjectID:  req.ProjectID,
+		ID:         req.RevisionID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return PlanRevision{}, ErrProjectConflict
+		}
+		return PlanRevision{}, err
+	}
+	return planRevisionFromRecord(row)
+}
+
+func (r *PgRepository) RejectPlanRevision(ctx context.Context, req RejectPlanRevisionRequest) (PlanRevision, error) {
+	row, err := r.q.RejectProjectPlanRevision(ctx, queries.RejectProjectPlanRevisionParams{
+		RejectedBy:      nullUUID(req.RejectedBy),
+		RejectionReason: textPtr(req.RejectionReason),
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		ID:              req.RevisionID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return PlanRevision{}, ErrProjectConflict
+		}
+		return PlanRevision{}, err
+	}
+	return planRevisionFromRecord(row)
+}
+
 func (r *PgRepository) CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error) {
 	return r.createProjectTaskWithQueries(ctx, r.q, req)
 }
@@ -1007,11 +1145,41 @@ func (r *PgRepository) RecordProjectTaskAttemptContextUpdate(ctx context.Context
 
 func (r *PgRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req DecomposeAcceptedPlanRevisionRequest) (DecomposeAcceptedPlanRevisionResult, error) {
 	req.DecompositionClaimKey = strings.TrimSpace(req.DecompositionClaimKey)
+	req.PlanFingerprint = strings.TrimSpace(req.PlanFingerprint)
 	if err := validateDecomposeAcceptedPlanRevisionRequest(req); err != nil {
 		return DecomposeAcceptedPlanRevisionResult{}, err
 	}
 	graphReq := graphRequestFromAcceptedPlanRevisionRequest(req)
 	return withProjectQueries(ctx, r, "accepted plan revision decompose", func(q *queries.Queries) (DecomposeAcceptedPlanRevisionResult, error) {
+		revisionRow, err := q.GetProjectPlanRevision(ctx, queries.GetProjectPlanRevisionParams{
+			TenantID:  req.TenantID,
+			ProjectID: req.ProjectID,
+			ID:        req.AcceptedPlanRevisionID,
+		})
+		if err != nil {
+			return DecomposeAcceptedPlanRevisionResult{}, projectRepositoryError(err)
+		}
+		revision, err := planRevisionFromRecord(revisionRow)
+		if err != nil {
+			return DecomposeAcceptedPlanRevisionResult{}, err
+		}
+		if revision.DemandID != req.DemandID || !IsAcceptedPlanRevisionStatus(revision.Status) || revision.PlanFingerprint != req.PlanFingerprint {
+			return DecomposeAcceptedPlanRevisionResult{}, ErrProjectConflict
+		}
+		claimRow, err := q.CreateProjectPlanDecompositionClaim(ctx, queries.CreateProjectPlanDecompositionClaimParams{
+			TenantID:               req.TenantID,
+			ProjectID:              req.ProjectID,
+			DemandID:               req.DemandID,
+			AcceptedPlanRevisionID: req.AcceptedPlanRevisionID,
+			PlanFingerprint:        req.PlanFingerprint,
+		})
+		if err != nil {
+			return DecomposeAcceptedPlanRevisionResult{}, err
+		}
+		claim, err := planDecompositionClaimFromRecord(claimRow)
+		if err != nil {
+			return DecomposeAcceptedPlanRevisionResult{}, err
+		}
 		existing, err := r.listProjectTasksByAcceptedPlanRevisionWithQueries(ctx, q, req.TenantID, req.ProjectID, req.DemandID, req.AcceptedPlanRevisionID)
 		if err != nil {
 			return DecomposeAcceptedPlanRevisionResult{}, err
@@ -1028,7 +1196,34 @@ func (r *PgRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req De
 			if err != nil {
 				return DecomposeAcceptedPlanRevisionResult{}, err
 			}
+			taskIDs := acceptedPlanProjectTaskIDs(existing)
+			if _, err := q.CompleteProjectPlanDecompositionClaim(ctx, queries.CompleteProjectPlanDecompositionClaimParams{
+				CreatedTaskIds: taskIDs,
+				TenantID:       req.TenantID,
+				ProjectID:      req.ProjectID,
+				ID:             claim.ID,
+			}); err != nil {
+				return DecomposeAcceptedPlanRevisionResult{}, err
+			}
+			if _, err := q.MarkProjectPlanRevisionDecomposed(ctx, queries.MarkProjectPlanRevisionDecomposedParams{
+				CreatedTaskIds: taskIDs,
+				TenantID:       req.TenantID,
+				ProjectID:      req.ProjectID,
+				ID:             req.AcceptedPlanRevisionID,
+			}); err != nil {
+				return DecomposeAcceptedPlanRevisionResult{}, err
+			}
 			return DecomposeAcceptedPlanRevisionResult{Tasks: existing, Dependencies: graph.Dependencies, Replayed: true}, nil
+		}
+		if revision.Status == PlanRevisionStatusAccepted {
+			if _, err := q.MarkProjectPlanRevisionDecomposing(ctx, queries.MarkProjectPlanRevisionDecomposingParams{
+				DecompositionClaimID: claim.ID,
+				TenantID:             req.TenantID,
+				ProjectID:            req.ProjectID,
+				ID:                   req.AcceptedPlanRevisionID,
+			}); err != nil {
+				return DecomposeAcceptedPlanRevisionResult{}, err
+			}
 		}
 
 		created, err := r.createProjectTaskGraphWithQueries(ctx, q, graphReq, projectTaskGraphWriteOptions{
@@ -1036,6 +1231,32 @@ func (r *PgRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req De
 			DecompositionClaimKey:  &req.DecompositionClaimKey,
 		})
 		if err != nil {
+			errorPayload, payloadErr := jsonbObject(map[string]any{"message": err.Error()}, "error")
+			if payloadErr == nil {
+				_, _ = q.FailProjectPlanDecompositionClaim(ctx, queries.FailProjectPlanDecompositionClaimParams{
+					Error:     errorPayload,
+					TenantID:  req.TenantID,
+					ProjectID: req.ProjectID,
+					ID:        claim.ID,
+				})
+			}
+			return DecomposeAcceptedPlanRevisionResult{}, err
+		}
+		taskIDs := acceptedPlanProjectTaskIDs(created.Tasks)
+		if _, err := q.CompleteProjectPlanDecompositionClaim(ctx, queries.CompleteProjectPlanDecompositionClaimParams{
+			CreatedTaskIds: taskIDs,
+			TenantID:       req.TenantID,
+			ProjectID:      req.ProjectID,
+			ID:             claim.ID,
+		}); err != nil {
+			return DecomposeAcceptedPlanRevisionResult{}, err
+		}
+		if _, err := q.MarkProjectPlanRevisionDecomposed(ctx, queries.MarkProjectPlanRevisionDecomposedParams{
+			CreatedTaskIds: taskIDs,
+			TenantID:       req.TenantID,
+			ProjectID:      req.ProjectID,
+			ID:             req.AcceptedPlanRevisionID,
+		}); err != nil {
 			return DecomposeAcceptedPlanRevisionResult{}, err
 		}
 		return DecomposeAcceptedPlanRevisionResult{Tasks: created.Tasks, Dependencies: created.Graph.Dependencies, Replayed: false}, nil
@@ -1348,7 +1569,7 @@ func (r *PgRepository) listProjectTasksByAcceptedPlanRevisionWithQueries(ctx con
 func validateDecomposeAcceptedPlanRevisionRequest(req DecomposeAcceptedPlanRevisionRequest) error {
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.DemandID == uuid.Nil ||
 		req.CoordinationJobID == uuid.Nil || req.RouteDecisionID == uuid.Nil ||
-		req.AcceptedPlanRevisionID == uuid.Nil || req.DecompositionClaimKey == "" || len(req.Tasks) == 0 {
+		req.AcceptedPlanRevisionID == uuid.Nil || req.PlanFingerprint == "" || req.DecompositionClaimKey == "" || len(req.Tasks) == 0 {
 		return ErrInvalidProject
 	}
 	keys := map[string]struct{}{}
@@ -4205,6 +4426,83 @@ func routeDecisionFromRecord(row queries.ProjectRouteDecision) (RouteDecision, e
 	}, nil
 }
 
+func planRevisionFromRecord(row queries.ProjectPlanRevision) (PlanRevision, error) {
+	payload, err := mapFromJSON(row.Payload)
+	if err != nil {
+		return PlanRevision{}, fmt.Errorf("payload: %w", err)
+	}
+	validationErrors, err := stringSliceFromJSON(row.ValidationErrors)
+	if err != nil {
+		return PlanRevision{}, fmt.Errorf("validation_errors: %w", err)
+	}
+	validationWarnings, err := stringSliceFromJSON(row.ValidationWarnings)
+	if err != nil {
+		return PlanRevision{}, fmt.Errorf("validation_warnings: %w", err)
+	}
+	return PlanRevision{
+		ID:                     row.ID,
+		TenantID:               row.TenantID,
+		TeamID:                 ptrUUID(row.TeamID),
+		ProjectID:              row.ProjectID,
+		DemandID:               row.DemandID,
+		CoordinationJobID:      ptrUUID(row.CoordinationJobID),
+		RouteDecisionID:        ptrUUID(row.RouteDecisionID),
+		RevisionNumber:         row.RevisionNumber,
+		Status:                 row.Status,
+		Payload:                payload,
+		PlannerProvider:        ptrText(row.PlannerProvider),
+		PlannerModel:           ptrText(row.PlannerModel),
+		PlannerInputHash:       ptrText(row.PlannerInputHash),
+		PlanFingerprint:        row.PlanFingerprint,
+		ValidationErrors:       validationErrors,
+		ValidationWarnings:     validationWarnings,
+		ReviewRequired:         row.ReviewRequired,
+		ReviewReason:           ptrText(row.ReviewReason),
+		AcceptedBy:             ptrUUID(row.AcceptedBy),
+		AcceptedAt:             ptrTime(row.AcceptedAt),
+		RejectedBy:             ptrUUID(row.RejectedBy),
+		RejectedAt:             ptrTime(row.RejectedAt),
+		RejectionReason:        ptrText(row.RejectionReason),
+		SupersededByRevisionID: ptrUUID(row.SupersededByRevisionID),
+		DecompositionClaimID:   ptrUUID(row.DecompositionClaimID),
+		CreatedTaskIDs:         append([]uuid.UUID(nil), row.CreatedTaskIds...),
+		CreatedAt:              row.CreatedAt.Time,
+		UpdatedAt:              row.UpdatedAt.Time,
+	}, nil
+}
+
+func planRevisionsFromRecords(rows []queries.ProjectPlanRevision) ([]PlanRevision, error) {
+	revisions := make([]PlanRevision, 0, len(rows))
+	for _, row := range rows {
+		revision, err := planRevisionFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		revisions = append(revisions, revision)
+	}
+	return revisions, nil
+}
+
+func planDecompositionClaimFromRecord(row queries.ProjectPlanDecompositionClaim) (PlanDecompositionClaim, error) {
+	errorPayload, err := mapFromJSON(row.Error)
+	if err != nil {
+		return PlanDecompositionClaim{}, fmt.Errorf("error: %w", err)
+	}
+	return PlanDecompositionClaim{
+		ID:                     row.ID,
+		TenantID:               row.TenantID,
+		ProjectID:              row.ProjectID,
+		DemandID:               row.DemandID,
+		AcceptedPlanRevisionID: row.AcceptedPlanRevisionID,
+		PlanFingerprint:        row.PlanFingerprint,
+		Status:                 row.Status,
+		CreatedTaskIDs:         append([]uuid.UUID(nil), row.CreatedTaskIds...),
+		Error:                  errorPayload,
+		CreatedAt:              row.CreatedAt.Time,
+		UpdatedAt:              row.UpdatedAt.Time,
+	}, nil
+}
+
 func executionSummaryFromRecord(row queries.ProjectExecutionSummary) (ExecutionSummary, error) {
 	evidenceRefs, err := anySliceFromJSON(row.EvidenceRefs)
 	if err != nil {
@@ -4548,6 +4846,14 @@ func tasksFromRecords(rows []queries.ProjectTask) ([]ProjectTask, error) {
 	return tasks, nil
 }
 
+func acceptedPlanProjectTaskIDs(tasks []ProjectTask) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.ID)
+	}
+	return ids
+}
+
 func dependenciesFromRecords(rows []queries.ProjectTaskDependency) []ProjectTaskDependency {
 	dependencies := make([]ProjectTaskDependency, 0, len(rows))
 	for _, row := range rows {
@@ -4844,6 +5150,13 @@ func jsonbArray(value []any, field string) ([]byte, error) {
 	return marshalJSON(value, field)
 }
 
+func jsonbStringSlice(values []string, field string) ([]byte, error) {
+	if len(values) == 0 {
+		return []byte("[]"), nil
+	}
+	return marshalJSON(values, field)
+}
+
 func jsonbUUIDSlice(values []uuid.UUID, field string) ([]byte, error) {
 	encoded := make([]string, 0, len(values))
 	for _, value := range values {
@@ -4870,6 +5183,19 @@ func uuidSliceFromJSON(raw []byte) ([]uuid.UUID, error) {
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+func stringSliceFromJSON(raw []byte) ([]string, error) {
+	values := []string{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &values); err != nil {
+			return nil, err
+		}
+		if values == nil {
+			values = []string{}
+		}
+	}
+	return values, nil
 }
 
 func anySliceFromJSON(raw []byte) ([]any, error) {

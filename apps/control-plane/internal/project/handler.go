@@ -33,6 +33,8 @@ type HandlerService interface {
 	ListProjectTaskLiveness(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectTaskLiveness, error)
 	GetOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error)
 	ListRouteDecisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]RouteDecision, error)
+	ListPlanRevisions(ctx context.Context, req ListPlanRevisionsRequest) ([]PlanRevision, error)
+	GetPlanRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (*PlanRevision, error)
 	ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error)
 	ListDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]DecisionRequest, error)
 	ResolveDecision(ctx context.Context, req ResolveDecisionRequest) (*DecisionRequest, error)
@@ -475,6 +477,49 @@ func (h *HTTPHandler) ListRouteDecisions(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, routeDecisionResponses(decisions))
+}
+
+func (h *HTTPHandler) ListPlanRevisions(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	limit, offset, ok := paginationFromRequest(w, r)
+	if !ok {
+		return
+	}
+	req := ListPlanRevisionsRequest{TenantID: tenantID, ProjectID: projectID, Limit: limit, Offset: offset}
+	if raw := r.URL.Query().Get("demand_id"); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil || id == uuid.Nil {
+			http.Error(w, "invalid demand_id", http.StatusBadRequest)
+			return
+		}
+		req.DemandID = &id
+	}
+	revisions, err := service.ListPlanRevisions(r.Context(), req)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, planRevisionResponses(revisions))
+}
+
+func (h *HTTPHandler) GetPlanRevision(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	revisionID, ok := planRevisionIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	revision, err := service.GetPlanRevision(r.Context(), tenantID, projectID, revisionID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, planRevisionResponseFromDomain(*revision))
 }
 
 func (h *HTTPHandler) ListCoordinationJobs(w http.ResponseWriter, r *http.Request) {
@@ -1204,6 +1249,15 @@ func revisionIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, b
 	return revisionID, true
 }
 
+func planRevisionIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	revisionID, err := uuid.Parse(chi.URLParam(r, "planRevisionId"))
+	if err != nil || revisionID == uuid.Nil {
+		http.Error(w, "invalid plan revision id", http.StatusBadRequest)
+		return uuid.Nil, false
+	}
+	return revisionID, true
+}
+
 func paginationFromRequest(w http.ResponseWriter, r *http.Request) (int32, int32, bool) {
 	limit, ok := int32QueryParam(w, r, "limit")
 	if !ok {
@@ -1653,6 +1707,37 @@ type routeDecisionResponse struct {
 	RequiresHumanReview         bool           `json:"requires_human_review"`
 	CreatedEventID              *string        `json:"created_event_id,omitempty"`
 	CreatedAt                   string         `json:"created_at,omitempty"`
+}
+
+type planRevisionResponse struct {
+	ID                     string         `json:"id"`
+	TenantID               string         `json:"tenant_id"`
+	TeamID                 *string        `json:"team_id,omitempty"`
+	ProjectID              string         `json:"project_id"`
+	DemandID               string         `json:"demand_id"`
+	CoordinationJobID      *string        `json:"coordination_job_id,omitempty"`
+	RouteDecisionID        *string        `json:"route_decision_id,omitempty"`
+	RevisionNumber         int32          `json:"revision_number"`
+	Status                 string         `json:"status"`
+	Payload                map[string]any `json:"payload"`
+	PlannerProvider        *string        `json:"planner_provider,omitempty"`
+	PlannerModel           *string        `json:"planner_model,omitempty"`
+	PlannerInputHash       *string        `json:"planner_input_hash,omitempty"`
+	PlanFingerprint        string         `json:"plan_fingerprint"`
+	ValidationErrors       []string       `json:"validation_errors"`
+	ValidationWarnings     []string       `json:"validation_warnings"`
+	ReviewRequired         bool           `json:"review_required"`
+	ReviewReason           *string        `json:"review_reason,omitempty"`
+	AcceptedBy             *string        `json:"accepted_by,omitempty"`
+	AcceptedAt             *string        `json:"accepted_at,omitempty"`
+	RejectedBy             *string        `json:"rejected_by,omitempty"`
+	RejectedAt             *string        `json:"rejected_at,omitempty"`
+	RejectionReason        *string        `json:"rejection_reason,omitempty"`
+	SupersededByRevisionID *string        `json:"superseded_by_revision_id,omitempty"`
+	DecompositionClaimID   *string        `json:"decomposition_claim_id,omitempty"`
+	CreatedTaskIDs         []string       `json:"created_task_ids"`
+	CreatedAt              string         `json:"created_at,omitempty"`
+	UpdatedAt              string         `json:"updated_at,omitempty"`
 }
 
 type executionSummaryResponse struct {
@@ -2352,6 +2437,47 @@ func routeDecisionResponses(decisions []RouteDecision) []routeDecisionResponse {
 	return responses
 }
 
+func planRevisionResponses(revisions []PlanRevision) []planRevisionResponse {
+	responses := make([]planRevisionResponse, 0, len(revisions))
+	for _, revision := range revisions {
+		responses = append(responses, planRevisionResponseFromDomain(revision))
+	}
+	return responses
+}
+
+func planRevisionResponseFromDomain(revision PlanRevision) planRevisionResponse {
+	return planRevisionResponse{
+		ID:                     revision.ID.String(),
+		TenantID:               revision.TenantID.String(),
+		TeamID:                 stringPtr(revision.TeamID),
+		ProjectID:              revision.ProjectID.String(),
+		DemandID:               revision.DemandID.String(),
+		CoordinationJobID:      stringPtr(revision.CoordinationJobID),
+		RouteDecisionID:        stringPtr(revision.RouteDecisionID),
+		RevisionNumber:         revision.RevisionNumber,
+		Status:                 revision.Status,
+		Payload:                mapOrEmpty(revision.Payload),
+		PlannerProvider:        revision.PlannerProvider,
+		PlannerModel:           revision.PlannerModel,
+		PlannerInputHash:       revision.PlannerInputHash,
+		PlanFingerprint:        revision.PlanFingerprint,
+		ValidationErrors:       stringSliceOrEmpty(revision.ValidationErrors),
+		ValidationWarnings:     stringSliceOrEmpty(revision.ValidationWarnings),
+		ReviewRequired:         revision.ReviewRequired,
+		ReviewReason:           revision.ReviewReason,
+		AcceptedBy:             stringPtr(revision.AcceptedBy),
+		AcceptedAt:             timePtr(revision.AcceptedAt),
+		RejectedBy:             stringPtr(revision.RejectedBy),
+		RejectedAt:             timePtr(revision.RejectedAt),
+		RejectionReason:        revision.RejectionReason,
+		SupersededByRevisionID: stringPtr(revision.SupersededByRevisionID),
+		DecompositionClaimID:   stringPtr(revision.DecompositionClaimID),
+		CreatedTaskIDs:         uuidStrings(revision.CreatedTaskIDs),
+		CreatedAt:              timeValue(revision.CreatedAt),
+		UpdatedAt:              timeValue(revision.UpdatedAt),
+	}
+}
+
 func executionSummaryResponses(summaries []ExecutionSummary) []executionSummaryResponse {
 	responses := make([]executionSummaryResponse, 0, len(summaries))
 	for _, summary := range summaries {
@@ -2868,6 +2994,13 @@ func mapOrEmpty(value map[string]any) map[string]any {
 func sliceOrEmpty(value []any) []any {
 	if value == nil {
 		return []any{}
+	}
+	return value
+}
+
+func stringSliceOrEmpty(value []string) []string {
+	if value == nil {
+		return []string{}
 	}
 	return value
 }

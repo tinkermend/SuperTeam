@@ -1107,6 +1107,49 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ProjectRouteDecision"
+  /api/v1/projects/{projectId}/plan-revisions:
+    get:
+      operationId: listProjectPlanRevisions
+      summary: List project plan revisions
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: demand_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Project plan revision list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectPlanRevision"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/plan-revisions/{planRevisionId}:
+    get:
+      operationId: getProjectPlanRevision
+      summary: Get a project plan revision
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/PlanRevisionId"
+      responses:
+        "200":
+          description: Project plan revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectPlanRevision"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/coordination-jobs:
     get:
       operationId: listProjectCoordinationJobs
@@ -3175,6 +3218,13 @@ components:
         format: uuid
     RevisionId:
       name: revisionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PlanRevisionId:
+      name: planRevisionId
       in: path
       required: true
       schema:
@@ -5355,6 +5405,102 @@ components:
           type: string
           format: uuid
         created_at:
+          type: string
+          format: date-time
+    ProjectPlanRevision:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - demand_id
+        - revision_number
+        - status
+        - payload
+        - plan_fingerprint
+        - validation_errors
+        - validation_warnings
+        - review_required
+        - created_task_ids
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        team_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        demand_id:
+          type: string
+          format: uuid
+        coordination_job_id:
+          type: string
+          format: uuid
+        route_decision_id:
+          type: string
+          format: uuid
+        revision_number:
+          type: integer
+          format: int32
+        status:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        planner_provider:
+          type: string
+        planner_model:
+          type: string
+        planner_input_hash:
+          type: string
+        plan_fingerprint:
+          type: string
+        validation_errors:
+          type: array
+          items:
+            type: string
+        validation_warnings:
+          type: array
+          items:
+            type: string
+        review_required:
+          type: boolean
+        review_reason:
+          type: string
+        accepted_by:
+          type: string
+          format: uuid
+        accepted_at:
+          type: string
+          format: date-time
+        rejected_by:
+          type: string
+          format: uuid
+        rejected_at:
+          type: string
+          format: date-time
+        rejection_reason:
+          type: string
+        superseded_by_revision_id:
+          type: string
+          format: uuid
+        decomposition_claim_id:
+          type: string
+          format: uuid
+        created_task_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
           type: string
           format: date-time
     ProjectExecutionSummary:

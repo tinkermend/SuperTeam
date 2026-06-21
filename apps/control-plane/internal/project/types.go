@@ -520,6 +520,7 @@ type DecomposeAcceptedPlanRevisionRequest struct {
 	CoordinationJobID      uuid.UUID
 	RouteDecisionID        uuid.UUID
 	AcceptedPlanRevisionID uuid.UUID
+	PlanFingerprint        string
 	DecompositionClaimKey  string
 	Tasks                  []ProjectTaskGraphCreateTask
 }
