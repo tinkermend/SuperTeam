@@ -421,8 +421,8 @@ func TestProjectCoordinatorWakesDownstreamOnCompletion(t *testing.T) {
 	require.Len(t, store.resolveReadyInputs, 1)
 	require.Equal(t, rootTaskID, store.resolveReadyInputs[0].CompletedTaskID)
 	require.Equal(t, []DispatchProjectTaskInput{
-		{TenantID: store.dispatchInputs[0].TenantID, ProjectID: store.snapshot.ProjectID, TaskID: rootTaskID},
-		{TenantID: store.dispatchInputs[0].TenantID, ProjectID: store.snapshot.ProjectID, TaskID: downstreamTaskID},
+		{TenantID: store.dispatchInputs[0].TenantID, ProjectID: store.snapshot.ProjectID, TaskID: rootTaskID, DispatchReason: project.DispatchReasonRootReady},
+		{TenantID: store.dispatchInputs[0].TenantID, ProjectID: store.snapshot.ProjectID, TaskID: downstreamTaskID, DispatchReason: project.DispatchReasonRootReady},
 	}, store.dispatchInputs)
 }
 
@@ -593,9 +593,10 @@ func TestProjectCoordinatorRoutesHumanDecisionToFailureRecovery(t *testing.T) {
 		"DispatchProjectTask",
 	}, store.calls)
 	require.Equal(t, []DispatchProjectTaskInput{{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		TaskID:    replacementTaskID,
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		TaskID:         replacementTaskID,
+		DispatchReason: project.DispatchReasonRootReady,
 	}}, store.dispatchInputs)
 	require.Len(t, store.applyFailureRecoveryInputs, 1)
 	require.Equal(t, ApplyFailureRecoveryDecisionInput{
@@ -724,6 +725,28 @@ func TestActivitiesDispatchProjectTaskKeepsTransientErrorRetryable(t *testing.T)
 	var appErr *temporal.ApplicationError
 	if errors.As(err, &appErr) && appErr.NonRetryable() {
 		t.Fatalf("expected retryable error, got non-retryable %#v", err)
+	}
+}
+
+func TestActivitiesDispatchProjectTaskDefaultsDispatchReason(t *testing.T) {
+	store := &recordingActivityStore{}
+	activities := NewActivities(store, HeuristicRoutePlanner{})
+
+	err := activities.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: uuid.New(), ProjectID: uuid.New(), TaskID: uuid.New()})
+	require.NoError(t, err)
+	require.Len(t, store.dispatchInputs, 1)
+	require.Equal(t, project.DispatchReasonRootReady, store.dispatchInputs[0].DispatchReason)
+}
+
+func TestActivitiesDispatchProjectTaskKeepsRetryLaterGateRetryable(t *testing.T) {
+	store := &recordingActivityStore{dispatchErr: ErrProjectTaskDispatchRetryLater}
+	activities := NewActivities(store, HeuristicRoutePlanner{})
+
+	err := activities.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{TenantID: uuid.New(), ProjectID: uuid.New(), TaskID: uuid.New()})
+	require.ErrorIs(t, err, ErrProjectTaskDispatchRetryLater)
+	var appErr *temporal.ApplicationError
+	if errors.As(err, &appErr) && appErr.NonRetryable() {
+		t.Fatalf("expected retryable retry-later error, got non-retryable %#v", err)
 	}
 }
 

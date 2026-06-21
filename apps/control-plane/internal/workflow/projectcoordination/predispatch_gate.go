@@ -47,7 +47,7 @@ func (s *ProjectStore) RunPreDispatchGate(ctx context.Context, input DispatchPro
 		PlannedTaskKey:         task.PlannedTaskKey,
 		SelectedEmployeeID:     selectedEmployeeID(task),
 		AttemptNo:              task.AttemptCount + 1,
-		DispatchReason:         project.DispatchReasonRootReady,
+		DispatchReason:         defaultDispatchReason(input.DispatchReason),
 	}
 	snapshot, err := s.loadPreDispatchGateSnapshot(ctx, input, task)
 	if err != nil {
@@ -470,6 +470,14 @@ func gateEventSummary(status string) string {
 	default:
 		return "Dispatch gate blocked"
 	}
+}
+
+func defaultDispatchReason(reason string) string {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return project.DispatchReasonRootReady
+	}
+	return reason
 }
 
 func selectedEmployeeID(task project.ProjectTask) uuid.UUID {

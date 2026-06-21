@@ -161,6 +161,7 @@ func (a *Activities) DispatchProjectTask(ctx context.Context, input DispatchProj
 	if a.store == nil {
 		return ErrActivityStoreRequired
 	}
+	input.DispatchReason = defaultDispatchReason(input.DispatchReason)
 	err := a.store.DispatchProjectTask(ctx, input)
 	if err != nil && !dispatchErrorRetryable(err) {
 		return temporal.NewNonRetryableApplicationError("project task dispatch rejected", "ProjectTaskDispatchTerminal", err)
