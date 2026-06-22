@@ -93,7 +93,13 @@ const (
 	ProjectEventTaskCancelled                  ProjectEventType = "project_task.cancelled"
 	ProjectEventTaskCompleted                  ProjectEventType = "project_task.completed"
 	ProjectEventTaskFailed                     ProjectEventType = "project_task.failed"
+	ProjectEventTaskResultSubmitted            ProjectEventType = "project_task.result.submitted"
 	ProjectEventTaskResultRecorded             ProjectEventType = "project_task.result.recorded"
+	ProjectEventTaskResultAccepted             ProjectEventType = "project_task.result.accepted"
+	ProjectEventTaskResultRejected             ProjectEventType = "project_task.result.rejected"
+	ProjectEventTaskResultBlocked              ProjectEventType = "project_task.result.blocked"
+	ProjectEventTaskResultRetryableFailed      ProjectEventType = "project_task.result.retryable_failed"
+	ProjectEventTaskResultFailedRetryable      ProjectEventType = ProjectEventTaskResultRetryableFailed
 	ProjectEventTaskResultValidationFailed     ProjectEventType = "project_task.result.validation_failed"
 	ProjectEventTaskRevisionRequested          ProjectEventType = "project_task.revision.requested"
 	ProjectEventTaskRevisionCreated            ProjectEventType = "project_task.revision.created"

@@ -26,6 +26,17 @@ func TestValidateTaskResultContract(t *testing.T) {
 		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
 	})
 
+	t.Run("completed result requires evidence on every required acceptance criterion result", func(t *testing.T) {
+		result := completeTaskResultContract()
+		result.AcceptanceResults[1].EvidenceRefs = nil
+
+		validation := ValidateTaskResultContract(taskResultContractTask(), result)
+
+		require.False(t, validation.Valid)
+		require.Contains(t, validation.Errors, "acceptance_result_evidence_missing:说明剩余风险")
+		require.Equal(t, TaskResultDecisionValidationFailed, validation.Decision)
+	})
+
 	t.Run("revision_needed requires a revision reason", func(t *testing.T) {
 		result := TaskResultContract{
 			Status:  TaskResultStatusRevisionNeeded,
@@ -111,6 +122,35 @@ func TestLegacyCompletionContractAdapter(t *testing.T) {
 		require.Equal(t, "请负责人确认是否接受剩余风险。", contract.FollowUpRequests[0].Summary)
 		require.NotNil(t, contract.HumanReviewRequest)
 	})
+}
+
+func TestTaskResultContractReviewRequiredExports(t *testing.T) {
+	var validation TaskResultValidationResult = ValidateTaskResultContract(ProjectTask{}, TaskResultContract{
+		Status:  "unknown",
+		Summary: "invalid status should surface as a typed validation error",
+	})
+	require.False(t, validation.Valid)
+	require.NotEmpty(t, validation.Errors)
+
+	var validationError TaskResultValidationError = validation.Errors[0]
+	require.Equal(t, TaskResultValidationError("status_invalid:unknown"), validationError)
+
+	contract := AdaptCompletionEvidenceToResultContract(CompleteProjectTaskAttemptRequest{
+		Conclusion:   "legacy completion evidence was normalized",
+		EvidenceRefs: []any{"evidence://legacy/ref"},
+	})
+	require.Equal(t, TaskResultStatusCompleted, contract.Status)
+	require.Equal(t, "evidence://legacy/ref", contract.EvidenceRefs[0].Ref)
+
+	require.Equal(t, TaskResultDecisionCompleteAccepted, NormalizeTaskResultDecision(ProjectTask{}, completeTaskResultContract()))
+}
+
+func TestProjectTaskResultEventConstants(t *testing.T) {
+	require.Equal(t, ProjectEventType("project_task.result.submitted"), ProjectEventTaskResultSubmitted)
+	require.Equal(t, ProjectEventType("project_task.result.accepted"), ProjectEventTaskResultAccepted)
+	require.Equal(t, ProjectEventType("project_task.result.rejected"), ProjectEventTaskResultRejected)
+	require.Equal(t, ProjectEventType("project_task.result.blocked"), ProjectEventTaskResultBlocked)
+	require.Equal(t, ProjectEventType("project_task.result.retryable_failed"), ProjectEventTaskResultRetryableFailed)
 }
 
 func taskResultContractTask() ProjectTask {

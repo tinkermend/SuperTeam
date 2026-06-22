@@ -156,6 +156,10 @@ type TaskResultValidation struct {
 	Warnings []string
 }
 
+type TaskResultValidationError = string
+
+type TaskResultValidationResult = TaskResultValidation
+
 func ValidateTaskResultContract(task ProjectTask, result TaskResultContract) TaskResultValidation {
 	validation := TaskResultValidation{Valid: true}
 
@@ -237,6 +241,10 @@ func TaskResultContractFromLegacyCompletion(req CompleteProjectTaskAttemptReques
 	return result
 }
 
+func AdaptCompletionEvidenceToResultContract(req CompleteProjectTaskAttemptRequest) TaskResultContract {
+	return TaskResultContractFromLegacyCompletion(req)
+}
+
 func TaskResultContractFromFailure(req FailProjectTaskAttemptRequest) TaskResultContract {
 	result := TaskResultContract{
 		Status:  TaskResultStatusFailed,
@@ -311,12 +319,12 @@ func validateCompletedTaskResult(task ProjectTask, result TaskResultContract) []
 			errors = append(errors, "acceptance_result_missing:"+criterion)
 			continue
 		}
-		errors = append(errors, validateCompletedAcceptanceResult(criterion, acceptanceResult, result.EvidenceRefs)...)
+		errors = append(errors, validateCompletedAcceptanceResult(criterion, acceptanceResult)...)
 	}
 	return errors
 }
 
-func validateCompletedAcceptanceResult(criterion string, result TaskResultAcceptanceResult, contractEvidenceRefs []TaskResultRef) []string {
+func validateCompletedAcceptanceResult(criterion string, result TaskResultAcceptanceResult) []string {
 	switch result.Status {
 	case TaskResultCriterionStatusPassed, TaskResultCriterionStatusHumanOverridden:
 	case TaskResultCriterionStatusNotApplicable:
@@ -326,7 +334,7 @@ func validateCompletedAcceptanceResult(criterion string, result TaskResultAccept
 	default:
 		return []string{"acceptance_result_not_accepted:" + criterion}
 	}
-	if len(result.EvidenceRefs) == 0 && len(contractEvidenceRefs) == 0 {
+	if len(result.EvidenceRefs) == 0 {
 		return []string{"acceptance_result_evidence_missing:" + criterion}
 	}
 	return nil
@@ -385,6 +393,10 @@ func mapTaskResultDecision(task ProjectTask, result TaskResultContract) TaskResu
 	default:
 		return TaskResultDecisionValidationFailed
 	}
+}
+
+func NormalizeTaskResultDecision(task ProjectTask, result TaskResultContract) TaskResultDecision {
+	return mapTaskResultDecision(task, result)
 }
 
 func taskResultNeedsHumanReview(task ProjectTask, result TaskResultContract) bool {
